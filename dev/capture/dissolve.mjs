@@ -23,6 +23,16 @@
    departs (.out, opacity falling) and the view arrives (.enter removed, opacity
    rising). Reduced-motion asserts neither happens — the hard contract.
 
+   #453: it also gates the RESTORED liquify's mechanism, load-independently —
+   a MutationObserver records the ghost's inline filter during the window
+   (registration evidence, like transitionstart: mutations land whatever the
+   frame rate), the envelope's TERMINAL write proves stepFx ran to its end
+   (#dissolveOut's displacement scale ends deterministically at 25 whatever
+   the frame rate, and nothing clears it), and the feImage href proves the
+   field is the cached texture rather than a live feTurbulence. Reverting the
+   mechanism (MIST_ON false) reds the first two; an unwired texture reds the
+   third.
+
    Writes to its target, so use a scratch fixture. usage:
    node dissolve.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
@@ -71,7 +81,7 @@ async function page(reduced = false) {
   // makes framesInWindow match nothing and the motion check passes vacuously.
   const trace = await p.evaluate(([rp, rq]) => {
     const view = document.getElementById('view');
-    const events = [], frames = [];
+    const events = [], frames = [], ghostFilters = [];
     let done = false;
     const onT = type => e => {
       if (e.propertyName === 'opacity' || e.propertyName === 'transform' || e.propertyName === 'filter')
@@ -80,6 +90,14 @@ async function page(reduced = false) {
     view.addEventListener('transitionrun', onT('run'));
     view.addEventListener('transitionstart', onT('start'));
     view.addEventListener('transitionend', onT('end'));
+    // #453: the ghost's inline filter, recorded by mutation rather than by
+    // sampling — a mutation lands whatever the frame rate, so this is the
+    // same load-independent class of evidence as transitionstart.
+    const mo = new MutationObserver(mrs => mrs.forEach(m => {
+      if (m.target.classList && m.target.classList.contains('ghost'))
+        ghostFilters.push(m.target.style.filter || '');
+    }));
+    mo.observe(document.body, { attributes: true, attributeFilter: ['style'], subtree: true });
     const t0 = performance.now();
     navigate('review', rp, { push: true, q: rq });   // the real crossfade
     (function f() {
@@ -87,7 +105,7 @@ async function page(reduced = false) {
       frames.push({ t: Math.round(t * 10) / 10, op: Math.round(parseFloat(getComputedStyle(view).opacity) * 100) });
       if (t < 1600) requestAnimationFrame(f);
     })();
-    return new Promise(res => setTimeout(() => res({ events, frames, t0 }), 1700));
+    return new Promise(res => setTimeout(() => { mo.disconnect(); res({ events, frames, t0, ghostFilters }); }, 1700));
   }, [review.name, question.title]);
 
   const evs = trace.events, frames = trace.frames, t0 = trace.t0;
@@ -128,6 +146,27 @@ async function page(reduced = false) {
   notes.push(`normal settled: body.review=${ghost.review} opacity=1=${ghost.settled} filter="${ghost.filter}" crisp=${ghost.crisp}`);
   ok('the crossfade completed to /review with a crisp settled view',
      ghost.review && ghost.settled && ghost.crisp);
+
+  // #453: the liquify itself. Three load-independent facts: the ghost carried
+  // the mist filter (mutation evidence), the envelope ran to its deterministic
+  // terminal write (stepFx's last frame leaves #dissolveOut's scale at 25 and
+  // nothing clears it — a starved rAF that fires even once after DREAM_MS
+  // lands the same value), and the field is the cached texture, not a live
+  // feTurbulence. Reverting to MIST_ON false reds the first two.
+  const mist = await p.evaluate(() => {
+    const sc = document.querySelector('#dissolveOut feDisplacementMap');
+    const fi = document.querySelector('#dissolveOut feImage.texsrc');
+    return { scale: sc ? sc.getAttribute('scale') : null,
+             href: fi ? (fi.getAttribute('href') || '') : '' };
+  });
+  notes.push(`mist: ghost filters seen=${JSON.stringify(trace.ghostFilters)} ` +
+             `terminal scale=${mist.scale} feImage href=${mist.href.slice(0, 22) || '<empty>'}`);
+  ok('the ghost carries the dissolve mist filter while it departs',
+     trace.ghostFilters.some(f => f.includes('dissolveOut')));
+  ok('the mist envelope runs to its end (terminal displacement scale)',
+     parseFloat(mist.scale) >= 20);
+  ok('the mist field is the cached feImage texture (#453), not live turbulence',
+     mist.href.startsWith('data:image/png'));
   ok('no page errors', errs.length === 0);
   await c.close();
 }

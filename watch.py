@@ -1283,16 +1283,16 @@ STYLE = """<style>
      0 + pushed-back, then removing .enter, gives a true fade-up from depth. */
   #view.enter { transition:none; opacity:0;
                 transform:translateY(30px) translateZ(-110px) scale(.93); }
-  /* #449: the SVG liquify mist is TEMPORARILY OFF (MIST_ON in crossfade; the
-     body carries `.mistoff` while it is). The haze the mist gave the arriving
-     view now rides the compositor as a CSS blur that clears as the view
-     surfaces into focus — same shape as the mist it replaces (peak ~5px at
-     the back of the dissolve, resolving to crisp at rest), but on the GPU
-     thread rather than a per-frame feTurbulence rasterization. Reduced-motion
-     zeroes it (transition:none below). Restore with MIST_ON: drop the
-     body.mistoff class and these rules become inert, the mist filter resumes. */
-  body.mistoff #view { filter:blur(5px); }
-  body.mistoff #view:not(.enter) { filter:blur(0); }
+  /* #449/#453: the arriving view's haze rides the COMPOSITOR as a CSS blur
+     that clears as it surfaces into focus (peak ~5px at the back of the
+     dissolve, resolving to crisp at rest) — measured free (#449). Ungated
+     since #453: the dissolveIn SVG filter is defined but never applied (a
+     second full-page rasterisation fails the frame budget), so this blur is
+     the arrival's softening in every configuration; the ghost's own haze is
+     the SVG mist when it is on, the .mistoff rules below when it is not.
+     Reduced-motion zeroes it either way (transition:none below). */
+  #view { filter:blur(5px); }
+  #view:not(.enter) { filter:blur(0); }
   /* the ghost is pinned to the box the outgoing view occupied (top/width/
      height set in crossfade), not stretched to the wrapper — the chrome now
      sits above #view, and a resizing column must not re-wrap the departing
@@ -1911,7 +1911,44 @@ STYLE = """<style>
 APP_BODY = """<canvas id="dreambg"></canvas>
 <svg id="dreamfx" width="0" height="0" aria-hidden="true"
      style="position:absolute;width:0;height:0;pointer-events:none">
+ <!-- #453: the dissolve mist is ONE CACHED noise field, pre-rendered once to a
+      canvas (mistTexture()) and consumed via feImage — the human's texture idea
+      ("just having a single texture ... and then just like moving it"). feTile
+      wraps it across the filter region, feOffset MOVES it per frame (the flow),
+      and the displacement/blur envelopes are the ones stepFx always drove.
+      Nothing regenerates per frame: #449 measured feTurbulence re-rasterizing
+      every frame as the whole cost, with the displacement+blur math free. -->
  <filter id="dissolveOut" x="-25%" y="-25%" width="150%" height="150%"
+         color-interpolation-filters="sRGB">
+  <feImage class="texsrc" x="0" y="0" width="256" height="256"
+           preserveAspectRatio="none" result="img"/>
+  <feTile in="img" result="tl"/>
+  <feOffset in="tl" dx="0" dy="0" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
+                     xChannelSelector="R" yChannelSelector="G" result="d"/>
+  <feGaussianBlur in="d" stdDeviation="0"/>
+ </filter>
+ <!-- dissolveIn is DEFINED BUT NOT APPLIED (#453): the second full-page
+      rasterisation is what fails the frame budget — one filtered element
+      costs ~30% of rAF frames on this route, two cost ~50%, and the incoming
+      view's mist was always its subtlest half (peak displacement lands while
+      opacity is near 0). The arrival's haze rides the compositor CSS blur
+      (5px→0, the ungated #view rules). Kept defined so a future mechanism
+      can re-apply it without re-authoring. -->
+ <filter id="dissolveIn" x="-25%" y="-25%" width="150%" height="150%"
+         color-interpolation-filters="sRGB">
+  <feImage class="texsrc" x="0" y="0" width="256" height="256"
+           preserveAspectRatio="none" result="img"/>
+  <feTile in="img" result="tl"/>
+  <feOffset in="tl" dx="0" dy="0" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
+                     xChannelSelector="R" yChannelSelector="G" result="d"/>
+  <feGaussianBlur in="d" stdDeviation="0"/>
+ </filter>
+ <!-- #449: the shelved per-frame feTurbulence versions, kept for comparison
+      (MIST_IMPL 'turbulence' in crossfade). Measured 2026-07-29: they cost
+      the dissolve +128% of rAF frames vs none. Do not re-enable casually. -->
+ <filter id="dissolveOutT" x="-25%" y="-25%" width="150%" height="150%"
          color-interpolation-filters="sRGB">
   <feTurbulence type="fractalNoise" baseFrequency="0.009" numOctaves="1"
                 seed="7" result="n"/>
@@ -1919,7 +1956,7 @@ APP_BODY = """<canvas id="dreambg"></canvas>
                      xChannelSelector="R" yChannelSelector="G" result="d"/>
   <feGaussianBlur in="d" stdDeviation="0"/>
  </filter>
- <filter id="dissolveIn" x="-25%" y="-25%" width="150%" height="150%"
+ <filter id="dissolveInT" x="-25%" y="-25%" width="150%" height="150%"
          color-interpolation-filters="sRGB">
   <feTurbulence type="fractalNoise" baseFrequency="0.009" numOctaves="1"
                 seed="7" result="n"/>
@@ -1929,8 +1966,10 @@ APP_BODY = """<canvas id="dreambg"></canvas>
  </filter>
  <filter id="departMist" x="-25%" y="-25%" width="150%" height="150%"
          color-interpolation-filters="sRGB">
-  <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="1"
-                seed="7" result="n"/>
+  <feImage class="texsrc" x="0" y="0" width="256" height="256"
+           preserveAspectRatio="none" result="img"/>
+  <feTile in="img" result="tl"/>
+  <feOffset in="tl" dx="0" dy="0" result="n"/>
   <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
                      xChannelSelector="R" yChannelSelector="G" result="d"/>
   <feGaussianBlur in="d" stdDeviation="0"/>
@@ -6481,18 +6520,27 @@ function dreamAway(wrap, node, rect, clipTop) {
   // (.gone, 700ms). The liquify/blur lives in an SVG mist filter (#departMist)
   // driven per-frame from rAF — the same idiom as the route dissolve's
   // #dissolveOut — so the ghost hazes and liquifies rather than just CSS-blurring.
+  // #453: the field is the same cached feImage texture as the route dissolve,
+  // drifted by feOffset instead of a baseFrequency ramp — a departure ghost is
+  // small, but feTurbulence re-rasterizes per frame whatever the area (#449).
   // Removing .pregone restores .qaghost's .7s transition for the departure leg.
   // Commits are excluded: their gesture is the grow-and-fall (line 677), and
   // they keep CSS blur(6px) instead of the SVG filter.
   if (node.classList.contains('commit')) {
     node.classList.add('gone');
+  } else if (!mistTexture()) {
+    node.classList.add('pregone');     // no canvas: CSS-blur departure only
+    setTimeout(() => { node.classList.remove('pregone'); node.classList.add('gone'); }, 180);
   } else {
     const dm = document.querySelector('#departMist feDisplacementMap');
     const bl = document.querySelector('#departMist feGaussianBlur');
-    const tu = document.querySelector('#departMist feTurbulence');
+    const of = document.querySelector('#departMist feOffset');
     const smooth = x => x * x * (3 - 2 * x);
     const t0m = performance.now();
     const MIST_MS = 880;               // 180ms pregone + 700ms gone
+    // drift bounded by the ghost's own size: the offset must never push the
+    // tiled field's edge into sampling reach (region margin − scale/2).
+    const drift = Math.max(0, Math.min(8, rect.width * 0.25 - 8, rect.height * 0.25 - 8));
     node.style.filter = 'url(#departMist)';
     node.classList.add('pregone');
     (function mistStep(now) {
@@ -6500,7 +6548,10 @@ function dreamAway(wrap, node, rect, clipTop) {
       const e = smooth(u);
       if (dm) dm.setAttribute('scale', (e * 14).toFixed(2));
       if (bl) bl.setAttribute('stdDeviation', (e * 4.5).toFixed(2));
-      if (tu) tu.setAttribute('baseFrequency', (0.012 + e * 0.01).toFixed(4));
+      if (of) {                        // the field flows up as it liquifies,
+        of.setAttribute('dx', (e * drift * 0.6).toFixed(1));  // rising with
+        of.setAttribute('dy', (-e * drift).toFixed(1));       // the ghost
+      }
       if (u < 1 && node.isConnected) requestAnimationFrame(mistStep);
     })(performance.now());
     setTimeout(() => {
@@ -7502,21 +7553,86 @@ addEventListener('click', e => {
    reduced-motion swaps instantly — no ghost, no mist. */
 const DREAM_MS = 1150;                     // dwell of the whole dissolve
 // #449: the SVG liquify mist (feTurbulence→displacement→blur, driven per-frame
-// from stepFx) is TEMPORARILY OFF. Measured 2026-07-29 on the route he named
-// (question→review): Chrome rasterizes feTurbulence afresh every frame and
-// does not cache it across frames, so freezing baseFrequency, freezing ALL six
-// stepFx attribute writes, and even clamping the ghost's filtered area 42%
-// (553×1557→553×900, geometry confirmed) all bought nothing — the cost is the
+// from stepFx) was shelved behind this switch. Measured 2026-07-29 on the route
+// he named (question→review): Chrome rasterizes feTurbulence afresh every frame
+// and does not cache it across frames, so freezing baseFrequency, freezing ALL
+// six stepFx attribute writes, and even clamping the ghost's filtered area 42%
+// (553×1557→553×900, geometry confirmed) all bought nothing — the cost was the
 // turbulence primitive regenerating, not the displacement math, the attribute
 // writes, or the area. Removing both dissolve filters recovered +100–128% of
-// rAF frames (capture: dev/capture/dissolveperf.mjs). The filters stay defined
-// and stepFx stays in place behind this switch so restoring the mist is one
-// edit when a cheaper mechanism exists (the candidate is a pre-rendered noise
-// texture consumed via feImage so nothing regenerates per frame). CSS blur on
-// the ghost + view now carries as much of the gesture as compositor effects can
-// — see the .ghost / #view rules. Restoring: set MIST_ON true and the CSS blur
-// override below becomes a no-op.
-const MIST_ON = false;
+// rAF frames (capture: dev/capture/dissolveperf.mjs).
+// #453: the mist is RESTORED as the human's texture idea — one cached noise
+// field pre-rendered once (mistTexture below), consumed via feImage and MOVED
+// per frame by feOffset ("just having a single texture ... and then just like
+// moving it"). Nothing regenerates per frame; feOffset/feTile shift a cached
+// bitmap, and #449 measured the displacement+blur math itself as free (I3).
+// Measured in the same harness against #449's bar — see transitions.md (*The
+// mist filter*) for the numbers. The shelved feTurbulence filters stay defined
+// (#dissolveOutT/#dissolveInT) and MIST_IMPL 'turbulence' selects them for
+// comparison. MIST_ON false = CSS blur carries the dissolve (#449's fallback;
+// body.mistoff rules), whatever MIST_IMPL says.
+const MIST_ON = true;
+const MIST_IMPL = 'feimage';   // 'feimage' (#453) | 'turbulence' (#449, shelved)
+// The cached mist field: a TILEABLE fractal value-noise texture, generated
+// once, deterministic (fixed PRNG state so captures are reproducible), with
+// independent R and G fields for the two displacement axes. Tileable by
+// construction — each octave's lattice wraps at its period — so feTile repeats
+// it seamlessly and feOffset can drift it without a seam ever crossing.
+let MIST_TEX = null;
+function mistTexture() {
+  if (MIST_TEX !== null) return MIST_TEX;
+  try {
+    const T = 256;
+    const cv = document.createElement('canvas'); cv.width = cv.height = T;
+    const cx2 = cv.getContext('2d');
+    if (!cx2) throw new Error('no 2d context');
+    const im = cx2.createImageData(T, T);
+    const fade = t => t * t * (3 - 2 * t);
+    const hash = (x, y, p, sd) => {
+      x = ((x % p) + p) % p; y = ((y % p) + p) % p;      // wrap → tileable
+      let h = (x * 374761393 + y * 668265263 + sd * 2246822519) >>> 0;
+      h = (h ^ (h >>> 13)) >>> 0; h = (h * 1274126177) >>> 0;
+      return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+    };
+    const oct = (px, py, p, sd) => {
+      const gx = px / T * p, gy = py / T * p;
+      const x0 = Math.floor(gx), y0 = Math.floor(gy);
+      const fx = fade(gx - x0), fy = fade(gy - y0);
+      const v00 = hash(x0, y0, p, sd), v10 = hash(x0 + 1, y0, p, sd);
+      const v01 = hash(x0, y0 + 1, p, sd), v11 = hash(x0 + 1, y0 + 1, p, sd);
+      return (v00 * (1 - fx) + v10 * fx) * (1 - fy) +
+             (v01 * (1 - fx) + v11 * fx) * fy;
+    };
+    // periods/weights chosen to read like the old baseFrequency≈0.009 field
+    // (~110px blobs) at a 256px tile: 2–3 large forms per tile, finer octaves
+    // for the swirl. R and G are independent fields (sd 11 vs 47).
+    const OS = [[2, .42], [4, .27], [8, .18], [16, .13]];
+    let mn = 1, mx = 0;
+    const R = new Float32Array(T * T), G = new Float32Array(T * T);
+    for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) {
+      let r = 0, g = 0;
+      for (const [p, w] of OS) { r += oct(x, y, p, 11) * w; g += oct(x, y, p, 47) * w; }
+      R[y * T + x] = r; G[y * T + x] = g;
+      if (r < mn) mn = r; if (r > mx) mx = r;
+    }
+    for (let i = 0; i < T * T; i++) {   // stretch R to the full range (same
+      const r = (R[i] - mn) / (mx - mn); // band G occupies, ±2%)
+      im.data[i * 4] = r * 255;
+      im.data[i * 4 + 1] = Math.max(0, Math.min(255, (G[i] - mn) / (mx - mn) * 255));
+      im.data[i * 4 + 2] = 128; im.data[i * 4 + 3] = 255;
+    }
+    cx2.putImageData(im, 0, 0);
+    MIST_TEX = cv.toDataURL('image/png');
+    document.querySelectorAll('#dreamfx feImage.texsrc').forEach(fi => {
+      fi.setAttribute('href', MIST_TEX);
+      fi.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', MIST_TEX);
+    });
+  } catch (e) {
+    MIST_TEX = '';                        // no canvas: degrade to CSS blur
+    document.body.classList.add('mistoff');
+  }
+  return MIST_TEX;
+}
 const fxNode = (id, tag) => document.querySelector('#' + id + ' ' + tag);
 function crossfade(html, xopts) {
   xopts = xopts || {};
@@ -7560,11 +7676,19 @@ function crossfade(html, xopts) {
   // so a shared-element FLIP from the clicked question lands true.
   const dock = document.getElementById('qdock');
   const dockRect = dock ? dock.getBoundingClientRect() : null;
-  // #449: the liquify mist is behind MIST_ON. When off, neither dissolve filter
-  // is applied — CSS blur on .ghost/#view carries the softening instead.
-  if (MIST_ON) {
-    ghost.style.filter = 'url(#dissolveOut)';
-    viewEl.style.filter = 'url(#dissolveIn)';
+  // #449/#453: the liquify mist is behind MIST_ON, and applied to the GHOST
+  // ONLY. #453 measured the cost model end to end in #449's own harness on
+  // this host: the per-frame price is the COUNT of full-page SVG filter
+  // rasterisations, nothing else — feImage≈feTurbulence, static≈animated,
+  // two filters ≈ 24 frames, one ≈ 34, none ≈ 47-50. So the departing view
+  // keeps the whole gesture (liquify + flow + haze, one rasterisation) and
+  // the arriving view's haze is the compositor CSS blur (measured free).
+  // MIST_IMPL picks the field: 'feimage' is the cached moved texture (#453),
+  // 'turbulence' the shelved per-frame feTurbulence (#449).
+  const mistOk = MIST_ON && (MIST_IMPL === 'turbulence' || mistTexture());
+  if (mistOk) {
+    const sfx = MIST_IMPL === 'turbulence' ? 'T' : '';
+    ghost.style.filter = 'url(#dissolveOut' + sfx + ')';
   }
   viewEl.classList.add('enter');
   void viewEl.offsetWidth;                 // commit the hidden start state
@@ -7582,33 +7706,42 @@ function crossfade(html, xopts) {
     viewEl.style.filter = '';              // crisp at rest, zero filter cost
     document.body.classList.remove('wsliding');
   };
-  // The per-frame mist envelope. Recoverable wholesale behind MIST_ON so
-  // restoring the liquify is one flag flip — measured irrelevant to cost when
-  // the filters are not applied (dev/capture/dissolveperf.mjs, #449).
-  if (MIST_ON) {
-    const dOut = fxNode('dissolveOut', 'feDisplacementMap');
-    const bOut = fxNode('dissolveOut', 'feGaussianBlur');
-    const tOut = fxNode('dissolveOut', 'feTurbulence');
-    const dIn = fxNode('dissolveIn', 'feDisplacementMap');
-    const bIn = fxNode('dissolveIn', 'feGaussianBlur');
-    const tIn = fxNode('dissolveIn', 'feTurbulence');
-    // per-destination swirl signature: this arrival's turbulence field
+  // The per-frame mist envelope, on the ghost's one rasterisation. feimage:
+  // the displacement/blur envelopes plus feOffset DRIFTS that move the cached
+  // field's two interfering layers on different bearings — the flow the
+  // baseFrequency ramp used to fake, now from a field nothing regenerates.
+  // turbulence (shelved): the original writes. The envelope endpoints are
+  // identical either way, so the gesture's shape does not depend on the
+  // mechanism.
+  if (mistOk) {
+    const sfx = MIST_IMPL === 'turbulence' ? 'T' : '';
+    const dOut = fxNode('dissolveOut' + sfx, 'feDisplacementMap');
+    const bOut = fxNode('dissolveOut' + sfx, 'feGaussianBlur');
+    const tOut = fxNode('dissolveOut' + sfx, 'feTurbulence');
+    const o1 = fxNode('dissolveOut' + sfx, 'feOffset');
+    // per-destination swirl signature: this arrival's field. feimage moves a
+    // STATIC field, so the seed selects where in the tile the field starts
+    // and on what bearing it drifts; turbulence seeds the noise itself.
     const seed = SEED[view.name] != null ? SEED[view.name] : 7;
     if (tOut) tOut.setAttribute('seed', seed);
-    if (tIn) tIn.setAttribute('seed', seed);
+    // drift: bounded so the offset never pushes the tiled field's edge into
+    // the region displacement can sample (region margin − scale/2; the
+    // narrowest filtered element on any route is the 553px questions column).
+    const ang = (seed % 12) / 12 * 2 * Math.PI;
+    const ox0 = (seed * 37) % 96 - 48, oy0 = (seed * 91) % 96 - 48;
+    const DX = Math.cos(ang) * 40, DY = Math.sin(ang) * 40;
     const smooth = x => x * x * (3 - 2 * x);
     function stepFx(now) {
       const u = Math.min(1, (now - t0) / DREAM_MS);
       const eo = smooth(u);                          // ghost: mist grows in
       if (dOut) dOut.setAttribute('scale', (eo * 25).toFixed(2));
       if (bOut) bOut.setAttribute('stdDeviation', (eo * 3.8).toFixed(2));
-      const ui = Math.min(1, Math.max(0, (now - t0 - 160) / (DREAM_MS - 160)));
-      const ei = smooth(ui);                         // incoming: mist clears
-      if (dIn) dIn.setAttribute('scale', ((1 - ei) * 19).toFixed(2));
-      if (bIn) bIn.setAttribute('stdDeviation', ((1 - ei) * 3.2).toFixed(2));
-      const bf = (0.009 + eo * 0.009).toFixed(4);    // field tightens: it flows
+      if (o1) {
+        o1.setAttribute('dx', (ox0 + eo * DX).toFixed(1));
+        o1.setAttribute('dy', (oy0 + eo * DY).toFixed(1));
+      }
+      const bf = (0.009 + eo * 0.009).toFixed(4);    // shelved: field tightens
       if (tOut) tOut.setAttribute('baseFrequency', bf);
-      if (tIn) tIn.setAttribute('baseFrequency', bf);
       if (u < 1) raf = requestAnimationFrame(stepFx);
       else finish();
     }

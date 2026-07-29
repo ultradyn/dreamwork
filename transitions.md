@@ -459,42 +459,48 @@ exception; an element leaving fades rather than vanishing.
   `data-aqid` only, rAF remove; reduced motion never applies the start pose.
   First paint / hard refresh settles visible without replaying arrival.
 - **The mist filter — the load-bearing rule.** Put *all* softening (blur
-  **and** displacement) inside **one** SVG filter
-  (`feTurbulence`→`feDisplacementMap`→`feGaussianBlur`) driven per-frame
-  from rAF; keep only `opacity`/`transform` on CSS. You cannot CSS-tween a
+  **and** displacement) inside **one** SVG filter driven per-frame from
+  rAF; keep only `opacity`/`transform` on CSS. You cannot CSS-tween a
   `filter` that holds a non-interpolable `url(#…)`. Clear the inline filter
   at rest so the settled element is pixel-crisp and zero-cost.
-  **#449: this mist is TEMPORARILY OFF** (human ruling 2026-07-29: "let's
-  try temporarily disabling the svg filter. we can make up for it as best we
-  can with css"). Measured on the route he named — question→review — by A/B
-  on this never-idle host (the only defensible comparison here; an absolute
-  threshold is a load-meter, refused on #444's ground). The capture is
-  `dev/capture/dissolveperf.mjs`, the guard is `dev/capture/dissolve.mjs`.
-  The cost is per-frame `feTurbulence` rasterization, and the levers you
-  would expect do not move it: freezing `baseFrequency` ≈ baseline (the
-  field is *not* invalidated by the per-frame rewrite, contra the first
-  guess); freezing **all six** `stepFx` attribute writes ≈ baseline — and
-  that filter ran with `scale=0`/`stdDeviation=0`, so it was
-  applied-but-inert and still cost the same, which is the proof: Chrome
-  rasterizes `feTurbulence` afresh every frame and does **not** cache it
-  across frames, whatever the attributes do. Clamping the ghost's filtered
-  area 42% (553×1557→553×900, geometry confirmed mid-dissolve) ≈ baseline,
-  so filtered-layer **area is not the lever** either — correcting the claim
-  this bullet once made. Removing **both** dissolve filters recovered
-  +100–128% of rAF frames, and that is what shipped. The filters stay
-  defined and `stepFx` stays in place behind a single `MIST_ON` switch
-  (const in `crossfade`), so restoring the liquify is one edit when a
-  cheaper mechanism exists. CSS compositor `blur()` on the ghost (grows
-  `0→7px` as it departs) and `#view` (`5px→0` as it arrives) carries the
-  haze the mist gave — confirmed free on SwiftShader (≈ no-blur in the same
-  run), and the gesture still arrives and departs (`dissolve.mjs` proves it
-  via `transitionstart`, never an end-state assert). The non-refuted
-  successor is the human's texture idea done as the one escape from
-  per-frame regeneration: pre-render the noise **once** to a canvas/`<img>`
-  and consume it via `feImage`, animating the field by `feOffset`/`feTile`
-  or two interfering layers. Whether Chrome caches an `feImage` source
-  across frames, and whether a translated static field reads as the gesture
-  evolving, are the successor's first questions.
+  **#449 measured the cost; #453 found the actual lever.** Measured on the
+  route he named — question→review — by A/B on this never-idle host (the
+  only defensible comparison here; an absolute threshold is a load-meter,
+  refused on #444's ground). The capture is `dev/capture/dissolveperf.mjs`,
+  the guard is `dev/capture/dissolve.mjs`. #449 refuted the obvious levers:
+  freezing `baseFrequency` ≈ baseline, freezing **all six** per-frame
+  attribute writes ≈ baseline (that filter ran applied-but-inert), clamping
+  the filtered area 42% ≈ baseline. #453 completed the cost model, same
+  harness, same host, one day later (load 26–33): **the per-frame price is
+  the COUNT of full-page SVG filter rasterisations — nothing else.** A
+  cached `feImage` field ≈ `feTurbulence` (23.9 vs 23.8 frames); a STATIC
+  filter ≈ an animated one (23.2 vs 23.9), so Chrome re-rasterizes a
+  filtered element every frame whatever the attributes do; and the count
+  scales ~linearly: two filters ≈ 24 frames, one ≈ 33–34, none ≈ 42–50
+  (interleaved same-run `noFilter` arm; #449's own run at load 49 read
+  12.1 → 27.6). One further refutation inside the winner: two `feImage`
+  layers interfered through an `feComposite` inside the ONE filter cost
+  ~8 frames (25.3 vs 33.2) — a full-region composite pass is a second
+  rasterisation in effect, so the shipped chain is a single moved layer.
+  **What shipped (#453): the human's texture idea at one rasterisation.**
+  The field is ONE tileable fractal-noise texture, pre-rendered once to a
+  canvas (`mistTexture()`, deterministic), consumed via
+  `feImage`→`feTile`→`feOffset` — *moved*, per his words — with the same
+  displacement/blur envelopes the mist always had, applied to the **ghost
+  only**. The departing view keeps the whole gesture (liquify + flow +
+  haze) for 33.2 frames vs the old mist's 23.8 (**+40%**, worst frame
+  105→73ms, stalls>50ms 11.5→4.2); the arriving view's haze is the
+  compositor CSS `blur(5px→0)`, measured free and now ungated, because the
+  second rasterisation was always its subtlest half (peak displacement
+  landed while opacity was near 0). The old `feTurbulence` filters stay
+  defined as `#dissolveOutT/#dissolveInT` behind `MIST_IMPL`, and
+  `MIST_ON=false` still falls back to CSS blur on both halves. `#departMist`
+  (card departures) consumes the same cached field, drift-bounded by the
+  ghost's own size so the offset never pushes the tile's edge into sampling
+  reach (region margin − scale/2). A liquify that fails this bar is a
+  finding, not a feature: any future variant that adds a rasterisation
+  must beat 33 frames in `dissolveperf.mjs`'s interleaved arms before it
+  ships.
 - **Lifted-hero FLIP** (shared-element morph, e.g. question → review dock).
   Measure the source rect, render the destination, invert to the source,
   play to identity — but the dream twist is a blurred, low-opacity drift,
