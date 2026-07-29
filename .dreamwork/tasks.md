@@ -196,12 +196,6 @@ Next id: **492**
   landed while the cutover was still open — `dev/ledger.py fold` moves the entry, it
   does not annotate in place. Moved back to Open by hand with this note appended; the
   premature-landed window was commits d83b6a6..now and touched nothing else.
-- **#490** — the update countdown ("arms in 4s — then this page updates") flashes at ~4 Hz · P2 ·
-  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:58:** *"'arms in
-  4s — then this page updates' flashes annoyingly after you press update. No need for it to do that.
-  Frequency is like 4 Hz maybe."* · the countdown text should tick (4…3…2…1) or hold steady — not
-  flash; transitions.md governs whatever replaces the flash · likely the update/armed countdown in
-  watch.py's dashboard chrome
 - **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
   dashboard/loop-config · origin: **human** · **human via watch `add-idea` 2026-07-29 17:10:** *"posture
   config (pace, etc) should have a place for text entry of subagent policy where user can put preferred
@@ -2737,6 +2731,14 @@ Next id: **492**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#490** — the update countdown ("arms in 4s — then this page updates") flashes at ~4 Hz · P2 ·
+  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:58:** *"'arms in
+  4s — then this page updates' flashes annoyingly after you press update. No need for it to do that.
+  Frequency is like 4 Hz maybe."* · the countdown text should tick (4…3…2…1) or hold steady — not
+  flash; transitions.md governs whatever replaces the flash · likely the update/armed countdown in
+  watch.py's dashboard chrome
+  · merged (5ccceb6f): the flash was setInterval(250ms) calling c.note every tick — confirmationFor.show re-added .dreamin and forced reflow each time, restarting the arrival ~4 Hz even when the second was unchanged. Fix: claim once at first paint, textContent-only tick on second changes, no-op when unchanged (lastLeft gate), note only for terminal hold-and-depart. Lane red-first via staleremedy guard counting mid-arm .dreamin adds; coordinator red-proof: forcing every tick down the gesture path fails exactly 'arm countdown does not re-fire .dreamin', restored byte-identical. 702 pytest green, guard PASS, audit exit 0. Lane model: grok-4.5 (346s, 44 calls — 4-for-4 on UI lanes).
+
 - **#415** — the hand-off grammar allows ONE sha, and a task landing in two commits is the
   ordinary case · P3 · loop-tooling/format · origin: **loop** · found when the `#411` lane
   reported honestly and lint called it malformed
