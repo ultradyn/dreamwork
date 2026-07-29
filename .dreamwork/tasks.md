@@ -27,20 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **492**
 
 ## Open
-- **#491** — dashboard head shows a stale migration filename beside 'updated Ns ago' · P2 ·
-  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 19:15:** *"
-  '2026-07-26-02-contextual-plugin-loading.md' shows at the top of the dashboard next to 'updated 50s
-  ago', and idk why. it doesn't look like we're actually updating that file all the time. seems like a
-  bug."* · coordinator measured: the `version` crumb renders `.dreamwork/skill-version` (content:
-  `2026-07-26-02-contextual-plugin-loading.md`, mtime Jul 27 00:36) but `migrations/` has TWO newer
-  files (`2026-07-27-01-run-mode.md`, `2026-07-27-02-task-origin-contract.md`) — so either the file is
-  stale-written or the crumb sources the wrong place, and beside the freshness age it reads as "this
-  file changed 50s ago", which it did not · diagnose first: who writes `.dreamwork/skill-version`,
-  what its semantics are vs `skill_identity`'s lexicographic-max over `migrations/`, then fix the
-  honest version of the bug (and if the display is honest-but-misleading, say so and fix the reading)
-  · **his screenshot 19:19: `.dreamwork/evidence/491-version-crumb-report.png`** — the crumb row is
-  `target · version · updated 1m ago`, so the stale migration filename and the freshness age read as
-  one statement about that file. Also confirms `serving e943a9a0` (the #371 deploy) live at report time
 - **#294** — Migrate the durable task ledger to SQLite and a tool/CLI API · P1 ·
   storage/tooling migration · origin: **human** · **human via `/answers`
   2026-07-27 01:17** · build after #264's reviewed concurrency design and the
@@ -2731,6 +2717,22 @@ Next id: **492**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#491** — dashboard head shows a stale migration filename beside 'updated Ns ago' · P2 ·
+  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 19:15:** *"
+  '2026-07-26-02-contextual-plugin-loading.md' shows at the top of the dashboard next to 'updated 50s
+  ago', and idk why. it doesn't look like we're actually updating that file all the time. seems like a
+  bug."* · coordinator measured: the `version` crumb renders `.dreamwork/skill-version` (content:
+  `2026-07-26-02-contextual-plugin-loading.md`, mtime Jul 27 00:36) but `migrations/` has TWO newer
+  files (`2026-07-27-01-run-mode.md`, `2026-07-27-02-task-origin-contract.md`) — so either the file is
+  stale-written or the crumb sources the wrong place, and beside the freshness age it reads as "this
+  file changed 50s ago", which it did not · diagnose first: who writes `.dreamwork/skill-version`,
+  what its semantics are vs `skill_identity`'s lexicographic-max over `migrations/`, then fix the
+  honest version of the bug (and if the display is honest-but-misleading, say so and fix the reading)
+  · **his screenshot 19:19: `.dreamwork/evidence/491-version-crumb-report.png`** — the crumb row is
+  `target · version · updated 1m ago`, so the stale migration filename and the freshness age read as
+  one statement about that file. Also confirms `serving e943a9a0` (the #371 deploy) live at report time
+  · Version crumb now leads with a dim 'skill' label instead of a bare migration filename. Diagnosis (c): honest-but-misleading — .dreamwork/skill-version correctly lags migrations/ (target's recorded stand vs tree's latest; two-source discipline preserved). Lane llmp-glm-5-2, 532s, 107 calls. Coordinator red-proof: reverted crumb to bare filename -> headcrumb guard FAIL ('the crumb labels itself as a skill version'); restored byte-identical; 341 pytest green; lint clean; audit-styleguide 0.
+
 - **#490** — the update countdown ("arms in 4s — then this page updates") flashes at ~4 Hz · P2 ·
   dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:58:** *"'arms in
   4s — then this page updates' flashes annoyingly after you press update. No need for it to do that.
