@@ -24,9 +24,32 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **485**
+Next id: **486**
 
 ## Open
+- **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
+  dashboard/loop-config · origin: **human** · **human via watch `add-idea` 2026-07-29 17:10:** *"posture
+  config (pace, etc) should have a place for text entry of subagent policy where user can put preferred
+  models, how to run subagents, etc. should be persisted to dreamworker state (if we support per-host
+  config, eg multiple dreamworkers that work in parallel), then this would be a host-level config or
+  worker-level."*
+  · **the overlap to state plainly, so this is not built twice:** `#445`'s Q3 ruling (2026-07-29 03:45)
+  ALREADY settled the field — *"a target number of subagents plus free text for type, special rules, when
+  to use them and when not. Validation: >= 1, warn in the UI on 0, hard-invalid below 0. Free text now,
+  standardise later if ever"* — and settled its two consumers: sizing automatic task selection, and
+  **showing the policy to the agent every time** (a per-tick read like `run-mode`, `#426`). That lives in
+  `#445`'s remaining increment (the controls). What is genuinely NEW here: the **persistence level** —
+  `.dreamwork/posture` is per-target machine-local today; he is asking whether subagent policy is
+  host-level or worker-level when several dreamworkers run in parallel against one hub.
+  · so this task is: the free-text field in the posture surface (probably landing WITH `#445`'s controls
+  increment rather than separately — sequence them), the per-tick read making it visible to the coordinator
+  at dispatch time, and the host-vs-worker placement decided against the dreamhub multi-worker shape
+  (`#275`/`#360` rulings: dreamhub read+write, him only for v1, multi-user later). The placement question
+  may be premature by one product stage — say so in the design rather than building for a swarm that does
+  not exist yet.
+  · needs `watch.py` for the control; a lane, sequenced behind whatever holds it · `transitions.md` binds
+  on any arrival; the text field obeys `#269`'s draft-durability rule like every box he types in.
+
 - **#477** — the 2s tick TELEPORTS a section it catches mid-open · P1 · bug/motion · origin: **loop**
   · **found 2026-07-29 08:53 by the `motion` lane while clearing `#475`, and it is the one genuine PAGE defect
   in the whole ten-guard batch** · `qsec` fails in the recipe and passes on an isolated fresh server, and the
