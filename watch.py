@@ -13791,12 +13791,17 @@ def one_line(text):
     return " ".join((text or "").split())
 
 
-def command_line(kind, text, source=""):
+def command_line(kind, text, source="", receipt_id=None):
     """Source-tagged watch-events.log line for a human-submitted command.
 
-    Pure; testable. do-next may carry no text (it just nudges selection)."""
+    Pure; testable. do-next may carry no text (it just nudges selection).
+    The receipt id is appended as a suffix (#527 — F1 of the #519
+    exactly-once audit) so the coordinator can match a drained receipt to
+    a wake-line it already acted on; absent when the journal is off (the
+    legacy E2 baseline that commits no receipt)."""
     body = f": {one_line(text)}" if text else ""
-    return f"command via watch{from_hint(source)}: {kind}{body}"
+    suffix = f" [receipt {receipt_id}]" if receipt_id else ""
+    return f"command via watch{from_hint(source)}: {kind}{body}{suffix}"
 
 
 def _expected_disconnect(exc):
@@ -14468,8 +14473,14 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # #342: the receipt already committed in do_POST (E3). The wake
             # line is the interrupt half — pre-empt kinds always fire; the
             # rest fire only in instant mode (batched kinds ride the cursor).
+            # #527: the wake-line carries the receipt id the SAME POST
+            # committed (journal_result, available because do_POST commits
+            # before dispatch) so the coordinator can match a drained receipt
+            # to a wake it already acted on — the join F1 found missing.
             if emits_wake(kind, target):
-                log_event(target, command_line(kind, text, req.get("from")))
+                result = self.journal_result()
+                rid = result.receipt_id if result else None
+                log_event(target, command_line(kind, text, req.get("from"), rid))
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_tint(self):
