@@ -939,18 +939,26 @@ def git_snapshots(ledger_path: str = ".dreamwork/tasks.md"):
     the ledger. Pure over git's deterministic ``log --reverse`` order; the
     same history always yields the same sequence. ``ledger_path`` may be
     absolute or relative; ``git show <sha>:<path>`` needs the repo-root-
-    relative form, derived here from ``git rev-parse --show-toplevel``."""
+    relative form, derived here from ``git rev-parse --show-toplevel``.
+
+    The top level is resolved with ``git -C <ledger.parent>`` (not bare
+    ``git`` from CWD) so the walk follows the ledger's OWN repo — the
+    cutover runs on a target dir that may sit in a different repo than the
+    process CWD, and a bare ``--show-toplevel`` would pick the wrong one."""
+    ledger = Path(ledger_path).resolve()
     top = Path(subprocess.check_output(
-        ["git", "rev-parse", "--show-toplevel"], text=True).strip())
-    rel = str(Path(ledger_path).resolve().relative_to(top))
+        ["git", "-C", str(ledger.parent), "rev-parse", "--show-toplevel"],
+        text=True).strip())
+    rel = str(ledger.relative_to(top))
     raw = subprocess.check_output(
-        ["git", "log", "--reverse", "--format=%H %ct", "--", rel],
+        ["git", "-C", str(top), "log", "--reverse", "--format=%H %ct", "--", rel],
         stderr=subprocess.DEVNULL, text=True)
     out = []
     for line in raw.splitlines():
         sha, ct = line.split()
         blob = subprocess.check_output(
-            ["git", "show", f"{sha}:{rel}"], stderr=subprocess.DEVNULL)
+            ["git", "-C", str(top), "show", f"{sha}:{rel}"],
+            stderr=subprocess.DEVNULL)
         out.append((sha, int(ct), blob.decode("utf-8", "replace")))
     return out
 
