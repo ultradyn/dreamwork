@@ -215,7 +215,9 @@ def test_import_history_is_idempotent(module, tmp_path):
     db = _scratch(tmp_path)
     r1 = _hist(module, CURRENT[2], SNAPSHOTS, db)
     assert r1["events"] > 0 and r1["recovered"] > 0
+    assert r1["populated"] is True, "first import must report it populated"
     r2 = _hist(module, CURRENT[2], SNAPSHOTS, db)
+    assert r2["populated"] is False, "second import must be a true no-op"
     conn = _ro(db)
     assert conn.execute("SELECT COUNT(*) FROM task_event").fetchone()[0] == r1["events"]
     assert conn.execute("SELECT COUNT(*) FROM task").fetchone()[0] == r1["task_rows"]

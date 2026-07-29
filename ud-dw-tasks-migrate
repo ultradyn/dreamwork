@@ -619,11 +619,13 @@ def import_history_into_db(text: str, a: dict, db_path: str, snapshots) -> dict:
     _guard_scratch_path(db_path)
     rec = recover_groomed_history(a, snapshots)
     store = ledger_store.open_store(db_path, ledger_text=text)
+    populated = False
     try:
         have_events = store.conn.execute(
             "SELECT COUNT(*) FROM task_event WHERE actor = 'migration:git'"
         ).fetchone()[0]
         if have_events == 0 and rec["events"]:
+            populated = True
             store.conn.execute("BEGIN IMMEDIATE")
             try:
                 rows = rec["tasks"]
@@ -661,7 +663,7 @@ def import_history_into_db(text: str, a: dict, db_path: str, snapshots) -> dict:
     return {"recovered": len(rec["tasks"]),
             "unrecoverable": sorted(rec["unrecoverable"]),
             "events": len(rec["events"]), "task_rows": n_rows,
-            "event_rows": n_events}
+            "event_rows": n_events, "populated": populated}
 
 
 _TASK_COLUMNS = ("state", "title", "body", "priority", "priority_uncertain",
@@ -1055,7 +1057,7 @@ def _run_import_history(text, analysis, db_path, ledger_relpath, out) -> int:
     except _CliFail as exc:
         print(exc.message, file=out)
         return exc.code
-    if result["event_rows"] and result["event_rows"] == result["events"]:
+    if result["populated"]:
         print(f"imported history: {result['recovered']} recovered rows, "
               f"{result['events']} migration:git events into {db_path}", file=out)
     else:
