@@ -606,6 +606,64 @@ def import_into_db(text: str, a: dict, db_path: str) -> dict:
     return {"populated": populated, "rows": len(rows), "next_id": next_id}
 
 
+def import_history_into_db(text: str, a: dict, db_path: str, snapshots) -> dict:
+    """Populate groomed-id rows + synthetic migration:git events (R3).
+
+    Scratch-only (``_guard_scratch_path``). Idempotent: a DB that already
+    holds migration:git events is a no-op. The recovered task rows share the
+    verbatim schema (body/title NOT NULL from a real history body; an id with
+    no entry head in any commit is UNRECOVERABLE and gets no row). Events are
+    hash-chained (``chain_events``) and inserted in chain order, so
+    ``ordinal`` follows the chain.
+    """
+    _guard_scratch_path(db_path)
+    rec = recover_groomed_history(a, snapshots)
+    store = ledger_store.open_store(db_path, ledger_text=text)
+    try:
+        have_events = store.conn.execute(
+            "SELECT COUNT(*) FROM task_event WHERE actor = 'migration:git'"
+        ).fetchone()[0]
+        if have_events == 0 and rec["events"]:
+            store.conn.execute("BEGIN IMMEDIATE")
+            try:
+                rows = rec["tasks"]
+                for t in sorted({r["type"] for r in rows.values()
+                                 if r["type"] is not None}):
+                    store.conn.execute(
+                        "INSERT OR IGNORE INTO task_type(type) VALUES (?)", (t,))
+                for i in sorted(rows):
+                    r = rows[i]
+                    store.conn.execute(
+                        "INSERT OR IGNORE INTO task(id, state, title, body,"
+                        " priority, priority_uncertain, type, origin,"
+                        " blocked_on, body_digest, source_line)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        (r["id"], r["state"], r["title"], r["body"],
+                         r["priority"], r["priority_uncertain"], r["type"],
+                         r["origin"], r["blocked_on"], r["body_digest"],
+                         r["source_line"]))
+                for e in chain_events(rec["events"]):
+                    store.conn.execute(
+                        "INSERT INTO task_event(task_id, at, cause, from_state,"
+                        " to_state, actor, receipt_id, detail, prev_hash, hash)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (e["task_id"], e["at"], e["cause"], e["from_state"],
+                         e["to_state"], e["actor"], e["receipt_id"],
+                         e["detail"], e["prev_hash"], e["hash"]))
+                store.conn.execute("COMMIT")
+            except Exception:
+                store.conn.execute("ROLLBACK")
+                raise
+        n_events = store.conn.execute("SELECT COUNT(*) FROM task_event").fetchone()[0]
+        n_rows = store.conn.execute("SELECT COUNT(*) FROM task").fetchone()[0]
+    finally:
+        store.close()
+    return {"recovered": len(rec["tasks"]),
+            "unrecoverable": sorted(rec["unrecoverable"]),
+            "events": len(rec["events"]), "task_rows": n_rows,
+            "event_rows": n_events}
+
+
 _TASK_COLUMNS = ("state", "title", "body", "priority", "priority_uncertain",
                  "type", "origin", "blocked_on", "body_digest", "source_line")
 
@@ -923,6 +981,27 @@ def _run_import(text, analysis, db_path, out) -> int:
     return _run_verify(text, analysis, db_path, out)
 
 
+def _run_import_history(text, analysis, db_path, ledger_relpath, out) -> int:
+    """--import-history: recover groomed bodies from git, write synthetic
+    migration:git rows + events, then ALWAYS verify the scratch DB."""
+    try:
+        snapshots = git_snapshots(ledger_relpath)
+        result = import_history_into_db(text, analysis, db_path, snapshots)
+    except _CliFail as exc:
+        print(exc.message, file=out)
+        return exc.code
+    if result["event_rows"] and result["event_rows"] == result["events"]:
+        print(f"imported history: {result['recovered']} recovered rows, "
+              f"{result['events']} migration:git events into {db_path}", file=out)
+    else:
+        print(f"no-op: {db_path} already holds the history import; verifying",
+              file=out)
+    if result["unrecoverable"]:
+        print(f"unrecoverable (no entry body in any commit): "
+              f"{', '.join(f'#{i}' for i in result['unrecoverable'])}", file=out)
+    return _run_verify(text, analysis, db_path, out)
+
+
 def _run_verify(text, analysis, db_path, out) -> int:
     failures = verify_db(text, analysis, db_path)
     if failures:
@@ -943,17 +1022,20 @@ def main(argv=None, out=None) -> int:
                    help="parse + report; writes nothing")
     p.add_argument("--import", dest="import_", action="store_true",
                    help="populate a SCRATCH database (never .dreamwork/) and verify it")
+    p.add_argument("--import-history", dest="import_history", action="store_true",
+                   help="R3: recover groomed-id bodies from git history into a "
+                        "SCRATCH database as synthetic migration:git events")
     p.add_argument("--verify", action="store_true",
                    help="re-verify an existing scratch database against the parse")
     p.add_argument("--to", metavar="PATH",
-                   help="scratch database path for --import/--verify")
+                   help="scratch database path for --import/--verify/--import-history")
     p.add_argument("--ledger", default=".dreamwork/tasks.md",
                    help="path to the Markdown task ledger")
     p.add_argument("--report", metavar="PATH",
                    help="also write the full report to PATH")
     args = p.parse_args(argv)
-    if (args.import_ or args.verify) and not args.to:
-        p.error("--import/--verify require --to <scratch.db>")
+    if (args.import_ or args.verify or args.import_history) and not args.to:
+        p.error("--import/--verify/--import-history require --to <scratch.db>")
     try:
         text = _read_ledger(args.ledger)
         analysis = build_analysis(text, ledger_path=args.ledger)
@@ -965,6 +1047,8 @@ def main(argv=None, out=None) -> int:
         return exc.code
     if args.import_:
         return _run_import(text, analysis, args.to, out)
+    if args.import_history:
+        return _run_import_history(text, analysis, args.to, args.ledger, out)
     if args.verify:
         return _run_verify(text, analysis, args.to, out)
     report = render_report(analysis)

@@ -148,3 +148,79 @@ def test_chain_prev_hash_term_is_load_bearing(module):
     other = module.chain_events(tampered)
     assert base[0]["hash"] != other[0]["hash"], "detail change must move hash 0"
     assert base[-1]["hash"] != other[-1]["hash"], "a later hash must move too"
+
+
+# ---------------------------------------------------------------------------
+# Import-history — scratch DB, synthetic events, idempotent, refused in
+# .dreamwork/. Tested at the function level with synthetic snapshots.
+# ---------------------------------------------------------------------------
+import sqlite3
+from test_tasks_migrate_import import _scratch
+
+
+def _hist(module, text, snapshots, db):
+    a = module.build_analysis(text, ledger_path="synthetic.md")
+    return module.import_history_into_db(text, a, db, snapshots)
+
+
+def _ro(db):
+    c = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    c.row_factory = sqlite3.Row
+    return c
+
+
+def test_import_history_inserts_rows_and_events(module, tmp_path):
+    a = _analysis(module, CURRENT[2])
+    rec = module.recover_groomed_history(a, SNAPSHOTS)
+    assert rec["tasks"], "fixture lost recoverable ids"
+    db = _scratch(tmp_path)
+    res = _hist(module, CURRENT[2], SNAPSHOTS, db)
+    conn = _ro(db)
+    rows = {r["id"] for r in conn.execute("SELECT id FROM task")}
+    assert rows == set(rec["tasks"]), "only recovered ids get rows"
+    for i in rec["tasks"]:
+        r = conn.execute("SELECT body, body_digest, source_line FROM task WHERE id=?",
+                         (i,)).fetchone()
+        assert r["body"] == rec["tasks"][i]["body"], f"#{i} body not verbatim"
+        assert r["body_digest"] == rec["tasks"][i]["body_digest"]
+        assert r["source_line"] is None, "history rows have no line in the current ledger"
+    ev = conn.execute("SELECT actor, cause FROM task_event").fetchall()
+    assert len(ev) == len(rec["events"])
+    assert all(r["actor"] == "migration:git" and r["cause"] == "migration_git" for r in ev)
+    assert res["recovered"] == len(rec["tasks"])
+    assert res["unrecoverable"] == [6]
+
+
+def test_import_history_chain_validates_against_recompute(module, tmp_path):
+    db = _scratch(tmp_path)
+    _hist(module, CURRENT[2], SNAPSHOTS, db)
+    ev = _ro(db).execute("SELECT * FROM task_event ORDER BY ordinal").fetchall()
+    assert ev, "no events imported"
+    prev = module.genesis_hash()
+    for r in ev:
+        d = dict(r)
+        assert r["prev_hash"] == prev, "stored prev_hash must link the running head"
+        assert r["hash"] == module.hash_event(prev, module.canonical_event_bytes(d)), \
+            "stored hash must recompute from prev + canonical bytes"
+        prev = r["hash"]
+
+
+def test_import_history_is_idempotent(module, tmp_path):
+    db = _scratch(tmp_path)
+    r1 = _hist(module, CURRENT[2], SNAPSHOTS, db)
+    assert r1["events"] > 0 and r1["recovered"] > 0
+    r2 = _hist(module, CURRENT[2], SNAPSHOTS, db)
+    conn = _ro(db)
+    assert conn.execute("SELECT COUNT(*) FROM task_event").fetchone()[0] == r1["events"]
+    assert conn.execute("SELECT COUNT(*) FROM task").fetchone()[0] == r1["task_rows"]
+    assert r2["events"] == r1["events"]
+
+
+def test_import_history_refuses_dreamwork_target(module, tmp_path):
+    db = str(tmp_path / ".dreamwork" / "h.sqlite3")
+    with pytest.raises(Exception) as ei:
+        module.import_history_into_db(CURRENT[2], _analysis(module, CURRENT[2]),
+                                      db, SNAPSHOTS)
+    assert getattr(ei.value, "code", None) == 77
+    assert not Path(db).exists()
+
