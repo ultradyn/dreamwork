@@ -34,10 +34,12 @@
    usage: node bdhover.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
+import { serveVerified } from './serve.mjs';
+import { waitFor } from './dom.mjs';
 
 const OUT = process.argv[2];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -101,16 +103,16 @@ commit([2, 4, 5, 6], [3], T0 + 3 * 3600);    // bucket 3
 commit([2, 4, 5, 6, 7], [], T0 + 4 * 3600);  // bucket 4
 //                                           // bucket 5: quiet, in progress
 
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
-                  { stdio: 'ignore' });
-process.on('exit', () => { try { srv.kill(); } catch (e) {} });
-await sleep(2500);
+const srv = await serveVerified(DIR, PORT);
+process.on('exit', () => { try { srv.kill('SIGTERM'); } catch (e) {} });
 const BASE = `http://127.0.0.1:${PORT}`;
+// #507: serveVerified polls /data.json until the server answers with our
+// target (and throws if it exits or a stranger holds the port) instead of
+// racing a fixed 2500ms sleep — under load a slow python outlasted it, the
+// fetch threw, and the guard reddened as "threw before finishing" over a
+// page it never read. The target is already proven ours; fetch here only
+// for the served series the figure checks below derive from.
 const served = await (await fetch(`${BASE}/data.json`)).json();
-if (served.target !== DIR) {
-  console.log(`FAIL :${PORT} is serving ${served.target}, not ${DIR}`);
-  process.exit(1);
-}
 const buckets = (served.burndown && served.burndown.buckets) || [];
 const commits = buckets.map(b => b.commits || 0);
 // THE PRECONDITIONS, asserted before anything that depends on them: the
@@ -131,7 +133,11 @@ const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webg
 const p = await br.newPage({ viewport: { width: 1100, height: 1500 } });
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-await sleep(1200);
+// #507: wait for the chart columns to be BUILT, not a fixed sleep — under load
+// the client render lags networkidle and a sleep grades a half-painted panel.
+// .bdnet .bdcol is what the hover/focus checks drive; settle for the level bars.
+await waitFor(p, '.bdnet .bdcol[data-open]', 15000);
+await sleep(400);
 
 /* in-page measurement of the inspector: text per LINE (innerText keeps
    the div structure; textContent would concatenate the facts into one
@@ -612,7 +618,7 @@ for (const idx of [0, lastIdx, busyIdx]) {
   const rp = await ctx.newPage();
   rp.on('pageerror', e => errs.push(String(e)));
   await rp.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-  await sleep(1000);
+  await waitFor(rp, '.bdnet .bdcol[data-open]', 15000);   // #507 render readiness
   const tr = await rp.evaluate(`new Promise(res => {
     const col = document.querySelectorAll('.bdnet .bdcol[data-open]')[${busyIdx}];
     if (!col) return res({ err: 'no col' });

@@ -15,6 +15,26 @@
  * reds two guards again.
  */
 
+/** waitFor — deterministic RENDER readiness (#507). `goto` with
+ *  `waitUntil:'networkidle'` returns once the network is idle (data.json
+ *  fetched), but under load the client JS that BUILDS the DOM the assertion
+ *  reads has not run yet, so a fixed `sleep()` after it grades a
+ *  half-rendered page (the burndown bare-server panel read `no ledger: {}`
+ *  over a correct server at load 58). Wait for the specific selector instead
+ *  — the same primitive `filehl`/`fileview`/`answers` already use inline.
+ *  Shared here so a guard composes server readiness (`serveVerified`) with
+ *  DOM readiness rather than hand-tuning a sleep per surface. Returns true
+ *  on ready; false on timeout (the caller's own absence-first check names
+ *  what was missing, never this helper). */
+export async function waitFor(page, selector, timeoutMs = 15000) {
+  try {
+    await page.waitForSelector(selector, { timeout: timeoutMs });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 /** textContent of the review dock's question headline with the live age
  *  removed -- the stable part, which is what identifies the question.
  *  Returns null when the dock is empty, so a caller cannot mistake a missing
