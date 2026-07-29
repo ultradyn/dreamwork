@@ -6879,6 +6879,61 @@ class TestPosture(unittest.TestCase):
         self.assertNotIn('writePostPending(', body)
         self.assertNotIn('commitPosture(', body)
 
+    def test_source_note_sits_beside_posture_heading(self):
+        """#488: override/source chip lives next to the Posture heading.
+
+        Production line: posturePicker builds `.posture-head` with the
+        section label and `#posture-src` as siblings; `#posture-src` must
+        NOT sit below the axes (old placement after `#pdesc`).
+        """
+        idx = watch.PAGE.index('function posturePicker(')
+        end = watch.PAGE.find('/* Shared description for posture', idx)
+        self.assertGreater(end, idx)
+        body = watch.PAGE[idx:end]
+        # Head row exists and carries both label + source note.
+        self.assertIn('posture-head', body)
+        head_i = body.index('posture-head')
+        src_i = body.index('id="posture-src"')
+        axes_i = body.index('posture-axes')
+        self.assertLess(head_i, src_i, 'posture-src must be inside the head row')
+        self.assertLess(src_i, axes_i,
+                        'posture-src must sit with the heading, before the axes')
+        # Old placement: source note after the description shell. Must not
+        # reappear there — if it does, the chip is no longer "next to Posture".
+        pdesc_i = body.index('id="pdesc"')
+        # Only one posture-src id in the picker markup.
+        self.assertEqual(body.count('id="posture-src"'), 1)
+        self.assertLess(src_i, pdesc_i)
+
+    def test_pdesc_reserves_layout_space_when_idle(self):
+        """#488: hover description never reflows the card.
+
+        Production lines:
+          - CSS `.pdesc { min-height:… }` is permanent (not only under `.open`)
+          - no `.pdesc[hidden] { display:none }` (display:none collapses space)
+          - markup does not plant `hidden` on #pdesc (would collapse via UA)
+        Visibility/opacity toggles; the box stays.
+        """
+        # Permanent min-height on the shell itself (not gated on .open).
+        # Slice the posture CSS block so a later surface cannot satisfy this.
+        css_i = watch.PAGE.index('.posture {')
+        css_end = watch.PAGE.index('/* ── what he has sent', css_i)
+        css = watch.PAGE[css_i:css_end]
+        self.assertRegex(
+            css, r'\.pdesc\s*\{[^}]*min-height\s*:\s*[1-9]',
+            'pdesc must reserve min-height when idle, not only when open')
+        # Collapse path that used to live here.
+        self.assertNotIn('.pdesc[hidden]', css)
+        self.assertNotRegex(css, r'\.pdesc\.open\s*\{[^}]*min-height')
+        # Markup: the shell is always in flow (no hidden attribute).
+        idx = watch.PAGE.index('function posturePicker(')
+        end = watch.PAGE.find('/* Shared description for posture', idx)
+        body = watch.PAGE[idx:end]
+        # Match the pdesc open tag; it must not carry hidden=.
+        m = re.search(r'<div class="pdesc"[^>]*>', body)
+        self.assertIsNotNone(m, 'pdesc shell missing from posturePicker')
+        self.assertNotIn('hidden', m.group(0))
+
 
 class TestDeployAction(unittest.TestCase):
     """#462 increment 2 — page-triggered `just deploy`.
