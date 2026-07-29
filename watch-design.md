@@ -2475,27 +2475,30 @@ that holds the chart under `BURN_COLUMNS`. Dotted underline is the
 affordance (same family as `.gservact`); accent is not spent.
 
 **#499 — column-count limit control, on the same head line.** When the
-served series has **more buckets than the active limit** (default **28**),
+served series has **more than 28 elements** (the default — his words),
 the head carries `limit [ N] [⟳]` after the step name — a numerical input
-and a reset. **No new row**: the control shares `.bdhead` (flex: numbers
+and a reset. **Presence is vs the DEFAULT (28), not the active limit**:
+with 50 buckets and limit=0 (all) the control stays up so he can dial
+back; with 50 and limit=100 it is still up (limit inactive, rule still
+shows it); with 26 under any limit it is absent. An earlier reading that
+hid the control against the active limit left no in-UI recovery from
+all-mode. **No new row**: the control shares `.bdhead` (flex: numbers
 ellipsis on the left, limit is `flex:none` so it is never clipped off).
 #417's fixed-height premise is unchanged; presence/absence is content on
 an existing line, not a layout growth. Semantics: **`<=0` = all/max**
 (stored as `0`); hard cap **168**; invalid input is refused quietly (the
 panel's voice — no toast). **⟳** restores the default 28 (clears the
-stored pref). Slice is the **most recent** N columns; the control's
-presence is decided from the **full** series length vs the active limit
-(slicing first would make the control vanish under itself). **State:
-client-side only, per-target `localStorage` key `dw:burn-limit:<target>`.**
-Chosen over a URL param because this panel already keeps its small UI
-state (`burn_step`) in localStorage, and that consistency is the
-tie-breaker; no `storage` event fanout (same as `burn_step`) so it never
-fights the posture picker's shared-arm keys. No server state, no new
-endpoint. Conditional presence does **not** invent a second arrival
-idiom: a live re-render of this panel commits instantly
-(transitions.md / #218), and a fragment of a fixed line posing in would
-be the snap among drifts. Reduced-motion parity is free. Accent is not
-spent.
+stored pref). Slice is the **most recent** N columns when the active
+limit is finite and below the series length. **State: client-side only,
+per-target `localStorage` key `dw:burn-limit:<target>`.** Chosen over a
+URL param because this panel already keeps its small UI state
+(`burn_step`) in localStorage, and that consistency is the tie-breaker;
+no `storage` event fanout (same as `burn_step`) so it never fights the
+posture picker's shared-arm keys. No server state, no new endpoint.
+Conditional presence does **not** invent a second arrival idiom: a live
+re-render of this panel commits instantly (transitions.md / #218), and a
+fragment of a fixed line posing in would be the snap among drifts.
+Reduced-motion parity is free. Accent is not spent.
 
 **#298 — the column inspector, a richer reading on the same seam.** The
 glance tip answers a passing hover; the inspector (`.bdinsp`) answers a
@@ -2655,9 +2658,10 @@ the c4 copy (no ellipsis at both widths, figures derived from `/data.json`),
 the per-column hover (readout numbers match the hovered column's served
 bucket, transition mid-frames, reduced-motion parity), **#498** in-progress
 `N% elapsed` (derived from the fixture's real period bounds — never a
-literal), and **#499** limit control (absent at/below the limit, present
-above it; fixed-height premise still holds with the control visible). The
-median and commit figure lines are re-rendered copy in that same panel.
+literal), and **#499** limit control (absent when totalN ≤ 28, present when
+totalN > 28 regardless of active limit — including limit=0 recovery;
+fixed-height premise still holds with the control visible). The median
+and commit figure lines are re-rendered copy in that same panel.
 `dev/capture/bdhover.mjs` owns the inspector's deeper coverage honesty
 and also asserts #498's elapsed figure on the open period.
 

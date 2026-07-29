@@ -857,13 +857,15 @@ STYLE = """<style>
   .bdstep:focus-visible { color:var(--lit); outline:1px solid var(--muted);
     outline-offset:2px; border-radius:2px; }
   /* #499: column-count limit control. Shares the head line (no new row, no
-     height change — #417). Renders only when total buckets exceed the
-     active limit. Input is tabular and narrow; ⟳ resets to 28. Accent is
-     not spent. Conditional presence is the same line growing/shrinking
-     its content: no pose/depart of its own, because a live re-render of
-     this panel commits instantly (transitions.md / #218) and inventing a
-     second arrival idiom for a fragment of a fixed line would be the snap
-     among drifts the rule forbids. Reduced-motion parity is free. */
+     height change — #417). Renders when total buckets exceed the DEFAULT
+     (28), regardless of the active limit — so limit=0 (all) still leaves
+     the control up for recovery. Input is tabular and narrow; ⟳ resets
+     to 28. Accent is not spent. Conditional presence is the same line
+     growing/shrinking its content: no pose/depart of its own, because a
+     live re-render of this panel commits instantly (transitions.md /
+     #218) and inventing a second arrival idiom for a fragment of a fixed
+     line would be the snap among drifts the rule forbids. Reduced-motion
+     parity is free. */
   .bdlimit { flex:0 0 auto; display:inline-flex; align-items:center;
              gap:.2rem; color:var(--dim); white-space:nowrap; }
   .bdlimit-in {
@@ -3665,10 +3667,12 @@ function burnPanel(d) {
   const totalN = all.length;
   /* #499: slice to the most recent `lim` columns when the series exceeds
      the active limit. lim=0 means all/max (no slice). Presence of the
-     control is totalN > lim (finite), never "displayed length > lim"
-     (slicing first would make the control vanish under itself). */
+     control is totalN > BURN_LIMIT_DEFAULT (28) — his rule: "when we have
+     more than 28 elements" — NOT vs the active limit. That way limit=0
+     (all) still shows the control so he can dial back; a rule that hid it
+     against the active limit left no in-UI recovery. */
   const lim = activeBurnLimit();          // 0 = all
-  const showLim = lim > 0 && totalN > lim;
+  const showLim = totalN > BURN_LIMIT_DEFAULT;
   const bs = (lim > 0 && totalN > lim) ? all.slice(-lim) : all;
   const flowMax = Math.max(1, ...bs.map(b => Math.max(b.arrived, b.landed)));
   const levelMax = Math.max(1, ...bs.map(b => b.open));
@@ -3704,13 +3708,14 @@ function burnPanel(d) {
   // from the same walk the columns do, not from a second reading.
   // #487: the step name is a cycle control (click / Enter / Space), not
   // bare prose — next ladder step, wrapping, announced via aria-live.
-  // #499: when totalN exceeds the active limit, the same line carries
-  // `limit [ N] [⟳]` — no second row (#417).
+  // #499: when totalN exceeds the DEFAULT (28), the same line carries
+  // `limit [ N] [⟳]` — no second row (#417). Presence is vs 28, not the
+  // active limit, so all-mode (0) still shows the control.
   const stepName = BURN_STEP_NAME[s.step] || 'bucketed';
   const stepAria = `granularity ${stepName} — activate to cycle`;
   const limVal = displayBurnLimitValue();
   const limCtl = showLim
-    ? `<span class="bdlimit" data-total="${totalN}" data-limit="${lim}">` +
+    ? `<span class="bdlimit" data-total="${totalN}" data-limit="${limVal}">` +
       `limit <input type="number" class="bdlimit-in" inputmode="numeric" ` +
       `min="0" max="${BURN_LIMIT_CAP}" step="1" value="${limVal}" ` +
       `aria-label="column limit, 0 for all, max ${BURN_LIMIT_CAP}">` +

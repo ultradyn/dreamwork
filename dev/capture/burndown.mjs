@@ -476,69 +476,110 @@ ok('...and its provenance is honest about the unknown remainder: every ' +
   await sleep(500);
 }
 
-/* ── #499: limit control — absent at/below, present above; height holds ─
-   Default limit is 28; this fixture has ~7 buckets so the control is
-   ABSENT. Force a low limit via localStorage (the real store path) and
-   reload so the page's own load path is what decides presence — not a
-   hand-built DOM. Presence is totalN > active limit; columns shown equal
-   the limit. Fixed panel height is the #417 premise with the control on. */
+/* ── #499: limit control — presence vs DEFAULT 28, not active limit ─────
+   Presence is totalN > 28 (his "when we have more than 28 elements"),
+   regardless of the active limit. That keeps the control up under
+   limit=0 (all) so there is an in-UI recovery path. Slice still follows
+   the active limit. Short fixture first (absent); then extend history
+   past 28 hourly buckets for the present / all-mode / slice cases. */
 {
-  const served = await (await fetch(`${BASE}/data.json`)).json();
-  const totalN = ((served.burndown && served.burndown.buckets) || []).length;
-  const target = served.target;
-  ok('#499 precondition: fixture has buckets, fewer than the default 28',
-     totalN >= 2 && totalN < 28);
-  // ABSENT at default
-  ok('#499: limit control is absent when total ≤ default limit (28)',
+  const served0 = await (await fetch(`${BASE}/data.json`)).json();
+  const shortN = ((served0.burndown && served0.burndown.buckets) || []).length;
+  const target = served0.target;
+  ok('#499 precondition: short fixture has buckets, fewer than default 28',
+     shortN >= 2 && shortN <= 28);
+  ok('#499: limit control is absent when totalN ≤ 28 (any active limit)',
      r0.limitPresent === false);
-  notes.push(`#499 default: totalN=${totalN} limitPresent=${r0.limitPresent} h=${r0.h}`);
+  notes.push(`#499 short: totalN=${shortN} limitPresent=${r0.limitPresent} h=${r0.h}`);
+  const hAbsent = r0.h;
 
-  // force a limit BELOW total so the control must appear
-  const forceLim = Math.max(2, totalN - 2);
-  ok('#499 precondition: forced limit is strictly below totalN',
-     forceLim < totalN && forceLim >= 1);
+  // Extend the planted history ~40h before T0 so hourly yields >28 buckets.
+  // Presence precondition is derived from the PAGE after forcing hourly —
+  // never a literal bucket count tuned to today's plant. Content must
+  // change each commit (git refuses identical trees); a trailing note is
+  // enough — the series span is the commit timestamps on the ledger path.
+  for (let h = 40; h >= 1; h--) {
+    const at = T0 - h * 3600;
+    writeFileSync(join(DIR, '.dreamwork', 'tasks.md'),
+      ledger([6, 7, 8, 9], [4, 5]) + `\n<!-- span ${h} -->\n`);
+    git(['add', '.dreamwork/tasks.md'], at);
+    git(['commit', '-q', '-m', `span ${at}`], at);
+  }
+  await p.evaluate(t => {
+    localStorage.removeItem('dw:burn-limit:' + t);   // default 28
+  }, target);
+  await p.reload({ waitUntil: 'networkidle' });
+  await sleep(1400);
+  // Force hourly via the real cycle control (localStorage burn-step is not
+  // read on first paint — loadBurnStepPref runs before data.target is set).
+  await p.evaluate(async () => {
+    for (let i = 0; i < 8; i++) {
+      if ((data && data.burndown && data.burndown.step) === 3600) return;
+      const b = document.querySelector('.bdstep');
+      if (!b) return;
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await new Promise(r => setTimeout(r, 450));
+    }
+  });
+  await sleep(600);
+  const pageMeta = await p.evaluate(() => ({
+    step: data && data.burndown && data.burndown.step,
+    totalN: ((data && data.burndown && data.burndown.buckets) || []).length,
+  }));
+  const totalN = pageMeta.totalN;
+  ok('#499 precondition: extended series has more than 28 buckets (hourly)',
+     pageMeta.step === 3600 && totalN > 28);
+  notes.push(`#499 extended: totalN=${totalN} step=${pageMeta.step}`);
+
+  const rDef = await p.evaluate(READ);
+  notes.push(`#499 default-28 over long series: present=${rDef.limitPresent} ` +
+             `cols=${rDef.cols} value=${rDef.limitValue} total=${rDef.limitTotal} ` +
+             `h=${rDef.h} (absent-state h was ${hAbsent})`);
+  ok('#499: control is present when totalN > 28 (default rule)',
+     rDef.limitPresent === true && rDef.limitReset === true);
+  ok('#499: control reports the full series length (not the sliced count)',
+     rDef.limitTotal === totalN);
+  ok('#499: default slices to 28 columns',
+     rDef.cols === 28 && rDef.limitValue === '28');
+  // fixed-height premise: panel height with control == without
+  ok('#499: panel height is unchanged with the control visible (#417)',
+     rDef.h === hAbsent);
+  ok('#499: head stays one nowrap flex line (no wrap, no second row)',
+     rDef.headDisplay === 'flex');
+
+  // force a lower limit → still present (totalN > 28), fewer columns
+  const forceLim = 12;
+  ok('#499 precondition: forced limit is below totalN and below default',
+     forceLim < totalN && forceLim < 28);
   await p.evaluate(({ t, lim }) => {
     localStorage.setItem('dw:burn-limit:' + t, String(lim));
   }, { t: target, lim: forceLim });
+  // no reload needed — apply via the live control if present, else set pref
+  // and rebuild through a step-noop isn't free; reload + re-force hourly
   await p.reload({ waitUntil: 'networkidle' });
   await sleep(1200);
+  await p.evaluate(async () => {
+    for (let i = 0; i < 8; i++) {
+      if ((data && data.burndown && data.burndown.step) === 3600) return;
+      const b = document.querySelector('.bdstep');
+      if (!b) return;
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await new Promise(r => setTimeout(r, 450));
+    }
+  });
+  await sleep(500);
   const rLim = await p.evaluate(READ);
   notes.push(`#499 forced lim=${forceLim}: present=${rLim.limitPresent} ` +
-             `cols=${rLim.cols} value=${rLim.limitValue} total=${rLim.limitTotal} ` +
-             `h=${rLim.h} (was ${r0.h})`);
-  ok('#499: limit control is present when total > active limit',
-     rLim.limitPresent === true && rLim.limitReset === true);
-  ok('#499: control reports the full series length (not the sliced count)',
-     rLim.limitTotal === totalN);
+             `cols=${rLim.cols} value=${rLim.limitValue}`);
+  ok('#499: control stays present under a non-default limit (totalN > 28)',
+     rLim.limitPresent === true);
   ok('#499: chart shows exactly the active limit columns',
      rLim.cols === forceLim);
   ok('#499: input value is the active limit',
      rLim.limitValue === String(forceLim));
-  // fixed-height premise: panel height with control == without, within
-  // the head's one-line flex (same min-height; control is on the same row)
-  ok('#499: panel height is unchanged with the control visible (#417)',
-     rLim.h === r0.h);
-  ok('#499: head stays one nowrap flex line (no wrap, no second row)',
-     rLim.headDisplay === 'flex' &&
-     (rLim.headWhiteSpace === 'nowrap' || true));
 
-  // reset restores default 28 → control disappears again (total < 28)
-  await p.evaluate(() => {
-    const b = document.querySelector('.bdlimit-reset');
-    if (b) b.click();
-  });
-  await sleep(800);
-  const rReset = await p.evaluate(READ);
-  notes.push(`#499 after reset: present=${rReset.limitPresent} cols=${rReset.cols}`);
-  ok('#499: ⟳ reset restores default — control absent again (total < 28)',
-     rReset.limitPresent === false && rReset.cols === totalN);
-
-  // re-force and set input to 0 (all) → control absent, all columns
-  await p.evaluate(({ t, lim }) => {
-    localStorage.setItem('dw:burn-limit:' + t, String(lim));
-  }, { t: target, lim: forceLim });
-  await p.reload({ waitUntil: 'networkidle' });
-  await sleep(1200);
+  // limit=0 (all/max) — THE recovery case: every column shown AND control
+  // still present so he can dial back. Presence is vs 28, not vs active.
   await p.evaluate(() => {
     const inp = document.querySelector('.bdlimit-in');
     if (!inp) return;
@@ -547,16 +588,43 @@ ok('...and its provenance is honest about the unknown remainder: every ' +
   });
   await sleep(800);
   const rAll = await p.evaluate(READ);
-  notes.push(`#499 all/max (0): present=${rAll.limitPresent} cols=${rAll.cols}`);
-  ok('#499: <=0 means all/max — every column shown, control absent',
-     rAll.limitPresent === false && rAll.cols === totalN);
+  notes.push(`#499 all/max (0): present=${rAll.limitPresent} cols=${rAll.cols} ` +
+             `value=${rAll.limitValue}`);
+  ok('#499: <=0 means all/max — every column shown',
+     rAll.cols === totalN);
+  ok('#499: limit=0 recovery — control STILL present when totalN > 28',
+     rAll.limitPresent === true && rAll.limitValue === '0');
 
-  // invalid input refused quietly: force limit again, type garbage, still old
+  // ⟳ reset → default 28; control still present (totalN > 28)
+  await p.evaluate(() => {
+    const b = document.querySelector('.bdlimit-reset');
+    if (b) b.click();
+  });
+  await sleep(800);
+  const rReset = await p.evaluate(READ);
+  notes.push(`#499 after reset: present=${rReset.limitPresent} cols=${rReset.cols} ` +
+             `value=${rReset.limitValue}`);
+  ok('#499: ⟳ reset restores default 28 columns; control still present',
+     rReset.limitPresent === true &&
+     rReset.cols === 28 &&
+     rReset.limitValue === '28');
+
+  // invalid input refused quietly
   await p.evaluate(({ t, lim }) => {
     localStorage.setItem('dw:burn-limit:' + t, String(lim));
   }, { t: target, lim: forceLim });
   await p.reload({ waitUntil: 'networkidle' });
   await sleep(1200);
+  await p.evaluate(async () => {
+    for (let i = 0; i < 8; i++) {
+      if ((data && data.burndown && data.burndown.step) === 3600) return;
+      const b = document.querySelector('.bdstep');
+      if (!b) return;
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await new Promise(r => setTimeout(r, 450));
+    }
+  });
+  await sleep(500);
   await p.evaluate(() => {
     const inp = document.querySelector('.bdlimit-in');
     if (!inp) return;
@@ -572,12 +640,13 @@ ok('...and its provenance is honest about the unknown remainder: every ' +
      rBad.limitValue === String(forceLim) &&
      rBad.cols === forceLim);
 
-  // clear for the rest of the guard
-  await p.evaluate(t => { localStorage.removeItem('dw:burn-limit:' + t); },
-                   target);
+  // clear prefs for the rest of the guard (auto step, default limit)
+  await p.evaluate(t => {
+    localStorage.removeItem('dw:burn-limit:' + t);
+    localStorage.removeItem('dw:burn-step:' + t);
+  }, target);
   await p.reload({ waitUntil: 'networkidle' });
   await sleep(1200);
-  // refresh r0-equivalent height baseline for motion checks below
   const rClean = await p.evaluate(READ);
   if (rClean.present) {
     r0.h = rClean.h;
