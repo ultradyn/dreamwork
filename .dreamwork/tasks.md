@@ -282,26 +282,6 @@ Next id: **484**
   required/optional, persist-until-answered), and the push-back — pag is a partial model (no authorship
   vocabulary, no threading, one-shot answers, no attention-mode axis), and `#294` must add question/contribution
   tables before any build. **The FEATURE stays blocked on `#294`** — only the survey half is done.
-- **#472** — a review-artifact link in a question renders as raw markdown, so he cannot open the artifact ·
-  **P1** · dashboard/questions · origin: **human** ·
-  **human via watch 2026-07-29 06:21:** *"the link to the review artifact does not work (doesn't render as a
-  link even)"*
-  · **this is the failure mode every review ask depends on.** The standing rule is that any ask requiring him
-  to read a design ships an artifact; if the link does not render, the artifact is unreachable from the place
-  that asks him to read it, and the ask silently becomes prose
-  · the `#417` entry writes it as a markdown inline link —
-  `[`417-burndown-commits.html`](../review/417-burndown-commits.html)` — and `watch.py` has `linkify`,
-  `linkifyReview` and `mdInline`/`mdSpans` (~2049-2140), so **something in that chain does not handle
-  `[text](url)`** while it does handle backticked paths and bare review names. Measure which before changing
-  anything: three functions compose here and the relative `../review/` path may also be wrong for the route
-  the questions view is served at
-  · **other entries use a different shape** — `#294` and `#445` write `` `.dreamwork/review/x.html` ``
-  backticked and unlinked — so the corpus is inconsistent and the fix has two halves: render the link, and
-  settle **one** way of writing it so the next ask is not a coin flip. `file-formats.md` is where that shape
-  belongs
-  · blocked on nothing · related: **#473**
-  · **FIXED `f0ca86e` (lane `wt/qsignal`, merge `aa9581f`, 2026-07-29 06:46) — and there were TWO defects, as suspected.** `mdSpans` had **no `[text](url)` handler at all**, and `linkifyReview` only matched the backticked `.dreamwork/review/x.html` form — so his markdown link matched nothing. **Separately the path was also wrong:** `../review/` does not resolve from `/questions`, so even a rendered link would have 404'd. A link that renders and 404s is the same defect wearing a fix's clothes, which is why the guard asserts the href **fetches**, not that an `<a>` exists. Shape settled on the corpus majority (backticked `.dreamwork/review/x.html`) **plus** tolerance for markdown links so his live `#417` entry works rather than waiting on a corpus migration nobody asked for.
-
 - **#473** — a question can be updated and he has no way to notice · **P1** · dashboard/questions ·
   origin: **human** ·
   **human via watch 2026-07-29 06:21:** *"it was not obvious that this question had updated, we should show
@@ -3672,6 +3652,27 @@ Next id: **484**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#472** — a review-artifact link in a question renders as raw markdown, so he cannot open the artifact ·
+  **P1** · dashboard/questions · origin: **human** ·
+  **human via watch 2026-07-29 06:21:** *"the link to the review artifact does not work (doesn't render as a
+  link even)"*
+  · **this is the failure mode every review ask depends on.** The standing rule is that any ask requiring him
+  to read a design ships an artifact; if the link does not render, the artifact is unreachable from the place
+  that asks him to read it, and the ask silently becomes prose
+  · the `#417` entry writes it as a markdown inline link —
+  `[`417-burndown-commits.html`](../review/417-burndown-commits.html)` — and `watch.py` has `linkify`,
+  `linkifyReview` and `mdInline`/`mdSpans` (~2049-2140), so **something in that chain does not handle
+  `[text](url)`** while it does handle backticked paths and bare review names. Measure which before changing
+  anything: three functions compose here and the relative `../review/` path may also be wrong for the route
+  the questions view is served at
+  · **other entries use a different shape** — `#294` and `#445` write `` `.dreamwork/review/x.html` ``
+  backticked and unlinked — so the corpus is inconsistent and the fix has two halves: render the link, and
+  settle **one** way of writing it so the next ask is not a coin flip. `file-formats.md` is where that shape
+  belongs
+  · blocked on nothing · related: **#473**
+  · **FIXED `f0ca86e` (lane `wt/qsignal`, merge `aa9581f`, 2026-07-29 06:46) — and there were TWO defects, as suspected.** `mdSpans` had **no `[text](url)` handler at all**, and `linkifyReview` only matched the backticked `.dreamwork/review/x.html` form — so his markdown link matched nothing. **Separately the path was also wrong:** `../review/` does not resolve from `/questions`, so even a rendered link would have 404'd. A link that renders and 404s is the same defect wearing a fix's clothes, which is why the guard asserts the href **fetches**, not that an `<a>` exists. Shape settled on the corpus majority (backticked `.dreamwork/review/x.html`) **plus** tolerance for markdown links so his live `#417` entry works rather than waiting on a corpus migration nobody asked for.
+  · fold verified 2026-07-29 15:07: shas resolve (f0ca86e1 fix, aa9581f3 merge), mdSpans gained the [text](url) handler, linkifyReview tolerates markdown links, qsignal.mjs registered in DEFAULT_GUARDS. Entry's own notes record the two-defect finding (no handler + wrong relative path) and the shape settlement (backticked .dreamwork/review/x.html majority form plus markdown tolerance). Folded by current coordinator after the entry sat open post-fix.
+
 - **#467** — a `- **Answer …` bullet in a questions.md body truncates the parsed entry, so a `→ answered`
   marker written after it is invisible to every reader · **P1** · tooling/lint · origin: **loop**
   · **measured, 2026-07-29 03:50**, folding his `#445` answer: the marker was appended after his answer and
