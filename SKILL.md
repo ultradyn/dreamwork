@@ -172,13 +172,21 @@ exactly: *"agents drifting back into implementing themselves or not using
 subagents where they could otherwise."* A manual refresh button was
 considered and rejected — the reminder belongs to the tick, not to him.
 
-**Batched delivery drains the journal on the tick** (#342, #501). When the
-delivery axis is `batched`, user events accumulate in the durable journal
-(`.dreamwork/user-events.sqlite3`) and NOTHING surfaces them except the
-loop's own drain — do-now/do-next class still pre-empts by wake line, but
-the ambiguous class (ideas, notes, anything not addressed to *now*) waits
-for you. The tick habit is `pending → process → consume` via
-`dev/journal_consume.py` (the ruling: `.dreamwork/docs/plans/delivery-modes.md`):
+**The journal drains on EVERY tick, whatever the delivery mode** (#342,
+#501, #528). The E3 cutover journals a receipt for every write route in
+BOTH modes — instant mode only adds the wake line on top, it never
+replaces the durable receipt — so the drain is not batched-mode plumbing,
+it is the loop's memory. In `instant` mode most drained receipts will be
+ones the wake line already delivered: recognise them (by content today;
+by receipt id once #527 lands) and consume past them — the cursor reading
+"already handled" is the NORMAL instant-mode case, not an error. What you
+must never do is skip the drain because the mode is instant: that leaves
+`(cursor, head]` growing forever and mass-replays the day the posture
+flips to batched (#519 F2). In `batched` mode the drain is the ONLY
+delivery for the ambiguous class (ideas, notes, anything not addressed to
+*now*) — do-now/do-next still pre-empt by wake line. The tick habit is
+`pending → process → consume` via `dev/journal_consume.py` (the ruling:
+`.dreamwork/docs/plans/delivery-modes.md`):
 
 1. `python3 <skill-dir>/dev/journal_consume.py pending` — read-only; one
    line per event, receipt id first, 80-char preview. Quiet on empty.
