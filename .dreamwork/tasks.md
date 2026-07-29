@@ -845,35 +845,6 @@ Next id: **490**
   accounted for, the 6 bandless entries deliberately left as his call
 
   · related: **#395, #440**
-- **#349** — `lessons.md` is 117 entries and 1476 lines, and a lesson in it failed to
-  prevent its own repeat · P2 · dogfood/loop reliability · origin: **loop** · found
-  pruning it during the maintenance rotation · **the evidence is specific and it is
-  tonight's**: line 757 has recorded since **2026-07-25** *"Revert a deliberate RED
-  injection with the inverse of the injection, never with `git checkout <file>`"*, naming
-  the exact consequence — destroyed uncommitted work sharing the file. On **2026-07-28**
-  the coordinator did precisely that while red-proving #348, lost the feature under test,
-  and produced two proofs that failed for the wrong reason while looking clean. The
-  lesson existed, was correct, was specific, and was not read
-  · **so the failure is not the writing, it is the reading**: nothing re-reads 1476 lines
-  before acting, and the file has no retrieval path other than a human scrolling it. The
-  same file already knows this about itself at line 1002 — *"grepping a dream for its own
-  phrasing does not tell you whether its lesson is already recorded"* — and that is how a
-  duplicate of 757 got appended tonight before the pruning pass caught it
-  · **the graduation rule is working and is not enough**: `SKILL.md` says prune when a
-  lesson becomes a guardrail, and #343's `check_author_tags` earned exactly that pruning
-  in this pass. But a lesson that *cannot* become a check (a habit, a shell hazard, a
-  judgement) has no exit and no index, so the un-graduatable ones accumulate — and they
-  are the ones that need to be recalled at the moment of acting
-  · rec: **not** summarisation, which loses the evidence half the format exists to keep
-  (`file-formats.md` says why). Candidates worth an IGC: a keyword/context index the loop
-  consults at the top of the specific acts these lessons govern (before an injection,
-  before writing a parsed file, before a worktree dispatch); splitting by act rather than
-  by date so the relevant dozen is readable; or a check that refuses a *new* lesson whose
-  first sentence is a near-duplicate of an existing one, which would have caught tonight's
-  · **do not implement before asking him** — this changes a durable record he reads, and
-  the cheap wrong answer (aggressive pruning) destroys evidence that is the point of the
-  file
-
 - **#346** — Design #294's task entity schema and read-only CLI surface, the half that
   is not gated on #263 · P1 · schema/CLI design · origin: **loop** · split from #294
   2026-07-28 00:26 while acting on his `do-next` steer (*"we need to start working on
@@ -2725,6 +2696,36 @@ Next id: **490**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#349** — `lessons.md` is 117 entries and 1476 lines, and a lesson in it failed to
+  prevent its own repeat · P2 · dogfood/loop reliability · origin: **loop** · found
+  pruning it during the maintenance rotation · **the evidence is specific and it is
+  tonight's**: line 757 has recorded since **2026-07-25** *"Revert a deliberate RED
+  injection with the inverse of the injection, never with `git checkout <file>`"*, naming
+  the exact consequence — destroyed uncommitted work sharing the file. On **2026-07-28**
+  the coordinator did precisely that while red-proving #348, lost the feature under test,
+  and produced two proofs that failed for the wrong reason while looking clean. The
+  lesson existed, was correct, was specific, and was not read
+  · **so the failure is not the writing, it is the reading**: nothing re-reads 1476 lines
+  before acting, and the file has no retrieval path other than a human scrolling it. The
+  same file already knows this about itself at line 1002 — *"grepping a dream for its own
+  phrasing does not tell you whether its lesson is already recorded"* — and that is how a
+  duplicate of 757 got appended tonight before the pruning pass caught it
+  · **the graduation rule is working and is not enough**: `SKILL.md` says prune when a
+  lesson becomes a guardrail, and #343's `check_author_tags` earned exactly that pruning
+  in this pass. But a lesson that *cannot* become a check (a habit, a shell hazard, a
+  judgement) has no exit and no index, so the un-graduatable ones accumulate — and they
+  are the ones that need to be recalled at the moment of acting
+  · rec: **not** summarisation, which loses the evidence half the format exists to keep
+  (`file-formats.md` says why). Candidates worth an IGC: a keyword/context index the loop
+  consults at the top of the specific acts these lessons govern (before an injection,
+  before writing a parsed file, before a worktree dispatch); splitting by act rather than
+  by date so the relevant dozen is readable; or a check that refuses a *new* lesson whose
+  first sentence is a near-duplicate of an existing one, which would have caught tonight's
+  · **do not implement before asking him** — this changes a durable record he reads, and
+  the cheap wrong answer (aggressive pruning) destroys evidence that is the point of the
+  file
+  · merged (3f000925): lessons retrieval is now read-time, not restructure — dev/lessons_index.py derives an act→lessons index from the entries' own vocabulary at read time (287/299 classified, 12 unclassifiable each named by line, visible not silent), and lint.py check_lesson_near_duplicates ERRORs a NEW first sentence that near-duplicates an existing claim (pairs already in HEAD are WARN). IGC refuted the split-by-act restructure (G4: 299 entries, inform posture; multi-act membership is the norm) and similarity-alone (gates writing a repeat, not reading before the act). Lane red-runs x2 incl. a real-text proof that the check catches the recorded L580/L622 repeat with the file's own words; coordinator red-proof: LESSON_DUP_RATIO 0.99 fails 4 dup tests, restored byte-identical. ON HIS DESK per inform posture: the WARN naming the pre-existing repeat lessons.md:580 ≈ :622 — prune/merge is his call, deliberately untouched. Model: inherited (pre-routing-rule dispatch).
+
 - **#489** — burndown cycle direction: click goes coarse→fine, shift-click reverses · P2 ·
   dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:35:** *"on the
   burndown cycle, when we click the cycle time period label, it should go the other day: daily ->
