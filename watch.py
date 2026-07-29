@@ -931,11 +931,17 @@ STYLE = """<style>
      holds. Same arrival idiom (pose → ease in, depart → ease out, snap
      under reduced motion) — a smaller instance of the same gesture, never
      a second one (transitions.md). Accent is not spent. */
+  /* border-box so max-width:100% INCLUDES padding + border. Content-box
+     let the box sit 100% wide then grow by ~18px of padding/border past
+     the panel — invisible on short coverage lines, exposed at 390px once
+     #498 lengthened the open-period line ("…period in progress · N%
+     elapsed") to the max-width ceiling (bdhover: right 392 vs bdR 374). */
   .bdinsp { position:absolute; top:0; left:0; z-index:3;
             pointer-events:none; font-size:.7rem; color:var(--dim);
             background:color-mix(in srgb, var(--bg) 92%, transparent);
             border:1px solid var(--line); border-radius:3px;
             padding:.3rem .5rem; white-space:nowrap; max-width:100%;
+            box-sizing:border-box;
             overflow:hidden; text-overflow:ellipsis;
             transition:opacity .42s ease, filter .42s ease,
                        transform .42s cubic-bezier(.32,.1,.2,1); }
@@ -7809,20 +7815,28 @@ function bdinspLay(bd, col, el) {
      rendered layout — no guessed px breakpoint); otherwise above the
      chart. When above, also above .bdtip so the glance stats line and the
      details never overlap. Same pose/depart arrival; only the resting
-     slot changes. */
+     slot changes.
+     #498 geometry: pin max-width to the panel in px before measuring so
+     a long coverage line (…period in progress · N% elapsed) cannot make
+     offsetWidth exceed the panel, and clamp left so left+width stays
+     inside — the border-box CSS is the real fix; this is the placement
+     half of the same guarantee. */
   const bdr = bd.getBoundingClientRect();
   const track = bd.querySelector('.bdnet');
   const tr = track ? track.getBoundingClientRect() : bdr;
   const tip = bd.querySelector('.bdtip');
   const tipOn = tip && !tip.hidden;
   const tipR = tipOn ? tip.getBoundingClientRect() : null;
+  el.style.maxWidth = bdr.width + 'px';
   const w = el.offsetWidth, h = el.offsetHeight;
   const pad = 4;
   // room = inspector fits entirely in the right half of the panel
   const hasRoom = (w + pad * 2) <= (bdr.width / 2);
   el.dataset.bdslot = hasRoom ? 'rhs' : 'above';
+  // horizontal clamp: never past the panel edges
+  const clampL = left => Math.max(0, Math.min(left, Math.max(0, bdr.width - w)));
   if (hasRoom) {
-    el.style.left = Math.max(0, bdr.width - w) + 'px';
+    el.style.left = clampL(bdr.width - w) + 'px';
     el.style.right = 'auto';
     // below the tip when it is up (no overlap); otherwise above the track
     let top = tr.top - bdr.top - h - pad;
@@ -7833,8 +7847,7 @@ function bdinspLay(bd, col, el) {
     el.style.top = top + 'px';
   } else {
     // centred horizontally, fully above chart AND above the tip line
-    el.style.left = Math.max(0, Math.min((bdr.width - w) / 2,
-                                         bdr.width - w)) + 'px';
+    el.style.left = clampL((bdr.width - w) / 2) + 'px';
     el.style.right = 'auto';
     let top = tr.top - bdr.top - h - pad;
     if (tipR) {
