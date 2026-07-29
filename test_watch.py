@@ -7194,6 +7194,192 @@ class TestPosture(unittest.TestCase):
                 watch.collect(d)["posture"]["delivery"], "batched")
 
 
+class TestDeliveryWakeRouting(unittest.TestCase):
+    """#342 lane B surface 2 — per-kind wake routing.
+
+    The receipt commits UNCONDITIONALLY in do_POST (E3); the watch-events.log
+    wake line's emission is conditional on (kind, mode). do-now/do-next
+    pre-empt even in batched mode; every other kind and the /answer, /comment,
+    /ask routes wake only in instant mode. Withholding the wake line IS
+    batching — the item rides the durable receipt and the tick's cursor read.
+    """
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _post(self, url, obj):
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    def _wake_lines(self, d):
+        """Every watch-events.log line — each is a wake line the tail monitor
+        wakes on. NOT filtered to 'via watch', because the /answer, /comment
+        and /ask wake lines carry no such marker; filtering to it would hide
+        them and make a withheld-line check pass trivially (the hollow trap)."""
+        log = os.path.join(d, ".dreamwork", "watch-events.log")
+        if not os.path.exists(log):
+            return []
+        with open(log, encoding="utf-8") as f:
+            return [ln for ln in f if ln.strip()]
+
+    def _witnessed(self, d):
+        """submissions.log paths — present iff the route ran end-to-end through
+        do_POST (the witness runs after the durable receipt, so its presence
+        proves the receipt committed)."""
+        path = os.path.join(d, ".dreamwork", "submissions.log")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return [json.loads(ln)["path"] for ln in f if ln.strip()]
+
+    def test_emits_wake_matrix_pure(self):
+        """Production line: emits_wake — the routing decision table.
+
+        PRECONDITION asserted at runtime (the hollow-check rule): the core
+        command kinds are exactly the four in COMMANDS, so a kind added later
+        is covered by the 'not a pre-empt kind' branch instead of slipping
+        past a hand-copied list.
+        """
+        core = set(watch.COMMAND_KINDS)
+        self.assertEqual(core, {"add-idea", "do-next", "do-now", "maintenance"},
+                         core)
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            instant = d
+            batched = os.path.join(d, "b")
+            os.makedirs(os.path.join(batched, ".dreamwork"))
+            self.assertTrue(
+                watch.write_posture(batched, "idle", "ask", 0, "batched"))
+            # pre-empt kinds wake in BOTH modes
+            for kind in watch.PREEMPT_KINDS:
+                self.assertTrue(watch.emits_wake(kind, instant), kind)
+                self.assertTrue(watch.emits_wake(kind, batched), kind)
+            self.assertEqual(set(watch.PREEMPT_KINDS), {"do-now", "do-next"})
+            # every other kind + plugin kinds + the routes wake only instant
+            for kind in ("add-idea", "maintenance", "some-plugin"):
+                self.assertTrue(watch.emits_wake(kind, instant), kind)
+                self.assertFalse(watch.emits_wake(kind, batched), kind)
+            for route in ("/answer", "/comment", "/ask"):
+                self.assertTrue(watch.emits_wake(route, instant), route)
+                self.assertFalse(watch.emits_wake(route, batched), route)
+
+    def test_command_preempt_kinds_wake_in_batched(self):
+        """Live: do-now/do-next wake even in batched mode; receipt always lands.
+
+        Production line: the `if emits_wake(kind, target):` gate in
+        _handle_command. Remove it and add-idea wakes in batched too (next
+        test); make emits_wake always-False and do-now stops waking here.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertTrue(
+                watch.write_posture(d, "idle", "ask", 0, "batched"))
+            base = self._serve(d)
+            for kind in ("do-now", "do-next"):
+                payload = {"kind": kind, "text": "preempt " + kind} \
+                    if kind != "do-next" else {"kind": "do-next", "text": ""}
+                self.assertEqual(self._post(base + "/command", payload), 202)
+            wakes = self._wake_lines(d)
+            self.assertTrue(any("do-now" in w for w in wakes), wakes)
+            self.assertTrue(any("do-next" in w for w in wakes), wakes)
+            # the receipt committed for both (E3 — unconditional)
+            self.assertEqual(self._witnessed(d).count("/command"), 2)
+
+    def test_command_batched_kinds_withhold_wake_in_batched(self):
+        """Live: add-idea/maintenance withhold the wake line in batched mode.
+
+        Production line: the `if emits_wake(kind, target):` gate. The receipt
+        still commits — withholding the wake IS batching; the cursor drains it.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertTrue(
+                watch.write_posture(d, "idle", "ask", 0, "batched"))
+            base = self._serve(d)
+            self.assertEqual(self._post(base + "/command",
+                                        {"kind": "add-idea", "text": "parked"}), 202)
+            self.assertEqual(self._post(base + "/command",
+                                        {"kind": "maintenance", "text": "groom"}), 202)
+            wakes = self._wake_lines(d)
+            self.assertFalse(any("add-idea" in w for w in wakes), wakes)
+            self.assertFalse(any("maintenance" in w for w in wakes), wakes)
+            # the receipt committed for both even though no wake fired
+            self.assertEqual(self._witnessed(d).count("/command"), 2)
+
+    def test_command_all_kinds_wake_in_instant(self):
+        """Live: in instant mode (the default) every command kind wakes.
+
+        Production line: emits_wake returns True in instant mode for non-
+        pre-empt kinds (delivery_mode == DELIVERY_DEFAULT). A posture file
+        with no delivery axis — or absent — is instant.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)  # no posture file → instant
+            base = self._serve(d)
+            self.assertEqual(self._post(base + "/command",
+                                        {"kind": "add-idea", "text": "now"}), 202)
+            self.assertEqual(self._post(base + "/command",
+                                        {"kind": "do-now", "text": "now"}), 202)
+            wakes = self._wake_lines(d)
+            self.assertTrue(any("add-idea" in w for w in wakes), wakes)
+            self.assertTrue(any("do-now" in w for w in wakes), wakes)
+
+    def test_answer_ask_comment_withhold_wake_in_batched(self):
+        """Live: /answer, /comment, /ask withhold the wake line in batched.
+
+        Production line: the `if emits_wake(<route>, target):` gate in each of
+        the three handlers. The receipt commits in every case (E3).
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertTrue(
+                watch.write_posture(d, "idle", "ask", 0, "batched"))
+            base = self._serve(d)
+            self.assertEqual(self._post(base + "/answer", {
+                "question": "A real open question?", "answer": "yes"}), 202)
+            self.assertEqual(self._post(base + "/comment", {
+                "question": "A real open question?", "comment": "a note",
+                "section": "Open"}), 202)
+            self.assertEqual(self._post(base + "/ask", {
+                "question": "a new question"}), 202)
+            wakes = self._wake_lines(d)
+            # /answer's wake line is 'answer: "..." -> .dreamwork/questions.md
+            # (fold the answer...)' — distinct markers, no 'via watch'.
+            self.assertFalse(any("fold the answer" in w for w in wakes), wakes)
+            self.assertFalse(any("follow-up" in w for w in wakes), wakes)
+            self.assertFalse(any("question for dreamer" in w for w in wakes),
+                             wakes)
+            # all three receipts committed despite no wake
+            witnessed = self._witnessed(d)
+            for route in ("/answer", "/comment", "/ask"):
+                self.assertIn(route, witnessed)
+
+    def test_answer_ask_comment_wake_in_instant(self):
+        """Live: in instant mode the three routes wake (today's behaviour)."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)  # instant
+            base = self._serve(d)
+            self.assertEqual(self._post(base + "/answer", {
+                "question": "A real open question?", "answer": "yes"}), 202)
+            self.assertEqual(self._post(base + "/ask", {
+                "question": "a new one"}), 202)
+            wakes = self._wake_lines(d)
+            self.assertTrue(any("fold the answer" in w for w in wakes), wakes)
+            self.assertTrue(any("question for dreamer" in w for w in wakes),
+                            wakes)
+
+
 class TestDeployAction(unittest.TestCase):
     """#462 increment 2 — page-triggered `just deploy`.
 

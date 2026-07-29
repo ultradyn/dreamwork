@@ -13113,6 +13113,39 @@ def delivery_line(mode, source=""):
     return f"delivery via watch{from_hint(source)}: {one_line(str(mode))}"
 
 
+# #342 — per-kind wake routing. The receipt commits UNCONDITIONALLY in do_POST
+# (the E3 invariant); these decide only whether the watch-events.log wake line
+# — the *interrupt* — fires on top. do-now/do-next pre-empt even in batched
+# mode (a do-now that does not pre-empt is a do-now that lied — his Q2 ruling);
+# every other command kind (add-idea, maintenance, plugin kinds) and the
+# /answer, /comment, /ask routes wake only in instant mode, riding the durable
+# receipt and the tick's cursor read otherwise. Withholding the wake line IS
+# batching.
+PREEMPT_KINDS = ("do-now", "do-next")
+
+
+def delivery_mode(target):
+    """Effective delivery posture: 'instant' (default) or 'batched' (#342).
+
+    Per-tick re-read of `.dreamwork/posture` via read_posture_file — the same
+    contract pace/asking/delegation use, so an on-disk change reaches a
+    running loop without restart. Absent axis → instant (today's behaviour)."""
+    return read_posture_file(target).get("delivery", DELIVERY_DEFAULT)
+
+
+def emits_wake(kind, target):
+    """Per-kind wake routing (#342): does this kind fire the wake line?
+
+    Pre-empt kinds (do-now/do-next) wake regardless of mode; every other kind
+    — add-idea, maintenance, plugin kinds — and the /answer, /comment, /ask
+    ROUTES (passed as their path string, which is never a pre-empt kind) wake
+    only in instant mode. The receipt always commits in do_POST; this is the
+    interrupt half only. Pure in `kind`; reads delivery posture from disk."""
+    if kind in PREEMPT_KINDS:
+        return True
+    return delivery_mode(target) == DELIVERY_DEFAULT
+
+
 def persistent_port(target):
     marker = os.path.join(target, ".dreamwork", "watch-port")
     saved = read_text(marker)
@@ -13882,8 +13915,10 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 text = read_text(path)
                 new_text = append_human_question(text, question, stamp)
                 atomic_write_text(path, new_text)
-            log_event(target, f'question for dreamer{from_hint(req.get("from"))}: '
-                      f'"{one_line(question)}" -> .dreamwork/answers.md')
+            # #342: /ask is a batched kind — wakes only in instant mode.
+            if emits_wake("/ask", target):
+                log_event(target, f'question for dreamer{from_hint(req.get("from"))}: '
+                          f'"{one_line(question)}" -> .dreamwork/answers.md')
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_answer(self):
@@ -13915,10 +13950,12 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 # construct itself: the check for it greps the source, and an
                 # explanation quoting what it forbids is a violation of it.)
                 atomic_write_text(qpath, new_text)
-            log_event(target,
-                      f'answer{from_hint(req.get("from"))}: "{one_line(title)}"'
-                      f' -> .dreamwork/questions.md '
-                      f'(fold the answer, act, move to Answered)')
+            # #342: /answer is a batched kind — wakes only in instant mode.
+            if emits_wake("/answer", target):
+                log_event(target,
+                          f'answer{from_hint(req.get("from"))}: "{one_line(title)}"'
+                          f' -> .dreamwork/questions.md '
+                          f'(fold the answer, act, move to Answered)')
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_comment(self):
@@ -13948,9 +13985,11 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 atomic_write_text(qpath, new_text)   # #370, as above
             hint = ("(re-evaluate — a note on an answered entry may amend it)"
                     if section == "Answered" else "(fold with the entry)")
-            log_event(target,
-                      f'follow-up{from_hint(req.get("from"))}: '
-                      f'"{one_line(title)}" -> .dreamwork/questions.md {hint}')
+            # #342: /comment is a batched kind — wakes only in instant mode.
+            if emits_wake("/comment", target):
+                log_event(target,
+                          f'follow-up{from_hint(req.get("from"))}: '
+                          f'"{one_line(title)}" -> .dreamwork/questions.md {hint}')
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_decide(self):
@@ -14036,7 +14075,11 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 self._reject("domain_invalid"); return
             if kind != "do-next" and not text:
                 self._reject("schema_invalid"); return
-            log_event(target, command_line(kind, text, req.get("from")))
+            # #342: the receipt already committed in do_POST (E3). The wake
+            # line is the interrupt half — pre-empt kinds always fire; the
+            # rest fire only in instant mode (batched kinds ride the cursor).
+            if emits_wake(kind, target):
+                log_event(target, command_line(kind, text, req.get("from")))
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_tint(self):
