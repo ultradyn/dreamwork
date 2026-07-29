@@ -123,6 +123,72 @@ def test_recover_events_are_migration_git_with_lifecycle(module):
 
 
 # ---------------------------------------------------------------------------
+# first_sight_events — #294 inc 8: ALL ids, not just groomed.
+#
+# Production line: the ``oids | lids`` arrival set in ``first_sight_events``.
+# Break by looping over ``groomed`` instead and the current-entry ids (#8 #9)
+# lose their events — the exact coverage gap (groomed-only → empty burndown
+# for current-entry tasks). The contrast with recover_groomed_history is the
+# guard: groomed recovery yields events for {5, 7}; first_sight_events must
+# yield events for {5, 7, 8, 9} — every id the markdown walk counts.
+# ---------------------------------------------------------------------------
+def test_first_sight_events_cover_all_ids_not_just_groomed(module):
+    a = _analysis(module, CURRENT[2])
+    groomed = _groomed(a)
+    # Precondition: the fixture has BOTH groomed ids AND current-entry ids.
+    # recover_groomed_history owns the groomed set; first_sight_events must
+    # cover it PLUS the current-entry ids (8 open, 9 landed). A fixture that
+    # lost either side makes the coverage check vacuous.
+    assert groomed == {5, 6, 7}, "fixture lost its groomed shape"
+    cur = set(a["open_ids"]) | set(a["landed_ids"])  # 8, 9
+    assert cur, "fixture lost its current-entry ids"
+    rec_events = module.recover_groomed_history(a, SNAPSHOTS)["events"]
+    rec_ids = {e["task_id"] for e in rec_events}
+    assert rec_ids == {5, 7}, "precondition: groomed recovery covers only 5, 7"
+    fs_events = module.first_sight_events(a, SNAPSHOTS)
+    fs_ids = {e["task_id"] for e in fs_events}
+    # first_sight_events must cover groomed-AND-current-entry ids — the gap.
+    assert cur <= fs_ids, (
+        f"current-entry ids {cur - fs_ids} missing — first_sight_events "
+        "regressed to groomed-only (the burndown gap this increment closes)")
+    # #6 appears as a bold span in #9's landed body, so parse_ledger counts
+    # it in the landed section and the markdown walk counts it too — so
+    # first_sight_events emits for it (matching the markdown model). It has
+    # no task row (unrecoverable), so _populate_events's FK-safe filter
+    # drops it at write time; that filtering is tested separately.
+    assert fs_ids == {5, 6, 7, 8, 9}, (
+        f"first-sight ids wrong: {sorted(fs_ids)}; must cover every id "
+        "parse_ledger counts in a section (the markdown walk's model)")
+
+
+def test_first_sight_events_match_markdown_first_sight_model(module):
+    """first_sight_events' arrived/landed epochs must equal what the markdown
+    git-walk (watch.ledger_series) would derive from the same snapshots —
+    the model store_series_raw replays."""
+    import watch as _watch
+    a = _analysis(module, CURRENT[2])
+    events = module.first_sight_events(a, SNAPSHOTS)
+    arrived = {e["task_id"]: int(
+        __import__("datetime").datetime.fromisoformat(e["at"]).timestamp())
+        for e in events if e["from_state"] is None and e["to_state"] == "open"}
+    landed = {e["task_id"]: int(
+        __import__("datetime").datetime.fromisoformat(e["at"]).timestamp())
+        for e in events if e["to_state"] == "landed"}
+    # The markdown walk's first-sight model over the same snapshots.
+    md_arr, md_land = {}, {}
+    for _sha, epoch, text in SNAPSHOTS:
+        o, done = _watch.parse_ledger(text)
+        for i in o | done:
+            md_arr.setdefault(int(i), epoch)
+        for i in done:
+            md_land.setdefault(int(i), epoch)
+    assert arrived == md_arr, (
+        f"arrived epochs diverge from markdown: {arrived} vs {md_arr}")
+    assert landed == md_land, (
+        f"landed epochs diverge from markdown: {landed} vs {md_land}")
+
+
+# ---------------------------------------------------------------------------
 # Hash chain — the journal contract, applied to task_event (DOMAIN_TAG).
 # ---------------------------------------------------------------------------
 def test_event_chain_links_and_verifies(module):
@@ -222,6 +288,45 @@ def test_import_history_is_idempotent(module, tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM task_event").fetchone()[0] == r1["events"]
     assert conn.execute("SELECT COUNT(*) FROM task").fetchone()[0] == r1["task_rows"]
     assert r2["events"] == r1["events"]
+
+
+def test_populate_events_filters_rowless_ids(module, tmp_path):
+    """_populate_events is FK-safe: an id visible in history as a bold span
+    but with no task row (unrecoverable groomed #6) gets NO event — honesty
+    over completeness, and task_event.task_id REFERENCES task(id).
+
+    Production line: the ``have_ids`` filter in ``_populate_events``. Break
+    by removing it and writing #6's event fails the FK (IntegrityError)."""
+    import ledger_store
+    a = _analysis(module, CURRENT[2])
+    db = _scratch(tmp_path)
+    # Import current-entry rows only (8, 9) — NOT the history (no groomed
+    # rows yet). #6 has no row and never will (unrecoverable).
+    assert _import(module, CURRENT[2], db) == 0
+    store = ledger_store.open_store(db)
+    try:
+        events = module.first_sight_events(a, SNAPSHOTS)
+        fs_ids = {e["task_id"] for e in events}
+        # Precondition: first_sight_events DOES emit for #6 (it's a bold
+        # span parse_ledger counts), so the filter has something to drop.
+        assert 6 in fs_ids, (
+            "precondition: #6 must be in first_sight_events (bold span) "
+            "— else the filter has nothing to filter")
+        have_ids = {r[0] for r in
+                    store.conn.execute("SELECT id FROM task")}
+        assert 6 not in have_ids, (
+            "precondition: #6 must have no row — else the FK test is moot")
+        store.conn.execute("BEGIN IMMEDIATE")
+        n = module._populate_events(store.conn, events)
+        store.conn.execute("COMMIT")
+    finally:
+        store.close()
+    conn = _ro(db)
+    written = {r["task_id"] for r in conn.execute("SELECT task_id FROM task_event")}
+    # Every written event has a row (FK-safe); #6 was filtered out.
+    assert 6 not in written, (
+        "#6 (no row) must NOT get an event — FK-safe honesty filter failed")
+    assert written <= have_ids, "an event was written for a rowless id"
 
 
 def test_import_history_refuses_dreamwork_target(module, tmp_path):

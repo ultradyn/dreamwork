@@ -630,6 +630,70 @@ def _populate_store(conn: sqlite3.Connection, text: str, a: dict) -> int:
     return len(rows)
 
 
+def _insert_groomed_rows(conn: sqlite3.Connection, tasks: dict) -> int:
+    """Write recovered groomed-id task rows on a connection (INSERT OR IGNORE).
+
+    Extracted from ``import_history_into_db`` so the cutover can write groomed
+    rows under its lease on the same connection it populated current-entry
+    rows on — the same extraction discipline ``_populate_store`` followed.
+    Caller owns the transaction. ``INSERT OR IGNORE`` keeps it idempotent
+    over a re-run (rollback re-runs forward). Types are registered first
+    (task.type REFERENCES task_type, unseeded — the import owns vocabulary).
+    """
+    for t in sorted({r["type"] for r in tasks.values()
+                     if r["type"] is not None}):
+        conn.execute("INSERT OR IGNORE INTO task_type(type) VALUES (?)", (t,))
+    for i in sorted(tasks):
+        r = tasks[i]
+        conn.execute(
+            "INSERT OR IGNORE INTO task(id, state, title, body,"
+            " priority, priority_uncertain, type, origin,"
+            " blocked_on, body_digest, source_line)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (r["id"], r["state"], r["title"], r["body"],
+             r["priority"], r["priority_uncertain"], r["type"],
+             r["origin"], r["blocked_on"], r["body_digest"],
+             r["source_line"]))
+    return len(tasks)
+
+
+def _populate_events(conn: sqlite3.Connection, events: list) -> int:
+    """Write chained migration:git events on a connection; idempotent.
+
+    Connection-level companion to ``_populate_store`` / ``_insert_groomed_rows``
+    so the cutover can write first-sight events under its lease on the same
+    connection (#294 inc 8). Idempotent: a no-op if migration:git events
+    already exist (a re-run after rollback, or a DB that already ran
+    --import-history). Caller owns the transaction; events are chained via
+    ``chain_events`` and inserted in chain order so ``ordinal`` follows the
+    chain.
+    """
+    have = conn.execute(
+        "SELECT COUNT(*) FROM task_event WHERE actor = 'migration:git'"
+    ).fetchone()[0]
+    if have > 0 or not events:
+        return 0
+    # FK-safe honesty filter: an id visible in git history as a bold span
+    # but with no task row (an unrecoverable groomed id — #6 in the test
+    # fixture, #101 #222 #223 #267 live) gets NO event. task_event.task_id
+    # REFERENCES task(id), so an event for a rowless id would fail the FK;
+    # and fabricating one would be dishonest (no row → no first-sight event,
+    # the same rule as the unrecoverable groomed four).
+    have_ids = set(r[0] for r in conn.execute("SELECT id FROM task"))
+    events = [e for e in events if e["task_id"] in have_ids]
+    if not events:
+        return 0
+    for e in chain_events(events):
+        conn.execute(
+            "INSERT INTO task_event(task_id, at, cause, from_state,"
+            " to_state, actor, receipt_id, detail, prev_hash, hash)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (e["task_id"], e["at"], e["cause"], e["from_state"],
+             e["to_state"], e["actor"], e["receipt_id"], e["detail"],
+             e["prev_hash"], e["hash"]))
+    return len(events)
+
+
 def import_into_db(text: str, a: dict, db_path: str) -> dict:
     """Populate the flat schema at db_path, or no-op over an existing import.
 
@@ -677,30 +741,8 @@ def import_history_into_db(text: str, a: dict, db_path: str, snapshots) -> dict:
             populated = True
             store.conn.execute("BEGIN IMMEDIATE")
             try:
-                rows = rec["tasks"]
-                for t in sorted({r["type"] for r in rows.values()
-                                 if r["type"] is not None}):
-                    store.conn.execute(
-                        "INSERT OR IGNORE INTO task_type(type) VALUES (?)", (t,))
-                for i in sorted(rows):
-                    r = rows[i]
-                    store.conn.execute(
-                        "INSERT OR IGNORE INTO task(id, state, title, body,"
-                        " priority, priority_uncertain, type, origin,"
-                        " blocked_on, body_digest, source_line)"
-                        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                        (r["id"], r["state"], r["title"], r["body"],
-                         r["priority"], r["priority_uncertain"], r["type"],
-                         r["origin"], r["blocked_on"], r["body_digest"],
-                         r["source_line"]))
-                for e in chain_events(rec["events"]):
-                    store.conn.execute(
-                        "INSERT INTO task_event(task_id, at, cause, from_state,"
-                        " to_state, actor, receipt_id, detail, prev_hash, hash)"
-                        " VALUES (?,?,?,?,?,?,?,?,?,?)",
-                        (e["task_id"], e["at"], e["cause"], e["from_state"],
-                         e["to_state"], e["actor"], e["receipt_id"],
-                         e["detail"], e["prev_hash"], e["hash"]))
+                _insert_groomed_rows(store.conn, rec["tasks"])
+                _populate_events(store.conn, rec["events"])
                 store.conn.execute("COMMIT")
             except Exception:
                 store.conn.execute("ROLLBACK")
@@ -907,20 +949,45 @@ def git_snapshots(ledger_path: str = ".dreamwork/tasks.md"):
     the ledger. Pure over git's deterministic ``log --reverse`` order; the
     same history always yields the same sequence. ``ledger_path`` may be
     absolute or relative; ``git show <sha>:<path>`` needs the repo-root-
-    relative form, derived here from ``git rev-parse --show-toplevel``."""
+    relative form, derived here from ``git rev-parse --show-toplevel``.
+
+    The top level is resolved with ``git -C <ledger.parent>`` (not bare
+    ``git`` from CWD) so the walk follows the ledger's OWN repo — the
+    cutover runs on a target dir that may sit in a different repo than the
+    process CWD, and a bare ``--show-toplevel`` would pick the wrong one."""
+    ledger = Path(ledger_path).resolve()
     top = Path(subprocess.check_output(
-        ["git", "rev-parse", "--show-toplevel"], text=True).strip())
-    rel = str(Path(ledger_path).resolve().relative_to(top))
+        ["git", "-C", str(ledger.parent), "rev-parse", "--show-toplevel"],
+        text=True).strip())
+    rel = str(ledger.relative_to(top))
     raw = subprocess.check_output(
-        ["git", "log", "--reverse", "--format=%H %ct", "--", rel],
+        ["git", "-C", str(top), "log", "--reverse", "--format=%H %ct", "--", rel],
         stderr=subprocess.DEVNULL, text=True)
     out = []
     for line in raw.splitlines():
         sha, ct = line.split()
         blob = subprocess.check_output(
-            ["git", "show", f"{sha}:{rel}"], stderr=subprocess.DEVNULL)
+            ["git", "-C", str(top), "show", f"{sha}:{rel}"],
+            stderr=subprocess.DEVNULL)
         out.append((sha, int(ct), blob.decode("utf-8", "replace")))
     return out
+
+
+def _safe_snapshots(ledger_path: str) -> list:
+    """``git_snapshots`` that returns ``[]`` when there is no git history.
+
+    The cutover (and rollback, which re-runs forward) needs first-sight
+    events for the burndown to survive the flip. In a live cutover the
+    target IS a git checkout, so the walk runs; on a scratch target with no
+    git history (the cutover tests' plain tmp dir), there are no snapshots,
+    so no events are fabricated — the same honesty rule as an unrecoverable
+    groomed id (no first-sight, no event).
+    """
+    try:
+        return git_snapshots(ledger_path)
+    except (subprocess.CalledProcessError, OSError, FileNotFoundError,
+            sqlite3.Error, ValueError):
+        return []
 
 
 def _length_framed(*parts) -> bytes:
@@ -1036,6 +1103,54 @@ def recover_groomed_history(a: dict, snapshots: list) -> dict:
                                          "landed"))
     return {"tasks": tasks, "events": events,
             "unrecoverable": unrecoverable, "groomed": groomed}
+
+
+def first_sight_events(a: dict, snapshots: list) -> list:
+    """First-sight ARRIVAL + LANDED events for EVERY id visible in history.
+
+    The burndown coverage gap (#294 inc 8): ``recover_groomed_history`` only
+    emits events for the ~74 groomed ids, so a store cut over today would
+    give ``ledger_parse.store_series_raw`` an EMPTY pre-cutover history for
+    the ~370 current-entry tasks. This walks the SAME snapshots and emits a
+    first-sight event for every id ``watch.ledger_series``'s markdown git-
+    walk would count — current-entry AND groomed alike — so the store's
+    burndown matches the markdown walk bucket for bucket at the flip.
+
+    The model is the markdown walk's model exactly (design M3-A, F3): an id
+    ARRIVES at the first commit where it appears anywhere (open OR landed)
+    and LANDS at the first commit where it appears under ``## Recently
+    landed``. Both are first-seen events — the Markdown never recorded
+    intra-life causes, so nothing more is fabricated. Arrival is modelled
+    ``NULL → open`` and landing ``open → landed`` (the shape
+    ``store_series_raw`` queries and ``test_ledger_dispatch.py``'s parity
+    fixture proves); an id born already landed gets both at its birth epoch,
+    which is the same +1/-1 net-zero the markdown walk records for it.
+
+    Only groomed ids need ROW recovery (``recover_groomed_history`` owns
+    that); current-entry tasks already have rows from ``_populate_store``.
+    An id with an entry but NO first-sight in any snapshot (a planted
+    fixture entry, or a header pre-dating git) gets NO fabricated event —
+    honesty over completeness, the same rule as the unrecoverable groomed
+    four (#101 #222 #223 #267).
+    """
+    watch = _load_watch_or_die()
+    arrived, landed = {}, {}
+    for sha, epoch, text in snapshots:
+        o, l = watch.parse_ledger(text)
+        oids, lids = {int(x) for x in o}, {int(x) for x in l}
+        for i in oids | lids:
+            arrived.setdefault(i, (sha, epoch))
+        for i in lids:
+            landed.setdefault(i, (sha, epoch))
+    events = []
+    for i in sorted(arrived):
+        sha, epoch = arrived[i]
+        events.append(_history_event(i, epoch, None, "open", sha, "first sight"))
+        if i in landed:
+            lsha, lepoch = landed[i]
+            events.append(_history_event(i, lepoch, "open", "landed", lsha,
+                                         "landed"))
+    return events
 
 
 # ---------------------------------------------------------------------------
@@ -1248,6 +1363,9 @@ def perform_cutover(target_dir, *, holder: str = "cutover",
     (2) Freeze writers — the lease + version gate make a mixed-version writer
         fail closed before accepting a write.
     (3) Run stages 1-4 (dry-run, backup, import, verify) under the lease.
+        Import includes first-sight events for EVERY task visible in git
+        history (current-entry + groomed), so the store is burndown-complete
+        at the flip (#294 inc 8).
     (4) Flip the reader — write the one-way cutover watermark.
     (5) Rename tasks.md -> tasks.md.deprecated (YAML block) + leave the
         one-line tasks.md shim (#458 notice).
@@ -1281,6 +1399,24 @@ def perform_cutover(target_dir, *, holder: str = "cutover",
     try:
         # Step 3: import + verify under the lease.
         populated = _populate_store(store.conn, text, analysis)
+        # #294 inc 8: write groomed-id rows + first-sight events for EVERY
+        # task visible in git history, so the store's burndown is complete at
+        # the flip (store_series_raw → watch.ledger_series parity). Current-
+        # entry rows already exist from _populate_store; groomed rows come
+        # from recover_groomed_history; the events cover both, written under
+        # the lease before the watermark. No git history → no events (honest).
+        snapshots = _safe_snapshots(str(tasks_path))
+        if snapshots:
+            rec = recover_groomed_history(analysis, snapshots)
+            store.conn.execute("BEGIN IMMEDIATE")
+            try:
+                _insert_groomed_rows(store.conn, rec["tasks"])
+                _populate_events(store.conn,
+                                 first_sight_events(analysis, snapshots))
+                store.conn.execute("COMMIT")
+            except Exception:
+                store.conn.execute("ROLLBACK")
+                raise
         failures = verify_db(text, analysis, str(store_db))
         if failures:
             raise _CliFail(EX_DATAERR, "cutover refused: verification failed "
@@ -1364,11 +1500,22 @@ def perform_rollback(backup_dir, target_dir, *, holder: str = "rollback",
     token = _acquire_cutover_lease(store.conn, holder, lease_seconds)
     try:
         populated = _populate_store(store.conn, text, analysis)
+        # Re-run forward also writes history events (#294 inc 8) — rollback
+        # deletes the store, so the burndown must be rebuilt from git like
+        # the forward cutover. Same code path, same idempotence.
+        snapshots = _safe_snapshots(str(tasks_path))
+        if snapshots:
+            rec = recover_groomed_history(analysis, snapshots)
+            store.conn.execute("BEGIN IMMEDIATE")
+            try:
+                _insert_groomed_rows(store.conn, rec["tasks"])
+                _populate_events(store.conn,
+                                 first_sight_events(analysis, snapshots))
+                store.conn.execute("COMMIT")
+            except Exception:
+                store.conn.execute("ROLLBACK")
+                raise
         failures = verify_db(text, analysis, str(store_db))
-        if failures:
-            raise _CliFail(EX_DATAERR, "rollback refused: verification "
-                           f"failed ({len(failures)} failures): "
-                           + "; ".join(failures[:5]))
         timestamp = datetime.now(timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%S.%fZ")
         _write_cutover_watermark(store.conn, timestamp)

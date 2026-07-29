@@ -216,3 +216,122 @@ def test_chain_verifies_over_synthetic_and_live_events(module, tmp_path):
     assert fails, (
         "mutated synthetic row must break the chain — "
         "a verifier that exempts migration:git rows is a silent forgery")
+
+
+# ---------------------------------------------------------------------------
+# Fixture 5 — Git first-sights match ledger_series (#294 inc 8).
+#
+# After a cutover, the store's per-bucket arrivals/landings (via
+# ledger_parse.store_series_raw → watch.ledger_series store path) must EQUAL
+# ledger_series's markdown-mode git-walk over the SAME fixture history —
+# bucket for bucket. The events are written by perform_cutover's OWN code
+# (first_sight_events over the planted git history), NOT hand-written.
+#
+# Production line: the ``_populate_events(store.conn, first_sight_events(...))``
+# call in ``perform_cutover``. Break by reverting it (no events written) and
+# the store path has no arrived/landed → state drops to BURN_NONE and every
+# bucket goes to zero — the empty-early-buckets failure that is F3's whole
+# point. (A cutover that wrote only current-entry rows + groomed rows, with
+# no events, is the gap this increment closes.)
+# ---------------------------------------------------------------------------
+def test_cutover_first_sights_match_ledger_series(module, tmp_path):
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    import watch
+
+    T = 1784900000
+    led = "## Open\n\n{open}\n## Recently landed\n\n{done}\n"
+    entry = "- **#{i}** — task {i} · P2 · task · origin: **human**\n"
+    landed_entry = "- **#{i}** — did it · landed `{s}`\n"
+    snapshots = [
+        # t=0h: #1 #2 arrive (open)
+        (led.format(open=entry.format(i=1) + entry.format(i=2), done=""), T),
+        # t=1h: #3 arrives, #1 lands
+        (led.format(open=entry.format(i=2) + entry.format(i=3),
+                    done=landed_entry.format(i=1, s="aaa1111")), T + 3600),
+        # t=2h: #2 lands; #4 arrives already-landed (born-landed edge case)
+        (led.format(open=entry.format(i=3),
+                    done=landed_entry.format(i=1, s="aaa1111")
+                    + landed_entry.format(i=2, s="bbb2222")
+                    + entry.format(i=4)), T + 7200),
+    ]
+
+    def _git_repo(d, snaps):
+        dw = os.path.join(d, ".dreamwork")
+        os.makedirs(dw, exist_ok=True)
+        base = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x",
+                    GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+        subprocess.run(["git", "-C", d, "init", "-q"], env=base, check=True,
+                       capture_output=True)
+        for i, (text, when) in enumerate(snaps):
+            env = dict(base, GIT_AUTHOR_DATE="@%d +0000" % when,
+                       GIT_COMMITTER_DATE="@%d +0000" % when)
+            with open(os.path.join(dw, "tasks.md"), "w") as f:
+                f.write(text)
+            subprocess.run(["git", "-C", d, "add", ".dreamwork/tasks.md"],
+                           env=env, check=True, capture_output=True)
+            subprocess.run(["git", "-C", d, "commit", "-q", "-m", "s%d" % i],
+                           env=env, check=True, capture_output=True)
+
+    watch._LEDGER_SNAPS.clear()
+    watch._LEDGER_CACHE.clear()
+    with tempfile.TemporaryDirectory() as d:
+        _git_repo(d, snapshots)
+        dw = os.path.join(d, ".dreamwork")
+        # The on-disk current file needs a Next-id header so the import can
+        # seed the id sequence (the git snapshots carry sections only).
+        current = snapshots[-1][0]
+        full = "# Task ledger\n\nNext id: **5**\n\n" + current
+        (Path(dw) / "tasks.md").write_text(full)
+
+        # Markdown-mode result (no watermark yet → git walk).
+        md = watch.ledger_series(d, now=T + 7200)
+        assert md["state"] == watch.BURN_OK, (
+            f"markdown walk must succeed, got {md.get('state')}")
+
+        # Precondition: the fixture yields arrivals AND landings (a fixture
+        # with only arrivals makes the landed/bucket assertions vacuous —
+        # the hollow-check failure this repo keeps paying for).
+        assert md["arrived"] >= 3, (
+            f"fixture must yield >=3 arrivals, got {md['arrived']}")
+        assert md["landed"] >= 2, (
+            f"fixture must yield >=2 landings, got {md['landed']}")
+        # Precondition: the early buckets are non-trivial (an all-zero set
+        # makes a store-with-no-events pass vacuously — the exact gap).
+        early = sum(b["arrived"] for b in md["buckets"][:2])
+        assert early > 0, (
+            "early buckets must carry arrivals — else the no-events failure "
+            "is invisible")
+
+        # Cutover writes rows + first-sight events (from MY code) + watermark.
+        module.perform_cutover(dw, out=io.StringIO())
+
+        # Store-mode result (watermark present → store path). Clear caches so
+        # the dispatch re-reads source_of_truth.
+        watch._LEDGER_CACHE.clear()
+        st = watch.ledger_series(d, now=T + 7200)
+
+        assert st["state"] == watch.BURN_OK, (
+            f"store series must succeed, got {st.get('state')} "
+            f"note={st.get('note')}")
+        assert st["arrived"] == md["arrived"], (
+            f"arrived: store={st['arrived']} markdown={md['arrived']}")
+        assert st["landed"] == md["landed"], (
+            f"landed: store={st['landed']} markdown={md['landed']}")
+        assert st["open"] == md["open"], (
+            f"open: store={st['open']} markdown={md['open']}")
+        assert len(st["buckets"]) == len(md["buckets"]), (
+            f"bucket count: store={len(st['buckets'])} "
+            f"markdown={len(md['buckets'])}")
+        for i, (sb, mb) in enumerate(zip(st["buckets"], md["buckets"])):
+            assert sb["arrived"] == mb["arrived"], (
+                f"bucket {i} arrived: store={sb['arrived']} "
+                f"markdown={mb['arrived']}")
+            assert sb["landed"] == mb["landed"], (
+                f"bucket {i} landed: store={sb['landed']} "
+                f"markdown={mb['landed']}")
+            assert sb["open"] == mb["open"], (
+                f"bucket {i} open: store={sb['open']} "
+                f"markdown={mb['open']}")
