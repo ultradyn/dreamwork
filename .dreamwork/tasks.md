@@ -657,7 +657,15 @@ Next id: **486**
   body font plus an inner visible postit
   · **probing its caveat found #396 (P1)** — see that entry. The caveat's own axis was clean at three
   densities; the axis it held constant was the element type
-  · **still open for 2b**: the strip below the cliff, awaiting his ruling on the artifact  · **PREVIEWS LANDED `98670ae` (increment only; #367 STAYS OPEN awaiting his ruling)** — he asked
+  · **still open for 2b**: the strip below the cliff, awaiting his ruling on the artifact  · **HIS RULING
+  ARRIVED 2026-07-28 15:11 and sat unprocessed for a day — found by the current coordinator 2026-07-29
+  17:36.** He took **C with a collapsible index**: *"can we do C but: add a little double chevron on RHS
+  indicating that the bar is collapsible, and when it expands it should show a list of the marks. Collapsed
+  by default."* So 2b's spec: default collapsed at the walk height (~32px); a double chevron at the right
+  edge as the affordance; expanded reveals the labelled marks; `transitions.md` governs the expand/collapse
+  with no exception; `aria-expanded` and keyboard parity not optional; whether the expanded list replaces
+  the walk row or sits beneath it, and whether expanded state persists, left to the implementer. **2b is
+  UNSTARTED** — dispatch it.  · **PREVIEWS LANDED `98670ae` (increment only; #367 STAYS OPEN awaiting his ruling)** — he asked
   at 14:52 to see A/B/C before deciding. `ccc @grok`, **13 minutes** end to end:
   `.dreamwork/review/367-option-previews.html` + source + six screenshots + a rail reference +
   `measures.json`, every figure measured from the rendered DOM at load and red-proved by changing
