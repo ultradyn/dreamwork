@@ -1,9 +1,16 @@
-"""SQLite task ledger store — schema + seeded id sequence (#294 increment 1).
+"""SQLite task ledger store — FLAT schema + seeded id sequence (#294 inc 2).
 
-Creates the entity + transition schema designed in task-store-schema.md (#346)
-and task-transition-boundary.md (#264), with the id sequence living in the store
-(AUTOINCREMENT, R1). Seed is derived from the Markdown ledger through lint's
-own parser — never a second regex — and verified before it is written.
+One `task` table carries every column the Markdown entry carries — increment
+1's entry/task split (`50f4933`) modelled combined entries, and #353 split
+every one of them, so the join joined each task to exactly one entry forever.
+The human ruled FLATTEN 2026-07-29 15:59 (rebuilding the lost, red-proved
+`5c5e534`): no `entry` table, no `task_by_entry` index. The #346 S1 relations
+(`related` n:n, `depends` directed) and the #264 transition boundary
+(`task_event`, `task_state`) are unchanged — they bound task ids already.
+
+The id sequence lives in the store (AUTOINCREMENT, R1). Seed is derived from
+the Markdown ledger through lint's own parser — never a second regex — and
+verified before it is written.
 
 Machine-local, stdlib sqlite3 only (C1). No cutover, no import, no write verbs:
 opening, creating, seeding, and proving the sequence is this module's whole job.
@@ -82,7 +89,7 @@ class SchemaVersionError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
-# Schema — entity (#346) + transition boundary (#264)
+# Schema — flat entity (#346 post-#353, ruled 2026-07-29) + boundary (#264)
 # ---------------------------------------------------------------------------
 # task.id is INTEGER PRIMARY KEY AUTOINCREMENT so the sequence lives in the
 # store (R1). Explicit-id INSERTs (import) and auto-allocated ids share one
@@ -111,8 +118,15 @@ CREATE TABLE IF NOT EXISTS task_type (
     type TEXT PRIMARY KEY
 );
 
-CREATE TABLE IF NOT EXISTS entry (
-    entry_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+-- The flat entity: one row per permanent id, every Markdown column on it.
+-- AUTOINCREMENT is load-bearing (R1): without it a deleted high-water id
+-- can be reissued, which reuses a permanent id. No entry table, no
+-- task_by_entry — post-#353 every entry IS one task, so the split joined
+-- 1:1 forever and modelled nothing (his flatten ruling, 2026-07-29 15:59).
+-- blocked_on stays verbatim prose, never an edge (#346 S1: edges live in
+-- depends); body is where notes/updates accumulate across a task's life.
+CREATE TABLE IF NOT EXISTS task (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     state               TEXT    NOT NULL CHECK (state IN ('open','landed')),
     title               TEXT    NOT NULL,
     body                TEXT    NOT NULL,
@@ -122,18 +136,10 @@ CREATE TABLE IF NOT EXISTS entry (
     type                TEXT    REFERENCES task_type(type),
     origin              TEXT    CHECK (origin IS NULL
                                   OR origin IN ('human','loop','unknown')),
+    blocked_on          TEXT,
     body_digest         TEXT,
     source_line         INTEGER
 );
-
--- Permanent task ids. AUTOINCREMENT is load-bearing (R1): without it a
--- deleted high-water id can be reissued, which reuses a permanent id.
-CREATE TABLE IF NOT EXISTS task (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    entry_id  INTEGER NOT NULL REFERENCES entry(entry_id),
-    ordinal   INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS task_by_entry ON task(entry_id);
 
 CREATE TABLE IF NOT EXISTS related (
     a INTEGER NOT NULL REFERENCES task(id),
