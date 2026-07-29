@@ -232,23 +232,6 @@ Next id: **482**
   filtered elements" shape he wrongly suspected of causing that jank. CSS blur/transform/opacity only.
   · **read with `#452`** (focus one question) — collapsing and focusing are two answers to the same complaint
   about a churning list, and whoever builds either should say why both are wanted.
-- **#453** — restore the liquify with a moved or layered noise texture instead of two live SVG filters ·
-  **P2** · dashboard/motion · origin: **human** · **blocked-on: #449** (which disables the mist) ·
-  **human via watch 2026-07-29 00:53:** *"could we generate the flowingness by just having a single texture
-  (which i presume causes displacement) and then just like moving it? or layering and having 2 interfering? we
-  can also tile them or whatever too if that is cheaper."*
-  · **this is the successor to `#449`'s temporary removal**, and the word *temporarily* in his 01:05 ruling is
-  what makes it a real task rather than a wish. `#449` leaves the filters defined behind one named switch with
-  its measurements beside them, so restoring is one edit once a cheaper mechanism exists.
-  · **what `#449` measured, and the constraint it puts on this:** the cost was **not** noise regeneration
-  (freezing `baseFrequency`, and freezing all six per-frame attribute writes, both measured ≈ baseline) and
-  **not** filtered area (a 42% clamp changed nothing). It was **two SVG filter rasterisations per frame**
-  contending with the shader — a threshold, since removing either alone bought nothing and removing both gave
-  +128% frames. **So a cheaper texture is only a win if it removes a rasterisation, not if it merely makes one
-  cheaper.** One cached field translated, tiled, or two layers interfering must be measured against that bar,
-  not against the old animated filter.
-  · **acceptance is comparative, on this host, in one run** — `#449`'s harness exists; reuse it rather than
-  re-deriving a baseline, and state the numbers next to the ones it recorded.
 - **#452** — focus a single question on its own page · **P2** · dashboard/asking · origin: **human** ·
   **human via watch 2026-07-29 01:04:** *"should be able to focus on a question, like open up to a page showing
   only that question. useful if other qs are being updated etc"*
@@ -3740,6 +3723,25 @@ Next id: **482**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#453** — restore the liquify with a moved or layered noise texture instead of two live SVG filters ·
+  **P2** · dashboard/motion · origin: **human** · **blocked-on: #449** (which disables the mist) ·
+  **human via watch 2026-07-29 00:53:** *"could we generate the flowingness by just having a single texture
+  (which i presume causes displacement) and then just like moving it? or layering and having 2 interfering? we
+  can also tile them or whatever too if that is cheaper."*
+  · **this is the successor to `#449`'s temporary removal**, and the word *temporarily* in his 01:05 ruling is
+  what makes it a real task rather than a wish. `#449` leaves the filters defined behind one named switch with
+  its measurements beside them, so restoring is one edit once a cheaper mechanism exists.
+  · **what `#449` measured, and the constraint it puts on this:** the cost was **not** noise regeneration
+  (freezing `baseFrequency`, and freezing all six per-frame attribute writes, both measured ≈ baseline) and
+  **not** filtered area (a 42% clamp changed nothing). It was **two SVG filter rasterisations per frame**
+  contending with the shader — a threshold, since removing either alone bought nothing and removing both gave
+  +128% frames. **So a cheaper texture is only a win if it removes a rasterisation, not if it merely makes one
+  cheaper.** One cached field translated, tiled, or two layers interfering must be measured against that bar,
+  not against the old animated filter.
+  · **acceptance is comparative, on this host, in one run** — `#449`'s harness exists; reuse it rather than
+  re-deriving a baseline, and state the numbers next to the ones it recorded.
+  · landed 1e0bd0e (merge of wt/453; lane work 24a3c99, native subagent). The liquify is restored at ONE rasterisation: a tileable fractal-noise field pre-rendered once to a canvas, consumed via feImage->feTile->feOffset and MOVED per frame, driving the mist's displacement/blur envelopes, on the departing ghost only; the arriving view keeps ungated compositor CSS blur. MIST_ON=true, MIST_IMPL='feimage'; the shelved turbulence filters stay behind MIST_IMPL='turbulence' for comparison. The lane measured every rival — feImage x2 (no win), static (no win, Chrome re-rasterizes every frame), two layers (a composite is a second rasterisation) — the bar was right: the win is removing a rasterisation, not making one cheaper. +40% frames vs the old mist, worst frame -30ms. Coordinator verified three ways: dissolve guard PASS solo; VISUAL REVIEW of the actual pixels (shipped matches the old turbulence warp/flow on the departing half, css-only is visibly the lesser blur); independent perf re-measure — the current default (feImage) reads ~32 frames vs css-only ~45, beating the old turbulence's ~24.
+
 - **#478** — the cited-sha check declines to run in the full suite, twice, and says so at OK · P2 ·
   verification/lint · origin: **loop** · **found 2026-07-29 09:05 by the full `just test` after tonight's four
   merges** — `test_lint.py::TestCitedShas::test_a_dead_cited_sha_warns` failed with a bare `[]`, and
