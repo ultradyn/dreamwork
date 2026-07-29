@@ -204,3 +204,80 @@ def test_import_band_resolutions(module, tmp_path):
         r = conn.execute("SELECT priority FROM task WHERE id=?", (i,)).fetchone()
         assert r["priority"] is None, (
             f"#{i} out-of-set band must import NULL, never a guessed band")
+
+
+def _expected_related_test_side(d: dict) -> set:
+    """Test-side related pairs — independent of the module's expected_related.
+
+    The import and the verifier share the production derivation; this scan
+    is the binding that keeps a broken production derivation from passing
+    on both sides at once (the repo's hollow-check failure).
+    """
+    pairs = set()
+    for ids, body in d["entries"]:
+        for m in lint.RELATED_MARKER.finditer(body):
+            for x in ledger_parse.ENTRY_ID.findall(m.group(1)):
+                for own in ids:
+                    r = int(x)
+                    if r in d["all_ids"] and r != own:
+                        pairs.add((min(own, r), max(own, r)))
+    return pairs
+
+
+def test_import_related_pairs_symmetric_and_deduped(module, tmp_path):
+    d = _derived(FIXTURE)
+    want = _expected_related_test_side(d)
+    assert want, "fixture lost its related pairs — the check would pass over nothing"
+    db = _scratch(tmp_path)
+    assert _import(module, FIXTURE, db) == 0
+    got = {(r["a"], r["b"]) for r in _db(db).execute("SELECT a, b FROM related")}
+    assert got == want
+    assert all(a < b for a, b in got), "related must be stored a < b"
+
+
+def test_import_depends_edges_directed(module, tmp_path):
+    d = _derived(FIXTURE)
+    want = set()
+    for ids, body in d["entries"]:
+        for m in re.finditer(r"blocked on (#\d+)", body, re.I):
+            n = int(m.group(1)[1:])
+            for own in ids:
+                if n in d["all_ids"] and n != own:
+                    want.add((own, n))
+    assert want, "fixture lost its depends edges"
+    db = _scratch(tmp_path)
+    assert _import(module, FIXTURE, db) == 0
+    got = {(r["task"], r["needs"]) for r in
+           _db(db).execute("SELECT task, needs FROM depends")}
+    assert got == want
+    # …and the human blocked-on field creates NO edge: it names no task id.
+    assert all(n in d["all_ids"] for _, n in got)
+
+
+def test_import_title_blocked_on_source_line(module, tmp_path):
+    """Independent derivation of the three columns the replay shares with
+    the import — without this, a broken production extractor would agree
+    with itself on both sides (the hollow-check failure)."""
+    d = _derived(FIXTURE)
+    db = _scratch(tmp_path)
+    assert _import(module, FIXTURE, db) == 0
+    conn = _db(db)
+    lines = FIXTURE.split("\n")
+    for i, body in d["per_id"].items():
+        row = conn.execute(
+            "SELECT title, blocked_on, source_line FROM task WHERE id=?",
+            (i,)).fetchone()
+        head = body.splitlines()[0]
+        want_title = head.split("—", 1)[1].split("·")[0].strip()
+        assert row["title"] == want_title, f"#{i} title"
+        want_line = next(n for n, ln in enumerate(lines, 1)
+                         if ln.startswith(f"- **#{i}") or
+                         ln.startswith("- **#") and f"#{i}" in ln.split("**")[1])
+        assert row["source_line"] == want_line, f"#{i} source_line"
+    # blocked_on: verbatim evidence, NULL where no recognised shape exists.
+    r106 = conn.execute("SELECT blocked_on FROM task WHERE id=106").fetchone()
+    assert "blocked on #102" in r106["blocked_on"]
+    r110 = conn.execute("SELECT blocked_on FROM task WHERE id=110").fetchone()
+    assert "blocked-on: **human**" in r110["blocked_on"]
+    r101 = conn.execute("SELECT blocked_on FROM task WHERE id=101").fetchone()
+    assert r101["blocked_on"] is None
