@@ -13,9 +13,13 @@ So this file set holds, deliberately and permanently, one question in each
 of the three states, plus every input shape the parser and the prose
 renderer are supposed to survive: a hard-wrapped title, a hard-wrapped
 sub-bullet, a note from the human and one from the loop, a legacy tag of
-each kind, inline emphasis, a nested bullet, a code fence, and a backticked
+each kind, inline emphasis, a nested bullet, a code fence, a backticked
 path to a review artifact (which is what gives the review dock and the
-route-change guards something to travel to).
+route-change guards something to travel to), and — for #506's body-link
+pips — a known-internal path (`.dreamwork/lessons.md`, which exists), an
+unknown path (`nosuch/vanished.md`, which does not), and an external
+`github.com/…` reference so the guard can derive both link kinds at runtime
+rather than assume them.
 
 Guards run against a COPY, so the ones that POST /answer and /comment can
 mutate freely and the next run still starts here. Add to this file rather
