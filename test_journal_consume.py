@@ -109,6 +109,19 @@ def _pending_ids(text: str) -> list[str]:
     return ids
 
 
+def _unapplied_ids(text: str) -> list[str]:
+    """The receipt id (2nd tab-field) of each ``UNAPPLIED`` line of consume output.
+
+    A consume line is ``UNAPPLIED\\t<id>\\t<kind>\\t<route>``; the id is the
+    second tab-field.  Derived from the line shape the CLI emits, never assumed.
+    """
+    ids = []
+    for line in text.splitlines():
+        if line.startswith("UNAPPLIED\t"):
+            ids.append(line.split("\t")[1])
+    return ids
+
+
 # ---------------------------------------------------------------------------
 # 1 — pending is quiet on empty (prints nothing, exit 0)
 # ---------------------------------------------------------------------------
@@ -261,6 +274,11 @@ def test_pending_does_not_advance(tmp_path: Path):
 def test_consume_advances_then_pending_empty(tmp_path: Path):
     """consume read-then-advances to head; afterwards pending reads nothing.
 
+    #526: a fresh drain (empty applied-ledger) reports every receipt UNAPPLIED
+    and writes the applied-ledger; the cursor still advances to head (the proof
+    writes the ledger, never the cursor).  The UNAPPLIED list names exactly the
+    seeded ids — derived from the SEED, never from the projection the CLI calls.
+
     RED LINE (run): remove the advance_cursor call from cmd_consume (consume
       reads but never advances). The cursor stays at 0, so the post-consume
       pending is NOT empty → the ``out == ""`` assertion fails. Production line:
@@ -268,21 +286,29 @@ def test_consume_advances_then_pending_empty(tmp_path: Path):
     """
     cli = _load_cli()
     path = tmp_path / "consume.sqlite3"
+    applied = tmp_path / "applied.md"
     bodies = [b'{"x":0}', b'{"x":1}', b'{"x":2}', b'{"x":3}']
     seeded = _seed(path, bodies)
     n = len(seeded)
     expected_ids = sorted(r.receipt_id for r in seeded)
 
-    code, out, err = _run(cli, ["consume", "--journal", str(path)])
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
     assert code == 0, f"consume must exit 0, got {code} (err={err!r})"
     lines = [ln for ln in out.splitlines() if ln.strip()]
-    # First line is the count; the rest are receipt ids, one per line.
     assert lines[0] == f"consumed {n} event(s)", (
         f"first line must report the count, got {lines[0]!r}"
     )
-    consumed_ids = sorted(lines[1:])
-    assert consumed_ids == expected_ids, (
-        "consume must report exactly the seeded receipt ids"
+    # A fresh applied-ledger ⇒ every receipt proves NOT_APPLIED → all UNAPPLIED.
+    assert "applied 0" in out, f"a fresh drain reports 0 applied; got {out!r}"
+    assert f"unapplied {n}" in out, (
+        f"a fresh drain reports {n} unapplied; got {out!r}")
+    unapplied = _unapplied_ids(out)
+    assert sorted(unapplied) == expected_ids, (
+        "the UNAPPLIED list must name exactly the seeded receipt ids"
+    )
+    assert applied.exists(), (
+        "the proof must have created/written the applied-ledger on the first drain"
     )
 
     # The cursor advanced to the head; derive head from the journal.
@@ -365,7 +391,8 @@ def test_consume_refuses_on_corruption_cursor_unmoved(tmp_path: Path):
         "precondition: fresh coordinator cursor at the origin"
     )
 
-    code, out, err = _run(cli, ["consume", "--journal", str(path)])
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(tmp_path / "applied.md")])
     assert code != 0, (
         "consume must refuse non-zero when the chain changed underfoot, "
         f"got exit {code} (out={out!r})"
@@ -387,6 +414,163 @@ def test_consume_refuses_on_corruption_cursor_unmoved(tmp_path: Path):
     assert len(_pending_ids(out)) == n, (
         "after a refused consume, pending must still list the unconsumed events"
     )
+
+
+# ---------------------------------------------------------------------------
+# #526 — the exactly-once proof wired into the drain.
+#
+# The audit (#519 F4) found apply's proof was exercised ONLY by tests.  These
+# tests prove it is now WIRED: consume routes every drained receipt through its
+# adapter's reconcile before advancing, so a replay of an already-applied range
+# writes nothing by construction.  Spies/fakes sit at the ADAPTER boundary
+# (the brief's named seam); the real proof runs over the real applied-ledger.
+# ---------------------------------------------------------------------------
+
+def _rewind_cursor(path: Path) -> None:
+    """Delete the coordinator cursor row so (cursor, head] re-drains.
+
+    This simulates a replay (the by-construction test): the same range is
+    consumed a second time.  It is a direct SQL mutation of the cursor row only
+    — it does not touch the chain (advance_cursor would refuse a mutated chain;
+    this keeps the chain intact so the replay verifies, not refuses).
+    """
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute("DELETE FROM cursors WHERE consumer = ?", (CONSUMER,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+class _SpyCommandAdapter:
+    """Wraps the real ``/command`` adapter, counting ``append_effect`` calls.
+
+    ``append_effect`` is the adapter's effect WRITE — the boundary the #526
+    proof guards.  A replay that proves APPLIED must NOT call it (the count
+    stays flat).  ``has_marker`` delegates to the REAL adapter over the REAL
+    applied-ledger, so the proof machinery (prove_applied → has_marker) is
+    genuinely exercised; the spy only OBSERVES the write, it does not fake the
+    verdict (a fake that short-circuits has_marker would not prove the real
+    machinery, which is the whole point of wiring it).
+    """
+
+    def __init__(self, real):
+        self._real = real
+        self.route = real.route
+        self.writes = 0
+
+    def append_effect(self, text, rid):
+        self.writes += 1
+        return self._real.append_effect(text, rid)
+
+    def has_marker(self, text, rid):
+        return self._real.has_marker(text, rid)
+
+
+def test_command_receipt_routes_through_reconcile_replay_writes_nothing(tmp_path: Path):
+    """#526 (a + d): a drained /command receipt routes through reconcile; the
+    adapter writes ONCE on the first drain and ZERO on a replay of the same
+    range (the by-construction exactly-once property).
+
+    A spy at the ADAPTER boundary counts append_effect.  First drain: NOT_APPLIED
+    → reconcile writes the marker once (spy rises) and lists it UNAPPLIED.
+    Rewind the cursor and re-drain: the marker is present → APPLIED → reconcile
+    finishes ONLY, append_effect is NOT called (spy flat) and the receipt is NOT
+    listed UNAPPLIED.  has_marker delegates to the REAL adapter over the REAL
+    applied-ledger, so the proof is exercised, not faked.
+
+    RED LINE (run): delete the APPLIED-no-write branch in reconcile
+      (``user_events/apply.py``: ``if proof is Proof.APPLIED: finish(); return
+      proof``).  The replayed receipt then falls through to append_effect → the
+      spy count rises on the replay → the ``replay wrote nothing`` assertion
+      fails. Production line injected: that APPLIED branch in reconcile.
+    """
+    cli = _load_cli()
+    path = tmp_path / "cmd.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"kind":"do-now","text":"stand up and check posture"}'],
+                   route="/command")
+    rid = seeded[0].receipt_id
+    n = len(seeded)
+    assert n >= 1, "precondition: at least one seeded receipt"
+
+    real = cli.apply.ADAPTERS["/command"]
+    spy = _SpyCommandAdapter(real)
+    cli.apply.ADAPTERS["/command"] = spy
+    try:
+        # First drain: the receipt is not yet applied → write once, UNAPPLIED.
+        code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                    "--applied", str(applied)])
+        assert code == 0, f"first consume exited {code} (err={err!r})"
+        assert spy.writes == n, (
+            f"first drain must call append_effect once per receipt ({n}); "
+            f"spy saw {spy.writes}")
+        assert rid in _unapplied_ids(out), (
+            f"the not-yet-applied receipt must be listed UNAPPLIED; got {out!r}")
+        assert applied.exists(), (
+            "precondition: the first drain wrote the applied-ledger (the marker "
+            "the replay must find) — without it the replay assertion is vacuous")
+        first_writes = spy.writes
+
+        # Rewind the cursor so the SAME range re-drains (a replay).
+        _rewind_cursor(path)
+
+        # Replay: the marker is present → APPLIED → write NOTHING.
+        code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                    "--applied", str(applied)])
+        assert code == 0, f"replay consume exited {code} (err={err!r})"
+        assert spy.writes == first_writes, (
+            f"replay must call append_effect ZERO times (spy {first_writes} -> "
+            f"{spy.writes}); an already-applied receipt proves APPLIED and "
+            "finishes only — the exactly-once property, by construction")
+        assert _unapplied_ids(out) == [], (
+            f"an already-applied receipt must NOT be listed UNAPPLIED; got {out!r}")
+    finally:
+        cli.apply.ADAPTERS["/command"] = real
+
+
+def test_unapplied_receipts_listed_in_consume_output(tmp_path: Path):
+    """#526 (b): receipts not already applied are listed UNAPPLIED in consume's
+    output — one line each, ``UNAPPLIED \\t id \\t kind \\t route`` — the list
+    the coordinator must act on.
+
+    A fresh drain lists every seeded receipt UNAPPLIED with its kind and route.
+    The expected ids/routes come from the SEED; the kind/route on each line are
+    derived from the line and asserted against the seed (never assumed).
+
+    RED LINE (run): remove the UNAPPLIED-reporting loop in cmd_consume.  No
+      UNAPPLIED lines are emitted → the line-count assertion fails. Production
+      line injected: the unapplied write-loop in cmd_consume.
+    """
+    cli = _load_cli()
+    path = tmp_path / "unappl.sqlite3"
+    applied = tmp_path / "applied.md"
+    bodies = [b'{"text":"a"}', b'{"text":"b"}', b'{"text":"c"}']
+    seeded = _seed(path, bodies, route="/command")
+    n = len(seeded)
+    assert n >= 2, "precondition: a non-trivial list so the shape check means something"
+    expected = {r.receipt_id: "/command" for r in seeded}
+
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, f"consume exited {code} (err={err!r})"
+    lines = [ln for ln in out.splitlines() if ln.startswith("UNAPPLIED\t")]
+    assert len(lines) == n, (
+        f"must list {n} UNAPPLIED receipts, got {len(lines)}; out={out!r}")
+    for ln in lines:
+        parts = ln.split("\t")
+        # UNAPPLIED \t id \t kind \t route  — the brief's "id + kind + route".
+        assert len(parts) == 4, (
+            f"an UNAPPLIED line is 4 tab-fields (UNAPPLIED/id/kind/route); "
+            f"got {ln!r}")
+        _, rid, kind, route = parts
+        assert rid in expected, f"unexpected id on UNAPPLIED line: {rid!r}"
+        assert kind == cli.EVENT_KIND, (
+            f"kind must be {cli.EVENT_KIND!r}, got {kind!r}")
+        assert route == expected[rid], (
+            f"route must be {expected[rid]!r}, got {route!r}")
+    assert sorted(_unapplied_ids(out)) == sorted(expected), (
+        "the UNAPPLIED ids must be exactly the seeded ids")
 
 
 # ---------------------------------------------------------------------------
@@ -471,7 +655,8 @@ def test_show_works_for_already_consumed_receipt(tmp_path: Path):
     rid = seeded[0].receipt_id
 
     # Consume advances the cursor past this receipt.
-    code, out, err = _run(cli, ["consume", "--journal", str(path)])
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(tmp_path / "applied.md")])
     assert code == 0, f"consume must exit 0, got {code} (err={err!r})"
 
     # Precondition (derived): the cursor genuinely moved past the receipt.
