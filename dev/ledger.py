@@ -287,6 +287,60 @@ def _write(path, text):
 
 
 # ---------------------------------------------------------------------------
+# sweep — the git half (subprocess stays out of the pure function)
+# ---------------------------------------------------------------------------
+
+def _git_subjects(repo, since):
+    """(sha, subject) pairs, newest first; None when git cannot answer."""
+    rng = [f"{since}..HEAD"] if since else []
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "log", "--format=%h\x1f%s"] + rng,
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    commits = []
+    for line in out.stdout.splitlines():
+        sha, sep, subject = line.partition("\x1f")
+        if sep:
+            commits.append((sha, subject))
+    return commits
+
+
+def _default_since(repo):
+    """The most recent fold commit — the last time landings were reconciled."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "log", "--format=%H", "-n", "1",
+             "--grep=^fold "],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout.strip() or None
+
+
+def sweep_text(text, commits, since):
+    """The advisory report. Always says how many commits were examined."""
+    n, findings = sweep(text, commits)
+    where = f"since {since[:12]}" if since else "across the whole history"
+    lines = [f"sweep: examined {n} commits {where}"]
+    for tid, landings in findings:
+        ev = ", ".join(f"`{sha}` {subject}" for sha, subject in landings)
+        lines.append(f"  #{tid} — {ev}")
+    lines.append(
+        f"sweep: {len(findings)} open id(s) git names a landing for that the "
+        f"entry does not cite" if findings else
+        "sweep: nothing to review (this ran — see the examined count above)")
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -306,7 +360,31 @@ def main(argv=None):
     pf.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
     pf.add_argument("--dry-run", action="store_true", help="print the result; do not write")
 
+    ps = sub.add_parser(
+        "sweep",
+        help="open ids git names a landing for that the entry does not cite "
+             "(advisory; exit 0 always)")
+    ps.add_argument("--since", default=None,
+                    help="ref to scan from (default: the most recent fold commit)")
+    ps.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
+    ps.add_argument("--repo", default=".", help="the git repo to scan (default %(default)s)")
+
     args = p.parse_args(argv)
+
+    if args.cmd == "sweep":
+        # Advisory by design (#404): every failure mode is a printed line and
+        # exit 0 — "cannot check" must never read as "nothing to fix".
+        ledger_path = Path(args.ledger)
+        if not ledger_path.exists():
+            sys.stdout.write(f"sweep: ledger not found: {ledger_path} (examined 0 commits)\n")
+            return 0
+        since = args.since if args.since is not None else _default_since(args.repo)
+        commits = _git_subjects(args.repo, since)
+        if commits is None:
+            sys.stdout.write("sweep: git could not answer (not a repo?) — did not run\n")
+            return 0
+        sys.stdout.write(sweep_text(ledger_path.read_text(), commits, since))
+        return 0
 
     ledger_path = Path(args.ledger)
     if not ledger_path.exists():
