@@ -21,6 +21,7 @@ import os
 import random
 import re
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -41,7 +42,7 @@ from user_events.sqlite import Envelope, open_journal
 # watch.py exactly the way it needs user_events/.
 from ledger_parse import (ENTRY_HEAD, ENTRY_ID, KNOWN_ORIGINS, ORIGIN_MARK,
                           entry_origins, ledger_entries, source_of_truth,
-                          store_series_raw)
+                          store_path, store_series_raw)
 # #351: /file's syntax highlighting REUSES #339's build-time scanner from
 # review_artifact.py — the tested one — rather than growing a second
 # highlighter here (two would drift). Only the public entry points are taken;
@@ -12216,7 +12217,48 @@ def file_created_ns(path):
     return _statx_birth_ns(path)
 
 
-def list_reviews(review_dir):
+def _review_decisions(dw_dir):
+    """``{artifact_name: (decision, question_title)}`` from the ledger store,
+    or ``{}`` when there is no decision data.
+
+    #289 — the decision is a LEFT JOIN onto the filesystem stat that
+    ``list_reviews`` already does. Decisions live in the store's
+    ``review_decision`` table (schema v2:
+    ``artifact TEXT PK, question_title TEXT NOT NULL, decision TEXT NOT NULL
+    CHECK(decision IN ('accepted','rejected','pending')), decided_at TEXT
+    NOT NULL, actor TEXT NOT NULL``), written by
+    ``ledger_write.record_review_decision``.
+
+    Markdown-mode projects (no store, or no cutover watermark) have no
+    decision data: the join degrades to an empty dict, and every row reads
+    ``decision=None`` — which ``artifactRow`` renders as 'unlinked', a state
+    DISTINCT from 'pending' by contract (absence of a record is its own
+    state). Read-only via the ``?mode=ro`` URI idiom (ledger_parse.py); a
+    missing or unreadable table/store is the same as no data.
+    """
+    if dw_dir is None or source_of_truth(dw_dir) != "store":
+        return {}
+    db = store_path(dw_dir)
+    if not db.exists():
+        return {}
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return {}
+    try:
+        rows = conn.execute(
+            "SELECT artifact, decision, question_title FROM review_decision"
+        ).fetchall()
+    except sqlite3.Error:
+        # A store that has not yet been migrated to the v2 review_decision
+        # shape is the same as no decision data: degrade, never crash.
+        return {}
+    finally:
+        conn.close()
+    return {r[0]: (r[1], r[2]) for r in rows}
+
+
+def list_reviews(review_dir, dw_dir=None):
     """Review artifacts newest-created first (#463).
 
     Sort and primary age use filesystem *birth* (created), not mtime.
@@ -12224,7 +12266,14 @@ def list_reviews(review_dir):
     differs. When birth is unavailable the row carries
     `created_known: false` and sorts after every known-created artifact —
     never silently under mtime as if that were created.
+
+    #289 — when ``dw_dir`` is the ``.dreamwork/`` dir of a store-mode
+    project, each row is LEFT JOINed to its ``review_decision`` (via
+    ``_review_decisions``): ``decision`` and ``question_title`` keys are
+    added (None when no row, or in markdown-mode). Absence of a record is
+    NOT 'pending' — it is its own state ('unlinked') by contract.
     """
+    decisions = _review_decisions(dw_dir)
     reviews = []
     for name in os.listdir(review_dir):
         if not name.endswith(".html"):
@@ -12254,6 +12303,10 @@ def list_reviews(review_dir):
             # figure — so the verdict belongs where the formatter is (ages()),
             # and no threshold has to be invented here.
             "show_modified": known and mtime_ns > created_ns,
+            # #289 — LEFT JOIN to review_decision (None when no row / markdown).
+            # Absence of a record is 'unlinked', NOT 'pending' (own state).
+            "decision": (decisions.get(name) or (None, None))[0],
+            "question_title": (decisions.get(name) or (None, None))[1],
         })
     # Known created first (newest-first), unknowns last, name as tie-break.
     reviews.sort(key=lambda r: (
@@ -12435,7 +12488,7 @@ def collect(target, burn_step=None):
             "skill-version": (read_text(
                 os.path.join(dw, "skill-version")) or "").strip(),
         },
-        "reviews": list_reviews(os.path.join(dw, "review"))
+        "reviews": list_reviews(os.path.join(dw, "review"), dw)
         if os.path.isdir(os.path.join(dw, "review")) else [],
         # #484 — built research HTML under docs/research, listed by the SAME
         # one listing shape (non-recursive, .html only, created/mtime facts):
