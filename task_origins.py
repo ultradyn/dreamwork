@@ -63,6 +63,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import ledger_parse  # the #213 entry/marker grammar — imported, never re-copied  # noqa: E402
+from ledger_parse import source_of_truth  # noqa: E402 — #294 inc 7 dispatch
 
 DEFAULT_PATH = ".dreamwork/tasks.md"
 GIT_TIMEOUT = 15
@@ -118,6 +119,56 @@ def _title(entry_text: str) -> str:
     return ledger_parse.ENTRY_HEAD.sub("", first, count=1).lstrip(" —·").strip()
 
 
+def _store_origins(dreamwork_dir):
+    """First-seen origins from the store's task table (#294 inc 7).
+
+    The post-cutover projection of the git-history walk: the store's
+    ``task.origin`` column is the parsed origin (set once at import, never
+    revisited — same first-sight semantics). The first-sight epoch and sha
+    come from the earliest ``task_event`` row per task.
+    """
+    import sqlite3
+    from datetime import datetime
+    db = ledger_parse.store_path(dreamwork_dir)
+    if not db.exists():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        task_rows = conn.execute(
+            "SELECT id, origin FROM task ORDER BY id").fetchall()
+        event_rows = conn.execute(
+            "SELECT task_id, MIN(at), detail FROM task_event "
+            "WHERE from_state IS NULL GROUP BY task_id").fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    # First-sight sha + epoch from the earliest event per task.
+    import re
+    first = {}
+    for tid, at, detail in event_rows:
+        sha = ""
+        m = re.search(r"\(([0-9a-f]{7,40})\)", detail or "")
+        if m:
+            sha = m.group(1)
+        try:
+            epoch = int(datetime.fromisoformat(at).timestamp())
+        except (ValueError, TypeError, OSError):
+            epoch = 0
+        first[int(tid)] = (sha, epoch)
+    tasks = []
+    for tid, origin in task_rows:
+        sha, epoch = first.get(int(tid), ("", 0))
+        tasks.append({"id": int(tid),
+                      "origin": origin if origin in ("human", "loop") else "unknown",
+                      "first_commit": sha, "first_seen": epoch,
+                      "title": ""})
+    return tasks
+
+
 def task_origins(repo, path: str = DEFAULT_PATH) -> dict:
     """First-seen origin of every ledger id, oldest history first.
 
@@ -127,6 +178,18 @@ def task_origins(repo, path: str = DEFAULT_PATH) -> dict:
     """
     repo = Path(repo).resolve()
     rel = _confine_path(path)
+
+    # #294 inc 7: dispatch on source_of_truth. The store's task.origin is
+    # the parsed first-sight origin (set once at import); the git walk stays
+    # for pre-cutover. A missing store is fail-closed to markdown.
+    dw_dir = str(repo / Path(path).parent)
+    if source_of_truth(dw_dir) == "store":
+        tasks = _store_origins(dw_dir)
+        if tasks is not None:
+            return {"repo": str(repo), "path": rel,
+                    "history_complete": True, "history_note": None,
+                    "tasks": tasks}
+
     if not (repo / ".git").exists():
         raise TaskOriginsError(f"{repo} is not a git checkout")
 

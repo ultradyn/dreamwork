@@ -62,6 +62,7 @@ LEDGER_HEAD = re.compile(rf"^- \*\*({watch.IDS_ONLY_SPAN})\*\*", re.M)
 # #352: ENTRY_ID was a third hand-written copy of `#(\d+)`; the grammar's
 # one home is ledger_parse now.
 from ledger_parse import ENTRY_ID  # noqa: E402
+from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
 
 
 # The three top-level keys this tool owns. Everything else in status.json is
@@ -339,7 +340,15 @@ def main(argv: list[str] | None = None) -> int:
               "could not read" % why, file=sys.stderr)
         return 2
 
-    ids = open_ids(lpath.read_text())
+    # #294 inc 7: dispatch on source_of_truth. The store's task table is
+    # authoritative after the cutover watermark; markdown stays for pre-cutover.
+    # Both paths return the same list[int] of open ids — the rest of main is
+    # unchanged. A missing store is fail-closed to markdown by source_of_truth.
+    if source_of_truth(str(dw)) == "store":
+        open_strs, _ = store_ids_by_state(str(dw))
+        ids = [int(x) for x in open_strs]
+    else:
+        ids = open_ids(lpath.read_text())
     if not ids:
         # An unreadable ledger and an empty one look identical to a parser, so
         # refuse rather than write `pending: 0` over a real count.
