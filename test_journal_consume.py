@@ -573,6 +573,57 @@ def test_unapplied_receipts_listed_in_consume_output(tmp_path: Path):
         "the UNAPPLIED ids must be exactly the seeded ids")
 
 
+def test_unregistered_route_is_listed_unapplied_never_silent(tmp_path: Path):
+    """#526 gate finding: a drained event whose route has NO adapter in
+    apply's registry must still surface on consume's UNAPPLIED list — the
+    proof cannot cover it, so the coordinator must be told to act on it.
+    The cursor still advances past it (it is not re-drained), and no
+    marker lands in the applied-ledger (there is no adapter to mark
+    through).
+
+    Preconditions derived at runtime: the route is REALLY unregistered
+    (adapter_for raises KeyError — a route the registry later adopts
+    would silently vacate the test), and the seed landed.
+
+    RED LINE (run): the ``except KeyError: return NOT_APPLIED`` branch in
+    ``_prove_drained`` returning ``Proof.APPLIED`` instead (the exact
+    sabotage the #526 gate probed and found unbound) → no UNAPPLIED line
+    for the event → the membership assertion fails.  Production line
+    injected: the KeyError branch's verdict in _prove_drained.
+    """
+    import user_events.apply as _apply
+    cli = _load_cli()
+    path = tmp_path / "unreg.sqlite3"
+    applied = tmp_path / "applied.md"
+    route = "/totally-unregistered-route"
+    try:
+        _apply.adapter_for(route)
+        raise AssertionError(
+            f"precondition: {route!r} must be unregistered for this test "
+            "to mean anything — the registry adopted it")
+    except KeyError:
+        pass
+    seeded = _seed(path, [b'{"text":"x"}'], route=route)
+    rid = seeded[0].receipt_id
+
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, f"consume exited {code} (err={err!r})"
+    unapplied = [ln for ln in out.splitlines() if ln.startswith("UNAPPLIED\t")]
+    assert any(ln.split("\t")[1] == rid for ln in unapplied), (
+        f"the unregistered-route receipt must be listed UNAPPLIED — a "
+        f"silent skip leaves the coordinator never told to act on it; "
+        f"out={out!r}")
+    ledger = applied.read_text() if applied.exists() else ""
+    assert rid not in ledger, (
+        "no marker may land for a route with no adapter — the proof "
+        "covers adapter-backed routes only")
+    code2, out2, _ = _run(cli, ["pending", "--journal", str(path)])
+    assert code2 == 0 and not out2.strip(), (
+        "the cursor advances past the unregistered event once — it is "
+        "reported, not re-drained")
+
+
 # ---------------------------------------------------------------------------
 # 6 — show prints the FULL payload verbatim (no 80-char preview cap), + header
 # ---------------------------------------------------------------------------
