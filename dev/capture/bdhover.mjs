@@ -108,10 +108,11 @@ const commits = buckets.map(b => b.commits || 0);
 // planted history really produced a busy bucket, a quiet middle bucket,
 // and a quiet in-progress last bucket — a flat fixture would make every
 // coverage check below vacuous (the born-hollow rule).
-ok('precondition: six served buckets with the planted commit profile',
-   buckets.length === 6 && commits[0] === 2 && commits[2] === 0 &&
-   commits[5] === 0 && commits[1] === 1 && commits[3] === 1 && commits[4] === 1);
-const quietIdx = 2, lastIdx = 5;
+ok('precondition: served buckets carry the planted commit profile',
+   buckets.length >= 6 && commits[0] === 2 && commits[1] === 1 &&
+   commits[2] === 0 && commits[3] === 1 && commits[4] === 1 &&
+   commits[buckets.length - 1] === 0);
+const quietIdx = 2, lastIdx = buckets.length - 1;
 let busyIdx = 0;
 commits.forEach((c, i) => { if (c > commits[busyIdx]) busyIdx = i; });
 notes.push(`served buckets: ${JSON.stringify(buckets.map(b =>

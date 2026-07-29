@@ -7016,7 +7016,12 @@ function bdinspLay(bd, col, el) {
   const cx = r.left - bdr.left + r.width / 2;
   el.style.left = Math.max(0, Math.min(cx - w / 2, bdr.width - w)) + 'px';
   el.style.right = 'auto';
-  el.style.top = Math.max(0, tr.top - bdr.top - h - 4) + 'px';
+  // above the LEVEL TRACK, never merely above the panel: only the one-line
+  // head sits between the track and the panel's top, and three lines do
+  // not fit there — clamping at 0 hangs the inspector over the columns it
+  // exists to explain. It floats past the panel's top instead, over what
+  // sits above (nothing between here and the page clips overflow).
+  el.style.top = (tr.top - bdr.top - h - 4) + 'px';
 }
 function bdinspCancel() {
   if (bdinspDwell) { clearTimeout(bdinspDwell); bdinspDwell = null; }
