@@ -24,9 +24,21 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **481**
+Next id: **482**
 
 ## Open
+- **#481** — `question-sigs.json` is inside `watched_mtime`'s walk, so a fresh target re-renders once for no reason · P3 ·
+  dashboard/motion · origin: **loop** · **recommended by the `#479` lane, which measured the mechanism** — `#473`
+  writes `.dreamwork/question-sigs.json` from `collect()` on first sight of entries, and `watched_mtime` walks all
+  of `.dreamwork/`, so a fresh fixture or target re-renders ~1.5s after page load with no user action. That
+  spurious re-render is what put `#479`'s mode-drop inside the guard's window. Motion with nothing behind it
+  · **why excluding it is safe:** the sig file is bookkeeping — a digest change can only follow a `questions.md`
+  change, which bumps `watched_mtime` itself. So its mtime carries no signal beyond what the walk already sees,
+  and excluding it loses no real re-render while removing the spurious one. Verify that claim before building
+  · **not the `#479` fix** — restoring the mode across any re-render is the correct primary regardless, because
+  re-renders are a fact of life on a live target. This removes one spurious re-render for every fresh target
+  · wants `watch.py` (`watched_mtime`) · blocked on nothing. Cross-ref in prose: the `question-sigs.json` writer is
+  `#473`, the mode-drop it exposed is `#479`.
 - **#480** — the deploy snapshot is a single file and cannot import `user_events/` or `ledger_parse.py`, so the next `just deploy` boot-fails and leaves his dashboard down · P1 ·
   deploy/tooling · origin: **loop** · **found 2026-07-29 by the `#352` lane, which pushed it back rather than
   touching deploy machinery** — `watch.py` at HEAD imports `user_events.sqlite` (`#263`) at module top and, as of
@@ -46,26 +58,6 @@ Next id: **481**
   · blocked on nothing. Cross-refs in prose above: `user_events/` from `#263`, the `ledger_parse` import from
   `#352` (`b7fd947`), the stop-before-start recipe `#431`, the symlink resolver `#425`, and `#368`'s split,
   which changes deploy anyway.
-- **#479** — `typing` loses the destination mode across a tick, and it was green two hours ago · P1 ·
-  regression/bug · origin: **loop** · **found 2026-07-29 09:12 by the full `just test` that closed `#475`** —
-  the ONLY failure in a 60-guard run (59 PASS, 60 of 60 judged), and it was **PASSING** in the 07:40 run, so it
-  arrived with tonight's merges or with `#477` (`c42ce90`)
-  · **the failure is narrow:** two assertions, `normal, quiet tick: the destination mode survived` and
-  `normal, content changed: …` — i.e. `comp.dataset.mode === 'note' && lit === 'note'`. In the same guard,
-  *the tick really replaced the card node*, *the typed text survived*, *the caret survived* and *focus stayed in
-  the box he was typing in* all **PASSED**
-  · **why that matters for diagnosis:** text/caret/focus come from `snapshotCardState` (`watch.py:6193`), which
-  carries `mode` in the SAME map — so the snapshot is being taken and mostly restored, and only the mode half is
-  lost. That is a different path from the `snapshotFolds`/`restoreFolds` pair `#477` changed, which is evidence
-  *against* my own fix being the cause but not proof: `#477` is still the first suspect because it is the newest
-  `watch.py` change and it runs on every tick
-  · **first move is empirical, not analytical:** run `typing` solo (it has only ever been observed failing under
-  a loaded suite at load ~30), and if it reproduces, bisect `watch.py` against `c42ce90` — `git bisect` here
-  wants `--first-parent` and a **pathspec** (`#474`'s lesson: 841 commits became 55)
-  · code to read: `setCardMode` (`watch.py:4019-4021`, whose `if (!btn && comp.dataset.mode !== mode) return;`
-  is a silent early exit — the shape of this failure) and the `.qcompose[data-mode]` render at `watch.py:2346`
-  · **handed to the incoming coordinator (Grok Build) at 09:27**, unstarted by me
-  · blocked on nothing · related: **#477**
 - **#478** — the cited-sha check declines to run in the full suite, twice, and says so at OK · P2 ·
   verification/lint · origin: **loop** · **found 2026-07-29 09:05 by the full `just test` after tonight's four
   merges** — `test_lint.py::TestCitedShas::test_a_dead_cited_sha_warns` failed with a bare `[]`, and
@@ -3799,6 +3791,28 @@ Next id: **481**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#479** — `typing` loses the destination mode across a tick, and it was green two hours ago · P1 ·
+  regression/bug · origin: **loop** · **found 2026-07-29 09:12 by the full `just test` that closed `#475`** —
+  the ONLY failure in a 60-guard run (59 PASS, 60 of 60 judged), and it was **PASSING** in the 07:40 run, so it
+  arrived with tonight's merges or with `#477` (`c42ce90`)
+  · **the failure is narrow:** two assertions, `normal, quiet tick: the destination mode survived` and
+  `normal, content changed: …` — i.e. `comp.dataset.mode === 'note' && lit === 'note'`. In the same guard,
+  *the tick really replaced the card node*, *the typed text survived*, *the caret survived* and *focus stayed in
+  the box he was typing in* all **PASSED**
+  · **why that matters for diagnosis:** text/caret/focus come from `snapshotCardState` (`watch.py:6193`), which
+  carries `mode` in the SAME map — so the snapshot is being taken and mostly restored, and only the mode half is
+  lost. That is a different path from the `snapshotFolds`/`restoreFolds` pair `#477` changed, which is evidence
+  *against* my own fix being the cause but not proof: `#477` is still the first suspect because it is the newest
+  `watch.py` change and it runs on every tick
+  · **first move is empirical, not analytical:** run `typing` solo (it has only ever been observed failing under
+  a loaded suite at load ~30), and if it reproduces, bisect `watch.py` against `c42ce90` — `git bisect` here
+  wants `--first-parent` and a **pathspec** (`#474`'s lesson: 841 commits became 55)
+  · code to read: `setCardMode` (`watch.py:4019-4021`, whose `if (!btn && comp.dataset.mode !== mode) return;`
+  is a silent early exit — the shape of this failure) and the `.qcompose[data-mode]` render at `watch.py:2346`
+  · **handed to the incoming coordinator (Grok Build) at 09:27**, unstarted by me
+  · blocked on nothing · related: **#477**
+  · landed ea2f0a5 (merge of wt/479; lane work 8f12734, native subagent). Root-caused to b9c1051 (#473 question-sigs), NOT #477 — the differing-restore-path evidence against #477 was right. A mode-only destination switch was dropped from snapshotCardState's inclusion test, so a tick re-render silently reverted the destination mode to default and re-aimed words he had not typed yet; older and wider than #473 (status.json churn re-renders every few seconds on a live target). #473's sig-file write put a spurious re-render inside the guard's window; reduced-motion passed only because it runs second. Fix: count a non-default mode as his in snapshotCardState, restore the mode before the no-text early return in restoreCardState. Lane red-proved both halves (Variant A and B, 3/3 red each); coordinator independently confirmed typing green on the merged tree and re-proved the inclusion half red on revert. Follow-up filed as #481.
+
 - **#352** — Standardize the duplicated ledger parsing before the store migration ·
   P1 · refactor/prerequisite · origin: **human** · **human via watch 2026-07-28 01:05**,
   as a follow-up on the #346 ask: *"before we work on this proper we should standardize the
