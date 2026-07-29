@@ -14,7 +14,6 @@ His words and the constraint are in
 > doesnt have to be react exactly as per se). In any case, this feels like a
 > general architecture smell … fix properly in a principled way.
 
-10
 
 ## TL;DR
 
@@ -37,7 +36,6 @@ step**. His "React or equivalent" is the right *goal* (DOM diffing) and the
 wrong *mechanism* for a no-build single-file product: a vendored morphdom
 (~2KB) gives the diff without the bundle/build cost React would impose.
 
-20
 
 ## The reset inventory, measured not assumed
 
@@ -57,7 +55,6 @@ The " Views are pure builders returning `#view`'s innerHTML" contract
 (`watch-design.md:726`) is the structural cause: the router/tick hand a brand-
 new string to one seam, and one seam throws the old DOM away.
 
-30
 
 Below, every row was checked against the source (line numbers cited). "Carried
 today?" = whether a snapshot/restore pair already re-applies it after the
@@ -86,7 +83,6 @@ swapped nodes are interrupted and have to be resumed (#477).
 | R15 | **Crumbs / project name / title** (his "works fine") | **Never lost** | chrome is a sibling of `#view`, reconciled by key | **N/A — already keyed-diff.** `renderChrome` (`watch.py:8428`) reuses crumb elements by `data-k`, rewrites `innerHTML` only when content changed (`watch.py:8448`). |
 | R16 | **Document-level scroll position** | Survives (the scroller is `body`/`html`, not inside `#view`) | N/A | N/A. |
 
-40
 
 **Inventory headline: 16 distinct surfaces; 1 is the bug he named (R1), 11 are
 re-applied by hand after the wholesale swap (R2–R12, imperfectly — re-created
@@ -103,7 +99,6 @@ selection (R1) — a state nobody snapshots — falls through. #503 and #494 are
 both instances of "a state nobody had snapshotted yet"; the principled fix
 removes the need to keep adding snapshots.
 
-50
 
 ## The IGC over integration shapes
 
@@ -139,7 +134,6 @@ wholesale swap (it snapshots rects before, then animates survivors after).
   keeps function and legibility and drops only timing (transitions.md hard
   contract).
 
-60
 
 **Ideas (his three + what the inventory uncovers).**
 
@@ -168,7 +162,6 @@ wholesale swap (it snapshots rects before, then animates survivors after).
 | **I4** keyed reconcile `#view` (morphdom-idiom) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | **I5** hash-skip + I4 | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 
-70
 
 **Why the ✘s (the errors are the reasoning):**
 
@@ -225,7 +218,6 @@ wholesale swap (it snapshots rects before, then animates survivors after).
   current view) *on top of* the structural fix. Both survive all goals; I5
   strictly dominates I4 on cost (fewer reconciliations) at no goal cost.
 
-80
 
 **Note on a tie avoided.** I4 and I5 both go All-✔. They are not rivals: I5
 is I4 plus an accelerator. The differentiating goal is implicit cost (fewer
@@ -255,7 +247,6 @@ Reported plainly, as invited:
   (`watch-design.md:2737`). The "equivalent" he gestured at — a DOM-diff — is
   exactly I4, and it does not need to be React.
 
-90
 
 ## Every transition family — its fate under the recommended shape (I5)
 
@@ -280,7 +271,6 @@ mechanism; "absorbed" = the hand snapshot/restore it needed becomes redundant.
 | **Review dock fade state** (#326) | **Absorbed.** | The `.attop`/`.atend` classes ride kept nodes; the manual class-copy in `setLiveContent` (`watch.py:6697`) is no longer needed. |
 | **Reduced-motion parity** (everywhere) | **Preserved.** | Reconciliation is state-preserving and non-animated; it changes nothing about timing. `rmr` paths untouched. |
 
-100
 
 ## What the instance fixes become (#141 / #503 / #494)
 
@@ -315,7 +305,6 @@ reusing the existing `*_LIST` declarations (`watch.py:7014`). No
 watch-design.md "`data-keep` so open rides snapshotFolds" notes update to
 "so the reconciler keeps the node."
 
-110
 
 ## Open calls for him (with recs)
 
@@ -351,7 +340,6 @@ watch-design.md "`data-keep` so open rides snapshotFolds" notes update to
   `.qaghost`/`.ghost` matches a reconciled identity key`** — same shape as
   the existing `states.mjs`/`morph.mjs` guards.
 
-120
 
 **DRAFT questions.md entry (NOT edited — for the coordinator to file):**
 
@@ -388,7 +376,6 @@ watch-design.md "`data-keep` so open rides snapshotFolds" notes update to
   Accepted answers: `rec` (takes all four) · per-question (`Q1: …`) · free text.
 ```
 
-130
 
 ## Implementation sketch (for the planning lane, not this one)
 
