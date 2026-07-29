@@ -3,34 +3,6 @@
 ## Open
 
 
-- **P2 · 2026-07-30 03:40 — #357 Q6: on the read verbs (`counts`, `sweep`), full warning line every time, or a terse `⚠ N warnings` hint?**
-  **Ask: `rec` (full line), `terse`, or free text.** One decision; a bare `rec` is a complete reply.
-
-  Your throttle sketch was evaluated with the IGC you asked for, and it produced a headline worth
-  stating plainly: **the sketch is refuted, and the refutation is not mine to over-rule.** "Surface
-  warnings early so the dreamworker can plan them in" and "suppress 70–80% of prints on the verbs I
-  run to look" are rivals — a throttle is a delay device pointed at your own stated goal. It also
-  needs memory (last-seen warning, skip-count) a stateless verb process cannot hold without a new
-  state file, and that state can suppress a warning you never saw, forever. Full reasoning:
-  `.dreamwork/docs/plans/cli-warning-layer.md` §IGC.
-
-  What survives is a genuine fork between the two stateless shapes, and it is yours because it is
-  about your reading habits:
-
-  - **`rec`: full line every verb (I1).** A `counts` alone shows WHAT the warnings are, so planning
-    them in needs no second action — your stated goal. Cost: the identical line repeats on
-    consecutive read-verb calls while counts are unchanged, and on `counts` it repeats a number the
-    output just showed. Bounded: on a clean tree it prints nothing at all.
-  - **terse hint on reads (I3).** Read verbs print `⚠ N warnings — lint.py` instead; no identical
-    repeat. Cost: you see THAT warnings exist, not WHAT they are — planning needs a `lint.py` run
-    or the next state-change verb. If fatigue bites later, this is a stateless drop-in, ruleable
-    with no migration — which is why `rec` is the cheaper-to-reverse start.
-
-  **If you say nothing:** the design's rec stands (full line, I1) and the footer ships that way
-  when #357 is implemented; nothing is built by this entry.
-
-
-
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
@@ -65,6 +37,35 @@
     primary way we access dreamworkers
 
 ## Answered
+
+
+- **P2 · 2026-07-30 03:40 — #357 Q6: on the read verbs (`counts`, `sweep`), full warning line every time, or a terse `⚠ N warnings` hint?**
+  → answered (2026-07-30 03:52): **rec — full line every verb (I1).** The read verbs carry the full warning breakdown every call; the terse hint is dropped. With Q5 (every verb) and Q6 both ruled and the throttle refuted by the IGC he ordered, `#357`'s design is fully settled and unblocked for implementation: stateless footer, one function in `dev/ledger.py` called by every verb at exit, his five counts + incomplete-data, WARN never ERROR, quiet rules, and the journal unconsumed-receipt count carrying on every verb. Recorded on `#357` and in the design doc.
+  **Ask: `rec` (full line), `terse`, or free text.** One decision; a bare `rec` is a complete reply.
+
+  Your throttle sketch was evaluated with the IGC you asked for, and it produced a headline worth
+  stating plainly: **the sketch is refuted, and the refutation is not mine to over-rule.** "Surface
+  warnings early so the dreamworker can plan them in" and "suppress 70–80% of prints on the verbs I
+  run to look" are rivals — a throttle is a delay device pointed at your own stated goal. It also
+  needs memory (last-seen warning, skip-count) a stateless verb process cannot hold without a new
+  state file, and that state can suppress a warning you never saw, forever. Full reasoning:
+  `.dreamwork/docs/plans/cli-warning-layer.md` §IGC.
+
+  What survives is a genuine fork between the two stateless shapes, and it is yours because it is
+  about your reading habits:
+
+  - **`rec`: full line every verb (I1).** A `counts` alone shows WHAT the warnings are, so planning
+    them in needs no second action — your stated goal. Cost: the identical line repeats on
+    consecutive read-verb calls while counts are unchanged, and on `counts` it repeats a number the
+    output just showed. Bounded: on a clean tree it prints nothing at all.
+  - **terse hint on reads (I3).** Read verbs print `⚠ N warnings — lint.py` instead; no identical
+    repeat. Cost: you see THAT warnings exist, not WHAT they are — planning needs a `lint.py` run
+    or the next state-change verb. If fatigue bites later, this is a stateless drop-in, ruleable
+    with no migration — which is why `rec` is the cheaper-to-reverse start.
+
+  **If you say nothing:** the design's rec stands (full line, I1) and the footer ships that way
+  when #357 is implemented; nothing is built by this entry.
+  - **Answer (via watch, 2026-07-30 03:52):** rec
 
 
 - **P2 · 2026-07-30 01:30 — #357: the CLI warning footer — on every `dev/ledger.py` verb, or only on verbs that change state?**
@@ -2948,59 +2949,4 @@
   it is not a TUI, agent, ACP, or PTY protocol. T3 Code overlaps #201's desired
   user outcome, but Connect itself cannot adopt or stream an existing herdr
   PTY. Keep #201's `/compact` herdr-control increment; before terminal
-  rendering, investigate whether T3 Code exposes a supported deep link,
-  embedding surface, or adopt-existing-session API. Research and revision-
-  pinned first-party citations live at
-  `.dreamwork/docs/research/t3-code-connect.md`.
-  - **Answer (via watch, 2026-07-26 13:05):** I'm not exactly sure, but
-    it's mentioned here and in the T3 code app.
-    https://github.com/pingdotgg/t3code/blob/5719e8ac4020dda0e375ef61d044b61f55a0df8a/apps/web/src/cloud/connectOnboarding.ts#L14
-
-- **May I deploy the dashboard?** → yes (2026-07-26): push and deploy as
-  needed; neither requires separate confirmation. DREAMWORK.md now carries
-  the durable authority, resolving the earlier contradiction. The stale
-  live snapshot should be updated immediately.
-
-- **May the dashboard read the session transcript? (#180)** → "Yes the
-  dashboard may" via watch (2026-07-25 15:36), with three mitigations
-  that are his and are better than the shapes offered:
-  **only the last 10-20 lines** (so the bulk of the transcript is never
-  read at all, which shrinks the exposure far more than any filter);
-  **prefilter into small digestible objects** before ingesting; and a
-  **consent gate** — the section blurred with skeleton text beneath,
-  and hovering brings previously-invisible copy into focus with
-  dreamlike effects, explaining what would be read and offering yes/no.
-  Filed as #185, because it is a reusable pattern rather than one
-  panel's chrome. His `jq` suggestion is noted in #180 with a
-  counter-rec: Python's stdlib json does the same job without adding a
-  binary this loop cannot assume exists.
-
-- **What should the dashboard be called? (#172, #153)** → `(4) dreamwork
-  · <status> · <extra>` via watch (2026-07-25 15:30). **The app name
-  comes back**: #153 had dropped it on the argument that the favicon
-  carries identity, and the answer settles it the other way. The layout
-  principle stands separately — invariants (repo, branch) anchor hard
-  right so a changing page title cannot shove them.
-
-  Two things arrived with the answer and are now tasks. He asked what
-  the `(4)` meant, and it was WRONG (#181): the count came from
-  `status.json`'s `awaiting_human`, a list the coordinator maintains by
-  hand, which had drifted from `questions.md`'s actual open count. A
-  hand-maintained count is a claim; it now derives from the file he can
-  look at. And the favicon is "too slow and does not look smooth" —
-  which is #153's one-frame-per-second choice, correct for a hidden tab
-  and wrong for the one he is watching (#182).
-
-- **Should `/file` reflow markdown? (#158)** → "I think rec still
-  though. i agree with only reflowing .md or similar. not source code"
-  via watch (2026-07-25 15:23). Rec taken: `.md` and similar prose
-  formats reflow at `/file`, source code stays verbatim, and the #102
-  rule is rewritten in the same commit so the next reader sees it was
-  reconsidered rather than forgotten. He noted `file-formats.md` needs
-  it too — same case, same fix. He also added an idea with it, now
-  #178: a pretty-print toggle for JSON, with syntax highlighting as a
-  bonus. That is the right shape for a format that is neither prose nor
-  code — reformatting it is a VIEW, so it gets a control rather than a
-  default.
-
-- **A goal the
+  rendering, investigate whether T3 Code exposes a supported deep lin
