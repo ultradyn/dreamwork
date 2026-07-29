@@ -53,6 +53,48 @@ export async function dockHeadlineParts(page) {
   return { raw, stable: await dockHeadline(page) };
 }
 
+/* ── keyed-store contract resolution (#476) ────────────────────────────────
+ *
+ * A guard that reads a dw:* localStorage key hardcodes the shape the page is
+ * expected to write. When the production builder moves (measured 2026-07-29:
+ * the dw:draft:v1: → v2: red-proof), a bare getItem(expected) returns null
+ * and the guard's options are both wrong: a bare "nothing was stored" FAIL
+ * that cannot tell "the save broke" from "the key contract moved" — or, in
+ * the dereference shape (`s.raw.includes(...)` on the absent read), an
+ * uncaught TypeError whose only verdict is the crash sentinel, which #471's
+ * accounting reads as did-not-judge. A FAIL says "the contract broke"; the
+ * sentinel says "this guard gated nothing", and the reader chases the guard
+ * instead of the change.
+ *
+ * So: RESOLVE the contract before asserting on it — one trip that reads the
+ * expected key AND enumerates the whole key family — and fail with
+ * found-vs-expected. Never throws: storage errors land in `err`.
+ */
+
+/** Read `expected` from the page's localStorage and list every key in
+ *  `familyPrefix` (pass '' to list all keys). Returns
+ *  `{ expected, raw, found }` — `raw` null when the key is absent (or when
+ *  `expected` is '', e.g. the page's target was unknown), `found` the
+ *  sorted family listing, possibly empty. `err` is set only if storage
+ *  itself refused. The caller builds the FAIL line that names both halves:
+ *  the key it expected and the keys it found. */
+export async function resolveStoreKey(page, expected, familyPrefix) {
+  return page.evaluate(({ expected, familyPrefix }) => {
+    const found = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (!familyPrefix || k.indexOf(familyPrefix) === 0)) found.push(k);
+      }
+      found.sort();
+      const raw = expected ? localStorage.getItem(expected) : null;
+      return { expected, raw, found };
+    } catch (e) {
+      return { expected, raw: null, found, err: String(e) };
+    }
+  }, { expected, familyPrefix });
+}
+
 /* ── frame-rate-free motion assertions (#414) ──────────────────────────────
  *
  * The obvious way to prove a transition is not a snap is to count how many
