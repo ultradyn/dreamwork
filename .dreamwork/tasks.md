@@ -2119,6 +2119,18 @@ Next id: **484**
   **Dual-write shadowing was REFUTED** — it is the second derived truth `#264` exists to remove
   · **blocked-on: **human** (R1–R4 + C1 on the artifact)** — ask filed 2026-07-29
   · **ALL FIVE CALLS ANSWERED `rec` 2026-07-29 05:48 via the dashboard.** So the design is ratified and **unblocked on him**: R1 the id sequence lives in the store (`AUTOINCREMENT`, seeded from the current next id and **verified before cutover** — ids are permanent, so a bad import must not be able to reset the sequence); R2 cutover takes an **exclusive lease** and consumes `#263` lane H's version gate, with **dual-write shadowing refuted** because a shadow period means two truths and removing the second derived truth is what `#264` exists for; R3 git history imports as **synthetic first-sight events** attributed `actor=migration:git`, never to him or to the loop, so a reconstructed event is always distinguishable from a witnessed one; R4 `tasks.md` becomes `tasks.md.deprecated` plus a **one-line shim carrying a `#458` migration notice**, so a stale agent reading the old path is told where the ledger went instead of quietly reading a frozen file; C1 v1 stays **machine-local** — no hosted store, no network, the same trust boundary as today. **This answer builds nothing and unblocks nothing downstream of it:** shipping is still gated on `#263` lane H and `#352`, which the ask said plainly and the ruling does not change. Entry stays open as implementation work with the design settled; the next increment is the schema and the seeded-sequence verification, not the cutover.
+  · **INCREMENT 1 LANDED `50f4933` (2026-07-29 06:07, lane `wt/schema`) — schema + seeded AUTOINCREMENT, sound (14
+  `test_ledger_store.py` pass on master).** It was never folded (0 citations), so this entry still read "next is
+  the schema" and a redundant dispatch went out at ~11:40 — the stale-next-text failure again. **The next
+  increment is now the import/parse-and-report stage** (`dreamwork tasks migrate --dry-run`), populating `task`,
+  `related`/`depends`, and re-seeding only upward.
+  · **OPEN DESIGN FORK — split vs flat entity, and it is Max's, asked in `questions.md`.** `50f4933` has an
+  **entry/task SPLIT** (`entry` + `task` + `task_by_entry` join), following `#346`'s ratified design literally.
+  But `#353`'s normalisation split the combined entries, so per this entry's own text `task(id PRIMARY KEY)`
+  needs **no** entry/task split — the join now models what nothing survives. The redundant-dispatch lane built a
+  flat "1b" alternative (one `task` table, `wt/294`, unmerged, red-proved) arguing the split is obsolete. Keep
+  the split (`50f4933`, ratified design) or flatten (`1b`)? Decide before the import stage — migrating into a
+  schema that is then flattened is the two-migrations error.
 
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch
