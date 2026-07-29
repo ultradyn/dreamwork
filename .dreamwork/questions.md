@@ -3,6 +3,29 @@
 ## Open
 
 
+- **P2 · 2026-07-29 22:25 — #342: delivery modes — the three calls the design leaves to you.**
+  The design is at `.dreamwork/docs/plans/delivery-modes.md` (landed today; batched vs instant
+  delivery for dashboard commands, riding #263's journal cursor). It deliberately does not pick
+  these for you:
+
+  **`Q1` — the ambiguous class** (answers to questions, notes/comments on reviews, `/ask`
+  replies): instant or batched by default? You named this *"the genuinely ambiguous class the
+  toggle is for."* **`rec`: batched** — they are read on the tick either way, and the class is
+  exactly where "overwhelmed" comes from; a `do now` still pre-empts.
+
+  **`Q2` — the toggle's shape and reach.** **`rec`: a fourth posture axis `delivery`
+  (`instant`|`batched`) in `.dreamwork/posture`**, absent defaults to `instant` (today), reusing
+  the dashboard's existing POST /posture + 10s arm — and batched mode keeps the most-urgent
+  kinds pre-empting rather than demoting everything. The alternative is a sibling
+  `.dreamwork/delivery` file.
+
+  **`Q3` — may a plugin self-declare a kind's urgency, or does the loop gate it?**
+  **`rec`: the loop gates it** — a plugin that can mark itself instant can wake you (and me) at
+  will, which is the cost the toggle exists to remove.
+
+  **If you say nothing:** nothing is built — the design doc explicitly authorises no mechanism.
+
+
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
