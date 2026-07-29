@@ -3,6 +3,21 @@
 ## Open
 
 
+- **P2 · 2026-07-30 01:30 — #357: the CLI warning footer — on every `dev/ledger.py` verb, or only on verbs that change state?**
+  The warning-layer design (`.dreamwork/docs/plans/cli-warning-layer.md`) is settled except this one fork,
+  which is yours because it is about your reading habits. Your word was "tacked on," which reads as every
+  verb. The footer's value is highest on the state-change verbs (`fold`/`file`/`note`) — they are what can
+  CREATE the unfolded-answer situation it exists to catch. The read verbs (`counts`, `sweep`) are the ones
+  you run to LOOK; tacking the footer there means every `counts` prints a warnings line under the counts.
+  Bounded either way by the quiet rules (zero counts are absent; a clean tree prints nothing extra).
+  - **`rec: every verb`** — the literal reading of "tacked on," the shape that can never miss a state-change
+    verb, and on a clean tree `counts` prints just its counts. Cost over the alternative is one
+    suppressed-absent line on read verbs — the cheapest possible cost. (The design folds the journal
+    unconsumed-receipt count under this call: every-verb carries it, state-change-only omits it.)
+  - **the alternative: state-change verbs only** (`fold`/`file`/`note`) — quieter on read verbs, at the cost
+    of the footer not appearing on `counts`, the verb whose whole job is "tell me what is waiting."
+
+
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
