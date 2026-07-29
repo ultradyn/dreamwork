@@ -3199,7 +3199,11 @@ this shape and convert opportunistically.)
   now a design fork for the human. This is `#363`/`#404`'s family (a landing nobody folded), biting from the
   *task* side rather than the hand-off side. The check is one command: `git log --oneline --grep='#294'` and
   look for the landing commit before believing "next is X". Evidence: the `50f4933` entry/task split vs my
-  lane's flat "1b" (`wt/294`), 2026-07-29.
+  lane's flat "1b" (`wt/294`), 2026-07-29. **Addendum (2026-07-30):** the dispatch-shortlist is the same trap
+  with a reassuring face — I briefed #431 off its "ranked #1 startable, verified" row and caught it only at
+  commit time: landed `522d30d`, folded `9a117c71`, and FOUR more of its rows checked out landed too (5/5
+  stale). A shortlist's "verified" column expires with the next fold. The store query (`state='open'`) is the
+  only trustworthy startable list; run it before every brief, not after the overwrite.
 - **A lane that reads whole large files (`watch.py` ~8900 lines, `tasks.md` ~8000) can blow its context and die
   on `max_tokens_truncation` before writing anything.** The `#298` lane read 1.08M input tokens over 16 model
   calls and was truncated mid-work — zero commits, nothing to salvage. The brief's file list (`watch.py`,
