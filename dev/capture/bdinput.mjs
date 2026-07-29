@@ -409,6 +409,39 @@ const forceTick = async () => {
              `atMax=${atMax} atMin=${atMin} cap=${CAP}`);
 }
 
+/* ── (c2) TYPED values clamp at the same min/max (applyBurnLimit) ───────
+   The merge gate's independent red found (c) binds only the STEPPER clamp:
+   sabotaging applyBurnLimit's cap clamp produced no FAIL — the typed path
+   the steppers were briefed to MATCH was unbound. A green red-run is a
+   finding; this section is the fix. Same change-event idiom as (c)'s
+   setup. */
+{
+  await p.evaluate(cap => {
+    if (typeof bdStepHoldStop === 'function') bdStepHoldStop();
+    const inp = document.getElementById('bdlimit-in');
+    inp.value = String(cap + 50);
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  }, CAP);
+  await sleep(600);
+  const over = await p.evaluate(() => ({
+    value: document.getElementById('bdlimit-in').value,
+    display: displayBurnLimitValue(),
+  }));
+  notes.push(`(c2) typed ${CAP + 50} → ${JSON.stringify(over)}`);
+  ok('(c2) a typed over-cap value clamps at the input max (applyBurnLimit)',
+     over.display === CAP && over.value === String(CAP));
+
+  await p.evaluate(() => {
+    const inp = document.getElementById('bdlimit-in');
+    inp.value = '0';
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await sleep(600);
+  const zero = await p.evaluate(() => displayBurnLimitValue());
+  ok('(c2) a typed 0 keeps the all/max contract (stored 0)',
+     zero === 0);
+}
+
 /* ── (d) hold [+] — at least 2 repeats after the initial step ─────────── */
 {
   const startVal = 10;
