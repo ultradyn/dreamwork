@@ -133,6 +133,24 @@ class AdvanceCursorResult:
 
 
 @dataclass(frozen=True)
+class ReceiptEvent:
+    """One ``receipt.created`` event in a cursor-bounded read projection (#342).
+
+    ``events_since_cursor`` returns these for the ``receipt.created`` events in
+    ``(cursor, head]`` — the queue a batched consumer drains on its tick.  Each
+    carries what an adapter replay needs (the receipt's route and exact payload
+    bytes) plus the ordinal and event hash; the high-end row's ``event_hash`` is
+    what the caller passes to :meth:`Journal.advance_cursor`'s ``expected``.
+    """
+
+    ordinal: int
+    event_hash: str
+    receipt_id: str
+    route: str
+    exact_payload_bytes: bytes
+
+
+@dataclass(frozen=True)
 class CutoverResult:
     """Outcome of cutover() (H2): the generation advanced from_gen -> to_gen.
 
@@ -1499,6 +1517,55 @@ class Journal:
             rebuild=False,
             ordinals_read=ordinals_read,
         )
+
+    def events_since_cursor(self, consumer: str) -> list[ReceiptEvent]:
+        """Cursor-bounded read: ``receipt.created`` events in ``(cursor, head]``.
+
+        Delivery-modes batched consume, act 1 (#342 / delivery-modes.md §"How
+        an agent consumes the cursor in batched mode").  Returns the events a
+        consumer has not yet scanned past, each carrying what an adapter replay
+        needs — the receipt's route and exact payload bytes — plus the ordinal
+        and event hash.  The high-end row's ``event_hash`` equals
+        :meth:`head_hash`, so the caller can pass it straight to
+        :meth:`advance_cursor`'s ``expected``.
+
+        Read-only: no writes, no cursor movement.  Reading twice returns the
+        same rows.  The range is the half-open interval strictly above the
+        consumer's cursor and up to the head, so an up-to-date consumer
+        (cursor == head) reads nothing and a fresh consumer (no cursor row)
+        reads from the empty-chain origin (ordinal 0).
+
+        Only ``receipt.created`` events are projected: a batched consumer
+        replays receipts through the adapters (apply.py), not transitions,
+        claims, health marks or the cutover watermark — those share the chain's
+        ordinals but carry no envelope to deliver (design doc: *"the
+        receipt.created events and their receipts' route + exact_payload_bytes"*).
+        """
+        lower = self.cursor(consumer).scanned_through_event_ordinal
+        upper = self.head_ordinal()
+        rows = self.conn.execute(
+            """
+            SELECT e.event_ordinal, e.event_hash, e.receipt_id,
+                   r.endpoint AS route, r.exact_payload_bytes
+            FROM events e
+            JOIN receipts r ON r.receipt_id = e.receipt_id
+            WHERE e.event_kind = 'receipt.created'
+              AND e.event_ordinal > ?
+              AND e.event_ordinal <= ?
+            ORDER BY e.event_ordinal ASC
+            """,
+            (lower, upper),
+        ).fetchall()
+        return [
+            ReceiptEvent(
+                ordinal=int(r["event_ordinal"]),
+                event_hash=r["event_hash"],
+                receipt_id=r["receipt_id"],
+                route=r["route"],
+                exact_payload_bytes=bytes(r["exact_payload_bytes"]),
+            )
+            for r in rows
+        ]
 
 
 def _ensure_generation_column(conn: sqlite3.Connection) -> None:

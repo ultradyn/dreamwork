@@ -45,6 +45,7 @@ from user_events.sqlite import (
     SCHEMA_VERSION,
     SUPPORTED_PROTOCOL_VERSIONS,
     Envelope,
+    ReceiptEvent,
     VersionMismatchError,
     open_journal,
 )
@@ -1333,5 +1334,319 @@ def test_a_request_spanning_the_cutover_completes_under_the_drained_generation(
         late_res = j.receive(late_env)
         assert late_res.kind == "inserted"
         assert j.receipt_generation(late_res.receipt_id) == gen_after
+    finally:
+        j.close()
+
+
+# ---------------------------------------------------------------------------
+# #342 — cursor-bounded read projection (delivery-modes batched consume act 1).
+#
+# events_since_cursor(consumer) returns the receipt.created events in
+# (cursor, head], each carrying the route + exact_payload_bytes an adapter
+# replay needs, plus the ordinal and event hash (the high-end hash is what
+# advance_cursor's `expected` compares against). Read-only: no cursor
+# movement. Named production lines whose breakage must fail each test are in
+# the docstrings — the read must reach the real query, not a test-built list
+# (lessons.md: a fixture that builds the projection itself proves nothing).
+# ---------------------------------------------------------------------------
+
+
+def test_cursor_read_empty_when_cursor_equals_head(
+    tmp_path: Path, journal_factory,
+):
+    """(cursor == head) is an empty range: returns nothing, does not error.
+
+    PRODUCTION LINE WHOSE DELETION/ALTERATION MUST FAIL THIS TEST:
+      the upper bound `event_ordinal <= head_ordinal()` — without it the
+      read is unbounded above and (combined with a stale cursor) would leak
+      nothing here, so the discriminating line is the lower bound, exercised
+      by the sibling test below. This test guards the *contract* that an
+      up-to-date consumer reads nothing and is not erroring on an empty
+      half-open range.
+    """
+    path = tmp_path / "cr-empty.sqlite3"
+    j = journal_factory(path)
+    try:
+        # Empty journal: cursor origin 0, head 0 → (0, 0] is empty.
+        assert j.head_ordinal() == 0, "precondition: empty journal has head 0"
+        assert j.cursor("nobody").scanned_through_event_ordinal == 0
+        assert j.events_since_cursor("nobody") == []
+
+        # Non-empty journal advanced to head: range is still empty.
+        for n in range(3):
+            assert j.receive(_envelope(body=f'{{"n":{n}}}'.encode())).kind == "inserted"
+        high = j.head_ordinal()
+        assert high >= 2, "precondition: need a non-trivial chain"
+        head = j.head_hash()
+        adv = j.advance_cursor("uptodate", expected=head, scanned_through=high)
+        assert adv.kind == "advanced", f"precondition advance failed: {adv!r}"
+        # cursor == head → empty range, no error.
+        rows = j.events_since_cursor("uptodate")
+        assert rows == [], (
+            f"cursor at head must read nothing, got {len(rows)} row(s); "
+            "an up-to-date consumer must not re-read what it advanced past"
+        )
+    finally:
+        j.close()
+
+
+def test_cursor_read_fresh_consumer_starts_from_empty_chain_origin(
+    tmp_path: Path, journal_factory,
+):
+    """A consumer with no cursor row reads from the origin (ordinal 0).
+
+    PRODUCTION LINE WHOSE DELETION/ALTERATION MUST FAIL THIS TEST:
+      the derivation of the lower bound from cursor(consumer), which returns
+      the origin (ordinal 0, H_0) when no cursor row exists. If the read
+      instead assumed an advanced position, a fresh consumer would miss
+      events 1..head.
+
+    No hand-built event list: receive() is the only thing that creates rows,
+      and events_since_cursor is the only thing read here.
+    """
+    path = tmp_path / "cr-origin.sqlite3"
+    j = journal_factory(path)
+    try:
+        bodies = [b'{"a":1}', b'{"a":2}', b'{"a":3}']
+        aids = [
+            "00000000-0000-4000-8000-000000000c01",
+            "00000000-0000-4000-8000-000000000c02",
+            "00000000-0000-4000-8000-000000000c03",
+        ]
+        for aid, body in zip(aids, bodies):
+            assert j.receive(_envelope(client_action_id=aid, body=body)).kind == "inserted"
+        high = j.head_ordinal()
+        assert high == len(bodies), (
+            f"precondition: head {high} must equal fixture size {len(bodies)}"
+        )
+        # Fresh consumer: no cursor row → origin.
+        cur = j.cursor("fresh")
+        assert cur.scanned_through_event_ordinal == 0, (
+            "precondition: a consumer with no cursor row must sit at the origin"
+        )
+        assert cur.revision == 0, "precondition: no cursor row means revision 0"
+
+        rows = j.events_since_cursor("fresh")
+        assert len(rows) == len(bodies), (
+            f"fresh consumer must read every event from the origin; "
+            f"got {len(rows)} of {len(bodies)}"
+        )
+        # Each carries the route + exact payload bytes from its receipt.
+        for row, body in zip(rows, bodies):
+            assert isinstance(row, ReceiptEvent)
+            assert row.route == "/answer", (
+                f"route must come from the receipt, got {row.route!r}"
+            )
+            assert row.exact_payload_bytes == body, (
+                "exact_payload_bytes must be the receipt's stored body"
+            )
+        assert [r.ordinal for r in rows] == [1, 2, 3]
+    finally:
+        j.close()
+
+
+def test_cursor_read_lower_bound_excludes_what_was_scanned_past(
+    tmp_path: Path, journal_factory,
+):
+    """The range is STRICTLY above the cursor (> not >=): ordinal order holds.
+
+    Two consumers sit at different positions; each reads only (cursor, head].
+    consumer-a is advanced to a NON-ZERO ordinal, so this test discriminates
+    `>` from `>=`: a `>=` lower bound would leak the cursor's own ordinal back
+    in. This is the red-proof target named in the brief (the ordinal lower
+    bound).
+
+    PRODUCTION LINE WHOSE ALTERATION MUST FAIL THIS TEST:
+      `event_ordinal > <lower>` changed to `>=` — consumer-a would then return
+      5 rows (ordinal 1 re-included) instead of 4.
+    """
+    path = tmp_path / "cr-bounds.sqlite3"
+    j = journal_factory(path)
+    try:
+        # ordinal 1 lands first; capture its hash BEFORE more events chain on,
+        # so advance_cursor's expected matches the verified hash at ordinal 1.
+        assert j.receive(_envelope(body=b'{"n":0}')).kind == "inserted"
+        head_at_1 = j.head_hash()
+        # consumer-a advances past ordinal 1 only (a NON-ZERO position, so the
+        # > vs >= distinction is reachable).
+        adv = j.advance_cursor("a", expected=head_at_1, scanned_through=1)
+        assert adv.kind == "advanced", f"precondition advance failed: {adv!r}"
+        assert j.cursor("a").scanned_through_event_ordinal == 1, (
+            "precondition: consumer-a must sit at a NON-ZERO ordinal to make "
+            "the > vs >= distinction reachable"
+        )
+        # More events land above consumer-a's position → ordinals 2..5.
+        for n in range(1, 5):
+            assert j.receive(_envelope(body=f'{{"n":{n}}}'.encode())).kind == "inserted"
+        high = j.head_ordinal()
+        assert high == 5, f"precondition: head must be 5, got {high}"
+
+        rows_a = j.events_since_cursor("a")
+        ord_a = [r.ordinal for r in rows_a]
+        assert ord_a == [2, 3, 4, 5], (
+            f"consumer-a (cursor 1) must read (1, 5] = [2,3,4,5], got {ord_a}; "
+            "if ordinal 1 is present, the lower bound is >= not >"
+        )
+        # Strictly ascending — the contract a batched consumer relies on.
+        assert ord_a == sorted(ord_a) and len(set(ord_a)) == len(ord_a), (
+            f"ordinals must be strictly ascending, got {ord_a}"
+        )
+
+        # consumer-b is fresh → reads the whole chain; per-consumer ranges differ.
+        rows_b = j.events_since_cursor("b")
+        assert [r.ordinal for r in rows_b] == [1, 2, 3, 4, 5], (
+            "fresh consumer-b must read the whole chain"
+        )
+    finally:
+        j.close()
+
+
+def test_cursor_read_does_not_advance_the_cursor(
+    tmp_path: Path, journal_factory,
+):
+    """Reading is side-effect-free: read twice, same rows, cursor unmoved.
+
+    PRODUCTION LINE WHOSE DELETION/ALTERATION MUST FAIL THIS TEST:
+      any write against the cursors table inside the read path. This test
+      reads the cursor's revision/ordinal before and after two reads and
+      asserts they are byte-for-byte unchanged; a read that advanced would
+      move the ordinal or bump the revision.
+    """
+    path = tmp_path / "cr-nomove.sqlite3"
+    j = journal_factory(path)
+    try:
+        # ordinal 1 first; capture its hash before chaining more on top.
+        assert j.receive(_envelope(body=b'{"n":0}')).kind == "inserted"
+        head_at_1 = j.head_hash()
+        for n in range(1, 3):
+            assert j.receive(_envelope(body=f'{{"n":{n}}}'.encode())).kind == "inserted"
+        # Give the consumer a real cursor row so a spurious write would bump it.
+        adv = j.advance_cursor("r", expected=head_at_1, scanned_through=1)
+        assert adv.kind == "advanced"
+        before = j.cursor("r")
+        assert before.scanned_through_event_ordinal == 1, "precondition: cursor at 1"
+        assert before.revision == 1, "precondition: one advance → revision 1"
+
+        first = j.events_since_cursor("r")
+        mid = j.cursor("r")
+        second = j.events_since_cursor("r")
+        after = j.cursor("r")
+
+        assert len(first) == 2 and len(second) == 2, "precondition: non-trivial range"
+        assert first == second, "two reads with no advance must return identical rows"
+        assert (mid.scanned_through_event_ordinal, mid.revision) == (1, 1), (
+            "a read must not move the cursor between reads"
+        )
+        assert (after.scanned_through_event_ordinal, after.revision) == (1, 1), (
+            "a read must not move or re-revise the cursor"
+        )
+    finally:
+        j.close()
+
+
+def test_cursor_read_composes_with_verify_and_advance_full_batched_consume(
+    tmp_path: Path, journal_factory,
+):
+    """The design's three acts: read range → verify → advance → re-read empty.
+
+    PRODUCTION LINE WHOSE DELETION/ALTERATION MUST FAIL THIS TEST:
+      the returned event hash matching the chain head — the last row's
+      event_hash is what the caller passes to advance_cursor's `expected`.
+      If the read returned a stale/wrong hash, advance would refuse
+      (expected_mismatch) and the final re-read would NOT be empty.
+    """
+    path = tmp_path / "cr-compose.sqlite3"
+    j = journal_factory(path)
+    try:
+        aids = [
+            "00000000-0000-4000-8000-000000000d01",
+            "00000000-0000-4000-8000-000000000d02",
+            "00000000-0000-4000-8000-000000000d03",
+        ]
+        for aid in aids:
+            assert j.receive(_envelope(client_action_id=aid, body=b'{"x":1}')).kind == "inserted"
+        high = j.head_ordinal()
+        assert high >= 2, "precondition: need a non-trivial range to consume"
+
+        # Act 1 — read the range.
+        rows = j.events_since_cursor("coord")
+        assert len(rows) == len(aids), (
+            f"fresh coordinator must read {len(aids)} events, got {len(rows)}"
+        )
+        # The returned high-end hash IS the chain head: usable as `expected`.
+        assert rows[-1].event_hash == j.head_hash(), (
+            "the last row's event_hash must equal head_hash() so the caller can "
+            "pass it to advance_cursor's expected"
+        )
+
+        # Act 2 — verify the chain to the head before acting.
+        verify = j.verify_chain(high)
+        assert verify.ok, f"chain must verify to head {high}: {verify!r}"
+        assert verify.head_hash == j.head_hash()
+
+        # Act 3 — advance using the hash the read handed back.
+        adv = j.advance_cursor(
+            "coord", expected=rows[-1].event_hash, scanned_through=high,
+        )
+        assert adv.kind == "advanced", (
+            f"advance must succeed using the read's hash, got {adv!r}; "
+            "if this refuses, the read returned a hash the cursor rejects"
+        )
+        assert j.cursor("coord").scanned_through_event_ordinal == high
+
+        # A second consume reads nothing — the range is now empty.
+        again = j.events_since_cursor("coord")
+        assert again == [], (
+            "after advancing to head, a second read must be empty; "
+            "a non-empty result means the cursor did not advance or the read "
+            "ignored it"
+        )
+    finally:
+        j.close()
+
+
+def test_cursor_read_projects_only_receipt_created_events(
+    tmp_path: Path, journal_factory,
+):
+    """The projection returns receipt.created events, not transitions/health.
+
+    A batched consumer replays receipts through the adapters; transitions,
+    health marks and the cutover watermark share the chain's ordinals but
+    carry no envelope to deliver, so they are excluded (design doc: "the
+    receipt.created events and their receipts' route + exact_payload_bytes").
+
+    PRODUCTION LINE WHOSE DELETION/ALTERATION MUST FAIL THIS TEST:
+      the `event_kind = 'receipt.created'` filter. transitions/health events
+      carry a receipt_id too, so without the filter they JOIN through and
+      leak into the projection (this test would see 4 rows, not 2).
+    """
+    path = tmp_path / "cr-project.sqlite3"
+    j = journal_factory(path)
+    try:
+        # receipt.created at ordinal 1.
+        r1 = j.receive(_envelope(body=b'{"k":1}'))
+        assert r1.kind == "inserted"
+        # receipt.transition at ordinal 2 (received → validated).
+        tr = j.transition(r1.receipt_id, "validated", expected_revision=1)
+        assert tr.kind == "applied", f"precondition transition failed: {tr!r}"
+        # receipt.created at ordinal 3.
+        assert j.receive(_envelope(body=b'{"k":2}')).kind == "inserted"
+        # receipt.health at ordinal 4.
+        j.record_health(r1.receipt_id, "shadow_failed")
+        high = j.head_ordinal()
+        assert high == 4, f"precondition: four events must be on the chain, got {high}"
+
+        rows = j.events_since_cursor("proj")
+        ordinals = [r.ordinal for r in rows]
+        assert ordinals == [1, 3], (
+            f"projection must return only receipt.created ordinals [1,3], "
+            f"got {ordinals}; if 2 (transition) or 4 (health) appear, the "
+            "event_kind='receipt.created' filter is gone"
+        )
+        # Every returned row is a receipt the consumer can replay.
+        for r in rows:
+            assert r.receipt_id
+            assert r.route == "/answer"
+            assert r.exact_payload_bytes in (b'{"k":1}', b'{"k":2}')
     finally:
         j.close()
