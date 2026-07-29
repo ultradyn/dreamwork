@@ -1451,29 +1451,6 @@ Next id: **486**
   the method into DREAMWORK.md if it is confirmed as how he wants decisions argued,
   since that is a durable preference and not a packaging detail
 
-- **#337** — `do next` should fall back to `add idea` after submitting, as
-  `do now` already does · P2 · dashboard UX · origin: **human** · **human via
-  watch `add-idea` 2026-07-27 23:01**: *"for the command composer, when the user
-  submits something under 'do next' it should autoselect 'add idea' after
-  submitting (just like 'do now' does)"* · **his premise verified exactly**:
-  `watch.py:5567` is `if (kind === 'do-now') setKind('add-idea');` — one kind is
-  special-cased and `do-next` is not · the literal fix is one condition, but
-  **that is the wrong shape and the file says so itself**: `COMMANDS`
-  (`watch.py:280`) is plugin-extensible (#86) and its comment states *"nothing
-  downstream assumes a fixed set"*, so a hardcoded list of two kinds is a third
-  place a new kind has to be remembered · rec: give the kind a property (e.g.
-  `sticky: false`) and have the submit path read it, so `add-idea` is the only
-  sticky kind and every steering kind — including `maintenance` in the hover
-  menu and anything a plugin adds later — decays to it · **the reason this is
-  worth more than a convenience**: a mode that persists silently raises the
-  authority of his NEXT message, so the composer should decay toward the least
-  dangerous kind rather than hold the most recent one; that also makes it
-  consistent with #257's danger treatment for `do-now` instead of orthogonal to
-  it · obeys `transitions.md` for the mode change itself, which already has an
-  idiom (#300 morphs the run-mode descriptions through one popover) · blocked on
-  `watch.py` being free; sequence after #336, which is his newer and higher steer
-  · **UNBLOCKED — `#336` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): the `do next` → `add idea` fallback's prerequisite landed. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
-
 - **#328** — Add `/tasks2`, the wide two-pane task triage layout · P2 · dashboard
   feature · origin: **human** · **human via watch 2026-07-27 21:47** · his answer
   to #281 Q1: the list-plus-detail wide layout IS wanted, but as a SECOND route,
@@ -3226,6 +3203,30 @@ Next id: **486**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#337** — `do next` should fall back to `add idea` after submitting, as
+  `do now` already does · P2 · dashboard UX · origin: **human** · **human via
+  watch `add-idea` 2026-07-27 23:01**: *"for the command composer, when the user
+  submits something under 'do next' it should autoselect 'add idea' after
+  submitting (just like 'do now' does)"* · **his premise verified exactly**:
+  `watch.py:5567` is `if (kind === 'do-now') setKind('add-idea');` — one kind is
+  special-cased and `do-next` is not · the literal fix is one condition, but
+  **that is the wrong shape and the file says so itself**: `COMMANDS`
+  (`watch.py:280`) is plugin-extensible (#86) and its comment states *"nothing
+  downstream assumes a fixed set"*, so a hardcoded list of two kinds is a third
+  place a new kind has to be remembered · rec: give the kind a property (e.g.
+  `sticky: false`) and have the submit path read it, so `add-idea` is the only
+  sticky kind and every steering kind — including `maintenance` in the hover
+  menu and anything a plugin adds later — decays to it · **the reason this is
+  worth more than a convenience**: a mode that persists silently raises the
+  authority of his NEXT message, so the composer should decay toward the least
+  dangerous kind rather than hold the most recent one; that also makes it
+  consistent with #257's danger treatment for `do-now` instead of orthogonal to
+  it · obeys `transitions.md` for the mode change itself, which already has an
+  idiom (#300 morphs the run-mode descriptions through one popover) · blocked on
+  `watch.py` being free; sequence after #336, which is his newer and higher steer
+  · **UNBLOCKED — `#336` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): the `do next` → `add idea` fallback's prerequisite landed. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
+  · landed 7d9a4f7c (merge of wt/337; lane work 88601f9d + fae98f67 + 3e362d8a, native subagent). COMMANDS entries gain 'sticky': add-idea is the only sticky kind; the submit path reads the property off the live table (absent means NOT sticky, so plugin kinds decay too — never a third place to remember). The do-now special case is gone, not duplicated. The decay rides setKind's existing slide — no second gesture. draft.mjs extended into a property-driven loop deriving both sets from the page's own COMMANDS with preconditions (exactly one sticky; >=2 decaying), exercising the fixture's real plugin kinds gh-sync/gh-triage. Coordinator independently red-proved on the merged tree: reverting the property read to the old special case fails exactly test_command_submit_decays_to_sticky_kind, restored byte-identical; draft PASS; 330 test_watch pass. Deployed.
+
 - **#484** — a listing surface for research HTML, reusing the one builder · P2 ·
   dashboard/research-artifacts · origin: **loop** · **recommended by the `#422` lane, recorded in
   `.dreamwork/docs/research/README.md`** · `#422` settled the kind (directory-canonical markdown,
