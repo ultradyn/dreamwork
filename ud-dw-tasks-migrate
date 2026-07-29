@@ -90,12 +90,15 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
+import uuid
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 EX_OK = 0
@@ -110,6 +113,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ledger_parse  # noqa: E402 — the ONE entry/origin grammar (#352)
 import ledger_store  # noqa: E402 — closed sets + verified seed derivation
 import lint  # noqa: E402 — load_watch(), NEXT_ID, RELATED_MARKER
+import migration_notice  # noqa: E402 — #458 notice the stale-agent shim carries
+from user_events.sqlite import (  # noqa: E402 — #263's lease + version-gate primitives
+    CutoverBusy,
+    VersionMismatchError,
+)
+
+REPO = Path(__file__).resolve().parent
 
 # A priority band in tasks.md is a whole `·`-field of the shape P<n> — or the
 # compound P<n>/P<m>, which S2 rules imports as the LOWER band with
@@ -573,6 +583,53 @@ def _check_importable(a: dict) -> None:
                        "every one.")
 
 
+def _populate_store(conn: sqlite3.Connection, text: str, a: dict) -> int:
+    """Populate the flat schema on an existing connection. Returns the row
+    count populated (0 if already populated). Caller owns the store lifecycle.
+
+    Extracted from ``import_into_db`` so the cutover can populate under its
+    lease on the same connection (one truth, one txn). One ``BEGIN IMMEDIATE
+    … COMMIT`` holds the whole population, so a failed import leaves the DB
+    untouched.
+    """
+    rows = expected_tasks(text, a)
+    have = conn.execute("SELECT COUNT(*) FROM task").fetchone()[0]
+    if have > 0:
+        return 0
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        # Types first: task.type REFERENCES task_type, and the lookup
+        # is deliberately unseeded — the import owns its vocabulary.
+        for t in sorted({r["type"] for r in rows.values()
+                         if r["type"] is not None}):
+            conn.execute(
+                "INSERT OR IGNORE INTO task_type(type) VALUES (?)", (t,))
+        for i in sorted(rows):
+            r = rows[i]
+            conn.execute(
+                "INSERT INTO task(id, state, title, body, priority,"
+                " priority_uncertain, type, origin, blocked_on,"
+                " body_digest, source_line)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (r["id"], r["state"], r["title"], r["body"],
+                 r["priority"], r["priority_uncertain"], r["type"],
+                 r["origin"], r["blocked_on"], r["body_digest"],
+                 r["source_line"]))
+        for x, y in sorted(expected_related(a)):
+            conn.execute(
+                "INSERT OR IGNORE INTO related(a, b) VALUES (?, ?)",
+                (x, y))
+        for t, n in sorted(expected_depends(a)):
+            conn.execute(
+                "INSERT OR IGNORE INTO depends(task, needs)"
+                " VALUES (?, ?)", (t, n))
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    return len(rows)
+
+
 def import_into_db(text: str, a: dict, db_path: str) -> dict:
     """Populate the flat schema at db_path, or no-op over an existing import.
 
@@ -585,43 +642,8 @@ def import_into_db(text: str, a: dict, db_path: str) -> dict:
     _guard_scratch_path(db_path)
     _check_importable(a)
     store = ledger_store.open_store(db_path, ledger_text=text)
-    rows = expected_tasks(text, a)
-    populated = 0
     try:
-        have = store.conn.execute("SELECT COUNT(*) FROM task").fetchone()[0]
-        if have == 0:
-            store.conn.execute("BEGIN IMMEDIATE")
-            try:
-                # Types first: task.type REFERENCES task_type, and the lookup
-                # is deliberately unseeded — the import owns its vocabulary.
-                for t in sorted({r["type"] for r in rows.values()
-                                 if r["type"] is not None}):
-                    store.conn.execute(
-                        "INSERT OR IGNORE INTO task_type(type) VALUES (?)", (t,))
-                for i in sorted(rows):
-                    r = rows[i]
-                    store.conn.execute(
-                        "INSERT INTO task(id, state, title, body, priority,"
-                        " priority_uncertain, type, origin, blocked_on,"
-                        " body_digest, source_line)"
-                        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                        (r["id"], r["state"], r["title"], r["body"],
-                         r["priority"], r["priority_uncertain"], r["type"],
-                         r["origin"], r["blocked_on"], r["body_digest"],
-                         r["source_line"]))
-                for x, y in sorted(expected_related(a)):
-                    store.conn.execute(
-                        "INSERT OR IGNORE INTO related(a, b) VALUES (?, ?)",
-                        (x, y))
-                for t, n in sorted(expected_depends(a)):
-                    store.conn.execute(
-                        "INSERT OR IGNORE INTO depends(task, needs)"
-                        " VALUES (?, ?)", (t, n))
-                store.conn.execute("COMMIT")
-                populated = len(rows)
-            except Exception:
-                store.conn.execute("ROLLBACK")
-                raise
+        populated = _populate_store(store.conn, text, a)
         next_id = store.next_id()
     finally:
         store.close()
@@ -629,7 +651,8 @@ def import_into_db(text: str, a: dict, db_path: str) -> dict:
     if next_id != want:
         raise _CliFail(EX_DATAERR, f"seed drift after import: store next id "
                        f"{next_id} != verified ledger next id {want}")
-    return {"populated": populated, "rows": len(rows), "next_id": next_id}
+    return {"populated": populated, "rows": len(expected_tasks(text, a)),
+            "next_id": next_id}
 
 
 def import_history_into_db(text: str, a: dict, db_path: str, snapshots) -> dict:
@@ -1015,6 +1038,354 @@ def recover_groomed_history(a: dict, snapshots: list) -> dict:
             "unrecoverable": unrecoverable, "groomed": groomed}
 
 
+# ---------------------------------------------------------------------------
+# Cutover (#294 R4 — the FINAL increment). The 7-step ordering the design
+# §"Cutover ordering and the mixed-writer freeze" copies stage-for-stage
+# from #263's cutover: exclusive lease, freeze every writer, run stages 1–4
+# under the lease, flip the reader (one-way watermark), rename + shim, emit
+# the watch-events line, release the lease.
+#
+# The lease reuses #263's CAS-on-meta primitive (user_events.Journal.cutover)
+# verbatim: same meta keys, same B5 ``lease_until > now`` predicate, same
+# CutoverBusy exception. NOT reinvented — imported from user_events.
+# ---------------------------------------------------------------------------
+
+# A real migrations/ entry — the notice names it so a stale agent that reads
+# the shim can discover the upgrade through its normal orient pass.
+_NOTICE_MIGRATION = "2026-07-29-10-task-ledger.md"
+
+_CUTOVER_META_KEYS = ("cutover_holder", "cutover_token", "cutover_lease_until")
+
+
+def _fsync_path(path: Path) -> None:
+    """fsync a file's bytes to disk (the cp+fsync #263's cutover relies on)."""
+    fd = os.open(str(path), os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def _guard_scratch_target(target_dir) -> None:
+    """Refuse to cutover the real .dreamwork/. Live execution is a
+    coordinator act; this increment verifies on scratch copies only."""
+    td = Path(target_dir).resolve()
+    real_dw = (REPO / ".dreamwork").resolve()
+    if td == real_dw or real_dw in td.parents:
+        raise _CliFail(EX_NOPERM, f"refusing --target-dir {target_dir}: "
+                       "the real .dreamwork/ is the live location; run the "
+                       "cutover on a scratch copy for verification")
+
+
+def _acquire_cutover_lease(conn, holder: str, lease_seconds: int) -> str:
+    """CAS-acquire the exclusive cutover lease on the store's meta table.
+
+    Reuses #263's lease primitive (user_events.Journal.cutover's acquire
+    block): an active lease whose ``lease_until > now`` is refused
+    (CutoverBusy); an expired lease is reclaimable (B5's predicate
+    inverted). Same meta keys, same ISO-8601 lexical comparison.
+    """
+    now = datetime.now(timezone.utc)
+    now_s = now.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    lease_until = (now + timedelta(seconds=lease_seconds)).strftime(
+        "%Y-%m-%dT%H:%M:%S.%fZ")
+    token = uuid.uuid4().hex
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        cur = conn.execute(
+            "SELECT value FROM meta WHERE key = 'cutover_lease_until'"
+        ).fetchone()
+        cur_s = cur[0] if cur is not None else None
+        # B5 predicate: an active lease is one whose lease_until > now.
+        active = cur_s is not None and cur_s > now_s
+        if active:
+            conn.execute("COMMIT")
+            raise CutoverBusy(
+                f"cutover lease active until {cur_s}; "
+                "steal only after expiry (reuse of B5 lease_until > now)")
+        for key, val in (("cutover_holder", holder),
+                         ("cutover_token", token),
+                         ("cutover_lease_until", lease_until)):
+            conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, val))
+        conn.execute("COMMIT")
+    except CutoverBusy:
+        raise
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    return token
+
+
+def _release_cutover_lease(conn) -> None:
+    """Drop the cutover lease rows (#263's _release_cutover_lease, verbatim)."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        placeholders = ",".join("?" * len(_CUTOVER_META_KEYS))
+        conn.execute(
+            f"DELETE FROM meta WHERE key IN ({placeholders})",
+            _CUTOVER_META_KEYS)
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def _write_cutover_watermark(conn, timestamp: str) -> None:
+    """Write the cutover watermark — the ONE-WAY reader flip (step 4).
+
+    Watermark present -> ledger_parse.is_cut_over returns True -> the store
+    is the source. Never dual-write, never two truths. Written exactly once
+    at cutover; never removed (rollback re-runs forward, keeping it present).
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES ('ledger_cut_over', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (timestamp,))
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def guard_markdown_write(target_dir) -> None:
+    """Lane-H version gate: refuse a direct Markdown mutation after cutover.
+
+    The store is the single source after the watermark; a Markdown write is
+    the legacy direct writer #263 forbids (G5). After rollback the store is
+    re-imported forward so the watermark is still present and this guard
+    still fires — rollback never restores a legacy writer.
+
+    **Production line:** the ``is_cut_over`` check in this guard. Break by
+    removing it and a direct Markdown write succeeds, reintroducing the
+    single-writer-by-convention hazard.
+    """
+    if ledger_parse.is_cut_over(target_dir):
+        raise VersionMismatchError(
+            "ledger store is cut over (watermark present); a direct Markdown "
+            "mutation is a legacy writer #263 forbids — use `dreamwork tasks "
+            "file|grab|cycle` through the store instead")
+
+
+def verify_task_event_chain(db_path: str) -> list[str]:
+    """Recompute the task_event hash chain from genesis; return failures.
+
+    Verifies over EVERY row ordered by ordinal, regardless of actor — a
+    synthetic ``migration:git`` row is chained exactly like a live one (B3).
+    **Production line:** the loop iterates all task_event rows. Break by
+    exempting ``actor='migration:git'`` rows and a mutated synthetic row
+    passes — a silent forgery.
+    """
+    conn = sqlite3.connect(f"file:{Path(db_path).resolve()}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    failures = []
+    try:
+        rows = conn.execute(
+            "SELECT * FROM task_event ORDER BY ordinal").fetchall()
+        prev = genesis_hash()
+        for r in rows:
+            d = dict(r)
+            if r["prev_hash"] != prev:
+                failures.append(
+                    f"task_event ordinal {r['ordinal']}: prev_hash breaks "
+                    f"the chain (expected {prev[:12]})")
+            if r["hash"] != hash_event(prev, canonical_event_bytes(d)):
+                failures.append(
+                    f"task_event ordinal {r['ordinal']}: hash does not "
+                    "recompute from prev + canonical bytes")
+            prev = r["hash"]
+    finally:
+        conn.close()
+    return failures
+
+
+def _write_deprecated_file(target_dir: Path, original_text: str,
+                           store_rel: str, backup_rel: str,
+                           timestamp: str) -> Path:
+    """Write tasks.md.deprecated: the original content with a YAML
+    deprecation block naming the canonical access path and recovery."""
+    deprecation = (
+        "---\n"
+        "deprecated: true\n"
+        f"reason: \"ledger migrated to SQLite store ({store_rel})\"\n"
+        'canonical-access: "dreamwork tasks ..."\n'
+        f"recovery: \"tasks migrate --rollback {backup_rel}\"\n"
+        f"migrated-at: \"{timestamp}\"\n"
+        "---\n\n")
+    deprecated_path = target_dir / "tasks.md.deprecated"
+    deprecated_path.write_text(deprecation + original_text, encoding="utf-8")
+    _fsync_path(deprecated_path)
+    return deprecated_path
+
+
+def _write_shim(tasks_path: Path) -> None:
+    """Leave a one-line tasks.md shim carrying only the #458 notice.
+
+    A stale agent reading tasks.md every tick finds the notice and switches
+    to the CLI; an agent reading tasks.md.deprecated finds the deprecation
+    block. Both paths self-heal (design M5-A, #458). The shim carries ONLY
+    the notice — no ledger data, so it cannot be mistaken for the source.
+    """
+    notice = migration_notice.render_notice(
+        _NOTICE_MIGRATION,
+        file=str(tasks_path),
+        summary="ledger migrated to SQLite store; use `dreamwork tasks ...`")
+    tasks_path.write_text(notice, encoding="utf-8")
+    _fsync_path(tasks_path)
+
+
+def perform_cutover(target_dir, *, holder: str = "cutover",
+                    lease_seconds: int = 300, out=None) -> dict:
+    """The 7-step cutover ordering (design section Cutover). Scratch-only.
+
+    (1) Acquire the exclusive cutover lease (#263's CAS primitive, reused).
+    (2) Freeze writers — the lease + version gate make a mixed-version writer
+        fail closed before accepting a write.
+    (3) Run stages 1-4 (dry-run, backup, import, verify) under the lease.
+    (4) Flip the reader — write the one-way cutover watermark.
+    (5) Rename tasks.md -> tasks.md.deprecated (YAML block) + leave the
+        one-line tasks.md shim (#458 notice).
+    (6) Write the cutover watermark row + one watch-events.log line.
+    (7) Release the lease.
+
+    Returns a dict with the watermark timestamp, backup dir, and counts.
+    """
+    out = out or sys.stdout
+    td = Path(target_dir)
+    _guard_scratch_target(td)
+
+    tasks_path = td / "tasks.md"
+    store_db = td / ledger_parse.STORE_FILENAME
+    text = _read_ledger(str(tasks_path))
+    analysis = build_analysis(text, ledger_path=str(tasks_path))
+
+    # Stage 2: backup (before the lease — a durable copy is the rollback
+    # substrate #263's cutover relies on, not a git commit).
+    backup_dir = td / "migration-backup"
+    backup_dir.mkdir(exist_ok=True)
+    backup_tasks = backup_dir / "tasks.md"
+    backup_tasks.write_text(text, encoding="utf-8")
+    _fsync_path(backup_tasks)
+    if store_db.exists():
+        shutil.copy2(str(store_db), str(backup_dir / store_db.name))
+
+    # Step 1: acquire the lease on the store's meta table.
+    store = ledger_store.open_store(str(store_db), ledger_text=text)
+    token = _acquire_cutover_lease(store.conn, holder, lease_seconds)
+    try:
+        # Step 3: import + verify under the lease.
+        populated = _populate_store(store.conn, text, analysis)
+        failures = verify_db(text, analysis, str(store_db))
+        if failures:
+            raise _CliFail(EX_DATAERR, "cutover refused: verification failed "
+                           f"under the lease ({len(failures)} failures): "
+                           + "; ".join(failures[:5]))
+
+        # Step 4 + 6: write the cutover watermark (the one-way reader flip).
+        timestamp = datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S.%fZ")
+        _write_cutover_watermark(store.conn, timestamp)
+
+        # Step 5: rename + shim (after the watermark commits, so a crash
+        # between watermark and rename leaves the store authoritative with
+        # the old file intact — recoverable, not inconsistent).
+        _write_deprecated_file(td, text, ledger_parse.STORE_FILENAME,
+                               str(backup_dir), timestamp)
+        _write_shim(tasks_path)
+
+        # Step 6: one watch-events.log line (no newlines — the coordinator's
+        # monitor wakes on a line and acts on it).
+        event_line = (f"ledger-cutover {ledger_parse.STORE_FILENAME} "
+                      f"migrated tasks.md to store (watermark {timestamp})\n")
+        with open(td / "watch-events.log", "a") as f:
+            f.write(event_line)
+    finally:
+        # Step 7: release the lease.
+        _release_cutover_lease(store.conn)
+        store.close()
+
+    print(f"cutover complete: watermark {timestamp}", file=out)
+    print(f"  tasks.md.deprecated: {td / 'tasks.md.deprecated'}", file=out)
+    print(f"  tasks.md shim:      {tasks_path}", file=out)
+    print(f"  store:              {store_db}", file=out)
+    print(f"  backup:             {backup_dir}", file=out)
+    print(f"  imported:           {populated} task rows", file=out)
+    return {"watermark": timestamp, "backup": str(backup_dir),
+            "store": str(store_db), "populated": populated}
+
+
+def perform_rollback(backup_dir, target_dir, *, holder: str = "rollback",
+                     lease_seconds: int = 300, out=None) -> dict:
+    """Restore the backup + pre-cutover DB, then re-run the migration forward.
+
+    Per design section Rollback: restore the backup file, delete the store,
+    re-import under a fresh lease, re-write the watermark. NEVER restore a
+    legacy direct writer — the version gate must refuse a direct Markdown
+    mutation after rollback, because the watermark is written again.
+
+    Returns a dict with the re-import result.
+    """
+    out = out or sys.stdout
+    td = Path(target_dir)
+    _guard_scratch_target(td)
+
+    backup = Path(backup_dir)
+    backup_tasks = backup / "tasks.md"
+    if not backup_tasks.exists():
+        raise _CliFail(EX_NOINPUT, f"backup tasks.md not found at "
+                       f"{backup_tasks}")
+
+    # 1. Restore tasks.md from backup.
+    tasks_path = td / "tasks.md"
+    text = backup_tasks.read_text(encoding="utf-8")
+    tasks_path.write_text(text, encoding="utf-8")
+    _fsync_path(tasks_path)
+
+    # 2. Remove the store (pre-cutover state).
+    store_db = td / ledger_parse.STORE_FILENAME
+    for suffix in ("", "-wal", "-shm"):
+        p = Path(str(store_db) + suffix)
+        if p.exists():
+            p.unlink()
+    # Remove the deprecated file and restore tasks.md as the real file.
+    deprecated = td / "tasks.md.deprecated"
+    if deprecated.exists():
+        deprecated.unlink()
+
+    # 3. Re-run forward: import under a fresh lease + re-cutover.
+    analysis = build_analysis(text, ledger_path=str(tasks_path))
+    store = ledger_store.open_store(str(store_db), ledger_text=text)
+    token = _acquire_cutover_lease(store.conn, holder, lease_seconds)
+    try:
+        populated = _populate_store(store.conn, text, analysis)
+        failures = verify_db(text, analysis, str(store_db))
+        if failures:
+            raise _CliFail(EX_DATAERR, "rollback refused: verification "
+                           f"failed ({len(failures)} failures): "
+                           + "; ".join(failures[:5]))
+        timestamp = datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S.%fZ")
+        _write_cutover_watermark(store.conn, timestamp)
+        _write_shim(tasks_path)
+        _write_deprecated_file(td, text, ledger_parse.STORE_FILENAME,
+                               str(backup), timestamp)
+    finally:
+        _release_cutover_lease(store.conn)
+        store.close()
+
+    print(f"rollback complete: re-imported {populated} rows, "
+          f"watermark {timestamp}", file=out)
+    print("  the store is the source again; direct Markdown mutation is "
+          "refused by the version gate", file=out)
+    return {"watermark": timestamp, "populated": populated}
+
+
 
 def render_report(a: dict) -> str:
     """The dry-run report — the deliverable of this increment."""
@@ -1111,7 +1482,7 @@ def _run_verify(text, analysis, db_path, out, snapshots_fn=None) -> int:
 def main(argv=None, out=None) -> int:
     out = out or sys.stdout
     p = _UsageParser(prog="ud-dw-tasks-migrate",
-                     description="parse-and-report half of the tasks.md → SQLite migration (#294)")
+                     description="the tasks.md -> SQLite migration (#294)")
     p.add_argument("--dry-run", action="store_true",
                    help="parse + report; writes nothing")
     p.add_argument("--import", dest="import_", action="store_true",
@@ -1121,13 +1492,51 @@ def main(argv=None, out=None) -> int:
                         "SCRATCH database as synthetic migration:git events")
     p.add_argument("--verify", action="store_true",
                    help="re-verify an existing scratch database against the parse")
+    p.add_argument("--cutover", action="store_true",
+                   help="R4: the 7-step cutover (lease, import, watermark, "
+                        "rename + shim). Scratch --target-dir only.")
+    p.add_argument("--rollback", metavar="BACKUP_DIR",
+                   help="restore backup + re-run forward; never restores a "
+                        "legacy direct writer")
     p.add_argument("--to", metavar="PATH",
                    help="scratch database path for --import/--verify/--import-history")
+    p.add_argument("--target-dir", metavar="DIR",
+                   help="scratch .dreamwork/-like directory for --cutover/--rollback")
     p.add_argument("--ledger", default=".dreamwork/tasks.md",
                    help="path to the Markdown task ledger")
     p.add_argument("--report", metavar="PATH",
                    help="also write the full report to PATH")
     args = p.parse_args(argv)
+
+    # Cutover and rollback operate on a target dir (tasks.md + store), not a
+    # single --to path. They read the ledger themselves, so they bypass the
+    # shared ledger-reading block below.
+    if args.cutover:
+        if not args.target_dir:
+            p.error("--cutover requires --target-dir <scratch-dir>")
+        try:
+            perform_cutover(args.target_dir, out=out)
+            return EX_OK
+        except _CliFail as exc:
+            print(exc.message, file=out)
+            return exc.code
+        except CutoverBusy as exc:
+            print(f"cutover refused: {exc}", file=out)
+            return EX_NOPERM
+
+    if args.rollback:
+        if not args.target_dir:
+            p.error("--rollback requires --target-dir <scratch-dir>")
+        try:
+            perform_rollback(args.rollback, args.target_dir, out=out)
+            return EX_OK
+        except _CliFail as exc:
+            print(exc.message, file=out)
+            return exc.code
+        except CutoverBusy as exc:
+            print(f"rollback refused: {exc}", file=out)
+            return EX_NOPERM
+
     if (args.import_ or args.verify or args.import_history) and not args.to:
         p.error("--import/--verify/--import-history require --to <scratch.db>")
     try:
