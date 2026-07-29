@@ -12698,7 +12698,8 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             parsed = urllib.parse.urlparse(self.path)
             # Same-document routes all return the one app shell; the client
             # router renders the matching view (deep links keep working).
-            if parsed.path in ("/", "/questions", "/answers", "/file", "/review"):
+            if parsed.path in ("/", "/questions", "/answers", "/file",
+                               "/review", "/question"):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
