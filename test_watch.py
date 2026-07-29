@@ -7597,6 +7597,93 @@ class TestShortBodyIsWitnessedAsShort(unittest.TestCase):
                              "a body the server capped did not arrive short")
 
 
+class TestShortBodyProceedsAsIncompleteWitness(unittest.TestCase):
+    """#371 policy — his 05:43 ruling on #263 Q2: a short body is NOT refused;
+    it is kept as a partial witness marked incomplete and allowed to proceed.
+
+    The witness half (#371, `d33cc2f`) records `short`/`got`. The E1 envelope
+    block then REFUSED an interrupted body with a 400 and no receipt, reading
+    law 2 as "transport-envelope failure before receipt". The ruling amends
+    that: the partial bytes are kept, marked incomplete, and the request
+    proceeds through the normal pipeline. The incomplete marker is preserved
+    end to end so a reader recovering the words knows what arrived is partial.
+
+    A real socket, not a mock: urllib will not lie about Content-Length, and a
+    mocked read proves nothing about the read (the #320 trap)."""
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server.server_address
+
+    @staticmethod
+    def _post_short_response(addr, path, declared, sent):
+        """Promise `declared`, send `sent`, half-close; return raw response."""
+        s = socket.create_connection(addr, timeout=5)
+        try:
+            head = (f"POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                    f"Content-Type: application/json\r\n"
+                    f"Content-Length: {declared}\r\nConnection: close\r\n\r\n")
+            s.sendall(head.encode() + sent)
+            s.shutdown(socket.SHUT_WR)      # the drop: EOF before `declared`
+            chunks = []
+            with contextlib.suppress(OSError):
+                while True:
+                    data = s.recv(4096)
+                    if not data:
+                        break
+                    chunks.append(data)
+            return b"".join(chunks)
+        finally:
+            s.close()
+
+    def _witness(self, d):
+        path = os.path.join(d, ".dreamwork", "submissions.log")
+        with open(path, encoding="utf-8") as f:
+            lines = [json.loads(line) for line in f if line.strip()]
+        self.assertTrue(lines, "nothing was witnessed at all")
+        return lines[-1]
+
+    def test_a_short_body_proceeds_and_is_marked_incomplete(self):
+        # The ruling: keep the partial witness, mark it incomplete, let it
+        # proceed. A transport 400 refusal is the behaviour this replaces.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            addr = self._serve(d)
+            sent = b'{"question": "A real open question?", "answer": "abc'
+            declared = len(sent) + 500
+            # Precondition, derived not pinned: a real interruption.
+            self.assertGreater(declared, len(sent))
+            resp = self._post_short_response(addr, "/answer", declared, sent)
+            status = resp.split(b"\r\n", 1)[0]
+            # It PROCEEDS, not refused: the partial body is malformed JSON, so
+            # the handler rejects it, but that is a pipeline rejection (202
+            # received->rejected), never a transport 400.
+            self.assertNotIn(b" 400 ", status, status)
+            # The incomplete marker is preserved end to end through the
+            # proceed path (not lost when the refusal is removed).
+            rec = self._witness(d)
+            self.assertTrue(rec.get("short"), rec)
+            self.assertEqual(rec["got"], len(sent))
+            self.assertEqual(rec["bytes"], declared)
+
+    def test_a_complete_body_is_unaffected_by_the_policy(self):
+        # Byte-identical for a body that is not short: no marker, proceeds.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            addr = self._serve(d)
+            body = b'{"question": "A real open question?", "answer": "ok"}'
+            resp = self._post_short_response(addr, "/answer", len(body), body)
+            status = resp.split(b"\r\n", 1)[0]
+            self.assertIn(b" 202 ", status, status)
+            rec = self._witness(d)
+            self.assertNotIn("short", rec)
+            self.assertNotIn("got", rec)
+
+
 class TestHandoffIdGrammar(unittest.TestCase):
     """#401 / #406: hand-off id vocabulary and section rules.
 
