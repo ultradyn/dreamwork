@@ -31,7 +31,7 @@ mode for review decisions. The four sibling content routes show the idiom:
       carries the delivery axis; the route actually returned success.
 4. Every added/changed check red-proved by injection + cp restore (never
    `git checkout`), and each red-proof names the PRODUCTION line it injected.
-5. `git commit --only <paths>`; handoffs.md Pending line with
+5. `git commit --only <paths>`; `.dreamwork/handoffs.md` Pending line with
    `· landed \`<sha>\` · … · by lane-515decide —` naming commits, reds, and
    the production line each red injected.
 
