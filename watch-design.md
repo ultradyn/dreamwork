@@ -1618,6 +1618,54 @@ change to how a question looks is one edit rather than a hunt.
   can restate a *live* card in its new state without assembling look-alike
   markup. Any future in-place state change uses the same seam.
 
+**An open card rolls up to the top of its scroll** (#454). His words:
+*"questions on the questions page should be collapsible. However, the size of
+each collapsed question should be at least like 5-6 lines. So it's more like
+a card or the top of a rolled up scroll. This should be persisted to
+IndexedDB and kept in sync like other ui state."* Rolling is not a fourth
+state on the waiting-on axis — a rolled question is still **open**, still
+waiting on him; it is a reading posture he takes toward the card, which is
+why it is a class on the card (`rolled`) rather than a `qaState`, and why
+only `open` cards offer it (awaiting still needs the loop; folded already IS
+the collapse).
+
+- **The 5-6 line floor is the design, not a detail.** A one-line collapse
+  is a title list, and a title alone does not say whether an entry still
+  needs him. So the clamp is a line COUNT (`ROLL_LINES`) times the RENDERED
+  line height, measured at runtime through `lineHeightOf`'s probe and handed
+  to CSS as `--rollh` — never a pinned pixel constant (#441's split-literal
+  lesson). The bottom edge softens with a CSS mask, the rolled scroll's
+  cut; never a per-card SVG filter (#449's measured jank — this feature is
+  precisely the many-filtered-elements shape).
+- **The clamp is the one place `.qbody` has a box off the dock.** #326's
+  `display:contents` stands everywhere else; a clamp needs an overflow edge
+  and an edge needs a box, so `.qa.rolled .qbody` is `display:block` for
+  exactly as long as the roll lasts. The compose box leaves with the body:
+  answering a question means reading it, and reading it means unrolling.
+- **The gesture is the card fold's own** (#111/#169): `toggleRoll` runs the
+  same snapshot → toggle → `regroupCards` with `toggled = null`, so the
+  height travels, the departing slice ghosts from the card-level clone
+  clipped below the new edge, and the arriving body eases in on `revealBody`.
+  Reduced motion snaps to the same end state.
+- **Persistence is per-question UI state**, keyed by the title identity
+  (`data-qid`), in the `dw-ui:<target>` IndexedDB store — through the ONE
+  helper the submissions log already races against a wedged store, never a
+  second path — and kept in sync across tabs through the standing
+  `storage`-event ping idiom (#290). `rolledQids` is the page's truth
+  between the two; `restoreRolls` re-applies it inside `setContent`, the one
+  seam every render commits through, so a tick, a route swap, or an
+  autoreload cannot lose it (his standing rule), and the tick's regroups
+  measure after it so a kept roll invents no travel. The boot read is async
+  after `ensureData`: first paint never waits on IndexedDB.
+- **The dock is exempt**: it is the reading surface, its card is never
+  rolled, and the affordance the shared markup emits declines there by CSS
+  (and is stripped in `dockHeadline` per the #474 chrome rule). The focus
+  page suppresses the button, as it suppresses the focus link — the page IS
+  the focus. Rolling composes with #452 rather than competing with it:
+  rolling is how the LIST stays scannable, focusing is how ONE question
+  holds still; the rolled card keeps its focus link visible inside the
+  clamp, so the way in is never rolled away.
+
 **The thread is cut at its resolution** (#128). His words, on an
 awaiting-fold entry: *"the first thing that showed up was like me replying to
 me? ... if we have a thread of notes like that, they should be collapsed but
