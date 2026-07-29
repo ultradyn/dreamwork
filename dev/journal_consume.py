@@ -45,9 +45,23 @@ cursor-unmoved at the seam the API does expose (see test_journal_consume.py).
 Consumer name is the literal ``'coordinator'`` (delivery-modes.md §"How an
 agent consumes the cursor in batched mode").
 
+  show      READ-ONLY.  Prints the FULL decoded payload of one receipt, plus a
+            small metadata header (receipt_id, state, revision,
+            client_action_id, request_digest — the fields ``get_receipt``
+            returns, one per line).  Never advances the cursor; never writes.
+            Works for ALREADY-CONSUMED receipts too — consumption only moves
+            the cursor, the receipt and its event rows persist — so a blindly
+            consumed event (its content was never read, only its id printed)
+            is recoverable here without hand SQL.  This closes the lossy-tick
+            failure that already cost one human instruction: the coordinator
+            once ran ``consume`` with no prior ``pending`` read, and the only
+            way back to a payload was a hand-written sqlite query that failed
+            twice on schema guesses before it worked.
+
 USAGE
   python3 dev/journal_consume.py pending [--journal PATH]
-  python3 dev/journal_consume.py consume  [--journal PATH]
+  python3 dev/journal_consume.py consume [--journal PATH]
+  python3 dev/journal_consume.py show <receipt-id> [--journal PATH]
 """
 from __future__ import annotations
 
@@ -184,6 +198,59 @@ def cmd_consume(args, out, err) -> int:
         return EX_OK
 
 
+# The header keys shown above a show payload, in the order printed.  A constant
+# so the header shape cannot drift from what get_receipt returns (the same dict
+# the test asserts against) — every key here is a key get_receipt guarantees.
+_SHOW_HEADER_KEYS = (
+    "receipt_id", "state", "revision",
+    "client_action_id", "request_digest",
+)
+
+
+def cmd_show(args, out, err) -> int:
+    """Read-only: print the FULL decoded payload of one receipt (#512).
+
+    Composes the single public read ``get_receipt(receipt_id)`` — no new
+    journal query, no ``user_events/`` change.  Never advances the cursor; the
+    receipt row persists after consume (consume only moves the cursor), so this
+    is the recovery path for a blindly-consumed event whose content was never
+    read.  An absent journal or unknown receipt both fall to the same
+    "not found" path: a one-line stderr message and EX_USAGE, with no write and
+    no db creation (read-only, the #501 discipline).
+    """
+    journal = Path(args.journal)
+    if not journal.exists():
+        # No journal → not found; do not create it (read-only, #501 discipline).
+        err.write(f"show: receipt {args.receipt_id} not found "
+                  f"(journal absent: {args.journal})\n")
+        return EX_USAGE
+    with open_journal(args.journal) as j:
+        receipt = j.get_receipt(args.receipt_id)
+    if receipt is None:
+        err.write(f"show: receipt {args.receipt_id} not found\n")
+        return EX_USAGE
+    for key in _SHOW_HEADER_KEYS:
+        out.write(f"{key}: {receipt[key]}\n")
+    payload = receipt["exact_payload_bytes"]
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        # Verbatim bytes were not UTF-8; report the size and print nothing else
+        # (no length cap, no preview collapse — this verb is for reading, and a
+        # binary payload has nothing legible to read).
+        out.write(f"\n<{len(payload)}-byte binary payload>\n")
+        return EX_OK
+    # Newlines are printed VERBATIM here — the deliberate exception to the
+    # lessons.md #126 collapse rule that pending/preview obey.  This output is
+    # for an agent to READ (a payload may be a multi-line human instruction),
+    # not a line-oriented log a monitor wakes on and parses one line at a time.
+    out.write("\n")
+    out.write(text)
+    if not text.endswith("\n"):
+        out.write("\n")
+    return EX_OK
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="dev/journal_consume.py",
@@ -211,6 +278,16 @@ def _parser() -> argparse.ArgumentParser:
         "--journal", default=JOURNAL_DEFAULT,
         help="journal db path (default: %(default)s)",
     )
+
+    ps = sub.add_parser(
+        "show",
+        help="print the full decoded payload of one receipt (read-only, #512)",
+    )
+    ps.add_argument("receipt_id", help="the receipt id to read")
+    ps.add_argument(
+        "--journal", default=JOURNAL_DEFAULT,
+        help="journal db path (default: %(default)s)",
+    )
     return p
 
 
@@ -232,6 +309,8 @@ def main(argv=None, out=None, err=None) -> int:
         return cmd_pending(args, out)
     if args.cmd == "consume":
         return cmd_consume(args, out, err)
+    if args.cmd == "show":
+        return cmd_show(args, out, err)
     return EX_USAGE  # argparse(required=True) makes this unreachable
 
 

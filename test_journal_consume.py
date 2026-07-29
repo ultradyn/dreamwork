@@ -387,3 +387,220 @@ def test_consume_refuses_on_corruption_cursor_unmoved(tmp_path: Path):
     assert len(_pending_ids(out)) == n, (
         "after a refused consume, pending must still list the unconsumed events"
     )
+
+
+# ---------------------------------------------------------------------------
+# 6 — show prints the FULL payload verbatim (no 80-char preview cap), + header
+# ---------------------------------------------------------------------------
+
+def test_show_prints_full_payload_and_header(tmp_path: Path):
+    """show prints the whole payload bytes decoded, plus a key: value header.
+
+    The payload is deliberately longer than the preview limit (_PREVIEW_LIMIT,
+    imported here and asserted-exceeded at runtime — a literal 81-char fixture
+    would silently satisfy a future limit bump and is the exact hollow-trap the
+    brief names).  The expected payload and the header values come from the
+    SEED / get_receipt — NOT from a second call to the CLI.
+
+    RED LINE (run): make cmd_show print the truncated preview instead of the
+      verbatim decoded text (``out.write(_preview(payload))``).  The
+      >_PREVIEW_LIMIT payload no longer appears in full → the
+      ``payload_text in out`` assertion fails.  Production line: the verbatim
+      ``out.write(text)`` payload write in cmd_show (NOT the _preview path).
+    """
+    cli = _load_cli()
+    limit = cli._PREVIEW_LIMIT
+    path = tmp_path / "show.sqlite3"
+    # Derive the length at runtime from the actual preview limit so a future
+    # change to _PREVIEW_LIMIT cannot make a literal fixture pass vacuously.
+    payload_text = "x" * (limit + 120)
+    assert len(payload_text) > limit, (
+        f"precondition: payload {len(payload_text)} must exceed the preview "
+        f"limit {limit} — else the no-cap assertion is vacuous"
+    )
+    seeded = _seed(path, [payload_text.encode("utf-8")])
+    rid = seeded[0].receipt_id
+
+    # Ground-truth header values from the public read the CLI composes — never
+    # assumed, so a header that printed a stale/wrong field fails here.
+    with open_journal(path) as j:
+        receipt = j.get_receipt(rid)
+    assert receipt is not None, "precondition: the seeded receipt must read back"
+
+    code, out, err = _run(cli, ["show", rid, "--journal", str(path)])
+    assert code == 0, f"show must exit 0, got {code} (err={err!r})"
+
+    # Header: each field on its own ``key: value`` line.
+    for key in ("receipt_id", "state", "revision",
+                "client_action_id", "request_digest"):
+        assert f"{key}: {receipt[key]}\n" in out, (
+            f"header field {key} must appear as 'key: value'; got {out!r}"
+        )
+    # A blank line separates header from payload.
+    assert "\n\n" in out, "a blank line must separate the header from the payload"
+    # The FULL payload appears verbatim — no truncation, no length cap.
+    assert payload_text in out, (
+        "the full payload (longer than the preview limit) must appear verbatim; "
+        f"got {out!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 7 — show works AFTER consume advanced the cursor past the receipt
+# ---------------------------------------------------------------------------
+
+def test_show_works_for_already_consumed_receipt(tmp_path: Path):
+    """show recovers a blindly-consumed receipt: consume moves only the cursor,
+    the receipt row persists, so show prints its payload after consume too.
+
+    The cursor is asserted MOVED first (derived from j.cursor, not assumed) so
+    the test's meaning — "already consumed" — does not rot into "never
+    consumed" if consume ever stopped advancing.
+
+    RED LINE (run): make cmd_show read via the cursor-scoped projection
+      (events_since_cursor + match-by-id) instead of the by-id get_receipt.
+      After consume the event is out of (cursor, head] → not found → exit 64
+      → the ``code == 0`` assertion fails.  Production line: the
+      ``j.get_receipt(args.receipt_id)`` call in cmd_show (a cursor-INDEPENDENT
+      by-id read) — that independence is precisely why it is the recovery seam.
+    """
+    cli = _load_cli()
+    path = tmp_path / "showconsumed.sqlite3"
+    payload_text = '{"instruction":"stand up and check posture"}'
+    seeded = _seed(path, [payload_text.encode("utf-8")])
+    rid = seeded[0].receipt_id
+
+    # Consume advances the cursor past this receipt.
+    code, out, err = _run(cli, ["consume", "--journal", str(path)])
+    assert code == 0, f"consume must exit 0, got {code} (err={err!r})"
+
+    # Precondition (derived): the cursor genuinely moved past the receipt.
+    with open_journal(path) as j:
+        cur = j.cursor(CONSUMER)
+        head = j.head_ordinal()
+    assert head == 1, f"precondition: one event seeded, head must be 1, got {head}"
+    assert cur.scanned_through_event_ordinal >= 1, (
+        "precondition: consume must have advanced the cursor past the receipt "
+        f"(got ord={cur.scanned_through_event_ordinal}) — else 'already "
+        "consumed' is meaningless"
+    )
+
+    # show still prints the payload of the now-consumed receipt.
+    code, out, err = _run(cli, ["show", rid, "--journal", str(path)])
+    assert code == 0, (
+        f"show must work for an already-consumed receipt, got {code} (err={err!r})"
+    )
+    assert payload_text in out, (
+        f"the consumed receipt's payload must still print; got {out!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 8 — unknown receipt id → exit 64, stderr message, stdout empty
+# ---------------------------------------------------------------------------
+
+def test_show_unknown_receipt_exits_usage(tmp_path: Path):
+    """An unknown receipt id prints a one-line error to stderr, exits EX_USAGE
+    (64), and writes nothing to stdout.
+
+    RED LINE (run): make the not-found branch return EX_OK instead of
+      EX_USAGE (swallowing the miss).  The ``code == 64`` assertion fails.
+      Production line: the ``return EX_USAGE`` in cmd_show's receipt-is-None
+      branch.
+    """
+    cli = _load_cli()
+    path = tmp_path / "unknown.sqlite3"
+    _seed(path, [b'{"x":1}'])  # a real journal, so the miss is the id, not the db
+    bogus = "00000000-0000-4000-8000-999999999999"
+
+    code, out, err = _run(cli, ["show", bogus, "--journal", str(path)])
+    assert code == cli.EX_USAGE, (
+        f"unknown receipt must exit EX_USAGE({cli.EX_USAGE}), got {code}"
+    )
+    assert out == "", (
+        f"unknown receipt must write nothing to stdout, got {out!r}"
+    )
+    assert err.strip() != "", "unknown receipt must print an error to stderr"
+    assert bogus in err, "the stderr message should name the missing id"
+
+
+# ---------------------------------------------------------------------------
+# 9 — absent journal → same not-found path, and the db is NOT created
+# ---------------------------------------------------------------------------
+
+def test_show_absent_journal_not_created(tmp_path: Path):
+    """An absent journal is 'not found' (exit 64, stderr, empty stdout) AND the
+    db file is never created — the read-only #501 discipline.
+
+    RED LINE (run): remove the ``if not journal.exists()`` early return so
+      execution falls through to open_journal, which creates the db.  The
+      ``not absent.exists()`` assertion fails (and the file now exists).
+      Production line: the absent-journal early return in cmd_show that
+      prevents open_journal from running (no filesystem side effect).
+    """
+    cli = _load_cli()
+    absent = tmp_path / "never.sqlite3"
+    assert not absent.exists(), "precondition: the journal must not exist yet"
+    rid = "00000000-0000-4000-8000-000000000001"
+
+    code, out, err = _run(cli, ["show", rid, "--journal", str(absent)])
+    assert code == cli.EX_USAGE, (
+        f"absent journal must exit EX_USAGE({cli.EX_USAGE}), got {code}"
+    )
+    assert out == "", "absent journal must write nothing to stdout"
+    assert err.strip() != "", "absent journal must print an error to stderr"
+    assert not absent.exists(), (
+        "show must NOT create an absent journal — it is read-only"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 10 — multi-line UTF-8 payload survives verbatim (the #126-collapse exception)
+# ---------------------------------------------------------------------------
+
+def test_show_multiline_payload_verbatim(tmp_path: Path):
+    """show is the deliberate exception to the collapse-newlines rule (#126):
+    a payload may be a multi-line human instruction, and this verb is for an
+    agent to READ it — so newlines print verbatim, not as ``\\n`` escapes.
+
+    The payload has at least two distinct lines; both must appear with a REAL
+    newline between them (the escaped ``\\n`` would be two chars, not a split).
+
+    RED LINE (run): collapse newlines before the verbatim write (``text =
+      text.replace('\\n', '\\\\n')``).  The two lines no longer appear on
+      separate lines → the ``line_two in lines`` assertion fails.  Production
+      line: the verbatim ``out.write(text)`` in cmd_show that does NOT collapse
+      newlines (unlike _preview/_format_event, which do).
+    """
+    cli = _load_cli()
+    path = tmp_path / "multiline.sqlite3"
+    line_one = "remember to hydrate"
+    line_two = "and stretch every hour"
+    payload_text = f"{line_one}\n{line_two}\n"
+    assert payload_text.count("\n") >= 2, (
+        "precondition: payload must have multiple newlines — else the "
+        "verbatim-newline assertion is vacuous"
+    )
+    seeded = _seed(path, [payload_text.encode("utf-8")])
+    rid = seeded[0].receipt_id
+
+    code, out, err = _run(cli, ["show", rid, "--journal", str(path)])
+    assert code == 0, f"show must exit 0, got {code} (err={err!r})"
+
+    lines = out.splitlines()
+    assert line_one in lines, (
+        f"the first payload line must appear verbatim on its own line; "
+        f"got {lines!r}"
+    )
+    assert line_two in lines, (
+        f"the second payload line must appear verbatim on its own line; "
+        f"got {lines!r}"
+    )
+    # The two payload lines are adjacent (only each other between them), so a
+    # collapse-to-\\n escape (which would join them into one line) is caught.
+    i = lines.index(line_one)
+    assert i + 1 < len(lines) and lines[i + 1] == line_two, (
+        "the two payload lines must be adjacent real lines, not joined by an "
+        f"escaped newline; got {lines!r}"
+    )
+
