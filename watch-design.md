@@ -2845,7 +2845,12 @@ something. They become links when #157 lands, by resolving first.
 **Both empty cases say so** — `(no message body — the subject is all of it)`
 and `(no files — an empty or merge commit)`. One line each, and they are the
 difference between "this commit had nothing more to tell you" and "this page
-could not read it", which is #136's rule one panel over.
+could not read it", which is #136's rule one panel over. **A no-body commit
+shows its FULL subject in the detail first** (#486): the header's `.gsub`
+ellipsises (`nowrap` + `text-overflow`), so without `.gfullsub` the one line
+the commit has to say is truncated in the header and shown nowhere — worst on
+the loop's own long fold subjects. The parenthetical stays: it still says
+*why* there is no body.
 
 `git_tail` carries the extra fields on the existing single `git log` call:
 `%x1e` at the head of the format makes each commit one record, so

@@ -761,6 +761,10 @@ STYLE = """<style>
   .git .gmeta { color:var(--dimmer); font-size:.7rem;
                 font-variant-numeric:tabular-nums; }
   .git .gnone { color:var(--dimmer); font-size:.7rem; margin:.35rem 0; }
+  /* #486: a commit with no body shows its FULL subject here, in the detail,
+     because the header's .gsub may ellipsise it — otherwise the one line the
+     commit has to say is shown nowhere */
+  .git .gfullsub { margin:.1rem 0 0; }
   /* the file list wraps as chips rather than a column: it is a glance at what
      the commit touched, and a fifty-line list would bury the body above it */
   .git .gfiles { display:flex; flex-wrap:wrap; gap:.2rem 1.5ch;
@@ -3266,12 +3270,15 @@ function servingLine(d) {
    Both empty cases say so. "(no message body)" and "(no files)" are one line
    each and they are the difference between "this commit had nothing more to
    tell you" and "this page could not read it" — which is #136's rule, one
-   panel over. */
+   panel over. A no-body commit first shows its FULL subject (#486): the
+   header's .gsub may ellipsise it, and "the subject is all of it" is a lie
+   the page cannot afford when the subject is a long fold line. */
 const gitDetail = c => `<div class="gdetail">` +
   `<div class="gmeta">${esc(c.full || c.sha)} · ${esc(c.who || 'unknown')}` +
   `</div>` +
   ((c.body || '').trim() ? mdB(c.body)
-    : `<div class="gnone">(no message body — the subject is all of it)</div>`) +
+    : `<div class="gfullsub">${esc(c.subject)}</div>` +
+      `<div class="gnone">(no message body — the subject is all of it)</div>`) +
   ((c.files || []).length
     ? `<div class="gfiles">` +
       c.files.map(f => `<span class="gfile">${esc(f)}</span>`).join('') +

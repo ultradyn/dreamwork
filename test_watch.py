@@ -1805,6 +1805,18 @@ class TestCollector(unittest.TestCase):
             run("commit", "-q", "--allow-empty", "-m", "chore: empty")
             self.assertEqual(watch.git_tail(d)[0]["files"], [])
 
+    def test_a_no_body_commit_shows_its_full_subject_in_the_detail(self):
+        # #486: the header's .gsub may ellipsise (nowrap + text-overflow), so
+        # a commit with no body must render its FULL subject inside the
+        # detail — otherwise the one line the commit has to say is shown
+        # nowhere. Assert the empty-body branch emits gfullsub with the
+        # subject, ahead of the parenthetical.
+        idx = watch.PAGE.index("gfullsub")
+        seg = watch.PAGE[idx:idx + 400]
+        self.assertIn("esc(c.subject)", seg)
+        self.assertIn("no message body", seg)
+        self.assertIn(".git .gfullsub", watch.PAGE)
+
     def test_git_tail_caps_the_file_list_and_says_it_did(self):
         # five commits touching a thousand files each would be a megabyte of
         # /data.json on every tick, to fill a disclosure nobody opened. The

@@ -95,6 +95,14 @@ const touch = (name, body, msg, agoSec) => {
 touch('older.txt', null, 'chore: a commit that is off the panel', 400 * 86400);
 touch('a.txt', BODY, 'feat: the row this guard expands', 5 * 3600);
 touch('b.txt', null, 'fix: a commit with no message body at all', 2 * 3600);
+/* #486: a LONG subject and no body. The header's .gsub ellipsises, so until
+   #486 the full subject was shown NOWHERE on the expanded row. Planted here,
+   between b and c in CREATION order — the panel walks the parent chain, so
+   creation order is display order and a commit appended at the end shifts
+   every index the checks above select (measured, not theorised). */
+const LONG_SUBJ =
+  'fold #445 + #443: attention axes ratified, controls landed and in use today';
+touch('g.txt', null, LONG_SUBJ, 100 * 60);
 touch('c.txt', BODY, 'docs: a third row, so there is one below the one we open', 900);
 writeFileSync(join(DIR, 'd.txt'), 'd\n');
 writeFileSync(join(DIR, 'e.txt'), 'e\n');
@@ -314,7 +322,29 @@ ok('...with a panel below them to be displaced', shape.below);
      !!body && body.subject === 'feat: a commit touching two files' &&
      body.files.join(',') === 'd.txt,e.txt');
   ok('...and a commit with no body says so rather than rendering blank',
-     !!body && body.nobody.filter(t => /no message body/.test(t)).length === 1);
+     !!body && body.nobody.filter(t => /no message body/.test(t)).length === 2);
+}
+
+// ── a long no-body subject is shown in FULL in the detail (#486) ──────────
+{
+  ok('precondition: the fixture subject is long enough to ellipsise in the header',
+     LONG_SUBJ.length >= 60);
+  const r = await p.evaluate(`(() => {
+    const rows = [...document.querySelectorAll('.git .commit[data-sha]')];
+    const row = rows.find(r => (r.querySelector('.gsub') || {}).textContent === ${JSON.stringify(LONG_SUBJ)});
+    if (!row) return { found: false };
+    /* NO CLICK: the detail is in the DOM whether the row is open or not, and
+       leaving a second row open breaks the tick-survival block's exactly-one
+       precondition below (measured). */
+    const b = row.querySelector('.gdetail');
+    return { found: true, detail: b ? b.textContent : '',
+             fullsub: b && b.querySelector('.gfullsub')
+               ? b.querySelector('.gfullsub').textContent : null };
+  })()`);
+  ok('a LONG subject with no body renders in FULL inside the detail (#486: the header may truncate)',
+     r.found && r.fullsub === LONG_SUBJ);
+  ok('...and the parenthetical still says why there is no body',
+     r.found && /no message body/.test(r.detail));
 }
 
 // ── what he opened survives the tick (#118 one level down) ────────────────
