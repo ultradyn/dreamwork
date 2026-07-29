@@ -59,6 +59,7 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { makeReporter } from './report.mjs';
 import { serveVerified } from './serve.mjs';
+import { resolveStoreKey } from './dom.mjs';
 import { mkdirSync, rmSync, cpSync, utimesSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
@@ -152,24 +153,29 @@ const boxValue = () => p.evaluate(() => {
 // with the same typeof guard the composer's draftKey uses.
 // Post-#269-extract primary key is dw:draft:v1:<target>:card:<title>; legacy
 // dw:adraft: is still dual-read (proved separately by planting one).
-const stored = () => p.evaluate(() => {
-  const tgt = (typeof data !== 'undefined' && data && data.target) || '';
-  const card = document.querySelector('#qdock .qa[data-qid]');
-  const qid = card ? card.dataset.qid : '';
-  const title = qid ? decodeURIComponent(qid) : '';
+// #476: resolved through dom.mjs's resolveStoreKey (expected read + whole
+// dw:draft: family in `family`), so a moved key builder fails the partition
+// checks with found-vs-expected instead of a bare "nothing was stored".
+const stored = async () => {
+  const id = await p.evaluate(() => {
+    const tgt = (typeof data !== 'undefined' && data && data.target) || '';
+    const card = document.querySelector('#qdock .qa[data-qid]');
+    const qid = card ? card.dataset.qid : '';
+    const title = qid ? decodeURIComponent(qid) : '';
+    return { tgt, qid, title };
+  });
+  const { tgt, qid, title } = id;
   const v1 = tgt && title ? 'dw:draft:v1:' + tgt + ':card:' + title : '';
   const legacy = tgt && title ? 'dw:adraft:' + tgt + ':' + title : '';
+  const r = await resolveStoreKey(p, v1, 'dw:draft:');
   let found = null;
-  if (v1) {
-    const raw = localStorage.getItem(v1);
-    if (raw) found = { key: v1, raw, shape: 'v1' };
-  }
+  if (r.raw) found = { key: v1, raw: r.raw, shape: 'v1' };
   if (!found && legacy) {
-    const raw = localStorage.getItem(legacy);
-    if (raw) found = { key: legacy, raw, shape: 'legacy' };
+    const rl = await resolveStoreKey(p, legacy, 'dw:adraft:');
+    if (rl.raw) found = { key: legacy, raw: rl.raw, shape: 'legacy' };
   }
-  return { tgt, qid, title, v1, legacy, found };
-});
+  return { tgt, qid, title, v1, legacy, found, family: r.found };
+};
 const typeReal = async text => {
   await p.click('#qdock textarea[id^="qi"]');
   await p.fill('#qdock textarea[id^="qi"]', '');
@@ -234,10 +240,17 @@ const TEXT = 'half-typed answer beside the artifact, mid-thought and';
 {
   const s = await stored();
   notes.push(`partition: v1=${JSON.stringify(s.v1)} found=${JSON.stringify(s.found && s.found.key)}`);
-  ok('a draft is stored at all (the save-on-input fired)',
-     !!(s.found && s.found.raw));
+  // #476: a red names the contract — expected key vs the dw:draft:* keys the
+  // store actually holds — so a moved builder points at watch.py, not here.
+  const held = !!(s.found && s.found.raw);
+  const contract = held ? ''
+    : ` — key contract: expected ${JSON.stringify(s.v1 || '(no target/title)')}, ` +
+      `store holds ${s.family.length ? s.family.join(', ') : 'NO dw:draft:* keys'}`;
+  ok('a draft is stored at all (the save-on-input fired)' + contract, held);
+  const wrongKey = held && s.found.key !== s.v1
+    ? ` — found ${JSON.stringify(s.found.key)}, expected ${JSON.stringify(s.v1)}` : '';
   ok('the draft key is the DraftStore v1 shape partitioned by target ' +
-     '(dw:draft:v1:<target>:card:…)',
+     '(dw:draft:v1:<target>:card:…)' + wrongKey,
      !!(s.found && s.found.key === s.v1));
   ok('...and by the question\'s title identity (data-qid), never the positional ' +
      'key, so a re-sort or a re-index cannot put it under the wrong question',
@@ -327,8 +340,13 @@ const TEXT = 'half-typed answer beside the artifact, mid-thought and';
   const s = await stored();
   notes.push(`successful answer: stored=${JSON.stringify(s.found)} (title no ` +
              `longer open, so a fresh card may be absent — the key is what counts)`);
-  ok('a SUCCESSFUL answer clears the draft (no key remains for the question)',
-     !(s.found && s.found.raw));
+  // #476: assert against the resolved family too — under a moved key contract
+  // a bare "expected key absent" passes vacuously while the page's own key
+  // still holds the draft for this question.
+  const left = s.title ? s.family.filter(k => k.endsWith(':card:' + s.title)) : [];
+  ok('a SUCCESSFUL answer clears the draft (no key remains for the question)' +
+     (left.length ? ` — store still holds ${left.join(', ')}` : ''),
+     !(s.found && s.found.raw) && left.length === 0);
 }
 
 // ── #459: #askbox survives a real reload ─────────────────────────────────
@@ -349,14 +367,19 @@ const TEXT = 'half-typed answer beside the artifact, mid-thought and';
     await p.type('#askbox', ASK, { delay: 1 });
     await sleep(150);
     // precondition: a store key exists before we trust the reload
-    const pre = await p.evaluate(() => {
-      const tgt = (typeof data !== 'undefined' && data && data.target) || '';
-      const k = tgt ? 'dw:draft:v1:' + tgt + ':ask:main' : '';
-      return { k, raw: k ? localStorage.getItem(k) : null };
-    });
-    notes.push(`askbox pre-reload store: ${JSON.stringify(pre)}`);
-    ok('#askbox precondition: typing wrote a DraftStore key (save-on-input)',
-       !!(pre.raw && pre.raw.indexOf(ASK) >= 0));
+    // (#476: resolved with the family listing, so a red names found-vs-expected)
+    const tgt = await p.evaluate(
+      () => (typeof data !== 'undefined' && data && data.target) || '');
+    const k = tgt ? 'dw:draft:v1:' + tgt + ':ask:main' : '';
+    const pre = await resolveStoreKey(p, k, 'dw:draft:');
+    notes.push(`askbox pre-reload store: key=${pre.expected} ` +
+               `raw=${JSON.stringify(pre.raw)}`);
+    const wrote = !!(pre.raw && pre.raw.indexOf(ASK) >= 0);
+    ok('#askbox precondition: typing wrote a DraftStore key (save-on-input)' +
+       (wrote ? '' : ` — key contract: expected ` +
+        `${JSON.stringify(k || '(no target)')}, store holds ` +
+        `${pre.found.length ? pre.found.join(', ') : 'NO dw:draft:* keys'}`),
+       wrote);
     await p.reload({ waitUntil: 'networkidle' });
     await sleep(1300);
     const v = await p.evaluate(() => {
