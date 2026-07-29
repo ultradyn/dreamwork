@@ -10,6 +10,8 @@
    - re-selecting the committed triple cancels the arm (no POST)
    - hard refresh follows the authoritative file when no pending
    - hover description never POSTs / arms
+   - #488: source chip sits beside the Posture heading (same row geometry)
+   - #488: hover desc reserves layout — #parm top unchanged open vs closed
 
    usage: node posture.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
@@ -44,9 +46,11 @@ mkdirSync(OUT, { recursive: true });
 const { ok, present, declare, finish, checks, notes, errs } = makeReporter();
 declare({
   drives: 'scratch target on / — posture chips, arm drain sample, POST once, ' +
-          'idempotent re-post, reduced-motion text path, hover no side effect',
+          'idempotent re-post, reduced-motion text path, hover no side effect, ' +
+          'source-chip beside heading, desc open/closed layout parity',
   traceWindow: 'arm drain sampled ~2.5s of the 10s (between() on bar width); ' +
-               'full arm wait once for commit; reduced-motion branch separate',
+               'full arm wait once for commit; reduced-motion branch separate; ' +
+               'reflow is two bounding-box snapshots (idle vs open), not motion',
 });
 
 /* between(vals, first, last) — transitions.md: at least one frame STRICTLY
@@ -122,7 +126,36 @@ ok('delegation stepper present with value + label',
 ok('source note names derivation when no override file',
    /derived|run mode/i.test(struct.src));
 
-// ── hover description: zero side effects ────────────────────────────────
+// ── #488 source chip beside the Posture heading ─────────────────────────
+// Geometry, not DOM ancestry alone: same-row means |label.top − src.top|
+// is well under one line. Precondition: both boxes have positive size.
+const headGeo = await p.evaluate(() => {
+  const head = document.querySelector('.posture-head');
+  const lab = head && head.querySelector('.label');
+  const src = document.getElementById('posture-src');
+  const axes = document.querySelector('.posture-axes');
+  if (!head || !lab || !src || !axes) return null;
+  const lr = lab.getBoundingClientRect();
+  const sr = src.getBoundingClientRect();
+  const ar = axes.getBoundingClientRect();
+  return {
+    inHead: head.contains(src),
+    labTop: lr.top, srcTop: sr.top,
+    labH: lr.height, srcH: sr.height,
+    srcBottom: sr.bottom, axesTop: ar.top,
+    topDelta: Math.abs(lr.top - sr.top),
+  };
+});
+notes.push('head geo: ' + JSON.stringify(headGeo));
+ok('source note lives inside .posture-head',
+   !!headGeo && headGeo.inHead);
+ok(`source note shares the heading row (Δtop=${headGeo ? headGeo.topDelta.toFixed(1) : '?'}px, floor < line height)`,
+   !!headGeo && headGeo.labH > 4 && headGeo.srcH > 4
+   && headGeo.topDelta < headGeo.labH * 0.75);
+ok('source note sits above the axes block',
+   !!headGeo && headGeo.srcBottom <= headGeo.axesTop + 1);
+
+// ── hover description: zero side effects + no reflow (#488) ─────────────
 const posts = [];
 ctx.on('request', req => {
   if (req.method() === 'POST' && req.url().includes('/posture')) {
@@ -136,6 +169,31 @@ const filePath = join(dir, '.dreamwork', 'posture');
 const linesBeforeHover = postureLines(logPath).length;
 const fileBeforeHover = fileText(filePath);
 
+// Idle layout snapshot BEFORE hover — production line for reflow is the
+// shell's permanent min-height (and the absence of display:none collapse).
+// If pdesc collapsed when idle, #parm.top would jump when open.
+const layoutIdle = await p.evaluate(() => {
+  const shell = document.getElementById('pdesc');
+  const parm = document.getElementById('parm');
+  const sec = document.getElementById('posture');
+  if (!shell || !parm || !sec) return null;
+  const sr = shell.getBoundingClientRect();
+  const pr = parm.getBoundingClientRect();
+  const cr = sec.getBoundingClientRect();
+  const cs = getComputedStyle(shell);
+  return {
+    shellH: sr.height, shellTop: sr.top,
+    parmTop: pr.top, secH: cr.height,
+    open: shell.classList.contains('open'),
+    display: cs.display, opacity: cs.opacity,
+    minH: cs.minHeight,
+  };
+});
+notes.push('layout idle: ' + JSON.stringify(layoutIdle));
+ok('pdesc reserves height when idle (shell > 0, display not none)',
+   !!layoutIdle && layoutIdle.shellH > 8
+   && layoutIdle.display !== 'none' && !layoutIdle.open);
+
 await p.hover('.paxis-chips[data-axis="asking"] .pchip[data-stop="near-auto"]');
 await sleep(400);
 const desc = await p.evaluate(() => {
@@ -143,7 +201,7 @@ const desc = await p.evaluate(() => {
   const shell = document.getElementById('pdesc');
   return {
     text: t ? t.textContent : '',
-    open: shell && shell.classList.contains('open') && !shell.hidden,
+    open: shell && shell.classList.contains('open'),
   };
 });
 notes.push('hover desc: ' + JSON.stringify(desc));
@@ -154,6 +212,36 @@ ok('hover left posture file bytes unchanged',
    fileText(filePath) === fileBeforeHover);
 ok('hover left events log posture lines unchanged',
    postureLines(logPath).length === linesBeforeHover);
+
+// Open layout — #parm top must match idle (end-state text cannot catch a reflow).
+const layoutOpen = await p.evaluate(() => {
+  const shell = document.getElementById('pdesc');
+  const parm = document.getElementById('parm');
+  const sec = document.getElementById('posture');
+  if (!shell || !parm || !sec) return null;
+  const sr = shell.getBoundingClientRect();
+  const pr = parm.getBoundingClientRect();
+  const cr = sec.getBoundingClientRect();
+  return {
+    shellH: sr.height, shellTop: sr.top,
+    parmTop: pr.top, secH: cr.height,
+    open: shell.classList.contains('open'),
+  };
+});
+notes.push('layout open: ' + JSON.stringify(layoutOpen));
+// Precondition: open actually painted different text/state than idle.
+ok('open layout precondition: shell is open and taller-or-equal idle reserve',
+   !!layoutOpen && layoutOpen.open
+   && layoutIdle && layoutOpen.shellH + 0.5 >= layoutIdle.shellH);
+const parmDelta = Math.abs(
+  (layoutOpen && layoutOpen.parmTop) - (layoutIdle && layoutIdle.parmTop));
+const secDelta = Math.abs(
+  (layoutOpen && layoutOpen.secH) - (layoutIdle && layoutIdle.secH));
+notes.push(`reflow deltas: parmTop=${parmDelta.toFixed(2)} secH=${secDelta.toFixed(2)}`);
+ok(`hover does not reflow #parm (Δtop=${parmDelta.toFixed(2)}px, want ≤1)`,
+   parmDelta <= 1);
+ok(`hover does not grow/shrink #posture (Δh=${secDelta.toFixed(2)}px, want ≤1)`,
+   secDelta <= 1);
 
 // ── arm + intermediate progress (normal motion) ─────────────────────────
 // Click a different pace stop so we arm away from the derived default.

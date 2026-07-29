@@ -2095,10 +2095,18 @@ quiet − / value / + with the derived label beside it. Active stop takes
 `--accent` (live loop control). Reduced motion hides the bar and keeps the
 second-by-second text and the same application time.
 
-**Source note.** A dim line under the axes says whether the painted values
-are `derived from run mode` or an `override · .dreamwork/posture`, so a
-glance never confuses the two. Hover/focus description reuses the rundesc
-blur/drift idiom and never arms, POSTs, or touches localStorage.
+**Source note (#488).** A dim chip sits **beside the Posture heading**
+(`.posture-head`: label + `#posture-src`), not under the axes — so a glance
+never confuses derived values with an `override · .dreamwork/posture`. The
+copy still reads `derived from run mode · pick a stop to override` when the
+file is absent, and `arming override…` while the shared arm is live.
+
+**Hover description reserves layout (#488).** `#pdesc` is always in flow
+with a permanent `min-height` (empty space is intentional). Show/hide is
+opacity + the rundesc blur/drift idiom only — never `display:none`, never
+the HTML `hidden` attribute, never insert/remove — so the card and
+everything below it do not reflow when the text arrives or departs.
+Hover/focus never arms, POSTs, or touches localStorage.
 
 **Consumption honesty.** The file + the events line
 (`posture via watch[ /path]: pace=… asking=… delegation=…`) are how an agent
@@ -2108,7 +2116,9 @@ not, by itself, change a running session's scheduler.
 `dev/capture/posture.mjs` is the browser guard: stop counts (including the
 four-stop asking axis), arm drain sampled mid-bar via `between()`, one POST
 + one events line on change, cancel on re-select, reduced-motion text path,
-hover side-effect free, hard-refresh follows the file.
+hover side-effect free, hard-refresh follows the file, source chip geometry
+beside the heading, and desc open/closed bounding-box parity so a reflow
+cannot hide behind an end-state text assertion.
 
 ### The project tint
 
