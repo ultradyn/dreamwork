@@ -350,48 +350,6 @@ Next id: **485**
   so that is a change to his environment, not just to this repo · blocked on nothing · related: **#310**
   · **AUDITED AND ONE GAP CLOSED `e6c6bdd` (lane `wt/hooktests`, merge `56f5c41`, 2026-07-29 05:12).** The premise was half-refuted with measurement and that is the finding: the hooks are **well covered at the script level** (32 tests, and `pytest --collect-only` confirms `just pytest` really does collect them, so this was **not** a `#310` case), and the consent gate does **not** drift — `hookutil`'s heading/Load-line regexes are byte-identical to `plugin_resolver`'s. What was genuinely unasserted: the three PostToolUse tests that exercise a lint failure all substitute a throwaway script via `$DREAMWORK_LINT`, so they proved the **plumbing** and nothing ran the **real** `lint.py` through the **real** hook against a **genuinely malformed** ledger — the one real-lint test used a valid fixture and therefore only proved clean→clean. That is this repo's own documented failure shape: a fake that returns exactly what the branch under test would have returned. `test_real_lint_catches_broken_ledger_through_hook` closes it (a `questions.md` missing `## Open`, with the runtime precondition that real lint does exit non-zero on it). **The remaining gap it refused to fake is the right refusal**: every test invokes the script directly, so none would notice the harness ceasing to call the hooks at all — stated as a ceiling in `plans/hook-plugin-coverage.md`, on the grounds that faking it means synthesising a Claude Code dispatch completely enough that the test is testing the synthesis. **Coordinator-verified independently:** neutering the hook's `returncode` gate reds the new test *and* the pre-existing plumbing test, and only the new one traverses real lint. Its reported dependency — the `doc-map.md` plans-row union — was the coordinator's to do and is done in the same commit as this line.
 
-- **#469** — nothing here can say which MODEL a lane ran on, and the two signals used for it are both
-  unreliable · **P2** · loop-orchestration/provenance · origin: **loop** · filed 04:24 as a routing bug,
-  **corrected by the human 04:47**
-  · **THE ORIGINAL FINDING WAS WRONG and the correction matters more than the finding.** His words: *"@glm52
-  resolves to the grok CLI but uses the glm-5.2 model. the cli harness is nice and works better than pi or
-  opencode for this."* So `warning: runner "grok"` names the **harness**, not the model — the two-model mix he
-  asked for **is** happening, and this entry's original claim that it was not is retracted
-  · **what survives, and it is narrower but real: both signals are unreliable, in opposite directions.**
-  (1) The runner label names the CLI harness, so it says nothing about the model — that is the mistake made
-  here. (2) The lane's **self-report** is a model's claim about itself while running under a harness that
-  supplies an identity, and tonight two `@glm52` lanes self-reported *"grok-4.5 (xAI)"* and a direct probe
-  answered *"Grok (xAI)"*. So the brief's instruction *"state which model you are"* collects an answer that
-  can be confidently wrong, and it was believed **because it agreed with the other wrong signal**
-  · **the lesson generalises past ccc:** two agreeing signals are not corroboration when both derive from the
-  same misreading. The check that would have caught it is the cheap one — ask the human, or read the dispatch
-  configuration, rather than asking the thing whose identity is in question
-  · **so the fix is provenance, not routing:** a lane's model should be recorded from **what dispatched it**
-  (the alias → model mapping, wherever `ccc` keeps it), never from the process's own account of itself. Then
-  `status.json` and the ledger can say `glm-5.2` because the config says so
-  · **and the attributions need re-correcting the other way:** ledger rows saying a `@glm52` lane did the work
-  were **right all along**; the rows this session wrote as `grok-4.5` for `axes` and `contain` are the wrong
-  ones. Fix those, and never write a model name taken from a self-report again
-  · blocked on nothing · related: **#428**
-  · **the investigation LANDED `f88527b`, merged `4c70a9d` — and `#469` STAYS OPEN for the sweep.** The
-  mapping lives in **`~/.config/ccc/config.toml`**: `[aliases.glm52] runner="grok" provider="llmp"
-  model="glm-5.2"` and `[aliases.grok] runner="grok" model="grok-4.5"`. Both share the grok CLI harness, so
-  `warning: runner "grok"` names the harness exactly as he said. `glm-5.2` is reachable (`grok models` lists
-  `llmp-glm-5-2`), which also refutes a stale *"BROKEN"* claim in `dogfood-orchestration.md`
-  · **why I could not find it, and it is a lesson not an excuse:** `grep -rn glm52 ~/.config/ccc* ~/.ccc*`
-  ran **nothing** — fish aborts the whole command on the non-matching second glob — and I read the empty
-  output as proof the config did not exist. The lane found it in the first place I claimed to have looked
-  · **the lane proved the self-report failure on itself:** its env carried `CCC_PROVIDER=llmp`, so it was
-  glm-5.2, and under the grok harness it would have introduced itself as `grok-4.5` — the same wrong answer
-  `axes` and `contain` gave. The harness exports **only** `CCC_PROVIDER` to the child, never the alias or the
-  model, so a lane genuinely cannot know what it is. **Provenance rule: the dispatcher records the ALIAS it
-  passed** (it owns that argument) and derives the model from config
-  · **remaining: the attribution sweep.** `axes` and `contain` were glm-5.2, not grok-4.5. The lane **flagged
-  rather than asserted** ten `handoffs.md` rows reading *"by grok"* — it could not recover each dispatch alias
-  retroactively, and a model attribution is history, so those stay **unknown** unless the dispatch is
-  recoverable. That restraint is the right call and it is why this entry is still open
-  · **SWEEP DONE 2026-07-29 05:16, and it turned out not to be a row-by-row edit.** Looking for the rows to correct, there are none: `axes` and `contain` never wrote a model name into `tasks.md` or `handoffs.md` — the wrong attributions lived in this entry's own prose and in the lanes' reports, not in the durable record. What **is** in the record is ten `by grok (wt/…)` rows that a later reader will take for a model, so the sweep is a **notice at the top of `handoffs.md`** rather than a back-fill: `by grok` names the harness, both aliases run the grok CLI, a lane cannot know its own model, and the rows predating the notice mean *grok harness, model unknown*. Deliberately **not** back-filled — the dispatch alias is not recoverable after the fact and a model attribution is history, which this repo does not guess (the ledger's reserved *unknown* origin value exists for exactly this class — named here in prose rather than in its marker form, because the marker form inside an entry's body makes `lint` count two origins and claim neither). The notice goes in the **hot file a stale agent still reads**, per `#458`'s self-migration philosophy, rather than in a plan nobody opens; the forward rule is stated where the next row gets written: the dispatcher records the alias it passed and derives the model from config.
-
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
@@ -3581,6 +3539,49 @@ Next id: **485**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#469** — nothing here can say which MODEL a lane ran on, and the two signals used for it are both
+  unreliable · **P2** · loop-orchestration/provenance · origin: **loop** · filed 04:24 as a routing bug,
+  **corrected by the human 04:47**
+  · **THE ORIGINAL FINDING WAS WRONG and the correction matters more than the finding.** His words: *"@glm52
+  resolves to the grok CLI but uses the glm-5.2 model. the cli harness is nice and works better than pi or
+  opencode for this."* So `warning: runner "grok"` names the **harness**, not the model — the two-model mix he
+  asked for **is** happening, and this entry's original claim that it was not is retracted
+  · **what survives, and it is narrower but real: both signals are unreliable, in opposite directions.**
+  (1) The runner label names the CLI harness, so it says nothing about the model — that is the mistake made
+  here. (2) The lane's **self-report** is a model's claim about itself while running under a harness that
+  supplies an identity, and tonight two `@glm52` lanes self-reported *"grok-4.5 (xAI)"* and a direct probe
+  answered *"Grok (xAI)"*. So the brief's instruction *"state which model you are"* collects an answer that
+  can be confidently wrong, and it was believed **because it agreed with the other wrong signal**
+  · **the lesson generalises past ccc:** two agreeing signals are not corroboration when both derive from the
+  same misreading. The check that would have caught it is the cheap one — ask the human, or read the dispatch
+  configuration, rather than asking the thing whose identity is in question
+  · **so the fix is provenance, not routing:** a lane's model should be recorded from **what dispatched it**
+  (the alias → model mapping, wherever `ccc` keeps it), never from the process's own account of itself. Then
+  `status.json` and the ledger can say `glm-5.2` because the config says so
+  · **and the attributions need re-correcting the other way:** ledger rows saying a `@glm52` lane did the work
+  were **right all along**; the rows this session wrote as `grok-4.5` for `axes` and `contain` are the wrong
+  ones. Fix those, and never write a model name taken from a self-report again
+  · blocked on nothing · related: **#428**
+  · **the investigation LANDED `f88527b`, merged `4c70a9d` — and `#469` STAYS OPEN for the sweep.** The
+  mapping lives in **`~/.config/ccc/config.toml`**: `[aliases.glm52] runner="grok" provider="llmp"
+  model="glm-5.2"` and `[aliases.grok] runner="grok" model="grok-4.5"`. Both share the grok CLI harness, so
+  `warning: runner "grok"` names the harness exactly as he said. `glm-5.2` is reachable (`grok models` lists
+  `llmp-glm-5-2`), which also refutes a stale *"BROKEN"* claim in `dogfood-orchestration.md`
+  · **why I could not find it, and it is a lesson not an excuse:** `grep -rn glm52 ~/.config/ccc* ~/.ccc*`
+  ran **nothing** — fish aborts the whole command on the non-matching second glob — and I read the empty
+  output as proof the config did not exist. The lane found it in the first place I claimed to have looked
+  · **the lane proved the self-report failure on itself:** its env carried `CCC_PROVIDER=llmp`, so it was
+  glm-5.2, and under the grok harness it would have introduced itself as `grok-4.5` — the same wrong answer
+  `axes` and `contain` gave. The harness exports **only** `CCC_PROVIDER` to the child, never the alias or the
+  model, so a lane genuinely cannot know what it is. **Provenance rule: the dispatcher records the ALIAS it
+  passed** (it owns that argument) and derives the model from config
+  · **remaining: the attribution sweep.** `axes` and `contain` were glm-5.2, not grok-4.5. The lane **flagged
+  rather than asserted** ten `handoffs.md` rows reading *"by grok"* — it could not recover each dispatch alias
+  retroactively, and a model attribution is history, so those stay **unknown** unless the dispatch is
+  recoverable. That restraint is the right call and it is why this entry is still open
+  · **SWEEP DONE 2026-07-29 05:16, and it turned out not to be a row-by-row edit.** Looking for the rows to correct, there are none: `axes` and `contain` never wrote a model name into `tasks.md` or `handoffs.md` — the wrong attributions lived in this entry's own prose and in the lanes' reports, not in the durable record. What **is** in the record is ten `by grok (wt/…)` rows that a later reader will take for a model, so the sweep is a **notice at the top of `handoffs.md`** rather than a back-fill: `by grok` names the harness, both aliases run the grok CLI, a lane cannot know its own model, and the rows predating the notice mean *grok harness, model unknown*. Deliberately **not** back-filled — the dispatch alias is not recoverable after the fact and a model attribution is history, which this repo does not guess (the ledger's reserved *unknown* origin value exists for exactly this class — named here in prose rather than in its marker form, because the marker form inside an entry's body makes `lint` count two origins and claim neither). The notice goes in the **hot file a stale agent still reads**, per `#458`'s self-migration philosophy, rather than in a plan nobody opens; the forward rule is stated where the next row gets written: the dispatcher records the alias it passed and derives the model from config.
+  · closed 2026-07-29 15:22, verified by the current coordinator: 4c70a9df + f88527bd resolve; the provenance notice is at handoffs.md:14 (by-grok names the harness, not the model; rows predating it mean grok harness, model unknown; the dispatcher records the alias and derives the model from ~/.config/ccc/config.toml). Entry's own sweep conclusion confirmed: no back-fill, the notice is the sweep.
+
 - **#468** — the lane-containment backstop, and the briefs that predate the rule · **P2** ·
   tooling/lane-safety · origin: **loop** · successor to `#465`, named in its design doc
   · **two halves, both small.** (1) **R2, the pre-merge assertion**: walk the main tree's *dirty* paths,
