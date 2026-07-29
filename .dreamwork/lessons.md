@@ -3206,3 +3206,10 @@ this shape and convert opportunistically.)
   `tasks.md`, the design docs) is an invitation to read them wholesale, so the constraint has to be stated:
   grep for the symbol and read only that window, each file once. Put it in the dispatch prompt for any lane
   pointed at the big files. Evidence: `019fabf4` failed 931s / 30 tool calls / exit 1, 2026-07-29.
+- **`dev/ledger.py fold` MOVES the entry — it is not an annotate-in-place tool, and calling it on an
+  in-progress task closes that task.** I used `fold 294 --note …` to record increment 4 of a five-
+  increment migration, and the entry went to `## Recently landed` with the cutover still open; the
+  premature-landed window lasted four commits before the inc5 fold-call reported "nothing to fold" and
+  exposed it. The note-appending was right, the tool was wrong: for a mid-task increment note, edit the
+  entry by hand under `## Open`. `fold` is for done. Evidence: `ud-dw-tasks-migrate`'s census counts
+  dropped #294 from open at 18:12; corrected 19:04.
