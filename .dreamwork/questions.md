@@ -2,34 +2,6 @@
 
 ## Open
 
-- **P1 · 2026-07-29 12:39 — #294: one task table or the landed entry/task split, for the SQLite store?**
-  The store's schema landed at `50f4933` with an `entry`+`task` join — but the design's own S1 ruling and the
-  entry normalisation mean every entry is now exactly one task, so the join models nothing. The flat version
-  (one `task` table) is already built and red-proved on `wt/294`.
-  **`Q1` — keep the split (`50f4933`) or flatten (`wt/294`)?** **`rec`: flatten** — the design's S1 ruling chose
-  it ("the schema loses a table and every consumer loses a join, permanently"), the work is done and proved, and
-  flattening is free only until the import stage (after that it is the two-migrations error). Measured IGC:
-  `.dreamwork/review/294-entity-shape.html`. Say "B without the strictness" for the flatten minus its stricter
-  `NOT NULL`s and extra columns. A ruling authorises only the schema shape — no import, cutover, CLI, or rename.
-  - **Note (human, via watch, 2026-07-29 15:46):** What is an entry? Like
-    is this the event log or? Can we cleanly migrate our current tasks to
-    sqlite with the recommended model?
-  - **Follow-up (loop, 2026-07-29 15:50):** **An `entry` is not the event log — and neither
-    schema choice touches the event log.** In the landed split (`50f4933`), `entry` is one
-    ledger entry's *text* and `task` is the id-level facts (band, type, origin, state), with a
-    join for the combined entries (`#138/#156` — one body, two permanent ids). The event log
-    is a separate thing entirely: `task_event`, an append-only table of *transitions* (grab,
-    status, priority, complete) from `#264`'s ratified design. Split vs flat changes how a task
-    **at rest** is stored; `task_event` is the same either way.
-    **And yes — the recommended (flat) model migrates cleanly, and `#353` is why.** The
-    normalisation already split every combined entry, so each Markdown entry is now exactly one
-    task: the import is one row per id, no join, nothing to reconstruct or guess. The import
-    stage runs `--dry-run` first — parse every open and landed entry, report exact
-    counts/ids/digests/conflicts, back up, import atomically, verify the DB before cutover,
-    explicit rollback. That stage is the next increment **after** your ruling; the ruling
-    authorises only the schema shape.
-    **Still pending, unchanged:** `Q1` — keep the split (`50f4933`) or flatten (`wt/294`)?
-    **`rec`: flatten.** Say `flatten`, `keep`, or `B without the strictness`.
 
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
@@ -79,6 +51,53 @@
     (fixed in `7be4a22`). **This question has never been answered.**
 
 ## Answered
+
+- **P1 · 2026-07-29 12:39 — #294: one task table or the landed entry/task split, for the SQLite store?**
+  → answered (2026-07-29 15:59): **RULED — flatten (`wt/294`).** His words: *"if you're satisfied then rec:
+    flatten."* The coordinator is satisfied — the rec was flatten, the flat schema is red-proved, and
+    flattening is free only until the import stage. Authorises the schema shape only; the import stage
+    (`dreamwork tasks migrate --dry-run`) is the next increment.
+  - **Follow-up (loop, 2026-07-29 16:00) — what an entry has, and yes, tasks update many times.** A flat
+    `task` row carries the id-level facts: title, priority band, type, origin (human|loop|unknown),
+    open|landed state, blocked-on and related ids — plus the **free-text body**, which is exactly where
+    notes and updates accumulate: that is what happens in the Markdown today (follow-up bullets appended to
+    an entry across its life), and the flat schema keeps that body column so the behaviour carries over
+    unchanged. An entry is not a single immutable message — it is the task's living text. Separately,
+    `task_event` (from `#264`'s ratified design) records *state transitions* as append-only rows, so the
+    history of grabs/status/priority/completions is queryable rather than buried in prose. Prose updates
+    live in the body; state changes live in the event log; neither is frozen.
+  The store's schema landed at `50f4933` with an `entry`+`task` join — but the design's own S1 ruling and the
+  entry normalisation mean every entry is now exactly one task, so the join models nothing. The flat version
+  (one `task` table) is already built and red-proved on `wt/294`.
+  **`Q1` — keep the split (`50f4933`) or flatten (`wt/294`)?** **`rec`: flatten** — the design's S1 ruling chose
+  it ("the schema loses a table and every consumer loses a join, permanently"), the work is done and proved, and
+  flattening is free only until the import stage (after that it is the two-migrations error). Measured IGC:
+  `.dreamwork/review/294-entity-shape.html`. Say "B without the strictness" for the flatten minus its stricter
+  `NOT NULL`s and extra columns. A ruling authorises only the schema shape — no import, cutover, CLI, or rename.
+  - **Note (human, via watch, 2026-07-29 15:46):** What is an entry? Like
+    is this the event log or? Can we cleanly migrate our current tasks to
+    sqlite with the recommended model?
+  - **Follow-up (loop, 2026-07-29 15:50):** **An `entry` is not the event log — and neither
+    schema choice touches the event log.** In the landed split (`50f4933`), `entry` is one
+    ledger entry's *text* and `task` is the id-level facts (band, type, origin, state), with a
+    join for the combined entries (`#138/#156` — one body, two permanent ids). The event log
+    is a separate thing entirely: `task_event`, an append-only table of *transitions* (grab,
+    status, priority, complete) from `#264`'s ratified design. Split vs flat changes how a task
+    **at rest** is stored; `task_event` is the same either way.
+    **And yes — the recommended (flat) model migrates cleanly, and `#353` is why.** The
+    normalisation already split every combined entry, so each Markdown entry is now exactly one
+    task: the import is one row per id, no join, nothing to reconstruct or guess. The import
+    stage runs `--dry-run` first — parse every open and landed entry, report exact
+    counts/ids/digests/conflicts, back up, import atomically, verify the DB before cutover,
+    explicit rollback. That stage is the next increment **after** your ruling; the ruling
+    authorises only the schema shape.
+    **Still pending, unchanged:** `Q1` — keep the split (`50f4933`) or flatten (`wt/294`)?
+    **`rec`: flatten.** Say `flatten`, `keep`, or `B without the strictness`.
+  - **Note (human, via watch, 2026-07-29 15:59):** Okay, so what does an
+    entry have? Cause if it's a message about a task, surely we could like
+    add notes to the task and update it more than once? But anyway, if
+    you're satisfied then rec: flatten.
+
 
 - **P2 · 2026-07-28 — #417: four ways to put commits-per-period on the burndown, priced. Which, if any?**
   **Ask: `C1`, `C2`, `C3`, `C4`, or `none` — and `rec` takes C4.**
