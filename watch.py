@@ -899,7 +899,7 @@ STYLE = """<style>
   .bdlimit { flex:0 0 auto; display:inline-flex; align-items:center;
              gap:.2rem; color:var(--dim); white-space:nowrap; }
   .bdlimit-in {
-    width:3.4ch; height:1.25em; line-height:1.15em; box-sizing:border-box;
+    width:4.4ch; height:1.25em; line-height:1.15em; box-sizing:border-box;
     font:inherit; font-size:inherit; font-variant-numeric:tabular-nums;
     color:var(--lit); background:transparent;
     border:1px solid var(--line); border-radius:2px;
