@@ -223,6 +223,28 @@ Next id: **492**
   burndown. That is inc8 (`lane-294histall`, dispatched 20:38): first-sight events
   for ALL ids under the cutover lease, design fixture 5 (store series ==
   `ledger_series` bucket-for-bucket). Live cutover stays held until inc8 merges.
+  · **INCREMENT 8 (history for all) MERGED 2026-07-29 21:00.** Lane `wt/294histall`
+  (llmp-glm-5-2, 1219s, 95 calls; `c4d540e9` `7a22f574` `9e1c4681` `397105af`).
+  `first_sight_events` walks the same snapshots and emits arrival (NULL→open) +
+  landing (open→landed) events for EVERY id `parse_ledger` counts in any commit —
+  the markdown walk's model exactly (M3-A); `perform_cutover`/`perform_rollback`
+  populate them under the lease after `_populate_store`, before the watermark.
+  Rowless ids (the unrecoverable four) get no event — FK-safe filter, honesty over
+  completeness. 4 new coverage guards incl. bucket-parity with preconditions
+  derived at runtime. Coordinator red-proof: reverting coverage to groomed-only
+  (the pre-inc8 bug at `for i in oids | lids:`) fails exactly the three coverage
+  tests incl. `test_cutover_first_sights_match_ledger_series`; byte-identical
+  restore; 419 green; lint clean; deploy_state current (no shipped file changed).
+  · **SEQUENCING FINDING (coordinator, 21:02): the cutover's own step 7 assumes
+  writes "go through `dreamwork tasks file|grab|cycle`" — and NO store write verb
+  exists** (grep: no allocate/file/land/grab/cycle in `ledger_store.py` or the
+  migrate script; they are #264's scope and were never built). Cutting over now
+  would strand the loop's write path: `dev/ledger.py fold` and task filing are
+  Markdown writes aimed at what becomes the shim. So there is an **inc9 — minimal
+  write verbs (`file` + `land`) plus re-pointing `dev/ledger.py`'s writes at the
+  store when `source_of_truth == 'store'`** — and the live cutover runs only once
+  the loop can write post-flip. Remaining after inc9: lint #362 swap + status.json
+  T2 field deletion (with the cutover), then execute.
 - **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
   dashboard/loop-config · origin: **human** · **human via watch `add-idea` 2026-07-29 17:10:** *"posture
   config (pace, etc) should have a place for text entry of subagent policy where user can put preferred
