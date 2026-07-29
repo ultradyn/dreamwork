@@ -7016,8 +7016,74 @@ function revealStaleAction() {
   }
   knownStaleAction = now;
 }
+/* #505 — keyed reconciliation of #view (I5: morphdom + content-hash skip).
+   The chrome already survived ticks because renderChrome reuses crumbs by
+   key; #view used to wholesale-replace via innerHTML, which is why a prose
+   Range inside a question card died on every poll (R1). Survivor nodes
+   matched by the page's existing identity attrs are KEPT — selection,
+   caret, listeners, open disclosures ride the node rather than a 12th
+   snapshot. Views stay pure HTML-string builders (G2); this is the one
+   seam that commits them.
+
+   Keys (one canonical attr per element class, same as *_LIST):
+     data-qid, data-aid, data-sha, data-review, data-keep, then id.
+   Corpse rule: .qaghost / .ghost never receive a key (dreamAway strips
+   identity; the reconciler refuses them as a second belt).
+
+   window.__dwViewRenderGen advances on every non-skipped mutation so
+   guards can prove a tick did work without requiring node replacement
+   (under reconciliation survivors are the same objects). */
+let lastViewHtml = null;
+window.__dwViewRenderGen = 0;
+function viewNodeKey(node) {
+  if (!node || node.nodeType !== 1) return undefined;
+  // corpse rule — a ghost holds no address (watch.py dreamAway + Q4)
+  if (node.classList &&
+      (node.classList.contains('qaghost') || node.classList.contains('ghost')))
+    return undefined;
+  const d = node.dataset;
+  if (d) {
+    if (d.qid) return 'qid:' + d.qid;
+    if (d.aid) return 'aid:' + d.aid;
+    if (d.sha) return 'sha:' + d.sha;
+    if (d.review) return 'review:' + d.review;
+    if (d.keep) return 'keep:' + d.keep;
+  }
+  if (node.id) return 'id:' + node.id;
+  return undefined;
+}
 function setContent(html) {
-  document.getElementById('view').innerHTML = html;
+  // I5 hash-skip: identical build → nothing to reconcile (and no gen bump).
+  if (html === lastViewHtml) return;
+  lastViewHtml = html;
+  window.__dwViewRenderGen = (window.__dwViewRenderGen || 0) + 1;
+  const viewEl = document.getElementById('view');
+  morphdom(viewEl, '<div id="view">' + html + '</div>', {
+    childrenOnly: true,
+    getNodeKey: viewNodeKey,
+    onBeforeElUpdated: function(fromEl, toEl) {
+      if (fromEl.classList &&
+          (fromEl.classList.contains('qaghost') ||
+           fromEl.classList.contains('ghost')))
+        return false;
+      // ages() owns .age textContent between ticks — builder markup leaves
+      // the spans empty. Skipping identical-identity age nodes preserves
+      // the filled figure and avoids a one-frame blank (dashboard #132).
+      if (fromEl.classList && fromEl.classList.contains('age') &&
+          toEl.classList && toEl.classList.contains('age')) {
+        const attrs = ['data-mt', 'data-ct', 'data-at', 'data-ut',
+                       'data-cr', 'data-day'];
+        let same = fromEl.className === toEl.className;
+        for (let i = 0; i < attrs.length; i++) {
+          if (fromEl.getAttribute(attrs[i]) !== toEl.getAttribute(attrs[i]))
+            same = false;
+        }
+        if (same) return false;
+      }
+      if (fromEl.isEqualNode(toEl)) return false;
+      return true;
+    },
+  });
   // before anything measures: the review pane's height is a measurement, and
   // crossfade reads the dock's rect on the very next line after setContent.
   fitReview();
@@ -7027,14 +7093,15 @@ function setContent(html) {
   ages();
   revealNewOpenAsks();
   revealStaleAction();
-  // #462: the remedy is re-created by innerHTML; re-apply arm/running classes
-  // and label so a mid-arm tick does not reset the control to idle copy.
+  // #462: the remedy may be re-created when the row is new; re-apply
+  // arm/running classes and label so a mid-arm tick does not reset idle copy.
   paintStaleDeployUI();
   revealReviewMods();
   revealReviewDecisions();  // #289: decision-token arrival, same idiom
   revealQuestionUpdates();  // #473: updated-ago arrival, after ages() hides dishonest ones
-  // #290: innerHTML destroys the arm bar nodes; resume shared pending (or
-  // re-sync the committed selection) without inventing a new deadline.
+  // #290: resume shared pending (or re-sync the committed selection)
+  // without inventing a new deadline — kept nodes already hold arm state;
+  // this still covers first paint and any rebuilt bar.
   syncRunModeFromData();
   // #445: same arm-resume idiom for the three-axis posture control.
   syncPostureFromData();
@@ -7046,10 +7113,11 @@ function setContent(html) {
   // the one place that puts a drafted answer back after the box is recreated —
   // the in-memory snapshot does the same for a tick, but only storage survives
   // the reload he reported (#269). Runs before paint, so the text is part of
-  // the first frame rather than arriving into an empty box.
+  // the first frame rather than arriving into an empty box. Idempotent on
+  // kept nodes (dwDraft.restore declines a non-empty box).
   restoreAnswerDrafts();
-  // #459: #askbox is recreated with the answers form; re-bind + restore from
-  // storage (after any in-memory snapshot the tick will still overlay).
+  // #459: re-bind + restore from storage. bindAskDraft unbinds first so a
+  // kept #askbox is not double-bound (the binding discipline under #505).
   bindAskDraft();
 }
 /* ── what the human did to a card survives a tick (#118, #111) ────────────
@@ -10847,6 +10915,18 @@ def page_shell(title, body, js):
 # half (#86) rides /data.json because it is a property of the machine, and so
 # can change under a page that is already open. `COMMANDS` is the one table
 # everything downstream reads, and it is a `let` for exactly that reason.
+# #505: vendored morphdom (MIT) lives beside this file so the diff algorithm
+# is reviewable without opening the PAGE blob. Loaded once at import; the
+# page still ships as one HTML response (no separate asset request).
+def _load_morphdom_js():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "vendor", "morphdom.min.js")
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+MORPHDOM_JS = _load_morphdom_js()
+
 # Template only — posture closed sets are injected by `_get_page()` on first
 # access so `import lint` (which does `import watch` at its top) never meets a
 # half-initialised lint. External code reads `watch.PAGE` via `__getattr__`.
@@ -10865,6 +10945,7 @@ _PAGE_TEMPLATE = page_shell('dreamwork watch', APP_BODY,
                   + "const RUN_MODE_DESC = "
                   + json.dumps(RUN_MODE_DESC, ensure_ascii=True) + ";\n"
                   + "/*__POSTURE_VOCAB__*/"
+                  + MORPHDOM_JS
                   + COMPONENTS_JS + VIEWS_JS + FAVICON_JS + SHADER_JS
                   + ROUTER_JS + COMMAND_JS)
 
