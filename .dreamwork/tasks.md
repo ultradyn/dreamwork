@@ -707,27 +707,6 @@ Next id: **484**
   recoverable-but-invisible. Fold that into whatever `#423` builds
   · related: **#410, #402, #424, #428**
 
-- **#422** — a research artifact is a kind we produce and have never specified · P2 ·
-  loop-tooling/format · origin: **human** · **human via watch `do-next` 2026-07-28 16:29**, second
-  half of the same message
-  · verbatim: *"also, we should support research artifacts in like `.dreamwork/docs/research/` or
-  something. ideally HTML when they are user facing or benefit from visual expression."*
-  · **the directory already exists and the documentation says otherwise.** `.dreamwork/docs/research/`
-  holds one file (`2026-07-28-parallel-lanes-evidence.md`) while `doc-map.md:25` documents the flat
-  form `.dreamwork/docs/research-*.md` — and a third file, `research-window-coords.md`, sits at
-  `docs/` root in that flat form. **Three spellings of one kind**, so the convention is not a
-  convention yet
-  · **the HTML half is the real gap.** `review_artifact.py` builds and checks templated HTML and
-  `watch.py` lists and serves it, but **only under `.dreamwork/review/`**. A user-facing research
-  doc has no path to a rendered page today, which is why `#421`'s options will ship as a *review*
-  artifact even though it is research
-  · so: decide whether research HTML reuses the review pipeline (a second listing surface, one
-  builder) or gets its own, document the directory + naming in the doc-map **and** `file-formats.md`
-  if a tool will parse it, and say what distinguishes research from a measurement
-  (`.dreamwork/docs/measurements/`, also undocumented there) from a plan
-  · blocked on nothing · related: **#421**
-
-
 - **#415** — the hand-off grammar allows ONE sha, and a task landing in two commits is the
   ordinary case · P3 · loop-tooling/format · origin: **loop** · found when the `#411` lane
   reported honestly and lint called it malformed
@@ -856,16 +835,6 @@ Next id: **484**
   that cite the sha, report the remainder with a count.** The count is the part that matters —
   a sweep that finds nothing must be distinguishable from one that did not run
   · related: **#381, #398, #394, #406**
-
-- **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
-  P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
-  · the existing row is for root-level `.dreamwork/docs/research-*.md` — a **different** location.
-  The directory has never been mapped, so `lint.check_doc_map_plans` has a sibling that was never
-  written: `plans/` is enumerated and checked, `research/` is neither
-  · smallest useful version is one row. Whether it should **enumerate** like the plans row (and so
-  gain a check) is the real question — 11 files is enough that a stale enumeration is a cost
-  · related: **#402**
-
 
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
   dashboard/transitions · origin: **loop** · from **#381's own caveat**, probed rather than accepted
@@ -3634,6 +3603,37 @@ Next id: **484**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
+  P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
+  · the existing row is for root-level `.dreamwork/docs/research-*.md` — a **different** location.
+  The directory has never been mapped, so `lint.check_doc_map_plans` has a sibling that was never
+  written: `plans/` is enumerated and checked, `research/` is neither
+  · smallest useful version is one row. Whether it should **enumerate** like the plans row (and so
+  gain a check) is the real question — 11 files is enough that a stale enumeration is a cost
+  · related: **#402**
+  · closed with #422's landing (same merge). The research row exists in doc-map.md — single row, not enumerated, with the no-check reasoning stated in the row itself, which was this entry's real question.
+
+- **#422** — a research artifact is a kind we produce and have never specified · P2 ·
+  loop-tooling/format · origin: **human** · **human via watch `do-next` 2026-07-28 16:29**, second
+  half of the same message
+  · verbatim: *"also, we should support research artifacts in like `.dreamwork/docs/research/` or
+  something. ideally HTML when they are user facing or benefit from visual expression."*
+  · **the directory already exists and the documentation says otherwise.** `.dreamwork/docs/research/`
+  holds one file (`2026-07-28-parallel-lanes-evidence.md`) while `doc-map.md:25` documents the flat
+  form `.dreamwork/docs/research-*.md` — and a third file, `research-window-coords.md`, sits at
+  `docs/` root in that flat form. **Three spellings of one kind**, so the convention is not a
+  convention yet
+  · **the HTML half is the real gap.** `review_artifact.py` builds and checks templated HTML and
+  `watch.py` lists and serves it, but **only under `.dreamwork/review/`**. A user-facing research
+  doc has no path to a rendered page today, which is why `#421`'s options will ship as a *review*
+  artifact even though it is research
+  · so: decide whether research HTML reuses the review pipeline (a second listing surface, one
+  builder) or gets its own, document the directory + naming in the doc-map **and** `file-formats.md`
+  if a tool will parse it, and say what distinguishes research from a measurement
+  (`.dreamwork/docs/measurements/`, also undocumented there) from a plan
+  · blocked on nothing · related: **#421**
+  · landed 1519cb8f (merge of wt/422; lane work 1ee0ef0b + e68a9589 + c1af7da0, native subagent, paired with #403). Directory-canonical: .dreamwork/docs/research/ wins over the flat research-*.md form (his own sentence names the directory; 13 files already there vs 1 stray; only a directory holds its own README header). Kind contract in research/README.md: research = what a commissioned answer MEANS; a measurement answers how-fast/how-many; a plan proposes a change and is pruned on landing. Single doc-map row, deliberately NOT enumerated and NO lint check — research is append-mostly so a list only grows; plans enumerate because plans churn both directions. HTML pipeline recommendation recorded (one builder, a second listing surface; do NOT reuse the review surface's questions.md pairing) — filed as follow-up, not implemented (watch.py/review_artifact.py coordinator-owned). Coordinator-verified: rename detected (window-coords.md, 100%), README present, doc-map row states its own reasoning, lint clean, 355 test_lint pass.
+
 - **#476** — a guard that THROWS on a changed contract reports "did not judge", not "failed" · P2 ·
   verification/guards · origin: **loop** · **found 2026-07-29 08:07 while red-proofing `#475`'s draft fix**
   · **the measurement:** changing the production key builder (`'dw:draft:v1:'` → `'dw:draft:v2:'`,
