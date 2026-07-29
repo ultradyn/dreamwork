@@ -1696,7 +1696,12 @@ rather than growing a second mechanism.
 
 The mode is the one that is a correctness rule rather than a comfort: it
 decides *which endpoint the text is sent to*, so silently reverting it to the
-card's default would redirect his words. `setCardMode` is the single
+card's default would redirect his words. **A non-default mode IS his state
+even with no text typed** (#479): `snapshotCardState`'s inclusion test counts
+`modeHis` on its own — otherwise any tick re-render reverts the destination
+mode to the card's default and re-aims words he has not typed yet. And
+`restoreCardState` restores the mode **before** the no-text early return, so
+an empty box keeps its mode too. `setCardMode` is the single
 implementation shared by the mode buttons and the restore, and it **declines
 a mode the new state cannot accept** — a folded entry is note-only, so a
 carried-over `answer` falls back to what the card rendered rather than arming

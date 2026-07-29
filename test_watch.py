@@ -1811,9 +1811,8 @@ class TestCollector(unittest.TestCase):
         # detail — otherwise the one line the commit has to say is shown
         # nowhere. Assert the empty-body branch emits gfullsub with the
         # subject, ahead of the parenthetical.
-        idx = watch.PAGE.index("gfullsub")
-        seg = watch.PAGE[idx:idx + 400]
-        self.assertIn("esc(c.subject)", seg)
+        idx = watch.PAGE.index('gfullsub">${esc(c.subject)}')
+        seg = watch.PAGE[idx:idx + 300]
         self.assertIn("no message body", seg)
         self.assertIn(".git .gfullsub", watch.PAGE)
 
