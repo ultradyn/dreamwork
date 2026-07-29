@@ -24,9 +24,18 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **489**
+Next id: **490**
 
 ## Open
+- **#489** — burndown cycle direction: click goes coarse→fine, shift-click reverses · P2 ·
+  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:35:** *"on the
+  burndown cycle, when we click the cycle time period label, it should go the other day: daily ->
+  4-hourly -> hourly -> montly -> weekly -> daily ... Also, if we shift-click it, it should cycle in
+  reverse."* · his sequence is exactly the reverse of what #487 shipped (coarse→fine with wrap to
+  coarsest; "montly" = the every-four-weeks step) · acceptances: (1) plain click walks daily →
+  4-hourly → hourly → every-four-weeks → weekly → daily; (2) shift-click walks the other way ·
+  follow-up to #487 (folded 98379eae) · coordinator-inline (small, single-purpose, watch.py is
+  coordinator-owned in main)
 - **#488** — posture card: 'override · .dreamwork/posture' label beside the heading; hover help text must not reflow · P2 ·
   dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:12:** *"the
   'override · .dreamwork/posture' label should go next to the 'Posture' heading. and the description
