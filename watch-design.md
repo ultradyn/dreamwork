@@ -405,24 +405,44 @@ which overrode a one-line ~12-character builder-truncated flag). A ~6-word label
 fills `.markflag`'s `max-width` and wraps to two lines; the worst case measures
 ~184×32px (`.dreamwork/docs/measurements/367-two-line-tab-geometry.md`).
 
-**Above the cliff, the rail; below it, nothing.** The worst-case flag fits
-inside `.wrap` down to ~830px (measured), so the rail shows at/above the
-existing **860px** breakpoint — reused rather than inventing a seam, with ~26px
-of margin to spare. Below it the whole rail is `display:none`: absent, not a
-broken flag, and not a strip. The strip below the cliff is increment 2b and his
-call (at his soft cap of 7 marks it needs 3 rows / ~214px of chrome on a narrow
-screen, and "shrink it" is not available once truncation is gone), so a
-provisional strip is the thing that ships and then gets argued with — this
-renders nothing rather than guess.
+**Above the cliff, the rail; below it, the collapsible strip.** The worst-case
+flag fits inside `.wrap` down to ~830px (measured), so the rail shows at/above
+the existing **860px** breakpoint — reused rather than inventing a seam, with
+~26px of margin to spare. Below it the whole rail is `display:none` (absent, not
+a broken flag) and the **markstrip** shows instead.
+
+**The strip is option C with a collapsible index** (his 2026-07-28 15:11
+ruling): collapsed by default at walk height (~32px); a double chevron (`»`) on
+the RHS as the expand affordance; expanded reveals the labelled marks. The
+control is a native `<details class="markstrip-panel">` — keyboard parity is
+Enter/Space on the summary; `aria-expanded="false"` documents the
+default-collapsed contract at load; the live expanded state is the HTML `open`
+attribute (the same disclosure idiom every other `<details>` on the page uses,
+and the one screen readers already announce). Expand/collapse reuses
+`details::details-content` (transitions.md) — no second gesture.
+
+**Implementer decisions, fixed in the plant:**
+- **List sits beneath the walk row** (summary stays when open). Next/prev remain
+  reachable while the index is open; replacing the walk would hide the control
+  he chose as the default chrome.
+- **Expanded state does not persist.** No `open` attribute, no script, no
+  localStorage — every load is collapsed. Offline-clean forbids the machinery
+  persistence would need, and "collapsed by default" is the ruling.
+
+**Walk tracking below the cliff.** With no script, "current" is still
+`:target`. The strip's walk row shows an idle "N essentials" until a mark is
+targeted; then generated `body:has(#id:target)` rules flip to that mark's
+`‹ n / N ›` next/prev. Same fragment links as the rail.
 
 **"Current" is `:target`; next/prev are real fragment links.** No script means
 no scroll-spy: the current passage is the one navigated to (`:target`), and the
 flag's opacity lifts to full when its passage is targeted (the page's own
 state-change transition, `.45s`, instant under reduced motion). Next/prev live
-inside the current flag's `.marknav` and walk the marks in document order as
-plain `#id` links — so the arrows read as a single control that follows the
-current mark, are keyboard-operable, and work offline. Each marked host carries
-`tabindex="-1"` so fragment navigation announces the passage to a screen reader.
+inside the current flag's `.marknav` (above the cliff) or the strip's walk row
+(below it) and walk the marks in document order as plain `#id` links — so the
+arrows read as a single control that follows the current mark, are
+keyboard-operable, and work offline. Each marked host carries `tabindex="-1"`
+so fragment navigation announces the passage to a screen reader.
 
 **Next/prev lands SETTLED, not as a journey.** A long-range smooth scroll is
 already refuted (the #229 v2 review's 1.5s one failed the gate); the template
@@ -443,10 +463,12 @@ pixels.
 `dev/capture/markrail.mjs` guards the rail: the worst-case flag fits inside
 `.wrap` at the cliff and never clips the page edge; it anchors at the column;
 next/prev lands settled (normal and reduced); the arrival's state change
-travels; below the cliff nothing renders; flags are focusable and the current
-passage is announced; the close pair does not overlap. It builds its own
-artifact through the real builder and loads it via `file://`, like
-`marktab-geometry.mjs` — the rail is a property of the artifact, not the server.
+travels; below the cliff the rail renders nothing (the strip is 2b's surface);
+flags are focusable and the current passage is announced; the close pair does
+not overlap. It builds its own artifact through the real builder and loads it
+via `file://`, like `marktab-geometry.mjs` — the rail is a property of the
+artifact, not the server. The strip's structure and collapse contract are held
+by `test_review_artifact.py`'s markstrip suite.
 
 ### The review pane (#305)
 

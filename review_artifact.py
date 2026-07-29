@@ -981,14 +981,94 @@ def _mark_tab_html(index, total, site, sites):
     return ''.join(parts)
 
 
+def _css_escape_ident(value):
+    """Escape a fragment id for use in a CSS selector (alphanumeric/hyphen pass)."""
+    out = []
+    for i, ch in enumerate(value):
+        if ch.isascii() and (ch.isalnum() or ch in ("-", "_")):
+            # leading digit must be escaped in CSS idents
+            if i == 0 and ch.isdigit():
+                out.append(r"\%x " % ord(ch))
+            else:
+                out.append(ch)
+        else:
+            out.append(r"\%x " % ord(ch))
+    return "".join(out) if out else "x"
+
+
+def _mark_strip_html(sites):
+    """Collapsible essentials strip for below the cliff (#367/2b).
+
+    Collapsed: the walk (option C) — idle "N essentials" or, when a mark is
+    ``:target``, that mark's ‹ n / N › next/prev (via generated ``:has`` rules;
+    no script). Expanded: the labelled list sits BENEATH the walk row (the
+    summary stays, so next/prev remain reachable). Collapsed by default (no
+    ``open``); no persistence (offline-clean — no script, no localStorage).
+    Expand/collapse is native ``<details>``, so keyboard parity is free and the
+    page's ``details::details-content`` transition applies (transitions.md).
+    """
+    total = len(sites)
+    # :has rules flip the walk row to the targeted mark's prev/next.
+    css = [".markstrip-at{display:none}"]
+    for i, site in enumerate(sites):
+        sel = _css_escape_ident(site["id"])
+        css.append(
+            'body:has(#%s:target) .markstrip-at[data-mid="%d"]{display:inline-flex}'
+            % (sel, i))
+        css.append(
+            'body:has(#%s:target) .markstrip-idle{display:none}' % sel)
+    walks = []
+    for i, site in enumerate(sites):
+        where = i + 1
+        chunk = ['<span class="markstrip-at" data-mid="%d">' % i]
+        if i > 0:
+            chunk.append(
+                '<a class="markprev" href="#%s" aria-label="previous essential '
+                'mark (mark %d of %d)">\u2039</a>'
+                % (sites[i - 1]["id"], where - 1, total))
+        chunk.append(
+            '<span class="markstrip-pos">%d / %d</span>' % (where, total))
+        if i < total - 1:
+            chunk.append(
+                '<a class="marknext" href="#%s" aria-label="next essential mark '
+                '(mark %d of %d)">\u203a</a>'
+                % (sites[i + 1]["id"], where + 1, total))
+        chunk.append("</span>")
+        walks.append("".join(chunk))
+    items = []
+    for i, site in enumerate(sites):
+        lab = html.escape(site["label"], quote=True)
+        items.append(
+            '<li><a class="markstrip-item" href="#%s" aria-label="essential mark '
+            '%d of %d: %s">%s</a></li>'
+            % (site["id"], i + 1, total, lab, lab))
+    noun = "essential" if total == 1 else "essentials"
+    return (
+        '<nav class="markstrip" aria-label="Essential marks">'
+        "<style>%s</style>"
+        '<details class="markstrip-panel">'
+        '<summary class="markstrip-sum" aria-expanded="false">'
+        '<span class="markstrip-walk">'
+        '<span class="markstrip-idle">'
+        '<span class="markstrip-count">%d %s</span></span>'
+        "%s"
+        "</span>"
+        '<span class="markstrip-chev" aria-hidden="true">»</span>'
+        "</summary>"
+        '<div class="markstrip-list details-in"><ol>%s</ol></div>'
+        "</details></nav>"
+    ) % ("".join(css), total, noun, "".join(walks), "".join(items))
+
+
 def inject_mark_rail(document):
-    """Plant a flag on each marked passage. No marks → the document unchanged.
+    """Plant rail flags and the below-cliff strip. No marks → unchanged.
 
     The opening tags are rewritten and the flags inserted last-offset-first so
     earlier byte spans stay valid as the string grows. Returns ``document``
     unchanged when there is nothing to plant, which is the half of the safety
     property the byte-identity check rests on: a body with no marks gains no
-    chrome at all.
+    chrome at all. The strip is planted once, after the toprail, only when
+    marks exist (#367/2b).
     """
     scan = _MarkInjectScan(_line_starts(document))
     scan.feed(document)
@@ -1005,7 +1085,18 @@ def inject_mark_rail(document):
         augmented = _augment_open_tag(site["tag_text"])
         flag = _mark_tab_html(index, total, site, sites)
         out = out[:site["start"]] + augmented + flag + out[site["end"]:]
-    return out
+    # Strip after the first </nav> (the sticky toprail) so it sits under the
+    # chrome and sticky-stacks below it. First </nav> is the toprail's.
+    strip = _mark_strip_html(sites)
+    nav_close = out.find("</nav>")
+    if nav_close == -1:
+        # No toprail (synthetic template in a test) — plant before <main>.
+        main = out.find("<main")
+        if main == -1:
+            return out + strip
+        return out[:main] + strip + out[main:]
+    at = nav_close + len("</nav>")
+    return out[:at] + strip + out[at:]
 
 
 # ── the #ask contract (#436) ──────────────────────────────────────────────
