@@ -50,25 +50,6 @@ Next id: **486**
   · needs `watch.py` for the control; a lane, sequenced behind whatever holds it · `transitions.md` binds
   on any arrival; the text field obeys `#269`'s draft-durability rule like every box he types in.
 
-- **#477** — the 2s tick TELEPORTS a section it catches mid-open · P1 · bug/motion · origin: **loop**
-  · **found 2026-07-29 08:53 by the `motion` lane while clearing `#475`, and it is the one genuine PAGE defect
-  in the whole ten-guard batch** · `qsec` fails in the recipe and passes on an isolated fresh server, and the
-  difference is tick phase, not load: when the dashboard's 2s tick lands inside the ~850ms `travelCard` open,
-  `restoreFolds` (`watch.py:6308`) re-opens the freshly rendered section with a native `el.open = true`, which
-  arrives at **full height in one frame**. The in-flight gesture on the old node is discarded with the node.
-  · **signature:** `the section really grows` PASSES (the span is right) while `grows continuously`, `travels`
-  and `body eases in` FAIL with `0 of N part-way` — a jump, which is `#196`'s snap re-entering by the back door
-  at the very surface `#196` fixed
-  · **independently reproduced by the coordinator** on the merged tree at 08:56 (`just guards 39894`: posture /
-  wisp / oneinput PASS, qsec FAIL, `0 of 71 part-way`), so this is not the lane's environment
-  · **why no guard-side fix exists:** the guard must fail a real teleport, and a `transitionstart`-only check
-  would pass one — the lane was right to refuse to make it green
-  · **the fix, and it needs no new bookkeeping:** `travelCard` owns `height` while it runs, so a non-empty
-  inline `height` on the old node IS the tell that a fold was mid-gesture; `snapshotFolds` records that plus the
-  interrupted height, and `restoreFolds` resumes the travel on the fresh node through `travelCard`/`revealBody`
-  — the same two calls the click handler already uses, per `transitions.md`'s reuse-the-idiom rule
-  · **wants `watch.py`**, so it is coordinator work, not a lane's
-  · related: **#479**
 - **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
   **P1** · loop-machinery/containment · origin: **loop** · found 2026-07-29 03:32 when the `#263` merge aborted:
   `error: Your local changes to the following files would be overwritten by merge: dev/capture/health.mjs`
@@ -3203,6 +3184,27 @@ Next id: **486**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#477** — the 2s tick TELEPORTS a section it catches mid-open · P1 · bug/motion · origin: **loop**
+  · **found 2026-07-29 08:53 by the `motion` lane while clearing `#475`, and it is the one genuine PAGE defect
+  in the whole ten-guard batch** · `qsec` fails in the recipe and passes on an isolated fresh server, and the
+  difference is tick phase, not load: when the dashboard's 2s tick lands inside the ~850ms `travelCard` open,
+  `restoreFolds` (`watch.py:6308`) re-opens the freshly rendered section with a native `el.open = true`, which
+  arrives at **full height in one frame**. The in-flight gesture on the old node is discarded with the node.
+  · **signature:** `the section really grows` PASSES (the span is right) while `grows continuously`, `travels`
+  and `body eases in` FAIL with `0 of N part-way` — a jump, which is `#196`'s snap re-entering by the back door
+  at the very surface `#196` fixed
+  · **independently reproduced by the coordinator** on the merged tree at 08:56 (`just guards 39894`: posture /
+  wisp / oneinput PASS, qsec FAIL, `0 of 71 part-way`), so this is not the lane's environment
+  · **why no guard-side fix exists:** the guard must fail a real teleport, and a `transitionstart`-only check
+  would pass one — the lane was right to refuse to make it green
+  · **the fix, and it needs no new bookkeeping:** `travelCard` owns `height` while it runs, so a non-empty
+  inline `height` on the old node IS the tell that a fold was mid-gesture; `snapshotFolds` records that plus the
+  interrupted height, and `restoreFolds` resumes the travel on the fresh node through `travelCard`/`revealBody`
+  — the same two calls the click handler already uses, per `transitions.md`'s reuse-the-idiom rule
+  · **wants `watch.py`**, so it is coordinator work, not a lane's
+  · related: **#479**
+  · closed 2026-07-29 17:21, verified by the current coordinator. Fix c42ce90d landed by the previous coordinator: snapshotFolds records travelling = el.open && el.style.height !== '' plus the interrupted height (a non-empty inline height IS the tell — travelCard owns height while it runs), and restoreFolds resumes the interrupted open on the fresh node through the same two calls the click handler uses (travelCard + revealBody), per the entry's own sketched fix. Independent re-verification today: qsec PASS in the ten-guard run at 15:29 on current master, 10 of 10 judged — the guard whose 'grows continuously / travels / body eases in' assertions failed with 0 of 76 part-way when the tick landed mid-open. The one genuine page defect in the fourteen-guard batch; everything else was a check that had outlived its contract (#475).
+
 - **#337** — `do next` should fall back to `add idea` after submitting, as
   `do now` already does · P2 · dashboard UX · origin: **human** · **human via
   watch `add-idea` 2026-07-27 23:01**: *"for the command composer, when the user
