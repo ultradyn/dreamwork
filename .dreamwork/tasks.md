@@ -24,9 +24,30 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **487**
+Next id: **489**
 
 ## Open
+- **#487** — burndown chart: click-to-cycle granularity, one hover surface, consistent placement · P2 ·
+  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:11:** *"update the
+  burndown chart so that clicking 'daily' cycles between daily/hourly/etc. Also at the same time, there
+  should not be a traditional tooltip while we have the new hover details, and the new hover details
+  should show up in a consistent location on the RHS of the burndown chart if there's room, and above it
+  if not. however, when above it, it should also be above the '123 open, up/down, 67 commits, date' line
+  that appears on hover. They should not overlap."* · three acceptances: (1) the granularity label is a
+  cycle control (daily → hourly → … → daily); (2) the legacy tooltip is gone wherever the new hover
+  details exist — one hover surface, not two; (3) hover details pin to a consistent spot: right of the
+  chart when it fits, above it otherwise — and when above, above the stats line too, never overlapping
+  it · **transitions.md applies**: the details panel's appear/move between RHS and above is a transition,
+  not a teleport · model: grok-4.5 (UI/visual work)
+- **#488** — posture card: 'override · .dreamwork/posture' label beside the heading; hover help text must not reflow · P2 ·
+  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:12:** *"the
+  'override · .dreamwork/posture' label should go next to the 'Posture' heading. and the description
+  text that appears on hovering buttons etc should not cause a reflow when it appears/disappears. So it
+  should take up constant space, even when not visible."* · two acceptances: (1) the override chip moves
+  up beside the 'Posture' heading; (2) button description text reserves its space (constant layout,
+  visibility toggles — not display:none) so the card never shifts when help appears or leaves ·
+  **transitions.md applies**: appearing help text is an arrival, and a reflow-free arrival is the point
+  of the request
 - **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
   dashboard/loop-config · origin: **human** · **human via watch `add-idea` 2026-07-29 17:10:** *"posture
   config (pace, etc) should have a place for text entry of subagent policy where user can put preferred
