@@ -3567,23 +3567,8 @@ function buildDashboard(d) {
        unavailable the row says so by name rather than lying with mtime.
        Secondary "modified X ago" only when created is known and differs;
        the chrome's ` · ` is the same separator #456 used for date/age. */
-    h += label('reviews') + d.reviews.map(r => {
-      let age = '';
-      if (r.created_known && r.created != null) {
-        age = `<span class="age" data-mt="${r.created}"></span>`;
-        if (r.show_modified)
-          age += `<span class="rsep"> · </span>` +
-                 `<span class="age rmod" data-mt="${r.mtime}" data-cr="${r.created}"` +
-                 ` data-review-mod="${esc(r.name)}"></span>`;
-      } else {
-        age = `<span class="age ageunk">created unknown</span>` +
-              `<span class="rsep"> · </span>` +
-              `<span class="age rmod" data-mt="${r.mtime}" data-review-mod="${esc(r.name)}"></span>`;
-      }
-      return `<div data-review="${esc(r.name)}"><a href="/review?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` +
-        pipBtn('/reviewraw?p=' + encodeURIComponent(r.name), r.name) +
-        age + `</div>`;
-    }).join('');
+    h += label('reviews') + d.reviews.map(r => artifactRow(r, 'review'))
+        .join('');
   }
   h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
@@ -3889,6 +3874,52 @@ function buildReview(name, q, d) {
       (dock ? reviewSplitBar(pct) : '') +
       dock +
     `</div>`;
+}
+/* ONE artifact row shape for both listing surfaces (#484): the dashboard's
+   reviews panel and the /research route. kind is 'review' | 'research';
+   the view is /<kind>?p=<name> and the raw endpoint /<kind>raw?p=<name> by
+   the one convention, so a second surface is a parameter, not a second
+   idiom. The #463 age pair (created primary, modified secondary only when
+   the rendered figures differ) comes with the row. */
+function artifactRow(r, kind) {
+  let age = '';
+  if (r.created_known && r.created != null) {
+    age = `<span class="age" data-mt="${r.created}"></span>`;
+    if (r.show_modified)
+      age += `<span class="rsep"> · </span>` +
+             `<span class="age rmod" data-mt="${r.mtime}" data-cr="${r.created}"` +
+             ` data-review-mod="${esc(r.name)}"></span>`;
+  } else {
+    age = `<span class="age ageunk">created unknown</span>` +
+          `<span class="rsep"> · </span>` +
+          `<span class="age rmod" data-mt="${r.mtime}" data-review-mod="${esc(r.name)}"></span>`;
+  }
+  return `<div data-${kind}="${esc(r.name)}">` +
+    `<a href="/${kind}?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` +
+    pipBtn('/' + kind + 'raw?p=' + encodeURIComponent(r.name), r.name) +
+    age + `</div>`;
+}
+/* #484 — research artifacts: the review VIEW idiom (the raw self-contained
+   artifact in an iframe for style isolation; the same #reviewwrap/#reviewframe
+   nodes, which is what lets the tick's snapshotReviewFrame/restoreReviewFrame
+   preservation reach it unchanged) over a listing with NO questions.md
+   pairing and NO archive-on-answered lifecycle — research outlives the
+   decisions it informed (.dreamwork/docs/research/README.md). No dock, no
+   split: there is no question to sit beside. */
+function buildResearch(name, d) {
+  if (name)
+    return `<div id="reviewwrap" class="nodock">` +
+      `<div id="reviewdoc"><iframe id="reviewframe" src="` +
+      '/researchraw?p=' + encodeURIComponent(name) +
+      `" title="research artifact" loading="lazy"></iframe></div></div>`;
+  if (!d) return '<div class="dim">loading…</div>';
+  if (!d.research.length)
+    return label('research') +
+      `<div class="dim">no built research artifacts yet — sources live in ` +
+      `<code>.dreamwork/docs/research/src/</code> and build through ` +
+      `<code>review_artifact.py</code>, the one template pipeline.</div>`;
+  return label('research') +
+    d.research.map(r => artifactRow(r, 'research')).join('');
 }
 /* #452 — ONE question on its own page: a surface the loop's churn cannot
    shift under him mid-answer. The key (`qid` in the URL) is the question's
@@ -4573,11 +4604,11 @@ let view = { name: null, param: null, q: null };
    The /filedata response carries one of those shapes; never the bytes. */
 let fileCache = { param: null, fetched: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
-const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22, question: 0.18 };
+const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22, question: 0.18, research: -0.08 };
 /* per-route dissolve signature: each destination swirls from its own
    turbulence seed, so arriving somewhere has a consistent feel (pairs with
    the per-route tint). Distinct small integers give distinct fields. */
-const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61, question: 67 };
+const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61, question: 67, research: 71 };
 /* ── the tab title (#153) ─────────────────────────────────────────────────
    The title is the ONLY part of this dashboard that exists while the tab is
    backgrounded, which is most of its life — so it answers the page's whole
@@ -4614,7 +4645,8 @@ const TITLE_ROUTE = { dashboard: () => '', questions: () => 'questions',
                       answers: () => 'answers',
                       file: p => p || 'file',
                       review: p => 'review ' + (p || ''),
-                      question: () => 'question' };
+                      question: () => 'question',
+                      research: p => 'research' + (p ? ' ' + p : '') };
 /* two missed heartbeats (4.75m each) — one late beat is a busy machine, two
    is a loop that stopped. */
 const STALE_TICK_MS = 10 * 60 * 1000;
@@ -5968,6 +6000,12 @@ function routeOf(loc) {
     // retitle (#452)
     return { name: 'question', param: sp.get('qid') };
   }
+  // #484 — no param: the listing of built research artifacts; ?p=<name>:
+  // one artifact in the review view's iframe idiom.
+  if (loc.pathname === '/research') {
+    const sp = new URLSearchParams(loc.search);
+    return { name: 'research', param: sp.get('p') };
+  }
   return { name: 'dashboard', param: null };
 }
 /* THE ONE PLACE `data` IS REPLACED, and it is a function rather than an
@@ -6031,6 +6069,7 @@ async function buildCurrent() {
   const d = await ensureData();
   if (view.name === 'review') return buildReview(view.param, view.q, d);
   if (view.name === 'question') return buildQuestion(view.param, d);
+  if (view.name === 'research') return buildResearch(view.param, d);
   if (!d) return '<div class="dim">loading…</div>';
   if (view.name === 'questions') return buildQuestions(d);
   if (view.name === 'answers') return buildAnswers(d);
@@ -7525,6 +7564,17 @@ function crumbsFor(v, d) {
   if (v.name === 'question') return [
     { k:'qs', html:'<a href="/questions">&larr; questions</a>' },
     { k:'home', html:'<a href="/">dashboard</a>' }];
+  // #484: the listing's way back is the dashboard; an artifact adds the
+  // listing as its middle crumb and the raw pop-out, the review pair's
+  // shape with no questions half (there is no pairing to return to).
+  if (v.name === 'research') {
+    const row = [{ k:'home', html:'<a href="/">&larr; dashboard</a>' }];
+    if (v.param) row.push(
+      { k:'list', html:'<a href="/research">research</a>' },
+      { k:'pip', html: pipBtn('/researchraw?p=' + encodeURIComponent(v.param),
+                              'research: ' + v.param) });
+    return row;
+  }
   if (!d) return [];
   return [
     { k:'target', html: esc(d.target) },
@@ -8180,16 +8230,23 @@ async function navigate(name, param, opts) {
     : name === 'review' ? '/review?p=' + encodeURIComponent(param || '') +
         (opts.q ? '&q=' + encodeURIComponent(opts.q) : '')
     : name === 'question' ? '/question?qid=' + encodeURIComponent(param || '')
+    : name === 'research' ? '/research' +
+        (param ? '?p=' + encodeURIComponent(param) : '')
     : '/';
+  /* The wide artifact column is the review idiom's, and a research DOC
+     (#484, /research?p=…) is the same reading gesture over the same
+     #reviewwrap nodes — so it borrows body.review rather than growing a
+     second wide-column rule. The research LISTING stays the normal column. */
+  const artifactDoc = name === 'review' || (name === 'research' && !!param);
   if (opts.push) history.pushState({ name, param, q: opts.q || null }, '', url);
   const html = await buildCurrent();
   if (opts.transition === false) {
-    document.body.classList.toggle('review', name === 'review');
+    document.body.classList.toggle('review', artifactDoc);
     document.body.classList.toggle('file', name === 'file');
     setContent(html);
     renderChrome(view, data, null);   // first paint: arrive, don't animate
   } else {
-    crossfade(html, { fromRect: opts.fromRect, review: name === 'review',
+    crossfade(html, { fromRect: opts.fromRect, review: artifactDoc,
                       file: name === 'file' });
   }
   // after the new content is in layout, and only for the swap that has a
@@ -8204,7 +8261,7 @@ function isInternal(a) {
   return a.pathname === '/' || a.pathname === '/questions'
       || a.pathname === '/answers'
       || a.pathname === '/file' || a.pathname === '/review'
-      || a.pathname === '/question';
+      || a.pathname === '/question' || a.pathname === '/research';
 }
 addEventListener('click', e => {
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey ||
@@ -11900,6 +11957,13 @@ def collect(target):
         },
         "reviews": list_reviews(os.path.join(dw, "review"))
         if os.path.isdir(os.path.join(dw, "review")) else [],
+        # #484 — built research HTML under docs/research, listed by the SAME
+        # one listing shape (non-recursive, .html only, created/mtime facts):
+        # the src/ sources stay invisible exactly as review sources do. No
+        # questions.md pairing, no archive lifecycle — that is the review
+        # surface, and research is not it.
+        "research": list_reviews(os.path.join(dw, "docs", "research"))
+        if os.path.isdir(os.path.join(dw, "docs", "research")) else [],
         "open_questions": open_question_count(questions),
         "questions_open": q_open,
         "answered_entries": q_answered,
@@ -11990,6 +12054,8 @@ SUMMARY_DENIED = frozenset({
     "files",             # full DREAMWORK/questions/lessons text (container;
                          #   one safe scalar is pulled out under skill_version)
     "reviews",           # design artifacts carrying his decision context
+    "research",          # the same class as reviews (#484): research
+                         #   artifacts and the reasoning they record
     "questions_open",    # parsed question bodies — his words
     "answered_entries",  # parsed answered-question bodies — his words
     "answers_open",      # his questions to the loop — his words
@@ -12804,7 +12870,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # Same-document routes all return the one app shell; the client
             # router renders the matching view (deep links keep working).
             if parsed.path in ("/", "/questions", "/answers", "/file",
-                               "/review", "/question"):
+                               "/review", "/question", "/research"):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
@@ -12883,6 +12949,22 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 name = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
                 full = (resolve_confined(
                     target, os.path.join(".dreamwork", "review", name))
+                    if name and "/" not in name else None)
+                text = read_text(full, limit=2_000_000) if full else None
+                if text is None:
+                    self.send_error(404)
+                    return
+                self._send(text, "text/html")   # self-contained artifact
+            elif parsed.path == "/researchraw":
+                # #484 — the /reviewraw idiom over docs/research: the raw
+                # self-contained artifact for the /research view's iframe.
+                # The no-slash basename rule is load-bearing in the same
+                # way: src/ sources are .html under this tree and must never
+                # be served as finished artifacts.
+                name = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
+                full = (resolve_confined(
+                    target, os.path.join(
+                        ".dreamwork", "docs", "research", name))
                     if name and "/" not in name else None)
                 text = read_text(full, limit=2_000_000) if full else None
                 if text is None:

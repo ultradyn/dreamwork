@@ -141,11 +141,19 @@ carries a `+` command opener (steer the loop without a chat turn).
   manual restart; the close-on-exec listening socket frees the port and the
   generation bump reloads clients.
 - **Single-document router**: `/`, `/questions`, `/answers`, `/file`,
-  `/review`, and `/question` serve one shell. `/answers` is the distinct human-to-dreamer
+  `/review`, `/question`, and `/research` serve one shell. `/answers` is the distinct human-to-dreamer
   question ledger while `/questions` remains dreamer-to-human. `/question?qid=<title>`
   (#452) focuses ONE question on its own page — a surface the loop's list
   churn cannot shift under him mid-answer; its key and resolution contract
-  are specified under *The focused question* below. The client
+  are specified under *The focused question* below. `/research` (#484) lists
+  the built research artifacts under `.dreamwork/docs/research/` — the same
+  listing shape as `list_reviews` (non-recursive, so `src/` sources stay
+  invisible), with **no** questions.md pairing and no archive-on-answered
+  lifecycle, which is the review *surface* research deliberately does not
+  reuse. `/research?p=<name>` views one artifact through the review view's
+  own idiom: the raw self-contained page (served at `/researchraw`) in the
+  same `#reviewwrap`/`#reviewframe` iframe, borrowing `body.review`'s wide
+  column for the doc half only — the listing keeps the normal column. The client
   router renders the view; pushState/popstate drive
   the URL. The `#dreambg` canvas is a sibling of `#view` — never unmounted,
   so the background survives navigation. Route changes dissolve — the
@@ -665,7 +673,10 @@ floats the target in an identity-headed window (`openPopout` → Document
 Picture-in-Picture, `window.open` fallback) that stays put while the main tab
 navigates and carries the same dreaming field (see Shader). Views are pure builders returning `#view`'s innerHTML
 (`buildDashboard`, `buildQuestions`, `buildAnswers`, `buildFile`,
-`buildReview`); the router swaps them. `answerRecord` is deliberately not
+`buildReview`, `buildResearch`); the router swaps them. One `artifactRow`
+factory spells the review/research listing row both surfaces share (#484) —
+link, pip, and the #463 created/modified age pair — so a listing surface is
+a parameter, not a second idiom. `answerRecord` is deliberately not
 `qaCard`: its Open author is the human, it has no human answer/comment controls,
 and Answered records are quiet disclosures. The compact ask form clears only
 after a confirmed `/ask` success; refused/unreachable sends keep the words and
