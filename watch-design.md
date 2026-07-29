@@ -140,9 +140,12 @@ carries a `+` command opener (steer the loop without a chat turn).
   (`os.execv`) when its own source mtime changes — edit-and-see with no
   manual restart; the close-on-exec listening socket frees the port and the
   generation bump reloads clients.
-- **Single-document router**: `/`, `/questions`, `/answers`, `/file`, and
-  `/review` serve one shell. `/answers` is the distinct human-to-dreamer
-  question ledger while `/questions` remains dreamer-to-human. The client
+- **Single-document router**: `/`, `/questions`, `/answers`, `/file`,
+  `/review`, and `/question` serve one shell. `/answers` is the distinct human-to-dreamer
+  question ledger while `/questions` remains dreamer-to-human. `/question?qid=<title>`
+  (#452) focuses ONE question on its own page — a surface the loop's list
+  churn cannot shift under him mid-answer; its key and resolution contract
+  are specified under *The focused question* below. The client
   router renders the view; pushState/popstate drive
   the URL. The `#dreambg` canvas is a sibling of `#view` — never unmounted,
   so the background survives navigation. Route changes dissolve — the
@@ -1494,9 +1497,10 @@ sort genuinely below an unmarked entry rather than level with it. The marker
 stays part of the title, so it renders: he reads the priority on the card
 rather than only inferring it from the order.
 
-- **It is a property of the parse, not of a renderer.** Three surfaces show
-  these entries — the dashboard's questions section, `/questions`, and the
-  review dock — and all three go through `qaCard`. A sort in each is three
+- **It is a property of the parse, not of a renderer.** Four surfaces show
+  these entries — the dashboard's questions section, `/questions`, the
+  review dock, and the `/question` focus page (#452) — and all four go
+  through `qaCard`. A sort in each is four
   chances to disagree about which question is most urgent, on the one channel
   whose whole job is telling him what to look at first. It also keeps
   `data-qkey` honest: the key is an *index into this list*, so the list the
@@ -1555,9 +1559,10 @@ data, and a glance at a structural change is how two records get merged.
 
 ### The question card
 
-A question is the page's one interactive object, and it appears on four
-surfaces — the dashboard, `/questions`, the review dock, and the card the
-submit morph restates in place. All four go through **one** component, so a
+A question is the page's one interactive object, and it appears on five
+surfaces — the dashboard, `/questions`, the review dock, the `/question`
+focus page, and the card the submit morph restates in place. All five go
+through **one** component, so a
 change to how a question looks is one edit rather than a hunt.
 
 **Contract: `qaCard(q, key)`.**
@@ -1702,6 +1707,61 @@ counts — grouping is the view's job, rendering is the card's.
 `dev/capture/qacard.mjs` guards this by *structural* comparison: it asserts
 the dashboard's and the review dock's cards have the same tag path and class
 vocabulary as `/questions`'s, which is exactly what a quiet fork would lose.
+
+### The focused question
+
+*#452, human via watch 2026-07-29: "should be able to focus on a question,
+like open up to a page showing only that question. useful if other qs are
+being updated etc."* The reason given IS the requirement: the loop rewrites
+`questions.md` while he is reading it, so a list view re-sorts and re-bodies
+entries under him mid-answer. `/question?qid=<title>` is the surface that
+churn cannot move — exactly one card, the full `qaCard`, answered from the
+same compose path as everywhere else.
+
+- **The key is the question's title identity — the same string `data-qid`
+  already carries.** It was chosen for what SURVIVES it: body rewrites,
+  priority re-sorts and the open→answered fold all keep the title, and
+  those three are the churn the page exists for. The alternatives were
+  rejected on the same evidence: a content hash breaks on the body rewrites
+  that are the common case, and a positional key breaks on every re-sort.
+  `#294`'s planned `question_id` can later be accepted *beside* the title
+  without invalidating a single link.
+- **The fold is followed, not reported.** Resolution searches
+  `questions_open` AND `answered_entries`, because answering re-indexes the
+  entry while he watches — a live question reported as gone is the failure
+  the route exists to prevent. Same title, same card, new `a<n>` address.
+- **An unresolvable key fails LOUD.** A retitle breaks the key, and
+  `.qmissing` says what happened (most likely re-titled or removed), guesses
+  at nothing (a near title is a different question), and links back to the
+  list — "I could not tell" and "nothing" must never render the same. It
+  wears the rail at DIM level, deliberately not `--warn`: the channel is
+  healthy and the question is simply gone; a fault colour would cry broken
+  over an edit.
+- **The way in is a real link on every card, in every state.** `.qfocus`
+  sits in the headline beside the age chrome: the href makes it
+  deep-linkable and copyable, keyboard operation is native, and the click
+  rides the router's existing dissolve (the #252 argument — a button would
+  re-implement all three). It is headline CHROME under the #474 rule: a
+  node with a class, and that class is listed in `dockHeadline`. It is
+  quiet at rest (dimmer than the age it sits beside), accent on
+  hover/focus, and has no motion of its own — it is part of the card's
+  HTML and rides the card's own arrival. On the focus page itself it is
+  suppressed: the page IS the focus.
+- **A link inside the folded card's `<summary>` is navigation, never a
+  fold.** The `EXPAND_SURFACES` handler declines clicks on `a` descendants
+  — it is registered before the router's handler, so its `preventDefault`
+  would otherwise swallow the navigation and the affordance would read as
+  present while only ever toggling the fold.
+- **The route change is the existing dissolve and nothing else.** Entering
+  and leaving is the crossfade every route uses, with the route's own
+  `TINT`/`SEED`/`TITLE_ROUTE` entries; reduced motion swaps instantly.
+
+`dev/capture/qfocus.mjs` guards all of it: the affordance on every card and
+its key identity, the folded-summary navigation, the arrival dissolve
+(`transitionstart` on `#view`, the load-independent detector), an answer
+sent from the focused surface landing on the same question, the tick
+following a real fixture fold, the said-missing state, and reduced-motion
+parity.
 
 ### The questions channel's health
 

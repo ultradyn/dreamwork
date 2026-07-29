@@ -3371,6 +3371,77 @@ class TestSummaryRoute(unittest.TestCase):
             self._request("/summary.json", host=self.host)[0], 200)
 
 
+class TestQuestionRoute(unittest.TestCase):
+    # #452: /question serves the ONE app shell like every other in-app
+    # route, so a deep link renders client-side. The qid is the question's
+    # title identity — derived here from a REAL parse of the target's
+    # questions.md, never a literal, so a fixture whose titles change
+    # cannot silently vacate the check.
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.target = make_target(self.tmp.name)
+        probe = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+        port = probe.server_address[1]
+        probe.server_close()
+        self.authority = watch.RequestAuthority(
+            ["allowed.test", "127.0.0.1"], port)
+        self.server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", port),
+            watch.make_handler(self.target, authority=self.authority))
+        threading.Thread(target=self.server.serve_forever,
+                         daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{port}"
+        self.host = f"allowed.test:{port}"
+
+    def _request(self, path, *, host=None):
+        headers = {}
+        if host is not None:
+            headers["Host"] = host
+        req = urllib.request.Request(self.base + path, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=5) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read()
+
+    def _real_title(self):
+        qfile = os.path.join(self.target, ".dreamwork", "questions.md")
+        with open(qfile, encoding="utf-8") as fh:
+            entries = watch.parse_open_questions(fh.read())
+        # Precondition the check's meaning depends on: the fixture HAS an
+        # open question to focus. Zero entries would make "the shell
+        # answers for a real qid" pass over a route that resolves nothing.
+        self.assertGreater(len(entries), 0,
+                           "fixture has no open questions — the route "
+                           "check below would be vacuous")
+        return entries[0]["title"]
+
+    def test_question_route_serves_the_app_shell(self):
+        title = self._real_title()
+        qid = urllib.parse.quote(title, safe="")
+        status, body = self._request("/question?qid=" + qid, host=self.host)
+        self.assertEqual(status, 200)
+        self.assertIn(b'id="view"', body)
+
+    def test_question_route_without_qid_still_serves_the_shell(self):
+        # No key is not an error the SERVER can see — the client renders
+        # the missing-question notice. The shell must still come back.
+        status, body = self._request("/question", host=self.host)
+        self.assertEqual(status, 200)
+        self.assertIn(b'id="view"', body)
+
+    def test_question_route_is_gated_by_host_authority(self):
+        title = self._real_title()
+        qid = urllib.parse.quote(title, safe="")
+        self.assertEqual(
+            self._request("/question?qid=" + qid, host="evil.test")[0], 421)
+
+
 class TestAppShell(unittest.TestCase):
     """The single-document router: /, /questions and /file all serve the
     one shell (deep links render client-side), and /filedata backs the
@@ -3473,6 +3544,32 @@ class TestAppShell(unittest.TestCase):
         for token in ('buildReview', 'reviewframe', 'qdock', 'flipDock',
                       '/reviewraw', 'linkifyReview'):
             self.assertIn(token, watch.PAGE)
+
+    def test_page_has_question_route_wiring(self):
+        # #452: /question?qid=<title> focuses ONE question on its own page —
+        # a surface the loop's list churn cannot shift under him mid-answer
+        # (the list re-sorts and re-bodies entries while he reads). The key
+        # is the question's own title identity, the same one `data-qid`
+        # already uses to survive regrouping: body rewrites, re-sorts and
+        # the open→answered fold all keep it, and those three are the churn
+        # the route exists for. A RETITLE breaks it, and that case must
+        # render an explicit missing notice — never a blank page and never
+        # a different question ("I could not tell" and "nothing" must not
+        # render the same). Guard: dev/capture/qfocus.mjs.
+        for token in ('buildQuestion', '/question?qid=', 'qfocus', 'qmissing'):
+            self.assertIn(token, watch.PAGE)
+        # A route lives in three places and must live in all three: the
+        # client router (routeOf), the internal-link claim (isInternal),
+        # and the server's app-shell table (covered live in
+        # TestQuestionRoute). Two of three is a deep link that full-reloads
+        # or a link the browser sends nowhere.
+        self.assertIn("loc.pathname === '/question'", watch.PAGE)
+        self.assertIn("a.pathname === '/question'", watch.PAGE)
+        # Resolution searches BOTH sections: answering folds an entry from
+        # questions_open into answered_entries while he watches, and the
+        # focused page must follow it across the fold rather than reporting
+        # a live question as gone.
+        self.assertIn("d.answered_entries.find", watch.PAGE)
 
     def test_narrow_review_frame_uses_measured_rvh_not_60vh(self):
         # #434 — production lines: the narrow #reviewdoc height, and the

@@ -1174,6 +1174,27 @@ STYLE = """<style>
   .qhealth.unreadable .qhbody { color:var(--lit); }
   .qhealth.missing .qhbody { color:var(--dim); }
   .qh { color:var(--warn); }
+  /* #452 — the focused question's said-missing state. The rail idiom at
+     DIM level, not --warn: the channel is healthy and the question is
+     simply gone, so it must not wear the fault colour — and it must not
+     render as an empty list either (#402). The head is the page's small
+     uppercase-label idiom; the body states what happened and guesses at
+     nothing. */
+  .qmissing { border-left:2px solid var(--dimmer); padding-left:.8rem;
+    margin:.3rem 0 .9rem; }
+  .qmissing .qmisshead { color:var(--dim); text-transform:uppercase;
+    letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
+  .qmissing .qmissbody { color:var(--lit); max-width:56ch; }
+  .qmissing .qmissback { margin-top:.5rem; }
+  /* #452 — the per-card way into the focused page. Headline chrome, so it
+     is quiet at rest (dimmer than the age it sits beside) and discovers
+     itself on hover/focus with the page's ordinary link signal. No motion
+     of its own: it never appears or disappears on a rendered card — it is
+     part of the card's HTML and rides the card's own arrival. */
+  .qfocus { color:var(--dimmer); font-size:.7rem; white-space:nowrap; }
+  .qfocus:hover { color:var(--accent); }
+  .qfocus:focus-visible { color:var(--accent);
+    outline:1px solid var(--accent); outline-offset:2px; }
   /* a send that did not land wears the same colour, because it is the same
      failure seen from the writing end: the channel to him did not work and
      nothing else on the page would have said so */
@@ -2595,6 +2616,22 @@ const qUpdatedHtml = q => {
   return `<span class="rsep"> · </span>` +
     `<span class="age qup" data-ut="${u}" data-q-upd="${esc(q.title || '')}"></span>`;
 };
+/* #452 — the way IN to the focused page, on every card in every state (a
+   folded entry can be focused too: a settled question stays findable). A
+   REAL LINK, the #252 argument three ways: the href makes it deep-linkable
+   and copyable, keyboard operation is native, and the click rides the
+   router's existing dissolve because isInternal already claims /question —
+   a button would re-implement all three. The key is the title identity the
+   card itself carries as data-qid, so the link and the card cannot
+   disagree about which question they name. It is headline CHROME, so it is
+   a node with a class, and that class is listed in dockHeadline (#474's
+   rule). Suppressed on the focus page itself — the page IS the focus —
+   which is a per-view read of the same `view` the router owns. */
+const qfocusLink = title =>
+  (typeof view !== 'undefined' && view && view.name === 'question') ? '' :
+  ` <a class="qfocus" href="/question?qid=${encodeURIComponent(title)}"` +
+  ` title="focus this question — open it on its own page"` +
+  ` aria-label="focus this question on its own page">focus</a>`;
 const qaInner = (q, key) => {
   const st = qaState(q, key);
   const body = q.body && q.body.trim() ? mdBReview(q.body.trim(), q.title) : '';
@@ -2648,11 +2685,12 @@ const qaInner = (q, key) => {
      created age is there — a settled entry that cannot be found again has
      simply been hidden. */
   const up = qUpdatedHtml(q);
+  const focus = qfocusLink(q.title);
   if (st === 'folded')
     return `<details class="qfold"><summary class="qt">${qtHtml(q.title)}${up}` +
       (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : '') +
-      `</summary><div class="qbody">${body}${foot}</div>${compose}</details>`;
-  return `<div class="qbody"><div class="qt">${qtHtml(q.title)}${up}</div>` +
+      `${focus}</summary><div class="qbody">${body}${foot}</div>${compose}</details>`;
+  return `<div class="qbody"><div class="qt">${qtHtml(q.title)}${up}${focus}</div>` +
          `${body}${foot}</div>${compose}`;
 };
 /* Two identities, deliberately. `data-qkey` ADDRESSES the entry in live data
@@ -3852,6 +3890,46 @@ function buildReview(name, q, d) {
       dock +
     `</div>`;
 }
+/* #452 — ONE question on its own page: a surface the loop's churn cannot
+   shift under him mid-answer. The key (`qid` in the URL) is the question's
+   TITLE identity — the same string `data-qid` already carries to survive
+   regrouping — chosen for what survives it: body rewrites, priority
+   re-sorts and the open→answered fold all keep the title, and those three
+   ARE the churn this page exists for (the loop rewrote #449's entry three
+   times in fifteen minutes while he was reading it). A RETITLE breaks the
+   key, and that case fails LOUD, in the .qmissing notice below — never a
+   blank page and never a different question ("I could not tell" and
+   "nothing" must not render the same). #294's planned question_id can
+   later be accepted beside the title without invalidating a single link. */
+function buildQuestion(title, d) {
+  if (!d) return '<div class="dim">loading…</div>';
+  if (title) {
+    const oi = (d.questions_open || []).findIndex(x => x.title === title);
+    if (oi >= 0)
+      return `<div id="qfocus">` +
+        qaCard(d.questions_open[oi], 'o' + oi) + `</div>`;
+    /* the fold, followed: answering re-indexes the entry into
+       answered_entries while he watches, and the page moves WITH it — a
+       live question reported as gone is the failure this route exists to
+       prevent. Same title, same card, new 'a<n>' address. */
+    const ai = d.answered_entries.findIndex(x => x.title === title);
+    if (ai >= 0)
+      return `<div id="qfocus">` +
+        qaCard(d.answered_entries[ai], 'a' + ai) + `</div>`;
+  }
+  /* Unresolved. The notice says WHAT (the key names nothing live), WHY
+     (most likely a retitle), and the way back — and it guesses at nothing:
+     a near title is a different question. Not --warn: the channel is fine,
+     the question is simply gone, and a fault colour would cry broken over
+     an edit. */
+  return `<div id="qfocus"><div class="qmissing">` +
+    `<div class="qmisshead">not found</div>` +
+    `<div class="qmissbody">this link names a question the list no longer ` +
+    `has — it was most likely re-titled or removed while you watched. ` +
+    `No other question has been substituted for it.</div>` +
+    `<div class="qmissback"><a href="/questions">&larr; back to questions</a></div>` +
+    `</div></div>`;
+}
 /* ── the review split (#305) ──────────────────────────────────────────────
    An INVISIBLE affordance still has to be operable by everything that
    operates a control, so the bar is a real `separator` with a value: a
@@ -4495,11 +4573,11 @@ let view = { name: null, param: null, q: null };
    The /filedata response carries one of those shapes; never the bytes. */
 let fileCache = { param: null, fetched: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
-const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22 };
+const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22, question: 0.18 };
 /* per-route dissolve signature: each destination swirls from its own
    turbulence seed, so arriving somewhere has a consistent feel (pairs with
    the per-route tint). Distinct small integers give distinct fields. */
-const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61 };
+const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61, question: 67 };
 /* ── the tab title (#153) ─────────────────────────────────────────────────
    The title is the ONLY part of this dashboard that exists while the tab is
    backgrounded, which is most of its life — so it answers the page's whole
@@ -4535,7 +4613,8 @@ const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61 };
 const TITLE_ROUTE = { dashboard: () => '', questions: () => 'questions',
                       answers: () => 'answers',
                       file: p => p || 'file',
-                      review: p => 'review ' + (p || '') };
+                      review: p => 'review ' + (p || ''),
+                      question: () => 'question' };
 /* two missed heartbeats (4.75m each) — one late beat is a busy machine, two
    is a loop that stopped. */
 const STALE_TICK_MS = 10 * 60 * 1000;
@@ -5882,6 +5961,13 @@ function routeOf(loc) {
     const sp = new URLSearchParams(loc.search);
     return { name: 'review', param: sp.get('p'), q: sp.get('q') };
   }
+  if (loc.pathname === '/question') {
+    const sp = new URLSearchParams(loc.search);
+    // the key is the question's TITLE identity — the same string data-qid
+    // carries — so it survives everything the loop's churn does short of a
+    // retitle (#452)
+    return { name: 'question', param: sp.get('qid') };
+  }
   return { name: 'dashboard', param: null };
 }
 /* THE ONE PLACE `data` IS REPLACED, and it is a function rather than an
@@ -5944,6 +6030,7 @@ async function buildCurrent() {
     return buildFile(view.param, await fetchFile(view.param), view.mode);
   const d = await ensureData();
   if (view.name === 'review') return buildReview(view.param, view.q, d);
+  if (view.name === 'question') return buildQuestion(view.param, d);
   if (!d) return '<div class="dim">loading…</div>';
   if (view.name === 'questions') return buildQuestions(d);
   if (view.name === 'answers') return buildAnswers(d);
@@ -7250,6 +7337,13 @@ addEventListener('click', e => {
   if (!e.target.closest) return;
   const m = EXPAND_SURFACES.find(s => e.target.closest(s.sum));
   if (!m) return;
+  /* #452: a REAL LINK inside the summary (the folded card's focus
+     affordance) is navigation, not a fold — decline it so the router's
+     handler takes it. This handler is registered FIRST, so its
+     preventDefault would otherwise mark the click handled and the
+     router's `e.defaultPrevented` check would skip the navigation: the
+     link read as present but only ever toggled the fold. */
+  if (e.target.closest('a')) return;
   e.preventDefault();
   const det = e.target.closest(m.sum).parentElement;
   const host = det.closest(m.host);
@@ -7341,6 +7435,10 @@ const TITLES = {
      one line down, in the crumb row (`crumbsFor`). */
   file: v => esc(fileBase(v.param || '')),
   review: v => `review<span class="revname">${esc(v.param || '')}</span>`,
+  /* #452: the heading names the SURFACE, not the question — a title can run
+     to a line and a half, and it is rendered in full by the card directly
+     below. When the key resolves nowhere the missing notice says so. */
+  question: () => 'question',
 };
 /* The copy button carries no path of its own, on purpose: it reads
    `view.param`, which is what the router parsed out of the URL and therefore
@@ -7422,6 +7520,11 @@ function crumbsFor(v, d) {
     { k:'home', html:'<a href="/">dashboard</a>' },
     { k:'pip', html: pipBtn('/reviewraw?p=' + encodeURIComponent(v.param || ''),
                             'review: ' + (v.param || '')) }];
+  // #452: the focused page belongs to the questions list — the way back is
+  // the same pair the review dock carries (no artifact to pop out here).
+  if (v.name === 'question') return [
+    { k:'qs', html:'<a href="/questions">&larr; questions</a>' },
+    { k:'home', html:'<a href="/">dashboard</a>' }];
   if (!d) return [];
   return [
     { k:'target', html: esc(d.target) },
@@ -8076,6 +8179,7 @@ async function navigate(name, param, opts) {
         (mode === 'source' ? '&view=source' : '')
     : name === 'review' ? '/review?p=' + encodeURIComponent(param || '') +
         (opts.q ? '&q=' + encodeURIComponent(opts.q) : '')
+    : name === 'question' ? '/question?qid=' + encodeURIComponent(param || '')
     : '/';
   if (opts.push) history.pushState({ name, param, q: opts.q || null }, '', url);
   const html = await buildCurrent();
@@ -8099,7 +8203,8 @@ function isInternal(a) {
   if (a.origin !== location.origin) return false;
   return a.pathname === '/' || a.pathname === '/questions'
       || a.pathname === '/answers'
-      || a.pathname === '/file' || a.pathname === '/review';
+      || a.pathname === '/file' || a.pathname === '/review'
+      || a.pathname === '/question';
 }
 addEventListener('click', e => {
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey ||
@@ -12698,7 +12803,8 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             parsed = urllib.parse.urlparse(self.path)
             # Same-document routes all return the one app shell; the client
             # router renders the matching view (deep links keep working).
-            if parsed.path in ("/", "/questions", "/answers", "/file", "/review"):
+            if parsed.path in ("/", "/questions", "/answers", "/file",
+                               "/review", "/question"):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
