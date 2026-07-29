@@ -8157,7 +8157,7 @@ function armStaleDeploy() {
     paintStaleDeployUI();
     const text = `arms in ${left}s — then this page updates`;
     const m = document.getElementById('fmsg');
-    if (m && /^arms in \d+s — then this page updates$/.test(m.textContent || '')) {
+    if (m && /^arms in \\d+s — then this page updates$/.test(m.textContent || '')) {
       m.textContent = text;  // tick the number in place; no arrival gesture
     } else {
       c.claim(text, true);   // first paint of this arm only
