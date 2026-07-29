@@ -27,15 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **490**
 
 ## Open
-- **#489** — burndown cycle direction: click goes coarse→fine, shift-click reverses · P2 ·
-  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:35:** *"on the
-  burndown cycle, when we click the cycle time period label, it should go the other day: daily ->
-  4-hourly -> hourly -> montly -> weekly -> daily ... Also, if we shift-click it, it should cycle in
-  reverse."* · his sequence is exactly the reverse of what #487 shipped (coarse→fine with wrap to
-  coarsest; "montly" = the every-four-weeks step) · acceptances: (1) plain click walks daily →
-  4-hourly → hourly → every-four-weeks → weekly → daily; (2) shift-click walks the other way ·
-  follow-up to #487 (folded 98379eae) · coordinator-inline (small, single-purpose, watch.py is
-  coordinator-owned in main)
 - **#488** — posture card: 'override · .dreamwork/posture' label beside the heading; hover help text must not reflow · P2 ·
   dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:12:** *"the
   'override · .dreamwork/posture' label should go next to the 'Posture' heading. and the description
@@ -2734,6 +2725,17 @@ Next id: **490**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#489** — burndown cycle direction: click goes coarse→fine, shift-click reverses · P2 ·
+  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:35:** *"on the
+  burndown cycle, when we click the cycle time period label, it should go the other day: daily ->
+  4-hourly -> hourly -> montly -> weekly -> daily ... Also, if we shift-click it, it should cycle in
+  reverse."* · his sequence is exactly the reverse of what #487 shipped (coarse→fine with wrap to
+  coarsest; "montly" = the every-four-weeks step) · acceptances: (1) plain click walks daily →
+  4-hourly → hourly → every-four-weeks → weekly → daily; (2) shift-click walks the other way ·
+  follow-up to #487 (folded 98379eae) · coordinator-inline (small, single-purpose, watch.py is
+  coordinator-owned in main)
+  · coordinator-inline (trivial class): cycleBurnStep(back), handler hands e.shiftKey; click walks coarse→fine per his order, shift reverses. Red-first wiring pytest + bdhover direction walk on real dispatched clicks with the ladder derived from the page's own BURN_STEP_ORDER; red-proof dropped the modifier and both layers failed exactly. 337 pytest green, bdhover PASS, audit exit 0. Styleguide contract updated same commit.
+
 - **#487** — burndown chart: click-to-cycle granularity, one hover surface, consistent placement · P2 ·
   dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:11:** *"update the
   burndown chart so that clicking 'daily' cycles between daily/hourly/etc. Also at the same time, there
