@@ -182,6 +182,29 @@ Next id: **492**
   landed while the cutover was still open — `dev/ledger.py fold` moves the entry, it
   does not annotate in place. Moved back to Open by hand with this note appended; the
   premature-landed window was commits d83b6a6..now and touched nothing else.
+  · **INCREMENT 6 (cutover machinery) MERGED 2026-07-29 20:06 — build only, never
+  executed live.** Lane `wt/294cutover` (llmp-glm-5-2, 1025s, 83 calls; `83584290`
+  `c085df72` `c3114a25` `abd39b4f`): `--cutover` implements the design's 7-step
+  ordering verbatim (lease via #263's CAS primitive imported not reinvented → freeze →
+  stages 1–4 under lease → one-way watermark `ledger_cut_over` in the store's meta →
+  `tasks.md.deprecated` + YAML block + one-line #458 shim → watch-events line →
+  release); `--rollback` restores the backup and re-runs FORWARD, never restoring a
+  legacy writer (`guard_markdown_write` raises VersionMismatchError post-watermark).
+  Reader flip lives in `ledger_parse.py` (`source_of_truth`/`store_entries`/
+  `store_ids_by_state`, leaf module, raw sqlite3, read-only connections). Lane
+  red-proved fixtures 6/8/9/10; coordinator independently red-proved the watermark
+  dispatch (`_WATERMARK_KEY` typo → `is_cut_over` always False → exactly
+  `test_rollback_never_restores_legacy_writer` fails; byte-identical restore; 47
+  migrate/store tests green; lint clean). **REMAINING, all coordinator acts at live
+  cutover:** (a) re-point the consumers — `watch.py` readers, `status_sync.py`,
+  `task_origins.py` dispatch on `ledger_parse.source_of_truth` (lane documented the
+  seam; consumers still read Markdown today); (b) retire `lint.py`'s
+  `check_status_agrees_with_ledger` (#362) and replace with the inverse invariant
+  (retired status.json fields `queue`/`current_task_ids`/per-agent `task_ids` must
+  stay ABSENT — fails closed on reappearance). Sequencing constraint: the lint swap
+  must land WITH the cutover, not before — the absence-invariant errors on today's
+  status.json, which still carries those fields; (c) execute `--cutover` live, lease
+  held, no lanes in flight.
 - **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
   dashboard/loop-config · origin: **human** · **human via watch `add-idea` 2026-07-29 17:10:** *"posture
   config (pace, etc) should have a place for text entry of subagent policy where user can put preferred
