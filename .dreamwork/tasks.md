@@ -431,27 +431,6 @@ Next id: **492**
   recoverable-but-invisible. Fold that into whatever `#423` builds
   · related: **#410, #402, #424, #428**
 
-- **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
-  right now · P2 · handoffs/correctness · origin: **loop** · **predicted by the `#401` lane in its
-  neighbour table and not filed by it; found in the tree one minute later**
-  · `pending_handoff_records` hides a pending line whose id is in `folded_ids`, and correlation is
-  **by id alone** — so a second landing under the same id is suppressed by the first one's fold. Not
-  hypothetical: the live file has **`#401` pending twice** (`f2c950e`, the audit half, and `e53d70c`,
-  the fix half) and folded **once**. The fix-half landing is invisible to the dashboard
-  · **it is the append-only design's own logic turned against it.** Nothing moves, so both lines
-  persist; a fold marker is a bare id token with no sha, so it cannot say *which* landing it
-  consumed. Every part of that is deliberate, and the combination loses a landing
-  · **and it is the ordinary case, not an exotic one** — a task landing twice is exactly what an
-  audit half plus a fix half looks like, which is how this repo splits work
-  · rec: **correlate a fold by `(id, sha)`**, not by id. The sha is already in the pending line and
-  every fold line already cites one in prose (*"citing `f2c950e`"*), so the data exists and only the
-  parser ignores it. The honest cost is migration: existing fold lines carry the sha in **prose**,
-  not in a parsed field
-  · **the red is in the tree and needs no injection**, as `#406`'s was — but prove it before tidying,
-  and **do not let a fold note claim a state nobody re-checked**; that mistake cost the last lane a
-  restore step
-  · related: **#401, #381**
-
 - **#407** — `/questions` has **no** timed ages, so the one-figure precision signal has nothing on
   the page to be read against · P3 · dashboard/design-rationale · origin: **loop** · found by
   measuring the deployed page while verifying **#392a**, not by reading the design
@@ -2717,6 +2696,28 @@ Next id: **492**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
+  right now · P2 · handoffs/correctness · origin: **loop** · **predicted by the `#401` lane in its
+  neighbour table and not filed by it; found in the tree one minute later**
+  · `pending_handoff_records` hides a pending line whose id is in `folded_ids`, and correlation is
+  **by id alone** — so a second landing under the same id is suppressed by the first one's fold. Not
+  hypothetical: the live file has **`#401` pending twice** (`f2c950e`, the audit half, and `e53d70c`,
+  the fix half) and folded **once**. The fix-half landing is invisible to the dashboard
+  · **it is the append-only design's own logic turned against it.** Nothing moves, so both lines
+  persist; a fold marker is a bare id token with no sha, so it cannot say *which* landing it
+  consumed. Every part of that is deliberate, and the combination loses a landing
+  · **and it is the ordinary case, not an exotic one** — a task landing twice is exactly what an
+  audit half plus a fix half looks like, which is how this repo splits work
+  · rec: **correlate a fold by `(id, sha)`**, not by id. The sha is already in the pending line and
+  every fold line already cites one in prose (*"citing `f2c950e`"*), so the data exists and only the
+  parser ignores it. The honest cost is migration: existing fold lines carry the sha in **prose**,
+  not in a parsed field
+  · **the red is in the tree and needs no injection**, as `#406`'s was — but prove it before tidying,
+  and **do not let a fold note claim a state nobody re-checked**; that mistake cost the last lane a
+  restore step
+  · related: **#401, #381**
+  · Fold correlation is now by (id, sha): a fold citing one landing's sha consumes only that landing, so #401's suppressed fix-half e53d70c surfaces again. FoldedHandoffs set-subclass keeps lint's contract byte-identical; id-only fallback when cited shas match no pending (fold-sha vocabulary is inconsistent — most cite merge commits). Lane llmp-glm-5-2, 803s, 64 calls. Coordinator red-proof: reverted the consumed-condition to id-only -> test failed 'e53d70c not found in set()'; restored byte-identical (md5 match); 343 pytest green; lint clean. lint.check_handoffs' own id-only WARN loop documented as lint's to widen (lint.py forbidden to lanes).
+
 - **#491** — dashboard head shows a stale migration filename beside 'updated Ns ago' · P2 ·
   dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 19:15:** *"
   '2026-07-26-02-contextual-plugin-loading.md' shows at the top of the dashboard next to 'updated 50s
