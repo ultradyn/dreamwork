@@ -139,7 +139,13 @@ const GEO = `(() => {
     return { l:+b.left.toFixed(1), t:+b.top.toFixed(1), r:+b.right.toFixed(1),
              b:+b.bottom.toFixed(1), w:+b.width.toFixed(1), h:+b.height.toFixed(1) }; };
   const wrap = q('.wrap'), read = q('p.read');
-  const worst = document.querySelector('[data-mid="0"]');
+  // #507: scope to .marktab — the visible rail above the cliff. The built
+  // artifact ALSO renders every mark inside .markstrip (the collapsible walk
+  // below the cliff, display:none here), so a bare [data-mid="0"] resolves to
+  // that hidden copy FIRST in DOM order and reads 0x0, and a Playwright
+  // locator over it hits a strict-mode violation (2+ matches). The rail this
+  // guard is about is .marktab; .markstrip is a different feature.
+  const worst = document.querySelector('.marktab[data-mid="0"]');
   const worstHost = q('#long');
   const closeParent = document.querySelector('#close.is-marked .marktab');
   const closeChild = document.querySelector('#closechild.is-marked .marktab');
@@ -236,14 +242,14 @@ async function targetTopAfter(p, id) {
   const { ctx, p } = await open();
   // establish a :target by clicking the first flag, so the arriving flag's
   // opacity transition has a real "from" state to travel from
-  await p.locator('[data-mid="0"] .markflag').click();
+  await p.locator('.marktab[data-mid="0"] .markflag').click();
   await sleep(600);
   const before = await p.evaluate(GEO);
   // trace scroll across the click: instant jump → the trace has only its two
   // endpoint values, 0 part-way; smooth scroll fills the window with them.
   const trace = traceScroll(p, 900);
   await sleep(40);
-  await p.locator('[data-mid="0"] .marknext').click();
+  await p.locator('.marktab[data-mid="0"] .marknext').click();
   const seen = await trace;
   await sleep(500);
   const after = await p.evaluate(GEO);
@@ -263,11 +269,11 @@ async function targetTopAfter(p, id) {
 
   // the arriving flag's opacity travels under normal motion (the page's idiom)
   // — reset to the first mark, then click next and trace the new current's opacity
-  await p.locator('[data-mid="0"] .markflag').click();
+  await p.locator('.marktab[data-mid="0"] .markflag').click();
   await sleep(600);
-  const opTrace = traceOpacity(p, '[data-mid="1"]', 700);
+  const opTrace = traceOpacity(p, '.marktab[data-mid="1"]', 700);
   await sleep(40);
-  await p.locator('[data-mid="0"] .marknext').click();
+  await p.locator('.marktab[data-mid="0"] .marknext').click();
   const ops = await opTrace;
   const opPartway = betweenCount(ops);
   notes.push(`arrival opacity: ${ops[0]?.toFixed(2)} -> ${ops.at(-1)?.toFixed(2)} ` +
@@ -280,11 +286,11 @@ async function targetTopAfter(p, id) {
    instant — timing changes, function and legibility do not */
 {
   const { ctx, p } = await open({ reduced: true });
-  await p.locator('[data-mid="0"] .markflag').click();
+  await p.locator('.marktab[data-mid="0"] .markflag').click();
   await sleep(500);
   const trace = traceScroll(p, 600);
   await sleep(40);
-  await p.locator('[data-mid="0"] .marknext').click();
+  await p.locator('.marktab[data-mid="0"] .marknext').click();
   const seen = await trace;
   await sleep(300);
   const reachedTop = await targetTopAfter(p, 'findings');
@@ -344,7 +350,7 @@ async function targetTopAfter(p, id) {
   ok('every marked host is focusable (tabindex="-1") so the current passage is announced',
      hosts.length > 0 && hosts.every(h => h.tabindex === '-1'));
   // the flags and the nav controls are real links in the tab order
-  await p.locator('[data-mid="0"] .markflag').focus();
+  await p.locator('.marktab[data-mid="0"] .markflag').focus();
   const focusedTag = await p.evaluate(`document.activeElement && document.activeElement.tagName + '.' + (document.activeElement.className || '')`);
   ok('a flag is a focusable control (focus lands on it)', /markflag/.test(focusedTag));
   // Tab from a flag reaches the next control (the next-mark link when current)
