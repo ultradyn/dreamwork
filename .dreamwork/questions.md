@@ -3,6 +3,41 @@
 ## Open
 
 
+- **P2 · 2026-07-30 06:05 — #510: an 'Orchestrator' option in Posture — three calls, after the IGC you asked for.**
+  **Sub-decisions:** `Q1`, `Q2`, `Q3`
+  Design: `.dreamwork/docs/plans/orchestrator-posture.md` (design only; no code authorised). Your 04:54
+  do-next. The IGC (I1–I5 × G1–G5) settles *how* it integrates — **a fifth posture axis**, not a fold onto
+  `delegation`, not the `hierarchical` run-mode value, not a control-only toggle, not a sibling file. What
+  it does not settle is *what* "Orchestrator" is, and that is the first call. One finding worth your eye:
+  the fleet concept you're gesturing at already exists, teed up and disabled, as the `hierarchical`
+  run-mode value (`watch.py:343`) — so this is less "invent where it goes" than "it wants to be a posture
+  axis, not the run-mode value it's parked as" (run-mode bundles decisions, `#443`; an axis is the
+  unbundled form).
+
+  - **`Q1` — the referent: orchestration MODE, or orchestrator IDENTITY?** Mode = the coordinator
+    dispatches + reviews and implements nothing inline (the coordinator-only-loop mode
+    `dogfood-orchestration.md` records; your "you main opus 5 claude orchestrator" usage). Identity =
+    which model/session runs the loop. **`rec: mode.`** Identity is a dispatch/provenance fact you set by
+    which session you run / which alias you dispatch — recorded at dispatch, not a posture dial; a
+    gitignored, tick-re-read posture file is the wrong home for "who was dispatched." If you mean
+    identity, say so — the integration is different and this IGC does not apply.
+  - **`Q2` — the closed set and name (if mode).** **`rec: a binary axis `hands-on` | `orchestrator`,
+    absent → `hands-on` (today).** `orchestrator` = the coordinator implements nothing inline — every
+    increment is dispatched, the coordinator's role is adjudication/review/ledger. `hands-on` = today
+    (implements inline, may also delegate). Binary because solo-vs-fleet is already `delegation`'s job
+    (`delegation: 0` = solo); a third "solo" stop would duplicate it. The other stop's label is open
+    (`hands-on` rec; `implementer`/`inline` alternatives); a three-stop `solo | mixed | orchestrator` is
+    available if you want "mixed" nameable.
+  - **`Q3` — the `hierarchical` run-mode (#264/#288).** **`rec: land the axis, do NOT enable
+    `hierarchical` as a run-mode value.** The axis is the dial `hierarchical` always wanted to be;
+    enabling the value re-bundles decisions (`#443`) and still needs #264/#288, while the axis needs
+    neither. Alternative: land both, the axis being what a later `hierarchical` convenience bundle sets.
+
+  **If you say nothing:** nothing is built — the design authorises no code, and the recs stand as the
+  defaults when the implementation split (subagent WebUI, coordinator docs, per your instruction) is
+  planned.
+  Accepted answers: `rec` (takes all three) · per-question (`Q1: …`) · free text.
+
 - **P2 · 2026-07-30 04:45 — #504: the composer 'chat' design is done — an IGC made it the first slice of #229, and four forks are yours.**
   **Sub-decisions:** `Q1`, `Q2`, `Q3`, `Q4`
   Design: `.dreamwork/docs/plans/composer-chat.md` (design only; no code authorised; the implementation
