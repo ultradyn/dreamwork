@@ -282,19 +282,6 @@ Next id: **484**
   required/optional, persist-until-answered), and the push-back — pag is a partial model (no authorship
   vocabulary, no threading, one-shot answers, no attention-mode axis), and `#294` must add question/contribution
   tables before any build. **The FEATURE stays blocked on `#294`** — only the survey half is done.
-- **#467** — a `- **Answer …` bullet in a questions.md body truncates the parsed entry, so a `→ answered`
-  marker written after it is invisible to every reader · **P1** · tooling/lint · origin: **loop**
-  · **measured, 2026-07-29 03:50**, folding his `#445` answer: the marker was appended after his answer and
-  `watch.answered_at` returned `None`. Cause: the dashboard writes his answer as `  - **Answer (via watch,
-  …):**`, and entry splitting treats a `- **` bullet as a boundary — so everything after it, marker included,
-  lands outside the body the readers see. Moving the marker **above** his answer line fixed it immediately
-  · **this is `#411`'s family, third instance.** A marker dropped (`#264`, `#263`), a marker trapped inside a
-  wrapped title, and now a marker orphaned past a nested bullet — each time the fold looked done, lint's
-  date check was the only thing that noticed, and it only notices *absence*, never *misplacement*
-  · **the fix is a check, not a habit:** if a body contains a `→ answered` marker positioned after a nested
-  `- **` bullet, ERROR and say where it must go. Assert the precondition at runtime — the check is vacuous
-  unless the fixture's marker really is unreachable, so derive that from the parser rather than trusting the
-  fixture's layout · related: **#411, #366, #473**
 - **#472** — a review-artifact link in a question renders as raw markdown, so he cannot open the artifact ·
   **P1** · dashboard/questions · origin: **human** ·
   **human via watch 2026-07-29 06:21:** *"the link to the review artifact does not work (doesn't render as a
@@ -3685,6 +3672,21 @@ Next id: **484**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#467** — a `- **Answer …` bullet in a questions.md body truncates the parsed entry, so a `→ answered`
+  marker written after it is invisible to every reader · **P1** · tooling/lint · origin: **loop**
+  · **measured, 2026-07-29 03:50**, folding his `#445` answer: the marker was appended after his answer and
+  `watch.answered_at` returned `None`. Cause: the dashboard writes his answer as `  - **Answer (via watch,
+  …):**`, and entry splitting treats a `- **` bullet as a boundary — so everything after it, marker included,
+  lands outside the body the readers see. Moving the marker **above** his answer line fixed it immediately
+  · **this is `#411`'s family, third instance.** A marker dropped (`#264`, `#263`), a marker trapped inside a
+  wrapped title, and now a marker orphaned past a nested bullet — each time the fold looked done, lint's
+  date check was the only thing that noticed, and it only notices *absence*, never *misplacement*
+  · **the fix is a check, not a habit:** if a body contains a `→ answered` marker positioned after a nested
+  `- **` bullet, ERROR and say where it must go. Assert the precondition at runtime — the check is vacuous
+  unless the fixture's marker really is unreachable, so derive that from the parser rather than trusting the
+  fixture's layout · related: **#411, #366, #473**
+  · landed 3cfbe8e9 (merge of wt/467; lane work 3000eb91 + 801d2ed6, native subagent). check_resolution_marker_after_subbullet (ERROR): an answered entry offends when answered_at sees no marker AND the marker shape is found inside an absorbed sub-bullet — keyed on the parser's truth (watch._parse_entries invariant 3: after an Answer/Note sub-bullet, following non-bullet lines absorb into that bullet's text), so a blank-line-released marker is legal. Placement contract in file-formats.md, same commit. Lane red-first (4 tests), runtime-derived precondition (fixture's marker genuinely unreachable via the real parser). Coordinator independently red-proved on the merged tree: neutering lint.py:414 fails exactly the two ERROR tests, byte-identical restore, 355 test_lint pass. Deliberately out of scope: the writer-side fix (fold appending the marker after the answer line).
+
 - **#466** — bundle the `subagent-protocols` skill with dreamwork, so a lane's two-way channel is part of the
   loop rather than a path a brief happens to name · **P2** · packaging/subagents · origin: **human** ·
   **human via watch 2026-07-29 03:45**, inside his `#445` answer
