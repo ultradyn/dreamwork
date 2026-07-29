@@ -188,10 +188,16 @@ status-sync *args:
 #                data.linkable_paths at runtime — a green without that
 #                precondition is vacuous. Production line: pipBtn injection
 #                inside linkify when the closed set matches.
+#   mdquote      ordinary (OUT, PORT) on the shared server (#521+#522). Plants
+#                a multi-line `>` quote, known + relative + unknown markdown
+#                links, and a fence holding `>` into the target copy; derives
+#                quote line count at runtime. Production lines: mdBlocks
+#                quote kind, mdRender blockquote branch, linkifyMd promote
+#                and literal branches, fence-before-quote order.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel headcrumb reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade rundesc markrail devoverlay autogrow dissolve burndownmock bdhover reviewask staleremedy rejectwrite posture summaryjson qsignal qfocus qroll research restcollapse qlinkpip"
+    DEFAULT_GUARDS="headertravel headcrumb reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade rundesc markrail devoverlay autogrow dissolve burndownmock bdhover reviewask staleremedy rejectwrite posture summaryjson qsignal qfocus qroll research restcollapse qlinkpip mdquote"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}

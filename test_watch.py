@@ -4052,16 +4052,17 @@ class TestAppShell(unittest.TestCase):
         # (same mdB as dashboard peeks); source code at /file does not.
         for token in ('function mdBlocks', 'function mdRender', 'const mdSpans',
                       'const mdB =', 'const mdBReview =',
-                      # the four things a join must not destroy
-                      "kind:'fence'", "kind:'h'", "kind:'li'",
-                      'const MD_BULLET =',
+                      # the five things a join must not destroy (#521 quote)
+                      "kind:'fence'", "kind:'h'", "kind:'li'", "kind: 'quote'",
+                      'const MD_BULLET =', 'const MD_QUOTE =',
                       # prose surfaces
                       'mdBReview(q.body.trim(), q.title)', 'mdB(d.content)',
                       # the files peek renders through mdB — pinned as a
                       # PREFIX, never the whole call: restcollapse added
                       # keep args (`file:${n}`) and a full-call literal went
-                      # stale on a change that kept the thing being asserted
-                      'expand(n, mdB(d.files[n])', 'mdInline(txt)'):
+                      # stale on a change that kept the thing being asserted;
+                      # #522 threads filePath as second arg for relative links
+                      'expand(n, mdB(d.files[n]', 'mdInline(txt)'):
             self.assertIn(token, watch.PAGE)
         # #158: /file branches on kind — .md (and kin) through mdB; else pre.
         # The branch is by EXTENSION, never content sniff, and the escape is
@@ -4069,11 +4070,16 @@ class TestAppShell(unittest.TestCase):
         # already-escaped text, and fences escape too — so hostile markup in
         # a rendered .md is visible text, never honoured HTML. The browser
         # half of that statement is the reflow guard's hostile-file checks.
+        # #522: mdB(text, param) so relative [text](../x) can resolve; pin
+        # the call prefix, not the whole form.
         for token in ('function isMarkdownFile', 'function buildFile',
-                      'isMarkdownFile(param)', 'mdB(text)',
+                      'isMarkdownFile(param)', 'mdB(text, param)',
                       "endsWith('.md')", "endsWith('.markdown')",
                       "endsWith('.mdx')",
-                      'mdSpans(linkify(esc(t)))', '${esc(b.text)}',
+                      # #522: linkifyReview → linkifyMd → linkify
+                      'linkify(linkifyMd(esc(t), baseDir))',
+                      'const linkifyMd =', 'class="mdquote"',
+                      '${esc(b.text)}',
                       '`<pre>${esc(text)}</pre>`'):
             self.assertIn(token, watch.PAGE)
         # status.json was in that list until #130 and is not any more. It is
@@ -4091,7 +4097,9 @@ class TestAppShell(unittest.TestCase):
         # rewritten, always to `/review?p=…` so a relative path cannot
         # 404 from /questions.
         for token in ('const revDock =', 'const linkifyReview =',
-                      'mdSpans(linkify(linkifyReview(esc(t), title)))',
+                      # #522 inserted linkifyMd between linkifyReview and
+                      # linkify; review still runs first (more specific)
+                      'linkify(linkifyMd(linkifyReview(esc(t), title), null))',
                       'mdBReview(q.body.trim(), q.title)'):
             self.assertIn(token, watch.PAGE)
         # the preferred shape still matches inside backticks (PAGE is the
@@ -6167,9 +6175,13 @@ class TestFileViewMode(unittest.TestCase):
         # unhighlighted file renders — both markdown modes read `src`, so
         # there is no second renderer to drift.
         self.assertIn("`<pre>${esc(text)}</pre>`", watch.PAGE)
+        # #522: mdB takes the file path as second arg for relative links;
+        # pin the call site prefix so the branch remains the production line
         self.assertIn(
-            "const body = (isMarkdownFile(param) && mode !== 'source') "
-            "? mdB(text) : src;", watch.PAGE)
+            "const body = (isMarkdownFile(param) && mode !== 'source')",
+            watch.PAGE)
+        self.assertIn("mdB(text, param)", watch.PAGE)
+        self.assertIn(": src;", watch.PAGE)
         # The render-plain condition is EXPLICIT, never "no hl happened to
         # arrive": the guarantee must not depend on what the server chose to
         # send (#252's own note about the #351 collision).
