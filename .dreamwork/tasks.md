@@ -451,51 +451,6 @@ Next id: **492**
   recoverable-but-invisible. Fold that into whatever `#423` builds
   · related: **#410, #402, #424, #428**
 
-- **#415** — the hand-off grammar allows ONE sha, and a task landing in two commits is the
-  ordinary case · P3 · loop-tooling/format · origin: **loop** · found when the `#411` lane
-  reported honestly and lint called it malformed
-  · **what happened.** `#411` landed as `54c68e8` (the fix) + `25a3fe4` (the lint count), so the
-  lane wrote `· landed \`54c68e8\` \`25a3fe4\` ·`. `file-formats.md:246` specifies
-  `· landed \`<sha>\` ·` — singular — so `lint` reported *"a hand-off entry the grammar does not
-  recognise"*. **The lane was right and the format was wrong**: two commits is what the work was
-  · normalised by hand to the final sha with the other in the prose, which loses the structure —
-  a tool can no longer find the first commit, only a human reading the sentence
-  · **this is `#401` one field over.** That task widened the hand-off *id* vocabulary to accept
-  plain / sub-id / combined because the loop's ids were richer than the grammar. The *sha* field
-  has the identical defect and the same fix shape: accept a run of backticked shas, keep the
-  first-and-last distinction if it is worth anything, and state it in `file-formats.md` in the
-  same commit
-  · **the cheap red is available without an injection**: today's `#411` line, before
-  normalisation, is a real failing input — put it in the fixture and assert the grammar accepts
-  it, then narrow the pattern back to one sha and watch it fail
-  · low priority: the WARN is loud, correct, and the workaround is one edit. Filed so the next
-  two-commit lane does not rediscover it — this is the third time today a lane has been marked
-  wrong by a checker that was itself too narrow (`qacard`, the dock guards, now this)
-  · related: **#401, #367, #427**
-  · **a second instance of the same narrowness, found 15:10 and worth folding in here rather than
-  filed separately:** `lint` cannot tell a merge that lands an *increment* of a multi-increment
-  task from a merge that *closes* it, so `#367` — open by design, awaiting his ruling — reports as
-  *"under `## Open` but git already has a close/merge commit"*. The hand-off grammar has the
-  matching gap: `· landed \`<sha>\` ·` says *landed*, with no way to say *increment 2 of n
-  landed*. Both are the same missing distinction, so whoever widens the sha field should widen
-  this too
-  · **IN PROGRESS 2026-07-28 17:03** — folded into the `#402b` lane (`ccc @glm52`,
-  `.worktrees/fmt`), because both widen a grammar in `file-formats.md` + `lint.py` and both have a
-  live symptom. The brief leans hardest on the **negative** tests: a widening's easy failure is
-  accepting everything, and one with no negative test has removed a check rather than improved it
-  · **DONE lint-local, `4c70722`, `ccc @glm52` (merged 17:47) — and the lane found the scope I got
-  wrong.** The hand-off grammar lives in **`watch.py`'s `HANDOFF_PENDING_RE`**, which my brief listed as
-  not-yours, and `parse_handoffs`' return shape is asserted on in `test_watch.py`. So it widened
-  **`lint.check_handoffs`** instead: multi-sha lines are reclassified out of the parser's `malformed`
-  bucket and counted separately. Red from the **real** `#411` line recovered from `f7d5bea`, not a
-  fixture; negative test keeps a zero-sha line malformed
-  · decisions, all in `file-formats.md`: order is **written-order, not enforced** (a hand-off is a
-  report; `Recently landed` is where order is recoverable from `git log`), **no cap** (capping
-  reintroduces the defect), **zero-sha stays malformed** (the delivery signal would be empty)
-  · **REMAINDER, and the lane named it rather than leaving it to be discovered:** `parse_handoffs`
-  still returns a multi-sha line as malformed, so `pending_handoff_records` **will not surface its
-  shas on the dashboard** until `watch.py`'s grammar widens too. Filed as part of `#427`
-
 - **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
   right now · P2 · handoffs/correctness · origin: **loop** · **predicted by the `#401` lane in its
   neighbour table and not filed by it; found in the tree one minute later**
@@ -2782,6 +2737,52 @@ Next id: **492**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#415** — the hand-off grammar allows ONE sha, and a task landing in two commits is the
+  ordinary case · P3 · loop-tooling/format · origin: **loop** · found when the `#411` lane
+  reported honestly and lint called it malformed
+  · **what happened.** `#411` landed as `54c68e8` (the fix) + `25a3fe4` (the lint count), so the
+  lane wrote `· landed \`54c68e8\` \`25a3fe4\` ·`. `file-formats.md:246` specifies
+  `· landed \`<sha>\` ·` — singular — so `lint` reported *"a hand-off entry the grammar does not
+  recognise"*. **The lane was right and the format was wrong**: two commits is what the work was
+  · normalised by hand to the final sha with the other in the prose, which loses the structure —
+  a tool can no longer find the first commit, only a human reading the sentence
+  · **this is `#401` one field over.** That task widened the hand-off *id* vocabulary to accept
+  plain / sub-id / combined because the loop's ids were richer than the grammar. The *sha* field
+  has the identical defect and the same fix shape: accept a run of backticked shas, keep the
+  first-and-last distinction if it is worth anything, and state it in `file-formats.md` in the
+  same commit
+  · **the cheap red is available without an injection**: today's `#411` line, before
+  normalisation, is a real failing input — put it in the fixture and assert the grammar accepts
+  it, then narrow the pattern back to one sha and watch it fail
+  · low priority: the WARN is loud, correct, and the workaround is one edit. Filed so the next
+  two-commit lane does not rediscover it — this is the third time today a lane has been marked
+  wrong by a checker that was itself too narrow (`qacard`, the dock guards, now this)
+  · related: **#401, #367, #427**
+  · **a second instance of the same narrowness, found 15:10 and worth folding in here rather than
+  filed separately:** `lint` cannot tell a merge that lands an *increment* of a multi-increment
+  task from a merge that *closes* it, so `#367` — open by design, awaiting his ruling — reports as
+  *"under `## Open` but git already has a close/merge commit"*. The hand-off grammar has the
+  matching gap: `· landed \`<sha>\` ·` says *landed*, with no way to say *increment 2 of n
+  landed*. Both are the same missing distinction, so whoever widens the sha field should widen
+  this too
+  · **IN PROGRESS 2026-07-28 17:03** — folded into the `#402b` lane (`ccc @glm52`,
+  `.worktrees/fmt`), because both widen a grammar in `file-formats.md` + `lint.py` and both have a
+  live symptom. The brief leans hardest on the **negative** tests: a widening's easy failure is
+  accepting everything, and one with no negative test has removed a check rather than improved it
+  · **DONE lint-local, `4c70722`, `ccc @glm52` (merged 17:47) — and the lane found the scope I got
+  wrong.** The hand-off grammar lives in **`watch.py`'s `HANDOFF_PENDING_RE`**, which my brief listed as
+  not-yours, and `parse_handoffs`' return shape is asserted on in `test_watch.py`. So it widened
+  **`lint.check_handoffs`** instead: multi-sha lines are reclassified out of the parser's `malformed`
+  bucket and counted separately. Red from the **real** `#411` line recovered from `f7d5bea`, not a
+  fixture; negative test keeps a zero-sha line malformed
+  · decisions, all in `file-formats.md`: order is **written-order, not enforced** (a hand-off is a
+  report; `Recently landed` is where order is recoverable from `git log`), **no cap** (capping
+  reintroduces the defect), **zero-sha stays malformed** (the delivery signal would be empty)
+  · **REMAINDER, and the lane named it rather than leaving it to be discovered:** `parse_handoffs`
+  still returns a multi-sha line as malformed, so `pending_handoff_records` **will not surface its
+  shas on the dashboard** until `watch.py`'s grammar widens too. Filed as part of `#427`
+  · already landed before dispatch (4c70722b, merged 6d374084, closed 59685ba2; follow-on #427 moved acceptance into watch.parse_handoffs) — the entry sat Open unfolded. Lane-415 verified rather than implemented: grammar is one-or-more shas, first=landing, order deliberately unasserted, zero-sha still malformed. Its red-proof caught a hollow target the repo's own way: neutering lint.py's reclassification stayed green because watch.parse_handoffs accepts the line first — lint's check is the documented no-op safety net (file-formats.md:710-714). Coordinator re-verified: shas resolve, 2 grammar tests pass, handoffs lint OK 27/21/0. Lane model: llmp-glm-5-2 (204s, 17 calls — an honest 'nothing to do' with evidence is a good outcome).
+
 - **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
   reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified
   · **the half that needs no ruling from him is DONE (`d33cc2f`)**: `submissions.log` now
