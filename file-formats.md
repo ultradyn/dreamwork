@@ -2138,6 +2138,30 @@ one would be dishonest (no row → no first-sight). The `meta` table carries:
   cutover lease (#263's CAS-on-meta primitive, reused verbatim). While the
   lease is active, a second cutover fails closed (`CutoverBusy`).
 
+**Write verbs** (`ledger_write.py`, #294 inc 9). Post-cutover the loop's two
+real ledger writes go through the store, not through direct Markdown
+mutation. The contract is three properties, each load-bearing:
+
+- **One transaction per transition.** `file_task` (INSERT task row + INSERT
+  the `filed` event) and `land_task` (CAS `state` open→landed + append note
+  to `body` + INSERT the `landed` event) each run inside one `BEGIN IMMEDIATE
+  … COMMIT`. A crash mid-transition leaves no partial state — a task row with
+  no `filed` event cannot exist (the import's fixture-3 shape, applied to the
+  live writer). `dev/ledger.py fold` / `file` dispatch on
+  `source_of_truth`: store → these verbs; markdown → today's text path.
+- **Chain per event.** Each transition appends one `task_event` row, hash-
+  chained via the same construction the migration uses (`genesis_hash` /
+  `hash_event` / `canonical_event_bytes`, the one copy in `ledger_store`).
+  `verify_task_event_chain` passes over live events exactly as it passes
+  over synthetic `migration:git` ones — the verifier walks by ordinal and
+  chains each row from the previous, so an ordinal-order append is always
+  valid.
+- **Actor is explicit** (default `'loop'`), never fabricated as the human.
+  The `filed` event records `NULL → open` (cause `filed_from_command`); the
+  `landed` event records `open → landed` (cause `landed`). The note a fold
+  carries goes to the task `body` (bodies accumulate notes across a task's
+  life) and to the event `detail`.
+
 **`tasks.md.deprecated`** — the original ledger content, byte-for-byte, with
 a leading YAML frontmatter deprecation block. Never auto-deleted (his #294
 standing rule):
