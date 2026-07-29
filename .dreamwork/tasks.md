@@ -24,9 +24,15 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **490**
+Next id: **491**
 
 ## Open
+- **#490** — the update countdown ("arms in 4s — then this page updates") flashes at ~4 Hz · P2 ·
+  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:58:** *"'arms in
+  4s — then this page updates' flashes annoyingly after you press update. No need for it to do that.
+  Frequency is like 4 Hz maybe."* · the countdown text should tick (4…3…2…1) or hold steady — not
+  flash; transitions.md governs whatever replaces the flash · likely the update/armed countdown in
+  watch.py's dashboard chrome
 - **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
   dashboard/loop-config · origin: **human** · **human via watch `add-idea` 2026-07-29 17:10:** *"posture
   config (pace, etc) should have a place for text entry of subagent policy where user can put preferred
@@ -107,22 +113,6 @@ Next id: **490**
   event streams**, which is what makes the future dreamhub multi-agent case tractable.
   · so this task is also the **falsifier for `#264`'s "capture enough detail"** — if replay cannot rebuild the
   DB, the log schema is wrong and that is a finding about `#294`, not about this tool.
-- **#459** — two typing boxes keep no draft: `#askbox` and the popout `#ptext` · **P2** ·
-  dashboard/durability · origin: **loop** (draftcheck lane, verifying `#269`) ·
-  · **found while checking what draft durability actually covers** (`6a6ddff`). The review dock, the
-  `/questions` answer boxes and the command composer all persist per keystroke and survive a process restart.
-  **`#askbox` and the popout `#ptext` do not** — text typed there is lost on a reload, a route change or a
-  redeploy.
-  · **his standing rule makes this a defect rather than a gap**: *"we must have persistence and never lose
-  work on an autoreload of a page"* is a property of **any field he can type into**, not of the boxes we
-  happened to fix. `#askbox` is how he files a question; losing that is losing an ask before it exists.
-  · **the mechanism already exists and must be reused, not re-authored** — `dw:adraft:<target>:<id>` /
-  `dw:draft:<target>`, written on every input event, restored after render, cleared only on durable success.
-  Read `.dreamwork/docs/draft-durability-status.md` first; it names the lines.
-  · smaller than it looks, and **independent of `#269`'s IndexedDB upgrade** — do not wait for that.
-  · **CLOSED with `#269`'s extraction `36a1594` (merge `ca799f5`, 2026-07-29 05:31).** Both boxes are now `DraftStore` consumers — `#askbox` as `ask:main`, the popout `#ptext` as `popout:main` — and each is proved against a **real reload** rather than a re-render, `#ptext` across closing and re-opening the popout. They were the right first consumers precisely because they were bare: binding them is what makes the extraction a module rather than a rename, which no test of the review dock alone could have shown.
-  · related: **#475** — the `draft` guard covering these two boxes is red on master; see that entry
-
 - **#451** — authorisation asks are a distinct queue, surfaced in the title bar opposite the composer ·
   **P2** · dashboard/asking · origin: **human** ·
   **human via watch 2026-07-29 01:02:** *"when a question is just an authorization request, we should have a
@@ -2687,6 +2677,23 @@ Next id: **490**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#459** — two typing boxes keep no draft: `#askbox` and the popout `#ptext` · **P2** ·
+  dashboard/durability · origin: **loop** (draftcheck lane, verifying `#269`) ·
+  · **found while checking what draft durability actually covers** (`6a6ddff`). The review dock, the
+  `/questions` answer boxes and the command composer all persist per keystroke and survive a process restart.
+  **`#askbox` and the popout `#ptext` do not** — text typed there is lost on a reload, a route change or a
+  redeploy.
+  · **his standing rule makes this a defect rather than a gap**: *"we must have persistence and never lose
+  work on an autoreload of a page"* is a property of **any field he can type into**, not of the boxes we
+  happened to fix. `#askbox` is how he files a question; losing that is losing an ask before it exists.
+  · **the mechanism already exists and must be reused, not re-authored** — `dw:adraft:<target>:<id>` /
+  `dw:draft:<target>`, written on every input event, restored after render, cleared only on durable success.
+  Read `.dreamwork/docs/draft-durability-status.md` first; it names the lines.
+  · smaller than it looks, and **independent of `#269`'s IndexedDB upgrade** — do not wait for that.
+  · **CLOSED with `#269`'s extraction `36a1594` (merge `ca799f5`, 2026-07-29 05:31).** Both boxes are now `DraftStore` consumers — `#askbox` as `ask:main`, the popout `#ptext` as `popout:main` — and each is proved against a **real reload** rather than a re-render, `#ptext` across closing and re-opening the popout. They were the right first consumers precisely because they were bare: binding them is what makes the extraction a module rather than a rename, which no test of the review dock alone could have shown.
+  · related: **#475** — the `draft` guard covering these two boxes is red on master; see that entry
+  · verified folded late — it closed with #269's DraftStore extraction (36a1594, merge ca799f5a) and the entry said so, but nobody folded it. Evidence re-verified 18:59: shas resolve, ask:main/popout:main bindings live in watch.py:6222/8908. #475's draft-guard red was folded earlier today.
+
 - **#488** — posture card: 'override · .dreamwork/posture' label beside the heading; hover help text must not reflow · P2 ·
   dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:12:** *"the
   'override · .dreamwork/posture' label should go next to the 'Posture' heading. and the description
