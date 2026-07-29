@@ -1,0 +1,265 @@
+"""Red-first tests for ledger_write — the MINIMAL store write verbs (#294 inc 9).
+
+file_task + land_task are the two real writes the loop does (file a new task,
+fold a landed one), pointed at the store so the live cutover does not strand
+them. Each test names the PRODUCTION LINE its red-proof targets, derives its
+preconditions at runtime, and was red-proved: the named line was injected,
+the test failed, and the source restored byte-identical.
+
+Named production lines whose change must red each test:
+
+- file_task's INSERT + _append_chained_event inside one BEGIN IMMEDIATE … COMMIT
+      → test_file_is_one_transaction_task_row_rolled_back_with_its_event
+- file_task returns cur.lastrowid (the AUTOINCREMENT-allocated id)
+      → test_file_allocates_the_seeded_next_id
+- land_task's UPDATE … WHERE state = 'open' (the CAS)
+      → test_land_cas_refuses_a_second_landing / _a_nonexistent_id
+- _append_chained_event's prev = _last_event_hash(conn) + hash_event(...)
+      → test_chain_verifies_over_file_and_land_events
+- land_task's body append (UPDATE task SET body = body || note)
+      → test_land_appends_note_to_body
+"""
+
+from __future__ import annotations
+
+import importlib.machinery
+import importlib.util
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+import ledger_store
+import ledger_write
+
+REPO = Path(__file__).resolve().parent
+MIGRATE_CLI = REPO / "ud-dw-tasks-migrate"
+
+
+def _load_migrate():
+    """Load the extensionless migrate CLI to reach verify_task_event_chain."""
+    loader = importlib.machinery.SourceFileLoader(
+        "ud_dw_tasks_migrate_write", str(MIGRATE_CLI))
+    spec = importlib.util.spec_from_loader("ud_dw_tasks_migrate_write", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture
+def store(tmp_path):
+    """A scratch store seeded at a known mark (closed by the fixture)."""
+    s = ledger_store.open_store(tmp_path / "l.sqlite3", seed_next_id=500)
+    yield s
+    s.close()
+
+
+@pytest.fixture
+def migrate():
+    return _load_migrate()
+
+
+# ---------------------------------------------------------------------------
+# file — allocates the seeded next id, never collides (G1/G2/G3)
+# ---------------------------------------------------------------------------
+
+def test_file_allocates_the_seeded_next_id(store):
+    """Production line: ``cur.lastrowid`` returned by file_task.
+
+    file_task must return the AUTOINCREMENT-allocated id, never an id chosen
+    by the caller. Break by returning a hardcoded id — it would not match the
+    seeded next id and the second file would collide with the first.
+    """
+    # Derive the mark at runtime: the store's next id IS the expected id.
+    mark = store.next_id()
+    assert mark > 1, f"precondition: non-trivial next id, got {mark}"
+
+    first = ledger_write.file_task(store, "first task", "body one",
+                                    at="2026-07-29T10:00:00Z")
+    assert first == mark, (
+        f"file_task returned {first}, expected the seeded next id {mark}")
+
+    second = ledger_write.file_task(store, "second task", "body two",
+                                     at="2026-07-29T10:00:01Z")
+    assert second == mark + 1, (
+        f"second file returned {second}, expected {mark + 1} — "
+        "the sequence must advance and never collide")
+
+
+def test_file_id_never_collides_with_a_higher_imported_row(tmp_path):
+    """Production line: AUTOINCREMENT on task.id (R1) + file_task's lastrowid.
+
+    An import inserts explicit-id rows; a subsequent file must allocate an id
+    strictly above the imported high-water mark, never colliding. Break by
+    seeding below the imported id and allocating from the seed — collision.
+    """
+    s = ledger_store.open_store(tmp_path / "l.sqlite3", seed_next_id=10)
+    try:
+        # Simulate an import: an explicit-id row above the seed.
+        s.conn.execute(
+            "INSERT INTO task(id, state, title, body) "
+            "VALUES (50, 'open', 'imported', 'b')")
+        s.conn.commit()
+        hw = s.sequence_high_water("task")
+        assert hw == 50, f"precondition: AUTOINCREMENT tracks the explicit id, got {hw}"
+
+        new_id = ledger_write.file_task(s, "filed after import", "body",
+                                         at="2026-07-29T10:00:00Z")
+        assert new_id > 50, (
+            f"filed id {new_id} must exceed the imported high-water 50 — "
+            "a collision would reuse a permanent id")
+        # The filed id is not 50 (the imported row's id).
+        assert new_id != 50
+    finally:
+        s.close()
+
+
+# ---------------------------------------------------------------------------
+# file — one transaction (G4): a task row with no filed event cannot exist
+# ---------------------------------------------------------------------------
+
+def test_file_is_one_transaction_task_row_rolled_back_with_its_event(store):
+    """Production line: ``conn.execute("ROLLBACK")`` in file_task's except block.
+
+    Sabotage the event INSERT by removing the filed cause from the task_cause
+    lookup (the event's cause REFERENCES task_cause). With the ROLLBACK
+    present, file_task raises AND leaves no task row. Break by removing the
+    ROLLBACK — the task row survives in the open transaction, so the
+    count-is-zero assertion fails.
+    """
+    # Remove the cause the filed event uses, so its INSERT fails the FK.
+    store.conn.execute(
+        "DELETE FROM task_cause WHERE cause = 'filed_from_command'")
+    store.conn.commit()
+    # Precondition: the cause is genuinely gone (the FK will fire).
+    row = store.conn.execute(
+        "SELECT COUNT(*) FROM task_cause WHERE cause = 'filed_from_command'"
+    ).fetchone()
+    assert row[0] == 0, "precondition: filed cause must be absent for the FK to fire"
+
+    with pytest.raises(sqlite3.IntegrityError):
+        ledger_write.file_task(store, "will not persist", "body",
+                                at="2026-07-29T10:00:00Z")
+
+    # Neither the task row nor the event survived the rolled-back transaction.
+    n_tasks = store.conn.execute("SELECT COUNT(*) FROM task").fetchone()[0]
+    assert n_tasks == 0, (
+        f"a failed file left {n_tasks} task row(s) — the transition must be "
+        "one transaction (G4): a task row with no filed event cannot exist")
+    n_events = store.conn.execute("SELECT COUNT(*) FROM task_event").fetchone()[0]
+    assert n_events == 0
+
+
+# ---------------------------------------------------------------------------
+# file — the filed event records NULL → open
+# ---------------------------------------------------------------------------
+
+def test_file_records_a_filed_event_null_to_open(store):
+    """Production line: _append_chained_event's from_state=None, to_state='open'."""
+    new_id = ledger_write.file_task(store, "a task", "its body",
+                                     actor="coordinator",
+                                     at="2026-07-29T10:00:00Z")
+    rows = store.conn.execute(
+        "SELECT cause, from_state, to_state, actor FROM task_event "
+        "WHERE task_id = ?", (new_id,)).fetchall()
+    assert len(rows) == 1
+    cause, frm, to, actor = rows[0]
+    assert cause == "filed_from_command"
+    assert frm is None, f"filed event from_state must be NULL, got {frm!r}"
+    assert to == "open"
+    assert actor == "coordinator"
+
+
+# ---------------------------------------------------------------------------
+# land — CAS: open → landed
+# ---------------------------------------------------------------------------
+
+def test_land_flips_an_open_task_to_landed(store):
+    """Production line: land_task's UPDATE … SET state='landed' WHERE state='open'."""
+    tid = ledger_write.file_task(store, "to land", "body",
+                                  at="2026-07-29T10:00:00Z")
+    ledger_write.land_task(store, tid, note="done",
+                            at="2026-07-29T11:00:00Z")
+    state = store.conn.execute(
+        "SELECT state FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    assert state == "landed"
+
+
+def test_land_cas_refuses_a_second_landing(store):
+    """Production line: ``cur.rowcount == 0`` → BadState in land_task.
+
+    Landing an already-landed task matches zero rows in the CAS UPDATE and
+    must refuse. Break by treating rowcount 0 as success — a double-land
+    would append a second landed event for an already-landed task.
+    """
+    tid = ledger_write.file_task(store, "land me twice", "body",
+                                  at="2026-07-29T10:00:00Z")
+    ledger_write.land_task(store, tid, at="2026-07-29T11:00:00Z")
+    with pytest.raises(ledger_write.BadState, match="not 'open'"):
+        ledger_write.land_task(store, tid, at="2026-07-29T12:00:00Z")
+    # Exactly one landed event — the refused second land wrote nothing.
+    n = store.conn.execute(
+        "SELECT COUNT(*) FROM task_event WHERE task_id = ? AND cause = 'landed'",
+        (tid,)).fetchone()[0]
+    assert n == 1, f"expected one landed event, got {n}"
+
+
+def test_land_refuses_a_nonexistent_id(store):
+    """Production line: ``row is None`` → TaskNotFound in land_task."""
+    with pytest.raises(ledger_write.TaskNotFound, match="no such task"):
+        ledger_write.land_task(store, 99999, at="2026-07-29T11:00:00Z")
+    # No event was written for the phantom id.
+    n = store.conn.execute(
+        "SELECT COUNT(*) FROM task_event WHERE task_id = 99999").fetchone()[0]
+    assert n == 0
+
+
+# ---------------------------------------------------------------------------
+# land — appends note to body (bodies accumulate notes across a task's life)
+# ---------------------------------------------------------------------------
+
+def test_land_appends_note_to_body(store):
+    """Production line: ``UPDATE task SET body = body || note`` in land_task."""
+    tid = ledger_write.file_task(store, "note me", "original body",
+                                  at="2026-07-29T10:00:00Z")
+    ledger_write.land_task(store, tid, note="landed cleanly",
+                            at="2026-07-29T11:00:00Z")
+    body = store.conn.execute(
+        "SELECT body FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    assert "original body" in body, "the original body must survive"
+    assert "landed cleanly" in body, "the note must be appended to the body"
+
+
+# ---------------------------------------------------------------------------
+# land's event chains — verify_task_event_chain passes; a mutation breaks it
+# ---------------------------------------------------------------------------
+
+def test_chain_verifies_over_file_and_land_events(store, migrate):
+    """Production line: _append_chained_event's prev = _last_event_hash(conn).
+
+    file + land append two chained events. verify_task_event_chain (in
+    ud-dw-tasks-migrate) must pass over them — a live event chains exactly
+    like a synthetic one. Break by chaining from genesis always (ignoring the
+    last event) — the second event's prev_hash breaks the chain.
+    """
+    t1 = ledger_write.file_task(store, "first", "b1", at="2026-07-29T10:00:00Z")
+    t2 = ledger_write.file_task(store, "second", "b2", at="2026-07-29T10:00:01Z")
+    ledger_write.land_task(store, t1, note="done", at="2026-07-29T11:00:00Z")
+
+    db_path = str(store.path)
+    # Precondition: there are live (non-migration) events to verify.
+    n = store.conn.execute("SELECT COUNT(*) FROM task_event").fetchone()[0]
+    assert n >= 3, f"precondition: need >=3 events, got {n}"
+
+    assert migrate.verify_task_event_chain(db_path) == [], (
+        "clean chain (file + file + land) must verify")
+
+    # Mutate one row — the chain must break at that row.
+    store.conn.execute(
+        "UPDATE task_event SET detail = detail || ' TAMPERED' "
+        "WHERE ordinal = (SELECT MIN(ordinal) FROM task_event)")
+    store.conn.commit()
+    fails = migrate.verify_task_event_chain(db_path)
+    assert fails, (
+        "mutated event row must break the chain — a verifier that does not "
+        "recompute the hash from canonical bytes is a silent forgery")
