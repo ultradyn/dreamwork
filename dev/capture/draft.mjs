@@ -31,6 +31,7 @@
    usage: node draft.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
+import { resolveStoreKey } from './dom.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -87,17 +88,24 @@ const boxAfterReload = async () => {
    Dual-read still lifts a legacy key, but the live save path is v1 — assert
    that. Target is derived at runtime so a hollow empty-string match cannot
    pass. Production line that reds the partition check: DraftStore.v1Key /
-   save for composer:main (watch.py DraftStore module). */
-const stored = () => p.evaluate(`(() => {
-  const t = (data && data.target) || '';
+   save for composer:main (watch.py DraftStore module).
+   #476: the key is RESOLVED (expected read + whole dw:draft: family listing)
+   before anything asserts on it — an absent key then fails with
+   found-vs-expected ("the contract broke") instead of a bare null that
+   either reads as "nothing was stored" or, dereferenced, dies as the crash
+   sentinel that #471's accounting counts as did-not-judge. */
+const stored = async () => {
+  const t = await p.evaluate(
+    () => (typeof data !== 'undefined' && data && data.target) || '');
   const v1 = t ? 'dw:draft:v1:' + t + ':composer:main' : '';
   const legacy = t ? 'dw:draft:' + t : '';
-  const rawV1 = v1 ? localStorage.getItem(v1) : null;
-  const rawLegacy = legacy ? localStorage.getItem(legacy) : null;
-  const key = rawV1 !== null ? v1 : (rawLegacy !== null ? legacy : v1);
-  const raw = rawV1 !== null ? rawV1 : rawLegacy;
-  return { key, raw, v1, legacy, target: t };
-})()`);
+  const r = await resolveStoreKey(p, v1, 'dw:draft:');
+  const rLeg = r.raw === null && legacy
+    ? await resolveStoreKey(p, legacy, 'dw:draft:') : null;
+  const raw = r.raw !== null ? r.raw : (rLeg ? rLeg.raw : null);
+  const key = r.raw !== null ? v1 : (rLeg && rLeg.raw !== null ? legacy : v1);
+  return { key, raw, v1, legacy, target: t, found: r.found, err: r.err };
+};
 
 await load();
 
@@ -124,9 +132,16 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
   notes.push(`stored under ${s.key}: ${s.raw} (v1=${s.v1})`);
   // Precondition: data.target known — else the partition string is empty and
   // any match is vacuous. Contract replaced by ca799f5 (#269/#459 DraftStore).
-  ok('typing writes a draft for THIS project (keyed by the target path)',
-     !!s.target && !!s.raw && s.key === s.v1 &&
-     s.v1.indexOf(s.target) >= 0 && s.raw.includes('thought'));
+  // #476: a red here names the contract — the key expected vs the keys the
+  // store actually holds — so a moved key builder reads as "the contract
+  // broke" and sends the reader to watch.py, not to this guard.
+  const wrote = !!s.target && !!s.raw && s.key === s.v1 &&
+                s.v1.indexOf(s.target) >= 0 && s.raw.includes('thought');
+  const contract = wrote ? ''
+    : ` — key contract: expected ${JSON.stringify(s.v1 || '(no target)')}, ` +
+      `store holds ${s.found.length ? s.found.join(', ') : 'NO dw:draft:* keys'}`;
+  ok('typing writes a draft for THIS project (keyed by the target path)' +
+     contract, wrote);
 
   const after = await boxAfterReload();
   notes.push(`after reload: ${JSON.stringify(after)}`);
@@ -187,7 +202,13 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
   const after = await boxAfterReload();
   notes.push(`after a successful send: stored ${JSON.stringify(s.raw)}, ` +
              `after reload ${JSON.stringify(after.value)}`);
-  ok('a SUCCESSFUL send clears the draft', !s.raw);
+  // #476: assert against the resolved family, not just the expected key —
+  // under a moved key contract a bare !s.raw passes vacuously (the guard
+  // reads an absent key while the page's own key still holds his words).
+  const left = s.found.filter(k => k.endsWith(':composer:main'));
+  ok('a SUCCESSFUL send clears the draft' +
+     (left.length ? ` — store still holds ${left.join(', ')}` : ''),
+     !s.raw && left.length === 0);
   ok('...so a reload does not resurrect a thought he already sent',
      after.value === '');
 }
@@ -214,8 +235,11 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
   await sleep(150);
   const s = await stored();
   notes.push(`after emptying the box by hand: stored ${JSON.stringify(s.raw)}`);
+  const leftE = s.found.filter(k => k.endsWith(':composer:main'));
   ok('emptying the box clears the store (deleting text is deliberate, ' +
-     'unlike closing or a failed send)', !s.raw);
+     'unlike closing or a failed send)' +
+     (leftE.length ? ` — store still holds ${leftE.join(', ')}` : ''),
+     !s.raw && leftE.length === 0);
 }
 
 await p.screenshot({ path: `${OUT}/draft.png`, fullPage: false });
