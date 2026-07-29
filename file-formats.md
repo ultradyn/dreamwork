@@ -374,7 +374,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
 | `.dreamwork/run-mode` | `watch.py` dashboard + the coordinator/main dreamer on tick and via `watch-events.log` | One line: one name from `watch.py`'s `RUN_MODES` (`lackadaisical`, `hot`, `assisted`). Absent/unknown → `lackadaisical`. Machine-local, **gitignored** — operational posture, not a portable project default. `status.json` may mirror it later but never owns it | `lint.py` |
-| `.dreamwork/posture` | the coordinator/main dreamer on tick (#445) | Three-axis override of run-mode's posture: `pace:`, `asking:`, `delegation:` — one per line, `#` comments allowed. Absent → derived from run-mode (see § below). Closed sets on pace/asking fail loud; delegation carries a number that steers, never gates | `lint.py` |
+| `.dreamwork/posture` | the coordinator/main dreamer on tick (#445, #342) | Four-axis override: `pace:`, `asking:`, `delegation:`, `delivery:` — one per line, `#` comments allowed. Absent pace/asking/delegation → derived from run-mode (see § below); absent `delivery` → `instant` (today's behaviour). Closed sets on pace/asking/delivery fail loud; delegation carries a number that steers, never gates | `lint.py` |
 | `.dreamwork/submissions.log` | recovery — the loop, and him, after something failed | One JSON object per line, written as the FIRST act of `do_POST` before any parsing or validation. Append-only, never rewritten. Machine-local, **gitignored** — see below | `lint.py` |
 | `.dreamwork/plugin-commands.json` | `watch.py`'s composer (#86) | `{"commands": [{kind, label, desc, plugin}]}`. Written **whole** by the loop at plugin resolution, never appended — see below. Machine-local, **gitignored** | `lint.py` |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
@@ -1121,7 +1121,7 @@ hot
 Checked by `lint.py` (`check_run_mode`), reading the closed set from
 `watch.py` so the checker cannot drift from the page.
 
-## `.dreamwork/posture` — the three-axis posture, overriding run-mode (#445)
+## `.dreamwork/posture` — the posture axes, overriding run-mode (#445, #342)
 
 `run-mode` is a single word, and `#443` measured that it carries **three
 independent decisions in one**: how fast the loop acts (pace), how much it
@@ -1210,13 +1210,26 @@ delegation axis carries a number whose label is derived for display.
   would be wrong most of the time, because that is what an average means. Two
   subagents may pair on a single worktree (his `#445`), talking via
   `subagent-protocols`.
+- **`delivery`** (`#342`) — *when* he is interrupted. Two stops: `instant`
+  (the loop is woken the moment he sends something) and `batched` (the item
+  rides the durable receipt and is drained on the next tick's cursor read —
+  more efficient, less responsive). **Absent → `instant`**, so a posture file
+  that predates the axis behaves identically; delivery is **not derived from
+  run-mode** (run-mode never encoded interrupt timing — it is a fresh default,
+  not a conversion). The axis sets the mode; the per-kind policy routes under
+  it: `do-now`/`do-next` pre-empt even in batched mode (a `do-now` that does
+  not pre-empt is a `do-now` that lied); everything else wakes only in instant
+  mode. Closed set — an unknown value **ERRORs** like pace/asking.
 
-**What lint enforces, and deliberately does not.** Pace and asking are closed
-sets, so an unknown value **ERRORs** — the silent-fallback hazard from
-run-mode / watch-tint, stated as an outcome. Delegation carries a *number*:
+**What lint enforces, and deliberately does not.** Pace, asking and delivery
+are closed sets, so an unknown value **ERRORs** — the silent-fallback hazard
+from run-mode / watch-tint, stated as an outcome. Delegation carries a *number*:
 nonsense (a non-integer, or a negative) **WARNs** — steer, not gate — and
 **nothing here ever reads the running fleet size**, because an average is an
-average. The clean-bill row carries the count of valid axes so coverage can
+average. Delivery is **optional**: its absence is the `instant` default (not a
+warning), so a three-line pre-axis file still reads clean — it joins the
+clean-bill "of N" count only when it is actually set. The clean-bill row
+carries the count of valid axes so coverage can
 never shrink to silence beside a finding (the rule `#380` codified after a
 check's OK row disappeared for the thing it was written for). The closed sets
 live in `lint.py` as the single source today; increment 2's dashboard controls
@@ -2015,7 +2028,7 @@ two.
 `watch.py` serves `/summary.json` as a **whitelisted** view of `collect()`,
 behind the same `_preflight()` GET authority gate as every other route. Output
 keys: `generated`, `open_questions`, `questions_health`, `answers_health`,
-`tint`, `run_mode`, `posture` (`pace`/`asking`/`delegation`/`source`),
+`tint`, `run_mode`, `posture` (`pace`/`asking`/`delegation`/`delivery`/`source`),
 `skill_identity` (`commit`/`skill_version`), `burndown_counts`
 (`open`/`arrived`/`landed`), `skill_version`.
 

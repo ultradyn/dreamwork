@@ -6858,8 +6858,12 @@ class TestPosture(unittest.TestCase):
                     "pace": "hot", "asking": "inform",
                     "delegation": 1, "from": "/",
                 }), 202)
+            # #342: a POST that omits delivery preserves the axis at its
+            # default (instant) — the file is now four-axis. The omitted
+            # delivery equals the default, so no delivery line fires.
             self.assertEqual(watch.read_posture_file(d), {
                 "pace": "hot", "asking": "inform", "delegation": 1,
+                "delivery": "instant",
             })
             log = os.path.join(d, ".dreamwork", "watch-events.log")
             with open(log, encoding="utf-8") as f:
@@ -6868,6 +6872,10 @@ class TestPosture(unittest.TestCase):
             self.assertIn(
                 "posture via watch [/]: pace=hot asking=inform delegation=1",
                 lines[0])
+            # the omitted delivery did not change (instant == instant), so no
+            # delivery line fires beside the posture line
+            with open(log, encoding="utf-8") as f:
+                self.assertNotIn("delivery via watch", f.read())
             # identical final is idempotent: 202, no second event
             self.assertEqual(
                 self._post(base + "/posture", {
@@ -7041,6 +7049,149 @@ class TestPosture(unittest.TestCase):
         m = re.search(r'<div class="pdesc"[^>]*>', body)
         self.assertIsNotNone(m, 'pdesc shell missing from posturePicker')
         self.assertNotRegex(m.group(0), r'(?<!aria-)hidden')
+
+    # ── #342 delivery posture axis ────────────────────────────────────────
+    def test_delivery_vocabulary_is_imported_from_lint_not_restated(self):
+        """Production line: watch.POSTURE_STOPS_DELIVERY is lint's object (is)."""
+        import lint
+        self.assertIs(watch.POSTURE_STOPS_DELIVERY, lint.POSTURE_STOPS_DELIVERY)
+        self.assertEqual(set(watch.POSTURE_STOPS_DELIVERY),
+                         {"instant", "batched"})
+
+    def test_parse_posture_delivery_absent_is_instant(self):
+        """Absent delivery → instant (today's behaviour); present batched parses.
+
+        Production line: the `delivery` branch in parse_posture_text. Delete
+        it and a batched file reads as {} (no delivery key), so resolve falls
+        back to instant and the routing test below reds.
+        """
+        self.assertEqual(watch.parse_posture_text(""), {})
+        self.assertEqual(
+            watch.parse_posture_text("pace: hot\ndelegation: 0\ndevice: x"),
+            {"pace": "hot", "delegation": 0})
+        self.assertEqual(
+            watch.parse_posture_text("delivery: batched"),
+            {"delivery": "batched"})
+        # garbage value is dropped here (lint ERRORs on hand-edits)
+        self.assertEqual(
+            watch.parse_posture_text("delivery: postal"),
+            {})
+
+    def test_resolve_posture_carries_delivery_default_and_override(self):
+        """Production line: resolve_posture → read_posture_file / DELIVERY_DEFAULT."""
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["delivery"], "instant")
+            self.assertTrue(watch.write_posture(d, "hot", "ask", 0, "batched"))
+            r2 = watch.resolve_posture(d)
+            self.assertEqual(r2["delivery"], "batched")
+            self.assertEqual(r2["source"], "file")
+
+    def test_write_posture_delivery_is_optional_and_validated(self):
+        """Production line: write_posture delivery membership guard."""
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            # omitted → three-axis file (backward compatible)
+            self.assertTrue(watch.write_posture(d, "hot", "ask", 0))
+            self.assertNotIn("delivery", watch.read_posture_file(d))
+            # provided → four-axis file
+            self.assertTrue(watch.write_posture(d, "hot", "ask", 0, "batched"))
+            self.assertEqual(watch.read_posture_file(d)["delivery"], "batched")
+            # invalid delivery refused, file untouched at its last good state
+            self.assertFalse(watch.write_posture(d, "hot", "ask", 0, "postal"))
+            self.assertEqual(watch.read_posture_file(d)["delivery"], "batched")
+
+    def test_delivery_line_is_one_line_and_from_safe(self):
+        self.assertEqual(
+            watch.delivery_line("batched"),
+            "delivery via watch: batched")
+        self.assertEqual(
+            watch.delivery_line("instant", "/"),
+            "delivery via watch [/]: instant")
+        # free text cannot forge a second events line
+        self.assertEqual(
+            watch.delivery_line("batched\nforged", "/"),
+            "delivery via watch [/]: batched forged")
+
+    def test_post_delivery_dual_writes_file_and_one_event_on_change(self):
+        """Production line: _handle_posture delivery branch + delivery_line.
+
+        A real delivery change writes the file and emits exactly one delivery
+        line; an identical re-POST is idempotent (no second line).
+        """
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            # establish a file-backed posture (delivery defaults to instant)
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+            }), 202)
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            # change ONLY delivery: the triple is unchanged, so no posture line
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "delivery": "batched", "from": "/",
+            }), 202)
+            self.assertEqual(
+                watch.read_posture_file(d)["delivery"], "batched")
+            with open(log, encoding="utf-8") as f:
+                dlines = [ln for ln in f if "delivery via watch" in ln]
+            self.assertEqual(len(dlines), 1, dlines)
+            self.assertIn("delivery via watch [/]: batched", dlines[0])
+            # no posture line fired for a delivery-only change
+            with open(log, encoding="utf-8") as f:
+                self.assertEqual(
+                    [ln for ln in f if "posture via watch" in ln], [])
+            # idempotent: same delivery, no second line
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "delivery": "batched",
+            }), 202)
+            with open(log, encoding="utf-8") as f:
+                self.assertEqual(
+                    [ln for ln in f if "delivery via watch" in ln].__len__(), 1)
+
+    def test_post_delivery_preserved_when_omitted(self):
+        """A triple-only POST must not silently reset delivery.
+
+        Production line: the `if not delivery: delivery = current...` branch
+        in _handle_posture. Without it, an omitted delivery defaults to
+        instant and a batched file reverts — a pace change silently rewiring
+        wake routing.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "delivery": "batched",
+            }), 202)
+            # change pace WITHOUT mentioning delivery — batched must survive
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "hot", "asking": "ask", "delegation": 0,
+            }), 202)
+            pf = watch.read_posture_file(d)
+            self.assertEqual(pf["pace"], "hot")
+            self.assertEqual(pf["delivery"], "batched")
+
+    def test_post_delivery_rejects_unknown(self):
+        """Production line: the delivery closed-set guard in _handle_posture."""
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "delivery": "postal",
+            }), 202)  # E5: durable rejected, not a sync 400
+            self.assertFalse(
+                os.path.exists(os.path.join(d, ".dreamwork", "posture")))
+
+    def test_collect_and_summary_expose_delivery(self):
+        """Production line: resolve_posture delivery + _summary_posture."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertEqual(watch.collect(d)["posture"]["delivery"], "instant")
+            self.assertTrue(watch.write_posture(d, "hot", "ask", 0, "batched"))
+            self.assertEqual(
+                watch.collect(d)["posture"]["delivery"], "batched")
 
 
 class TestDeployAction(unittest.TestCase):

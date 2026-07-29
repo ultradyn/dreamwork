@@ -12796,9 +12796,11 @@ SUMMARY_DENIED = frozenset({
 
 
 def _summary_posture(v):
-    # Only the four enum/int axes; delegation_label is display chrome and a
-    # fifth key posture might grow never rides out unreviewed.
-    return {k: v.get(k) for k in ("pace", "asking", "delegation", "source")}
+    # The enum/int axes + delivery (#342); delegation_label is display chrome
+    # and never rides out unreviewed. delivery is real posture an external
+    # consumer needs to route on, not chrome.
+    return {k: v.get(k) for k in
+            ("pace", "asking", "delegation", "delivery", "source")}
 
 
 def _summary_skill_identity(v):
@@ -12987,6 +12989,8 @@ def parse_posture_text(raw):
             out["pace"] = v
         elif k == "asking" and v in lint.POSTURE_STOPS_ASKING:
             out["asking"] = v
+        elif k == "delivery" and v in lint.POSTURE_STOPS_DELIVERY:
+            out["delivery"] = v
         elif k == "delegation":
             try:
                 n = int(v)
@@ -13024,6 +13028,7 @@ def resolve_posture(target):
         "pace": base["pace"],
         "asking": base["asking"],
         "delegation": int(base["delegation"]),
+        "delivery": file_vals.get("delivery", DELIVERY_DEFAULT),
         "source": "derived",
     }
     if file_vals:
@@ -13035,12 +13040,19 @@ def resolve_posture(target):
     return out
 
 
-def write_posture(target, pace, asking, delegation):
-    """Persist a complete three-axis override. Returns False if refused."""
+def write_posture(target, pace, asking, delegation, delivery=None):
+    """Persist a posture override. Returns False if refused.
+
+    Writes the three required axes always; writes delivery only when it is
+    passed (None → omitted, so absent reads as the instant default — a caller
+    that has no opinion on delivery gets today's three-line file). A caller
+    that sets delivery passes it through and the fourth line lands."""
     lint = _posture_vocab()
     if pace not in lint.POSTURE_STOPS_PACE:
         return False
     if asking not in lint.POSTURE_STOPS_ASKING:
+        return False
+    if delivery is not None and delivery not in lint.POSTURE_STOPS_DELIVERY:
         return False
     try:
         n = int(delegation)
@@ -13049,7 +13061,10 @@ def write_posture(target, pace, asking, delegation):
     if n < 0:
         return False
     path = os.path.join(target, ".dreamwork", "posture")
-    body = f"pace: {pace}\nasking: {asking}\ndelegation: {n}\n"
+    lines = [f"pace: {pace}", f"asking: {asking}", f"delegation: {n}"]
+    if delivery is not None:
+        lines.append(f"delivery: {delivery}")
+    body = "\n".join(lines) + "\n"
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         atomic_write_text(path, body)
@@ -13081,6 +13096,21 @@ def posture_equal(a, b):
                 and int(a.get("delegation")) == int(b.get("delegation")))
     except (TypeError, ValueError):
         return False
+
+
+# #342 — the delivery posture axis (instant|batched). Absent = instant, so the
+# default is today's behaviour (every wake line fires). The loop gates which
+# kinds wake; the cursor read on every tick is the guarantee nothing is lost.
+DELIVERY_DEFAULT = "instant"
+
+
+def delivery_line(mode, source=""):
+    """Source-tagged watch-events.log line for a committed delivery change.
+
+    Pure; one_line on the mode so nothing forges a second event. The ceremony
+    posture/run-mode already use (dual-write + one line on real change), not a
+    second one."""
+    return f"delivery via watch{from_hint(source)}: {one_line(str(mode))}"
 
 
 def persistent_port(target):
@@ -14064,16 +14094,21 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                        "application/json")
 
         def _handle_posture(self):
-            """Three-axis posture override (#445).
+            """Four-axis posture override (#445 + #342 delivery).
 
             Dual-write: authoritative gitignored `.dreamwork/posture` plus
-            one watch-events.log line when the three-axis point actually
-            changes. Identical final is 200 + no event. The client arms a
-            single shared 10s pending across all three axes (one file, one
-            ceremony) and only POSTs the final triple; this handler never
+            one watch-events.log line when a posture point actually changes
+            — a `posture via watch` line for the pace/asking/delegation
+            triple, a `delivery via watch` line for the delivery axis. Both
+            are the SAME ceremony run-mode already uses (dual-write + one
+            line on real change), not two. Identical final is 202 + no event.
+            The client arms a single shared 10s pending across every axis
+            (one file) and only POSTs the final point; this handler never
             debounce-timer itself. Closed sets imported from lint — never
             restated. Delegation is a non-negative integer TARGET, never a
-            cap (his #445 Q3).
+            cap (his #445 Q3). Delivery absent in the request preserves the
+            axis's current value (a pace change must not silently reset wake
+            routing); absent on disk is the instant default.
             """
             req = self._read_json()
             if req is None:
@@ -14092,37 +14127,56 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             if delegation < 0:
                 self._reject("domain_invalid"); return
             current = resolve_posture(target)
-            if (current.get("pace") == pace
-                    and current.get("asking") == asking
-                    and int(current.get("delegation", -1)) == delegation
-                    and current.get("source") == "file"):
+            # Delivery: the request may omit it (preserve the current value so
+            # a triple-only edit never silently resets wake routing); an empty
+            # value or no file yet falls back to the instant default.
+            delivery = str((req or {}).get("delivery", "")).strip()
+            if not delivery:
+                delivery = current.get("delivery", DELIVERY_DEFAULT)
+            if delivery not in lint.POSTURE_STOPS_DELIVERY:
+                self._reject("domain_invalid"); return
+            triple_same = (current.get("pace") == pace
+                           and current.get("asking") == asking
+                           and int(current.get("delegation", -1)) == delegation)
+            delivery_same = current.get("delivery", DELIVERY_DEFAULT) == delivery
+            if triple_same and delivery_same and current.get("source") == "file":
                 # Identical file-backed final: silent. (Derived-source match
                 # still writes the file so an explicit override is durable.)
                 self._send_receipt(json.dumps({
                     "ok": True, "pace": pace, "asking": asking,
-                    "delegation": delegation, "changed": False,
+                    "delegation": delegation, "delivery": delivery,
+                    "changed": False,
                 }), "application/json")
                 return
             # Also silent when the on-disk file already holds exactly this
-            # triple (resolve may have filled source=file already above).
+            # point (resolve may have filled source=file already above).
             file_vals = read_posture_file(target)
             if (file_vals.get("pace") == pace
                     and file_vals.get("asking") == asking
                     and file_vals.get("delegation") == delegation
-                    and len(file_vals) == 3):
+                    and file_vals.get("delivery", DELIVERY_DEFAULT) == delivery
+                    and len(file_vals) >= 3):
                 self._send_receipt(json.dumps({
                     "ok": True, "pace": pace, "asking": asking,
-                    "delegation": delegation, "changed": False,
+                    "delegation": delegation, "delivery": delivery,
+                    "changed": False,
                 }), "application/json")
                 return
-            if not write_posture(target, pace, asking, delegation):
+            if not write_posture(target, pace, asking, delegation, delivery):
                 self.send_error(500)
                 return
-            log_event(target, posture_line(pace, asking, delegation,
-                                           req.get("from")))
+            changed = False
+            if not triple_same:
+                log_event(target, posture_line(pace, asking, delegation,
+                                               req.get("from")))
+                changed = True
+            if not delivery_same:
+                log_event(target, delivery_line(delivery, req.get("from")))
+                changed = True
             self._send_receipt(json.dumps({
                 "ok": True, "pace": pace, "asking": asking,
-                "delegation": delegation, "changed": True,
+                "delegation": delegation, "delivery": delivery,
+                "changed": changed,
                 "delegation_label": lint.delegation_posture(delegation),
             }), "application/json")
 
@@ -14239,9 +14293,9 @@ def __getattr__(name):
     if name == "PAGE":
         return _get_page()
     if name in (
-        "POSTURE_STOPS_PACE", "POSTURE_STOPS_ASKING", "DELEGATION_POSTURES",
-        "POSTURE_AXES", "derive_posture", "delegation_posture",
-        "RUN_MODE_TO_POSTURE",
+        "POSTURE_STOPS_PACE", "POSTURE_STOPS_ASKING", "POSTURE_STOPS_DELIVERY",
+        "DELEGATION_POSTURES", "POSTURE_AXES", "derive_posture",
+        "delegation_posture", "RUN_MODE_TO_POSTURE",
     ):
         return getattr(_posture_vocab(), name)
     raise AttributeError(f"module 'watch' has no attribute {name!r}")
