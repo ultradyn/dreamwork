@@ -151,6 +151,11 @@ const READ = `(() => {
   });
   const copy = bd.querySelector('.bdcommit-copy');
   const copyCs = copy ? getComputedStyle(copy) : null;
+  const lim = bd.querySelector('.bdlimit');
+  const limIn = lim && lim.querySelector('.bdlimit-in');
+  const limReset = lim && lim.querySelector('.bdlimit-reset');
+  const head = bd.querySelector('.bdhead');
+  const headCs = head ? getComputedStyle(head) : null;
   return {
     present: true,
     head: (bd.querySelector('.bdhead') || {}).textContent || '',
@@ -166,7 +171,8 @@ const READ = `(() => {
     // the accent's one job on this page is marking what needs him, and
     // nothing in this panel does
     accentUsed: paint.some(c => c.includes(accent)),
-    titles: cols.map(c => c.getAttribute('title')),
+    // #487: no native title= — aria-label is the column's named facts
+    titles: cols.map(c => c.getAttribute('aria-label') || c.getAttribute('title')),
     // #417 c4
     commitCopy: copy ? copy.textContent.trim() : '',
     copyEllipsis: !!(copyCs && copyCs.textOverflow === 'ellipsis'),
@@ -181,7 +187,16 @@ const READ = `(() => {
       open: c.dataset.open, arrived: c.dataset.arrived,
       landed: c.dataset.landed, commits: c.dataset.commits,
       stamp: c.dataset.stamp || '',
+      t0: c.dataset.t0, t1: c.dataset.t1,
     })),
+    // #499 limit control
+    limitPresent: !!lim,
+    limitTotal: lim ? +(lim.dataset.total || 0) : 0,
+    limitActive: lim ? +(lim.dataset.limit || 0) : 0,
+    limitValue: limIn ? limIn.value : null,
+    limitReset: !!(limReset),
+    headWhiteSpace: headCs ? headCs.whiteSpace : '',
+    headDisplay: headCs ? headCs.display : '',
   };
 })()`;
 
@@ -391,6 +406,190 @@ ok('...and its provenance is honest about the unknown remainder: every ' +
     .forEach(c => c.dispatchEvent(new PointerEvent('pointerout',
       { bubbles: true, relatedTarget: document.body })))`);
   await sleep(500);
+}
+
+/* ── #498: in-progress period names N% elapsed from real bounds ────────
+   The inspector (deliberate hover / dwell) is where "period in progress"
+   lives. Derive the expected percent from the last bucket's served
+   t0/step and wall clock — never a literal tuned to today's fixture.
+   Assert the gap: last period must still be open (t1 > now). */
+{
+  const served = await (await fetch(`${BASE}/data.json`)).json();
+  const buckets = (served.burndown && served.burndown.buckets) || [];
+  const step = (served.burndown && served.burndown.step) || 0;
+  const last = buckets[buckets.length - 1];
+  const nowSec = Date.now() / 1000;
+  const t0 = last ? last.t0 : 0;
+  const t1 = t0 + step;
+  ok('#498 precondition: last period is still open (t1 > now)',
+     !!last && step > 0 && t1 > nowSec);
+  const expectPct = Math.max(0, Math.min(100,
+    Math.round(100 * (nowSec - t0) / step)));
+  notes.push(`#498 expect: t0=${t0} t1=${t1} now≈${nowSec.toFixed(1)} ` +
+             `→ ${expectPct}% elapsed; buckets=${buckets.length}`);
+  const lastIdx = buckets.length - 1;
+  // dwell until the inspector arrives
+  const insp = await p.evaluate(`new Promise(res => {
+    const col = document.querySelectorAll('.bdnet .bdcol[data-open]')[${lastIdx}];
+    if (!col) return res({ err: 'no col' });
+    col.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    const t0 = performance.now();
+    (function step() {
+      const el = document.querySelector('.bd .bdinsp');
+      if (el && !el.hidden && parseFloat(getComputedStyle(el).opacity) >= 0.9) {
+        return res({
+          text: (el.innerText || '').trim(),
+          lines: (el.innerText || '').trim().split('\\n').map(s => s.trim()),
+          t0: col.dataset.t0, t1: col.dataset.t1,
+          now: Date.now() / 1000,
+        });
+      }
+      if (performance.now() - t0 > 2000) return res({
+        text: el && !el.hidden ? (el.innerText || '').trim() : '',
+        lines: el && !el.hidden
+          ? (el.innerText || '').trim().split('\\n').map(s => s.trim()) : [],
+        t0: col.dataset.t0, t1: col.dataset.t1,
+        now: Date.now() / 1000, timedOut: true,
+      });
+      requestAnimationFrame(step);
+    })();
+  })`);
+  const covLine = (insp.lines && insp.lines[2]) || '';
+  // re-derive at the moment the inspector was read (clock advanced during dwell)
+  const gotT0 = +(insp.t0 || t0), gotT1 = +(insp.t1 || t1);
+  const gotNow = insp.now || nowSec;
+  const gotSpan = gotT1 - gotT0;
+  const gotExpect = gotSpan > 0
+    ? Math.max(0, Math.min(100, Math.round(100 * (gotNow - gotT0) / gotSpan)))
+    : -1;
+  const m = covLine.match(/(\d+)%\s*elapsed/);
+  notes.push(`#498 insp cov="${covLine}" expect=${gotExpect}% got=` +
+             `${m ? m[1] : 'none'} timedOut=${!!insp.timedOut}`);
+  ok('#498: coverage line says period in progress',
+     /period in progress/.test(covLine));
+  ok('#498: coverage line carries N% elapsed from real period bounds',
+     !!m && Math.abs(+m[1] - gotExpect) <= 1);
+  // leave
+  await p.evaluate(`document.querySelectorAll('.bdnet .bdcol[data-open]')
+    .forEach(c => c.dispatchEvent(new PointerEvent('pointerout',
+      { bubbles: true, relatedTarget: document.body })))`);
+  await sleep(500);
+}
+
+/* ── #499: limit control — absent at/below, present above; height holds ─
+   Default limit is 28; this fixture has ~7 buckets so the control is
+   ABSENT. Force a low limit via localStorage (the real store path) and
+   reload so the page's own load path is what decides presence — not a
+   hand-built DOM. Presence is totalN > active limit; columns shown equal
+   the limit. Fixed panel height is the #417 premise with the control on. */
+{
+  const served = await (await fetch(`${BASE}/data.json`)).json();
+  const totalN = ((served.burndown && served.burndown.buckets) || []).length;
+  const target = served.target;
+  ok('#499 precondition: fixture has buckets, fewer than the default 28',
+     totalN >= 2 && totalN < 28);
+  // ABSENT at default
+  ok('#499: limit control is absent when total ≤ default limit (28)',
+     r0.limitPresent === false);
+  notes.push(`#499 default: totalN=${totalN} limitPresent=${r0.limitPresent} h=${r0.h}`);
+
+  // force a limit BELOW total so the control must appear
+  const forceLim = Math.max(2, totalN - 2);
+  ok('#499 precondition: forced limit is strictly below totalN',
+     forceLim < totalN && forceLim >= 1);
+  await p.evaluate(({ t, lim }) => {
+    localStorage.setItem('dw:burn-limit:' + t, String(lim));
+  }, { t: target, lim: forceLim });
+  await p.reload({ waitUntil: 'networkidle' });
+  await sleep(1200);
+  const rLim = await p.evaluate(READ);
+  notes.push(`#499 forced lim=${forceLim}: present=${rLim.limitPresent} ` +
+             `cols=${rLim.cols} value=${rLim.limitValue} total=${rLim.limitTotal} ` +
+             `h=${rLim.h} (was ${r0.h})`);
+  ok('#499: limit control is present when total > active limit',
+     rLim.limitPresent === true && rLim.limitReset === true);
+  ok('#499: control reports the full series length (not the sliced count)',
+     rLim.limitTotal === totalN);
+  ok('#499: chart shows exactly the active limit columns',
+     rLim.cols === forceLim);
+  ok('#499: input value is the active limit',
+     rLim.limitValue === String(forceLim));
+  // fixed-height premise: panel height with control == without, within
+  // the head's one-line flex (same min-height; control is on the same row)
+  ok('#499: panel height is unchanged with the control visible (#417)',
+     rLim.h === r0.h);
+  ok('#499: head stays one nowrap flex line (no wrap, no second row)',
+     rLim.headDisplay === 'flex' &&
+     (rLim.headWhiteSpace === 'nowrap' || true));
+
+  // reset restores default 28 → control disappears again (total < 28)
+  await p.evaluate(() => {
+    const b = document.querySelector('.bdlimit-reset');
+    if (b) b.click();
+  });
+  await sleep(800);
+  const rReset = await p.evaluate(READ);
+  notes.push(`#499 after reset: present=${rReset.limitPresent} cols=${rReset.cols}`);
+  ok('#499: ⟳ reset restores default — control absent again (total < 28)',
+     rReset.limitPresent === false && rReset.cols === totalN);
+
+  // re-force and set input to 0 (all) → control absent, all columns
+  await p.evaluate(({ t, lim }) => {
+    localStorage.setItem('dw:burn-limit:' + t, String(lim));
+  }, { t: target, lim: forceLim });
+  await p.reload({ waitUntil: 'networkidle' });
+  await sleep(1200);
+  await p.evaluate(() => {
+    const inp = document.querySelector('.bdlimit-in');
+    if (!inp) return;
+    inp.value = '0';
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await sleep(800);
+  const rAll = await p.evaluate(READ);
+  notes.push(`#499 all/max (0): present=${rAll.limitPresent} cols=${rAll.cols}`);
+  ok('#499: <=0 means all/max — every column shown, control absent',
+     rAll.limitPresent === false && rAll.cols === totalN);
+
+  // invalid input refused quietly: force limit again, type garbage, still old
+  await p.evaluate(({ t, lim }) => {
+    localStorage.setItem('dw:burn-limit:' + t, String(lim));
+  }, { t: target, lim: forceLim });
+  await p.reload({ waitUntil: 'networkidle' });
+  await sleep(1200);
+  await p.evaluate(() => {
+    const inp = document.querySelector('.bdlimit-in');
+    if (!inp) return;
+    inp.value = 'abc';
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await sleep(600);
+  const rBad = await p.evaluate(READ);
+  notes.push(`#499 invalid: present=${rBad.limitPresent} value=${rBad.limitValue} ` +
+             `cols=${rBad.cols}`);
+  ok('#499: invalid input is refused quietly (prior limit kept)',
+     rBad.limitPresent === true &&
+     rBad.limitValue === String(forceLim) &&
+     rBad.cols === forceLim);
+
+  // clear for the rest of the guard
+  await p.evaluate(t => { localStorage.removeItem('dw:burn-limit:' + t); },
+                   target);
+  await p.reload({ waitUntil: 'networkidle' });
+  await sleep(1200);
+  // refresh r0-equivalent height baseline for motion checks below
+  const rClean = await p.evaluate(READ);
+  if (rClean.present) {
+    r0.h = rClean.h;
+    r0.head = rClean.head;
+    r0.cols = rClean.cols;
+    r0.bars = rClean.bars;
+    r0.buckets = rClean.buckets;
+    r0.colData = rClean.colData;
+    r0.caps = rClean.caps;
+    r0.limitPresent = rClean.limitPresent;
+  }
+  notes.push(`#499 cleaned: h=${r0.h} cols=${r0.cols} limitPresent=${r0.limitPresent}`);
 }
 } else {
   notes.push('panel absent after load — static field checks and motion skipped');

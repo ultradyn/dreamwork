@@ -830,12 +830,21 @@ STYLE = """<style>
   /* position:relative so the per-column hover tip can float without
      changing layout height (#417). */
   .bd { margin:.1rem 0 .9rem; position:relative; }
-  /* ONE LINE, ELLIPSISED — #151's mechanism for #151's reason, one panel
-     down: the numbers in here change, and a head that wraps to two lines
-     changes the panel's height, which is the premise that lets the bars
-     animate without dragging everything below them. */
+  /* ONE LINE — #151's mechanism for #151's reason, one panel down: the
+     numbers in here change, and a head that wraps to two lines changes
+     the panel's height, which is the premise that lets the bars animate
+     without dragging everything below them. Flex so #499's limit control
+     can sit on the same row without being ellipsised off the end: the
+     count + step flex-shrink and ellipsis; the limit (when present) is
+     flex:none and always fully visible. No second row — #417 fixed height. */
+  /* min-height is sized for the #499 input's border box so the head is
+     the same height with or without the limit control — appearing must
+     not move the panel (#417). */
   .bdhead { color:var(--dim); font-size:.7rem; margin-bottom:.4rem;
-            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            display:flex; align-items:center; gap:.35rem;
+            white-space:nowrap; min-height:1.45em; }
+  .bdhead-nums { flex:1 1 auto; min-width:0;
+                 overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .bdhead .bdnum { color:var(--lit); }
   /* #487: granularity cycle control — looks like a control (underline
      affordance, pointer), keyboard-native as a real <button>, announces
@@ -847,6 +856,35 @@ STYLE = """<style>
   .bdstep:hover { color:var(--lit); text-decoration-style:solid; }
   .bdstep:focus-visible { color:var(--lit); outline:1px solid var(--muted);
     outline-offset:2px; border-radius:2px; }
+  /* #499: column-count limit control. Shares the head line (no new row, no
+     height change — #417). Renders only when total buckets exceed the
+     active limit. Input is tabular and narrow; ⟳ resets to 28. Accent is
+     not spent. Conditional presence is the same line growing/shrinking
+     its content: no pose/depart of its own, because a live re-render of
+     this panel commits instantly (transitions.md / #218) and inventing a
+     second arrival idiom for a fragment of a fixed line would be the snap
+     among drifts the rule forbids. Reduced-motion parity is free. */
+  .bdlimit { flex:0 0 auto; display:inline-flex; align-items:center;
+             gap:.2rem; color:var(--dim); white-space:nowrap; }
+  .bdlimit-in {
+    width:3.4ch; height:1.25em; line-height:1.15em; box-sizing:border-box;
+    font:inherit; font-size:inherit; font-variant-numeric:tabular-nums;
+    color:var(--lit); background:transparent;
+    border:1px solid var(--line); border-radius:2px;
+    padding:0 .15rem; margin:0; text-align:right; vertical-align:middle;
+    -moz-appearance:textfield; appearance:textfield;
+  }
+  .bdlimit-in::-webkit-outer-spin-button,
+  .bdlimit-in::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  .bdlimit-in:hover { border-color:var(--muted); }
+  .bdlimit-in:focus { outline:1px solid var(--muted); outline-offset:1px;
+    border-color:var(--muted); }
+  .bdlimit-reset { background:none; border:none; font:inherit;
+    color:var(--muted); cursor:pointer; padding:0 .12rem; margin:0;
+    line-height:1; border-radius:2px; }
+  .bdlimit-reset:hover { color:var(--lit); }
+  .bdlimit-reset:focus-visible { color:var(--lit);
+    outline:1px solid var(--muted); outline-offset:2px; }
   .bdtrack { display:flex; align-items:stretch; gap:2px; }
   .bdnet { height:30px; }
   .bdflow { height:34px; margin-top:9px; }
@@ -3465,6 +3503,18 @@ const BURN_STEP_NAME = { 3600: 'hourly', 14400: 'every four hours',
    fine → coarse, wrapping. One list, never a second vocabulary. */
 const BURN_STEP_ORDER = [3600, 14400, 86400, 604800, 2419200];
 let burnStepPref = null;   // null = server auto; else a BURN_STEP_ORDER entry
+/* #499: client-side column-count limit. Default 28; <=0 means all/max;
+   hard cap 168. Preference is per-target in localStorage (same family as
+   burn_step — URL params would fight the posture picker's shared-arm
+   idiom less, but the page already keeps small UI state for this panel in
+   localStorage, and that is the tie-breaker). Cross-tab: each tab reads
+   on load; no storage-event fanout (burn_step does not either) so it
+   never races the posture pending key. */
+const BURN_LIMIT_DEFAULT = 28;
+const BURN_LIMIT_CAP = 168;
+// null = use default; number is the stored preference (0 = all).
+let burnLimitPref = null;
+let _burnLimitDidLoad = false;
 /* a bucket's label. Hourly buckets want a clock; daily and wider want a
    date, because "00:00" five times in a row is not a time axis. */
 const bstamp = (t, step) => {
@@ -3610,7 +3660,16 @@ function burnPanel(d) {
   if (s.state !== 'ok')
     return label('burndown') + `<div class="bd">` +
       `<div class="bdnone">${esc(s.note || s.state)}</div></div>`;
-  const bs = s.buckets || [];
+  ensureBurnLimit();
+  const all = s.buckets || [];
+  const totalN = all.length;
+  /* #499: slice to the most recent `lim` columns when the series exceeds
+     the active limit. lim=0 means all/max (no slice). Presence of the
+     control is totalN > lim (finite), never "displayed length > lim"
+     (slicing first would make the control vanish under itself). */
+  const lim = activeBurnLimit();          // 0 = all
+  const showLim = lim > 0 && totalN > lim;
+  const bs = (lim > 0 && totalN > lim) ? all.slice(-lim) : all;
   const flowMax = Math.max(1, ...bs.map(b => Math.max(b.arrived, b.landed)));
   const levelMax = Math.max(1, ...bs.map(b => b.open));
   const peakCommits = (typeof s.commit_max === 'number') ? s.commit_max
@@ -3645,18 +3704,32 @@ function burnPanel(d) {
   // from the same walk the columns do, not from a second reading.
   // #487: the step name is a cycle control (click / Enter / Space), not
   // bare prose — next ladder step, wrapping, announced via aria-live.
+  // #499: when totalN exceeds the active limit, the same line carries
+  // `limit [ N] [⟳]` — no second row (#417).
   const stepName = BURN_STEP_NAME[s.step] || 'bucketed';
   const stepAria = `granularity ${stepName} — activate to cycle`;
+  const limVal = displayBurnLimitValue();
+  const limCtl = showLim
+    ? `<span class="bdlimit" data-total="${totalN}" data-limit="${lim}">` +
+      `limit <input type="number" class="bdlimit-in" inputmode="numeric" ` +
+      `min="0" max="${BURN_LIMIT_CAP}" step="1" value="${limVal}" ` +
+      `aria-label="column limit, 0 for all, max ${BURN_LIMIT_CAP}">` +
+      `<button type="button" class="bdlimit-reset" ` +
+      `aria-label="reset column limit to ${BURN_LIMIT_DEFAULT}">⟳</button>` +
+      `</span>`
+    : '';
   let h = label('burndown') + `<div class="bd">` +
     `<div class="bdtip" hidden role="status" aria-live="polite"></div>` +
     /* #298/#487: the inspector is the richer reading; pin is RHS-or-above
        (bdinspLay), not column-centred. role=status like the tip. */
     `<div class="bdinsp" hidden role="status"></div>` +
-    `<div class="bdhead"><span class="bdnum">${s.open}</span> open · ` +
+    `<div class="bdhead"><span class="bdhead-nums">` +
+    `<span class="bdnum">${s.open}</span> open · ` +
     `${s.arrived} arrived · ${s.landed} landed · ` +
     `<button type="button" class="bdstep" role="button"` +
     ` data-step="${s.step}"` +
-    ` aria-label="${esc(stepAria)}">${esc(stepName)}</button></div>` +
+    ` aria-label="${esc(stepAria)}">${esc(stepName)}</button>` +
+    `</span>${limCtl}</div>` +
     `<div class="bdtrack bdnet" role="list" ` +
       `aria-label="open count per period; line weight is ledger commits">` +
       bs.map(b => col(b, true) +
@@ -3668,7 +3741,7 @@ function burnPanel(d) {
         `<div class="bdrule"></div>` +
         `<div class="bdhalf bdbot">${bdbar(b, 'landed', 'bddown', flowMax)}</div>` +
         `</div>`).join('') + `</div>` +
-    `<div class="bdaxis"><span>${esc(bstamp(s.from, s.step))}</span>` +
+    `<div class="bdaxis"><span>${esc(bstamp(bs.length ? bs[0].t0 : s.from, s.step))}</span>` +
       `<span>arrivals above · landed below · weight is commits</span>` +
       `<span>${esc(bstamp(s.to, s.step))}</span></div>`;
   /* WHO FILED EACH TASK, said honestly (#217). The old panel reported its
@@ -7450,6 +7523,99 @@ addEventListener('click', e => {
   cycleBurnStep(e.shiftKey);
 });
 
+/* #499 — column-count limit. Client-only: no server state, no endpoint.
+   localStorage per target (see burnLimitPref note above). Invalid input
+   is refused quietly — re-render restores the previous value; no toast
+   idiom exists on this panel. */
+function burnLimitStorageKey() {
+  try {
+    return 'dw:burn-limit:' + ((data && data.target) || '');
+  } catch (e) { return 'dw:burn-limit'; }
+}
+function loadBurnLimitPref() {
+  try {
+    const raw = localStorage.getItem(burnLimitStorageKey());
+    if (raw == null || raw === '') return null;
+    const v = parseInt(raw, 10);
+    if (!Number.isFinite(v)) return null;
+    return v;
+  } catch (e) { return null; }
+}
+function ensureBurnLimit() {
+  if (_burnLimitDidLoad) return;
+  _burnLimitDidLoad = true;
+  const v = loadBurnLimitPref();
+  if (v !== null) burnLimitPref = v;
+}
+/* Active slice size: 0 = all (no slice); else 1..BURN_LIMIT_CAP. */
+function activeBurnLimit() {
+  ensureBurnLimit();
+  if (burnLimitPref === null) return BURN_LIMIT_DEFAULT;
+  if (!Number.isFinite(burnLimitPref) || burnLimitPref <= 0) return 0;
+  return Math.min(BURN_LIMIT_CAP, Math.max(1, Math.floor(burnLimitPref)));
+}
+function displayBurnLimitValue() {
+  ensureBurnLimit();
+  if (burnLimitPref === null) return BURN_LIMIT_DEFAULT;
+  if (!Number.isFinite(burnLimitPref)) return BURN_LIMIT_DEFAULT;
+  if (burnLimitPref <= 0) return 0;
+  return Math.min(BURN_LIMIT_CAP, Math.floor(burnLimitPref));
+}
+async function rerenderBurnLimit() {
+  if (!view || view.name !== 'dashboard' || !data) return;
+  try {
+    const bdHover = snapshotBdHover();
+    const html = await buildCurrent();
+    setLiveContent(html);
+    restoreBdHover(bdHover);
+  } catch (e) {}
+}
+function applyBurnLimit(raw) {
+  /* Refuse invalid quietly: non-numeric / empty leaves the prior pref
+     and restores the input's displayed value (no toast idiom).
+     <=0 → all/max (stored as 0). >cap → clamp to cap. */
+  if (raw === '' || raw == null) {
+    const inp = document.querySelector('.bdlimit-in');
+    if (inp) inp.value = String(displayBurnLimitValue());
+    return;
+  }
+  const n = parseInt(String(raw).trim(), 10);
+  if (!Number.isFinite(n)) {
+    const inp = document.querySelector('.bdlimit-in');
+    if (inp) inp.value = String(displayBurnLimitValue());
+    return;
+  }
+  const store = n <= 0 ? 0 : Math.min(BURN_LIMIT_CAP, n);
+  burnLimitPref = store;
+  _burnLimitDidLoad = true;
+  try { localStorage.setItem(burnLimitStorageKey(), String(store)); }
+  catch (e) {}
+  rerenderBurnLimit();
+}
+function resetBurnLimit() {
+  burnLimitPref = null;               // back to default 28
+  _burnLimitDidLoad = true;
+  try { localStorage.removeItem(burnLimitStorageKey()); }
+  catch (e) {}
+  rerenderBurnLimit();
+}
+addEventListener('change', e => {
+  const inp = e.target && e.target.closest && e.target.closest('.bdlimit-in');
+  if (!inp) return;
+  applyBurnLimit(inp.value);
+});
+addEventListener('keydown', e => {
+  const inp = e.target && e.target.closest && e.target.closest('.bdlimit-in');
+  if (!inp) return;
+  if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+});
+addEventListener('click', e => {
+  const btn = e.target && e.target.closest && e.target.closest('.bdlimit-reset');
+  if (!btn) return;
+  e.preventDefault();
+  resetBurnLimit();
+});
+
 /* #417 per-column hover/focus readout. Shows open + arrived + landed +
    commits so the level line's two meanings (height = open, weight =
    commits) are never left implied. The tip is an arrival: rundesc's
@@ -7572,13 +7738,24 @@ function bdstampFull(t) {
 }
 function bdinspHTML(col) {
   const d = col.dataset;
-  const t1 = +d.t1, now = Date.now() / 1000;
-  const iv = bdstampFull(+d.t0) + ' – ' + (t1 > now ? 'now' : bdstampFull(t1));
+  const t0 = +d.t0, t1 = +d.t1, now = Date.now() / 1000;
+  const iv = bdstampFull(t0) + ' – ' + (t1 > now ? 'now' : bdstampFull(t1));
   // coverage the geometry cannot say: a period with no ledger commit
   // CARRIES the previous level; the current period is still arriving.
   const cov = [d.covered === '1' ? 'measured'
                                 : 'level carried — no ledger commits'];
-  if (t1 > now) cov.push('period in progress');
+  if (t1 > now) {
+    cov.push('period in progress');
+    /* #498: % of this open period elapsed, from the column's real t0/t1
+       (not from column index). Clamped to 0..100 so a clock skew past the
+       bounds cannot invent a figure the interval itself forbids. */
+    const span = t1 - t0;
+    if (span > 0) {
+      const pct = Math.max(0, Math.min(100,
+        Math.round(100 * (now - t0) / span)));
+      cov.push(pct + '% elapsed');
+    }
+  }
   return `<div class="bdin-iv">${esc(iv)}</div>` +
     `<div><span class="bdnum">${esc(d.open)}</span> open · ` +
     `${esc(d.arrived)} arrived · ${esc(d.landed)} landed · ` +

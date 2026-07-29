@@ -2474,6 +2474,29 @@ honours a forced member of `BURN_STEPS` and otherwise keeps the auto pick
 that holds the chart under `BURN_COLUMNS`. Dotted underline is the
 affordance (same family as `.gservact`); accent is not spent.
 
+**#499 — column-count limit control, on the same head line.** When the
+served series has **more buckets than the active limit** (default **28**),
+the head carries `limit [ N] [⟳]` after the step name — a numerical input
+and a reset. **No new row**: the control shares `.bdhead` (flex: numbers
+ellipsis on the left, limit is `flex:none` so it is never clipped off).
+#417's fixed-height premise is unchanged; presence/absence is content on
+an existing line, not a layout growth. Semantics: **`<=0` = all/max**
+(stored as `0`); hard cap **168**; invalid input is refused quietly (the
+panel's voice — no toast). **⟳** restores the default 28 (clears the
+stored pref). Slice is the **most recent** N columns; the control's
+presence is decided from the **full** series length vs the active limit
+(slicing first would make the control vanish under itself). **State:
+client-side only, per-target `localStorage` key `dw:burn-limit:<target>`.**
+Chosen over a URL param because this panel already keeps its small UI
+state (`burn_step`) in localStorage, and that consistency is the
+tie-breaker; no `storage` event fanout (same as `burn_step`) so it never
+fights the posture picker's shared-arm keys. No server state, no new
+endpoint. Conditional presence does **not** invent a second arrival
+idiom: a live re-render of this panel commits instantly
+(transitions.md / #218), and a fragment of a fixed line posing in would
+be the snap among drifts. Reduced-motion parity is free. Accent is not
+spent.
+
 **#298 — the column inspector, a richer reading on the same seam.** The
 glance tip answers a passing hover; the inspector (`.bdinsp`) answers a
 *deliberate* look — a hover that **dwells 700ms**, a keyboard focus
@@ -2486,8 +2509,11 @@ pose→ease-in / depart idiom, same floats-over-the-chart premise.
   **coverage state** — a period with no ledger commit *carries* the
   previous level rather than measuring it (the chart's own rule), so the
   inspector says `level carried — no ledger commits`; the current period
-  adds `period in progress`. Values are the column's own served numbers —
-  detail *about values already summarised*, never a hidden dataset.
+  adds `period in progress` and **#498** appends `N% elapsed`, derived
+  from the column's real `t0`/`t1` bounds and wall clock (never from
+  column index), clamped 0..100. Values are the column's own served
+  numbers — detail *about values already summarised*, never a hidden
+  dataset.
 - **#487 pin — consistent location, not column-centred.** Room is measured
   from the rendered layout: the inspector fits in the **right half** of the
   panel when `(offsetWidth + pad) ≤ panelWidth / 2` — no guessed px
@@ -2626,9 +2652,14 @@ this is a single honest measurement, not the composite that rule refuses.)
 (derived at runtime across a real data change — never a literal pixel
 floor), the c3 weight mapping (zero vs one vs peak, against served data),
 the c4 copy (no ellipsis at both widths, figures derived from `/data.json`),
-and the per-column hover (readout numbers match the hovered column's served
-bucket, transition mid-frames, reduced-motion parity). The median and commit
-figure lines are re-rendered copy in that same panel.
+the per-column hover (readout numbers match the hovered column's served
+bucket, transition mid-frames, reduced-motion parity), **#498** in-progress
+`N% elapsed` (derived from the fixture's real period bounds — never a
+literal), and **#499** limit control (absent at/below the limit, present
+above it; fixed-height premise still holds with the control visible). The
+median and commit figure lines are re-rendered copy in that same panel.
+`dev/capture/bdhover.mjs` owns the inspector's deeper coverage honesty
+and also asserts #498's elapsed figure on the open period.
 
 **No motion, on purpose.** A live tick commits its DOM instantly
 (transitions.md), and nothing about this datum is a layout change anyone

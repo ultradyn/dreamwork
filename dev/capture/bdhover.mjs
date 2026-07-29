@@ -251,6 +251,23 @@ const leaveAll = async () => {
   ok('#298: the open period says so, and ends the interval at "now"',
      !!last && /period in progress/.test(last.lines[2] || '') &&
      /– now$/.test(last.lines[0] || ''));
+  /* #498: % elapsed from the open period's real t0/t1, derived at the
+     moment of the read — never a literal. Precondition: last is open. */
+  {
+    const want = buckets[lastIdx];
+    const step = served.burndown.step;
+    const nowSec = Date.now() / 1000;
+    const t0 = want.t0, t1 = t0 + step;
+    ok('#498 precondition: last period is still open (t1 > now)',
+       step > 0 && t1 > nowSec);
+    const expectPct = Math.max(0, Math.min(100,
+      Math.round(100 * (nowSec - t0) / step)));
+    const m = ((last && last.lines[2]) || '').match(/(\d+)%\s*elapsed/);
+    notes.push(`#498: cov="${(last && last.lines[2]) || ''}" ` +
+               `expect≈${expectPct}% got=${m ? m[1] : 'none'}`);
+    ok('#498: open period names N% elapsed from real period bounds',
+       !!m && Math.abs(+m[1] - expectPct) <= 2);
+  }
   await leaveAll();
 }
 
