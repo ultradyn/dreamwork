@@ -1,4 +1,4 @@
-/* bdhover — #298: the burndown column inspector.
+/* bdhover — #298/#487: the burndown column inspector.
 
    One restrained chart-native inspector (`.bdinsp`) on #417's seam — the
    RICHER reading a deliberate look gets: a hover that dwells, a keyboard
@@ -6,6 +6,12 @@
    and completions, the commits, and the coverage state the geometry
    cannot say (a period with no ledger commit CARRIES the level; the
    current period is still arriving).
+
+   #487 rework: pin is CONSISTENT (RHS of the panel when the inspector's
+   measured width fits in the right half; otherwise above chart AND above
+   `.bdtip` so the two never overlap). No native `title=` on columns —
+   one hover surface. Granularity cycle is unit-tested; this guard owns
+   geometry and values.
 
    OWN TARGET + OWN EPHEMERAL PORT, same reason as burndown.mjs: the datum
    is a property of a repository's ledger HISTORY. The history is PLANTED
@@ -19,8 +25,9 @@
      - the interval line corresponds to the bucket's served t0/t1;
      - coverage honesty: quiet period = carried, busy period = measured,
        last period = in progress;
-     - edge-column clamping: first and last columns keep the inspector
-       inside the panel and ABOVE the level track (never on a neighbour);
+     - #487 pin: slot is rhs|above from layout widths; never overlaps tip;
+       stays inside the panel horizontally;
+     - no native title= on level columns (one hover surface);
      - arrival has mid-frames (a snap has none); reduced motion snaps;
      - hover→focus parity, Escape and tap dismissal.
 
@@ -132,12 +139,24 @@ const INSP = `(() => {
   const el = document.querySelector('.bd .bdinsp');
   if (!el || el.hidden) return null;
   const r = el.getBoundingClientRect();
-  const bd = document.querySelector('.bd').getBoundingClientRect();
+  const bdEl = document.querySelector('.bd');
+  const bd = bdEl.getBoundingClientRect();
   const track = document.querySelector('.bd .bdnet').getBoundingClientRect();
+  const tip = document.querySelector('.bd .bdtip');
+  const tipR = tip && !tip.hidden ? tip.getBoundingClientRect() : null;
+  // room derivation mirrors bdinspLay: inspector fits in the right half
+  const hasRoom = (el.offsetWidth + 8) <= (bd.width / 2);
+  const overlapTip = tipR
+    ? !(r.bottom <= tipR.top + 1 || r.top >= tipR.bottom - 1
+        || r.right <= tipR.left + 1 || r.left >= tipR.right - 1)
+    : false;
   return { lines: (el.innerText || '').trim().split('\\n').map(s => s.trim()),
            op: parseFloat(getComputedStyle(el).opacity),
-           left: r.left, right: r.right, bottom: r.bottom,
-           bdL: bd.left, bdR: bd.right, trackTop: track.top };
+           left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+           w: r.width, bdL: bd.left, bdR: bd.right, bdW: bd.width,
+           trackTop: track.top, slot: el.dataset.bdslot || '',
+           hasRoom, overlapTip,
+           tipTop: tipR ? tipR.top : null, tipBot: tipR ? tipR.bottom : null };
 })()`;
 const dwellAndRead = async (idx, wait = 1000) => {
   await p.evaluate(`(() => {
@@ -233,20 +252,69 @@ const leaveAll = async () => {
   await leaveAll();
 }
 
-/* ── edge-column clamping, and never on a neighbour ─────────────────────
-   First and last columns: the inspector stays inside the panel's
-   horizontal bounds, and its bottom edge never crosses into the level
-   track — so it cannot sit on a column, its own or a neighbour's. */
-for (const idx of [0, lastIdx]) {
+/* ── #487 consistent pin: RHS when room, above otherwise; never tip ────
+   First and last columns used to drive a column-centred clamp. The pin
+   is now independent of the column: same slot for both. Room is derived
+   from the inspector's measured width vs half the panel — assert that
+   derivation matches the slot the page chose, and that tip+insp never
+   share pixels. */
+{
+  const nativeTitle = await p.evaluate(`(() => {
+    const cols = document.querySelectorAll('.bdnet .bdcol[data-open]');
+    return [...cols].some(c => c.hasAttribute('title'));
+  })()`);
+  ok('#487: no native title= on level columns (one hover surface)',
+     nativeTitle === false);
+  const stepBtn = await p.evaluate(`(() => {
+    const b = document.querySelector('.bd .bdstep');
+    if (!b) return null;
+    return { tag: b.tagName, role: b.getAttribute('role'),
+             label: b.getAttribute('aria-label') || '',
+             text: (b.textContent || '').trim() };
+  })()`);
+  ok('#487: granularity is a button control with announced state',
+     !!stepBtn && stepBtn.tag === 'BUTTON' &&
+     /granularity/i.test(stepBtn.label) && !!stepBtn.text);
+  notes.push(`step control: ${JSON.stringify(stepBtn)}`);
+}
+for (const idx of [0, lastIdx, busyIdx]) {
   const m = await dwellAndRead(idx);
-  notes.push(`clamp col[${idx}]: ${JSON.stringify(m &&
-    { left: m.left | 0, right: m.right | 0, bottom: m.bottom | 0,
-      bdL: m.bdL | 0, bdR: m.bdR | 0, trackTop: m.trackTop | 0 })}`);
-  ok(`#298: edge column ${idx} keeps the inspector inside the panel`,
+  notes.push(`pin col[${idx}]: ${JSON.stringify(m &&
+    { slot: m.slot, hasRoom: m.hasRoom, left: m.left | 0, right: m.right | 0,
+      top: m.top | 0, bottom: m.bottom | 0, w: m.w | 0, bdW: m.bdW | 0,
+      overlapTip: m.overlapTip, tipTop: m.tipTop | 0 })}`);
+  ok(`#487: col ${idx} keeps the inspector inside the panel`,
      !!m && m.left >= m.bdL - 1 && m.right <= m.bdR + 1);
-  ok(`#298: edge column ${idx} inspector never sits on the columns`,
-     !!m && m.bottom <= m.trackTop + 1);
+  // precondition: room flag and slot agree — a hollow check would let the
+  // page claim "rhs" while measuring "no room"
+  ok(`#487: col ${idx} slot matches layout-derived room`,
+     !!m && ((m.hasRoom && m.slot === 'rhs') ||
+             (!m.hasRoom && m.slot === 'above')));
+  ok(`#487: col ${idx} inspector never overlaps the glance tip`,
+     !!m && m.overlapTip === false);
+  if (m && m.slot === 'above' && m.tipTop != null) {
+    ok(`#487: col ${idx} above-slot sits above the tip line`,
+       m.bottom <= m.tipTop + 1);
+  }
   await leaveAll();
+}
+/* narrow viewport forces the above slot (room is width-derived) */
+{
+  await p.setViewportSize({ width: 390, height: 844 });
+  await sleep(500);
+  const m = await dwellAndRead(busyIdx);
+  notes.push(`narrow pin: ${JSON.stringify(m &&
+    { slot: m.slot, hasRoom: m.hasRoom, w: m.w | 0, bdW: m.bdW | 0,
+      overlapTip: m.overlapTip })}`);
+  // precondition: at 390 the inspector really does not fit half-width —
+  // otherwise the "above" assertion is vacuous
+  ok('#487 narrow precondition: no room on the right half',
+     !!m && m.hasRoom === false);
+  ok('#487 narrow: slot is above and clears the tip',
+     !!m && m.slot === 'above' && m.overlapTip === false);
+  await leaveAll();
+  await p.setViewportSize({ width: 1100, height: 1500 });
+  await sleep(400);
 }
 
 /* ── hover→focus parity, then dismissal ──────────────────────────────────
@@ -303,17 +371,18 @@ for (const idx of [0, lastIdx]) {
      (await p.evaluate(INSP)) === null);
 }
 
-/* ── mobile: still clamped, still above the columns ───────────────────── */
+/* ── mobile screenshot + inside-panel pin (narrow path already covered) ─ */
 {
   await p.setViewportSize({ width: 390, height: 844 });
   await sleep(500);
   const m = await dwellAndRead(lastIdx);
   notes.push(`mobile col[${lastIdx}]: ${JSON.stringify(m &&
-    { left: m.left | 0, right: m.right | 0, bdL: m.bdL | 0, bdR: m.bdR | 0,
-      bottom: m.bottom | 0, trackTop: m.trackTop | 0 })}`);
-  ok('#298: at 390px the edge column still clamps inside the panel',
-     !!m && m.left >= m.bdL - 1 && m.right <= m.bdR + 1 &&
-     m.bottom <= m.trackTop + 1);
+    { slot: m.slot, left: m.left | 0, right: m.right | 0,
+      bdL: m.bdL | 0, bdR: m.bdR | 0, overlapTip: m.overlapTip })}`);
+  ok('#298/#487: at 390px the inspector stays inside the panel',
+     !!m && m.left >= m.bdL - 1 && m.right <= m.bdR + 1);
+  ok('#298/#487: at 390px tip and inspector do not overlap',
+     !!m && m.overlapTip === false);
   await p.screenshot({ path: `${OUT}/bdhover-mobile.png`, fullPage: false });
   await leaveAll();
   await p.setViewportSize({ width: 1100, height: 1500 });
