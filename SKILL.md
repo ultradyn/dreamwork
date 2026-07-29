@@ -304,6 +304,18 @@ the main tree is dirty); do not read either as a guarantee that a lane cannot
 touch the main checkout. Ceiling per harness:
 `.dreamwork/docs/plans/harness-containment.md`.
 
+**A lane never runs `just test` or the full guard suite; the coordinator owns
+both** (#424). The browser guards bind ports 39890-39899 and the recipe
+hard-aborts if any port in the range is held, so with N lanes live at most one
+process can ever run it — a brief that says *"then `just test`"* is
+unsatisfiable at fan-out and has left lanes waiting fourteen minutes on a lock
+nobody modelled. The convention that works: **a lane runs targeted pytest and
+`lint.py` only** (plus its *own* guard, solo, via
+`DREAMWORK_GUARDS=<name> DREAMWORK_HUB_GUARDS= just guards <port>` after
+checking the range is free — never another lane's guard, never the suite), and
+the coordinator verifies guards once on the merged tree before folding. This
+matches who actually merges.
+
 **Inbox and hand-off paths given to a worktree lane are absolute.** A lane
 in `.worktrees/x` told to append to `.dreamwork/inbox.md` writes its own
 copy, and the coordinator never sees it (`inbox.md` is often untracked, so
