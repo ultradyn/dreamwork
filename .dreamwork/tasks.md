@@ -205,6 +205,24 @@ Next id: **492**
   must land WITH the cutover, not before — the absence-invariant errors on today's
   status.json, which still carries those fields; (c) execute `--cutover` live, lease
   held, no lanes in flight.
+  · **INCREMENT 7 (consumer re-point) MERGED 2026-07-29 20:34 — dark path, zero
+  behavior change until a watermark exists.** Lane `wt/294repoint` (llmp-glm-5-2,
+  1370s, 141 calls; `05df0471` `3e5f5f4f` `7dd0f666` `b16be089` `29c554ee`). Every
+  ledger consumer enumerated and flipped except lint.py (coordinator act): watch.py's
+  `ledger_series` (store side = `store_series_raw` over `task_event` first-sights,
+  same `_series_from_model` bucket builder both paths), `status_sync.read_open_ids`,
+  `task_origins` (store = `task.origin` + earliest event), `dev/ledger.py counts`.
+  Not flipped by design: `dev/ledger.py fold`/`sweep` (Markdown tools, pre-cutover),
+  `ledger_store.derive_next_id` (import path always reads Markdown). 5 dispatch
+  parity tests (markdown-mode == store-mode per consumer, runtime-derived fixtures).
+  Coordinator red-proof: `store_series_raw` returning an empty model fails exactly
+  `test_ledger_series_store_matches_markdown`; byte-identical restore; 454 tests
+  green; lint clean. **Lane finding, verified by coordinator: the cutover import
+  writes first-sight events only for the 74 GROOMED ids** (`recover_groomed_history`
+  iterates the groomed set) — a store cut over today would have an EMPTY pre-cutover
+  burndown. That is inc8 (`lane-294histall`, dispatched 20:38): first-sight events
+  for ALL ids under the cutover lease, design fixture 5 (store series ==
+  `ledger_series` bucket-for-bucket). Live cutover stays held until inc8 merges.
 - **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
   dashboard/loop-config · origin: **human** · **human via watch `add-idea` 2026-07-29 17:10:** *"posture
   config (pace, etc) should have a place for text entry of subagent policy where user can put preferred
