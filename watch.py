@@ -746,6 +746,12 @@ STYLE = """<style>
               padding-left:1.6ch; text-indent:-1.6ch; }
   .md .mdli::before { content:"\\00b7  "; color:var(--dim); }
   .md pre.mdcode { margin:.45rem 0; white-space:pre; overflow-x:auto; }
+  /* #521 — a blockquote is one quieter step on the text ramp, with its own
+     left rule inside the prose rail. Not a coloured callout: emphasis on
+     this page is luminance, and a quote is quieter, not louder. Static —
+     no state change, no transition. */
+  .md .mdquote { margin:.45rem 0; padding:.1rem 0 .1rem 1ch;
+                 border-left:2px solid var(--border); color:var(--dim); }
   /* emphasis is luminance, not weight (see mdSpans) */
   .md strong, .anstext strong, .follow strong {
     font-weight:inherit; color:var(--bright); }
@@ -2419,6 +2425,62 @@ const linkify = h => h.replace(
     }
     return m;
   });
+/* #522 — general markdown links `[text](target)`. Order is load-bearing:
+   linkifyReview (more specific, review docks) runs first; this pass then
+   consumes a known-internal or http(s) target whole so the `](…)` tail
+   never bleeds; linkify's backticked-path pass runs last. Unknown targets
+   stay fully literal (never half-rendered): the brackets remain visible
+   and interior backticks become code without being promoted to links.
+   Relative targets resolve against the viewed file's directory only when
+   that resolution lands in `data.linkable_paths` — a broken link is a
+   false promise, so anything else stays text. */
+const mdNormJoin = (baseDir, rel) => {
+  if (rel.startsWith('/')) return null;
+  const parts = [...String(baseDir).split('/'), ...String(rel).split('/')];
+  const stack = [];
+  for (const p of parts) {
+    if (p === '' || p === '.') continue;
+    if (p === '..') { if (!stack.length) return null; stack.pop(); continue; }
+    stack.push(p);
+  }
+  return stack.join('/');
+};
+const resolveMdTarget = (target, baseDir) => {
+  // esc() may have turned & into &amp; inside a query string
+  const t = String(target)
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+  if (/^https?:\\/\\//i.test(t)) return { kind: 'external', href: t };
+  const paths = (data && Array.isArray(data.linkable_paths))
+    ? data.linkable_paths : [];
+  if (paths.includes(t)) return { kind: 'internal', path: t };
+  if (baseDir != null) {
+    const resolved = mdNormJoin(baseDir, t);
+    if (resolved != null && paths.includes(resolved))
+      return { kind: 'internal', path: resolved };
+  }
+  return { kind: 'literal' };
+};
+const linkifyMd = (h, baseDir) => h.replace(
+  /\\[([^\\]]*)\\]\\(([^)\\s]+)\\)/g,
+  (m, label, target) => {
+    const r = resolveMdTarget(target, baseDir);
+    // corpus often writes [`path`](…); strip surrounding backticks for display
+    const lab = label.replace(/^`|`$/g, '');
+    if (r.kind === 'internal') {
+      const url = '/file?p=' + encodeURIComponent(r.path);
+      // same .mdfile idiom as a backticked known path (#506)
+      return '<span class="mdfile">`<a href="' + url + '">' + lab + '</a>`' +
+             pipBtn(url, r.path) + '</span>';
+    }
+    if (r.kind === 'external')
+      // no pip — a pip floats a local view (#506)
+      return '<a href="' + r.href + '" rel="noopener noreferrer">' + lab + '</a>';
+    // fully literal: keep brackets, code-style interior backticks, but do
+    // NOT leave raw `path` for linkify to half-promote (the bleed bug)
+    return '[' + label.replace(/`([^`]+)`/g, '<code>$1</code>') +
+           '](' + target + ')';
+  });
 const preB = t => `<pre>${linkify(esc(t))}</pre>`;
 /* a backticked path to a review artifact docks THIS question onto the
    review page (carries its title); every other path stays a /file link.
@@ -2429,7 +2491,8 @@ const preB = t => `<pre>${linkify(esc(t))}</pre>`;
    unreachable from the ask. Prefer the backticked shape; ALSO recognise
    markdown links whose target is a review artifact (basename after
    `../review/` or `.dreamwork/review/`) so a live entry that used the
-   outlier shape still docks. A bare relative href is never left as-is. */
+   outlier shape still docks. A bare relative href is never left as-is.
+   This pass stays MORE SPECIFIC than linkifyMd and must run first. */
 const revDock = (name, title, label) =>
   '<a class="rev" href="/review?p=' + encodeURIComponent(name) +
   '&q=' + encodeURIComponent(title) + '">' + label + '</a>';
@@ -2460,7 +2523,7 @@ const linkifyReview = (escaped, title) => {
    reflow through mdB. Source code and other files at `/file` stay verbatim
    in a <pre>. JSON is neither (#178). Status and git have their own components.
 
-   Four things must survive the join, because each one carries meaning a
+   Five things must survive the join, because each one carries meaning a
    joined line would destroy:
      · a blank line is a paragraph break
      · a leading `- ` is a real list item and its INDENT is its nesting —
@@ -2468,8 +2531,11 @@ const linkifyReview = (escaped, title) => {
        an entry, and flattening the marker would render the two identically
      · a ``` fence is code, and code is not prose
      · a `#` heading stands alone
+     · a leading `>` is a blockquote (#521) — consecutive quote lines form
+       ONE block; a `>` inside a fence stays code (fences win)
    Every other line break is a wrap, and gets joined with a space. */
 const MD_BULLET = /^(\\s*)[-*]\\s+(.*)$/;
+const MD_QUOTE = /^>\\s?(.*)$/;
 function mdBlocks(text) {
   const out = [];
   let cur = null, fence = null;
@@ -2480,13 +2546,26 @@ function mdBlocks(text) {
       else { flush(); fence = []; }
       continue;
     }
-    if (fence) { fence.push(line); continue; }
+    if (fence) { fence.push(line); continue; }   // fences win over `>` (#521)
     if (!line.trim()) { flush(); continue; }      // blank line ends a block
     if (/^\\s*#{1,6}\\s/.test(line)) {
       flush(); out.push({ kind:'h', text: line.replace(/^\\s*#+\\s*/, '') }); continue;
     }
     const m = line.match(MD_BULLET);
     if (m) { flush(); cur = { kind:'li', indent:m[1].length, text:m[2] }; continue; }
+    const qm = line.match(MD_QUOTE);
+    if (qm) {
+      const piece = qm[1].trim();
+      if (cur && cur.kind === 'quote') {
+        if (piece) cur.text = cur.text ? (cur.text + ' ' + piece) : piece;
+      } else {
+        flush();
+        cur = { kind: 'quote', text: piece };
+      }
+      continue;
+    }
+    // a non-quote line ends a quote block (do not glue prose onto it)
+    if (cur && cur.kind === 'quote') flush();
     if (cur) { cur.text += ' ' + line.trim(); continue; }   // a wrap: join it
     cur = { kind:'p', indent:0, text: line.trim() };
   }
@@ -2506,7 +2585,8 @@ function mdRender(text, inline) {
     b.kind === 'fence' ? `<pre class="mdcode">${esc(b.text)}</pre>` :
     b.kind === 'h' ? `<div class="mdh">${inline(b.text)}</div>` :
     b.kind === 'li' ? `<div class="mdli" style="--lvl:${levels.indexOf(b.indent)}">` +
-                      `${inline(b.text)}</div>`
+                      `${inline(b.text)}</div>` :
+    b.kind === 'quote' ? `<blockquote class="mdquote">${inline(b.text)}</blockquote>`
                     : `<p>${inline(b.text)}</p>`).join('');
 }
 /* Inline markdown the loop actually writes: **bold**, *em*, `code`. Bold is
@@ -2514,15 +2594,29 @@ function mdRender(text, inline) {
    text ramp, and a mono bold would change metrics to say no more. Order is
    load-bearing: the linkifiers inject <a> INSIDE the backticks, so code
    spans convert after them and swallow the link; ** before * so a bold pair
-   is never read as two emphases. */
+   is never read as two emphases. Link pass order: linkifyReview (review
+   docks) → linkifyMd (general [text](target), #522) → linkify (backticks). */
 const mdSpans = h => h
   .replace(/`([^`]+)`/g, '<code>$1</code>')
   .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
   .replace(/(^|[\\s(\\[])\\*([^*\\s][^*]*?)\\*(?=$|[\\s.,;:)\\]])/g, '$1<em>$2</em>');
-const mdInline = t => mdSpans(linkify(esc(t)));
+/* baseDir is the viewed file's directory (or null): relative markdown-link
+   targets resolve only against it, and only when the result is linkable. */
+const mdInlineAt = baseDir => t =>
+  mdSpans(linkify(linkifyMd(esc(t), baseDir)));
+const mdInline = t => mdInlineAt(null)(t);
 const mdInlineReview = title => t =>
-  mdSpans(linkify(linkifyReview(esc(t), title)));
-const mdB = t => `<div class="md">${mdRender(t, mdInline)}</div>`;
+  mdSpans(linkify(linkifyMd(linkifyReview(esc(t), title), null)));
+/* filePath (optional): the path being rendered, so relative [text](../x)
+   targets can resolve against its directory into the closed linkable set. */
+const mdB = (t, filePath) => {
+  let base = null;
+  if (filePath != null && filePath !== '') {
+    const i = String(filePath).lastIndexOf('/');
+    base = i >= 0 ? String(filePath).slice(0, i) : '';
+  }
+  return `<div class="md">${mdRender(t, mdInlineAt(base))}</div>`;
+};
 const mdBReview = (t, title) =>
   `<div class="md">${mdRender(t, mdInlineReview(title))}</div>`;
 /* a follow-up thread and a quiet add-a-note box, carried by every question
@@ -3845,7 +3939,7 @@ function buildDashboard(d) {
   }
   h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
-         expand(n, mdB(d.files[n]), '', `file:${n}`)).join('');
+         expand(n, mdB(d.files[n], n), '', `file:${n}`)).join('');
   // ...then how the work itself is going (#142). Below the questions and the
   // reviews on purpose: the top of this page is what NEEDS him — a fault,
   // what just happened, what he must answer — and the burndown is context
@@ -4083,7 +4177,10 @@ function buildFile(param, fetched, mode) {
      same verbatim <pre> it always was: plain, never guessed. */
   const src = (!renderPlain && fetched.hl) ? fetched.hl
                                          : `<pre>${esc(text)}</pre>`;
-  const body = (isMarkdownFile(param) && mode !== 'source') ? mdB(text) : src;
+  /* filePath threads into mdB so relative [text](../x) targets resolve
+     against this file's directory into the closed linkable set (#522). */
+  const body = (isMarkdownFile(param) && mode !== 'source')
+    ? mdB(text, param) : src;
   return `<div id="filebody">${body}</div>`;
 }
 /* the image's own arrival (#336): if its bytes land after the view settled,
@@ -6434,8 +6531,15 @@ async function fetchFile(param) {
   return fetched;
 }
 async function buildCurrent() {
-  if (view.name === 'file')
+  /* #522: the file view also needs `data` — linkify / linkifyMd consult
+     `data.linkable_paths` to decide which targets to promote. Skipping
+     ensureData here left a cold /file load with data===null, so every
+     known path stayed literal (and any later tick only re-rendered on an
+     mtime change). Same closed set as every other prose surface. */
+  if (view.name === 'file') {
+    await ensureData();
     return buildFile(view.param, await fetchFile(view.param), view.mode);
+  }
   const d = await ensureData();
   if (view.name === 'review') return buildReview(view.param, view.q, d);
   if (view.name === 'question') return buildQuestion(view.param, d);

@@ -1362,13 +1362,23 @@ reason, neither of them markdown: `status.json` (#130) and the git tail
 component of its own (below). JSON at `/file` is still neither prose nor a
 toggle yet (#178).
 
-Four things survive the join, because each carries meaning a joined line
+Five things survive the join, because each carries meaning a joined line
 would destroy: a **blank line** is a paragraph break; a leading **`- `** is a
 real list item and its **indent is its nesting**; a **``` fence** is code;
-a **`#` heading** stands alone. Nesting is the *rank* of a bullet's indent
-among the indents actually present, not its column count — a question body
-arrives carrying the source file's own 2-space indent, and absolute columns
-would push every sub-bullet a level too deep.
+a **`#` heading** stands alone; a leading **`>`** is a **blockquote**
+(#521) — consecutive `>` lines form one block, reflow, and still take
+inline markdown. A `>` line inside a fence stays code (fences win). Nesting
+is the *rank* of a bullet's indent among the indents actually present, not
+its column count — a question body arrives carrying the source file's own
+2-space indent, and absolute columns would push every sub-bullet a level
+too deep.
+
+**A blockquote is quieter, not louder (#521).** Rendered as
+`<blockquote class="mdquote">`: a 2px `--border` left rule inside the prose
+rail, text at `--dim` (one step dimmer than body `--muted`). Not a coloured
+callout — emphasis on this page is luminance, and a quote steps down the
+ramp. Static styling; no state change, no transition. Guard:
+`dev/capture/mdquote.mjs`.
 
 **Inline emphasis is luminance, not weight.** `**bold**` renders as
 `--bright` at the same weight; the page already says "more important" with
@@ -1386,21 +1396,42 @@ question travels with the artifact. Prefer that shape in every new ask —
 it is what `#294`, `#445` and most of the open set already use. A markdown
 inline link whose target is a review artifact
 (`[label](../review/name.html)` or `[label](.dreamwork/review/name.html)`)
-is also recognised and rewritten to the same dock URL: `mdSpans` has no
-general `[text](url)` pass, and a relative `../review/` path is wrong for
-the `/questions` route, so the outlier form used by `#417` was raw text
-and unreachable. Bare relative paths are never left as navigable hrefs.
-(`file-formats.md` is where the writing rule belongs; this paragraph is
-the page-side contract.)
+is also recognised and rewritten to the same dock URL. This pass is more
+specific than the general `[text](target)` pass (#522) and runs first so
+review docks win in review contexts. Bare relative paths are never left as
+navigable hrefs. (`file-formats.md` is where the writing rule belongs; this
+paragraph is the page-side contract.)
+
+**General markdown links `[text](target)` (#522).** `linkifyMd` consumes the
+whole construct — never half: either fully promoted or fully literal, never
+a linked label with a bleeding `](…)` tail (the bug his 07:41 screenshot
+named). Target rules, closed set only:
+
+- **known-internal** (`data.linkable_paths`, or a relative target that
+  resolves against the *viewed file's directory* into that set) → same
+  `.mdfile` idiom as a backticked known path: link + pip. The optional
+  base path is the file being rendered (`mdB(text, filePath)` at `/file`
+  and the dashboard file peeks); without a base, only absolute-from-repo
+  targets in the set promote.
+- **`http(s)://…`** → a plain external `<a rel="noopener noreferrer">`,
+  no pip (a pip floats a local view — the #506 rule).
+- **anything else** → fully literal: brackets stay visible; interior
+  backticks become `<code>` without being promoted to links, so linkify
+  cannot half-render the label.
+
+Pass order is load-bearing: `linkifyReview` → `linkifyMd` → `linkify`
+(backticks). Guard: `dev/capture/mdquote.mjs`.
 
 **Known-internal file links carry a pip (#506).** When `linkify` promotes a
 backticked path because it is in `data.linkable_paths`, it also emits
 `pipBtn('/file?p=…', path)` immediately after the backticked span, both
 inside a `.mdfile` nowrap unit so the glyph never orphans onto the next
-line. The decision is one: the closed set that decides the link decides the
-pip — there is no second allow-list. External links and unknown code spans
-get none. The pip is outside the backticks so `<code>` wraps only the path
-(the link is content; the pip is chrome). Guard: `dev/capture/qlinkpip.mjs`.
+line. The same idiom applies when `linkifyMd` promotes a known-internal
+markdown link (#522). The decision is one: the closed set that decides the
+link decides the pip — there is no second allow-list. External links and
+unknown code spans get none. The pip is outside the backticks so `<code>`
+wraps only the path (the link is content; the pip is chrome). Guard:
+`dev/capture/qlinkpip.mjs`.
 
 The parser feeds this: a sub-bullet may itself be hard-wrapped, and its
 continuation lines belong to *it*. Capturing only the first line truncated
