@@ -1,15 +1,17 @@
 /* #118 — a live tick must not eat what the human is typing.
 
-   The tick re-renders the question list through `innerHTML`, so every card
-   node is genuinely replaced roughly every 2s. Anything half-typed lives
-   only in that node, so the render destroys it unless it is carried across.
+   Under #505, setContent reconciles #view by key (morphdom) so survivor
+   card nodes are KEPT — text/caret/focus ride the node. Before #505 the
+   tick wholesale-replaced via innerHTML and snapshotCardState re-applied
+   the draft. Either path must keep what he typed.
 
    The hazard is invisible to a screenshot and to any check that does not
    force a real tick, so this script does both halves:
      - it makes the tick actually happen (a real write under `.dreamwork/`,
        which is what `watched_mtime` watches) and PROVES it happened by
-       showing the textarea node was replaced. Without that assertion a
-       do-nothing tick would pass every check below.
+       `__dwViewRenderGen` advancing (or, legacy, the textarea node being
+       replaced). Node replacement is no longer required under
+       reconciliation — a kept node is the success mode.
      - it then asserts the text, the caret, the focus and the destination
        mode survived — the mode because it decides which endpoint the text
        is sent to, so losing it would silently redirect his words.
@@ -48,7 +50,11 @@ const TICK = (qid, poke) => `(async (qid, poke) => {
   const sel = '.qa[data-qid="' + qid + '"]';
   const box = () => document.querySelector(sel + ' textarea');
   const ta0 = box();
-  const lefts = []; let replaced = false;
+  const gen0 = window.__dwViewRenderGen || 0;
+  // Force morph path even when markup is byte-identical (hash-skip would
+  // otherwise make a quiet /command tick a no-op on /questions).
+  if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
+  const lefts = []; let replaced = false; let advanced = false;
   await fetch(poke.url, { method: 'POST',
     headers: {'Content-Type':'application/json'}, body: JSON.stringify(poke.body) });
   const t0 = performance.now();
@@ -57,12 +63,14 @@ const TICK = (qid, poke) => `(async (qid, poke) => {
     if (ind) lefts.push(Math.round(ind.getBoundingClientRect().left));
     const now = box();
     if (now && now !== ta0) replaced = true;
+    if ((window.__dwViewRenderGen || 0) > gen0) advanced = true;
     if (performance.now() - t0 < 5200) requestAnimationFrame(step); else res();
   })());
   const ta = box(), comp = ta && ta.closest('.qcompose');
   const lit = comp && comp.querySelector('.sgbtn.on');
   return {
-    replaced, lefts,
+    // #505: tickWorked = gen advanced OR (legacy) node replaced
+    replaced, advanced, tickWorked: advanced || replaced, lefts,
     value: ta ? ta.value : null,
     start: ta ? ta.selectionStart : -1, end: ta ? ta.selectionEnd : -1,
     focused: !!ta && document.activeElement === ta,
@@ -86,7 +94,8 @@ async function typeInto(p, qid) {
 }
 
 const survived = (r, label, reduced) => {
-  ok(`${label}: the tick really replaced the card node`, r.replaced);
+  ok(`${label}: the tick really ran (render gen advanced or node replaced)`,
+     !!(r && r.tickWorked));
   ok(`${label}: the typed text survived`, r.value === TEXT);
   ok(`${label}: the caret survived`,
      r.start === TEXT.length - BACK && r.end === r.start);
@@ -150,7 +159,9 @@ for (const reduced of [false, true]) {
     const sel = '.qa[data-qid="' + qid + '"] > .qfold';
     const d0 = document.querySelector(sel);
     const wasOpen = !!(d0 && d0.open);
-    let replaced = false;
+    const gen0 = window.__dwViewRenderGen || 0;
+    if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
+    let replaced = false, advanced = false;
     await fetch('/command', { method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ kind: 'add-idea', text: 'fold guard tick' }) });
@@ -158,13 +169,16 @@ for (const reduced of [false, true]) {
     await new Promise(res => (function step() {
       const d = document.querySelector(sel);
       if (d && d !== d0) replaced = true;
+      if ((window.__dwViewRenderGen || 0) > gen0) advanced = true;
       if (performance.now() - t0 < 5200) requestAnimationFrame(step); else res();
     })());
     const d = document.querySelector(sel);
-    return { wasOpen, replaced, stillOpen: !!(d && d.open) };
+    return { wasOpen, replaced, advanced, tickWorked: advanced || replaced,
+             stillOpen: !!(d && d.open), kept: !!(d0 && d && d0 === d && d.open) };
   })(${JSON.stringify(fqid)})`);
   ok(`${tag}: a folded entry can be expanded`, f.wasOpen);
-  ok(`${tag}: the tick really replaced the folded card node`, f.replaced);
+  ok(`${tag}: the tick really ran (render gen advanced or node replaced)`,
+     !!(f && f.tickWorked));
   ok(`${tag}: one he opened up to read stays open across a tick`, f.stillOpen);
 
   ok(`${tag}: no page errors`, errs.length === 0);

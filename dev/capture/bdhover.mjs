@@ -457,17 +457,17 @@ for (const idx of [0, lastIdx, busyIdx]) {
 }
 
 /* ── #494: hover / pin survive the live tick re-render ───────────────────
-   The dashboard re-renders through innerHTML whenever ANY watched file
-   changes (status.json every few seconds — the 2s /mtime poll). Without
-   a carry, .bdtip/.bdinsp are recreated hidden and bdtipCol/bdinspCol
-   point at detached columns: the tip fades in, then 1–2s later "it all
-   resets" with the mouse unmoved. This is the poll, not a hide timer.
+   The dashboard re-renders whenever ANY watched file changes (status.json
+   every few seconds — the 2s /mtime poll). Without a carry, .bdtip/.bdinsp
+   are recreated hidden and bdtipCol/bdinspCol point at detached columns:
+   the tip fades in, then 1–2s later "it all resets" with the mouse unmoved.
+   This is the poll, not a hide timer.
 
-   THE PRECONDITION is the mechanism: the column node we hovered must be
-   detached after the tick (a real re-render), and the tip element must
-   be a new node. An end-state-only check that the tip is up would pass
-   if the tick never ran. THE ASSERTION is that tip + inspector stay the
-   active surface for the same column numbers, with no pointer move. */
+   Under #505, keyed reconciliation keeps .bdcol[data-t0] (and tip/insp
+   when they are outside the swapped subtree). Vacuity is __dwViewRenderGen
+   advancing (or legacy: column detached). End-state-only "tip is up" would
+   pass if the tick never ran. THE ASSERTION is that tip + inspector stay
+   the active surface for the same column numbers, with no pointer move. */
 {
   const TIP = `(() => {
     const el = document.querySelector('.bd .bdtip');
@@ -497,21 +497,26 @@ for (const idx of [0, lastIdx, busyIdx]) {
   const swap = await p.evaluate(`(async () => {
     const colBefore = document.querySelector('.bdnet .bdcol[data-probe494="1"]');
     const tipBefore = document.querySelector('.bd .bdtip');
+    const gen0 = window.__dwViewRenderGen || 0;
+    if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
     await fetch('/command', { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'add-idea', text: '494 hover tick' }) });
     await tick();
-    // one retry if the mtime race lost the first tick (same shape as
-    // burndown.mjs quiet-tick: force the re-render, do not invent one)
-    if (colBefore && colBefore.isConnected) {
+    // one retry if the first tick no-op'd
+    if ((window.__dwViewRenderGen || 0) <= gen0) {
+      if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
       await new Promise(r => setTimeout(r, 50));
       await tick();
     }
     const tipAfter = document.querySelector('.bd .bdtip');
     const insp = document.querySelector('.bd .bdinsp');
+    const advanced = (window.__dwViewRenderGen || 0) > gen0;
     return {
       colDetached: !colBefore || !colBefore.isConnected,
       tipReplaced: !!tipAfter && tipAfter !== tipBefore,
+      advanced,
+      tickWorked: advanced || !colBefore || !colBefore.isConnected,
       tipHidden: !tipAfter || tipAfter.hidden,
       tipText: tipAfter && !tipAfter.hidden
         ? (tipAfter.textContent || '').trim() : '',
@@ -528,8 +533,8 @@ for (const idx of [0, lastIdx, busyIdx]) {
   })()`);
   notes.push(`#494 hover tick: ${JSON.stringify(swap)}`);
   ok('#494 precondition: the tick really re-rendered the burndown DOM ' +
-     '(column detached, tip node replaced)',
-     !!swap && swap.colDetached && swap.tipReplaced);
+     '(render gen advanced or column detached)',
+     !!swap && swap.tickWorked === true);
   const tipMatch = !!swap && !swap.tipHidden && !swap.tipDepart &&
     swap.tipOp >= 0.9 &&
     new RegExp('^' + pre.open + ' open · ').test(swap.tipText || '') &&
@@ -558,17 +563,23 @@ for (const idx of [0, lastIdx, busyIdx]) {
   const pinSwap = await p.evaluate(`(async () => {
     const colBefore = document.querySelector(
       '.bdnet .bdcol[data-probe494pin="1"]');
+    const gen0 = window.__dwViewRenderGen || 0;
+    if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
     await fetch('/command', { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'add-idea', text: '494 pin tick' }) });
     await tick();
-    if (colBefore && colBefore.isConnected) {
+    if ((window.__dwViewRenderGen || 0) <= gen0) {
+      if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
       await new Promise(r => setTimeout(r, 50));
       await tick();
     }
     const insp = document.querySelector('.bd .bdinsp');
+    const advanced = (window.__dwViewRenderGen || 0) > gen0;
     return {
       colDetached: !colBefore || !colBefore.isConnected,
+      advanced,
+      tickWorked: advanced || !colBefore || !colBefore.isConnected,
       inspHidden: !insp || insp.hidden,
       inspText: insp && !insp.hidden ? (insp.innerText || '').trim() : '',
       inspOp: insp && !insp.hidden
@@ -577,7 +588,7 @@ for (const idx of [0, lastIdx, busyIdx]) {
   })()`);
   notes.push(`#494 pin tick: ${JSON.stringify(pinSwap)}`);
   ok('#494 pin precondition: the tick really re-rendered under the pin',
-     !!pinSwap && pinSwap.colDetached);
+     !!pinSwap && pinSwap.tickWorked === true);
   const qWant = buckets[quietIdx];
   const pinVals = (pinSwap.inspText || '').match(
     /(\d+) open · (\d+) arrived · (\d+) landed · (\d+) commits?/);

@@ -226,18 +226,19 @@ ok('past 100 days uses weeks (two digits), not a three-digit day count (#385)',
      seen.same === true);
 }
 
-/* ...and it survives a re-render that genuinely replaces the node. This is
-   the other direction: after a real tick the row is a NEW element, and the
-   per-second sweep has to find and fill it. `setContent` re-runs `ages()`,
-   so a fresh row is filled before it paints — assert it is never blank. */
+/* ...and it survives a re-render. Under #505 the row is KEPT by data-sha
+   (not replaced); ages() still owns the text and must not blank it. The
+   vacuity proof is __dwViewRenderGen advancing, not node identity change. */
 {
   const after = await p.evaluate(async () => {
     const row = () => document.querySelector('.git .commit[data-sha]');
     const el0 = row(); el0.__guardMark = 'kept';
+    const gen0 = window.__dwViewRenderGen || 0;
+    if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
     await fetch('/command', { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'add-idea', text: 'dashboard guard tick' }) });
-    // watch the age never go blank while the tick swaps the DOM under it
+    // watch the age never go blank while the tick mutates the DOM under it
     let blank = 0;
     const t0 = performance.now();
     await new Promise(res => (function step() {
@@ -248,14 +249,19 @@ ok('past 100 days uses weeks (two digits), not a three-digit day count (#385)',
     const el1 = row();
     const t1 = el1.querySelector('.age').textContent;
     await new Promise(r => setTimeout(r, 1600));
-    return { replaced: el1 !== el0, blank, t1,
+    const advanced = (window.__dwViewRenderGen || 0) > gen0;
+    return { replaced: el1 !== el0, advanced,
+             tickWorked: advanced || el1 !== el0,
+             kept: el1 === el0 && el1.__guardMark === 'kept',
+             blank, t1,
              t2: row().querySelector('.age').textContent };
   });
-  notes.push(`after a real tick: replaced=${after.replaced} ` +
-             `blank frames=${after.blank} ${after.t1} -> ${after.t2}`);
+  notes.push(`after a real tick: worked=${after.tickWorked} replaced=${after.replaced} ` +
+             `kept=${after.kept} blank frames=${after.blank} ${after.t1} -> ${after.t2}`);
   // without this the three checks below pass on a tick that never happened
-  ok('the tick genuinely replaced the row node', after.replaced === true);
-  ok('...the fresh row is filled before it paints', after.blank === 0);
+  ok('the tick genuinely ran (render gen advanced or row replaced)',
+     after.tickWorked === true);
+  ok('...the age row is filled (never blank mid-tick)', after.blank === 0);
   ok('...and it keeps ticking afterwards', after.t1 !== after.t2);
 }
 
@@ -420,18 +426,24 @@ const servedCount = async () =>
     document.querySelector('.qsec > summary').click();
     const was = document.querySelector('.qsec').open;
     const el0 = document.querySelector('.qsec');
+    const gen0 = window.__dwViewRenderGen || 0;
+    if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
     await fetch('/command', { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'add-idea', text: 'qsec guard tick' }) });
     await new Promise(r => setTimeout(r, 4200));
     const el1 = document.querySelector('.qsec');
-    return { was, replaced: el1 !== el0, still: el1.open,
+    const advanced = (window.__dwViewRenderGen || 0) > gen0;
+    return { was, replaced: el1 !== el0, advanced,
+             tickWorked: advanced || el1 !== el0,
+             still: el1.open,
              cards: [...document.querySelectorAll('.qsec .qa')]
                       .filter(c => c.checkVisibility()).length };
   });
   notes.push(`qsec across a tick: ${JSON.stringify(survived)}`);
   ok('it opens when he clicks it', survived.was === true);
-  ok('...the tick genuinely replaced the section node', survived.replaced);
+  ok('...the tick genuinely ran (render gen advanced or section replaced)',
+     survived.tickWorked === true);
   ok('...and it is still open afterwards, not shut under him',
      survived.still === true && survived.cards > 0);
 

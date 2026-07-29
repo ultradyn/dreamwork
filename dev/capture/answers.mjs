@@ -190,33 +190,42 @@ async function traceToggle(name){
 await traceToggle('answered disclosure open'); await traceToggle('answered disclosure close');
 
 /* ── #238: open answered disclosure survives a real tick ───────────────────
-   Load-bearing: prove the node was replaced (a no-op tick would pass every
-   end-state check). Open is keyed to the logical record, not list position. */
+   Load-bearing: prove a setContent ran (no-op tick would pass every end-state
+   check). Under #505 the node is KEPT by data-aid/data-keep; vacuity is
+   __dwViewRenderGen advancing (or legacy: __dwMark gone). Open is keyed to
+   the logical record, not list position. */
 async function forceTick(markEl){
-  // markEl is the pre-tick element handle; after tick it must not be in document
   const pre = await markEl.evaluate(e=>{e.__dwMark=1; return {aid:e.dataset.aid||'', keep:e.dataset.keep||'', body:(e.querySelector('.aqbody')||{}).textContent||''};});
+  const gen0 = await page.evaluate(()=>{
+    if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
+    return window.__dwViewRenderGen || 0;
+  });
   await page.evaluate(()=>fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'do-next',text:'',from:'/answers'})}).then(r=>r.status));
   const t0=Date.now();
-  let replaced=false, open=false, peerOpen=false, body='';
+  let tickWorked=false, replaced=false, open=false, peerOpen=false, body='';
   while(Date.now()-t0<5200){
-    const st=await page.evaluate(({aid,bodyNeedle})=>{
+    const st=await page.evaluate(({aid,bodyNeedle,gen0})=>{
       const all=[...document.querySelectorAll('.aq.answered')];
       const byBody=all.find(e=>(e.querySelector('.aqbody')?.textContent||'').includes(bodyNeedle));
       const el=aid?document.querySelector(`.aq.answered[data-aid="${CSS.escape(aid)}"]`):byBody;
       const peer=all.find(e=>e!==el);
+      const advanced = (window.__dwViewRenderGen || 0) > gen0;
+      const replaced = !!(el && !el.__dwMark);
       return {
-        replaced: !!(el && !el.__dwMark),
+        replaced,
+        advanced,
+        tickWorked: advanced || replaced,
         open: !!(el && el.open),
         peerOpen: !!(peer && peer.open),
         body: el?(el.querySelector('.aqbody')?.textContent||''):'',
         count: all.length,
         aids: all.map(e=>e.dataset.aid||''),
       };
-    }, {aid:pre.aid, bodyNeedle:'first loop answer'});
-    if(st.replaced){replaced=true; open=st.open; peerOpen=st.peerOpen; body=st.body; break;}
+    }, {aid:pre.aid, bodyNeedle:'first loop answer', gen0});
+    if(st.tickWorked){tickWorked=true; replaced=st.replaced; open=st.open; peerOpen=st.peerOpen; body=st.body; break;}
     await sleep(50);
   }
-  return {replaced, open, peerOpen, body, pre};
+  return {tickWorked, replaced, open, peerOpen, body, pre};
 }
 
 // Quiet tick: open first of two duplicate-title / different-body records
@@ -231,7 +240,7 @@ await page.waitForFunction(()=>{
   return el && el.open;
 },{timeout:3000});
 const quiet=await forceTick(firstByBody);
-ok('#238 quiet tick replaced the answered node', quiet.replaced);
+ok('#238 quiet tick really ran (render gen advanced or node replaced)', quiet.tickWorked);
 ok('#238 open survives quiet tick on same body', quiet.open && quiet.body.includes('first loop answer'));
 ok('#238 closed peer stays closed after quiet tick', !quiet.peerOpen);
 
@@ -275,19 +284,12 @@ ok('#238 open is not stuck on index 0 after reorder', !reorder.openOnIndex0);
 ok('#238 closed peer stays closed after reorder', reorder.closedPeer);
 
 // Deletion: open the second body; delete the first body from disk.
-// #247/#251: non-vacuous — ElementHandle for the *original* open node must
-// detach (isConnected===false). Fresh-node isConnected alone is not proof.
-/* #296 handshake: the wait here USED to be count===2, which was already true
-   from the reorder phase's swapped pair — it passed BEFORE the client's /mtime
-   tick consumed this writeFileSync, so the tick's innerHTML render was still
-   pending and landed between elementHandle() and the isConnected check,
-   detaching the node under load ('#251 original node starts connected').
-   Bind the real premise instead: the render that consumed THIS write has
-   COMPLETED, after which no refresh can be pending (no writes outstanding;
-   ticks are sequential). Renders are logged by wrapping the page's own
-   setLiveContent, keyed by the mtime the consuming tick read — a stale-labeled
-   tick whose /data.json fetch happened to carry our content cannot satisfy
-   it, and the content-order predicate belts the render's payload. */
+// #247/#251: under #505 the SURVIVOR node is KEPT by data-aid (same object
+// across the tick) — vacuity is a setLiveContent that consumed the write
+// (__dwRenders / gen), not detachment of the survivor. The deleted peer is
+// gone; the open survivor keeps open + aid.
+/* #296 handshake: wait for the render that consumed THIS write, not merely
+   count===2 (which can already be true from the reorder phase). */
 await page.evaluate(()=>{
   window.__dwRenders=[];
   const orig=setLiveContent;
@@ -321,7 +323,8 @@ await page.waitForFunction(()=>{
   const el=[...document.querySelectorAll('.aq.answered')].find(e=>(e.querySelector('.aqbody')?.textContent||'').includes('second loop answer'));
   return el && el.open;
 },{timeout:3000});
-// Playwright handle to the pre-refresh node — survives only if the DOM keeps it
+// Playwright handle to the pre-deletion survivor — under #505 it stays
+// connected (kept by data-aid); under legacy innerHTML it detaches.
 const oldSecondHandle=await openSecond.elementHandle();
 ok('#251 pre-deletion ElementHandle acquired', !!oldSecondHandle);
 ok('#251 original node starts connected',
@@ -335,17 +338,19 @@ const preDel=await openSecond.evaluate(e=>{
   };
 });
 ok('#247 deletion preAid present on open survivor', !!preDel.aid && preDel.aid===preDel.keep);
+const genDel0=await page.evaluate(()=>window.__dwViewRenderGen||0);
 writeFileSync(ansPath, '# Questions for the dreamer\n\n## Open\n\n## Answered\n\n- **Duplicate?** → answered (2026-07-26): second loop answer.\n');
 const t1=Date.now();
-let del={ready:false, open:false, count:0, sameAid:false, replaced:false, connected:false, aid:''};
+let del={ready:false, open:false, count:0, sameAid:false, replaced:false, connected:false, aid:'', advanced:false};
 while(Date.now()-t1<5200){
-  const st=await page.evaluate(({preAid, needle})=>{
+  const st=await page.evaluate(({preAid, needle, gen0})=>{
     const all=[...document.querySelectorAll('.aq.answered')];
     if(all.length!==1) return {ready:false, count:all.length};
     const el=all[0];
     const body=el.querySelector('.aqbody')?.textContent||'';
     if(!body.includes(needle)) return {ready:false, count:1};
     const aid=el.dataset.aid||'';
+    const advanced=(window.__dwViewRenderGen||0)>gen0;
     return {
       ready:true,
       open:!!el.open,
@@ -353,22 +358,25 @@ while(Date.now()-t1<5200){
       sameAid:!!(preAid && aid===preAid),
       replaced:!(el.__dwMark),
       connected:!!el.isConnected,
+      markSurvived:!!el.__dwMark,
+      advanced,
       aid,
     };
-  }, {preAid:preDel.aid, needle:'second loop answer'});
+  }, {preAid:preDel.aid, needle:'second loop answer', gen0:genDel0});
   if(st.ready){del=st; break;}
   await sleep(50);
 }
-// #251: the *old* handle must be detached — not merely that the new query is connected.
-// evaluate on a detached node should succeed and return true; catch → false
-// (never true: that launders protocol errors into PASS).
-const oldDetached=oldSecondHandle
-  ? await oldSecondHandle.evaluate(n=>!n.isConnected).catch(()=>false)
+// Vacuity: a render advanced OR the survivor was rebuilt. Under #505 the
+// survivor is KEPT (markSurvived / same handle connected) — that is the win.
+const oldStillConnected=oldSecondHandle
+  ? await oldSecondHandle.evaluate(n=>n.isConnected).catch(()=>false)
   : false;
 ok('#238 deletion leaves the survivor', del.ready && del.count===1);
 ok('#247 deletion survivor keeps same aid', del.sameAid && del.aid===preDel.aid);
-ok('#247 deletion replaced connected survivor node', del.replaced && del.connected);
-ok('#251 original openSecond node is detached (isConnected===false)', oldDetached);
+ok('#247 deletion tick ran (render gen advanced or survivor rebuilt)',
+   !!(del.advanced || del.replaced));
+ok('#251 survivor node identity: kept under reconcile OR rebuilt under swap',
+   (del.markSurvived && oldStillConnected) || (del.replaced && !oldStillConnected));
 ok('#238 open survives deletion of the other record', del.open);
 if(oldSecondHandle) await oldSecondHandle.dispose().catch(()=>{});
 

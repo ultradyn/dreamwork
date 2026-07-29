@@ -3,22 +3,22 @@
    His report (2026-07-30 03:30): the collapsible resets after being open
    for ~1 second.
 
-   Cause: expand() emitted details.peek without data-keep. snapshotFolds
-   only walks details[data-keep]; the live tick rebuilds the dashboard
-   through innerHTML whenever a watched file's mtime moves (status.json /
-   /command → watch-events.log), so the disclosure reappears closed. Same
-   class as #141 (qsec) and #494 (burndown tip).
+   Cause: expand() emitted details.peek without data-keep. Under the old
+   innerHTML swap, open state died unless snapshotFolds/restoreFolds
+   re-applied it. #505 keeps data-keep nodes via morphdom reconciliation;
+   restoreFolds remains as a belt until pair deletion. Same class as
+   #141 (qsec) and #494 (burndown tip).
 
    Load-bearing preconditions (a green without these proves nothing):
      - the disclosure exists and starts closed
-     - after open, a real re-render detached the node (not a no-op tick)
+     - after open, a real setContent ran (__dwViewRenderGen advanced;
+       under #505 the node is KEPT, so detach is no longer required)
      - open is still true after ≥3 consecutive re-renders
      - restore did not re-pose (no mid-travel height, body fully opaque)
 
-   production line the green depends on: restoreFolds(folds) after
-   setLiveContent in tick(), fed by data-keep="status-rest" on expand().
-   Break either (strip data-keep from status expand, or skip restoreFolds)
-   and the open-survives checks go red.
+   production line the green depends on: data-keep="status-rest" on
+   expand() + either kept-node reconciliation or restoreFolds after
+   setLiveContent. Strip data-keep and both paths lose open state.
 
    usage: node restcollapse.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
@@ -104,13 +104,17 @@ async function forceTickCycle() {
       '#status details.peek[data-probe-rest="1"]') ||
       document.querySelector('#status details.peek');
     if (before) before.__restMark = 1;
+    const gen0 = window.__dwViewRenderGen || 0;
+    // Force morph path (not hash-skip) so a quiet ideas write still mutates.
+    if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
     await fetch('/command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'add-idea', text: 'restcollapse tick' }),
     });
     await tick();
-    if (before && before.isConnected) {
+    if ((window.__dwViewRenderGen || 0) <= gen0 && before && before.isConnected) {
+      if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
       await new Promise(r => setTimeout(r, 50));
       await tick();
     }
@@ -118,10 +122,15 @@ async function forceTickCycle() {
     // Settled open restore: restoreFolds sets el.open=true only (no
     // travelCard/revealBody). A re-pose every poll would leave inline height
     // or a body still fading in — both are the bug wearing a fix.
+    // Under #505 the node may be the SAME object (markSurvived / !detached).
     const body = d && [...d.children].find(c => c.tagName !== 'SUMMARY');
     const op = body ? parseFloat(getComputedStyle(body).opacity) : null;
+    const advanced = (window.__dwViewRenderGen || 0) > gen0;
     return {
       detached: !before || !before.isConnected,
+      advanced,
+      // vacuity: gen advanced OR (legacy) node detached
+      tickWorked: advanced || !before || !before.isConnected,
       open: !!(d && d.open),
       keep: d && d.getAttribute('data-keep'),
       summary: d && ((d.querySelector('summary') || {}).textContent || '').trim(),
@@ -145,14 +154,14 @@ for (let i = 0; i < 3; i++) {
   });
 }
 
-ok('precondition: tick 1 really re-rendered (status peek node detached)',
-   !!ticks[0] && ticks[0].detached === true);
+ok('precondition: tick 1 really ran (render gen advanced or node detached)',
+   !!ticks[0] && ticks[0].tickWorked === true);
 ok('open survives tick 1', !!ticks[0] && ticks[0].open === true &&
    ticks[0].keep === 'status-rest');
 ok('open survives tick 2', !!ticks[1] && ticks[1].open === true &&
-   ticks[1].detached === true);
+   ticks[1].tickWorked === true);
 ok('open survives tick 3 (≥3 consecutive poll cycles)',
-   !!ticks[2] && ticks[2].open === true && ticks[2].detached === true);
+   !!ticks[2] && ticks[2].open === true && ticks[2].tickWorked === true);
 
 /* silent restore: no re-animation every poll. restoreFolds sets el.open=true
    without revealBody / travelCard when not mid-gesture. */
@@ -170,19 +179,28 @@ const peers = await p.evaluate(async () => {
   target.open = true;
   target.__peerMark = 1;
   const keep = target.getAttribute('data-keep');
+  const gen0 = window.__dwViewRenderGen || 0;
+  if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
   await fetch('/command', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ kind: 'add-idea', text: 'restcollapse peer' }),
   });
   await tick();
-  if (target.isConnected) { await new Promise(r => setTimeout(r, 50)); await tick(); }
+  if ((window.__dwViewRenderGen || 0) <= gen0 && target.isConnected) {
+    if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
+    await new Promise(r => setTimeout(r, 50));
+    await tick();
+  }
   const after = document.querySelector(`details.peek[data-keep="${CSS.escape(keep)}"]`);
   const allKeeps = [...document.querySelectorAll('details.peek')]
     .map(d => d.getAttribute('data-keep'));
+  const advanced = (window.__dwViewRenderGen || 0) > gen0;
   return {
     keep,
     detached: !target.isConnected,
+    advanced,
+    tickWorked: advanced || !target.isConnected,
     open: !!(after && after.open),
     allKeeps,
   };
@@ -191,7 +209,7 @@ notes.push(`peers: ${JSON.stringify(peers)}`);
 ok('peer file peek carries data-keep=file:*',
    !!peers && !peers.err && /^file:/.test(peers.keep || ''));
 ok('peer file peek open survives a tick (expand() helper, not a one-off)',
-   !!peers && peers.detached && peers.open === true);
+   !!peers && peers.tickWorked && peers.open === true);
 ok('all expand peeks on the dashboard carry a data-keep',
    !!peers && Array.isArray(peers.allKeeps) &&
    peers.allKeeps.length > 0 && peers.allKeeps.every(k => !!k));

@@ -1,9 +1,10 @@
 /* bdinput — #523 + #524: burndown limit input keeps focus across ticks;
    [-]/[+] steppers with hold-to-repeat, including across a data tick.
 
-   #523: setContent swaps #view's innerHTML every poll; a focused
-   .bdlimit-in is destroyed with it. snapshotViewInputs / restoreViewInputs
-   carry id + value + selection; typed text wins over the fresh markup.
+   #523: under the old innerHTML swap a focused .bdlimit-in was destroyed;
+   snapshotViewInputs / restoreViewInputs carried id + value + selection.
+   #505 keeps the node by id via morphdom; the snapshot pair remains as a
+   belt until lockstep deletion. Typed text still wins over fresh markup.
 
    #524: − / + buttons flank the input; click steps; hold auto-repeats
    (module-level interval so a re-render mid-hold does not kill it).
@@ -15,16 +16,19 @@
 
    Preconditions derived at runtime (born-hollow rule):
      - limit input exists (totalN > 28, hourly)
-     - each forced tick actually replaced the input node
+     - each forced tick really ran (__dwViewRenderGen advanced; under #505
+       the input node is KEPT, so "replaced" is no longer required)
      - hold produces ≥2 value changes; hold-across-tick keeps changing after
        the swap
 
    production lines each green depends on (for red-proof injection):
      (a)(b) restoreViewInputs(viewIn) after setLiveContent in tick()
+            AND/OR kept-node reconciliation by id
      (a)    el.value = saved.value inside restoreViewInputs (typed wins)
      (c)    bdStepNudge / .bdlimit-step markup
      (d)    bdStepHoldStart interval arm
      (e)    pointercancel keep-hold when target.isConnected === false
+            (or kept node mid-hold under #505)
 
    usage: node bdinput.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
@@ -165,6 +169,9 @@ const forceTick = async () => {
   const r = await p.evaluate(async () => {
     const before = document.getElementById('bdlimit-in');
     const beforeId = before ? before.id : null;
+    const renderGen0 = window.__dwViewRenderGen || 0;
+    // Force morph path even when dashboard markup is byte-identical.
+    if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
     // SNAPSHOT WHILE FOCUS STILL HOLDS — no await above this line.
     const kept = snapshotCardState();
     const askKept = snapshotAskState();
@@ -204,11 +211,15 @@ const forceTick = async () => {
     regroupCards(beforeCards);
 
     const after = document.getElementById('bdlimit-in');
+    const advanced = (window.__dwViewRenderGen || 0) > renderGen0;
     // Sample INSIDE this turn — a later evaluate can lose the race to
     // anything else that focuses (the failure mode that made (a) red
     // while (b) green: identical restore, different inter-evaluate delay).
     return {
       replaced: !!(before && after && before !== after),
+      advanced,
+      // #505: gen advanced is vacuity; replaced is legacy under innerHTML
+      tickWorked: advanced || !!(before && after && before !== after),
       beforeId,
       afterId: after ? after.id : null,
       genBefore,
@@ -266,10 +277,11 @@ const forceTick = async () => {
   const aStart = tickA && tickA.after && tickA.after.start;
   const aEnd = tickA && tickA.after && tickA.after.end;
   const aFocus = tickA && tickA.after && tickA.after.focused;
-  notes.push(`(a) tick replaced=${!!tickA.replaced} snap=${JSON.stringify(tickA.snap)} ` +
+  notes.push(`(a) tick worked=${!!tickA.tickWorked} replaced=${!!tickA.replaced} ` +
+             `advanced=${!!tickA.advanced} snap=${JSON.stringify(tickA.snap)} ` +
              `after={value:${aVal},start:${aStart},end:${aEnd},focused:${aFocus}}`);
-  ok('(a) precondition: the tick really replaced the input node',
-     !!tickA.replaced);
+  ok('(a) precondition: the tick really ran (render gen advanced or node replaced)',
+     !!tickA.tickWorked);
   ok('(a) precondition: snapshot captured the focused input',
      !!tickA.snap && tickA.snap.id === 'bdlimit-in' &&
      tickA.snap.value === typed);
@@ -301,8 +313,8 @@ const forceTick = async () => {
      before.focused && before.start === 1 && before.end === 3 &&
      before.value === '128');
   const tickB = await forceTick();
-  ok('(b) precondition: the tick really replaced the input node',
-     !!tickB.replaced);
+  ok('(b) precondition: the tick really ran (render gen advanced or node replaced)',
+     !!tickB.tickWorked);
   const after = tickB.after || {};
   notes.push(`(b) after: ${JSON.stringify(after)}`);
   ok('(b) selection range survives the data tick',
@@ -511,6 +523,8 @@ const forceTick = async () => {
   const tickE = await p.evaluate(async () => {
     const nodeBefore = document.getElementById('bdlimit-in');
     const held = !!_bdStepHold;
+    const renderGen0 = window.__dwViewRenderGen || 0;
+    if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
     await fetch('/command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -525,8 +539,11 @@ const forceTick = async () => {
     restoreBdHover(bdHover);
     restoreViewInputs(viewIn);
     const nodeAfter = document.getElementById('bdlimit-in');
+    const advanced = (window.__dwViewRenderGen || 0) > renderGen0;
     return {
       replaced: !!(nodeBefore && nodeAfter && nodeBefore !== nodeAfter),
+      advanced,
+      tickWorked: advanced || !!(nodeBefore && nodeAfter && nodeBefore !== nodeAfter),
       heldBefore: held,
       heldAfter: !!_bdStepHold,
       v: displayBurnLimitValue(),
@@ -544,8 +561,8 @@ const forceTick = async () => {
   const maxAfter = Math.max(...afterVals.filter(n => Number.isFinite(n)));
   notes.push(`(e) midHold=${JSON.stringify(midHold)} tickE=${JSON.stringify(tickE)} ` +
              `afterVals=${JSON.stringify(afterVals)} maxAfter=${maxAfter}`);
-  ok('(e) precondition: tick mid-hold really replaced the input node',
-     !!tickE.replaced);
+  ok('(e) precondition: tick mid-hold really ran (render gen advanced or node replaced)',
+     !!tickE.tickWorked);
   ok('(e) precondition: hold had already stepped before the tick',
      midHold.v > startVal && midHold.holding);
   ok('(e) hold state survives the swap (module-level interval)',
