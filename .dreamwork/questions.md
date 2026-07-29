@@ -3,6 +3,31 @@
 ## Open
 
 
+- **P1 · 2026-07-29 22:31 — #287: the matt-pocock-skills bridge spec is written — five calls are yours.**
+  The spec is at `.dreamwork/docs/plans/matt-pocock-skills-bridge.md` (landed today, written-spec
+  authority only; the suite runs unchanged and the bridge translates at three seams). Each question
+  has a rec in the doc; each is a genuine fork, so they are here rather than picked:
+
+  **`OQ1` — local ledger, or a real GitHub tracker mirrored?** **`rec`: local ledger** — makes the
+  sqlite cutover invisible and needs no remote authority. The fork: the suite's designed-for home is
+  a real tracker; if you want that, `ud-dreamwork-github` already covers the forge side.
+
+  **`OQ2` — grill cadence: one question per entry, awaited, or batched into one multi-part entry?**
+  **`rec`: one per entry, awaited** — preserves the suite's cadence and #254's one-root rule.
+
+  **`OQ3` — where does `CONTEXT.md` live?** **`rec`: repo-root, referenced not copied.** The fork is
+  `.dreamwork/docs/domain/`, which touches repo-root layout.
+
+  **`OQ4` — may the loop dispatch suite tools (`research`/`code-review`/`prototype`) autonomously?**
+  **`rec`: human-invoked only** by default; autonomous dispatch is scope the authority lines grant
+  explicitly, not a default.
+
+  **`OQ5` — may loop-generated `to-spec`/`to-tickets` output file itself as tasks?**
+  **`rec`: no — filing is a human steer** by default.
+
+  **If you say nothing:** nothing is built — the spec authorises specification only.
+
+
 - **P2 · 2026-07-29 22:25 — #342: delivery modes — the three calls the design leaves to you.**
   The design is at `.dreamwork/docs/plans/delivery-modes.md` (landed today; batched vs instant
   delivery for dashboard commands, riding #263's journal cursor). It deliberately does not pick
