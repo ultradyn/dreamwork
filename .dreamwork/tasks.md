@@ -27,20 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **485**
 
 ## Open
-- **#484** — a listing surface for research HTML, reusing the one builder · P2 ·
-  dashboard/research-artifacts · origin: **loop** · **recommended by the `#422` lane, recorded in
-  `.dreamwork/docs/research/README.md`** · `#422` settled the kind (directory-canonical markdown,
-  single doc-map row) and left the HTML half as an argued recommendation: sources at
-  `docs/research/src/<slug>.html` built through `review_artifact.py`'s generic template builder
-  (a second template pipeline would recreate the five-font-families drift `#325` exists to end),
-  with a `list_research`-style route in `watch.py` mirroring `list_reviews`. **Do NOT reuse the
-  review surface** — its questions.md pairing and archive-on-answered lifecycle does not fit
-  research. Until this lands, research ships as markdown and options ship via the review pipeline.
-  · needs `watch.py` + `review_artifact.py` — a lane, not the coordinator · `transitions.md` binds
-  on any arrival/departure; `watch-design.md` in the same commit. Cross-refs in prose above: the
-  kind contract from `#422`, the template-builder drift `#325` ended, and `#436`'s build-time
-  artifact contract.
-
 - **#477** — the 2s tick TELEPORTS a section it catches mid-open · P1 · bug/motion · origin: **loop**
   · **found 2026-07-29 08:53 by the `motion` lane while clearing `#475`, and it is the one genuine PAGE defect
   in the whole ten-guard batch** · `qsec` fails in the recipe and passes on an isolated fresh server, and the
@@ -3204,6 +3190,21 @@ Next id: **485**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#484** — a listing surface for research HTML, reusing the one builder · P2 ·
+  dashboard/research-artifacts · origin: **loop** · **recommended by the `#422` lane, recorded in
+  `.dreamwork/docs/research/README.md`** · `#422` settled the kind (directory-canonical markdown,
+  single doc-map row) and left the HTML half as an argued recommendation: sources at
+  `docs/research/src/<slug>.html` built through `review_artifact.py`'s generic template builder
+  (a second template pipeline would recreate the five-font-families drift `#325` exists to end),
+  with a `list_research`-style route in `watch.py` mirroring `list_reviews`. **Do NOT reuse the
+  review surface** — its questions.md pairing and archive-on-answered lifecycle does not fit
+  research. Until this lands, research ships as markdown and options ship via the review pipeline.
+  · needs `watch.py` + `review_artifact.py` — a lane, not the coordinator · `transitions.md` binds
+  on any arrival/departure; `watch-design.md` in the same commit. Cross-refs in prose above: the
+  kind contract from `#422`, the template-builder drift `#325` ended, and `#436`'s build-time
+  artifact contract.
+  · landed aef5bd97 (merge of wt/484; lane work 9a66c4b7..a1155f04, 6 commits, native subagent). /research lists built artifacts under .dreamwork/docs/research/ (non-recursive, mirroring list_reviews); /research?p=<name> views one in the same #reviewwrap/#reviewframe iframe served from /researchraw (the /reviewraw idiom verbatim, no-slash confinement load-bearing). artifactRow(r, kind) factory shared with the reviews panel — a second surface is a parameter, not a second idiom. NO questions.md pairing/dock/archive lifecycle (per spec). research guard registered (64); its preconditions caught a real fixture bug (src and built sharing a name made 'not listed' vacuous). Sample artifact: window-coords.md converted through the unchanged builder with no_ask/no_if_silent (research parks no decision). Coordinator independently verified on the merged tree: research PASS; red-proof removing the no-slash rule fails exactly the confinement check, watch.py restored byte-identical; 329 test_watch pass; VISUAL REVIEW of /research on the live deployed dashboard at desktop 1280 and mobile 390 — page's own voice, no overflow, honest sparse state. Deployed aef5bd97.
+
 - **#452** — focus a single question on its own page · **P2** · dashboard/asking · origin: **human** ·
   **human via watch 2026-07-29 01:04:** *"should be able to focus on a question, like open up to a page showing
   only that question. useful if other qs are being updated etc"*
