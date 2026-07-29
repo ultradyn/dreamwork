@@ -1149,9 +1149,9 @@ class TestCollector(unittest.TestCase):
                       'bdinspSchedule(col)',
                       "e.key === 'Escape' && bdinspCol"):
             self.assertIn(token, watch.PAGE)
-        # the clamp is a clamp: centred on the column, bounded by the panel
-        self.assertIn("Math.max(0, Math.min(cx - w / 2, bdr.width - w))",
-                      watch.PAGE)
+        # #487: pin is RHS-or-above from rendered widths (see
+        # test_burndown_insp_pins_rhs_or_above), not column-centred.
+        self.assertIn("el.dataset.bdslot", watch.PAGE)
         # hover is not the sole path: focus shows the same inspector,
         # tap pins without preventDefault (chart scroll unbroken)
         self.assertIn("showBdTip(col);\n  showBdInsp(col);", watch.PAGE)
@@ -1832,7 +1832,8 @@ class TestCollector(unittest.TestCase):
         # re-arms #208's exact failure.
         assignments = re.findall(r"(?m)^\s*data\s*=", watch.PAGE)
         self.assertEqual(assignments, ["  data ="])
-        self.assertEqual(watch.PAGE.count("setData(await"), 2)
+        # ensureData + tick + #487 cycleBurnStep — every fetcher through setData
+        self.assertEqual(watch.PAGE.count("setData(await"), 3)
 
     def test_git_tail_carries_what_an_expanded_row_shows(self):
         # #166: the row expands onto the full sha, the author, the message
