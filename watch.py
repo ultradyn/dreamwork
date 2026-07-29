@@ -6189,7 +6189,14 @@ function snapshotCardState() {
     // seconds, which is #118 with reading in place of typing.
     const sc = qaScroller(card);
     const read = sc ? sc.scrollTop : 0;
-    if (!typed && !opened && !read) return; // he has done nothing to this card
+    // #479: a destination-MODE switch is something he did too, and it lives
+    // only in this node — the group renders at the card's default, so any
+    // other mode is his click. A tick that lands between the click and the
+    // first keystroke otherwise re-renders the DEFAULT destination and
+    // silently re-aims words he has not typed yet.
+    const modeHis = comp && comp.dataset.mode !==
+      qaDefaultMode(card.classList.contains('open') ? 'open' : 'awaiting');
+    if (!typed && !opened && !read && !modeHis) return; // he has done nothing
     m.set(card.dataset.qid, {
       open: dets, read,
       value: typed ? ta.value : null, mode: comp && comp.dataset.mode,
@@ -6238,8 +6245,14 @@ function restoreCardState(saved) {
     (s.open || []).forEach((o, i) => { if (o && dets[i]) dets[i].open = true; });
     // how far he had READ into the question (#305) — see putScroll
     putScroll(qaScroller(card), s.read);
-    if (s.value === null) return;
     const comp = card.querySelector('.qcompose');
+    // the mode is WHERE THE TEXT GOES: a re-render must never silently
+    // redirect it — and it rides even with no text yet, because the click
+    // that set it is his whether or not a keystroke has followed (#479), so
+    // it is restored BEFORE the no-text early return below. setCardMode
+    // declines a mode the new state cannot accept.
+    setCardMode(comp, s.mode, true);
+    if (s.value === null) return;
     const ta = comp && comp.querySelector('textarea');
     if (!ta) return;                       // the state stopped offering a box
     ta.value = s.value;
@@ -6249,9 +6262,6 @@ function restoreCardState(saved) {
     // the snapshot carried is now derived from the content rather than trusted,
     // which is the same preference as letting `fitText` recompute on input.
     fitText(ta, false);
-    // the mode is WHERE THE TEXT GOES: a re-render must never silently
-    // redirect it. setCardMode declines a mode the new state cannot accept.
-    setCardMode(comp, s.mode, true);
     putScroll(ta, s.scroll);
     try { ta.setSelectionRange(s.start, s.end, s.dir || 'none'); } catch (e) {}
     if (s.focus) refocus(ta);
