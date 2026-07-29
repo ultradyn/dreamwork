@@ -634,3 +634,55 @@ class TestReadsStatusJsonDefensively:
         rc, out, err, before, spath = self._run_raw(tmp_path, good, _ledger(1))
         assert rc == 0, err                        # clean — distinct from the rc==2 refusals
         assert "coverage:" in out
+
+
+# ---------------------------------------------------------------------------
+# Store mode (#294 T2): post-cutover status_sync must STRIP the retired
+# fields (queue, current_task_ids) rather than derive them — the tool that
+# used to write them is exactly the process that would regrow them, and
+# lint's absence-invariant ERRORs on a regrown field.
+#
+# Production line: the ``status.pop(k, None)`` strip loop in main's
+# store_mode branch. Break it (``for k in ():``) and the retired fields
+# survive the sync — the regrowth the invariant exists to catch.
+# ---------------------------------------------------------------------------
+def _cut_over_target(tmp_path: Path) -> Path:
+    """A REAL post-cutover scratch target (watermark + store + shim)."""
+    import importlib.machinery, importlib.util
+    repo = Path(__file__).resolve().parent
+    loader = importlib.machinery.SourceFileLoader(
+        "ud_dw_tasks_migrate", str(repo / "ud-dw-tasks-migrate"))
+    spec = importlib.util.spec_from_loader("ud_dw_tasks_migrate", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    dw = tmp_path / ".dreamwork"
+    dw.mkdir(exist_ok=True)
+    (dw / "tasks.md").write_text(
+        "# Task ledger\n\nNext id: **12**\n\n## Open\n\n"
+        "- **#10** — a clean open entry · P1 · task · origin: **human**\n\n"
+        "## Recently landed\n\n"
+        "- **#11** — a landed entry · P0 · origin: **human** (abc1234)\n")
+    mod.perform_cutover(str(dw), out=io.StringIO())
+    import ledger_parse
+    assert ledger_parse.source_of_truth(dw) == "store", \
+        "fixture precondition: the watermark must be present"
+    return tmp_path
+
+
+def test_store_mode_strips_the_retired_fields(tmp_path):
+    target = _cut_over_target(tmp_path)
+    dw = target / ".dreamwork"
+    (dw / "status.json").write_text(json.dumps(
+        {"task": "294", "queue": {"in_progress": 1, "pending": 9},
+         "current_task_ids": [10], "dreamers": []}, indent=2) + "\n")
+    out_s, err_s = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out_s), contextlib.redirect_stderr(err_s):
+        rc = status_sync.main(["--target", str(target)])
+    assert rc == 0, err_s.getvalue()
+    written = json.loads((dw / "status.json").read_text())
+    assert "queue" not in written, \
+        "queue regrown post-cutover — the second derived truth (#294 T2)"
+    assert "current_task_ids" not in written, \
+        "current_task_ids regrown post-cutover (#294 T2)"
+    assert "dreamers" in written, \
+        "the strip must not take the still-owned dreamers field with it"

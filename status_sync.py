@@ -426,11 +426,25 @@ def main(argv: list[str] | None = None) -> int:
 
     want_queue = {"in_progress": len(live), "pending": len(ids) - len(live)}
     changes = []
-    if status.get("queue") != want_queue:
-        changes.append("queue %s -> %s" % (status.get("queue"), want_queue))
-    if status.get("current_task_ids") != live:
-        changes.append("current_task_ids %s -> %s"
-                       % (status.get("current_task_ids"), live))
+    # #294 T2: post-cutover the store is the ONE source for queue depth and
+    # in-flight tasks. status.json loses `queue` and `current_task_ids`, and
+    # this tool — the very process that derived them — must not regrow them:
+    # lint's absence-invariant ERRORs on a regrown field, and a regrown field
+    # is the second derived truth #264 exists to remove. So in store mode the
+    # tool's write of those keys is inverted into a strip.
+    store_mode = source_of_truth(dw) == "store"
+    if store_mode:
+        for k in ("queue", "current_task_ids"):
+            if k in status:
+                changes.append("%s present post-cutover — retired, dropping "
+                               "(#294 T2)" % k)
+                status.pop(k, None)
+    else:
+        if status.get("queue") != want_queue:
+            changes.append("queue %s -> %s" % (status.get("queue"), want_queue))
+        if status.get("current_task_ids") != live:
+            changes.append("current_task_ids %s -> %s"
+                           % (status.get("current_task_ids"), live))
     dreamers_in = status.get("dreamers", [])
     if dreamers_in != pruned:
         changes.append("dreamers prune %d stale lane(s) (%d -> %d)"
@@ -444,8 +458,11 @@ def main(argv: list[str] | None = None) -> int:
             print("stale: %s" % c)
         return 1 if changes else 0
 
-    status["queue"], status["current_task_ids"], status["dreamers"] = (
-        want_queue, live, pruned)
+    if store_mode:
+        status["dreamers"] = pruned
+    else:
+        status["queue"], status["current_task_ids"], status["dreamers"] = (
+            want_queue, live, pruned)
     spath.write_text(json.dumps(status, indent=2) + "\n")
     print("\n".join(changes) if changes
           else "already in sync (%d open, %d live)" % (len(ids), len(live)))
