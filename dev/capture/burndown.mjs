@@ -30,10 +30,12 @@
    usage: node burndown.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
+import { serveVerified } from './serve.mjs';
+import { waitFor } from './dom.mjs';
 
 const OUT = process.argv[2];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -113,17 +115,17 @@ commit([4, 5, 6, 7, 8], [2, 3], T0 + 3 * 3600);
 commit([5, 6, 7, 8, 9], [3, 4], T0 + 4 * 3600);
 commit([6, 7, 8, 9], [4, 5], T0 + 5 * 3600);   // #1..#3 groomed away
 
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
-                  { stdio: 'ignore' });
-process.on('exit', () => { try { srv.kill(); } catch (e) {} });
-await sleep(2500);
+const srv = await serveVerified(DIR, PORT);
+process.on('exit', () => { try { srv.kill('SIGTERM'); } catch (e) {} });
 const BASE = `http://127.0.0.1:${PORT}`;
 {
+  // #507: serveVerified polls /data.json until the server answers with our
+  // target (and throws if it exits or a stranger holds the port) rather than
+  // racing a fixed 2500ms sleep — a slow python under load took longer than
+  // that, the fetch threw ECONNREFUSED, and the guard reddened as "threw
+  // before finishing its checks" over a page it never read. The served
+  // target is already proven ours; fetch here only for the shape note.
   const d = await (await fetch(`${BASE}/data.json`)).json();
-  if (d.target !== DIR) {
-    console.log(`FAIL :${PORT} is serving ${d.target}, not ${DIR}`);
-    process.exit(1);
-  }
   notes.push(`served burndown: ${JSON.stringify(
     { ...d.burndown, buckets: (d.burndown.buckets || []).length })}`);
 }
@@ -132,7 +134,12 @@ const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webg
 const p = await br.newPage({ viewport: { width: 1100, height: 1500 } });
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-await sleep(1200);
+// #507: wait for the chart's bars (or the no-ledger state) to be BUILT, not a
+// fixed sleep — under load the client render lags networkidle and a sleep
+// grades a half-painted panel. .bdbar proves the chart attached; .bdnone the
+// bare case. Settle briefly so columns/levels/caps paint in the same pass.
+await waitFor(p, '.bd .bdbar[data-bk], .bdnone', 15000);
+await sleep(400);
 
 const READ = `(() => {
   const bd = document.querySelector('.bd');
@@ -849,7 +856,8 @@ if (panelOk) {
   const rp = await ctx.newPage();
   rp.on('pageerror', e => errs.push(String(e)));
   await rp.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-  await sleep(1200);
+  await waitFor(rp, '.bd .bdbar[data-bk], .bdnone', 15000);   // #507 render readiness
+  await sleep(400);
   const before = await rp.evaluate(READ);
   const t = rp.evaluate(TRACE(4200));
   await sleep(60);
@@ -920,15 +928,13 @@ if (panelOk) {
   const DIR2 = join(OUT, 'bare');
   rmSync(DIR2, { recursive: true, force: true });
   cpSync('dev/capture/fixture', DIR2, { recursive: true });
-  const srv2 = spawn('python3', ['watch.py', '--target', DIR2,
-                                 '--port', String(port2)], { stdio: 'ignore' });
+  const srv2 = await serveVerified(DIR2, port2);
   try {
-    await sleep(2500);
     const d = await (await fetch(`http://127.0.0.1:${port2}/data.json`)).json();
-    if (d.target !== DIR2) throw new Error(`:${port2} is serving ${d.target}`);
     const bp = await br.newPage({ viewport: { width: 1100, height: 1200 } });
     await bp.goto(`http://127.0.0.1:${port2}/`, { waitUntil: 'networkidle' });
-    await sleep(1000);
+    // #507: wait for the panel (no-ledger state) to render, not a fixed sleep.
+    await waitFor(bp, '.bd', 15000);
     const r = await bp.evaluate(READ);
     notes.push(`no ledger: ${JSON.stringify({ none: r.none, head: r.head,
                                               bars: r.bars })}`);
