@@ -128,8 +128,9 @@ deferred widening `run-mode`. Today's vocabulary lives in `lint.py`
   `near-auto` journals each choice silently; `auto` never blocks on a reply.
 - **delegation** — an **average-concurrency target** (an integer: `0` =
   occasional, `1` = assist, `2+` = delegate), never a cap or a refusal
-  (`#445` Q3). Two subagents may pair on one worktree, talking via
-  `subagent-protocols`.
+  (`#445` Q3). Two subagents may pair on one worktree, talking via the
+  `subagent-protocols` handshake, bundled at
+  `<skill-dir>/subagent-protocols-for-subagents.md`.
 
 **Absent posture → derived from run-mode** (the mapping lives in
 `lint.derive_posture`, the single source): `lackadaisical` → idle pace;
@@ -325,6 +326,20 @@ a subagent's final message is a channel nobody reads back, and it has
 silently swallowed deliverables here. Dreamers append to the coordinator
 inbox, and that is still the right channel for judgement — so dispatch
 utilities the same way rather than watching harder.
+
+**The handshake is bundled, not assumed** (#466). Every dispatch prompt
+carries the startup handshake from
+`<skill-dir>/subagent-protocols-for-subagents.md` — the subagent's own
+inbox, the startup message naming whether it can be reached mid-task,
+id-prefixed append-only lines — and the coordinator side (its own inbox
+monitor, what to put in the prompt, how to read the handshake) is
+`<skill-dir>/subagent-protocols-for-coordinators.md`, with the
+`watch-file.sh` monitor helper bundled beside them. Both are vendored
+copies of the `subagent-protocols` skill with the upstream sha recorded
+in each header, so a fresh install carries the channel rather than
+depending on the host's skill set. A lane that never loaded the
+handshake has no inbox — and the inbox is the coordinator's only
+mid-task steering channel.
 
 **But the inbox is not lossless, and this file used to claim it was.**
 Measured across one four-lane batch: the **commit** arrived 4/4, the
