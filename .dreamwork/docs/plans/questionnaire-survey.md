@@ -12,9 +12,10 @@ Context used for relevance: `#445` (four question/attention levels), `#421` (how
 
 ## 1. What `~/src/pag-server/` actually does
 
-There are **two related surfaces**, not one. The human's "question form" is the
+There are **three related surfaces**, not one. The human's "question form" is the
 workspace-chat `ask_user` form. The mail plugin has a second questionnaire product
-with a different type set and response lifecycle. Both are cited so a later design
+with a different type set and response lifecycle, and workspace templates carry a
+third, birth-time questionnaire (§1.3). All are cited so a later design
 does not mix their contracts.
 
 ### 1.1 Workspace chat form (`ask_user`) — the feature-rich reference
@@ -29,6 +30,7 @@ does not mix their contracts.
 | Answer + notes normalize | `lib/pag_server/questionnaire/answer_normalizer.ex` | `PagServer.Questionnaire.AnswerNormalizer` |
 | Adapter seam + lifecycle map | `lib/pag_server/questionnaire/adapter_contract.ex` | `PagServer.Questionnaire.AdapterContract` |
 | Audit Ecto schema | `lib/pag_server/schema/question_record.ex` | `PagServer.Schema.QuestionRecord` |
+| Unanswered-question notifier | `lib/pag_server/tools/question_notifier.ex` | `PagServer.Tools.QuestionNotifier` (+ `LoggerBackend`, `EmailBackend`) |
 | Migration | `priv/repo/migrations/20260227130000_create_question_records.exs` | `CreateQuestionRecords` |
 | UX guide (behaviour, not code) | `docs/guides/questionnaire-ux-v2.md` | — |
 | Adapter contract doc | `docs/architecture/questionnaire-adapter-contract.md` | — |
@@ -104,6 +106,13 @@ request.
 `QuestionAuditLog` / `question_records` (see §2). Events via `EventPersistence` /
 PubSub topic prefix `"workspace_questions:"`.
 
+**Unanswered nudge:** `QuestionNotifier` subscribes to each watched workspace's
+question topic and schedules a notification after a configurable delay
+(`@default_notify_after_ms` 30_000); resolution before the delay cancels the
+timer. Backend is pluggable via a `Backend` behaviour — `LoggerBackend` logs,
+`EmailBackend` sends mail. The transferable shape is *delay-then-nudge, cancel
+on resolution*, independent of the email transport.
+
 ### 1.2 Mail questionnaire (second product)
 
 | Layer | Path | Symbol |
@@ -125,7 +134,22 @@ same-answer transitions map to lifecycle `:duplicate` via `AdapterContract`.
 **Planner use:** `plugins/backlog/lib/planner_questionnaire.ex` builds progressive
 Q&A over mail for plan generation — product-specific orchestration, not the chat form.
 
-### 1.3 Looked for and not found
+### 1.3 Setup-wizard template questionnaire (third surface — not the model)
+
+Distinct from both chat `ask_user` and mail: workspace **templates** may declare
+`questionnaire_sections` (`lib/pag_server/templates/workspace_template.ex`,
+`@question_types ~w(free_text single_select multi_select yes_no scale)`), edited
+via `PagServerWeb.Live.WorkspaceTemplateEditor.QuestionnaireEditor`
+(section/question CRUD, reordering, per-question `variable` binding) and run by
+the setup wizard (`lib/pag_server_web/live/setup_wizard.ex`) at workspace
+creation; answers substitute into file templates and prompts through each
+question's bound variable, and `metadata.no_questionnaire` skips the step
+(auto-set when no sections exist — `lib/pag_server_web/live/workspace_template_editor_live.ex`).
+It is a **birth-time variable collector for an agent-template product**, not a
+model for asking him things mid-loop, so it is recorded here for completeness
+and excluded from the mapping except as a cut (§3).
+
+### 1.4 Looked for and not found
 
 | Capability | Result |
 |---|---|
@@ -250,10 +274,12 @@ Reasons are in **dreamwork's** terms. "It was there in pag" is never a keep.
 | `is_secret` password masking | **cut** | Dreamwork does not ask for secrets in the dashboard channel |
 | `number` / `boolean` / `scale` mail types | **cut** | Form-builder surface area; `#445`'s numeric-ish rule is validation on free text (`>=1`, warn on 0, hard-invalid below 0), not a type zoo |
 | Mail questionnaire product + `message_type` transport | **cut** | Different product (cross-workspace mail); dreamwork's channel is the dashboard + `questions.md` |
+| Setup-wizard `questionnaire_sections` with variable binding into file templates/prompts | **cut** | Birth-time variable collector for pag's workspace-template product; dreamwork has no agent-template wizard and its ask surface is mid-loop, not creation-time |
 | Planner progressive mail Q&A orchestration | **cut** | Backlog planner workflow; not the human↔loop ask surface |
 | GenServer-blocked sync `ask_user` | **cut** | Loop must keep working while he is unanswered (`#445` level-4 cooperation); blocking is anti-pattern here |
 | Async pending with agent-batch chunking to hundreds | **cut** | Wrong scale; one open question set is enough |
 | Timeout countdown + extend-by-10-minutes UI | **cut** | Open questions already age on the card; a second clock competes with title age (`#392b`) |
+| Delayed notifier while a question stays unanswered (30 s default, pluggable backend, cancel-on-resolve) | **open → lean keep** | `#445` fixes *what happens if he never replies* per level; delay-then-nudge is a candidate mechanism for that — the transport (email) is not the point |
 | Dismiss without answer as first-class outcome | **open** | Sometimes he should decline; today that is a Note or silence — needs a deliberate tag, not a quiet dismiss |
 | `clone_for_fork` independent pending clones | **cut** | Thread-fork product of multi-agent workspaces; no analogue in single-dashboard dreamwork |
 | Audit blob `question_spec` + `answer` jsonb only | **open** | Fine as an event snapshot; insufficient alone as the *live* store for open questions |
