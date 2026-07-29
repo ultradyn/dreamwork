@@ -2,6 +2,15 @@
 
 ## Open
 
+- **P1 · 2026-07-29 12:39 — #294: one task table or the landed entry/task split, for the SQLite store?**
+  The store's schema landed at `50f4933` with an `entry`+`task` join — but the design's own S1 ruling and the
+  entry normalisation mean every entry is now exactly one task, so the join models nothing. The flat version
+  (one `task` table) is already built and red-proved on `wt/294`.
+  **`Q1` — keep the split (`50f4933`) or flatten (`wt/294`)?** **`rec`: flatten** — the design's S1 ruling chose
+  it ("the schema loses a table and every consumer loses a join, permanently"), the work is done and proved, and
+  flattening is free only until the import stage (after that it is the two-migrations error). Measured IGC:
+  `.dreamwork/review/294-entity-shape.html`. Say "B without the strictness" for the flatten minus its stricter
+  `NOT NULL`s and extra columns. A ruling authorises only the schema shape — no import, cutover, CLI, or rename.
 
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
