@@ -8144,16 +8144,26 @@ function armStaleDeploy() {
   staleDeployUntil = until;
   paintStaleDeployUI();
   const remainingMs = () => Math.max(0, staleDeployUntil - Date.now());
-  c.note(
-    `arms in ${Math.ceil(remainingMs() / 1000)}s — then this page updates`,
-    true);
+  // #490: countdown is steady text that ticks once per second. Re-calling
+  // note()/claim() restarts .dreamin at the poll rate (~4 Hz flash on #fmsg).
+  // claim (not note) so a 10s arm is not auto-cleared at the 5s hold.
+  let lastLeft = -1;
   const setCount = () => {
     if (gen !== staleDeployGen) return;
-    paintStaleDeployUI();
     const left = Math.ceil(remainingMs() / 1000);
-    if (left > 0)
-      c.note(`arms in ${left}s — then this page updates`, true);
+    if (left <= 0) return;
+    if (left === lastLeft) return;  // same second — do nothing
+    lastLeft = left;
+    paintStaleDeployUI();
+    const text = `arms in ${left}s — then this page updates`;
+    const m = document.getElementById('fmsg');
+    if (m && /^arms in \\d+s — then this page updates$/.test(m.textContent || '')) {
+      m.textContent = text;  // tick the number in place; no arrival gesture
+    } else {
+      c.claim(text, true);   // first paint of this arm only
+    }
   };
+  setCount();
   if (staleDeployTick) clearInterval(staleDeployTick);
   staleDeployTick = setInterval(setCount, 250);
   if (staleDeployTimer) clearTimeout(staleDeployTimer);

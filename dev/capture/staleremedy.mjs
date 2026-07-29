@@ -204,6 +204,61 @@ let beforeState;
   await ctx.close();
 }
 
+// ── 3b. #490 — arm countdown is steady text, not a 4 Hz flash ────────────
+// Production line: armStaleDeploy's setCount calling c.note/claim every
+// poll tick. show() re-adds .dreamin on every note, so a 250ms interval
+// restarts the arrival gesture ~4×/s. Red: reinstate unconditional
+// c.note(`arms in ${left}s — then this page updates`, true) inside setCount
+// (the pre-#490 body). Threshold is "after the one legitimate arrival,
+// zero further .dreamin adds" — not a poll-rate literal.
+{
+  const ctx = await br.newContext({ viewport: { width: 1100, height: 1000 } });
+  const p = await ctx.newPage();
+  p.on('pageerror', e => errs.push(String(e)));
+  await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await p.waitForSelector('.gservact');
+  await p.click('.gservact');
+  // Let the one legitimate arrival finish (.dreamin added then cleared on rAF).
+  await sleep(350);
+  const flash = await p.evaluate(async () => {
+    const m = document.getElementById('fmsg');
+    if (!m) return { ok: false, why: 'no #fmsg' };
+    let dreaminAdds = 0;
+    let textChanges = 0;
+    let lastText = m.textContent;
+    const texts = [lastText];
+    const mo = new MutationObserver(() => {
+      if (m.classList.contains('dreamin')) dreaminAdds++;
+      const t = m.textContent;
+      if (t !== lastText) {
+        textChanges++;
+        lastText = t;
+        texts.push(t);
+      }
+    });
+    mo.observe(m, {
+      attributes: true, attributeFilter: ['class'],
+      childList: true, characterData: true, subtree: true,
+    });
+    // Window long enough that a 250ms poll re-note would fire several times
+    // (and long enough to cross a second boundary for a legitimate tick).
+    await new Promise(r => setTimeout(r, 1400));
+    mo.disconnect();
+    return {
+      ok: true, dreaminAdds, textChanges, texts,
+      final: m.textContent, stillArming: /arms in/.test(m.textContent || ''),
+    };
+  });
+  notes.push(`#490 flash: ${JSON.stringify(flash)}`);
+  ok('#490 precondition — arm countdown is on #fmsg after settle',
+     flash.ok === true && flash.stillArming === true);
+  // The flash itself: any mid-arm .dreamin restart is the bug. A second
+  // boundary may rewrite the number (textChanges ≥ 0); that is not a flash.
+  ok('#490 arm countdown does not re-fire .dreamin after arrival',
+     flash.ok === true && flash.dreaminAdds === 0);
+  await ctx.close();
+}
+
 // ── 4. a REJECTED deploy does not claim success (writeVerdict) ───────────
 // Production line: fireStaleDeploy's writeVerdict gate. Red: gate on res.ok
 // alone (E5b) or delete the refused note. Fires the production function
