@@ -71,6 +71,10 @@ Next id: **231**
 
 - **#202** — the second twin of a within-section duplicate · P2 · tooling · origin: **loop**
 
+- **#208** — a wholly-bolded band field · **P1** · tooling · origin: **loop**
+
+- **#209** — title embeds **P2** as emphasis · tooling · origin: **human**
+
 - **#222** — a compound-band entry · P0/P1 · bug · origin: **human**
 
 - **#223** — an out-of-band entry · P4 · tooling · origin: **loop**
@@ -103,7 +107,15 @@ CLOSED_BANDS = {"P0", "P1", "P2", "P3"}
 
 
 def _band_fields(body: str) -> list[str]:
-    return [f.strip() for f in body.split("·") if BAND_FIELD.match(f.strip())]
+    out = []
+    for frag in body.split("·"):
+        f = frag.strip()
+        m = re.match(r"^\*\*(.+?)\*\*$", f)
+        if m:
+            f = m.group(1).strip()
+        if BAND_FIELD.match(f):
+            out.append(f)
+    return out
 
 
 def _derived(text: str) -> dict:
@@ -209,11 +221,53 @@ def test_missing_band_means_p2_by_contract(module):
 
 def test_origin_outside_closed_set_reported(module):
     d = _derived(FIXTURE)
+    # The contract vocabulary is lint.ORIGIN_VALUES (human|loop|unknown —
+    # `unknown` is first-class), NOT ledger_parse.KNOWN_ORIGINS.
     bad = {i for i, marks in d["origin_marks"].items()
-           if marks and any(m.strip() not in ledger_parse.KNOWN_ORIGINS for m in marks)}
+           if len(marks) == 1 and marks[0].strip() not in lint.ORIGIN_VALUES}
     assert bad, "fixture lost its out-of-vocabulary origin"
     a = _analyse(module)
-    assert bad <= _conflict_ids(a, "origin outside closed set")
+    assert _conflict_ids(a, "origin outside closed set") == bad
+
+
+def test_explicit_unknown_origin_is_legal(module):
+    d = _derived(FIXTURE)
+    assert not any(m.strip() == "unknown"
+                   for marks in d["origin_marks"].values() for m in marks), (
+        "fixture gained an explicit unknown origin — delete this test's inverse")
+    text = FIXTURE.replace("origin: **human**\n  with a body cross-ref",
+                           "origin: **unknown**\n  with a body cross-ref")
+    d2 = _derived(text)
+    assert any(m.strip() == "unknown" for marks in d2["origin_marks"].values()
+               for m in marks), "unknown-origin injection never reached the fixture"
+    a = _analyse(module, text)
+    still_bad = {i for i, marks in d2["origin_marks"].items()
+                 if len(marks) == 1 and marks[0].strip() not in lint.ORIGIN_VALUES}
+    assert 220 not in still_bad and still_bad, "derivation lost its anchor"
+    assert _conflict_ids(a, "origin outside closed set") == still_bad
+
+
+def test_bolded_band_field_is_a_band_not_missing(module):
+    d = _derived(FIXTURE)
+    bolded = {ids[0] for ids, body in d["entries"]
+              if len(ids) == 1 and re.search(r"· \*\*P\d+\*\* ·", body)}
+    assert bolded, "fixture lost its wholly-bolded band field"
+    assert not (bolded & d["bandless"]), "test scan cannot see the bolded field"
+    a = _analyse(module)
+    assert not (bolded & _conflict_ids(a, "missing band (P2 by contract)"))
+
+
+def test_title_embedded_band_flagged_with_evidence(module):
+    d = _derived(FIXTURE)
+    embedded = {ids[0] for ids, body in d["entries"]
+                if len(ids) == 1 and not _band_fields(body)
+                and re.search(r"\*\*P\d+\*\*", body)}
+    assert embedded, "fixture lost its title-embedded band"
+    a = _analyse(module)
+    rows = [c for c in analysis_conflicts(a, "missing band (P2 by contract)")
+            if c["id"] in embedded]
+    assert {c["id"] for c in rows} == embedded
+    assert all("not as a `·`-field" in c["detail"] for c in rows)
 
 
 def test_origin_absent_under_216_is_legal(module):

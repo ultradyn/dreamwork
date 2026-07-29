@@ -56,6 +56,11 @@ import lint  # noqa: E402 — load_watch(), NEXT_ID, RELATED_MARKER
 # compound P<n>/P<m>, which S2 rules imports as the LOWER band with
 # priority_uncertain=1. A field merely CONTAINING "P1" is prose, not a band.
 BAND_FIELD = re.compile(r"^P\d+(/P\d+)*$")
+# A band field may be bolded whole (`· **P1** ·` — #465's shape); a bolded
+# band EMBEDDED in a title (#99's `**P2** The popout composer…`) is not a
+# field and is reported as missing-with-evidence, not silently read.
+BOLD_FIELD = re.compile(r"^\*\*(.+?)\*\*$")
+BOLD_BAND_TOKEN = re.compile(r"\*\*(P\d+(/P\d+)*)\*\*")
 # `blocked on #N` stays prose (lint's comment at BLOCKED_ON_HUMAN_MARK: a
 # task-blocker is a different relation); the field form `blocked-on: **…**`
 # is lint's production marker. Both are read here, never re-anchored wider.
@@ -72,8 +77,21 @@ ORIGIN_CONTRACT_MIN_ID = 216  # file-formats.md: origin is forward-only from #21
 # ---------------------------------------------------------------------------
 
 def band_fields(body: str) -> list[str]:
-    """Every whole `·`-field that is a band shape (P<n>, or compound P<n>/P<m>)."""
-    return [f.strip() for f in body.split("·") if BAND_FIELD.match(f.strip())]
+    """Every whole `·`-field that is a band shape (P<n>, or compound P<n>/P<m>).
+
+    A wholly-bolded field (`**P1**`) counts — #346 measured that shape in the
+    live ledger. A bolded band inside a longer title does NOT: it is prose
+    emphasis, and reading it as the entry's band would invent structure.
+    """
+    out = []
+    for frag in body.split("·"):
+        f = frag.strip()
+        m = BOLD_FIELD.match(f)
+        if m:
+            f = m.group(1).strip()
+        if BAND_FIELD.match(f):
+            out.append(f)
+    return out
 
 
 def band_import_rule(field: str) -> tuple[str, int]:
@@ -201,8 +219,11 @@ def _detect_conflicts(a: dict, text: str) -> None:
                   detail="one entry head names " + "/".join(f"#{i}" for i in e["ids"]))
         bands = band_fields(e["body"])
         if not bands:
+            embedded = BOLD_BAND_TOKEN.search(e["body"])
+            evidence = (f"; it carries '**{embedded.group(1)}**' embedded in "
+                        "prose, not as a `·`-field" if embedded else "")
             _flag(c, "missing band (P2 by contract)", id=first,
-                  detail=f"#{first} carries no band field — imports as P2")
+                  detail=f"#{first} carries no band field{evidence} — imports as P2")
         for b in bands:
             if b not in ledger_store.PRIORITY_BANDS:
                 lower, uncertain = band_import_rule(b)
@@ -210,12 +231,19 @@ def _detect_conflicts(a: dict, text: str) -> None:
                         if "/" in b else
                         f"band '{b}' is outside the closed set P0..P3")
                 _flag(c, "band outside closed set", id=first, detail=f"#{first}: {note}")
+        # Origin: the contract vocabulary is lint.ORIGIN_VALUES / the store's
+        # CHECK (human|loop|unknown) — `unknown` is a FIRST-CLASS value
+        # (lint.check_task_origins: "not a failure"), distinct from
+        # ledger_parse.KNOWN_ORIGINS, which is the claim-classification
+        # subset. Enforcement scope mirrors lint: the #216 cutoff governs
+        # absence and multiplicity; a single out-of-vocabulary value is a
+        # conflict at any id because import would fail-closed over real prose.
         marks = [m.strip() for m in ledger_parse.ORIGIN_MARK.findall(e["body"])]
-        known = [m for m in marks if m in ledger_parse.KNOWN_ORIGINS]
-        if len(marks) == 1 and not known:
+        if len(marks) == 1 and marks[0] not in ledger_store.ORIGINS:
             _flag(c, "origin outside closed set", id=first,
-                  detail=f"#{first}: origin '{marks[0]}' is not human|loop|unknown")
-        elif len(marks) > 1:
+                  detail=f"#{first}: origin '{marks[0]}' is outside "
+                  "human|loop|unknown — imports as unknown (fail-closed)")
+        elif len(marks) > 1 and any(i >= ORIGIN_CONTRACT_MIN_ID for i in e["ids"]):
             _flag(c, "origin outside closed set", id=first,
                   detail=f"#{first}: {len(marks)} origin markers — the contract says one")
         elif not marks and any(i >= ORIGIN_CONTRACT_MIN_ID for i in e["ids"]):
