@@ -37,7 +37,10 @@ export async function dockHeadline(page) {
     // and that node's class is listed here. A future addition still has to be
     // added to this list -- which is why the callers assert that the strip
     // actually REMOVED something rather than trusting it silently.
-    clone.querySelectorAll('.qage, .age, .qup, .rsep').forEach(n => n.remove());
+    // `.qfocus` is #452's per-card focus link — headline chrome like the
+    // rest, removed for the same identity question.
+    clone.querySelectorAll('.qage, .age, .qup, .rsep, .qfocus')
+      .forEach(n => n.remove());
     return clone.textContent;
   });
 }

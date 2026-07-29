@@ -1186,6 +1186,15 @@ STYLE = """<style>
     letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
   .qmissing .qmissbody { color:var(--lit); max-width:56ch; }
   .qmissing .qmissback { margin-top:.5rem; }
+  /* #452 — the per-card way into the focused page. Headline chrome, so it
+     is quiet at rest (dimmer than the age it sits beside) and discovers
+     itself on hover/focus with the page's ordinary link signal. No motion
+     of its own: it never appears or disappears on a rendered card — it is
+     part of the card's HTML and rides the card's own arrival. */
+  .qfocus { color:var(--dimmer); font-size:.7rem; white-space:nowrap; }
+  .qfocus:hover { color:var(--accent); }
+  .qfocus:focus-visible { color:var(--accent);
+    outline:1px solid var(--accent); outline-offset:2px; }
   /* a send that did not land wears the same colour, because it is the same
      failure seen from the writing end: the channel to him did not work and
      nothing else on the page would have said so */
@@ -2607,6 +2616,22 @@ const qUpdatedHtml = q => {
   return `<span class="rsep"> · </span>` +
     `<span class="age qup" data-ut="${u}" data-q-upd="${esc(q.title || '')}"></span>`;
 };
+/* #452 — the way IN to the focused page, on every card in every state (a
+   folded entry can be focused too: a settled question stays findable). A
+   REAL LINK, the #252 argument three ways: the href makes it deep-linkable
+   and copyable, keyboard operation is native, and the click rides the
+   router's existing dissolve because isInternal already claims /question —
+   a button would re-implement all three. The key is the title identity the
+   card itself carries as data-qid, so the link and the card cannot
+   disagree about which question they name. It is headline CHROME, so it is
+   a node with a class, and that class is listed in dockHeadline (#474's
+   rule). Suppressed on the focus page itself — the page IS the focus —
+   which is a per-view read of the same `view` the router owns. */
+const qfocusLink = title =>
+  (typeof view !== 'undefined' && view && view.name === 'question') ? '' :
+  ` <a class="qfocus" href="/question?qid=${encodeURIComponent(title)}"` +
+  ` title="focus this question — open it on its own page"` +
+  ` aria-label="focus this question on its own page">focus</a>`;
 const qaInner = (q, key) => {
   const st = qaState(q, key);
   const body = q.body && q.body.trim() ? mdBReview(q.body.trim(), q.title) : '';
@@ -2660,11 +2685,12 @@ const qaInner = (q, key) => {
      created age is there — a settled entry that cannot be found again has
      simply been hidden. */
   const up = qUpdatedHtml(q);
+  const focus = qfocusLink(q.title);
   if (st === 'folded')
     return `<details class="qfold"><summary class="qt">${qtHtml(q.title)}${up}` +
       (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : '') +
-      `</summary><div class="qbody">${body}${foot}</div>${compose}</details>`;
-  return `<div class="qbody"><div class="qt">${qtHtml(q.title)}${up}</div>` +
+      `${focus}</summary><div class="qbody">${body}${foot}</div>${compose}</details>`;
+  return `<div class="qbody"><div class="qt">${qtHtml(q.title)}${up}${focus}</div>` +
          `${body}${foot}</div>${compose}`;
 };
 /* Two identities, deliberately. `data-qkey` ADDRESSES the entry in live data
