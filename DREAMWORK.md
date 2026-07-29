@@ -361,6 +361,14 @@ dreamwork-version: 5853e1789929
     verification chains and produced the best single piece of work of the day, but
     sweeps the space *around* its assigned chain less thoroughly, so pair it with a
     coordinator perimeter audit. Neither is reliably better; route by task shape.
+    · **MODELS, set 2026-07-29 18:02 (this harness's native `spawn_subagent`).** His
+    words: *"in future for subagents, please use glm-5.2 and grok-4.5 (you'll have to
+    experiment to find out which tasks suit which models). Note that you might have to
+    specify glm-5.2 as llmp-glm-5.2."* So dispatches in this harness pass an explicit
+    `model` slug — `llmp-glm-5-2` or `grok-4.5` — on the same routing rule as above
+    (vision → grok; long reasoning/prose → glm), and each lane's report should note
+    which model ran it so the experiment accumulates honestly. The `ccc`-runner bullets
+    above are the previous harness's form of the same two-model policy.
 - Subagent lifecycle (2026-07-25): **prefer fresh subagents; reuse an
   existing one only if it stopped less than ~4 minutes ago.** Retire
   idle dreamers rather than leaving them parked.
