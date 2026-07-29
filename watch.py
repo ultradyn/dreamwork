@@ -40,7 +40,8 @@ from user_events.sqlite import Envelope, open_journal
 # ledger_parse.py, which is why the deploy snapshot needs it alongside
 # watch.py exactly the way it needs user_events/.
 from ledger_parse import (ENTRY_HEAD, ENTRY_ID, KNOWN_ORIGINS, ORIGIN_MARK,
-                          entry_origins, ledger_entries)
+                          entry_origins, ledger_entries, source_of_truth,
+                          store_series_raw)
 # #351: /file's syntax highlighting REUSES #339's build-time scanner from
 # review_artifact.py — the tested one — rather than growing a second
 # highlighter here (two would drift). Only the public entry points are taken;
@@ -11098,8 +11099,96 @@ def _burn_step(span):
     return BURN_STEPS[-1]
 
 
+def _series_from_model(arrived, landed, opencount, first_sight, latest,
+                       commit_times, complete, now, step):
+    """The bucketed chart + summary stats, shared by both read paths (#294 inc 7).
+
+    Both the markdown git-walk and the store ``task_event`` query build the
+    same first-sight model; this function turns it into the output dict the
+    dashboard reads. Extracted verbatim from ``ledger_series``'s body so the
+    two paths stay byte-identical — one bucket builder, not two (#218's
+    one-source-of-truth rule).
+    """
+    out = {"state": None, "note": None, "buckets": [], "step": 0,
+           "open": 0, "arrived": 0, "landed": 0, "from": 0, "to": 0}
+
+    if not arrived:
+        out["state"] = BURN_NONE
+        out["note"] = ("no first-sight arrivals — nothing to chart yet, "
+                       "which is not the same as nothing happening")
+        return out
+
+    first = min(commit_times) if commit_times else min(arrived.values())
+    last = max((max(commit_times) if commit_times else min(arrived.values())),
+               int(now if now is not None else time.time()))
+    auto = _burn_step(last - first)
+    if step not in BURN_STEPS:
+        step = auto
+    n = int((last - first) // step) + 1
+    buckets = [{"t0": first + i * step, "arrived": 0, "landed": 0,
+                "open": 0, "commits": 0}
+               for i in range(n)]
+    idx = lambda t: min(n - 1, max(0, int((t - first) // step)))  # noqa: E731
+    for t in arrived.values():
+        buckets[idx(t)]["arrived"] += 1
+    for t in landed.values():
+        buckets[idx(t)]["landed"] += 1
+    for ct in commit_times:
+        buckets[idx(ct)]["commits"] += 1
+    carry = 0
+    for b in buckets:
+        inside = [v for t, v in opencount.items()
+                  if b["t0"] <= t < b["t0"] + step]
+        carry = inside[-1] if inside else carry
+        b["open"] = carry
+
+    out.update(state=BURN_OK, buckets=buckets, step=step,
+               open=len(latest), arrived=len(arrived), landed=len(landed))
+    out["from"] = first
+    out["to"] = last
+    ccounts = [b["commits"] for b in buckets]
+    ccounts_sorted = sorted(ccounts)
+    cn = len(ccounts_sorted)
+    if cn == 0:
+        cmed = 0
+    elif cn % 2:
+        cmed = ccounts_sorted[cn // 2]
+    else:
+        cmed = (ccounts_sorted[cn // 2 - 1] + ccounts_sorted[cn // 2]) // 2
+    out["commit_total"] = sum(ccounts)
+    out["commit_max"] = max(ccounts) if ccounts else 0
+    out["commit_median"] = cmed
+    out["commit_quiet"] = sum(1 for c in ccounts if c == 0)
+    durations = sorted(landed[i] - arrived[i]
+                       for i in landed if i in arrived)
+    n = len(durations)
+    median = None
+    if n == 1:
+        median = float(durations[0])
+    elif n > 1:
+        mid = n // 2
+        median = (float(durations[mid]) if n % 2
+                  else (durations[mid - 1] + durations[mid]) / 2.0)
+    out["median"] = median
+    out["median_n"] = n
+    prov = {"human": 0, "loop": 0, "unknown": 0}
+    for origin in first_sight.values():
+        prov[origin] += 1
+    prov["total"] = len(first_sight)
+    prov["history_complete"] = complete
+    out["provenance"] = prov
+    return out
+
+
 def ledger_series(target, path=LEDGER_PATH, now=None, step=None):
     """Arrivals, completions and the open count over the ledger's own history.
+
+    Dispatches on :func:`ledger_parse.source_of_truth` (#294 inc 7): when the
+    store's cutover watermark is present, the series is a query over
+    ``task_event`` first-sight events (the synthetic ``migration:git`` rows);
+    otherwise the markdown git-walk runs unchanged. Both paths feed the same
+    first-sight model into :func:`_series_from_model`, so the output shape is
+    identical — the live cutover flips readers by DATA, not by deploy.
 
     An id ARRIVES at the first commit that mentions it anywhere, and is
     COMPLETE at the first commit that names it under `## Recently landed`.
@@ -11114,6 +11203,37 @@ def ledger_series(target, path=LEDGER_PATH, now=None, step=None):
     """
     out = {"state": None, "note": None, "buckets": [], "step": 0,
            "open": 0, "arrived": 0, "landed": 0, "from": 0, "to": 0}
+
+    # #294 inc 7: dispatch on the cutover watermark. The store path queries
+    # task_event; the markdown path walks git. Both build the same model and
+    # feed _series_from_model. A missing/unreadable store is fail-closed to
+    # markdown by source_of_truth itself — never let a missing store break
+    # a reader.
+    dw_dir = os.path.join(str(target), os.path.dirname(path))
+    if source_of_truth(dw_dir) == "store":
+        model = store_series_raw(dw_dir)
+        if model is None:
+            out["state"] = BURN_NONE
+            out["note"] = "the ledger store is unreadable"
+            return out
+        # Reconstruct opencount from arrivals/landings (delta walk): at each
+        # event time the open level = arrivals-so-far − landings-so-far,
+        # the same count the markdown walk reads from each snapshot.
+        from collections import defaultdict
+        delta = defaultdict(int)
+        for t in model["arrived"].values():
+            delta[t] += 1
+        for t in model["landed"].values():
+            delta[t] -= 1
+        opencount = {}
+        running = 0
+        for t in sorted(delta):
+            running += delta[t]
+            opencount[t] = running
+        return _series_from_model(
+            model["arrived"], model["landed"], opencount,
+            model["first_sight"], model["latest_open"],
+            model["commit_times"], True, now, step)
 
     def g(*args):
         res = subprocess.run(
@@ -11206,96 +11326,10 @@ def ledger_series(target, path=LEDGER_PATH, now=None, step=None):
                       "any revision of it" % path
         return out
 
-    first = revs[0][1]
-    last = max(revs[-1][1], int(now if now is not None else time.time()))
-    auto = _burn_step(last - first)
-    # #487: a forced step from the cycle control wins; unknown/None → auto
-    if step not in BURN_STEPS:
-        step = auto
-    n = int((last - first) // step) + 1
-    buckets = [{"t0": first + i * step, "arrived": 0, "landed": 0,
-                "open": 0, "commits": 0}
-               for i in range(n)]
-    idx = lambda t: min(n - 1, max(0, int((t - first) // step)))  # noqa: E731
-    for t in arrived.values():
-        buckets[idx(t)]["arrived"] += 1
-    for t in landed.values():
-        buckets[idx(t)]["landed"] += 1
-    # ledger-touching commits per period (#417): the same `revs` walk the
-    # panel already owns — no second walk (#218's one-source-of-truth rule).
-    # These are commits that touched the ledger path, not repo-wide commits.
-    for _rev, ct in revs:
-        buckets[idx(ct)]["commits"] += 1
-    # the open count is a LEVEL, not a count of events: each bucket carries
-    # the last reading inside it, and a bucket with no commits inherits the
-    # one before rather than reading as a drop to zero
-    carry = 0
-    for b in buckets:
-        inside = [v for t, v in opencount.items()
-                  if b["t0"] <= t < b["t0"] + step]
-        carry = inside[-1] if inside else carry
-        b["open"] = carry
-
-    out.update(state=BURN_OK, buckets=buckets, step=step, from_=first,
-               open=len(latest), arrived=len(arrived), landed=len(landed))
-    out["from"] = first
-    out["to"] = last
-    out.pop("from_", None)
-    # #417 c4: summary figures for the copy line — median / peak / empty
-    # periods over the same buckets the chart draws. Integer median for an
-    # even population (mean of the two middles, then floor) so the line
-    # never needs a decimal.
-    ccounts = [b["commits"] for b in buckets]
-    ccounts_sorted = sorted(ccounts)
-    cn = len(ccounts_sorted)
-    if cn == 0:
-        cmed = 0
-    elif cn % 2:
-        cmed = ccounts_sorted[cn // 2]
-    else:
-        cmed = (ccounts_sorted[cn // 2 - 1] + ccounts_sorted[cn // 2]) // 2
-    out["commit_total"] = sum(ccounts)
-    out["commit_max"] = max(ccounts) if ccounts else 0
-    out["commit_median"] = cmed
-    out["commit_quiet"] = sum(1 for c in ccounts if c == 0)
-    # How long finished work took, from the pairs the walk already holds
-    # (#218). An id in `arrived` but not `landed` is still open and has no
-    # duration, so the median is over the INTERSECTION — the ids that have
-    # both a first sighting and a first landing. That silently answers a
-    # different question than a reader assumes: it is "of the work that
-    # finished, how long did it take", NOT "how long does work take", and
-    # the still-open long tail is excluded. `median_n` is carried beside it
-    # so the renderer can state the population the figure was computed over
-    # — a median over 4 pairs and one over 200 are different kinds of claim.
-    # No second walk: the two dicts above are the only source of truth, and
-    # a second walk is a second truth (#218's reason for existing). No
-    # velocity score, no rate, no index — one duration, honestly labelled.
-    # An even-sized population takes the MEAN of its two middle values
-    # (the standard median); a combined head (`- **#A/#B**`) is already two
-    # ids in `landed`, so it contributes TWO durations, not one.
-    durations = sorted(landed[i] - arrived[i]
-                       for i in landed if i in arrived)
-    n = len(durations)
-    median = None
-    if n == 1:
-        median = float(durations[0])
-    elif n > 1:
-        mid = n // 2
-        median = (float(durations[mid]) if n % 2
-                  else (durations[mid - 1] + durations[mid]) / 2.0)
-    out["median"] = median            # seconds, or None when nothing finished
-    out["median_n"] = n               # the population the median was over
-    # Who filed each task, by first sight (#216), drawn honestly (#217):
-    # three counts and a denominator, never a split that folds the unknown
-    # remainder into loop. The denominator is COMMITTED first sightings —
-    # an uncommitted entry in the working tree is not a historical arrival.
-    prov = {"human": 0, "loop": 0, "unknown": 0}
-    for origin in first_sight.values():
-        prov[origin] += 1
-    prov["total"] = len(first_sight)
-    prov["history_complete"] = complete
-    out["provenance"] = prov
-    return out
+    commit_times = [ct for _rev, ct in revs]
+    return _series_from_model(
+        arrived, landed, opencount, first_sight, latest,
+        commit_times, complete, now, step)
 
 
 def ledger_stats(target, step=None):

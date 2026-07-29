@@ -57,6 +57,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import watch  # noqa: E402  — the production parser, reused not copied
 from ledger_parse import ledger_entries, open_section_text  # noqa: E402
+from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
 
 LEDGER_DEFAULT = ".dreamwork/tasks.md"
 NOTE_PREFIX = "  · "  # two-space indent, U+00B7, space — the ledger's continuation idiom
@@ -387,6 +388,22 @@ def main(argv=None):
         return 0
 
     ledger_path = Path(args.ledger)
+
+    # #294 inc 7: `counts` is a read consumer — dispatch on source_of_truth.
+    # `fold` is a markdown WRITE tool (moves text blocks); after cutover the
+    # store's write verbs own that, so fold stays a pre-cutover tool and is
+    # documented as such.
+    if args.cmd == "counts":
+        dw_dir = str(ledger_path.parent)
+        if source_of_truth(dw_dir) == "store":
+            open_ids, landed_ids = store_ids_by_state(dw_dir)
+            sys.stdout.write(
+                f"open ids:   {len(open_ids)}   "
+                f"(store_ids_by_state — task.state='open')\n"
+                f"landed ids: {len(landed_ids)}   "
+                f"(store_ids_by_state — task.state='landed')\n")
+            return 0
+
     if not ledger_path.exists():
         sys.stderr.write(f"ledger not found: {ledger_path}\n")
         return 2
