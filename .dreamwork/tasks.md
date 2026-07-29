@@ -509,182 +509,6 @@ Next id: **489**
   · related: **#425, #426, #439**
   · **PROMOTED BY HIS `#275` ANSWER, 2026-07-29 05:54 — this stops being a cleanup and becomes enabling work.** His words: *"dreamhub should entirely replace watch.py for normal day-to-day use. All features from watch.py should be ported over. **or watch.py should be refactored into modules and then they can be imported to use in dreamhub**."* That names this task as one of the two routes to a product goal, so the extraction now has a consumer instead of only a rationale. **The coordinator's parallelism argument for this was the weaker one** and is now secondary: tonight lanes queued repeatedly because ~12k lines of UI live in one file that exactly one lane can hold. True, but internal. His reason is that the port is otherwise a **second implementation of every feature**, which is the same two-truths error `#264` and `#294` R2 both refused. Note `#443` already constrains the shape: `deprecated/watch.py` keeps the monolith and `watch.py` becomes a **symlink** until the new entry point is proven, so a client that starts before the split still works.
 
-- **#367** — Tabbed pointers to a review's essentials, with next/prev · P2 ·
-  review tooling/UX · origin: **human** · **human via watch `add-idea` 2026-07-28 02:36**,
-  typed from `/review?p=task-store-schema.html` — so from inside the problem: *"on reviews, it
-  would be really handy to have some pointer labels at the most important parts. like the
-  absolute essentials. then i could have a next/prev button too. something like those little
-  thin postits that lawyers use to indicate key points and where you need to sign. would make
-  it a lot quicker to go through reviews I think. (Sometimes they are quite long)"*
-  · **his analogy is precise and it decides the design.** A lawyer's flag is not a table of
-  contents: it marks *where you must act*, it protrudes so you can find it without opening the
-  document, and there are five of them and not fifty. So this is a **different axis from the
-  existing `nav`** — nav is structure (`findings` / `shape` / `decision`), this is *"read this
-  if you read nothing else"* — and conflating them would produce a second table of contents,
-  which is not what he asked for
-  · **the forcing function is worth as much as the feature.** Marks come from the source, so
-  the authoring dreamer has to name which three or four passages are the essentials. An
-  artifact that cannot say what its own essentials are is an artifact that has not decided what
-  it is asking — so this makes a quality problem visible rather than only saving him time
-  · design constraints already known, so nobody rediscovers them: **(a)** it is a frame change,
-  and touching `review-artifact.template.html` restamps all 15 artifacts (`template_stamp`
-  digests its bytes), so it should land **in one commit with #347's missing
-  `white-space:nowrap`** and whatever #364's answered-marker turns out to be — three frame
-  tasks, one rebuild · **(b)** next/prev is movement between marks, so `transitions.md` governs
-  it, and a **long-range smooth scroll is already refuted** — the #229 v2 review found a 1.5s
-  one and it failed the gate; a settled landing is the requirement, not a journey · **(c)** the
-  template has no `scroll-behavior` today (measured: zero occurrences), so the behaviour is
-  chosen here rather than inherited · **(d)** the tabs are navigation, so they are real
-  focusable controls with the current mark announced, not decorative edge art · **(e)** on
-  mobile a protruding edge tab competes with the column for width, which is where the physical
-  metaphor stops paying and needs its own answer rather than a shrink
-  · rec: one source-declared mark per essential passage (a class on the block, plus its short
-  label), rendered as thin edge tabs; next/prev walks them in document order; the count is
-  **capped low and the cap is stated**, because his whole point is that five flags help and
-  fifty are wallpaper
-  · **UNBLOCKED 2026-07-28 04:05, both reasons spent**: #365's measurement landed
-  (`09c3881`), so the way to add a component rule is now demonstrated rather than deferred —
-  count the class's real direct children across every built artifact, add the rule only if the
-  set is unanimous, and record the count. That pass also refuted `.summary-line` and
-  `.choice`/`.answer`, so a new `.mark` component must earn its rule the same way and not by
-  analogy · and the frame batch it was waiting to ride landed at `405092f`, so this is now its
-  own commit and its own rebuild, which is one restamp of 15 artifacts and acceptable
-  · **design landed design-only 2026-07-28 04:30, awaiting his ruling.** Plan
-  `.dreamwork/docs/plans/review-essential-marks.md`, artifact
-  `.dreamwork/review/review-essential-marks.html`, asked in `questions.md` as four decisions
-  M1-M4. Measured first, and **the measurement refuted three designs including the literal
-  reading of his own metaphor**: a per-section list would be 22 entries in the artifact that
-  needs it most; the margin outside `.wrap` is **16px at every viewport from 1120px down**, so a
-  tab protruding past the page edge is affordable only above ~1250px; and blocks within a section
-  run 614px to 1120px, so a per-block anchor would scatter the flags across 500px
-  · **the shape that survived**: a mark is a flag at a *height*, anchored to the reading column's
-  right edge — `.read` is a fixed **613.5px** (78ch at 13.12px, which does not scale) and
-  left-aligned, leaving **506px of wrap already empty** at 1280px. Rail above 780px, compact
-  strip below, next/prev walking document order in both
-  · **constraint (e) above was wrong in a way worth keeping recorded**: it anticipated the hard
-  case at mobile, and the cliff is at **~780px** — above both existing breakpoints (860, 480).
-  A design answering only for 390px would have passed review and broken in a half-width window
-  on his desktop
-  · **RULED 2026-07-28 05:35 (`0597bc6`), so this is unblocked to build.** M1 (the 780px
-  rail/strip split) and M4 (marks are not a `nav` entry) went with the rec. **M2 and M3 were
-  overridden**: the cap is **soft 7 / hard 15** — seven is allowed, so the warning starts at
-  **8** and the refusal at 15 (`MARKS_WARN_AT = 8`; a cap of 7 that warns *at* 7 is a cap of
-  6, and this line and the plan's both used to say "at seven") — not my
-  five-and-refuse; and the label is **two-line tabs at a smaller text size, up to ~6 words**,
-  not my ~12 characters with builder truncation. The tab grows to fit the label; nobody
-  truncates. The rulings are now recorded in the plan's §"What was decided", which wins over
-  the superseded paragraphs left in place around it
-  · **one measurement is owed before building M3** and it is the same class of thing that
-  refuted three designs already: a two-line tab at a smaller size is **taller and possibly
-  wider** than the tab all the geometry was measured against, and the geometry is tight — the
-  gutter outside `.wrap` is 16px at every viewport from 1120px down. Measure ~6 words at two
-  lines against that gutter first. If it does not fit somewhere, **report the measurement**;
-  do not quietly reintroduce a cap he just removed
-  · **increment 1 LANDED 2026-07-28 06:58 (`dbcbcc5`), and it is the safety net rather than
-  the feature**: `essential_marks()` parses `data-mark` in document order, warns at 8, refuses
-  at 15, refuses a mark whose element has no `id` of its own. **No visible change, no template
-  touch, no artifact rebuilt** — which is the whole point: the frame now carries the machinery,
-  so every later increment is shippable on its own. 70 tests in `test_review_artifact.py`
-  · **coordinator verified independently, not folded**: the byte-identity guarantee is the
-  criterion most likely to be hollow, so I recomputed its frozen baseline from a ref **I**
-  picked by hand (`12d17ad`, confirmed to carry neither `MARKS_WARN_AT` nor `essential_marks`)
-  and it matched to the digit — the constant is genuinely pre-change, not recomputed with the
-  new code. Then I injected the realistic regression rather than the lane's placeholder — an
-  unguarded marks stylesheet (`increment 2's CSS added without checking labels is non-empty`) —
-  and `test_a_source_with_no_marks_renders_byte_identically_apart_from_the_stamp` went red
-  alone, neighbours green. Snapshot-restored; 70 pass
-  · **still to build: increments 2+** — the rail/strip presentation, the tab, next/prev.
-  **Increment 1 hands increment 2 a guarantee it should not squander:** every mark's `id` is on
-  the marked element itself, so next/prev can key off it directly with nothing to invent
-  · **the owed measurement LANDED 2026-07-28 07:26 (`1696657`, `ccc @grok`), and it refuted the
-  geometry the design rests on.** Doc `.dreamwork/docs/measurements/367-two-line-tab-geometry.md`,
-  reproducible script `dev/capture/marktab-geometry.mjs`, screenshots under
-  `.dreamwork/docs/measurements/367-tabs/`. **A worst-case ~6-word two-line tab is 180×32.3px,
-  not the 96px flag every number in the plan assumed.** Consequences, all measured:
-    · **the 780px cliff does not hold — it moves to ~830px.** The tab fits inside `.wrap` down
-    to 830 (by 0.5px), is past the wrap at 820, and is **clipped past the page edge at 810 and
-    at 780**. Typical authored labels are 117–130px and would have hidden this; the worst case
-    is what decides a no-truncation design
-    · **vertical collision is possible in real documents.** Tab height 32.3px is the minimum
-    top-to-top gap; this artifact's densest adjacent block pair (`section#long` → `p.read`) is
-    **29.2px**. Section-level marks are safe (329–929px apart); block-level adjacent marks are
-    not
-    · **the strip below the cliff needs its own answer for 5–7 marks.** At the soft cap of 7,
-    worst-case labels need **3 rows / ~214px**; typical labels 2 rows / ~140px. He removed
-    truncation, so "shrink it" is not available
-  · **coordinator verified independently:** re-ran the lane's script and every number reproduced
-  **byte-identically**, including the screenshots — the measurement is deterministic, which is
-  stronger than the criterion asked for. I also looked at the images myself rather than reading
-  its vision notes. The 780px shot shows the tab clipped **mid-word**, and carries an irony worth
-  keeping: the artifact's own table in that same image reads *"780 · 134 · yes — and this is the
-  last one"*, so the design doc is being falsified by the prototype rendered on top of it
-  · **one boundary the lane did not name** (coordinator perimeter audit): its collision shot
-  uses **identical labels** for both tabs, which exaggerates "reads as one continuous chrome
-  mass" — distinct labels would separate better. The geometric finding stands regardless, and so
-  does the fix (a minimum gap or a divider), so this changes the evidence's strength and not the
-  conclusion
-  · **derived decisions, mine and reversible — these follow from his ruling rather than adding
-  to it**, and increment 2's brief carries them: **(i)** the rail/strip switch moves to the
-  measured wrap-fit boundary rather than staying at the literal 780, because he ruled no
-  truncation and a clipped flag is worse than no flag; **(ii)** two marks closer than the tab
-  height are the renderer's problem, not the author's — offset or stack them, and refuse only if
-  that is impossible, in the voice of the existing no-id refusal
-  · **one question is genuinely his and is NOT derivable**: at 5–7 marks the strip becomes
-  ~140–214px of chrome on a narrow screen. That is a reading-experience price, and he is the only
-  one who can say whether it is worth paying or whether the strip should cap what it *shows*
-  while next/prev still walks them all. Owed to him with an artifact
-  · the first increment is unchanged by the rulings: the source contract in `file-formats.md`
-  plus the "declares no marks ⇒ byte-identical output" check, red first, which touches no
-  artifact — and it is the one that makes the frame change safe to ship before any artifact
-  adopts it
-
-  · related: **#396, #417, #415**
-  · **INCREMENT 2a LANDED** `d4cbba8` `a818bf8` (+ `markrail` registered in the `justfile`, which the
-  brief had failed to grant — ratified by relay). `ccc @glm52`. The rail, the flag, next/prev, above
-  the cliff only; **below 860px nothing renders**, deliberately, because 2b is his call
-  · **coordinator verification, all three owed checks done.** (1) **The motion red re-run and it is
-  discriminating**: injecting `scroll-behavior:smooth` into the template's `html` rule fails exactly
-  *"...and LANDS SETTLED — an instant jump, not a smooth journey (0 part-way)"* plus its
-  reduced-motion twin, while every geometry neighbour stayed green. Restored from a `cp` snapshot,
-  byte-exact. First attempt injected into a `html {` rule that does not exist and the guard passed —
-  a green red-run, caught, not believed. (2) **Guard green at load 26.6**, which this repo's
-  asymmetry rule makes conclusive. (3) **The retired byte-identity test is not weaker**: the lane
-  dropped only the frozen whole-document digest and kept `_prechange_review_artifact`'s
-  content-resolution, comparing the **body region** against the live pre-change builder — so the
-  drift the digest existed to catch is still caught directly, and it no longer false-fails on frame
-  CSS the template is supposed to gain
-  · its `ch`-resolution finding is genuinely subtle and correct — a one-element flag would resolve
-  `--measure:78ch` against the *tab's* narrower font, so the flag is an outer block inheriting the
-  body font plus an inner visible postit
-  · **probing its caveat found #396 (P1)** — see that entry. The caveat's own axis was clean at three
-  densities; the axis it held constant was the element type
-  · **still open for 2b**: the strip below the cliff, awaiting his ruling on the artifact  · **HIS RULING
-  ARRIVED 2026-07-28 15:11 and sat unprocessed for a day — found by the current coordinator 2026-07-29
-  17:36.** He took **C with a collapsible index**: *"can we do C but: add a little double chevron on RHS
-  indicating that the bar is collapsible, and when it expands it should show a list of the marks. Collapsed
-  by default."* So 2b's spec: default collapsed at the walk height (~32px); a double chevron at the right
-  edge as the affordance; expanded reveals the labelled marks; `transitions.md` governs the expand/collapse
-  with no exception; `aria-expanded` and keyboard parity not optional; whether the expanded list replaces
-  the walk row or sits beneath it, and whether expanded state persists, left to the implementer. **2b is
-  UNSTARTED** — dispatch it.  · **PREVIEWS LANDED `98670ae` (increment only; #367 STAYS OPEN awaiting his ruling)** — he asked
-  at 14:52 to see A/B/C before deciding. `ccc @grok`, **13 minutes** end to end:
-  `.dreamwork/review/367-option-previews.html` + source + six screenshots + a rail reference +
-  `measures.json`, every figure measured from the rendered DOM at load and red-proved by changing
-  a row count and watching the caption follow
-  · **it corrected a number I had given HIM**: the entry said option A costs ~214px of chrome at
-  seven marks; measured it is **167.9px** in 3 rows (B 127.2, C 31.8, unchanged at 640). The 214
-  was extrapolated from a 180px worst-case tab and never observed. Also *"the reading column is
-  fixed at 613.5px"* is true at 780 and false at 640 (608 — 78ch stops fitting); **the 16px outer
-  margin does hold at both**, so the no-lateral-space argument the decision rests on is intact
-  · **the rec survives but its shape changed**, and both the lane and I say so independently after
-  looking at the pixels: **A reads lighter than its number implied** — three tidy rows of
-  product-shaped pills — so if he wants the index before walking, A is more defensible than my
-  figure made it sound. B looks worse in pixels than in prose. C reads as a usable walk, not a stub
-  · **the two lint WARNs naming this entry are correct and are a grammar gap, not a mistake**: a
-  merge commit that lands an *increment* of a multi-increment task is indistinguishable from one
-  that closes it, so `#367` reads as "open but already merged". Same class as `#415` — a checker
-  narrower than the work it describes. Recorded there rather than silenced here
-
 - **#378** — One `.fact` sits outside any `.facts` grid, in a file with no source · P3 ·
   review tooling · origin: **loop** · 10m · found by #365's measurement and verified
   independently: `protected-service-boundary-288.html` has `containers=0 facts=1`, so that
@@ -2913,6 +2737,183 @@ Next id: **489**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#367** — Tabbed pointers to a review's essentials, with next/prev · P2 ·
+  review tooling/UX · origin: **human** · **human via watch `add-idea` 2026-07-28 02:36**,
+  typed from `/review?p=task-store-schema.html` — so from inside the problem: *"on reviews, it
+  would be really handy to have some pointer labels at the most important parts. like the
+  absolute essentials. then i could have a next/prev button too. something like those little
+  thin postits that lawyers use to indicate key points and where you need to sign. would make
+  it a lot quicker to go through reviews I think. (Sometimes they are quite long)"*
+  · **his analogy is precise and it decides the design.** A lawyer's flag is not a table of
+  contents: it marks *where you must act*, it protrudes so you can find it without opening the
+  document, and there are five of them and not fifty. So this is a **different axis from the
+  existing `nav`** — nav is structure (`findings` / `shape` / `decision`), this is *"read this
+  if you read nothing else"* — and conflating them would produce a second table of contents,
+  which is not what he asked for
+  · **the forcing function is worth as much as the feature.** Marks come from the source, so
+  the authoring dreamer has to name which three or four passages are the essentials. An
+  artifact that cannot say what its own essentials are is an artifact that has not decided what
+  it is asking — so this makes a quality problem visible rather than only saving him time
+  · design constraints already known, so nobody rediscovers them: **(a)** it is a frame change,
+  and touching `review-artifact.template.html` restamps all 15 artifacts (`template_stamp`
+  digests its bytes), so it should land **in one commit with #347's missing
+  `white-space:nowrap`** and whatever #364's answered-marker turns out to be — three frame
+  tasks, one rebuild · **(b)** next/prev is movement between marks, so `transitions.md` governs
+  it, and a **long-range smooth scroll is already refuted** — the #229 v2 review found a 1.5s
+  one and it failed the gate; a settled landing is the requirement, not a journey · **(c)** the
+  template has no `scroll-behavior` today (measured: zero occurrences), so the behaviour is
+  chosen here rather than inherited · **(d)** the tabs are navigation, so they are real
+  focusable controls with the current mark announced, not decorative edge art · **(e)** on
+  mobile a protruding edge tab competes with the column for width, which is where the physical
+  metaphor stops paying and needs its own answer rather than a shrink
+  · rec: one source-declared mark per essential passage (a class on the block, plus its short
+  label), rendered as thin edge tabs; next/prev walks them in document order; the count is
+  **capped low and the cap is stated**, because his whole point is that five flags help and
+  fifty are wallpaper
+  · **UNBLOCKED 2026-07-28 04:05, both reasons spent**: #365's measurement landed
+  (`09c3881`), so the way to add a component rule is now demonstrated rather than deferred —
+  count the class's real direct children across every built artifact, add the rule only if the
+  set is unanimous, and record the count. That pass also refuted `.summary-line` and
+  `.choice`/`.answer`, so a new `.mark` component must earn its rule the same way and not by
+  analogy · and the frame batch it was waiting to ride landed at `405092f`, so this is now its
+  own commit and its own rebuild, which is one restamp of 15 artifacts and acceptable
+  · **design landed design-only 2026-07-28 04:30, awaiting his ruling.** Plan
+  `.dreamwork/docs/plans/review-essential-marks.md`, artifact
+  `.dreamwork/review/review-essential-marks.html`, asked in `questions.md` as four decisions
+  M1-M4. Measured first, and **the measurement refuted three designs including the literal
+  reading of his own metaphor**: a per-section list would be 22 entries in the artifact that
+  needs it most; the margin outside `.wrap` is **16px at every viewport from 1120px down**, so a
+  tab protruding past the page edge is affordable only above ~1250px; and blocks within a section
+  run 614px to 1120px, so a per-block anchor would scatter the flags across 500px
+  · **the shape that survived**: a mark is a flag at a *height*, anchored to the reading column's
+  right edge — `.read` is a fixed **613.5px** (78ch at 13.12px, which does not scale) and
+  left-aligned, leaving **506px of wrap already empty** at 1280px. Rail above 780px, compact
+  strip below, next/prev walking document order in both
+  · **constraint (e) above was wrong in a way worth keeping recorded**: it anticipated the hard
+  case at mobile, and the cliff is at **~780px** — above both existing breakpoints (860, 480).
+  A design answering only for 390px would have passed review and broken in a half-width window
+  on his desktop
+  · **RULED 2026-07-28 05:35 (`0597bc6`), so this is unblocked to build.** M1 (the 780px
+  rail/strip split) and M4 (marks are not a `nav` entry) went with the rec. **M2 and M3 were
+  overridden**: the cap is **soft 7 / hard 15** — seven is allowed, so the warning starts at
+  **8** and the refusal at 15 (`MARKS_WARN_AT = 8`; a cap of 7 that warns *at* 7 is a cap of
+  6, and this line and the plan's both used to say "at seven") — not my
+  five-and-refuse; and the label is **two-line tabs at a smaller text size, up to ~6 words**,
+  not my ~12 characters with builder truncation. The tab grows to fit the label; nobody
+  truncates. The rulings are now recorded in the plan's §"What was decided", which wins over
+  the superseded paragraphs left in place around it
+  · **one measurement is owed before building M3** and it is the same class of thing that
+  refuted three designs already: a two-line tab at a smaller size is **taller and possibly
+  wider** than the tab all the geometry was measured against, and the geometry is tight — the
+  gutter outside `.wrap` is 16px at every viewport from 1120px down. Measure ~6 words at two
+  lines against that gutter first. If it does not fit somewhere, **report the measurement**;
+  do not quietly reintroduce a cap he just removed
+  · **increment 1 LANDED 2026-07-28 06:58 (`dbcbcc5`), and it is the safety net rather than
+  the feature**: `essential_marks()` parses `data-mark` in document order, warns at 8, refuses
+  at 15, refuses a mark whose element has no `id` of its own. **No visible change, no template
+  touch, no artifact rebuilt** — which is the whole point: the frame now carries the machinery,
+  so every later increment is shippable on its own. 70 tests in `test_review_artifact.py`
+  · **coordinator verified independently, not folded**: the byte-identity guarantee is the
+  criterion most likely to be hollow, so I recomputed its frozen baseline from a ref **I**
+  picked by hand (`12d17ad`, confirmed to carry neither `MARKS_WARN_AT` nor `essential_marks`)
+  and it matched to the digit — the constant is genuinely pre-change, not recomputed with the
+  new code. Then I injected the realistic regression rather than the lane's placeholder — an
+  unguarded marks stylesheet (`increment 2's CSS added without checking labels is non-empty`) —
+  and `test_a_source_with_no_marks_renders_byte_identically_apart_from_the_stamp` went red
+  alone, neighbours green. Snapshot-restored; 70 pass
+  · **still to build: increments 2+** — the rail/strip presentation, the tab, next/prev.
+  **Increment 1 hands increment 2 a guarantee it should not squander:** every mark's `id` is on
+  the marked element itself, so next/prev can key off it directly with nothing to invent
+  · **the owed measurement LANDED 2026-07-28 07:26 (`1696657`, `ccc @grok`), and it refuted the
+  geometry the design rests on.** Doc `.dreamwork/docs/measurements/367-two-line-tab-geometry.md`,
+  reproducible script `dev/capture/marktab-geometry.mjs`, screenshots under
+  `.dreamwork/docs/measurements/367-tabs/`. **A worst-case ~6-word two-line tab is 180×32.3px,
+  not the 96px flag every number in the plan assumed.** Consequences, all measured:
+    · **the 780px cliff does not hold — it moves to ~830px.** The tab fits inside `.wrap` down
+    to 830 (by 0.5px), is past the wrap at 820, and is **clipped past the page edge at 810 and
+    at 780**. Typical authored labels are 117–130px and would have hidden this; the worst case
+    is what decides a no-truncation design
+    · **vertical collision is possible in real documents.** Tab height 32.3px is the minimum
+    top-to-top gap; this artifact's densest adjacent block pair (`section#long` → `p.read`) is
+    **29.2px**. Section-level marks are safe (329–929px apart); block-level adjacent marks are
+    not
+    · **the strip below the cliff needs its own answer for 5–7 marks.** At the soft cap of 7,
+    worst-case labels need **3 rows / ~214px**; typical labels 2 rows / ~140px. He removed
+    truncation, so "shrink it" is not available
+  · **coordinator verified independently:** re-ran the lane's script and every number reproduced
+  **byte-identically**, including the screenshots — the measurement is deterministic, which is
+  stronger than the criterion asked for. I also looked at the images myself rather than reading
+  its vision notes. The 780px shot shows the tab clipped **mid-word**, and carries an irony worth
+  keeping: the artifact's own table in that same image reads *"780 · 134 · yes — and this is the
+  last one"*, so the design doc is being falsified by the prototype rendered on top of it
+  · **one boundary the lane did not name** (coordinator perimeter audit): its collision shot
+  uses **identical labels** for both tabs, which exaggerates "reads as one continuous chrome
+  mass" — distinct labels would separate better. The geometric finding stands regardless, and so
+  does the fix (a minimum gap or a divider), so this changes the evidence's strength and not the
+  conclusion
+  · **derived decisions, mine and reversible — these follow from his ruling rather than adding
+  to it**, and increment 2's brief carries them: **(i)** the rail/strip switch moves to the
+  measured wrap-fit boundary rather than staying at the literal 780, because he ruled no
+  truncation and a clipped flag is worse than no flag; **(ii)** two marks closer than the tab
+  height are the renderer's problem, not the author's — offset or stack them, and refuse only if
+  that is impossible, in the voice of the existing no-id refusal
+  · **one question is genuinely his and is NOT derivable**: at 5–7 marks the strip becomes
+  ~140–214px of chrome on a narrow screen. That is a reading-experience price, and he is the only
+  one who can say whether it is worth paying or whether the strip should cap what it *shows*
+  while next/prev still walks them all. Owed to him with an artifact
+  · the first increment is unchanged by the rulings: the source contract in `file-formats.md`
+  plus the "declares no marks ⇒ byte-identical output" check, red first, which touches no
+  artifact — and it is the one that makes the frame change safe to ship before any artifact
+  adopts it
+
+  · related: **#396, #417, #415**
+  · **INCREMENT 2a LANDED** `d4cbba8` `a818bf8` (+ `markrail` registered in the `justfile`, which the
+  brief had failed to grant — ratified by relay). `ccc @glm52`. The rail, the flag, next/prev, above
+  the cliff only; **below 860px nothing renders**, deliberately, because 2b is his call
+  · **coordinator verification, all three owed checks done.** (1) **The motion red re-run and it is
+  discriminating**: injecting `scroll-behavior:smooth` into the template's `html` rule fails exactly
+  *"...and LANDS SETTLED — an instant jump, not a smooth journey (0 part-way)"* plus its
+  reduced-motion twin, while every geometry neighbour stayed green. Restored from a `cp` snapshot,
+  byte-exact. First attempt injected into a `html {` rule that does not exist and the guard passed —
+  a green red-run, caught, not believed. (2) **Guard green at load 26.6**, which this repo's
+  asymmetry rule makes conclusive. (3) **The retired byte-identity test is not weaker**: the lane
+  dropped only the frozen whole-document digest and kept `_prechange_review_artifact`'s
+  content-resolution, comparing the **body region** against the live pre-change builder — so the
+  drift the digest existed to catch is still caught directly, and it no longer false-fails on frame
+  CSS the template is supposed to gain
+  · its `ch`-resolution finding is genuinely subtle and correct — a one-element flag would resolve
+  `--measure:78ch` against the *tab's* narrower font, so the flag is an outer block inheriting the
+  body font plus an inner visible postit
+  · **probing its caveat found #396 (P1)** — see that entry. The caveat's own axis was clean at three
+  densities; the axis it held constant was the element type
+  · **still open for 2b**: the strip below the cliff, awaiting his ruling on the artifact  · **HIS RULING
+  ARRIVED 2026-07-28 15:11 and sat unprocessed for a day — found by the current coordinator 2026-07-29
+  17:36.** He took **C with a collapsible index**: *"can we do C but: add a little double chevron on RHS
+  indicating that the bar is collapsible, and when it expands it should show a list of the marks. Collapsed
+  by default."* So 2b's spec: default collapsed at the walk height (~32px); a double chevron at the right
+  edge as the affordance; expanded reveals the labelled marks; `transitions.md` governs the expand/collapse
+  with no exception; `aria-expanded` and keyboard parity not optional; whether the expanded list replaces
+  the walk row or sits beneath it, and whether expanded state persists, left to the implementer. **2b is
+  UNSTARTED** — dispatch it.  · **PREVIEWS LANDED `98670ae` (increment only; #367 STAYS OPEN awaiting his ruling)** — he asked
+  at 14:52 to see A/B/C before deciding. `ccc @grok`, **13 minutes** end to end:
+  `.dreamwork/review/367-option-previews.html` + source + six screenshots + a rail reference +
+  `measures.json`, every figure measured from the rendered DOM at load and red-proved by changing
+  a row count and watching the caption follow
+  · **it corrected a number I had given HIM**: the entry said option A costs ~214px of chrome at
+  seven marks; measured it is **167.9px** in 3 rows (B 127.2, C 31.8, unchanged at 640). The 214
+  was extrapolated from a 180px worst-case tab and never observed. Also *"the reading column is
+  fixed at 613.5px"* is true at 780 and false at 640 (608 — 78ch stops fitting); **the 16px outer
+  margin does hold at both**, so the no-lateral-space argument the decision rests on is intact
+  · **the rec survives but its shape changed**, and both the lane and I say so independently after
+  looking at the pixels: **A reads lighter than its number implied** — three tidy rows of
+  product-shaped pills — so if he wants the index before walking, A is more defensible than my
+  figure made it sound. B looks worse in pixels than in prose. C reads as a usable walk, not a stub
+  · **the two lint WARNs naming this entry are correct and are a grammar gap, not a mistake**: a
+  merge commit that lands an *increment* of a multi-increment task is indistinguishable from one
+  that closes it, so `#367` reads as "open but already merged". Same class as `#415` — a checker
+  narrower than the work it describes. Recorded there rather than silenced here
+  · 2b merged (669ea439): below-cliff markstrip per his C+chevron ruling — native details disclosure reusing details::details-content (transitions.md), list beneath the walk so next/prev stay available, collapsed every load (offline-clean forbids persistence), restamp of 19 artifacts v1+00e8ce0d. Lane red-first + 2 red-proofs; coordinator red-proof: neutering the strip plant fails 3 markstrip tests, restored byte-identical. 114 review-artifact tests green, lint clean, audit exit 0. All increments now landed: rail above cliff, strip below, next/prev, previews+measures. ADOPTION NOTE: no source declares data-mark yet, so rail+strip are latent until an authoring dreamer names a review's essentials — the forcing function working as designed. No deploy needed (template+artifacts served from disk; watch.py untouched). Lane model: grok-4.5 (415s, 73 tool calls — the output-discipline redispatch survived where the truncated first attempt did not).
+
 - **#454** — questions collapse to a rolled-scroll card of 5-6 lines, persisted like other UI state ·
   **P2** · dashboard/asking · origin: **human** ·
   **human via watch 2026-07-29 01:06:** *"questions on the questions page should be collasible. However, the
