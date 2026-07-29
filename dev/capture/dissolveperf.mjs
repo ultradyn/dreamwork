@@ -1,6 +1,17 @@
 /* dissolveperf — #449: the question→review dissolve is framey. A CAPTURE, not a
    guard (see footer): it measures and prints; it gates nothing.
 
+   #483 (2026-07-29): #453 landed the successor this file named — the feImage
+   liquify IS the default now (MIST_ON=true, MIST_IMPL='feimage'), so the
+   baseline arm measures the CURRENT mechanism, and a `turbulence` arm
+   re-selects the shelved #449 field so the two mechanisms stay comparable in
+   one run. What that comparison SHOWS is in the foot's reading comment — and
+   it is not the naive expectation: #453 changed BOTH impls to filter the
+   ghost only (the arriving view rides compositor CSS blur either way), so
+   the old two-filter route no longer exists to A/B, and the arms differ in
+   FIELD mechanism at ONE rasterisation each. The reading comment at the foot
+   is the current truth; the #449 record below is kept as history.
+
    The human (2026-07-29) reported framiness on ONE route change — question→
    review — and suspected the SVG liquify ("the SVG liquify stuff, maybe? … a
    lot of elements … recent addition … collapsible sections … liquify effect").
@@ -46,12 +57,18 @@
    stops liquifying to gain frames has traded away the thing the page exists to
    be"). So no CHEAP, in-constraint fix exists in this increment.
 
-   The non-refuted successor is the human's texture idea done as the one thing
-   that escapes per-frame feTurbulence: pre-render the noise ONCE to a canvas/
-   image and consume it via feImage, animating the field by feOffset/feTile (or
-   two interfering layers). Whether Chrome caches an feImage source across
-   frames — and whether a translated static field reads as the gesture evolving —
-   is unmeasured and is the successor task's first question.
+   The successor this capture named — the human's texture idea done as the one
+   thing that escapes per-frame feTurbulence — was answered by #453 (1e0bd0e):
+   pre-rendered noise consumed via feImage, the field moved by feOffset/feTile,
+   ONE rasterisation on the departing ghost (the arriving haze is compositor
+   CSS blur). Chrome does cache the feImage source across frames, and #453
+   measured ~+40% frames over the two-filter turbulence route in this harness.
+   MIST_IMPL='feimage' is now the DEFAULT, so `baseline` below IS the feImage
+   mechanism; the `turbulence` arm re-selects the shelved #449 field. Both
+   impls now filter the ghost ONLY, so the arms are an equal-rasterisation
+   A/B of field mechanism — and #453's +40% was the 2→1 rasterisation cut,
+   which no MIST_IMPL value can re-select (the second filter is deleted, not
+   gated). See the foot's reading comment for what the arms show.
 
    WHY THIS IS A CAPTURE, NOT A GUARD. A perf threshold on this host is a load
    meter, not a check: baseline frames ranged 4–20 and fmax 110–540ms across
@@ -89,6 +106,18 @@ const HOOK = `(() => {
   window.requestAnimationFrame = function(cb) {
     return orig(function(ts){ window.__raf.push(performance.now()); return cb(ts); });
   };
+  // #483: record every dissolve filter the page APPLIES (distinct values, in
+  // order). This is the precondition evidence for the mechanism A/B — the
+  // baseline must show url(#dissolveOut) and the turbulence arm
+  // url(#dissolveOutT), or an arm that "measures turbulence" while running
+  // feImage reads the same number twice and calls it a comparison.
+  window.__mists = [];
+  const obs = new MutationObserver(mrs => { for (const m of mrs) {
+    const f = (m.target.style && m.target.style.filter) || '';
+    if (f.includes('dissolve') && window.__mists[window.__mists.length - 1] !== f) window.__mists.push(f);
+  }});
+  const go = () => obs.observe(document.body, {attributes:true, attributeFilter:['style'], subtree:true});
+  if (document.body) go(); else document.addEventListener('DOMContentLoaded', go);
 })();`;
 // I1: freeze baseFrequency writes only (refutes the baseFrequency-invalidation
 // hypothesis). Faithful to deleting the two `tOut/tIn.setAttribute('baseFrequency'…)`
@@ -116,12 +145,33 @@ const C_NOFILTER = HOOK + `(() => {
   const go = () => obs.observe(document.body, {attributes:true, attributeFilter:['style'], subtree:true});
   if (document.body) go(); else document.addEventListener('DOMContentLoaded', go);
 })();`;
-const COND = { baseline: HOOK, freezeBf: C_FREEZEBF, clamp: C_CLAMP, noFilter: C_NOFILTER };
+const COND = { baseline: HOOK, turbulence: HOOK, freezeBf: C_FREEZEBF, clamp: C_CLAMP, noFilter: C_NOFILTER };
+// The turbulence arm carries the SAME init script as baseline; the difference
+// is the served document. MIST_IMPL is a `const` baked into the page by
+// watch.py, so no init script can re-select it — the honest lever is the one
+// a human would use, editing that one line, done here by rewriting the served
+// HTML in flight. The rewrite targets the exact source line; if watch.py ever
+// rewords it, rewrites comes back 0 and the arm reports itself unconfirmed
+// instead of silently measuring feImage twice.
+const MIST_LINE = "const MIST_IMPL = 'feimage';";
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 
-async function runOnce(condInit) {
+async function runOnce(condInit, turb) {
   const ctx = await br.newContext({ viewport: { width: 1440, height: 900 } });
+  let rewrites = 0, rewriteMiss = false;
+  if (turb) await ctx.route('**/*', async route => {
+    const req = route.request();
+    // only the TOP-LEVEL shell carries MIST_IMPL — the review route's artifact
+    // iframe (#reviewframe) is a document request too, and it must neither be
+    // rewritten nor counted as a miss.
+    if (req.resourceType() !== 'document' || req.frame().parentFrame()) return route.continue();
+    const resp = await route.fetch();
+    const body = await resp.text();
+    if (!body.includes(MIST_LINE)) { rewriteMiss = true; return route.fulfill({ response: resp, body }); }
+    rewrites++;
+    return route.fulfill({ response: resp, body: body.replace(MIST_LINE, "const MIST_IMPL = 'turbulence';") });
+  });
   await ctx.addInitScript(condInit);
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(String(e)));
@@ -135,11 +185,17 @@ async function runOnce(condInit) {
   await sleep(1500);   // dissolve (DREAM_MS 1150) + settle
   const r = await p.evaluate(() => {
     const v = document.getElementById('view');
-    return { raf: window.__raf.slice(), review: document.body.classList.contains('review'),
+    return { raf: window.__raf.slice(), mists: window.__mists.slice(),
+      review: document.body.classList.contains('review'),
       reviewH: document.documentElement.scrollHeight, vN: document.querySelectorAll('#view *').length,
       vW: v ? v.offsetWidth : 0, vH: v ? v.offsetHeight : 0 };
   });
   await ctx.close();
+  // which mechanism the ghost ACTUALLY wore, from the filters the page applied:
+  // 'T' = shelved two-filter feTurbulence, 'fe' = cached feImage texture,
+  // '?' = no dissolve filter seen (arm measured nothing — say so, loudly).
+  const mist = r.mists.some(f => f.includes('#dissolveOutT') || f.includes('#dissolveInT')) ? 'T'
+    : r.mists.some(f => f.includes('#dissolveOut') || f.includes('#dissolveIn')) ? 'fe' : '?';
   // distinct-frame clustering: callbacks <8ms apart are one frame (stepFx +
   // shader share the frame). The count and the inter-FRAME gap distribution are
   // the load-bearing signal; a raw inter-callback gap is an instrument artefact.
@@ -149,26 +205,27 @@ async function runOnce(condInit) {
   const gaps = [];
   for (let i = 1; i < frames.length; i++) gaps.push(frames[i] - frames[i - 1]);
   gaps.sort((a, b) => a - b);
-  return { errs, review: r.review, reviewH: r.reviewH, vN: r.vN, vW: r.vW, vH: r.vH,
+  return { errs, mist, rewrites, rewriteMiss, review: r.review, reviewH: r.reviewH, vN: r.vN, vW: r.vW, vH: r.vH,
     frames: frames.length,
     fmax: gaps.length ? +gaps.at(-1).toFixed(1) : null,
     stall50: gaps.filter(g => g > 50).length };
 }
 
-const REPS = 10;
-const labels = ['baseline', 'freezeBf', 'clamp', 'noFilter'];
+const REPS = +(process.env.DP_REPS || 10);   // env knob for quick iterations; 10 for a real read
+const labels = ['baseline', 'turbulence', 'freezeBf', 'clamp', 'noFilter'];
 const seq = []; for (let i = 0; i < REPS; i++) seq.push(...labels);
-for (const l of labels) await runOnce(COND[l]);   // warmup (discarded)
+for (const l of labels) await runOnce(COND[l], l === 'turbulence');   // warmup (discarded)
 
-console.log(`# dissolveperf #449 — load ${loadavg()} on ${cores} cores; ${REPS} reps each, interleaved`);
+console.log(`# dissolveperf #449/#483 — load ${loadavg()} on ${cores} cores; ${REPS} reps each, interleaved`);
 console.log(`# route: /questions -> /review (p=${RP}, q=longest body ${question.body.length} chars); 1440x900; DREAM_MS=1150`);
 console.log(`# metric: distinct rAF frames in [tNav, tNav+1300] (cluster<8ms=1frame); fmax=largest inter-frame gap(ms)`);
+console.log(`# baseline IS the current default (MIST_ON=true, MIST_IMPL='feimage', #453); turbulence re-serves the page with MIST_IMPL='turbulence' (#449's shelved field, same one-filter dissolve)`);
 const res = {};
 for (const l of labels) res[l] = [];
 for (const l of seq) {
-  const r = await runOnce(COND[l]);
+  const r = await runOnce(COND[l], l === 'turbulence');
   res[l].push(r);
-  console.log(`${l.padEnd(9)} frames=${String(r.frames).padStart(3)} fmax=${String(r.fmax).padStart(7)} stall50=${String(r.stall50).padStart(2)} errs=${r.errs.length} [load ${loadavg()}]`);
+  console.log(`${l.padEnd(10)} mist=${r.mist.padEnd(2)} rw=${r.rewrites}${r.rewriteMiss ? '!' : ''} frames=${String(r.frames).padStart(3)} fmax=${String(r.fmax).padStart(7)} stall50=${String(r.stall50).padStart(2)} errs=${r.errs.length} [load ${loadavg()}]`);
 }
 function summ(a, k) {
   const v = a.map(r => r[k]).filter(x => x != null).sort((x, y) => x - y);
@@ -176,13 +233,34 @@ function summ(a, k) {
   const m = +(v.reduce((s, x) => s + x, 0) / v.length).toFixed(1);
   return `mean=${m} min=${v[0]} max=${v.at(-1)}`;
 }
+const mean = (a, k) => { const v = a.map(r => r[k]).filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
 const g = res.baseline[0];
 console.log(`\n# review settled: body.review=${g.review} H=${g.reviewH}px (${g.vN} els) view ${g.vW}x${g.vH}`);
+// PRECONDITIONS, asserted from the run's own evidence (a green A/B over two
+// arms that ran the same mechanism is the #483 trap — see HOOK comment):
+// every turbulence rep must have worn a dissolveOutT/InT filter and rewritten
+// the MIST_IMPL line exactly once; no other arm may show a T filter.
+const tOK = res.turbulence.every(r => r.mist === 'T' && r.rewrites === 1 && !r.rewriteMiss);
+const bOK = ['baseline', 'freezeBf', 'clamp', 'noFilter'].every(l => res[l].every(r => r.mist !== 'T'));
+console.log(`# precondition: turbulence arm engaged #dissolveOutT on all ${REPS} reps (rewrite=1 each): ${tOK ? 'CONFIRMED' : '!! NOT CONFIRMED — the arm may have measured feImage twice'}`);
+console.log(`# precondition: no T filter in baseline/freezeBf/clamp/noFilter: ${bOK ? 'CONFIRMED' : '!! T filter seen outside the turbulence arm'}`);
 console.log('# summary (frames higher=better; fmax/stall lower=better)');
 for (const l of labels) {
-  console.log(`# ${l.padEnd(9)} frames ${summ(res[l], 'frames')} | fmax ${summ(res[l], 'fmax')} | stall50 ${summ(res[l], 'stall50')}`);
+  console.log(`# ${l.padEnd(10)} frames ${summ(res[l], 'frames')} | fmax ${summ(res[l], 'fmax')} | stall50 ${summ(res[l], 'stall50')}`);
 }
-console.log('\n# reading: freezeBf≈baseline (baseFrequency NOT the cost); clamp≈baseline (area NOT the');
-console.log('# cost); only noFilter recovers frames (+128%) — but noFilter is forbidden by transitions.md');
-console.log('# (no mist = less gesture). Successor: feImage of a pre-rendered noise texture. See header.');
+const bM = mean(res.baseline, 'frames'), tM = mean(res.turbulence, 'frames');
+const bS = mean(res.baseline, 'stall50'), tS = mean(res.turbulence, 'stall50');
+if (bM && tM) console.log(`# feImage vs turbulence: ${bM.toFixed(1)} vs ${tM.toFixed(1)} frames (${(100 * (bM - tM) / tM).toFixed(0)}%) | stall50 ${bS.toFixed(1)} vs ${tS.toFixed(1)}`);
+console.log('\n# reading: baseline is the feImage liquify (#453) — ONE rasterisation on the ghost.');
+console.log('# turbulence runs the SAME one-filter dissolve with #449\'s live feTurbulence field');
+console.log('# re-selected: #453 moved the arriving view to compositor CSS blur for BOTH impls,');
+console.log('# so the arms differ in FIELD MECHANISM at an equal rasterisation count, and frame');
+console.log('# PARITY between them is the expected result — it re-confirms #453\'s measured cost');
+console.log('# model (watch.py: the per-frame price is the rasterisation COUNT, nothing else;');
+console.log('# "feImage≈feTurbulence, static≈animated ... one ≈ 34"). Where the live field still');
+console.log('# pays is the stall50 column. The +40% #453 win was the 2→1 rasterisation cut; the');
+console.log('# old two-filter route is deleted code, not a gated one, and cannot be re-selected.');
+console.log('# noFilter stays the CSS-only reference: the most frames, and forbidden by');
+console.log('# transitions.md (no mist = less gesture). freezeBf/clamp keep their #449 meaning.');
+console.log('# See header.');
 await br.close();
