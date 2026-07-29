@@ -388,6 +388,11 @@ POSTURE_DELEGATION_DESC = {
     "assist": "a helper on average · target between 0.5 and 1.5",
     "delegate": "several helpers · target 2+; pairs may share one worktree",
 }
+# #342 — delivery: when he is interrupted. Contract copy, not marketing.
+POSTURE_DELIVERY_DESC = {
+    "instant": "wake the loop now · every kind fires the moment you send it",
+    "batched": "drain on the next tick · do-now/do-next still pre-empt",
+}
 # Hoisted early so lint can `import watch` without waiting for the ledger
 # section thousands of lines later. Single definition — the ledger block
 # reuses this name, never restates.
@@ -5595,6 +5600,10 @@ function readPostPending() {
     if (POSTURE_STOPS_PACE.indexOf(p.pace) < 0) return null;
     if (POSTURE_STOPS_ASKING.indexOf(p.asking) < 0) return null;
     if (typeof p.delegation !== 'number' || p.delegation < 0) return null;
+    // delivery is optional in a stale pending cache — default it to instant
+    // rather than rejecting, so a pre-#342 pending entry still resumes.
+    if (p.delivery != null && POSTURE_STOPS_DELIVERY.indexOf(p.delivery) < 0)
+      return null;
     if (typeof p.until !== 'number') return null;
     if (p.phase === 'cancel') {
       if (Date.now() >= p.until) { localStorage.removeItem(k); return null; }
@@ -5616,6 +5625,7 @@ function writePostPending(draft, until, owner) {
     if (!k) return;
     localStorage.setItem(k, JSON.stringify({
       pace: draft.pace, asking: draft.asking, delegation: draft.delegation,
+      delivery: draft.delivery,
       until, owner: owner || postTabId(),
     }));
   } catch (e) {}
@@ -5626,6 +5636,7 @@ function writePostCancel(draft) {
     if (!k) return;
     localStorage.setItem(k, JSON.stringify({
       pace: draft.pace, asking: draft.asking, delegation: draft.delegation,
+      delivery: draft.delivery,
       phase: 'cancel', until: Date.now() + 800, owner: postTabId(),
     }));
   } catch (e) {}
@@ -5641,10 +5652,12 @@ function committedPosture(d) {
   const pace = POSTURE_STOPS_PACE.indexOf(p.pace) >= 0 ? p.pace : POSTURE_STOPS_PACE[0];
   const asking = POSTURE_STOPS_ASKING.indexOf(p.asking) >= 0
     ? p.asking : POSTURE_STOPS_ASKING[0];
+  const delivery = POSTURE_STOPS_DELIVERY.indexOf(p.delivery) >= 0
+    ? p.delivery : 'instant';
   let dlg = 0;
   try { dlg = Math.max(0, parseInt(p.delegation, 10) || 0); } catch (e) { dlg = 0; }
   return {
-    pace, asking, delegation: dlg,
+    pace, asking, delegation: dlg, delivery,
     source: p.source === 'file' ? 'file' : 'derived',
     delegation_label: p.delegation_label || delegationLabel(dlg),
   };
@@ -5805,6 +5818,7 @@ async function commitPosture(draft, gen, opts) {
         pace: draft.pace,
         asking: draft.asking,
         delegation: draft.delegation,
+        delivery: draft.delivery,
         from: location.pathname + location.search,
         tab: postTabId(),
         orphan: orphan || false,
@@ -5824,6 +5838,7 @@ async function commitPosture(draft, gen, opts) {
         pace: draft.pace,
         asking: draft.asking,
         delegation: draft.delegation,
+        delivery: draft.delivery,
         source: 'file',
         delegation_label: delegationLabel(draft.delegation),
       };
@@ -5843,9 +5858,10 @@ function armPostureDraft(next) {
   const msg = document.getElementById('pmsg');
   if (msg) msg.textContent = '';
   const cur = committedPosture(data);
-  // Re-selecting the fully committed triple cancels any pending arm.
+  // Re-selecting the fully committed point cancels any pending arm.
   if (next.pace === cur.pace && next.asking === cur.asking
-      && next.delegation === cur.delegation && cur.source === 'file') {
+      && next.delegation === cur.delegation
+      && next.delivery === cur.delivery && cur.source === 'file') {
     postArmGen++;
     postArmShouldCommit = false;
     writePostCancel(cur);
@@ -5864,7 +5880,7 @@ function armPostureDraft(next) {
   postArmShouldCommit = true;
   postDraft = {
     pace: next.pace, asking: next.asking, delegation: next.delegation,
-    source: 'file',
+    delivery: next.delivery, source: 'file',
   };
   writePostPending(postDraft, until, postTabId());
   paintPostureSelection(postDraft, false);
@@ -5873,9 +5889,11 @@ function armPostureDraft(next) {
 function pickPostureAxis(axis, stop) {
   if (axis === 'pace' && POSTURE_STOPS_PACE.indexOf(stop) < 0) return;
   if (axis === 'asking' && POSTURE_STOPS_ASKING.indexOf(stop) < 0) return;
+  if (axis === 'delivery' && POSTURE_STOPS_DELIVERY.indexOf(stop) < 0) return;
   const base = postDraft || committedPosture(data);
   const next = {
     pace: base.pace, asking: base.asking, delegation: base.delegation,
+    delivery: base.delivery,
   };
   next[axis] = stop;
   armPostureDraft(next);
@@ -5887,6 +5905,7 @@ function stepPostureDelegation(delta) {
   if (n > POSTURE_DELEGATION_UI_MAX) n = POSTURE_DELEGATION_UI_MAX;
   armPostureDraft({
     pace: base.pace, asking: base.asking, delegation: n,
+    delivery: base.delivery,
   });
 }
 function posturePicker(d) {
@@ -5894,7 +5913,7 @@ function posturePicker(d) {
   const arm = pendingPostIsLive(pending) ? pending : null;
   const cur = arm
     ? { pace: arm.pace, asking: arm.asking, delegation: arm.delegation,
-        source: 'file' }
+        delivery: arm.delivery || 'instant', source: 'file' }
     : committedPosture(d);
   if (arm) postDraft = cur;
   const paceChips = POSTURE_STOPS_PACE.map(n =>
@@ -5912,6 +5931,16 @@ function posturePicker(d) {
     ` aria-checked="${n === cur.asking ? 'true' : 'false'}"` +
     ` aria-describedby="pdesc-text"` +
     ` onclick="pickPostureAxis('asking','${esc(n)}')">${esc(n)}</button>`
+  ).join('');
+  // #342: delivery — a fourth axis row reusing the pace/asking chip idiom
+  // verbatim (same .sgbtn.pchip class, same pickPostureAxis, the shared arm).
+  // No second gesture; the chip arrives and changes state the same way.
+  const deliveryChips = POSTURE_STOPS_DELIVERY.map(n =>
+    `<button type="button" role="radio" class="sgbtn pchip` +
+    `${n === cur.delivery ? ' on' : ''}" data-stop="${esc(n)}"` +
+    ` aria-checked="${n === cur.delivery ? 'true' : 'false'}"` +
+    ` aria-describedby="pdesc-text"` +
+    ` onclick="pickPostureAxis('delivery','${esc(n)}')">${esc(n)}</button>`
   ).join('');
   const dlgLab = delegationLabel(cur.delegation);
   const srcNote = cur.source === 'file'
@@ -5951,6 +5980,12 @@ function posturePicker(d) {
     `${esc(dlgLab)}</span></div>` +
     `<div class="pstephint">target, not a cap · 0 is occasional, not forbidden</div>` +
     `</div></div>` +
+    // #342 delivery axis — same .paxis/.paxis-chips shape as pace/asking.
+    `<div class="paxis" data-axis="delivery">` +
+    `<div class="paxis-lab" id="delivery-lab">delivery · when interrupted</div>` +
+    `<div class="sgroup paxis-chips" role="radiogroup" data-axis="delivery"` +
+    ` aria-labelledby="delivery-lab">` +
+    `<div class="sgind"></div>${deliveryChips}</div></div>` +
     `<div class="pdesc" id="pdesc" role="tooltip" aria-hidden="true">` +
     `<span class="pdesc-text" id="pdesc-text"></span></div>` +
     `<div class="parm" id="parm">` +
@@ -5973,6 +6008,8 @@ function postDescFor(axis, stop) {
   if (axis === 'asking' && POSTURE_ASKING_DESC[stop]) return POSTURE_ASKING_DESC[stop];
   if (axis === 'delegation' && POSTURE_DELEGATION_DESC[stop])
     return POSTURE_DELEGATION_DESC[stop];
+  if (axis === 'delivery' && POSTURE_DELIVERY_DESC[stop])
+    return POSTURE_DELIVERY_DESC[stop];
   return '';
 }
 function hidePostDesc(immediate) {
@@ -6102,7 +6139,8 @@ function syncPostureFromData() {
     if (document.getElementById('posture'))
       paintPostureSelection({
         pace: pending.pace, asking: pending.asking,
-        delegation: pending.delegation, source: 'file',
+        delegation: pending.delegation, delivery: pending.delivery || 'instant',
+        source: 'file',
       }, true);
     postArmShouldCommit = false;
     clearPostArmUI();
@@ -6113,7 +6151,8 @@ function syncPostureFromData() {
       postArmShouldCommit = true;
     const draft = {
       pace: pending.pace, asking: pending.asking,
-      delegation: pending.delegation, source: 'file',
+      delegation: pending.delegation, delivery: pending.delivery || 'instant',
+      source: 'file',
     };
     postDraft = draft;
     if (document.getElementById('posture'))
@@ -6134,9 +6173,12 @@ function syncPostureFromData() {
         const cur = committedPosture(data);
         if (p && !p.phase
             && (cur.pace !== p.pace || cur.asking !== p.asking
-                || cur.delegation !== p.delegation || cur.source !== 'file'))
+                || cur.delegation !== p.delegation
+                || cur.delivery !== (p.delivery || 'instant')
+                || cur.source !== 'file'))
           commitPosture({
             pace: p.pace, asking: p.asking, delegation: p.delegation,
+            delivery: p.delivery || 'instant',
           }, gen, { orphan: true });
       }, 200);
     }
@@ -6167,7 +6209,8 @@ window.addEventListener('storage', e => {
   postArmShouldCommit = false;
   const draft = {
     pace: pending.pace, asking: pending.asking,
-    delegation: pending.delegation, source: 'file',
+    delegation: pending.delegation, delivery: pending.delivery || 'instant',
+    source: 'file',
   };
   postDraft = draft;
   paintPostureSelection(draft, true);
@@ -10281,6 +10324,8 @@ def _get_page():
         + json.dumps(list(lint.POSTURE_STOPS_PACE)) + ";\n"
         + "const POSTURE_STOPS_ASKING = "
         + json.dumps(list(lint.POSTURE_STOPS_ASKING)) + ";\n"
+        + "const POSTURE_STOPS_DELIVERY = "
+        + json.dumps(list(lint.POSTURE_STOPS_DELIVERY)) + ";\n"
         + "const DELEGATION_POSTURES = "
         + json.dumps(list(lint.DELEGATION_POSTURES)) + ";\n"
         + "const POSTURE_DELEGATION_UI_MAX = "
@@ -10291,6 +10336,8 @@ def _get_page():
         + json.dumps(POSTURE_ASKING_DESC, ensure_ascii=True) + ";\n"
         + "const POSTURE_DELEGATION_DESC = "
         + json.dumps(POSTURE_DELEGATION_DESC, ensure_ascii=True) + ";\n"
+        + "const POSTURE_DELIVERY_DESC = "
+        + json.dumps(POSTURE_DELIVERY_DESC, ensure_ascii=True) + ";\n"
     )
     _PAGE_CACHE = _PAGE_TEMPLATE.replace("/*__POSTURE_VOCAB__*/", vocab)
     return _PAGE_CACHE

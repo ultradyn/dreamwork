@@ -7193,6 +7193,77 @@ class TestPosture(unittest.TestCase):
             self.assertEqual(
                 watch.collect(d)["posture"]["delivery"], "batched")
 
+    # ── #342 surface 3: the delivery dashboard chip ──────────────────────
+    def test_page_carries_delivery_vocabulary(self):
+        """The closed set is injected from lint (single source), not restated."""
+        self.assertIn(
+            "const POSTURE_STOPS_DELIVERY = "
+            + json.dumps(list(watch.POSTURE_STOPS_DELIVERY)),
+            watch.PAGE)
+
+    def test_delivery_chip_reuses_the_posture_picker_idiom(self):
+        """The delivery chip is a fourth axis row in the posture picker,
+        reusing the EXACT pace/asking idiom (same class, same picker fn, the
+        shared 10s arm) — authoring a second gesture is the failure
+        transitions.md / CLAUDE.md name. Asserted in source (browser guards
+        are the coordinator's merge-gate, not this lane's).
+
+        Production line: posturePicker builds a delivery .paxis row whose
+        chips come from POSTURE_STOPS_DELIVERY.map and fire pickPostureAxis.
+        """
+        # the chip row lives inside posturePicker, beside the other axes
+        idx = watch.PAGE.index('function posturePicker(')
+        end = watch.PAGE.find('/* Shared description for posture', idx)
+        self.assertGreater(end, idx)
+        body = watch.PAGE[idx:end]
+        self.assertIn('data-axis="delivery"', body)
+        self.assertIn('delivery-lab', body)
+        # driven from the closed set (not a hardcoded two-chip list)
+        self.assertIn('POSTURE_STOPS_DELIVERY.map', body)
+        self.assertIn("pickPostureAxis('delivery'", body)
+        # same chip class as pace/asking — no second gesture
+        self.assertIn("class=\"sgbtn pchip", body)
+        # no second arm: delivery routes through the shared posture arm, not
+        # its own. A second arm would be a second ceremony.
+        self.assertNotIn('armDelivery', watch.PAGE)
+        self.assertNotIn('commitDelivery', watch.PAGE)
+
+    def test_delivery_posts_through_the_shared_arm_and_posture_route(self):
+        """Production lines: commitPosture carries delivery in the POST body
+        and through the shared 10s arm (RUN_ARM_MS, one /posture route).
+
+        Scoped to the JSON.stringify POST body — a bare or function-wide
+        'delivery: draft.delivery' assertion is hollow (the optimistic
+        data.posture update and the pending cache carry it too), so the check
+        is sliced to the bytes the POST actually sends. A dropped field reds
+        here; the two other copies do not satisfy it.
+        """
+        # Slice the JSON.stringify({...}) the /posture fetch sends, not the
+        # whole fn (and not the tint POST, whose body:stringify comes first).
+        fi = watch.PAGE.index("fetch('/posture'")
+        si = watch.PAGE.index("body: JSON.stringify({", fi)
+        se = watch.PAGE.index("}),", si)
+        post_body = watch.PAGE[si:se]
+        self.assertIn('pace: draft.pace', post_body)
+        self.assertIn('delivery: draft.delivery', post_body)
+        # committedPosture carries delivery so the chip paints its selection
+        cp_i = watch.PAGE.index('function committedPosture(')
+        cp_end = watch.PAGE.index('function delegationLabel(', cp_i)
+        self.assertIn('POSTURE_STOPS_DELIVERY', watch.PAGE[cp_i:cp_end])
+        # no second arm: delivery routes through the shared posture arm
+        self.assertNotIn('armDelivery', watch.PAGE)
+
+    def test_delivery_desc_table_covers_both_stops(self):
+        """Contract copy present for both stops (hover descriptions)."""
+        for stop in watch.POSTURE_STOPS_DELIVERY:
+            self.assertIn(stop, watch.POSTURE_DELIVERY_DESC)
+            self.assertTrue(watch.POSTURE_DELIVERY_DESC[stop].strip())
+        self.assertIn('POSTURE_DELIVERY_DESC', watch.PAGE)
+        # postDescFor serves the delivery axis
+        pdf_i = watch.PAGE.index('function postDescFor(')
+        pdf_end = watch.PAGE.index('function hidePostDesc(', pdf_i)
+        self.assertIn("axis === 'delivery'", watch.PAGE[pdf_i:pdf_end])
+
 
 class TestDeliveryWakeRouting(unittest.TestCase):
     """#342 lane B surface 2 — per-kind wake routing.
