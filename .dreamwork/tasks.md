@@ -392,42 +392,6 @@ Next id: **485**
   recoverable. That restraint is the right call and it is why this entry is still open
   · **SWEEP DONE 2026-07-29 05:16, and it turned out not to be a row-by-row edit.** Looking for the rows to correct, there are none: `axes` and `contain` never wrote a model name into `tasks.md` or `handoffs.md` — the wrong attributions lived in this entry's own prose and in the lanes' reports, not in the durable record. What **is** in the record is ten `by grok (wt/…)` rows that a later reader will take for a model, so the sweep is a **notice at the top of `handoffs.md`** rather than a back-fill: `by grok` names the harness, both aliases run the grok CLI, a lane cannot know its own model, and the rows predating the notice mean *grok harness, model unknown*. Deliberately **not** back-filled — the dispatch alias is not recoverable after the fact and a model attribution is history, which this repo does not guess (the ledger's reserved *unknown* origin value exists for exactly this class — named here in prose rather than in its marker form, because the marker form inside an entry's body makes `lint` count two origins and claim neither). The notice goes in the **hot file a stale agent still reads**, per `#458`'s self-migration philosophy, rather than in a plan nobody opens; the forward rule is stated where the next row gets written: the dispatcher records the alias it passed and derives the model from config.
 
-- **#468** — the lane-containment backstop, and the briefs that predate the rule · **P2** ·
-  tooling/lane-safety · origin: **loop** · successor to `#465`, named in its design doc
-  · **two halves, both small.** (1) **R2, the pre-merge assertion**: walk the main tree's *dirty* paths,
-  enumerate live worktrees, report when a path no lane owns is dirty in the main checkout while a lane is
-  out. `#465` catches a commit; this catches an edit that has not reached one, which is the state that
-  aborted the held `#263` merge. (2) **retro-fit `Lane-owns:`** — `#465`'s check grandfathers every brief
-  written before the rule, and that is **all 101 of them**, so the guard protects nothing until a brief
-  declares ownership
-  · **do not make the loop's own commits harder** — the constraint that shaped `#465` binds this too
-  · related: **#465**
-  · **HALF (1) LANDED `64f0431`** — `lint.check_lane_containment_backstop`, and it needs **no hook**, so it
-  protects every checkout regardless of `--install`. It reads the same `Lane-owns:` declaration one step
-  earlier: a lane-owned path **dirty** in the main tree (staged, unstaged or untracked) is an ERROR, which is
-  the state that actually aborted the held `#263` merge before any commit existed
-  · **two defects in it were found by red-proofing it**, both now tested: it printed the ERROR *and* a clean
-  bill saying no owned path was dirty in the same run; and its branch parsing mishandled `refs/heads/wt/x`, so
-  it saw no lanes and the OK row silently never appeared. The second is the exact failure mode this repo keeps
-  paying for — a check that examines nothing looks identical to one that found nothing
-  · **remaining: half (2)**, retro-fitting `Lane-owns:` to briefs written before the rule. All 101 are
-  grandfathered; the first brief written after it (`462-deploy-action.md`) failed both brief checks on its
-  first commit because the marker was **bolded** and the parser could not see it — so the sweep is worth doing
-  for any brief that may be re-run
-  · **half 2 LANDED `1340e05`, merged `79ea572` — and `#468` STAYS OPEN on the R2 backstop's successor work.**
-  Coverage moved from *10 in scope, 65 grandfathered* to **54 in scope, 21 grandfathered**: 44 briefs declared,
-  **21 deliberately skipped and reported** rather than quietly included, because a wrong `Lane-owns:` refuses
-  commits and ambiguous prose is not worth that risk
-  · **half 1's own defect, found by running eight lanes (`f247fd6`).** With eight registered the coverage row
-  read *7 of 8*, and the gap was `wt/dreamers` resolving to `402-dreamers-shape.md` from an earlier session —
-  first match by **sorted filename**, `-` before `.`, declaring nothing. The lane was unprotected while the row
-  still counted it: the worst combination, because the row reads as reassurance. Eight task ids here carry more
-  than one brief. Ownership is now the **union** over every brief naming the lane, in both readers
-  · **and it caught the coordinator, correctly**, minutes later: editing `doc-map.md` in the main checkout while
-  `wt/ledgerdb` still owned it. The fix was to retire the finished lane's worktree, not to bypass the check —
-  which is the behaviour the guard exists to produce
-  · **R2 LANDED `94a8664` (lane `wt/premerge`, glm-5.2, merge `301050c`, 2026-07-29 05:46) — `#468` can close.** R2 is a **`pre-merge <branch>` subcommand** on `dev/lane_guard.py`, not a hook, and the argument is the one the brief asked for rather than tidiness: a `pre-merge-commit` hook **does not fire on a fast-forward**, which is the common lane merge, so the hook would be silently absent exactly when it mattered — and installing one is a separate consent ask whose first half is still un-granted. Its honest weakness is that it must be remembered, which is precisely what the ambient `lint` backstop already covers; R2 adds the two dimensions the backstop cannot reach — the **coordinator's own tracked dirt** and an **untracked file the merge would overwrite**. Three refusals (exit 1), each naming the reason and **one** action; three declines (exit 2) for not-main-checkout, unreadable `git status`, unresolvable branch — so a state it cannot evaluate fails loud instead of allowing silently. It **never moves work**: no stash, reset, checkout or merge, because eight lanes have run in this tree and a helpful cleanup is how an uncommitted hour disappears. It extracted **one** shared reader, `lint.lane_owned_paths`, rather than authoring a second — the brief's hard requirement, and the reason the `#402` two-brief shadowing cannot recur in one reader and not the other. **Coordinator-verified independently:** stubbing the untracked-clobber intersection to `[]` reds exactly `test_an_untracked_file_the_merge_would_clobber_refuses` and leaves its six neighbours green. 335 `test_lint.py` tests pass on master; lint clean.
-
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
@@ -3617,6 +3581,43 @@ Next id: **485**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#468** — the lane-containment backstop, and the briefs that predate the rule · **P2** ·
+  tooling/lane-safety · origin: **loop** · successor to `#465`, named in its design doc
+  · **two halves, both small.** (1) **R2, the pre-merge assertion**: walk the main tree's *dirty* paths,
+  enumerate live worktrees, report when a path no lane owns is dirty in the main checkout while a lane is
+  out. `#465` catches a commit; this catches an edit that has not reached one, which is the state that
+  aborted the held `#263` merge. (2) **retro-fit `Lane-owns:`** — `#465`'s check grandfathers every brief
+  written before the rule, and that is **all 101 of them**, so the guard protects nothing until a brief
+  declares ownership
+  · **do not make the loop's own commits harder** — the constraint that shaped `#465` binds this too
+  · related: **#465**
+  · **HALF (1) LANDED `64f0431`** — `lint.check_lane_containment_backstop`, and it needs **no hook**, so it
+  protects every checkout regardless of `--install`. It reads the same `Lane-owns:` declaration one step
+  earlier: a lane-owned path **dirty** in the main tree (staged, unstaged or untracked) is an ERROR, which is
+  the state that actually aborted the held `#263` merge before any commit existed
+  · **two defects in it were found by red-proofing it**, both now tested: it printed the ERROR *and* a clean
+  bill saying no owned path was dirty in the same run; and its branch parsing mishandled `refs/heads/wt/x`, so
+  it saw no lanes and the OK row silently never appeared. The second is the exact failure mode this repo keeps
+  paying for — a check that examines nothing looks identical to one that found nothing
+  · **remaining: half (2)**, retro-fitting `Lane-owns:` to briefs written before the rule. All 101 are
+  grandfathered; the first brief written after it (`462-deploy-action.md`) failed both brief checks on its
+  first commit because the marker was **bolded** and the parser could not see it — so the sweep is worth doing
+  for any brief that may be re-run
+  · **half 2 LANDED `1340e05`, merged `79ea572` — and `#468` STAYS OPEN on the R2 backstop's successor work.**
+  Coverage moved from *10 in scope, 65 grandfathered* to **54 in scope, 21 grandfathered**: 44 briefs declared,
+  **21 deliberately skipped and reported** rather than quietly included, because a wrong `Lane-owns:` refuses
+  commits and ambiguous prose is not worth that risk
+  · **half 1's own defect, found by running eight lanes (`f247fd6`).** With eight registered the coverage row
+  read *7 of 8*, and the gap was `wt/dreamers` resolving to `402-dreamers-shape.md` from an earlier session —
+  first match by **sorted filename**, `-` before `.`, declaring nothing. The lane was unprotected while the row
+  still counted it: the worst combination, because the row reads as reassurance. Eight task ids here carry more
+  than one brief. Ownership is now the **union** over every brief naming the lane, in both readers
+  · **and it caught the coordinator, correctly**, minutes later: editing `doc-map.md` in the main checkout while
+  `wt/ledgerdb` still owned it. The fix was to retire the finished lane's worktree, not to bypass the check —
+  which is the behaviour the guard exists to produce
+  · **R2 LANDED `94a8664` (lane `wt/premerge`, glm-5.2, merge `301050c`, 2026-07-29 05:46) — `#468` can close.** R2 is a **`pre-merge <branch>` subcommand** on `dev/lane_guard.py`, not a hook, and the argument is the one the brief asked for rather than tidiness: a `pre-merge-commit` hook **does not fire on a fast-forward**, which is the common lane merge, so the hook would be silently absent exactly when it mattered — and installing one is a separate consent ask whose first half is still un-granted. Its honest weakness is that it must be remembered, which is precisely what the ambient `lint` backstop already covers; R2 adds the two dimensions the backstop cannot reach — the **coordinator's own tracked dirt** and an **untracked file the merge would overwrite**. Three refusals (exit 1), each naming the reason and **one** action; three declines (exit 2) for not-main-checkout, unreadable `git status`, unresolvable branch — so a state it cannot evaluate fails loud instead of allowing silently. It **never moves work**: no stash, reset, checkout or merge, because eight lanes have run in this tree and a helpful cleanup is how an uncommitted hour disappears. It extracted **one** shared reader, `lint.lane_owned_paths`, rather than authoring a second — the brief's hard requirement, and the reason the `#402` two-brief shadowing cannot recur in one reader and not the other. **Coordinator-verified independently:** stubbing the untracked-clobber intersection to `[]` reds exactly `test_an_untracked_file_the_merge_would_clobber_refuses` and leaves its six neighbours green. 335 `test_lint.py` tests pass on master; lint clean.
+  · closed 2026-07-29 15:17, verified by the current coordinator: 301050c5 + 94a8664f resolve; dev/lane_guard.py pre-merge is in daily use (ran clean on every merge this session — 466/467/476/422 — and correctly declines an unresolvable branch). Entry's own text says R2's landing closes it. Both halves landed earlier (containment backstop 64f0431, Lane-owns retrofit 1340e05 + f247fd6, R2 301050c).
+
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
   P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
   · the existing row is for root-level `.dreamwork/docs/research-*.md` — a **different** location.
