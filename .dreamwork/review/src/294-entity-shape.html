@@ -1,0 +1,189 @@
+<!--dreamwork-review-source
+title: #294 · the entity-shape fork — split or flat
+identity: entity shape
+context: task #294 · decision before the import stage
+status: awaiting review
+headline: Increment 1 landed a join that models the thing S1 forbade. Keep the split, or flatten while the store still has zero rows and zero consumers.
+tag: decision needed before the import stage
+sub: task #294 · 29 July 2026 · the OPEN DESIGN FORK from tasks.md, asked
+skip: Skip to the decision
+skip_href: #decision
+-->
+<!--#nav-->
+<a class="full" href="#facts">the facts</a><a href="#shapes">the two shapes</a><a href="#igc">the matrix</a><a href="#commits">what each commits to</a><a href="#decision">decision</a>
+<!--#lead-->
+<p class="lead">#294's increment 1 landed on master at 06:07 (<code>50f4933</code>) with an
+<strong>entry/task split</strong> &mdash; <code>entry</code> + <code>task</code> + a
+<code>task_by_entry</code> join &mdash; following #346's ratified schema section literally. But that
+section predates #353: the three combined entries were split at <code>9fec0bf</code>, every entry is
+now one task, and S1 forbids new combined entries. #346's own ruling text says the consequence aloud
+&mdash; <em>"the schema then loses a table and every consumer loses a join, permanently"</em> &mdash;
+and #294's ratified plan agrees: <em>"today there is no join."</em> A lane has built the flat
+alternative (<strong>1b</strong>, <code>5c5e534</code> on <code>wt/294</code>, red-proved). This page
+asks which entity shape the import stage builds on.</p>
+<p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> the landed split
+(<code>50f4933</code>) stands by default and the import stage builds on it &mdash; the fork stays
+open, and flattening afterwards becomes the two-migrations error this page exists to avoid.</p>
+<div id="ask" class="ask-block">
+  <div class="label">The decision &mdash; one entity shape for the import stage</div>
+  <p class="ask-q"><strong>A</strong> &mdash; keep the landed split (<code>50f4933</code>:
+  <code>entry</code> + <code>task</code> + <code>task_by_entry</code>), #346's schema section as
+  written; or <strong>B</strong> &mdash; flatten to one <code>task</code> table (adopt
+  <code>5c5e534</code> from <code>wt/294</code> as increment 1b, replacing increment 1's entity shape
+  <strong>before</strong> the import stage). Everything else &mdash; <code>related</code>,
+  <code>depends</code>, <code>review_decision</code>, <code>task_event</code>, <code>task_state</code>,
+  the seeded <code>AUTOINCREMENT</code> &mdash; is identical in both and is not being asked.</p>
+  <p class="ask-answers"><span class="key">accepted answers</span>
+  <code>rec</code> (B, as recommended below) &nbsp;&middot;&nbsp; <code>A</code> / <code>B</code>
+  &nbsp;&middot;&nbsp; <code>B without the strictness</code> (flatten only) &nbsp;&middot;&nbsp; free
+  text</p>
+</div>
+<!--#call-->
+<div class="call"><strong>Recommendation: B &mdash; flatten.</strong> The ratified intent already chose
+this: S1's ruling and #294's plan both say the join goes, and <code>50f4933</code> followed a schema
+section written before that consequence landed. The flat schema is not a proposal &mdash; it is built,
+23 red-proofs with every injection restored, 21 ledger tests green (re-verified on this lane today).
+And the window where flattening is free closes at the import stage: today the store has no rows, no
+consumer, no cutover; the day after import, the same change is a data migration over permanent ids.
+The split's one real advantage &mdash; surviving a recurrence of combined entries &mdash; is already
+covered: S1 forbade them, and the <code>related(a,b)</code> n:n table you asked for at 01:23 is where
+that relation lives now.</div>
+<!--#aside-->
+<span class="big">0</span>
+<small>rows in today's ledger that need the entry/task join &mdash; all three combined entries were
+split at <code>9fec0bf</code> and S1 forbids new ones. 21/21 ledger tests green on the flat
+<code>5c5e534</code>, re-run on this lane 2026-07-29</small>
+<!--#body-->
+<section id="facts" aria-labelledby="fa-t">
+  <div class="label" id="fa-t">The facts, plainly</div>
+  <div class="summary-line"><span>1</span><span><strong>#346's ratified schema section carries the split</strong> &mdash; <code>entry</code> + <code>task</code> + <code>task_by_entry</code> (<code>task-store-schema.md</code>, 2026-07-28) &mdash; and it predates #353's landing.</span></div>
+  <div class="summary-line"><span>2</span><span><strong>#353 split the three combined entries</strong> (<code>#138/#156</code>, <code>#250/#251</code>, <code>#292/#293</code>) at <code>9fec0bf</code>; every entry is now one task, and S1 forbids new combined entries. The ledger's own text: <em>"<code>task(id PRIMARY KEY)</code> needs no entry/task split."</em></span></div>
+  <div class="summary-line"><span>3</span><span><strong>#346's own S1 ruling states the consequence</strong> &mdash; <em>"the schema then loses a table and every consumer loses a join, permanently"</em> &mdash; and #294's ratified plan repeats it: <em>"entry separated from task only where combined entries survive (S1 split, so today there is no join)."</em> The schema section was never updated to match.</span></div>
+  <div class="summary-line"><span>4</span><span><strong>The split landed anyway at 06:07</strong> (<code>50f4933</code>, increment 1) &mdash; a lane following the ratified schema section literally. It is sound and tested (14 pass on master); it was simply never folded, which is how the redundant dispatch that built 1b happened.</span></div>
+  <div class="summary-line"><span>5</span><span><strong>The flat alternative exists and is proved</strong>: <code>5c5e534</code> on <code>wt/294</code> (increment 1b) &mdash; one <code>task</code> table, 23 red-proofs with each injection restored, the removed <code>entry</code> table asserted absent. This lane re-ran its suite today: 21/21 green.</span></div>
+  <div class="summary-line"><span>6</span><span><strong>Everything else is identical in both.</strong> <code>related</code>, <code>depends</code>, <code>review_decision</code>, <code>task_event</code>, <code>task_state</code>, the lookup tables and the seeded <code>AUTOINCREMENT</code> sequence do not differ. The fork is <em>only</em> the entity shape.</span></div>
+</section>
+
+<section id="shapes" aria-labelledby="sh-t">
+  <div class="label" id="sh-t">The two shapes, side by side</div>
+  <p class="read"><strong>A &mdash; the landed split</strong> (<code>50f4933</code>): attributes on
+  <code>entry</code>, permanent ids on <code>task</code>, every read joins the two.</p>
+  <pre><code class="language-sql">CREATE TABLE entry (
+  entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  state    TEXT NOT NULL CHECK (state IN ('open','landed')),
+  title    TEXT NOT NULL,
+  body     TEXT NOT NULL,
+  priority TEXT REFERENCES priority_band(band),        -- nullable
+  priority_uncertain INTEGER NOT NULL DEFAULT 0,
+  type     TEXT REFERENCES task_type(type),
+  origin   TEXT CHECK (origin IS NULL
+             OR origin IN ('human','loop','unknown')),
+  body_digest TEXT, source_line INTEGER
+);
+CREATE TABLE task (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  entry_id INTEGER NOT NULL REFERENCES entry(entry_id),
+  ordinal  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX task_by_entry ON task(entry_id);</code></pre>
+  <p class="read"><strong>B &mdash; the flat entity</strong> (<code>5c5e534</code>, wt/294): one row per
+  permanent id, every attribute on <code>task</code>, no join anywhere.</p>
+  <pre><code class="language-sql">CREATE TABLE task (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  state    TEXT NOT NULL CHECK (state IN ('open','landed')),
+  title    TEXT NOT NULL,
+  body     TEXT NOT NULL,
+  priority TEXT NOT NULL REFERENCES priority_band(band),
+  priority_uncertain INTEGER NOT NULL DEFAULT 0,
+  type     TEXT REFERENCES task_type(type),
+  origin   TEXT NOT NULL
+             CHECK (origin IN ('human','loop','unknown')),
+  owner    TEXT,
+  blocked_on TEXT,        -- verbatim prose, never an edge
+  body_digest TEXT, source_line INTEGER
+);
+-- no entry table, no task_by_entry;
+-- related / depends / review_decision / task_event /
+-- task_state unchanged between the two</code></pre>
+  <p class="quiet">B bundles two strictness upgrades and two columns, all separable from the flatten
+  itself: <code>priority NOT NULL</code> (the 6 bandless entries are #353's to resolve pre-import) and
+  <code>origin NOT NULL</code> (absence below id 216 is derivable &mdash; S3 was withdrawn), plus
+  <code>owner</code> and <code>blocked_on</code> as verbatim prose.</p>
+</section>
+
+<section id="igc" aria-labelledby="ig-t">
+  <div class="label" id="ig-t">The IGC &mdash; two ideas, five goals</div>
+  <p class="read"><strong>G1</strong> the schema matches post-#353 reality (every entry is one task)
+  &middot; <strong>G2</strong> simplicity &mdash; no pointless join &middot; <strong>G3</strong> avoids
+  a two-migrations re-shape &middot; <strong>G4</strong> preserves the ratified design intent &middot;
+  <strong>G5</strong> robust if combined entries ever recur. The decisive error is written under each
+  ✘; a ? is a bounded exposure, explained.</p>
+  <div class="scroller"><table>
+  <thead><tr><th>idea</th><th>All</th><th>G1</th><th>G2</th><th>G3</th><th>G4</th><th>G5</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>A &middot; keep the split</strong><br><code>50f4933</code>, landed</td>
+      <td class="fail">✘<br><span class="dim">refuted on G1, G2, G4</span></td>
+      <td class="fail">✘<br><span class="dim">the join models exactly what <code>9fec0bf</code> removed &mdash; every read joins entry&harr;task 1:1 forever, for zero rows that need it</span></td>
+      <td class="fail">✘<br><span class="dim">two id namespaces (<code>entry_id</code> vs task id) and a join in every consumer &mdash; list, get, <code>?t=</code>, the importer &mdash; with nothing on the other side of it</span></td>
+      <td class="pass">✔<br><span class="dim">no re-shape &mdash; but only by committing to the join <em>permanently</em>; "split for now" is not an available reading of A</span></td>
+      <td class="fail">✘<br><span class="dim">S1's ratified ruling: "the schema then loses a table and every consumer loses a join, permanently"; #294's plan: "today there is no join." A preserves the superseded <em>text</em>, not the ratified <em>intent</em></span></td>
+      <td class="pass">✔<br><span class="dim">the split's one real advantage: a recurring combined entry fits with no re-shape</span></td>
+    </tr>
+    <tr class="row-accent">
+      <td><strong>B &middot; flatten to one task table</strong><br><code>5c5e534</code>, wt/294, red-proved</td>
+      <td class="pass">✔<br><span class="dim">survives; G5 is a bounded exposure, not a failure</span></td>
+      <td class="pass">✔<br><span class="dim">one row per permanent id &mdash; the store's shape is the ledger's shape</span></td>
+      <td class="pass">✔<br><span class="dim">no join, one id namespace; get / list / import read one table</span></td>
+      <td class="pass">✔<br><span class="dim">decide now, import once into the final shape &mdash; the re-shape happens while the store has zero rows and zero consumers, where it is free</span></td>
+      <td class="pass">✔<br><span class="dim">it <em>is</em> S1's stated consequence and #294's own "no join" line, implemented</span></td>
+      <td class="unknown">?<br><span class="dim">the one place flat pays: a recurrence would need a re-shape. Bounded because S1 <em>forbids</em> recurrence and the ratified <code>related(a,b)</code> n:n table is that relation's sanctioned home &mdash; the exposure is a case the design already ruled out</span></td>
+    </tr>
+  </tbody>
+  </table></div>
+  <div class="notice"><strong>G3 is why this is asked today, not after the import.</strong> The #294
+  entry names the error: <em>migrating into a schema that is then flattened is the two-migrations
+  error.</em> Before the import, flattening costs replacing a schema with no data and no consumer.
+  After the import, the same change is a data migration over permanent ids &mdash; the exact
+  double-migration you have warned about twice.</div>
+</section>
+
+<section id="commits" aria-labelledby="co-t">
+  <div class="label" id="co-t">What each choice commits to &mdash; read this before ruling</div>
+  <div class="choice"><strong>A &mdash; keep the split.</strong> You commit every consumer to the join,
+  permanently: #346's read verbs (<code>list</code> / <code>get</code> / <code>count</code>), the
+  <code>?t=</code> resolver, the import script, #264's write verbs, and the future Postgres port each
+  carry the <code>entry_id</code>&harr;task-id mapping and a join that is always 1:1. You keep two id
+  namespaces for one real one, and #346's finding-1 fixture ("get 138 and 156 return one body") keeps
+  protecting a case reality no longer contains. Because flattening after import is the two-migrations
+  error, <strong>A is not "split for now" &mdash; it is "split forever".</strong></div>
+  <div class="choice"><strong>B &mdash; flatten.</strong> You commit to replacing increment 1's entity
+  shape with <code>5c5e534</code> before the import stage &mdash; free today, because
+  <code>50f4933</code> has no production consumer, no data, and no cutover; its 14 tests are
+  superseded by 1b's suite. You accept S1's forbid as permanent and <code>related(a,b)</code> as the
+  only home for "same work" relations. Two strictness calls ride along, both #346's own post-ruling
+  lines: <code>priority NOT NULL</code> and <code>origin NOT NULL</code>. Answer <strong>"B without
+  the strictness"</strong> if you want the flatten only &mdash; they are separable.</div>
+</section>
+
+<section id="decision" aria-labelledby="d-t">
+  <div class="label" id="d-t">The decision</div>
+  <div class="choice"><strong>A or B &mdash; one entity shape for the import stage.</strong>
+  <div class="answer"><strong>Rec: B &mdash; flatten.</strong> (1) The ratified intent already chose
+  it: S1's ruling and #294's plan both say the join goes; <code>50f4933</code> followed a schema
+  section written before that consequence landed. (2) The flat schema is built and red-proved, not
+  proposed &mdash; re-verified green on this lane today. (3) The window where flattening is free
+  closes at the import stage; that is the entire urgency. (4) The split's only win (G5) is already
+  covered by S1's forbid plus the <code>related(a,b)</code> table you asked for at 01:23.</div></div>
+</section>
+
+<section id="approval" aria-labelledby="ap-t">
+  <div class="label" id="ap-t">What a ruling means, and what it does not</div>
+  <div class="approval">Ruling <strong>B</strong> authorises merging <code>wt/294</code>'s
+  <code>ledger_store.py</code>, <code>test_ledger_store.py</code> and the inc-1b plan note onto master
+  as increment 1b, replacing increment 1's entity shape. Ruling <strong>A</strong> closes the fork and
+  the import stage proceeds on <code>50f4933</code>'s schema. Either way, nothing else is authorised:
+  no import, no cutover, no CLI, no rename &mdash; those stay gated on #263 lane H and #352.</div>
+</section>
+<!--#footer-->
+task #294 &middot; the entity-shape fork &middot; sources: <code>.dreamwork/docs/plans/ledger-sqlite.md</code> &middot; <code>task-store-schema.md</code> &middot; <code>50f4933</code> &middot; <code>wt/294</code> @ <code>5c5e534</code>
