@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **486**
+Next id: **487**
 
 ## Open
 - **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
@@ -3052,6 +3052,17 @@ Next id: **486**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#486** — an expanded commit with a long subject and no body shows the full subject NOWHERE · P2 ·
+  dashboard/git-panel · origin: **human** · **human via watch `do-next` 2026-07-29 17:37:** *"when it's
+  just a subject, I end up seeing something like: `59ee5d8b fold #445 + #443: attention axes ratified,
+  cont...` … `(no message body — the subject is all of it)`. So the subject can be truncated, but then it
+  doesn't show the subject separately so some of the message isn't shown."*
+  · measured at filing: `.gsub` ellipsises in the header (`white-space:nowrap; text-overflow:ellipsis`,
+  `watch.py:771`), and `gitDetail`'s empty-body branch emits only the parenthetical — so the full subject
+  is genuinely unshown, worst exactly on the loop's own long fold subjects
+  · in progress (coordinator, inline — small and watch.py-adjacent to nothing a lane holds)
+  · landed 60d8d6da (coordinator inline, small — Max's do-next 17:37). gitDetail's empty-body branch now emits gfullsub with the full subject ahead of the parenthetical; the header's .gsub may ellipsise, so the one line a no-body commit has to say was previously shown nowhere. gitrow guard: LONG_SUBJ fixture planted in the right CREATION-order slot (the panel walks the parent chain — a commit appended at the end lands at [0] and shifts every index the checks select, measured not theorised), no-click read (leaving a second row open broke the tick-survival block's exactly-one precondition). Red-first both levels; independent red-proof: removing the gfullsub emission fails exactly the pytest and the guard's #486 check. Design rule recorded in watch-design.md same commit.
+
 - **#443** — run modes conflate PACE with DELEGATION POSTURE, so there is no way to say *"idle-friendly, but
   use subagents"* · **P1** · loop-design/run-mode · origin: **human** · **human via watch 2026-07-28 22:18**
   · his words (dictated, lightly punctuated): *"We need to rethink how the Run modes work. Because when,
