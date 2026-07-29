@@ -7209,6 +7209,16 @@ class TestDeployAction(unittest.TestCase):
         # Deploy is a registered write route (E2 derives from the table).
         self.assertIn('"/deploy": _handle_deploy',
                       inspect.getsource(watch.make_handler))
+        # #490: mid-arm countdown must not re-call note/claim (restarts
+        # .dreamin ~4 Hz). The in-place textContent path + lastLeft gate
+        # are the production lines; reinstate unconditional c.note in
+        # setCount to red the browser half (staleremedy.mjs §3b).
+        arm_body = watch.PAGE.split("function armStaleDeploy(")[1].split(
+            "function fireStaleDeploy(")[0]
+        self.assertIn("lastLeft", arm_body)
+        self.assertIn("m.textContent = text", arm_body)
+        self.assertNotIn(
+            "c.note(`arms in ${left}s — then this page updates`", arm_body)
 
 
 class TestQuestionPriority(unittest.TestCase):
