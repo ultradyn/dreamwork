@@ -189,6 +189,19 @@ def _missing_pid(d: dict) -> bool:
     return pid is None or pid == "" or pid == 0
 
 
+def read_open_ids(dw, lpath):
+    """Open ids under `## Open`, dispatching on source_of_truth (#294 inc 7).
+
+    Returns ``list[int]`` — every id under Open, combined heads expanded.
+    Store mode queries ``store_ids_by_state``; markdown mode parses the
+    text. A missing store is fail-closed to markdown by ``source_of_truth``.
+    """
+    if source_of_truth(str(dw)) == "store":
+        open_strs, _ = store_ids_by_state(str(dw))
+        return [int(x) for x in open_strs]
+    return open_ids(lpath.read_text())
+
+
 def _evaluable(d) -> bool:
     """Whether an entry can be asked about at all (#402a).
 
@@ -344,11 +357,7 @@ def main(argv: list[str] | None = None) -> int:
     # authoritative after the cutover watermark; markdown stays for pre-cutover.
     # Both paths return the same list[int] of open ids — the rest of main is
     # unchanged. A missing store is fail-closed to markdown by source_of_truth.
-    if source_of_truth(str(dw)) == "store":
-        open_strs, _ = store_ids_by_state(str(dw))
-        ids = [int(x) for x in open_strs]
-    else:
-        ids = open_ids(lpath.read_text())
+    ids = read_open_ids(dw, lpath)
     if not ids:
         # An unreadable ledger and an empty one look identical to a parser, so
         # refuse rather than write `pending: 0` over a real count.
