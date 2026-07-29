@@ -1,8 +1,10 @@
 # Brief — #431: `just deploy`'s `pkill -f` kills any process that merely mentions the snapshot
 
-**Lane-owns:** `justfile`, `dev/deploy_state.py`, `file-formats.md`, new helpers under `dev/` (the
-"Files — Yours" section below, declared in #465's vocabulary; added 2026-07-30 when a revert re-committed
-this brief inside the guard's window — the lane landed at `522d30d`).
+Lane-owns: justfile, dev/deploy_state.py, file-formats.md, dev/
+
+(The ownership list is the "Files — Yours" section below, declared in #465's vocabulary; added 2026-07-30
+when a revert re-committed this brief inside the guard's window — the lane landed at `522d30d`. `dev/`
+covers new helpers.)
 
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/deploykill`**, branch **`wt/deploykill`**. Do not push, do not merge.
 **Never use `attn` under any circumstances.** Report by appending **once** to the absolute path
