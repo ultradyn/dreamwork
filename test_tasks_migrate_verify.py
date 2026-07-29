@@ -288,3 +288,50 @@ def test_import_report_prints_counts_and_seed(module, tmp_path):
     assert _import(module, FIXTURE, _scratch(tmp_path), out=out) == 0
     assert f"{len(d['all_ids'])} task rows" in out.getvalue()
     assert f"next id: {derived_next}" in out.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Live-repo acceptance — this repo's real tasks.md into a scratch DB.
+# ---------------------------------------------------------------------------
+def test_live_ledger_import_acceptance(module, tmp_path):
+    import sqlite3 as sq
+    from test_tasks_migrate_import import LIVE_LEDGER
+    text = LIVE_LEDGER.read_text()
+    d = _derived(text)
+    a = module.build_analysis(text, ledger_path=str(LIVE_LEDGER))
+    headless = {c["id"] for c in
+                a["conflicts"].get("section id without an entry", [])}
+    entries_ids = {i for ids, _ in d["entries"] for i in ids}
+    assert headless and headless.isdisjoint(entries_ids), (
+        "live ledger lost its groomed-id shape — revisit the headless rule")
+    db = _scratch(tmp_path)
+    out = io.StringIO()
+    rc = module.main(["--import", "--ledger", str(LIVE_LEDGER),
+                      "--to", db], out=out)
+    assert rc == 0, out.getvalue()
+    conn = sq.connect(f"file:{db}?mode=ro", uri=True)
+    rows = conn.execute("SELECT id, state FROM task").fetchall()
+    assert len(rows) == len(entries_ids)
+    assert {r[0] for r in rows} == entries_ids
+    # The band resolutions, derived from the dry-run's own conflict list.
+    compounds = {c["id"] for c in
+                 a["conflicts"].get("band outside closed set", [])}
+    bandless = {c["id"] for c in
+                a["conflicts"].get("missing band (P2 by contract)", [])}
+    assert len(compounds) >= 3 and len(bandless) >= 18, (
+        "live ledger's known conflict floors moved — re-derive expectations")
+    for (i,) in conn.execute("SELECT id FROM task WHERE priority_uncertain=1"):
+        assert i in compounds, f"#{i} uncertain without a compound report"
+    for i in compounds:
+        assert conn.execute("SELECT priority FROM task WHERE id=?",
+                            (i,)).fetchone()[0] == "P1"
+    for i in bandless:
+        assert conn.execute("SELECT priority FROM task WHERE id=?",
+                            (i,)).fetchone()[0] == "P2"
+    # Groomed ids: no rows; the sequence still seeds at the ledger's next id.
+    assert not conn.execute(
+        f"SELECT 1 FROM task WHERE id IN ({','.join(map(str, headless))})"
+    ).fetchone()
+    seq = conn.execute("SELECT seq FROM sqlite_sequence WHERE name='task'"
+                       ).fetchone()[0]
+    assert seq + 1 == a["seed"]["seed"]

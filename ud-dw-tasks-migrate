@@ -47,8 +47,12 @@ Import rules (all ruled in increments 2–3 or #346; nothing guessed):
   registered in the task_type lookup;
 - origin: one in-vocabulary marker as-is; out-of-vocabulary/multiple fail
   closed to ``unknown``; NULL iff every id < 216 (#346 finding 4);
-- related: symmetric pairs (a<b) between existing ids; depends: directed
+- related: symmetric pairs (a<b) between entry-headed ids; depends: directed
   edges from the two recognised blocked-on forms; dangling targets skip;
+- a section id with no entry head (groomed landed prose — reported as
+  "section id without an entry") gets NO row: body/title are verbatim-only
+  and NOT NULL, so a stub would be fabrication; R3's git-history import owns
+  those ids, and verification fails if one appears before then;
 - the sequence is seeded by ledger_store (verified, re-seed only upward) and
   asserted == the ledger's next id after import;
 - idempotent: a second --import over the same DB populates nothing and
@@ -294,9 +298,11 @@ def expected_related(a: dict) -> set[tuple[int, int]]:
 
     Every id of the stating entry inherits the relation. A dangling target
     (the dry-run's reported conflict) creates no edge — the FK would fail,
-    and inventing the target is worse than skipping the pair.
+    and inventing the target is worse than skipping the pair. The target set
+    is ENTRY-headed ids: a groomed section id ("section id without an
+    entry") has no row to reference until R3 imports it.
     """
-    ids = set(a["open_ids"]) | set(a["landed_ids"])
+    ids = {i for e in a["entries"] for i in e["ids"]}
     pairs = set()
     for e in a["entries"]:
         for r in related_ids(e["body"]):
@@ -311,9 +317,10 @@ def expected_depends(a: dict) -> set[tuple[int, int]]:
 
     Only machine-recognisable shapes — the same two the dry-run reads —
     become edges (#346: prose is not parsed into obligations); `blocked-on:
-    **human**` names no id and creates none.
+    **human**` names no id and creates none. Targets are ENTRY-headed ids,
+    same as related: an edge at a groomed id waits for R3's history import.
     """
-    ids = set(a["open_ids"]) | set(a["landed_ids"])
+    ids = {i for e in a["entries"] for i in e["ids"]}
     edges = set()
     for e in a["entries"]:
         for n in blocked_on_ids(e["body"]):
@@ -457,6 +464,18 @@ def _detect_conflicts(a: dict, text: str) -> None:
         for b in sorted(set(blocked_on_ids(e["body"])) - exists):
             _flag(c, "blocked-on id does not exist", id=b,
                   detail=f"#{first} is blocked on #{b}, which no entry or section holds")
+    # The reverse gap: parse_ledger counts bold `**#N**` spans inside the
+    # landed section's groomed prose summaries as landed ids, but no ENTRY
+    # heads them — the body is gone from this snapshot. Nothing here may
+    # fabricate the row (body/title are NOT NULL and verbatim-only); R3's
+    # git-history import owns them. Output, never an error (#346).
+    heads = {i for e in a["entries"] for i in e["ids"]}
+    for i in sorted(exists - heads - {None}):
+        if i in open_ids or i in landed_ids:
+            _flag(c, "section id without an entry", id=i,
+                  detail=f"#{i} is counted in a section but heads no entry — "
+                  "its body was groomed to prose; the git-history import "
+                  "(R3, a later increment) owns it, so --import writes no row")
     _verify_seed(a, text)
 
 
@@ -617,12 +636,18 @@ def verify_db(text: str, a: dict, db_path: str) -> list[str]:
         for i in sorted(db_ids - set(expected)):
             failures.append(f"task #{i}: in the DB but not in the parse")
         states = Counter(r["state"] for r in rows)
-        if states.get("open", 0) != a["open_count"]:
-            failures.append(f"open count {states.get('open', 0)} != parse "
-                            f"{a['open_count']}")
-        if states.get("landed", 0) != a["landed_count"]:
-            failures.append(f"landed count {states.get('landed', 0)} != parse "
-                            f"{a['landed_count']}")
+        want_states = Counter(r["state"] for r in expected.values())
+        for state in ("open", "landed"):
+            if states.get(state, 0) != want_states.get(state, 0):
+                failures.append(f"{state} count {states.get(state, 0)} != "
+                                f"parse {want_states.get(state, 0)}")
+        # A groomed id (no entry head) must have NO row: importing one would
+        # fabricate a body the current ledger does not hold. R3 owns these.
+        for c in a["conflicts"].get("section id without an entry", []):
+            if c["id"] in db_ids:
+                failures.append(f"task #{c['id']}: groomed id has a row — "
+                                "its body is not in the ledger; that row is "
+                                "a fabrication (R3 owns the history import)")
         by_id = {r["id"]: r for r in rows}
         for i in sorted(set(expected) & db_ids):
             row, want = by_id[i], expected[i]
