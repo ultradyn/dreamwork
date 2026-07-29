@@ -297,14 +297,21 @@ def server_class(family):
 # entry here and nothing else. Order is display order; `common` kinds get a
 # button in the composer, the rest live in the hover menu. Plugin-contributed
 # kinds (#86) append to this list — nothing downstream assumes a fixed set.
+# `sticky` (#337): whether the composer KEEPS the kind after its command
+# lands. add-idea is the only sticky kind; every steering kind decays back
+# to it at submit, because a mode that persists silently raises the
+# authority of his NEXT message (#257's reasoning, generalised). Absent
+# means NOT sticky — a plugin kind that says nothing must not linger
+# either — so the decay needs no third place to be remembered.
 COMMANDS = (
-    {"kind": "add-idea", "label": "add idea", "common": True,
+    {"kind": "add-idea", "label": "add idea", "common": True, "sticky": True,
      "desc": "park a thought; the loop picks it up when it chooses next"},
-    {"kind": "do-next", "label": "do next", "common": True,
+    {"kind": "do-next", "label": "do next", "common": True, "sticky": False,
      "desc": "jump this to the front of the queue (text optional)"},
-    {"kind": "do-now", "label": "do now", "common": True,
+    {"kind": "do-now", "label": "do now", "common": True, "sticky": False,
      "desc": "interrupt the current increment and start this instead"},
     {"kind": "maintenance", "label": "maintenance", "common": False,
+     "sticky": False,
      "desc": "housekeeping: grooming, re-reads, alignment passes"},
 )
 
@@ -9102,9 +9109,18 @@ function popoutDoc(url, label) {
         if (plus) { const b = plus.getBoundingClientRect();
           ripple(b.left + b.width / 2, b.top + b.height / 2); }
         document.getElementById('cmdtext').value = '';
-        if (kind === 'do-now') setKind('add-idea');
         clearDraft();  // unguarded ON PURPOSE: already inside cv.landed, and
         // an isDurable() here would read as a gate while gating nothing (#163)
+        // #337: a landed command does not keep its kind — the composer
+        // decays back to the one sticky kind, so his NEXT message is never
+        // silently promoted to the authority of the one he just sent.
+        // Read the property off the LIVE table (COMMANDS is a `let`; plugin
+        // kinds join it, #86), and absent means NOT sticky, so no kind is
+        // named here and a new one is not a third place to remember. The
+        // decay rides setKind — the indicator's existing slide, not a
+        // second gesture (transitions.md).
+        const sent = COMMANDS.find(c => c.kind === kind);
+        if (sent && !sent.sticky) setKind('add-idea');
         fitText(document.getElementById('cmdtext'), true);  // #177: shrink back, the same gesture reversed
         // he may already have started typing again while the POST was in
         // flight, before there was any timer to cancel. Courtesy is NOT

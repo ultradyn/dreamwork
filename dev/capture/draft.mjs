@@ -213,17 +213,37 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
      after.value === '');
 }
 
-/* ── do-now is immediate; after success the composer returns to capture ── */
+/* ── #337: a landed command does not keep its kind — every NON-sticky kind
+   decays back to the sticky one. The loop below derives both sets from the
+   page's own table at runtime, so a kind added later with sticky:false is
+   covered without this guard being touched, and a one-entry decaying list
+   fails as a precondition (one kind would prove nothing about the
+   property). maintenance is exercised too: it lives only in the ⋯ menu, so
+   its item is clicked through the DOM — a visibility-gated p.click would
+   hang on a shut menu that still holds a working listener. ─────────────── */
 {
-  await openComposer();
-  await p.click('.cmdkind[data-kind="do-now"]');
-  await type('the urgent thing');
-  await p.evaluate(`document.getElementById('cmdform').requestSubmit()`);
-  await sleep(600);
-  const kind = await p.evaluate(
-    `document.querySelector('#cmdkinds .cmdkind.on').dataset.kind`);
-  ok('after a successful do-now, the composer returns to add idea',
-     kind === 'add-idea');
+  const sets = await p.evaluate(`({
+    sticky: COMMANDS.filter(c => c.sticky).map(c => c.kind),
+    decaying: COMMANDS.filter(c => !c.sticky).map(c => c.kind),
+  })`);
+  notes.push(`sticky: ${sets.sticky.join(', ') || '(none)'}; ` +
+             `decaying: ${sets.decaying.join(', ') || '(none)'}`);
+  ok('exactly one sticky kind exists for the composer to decay TO',
+     sets.sticky.length === 1);
+  ok('more than one kind decays — the pair is what proves the property',
+     sets.decaying.length >= 2);
+  for (const k of sets.decaying) {
+    await openComposer();
+    await p.evaluate(
+      `document.querySelector('.cmdmenuitem[data-kind="${k}"]').click()`);
+    await type('via ' + k);
+    await p.evaluate(`document.getElementById('cmdform').requestSubmit()`);
+    await sleep(600);
+    const kind = await p.evaluate(
+      `document.querySelector('#cmdkinds .cmdkind.on').dataset.kind`);
+    ok(`after a successful ${k}, the composer returns to ${sets.sticky[0]}`,
+       kind === sets.sticky[0]);
+  }
 }
 
 /* ── emptying the box is his act, and the store follows it ────────────── */
