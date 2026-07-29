@@ -265,7 +265,9 @@ def sweep(text, commits):
         if not m:
             continue
         for tid in (int(x) for x in SWEEP_ID.findall(m.group(1))):
-            if tid not in open_ids:
+            # parse_ledger's ids are strings; ledger_entries' are ints — the
+            # membership check is against the former, the body map the latter.
+            if str(tid) not in open_ids:
                 continue
             if sha in bodies.get(tid, ""):
                 continue  # a deliberate partial: it cites its commit (#323's rule)
