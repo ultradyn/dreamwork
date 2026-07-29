@@ -87,3 +87,5 @@ Final report: what changed per commit, the red-run evidence (which test
 failed on which injection, and the production line named), the per-kind ×
 mode matrix as tested, and anything NOT done (the tick-consume loop habit is
 the coordinator's, not yours). Commit in your worktree; coordinator merges.
+Per #398 the hand-off lands in `.dreamwork/handoffs.md` (the coordinator
+writes the main-checkout entry at merge time from your report).
