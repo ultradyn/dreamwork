@@ -33,6 +33,8 @@ INVARIANTS — enforced before AND after the write
 USAGE
   python3 dev/ledger.py counts [--ledger PATH]
   python3 dev/ledger.py fold <id> --note <text> [--ledger PATH] [--dry-run]
+  python3 dev/ledger.py file <title> [--note <text>] [--priority P] [--type T] [--origin O] [--ledger PATH] [--dry-run]
+  python3 dev/ledger.py note <id> --note <text> [--ledger PATH] [--dry-run]
   python3 dev/ledger.py sweep [--since REF] [--ledger PATH] [--repo PATH]
 
 `counts` prints the open and landed id counts from `watch.parse_ledger`
@@ -343,6 +345,21 @@ def _file_store(dw_dir, title, body, priority, type, origin):
     return new_id
 
 
+def _note_store(dw_dir, task_id, note):
+    """Store-mode note: note_task (append note to body in any state, no event).
+
+    There is no state change — a note annotates the body, so the store verb
+    appends and the Markdown file is untouched (the store is the single
+    source post-cutover).
+    """
+    store = ledger_store.open_store(store_path(dw_dir))
+    try:
+        ledger_write.note_task(store, task_id, note)
+    finally:
+        store.close()
+    sys.stdout.write(f"noted #{task_id} (store)\n")
+
+
 def file_text(text, title, note, priority, type, origin):
     """Markdown-mode file: insert a new entry under ``## Open``, bump ``Next id``.
 
@@ -387,6 +404,61 @@ def file_text(text, title, note, priority, type, origin):
         "Next id: **{}**".format(new_id + 1), new_text, count=1)
 
     assert_headings(new_text, "after file")
+    return new_text
+
+
+def note_text(text, task_id, note):
+    """Markdown-mode note: append a ``  · <note>`` continuation line to an entry.
+
+    The entry may be in either section (note works in any state). The note
+    line is appended at the END of the entry's content block, matching how
+    the coordinator's notes accumulate; the entry is never moved. Returns
+    the new text (the caller writes it). Raises ``LedgerError`` on an unknown
+    id or a non-unique match; it never returns a text that fails
+    ``assert_headings``.
+
+    The entry is located by the production head pattern
+    (``watch.LEDGER_ENTRY`` + ``watch.ENTRY_ID``) after ``watch.parse_ledger``
+    confirms the id is known in either section — never a fresh regex.
+    """
+    assert_headings(text, "before note")
+
+    open_ids, landed_ids = watch.parse_ledger(text)
+    sid = str(task_id)
+    if sid not in open_ids and sid not in landed_ids:
+        raise LedgerError(f"#{task_id} is in neither section — unknown id")
+
+    lines = text.split("\n")
+    matches = []
+    for i, ln in enumerate(lines):
+        m = watch.LEDGER_ENTRY.match(ln)
+        if m and sid in watch.ENTRY_ID.findall(m.group(1)):
+            matches.append(i)
+    if len(matches) != 1:
+        raise LedgerError(
+            f"#{task_id} matches {len(matches)} entry head(s); will not "
+            f"note an id that is not unique in the ledger")
+    h = matches[0]
+
+    # The entry's content runs from the head through blank/indented lines up
+    # to the next column-0 content line (the production parser's own rule:
+    # a column-0 line ends an entry). Append the note at the end of the
+    # content (notes accumulate), before any trailing blank separator.
+    next_head = len(lines)
+    for j in range(h + 1, len(lines)):
+        ln = lines[j]
+        if ln.startswith(" ") or ln.startswith("\t") or ln == "":
+            continue
+        next_head = j
+        break
+    block_end = next_head
+    while block_end > h + 1 and lines[block_end - 1].strip() == "":
+        block_end -= 1
+
+    new_lines = lines[:block_end] + [NOTE_PREFIX + note] + lines[block_end:]
+    new_text = "\n".join(new_lines)
+
+    assert_headings(new_text, "after note")
     return new_text
 
 
@@ -473,6 +545,12 @@ def main(argv=None):
     pfile.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
     pfile.add_argument("--dry-run", action="store_true", help="print the result; do not write")
 
+    pn = sub.add_parser("note", help="append a `  · <note>` line to an entry in either section")
+    pn.add_argument("id", type=int, help="the task id to annotate (e.g. 294)")
+    pn.add_argument("--note", required=True, help="appended as a `  · <text>` continuation line")
+    pn.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
+    pn.add_argument("--dry-run", action="store_true", help="print the result; do not write")
+
     ps = sub.add_parser(
         "sweep",
         help="open ids git names a landing for that the entry does not cite "
@@ -502,12 +580,15 @@ def main(argv=None):
     ledger_path = Path(args.ledger)
     dw_dir = str(ledger_path.parent)
 
-    # #294 inc 9: write verbs (fold, file) dispatch on source_of_truth.
+    # #294 inc 9: write verbs (fold, file, note) dispatch on source_of_truth.
     # Store mode → the store write verbs; markdown mode → today's text path.
     # `counts` (inc 7) is a read consumer and dispatches below.
-    if args.cmd in ("fold", "file") and source_of_truth(dw_dir) == "store":
+    if args.cmd in ("fold", "file", "note") and source_of_truth(dw_dir) == "store":
         if args.cmd == "fold":
             _fold_store(dw_dir, args.id, args.note)
+            return 0
+        if args.cmd == "note":
+            _note_store(dw_dir, args.id, args.note)
             return 0
         _file_store(dw_dir, args.title, args.note or args.title,
                     args.priority, args.type, args.origin)
@@ -531,7 +612,7 @@ def main(argv=None):
     # uses (defense-in-depth: the dispatch above already routed cut-over
     # writes to the store; this catches a watermark set between dispatch and
     # write, and documents that the markdown writer is pre-cutover only).
-    if args.cmd in ("fold", "file"):
+    if args.cmd in ("fold", "file", "note"):
         try:
             _migrate_guard().guard_markdown_write(dw_dir)
         except Exception as exc:
@@ -562,6 +643,16 @@ def main(argv=None):
                 return 0
             _write(args.ledger, new_text)
             sys.stdout.write(f"filed into {args.ledger}\n")
+            return 0
+        if args.cmd == "note":
+            new_text = note_text(text, args.id, args.note)  # asserts before AND after
+            if args.dry_run:
+                sys.stdout.write(new_text)
+                if not new_text.endswith("\n"):
+                    sys.stdout.write("\n")
+                return 0
+            _write(args.ledger, new_text)
+            sys.stdout.write(f"noted #{args.id} into {args.ledger}\n")
             return 0
     except LedgerError as e:
         sys.stderr.write(f"ledger: {e}\n")

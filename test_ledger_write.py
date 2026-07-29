@@ -263,3 +263,110 @@ def test_chain_verifies_over_file_and_land_events(store, migrate):
     assert fails, (
         "mutated event row must break the chain — a verifier that does not "
         "recompute the hash from canonical bytes is a silent forgery")
+
+
+# ---------------------------------------------------------------------------
+# note — appends to body (any state), no event, TaskNotFound on a missing id
+#
+# Named production lines whose change must red each test:
+#
+# - note_task's UPDATE task SET body = body || note WHERE id = ?
+#       → test_note_appends_to_body_in_any_state
+# - note_task's cur.rowcount == 0 → TaskNotFound
+#       → test_note_raises_task_not_found
+# - note_task writes NO task_event row (a note is not a transition)
+#       → test_note_writes_no_event_chain_verifies
+# ---------------------------------------------------------------------------
+
+def test_note_appends_to_body_in_any_state(store):
+    """Production line: ``UPDATE task SET body = body || note`` in note_task.
+
+    A note appends to the body in ANY state — both an open and a landed task
+    get annotated (the coordinator notes open tasks mid-flight and landed
+    tasks in retrospect). Derive the before-body at runtime and assert the
+    note lands in it while the original body survives. Break by making the
+    UPDATE a no-op (e.g. ``body = body``) — the note would not appear.
+    """
+    # Derive distinct bodies so the assertion is not vacuous.
+    open_id = ledger_write.file_task(store, "open task", "open body",
+                                      at="2026-07-29T10:00:00Z")
+    landed_id = ledger_write.file_task(store, "landed task", "landed body",
+                                        at="2026-07-29T10:00:01Z")
+    ledger_write.land_task(store, landed_id, at="2026-07-29T11:00:00Z")
+
+    before_open = store.conn.execute(
+        "SELECT body FROM task WHERE id = ?", (open_id,)).fetchone()[0]
+    before_landed = store.conn.execute(
+        "SELECT body FROM task WHERE id = ?", (landed_id,)).fetchone()[0]
+    # Precondition: the two bodies differ (a shared body makes the per-task
+    # append assertions vacuous).
+    assert before_open != before_landed, "fixture: the two bodies must differ"
+
+    ledger_write.note_task(store, open_id, "an open note")
+    ledger_write.note_task(store, landed_id, "a landed note")
+
+    after_open = store.conn.execute(
+        "SELECT body FROM task WHERE id = ?", (open_id,)).fetchone()[0]
+    after_landed = store.conn.execute(
+        "SELECT body FROM task WHERE id = ?", (landed_id,)).fetchone()[0]
+    assert "open body" in after_open and "an open note" in after_open, (
+        "the open task's body must keep its text and gain the note")
+    assert "landed body" in after_landed and "a landed note" in after_landed, (
+        "the landed task's body must keep its text and gain the note")
+    # The note did not migrate into the wrong task.
+    assert "a landed note" not in after_open
+    assert "an open note" not in after_landed
+
+
+def test_note_raises_task_not_found(store):
+    """Production line: ``cur.rowcount == 0`` → TaskNotFound in note_task.
+
+    Annotating a missing id matches zero rows in the UPDATE and must refuse.
+    Break by treating rowcount 0 as success — the note would silently vanish
+    and no exception would surface.
+    """
+    # Precondition: 99999 genuinely does not exist.
+    row = store.conn.execute(
+        "SELECT 1 FROM task WHERE id = 99999").fetchone()
+    assert row is None, "precondition: id 99999 must not exist"
+
+    with pytest.raises(ledger_write.TaskNotFound, match="no such task"):
+        ledger_write.note_task(store, 99999, "nowhere to land")
+    # No event was written for the phantom id.
+    n = store.conn.execute(
+        "SELECT COUNT(*) FROM task_event WHERE task_id = 99999").fetchone()[0]
+    assert n == 0
+
+
+def test_note_writes_no_event_chain_verifies(store, migrate):
+    """Production line: note_task appends to body WITHOUT a task_event row.
+
+    A note is not a state transition (#264's boundary), so note_task writes
+    no event — the body is the annotation trail. Break by adding an event in
+    note_task and the event-count assertion fails (a note must not invent a
+    transition). The chain must still verify: it is untouched, so an ordinal-
+    order append of nothing leaves every hash intact.
+    """
+    tid = ledger_write.file_task(store, "to note", "body",
+                                  at="2026-07-29T10:00:00Z")
+    n_before = store.conn.execute(
+        "SELECT COUNT(*) FROM task_event WHERE task_id = ?", (tid,)).fetchone()[0]
+
+    ledger_write.note_task(store, tid, "a mid-task note")
+
+    n_after = store.conn.execute(
+        "SELECT COUNT(*) FROM task_event WHERE task_id = ?", (tid,)).fetchone()[0]
+    assert n_after == n_before, (
+        f"a note must write no event (got {n_before} → {n_after}); a note is "
+        "not a transition, so the chain records nothing")
+
+    # The chain still verifies over the untouched events.
+    db_path = str(store.path)
+    assert migrate.verify_task_event_chain(db_path) == [], (
+        "the untouched chain must verify — note_task must not corrupt it")
+
+    # And the note did land in the body (sanity: the no-event choice did not
+    # also drop the body append).
+    body = store.conn.execute(
+        "SELECT body FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    assert "a mid-task note" in body

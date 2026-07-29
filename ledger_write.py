@@ -185,3 +185,45 @@ def land_task(store, task_id, *, note=None, actor="loop", at=None) -> None:
     except Exception:
         conn.execute("ROLLBACK")
         raise
+
+
+# ---------------------------------------------------------------------------
+# note — annotate a task (body append, no transition)
+# ---------------------------------------------------------------------------
+
+def note_task(store, task_id, note, *, actor="loop") -> None:
+    """Annotate a task: append the note to ``task.body`` in ANY state.
+
+    A note is not a state transition (#264's boundary: one event per
+    transition), so it appends to the body ONLY — no ``task_event`` row.
+    The body is the annotation audit trail (the schema's own comment: "body
+    is where notes/updates accumulate across a task's life"), and the note's
+    date and attribution live in its prose, as the coordinator writes them.
+    ``verify_task_event_chain`` therefore passes trivially: the chain is
+    untouched. One transaction: the body append is atomic.
+
+    ``actor`` is accepted for parity with the file/land verb set; because no
+    event is written it is not recorded in the chain. Works for any state
+    (open or landed — both get annotated in practice).
+
+    Raises ``TaskNotFound`` if the id does not exist; ``WriteError`` on an
+    empty note.
+    """
+    if not isinstance(note, str) or not note.strip():
+        raise WriteError("note must be a non-empty string")
+
+    conn = store.conn
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        cur = conn.execute(
+            "UPDATE task SET body = body || ? WHERE id = ?",
+            ("\n" + _NOTE_PREFIX + note, task_id))
+        if cur.rowcount == 0:
+            conn.execute("ROLLBACK")
+            raise TaskNotFound(f"cannot note #{task_id}: no such task")
+        conn.execute("COMMIT")
+    except TaskNotFound:
+        raise
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise

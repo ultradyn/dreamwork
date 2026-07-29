@@ -621,3 +621,106 @@ def test_dev_ledger_file_markdown_path_inserts_and_bumps(dev_ledger, tmp_path):
     # No store was created (markdown mode does not touch the store).
     assert not (dw / ledger_parse.STORE_FILENAME).exists(), (
         "markdown-mode file must not create a store")
+
+
+# ---------------------------------------------------------------------------
+# Test 9 — dev/ledger.py note: store-mode note appends to body, Markdown
+# untouched.
+#
+# Production line: the ``if args.cmd == "note"`` branch in the store dispatch
+# in dev/ledger.py main. Red-proof: remove the note store branch and note
+# falls through to the markdown path, which edits tasks.md instead of
+# appending the store body — the markdown-untouched assertion fails.
+# ---------------------------------------------------------------------------
+def test_dev_ledger_note_store_path_appends_to_body_markdown_untouched(
+        migrate, dev_ledger, tmp_path):
+    """note in store mode appends to the body; tasks.md is not touched."""
+    import contextlib
+    dw = tmp_path / "dw"
+    dw.mkdir()
+    (dw / "tasks.md").write_text(LEDGER)
+    db = _setup_store(migrate, dw, LEDGER)
+    _write_watermark(db)
+
+    # Derive the before-body at runtime so the assertion is not a literal.
+    conn = sqlite3.connect(str(db))
+    body_before = conn.execute(
+        "SELECT body FROM task WHERE id = 10").fetchone()[0]
+    conn.close()
+    assert body_before is not None, "precondition: #10 must exist"
+
+    original_md = (dw / "tasks.md").read_text()
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = dev_ledger.main(["note", "10", "--note", "a store note",
+                              "--ledger", str(dw / "tasks.md")])
+    assert rc == 0
+
+    # The note landed in the body; the original body survived.
+    conn = sqlite3.connect(str(db))
+    body, state = conn.execute(
+        "SELECT body, state FROM task WHERE id = 10").fetchone()
+    conn.close()
+    assert body_before in body, "the original body must survive the note"
+    assert "a store note" in body, "the note must be appended to the body"
+    # A note is not a transition: the state must not change.
+    assert state == "open", f"a note must not change state, got {state!r}"
+
+    # The Markdown file is byte-identical — the store is the source.
+    assert (dw / "tasks.md").read_text() == original_md, (
+        "tasks.md must be untouched in store-mode note")
+
+
+# ---------------------------------------------------------------------------
+# Test 10 — dev/ledger.py note: markdown-mode note lands under the right
+# entry and does NOT move it (sections unchanged). No watermark → markdown
+# mode, so the markdown behaviour is unchanged by the store dispatch.
+#
+# Production line: ``note_text`` in dev/ledger.py. Red-proof: make note_text
+# a no-op (return text unchanged) and the note does not appear; or make it
+# move the entry and the open/landed id sets change.
+# ---------------------------------------------------------------------------
+def test_dev_ledger_note_markdown_path_appends_without_moving(dev_ledger, tmp_path):
+    """note in markdown mode appends a `  · ` line; the entry stays put."""
+    import contextlib
+    import re
+    dw = tmp_path / "dw"
+    dw.mkdir()
+    (dw / "tasks.md").write_text(LEDGER)
+
+    # No watermark → markdown mode. Precondition: #10 is open, #11 landed.
+    open_before, landed_before = watch.parse_ledger(LEDGER)
+    assert "10" in open_before, "precondition: #10 must be open"
+    assert "11" in landed_before, "precondition: #11 must be landed"
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = dev_ledger.main(["note", "10", "--note", "a markdown note",
+                              "--ledger", str(dw / "tasks.md")])
+    assert rc == 0
+
+    result = (dw / "tasks.md").read_text()
+    # The note line is a `  · ` continuation under the #10 entry.
+    assert "  · a markdown note" in result, (
+        "the note must appear as a `  · ` continuation line")
+    # The entry itself still reads correctly (head intact).
+    assert "- **#10** — an open task" in result
+
+    # Sections are UNCHANGED — the note did not move the entry (nor any other).
+    open_after, landed_after = watch.parse_ledger(result)
+    assert set(open_after) == set(open_before), (
+        f"open ids must be unchanged: before={sorted(open_before)} "
+        f"after={sorted(open_after)}")
+    assert set(landed_after) == set(landed_before), (
+        f"landed ids must be unchanged: before={sorted(landed_before)} "
+        f"after={sorted(landed_after)}")
+
+    # The note landed immediately under the #10 head, not under #12.
+    ten_idx = result.index("- **#10**")
+    note_idx = result.index("  · a markdown note")
+    twelve_idx = result.index("- **#12**")
+    assert ten_idx < note_idx < twelve_idx, (
+        "the note must sit under #10 and before #12 — not under the wrong entry")
+
+    # No store was created (markdown mode does not touch the store).
+    assert not (dw / ledger_parse.STORE_FILENAME).exists(), (
+        "markdown-mode note must not create a store")
