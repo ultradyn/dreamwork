@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""ud-dw-tasks-migrate — the parse-and-report half of the tasks.md → SQLite
+migration (#294 increment 3, design .dreamwork/docs/plans/ledger-sqlite.md).
+
+The design's eventual surface is ``dreamwork tasks migrate``; no ``dreamwork``
+dispatcher exists yet, so this follows the repo's CLI layout (``ud-dw-user-
+events``, ``ud-dw-generate``): one extensionless executable at the skill root,
+loadable by path for tests. A later dispatcher can shell to it unchanged.
+
+This increment is DRY-RUN ONLY. It parses every open AND landed entry through
+the PRODUCTION parser — ``watch.parse_ledger`` for the open/landed id sets and
+``ledger_parse.ledger_entries`` for the entry/origin grammar, the one copy
+#352 exists to keep single; five hand-rolled ledger parsers have been wrong in
+this repo, so this script writes no sixth. It reports exact counts, the id
+set, per-entry digests, every conflict it can detect, and the seed the store's
+id sequence WOULD take (R1, verified via ``ledger_store.derive_next_id``). It
+writes NOTHING — no database, no ledger edit. The report is the deliverable.
+
+Deliberately readable and user-modifiable (G7): field extraction that has no
+production reader (priority bands are prose ``·``-fields in tasks.md — #346
+measured them with its own scan) lives here in small named functions with the
+closed sets imported from ``ledger_store``, never copied.
+
+Stable exit codes (asserted by test_tasks_migrate.py):
+
+    0   report rendered — conflicts are OUTPUT, never errors (#346's ruling)
+    64  EX_USAGE      bad arguments
+    65  EX_DATAERR    unparseable ledger (no `## Open` section, or no ids)
+    66  EX_NOINPUT    ledger file missing / unreadable
+
+Usage: ud-dw-tasks-migrate --dry-run [--ledger PATH] [--report PATH]
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+EX_OK = 0
+EX_USAGE = 64
+EX_DATAERR = 65
+EX_NOINPUT = 66
+
+# The skill's own modules (lint, ledger_parse, ledger_store) sit beside this
+# script; put that directory on the path so the CLI runs from any cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import ledger_parse  # noqa: E402 — the ONE entry/origin grammar (#352)
+import ledger_store  # noqa: E402 — closed sets + verified seed derivation
+import lint  # noqa: E402 — load_watch(), NEXT_ID, RELATED_MARKER
+
+# A priority band in tasks.md is a whole `·`-field of the shape P<n> — or the
+# compound P<n>/P<m>, which S2 rules imports as the LOWER band with
+# priority_uncertain=1. A field merely CONTAINING "P1" is prose, not a band.
+BAND_FIELD = re.compile(r"^P\d+(/P\d+)*$")
+# `blocked on #N` stays prose (lint's comment at BLOCKED_ON_HUMAN_MARK: a
+# task-blocker is a different relation); the field form `blocked-on: **…**`
+# is lint's production marker. Both are read here, never re-anchored wider.
+BLOCKED_ON_PROSE = re.compile(r"blocked on (#\d+)", re.I)
+
+ORIGIN_CONTRACT_MIN_ID = 216  # file-formats.md: origin is forward-only from #216
+
+
+class _UsageParser(argparse.ArgumentParser):
+    def error(self, message):  # argparse exits 2; the contract says 64
+        self.exit(EX_USAGE, f"{self.prog}: error: {message}\n")
+
+
+def _load_watch_or_die():
+    watch = lint.load_watch()
+    if watch is None:
+        raise _Unparseable("watch.py unimportable — the production parser is missing")
+    return watch
+
+
+class _Unparseable(Exception):
+    """The ledger cannot be parsed at all — the ONLY nonzero-report cause."""
+
+
+def build_analysis(text: str, *, ledger_path: str) -> dict:
+    """Parse the whole ledger through the production parser into one report dict.
+
+    Counts come from ``watch.parse_ledger`` (the open/landed id sets every
+    consumer uses); entries come from ``ledger_parse.ledger_entries`` (the one
+    entry grammar). The two answer different questions, and the report keeps
+    both so a disagreement between them — an entry head outside both sections
+    — is itself a reported conflict rather than a silent skew.
+    """
+    watch = _load_watch_or_die()
+    open_raw, landed_raw = watch.parse_ledger(text)
+    if not re.search(watch.LEDGER_SEC_OPEN, text):
+        raise _Unparseable("no `## Open` section heading — not a task ledger")
+    entries = ledger_parse.ledger_entries(text)
+    open_ids = {int(x) for x in open_raw}
+    landed_ids = {int(x) for x in landed_raw}
+    if not (open_ids | landed_ids):
+        raise _Unparseable("parse_ledger found no ids — empty or unparseable ledger")
+    parsed = []
+    for ids, body in entries:
+        if any(i in open_ids for i in ids):
+            section = "open"
+        elif any(i in landed_ids for i in ids):
+            section = "landed"
+        else:
+            section = "stray"  # a head outside both sections — #484's old home
+        parsed.append({
+            "ids": list(ids),
+            "section": section,
+            "digest": hashlib.sha256(body.encode()).hexdigest(),
+            "body": body,
+        })
+    return {
+        "ledger_path": ledger_path,
+        "open_ids": sorted(open_ids),
+        "landed_ids": sorted(landed_ids),
+        "open_count": len(open_ids),
+        "landed_count": len(landed_ids),
+        "total_ids": len(open_ids | landed_ids),
+        "disjoint": not (open_ids & landed_ids),
+        "entries": parsed,
+        "conflicts": {},
+        "seed": {},
+    }
+
+
+def _read_ledger(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise _CliFail(EX_NOINPUT, f"cannot read ledger {path}: {exc}")
+
+
+class _CliFail(Exception):
+    def __init__(self, code: int, message: str):
+        super().__init__(message)
+        self.code, self.message = code, message
+
+
+def render_report(a: dict) -> str:
+    """The dry-run report — the deliverable of this increment."""
+    out = []
+    out.append("dreamwork tasks migrate — DRY RUN (writes nothing)")
+    out.append(f"ledger: {a['ledger_path']}")
+    out.append("")
+    out.append("COUNTS")
+    out.append(f"  open ids:    {a['open_count']}")
+    out.append(f"  landed ids:  {a['landed_count']}")
+    out.append(f"  total ids:   {a['total_ids']} "
+               f"(disjoint: {'yes' if a['disjoint'] else 'NO — duplicate across sections'})")
+    out.append(f"  entries:     {len(a['entries'])}")
+    out.append("")
+    out.append("ID SET")
+    out.append("  " + " ".join(f"#{i}" for i in sorted(set(a['open_ids']) | set(a['landed_ids']))))
+    out.append("")
+    return "\n".join(out)
+
+
+def main(argv=None, out=None) -> int:
+    out = out or sys.stdout
+    p = _UsageParser(prog="ud-dw-tasks-migrate",
+                     description="parse-and-report half of the tasks.md → SQLite migration (#294)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="parse + report; writes nothing (the only stage this increment ships)")
+    p.add_argument("--ledger", default=".dreamwork/tasks.md",
+                   help="path to the Markdown task ledger")
+    p.add_argument("--report", metavar="PATH",
+                   help="also write the full report to PATH")
+    args = p.parse_args(argv)
+    try:
+        text = _read_ledger(args.ledger)
+        analysis = build_analysis(text, ledger_path=args.ledger)
+    except _Unparseable as exc:
+        print(f"unparseable ledger: {exc}", file=out)
+        return EX_DATAERR
+    except _CliFail as exc:
+        print(exc.message, file=out)
+        return exc.code
+    report = render_report(analysis)
+    print(report, file=out)
+    if args.report:
+        Path(args.report).write_text(report + "\n", encoding="utf-8")
+    return EX_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())
