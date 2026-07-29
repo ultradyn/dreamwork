@@ -1418,3 +1418,222 @@ def test_justfile_deploy_verifies_identity_and_drops_dev_and_curl():
     assert "--wait-port-free" in joined, (
         "deploy recipe does not wait for the port to free before starting — "
         "the stop/autoreload race can leave the old process holding the port")
+
+
+# --- #520: stop the old server BEFORE shipping the snapshot (the mv) --------
+#
+# The defect: `just deploy` ran `mv $snap.tmp $snap` (shipping the snapshot to
+# its final path) BEFORE --stop-deployed. Against an autoreloading occupant
+# the mv overwrote the file it watched, so autoreload os.execv'd the old
+# process IN PLACE (same pid, port flickered free via close-on-exec then
+# rebound) — arming the race the #508 identity checks then had to catch. The
+# fix is ordering: stop FIRST, then ship the snapshot to a path no live process
+# watches. The #480 boot-proofs (ship-siblings + assert-importable) stay
+# BEFORE the stop — only the race-arming `mv` moved.
+#
+# Production line whose removal fails the order test: the `mv "$snap.tmp"`
+# line's position in the deploy recipe. Move the mv back before --stop-deployed
+# (the pre-#520 order) and stop no longer precedes ship.
+
+
+def test_justfile_deploy_stops_before_ship_before_start_before_verify():
+    """#520 — the deploy recipe's order is stop → ship → start → verify.
+
+    The four anchors are DERIVED from the recipe text at runtime (a literal
+    line-number assertion is a check with an expiry date):
+      stop  — the `--stop-deployed` verb
+      ship  — the shell `mv` that ships the snapshot to its final path (the
+              only `mv` in the recipe; ship-siblings is a Python verb, not a
+              shell mv, and writes different files than $snap so it does not
+              arm the race)
+      start — the `nohup` start of the new server
+      verify— the `--verify-deployed` identity check
+
+    Production line whose removal fails this test: the `mv "$snap.tmp"` line's
+    position in the deploy recipe. Move the mv back before --stop-deployed (the
+    pre-#520 order) and `i_stop < i_ship` is violated.
+    """
+    root = Path(__file__).resolve().parent
+    text = (root / "justfile").read_text()
+    start = text.index("\ndeploy rev=")
+    rest = text[start + 1:]
+    end = len(rest)
+    for i, line in enumerate(rest.splitlines()[1:], start=1):
+        if line and not line[0].isspace() and not line.startswith("#") and ":" in line:
+            offset = 0
+            for j, l in enumerate(rest.splitlines()):
+                if j == i:
+                    end = offset
+                    break
+                offset += len(l) + 1
+            break
+    recipe = rest[:end]
+    cmd_lines = []
+    for line in recipe.splitlines():
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        cmd_lines.append(stripped)
+    joined = "\n".join(cmd_lines)
+
+    i_stop = joined.index("--stop-deployed")
+    # the ship step: the shell `mv` that ships the snapshot. Anchoring on a
+    # command line starting with `mv ` is specific to the ship step — it is
+    # the only shell mv in the recipe (ship-siblings is a Python verb).
+    i_ship = None
+    for line in cmd_lines:
+        if line.startswith("mv "):
+            i_ship = joined.index(line)
+            break
+    assert i_ship is not None, (
+        "deploy recipe has no `mv` ship step — the snapshot is never shipped "
+        "to its final path")
+    i_start = joined.index("nohup")
+    i_verify = joined.index("--verify-deployed")
+
+    assert i_stop < i_ship, (
+        "the deploy recipe ships the snapshot (mv) BEFORE --stop-deployed — "
+        "the #520 defect: against an autoreloading occupant the mv arms the "
+        "execv race the #508 checks then have to catch. Stop must come first.")
+    assert i_ship < i_start, (
+        "the deploy recipe starts the new server before shipping the snapshot "
+        "(mv) — the new server would boot the OLD content at $snap")
+    assert i_start < i_verify, (
+        "the deploy recipe verifies before starting — identity of what?")
+
+
+# An autoreloading standin: binds a port, watches its OWN source file for mtime
+# changes, and os.execv's itself in place on change (same pid, fresh
+# GENERATION, close-on-exec socket flickers free then rebinds). This is the
+# exact shape of the old --dev deployed server: the recipe's `mv` overwrote the
+# file it watched, triggering the in-place re-exec that armed the #508 race.
+AUTORELOAD_STANDIN = textwrap.dedent("""\
+    import os, sys, time, socket, threading
+    GENERATION = "%.6f" % time.time()
+    PORT = int(sys.argv[1])
+    MARKER = sys.argv[2]
+    _tmp = MARKER + ".tmp"
+    with open(_tmp, "w") as _f:
+        _f.write(GENERATION)
+    os.replace(_tmp, MARKER)
+    _s = socket.socket()
+    _s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    _s.bind(("127.0.0.1", PORT))
+    _s.listen(8)
+    _src = os.path.abspath(__file__)
+    _my_mtime = os.path.getmtime(_src)
+
+    def _watch():
+        while True:
+            time.sleep(0.05)
+            try:
+                if os.path.getmtime(_src) != _my_mtime:
+                    os.execv(sys.executable,
+                             [sys.executable, _src, str(PORT), MARKER])
+            except OSError:
+                pass
+
+    threading.Thread(target=_watch, daemon=True).start()
+    while True:
+        time.sleep(1)
+""")
+
+
+def test_deploy_new_ordering_completes_against_autoreload_standin(tmp_path):
+    """#520 — the reordered sequence (stop → wait-free → ship → start → verify)
+    completes with identity verified against an autoreloading occupant, with no
+    manual step. The old order (ship before stop) armed the race by overwriting
+    the file the autoreloader watched; the new order ships to a dead path.
+
+    PRECONDITION (asserted at runtime, not assumed): the standin really IS
+    autoreloading — overwriting its file triggers an in-place os.execv (same
+    pid, fresh GENERATION). Without this the test is vacuous: a non-autoreloading
+    occupant cannot arm the race regardless of order, so a green against one
+    proves nothing about the ordering.
+
+    Production line whose removal fails the precondition: the `os.execv(...)`
+    call inside AUTORELOAD_STANDIN's `_watch` (remove it and the standin never
+    re-execs, so the precondition's reexeced assertion fails). Production line
+    whose removal fails the main sequence: `pid = listening_pid(port)` in
+    stop_deployed (sabotage to `pid = None` and stop returns 0 without killing
+    — the old process survives the stop, holds the port, and the
+    `not _alive(old.pid)` assertion fails).
+    """
+    snap = tmp_path / _unique_snap_name()
+    snap.write_text(AUTORELOAD_STANDIN)
+    marker = tmp_path / "gen.txt"
+    port = _ephemeral_port()
+
+    old = subprocess.Popen(
+        [sys.executable, str(snap), str(port), str(marker)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+    new = None
+    try:
+        assert _wait_listening(port, old.pid), "standin never bound"
+        gen_before = marker.read_text()
+        assert gen_before, "standin never wrote its generation marker"
+
+        # PRECONDITION: prove the standin re-execs on file change (the race's
+        # enabler). Overwrite the file; the watch thread sees the mtime change
+        # and os.execv's in place (same pid, fresh GENERATION, port rebinds).
+        _time.sleep(0.3)   # let the watch thread record its baseline mtime
+        snap.write_text(AUTORELOAD_STANDIN)   # same content, new mtime -> re-exec
+        deadline = _time.time() + 8
+        reexeced = False
+        while _time.time() < deadline:
+            try:
+                gen_now = marker.read_text()
+            except OSError:
+                gen_now = gen_before
+            holder = ds.listening_pid(port)
+            if gen_now != gen_before and holder == old.pid:
+                reexeced = True
+                break
+            _time.sleep(0.05)
+        assert reexeced, (
+            "precondition failed: the standin did not re-exec on file change "
+            "(generation marker unchanged) — it is not autoreloading, so this "
+            "test cannot prove the ordering disarms the race")
+
+        # === THE NEW ORDERING (stop → wait-free → ship → start → verify) ===
+
+        # 1. STOP the old server BEFORE shipping (the #520 fix). The old
+        #    process is still running $snap, so argv_runs_snap matches by path.
+        assert ds.stop_deployed(port, str(snap), wait_s=3.0) == 0, (
+            "stop failed — the old autoreloading server could not be stopped")
+        assert not _alive(old.pid), (
+            "stop returned success but the old process is still alive — "
+            "the race is live: shipping now would trigger a re-exec")
+        # 2. WAIT for the port to be really free.
+        assert ds.wait_port_free(port, wait_s=3.0) == 0, (
+            "port never freed after stop — the old process respawned/rebound")
+        # 3. SHIP the snapshot now that no live process watches it. This
+        #    overwrite would have armed the race in the old order; now it is
+        #    inert. LISTENER_SRC is the "new server" content.
+        snap.write_text(LISTENER_SRC)
+        # 4. START the new server.
+        new = subprocess.Popen(
+            [sys.executable, str(snap), str(port)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+        # 5. VERIFY identity.
+        assert _wait_listening(port, new.pid), "new server never bound"
+        rc = ds.verify_deployed(port, str(snap), new.pid)
+        assert rc == 0, (
+            "verify failed against an autoreloading occupant under the new "
+            "ordering — the deploy did not complete cleanly")
+        after_pid = ds.listening_pid(port)
+        assert after_pid == new.pid
+        assert after_pid != old.pid, (
+            "the listener after deploy is the old process — the new ordering "
+            "did not replace it")
+    finally:
+        for p in (old, new):
+            if p is None:
+                continue
+            try:
+                os.kill(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.wait(timeout=3)
