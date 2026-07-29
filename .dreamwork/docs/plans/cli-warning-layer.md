@@ -178,7 +178,10 @@ second store of truth that drifts from the real counts (the exact failure
 `#362` was filed over: two files holding two halves of one fact). The footer is
 stateless: it reads the live counts every call and prints the non-zero ones.
 Fatigue is held by rule 1 (zeros absent) and rule 3 (legitimate-noise
-squelch), not by remembering what it said last time.
+squelch), not by remembering what it said last time. **(He later sketched
+exactly such a suppress-throttle for the read verbs; the IGC in the rulings
+section evaluates it and refutes it decisively — on this invariant (G1), plus
+never-suppress-unseen (G2) and surface-early (G3a). It is not on the table.)**
 
 ---
 
@@ -205,55 +208,167 @@ authorises **no code.** Specifically, it does not authorise:
 
 ---
 
-## Open calls for him — one
+## Rulings — Q5 settled (every verb); one fork escalated (2026-07-30)
 
-His standing rule: if every call has one clearly-superior answer, there are no
-open questions. Four of the five questions the brief posed have one clearly-
-superior answer, so they are not open calls — they are settled here:
+Q5 is **closed: the footer prints on EVERY `dev/ledger.py` verb** — the literal
+reading of his word "tacked on," ruled at 2026-07-30 03:11. The "state-change
+verbs only" alternative is dropped. (Q1–Q4 below are unchanged from the prior
+draft: each had one clearly-superior answer, so none was a fork.)
 
-- **Q1 (footer contents)** — settled: his five counts + incomplete-data, nothing
-  else. Superior answer, no fork.
-- **Q2 (where it lives)** — settled: one function in `dev/ledger.py`, called by
-  every verb at exit, on stderr. Superior answer, no fork.
-- **Q3 (WARN never ERROR)** — settled: never changes an exit code, never blocks.
-  Superior answer, no fork.
-- **Q4 (quiet rules)** — settled: zeros absent, whole footer absent on all-zero,
-  incomplete-data squelchable, five-counts never squelched. Superior answer, no
-  fork.
+He ruled with an amendment whose reasoning is **his**, not this doc's: warnings
+should surface **EARLY** in the loop so the dreamworker can plan them in. To
+that end he sketched a throttle for the READ verbs (`counts`, `sweep`): print
+always after a state-change verb (`fold`/`file`/`note`); on the read verbs
+suppress ~70–80% of prints, but only while ALL of — the warning is unchanged AND
+time since last warning < heartbeat × 0.7 AND warnings skipped since last print
+< 4 (every 5th call prints regardless). His words: "Something like that." His
+instruction: evaluate it with the vendored IGC method, and surface any issues as
+a new question.
 
-One genuine fork remains, and it is his to rule:
+That IGC follows. It **settles** one part (the suppress-throttle is refuted —
+not his to over-rule; it breaks invariants already paid for) and **escalates**
+one genuine fork that IS his.
 
-> **Q5 — footer on EVERY verb, or only on verbs that change state?**
+### Q1–Q4 — settled (unchanged)
+
+- **Q1 (footer contents)** — his five counts + incomplete-data, nothing else.
+- **Q2 (where it lives)** — one function in `dev/ledger.py`, called by every
+  verb at exit, on stderr.
+- **Q3 (WARN never ERROR)** — never changes an exit code, never blocks.
+- **Q4 (quiet rules)** — zeros absent, whole footer absent on all-zero,
+  incomplete-data squelchable, five-counts never squelched.
+
+## IGC — the read-verb throttle (evaluated per `igc-method.md`)
+
+**Context (the C).** The footer prints on every verb (Q5, settled). Verbs split
+into state-change (`fold`/`file`/`note`) and read (`counts`, `sweep`).
+`dev/ledger.py` is a **stateless verb process** — each `counts` is a fresh
+process with no memory of what it printed last call. The throttle sketch needs
+three pieces of memory (last-seen warning, last-print time, skip-count) that a
+fresh process does not hold. His goal: warnings surface early so the dreamworker
+can plan them in. The design's quiet rules (1: zeros absent; 2: all-zero absent;
+3: incomplete-data squelchable) are stateless and must keep holding on a clean
+tree.
+
+**Goals (binary; decisive-only — excess-capacity factors omitted).**
+
+- **G1 — Stateless.** The footer writes no persistent state between invocations
+  (the sworn invariant in the quiet-rules section: "The footer is stateless; it
+  reads the live counts every call").
+- **G2 — Never suppresses an unseen warning.** A warning the reader has not yet
+  seen always appears; no drift-state can hide one indefinitely.
+- **G3a — Surfaces early (presence).** A new warning is visible on the next read
+  verb, within the planning/heartbeat window — never delayed past it.
+- **G3b — Carries content to plan in.** The read-verb emission carries enough
+  that the dreamworker can plan the warning in without a second action (it shows
+  WHAT the warning is, not merely that one exists).
+- **G4 — Dampens read-verb repeat-fatigue.** The identical full warning line
+  does not repeat on consecutive read-verb calls while counts are unchanged.
+
+**Ideas.**
+
+- **I1 — plain every-verb, no throttle.** Every verb prints the full footer
+  (zeros absent, all-zero absent). The quiet rules are the whole damper.
+- **I2 — his suppress-throttle sketch**, as stated: suppress ~70–80% on read
+  verbs under the three conditions; every 5th call prints regardless.
+- **I3 — verbosity-split.** Read verbs emit a TERSE hint when any non-zero
+  warning exists (presence + magnitude, e.g. `⚠ N warnings — lint.py`);
+  state-change verbs emit the full line. Stateless — it decides on verb type
+  only, no memory. (A content-preserving variant — full line minus the count
+  redundant with the verb — still repeats the rest, so it dampens nothing and
+  collapses back to I1; only the terse form actually meets G4.)
+
+**The grid.**
+
+| Idea | All | G1 | G2 | G3a | G3b | G4 |
+|------|:---:|:--:|:--:|:---:|:---:|:--:|
+| **I1** plain every-verb | ✘ | ✔ | ✔ | ✔ | ✔ | ✘ |
+| **I2** his suppress-throttle | ✘ | ✘ | ✘ | ✘ | ✔ | ✔ |
+| **I3** terse hint on reads | ✘ | ✔ | ✔ | ✔ | ✘ | ✔ |
+
+**Why each ✘ (the decisive errors — the grid is the index, these are the
+reasoning).**
+
+- **I2 · G1 (statelessness):** the three conditions each need memory a fresh
+  process lacks. The only candidate home is a new `.dreamwork/footer-state` file
+  — which is (a) new loop-written, tool-parsed state the design swore off ("The
+  footer is stateless"), (b) a new `file-formats.md`/`lint.py` burden, (c)
+  contended under concurrent lanes (several verbs in flight write the same
+  file), (d) drift-prone on a killed lane. The store is no home either: worktrees
+  lack it, and writing on `counts` turns a read verb into a write and breaks the
+  read-only posture. The "every 5th prints" safety valve needs the SAME banned
+  state, so it cannot rescue the idea.
+- **I2 · G2 (never-suppress-unseen):** the "unchanged" comparison reads the
+  throttle's own stored last-seen warning; under concurrent lanes or a killed
+  write that store drifts, and the throttle suppresses a warning the reader never
+  saw — the suppress-forever failure. A stateless footer cannot have this
+  failure; a stateful one cannot avoid it on the only state available to it.
+- **I2 · G3a (surface early):** a throttle is definitionally a delay device. His
+  stated goal is "surface early." On the read verbs — the verbs the dreamworker
+  runs to LOOK — the throttle's job is to NOT print, so it can only delay a
+  warning past the window, never hasten it. His two wants (surface early +
+  suppress on the looking-verbs) are rivals on the read verbs.
+- **I1 · G4 (repeat-fatigue):** it prints the identical full line on every
+  read-verb call while counts are unchanged — maximal repeat-fatigue, the very
+  fatigue the throttle was sketched to address (and on `counts` specifically it
+  repeats the open-task count the verb's own output just showed).
+- **I3 · G3b (content to plan in):** the terse hint carries presence and
+  magnitude but not content; the dreamworker must take a second action (run
+  `lint.py`, or hit the next state-change verb) to see WHAT the warnings are
+  before it can plan them in.
+
+**Zero survivors — and why that is the answer, not a failure.** G3b (content on
+reads) and G4 (no repeat on reads) are **rivals**: the full line carries content
+but repeats; the terse hint does not repeat but drops content. No footer shape
+on the read verbs has both — that is a fact about read verbs, not a goal that is
+wrong or too strict, so brainstorming will not conjure a survivor. Per the
+method, zero survivors means: do not pick a refuted option; resolve by dropping a
+goal — and which of G3b/G4 to drop is the human's reading-habit call, not the
+code's. **I2 is settled as refuted** (G1/G2/G3a are none of them his to relax:
+statelessness is a sworn invariant, never-suppress-unseen is correctness,
+surface-early is his own stated goal). **I1 vs I3 is the escalated fork.**
+
+The journal unconsumed-receipt count (fact 1's extra) carries on every verb
+under the Q5 ruling: it is cheap, and it is the durable "something is waiting"
+signal. (It had been held under Q5 only because the state-change-only
+alternative would have made it less relevant — a `fold` does not change what is
+unconsumed in the journal. That alternative is dropped, so the count carries.)
+
+## Open call for him — one (escalated from the IGC)
+
+> **Q6 — on the read verbs, full line every time (I1) or terse hint (I3)?**
 >
-> His word was "tacked on," which reads as "every verb." But the footer's value
-> is highest on the verbs that CHANGE state (`fold`, `file`, `note`) — because
-> those are the ones that can CREATE the unfolded-answer situation the footer
-> exists to catch (a `fold` that should have been a note, a `file` that splits
-> an ask). The read verbs (`counts`, `sweep`) are the ones a human runs to
-> LOOK, and tacking the footer onto them means every `counts` invocation prints
-> a second line of warnings below the counts — which is either helpful (he sees
-> the queue AND the warnings in one glance) or noisy (the counts ARE the queue;
-> the warnings repeat the open-task count he just asked for).
+> Both are stateless (G1 ✔), both surface immediately and never suppress an
+> unseen warning (G2/G3a ✔), and on a clean tree both print exactly what the
+> verb prints today (quiet rules 1–2 hold identically — no memory, so no drift).
+> They differ on one axis, and it is his:
 >
-> **This is genuinely his**, because both readings are defensible and the
-> trade-off is about his reading habits, which are not measurable from the code.
+> - **I1 (full line every verb).** The read verb carries the full warning
+>   breakdown every call, so the dreamworker can plan them in from a `counts`
+>   alone (G3b ✔). Cost: the identical line repeats on every read-verb call while
+>   counts are unchanged (G4 ✘) — and on `counts` the open-task count repeats a
+>   number the verb's own output just showed.
+> - **I3 (terse hint on reads).** The read verb emits `⚠ N warnings` (presence +
+>   magnitude) instead of the full line, so no identical repeat (G4 ✔) and no
+>   redundancy with `counts`. Cost: the dreamworker sees THAT warnings exist, not
+>   WHAT they are, and must run `lint.py` (or hit the next state-change verb) to
+>   plan them in (G3b ✘).
 >
-> - **rec: every verb.** It is the literal reading of "tacked on," it is the
->   shape that can never miss a state-change verb, and the noise on `counts` is
->   bounded by rule 1 (zeros absent) — on a clean tree `counts` prints just its
->   counts and nothing else. The cost of "every verb" over "state-change only"
->   is one suppressed-absent line on the read verbs, which is the cheapest
->   possible cost.
-> - **the alternative: state-change verbs only** (`fold`/`file`/`note`). Quieter
->   on the read verbs, at the cost of the footer not appearing on the one verb
->   (`counts`) he runs most often to check state — which is the verb whose whole
->   job is "tell me what is waiting."
-
-The journal unconsumed-receipt count (fact 1's extra) is folded under Q5 rather
-than its own call: if the footer is on every verb, it carries the unconsumed
-count (it is cheap and it is the durable "something is waiting"); if it is on
-state-change verbs only, the unconsumed count is less relevant (a `fold` does
-not change what is unconsumed in the journal) and can be omitted.
+> This is genuinely his: it trades content-on-the-looking-verb against
+> repeat-fatigue on the looking-verb — a reading-habit and workflow judgment the
+> code cannot measure (the same class of call Q5 was). The suppress-throttle he
+> sketched (I2) is NOT on the table: it is refuted above, and the fatigue it
+> targeted is addressable only by I3's terse shape (which he may or may not
+> prefer to I1's full shape).
+>
+> - **rec: I1.** His stated reason for the throttle was "surface early so the
+>   dreamworker can plan them in," and on that goal I1 strictly dominates I3 — it
+>   shows content every read-verb, so planning needs no second action. The
+>   fatigue I1 costs is bounded by rule 1 (zeros absent): the repeating line is
+>   short, and on a clean tree it is absent entirely. I3 buys less fatigue at the
+>   price of the very thing he said he wanted (content to plan in). If the
+>   repeat-fatigue bites in practice, I3 is a stateless drop-in ruleable later
+>   with no migration — so the cheaper-to-reverse choice is to start at I1.
 
 ---
 
