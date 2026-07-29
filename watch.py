@@ -7284,12 +7284,17 @@ function dataJsonUrl() {
   return (s && BURN_STEP_ORDER.indexOf(s) >= 0)
     ? '/data.json?burn_step=' + s : '/data.json';
 }
-async function cycleBurnStep() {
+async function cycleBurnStep(back) {
   const cur = (data && data.burndown && data.burndown.step)
     || BURN_STEP_ORDER[0];
   let i = BURN_STEP_ORDER.indexOf(cur);
   if (i < 0) i = 0;
-  const next = BURN_STEP_ORDER[(i + 1) % BURN_STEP_ORDER.length];
+  /* #489: plain click walks coarse→fine (his order: daily → 4-hourly →
+     hourly → wrap to every-four-weeks); shift-click reverses. The
+     ladder itself stays fine→coarse — click decrements, shift
+     increments. */
+  const L = BURN_STEP_ORDER.length;
+  const next = BURN_STEP_ORDER[(i + (back ? 1 : L - 1)) % L];
   burnStepPref = next;
   try { localStorage.setItem(burnStepStorageKey(), String(next)); }
   catch (e) {}
@@ -7308,7 +7313,7 @@ addEventListener('click', e => {
   const btn = e.target.closest && e.target.closest('.bdstep');
   if (!btn) return;
   e.preventDefault();
-  cycleBurnStep();
+  cycleBurnStep(e.shiftKey);
 });
 
 /* #417 per-column hover/focus readout. Shows open + arrived + landed +

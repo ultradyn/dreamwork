@@ -277,6 +277,66 @@ const leaveAll = async () => {
      /granularity/i.test(stepBtn.label) && !!stepBtn.text);
   notes.push(`step control: ${JSON.stringify(stepBtn)}`);
 }
+/* ── #489 direction: plain click walks coarse→fine (down the fine→coarse
+   ladder, wrapping to the coarsest); shift-click reverses. Real
+   dispatched clicks, not a call into the page's function — the wiring
+   (handler passes the modifier) is the thing under test. The ladder is
+   read back from the page's own BURN_STEP_ORDER so a new server step
+   cannot silently invalidate the walk. ── */
+{
+  const walk = await p.evaluate(`(async () => {
+    const order = BURN_STEP_ORDER;
+    const stepOf = () => (data && data.burndown && data.burndown.step) || null;
+    const click = shift => {
+      const b = document.querySelector('.bd .bdstep');
+      b.dispatchEvent(new MouseEvent('click', { shiftKey: shift,
+                                                bubbles: true,
+                                                cancelable: true }));
+    };
+    const waitStep = async (prev) => {
+      for (let i = 0; i < 50; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (stepOf() !== prev) return stepOf();
+      }
+      return stepOf();
+    };
+    const s0 = stepOf();
+    click(false);
+    const s1 = await waitStep(s0);
+    click(true);
+    const s2 = await waitStep(s1);
+    return { order, s0, s1, s2 };
+  })()`);
+  const i0 = walk && walk.order.indexOf(walk.s0);
+  const i1 = walk && walk.order.indexOf(walk.s1);
+  const i2 = walk && walk.order.indexOf(walk.s2);
+  const L = walk ? walk.order.length : 0;
+  ok('#489: fixture starts on a known ladder step (precondition)',
+     !!walk && i0 >= 0);
+  ok('#489: plain click walks coarse→fine (down the ladder, wrapping)',
+     !!walk && i0 >= 0 && i1 === (i0 - 1 + L) % L);
+  ok('#489: shift-click walks back up (reverse)',
+     !!walk && i1 >= 0 && i2 === (i1 + 1) % L);
+  notes.push(`cycle walk: ${JSON.stringify(walk)}`);
+  /* leave the chart where we found it for the geometry checks below —
+     plain-click until the served step returns, bounded */
+  if (walk && walk.s2 !== walk.s0) {
+    await p.evaluate(`(async (target) => {
+      const stepOf = () => (data && data.burndown && data.burndown.step) || null;
+      for (let n = 0; n < 8 && stepOf() !== target; n++) {
+        const prev = stepOf();
+        document.querySelector('.bd .bdstep')
+          .dispatchEvent(new MouseEvent('click', { shiftKey: false,
+                                                   bubbles: true,
+                                                   cancelable: true }));
+        for (let i = 0; i < 50; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          if (stepOf() !== prev) break;
+        }
+      }
+    })(${walk ? walk.s0 : 0})`);
+  }
+}
 for (const idx of [0, lastIdx, busyIdx]) {
   const m = await dwellAndRead(idx);
   notes.push(`pin col[${idx}]: ${JSON.stringify(m &&

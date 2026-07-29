@@ -2424,7 +2424,10 @@ exact numbers so the weight mapping is learnable rather than argued about.
 **#487 — granularity is a cycle control.** The head's step name
 (`hourly` / `every four hours` / `daily` / `weekly` / `every four weeks` —
 the same ladder as `BURN_STEPS`) is a real `<button class="bdstep">`, not
-bare prose. Click / Enter / Space advances one step on the ladder and wraps;
+bare prose. Click / Enter / Space walks one step **coarse→fine** and wraps
+to the coarsest (#489: his order — daily → 4-hourly → hourly → every four
+weeks → weekly → daily); **shift-click walks the other way**. The ladder
+itself stays fine→coarse; the click decrements, the shift increments.
 `aria-label` announces `granularity <name> — activate to cycle`. The
 preference is per-target in `localStorage` and re-fetches
 `/data.json?burn_step=N` so only the burndown re-buckets — the server

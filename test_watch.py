@@ -1183,6 +1183,14 @@ class TestCollector(unittest.TestCase):
         self.assertRegex(watch.PAGE,
                          r'bdstep[^>]*(role="button"|tabindex)')
 
+    def test_burndown_cycle_direction_wiring(self):
+        # #489 — plain click walks coarse→fine (his order: daily →
+        # 4-hourly → hourly → wrap to every-four-weeks); shift-click
+        # reverses. The click handler must hand the modifier to the
+        # cycle; bdhover owns the behavioural walk.
+        self.assertIn('function cycleBurnStep(back)', watch.PAGE)
+        self.assertIn('cycleBurnStep(e.shiftKey)', watch.PAGE)
+
     def test_ledger_series_honours_a_forced_step(self):
         # #487 — cycling needs a step the auto ladder would not pick.
         # A ~2h ledger auto-picks hourly; forcing daily must re-bucket.
