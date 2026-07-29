@@ -60,12 +60,16 @@ from ledger_store import (
 
 
 REPO = Path(__file__).resolve().parent
-LIVE_LEDGER = REPO / ".dreamwork" / "tasks.md"
+# Post-cutover (#294) the live Markdown ledger is the FROZEN deprecated file —
+# tasks.md itself is a one-line migration-notice shim with no `Next id`
+# header and no parseable entries. These markdown-path checks describe the
+# frozen document, so that is the file they must read.
+LIVE_LEDGER = REPO / ".dreamwork" / "tasks.md.deprecated"
 
 
 @pytest.fixture
 def live_text() -> str:
-    """The real Markdown ledger — read-only. Never written."""
+    """The real (frozen) Markdown ledger — read-only. Never written."""
     return LIVE_LEDGER.read_text(encoding="utf-8")
 
 
