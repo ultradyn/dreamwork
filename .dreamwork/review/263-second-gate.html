@@ -1,11 +1,11 @@
 <!doctype html>
-<!--Built from the dreamwork review template v1+c6a57f20 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<!--Built from the dreamwork review template v1+00e8ce0d (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
-<meta name="dreamwork-review-template" content="v1+c6a57f20">
+<meta name="dreamwork-review-template" content="v1+00e8ce0d">
 <meta name="dreamwork-review-ask" content="exempt: decided 2026-07-29 01:37 — second gate answered; page is a record, not a live ask">
 <meta name="dreamwork-review-if-silent" content="exempt: decided — silence no longer parks a live ask; gate already open">
 <title>#263 · second gate · DECIDED — open E and H, split #368 first</title>
@@ -189,7 +189,7 @@ details[open]::details-content{block-size:auto;opacity:1;filter:none}
 footer{margin-top:3.5rem;padding:1.2rem 0 2rem;border-top:1px solid var(--line);color:var(--dimmer)}
 button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
 
-/* ── essential marks (#367) — the lawyer's flag rail, above the cliff only ──
+/* ── essential marks (#367) — rail above the cliff, strip below ──
    A mark is a flag at a HEIGHT, not a decoration on a box: the tab anchors to
    the reading column's right edge at the passage's top. The artifact is
    offline-clean (no script), so this is CSS-only — each tab is a child of its
@@ -200,9 +200,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
    than the tab's smaller font — a single-element tab would place the flag at
    the wrong column. The visible postit (.markflag) carries the .66rem size.
    "Current" is :target (the passage navigated to); next/prev are real fragment
-   links, so the whole thing is keyboard-operable and offline-honest. Below the
-   measured cliff the rail is display:none — absent, not broken (the strip
-   below the cliff is increment 2b and his call, not this one). */
+   links, so the whole thing is keyboard-operable and offline-honest.
+   Below the measured cliff the rail is display:none and the strip shows —
+   option C walk (~32px) + collapsible labelled index (his 2026-07-28 ruling).
+   Expand/collapse reuses details::details-content (transitions.md); no second
+   gesture. */
 .is-marked{position:relative;scroll-margin-top:5.5rem}
 .marktab{position:absolute;top:0;left:calc(var(--measure) + .4ch);z-index:15;display:flex;align-items:baseline;gap:.35ch;line-height:1.25;opacity:.6;transition:opacity .45s var(--ease)}
 .is-marked:target .marktab{opacity:1}
@@ -218,13 +220,38 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
    down so the flags read as two, not one chrome mass. The renderer's problem,
    not the author's (#367). */
 .marktab[data-stagger]{margin-top:1.05rem}
+/* ── strip below the cliff (#367/2b) ──
+   Hidden above the cliff (rail owns that width). Sticky under the toprail.
+   Collapsed = the walk (~32px); expanded list SITS BENEATH the walk row
+   (summary stays — next/prev remain reachable). No open attr = collapsed
+   every load (no persistence: offline-clean, no script/localStorage). */
+.markstrip{display:none;position:sticky;top:58px;z-index:19;background:rgba(9,13,22,.94);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
+.markstrip-panel{border:0;margin:0}
+.markstrip-panel>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:1ch;min-height:32px;height:auto;padding:.35rem 0;color:var(--muted);outline:none}
+.markstrip-panel>summary::-webkit-details-marker{display:none}
+.markstrip-panel>summary::before{content:none}
+.markstrip-panel[open]>summary{color:var(--lit);padding-top:.35rem}
+.markstrip-in{width:min(calc(100% - 2rem),1120px);margin:0 auto;padding:0}
+.markstrip-sum{width:min(calc(100% - 2rem),1120px);margin:0 auto}
+.markstrip-walk{display:inline-flex;align-items:center;gap:.6ch;font-size:.72rem;min-width:0}
+.markstrip-idle{display:inline-flex;align-items:center;gap:.5ch;color:var(--dim)}
+.markstrip-at{display:none;align-items:center;gap:.5ch}
+.markstrip-at a{color:var(--accent);text-decoration:none;padding:0 .3ch;min-height:32px;display:inline-flex;align-items:center}
+.markstrip-at a:hover{color:var(--bright)}
+.markstrip-pos,.markstrip-count{color:var(--muted);white-space:nowrap}
+.markstrip-chev{color:var(--dim);font-size:.72rem;padding:0 .4ch;flex:none;transition:transform .45s var(--ease),color .45s var(--ease)}
+.markstrip-panel[open] .markstrip-chev{transform:rotate(90deg);color:var(--accent)}
+.markstrip-list{padding:.15rem 0 .55rem;margin:0}
+.markstrip-list ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.15rem}
+.markstrip-list li{margin:0}
+.markstrip-item{display:block;padding:.28rem .55rem;border-radius:3px;color:var(--muted);text-decoration:none;font-size:.72rem;line-height:1.35}
+.markstrip-item:hover,.markstrip-item:focus-visible{color:var(--bright);background:rgba(165,180,252,.08)}
 @media(max-width:859.98px){
-  /* BELOW THE CLIFF: render nothing. The worst-case ~6-word two-line tab
-     (~184px, max-width:11.5rem) fits inside .wrap down to ~830px (measured:
-     dev/capture/marktab-geometry.mjs); 860 is the existing breakpoint and
-     leaves ~26px of margin there. dev/capture/markrail.mjs re-proves the fit
-     in pixels. */
+  /* BELOW THE CLIFF: hide the rail (worst-case flag clips past the page
+     edge below ~830px); show the collapsible strip instead. 860 is the
+     existing breakpoint (~26px margin at the wrap-fit boundary). */
   .marktab{display:none!important}
+  .markstrip{display:block}
 }
 @media(max-width:860px){
   .hero-grid,.frames,.deltas,.checks{grid-template-columns:1fr}
@@ -721,7 +748,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 <footer><p>Plan: <code>.dreamwork/docs/plans/user-event-journal-implementation.md</code> · questions
 entry (spec): the <code>#263</code> entry in <code>questions.md</code> · this page built by
 <code>review_artifact.py</code> from
-<code>.dreamwork/review/src/263-second-gate.html</code>.</p> <span class="dimmer">· built from review template v1+c6a57f20</span></footer>
+<code>.dreamwork/review/src/263-second-gate.html</code>.</p> <span class="dimmer">· built from review template v1+00e8ce0d</span></footer>
 
 </main>
 </body>
