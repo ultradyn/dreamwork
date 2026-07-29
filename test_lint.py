@@ -120,6 +120,37 @@ def frozen_tree(tmp_path):
         )
 
 
+def _materialize_store(dw, ledger_text, tmp_path):
+    """Put the post-cutover store into ``dw`` via the REAL cutover path.
+
+    A git snapshot (the frozen HEAD tree, or any `git archive`/zip install)
+    carries no store — `ledger.sqlite3` is gitignored by design — so lint's
+    store mode cannot engage and the markdown path falls back to the #458
+    shim. `perform_cutover` is the blessed machinery that built the live
+    store (#294); it is run in a history-less scratch dir because its git-
+    history walk (for burndown first-sight events) is seconds-slow inside a
+    real worktree, and a dogfood run needs only the task rows + watermark,
+    not the series. Only the resulting `ledger.sqlite3` is copied into `dw`;
+    no committed file is touched, and the store holds the same committed
+    ledger data the live checkout's does.
+    """
+    import importlib.machinery, importlib.util, io, shutil
+    import ledger_parse
+    repo = Path(lint.__file__).resolve().parent
+    loader = importlib.machinery.SourceFileLoader(
+        "ud_dw_tasks_migrate_dogfood", str(repo / "ud-dw-tasks-migrate"))
+    spec = importlib.util.spec_from_loader(
+        "ud_dw_tasks_migrate_dogfood", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    scratch = tmp_path / "store-build"
+    scratch.mkdir()
+    (scratch / "tasks.md").write_text(ledger_text)
+    mod.perform_cutover(str(scratch), out=io.StringIO())
+    shutil.copy2(ledger_parse.store_path(scratch),
+                 ledger_parse.store_path(dw))
+
+
 class TestTheBugItWasBuiltFor:
     def test_the_real_broken_shape_is_an_error(self, tmp_path):
         rep = run(target(tmp_path, **{"questions.md": BROKEN}))
@@ -133,7 +164,7 @@ class TestTheBugItWasBuiltFor:
         detail = next(d for _, w, d in rep.rows if w == "questions.md")
         assert "1 open" in detail and "1 answered" in detail
 
-    def test_this_repo_passes_its_own_linter(self, frozen_tree):
+    def test_this_repo_passes_its_own_linter(self, frozen_tree, tmp_path):
         # Dogfood: the file the whole bug was about, checked by the tool
         # written because of it.
         #
@@ -142,24 +173,39 @@ class TestTheBugItWasBuiltFor:
         # and the only failure in 1193 tests was this one. The snapshot is fixed
         # at one SHA, so the assertion is about a tree no lane can move.
         #
+        # Post-cutover (#294) the snapshot's tasks.md is the one-line #458 shim
+        # and the store is gitignored (absent by design), so lint's markdown
+        # path reads the shim (no `Next id` header) and ERRORs — the dogfood
+        # could never pass. The real committed ledger is tasks.md.deprecated
+        # (populated, frozen at cutover); the non-vacuous precondition reads
+        # it, and the store the live checkout carries is materialized from it
+        # via the REAL cutover path so the dogfood runs in STORE mode — exactly
+        # how lint runs on the live checkout. The snapshot stays fixed at one
+        # SHA's committed content, so #428's no-live-race guarantee holds.
+        #
         # Precondition, derived at runtime: the snapshot must actually carry the
         # files lint reasons about, or `not rep.failed` proves nothing — an empty
         # tree has nothing to fail on, which is the hollowness this repo keeps
         # paying for. A lost `.dreamwork` would pass vacuously.
-        q = frozen_tree / ".dreamwork" / "questions.md"
-        t = frozen_tree / ".dreamwork" / "tasks.md"
+        dw = frozen_tree / ".dreamwork"
+        q = dw / "questions.md"
+        led = dw / "tasks.md.deprecated"
         assert q.is_file() and q.read_text().strip(), \
             "snapshot carries no questions.md — the dogfood run would examine nothing"
-        assert t.is_file() and t.read_text().strip(), \
-            "snapshot carries no tasks.md — the dogfood run would examine nothing"
+        assert led.is_file() and led.read_text().strip(), \
+            "snapshot carries no tasks.md.deprecated — the real committed ledger is gone"
         # And the ledger parses to a non-trivial entry count, so the run is
         # against a populated tree rather than a stub. `load_watch` is the same
         # parser loader lint itself uses.
         watch = lint.load_watch()
         assert watch is not None, "watch.py unimportable — cannot derive entry count"
-        open_ids, _ = watch.parse_ledger(t.read_text())
+        open_ids, _ = watch.parse_ledger(led.read_text())
         assert len(open_ids) > 0, \
-            f"snapshot ledger parsed {len(open_ids)} open entries — run is vacuous"
+            f"committed ledger parsed {len(open_ids)} open entries — run is vacuous"
+        # Materialize the gitignored store (absent by design in any git
+        # snapshot) from the committed ledger via the REAL cutover path, so
+        # lint engages store mode over real projected data — not the shim.
+        _materialize_store(dw, led.read_text(), tmp_path)
         rep = run(frozen_tree)
         assert not rep.failed, rep.render()
 
@@ -1937,7 +1983,15 @@ class TestSelfCompletedOpen:
     """
 
     def _real_ledger(self):
-        return (lint.SKILL_DIR / ".dreamwork" / "tasks.md").read_text()
+        # Post-cutover (#294) `.dreamwork/tasks.md` is the one-line #458 shim
+        # — no `## Open`, no parseable entries — so every runtime precondition
+        # below would fail vacuously against it. These markdown-path checks
+        # describe the FROZEN ledger, which post-cutover lives in
+        # tasks.md.deprecated (the same repoint as 135c2e31 / 7068342d). That
+        # file is committed and frozen at cutover, so the open/landed
+        # membership and body markers the preconditions derive from it cannot
+        # drift under the test the way the live store can.
+        return (lint.SKILL_DIR / ".dreamwork" / "tasks.md.deprecated").read_text()
 
     def _entry_text(self, ledger_text, tid):
         for ids, body in lint.ledger_entries(ledger_text):
@@ -2478,7 +2532,13 @@ class TestHandoffs:
         is derived at runtime, so the test cannot pass over an id that is no
         longer open. Robust to the ledger changing under it.
         """
-        live = (Path(lint.__file__).parent / ".dreamwork" / "tasks.md").read_text()
+        # Post-cutover (#294) tasks.md is the #458 one-line shim (zero open
+        # ids), so the runtime `open_ids` precondition below would fail against
+        # it. The frozen ledger this check reads is tasks.md.deprecated (same
+        # repoint as 7068342d) — committed and frozen at cutover, so the id
+        # picked at runtime is a genuinely-open one that cannot drift away.
+        live = (Path(lint.__file__).parent / ".dreamwork"
+                / "tasks.md.deprecated").read_text()
         watch = lint.load_watch()
         open_ids, _ = watch.parse_ledger(live)
         assert open_ids, "precondition: the live ledger has open ids"
