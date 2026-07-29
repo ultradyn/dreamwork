@@ -1938,23 +1938,6 @@ Next id: **484**
   the self-hosted half has no IdP at all under his direction
   · **Q3/Q5/Q6 ANSWERED 2026-07-29 05:54, and Q3 REFUTED THE REC.** Not read-only: **read+write**, because *"dreamhub should entirely replace watch.py for normal day-to-day use. All features from watch.py should be ported over. or watch.py should be refactored into modules and then they can be imported to use in dreamhub."* The rec was reasoned from dreamhub's **present** surface (GET-only, and watch.py's write routes being agent-steering per `#288`) — which was true and beside the point: he was answering about what dreamhub is FOR, and the loop asked as though the current shape were the constraint. **Q5 yes** — the redacted `/summary.json` ships first, so the `/data.json` full-content leak stays the blocker. **Q6 `rec`** — him only for v1, multi-user hubs explicitly later. **What this does NOT authorise, stated because read+write makes it sharper:** he answered what dreamhub should DO, not where it may listen. **Public/WAN serving remains forbidden pending a reviewed design**, and a writable hub raises that bar rather than lowering it — the write routes steer a loop that acts on this machine.
 
-- **#298** — Explain each burndown column on hover, focus and touch · P2 ·
-  Web UI feature · 25m · origin: **human** · **human via watch `add-idea`
-  14:10** · inspecting a chart column should reveal the exact interval/date,
-  open-task level, arrivals and completions that its geometry currently encodes,
-  plus source/coverage state where relevant; this is detail *about values already
-  summarised on screen*, preserving #142's more-detail rule rather than hiding a
-  second dataset in hover · one restrained chart-native inspector follows the
-  active column without obscuring neighbours, arrives/departs through the page's
-  atmospheric transition, and snaps under reduced motion · hover cannot be the
-  sole path: every column is keyboard-focusable with a useful accessible name,
-  focus shows the same inspector, and tap selects/dismisses it without breaking
-  chart scroll on mobile · red-first guard proves exact values against a
-  controlled ledger history, edge-column clamping, hover→focus parity, Escape/
-  blur/tap dismissal, intermediate arrival/departure states and reduced-motion
-  function · deterministic desktop/mobile captures + visual-review-and-fix ·
-  relates #218's filed-to-landed median but does not depend on it
-
 - **#297** — Make every dashboard disclosure travel instead of jump · P2 ·
   Web UI bug · 60m · origin: **human** · **human via watch `add-idea`
   14:09 (duplicate delivery recorded once)** · expanding/collapsing git rows,
@@ -3714,6 +3697,24 @@ Next id: **484**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#298** — Explain each burndown column on hover, focus and touch · P2 ·
+  Web UI feature · 25m · origin: **human** · **human via watch `add-idea`
+  14:10** · inspecting a chart column should reveal the exact interval/date,
+  open-task level, arrivals and completions that its geometry currently encodes,
+  plus source/coverage state where relevant; this is detail *about values already
+  summarised on screen*, preserving #142's more-detail rule rather than hiding a
+  second dataset in hover · one restrained chart-native inspector follows the
+  active column without obscuring neighbours, arrives/departs through the page's
+  atmospheric transition, and snaps under reduced motion · hover cannot be the
+  sole path: every column is keyboard-focusable with a useful accessible name,
+  focus shows the same inspector, and tap selects/dismisses it without breaking
+  chart scroll on mobile · red-first guard proves exact values against a
+  controlled ledger history, edge-column clamping, hover→focus parity, Escape/
+  blur/tap dismissal, intermediate arrival/departure states and reduced-motion
+  function · deterministic desktop/mobile captures + visual-review-and-fix ·
+  relates #218's filed-to-landed median but does not depend on it
+  · landed cd9c8c98 (merge of wt/298; native subagent, 3rd attempt — two prior lanes died on max_tokens_truncation writing the guard in one response; this one used small output increments, 10 commits, no truncation). A restrained burndown column inspector: a passing hover keeps #417's glance tip; a hover that dwells 700ms, keyboard focus, or a tap (pinned) opens the richer inspector — exact interval, open level, arrivals/completions, commits, and honest coverage state (measured / level carried / period in progress). One seam, two depths. bdhover guard registered (62), red-proven. Coordinator visual review of the pixels (restrained, clamped, honest about coverage, never covers the chart); test_watch.py 320 pass; bdhover PASS on master.
+
 - **#351** — `/file` should highlight source, run wider, and not wrap lines · P2 ·
   dashboard/readability · origin: **human** · **human via watch `add-idea` 2026-07-28
   01:03**, typed from `/file?p=lint.py` — the page he was reading this session's work on:
