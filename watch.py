@@ -651,7 +651,12 @@ STYLE = """<style>
      decision row always is). Emphasis here is luminance, not colour:
      --ok/--warn are reserved (#351 pane / #136 broken), so the glyph (✔/✘)
      carries the verdict and the ramp carries 'done'. */
-  .rdecision { margin-left:.6ch; font-size:.7rem; white-space:nowrap; }
+  .rdecision { margin-left:.6ch; font-size:.7rem; white-space:nowrap;
+               /* the standing transition .dreamin eases BACK from (the
+                  enter-snap rule, #154/#463): without it the arrival pose
+                  snaps to lit rather than easing in. */
+               transition:opacity .55s ease, filter .55s ease,
+                          transform .55s ease; }
   .rdecision.raccepted, .rdecision.rrejected { color:var(--dim); }
   .rdecision.rpending { color:var(--muted); }
   .rqlink { color:inherit; text-decoration:none; }
@@ -4423,6 +4428,45 @@ function revealReviewMods() {
   }
   knownReviewMods = now;
 }
+/* #289 — a review's DECISION token appearing/changing on its row is a state
+   change (transitions.md: no size floor), and it reuses the SAME one-shot
+   `.dreamin` arrival idiom as revealReviewMods (#463) / revealQuestionUpdates
+   (#473): the row survives the tick (keyed by filename, travels via the list
+   FLIP only when it MOVES), but the decision marker inside it is new
+   innerHTML. Track each row's `data-decision`; on a genuine change the marker
+   gets the enter-snap start pose, then eases in on the standing transition.
+   First paint settles visible (no pose), reduced motion skips the pose
+   (function only), and a decision going TO 'unlinked' is a departure of inner
+   content (no survivor to animate) so it gets no arrival — the marker simply
+   is absent from the new innerHTML, the same as the status panel's
+   data-driven facts. */
+let knownReviewDecisions = null;
+function revealReviewDecisions() {
+  // Only the dashboard reviews list carries decisions; reset on any other
+  // route so the next dashboard paint settles rather than re-arriving.
+  if (view.name !== 'dashboard') { knownReviewDecisions = null; return; }
+  const rows = [...document.querySelectorAll('[data-review]')];
+  const now = {};
+  for (const r of rows) now[r.dataset.review] = r.dataset.decision || 'unlinked';
+  if (knownReviewDecisions === null) {
+    knownReviewDecisions = now;   // first paint: settle visible
+    return;
+  }
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  for (const r of rows) {
+    const name = r.dataset.review, dec = now[name];
+    if (knownReviewDecisions[name] === dec) continue;   // unchanged
+    if (dec === 'unlinked') continue;   // marker left, not arrived
+    const marker = r.querySelector('.rdecision');
+    if (!marker || reduce) continue;
+    marker.classList.add('dreamin');
+    void marker.offsetWidth;
+    requestAnimationFrame(() => {
+      if (marker.isConnected) marker.classList.remove('dreamin');
+    });
+  }
+  knownReviewDecisions = now;
+}
 /* one field, two destinations: the mode group under the box picks which
    (#103). Everything downstream — the morph, the ripple, the re-render hold
    — is unchanged; only the routing is new. */
@@ -6589,6 +6633,7 @@ function setContent(html) {
   // and label so a mid-arm tick does not reset the control to idle copy.
   paintStaleDeployUI();
   revealReviewMods();
+  revealReviewDecisions();  // #289: decision-token arrival, same idiom
   revealQuestionUpdates();  // #473: updated-ago arrival, after ages() hides dishonest ones
   // #290: innerHTML destroys the arm bar nodes; resume shared pending (or
   // re-sync the committed selection) without inventing a new deadline.
