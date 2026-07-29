@@ -393,6 +393,14 @@ POSTURE_DELIVERY_DESC = {
     "instant": "wake the loop now · every kind fires the moment you send it",
     "batched": "drain on the next tick · do-now/do-next still pre-empt",
 }
+# #510 — orchestration: does the coordinator implement, or only dispatch +
+# review? Contract copy, not marketing. The axis is inert until a consumer
+# reads it (the same forward-looking-dial shape delivery held before its
+# consumer).
+POSTURE_ORCHESTRATION_DESC = {
+    "hands-on": "the coordinator implements increments itself · may also delegate",
+    "orchestrator": "coordinator implements nothing · every increment is dispatched",
+}
 # Hoisted early so lint can `import watch` without waiting for the ledger
 # section thousands of lines later. Single definition — the ledger block
 # reuses this name, never restates.
@@ -5910,6 +5918,11 @@ function readPostPending() {
     // rather than rejecting, so a pre-#342 pending entry still resumes.
     if (p.delivery != null && POSTURE_STOPS_DELIVERY.indexOf(p.delivery) < 0)
       return null;
+    // orchestration is optional in a stale pending cache — default it to
+    // hands-on, so a pre-#510 pending entry still resumes.
+    if (p.orchestration != null
+        && POSTURE_STOPS_ORCHESTRATION.indexOf(p.orchestration) < 0)
+      return null;
     if (typeof p.until !== 'number') return null;
     if (p.phase === 'cancel') {
       if (Date.now() >= p.until) { localStorage.removeItem(k); return null; }
@@ -5931,7 +5944,7 @@ function writePostPending(draft, until, owner) {
     if (!k) return;
     localStorage.setItem(k, JSON.stringify({
       pace: draft.pace, asking: draft.asking, delegation: draft.delegation,
-      delivery: draft.delivery,
+      delivery: draft.delivery, orchestration: draft.orchestration,
       until, owner: owner || postTabId(),
     }));
   } catch (e) {}
@@ -5942,7 +5955,7 @@ function writePostCancel(draft) {
     if (!k) return;
     localStorage.setItem(k, JSON.stringify({
       pace: draft.pace, asking: draft.asking, delegation: draft.delegation,
-      delivery: draft.delivery,
+      delivery: draft.delivery, orchestration: draft.orchestration,
       phase: 'cancel', until: Date.now() + 800, owner: postTabId(),
     }));
   } catch (e) {}
@@ -5960,10 +5973,12 @@ function committedPosture(d) {
     ? p.asking : POSTURE_STOPS_ASKING[0];
   const delivery = POSTURE_STOPS_DELIVERY.indexOf(p.delivery) >= 0
     ? p.delivery : 'instant';
+  const orchestration = POSTURE_STOPS_ORCHESTRATION.indexOf(p.orchestration) >= 0
+    ? p.orchestration : 'hands-on';
   let dlg = 0;
   try { dlg = Math.max(0, parseInt(p.delegation, 10) || 0); } catch (e) { dlg = 0; }
   return {
-    pace, asking, delegation: dlg, delivery,
+    pace, asking, delegation: dlg, delivery, orchestration,
     source: p.source === 'file' ? 'file' : 'derived',
     delegation_label: p.delegation_label || delegationLabel(dlg),
   };
@@ -6125,6 +6140,7 @@ async function commitPosture(draft, gen, opts) {
         asking: draft.asking,
         delegation: draft.delegation,
         delivery: draft.delivery,
+        orchestration: draft.orchestration,
         from: location.pathname + location.search,
         tab: postTabId(),
         orphan: orphan || false,
@@ -6145,6 +6161,7 @@ async function commitPosture(draft, gen, opts) {
         asking: draft.asking,
         delegation: draft.delegation,
         delivery: draft.delivery,
+        orchestration: draft.orchestration,
         source: 'file',
         delegation_label: delegationLabel(draft.delegation),
       };
@@ -6167,7 +6184,8 @@ function armPostureDraft(next) {
   // Re-selecting the fully committed point cancels any pending arm.
   if (next.pace === cur.pace && next.asking === cur.asking
       && next.delegation === cur.delegation
-      && next.delivery === cur.delivery && cur.source === 'file') {
+      && next.delivery === cur.delivery
+      && next.orchestration === cur.orchestration && cur.source === 'file') {
     postArmGen++;
     postArmShouldCommit = false;
     writePostCancel(cur);
@@ -6186,7 +6204,8 @@ function armPostureDraft(next) {
   postArmShouldCommit = true;
   postDraft = {
     pace: next.pace, asking: next.asking, delegation: next.delegation,
-    delivery: next.delivery, source: 'file',
+    delivery: next.delivery, orchestration: next.orchestration,
+    source: 'file',
   };
   writePostPending(postDraft, until, postTabId());
   paintPostureSelection(postDraft, false);
@@ -6196,10 +6215,12 @@ function pickPostureAxis(axis, stop) {
   if (axis === 'pace' && POSTURE_STOPS_PACE.indexOf(stop) < 0) return;
   if (axis === 'asking' && POSTURE_STOPS_ASKING.indexOf(stop) < 0) return;
   if (axis === 'delivery' && POSTURE_STOPS_DELIVERY.indexOf(stop) < 0) return;
+  if (axis === 'orchestration'
+      && POSTURE_STOPS_ORCHESTRATION.indexOf(stop) < 0) return;
   const base = postDraft || committedPosture(data);
   const next = {
     pace: base.pace, asking: base.asking, delegation: base.delegation,
-    delivery: base.delivery,
+    delivery: base.delivery, orchestration: base.orchestration,
   };
   next[axis] = stop;
   armPostureDraft(next);
@@ -6211,7 +6232,7 @@ function stepPostureDelegation(delta) {
   if (n > POSTURE_DELEGATION_UI_MAX) n = POSTURE_DELEGATION_UI_MAX;
   armPostureDraft({
     pace: base.pace, asking: base.asking, delegation: n,
-    delivery: base.delivery,
+    delivery: base.delivery, orchestration: base.orchestration,
   });
 }
 function posturePicker(d) {
@@ -6219,7 +6240,8 @@ function posturePicker(d) {
   const arm = pendingPostIsLive(pending) ? pending : null;
   const cur = arm
     ? { pace: arm.pace, asking: arm.asking, delegation: arm.delegation,
-        delivery: arm.delivery || 'instant', source: 'file' }
+        delivery: arm.delivery || 'instant',
+        orchestration: arm.orchestration || 'hands-on', source: 'file' }
     : committedPosture(d);
   if (arm) postDraft = cur;
   const paceChips = POSTURE_STOPS_PACE.map(n =>
@@ -6247,6 +6269,16 @@ function posturePicker(d) {
     ` aria-checked="${n === cur.delivery ? 'true' : 'false'}"` +
     ` aria-describedby="pdesc-text"` +
     ` onclick="pickPostureAxis('delivery','${esc(n)}')">${esc(n)}</button>`
+  ).join('');
+  // #510: orchestration — a fifth axis row, the same chip idiom again. The
+  // axis is inert until a consumer reads it; the control lands now so the
+  // dial is settable the same way every other axis is.
+  const orchChips = POSTURE_STOPS_ORCHESTRATION.map(n =>
+    `<button type="button" role="radio" class="sgbtn pchip` +
+    `${n === cur.orchestration ? ' on' : ''}" data-stop="${esc(n)}"` +
+    ` aria-checked="${n === cur.orchestration ? 'true' : 'false'}"` +
+    ` aria-describedby="pdesc-text"` +
+    ` onclick="pickPostureAxis('orchestration','${esc(n)}')">${esc(n)}</button>`
   ).join('');
   const dlgLab = delegationLabel(cur.delegation);
   const srcNote = cur.source === 'file'
@@ -6292,6 +6324,12 @@ function posturePicker(d) {
     `<div class="sgroup paxis-chips" role="radiogroup" data-axis="delivery"` +
     ` aria-labelledby="delivery-lab">` +
     `<div class="sgind"></div>${deliveryChips}</div></div>` +
+    // #510 orchestration axis — same .paxis/.paxis-chips shape as pace/asking.
+    `<div class="paxis" data-axis="orchestration">` +
+    `<div class="paxis-lab" id="orchestration-lab">orchestration · coordinator role</div>` +
+    `<div class="sgroup paxis-chips" role="radiogroup" data-axis="orchestration"` +
+    ` aria-labelledby="orchestration-lab">` +
+    `<div class="sgind"></div>${orchChips}</div></div>` +
     `<div class="pdesc" id="pdesc" role="tooltip" aria-hidden="true">` +
     `<span class="pdesc-text" id="pdesc-text"></span></div>` +
     `<div class="parm" id="parm">` +
@@ -6316,6 +6354,8 @@ function postDescFor(axis, stop) {
     return POSTURE_DELEGATION_DESC[stop];
   if (axis === 'delivery' && POSTURE_DELIVERY_DESC[stop])
     return POSTURE_DELIVERY_DESC[stop];
+  if (axis === 'orchestration' && POSTURE_ORCHESTRATION_DESC[stop])
+    return POSTURE_ORCHESTRATION_DESC[stop];
   return '';
 }
 function hidePostDesc(immediate) {
@@ -6446,6 +6486,7 @@ function syncPostureFromData() {
       paintPostureSelection({
         pace: pending.pace, asking: pending.asking,
         delegation: pending.delegation, delivery: pending.delivery || 'instant',
+        orchestration: pending.orchestration || 'hands-on',
         source: 'file',
       }, true);
     postArmShouldCommit = false;
@@ -6458,6 +6499,7 @@ function syncPostureFromData() {
     const draft = {
       pace: pending.pace, asking: pending.asking,
       delegation: pending.delegation, delivery: pending.delivery || 'instant',
+      orchestration: pending.orchestration || 'hands-on',
       source: 'file',
     };
     postDraft = draft;
@@ -6481,10 +6523,12 @@ function syncPostureFromData() {
             && (cur.pace !== p.pace || cur.asking !== p.asking
                 || cur.delegation !== p.delegation
                 || cur.delivery !== (p.delivery || 'instant')
+                || cur.orchestration !== (p.orchestration || 'hands-on')
                 || cur.source !== 'file'))
           commitPosture({
             pace: p.pace, asking: p.asking, delegation: p.delegation,
             delivery: p.delivery || 'instant',
+            orchestration: p.orchestration || 'hands-on',
           }, gen, { orphan: true });
       }, 200);
     }
@@ -6516,6 +6560,7 @@ window.addEventListener('storage', e => {
   const draft = {
     pace: pending.pace, asking: pending.asking,
     delegation: pending.delegation, delivery: pending.delivery || 'instant',
+    orchestration: pending.orchestration || 'hands-on',
     source: 'file',
   };
   postDraft = draft;
@@ -10884,6 +10929,8 @@ def _get_page():
         + json.dumps(list(lint.POSTURE_STOPS_ASKING)) + ";\n"
         + "const POSTURE_STOPS_DELIVERY = "
         + json.dumps(list(lint.POSTURE_STOPS_DELIVERY)) + ";\n"
+        + "const POSTURE_STOPS_ORCHESTRATION = "
+        + json.dumps(list(lint.POSTURE_STOPS_ORCHESTRATION)) + ";\n"
         + "const DELEGATION_POSTURES = "
         + json.dumps(list(lint.DELEGATION_POSTURES)) + ";\n"
         + "const POSTURE_DELEGATION_UI_MAX = "
@@ -10896,6 +10943,8 @@ def _get_page():
         + json.dumps(POSTURE_DELEGATION_DESC, ensure_ascii=True) + ";\n"
         + "const POSTURE_DELIVERY_DESC = "
         + json.dumps(POSTURE_DELIVERY_DESC, ensure_ascii=True) + ";\n"
+        + "const POSTURE_ORCHESTRATION_DESC = "
+        + json.dumps(POSTURE_ORCHESTRATION_DESC, ensure_ascii=True) + ";\n"
     )
     _PAGE_CACHE = _PAGE_TEMPLATE.replace("/*__POSTURE_VOCAB__*/", vocab)
     return _PAGE_CACHE
@@ -13401,11 +13450,13 @@ SUMMARY_DENIED = frozenset({
 
 
 def _summary_posture(v):
-    # The enum/int axes + delivery (#342); delegation_label is display chrome
-    # and never rides out unreviewed. delivery is real posture an external
-    # consumer needs to route on, not chrome.
+    # The enum/int axes + delivery (#342) + orchestration (#510);
+    # delegation_label is display chrome and never rides out unreviewed.
+    # delivery and orchestration are real posture an external consumer needs
+    # to route on, not chrome.
     return {k: v.get(k) for k in
-            ("pace", "asking", "delegation", "delivery", "source")}
+            ("pace", "asking", "delegation", "delivery", "orchestration",
+             "source")}
 
 
 def _summary_skill_identity(v):
@@ -13596,6 +13647,8 @@ def parse_posture_text(raw):
             out["asking"] = v
         elif k == "delivery" and v in lint.POSTURE_STOPS_DELIVERY:
             out["delivery"] = v
+        elif k == "orchestration" and v in lint.POSTURE_STOPS_ORCHESTRATION:
+            out["orchestration"] = v
         elif k == "delegation":
             try:
                 n = int(v)
@@ -13634,6 +13687,7 @@ def resolve_posture(target):
         "asking": base["asking"],
         "delegation": int(base["delegation"]),
         "delivery": file_vals.get("delivery", DELIVERY_DEFAULT),
+        "orchestration": file_vals.get("orchestration", ORCHESTRATION_DEFAULT),
         "source": "derived",
     }
     if file_vals:
@@ -13645,19 +13699,23 @@ def resolve_posture(target):
     return out
 
 
-def write_posture(target, pace, asking, delegation, delivery=None):
+def write_posture(target, pace, asking, delegation, delivery=None,
+                  orchestration=None):
     """Persist a posture override. Returns False if refused.
 
-    Writes the three required axes always; writes delivery only when it is
-    passed (None → omitted, so absent reads as the instant default — a caller
-    that has no opinion on delivery gets today's three-line file). A caller
-    that sets delivery passes it through and the fourth line lands."""
+    Writes the three required axes always; writes delivery / orchestration
+    only when passed (None → omitted, so absent reads as the default — a
+    caller with no opinion on either gets today's three-line file). A caller
+    that sets one passes it through and the extra line lands."""
     lint = _posture_vocab()
     if pace not in lint.POSTURE_STOPS_PACE:
         return False
     if asking not in lint.POSTURE_STOPS_ASKING:
         return False
     if delivery is not None and delivery not in lint.POSTURE_STOPS_DELIVERY:
+        return False
+    if (orchestration is not None
+            and orchestration not in lint.POSTURE_STOPS_ORCHESTRATION):
         return False
     try:
         n = int(delegation)
@@ -13669,6 +13727,8 @@ def write_posture(target, pace, asking, delegation, delivery=None):
     lines = [f"pace: {pace}", f"asking: {asking}", f"delegation: {n}"]
     if delivery is not None:
         lines.append(f"delivery: {delivery}")
+    if orchestration is not None:
+        lines.append(f"orchestration: {orchestration}")
     body = "\n".join(lines) + "\n"
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -13678,16 +13738,21 @@ def write_posture(target, pace, asking, delegation, delivery=None):
         return False
 
 
-def posture_line(pace, asking, delegation, source=""):
+def posture_line(pace, asking, delegation, orchestration, source=""):
     """Source-tagged watch-events.log line for a committed posture change.
 
-    Pure; one_line on each free field so nothing forges a second event.
+    Carries the posture POINT — pace / asking / delegation / orchestration —
+    the axes without a separate consumer line. Delivery has its own
+    `delivery via watch` line (it drives wake routing); orchestration rides
+    here because it has no consumer yet. Pure; one_line on each free field so
+    nothing forges a second event.
     """
     return (
         f"posture via watch{from_hint(source)}: "
         f"pace={one_line(str(pace))} "
         f"asking={one_line(str(asking))} "
         f"delegation={one_line(str(delegation))}"
+        f" orchestration={one_line(str(orchestration))}"
     )
 
 
@@ -13707,6 +13772,11 @@ def posture_equal(a, b):
 # default is today's behaviour (every wake line fires). The loop gates which
 # kinds wake; the cursor read on every tick is the guarantee nothing is lost.
 DELIVERY_DEFAULT = "instant"
+# #510 — the orchestration posture axis (hands-on|orchestrator). Absent =
+# hands-on, so the default is today's behaviour (the coordinator implements
+# inline). The axis is inert until a consumer reads it; it rides the
+# `posture via watch` line, not its own.
+ORCHESTRATION_DEFAULT = "hands-on"
 
 
 def delivery_line(mode, source=""):
@@ -14757,21 +14827,23 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                        "application/json")
 
         def _handle_posture(self):
-            """Four-axis posture override (#445 + #342 delivery).
+            """Five-axis posture override (#445 + #342 delivery + #510 orchestration).
 
             Dual-write: authoritative gitignored `.dreamwork/posture` plus
             one watch-events.log line when a posture point actually changes
-            — a `posture via watch` line for the pace/asking/delegation
-            triple, a `delivery via watch` line for the delivery axis. Both
+            — a `posture via watch` line for the pace/asking/delegation/
+            orchestration point, a `delivery via watch` line for the delivery
+            axis (delivery drives wake routing; the rest do not). Both
             are the SAME ceremony run-mode already uses (dual-write + one
             line on real change), not two. Identical final is 202 + no event.
             The client arms a single shared 10s pending across every axis
             (one file) and only POSTs the final point; this handler never
             debounce-timer itself. Closed sets imported from lint — never
             restated. Delegation is a non-negative integer TARGET, never a
-            cap (his #445 Q3). Delivery absent in the request preserves the
-            axis's current value (a pace change must not silently reset wake
-            routing); absent on disk is the instant default.
+            cap (his #445 Q3). Delivery / orchestration absent in the request
+            preserve the axis's current value (a pace change must not silently
+            reset wake routing or the orchestration mode); absent on disk is
+            the default (instant / hands-on).
             """
             req = self._read_json()
             if req is None:
@@ -14798,16 +14870,27 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 delivery = current.get("delivery", DELIVERY_DEFAULT)
             if delivery not in lint.POSTURE_STOPS_DELIVERY:
                 self._reject("domain_invalid"); return
+            # Orchestration (#510): same omit-preserves-current shape as
+            # delivery; an empty value or no file falls back to hands-on.
+            orchestration = str((req or {}).get("orchestration", "")).strip()
+            if not orchestration:
+                orchestration = current.get("orchestration", ORCHESTRATION_DEFAULT)
+            if orchestration not in lint.POSTURE_STOPS_ORCHESTRATION:
+                self._reject("domain_invalid"); return
             triple_same = (current.get("pace") == pace
                            and current.get("asking") == asking
                            and int(current.get("delegation", -1)) == delegation)
             delivery_same = current.get("delivery", DELIVERY_DEFAULT) == delivery
-            if triple_same and delivery_same and current.get("source") == "file":
+            orch_same = (current.get("orchestration", ORCHESTRATION_DEFAULT)
+                         == orchestration)
+            if (triple_same and delivery_same and orch_same
+                    and current.get("source") == "file"):
                 # Identical file-backed final: silent. (Derived-source match
                 # still writes the file so an explicit override is durable.)
                 self._send_receipt(json.dumps({
                     "ok": True, "pace": pace, "asking": asking,
                     "delegation": delegation, "delivery": delivery,
+                    "orchestration": orchestration,
                     "changed": False,
                 }), "application/json")
                 return
@@ -14818,20 +14901,27 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                     and file_vals.get("asking") == asking
                     and file_vals.get("delegation") == delegation
                     and file_vals.get("delivery", DELIVERY_DEFAULT) == delivery
+                    and file_vals.get("orchestration", ORCHESTRATION_DEFAULT)
+                        == orchestration
                     and len(file_vals) >= 3):
                 self._send_receipt(json.dumps({
                     "ok": True, "pace": pace, "asking": asking,
                     "delegation": delegation, "delivery": delivery,
+                    "orchestration": orchestration,
                     "changed": False,
                 }), "application/json")
                 return
-            if not write_posture(target, pace, asking, delegation, delivery):
+            if not write_posture(target, pace, asking, delegation, delivery,
+                                 orchestration):
                 self.send_error(500)
                 return
             changed = False
-            if not triple_same:
+            # The posture point (pace/asking/delegation/orchestration) fires
+            # one line on any change; orchestration rides it because it has
+            # no separate consumer. Delivery has its own line (wake routing).
+            if not triple_same or not orch_same:
                 log_event(target, posture_line(pace, asking, delegation,
-                                               req.get("from")))
+                                                orchestration, req.get("from")))
                 changed = True
             if not delivery_same:
                 log_event(target, delivery_line(delivery, req.get("from")))
@@ -14839,6 +14929,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             self._send_receipt(json.dumps({
                 "ok": True, "pace": pace, "asking": asking,
                 "delegation": delegation, "delivery": delivery,
+                "orchestration": orchestration,
                 "changed": changed,
                 "delegation_label": lint.delegation_posture(delegation),
             }), "application/json")
@@ -14957,6 +15048,7 @@ def __getattr__(name):
         return _get_page()
     if name in (
         "POSTURE_STOPS_PACE", "POSTURE_STOPS_ASKING", "POSTURE_STOPS_DELIVERY",
+        "POSTURE_STOPS_ORCHESTRATION",
         "DELEGATION_POSTURES", "POSTURE_AXES", "derive_posture",
         "delegation_posture", "RUN_MODE_TO_POSTURE",
     ):
