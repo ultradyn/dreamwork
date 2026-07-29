@@ -3213,3 +3213,13 @@ this shape and convert opportunistically.)
   exposed it. The note-appending was right, the tool was wrong: for a mid-task increment note, edit the
   entry by hand under `## Open`. `fold` is for done. Evidence: `ud-dw-tasks-migrate`'s census counts
   dropped #294 from open at 18:12; corrected 19:04.
+- **Background subagents die with the parent session's compaction — the brief on disk is the only
+  survivable state.** A compaction event killed three running lanes at once. The one that had written its
+  deliverable to the repo (`cli-warning-layer.md`) was collectible; the two whose work lived only in their
+  transcripts (a /tmp visual review, a worktree that left no branch and no dangling commits) were total
+  losses and had to be re-dispatched. What made re-dispatch a five-minute job instead of a rewrite: every
+  lane's brief was already committed under `.dreamwork/docs/briefs/`, so the new lane got byte-identical
+  instructions. Two corollaries: (1) a lane whose deliverable is a verdict (not a file) should write its
+  report to disk as it goes, not only in its final message; (2) after any compaction, the FIRST tick's job
+  is reconciling `status.json`'s agent list against reality — three entries pointed at dead subagent ids.
+  Evidence: 2026-07-30 01:10 tick, lanes 289viz/342a re-dispatched, 357design collected from disk.
