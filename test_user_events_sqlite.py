@@ -47,7 +47,6 @@ from user_events.sqlite import (
     Envelope,
     ReceiptEvent,
     VersionMismatchError,
-    events_since_cursor,
     open_journal,
 )
 
@@ -1464,18 +1463,20 @@ def test_cursor_read_lower_bound_excludes_what_was_scanned_past(
     path = tmp_path / "cr-bounds.sqlite3"
     j = journal_factory(path)
     try:
-        for n in range(3):
-            assert j.receive(_envelope(body=f'{{"n":{n}}}'.encode())).kind == "inserted"
-        # consumer-a advances past ordinal 1 only.
+        # ordinal 1 lands first; capture its hash BEFORE more events chain on,
+        # so advance_cursor's expected matches the verified hash at ordinal 1.
+        assert j.receive(_envelope(body=b'{"n":0}')).kind == "inserted"
         head_at_1 = j.head_hash()
+        # consumer-a advances past ordinal 1 only (a NON-ZERO position, so the
+        # > vs >= distinction is reachable).
         adv = j.advance_cursor("a", expected=head_at_1, scanned_through=1)
         assert adv.kind == "advanced", f"precondition advance failed: {adv!r}"
         assert j.cursor("a").scanned_through_event_ordinal == 1, (
             "precondition: consumer-a must sit at a NON-ZERO ordinal to make "
             "the > vs >= distinction reachable"
         )
-        # More events land above consumer-a's position.
-        for n in range(3, 5):
+        # More events land above consumer-a's position → ordinals 2..5.
+        for n in range(1, 5):
             assert j.receive(_envelope(body=f'{{"n":{n}}}'.encode())).kind == "inserted"
         high = j.head_ordinal()
         assert high == 5, f"precondition: head must be 5, got {high}"
@@ -1514,12 +1515,13 @@ def test_cursor_read_does_not_advance_the_cursor(
     path = tmp_path / "cr-nomove.sqlite3"
     j = journal_factory(path)
     try:
-        for n in range(3):
+        # ordinal 1 first; capture its hash before chaining more on top.
+        assert j.receive(_envelope(body=b'{"n":0}')).kind == "inserted"
+        head_at_1 = j.head_hash()
+        for n in range(1, 3):
             assert j.receive(_envelope(body=f'{{"n":{n}}}'.encode())).kind == "inserted"
         # Give the consumer a real cursor row so a spurious write would bump it.
-        head = j.head_hash()
-        high = j.head_ordinal()
-        adv = j.advance_cursor("r", expected=head, scanned_through=1)
+        adv = j.advance_cursor("r", expected=head_at_1, scanned_through=1)
         assert adv.kind == "advanced"
         before = j.cursor("r")
         assert before.scanned_through_event_ordinal == 1, "precondition: cursor at 1"
