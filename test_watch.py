@@ -2973,6 +2973,41 @@ class TestCollector(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     watch.list_reviews(rd)
 
+    def test_collect_lists_research_built_html_ignoring_src(self):
+        # #484 — research artifacts list under `.dreamwork/docs/research/`
+        # exactly the way reviews list under `.dreamwork/review/`: the built
+        # .html at the directory's root, non-recursively, so a source in
+        # `src/` (the one builder's layout, review_artifact.build_path) is
+        # never listed — and never served as a half-built page.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            rd = os.path.join(d, ".dreamwork", "docs", "research")
+            src = os.path.join(rd, "src")
+            os.makedirs(src)
+            built = os.path.join(rd, "window-coords.html")
+            source = os.path.join(src, "window-coords.html")
+            note = os.path.join(rd, "README.md")
+            for path in (built, source, note):
+                with open(path, "w") as f:
+                    f.write("<!doctype html><p>x")
+            # Runtime-derived preconditions: both exclusions have a real
+            # subject on disk, so "not listed" is the filter's doing, not an
+            # empty fixture's.
+            self.assertTrue(os.path.isfile(source))
+            self.assertTrue(os.path.isfile(note))
+            data = watch.collect(d)
+            names = [r["name"] for r in data["research"]]
+            self.assertEqual(names, ["window-coords.html"])
+
+    def test_collect_research_absent_dir_is_empty_not_error(self):
+        # Most loop targets have no research directory yet; the key exists
+        # and is empty, mirroring the reviews absent-dir branch.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertFalse(os.path.isdir(
+                os.path.join(d, ".dreamwork", "docs", "research")))
+            self.assertEqual(watch.collect(d)["research"], [])
+
     def test_resolve_confined_nested(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
@@ -3570,6 +3605,26 @@ class TestAppShell(unittest.TestCase):
         # focused page must follow it across the fold rather than reporting
         # a live question as gone.
         self.assertIn("d.answered_entries.find", watch.PAGE)
+
+    def test_page_has_research_route_wiring(self):
+        # #484 — /research lists the built research artifacts under
+        # .dreamwork/docs/research/ and /research?p=<name> views one through
+        # the same iframe idiom as /review (raw served at /researchraw).
+        # It deliberately does NOT reuse the review surface: no questions.md
+        # pairing, no archive-on-answered lifecycle. Guard:
+        # dev/capture/research.mjs.
+        for token in ('buildResearch', '/researchraw', '/research?p='):
+            self.assertIn(token, watch.PAGE)
+        # A route lives in three places (the #452 lesson restated at
+        # test_page_has_question_route_wiring): the client router, the
+        # internal-link claim, and the server's app-shell table (covered
+        # live in test_research_route_serves_shell_...).
+        self.assertIn("loc.pathname === '/research'", watch.PAGE)
+        self.assertIn("a.pathname === '/research'", watch.PAGE)
+        # The view half embeds the raw artifact for style isolation —
+        # reusing the reviewframe id is what gives the tick's
+        # snapshotReviewFrame/restoreReviewFrame preservation to it.
+        self.assertIn("'/researchraw?p=' + encodeURIComponent(", watch.PAGE)
 
     def test_narrow_review_frame_uses_measured_rvh_not_60vh(self):
         # #434 — production lines: the narrow #reviewdoc height, and the
@@ -5400,6 +5455,46 @@ class TestAppShell(unittest.TestCase):
             for bad in ("/reviewraw?p=../questions.md",
                         "/reviewraw?p=sub/dir.html",
                         "/reviewraw?p=missing.html"):
+                with self.assertRaises(urllib.error.HTTPError) as cm:
+                    self._get(base + bad)
+                self.assertEqual(cm.exception.code, 404)
+
+    def test_research_serves_shell_researchraw_serves_artifact(self):
+        # #484 — same pair as /review + /reviewraw, over docs/research.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            rd = os.path.join(d, ".dreamwork", "docs", "research")
+            os.makedirs(rd)
+            with open(os.path.join(rd, "window-coords.html"), "w") as f:
+                f.write("<!doctype html><title>R</title><p>research body")
+            base = self._serve(d)
+            # /research (list) and /research?p= both return the app shell;
+            # the client router renders the matching view.
+            for path in ("/research", "/research?p=window-coords.html"):
+                status, body = self._get(base + path)
+                self.assertEqual(status, 200)
+                self.assertIn('id="view"', body)
+            # /researchraw returns the raw artifact for the iframe.
+            status, raw = self._get(base + "/researchraw?p=window-coords.html")
+            self.assertEqual(status, 200)
+            self.assertIn("research body", raw)
+
+    def test_researchraw_blocks_escape_src_and_missing(self):
+        # The src/ half is the load-bearing one: a source is .html under the
+        # research tree, and only the no-slash basename rule keeps it from
+        # being served as a finished artifact.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            rd = os.path.join(d, ".dreamwork", "docs", "research")
+            os.makedirs(os.path.join(rd, "src"))
+            with open(os.path.join(rd, "src", "draft.html"), "w") as f:
+                f.write("<!doctype html><p>half-built source")
+            self.assertTrue(os.path.isfile(
+                os.path.join(rd, "src", "draft.html")))
+            base = self._serve(d)
+            for bad in ("/researchraw?p=../review/x.html",
+                        "/researchraw?p=src/draft.html",
+                        "/researchraw?p=missing.html"):
                 with self.assertRaises(urllib.error.HTTPError) as cm:
                     self._get(base + bad)
                 self.assertEqual(cm.exception.code, 404)
