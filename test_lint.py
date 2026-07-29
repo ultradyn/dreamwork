@@ -4619,6 +4619,117 @@ class TestResolutionMarkerOutsideTitle:
         assert self.rows(t) == []
 
 
+class TestResolutionMarkerAfterSubbullet:
+    """#467: a `→ answered` marker written AFTER a nested `- **` sub-bullet is
+    absorbed into that sub-bullet as a wrapped continuation (`_parse_entries`
+    invariant 3), so it never reaches `body` and `answered_at` returns None —
+    the fold looks done, and the #411 WARN names a "dropped" marker that was
+    written, just in the wrong place. Third instance of the #411 family:
+    measured 2026-07-29 folding his #445 answer; moving the marker above the
+    answer line fixed it instantly."""
+
+    def build(self, tmp_path, entries):
+        # `entries`: list of raw entry text, each starting with `- **`.
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "questions.md").write_text(
+            "# Questions\n\n## Open\n\n## Answered\n\n"
+            + "\n\n".join(entries) + "\n")
+        return t
+
+    def rows(self, t):
+        rep = lint.Report()
+        lint.check_resolution_marker_after_subbullet(
+            t / ".dreamwork", lint.load_watch(), rep)
+        return [(lvl, d) for lvl, w, d in rep.rows if w == "questions.md"]
+
+    def parsed(self, t):
+        import watch
+        return watch.parse_answered(
+            (t / ".dreamwork/questions.md").read_text())
+
+    def test_a_marker_after_the_answer_bullet_errors_and_is_named(self, tmp_path):
+        t = self.build(tmp_path, [
+            # the shape that actually happened: the fold appended the marker
+            # after his Answer bullet, where the parser swallows it
+            "- **P1 · 2026-07-29 — #998: a settled ask with a stranded marker**\n"
+            "  some body prose\n"
+            "  - **Answer (via watch, 2026-07-29 03:45):** rec\n"
+            "  → answered (2026-07-29 03:50): rec — recorded.\n",
+            "- **P1 · 2026-07-29 — #999: a well-formed entry**\n"
+            "  → answered (2026-07-29 03:50): rec — recorded.\n"
+            "  - **Answer (via watch, 2026-07-29 03:45):** rec\n",
+        ])
+        # PRECONDITION, derived from the real parser — never trusted from the
+        # fixture's layout: the stranded marker must be genuinely unreachable
+        # (`answered_at` None) while the well-formed entry's is seen, and the
+        # stranded marker must be present in what the parser DID absorb (the
+        # answer's follow text), or the check has no subject and every
+        # assertion below is vacuous.
+        import watch
+        by = {it["title"]: it for it in self.parsed(t)}
+        bad = by["P1 · 2026-07-29 — #998: a settled ask with a stranded marker"]
+        good = by["P1 · 2026-07-29 — #999: a well-formed entry"]
+        assert watch.answered_at(bad["body"]) is None
+        assert watch.answered_at(good["body"]) == "2026-07-29 03:50"
+        assert any("→ answered (2026-07-29" in f["text"]
+                   for f in bad["follows"]), bad["follows"]
+        rows = self.rows(t)
+        assert rows and rows[0][0] == lint.ERROR, rows
+        assert "stranded marker" in rows[0][1]
+        # the repair instruction: where the marker must go
+        assert "above" in rows[0][1] and "sub-bullet" in rows[0][1]
+        assert "well-formed" not in rows[0][1]
+
+    def test_a_marker_above_the_answer_bullet_is_silent(self, tmp_path):
+        t = self.build(tmp_path, [
+            "- **P1 · 2026-07-29 — #999: marker at the head of the body**\n"
+            "  → answered (2026-07-29 03:50): rec — recorded.\n"
+            "  - **Answer (via watch, 2026-07-29 03:45):** rec\n",
+        ])
+        # PRECONDITION: the marker is genuinely reachable here, or "silent"
+        # proves nothing about the position distinction.
+        import watch
+        (it,) = self.parsed(t)
+        assert watch.answered_at(it["body"]) == "2026-07-29 03:50"
+        assert self.rows(t) == []
+
+    def test_a_blank_line_releases_the_marker_and_is_silent(self, tmp_path):
+        # The parser's invariant 3 ends at a blank line, so a marker after a
+        # sub-bullet WITH a blank line between lands back in the body. This
+        # pins the check to the parser's truth: it must not cry ERROR on a
+        # marker the reader can see.
+        t = self.build(tmp_path, [
+            "- **P1 · 2026-07-29 — #997: blank-separated marker**\n"
+            "  - **Answer (via watch, 2026-07-29 03:45):** rec\n"
+            "\n"
+            "  → answered (2026-07-29 03:50): rec — recorded.\n",
+        ])
+        import watch
+        (it,) = self.parsed(t)
+        assert watch.answered_at(it["body"]) == "2026-07-29 03:50"
+        assert self.rows(t) == []
+
+    def test_a_note_bullet_strands_the_marker_just_the_same(self, tmp_path):
+        # The absorption is invariant 3's, not the Answer tag's: a Note
+        # sub-bullet swallows a following marker identically.
+        t = self.build(tmp_path, [
+            "- **P1 · 2026-07-29 — #996: marker after a note**\n"
+            "  - **Note (human, via watch, 2026-07-29 03:40):** a thought\n"
+            "  → answered (2026-07-29 03:50): rec — recorded.\n",
+        ])
+        import watch
+        (it,) = self.parsed(t)
+        assert watch.answered_at(it["body"]) is None
+        assert any("→ answered (2026-07-29" in f["text"]
+                   for f in it["follows"]), it["follows"]
+        rows = self.rows(t)
+        assert rows and rows[0][0] == lint.ERROR, rows
+        assert "marker after a note" in rows[0][1]
+
+
+
 class TestBriefLaneOwns:
     """#465: a worktree-naming brief must declare its owned paths.
 
