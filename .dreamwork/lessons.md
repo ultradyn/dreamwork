@@ -3200,3 +3200,9 @@ this shape and convert opportunistically.)
   *task* side rather than the hand-off side. The check is one command: `git log --oneline --grep='#294'` and
   look for the landing commit before believing "next is X". Evidence: the `50f4933` entry/task split vs my
   lane's flat "1b" (`wt/294`), 2026-07-29.
+- **A lane that reads whole large files (`watch.py` ~8900 lines, `tasks.md` ~8000) can blow its context and die
+  on `max_tokens_truncation` before writing anything.** The `#298` lane read 1.08M input tokens over 16 model
+  calls and was truncated mid-work — zero commits, nothing to salvage. The brief's file list (`watch.py`,
+  `tasks.md`, the design docs) is an invitation to read them wholesale, so the constraint has to be stated:
+  grep for the symbol and read only that window, each file once. Put it in the dispatch prompt for any lane
+  pointed at the big files. Evidence: `019fabf4` failed 931s / 30 tool calls / exit 1, 2026-07-29.
