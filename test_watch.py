@@ -1255,8 +1255,16 @@ class TestCollector(unittest.TestCase):
         # #487 — consistent pin: RHS when room (measured from layout),
         # above chart+tip when not. Never follows the column centre.
         self.assertIn('function bdinspLay(bd, col, el)', watch.PAGE)
-        lay = watch.PAGE[watch.PAGE.index('function bdinspLay'):
-                         watch.PAGE.index('function bdinspLay') + 900]
+        # Slice to the next function declaration, never a fixed char window:
+        # a +900 literal covered less than half of bdinspLay once #498's
+        # geometry fix lengthened it, and the check failed on truncation,
+        # not on the placement it names (the repo's tuned-literal lesson).
+        start = watch.PAGE.index('function bdinspLay')
+        end = watch.PAGE.index('\nfunction ', start + 1)
+        lay = watch.PAGE[start:end]
+        self.assertGreater(len(lay), 900,
+                           "slice must beat the old fixed window — a shorter "
+                           "one risks re-tuning the literal that just failed")
         # room is derived from rendered widths, not a guessed px breakpoint
         self.assertIn('offsetWidth', lay)
         self.assertIn('bdr.width', lay)
