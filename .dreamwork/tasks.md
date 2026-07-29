@@ -282,18 +282,6 @@ Next id: **484**
   required/optional, persist-until-answered), and the push-back — pag is a partial model (no authorship
   vocabulary, no threading, one-shot answers, no attention-mode axis), and `#294` must add question/contribution
   tables before any build. **The FEATURE stays blocked on `#294`** — only the survey half is done.
-- **#466** — bundle the `subagent-protocols` skill with dreamwork, so a lane's two-way channel is part of the
-  loop rather than a path a brief happens to name · **P2** · packaging/subagents · origin: **human** ·
-  **human via watch 2026-07-29 03:45**, inside his `#445` answer
-  · his words: *"they can talk to eachother via /subagent-protocols (another skill we should bundle with
-  dreamwork, btw, please add that as a task)"* — said while ruling that **two agents may pair on a single
-  worktree**, which is what makes the channel load-bearing rather than convenient
-  · **why it matters now.** Every brief this session hand-wrote the path
-  `/home/xertrov/.claude-w/skills/subagent-protocols/SKILL.md` and the handshake obligation, and a lane that
-  never loaded it would have no inbox — the coordinator's only mid-task steering channel. A dependency stated
-  in prose in each brief is a dependency that goes missing the first time a brief is written in a hurry
-  · **this is the same shape as `#372`'s `use-igcs` bundling** — read them together and reuse whatever
-  mechanism that lands, rather than authoring a second one · related: **#445, #372**
 - **#467** — a `- **Answer …` bullet in a questions.md body truncates the parsed entry, so a `→ answered`
   marker written after it is invisible to every reader · **P1** · tooling/lint · origin: **loop**
   · **measured, 2026-07-29 03:50**, folding his `#445` answer: the marker was appended after his answer and
@@ -3697,6 +3685,20 @@ Next id: **484**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#466** — bundle the `subagent-protocols` skill with dreamwork, so a lane's two-way channel is part of the
+  loop rather than a path a brief happens to name · **P2** · packaging/subagents · origin: **human** ·
+  **human via watch 2026-07-29 03:45**, inside his `#445` answer
+  · his words: *"they can talk to eachother via /subagent-protocols (another skill we should bundle with
+  dreamwork, btw, please add that as a task)"* — said while ruling that **two agents may pair on a single
+  worktree**, which is what makes the channel load-bearing rather than convenient
+  · **why it matters now.** Every brief this session hand-wrote the path
+  `/home/xertrov/.claude-w/skills/subagent-protocols/SKILL.md` and the handshake obligation, and a lane that
+  never loaded it would have no inbox — the coordinator's only mid-task steering channel. A dependency stated
+  in prose in each brief is a dependency that goes missing the first time a brief is written in a hurry
+  · **this is the same shape as `#372`'s `use-igcs` bundling** — read them together and reuse whatever
+  mechanism that lands, rather than authoring a second one · related: **#445, #372**
+  · landed 47104b41 (merge of wt/466; lane work eb82273b..d758bf9c, native subagent). subagent-protocols vendored into the skill via #447's mechanism: for-subagents + for-coordinators halves + watch-file.sh, each header carrying upstream path + sha256 + staleness story; bodies verbatim apart from one declared repointing deviation. Wired into SKILL.md at two sites so a fresh install carries the handshake rather than depending on the host's skill set. The lane corrected my brief: #372 was mis-cited as the use-igcs bundling (it is the review scroller fix); #447 is the only bundling mechanism. Coordinator-verified independently: all 3 upstream sha256s match the recorded headers, body diff shows only the declared deviation, lint clean, 351 test_lint pass on the merged tree.
+
 - **#298** — Explain each burndown column on hover, focus and touch · P2 ·
   Web UI feature · 25m · origin: **human** · **human via watch `add-idea`
   14:10** · inspecting a chart column should reveal the exact interval/date,
