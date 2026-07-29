@@ -3713,6 +3713,18 @@ class TestAppShell(unittest.TestCase):
         self.assertIn('restoreReviewFrame(reviewFrame);', watch.PAGE)
         self.assertNotIn("if (view.name === 'dashboard') setContent(buildDashboard(data));",
                          watch.PAGE)
+        # #505: setContent reconciles #view (morphdom + hash-skip), not
+        # wholesale innerHTML=. Red-prove: reintroduce
+        # `document.getElementById('view').innerHTML = html` as the body of
+        # setContent (and drop the morphdom call) — this pin and selectkeep
+        # both go red.
+        self.assertIn('morphdom(viewEl', watch.PAGE)
+        self.assertIn('function viewNodeKey', watch.PAGE)
+        self.assertIn('if (html === lastViewHtml) return;', watch.PAGE)
+        # the old swap form must not be the setContent body
+        sc = watch.PAGE.split('function setContent(html)', 1)[1][:1800]
+        self.assertNotIn(
+            "document.getElementById('view').innerHTML = html", sc)
 
     def test_page_has_review_route_wiring(self):
         # Static guard: /review is an in-app route that embeds the artifact
