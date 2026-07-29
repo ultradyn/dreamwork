@@ -260,21 +260,6 @@ Next id: **485**
   · **turning `identity` back on immediately exposed a REAL failure it had been hiding**, which is the clearest possible demonstration of the cost: it asserted that a refused tint returns **400**, but since `#263` E5 a durable rejection is **202 with `rejected` in the body** — *a 202 does not mean the write landed*. So that assertion had been wrong since E5 and invisible since 02:56. Now it asserts the **verdict**, not the status, because status alone passes on an accepted write. `identity`, `gitrow`, `reviewdraft` and `summaryjson` all PASS under `just guards`, which **none of them could do before**.
   · **the successor this leaves open, and it is the real lesson:** the suite reports `59 guard(s) registered, each with a file` and nothing measures whether a registered guard **executed**. That gap is what let eight guards idle for three and a half hours. A count of guards that actually ran, compared against the registered set, is the missing check.
 
-- **#470** — the hook plugin ships behaviour into his harness and nothing measures whether it still fires ·
-  **P2** · verification/plugins · origin: **loop** · filed 2026-07-29 while looking for work disjoint from
-  `watch.py`
-  · `plugins/ud-dreamwork-hooks/` has a `tests/` directory, so somebody meant to check it — but nobody has
-  established whether what it ships is what those tests cover, or whether they run at all
-  · **the failure mode is invisible by construction:** a hook that silently stops firing leaves the loop
-  working, slightly worse, forever. The question that matters per hook is not *"do its functions work"* but
-  *"would anything fail if it stopped firing entirely"* — a test that imports a hook and checks a pure
-  function while the **registration** is broken proves nothing
-  · **prior art for exactly this being wrong:** `#310` found *"not yet wired into `just test`"* had been false
-  for two days in one doc while another doc assumed it true. A suite nothing runs is documentation
-  · **do not change hook behaviour to make it testable** without saying so plainly — these run in his harness,
-  so that is a change to his environment, not just to this repo · blocked on nothing · related: **#310**
-  · **AUDITED AND ONE GAP CLOSED `e6c6bdd` (lane `wt/hooktests`, merge `56f5c41`, 2026-07-29 05:12).** The premise was half-refuted with measurement and that is the finding: the hooks are **well covered at the script level** (32 tests, and `pytest --collect-only` confirms `just pytest` really does collect them, so this was **not** a `#310` case), and the consent gate does **not** drift — `hookutil`'s heading/Load-line regexes are byte-identical to `plugin_resolver`'s. What was genuinely unasserted: the three PostToolUse tests that exercise a lint failure all substitute a throwaway script via `$DREAMWORK_LINT`, so they proved the **plumbing** and nothing ran the **real** `lint.py` through the **real** hook against a **genuinely malformed** ledger — the one real-lint test used a valid fixture and therefore only proved clean→clean. That is this repo's own documented failure shape: a fake that returns exactly what the branch under test would have returned. `test_real_lint_catches_broken_ledger_through_hook` closes it (a `questions.md` missing `## Open`, with the runtime precondition that real lint does exit non-zero on it). **The remaining gap it refused to fake is the right refusal**: every test invokes the script directly, so none would notice the harness ceasing to call the hooks at all — stated as a ceiling in `plans/hook-plugin-coverage.md`, on the grounds that faking it means synthesising a Claude Code dispatch completely enough that the test is testing the synthesis. **Coordinator-verified independently:** neutering the hook's `returncode` gate reds the new test *and* the pre-existing plumbing test, and only the new one traverses real lint. Its reported dependency — the `doc-map.md` plans-row union — was the coordinator's to do and is done in the same commit as this line.
-
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
@@ -3420,6 +3405,22 @@ Next id: **485**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#470** — the hook plugin ships behaviour into his harness and nothing measures whether it still fires ·
+  **P2** · verification/plugins · origin: **loop** · filed 2026-07-29 while looking for work disjoint from
+  `watch.py`
+  · `plugins/ud-dreamwork-hooks/` has a `tests/` directory, so somebody meant to check it — but nobody has
+  established whether what it ships is what those tests cover, or whether they run at all
+  · **the failure mode is invisible by construction:** a hook that silently stops firing leaves the loop
+  working, slightly worse, forever. The question that matters per hook is not *"do its functions work"* but
+  *"would anything fail if it stopped firing entirely"* — a test that imports a hook and checks a pure
+  function while the **registration** is broken proves nothing
+  · **prior art for exactly this being wrong:** `#310` found *"not yet wired into `just test`"* had been false
+  for two days in one doc while another doc assumed it true. A suite nothing runs is documentation
+  · **do not change hook behaviour to make it testable** without saying so plainly — these run in his harness,
+  so that is a change to his environment, not just to this repo · blocked on nothing · related: **#310**
+  · **AUDITED AND ONE GAP CLOSED `e6c6bdd` (lane `wt/hooktests`, merge `56f5c41`, 2026-07-29 05:12).** The premise was half-refuted with measurement and that is the finding: the hooks are **well covered at the script level** (32 tests, and `pytest --collect-only` confirms `just pytest` really does collect them, so this was **not** a `#310` case), and the consent gate does **not** drift — `hookutil`'s heading/Load-line regexes are byte-identical to `plugin_resolver`'s. What was genuinely unasserted: the three PostToolUse tests that exercise a lint failure all substitute a throwaway script via `$DREAMWORK_LINT`, so they proved the **plumbing** and nothing ran the **real** `lint.py` through the **real** hook against a **genuinely malformed** ledger — the one real-lint test used a valid fixture and therefore only proved clean→clean. That is this repo's own documented failure shape: a fake that returns exactly what the branch under test would have returned. `test_real_lint_catches_broken_ledger_through_hook` closes it (a `questions.md` missing `## Open`, with the runtime precondition that real lint does exit non-zero on it). **The remaining gap it refused to fake is the right refusal**: every test invokes the script directly, so none would notice the harness ceasing to call the hooks at all — stated as a ceiling in `plans/hook-plugin-coverage.md`, on the grounds that faking it means synthesising a Claude Code dispatch completely enough that the test is testing the synthesis. **Coordinator-verified independently:** neutering the hook's `returncode` gate reds the new test *and* the pre-existing plumbing test, and only the new one traverses real lint. Its reported dependency — the `doc-map.md` plans-row union — was the coordinator's to do and is done in the same commit as this line.
+  · closed 2026-07-29 15:31, verified by the current coordinator: 56f5c41a + e6c6bdd2 resolve; plans/hook-plugin-coverage.md exists; test_real_lint_catches_broken_ledger_through_hook is present in the plugin tests. The audit's verdict stands: well covered at script level (32 tests, genuinely collected by just pytest), the consent-gate regexes byte-identical to plugin_resolver, the one real gap (real lint through the real hook against a genuinely malformed ledger) closed, and the remaining gap — the harness ceasing to call the hooks at all — a stated ceiling, refused because faking it means testing the synthesis. Nothing left that is buildable without faking the thing under test.
+
 - **#475** — ten guards are red on master and load is not why · **P1** · regression/verification ·
   origin: **loop** · **found 2026-07-29 07:40 by the first full `just test` to complete in this session**
   · **the run:** pytest and `lint` green; guards **48 PASS / 14 FAIL** of 60 (plus `hub`, `contract`).
