@@ -24,9 +24,20 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **491**
+Next id: **492**
 
 ## Open
+- **#491** — dashboard head shows a stale migration filename beside 'updated Ns ago' · P2 ·
+  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 19:15:** *"
+  '2026-07-26-02-contextual-plugin-loading.md' shows at the top of the dashboard next to 'updated 50s
+  ago', and idk why. it doesn't look like we're actually updating that file all the time. seems like a
+  bug."* · coordinator measured: the `version` crumb renders `.dreamwork/skill-version` (content:
+  `2026-07-26-02-contextual-plugin-loading.md`, mtime Jul 27 00:36) but `migrations/` has TWO newer
+  files (`2026-07-27-01-run-mode.md`, `2026-07-27-02-task-origin-contract.md`) — so either the file is
+  stale-written or the crumb sources the wrong place, and beside the freshness age it reads as "this
+  file changed 50s ago", which it did not · diagnose first: who writes `.dreamwork/skill-version`,
+  what its semantics are vs `skill_identity`'s lexicographic-max over `migrations/`, then fix the
+  honest version of the bug (and if the display is honest-but-misleading, say so and fix the reading)
 - **#294** — Migrate the durable task ledger to SQLite and a tool/CLI API · P1 ·
   storage/tooling migration · origin: **human** · **human via `/answers`
   2026-07-27 01:17** · build after #264's reviewed concurrency design and the
