@@ -11900,6 +11900,13 @@ def collect(target):
         },
         "reviews": list_reviews(os.path.join(dw, "review"))
         if os.path.isdir(os.path.join(dw, "review")) else [],
+        # #484 — built research HTML under docs/research, listed by the SAME
+        # one listing shape (non-recursive, .html only, created/mtime facts):
+        # the src/ sources stay invisible exactly as review sources do. No
+        # questions.md pairing, no archive lifecycle — that is the review
+        # surface, and research is not it.
+        "research": list_reviews(os.path.join(dw, "docs", "research"))
+        if os.path.isdir(os.path.join(dw, "docs", "research")) else [],
         "open_questions": open_question_count(questions),
         "questions_open": q_open,
         "answered_entries": q_answered,
@@ -12804,7 +12811,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # Same-document routes all return the one app shell; the client
             # router renders the matching view (deep links keep working).
             if parsed.path in ("/", "/questions", "/answers", "/file",
-                               "/review", "/question"):
+                               "/review", "/question", "/research"):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
@@ -12883,6 +12890,22 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 name = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
                 full = (resolve_confined(
                     target, os.path.join(".dreamwork", "review", name))
+                    if name and "/" not in name else None)
+                text = read_text(full, limit=2_000_000) if full else None
+                if text is None:
+                    self.send_error(404)
+                    return
+                self._send(text, "text/html")   # self-contained artifact
+            elif parsed.path == "/researchraw":
+                # #484 — the /reviewraw idiom over docs/research: the raw
+                # self-contained artifact for the /research view's iframe.
+                # The no-slash basename rule is load-bearing in the same
+                # way: src/ sources are .html under this tree and must never
+                # be served as finished artifacts.
+                name = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
+                full = (resolve_confined(
+                    target, os.path.join(
+                        ".dreamwork", "docs", "research", name))
                     if name and "/" not in name else None)
                 text = read_text(full, limit=2_000_000) if full else None
                 if text is None:
