@@ -1319,8 +1319,12 @@ def _write_shim(tasks_path: Path) -> None:
 
 
 def perform_cutover(target_dir, *, holder: str = "cutover",
-                    lease_seconds: int = 300, out=None) -> dict:
-    """The 7-step cutover ordering (design section Cutover). Scratch-only.
+                    lease_seconds: int = 300, live: bool = False,
+                    out=None) -> dict:
+    """The 7-step cutover ordering (design section Cutover). Scratch-only
+    unless ``live=True`` — the CLI never passes it; the live execution is a
+    deliberate coordinator ``python3 -c`` act, so reaching the real
+    .dreamwork/ requires naming the keyword in code, never a flag.
 
     (1) Acquire the exclusive cutover lease (#263's CAS primitive, reused).
     (2) Freeze writers — the lease + version gate make a mixed-version writer
@@ -1339,7 +1343,11 @@ def perform_cutover(target_dir, *, holder: str = "cutover",
     """
     out = out or sys.stdout
     td = Path(target_dir)
-    _guard_scratch_target(td)
+    if not live:
+        _guard_scratch_target(td)
+    else:
+        print(f"LIVE cutover of {td.resolve()} — the real ledger flips",
+              file=out)
 
     tasks_path = td / "tasks.md"
     store_db = td / ledger_parse.STORE_FILENAME
