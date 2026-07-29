@@ -4,10 +4,11 @@
 batched by default (a `do now` still pre-empts); Q2 rec — the posture axis
 `delivery` (`instant`|`batched`) in `.dreamwork/posture`, absent = instant,
 with the most-urgent kinds pre-empting even in batched mode; Q3 rec amended —
-the loop gates urgency, but plugins may *suggest* it.** The ruling settles the
-design; implementation is `#342`'s next increment. What follows is the design
-as ruled on — the "his to rule" framings are kept as the record, with the
-outcomes marked.
+the loop gates urgency, but plugins may *suggest* it.** The ruling settled the
+design; the implementation landed as **#342b** (folded 2026-07-30 — the
+`delivery` axis, `emits_wake`, `PREEMPT_KINDS`, and the four content-route gates).
+What follows is the design as ruled on — the "his to rule" framings are kept as
+the record, with the outcomes marked.
 
 ## Authority and what this builds on
 
@@ -179,35 +180,89 @@ A batched consume is then three acts:
 This is the "agent gets all updates at once" he asked for: one bounded read, one
 batch of adapter replays, one cursor advance — on the tick, not on the wake.
 
-## What changes in watch.py's command handlers
+## What changed in watch.py's write routes (design-as-built — #342b landed)
 
-One decision point per write route, at the seam where the wake line is emitted.
-Today every write route commits a receipt (the E3 cutover, in `do_POST` before
-dispatch) **and** emits a `watch-events.log` line (`log_event` in
-`_handle_answer`, `_handle_ask`, `_handle_comment`, `_handle_command`). The
-receipt is the durable home; the wake line is the *interrupt*. So routing by mode
-is: **decide, per-kind and per-mode, whether to emit the wake line** — the
-receipt always commits regardless.
+The #342 ruling's per-kind wake routing **is landed** in `watch.py` (increment
+#342b, folded 2026-07-30). The seam is `emits_wake(kind, target)` (`watch.py:13418`):
+`kind in PREEMPT_KINDS` (`("do-now","do-next")`, `watch.py:13406`) wakes regardless
+of mode; every other kind wakes only when `delivery_mode(target)` (`watch.py:13409`)
+reads `instant` (absent axis → `DELIVERY_DEFAULT = "instant"`, `watch.py:13386`).
+Every wake goes through the single append fn `log_event` (`watch.py:13464`); the
+receipt commits unconditionally in `do_POST` before dispatch. **The receipt is the
+durable home; the wake line is the interrupt.** Withholding the wake line IS batching.
 
-- **Instant kinds (in instant mode, and — per the proposed reading — in batched
-  mode too):** emit the wake line exactly as today. The monitor fires; the agent
-  acts now.
-- **Batched kinds:** commit the receipt (already happens, unchanged), and
-  **withhold the wake line** (or emit it only as a low-priority marker the
-  monitor does not wake on). The item is durable in the journal; the agent drains
-  it on the next tick via the cursor read above. This is literally *not*
-  interrupting — which is the behaviour he asked `add idea` to have.
+`WRITE_ROUTE_HANDLERS` (`watch.py:14541`) registers **nine** write routes. Their
+wake status today, each verified against the handler while writing this section:
 
-The kind to route on is recoverable today only by string-matching `kind` out of
-the body (fact 1 above). The clean version — which this design *proposes but does
-not require* — is to carry `kind` (or a derived urgency) as a first-class field
-on the receipt/event so the journal routes on it directly, rather than the wake
-handler parsing prose. That is a `watch.py` + journal-shape change; it is named
-here, not sized. The minimal version routes at `watch.py` POST time only (the
-handler knows `kind` before it formats the line), needs no journal change, and is
-the one to build first. **No handler is removed;** the wake line's emission
-becomes conditional on the per-kind/mode policy, and the receipt commit stays
-unconditional.
+| route | handler (def) | wake gate | status |
+|---|---|---|---|
+| `/command` | `_handle_command` (`14341`) | `if emits_wake(kind, target):` (`14363`) → `log_event` (`14364`) | **GATED** — pre-empt kinds (`do-now`/`do-next`) always wake; `add-idea`/`maintenance`/plugin kinds wake only in instant mode. COMPLIANT |
+| `/answer` | `_handle_answer` (`14206`) | `if emits_wake("/answer", target):` (`14236`) → `log_event` (`14237`) | **GATED** — batched kind. COMPLIANT |
+| `/ask` | `_handle_ask` (`14181`) | `if emits_wake("/ask", target):` (`14201`) → `log_event` (`14202`) | **GATED** — batched kind. COMPLIANT |
+| `/comment` | `_handle_comment` (`14243`) | `if emits_wake("/comment", target):` (`14271`) → `log_event` (`14272`) | **GATED** — batched kind. COMPLIANT |
+| `/decide` | `_handle_decide` (`14277`) | none — unconditional `log_event` (`14334`) | **NOT GATED** — a content route with a journal receipt that wakes unconditionally, silently undoing batched mode for review decisions. Gating it behind `emits_wake` so a review decision rides the batched cursor like `/answer` and `/comment` is **in flight under #515**; until it lands, this is the one content route the ruling is not yet realised for |
+| `/tint` | `_handle_tint` (`14367`) | no `log_event` call at all | **non-waking by design** — a colour is not a thing an agent acts on; the loop learns it from the file via the 2s poll, not a wake (handler docstring: *"DELIBERATELY NOT AN EVENTS-LOG LINE, and it is the only write here that is not"*) |
+| `/run-mode` | `_handle_run_mode` (`14392`) | none — unconditional `log_event` (`14417`) on a real change | **always-instant carve-out** — control-plane (see next section) |
+| `/posture` | `_handle_posture` (`14421`) | none — posture-triple `log_event` (`14495`) + delivery-axis `log_event` (`14499`), each on a real change | **always-instant carve-out** — control-plane (see next section) |
+| `/deploy` | `_handle_deploy` (`14508`) | no `log_event` call at all | **non-waking by design** — it restarts the server; success is a new `GENERATION` on `/mtime`, not a wake line |
+
+So the "one decision point per write route" this section once asserted is now
+realised for four of the five content routes. The fifth — `/decide` — is the gap
+#515 closes; until it lands, a `/decide` under `delivery: batched` fires its wake
+line every time. `/tint` and `/deploy` correctly have no wake line at all (a
+colour and a restart are not agent actions). The two control routes wake
+unconditionally and on purpose — that carve-out is the next section.
+
+## Wake channels outside the route table (#517)
+
+The ruling was framed entirely around user input *kinds*, so it says nothing about
+system, control, or error wakes. The #514 audit traced every `log_event` call site;
+four live wake channels sit outside the per-kind route table above, and each now
+has a stated policy:
+
+### Control-plane wakes — always-instant carve-out
+
+`_handle_run_mode` (`watch.py:14392`) and `_handle_posture` (`watch.py:14421`) each
+call `log_event` on a real change with no `emits_wake` branch: a `run-mode via
+watch` line (`14417`), a `posture via watch` line for the pace/asking/delegation
+triple (`14495`), and a `delivery via watch` line for the delivery axis (`14499`).
+These are **control/meta** events — the human reconfiguring how the loop runs — not
+content inputs, so they fall outside the per-kind table. **They wake unconditionally
+on purpose.** A `delivery` toggle that does not wake the loop until its next tick
+*defeats the toggle*: he switches to batched to stop the noise, and if the switch
+itself does not interrupt, the loop keeps firing under the old (instant) mode until
+it happens to tick — the opposite of the control he just asserted. The same holds
+for run-mode and posture changes: he is steering, and the steer must take now. This
+is the code's current behaviour and it is correct; this section exists to state it
+as a carve-out rather than leave it an unannotated default.
+
+### Journal failure-path wakes — always-loud error diagnostics
+
+`_journal_receive` (`watch.py:13511`), `_journal_record_health` (`13528`), and
+`_journal_reject` (`13542`) each call `log_event`, but **only inside an `except`**
+(at `13524`, `13539`, `13561`). They fire solely when the journal
+open/receive/record/reject itself failed. An error diagnostic should always be loud
+— a receipt-commit failure means his inputs may not be durable — so these wake in
+any mode. They are not content and are not a class the per-kind ruling governs.
+
+### The tasks-cutover one-shot — operational migration
+
+`ud-dw-tasks-migrate` step 6 (`ud-dw-tasks-migrate:1411-1414`) appends one
+`ledger-cutover …` line to `watch-events.log` with no mode awareness. It is a
+one-shot operational CLI event that runs once at cutover, not a dashboard route,
+and is outside the delivery ruling's scope.
+
+### `question-updated` — policy pending under #516
+
+`track_question_updates` (`watch.py:12873`) runs inside `collect()` on every
+dashboard poll and, when a question entry's content digest changes, writes one
+`question-updated via watch: …` line unconditionally (`12915`) — no `emits_wake`
+branch, and it bypasses the journal/cursor entirely (a digest computed in
+`collect()`, not a receipt). This is content-adjacent (the question surface is the
+class delivery batches) yet it wakes immediately in batched mode. **Its policy is
+not yet decided:** whether to mode-gate it or declare it an always-instant sync
+signal (and whether it should be journaled) is open under **#516**, in flight.
+Until then it is a known unguarded wake on a batched-class surface.
 
 ## The "always part of the agent's loop" guarantee
 
@@ -254,14 +309,17 @@ wake-and-act cycles.
   *suggest*** urgency; the suggestion is input to the loop's gate, never a
   self-grant.
 
-## What this design does NOT authorise — SUPERSEDED by the ruling
+## What this design did NOT authorise — landed as #342b
 
-**The 2026-07-30 ruling settles Q1–Q3, so the design is no longer
-undecided and its implementation is `#342`'s next increment.** The list below
-is kept as the record of what the *design doc alone* did not authorise before
-the ruling; the implementation increment still lands each item's own red-first
-checks and `file-formats.md`/`lint.py` changes in the same commit as the code,
-per house rule.
+The 2026-07-30 ruling settled Q1–Q3. The implementation then landed as
+**#342b** (folded 2026-07-30): the `delivery` posture axis (`delivery_mode`,
+`watch.py:13409`), the per-kind gate (`emits_wake`, `watch.py:13418`), the
+pre-empt set (`PREEMPT_KINDS`, `watch.py:13406`), and the four content-route
+gates named in the table above. The list below is kept as the historical record
+of what the *design doc alone* did not authorise before the ruling — it is
+history, not current state. What is current is the design-as-built state in the
+two sections above: the gates are in for four of the five content routes, and the
+one remaining gap (`/decide`) is in flight under #515.
 
 Matched to house style (`attention-modes.md`, `user-event-journal-implementation.md`
 §"What this plan does not authorise"): #342 was filed as a DESIGN task, and this
@@ -319,10 +377,13 @@ next gate has to decide.
   delivery-modes needs the read that the CLI `list` does not provide. Everything
   else consumes what #263 built.
 
-- **watch.py routing** = one decision per route: the receipt always commits; the
-  wake line's emission becomes conditional on per-kind/mode policy. Withholding
-  the wake line *is* batching. Minimal version routes at POST time (handler knows
-  `kind`); clean version carries `kind` as a receipt field (named, not sized).
+- **watch.py routing — LANDED (#342b):** the per-kind gate `emits_wake`
+  (`watch.py:13418`) now decides, per route, whether to emit the wake line; the
+  receipt always commits. Four of the five content routes are gated
+  (`/command`, `/answer`, `/ask`, `/comment`); `/decide` is the gap **#515**
+  closes (in flight). `/tint` and `/deploy` have no wake line by design; the
+  control routes (`/run-mode`, `/posture`) wake unconditionally as a carve-out.
+  Withholding the wake line *is* batching.
 
 - **The loop guarantee:** the cursor read runs on every tick (like run-mode/
   posture), so low-urgency items are drained whether or not the monitor fired —
@@ -332,5 +393,6 @@ next gate has to decide.
 - **Open calls — RULED 2026-07-30:** Q1 the ambiguous class batches (whole
   class; overrides the `/answer` → instant proposal); Q2 the `delivery`
   posture axis with urgent kinds pre-empting; Q3 the loop gates urgency,
-  plugins may suggest. Implementation is `#342`'s next increment; the
-  per-surface authorisations land with their own red-first checks.
+  plugins may suggest. The routing **landed as #342b**; the open remainder is
+  `/decide` (#515, in flight), the `question-updated` policy (#516, in flight),
+  and the control/journal/migrate wakes now documented here as carve-outs.
