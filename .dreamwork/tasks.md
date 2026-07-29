@@ -728,50 +728,6 @@ Next id: **485**
   worth asking before writing that sentence
   · related: **#392**
 
-- **#404** — for a same-tree lane, `git log` is a strictly more reliable landing channel than
-  `handoffs.md`, and the tick reads the weaker one first · P2 · loop/design · origin: **loop** ·
-  found by **noticing I had already run the experiment** — I learned of two landings from `git log`
-  while looking for something else, and only then checked the hand-off file, which was empty
-  · **the evidence, unplanned and therefore worth more:** `#392a` (`159917b`) and `#397` (`1b508b0`)
-  both landed. I discovered both from `git log --oneline`. `handoffs.md`'s `## Pending` named
-  neither — it still held only `#398`'s line
-  · **the obligation was in the dispatch prompt**, not a relay — the fix `#398` exists to enforce
-  and which was measured working once. So prompt-placement is **not sufficient**; compliance
-  varies by lane. The count is **provisional and deliberately not recorded yet**: both lanes were
-  still alive when this was filed and may write their lines before exiting. Confirm on exit, then
-  amend this entry — a compliance number taken while the lane is running is a measurement of the
-  wrong moment
-  · **the structural point does not depend on that count.** A lane **cannot land work without
-  committing**, and this repo's commit convention already puts the id in the subject
-  (`fix(#392a):`, `design(#397):`, `docs(#401):`). So the id is in git **by construction**, whereas
-  the hand-off line is an extra act a lane must remember. One channel cannot be forgotten; the
-  other is a habit. `#381` built the habit
-  · **which narrows what `handoffs.md` is actually for** — landings `git log` cannot attribute: a
-  different machine, a different repo, or work that is not a commit. That is a real set and the
-  file should stay. But `SKILL.md`'s tick reads the file and does **not** mention deriving landings
-  from git, so the tick's **primary** route is the weaker one. That ordering is the defect
-  · rec: keep `handoffs.md` for the foreign case; add a git-derived landing sweep to the tick as
-  the primary route (ids in subjects since the last fold, correlated against `## Open`), and demote
-  the file to supplementary. `lint.check_landed_still_open` already does adjacent correlation —
-  **read it before designing, it may already be most of this**
-  · **the trap to avoid, and it is this repo's own recurring one:** a git sweep that finds nothing
-  prints the same as one that ran wrong. Whatever gets built reports **how many commits it
-  examined**, not just what it found
-  · **the recommended sweep was RUN by hand and it works — this entry now has a yield number.**
-  Scanned **1,131** commit subjects for `fix|feat|close|perf|refactor(#N):` against the **136** open
-  ids: **6 flagged** whose entry does not cite the sha. That is a **4% review load**, which is
-  tractable rather than noise
-  · **and one of the six is real: `#340`**, fixed at `8009c90` and open ever since, found by this
-  sweep and by nothing else — not by `lint`, not by the hand-off channel, not by me reading the
-  ledger. The other five (`#394`, `#399`, `#275`, `#254`, `#196`) are a mix of partial fixes and
-  work I have not yet folded, so **the sweep needs a suppression convention and one already
-  exists**: `check_landed_still_open` treats a **cited sha** as the entry's evidence that it is
-  deliberately still open. Cite the sha, the row disappears
-  · so the design is settled by measurement rather than argument: **scan subjects, subtract entries
-  that cite the sha, report the remainder with a count.** The count is the part that matters —
-  a sweep that finds nothing must be distinguishable from one that did not run
-  · related: **#381, #398, #394, #406**
-
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
   dashboard/transitions · origin: **loop** · from **#381's own caveat**, probed rather than accepted
   · `#381` surfaced pending hand-offs by adding a span to the existing `stfacts` row, which is the
@@ -3539,6 +3495,51 @@ Next id: **485**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#404** — for a same-tree lane, `git log` is a strictly more reliable landing channel than
+  `handoffs.md`, and the tick reads the weaker one first · P2 · loop/design · origin: **loop** ·
+  found by **noticing I had already run the experiment** — I learned of two landings from `git log`
+  while looking for something else, and only then checked the hand-off file, which was empty
+  · **the evidence, unplanned and therefore worth more:** `#392a` (`159917b`) and `#397` (`1b508b0`)
+  both landed. I discovered both from `git log --oneline`. `handoffs.md`'s `## Pending` named
+  neither — it still held only `#398`'s line
+  · **the obligation was in the dispatch prompt**, not a relay — the fix `#398` exists to enforce
+  and which was measured working once. So prompt-placement is **not sufficient**; compliance
+  varies by lane. The count is **provisional and deliberately not recorded yet**: both lanes were
+  still alive when this was filed and may write their lines before exiting. Confirm on exit, then
+  amend this entry — a compliance number taken while the lane is running is a measurement of the
+  wrong moment
+  · **the structural point does not depend on that count.** A lane **cannot land work without
+  committing**, and this repo's commit convention already puts the id in the subject
+  (`fix(#392a):`, `design(#397):`, `docs(#401):`). So the id is in git **by construction**, whereas
+  the hand-off line is an extra act a lane must remember. One channel cannot be forgotten; the
+  other is a habit. `#381` built the habit
+  · **which narrows what `handoffs.md` is actually for** — landings `git log` cannot attribute: a
+  different machine, a different repo, or work that is not a commit. That is a real set and the
+  file should stay. But `SKILL.md`'s tick reads the file and does **not** mention deriving landings
+  from git, so the tick's **primary** route is the weaker one. That ordering is the defect
+  · rec: keep `handoffs.md` for the foreign case; add a git-derived landing sweep to the tick as
+  the primary route (ids in subjects since the last fold, correlated against `## Open`), and demote
+  the file to supplementary. `lint.check_landed_still_open` already does adjacent correlation —
+  **read it before designing, it may already be most of this**
+  · **the trap to avoid, and it is this repo's own recurring one:** a git sweep that finds nothing
+  prints the same as one that ran wrong. Whatever gets built reports **how many commits it
+  examined**, not just what it found
+  · **the recommended sweep was RUN by hand and it works — this entry now has a yield number.**
+  Scanned **1,131** commit subjects for `fix|feat|close|perf|refactor(#N):` against the **136** open
+  ids: **6 flagged** whose entry does not cite the sha. That is a **4% review load**, which is
+  tractable rather than noise
+  · **and one of the six is real: `#340`**, fixed at `8009c90` and open ever since, found by this
+  sweep and by nothing else — not by `lint`, not by the hand-off channel, not by me reading the
+  ledger. The other five (`#394`, `#399`, `#275`, `#254`, `#196`) are a mix of partial fixes and
+  work I have not yet folded, so **the sweep needs a suppression convention and one already
+  exists**: `check_landed_still_open` treats a **cited sha** as the entry's evidence that it is
+  deliberately still open. Cite the sha, the row disappears
+  · so the design is settled by measurement rather than argument: **scan subjects, subtract entries
+  that cite the sha, report the remainder with a count.** The count is the part that matters —
+  a sweep that finds nothing must be distinguishable from one that did not run
+  · related: **#381, #398, #394, #406**
+  · landed 828b9073 (merge of wt/404; lane work 0c2f77fc..9706a18d, native subagent). dev/ledger.py sweep: id-bearing commit subjects (all ten forms derived from 1,131 real subjects, multi-id parens handled) vs the open id set, cited shas subtracted, examined count ALWAYS printed so 'found nothing' differs from 'did not run'; advisory, exit 0 on every failure mode; default --since = most recent fold commit. SKILL.md tick now discovers landings from the git sweep first; handoffs.md demoted to the foreign case. Reuses ledger_parse + watch.parse_ledger — no fifth parser. Lane red-first with runtime-derived preconditions (the fixture's id-citation gap derived before asserting). Coordinator independently red-proved the subtraction half on the merged tree (dev/ledger.py:272 -> if False fails exactly test_sweep_subtracts_entries_that_cite_the_sha; byte-identical restore; 371 pass). Live proof at merge time: the sweep found #404 itself — handoffs.md had no line for it, git already knew.
+
 - **#469** — nothing here can say which MODEL a lane ran on, and the two signals used for it are both
   unreliable · **P2** · loop-orchestration/provenance · origin: **loop** · filed 04:24 as a routing bug,
   **corrected by the human 04:47**
