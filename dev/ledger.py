@@ -33,6 +33,7 @@ INVARIANTS — enforced before AND after the write
 USAGE
   python3 dev/ledger.py counts [--ledger PATH]
   python3 dev/ledger.py fold <id> --note <text> [--ledger PATH] [--dry-run]
+  python3 dev/ledger.py sweep [--since REF] [--ledger PATH] [--repo PATH]
 
 `counts` prints the open and landed id counts from `watch.parse_ledger`
 with the expression that produced them — the same anchored read every
@@ -45,6 +46,8 @@ unknown id, id already in landed, id matching more than one open entry.
 """
 import argparse
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -53,6 +56,7 @@ from pathlib import Path
 # root (in which case sys.path[0] is `dev/`, not the cwd).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import watch  # noqa: E402  — the production parser, reused not copied
+from ledger_parse import ledger_entries, open_section_text  # noqa: E402
 
 LEDGER_DEFAULT = ".dreamwork/tasks.md"
 NOTE_PREFIX = "  · "  # two-space indent, U+00B7, space — the ledger's continuation idiom
@@ -209,6 +213,64 @@ def _prepend_at_top_of_landed(landed_lines, moved):
     while i < len(landed_lines) and landed_lines[i].strip() == "":
         i += 1
     return moved + [""] + landed_lines[i:]
+
+
+# ---------------------------------------------------------------------------
+# sweep (#404) — landings discoverable from git subjects, minus cited shas
+#
+# A lane cannot land work without committing, and this repo's commit
+# convention puts the id in the subject BY CONSTRUCTION — so git log is a
+# strictly more reliable landing channel than `.dreamwork/handoffs.md`,
+# which is an extra act a lane must remember. This is the discovery twin of
+# `lint.check_landed_still_open` (#323), not a second implementation: the
+# correlation rule (git names a commit the entry does not) and the
+# production helpers (`ledger_parse.open_section_text` /
+# `ledger_parse.ledger_entries`) are the same; what differs is that the
+# sweep is ADVISORY (exit 0 always), bounded to commits since a ref, and
+# matches the full verb set — a discovery sweep tolerates weak verbs
+# (`docs(#N)`) that the lint WARN may not.
+# ---------------------------------------------------------------------------
+
+# The id-bearing subject forms, derived from this repo's own git log
+# (1,131 subjects measured: merge 132, fix 103, docs 77, feat 71, close 48,
+# guard 18, design 15, test 9, refactor 1, perf 1). The parens may carry
+# several ids (`merge(#422,#403)`); lint's CLOSE_SUBJECT takes only the
+# first, which a discovery sweep must not.
+SWEEP_SUBJECT = re.compile(
+    r"^(?:merge|fix|feat|close|perf|refactor|guard|docs|test|design)"
+    r"\((#\d+(?:,#\d+)*)\)")
+SWEEP_ID = re.compile(r"#(\d+)")
+
+
+def sweep(text, commits):
+    """Correlate id-bearing subjects against the OPEN ids; subtract cited shas.
+
+    `commits` is an iterable of (sha, subject) pairs, newest first. Returns
+    (n_examined, findings) where findings is a list of (task_id, [(sha,
+    subject), ...]) for open ids git names a landing for that the entry does
+    not cite. `n_examined` counts EVERY commit looked at, matching subjects
+    or not — a sweep that found nothing must be distinguishable from one
+    that did not run.
+    """
+    open_ids, _ = watch.parse_ledger(text)
+    bodies = {}
+    for ids, body in ledger_entries(open_section_text(text) or ""):
+        for tid in ids:
+            bodies[tid] = body
+    found = {}
+    n = 0
+    for sha, subject in commits:
+        n += 1
+        m = SWEEP_SUBJECT.match(subject)
+        if not m:
+            continue
+        for tid in (int(x) for x in SWEEP_ID.findall(m.group(1))):
+            if tid not in open_ids:
+                continue
+            if sha in bodies.get(tid, ""):
+                continue  # a deliberate partial: it cites its commit (#323's rule)
+            found.setdefault(tid, []).append((sha, subject))
+    return n, sorted(found.items())
 
 
 # ---------------------------------------------------------------------------
