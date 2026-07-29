@@ -3437,11 +3437,17 @@ function burnPanel(d) {
     const c = b.commits || 0;
     const title = `${stamp} · ${b.open} open · ${b.arrived} arrived · ` +
       `${b.landed} landed · ${c} commit${c === 1 ? '' : 's'}`;
+    /* #298: the inspector needs what the glance tip does not — the exact
+       interval (t0→t1) and the coverage state. A period with no ledger
+       commit CARRIES the previous level rather than measuring it (the
+       chart's own rule), so the inspector must be able to say so. */
     const focus = focusable
       ? ` tabindex="0" role="listitem"` +
         ` data-open="${b.open}" data-arrived="${b.arrived}"` +
         ` data-landed="${b.landed}" data-commits="${c}"` +
-        ` data-stamp="${esc(stamp)}"`
+        ` data-stamp="${esc(stamp)}"` +
+        ` data-t0="${b.t0}" data-t1="${b.t0 + s.step}"` +
+        ` data-covered="${c > 0 ? 1 : 0}"`
       : '';
     return `<div class="bdcol"${focus} title="${esc(title)}"` +
       ` aria-label="${esc(title)}">`;
@@ -3451,6 +3457,11 @@ function burnPanel(d) {
   // from the same walk the columns do, not from a second reading.
   let h = label('burndown') + `<div class="bd">` +
     `<div class="bdtip" hidden role="status" aria-live="polite"></div>` +
+    /* #298: the inspector floats beside the tip — one per panel, refilled
+       per column, laid out in JS (it must centre on a column and clamp to
+       the track, which CSS cannot express). role=status like the tip: the
+       same reading by another path, never a live shout. */
+    `<div class="bdinsp" hidden role="status"></div>` +
     `<div class="bdhead"><span class="bdnum">${s.open}</span> open · ` +
     `${s.arrived} arrived · ${s.landed} landed · ` +
     `${BURN_STEP_NAME[s.step] || 'bucketed'}</div>` +
