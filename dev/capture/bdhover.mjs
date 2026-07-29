@@ -122,3 +122,128 @@ const p = await br.newPage({ viewport: { width: 1100, height: 1500 } });
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
 await sleep(1200);
+
+/* in-page measurement of the inspector: text per LINE (innerText keeps
+   the div structure; textContent would concatenate the facts into one
+   string a role-parse could not separate), opacity, and the rects the
+   clamping checks reason about. */
+const INSP = `(() => {
+  const el = document.querySelector('.bd .bdinsp');
+  if (!el || el.hidden) return null;
+  const r = el.getBoundingClientRect();
+  const bd = document.querySelector('.bd').getBoundingClientRect();
+  const track = document.querySelector('.bd .bdnet').getBoundingClientRect();
+  return { lines: (el.innerText || '').trim().split('\\n').map(s => s.trim()),
+           op: parseFloat(getComputedStyle(el).opacity),
+           left: r.left, right: r.right, bottom: r.bottom,
+           bdL: bd.left, bdR: bd.right, trackTop: track.top };
+})()`;
+const dwellAndRead = async (idx, wait = 1000) => {
+  await p.evaluate(`(() => {
+    const col = document.querySelectorAll('.bdnet .bdcol[data-open]')[${idx}];
+    col && col.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+  })()`);
+  await sleep(wait);
+  return p.evaluate(INSP);
+};
+const leaveAll = async () => {
+  await p.evaluate(`document.querySelectorAll('.bdnet .bdcol[data-open]')
+    .forEach(c => c.dispatchEvent(new PointerEvent('pointerout',
+      { bubbles: true, relatedTarget: document.body })))`);
+  await sleep(600);
+};
+
+/* ── exact values against the served bucket ─────────────────────────────
+   The busy column, hovered with a dwell. THE numbers, parsed by role from
+   the inspector's own value line — never a bare substring (a tip naming
+   the wrong column passes includes()). */
+{
+  const want = buckets[busyIdx];
+  const tr = await p.evaluate(`new Promise(res => {
+    const col = document.querySelectorAll('.bdnet .bdcol[data-open]')[${busyIdx}];
+    if (!col) return res({ err: 'no col' });
+    const seen = [];
+    const t0 = performance.now();
+    requestAnimationFrame(() => {
+      col.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    });
+    (function step() {
+      const t = performance.now() - t0;
+      const el = document.querySelector('.bd .bdinsp');
+      const op = el && !el.hidden
+        ? parseFloat(getComputedStyle(el).opacity) : 0;
+      seen.push({ t, op, hidden: !el || el.hidden });
+      if (t < 1600) requestAnimationFrame(step);
+      else res({ seen, lines: el && !el.hidden
+        ? (el.innerText || '').trim().split('\\n').map(s => s.trim()) : [] });
+    })();
+  })`);
+  const lines = tr.lines || [];
+  notes.push(`dwell col[${busyIdx}] lines=${JSON.stringify(lines)}; ` +
+    `firstVisible=${((tr.seen || []).find(s => !s.hidden) || {}).t | 0}ms; ` +
+    `ops=${[...new Set((tr.seen || []).map(s => Math.round(s.op * 100)))].join(',')}`);
+  ok('#298 precondition: three lines (interval · values · coverage)',
+     lines.length === 3);
+  const vals = (lines[1] || '').match(
+    /^(\d+) open · (\d+) arrived · (\d+) landed · (\d+) commits?$/);
+  ok('#298: names this column\'s open level and commits',
+     !!vals && +vals[1] === want.open && +vals[4] === (want.commits || 0));
+  ok('#298: names this column\'s arrivals and completions',
+     !!vals && +vals[2] === want.arrived && +vals[3] === want.landed);
+  // the interval line corresponds to the bucket's served t0/t1, formatted
+  // by the same Intl calls in-page — derived, never a literal date
+  const wantIv = await p.evaluate(`(() => {
+    const f = t => { const d = new Date(t * 1000);
+      return d.toLocaleDateString(undefined,
+        { weekday: 'short', day: 'numeric', month: 'short' }) + ' ' +
+        d.toLocaleTimeString(undefined,
+          { hour: '2-digit', minute: '2-digit' }); };
+    return f(${want.t0}) + ' – ' + f(${want.t0 + served.burndown.step});
+  })()`);
+  notes.push(`interval: got "${lines[0]}" want "${wantIv}"`);
+  ok('#298: the exact interval matches the served bucket', lines[0] === wantIv);
+  ok('#298: a busy period reads as measured', /measured/.test(lines[2] || ''));
+  // a PASSING hover is not enough — the inspector dwells (#417's glance
+  // tip owns the pass). First visibility well after the pointer arrives.
+  const firstVis = (tr.seen || []).find(s => !s.hidden);
+  ok('#298: dwell, not instant — a passing hover stays a glance',
+     !!firstVis && firstVis.t >= 600);
+  // arrival has mid-frames: a snap has no opacity strictly between ends
+  const ops = (tr.seen || []).filter(s => !s.hidden).map(s => s.op);
+  const mid = ops.filter(o => o > 0.03 && o < 0.97);
+  ok('#298: the inspector arrives (mid-frame opacity, not a snap)',
+     ops.length > 0 && ops[ops.length - 1] >= 0.9 && mid.length >= 1);
+  await leaveAll();
+}
+
+/* ── coverage honesty: carried and in-progress ────────────────────────── */
+{
+  const quiet = await dwellAndRead(quietIdx);
+  notes.push(`quiet col[${quietIdx}]: ${JSON.stringify(quiet && quiet.lines)}`);
+  ok('#298: a quiet period says its level is CARRIED, not measured',
+     !!quiet && /level carried — no ledger commits/.test(quiet.lines[2] || '') &&
+     !/period in progress/.test(quiet.lines[2] || ''));
+  await leaveAll();
+  const last = await dwellAndRead(lastIdx);
+  notes.push(`last col[${lastIdx}]: ${JSON.stringify(last && last.lines)}`);
+  ok('#298: the open period says so, and ends the interval at "now"',
+     !!last && /period in progress/.test(last.lines[2] || '') &&
+     /– now$/.test(last.lines[0] || ''));
+  await leaveAll();
+}
+
+/* ── edge-column clamping, and never on a neighbour ─────────────────────
+   First and last columns: the inspector stays inside the panel's
+   horizontal bounds, and its bottom edge never crosses into the level
+   track — so it cannot sit on a column, its own or a neighbour's. */
+for (const idx of [0, lastIdx]) {
+  const m = await dwellAndRead(idx);
+  notes.push(`clamp col[${idx}]: ${JSON.stringify(m &&
+    { left: m.left | 0, right: m.right | 0, bottom: m.bottom | 0,
+      bdL: m.bdL | 0, bdR: m.bdR | 0, trackTop: m.trackTop | 0 }))}`);
+  ok(`#298: edge column ${idx} keeps the inspector inside the panel`,
+     !!m && m.left >= m.bdL - 1 && m.right <= m.bdR + 1);
+  ok(`#298: edge column ${idx} inspector never sits on the columns`,
+     !!m && m.bottom <= m.trackTop + 1);
+  await leaveAll();
+}
