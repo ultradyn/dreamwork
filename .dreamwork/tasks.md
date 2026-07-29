@@ -38,6 +38,9 @@ Next id: **492**
   file changed 50s ago", which it did not · diagnose first: who writes `.dreamwork/skill-version`,
   what its semantics are vs `skill_identity`'s lexicographic-max over `migrations/`, then fix the
   honest version of the bug (and if the display is honest-but-misleading, say so and fix the reading)
+  · **his screenshot 19:19: `.dreamwork/evidence/491-version-crumb-report.png`** — the crumb row is
+  `target · version · updated 1m ago`, so the stale migration filename and the freshness age read as
+  one statement about that file. Also confirms `serving e943a9a0` (the #371 deploy) live at report time
 - **#294** — Migrate the durable task ledger to SQLite and a tool/CLI API · P1 ·
   storage/tooling migration · origin: **human** · **human via `/answers`
   2026-07-27 01:17** · build after #264's reviewed concurrency design and the
