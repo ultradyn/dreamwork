@@ -10689,7 +10689,7 @@ def _burn_step(span):
     return BURN_STEPS[-1]
 
 
-def ledger_series(target, path=LEDGER_PATH, now=None):
+def ledger_series(target, path=LEDGER_PATH, now=None, step=None):
     """Arrivals, completions and the open count over the ledger's own history.
 
     An id ARRIVES at the first commit that mentions it anywhere, and is
@@ -10697,6 +10697,11 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
     Both are first-seen events, which is what makes them survive grooming:
     that section is pruned, so anything derived from its current contents
     would lose a completion every time the coordinator tidies.
+
+    ``step`` (#487): when it is a member of ``BURN_STEPS``, that width is
+    used instead of the auto ladder — the head's cycle control forces a
+    coarser or finer reading. Anything else (including ``None``) keeps the
+    auto pick that holds the chart under ``BURN_COLUMNS``.
     """
     out = {"state": None, "note": None, "buckets": [], "step": 0,
            "open": 0, "arrived": 0, "landed": 0, "from": 0, "to": 0}
@@ -10794,7 +10799,10 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
 
     first = revs[0][1]
     last = max(revs[-1][1], int(now if now is not None else time.time()))
-    step = _burn_step(last - first)
+    auto = _burn_step(last - first)
+    # #487: a forced step from the cycle control wins; unknown/None → auto
+    if step not in BURN_STEPS:
+        step = auto
     n = int((last - first) // step) + 1
     buckets = [{"t0": first + i * step, "arrived": 0, "landed": 0,
                 "open": 0, "commits": 0}
@@ -10881,16 +10889,17 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
     return out
 
 
-def ledger_stats(target):
-    """`ledger_series`, cached on HEAD.
+def ledger_stats(target, step=None):
+    """`ledger_series`, cached on HEAD (+ optional forced step, #487).
 
     Cached because the walk is one `git show` per ledger commit — 139 today,
     and it only ever grows. Per-revision parses are memoised globally on the
     commit sha as well, because history is immutable, so a NEW head costs
     only the commits that are new. The cache key is the truthful one for a
     repository-history answer: the target (which fixes the ledger's path
-    inside its repo, #217) and its HEAD — a tick with an unmoved HEAD
-    reuses the answer, a new commit recomputes it.
+    inside its repo, #217), its HEAD, and the forced step (or None for the
+    auto ladder) — a tick with an unmoved HEAD reuses the answer, a new
+    commit or a cycle-control click recomputes it.
     """
     try:
         head = subprocess.run(
@@ -10898,10 +10907,15 @@ def ledger_stats(target):
             capture_output=True, timeout=10).stdout.decode().strip()
     except (OSError, subprocess.SubprocessError):
         head = ""
-    key = (os.path.abspath(target), head)
+    forced = step if step in BURN_STEPS else None
+    key = (os.path.abspath(target), head, forced)
     if key not in _LEDGER_CACHE:
-        _LEDGER_CACHE.clear()
-        _LEDGER_CACHE[key] = ledger_series(target)
+        # keep only this key's peers for the same HEAD cheap: drop other
+        # HEADs entirely (history moved); keep other forced steps for this
+        # HEAD so cycling back is free.
+        if any(k[0] == key[0] and k[1] != head for k in _LEDGER_CACHE):
+            _LEDGER_CACHE.clear()
+        _LEDGER_CACHE[key] = ledger_series(target, step=forced)
     return _LEDGER_CACHE[key]
 
 
@@ -11950,7 +11964,7 @@ def track_question_updates(target, entries):
     return entries
 
 
-def collect(target):
+def collect(target, burn_step=None):
     now = time.time()
     dw = os.path.join(target, ".dreamwork")
     questions = read_text(os.path.join(dw, "questions.md"))
@@ -12012,8 +12026,9 @@ def collect(target):
         "deployed": serving_cached(target),
         # the ledger's own history as a time series (#142) — no new
         # instrumentation, because tasks.md is versioned and its ids are
-        # permanent
-        "burndown": ledger_stats(target),
+        # permanent. burn_step (#487) is the cycle control's forced
+        # granularity; None keeps the auto ladder.
+        "burndown": ledger_stats(target, step=burn_step),
         # his colour for this project (#143). It rides /data.json rather than
         # the shell so the EXISTING mtime poll carries it: he picks a tint in
         # one window and every other window on this project follows within a
@@ -12896,7 +12911,18 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                                "/review", "/question", "/research"):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
-                self._send(json.dumps(collect(target)), "application/json")
+                # #487: optional burn_step lets the head's cycle control
+                # re-bucket without a second walk of any other series.
+                qs = urllib.parse.parse_qs(parsed.query)
+                raw = (qs.get("burn_step") or [None])[0]
+                try:
+                    burn_step = int(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    burn_step = None
+                if burn_step not in BURN_STEPS:
+                    burn_step = None
+                self._send(json.dumps(collect(target, burn_step=burn_step)),
+                           "application/json")
             elif parsed.path == "/summary.json":
                 # Q5: a whitelist view of collect() (summary()), for any
                 # non-loopback consumer. /data.json serves full documents and
