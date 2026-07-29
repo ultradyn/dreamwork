@@ -516,7 +516,7 @@ def _guard_scratch_path(db_path: str) -> None:
 
 def _check_importable(a: dict) -> None:
     """Refuse ledgers whose conflicts have no ruled import resolution."""
-    fatal = [(cat, rows) for cat in FATAL_CONFLICTS
+    fatal = [(cat, a["conflicts"][cat]) for cat in FATAL_CONFLICTS
              if a["conflicts"].get(cat)]
     if fatal:
         detail = "; ".join(f"{cat} ({len(rows)})" for cat, rows in fatal)
