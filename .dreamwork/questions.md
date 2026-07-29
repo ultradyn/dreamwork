@@ -3,6 +3,40 @@
 ## Open
 
 
+- **P2 · 2026-07-30 04:45 — #504: the composer 'chat' design is done — an IGC made it the first slice of #229, and four forks are yours.**
+  **Sub-decisions:** `Q1`, `Q2`, `Q3`, `Q4`
+  Design: `.dreamwork/docs/plans/composer-chat.md` (design only; no code authorised; the implementation
+  anchor stays `#373`).
+
+  The headline is the reconciliation, not a fork: a real IGC (A/B/C × G1–G5) decided your `chat` command
+  **is** the main-dreamer first slice of `#229`/`#270`'s approved spine — not a separate channel. A separate
+  store was refuted (a second durable inbox competing with the `#263` receipt), as was riding
+  `/command`+`questions.md` (no queryable unread home, no enforceable reply channel). So the message path,
+  thread model and reply channel are `#229`'s, and your *"get unread at the start of a loop iteration"* is,
+  by name, the `#342` cursor read (`dev/journal_consume.py pending`). One pushback, stated plainly in the
+  doc: *"tracked in the db, but only just in case"* understates the receipt — under `#342` it is the
+  delivery path, not a backup.
+
+  Four genuine forks, each with a rec; **`rec` takes all four.**
+
+  - **`Q1` — the POST route home.** `rec`: a new **`/command` chat kind** — reuses the existing route, the
+    receipt seam and the composer row; thinnest path, and matches your "command" framing. The alternative is
+    a new `/chat` write route, reserved for `#373`'s full surface (a `watch.py` change plus an E2Shadow
+    extension).
+  - **`Q2` — the UI word.** Implementation never says `thread` (`#229`'s vocabulary rule). `rec`: the UI
+    says **"topic chat"** too. The alternative keeps your word "thread" in the human-facing label only;
+    behaviour is identical either way.
+  - **`Q3` — the delivery default under `#342`.** `rec`: **batched** — rides the tick cursor read, exactly
+    your "get unread at iteration start", joining the ambiguous class `#342` already ruled batched. The
+    alternative is `instant` (pre-empts like `do-now`).
+  - **`Q4` — does this slice ship a visible chat surface?** `rec`: a **minimal chat list reusing the
+    dashboard**, deferring `#373`'s global `/chat` index and dedicated route. The alternative lands only the
+    loop-side path now, all UI later.
+
+  **If you say nothing:** nothing is built — the design authorises no code, and the recs stand as the
+  design's defaults when `#373` is planned.
+  Accepted answers: `rec` (takes all four) · per-question (`Q1: …`) · free text.
+
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
