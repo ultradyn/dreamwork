@@ -1,73 +1,73 @@
-# Brief — lane-431deploy: `just deploy`'s `pkill -f` kills the shell that mentions the snapshot (#431)
+# Brief — #431: `just deploy`'s `pkill -f` kills any process that merely mentions the snapshot
 
-**Lane-owns:** the deploy recipe in `justfile` + any deploy helper script it
-calls (e.g. `dev/deploy_state.py` ONLY if the kill logic lives there — locate
-it first) + a new guard/test file under `dev/` if the fix needs one. Do NOT
-touch `watch.py`, `test_watch.py`, `lint.py`, `test_lint.py`,
-`file-formats.md`, or `status_sync.py` (other lanes own those this window).
+Repo: `ud-dreamwork`. Worktree: **`.worktrees/deploykill`**, branch **`wt/deploykill`**. Do not push, do not merge.
+**Never use `attn` under any circumstances.** Report by appending **once** to the absolute path
+`/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`, and **state which model you are** at the
+top — a lane report today was labelled `grok` when `glm52` was dispatched and I am tracking that.
+**Do not write `.dreamwork/handoffs.md`** — the coordinator writes that at merge time. Inbox and hand-off
+paths for a worktree lane are absolute, per `SKILL.md` (#405).
 
-**Model:** llmp-glm-5-2 · **Isolation:** worktree (coordinator merge-gates).
+## The defect, and it has fired four times today
 
-## The bug (from the ledger, measured 2026-07-28 18:16)
+`just deploy`'s `pkill -f <snapshot pattern>` matches **any** process whose command line merely *mentions*
+the pattern — including the shell running the deploy, an agent's own `pgrep` check, and (twice today) a
+process whose **comment** contained the string. One instance killed a coordinator shell with exit 144.
+Read `#431` in `.dreamwork/tasks.md` for the record.
 
-The deploy recipe runs `pkill -f "$(basename "$snap")"` where the basename is
-`ud-dreamwork-watch.py`. `pkill -f` matches the WHOLE command line of every
-process, so it kills anything that merely names the file — an agent shell that
-assigned the path to a variable, an editor, a `grep`. It killed the shell
-running the deploy itself: exit 144 (128+16 SIGTERM), recipe cut off partway —
-and a half-completed deploy is the one failure that leaves the human's
-dashboard down. It only fires when the caller's own command line mentions the
-basename, so it is rare, silent, and self-interrupting.
+`pkill -f` is the wrong instrument: the pattern is matched against the full command line of every process,
+so the matcher matches the matcher. Bracket tricks (`[j]ust`) do **not** fix it — the literal reappears in
+whatever text explains the trick.
 
-## The fix direction (yours to refine, the invariant is not)
+## What to build
 
-**Kill by identity, not by name-substring.** The process deploy must stop is
-the server bound to the deploy port — find it by what it IS, not by a string
-in its argv. Strong candidates:
+Make the deploy stop **only the process it deployed**. Your design, but state the reasoning:
 
-- look up the listener on the deploy/watch port (the repo already reasons
-  about port ownership for the guarded ranges — see how the guards and
-  `just deploy` itself check ports) and signal that pid; or
-- `pgrep -f` with the FULL anchored path plus exclusion of $$ and its
-  ancestry — strictly weaker, use only if port-lookup is unworkable.
+- **Prefer a pidfile** written by the server it starts, verified before signalling — a pid alone is
+  ambiguous after a wrap-around or an `os.exec`, so check the pid is actually the server (`/proc/<pid>/cmdline`
+  or `deploy_state.py`, which already separates *is the file right* from *is the process running that file*).
+- **Or** the listening socket: whatever owns the deploy port is the thing to stop (`ss -ltnp`, `fuser`).
+  Note `.dreamwork/watch-port` records the port.
+- Either way: **no `pkill -f` against a pattern that could match the caller.** If any pattern survives,
+  build it from parts and say why it cannot self-match.
+- **Fail loudly if the target cannot be identified.** Killing nothing and saying so beats killing the shell.
 
-The invariant the merge-gate will check: **a process whose command line
-contains the snapshot basename but which is not the server MUST survive the
-kill step**, and the actual server MUST still be stopped (the fix that
-"never kills anything" is a failure, not a fix — deploy must still deploy).
+## Done means all of these
 
-## Constraints (hard)
+1. `just deploy` stops only its own server; a shell whose command line contains the snapshot path survives.
+2. **Red-first, and name the production line.** Reinstate the `pkill -f` form and show the self-match
+   occurring (a decoy process whose command line merely mentions the pattern is killed), then show it
+   surviving after your fix. **A green red-run is a finding, never a relief** — if your check passes with
+   the old form in place, the check is not reaching the code and that is the more valuable result.
+3. **Assert the check's precondition**: that the decoy process was actually alive and matched the pattern
+   before the stop step. A check that silently had no decoy passes forever.
+4. **DO NOT stop, restart, redeploy or `pkill` the live dashboard on :35110**, and do not touch the
+   heartbeat, the monitors or the loop. Test against **your own** server on an ephemeral port outside
+   39880–39899. This is the one task where an over-broad test command is itself the bug — be careful.
+5. `python3 lint.py` clean and `python3 -m pytest -q -p no:randomly` passes (1061 at dispatch). **Do not run
+   the full `just test`.**
+6. A commit that changes what an existing install must do carries a trailer: `Migration:`, `Feature:`, or
+   `Needs: config|consent`. A pidfile is likely `Migration:` — decide.
+7. If the loop writes a pidfile and a tool parses it, **`file-formats.md` states its shape in the same
+   commit** — the standing rule, checked by `lint.py`.
 
-- **NEVER run `just deploy` itself.** Port 35110 deploys are the
-  coordinator's, standing-authorized only there. Test the kill-step logic in
-  isolation against processes YOU spawn on unprivileged high ports outside
-  39880-39899 and 35110 (e.g. 42xxx), and clean them up.
-- Never `pkill -f` anything in your own testing except against your own
-  planted decoys by exact pid.
-- Red-first: write the decoy-survival guard BEFORE the fix and watch it fail
-  against the CURRENT recipe logic (you may invoke the recipe's kill step
-  extracted, or a test harness that runs the same command the recipe runs —
-  name in your report exactly which production line you exercised).
-- Small committed increments, `git commit --only <paths>` (new files need
-  `git add` first).
+## Files
 
-## Acceptance criteria (measurable)
+Yours: `justfile`, `dev/deploy_state.py`, `file-formats.md`, and any new helper under `dev/` plus its
+`DEFAULT_GUARDS`/`lint.NOT_GUARDS` registration if it is a `.mjs` guard.
 
-1. A guard/test that plants a decoy process whose cmdline mentions
-   `ud-dreamwork-watch.py` and asserts the decoy SURVIVES the recipe's kill
-   step while a planted fake server (the thing listening on the deploy
-   port) is stopped. Red against the old logic, green against the new.
-2. The guard names the production line it exercises, per the repo's
-   structural-red rule.
-3. `just deploy`'s recipe still stops the real server (argued by the guard's
-   fake-server half, since you may not run a real deploy).
-4. Full `just test` green in your worktree (the suite binds 39890-39899 /
-   39880-39889 — check `lsof -i :39890-39899` first; if occupied, run only
-   `pytest` + `lint.py` and say so in the report).
-5. `git diff --stat` touches only your owned paths.
+**Not yours:** `watch.py`, `lint.py`, `.dreamwork/tasks.md`, `.dreamwork/questions.md` — report exact lines
+instead of editing them.
 
-## Hand-off obligation (#398)
+## Practical
 
-Final report in `.dreamwork/handoffs.md` format: what changed, the red/green
-evidence (commands + output), the production line the guard exercises, and
-anything you did NOT do. The coordinator merge-gates from your worktree.
+- 2 threads. `git add <newfile>` then `git commit --only <paths> -m 'fix(#431): …'` — **`--only`, never
+  `git add -A`**: other agents commit in this tree.
+- **Commit before you finish.** A lane today did 24 turns of correct work and exited without committing.
+- **This should be small.** If it grows, land the stop-the-right-process half and say what you left.
+- **Push back with reasons if any of this is wrong.** Every lane today that refuted its brief was right to.
+
+## Report
+
+Say: which model you are; the mechanism you chose and why; the exact production line whose change reds your
+check; the decoy-precondition assertion; the trailer; and confirmation you never touched :35110, the
+heartbeat, the monitors, or the loop.
