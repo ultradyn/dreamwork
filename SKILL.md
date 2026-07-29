@@ -158,6 +158,39 @@ every tick alongside run-mode; it is the same per-tick-re-read contract
 (`#426`). Treat the posture as **selection/policy posture for this host**;
 do **not** invent kill/sandbox authority from it alone (`#288`).
 
+**Restate the posture at each tick, don't just re-read it** (#513, human
+steer). The file read is silent; what keeps the loop honest is saying the
+resolved axes back to yourself at tick start — *pace hot, asking near-auto,
+delegation 4, delivery batched* — and checking the last few ticks against
+them: a `delegation: 4` posture with zero lanes out is drift; so is
+implementing inline what a lane could carry. The steer named the failure
+exactly: *"agents drifting back into implementing themselves or not using
+subagents where they could otherwise."* A manual refresh button was
+considered and rejected — the reminder belongs to the tick, not to him.
+
+**Batched delivery drains the journal on the tick** (#342, #501). When the
+delivery axis is `batched`, user events accumulate in the durable journal
+(`.dreamwork/user-events.sqlite3`) and NOTHING surfaces them except the
+loop's own drain — do-now/do-next class still pre-empts by wake line, but
+the ambiguous class (ideas, notes, anything not addressed to *now*) waits
+for you. The tick habit is `pending → process → consume` via
+`dev/journal_consume.py` (the ruling: `.dreamwork/docs/plans/delivery-modes.md`):
+
+1. `python3 <skill-dir>/dev/journal_consume.py pending` — read-only; one
+   line per event, receipt id first, 80-char preview. Quiet on empty.
+2. Process each event — act on it, file it as a task, or fold it into a
+   question. The preview is a triage aid, not the content; when it is not
+   enough, read the receipt's full payload from the journal before acting.
+3. Only then `python3 <skill-dir>/dev/journal_consume.py consume` — the
+   verifying read-then-advance that moves the cursor past what you read.
+
+**Never consume without a prior `pending` read in the same tick.** The
+coordinator ran `consume` blind once and discarded two events' content
+unread — one was a human instruction (the #513 steer above), recovered
+only by hand-written SQL against the events table. `consume` prints
+receipt ids, not content; a blind consume is a silent loss with a green
+exit code, the exact failure batched mode exists to prevent.
+
 ## Selecting the next task
 
 0. **Sync.** Check the task list first. Resume unblocked in-progress work
@@ -544,10 +577,12 @@ results, no ceremony.
   dashboard after a 10s arm, dual-written with one `watch-events.log` line
   on change. Authoritative over any status mirror; machine-local /
   gitignored. See `file-formats.md`.
-- `.dreamwork/posture` — three-axis posture override (#445, ratifies #443):
-  `pace:` / `asking:` / `delegation:`, one axis per line. Absent → derived
-  from run-mode via `lint.derive_posture` (no silent change); present →
-  overrides any axis independently. Pace and asking are closed sets; delegation
+- `.dreamwork/posture` — four-axis posture override (#445 ratifies #443;
+  delivery added by #342): `pace:` / `asking:` / `delegation:` / `delivery:`,
+  one axis per line. Absent → pace/asking/delegation derive
+  from run-mode via `lint.derive_posture` (no silent change); absent delivery
+  → `instant` (pre-axis behaviour). Present → overrides any axis independently.
+  Pace, asking and delivery are closed sets; delegation
   is an average-concurrency target (steers, never gates). Machine-local /
   gitignored, re-read every tick like run-mode. See `file-formats.md`.
 - `.dreamwork/status.json` — live loop status for the watch.py dashboard,
