@@ -7913,9 +7913,22 @@ function crumbsFor(v, d) {
     return row;
   }
   if (!d) return [];
-  return [
+  // #491 — the version crumb sits BESIDE the freshness age ("updated Ns ago"),
+  // and a bare migration filename in that slot read as "this file changed Ns
+  // ago". It is not: the value is the target's RECORDED skill version
+  // (.dreamwork/skill-version, written by orient), a different source from the
+  // skill tree's latest migration (skill_identity). The value is honest; the
+  // defect was the adjacency implying an age, because the crumb named nothing
+  // about what it IS. So it says so — a dim "skill" label before the name —
+  // and the neighbour no longer supplies the meaning. Built only when there is
+  // a name to show (an empty version file renders no crumb, not a bare dot).
+  const sv = d.files['skill-version'];
+  const row = [
     { k:'target', html: esc(d.target) },
-    { k:'version', html: esc(d.files['skill-version']) },
+  ];
+  if (sv) row.push({ k:'version',
+    html:'<span style="color:var(--dim)">skill</span> ' + esc(sv) });
+  row.push(
     { k:'updated', html:'<span id="upd"></span>' },
     // the count is zero whether everything is answered or the file cannot be
     // read, so the crumb must not quietly render the broken case as the calm
@@ -7926,8 +7939,8 @@ function crumbsFor(v, d) {
         ? `<a class="q" href="/questions">${d.open_questions} open ` +
           `question${d.open_questions > 1 ? 's' : ''}</a>`
         : `<a class="q" href="/questions" style="color:var(--dimmer)">` +
-          `questions</a>` },
-  ];
+          `questions</a>` });
+  return row;
 }
 /* where the heading sits RIGHT NOW — taken before the column class flips,
    because that flip is what moves everything. */
