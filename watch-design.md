@@ -3057,6 +3057,16 @@ same `confirmationFor` as the file-path copy):
 | never finishes | `update never finished — this page is still the old one` |
 | success | a new `GENERATION` → full `location.reload()` (the page *is* the new one) |
 
+**Arming copy is steady text that ticks (#490).** The first paint of an arm
+arrives once through `claim` (not `note` — a 10s arm must not auto-clear at
+the 5s confirmation hold). Each second change rewrites the number **in place**
+on `#fmsg`; it never re-calls `claim`/`note`, so `.dreamin` is not restarted
+at the 250ms poll rate. The pre-#490 path re-`note`d every tick and flashed
+~4 Hz after he pressed update — "no need for it to do that." Terminal states
+(running / refused / cancelled / never finished) still go through `note` and
+own the full hold-and-depart lifecycle. Guard: `dev/capture/staleremedy.mjs`
+(§3b counts mid-arm `.dreamin` adds after the legitimate arrival settles).
+
 **Why two refusal rows, and the general rule they establish.** Both refusals are
 `domain_invalid`, because `REJECTION_REASONS` is a three-wide contract and this
 route can refuse for two unrelated causes. Reusing the generic `REJECT_WHY` copy
