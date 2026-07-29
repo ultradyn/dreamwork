@@ -179,146 +179,6 @@ Next id: **486**
   required/optional, persist-until-answered), and the push-back — pag is a partial model (no authorship
   vocabulary, no threading, one-shot answers, no attention-mode axis), and `#294` must add question/contribution
   tables before any build. **The FEATURE stays blocked on `#294`** — only the survey half is done.
-- **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
-  artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
-  **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
-  `.dreamwork/watch-events.log` at that timestamp and is the authority; this entry is a structuring of it, not
-  a replacement
-  · **this is the answer to `#421`'s question arriving as a design rather than a choice among my four options**,
-  and it supersedes the shape of that ask. It is also the second axis of `#443` (run modes conflating pace with
-  delegation) — read the two together; **whoever designs either must reconcile them or say why they stay
-  separate**
-  · **the four levels, in his order.** (1) **ask me everything** — any non-trivial design or architectural
-  choice produces a review document and *he* chooses between the options; *"probably a bit more than you've
-  been asking me, but you do ask me a lot of stuff"*. (2) **keep me informed** — mostly automatic, but each
-  material choice emits **documentation rather than a question**: what the choice was, why a choice was
-  needed, the details, a brief note on the other options, and the evaluation table. *"a review in the sense
-  that it's for the human's review, but it's not asking them for a choice — so it's a bit different to what we
-  have now."* He put a number on it: **~10–20% of questions escalate**. (3) **near-automatic** — the
-  evaluation is still done and **logged to a journal folder** (ADR-shaped), but nothing is surfaced unless it
-  is genuinely big or he is stuck; *"it's too much in the noise to actually surface"*. (4) **full auto** —
-  *"tasked with figure it out"*; every blocker is the loop's to solve, never blocked on a reply
-  · **the obligation that runs through all four: the IGC evaluation.** Level 1 *always shows it to him*, level
-  2 includes it in the emitted document, level 3 logs it without surfacing. **`IGC` is now DEFINED and this no longer
-  blocks** (2026-07-29 00:33, his pointer to the `use-igcs` skill; vendored by `#447` as `igc-method.md` +
-  `igc-concepts.md`): **(Idea, Goal, Context)**, the Critical Fallibilism method — per (idea, goal) in a stated
-  context, `✔` non-refuted / `✘` refuted with the decisive error written out / `?` a TODO, an `All` rollup,
-  breakpoints instead of maximisation, and **never a score**. So "the evaluation table" in every level means an
-  IGC matrix, and `SKILL.md` already instructs it at four judgement sites
-  · **the rule about not-material choices**, which is what makes level 2 workable: *"some choices where you
-  have multiple good options … are not very material. It doesn't really matter to the user's goals. You can
-  just make a choice in that regard … unless the user has specifically mentioned something."* So the escalation
-  test is **materiality against his goals**, not difficulty
-  · **before declaring yourself stuck, research first**: *"you should always use a subagent to research the
-  question, see if anyone's solved it before, what the options are."* Stuck is a state you have to earn
-  · **and the deepest part, which belongs in `DREAMWORK.md` regardless of what gets built**: when uncertain,
-  **ask about his goals rather than about the immediate decision** — *"if you know about their goals, you can
-  evaluate not just the current answer … but you can also do that for many other questions."* Uncertainty
-  usually means the goals need to be more specific. This is the skill's own *"unclear is a goals problem"*
-  stated as an operational instruction, and it should be folded into `DREAMWORK.md` as a durable preference
-  · **level 4's cooperation clause is explicit and must not be lost**: *"you still want to cooperate with the
-  user … but you never want to be blocked just because the user hasn't replied or because you don't have
-  access to something."* Raise the unblocking question **as early as possible**, keep working while it is
-  unanswered, and do not go down a rabbit hole while other work exists. His worked example: don't buy a domain
-  for a project that already has one, but do ask *"do we have a domain?"* early and cheaply
-  · **the configuration also carries subagent policy**, and he specified the shape: a **target number** of
-  subagents plus **free text** for type, special rules, when to use them and when not. Validation: `>= 1`,
-  **warn in the UI on 0**, **hard-invalid below 0**. Free text now, standardise later if ever. Two consumers he
-  named: sizing automatic task selection to the target, and **showing the subagent policy to the agent every
-  time** — which makes it a per-tick read like `run-mode`, not a start-up read (`#426`)
-  · **design first, and it needs an artifact with an `#ask`**: the level names, where the config lives, and how
-  it composes with `run-mode` are all his calls. **Do not change `.dreamwork/run-mode`'s closed set or
-  `file-formats.md` before he rules** — and note the `IGC` question above is a blocker on the artifact, not on
-  the design discussion
-  · **blocked-on: **human** (define `IGC`; then rule on the composition with `#443`)**
-  · related: **#443, #421, #438, #426, #466**
-  · **DESIGN LANDED `0eea21c`, merged `1462aeb` — and it STAYS OPEN, because a design is not a ruling.**
-  `.dreamwork/docs/plans/attention-modes.md` plus the artifact `.dreamwork/review/445-attention-modes.html`;
-  built no mechanism, as the brief required — no `watch.py`, no tick-read file, no change to `run-mode`'s closed
-  set
-  · **the reconciliation with `#443` resolved to THREE orthogonal axes: pace × asking × delegation.** The
-  decisive error against one combined enum is concrete and it is *this session*: a single level drags pace and
-  delegation with it, so *"lackadaisical but delegating"* — his own instruction tonight — is unexpressible, and
-  that is precisely why `#443` was filed. Two axes fail too: asking (what surfaces to him) and delegation (who
-  does the work) are independent and neither derives from the other. A per-task override survives as an
-  *addition* to three axes, never a substitute
-  · `#443`'s existing values decompose cleanly — `lackadaisical` → idle pace, `hot` → hot pace + own hands,
-  `assisted` → hot pace + subagents — and the combination that has no name today (idle pace **with** subagents)
-  becomes expressible, which is the test the design had to pass
-  · each level fixes four things: what surfaces, what is emitted, where it is logged, and **what happens if he
-  never replies** — L1 blocks on him by design, L2 parks nothing (a document is not an ask), L3 proceeds and
-  *earns* stuck by researching first, L4 never blocks and keeps working the unanswered question in the
-  background. The ~10–20% escalation figure is recorded as a **soft estimate that steers**, with no counter that
-  gates, per his 01:17 ruling
-  · **the escalation test is materiality against his goals, not difficulty** — a design that escalates by
-  hardness escalates the wrong things
-  · **artifact verified by me, not folded from the report**: exactly one real `#ask`, both build-time metas
-  present, no stray `>` in the head (the `#457` regression), and the IGC table carries `table-layout:fixed`
-  through a class selector because the template's bare-`table` rule would otherwise win — the same pattern
-  `#421` proved after a 4197px table shipped and he could not read it
-  · **asked 2026-07-29 02:42 with three declared sub-decisions** (`Q1` the three axes, `Q2` names + where the
-  asking axis lives, `Q3` the subagent target and policy shape) · **blocked on his ruling**
-  · **HIS RULING, 2026-07-29 03:45 (via watch) — Q1 `rec`, Q2 amended, Q3 amended.** The three orthogonal
-  axes (**pace × asking × delegation**) are ratified. **Q2:** widening `run-mode` into a multi-field file is
-  approved *in principle but deferred* — *"we don't need to do that yet. We can just convert the current modes
-  into the new values"*. So the first increment is a **vocabulary conversion**, not a format change: today's
-  three values are re-expressed as points in the new space, and **each axis gets its own control** with about
-  **three stops** — *"IDK that I will leave up to you, but we get 3 dimensions of input is the point"*, so the
-  stops are the loop's call and the three dimensions are not. **Q3:** the subagent number is an
-  **average-concurrency target, not a cap or a quota** — `0` means *occasional*, i.e. a subagent when one is
-  necessary or a particularly good choice (average below 0.5 running); `1` means an average strictly between
-  0.5 and 1.5; and so on. Interdependent work still governs, and **two agents may pair on one worktree**,
-  coordinating through `subagent-protocols` (`#466`)
-  · **no longer blocked-on human** — the design is ratified and the axes are settled; what remains is
-  implementation, and it starts with the conversion plus the controls
-  · **increment 1 LANDED `56daaeb` + `9b64661`, merged `f57de41`** — the vocabulary, its `lint` checks,
-  `file-formats.md` and `SKILL.md`'s selection posture. A **sibling `.dreamwork/posture` file**, so `run-mode`'s
-  contract and its re-read-every-tick property are untouched and no migration is needed (his Q2: *"widen it,
-  but we don't need to do that yet"*). Gitignored (`4e704e9`) for the same reasons `run-mode` is
-  · **two coordinator steers changed the result, and the lane conceded both with evidence.** (1) It compressed
-  his **four** asking levels to three to keep the axes symmetric. Levels 3 and 4 differ observably — near-auto
-  still journals an ADR-shaped record, full-auto does not — and his *"3 stops … maybe? IDK"* was about the
-  **control**, not the vocabulary. Asking keeps four stops, in his words. (2) It derived `asking = inform` for
-  all three existing values, which would have **quietly stopped the loop asking him** — it re-derived
-  `asking = ask` after measuring 108 question resolutions and 28 artifacts against level 2's ~10–20% escalation
-  · **the asymmetry is now a control problem, flagged for increment 2**: four stops on asking, three on pace,
-  an integer target on delegation. That is increment 2's to solve and it must not solve it by deleting a level
-  · **remaining: the controls** — his *"we should add controls for the new values and their dimensions"*.
-  Blocked on nothing; it needs `watch.py`, so it goes to a lane when `watch.py` is free
-- **#443** — run modes conflate PACE with DELEGATION POSTURE, so there is no way to say *"idle-friendly, but
-  use subagents"* · **P1** · loop-design/run-mode · origin: **human** · **human via watch 2026-07-28 22:18**
-  · his words (dictated, lightly punctuated): *"We need to rethink how the Run modes work. Because when,
-  like, we need ways to say, like, be lackadaisical, but also use sub-agents. So we need a good — I guess
-  like a good — yeah, good way to do that. We need to think about how we're gonna structure this and
-  restructure it from first principles so that it works and it works well."*
-  · **the defect stated plainly.** `.dreamwork/run-mode` (`#290`) is one line from a closed set —
-  `lackadaisical` / `hot` / `assisted` — and that single axis is carrying at least two independent
-  decisions: **how often the loop acts** and **whether it acts through subagents.** `assisted` is the only
-  value that implies helpers, and it also implies a pace, so *"lackadaisical but delegating"* is
-  unexpressible. Tonight's session is exactly that state — he asked for low activity **and** for all work to
-  go through subagents — and it was held in conversation rather than in the file, which means it does not
-  survive a restart or a compaction
-  · **first principles, as he asked**, and the axes to argue about rather than assume: (1) **pace** — how
-  eagerly the coordinator starts new work; (2) **delegation** — coordinator's own hands vs subagents, and how
-  many at once; (3) **quota posture** — what to spend, which tonight was the *reason* for the mismatch and is
-  arguably its own axis rather than a consequence of pace; (4) **autonomy** — how much lands without asking.
-  Whether these are four axes, or two axes and two derived values, is the actual design question
-  · **what must not be lost.** `#288` is explicit that a run mode grants **no kill or sandbox authority** on
-  its own, and `#290`'s file contract is load-bearing: gitignored, machine-local, re-read every tick, written
-  by the dashboard behind a 10s arm with one events line on change. A richer mode must keep *re-read every
-  tick* — that is the only property that lets an on-disk change reach a running loop (`#426`), and it is why
-  `run-mode` is the prior art the reload design points at
-  · **the closed set is the thing under review**, so `file-formats.md`, `watch.py`'s parser, the dashboard's
-  composer control, and `SKILL.md`'s selection posture all move together — and a wider grammar has a
-  migration cost for existing installs (`Migration:` trailer)
-  · **design first, with a review artifact and an `#ask`** — this is a restructure of a contract he set and
-  the axes are his call, not the loop's. Do not change the file format before he rules
-  · **blocked-on: **human** (after the design lands)** · related: **#290, #288, #426, #438, #445**
-  · **RESOLVED BY `#445`'s RULING, 2026-07-29 03:45.** The conflation is settled as **three** axes — pace,
-  asking, delegation — not the four this entry proposed: **quota posture** collapses into delegation plus pace
-  rather than standing alone, and **autonomy** is the asking axis under another name. The file format does not
-  change yet (his Q2: convert the current values into the new vocabulary first), so `#290`'s contract and the
-  *re-read every tick* property survive untouched for now. **No longer blocked-on human**
 - **#438** — a generic scheduled-tasks facility, so maintenance and inbound-scanning work is filed rather
   than done ad hoc · P2 · feature/scheduling · origin: **human** · **human via watch 2026-07-28 20:34**
   · his words: *"we should add support for task scheduling (probably managed through dreamhub). central
@@ -3184,6 +3044,150 @@ Next id: **486**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#443** — run modes conflate PACE with DELEGATION POSTURE, so there is no way to say *"idle-friendly, but
+  use subagents"* · **P1** · loop-design/run-mode · origin: **human** · **human via watch 2026-07-28 22:18**
+  · his words (dictated, lightly punctuated): *"We need to rethink how the Run modes work. Because when,
+  like, we need ways to say, like, be lackadaisical, but also use sub-agents. So we need a good — I guess
+  like a good — yeah, good way to do that. We need to think about how we're gonna structure this and
+  restructure it from first principles so that it works and it works well."*
+  · **the defect stated plainly.** `.dreamwork/run-mode` (`#290`) is one line from a closed set —
+  `lackadaisical` / `hot` / `assisted` — and that single axis is carrying at least two independent
+  decisions: **how often the loop acts** and **whether it acts through subagents.** `assisted` is the only
+  value that implies helpers, and it also implies a pace, so *"lackadaisical but delegating"* is
+  unexpressible. Tonight's session is exactly that state — he asked for low activity **and** for all work to
+  go through subagents — and it was held in conversation rather than in the file, which means it does not
+  survive a restart or a compaction
+  · **first principles, as he asked**, and the axes to argue about rather than assume: (1) **pace** — how
+  eagerly the coordinator starts new work; (2) **delegation** — coordinator's own hands vs subagents, and how
+  many at once; (3) **quota posture** — what to spend, which tonight was the *reason* for the mismatch and is
+  arguably its own axis rather than a consequence of pace; (4) **autonomy** — how much lands without asking.
+  Whether these are four axes, or two axes and two derived values, is the actual design question
+  · **what must not be lost.** `#288` is explicit that a run mode grants **no kill or sandbox authority** on
+  its own, and `#290`'s file contract is load-bearing: gitignored, machine-local, re-read every tick, written
+  by the dashboard behind a 10s arm with one events line on change. A richer mode must keep *re-read every
+  tick* — that is the only property that lets an on-disk change reach a running loop (`#426`), and it is why
+  `run-mode` is the prior art the reload design points at
+  · **the closed set is the thing under review**, so `file-formats.md`, `watch.py`'s parser, the dashboard's
+  composer control, and `SKILL.md`'s selection posture all move together — and a wider grammar has a
+  migration cost for existing installs (`Migration:` trailer)
+  · **design first, with a review artifact and an `#ask`** — this is a restructure of a contract he set and
+  the axes are his call, not the loop's. Do not change the file format before he rules
+  · **blocked-on: **human** (after the design lands)** · related: **#290, #288, #426, #438, #445**
+  · **RESOLVED BY `#445`'s RULING, 2026-07-29 03:45.** The conflation is settled as **three** axes — pace,
+  asking, delegation — not the four this entry proposed: **quota posture** collapses into delegation plus pace
+  rather than standing alone, and **autonomy** is the asking axis under another name. The file format does not
+  change yet (his Q2: convert the current values into the new vocabulary first), so `#290`'s contract and the
+  *re-read every tick* property survive untouched for now. **No longer blocked-on human**
+  · closed 2026-07-29 17:22. Resolved by #445's 03:45 ruling as recorded in the entry: the conflation settled as THREE axes (pace, asking, delegation), quota posture collapsing into delegation+pace and autonomy being the asking axis. The file format was NOT widened (his Q2: convert first) — run-mode's contract and its re-read-every-tick property survive. Both follow-on increments are done: the vocabulary (#445 inc 1) and the controls (c33a8318, used by him 16:01). 'Lackadaisical but delegating' — the state that was unexpressible and motivated the task — is expressible today as idle pace + delegation target.
+
+- **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
+  artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
+  **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
+  `.dreamwork/watch-events.log` at that timestamp and is the authority; this entry is a structuring of it, not
+  a replacement
+  · **this is the answer to `#421`'s question arriving as a design rather than a choice among my four options**,
+  and it supersedes the shape of that ask. It is also the second axis of `#443` (run modes conflating pace with
+  delegation) — read the two together; **whoever designs either must reconcile them or say why they stay
+  separate**
+  · **the four levels, in his order.** (1) **ask me everything** — any non-trivial design or architectural
+  choice produces a review document and *he* chooses between the options; *"probably a bit more than you've
+  been asking me, but you do ask me a lot of stuff"*. (2) **keep me informed** — mostly automatic, but each
+  material choice emits **documentation rather than a question**: what the choice was, why a choice was
+  needed, the details, a brief note on the other options, and the evaluation table. *"a review in the sense
+  that it's for the human's review, but it's not asking them for a choice — so it's a bit different to what we
+  have now."* He put a number on it: **~10–20% of questions escalate**. (3) **near-automatic** — the
+  evaluation is still done and **logged to a journal folder** (ADR-shaped), but nothing is surfaced unless it
+  is genuinely big or he is stuck; *"it's too much in the noise to actually surface"*. (4) **full auto** —
+  *"tasked with figure it out"*; every blocker is the loop's to solve, never blocked on a reply
+  · **the obligation that runs through all four: the IGC evaluation.** Level 1 *always shows it to him*, level
+  2 includes it in the emitted document, level 3 logs it without surfacing. **`IGC` is now DEFINED and this no longer
+  blocks** (2026-07-29 00:33, his pointer to the `use-igcs` skill; vendored by `#447` as `igc-method.md` +
+  `igc-concepts.md`): **(Idea, Goal, Context)**, the Critical Fallibilism method — per (idea, goal) in a stated
+  context, `✔` non-refuted / `✘` refuted with the decisive error written out / `?` a TODO, an `All` rollup,
+  breakpoints instead of maximisation, and **never a score**. So "the evaluation table" in every level means an
+  IGC matrix, and `SKILL.md` already instructs it at four judgement sites
+  · **the rule about not-material choices**, which is what makes level 2 workable: *"some choices where you
+  have multiple good options … are not very material. It doesn't really matter to the user's goals. You can
+  just make a choice in that regard … unless the user has specifically mentioned something."* So the escalation
+  test is **materiality against his goals**, not difficulty
+  · **before declaring yourself stuck, research first**: *"you should always use a subagent to research the
+  question, see if anyone's solved it before, what the options are."* Stuck is a state you have to earn
+  · **and the deepest part, which belongs in `DREAMWORK.md` regardless of what gets built**: when uncertain,
+  **ask about his goals rather than about the immediate decision** — *"if you know about their goals, you can
+  evaluate not just the current answer … but you can also do that for many other questions."* Uncertainty
+  usually means the goals need to be more specific. This is the skill's own *"unclear is a goals problem"*
+  stated as an operational instruction, and it should be folded into `DREAMWORK.md` as a durable preference
+  · **level 4's cooperation clause is explicit and must not be lost**: *"you still want to cooperate with the
+  user … but you never want to be blocked just because the user hasn't replied or because you don't have
+  access to something."* Raise the unblocking question **as early as possible**, keep working while it is
+  unanswered, and do not go down a rabbit hole while other work exists. His worked example: don't buy a domain
+  for a project that already has one, but do ask *"do we have a domain?"* early and cheaply
+  · **the configuration also carries subagent policy**, and he specified the shape: a **target number** of
+  subagents plus **free text** for type, special rules, when to use them and when not. Validation: `>= 1`,
+  **warn in the UI on 0**, **hard-invalid below 0**. Free text now, standardise later if ever. Two consumers he
+  named: sizing automatic task selection to the target, and **showing the subagent policy to the agent every
+  time** — which makes it a per-tick read like `run-mode`, not a start-up read (`#426`)
+  · **design first, and it needs an artifact with an `#ask`**: the level names, where the config lives, and how
+  it composes with `run-mode` are all his calls. **Do not change `.dreamwork/run-mode`'s closed set or
+  `file-formats.md` before he rules** — and note the `IGC` question above is a blocker on the artifact, not on
+  the design discussion
+  · **blocked-on: **human** (define `IGC`; then rule on the composition with `#443`)**
+  · related: **#443, #421, #438, #426, #466**
+  · **DESIGN LANDED `0eea21c`, merged `1462aeb` — and it STAYS OPEN, because a design is not a ruling.**
+  `.dreamwork/docs/plans/attention-modes.md` plus the artifact `.dreamwork/review/445-attention-modes.html`;
+  built no mechanism, as the brief required — no `watch.py`, no tick-read file, no change to `run-mode`'s closed
+  set
+  · **the reconciliation with `#443` resolved to THREE orthogonal axes: pace × asking × delegation.** The
+  decisive error against one combined enum is concrete and it is *this session*: a single level drags pace and
+  delegation with it, so *"lackadaisical but delegating"* — his own instruction tonight — is unexpressible, and
+  that is precisely why `#443` was filed. Two axes fail too: asking (what surfaces to him) and delegation (who
+  does the work) are independent and neither derives from the other. A per-task override survives as an
+  *addition* to three axes, never a substitute
+  · `#443`'s existing values decompose cleanly — `lackadaisical` → idle pace, `hot` → hot pace + own hands,
+  `assisted` → hot pace + subagents — and the combination that has no name today (idle pace **with** subagents)
+  becomes expressible, which is the test the design had to pass
+  · each level fixes four things: what surfaces, what is emitted, where it is logged, and **what happens if he
+  never replies** — L1 blocks on him by design, L2 parks nothing (a document is not an ask), L3 proceeds and
+  *earns* stuck by researching first, L4 never blocks and keeps working the unanswered question in the
+  background. The ~10–20% escalation figure is recorded as a **soft estimate that steers**, with no counter that
+  gates, per his 01:17 ruling
+  · **the escalation test is materiality against his goals, not difficulty** — a design that escalates by
+  hardness escalates the wrong things
+  · **artifact verified by me, not folded from the report**: exactly one real `#ask`, both build-time metas
+  present, no stray `>` in the head (the `#457` regression), and the IGC table carries `table-layout:fixed`
+  through a class selector because the template's bare-`table` rule would otherwise win — the same pattern
+  `#421` proved after a 4197px table shipped and he could not read it
+  · **asked 2026-07-29 02:42 with three declared sub-decisions** (`Q1` the three axes, `Q2` names + where the
+  asking axis lives, `Q3` the subagent target and policy shape) · **blocked on his ruling**
+  · **HIS RULING, 2026-07-29 03:45 (via watch) — Q1 `rec`, Q2 amended, Q3 amended.** The three orthogonal
+  axes (**pace × asking × delegation**) are ratified. **Q2:** widening `run-mode` into a multi-field file is
+  approved *in principle but deferred* — *"we don't need to do that yet. We can just convert the current modes
+  into the new values"*. So the first increment is a **vocabulary conversion**, not a format change: today's
+  three values are re-expressed as points in the new space, and **each axis gets its own control** with about
+  **three stops** — *"IDK that I will leave up to you, but we get 3 dimensions of input is the point"*, so the
+  stops are the loop's call and the three dimensions are not. **Q3:** the subagent number is an
+  **average-concurrency target, not a cap or a quota** — `0` means *occasional*, i.e. a subagent when one is
+  necessary or a particularly good choice (average below 0.5 running); `1` means an average strictly between
+  0.5 and 1.5; and so on. Interdependent work still governs, and **two agents may pair on one worktree**,
+  coordinating through `subagent-protocols` (`#466`)
+  · **no longer blocked-on human** — the design is ratified and the axes are settled; what remains is
+  implementation, and it starts with the conversion plus the controls
+  · **increment 1 LANDED `56daaeb` + `9b64661`, merged `f57de41`** — the vocabulary, its `lint` checks,
+  `file-formats.md` and `SKILL.md`'s selection posture. A **sibling `.dreamwork/posture` file**, so `run-mode`'s
+  contract and its re-read-every-tick property are untouched and no migration is needed (his Q2: *"widen it,
+  but we don't need to do that yet"*). Gitignored (`4e704e9`) for the same reasons `run-mode` is
+  · **two coordinator steers changed the result, and the lane conceded both with evidence.** (1) It compressed
+  his **four** asking levels to three to keep the axes symmetric. Levels 3 and 4 differ observably — near-auto
+  still journals an ADR-shaped record, full-auto does not — and his *"3 stops … maybe? IDK"* was about the
+  **control**, not the vocabulary. Asking keeps four stops, in his words. (2) It derived `asking = inform` for
+  all three existing values, which would have **quietly stopped the loop asking him** — it re-derived
+  `asking = ask` after measuring 108 question resolutions and 28 artifacts against level 2's ~10–20% escalation
+  · **the asymmetry is now a control problem, flagged for increment 2**: four stops on asking, three on pace,
+  an integer target on delegation. That is increment 2's to solve and it must not solve it by deleting a level
+  · **remaining: the controls** — his *"we should add controls for the new values and their dimensions"*.
+  Blocked on nothing; it needs `watch.py`, so it goes to a lane when `watch.py` is free
+  · closed 2026-07-29 17:22, verified by the current coordinator. Design ratified 03:45 (three orthogonal axes pace x asking x delegation; vocabulary conversion first; delegation as average-concurrency target). Increment 1 (vocabulary, .dreamwork/posture sibling file, lint checks, SKILL.md selection posture) landed 56daaeb + 9b64661. The controls — the stated remainder — landed c33a8318 (three-axis posture controls on the dashboard) and were USED by him at 16:01 today (pace=steady asking=near-auto delegation=2, honored by the loop the same hour). The free-text subagent policy half of Q3's original shape is unbuilt and is now #485's scope (his add-idea 17:10), so it does not hold this entry open. posture guard PASS in the ten-guard verification 15:29.
+
 - **#477** — the 2s tick TELEPORTS a section it catches mid-open · P1 · bug/motion · origin: **loop**
   · **found 2026-07-29 08:53 by the `motion` lane while clearing `#475`, and it is the one genuine PAGE defect
   in the whole ten-guard batch** · `qsec` fails in the recipe and passes on an isolated fresh server, and the
