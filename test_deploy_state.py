@@ -1477,6 +1477,7 @@ def test_justfile_deploy_stops_before_ship_before_start_before_verify():
     joined = "\n".join(cmd_lines)
 
     i_stop = joined.index("--stop-deployed")
+    i_wait = joined.index("--wait-port-free")
     # the ship step: the shell `mv` that ships the snapshot. Anchoring on a
     # command line starting with `mv ` is specific to the ship step — it is
     # the only shell mv in the recipe (ship-siblings is a Python verb).
@@ -1495,6 +1496,13 @@ def test_justfile_deploy_stops_before_ship_before_start_before_verify():
         "the deploy recipe ships the snapshot (mv) BEFORE --stop-deployed — "
         "the #520 defect: against an autoreloading occupant the mv arms the "
         "execv race the #508 checks then have to catch. Stop must come first.")
+    assert i_stop < i_wait < i_ship, (
+        "the deploy recipe ships the snapshot (mv) before the port is "
+        "confirmed free — the coordinator's green red-run at the #520 gate "
+        "(mv injected between stop and wait) PASSED the original stop<ship "
+        "anchor, pinning only half the order. The settle must complete "
+        "before the mv overwrites the watched path, or the SIGTERM-release "
+        "window re-arms the flicker the wait exists to outlast.")
     assert i_ship < i_start, (
         "the deploy recipe starts the new server before shipping the snapshot "
         "(mv) — the new server would boot the OLD content at $snap")
