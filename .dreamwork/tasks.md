@@ -27,15 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **490**
 
 ## Open
-- **#488** — posture card: 'override · .dreamwork/posture' label beside the heading; hover help text must not reflow · P2 ·
-  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:12:** *"the
-  'override · .dreamwork/posture' label should go next to the 'Posture' heading. and the description
-  text that appears on hovering buttons etc should not cause a reflow when it appears/disappears. So it
-  should take up constant space, even when not visible."* · two acceptances: (1) the override chip moves
-  up beside the 'Posture' heading; (2) button description text reserves its space (constant layout,
-  visibility toggles — not display:none) so the card never shifts when help appears or leaves ·
-  **transitions.md applies**: appearing help text is an arrival, and a reflow-free arrival is the point
-  of the request
 - **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
   dashboard/loop-config · origin: **human** · **human via watch `add-idea` 2026-07-29 17:10:** *"posture
   config (pace, etc) should have a place for text entry of subagent policy where user can put preferred
@@ -2696,6 +2687,17 @@ Next id: **490**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#488** — posture card: 'override · .dreamwork/posture' label beside the heading; hover help text must not reflow · P2 ·
+  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:12:** *"the
+  'override · .dreamwork/posture' label should go next to the 'Posture' heading. and the description
+  text that appears on hovering buttons etc should not cause a reflow when it appears/disappears. So it
+  should take up constant space, even when not visible."* · two acceptances: (1) the override chip moves
+  up beside the 'Posture' heading; (2) button description text reserves its space (constant layout,
+  visibility toggles — not display:none) so the card never shifts when help appears or leaves ·
+  **transitions.md applies**: appearing help text is an arrival, and a reflow-free arrival is the point
+  of the request
+  · merged (cc90d238): #posture-src chip moved into .posture-head beside the Posture heading; #pdesc reserves permanent min-height:2.6em so hover help toggles opacity/blur only, never layout. Guard gained scroll-invariant reflow checks (offset/height deltas of elements below the help text, want ≤1px). Lane red-first + red-proof; coordinator red-proof: min-height:0 fails exactly 3 reflow checks (Δoff=15.67px), restored byte-identical. 339 pytest green, posture guard PASS, audit exit 0. Lane model: grok-4.5 (481s, 56 calls — third clean fast UI lane on that model).
+
 - **#349** — `lessons.md` is 117 entries and 1476 lines, and a lesson in it failed to
   prevent its own repeat · P2 · dogfood/loop reliability · origin: **loop** · found
   pruning it during the maintenance rotation · **the evidence is specific and it is
