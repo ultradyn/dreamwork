@@ -400,25 +400,38 @@ deploy rev="HEAD":
       || { rm -f "$snap.tmp"; echo "deploy refused: sibling modules could not be staged beside the snapshot — his dashboard was left running"; exit 1; }
     python3 dev/deploy_state.py --assert-importable "$snap.tmp" \
       || { rm -f "$snap.tmp"; echo "deploy refused: the snapshot's imports do not resolve from the deploy dir — his dashboard was left running"; exit 1; }
-    mv "$snap.tmp" "$snap"
+    # #520 — STOP the old server BEFORE shipping the snapshot (`mv`). The old
+    # order ran `mv $snap.tmp $snap` before --stop-deployed: against an
+    # autoreloading occupant (the old --dev server was one) the `mv` overwrote
+    # the file it watched, so autoreload os.execv'd the old process IN PLACE
+    # (same pid, port flickered free via close-on-exec then rebound) — arming
+    # the race the #508 identity checks then had to catch. The first
+    # identity-verified deploy (2026-07-30 07:38) hit exactly this: stop
+    # sampled the flicker, wait-port-free refused, a human step was needed.
+    # The reorder is honest: --stop-deployed needs only the snap PATH
+    # (argv_runs_snap compares realpaths, never shipped CONTENT), so the old
+    # process — still running $snap with a matching argv — is correctly
+    # identified and stopped. The #480 boot-proofs (ship-siblings +
+    # assert-importable) stay BEFORE the stop: a snapshot that cannot boot is
+    # still refused with the dashboard up; only the race-arming `mv` moved.
     # #431 — stop ONLY the process listening on $port whose argv is $snap.
     # Never `pkill -f <basename>`: that matches any process whose command line
     # merely *mentions* the pattern (the deploy shell, a pgrep, a comment) and
     # killed a coordinator shell with exit 144. Identify by the listening
     # socket, verify via /proc/<pid>/cmdline, signal that pid alone.
     python3 dev/deploy_state.py --stop-deployed --port "$port" --snap "$snap" \
-      || { echo "deploy refused: could not identify the process to stop on :$port — left it alone"; exit 1; }
-    # #508 — wait for the port to be REALLY free before starting the new
-    # server, and confirm it STAYS free. The old server ran with --dev
-    # (autoreload); this recipe's `mv` overwrote the snapshot it watches, so
-    # autoreload os.execv'd the old process IN PLACE (same pid) and its
-    # close-on-exec socket flickered free during the exec before rebinding.
-    # stop_deployed's poll can grade that flicker as 'free' and return success
-    # while the old process rebinds — so the new server would die on bind
-    # (invisible under `nohup … &`) and the old curl readiness would print
-    # 'deployed' against the OLD process. Refuse if the port never stays free.
+      || { rm -f "$snap.tmp"; echo "deploy refused: could not identify the process to stop on :$port — left it alone"; exit 1; }
+    # #508/#520 — wait for the port to be REALLY free before shipping + starting,
+    # and confirm it STAYS free. #520 moved the `mv` after this wait, so this
+    # recipe no longer arms the autoreload execv flicker itself; but the settle
+    # is still belt-and-braces for the SIGTERM port-release window — a single
+    # `listening_pid is None` sample is not proof the bind is gone.
     python3 dev/deploy_state.py --wait-port-free --port "$port" \
-      || { echo "deploy refused: :$port never freed after stop (the old process re-exec'd/respawned) — his dashboard was left running, the new server was not started"; exit 1; }
+      || { rm -f "$snap.tmp"; echo "deploy refused: :$port never freed after stop (the old process re-exec'd/respawned) — his dashboard was left running, the new server was not started"; exit 1; }
+    # #520 — SHIP the snapshot now that the old server is dead. Before #520 the
+    # `mv` ran before the stop and armed the autoreload execv race above; now it
+    # overwrites a path no live process watches.
+    mv "$snap.tmp" "$snap"
     # #508 — the deployed server no longer runs with --dev: autoreload (implied
     # by --dev) was the mechanism that re-exec'd the old process in place on
     # this recipe's own `mv`, creating the residual port-holder the race needs.
