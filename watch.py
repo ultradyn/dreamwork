@@ -10903,6 +10903,38 @@ def _handoff_pending_shas(match):
                  if s.strip())
 
 
+# Backticked hex git shas cited in a fold note (#409). Fold lines carry the
+# landing sha in freeform prose — `citing \`f2c950e\``, `merged \`cb476a7\`` —
+# never a parsed field. This reads what is there; an id ref (`\`#401\``) or a
+# date is not hex, so it is excluded. {7,40} is short..full git sha length.
+_HANDOFF_FOLD_SHA_RE = re.compile(r"`([0-9a-fA-F]{7,40})`")
+
+
+def _handoff_fold_shas(fold_note):
+    """Lowercased hex shas a fold note cites, in written order (#409).
+
+    Returns ``()`` when the note cites no sha, so correlation can fall back
+    to id-only — most folds cite the MERGE commit, not the work sha a pending
+    landed, and a fold matching no pending must not resurface one.
+    """
+    return tuple(m.group(1).lower()
+                 for m in _HANDOFF_FOLD_SHA_RE.finditer(fold_note or ""))
+
+
+class FoldedHandoffs(set):
+    """Folded id tokens, plus the shas each fold cites (#409).
+
+    Behaves as the set of folded id tokens for callers that correlate by id
+    alone (lint's ``nid in folded_ids`` / ``len(folded_ids)`` — unchanged), and
+    carries ``shas_by_id``: id → set of lowercased shas cited in that id's
+    fold note(s). ``pending_handoff_records`` uses it for (id, sha) correlation.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.shas_by_id = {}
+
+
 def handoff_parent_ids(token):
     """Parent ledger id(s) for correlating a hand-off against `## Open`.
 
@@ -10947,7 +10979,7 @@ def parse_handoffs(text):
     outside both) is malformed, not silent. The malformed path runs for every
     section so a Pending-shaped line under `## Folded` cannot vanish (#406).
     """
-    pending, folded_ids, malformed = [], set(), []
+    pending, folded_ids, malformed = [], FoldedHandoffs(), []
     section = None
     for ln in (text or "").splitlines():
         s = ln.strip()
@@ -10973,7 +11005,15 @@ def parse_handoffs(text):
                 shas,
                 m_pend.group(3).strip()))
         elif section == "F" and m_fold:
-            folded_ids.add(_normalise_handoff_id_token(m_fold.group(1)))
+            nid = _normalise_handoff_id_token(m_fold.group(1))
+            folded_ids.add(nid)
+            # #409: capture the shas the fold cites so correlation can be by
+            # (id, sha), not id alone. group(2) is only the TIMESTAMP parenthetical;
+            # the sha lives in the freeform note after it (citing/merged …), so
+            # scan the whole line. Backtick+hex filter excludes id refs / dates.
+            fshas = _handoff_fold_shas(ln)
+            if fshas:
+                folded_ids.shas_by_id.setdefault(nid, set()).update(fshas)
         elif m_bare:
             # Wrong section, incomplete grammar, or unrecognised id shape —
             # all LOUD. Runs outside section P so a misfiled line is visible.
@@ -10994,12 +11034,34 @@ def pending_handoff_records(text):
 
     Each record carries ``sha`` (first / landing) and ``shas`` (one-or-more,
     written order) so a multi-commit landing surfaces every commit (#427).
+
+    Correlation is by ``(id, sha)`` (#409): a fold citing a sha a pending
+    landed consumes ONLY that sha, so a second landing under the same id is no
+    longer silenced by the first one's fold. The fold-sha vocabulary is
+    inconsistent — most folds cite the MERGE commit, not the work sha a
+    pending landed — so the fallback is decided at the **id level**: when a
+    fold's cited shas match no pending for that id, correlation falls back to
+    id-only and a legitimately-folded hand-off cannot resurface. The cited
+    shas ride on ``folded_ids.shas_by_id``; the ``row.id in folded_ids``
+    membership test alone stays id-only (lint's contract, unchanged).
     """
     pending, folded_ids, _malformed = parse_handoffs(text)
+    # Union of pending shas per id, so the fallback is an id-level decision:
+    # a fold citing only a merge commit matches no pending and consumes all.
+    pend_shas_by_id = {}
+    for row in pending:
+        pend_shas_by_id.setdefault(row.id, set()).update(
+            s.lower() for s in row.shas)
     out = []
     for row in pending:
         if row.id in folded_ids:
-            continue
+            fold_shas = folded_ids.shas_by_id.get(row.id)
+            row_shas = {s.lower() for s in row.shas}
+            if (fold_shas is None                      # no citable sha: id-only
+                    or not (fold_shas & pend_shas_by_id.get(row.id, set()))
+                                                       # merge sha, no match: id-only
+                    or (fold_shas & row_shas)):        # this sha was folded
+                continue
         shas = list(row.shas)
         out.append({"id": row.id, "sha": shas[0], "shas": shas,
                     "claimer": row.claimer})
