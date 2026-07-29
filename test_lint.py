@@ -2644,10 +2644,24 @@ class TestCitedShas:
         git("init", "-q")
         git("config", "user.email", "t@t")
         git("config", "user.name", "t")
-        (t / "f").write_text("1")
-        git("add", "f")
-        git("commit", "-qm", "a real commit")
-        live = git("rev-parse", "HEAD").stdout.strip()[:7]
+        # #478: the short sha MUST contain a letter. A pure-digit prefix —
+        # (10/16)^7 ≈ 3.7% of commits, measured 6-in-160 against this fixture —
+        # is dropped by the check's PID filter (`re.search(r"[a-f]", token)`),
+        # so `test_a_dead_cited_sha_warns` collapsed to ONE collected sha, the
+        # all-missing branch read it as the wrong tree at OK, and the test
+        # failed with a bare `[]` — twice in a full suite, never reproducibly,
+        # because the commit sha is new every run. Re-roll until the prefix
+        # discriminates, and assert it: this precondition is the whole test.
+        n = 0
+        while True:
+            n += 1
+            (t / "f").write_text(str(n))
+            git("add", "f")
+            git("commit", "-qm", "a real commit")
+            live = git("rev-parse", "HEAD").stdout.strip()[:7]
+            if re.search(r"[a-f]", live):
+                break
+        assert re.search(r"[a-f]", live), live
         (dw / "tasks.md").write_text(ledger.replace("LIVE", live))
         return t, live
 
@@ -2827,6 +2841,40 @@ Next id: **9**
         assert seen.get("full") == 2, "git did not answer for both shas: %r" % seen
         assert len(rows) == 1, rows
         assert "1 of 2" in rows[0]
+
+    def test_the_fixture_live_sha_never_collapses_to_a_pid(self, tmp_path):
+        """#478: the flake that read as a suite-order decline, pinned at its
+        actual line.
+
+        `test_a_dead_cited_sha_warns` failed twice in full suites and passed
+        every isolated run, printing a bare `[]`. Suite-order env leakage
+        (`GIT_DIR`) was the suspect, but it cannot produce that signature: a
+        process-wide leak redirects THIS fixture's own `git init`/`commit`/
+        `rev-parse` too, so the commit lands in the leaked repo and the check
+        finds it there — the WARN still fires. The real mechanism is in
+        `build()`: when HEAD's 7-char prefix is pure digits ((10/16)^7 ≈ 3.7%
+        of commits; measured 6-in-160 against the unfixed fixture), the
+        check's PID filter drops the LIVE cite, the collected list collapses
+        to `beefca7` alone, and the all-missing branch reports "wrong tree"
+        at OK — the WARN-filtered view then reads as a decline. The failure
+        row says so: `all 1 cited commit(s) are missing`.
+
+        The production line is `build()`'s live-sha selection. Break the
+        re-roll and this class flakes at the measured rate; the assertion in
+        `build()` is the guard, and this test exists so the mechanism is
+        written down where the next reader will look for it.
+        """
+        t, live = self.build(tmp_path, self.LEDGER)
+        assert re.search(r"[a-f]", live), (
+            "a pure-digit LIVE prefix is filtered as a PID and collapses the "
+            "collected list to one sha: %r" % live)
+        # And the discriminating case the class exists for still holds: the
+        # live cite is collected and resolves, so a dead neighbour WARNs.
+        ledger = self.LEDGER.replace(
+            "landed `LIVE`", "landed `LIVE` and also merged `beefca7`")
+        t, live = self.build(tmp_path, ledger)
+        warns = self.rows(t, lint.WARN)
+        assert len(warns) == 1 and "beefca7" in warns[0], warns
 
     def test_the_check_is_registered_in_run_checks(self):
         """Every row above comes through `run_checks`, which is the single list
