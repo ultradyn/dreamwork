@@ -2774,36 +2774,72 @@ const subsDbName = () => {
   const t = (typeof data !== 'undefined' && data && data.target) || '';
   return t ? 'dw-submissions:' + t : '';
 };
-function subsOpen() {
+/* the ONE IndexedDB helper, generalized rather than duplicated (#454):
+   the open and the transaction are the wedged-store discipline — every
+   failure resolves null, nothing throws at a caller — and each database
+   says only what its upgrade creates. A second copy of this for a second
+   store is how one of them loses the raced-timeout handling. */
+function idbOpen(name, upgrade) {
   return new Promise(res => {
-    const name = subsDbName();
     if (!name || typeof indexedDB === 'undefined' || !indexedDB) return res(null);
     let rq;
     try { rq = indexedDB.open(name, 1); } catch (e) { return res(null); }
-    rq.onupgradeneeded = () => {
-      const db = rq.result;
-      if (!db.objectStoreNames.contains(SUBS_STORE))
-        db.createObjectStore(SUBS_STORE, { keyPath:'id', autoIncrement:true });
-    };
+    rq.onupgradeneeded = () => upgrade(rq.result);
     rq.onsuccess = () => res(rq.result);
     rq.onerror = rq.onblocked = () => res(null);
   });
 }
 /* one transaction, always closed, never throwing at the caller */
-function subsTx(mode, fn) {
-  return subsOpen().then(db => new Promise(res => {
+function idbTx(openFn, store, mode, fn) {
+  return openFn().then(db => new Promise(res => {
     if (!db) return res(null);
     let out = null;
     const done = v => { try { db.close(); } catch (e) {} res(v); };
     try {
-      const tx = db.transaction(SUBS_STORE, mode);
-      const rq = fn(tx.objectStore(SUBS_STORE));
+      const tx = db.transaction(store, mode);
+      const rq = fn(tx.objectStore(store));
       if (rq) rq.onsuccess = () => { out = rq.result; };
       tx.oncomplete = () => done(out);
       tx.onerror = tx.onabort = () => done(null);
     } catch (e) { done(null); }
   })).catch(() => null);
 }
+function subsOpen() {
+  return idbOpen(subsDbName(), db => {
+    if (!db.objectStoreNames.contains(SUBS_STORE))
+      db.createObjectStore(SUBS_STORE, { keyPath:'id', autoIncrement:true });
+  });
+}
+function subsTx(mode, fn) { return idbTx(subsOpen, SUBS_STORE, mode, fn); }
+/* ── persisted UI state (#454) ──────────────────────────────────────────
+   "Persisted to IndexedDB and kept in sync like other ui state." A SEPARATE
+   database from the submissions log, for that log's own reason (a separate
+   database cannot leak by omission): the subs store is an append-only
+   record of what he SENT; this one is keyed state about how the page
+   LOOKS — today the rolled questions. Same wedged-store discipline through
+   the shared helper, and the write is raced the same way: a roll is a
+   gesture, and a gesture never waits on storage.
+   Cross-tab sync is no new mechanism either: the standing 'storage'-event
+   idiom (#290's pending mode) carries the ping; IndexedDB carries the
+   truth a reload reads back. */
+const UI_STORE = 'ui';
+const uiDbName = () => {
+  const t = (typeof data !== 'undefined' && data && data.target) || '';
+  return t ? 'dw-ui:' + t : '';
+};
+function uiOpen() {
+  return idbOpen(uiDbName(), db => {
+    if (!db.objectStoreNames.contains(UI_STORE))
+      db.createObjectStore(UI_STORE, { keyPath:'k' });
+  });
+}
+const uiTx = (mode, fn) => idbTx(uiOpen, UI_STORE, mode, fn);
+const UI_WAIT_MS = 250;
+const uiPut = (k, v) => Promise.race([
+  uiTx('readwrite', st => st.put({ k, v, at: Date.now() })),
+  new Promise(r => setTimeout(() => r(null), UI_WAIT_MS)),
+]);
+const uiAll = () => uiTx('readonly', st => st.getAll());
 /* what KIND of act each endpoint is, in his terms rather than the protocol's.
    An unknown path still records, with the body kept whole — a new POST route
    is logged the day it is added, without anyone remembering this table. */
