@@ -159,12 +159,10 @@ async function forceTickSample() {
     const askKept = snapshotAskState();
     const beforeCards = snapshotCards();
     const viewIn = snapshotViewInputs();
-    const bdHover = typeof snapshotBdHover === 'function' ? snapshotBdHover() : null;
     setData(await (await fetch(typeof dataJsonUrl === 'function'
       ? dataJsonUrl() : '/data.json')).json());
     const html = await buildCurrent();
     setLiveContent(html);
-    if (typeof restoreBdHover === 'function') restoreBdHover(bdHover);
     restoreCardState(kept);
     restoreViewInputs(viewIn);
     restoreAskState(askKept);

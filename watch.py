@@ -7048,6 +7048,9 @@ function viewNodeKey(node) {
     if (d.sha) return 'sha:' + d.sha;
     if (d.review) return 'review:' + d.review;
     if (d.keep) return 'keep:' + d.keep;
+    // burndown columns (#494): data-t0 is the bucket identity
+    if (d.t0 && node.classList && node.classList.contains('bdcol'))
+      return 't0:' + d.t0;
   }
   if (node.id) return 'id:' + node.id;
   return undefined;
