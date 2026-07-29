@@ -114,14 +114,18 @@ sections, both only grow by append. This is the one act on `tasks.md` a
 foreign session cannot do for itself, so consuming its hand-off is how its
 landed work reaches the ledger at all.
 
-Check `.dreamwork/watch-events.log`'s mtime too. A command he types into
-the dashboard composer exists **only** as a line in that file — nothing
-is written anywhere else, and the write is best-effort — so if the tail
-monitor is not armed (a resumed session, a compacted one, a `watch.py`
-started after init), his `do now:` is lost with no error anywhere. The
-human responses are durable because they land in `questions.md`, and human
-questions are durable because they land in `answers.md`; the command channel
-is not.
+Check `.dreamwork/watch-events.log`'s mtime too. Since the E3 cutover a
+command he types into the dashboard composer is ALSO durable: every
+`/command` POST commits a journal receipt before dispatch, so the tick's
+cursor read (`pending`) lists it even when the tail monitor missed the
+wake line (a resumed session, a compacted one, a `watch.py` started after
+init). The wake line is the interrupt; the receipt is the record. Two
+cautions (#519): the wake line carries no receipt id, so if you acted on a
+do-now from the wake line and the SAME instruction later appears in
+`pending`, it is the same instruction delivered twice — act once (this is
+#527's proper fix); and pre-E3 this paragraph said the command channel was
+wake-only, which is why the drain must run on every tick regardless of
+delivery mode (#528).
 
 **Run mode (#290) and posture (#445).** On tick start (and when an events
 line matches `run-mode via watch`), re-read `.dreamwork/run-mode` — that file
