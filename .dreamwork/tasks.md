@@ -24,7 +24,19 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **484**
+Next id: **485**
+
+- **#484** — a listing surface for research HTML, reusing the one builder · P2 ·
+  dashboard/research-artifacts · origin: **loop** · **recommended by the `#422` lane, recorded in
+  `.dreamwork/docs/research/README.md`** · `#422` settled the kind (directory-canonical markdown,
+  single doc-map row) and left the HTML half as an argued recommendation: sources at
+  `docs/research/src/<slug>.html` built through `review_artifact.py`'s generic template builder
+  (a second template pipeline would recreate the five-font-families drift `#325` exists to end),
+  with a `list_research`-style route in `watch.py` mirroring `list_reviews`. **Do NOT reuse the
+  review surface** — its questions.md pairing and archive-on-answered lifecycle does not fit
+  research. Until this lands, research ships as markdown and options ship via the review pipeline.
+  · needs `watch.py` + `review_artifact.py` — a lane, not the coordinator · `transitions.md` binds
+  on any arrival/departure; `watch-design.md` in the same commit · related: **#422, #325, #436**
 
 ## Open
 - **#477** — the 2s tick TELEPORTS a section it catches mid-open · P1 · bug/motion · origin: **loop**
