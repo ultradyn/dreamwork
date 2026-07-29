@@ -251,6 +251,7 @@ class E2Shadow(HttpHarness):
         varies per call so each receipt's body differs (no accidental dedup).
         """
         import uuid as _uuid
+        import ledger_store
         marker = _uuid.uuid4().hex[:8]
         statuses = []
         # 1. /ask — records a new question for the dreamer (answers.md).
@@ -288,7 +289,20 @@ class E2Shadow(HttpHarness):
         statuses.append(self.post(
             "/posture", {"pace": "steady", "asking": "inform",
                          "delegation": 1})[0])
-        # 8. /deploy — page-triggered just deploy (#462); runner faked.
+        # 8. /decide — review decision (#289). The fixture is markdown-mode
+        #    (no store), so this reaches the domain_invalid refusal — which is
+        #    still a durable receipt (202 on / 200 off, same as every other
+        #    route). The payload passes schema so the refusal is the honest
+        #    "no store" one, not a schema_invalid that never reaches the domain
+        #    check. The closed set the handler validates against: assert it so
+        #    a renamed decision would turn this into a schema rejection wearing
+        #    the domain path's name.
+        self.assertIn("accepted", ledger_store.REVIEW_DECISIONS)
+        statuses.append(self.post(
+            "/decide", {"artifact": f"artifact-{marker}",
+                        "question_title": "A real open question?",
+                        "decision": "accepted"})[0])
+        # 9. /deploy — page-triggered just deploy (#462); runner faked.
         statuses.append(self.post("/deploy", {})[0])
         return statuses, self.submissions_rows()
 
@@ -301,8 +315,14 @@ class E2Shadow(HttpHarness):
             off_statuses, off_subs = baseline.run_all_routes()
         # The route list is derived from the dispatch, not hand-copied: assert
         # its length matches the routes we exercised, so a new route added to
-        # WRITE_ROUTE_HANDLERS without a payload here fails loudly.
-        self.assertEqual(len(WRITE_ROUTES), 8, WRITE_ROUTES)
+        # WRITE_ROUTE_HANDLERS without a payload here fails loudly. This literal
+        # is a deliberate alarm — do NOT derive it from WRITE_ROUTE_HANDLERS
+        # (that would be `len(table) == len(table)`, a check born hollow: the
+        # repo has a documented lesson about exactly that shape). Bump it
+        # consciously when extending run_all_routes, and say why here.
+        # 2026-07-30 #496: 8→9 — /decide (#289) joined /deploy (#462) in the
+        # dispatch; both needed payloads in run_all_routes.
+        self.assertEqual(len(WRITE_ROUTES), 9, WRITE_ROUTES)
         # Every route returned 202 with the journal ON (E3 cutover moved the
         # write-route status) and 200 with the journal OFF (the pre-cutover
         # baseline, which still uses _send). The shadow must change only the
@@ -329,8 +349,8 @@ class E2Shadow(HttpHarness):
         # count assertion above (len(WRITE_ROUTES)) would still pass while a
         # route went unshadowed — UNLESS this guard fails first. This is the
         # plan's "derive the route list" discipline made executable.
-        exercised = 8  # ask, comment, answer, command, tint, run-mode,
-        #              posture, deploy
+        exercised = 9  # ask, comment, answer, command, tint, run-mode,
+        #              posture, decide, deploy
         self.assertEqual(len(WRITE_ROUTES), exercised, WRITE_ROUTES)
 
     @contextlib.contextmanager
@@ -448,7 +468,7 @@ class E3Cutover(HttpHarness):
 class _BaselineHarness(E2Shadow):
     """Same harness, journal disabled — the pre-journal observable baseline.
 
-    Not a test target: it exists only to run the six routes against a
+    Not a test target: it exists only to run the write routes against a
     journal-off server inside E2's comparison. `__test__ = False` stops
     unittest from collecting the inherited E2 tests against it (they would
     fail on the receipt count, which is the point of the baseline)."""
