@@ -67,6 +67,10 @@ the same column.
   read it as the ledger.
 - Another lane may be merging `watch.py` work to master concurrently; keep
   your diff minimal and expect a rebase at merge time.
+- Hand-off obligation (#398): if you cannot finish, you hand off — append
+  your state to `.dreamwork/handoffs.md` (in the MAIN checkout, read-only
+  otherwise) before stopping, so the next lane resumes from your words
+  rather than your diff.
 - Never use `attn`. Never `pkill -f`. Guards bind ports 39890–39899 — check
   ownership before running.
 - Report: the diagnosed cause (exact lines), the red run output, the fix, the
