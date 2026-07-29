@@ -64,6 +64,45 @@ BLOCKED_ON_PROSE = re.compile(r"blocked on (#\d+)", re.I)
 ORIGIN_CONTRACT_MIN_ID = 216  # file-formats.md: origin is forward-only from #216
 
 
+# ---------------------------------------------------------------------------
+# Field extraction — the parts of an entry with no production reader.
+# Entry/id/origin/related come from ledger_parse + lint; bands and the prose
+# blocked-on phrase are tasks.md prose fields (#346 found no reader), so they
+# are read here in small functions against ledger_store's closed sets.
+# ---------------------------------------------------------------------------
+
+def band_fields(body: str) -> list[str]:
+    """Every whole `·`-field that is a band shape (P<n>, or compound P<n>/P<m>)."""
+    return [f.strip() for f in body.split("·") if BAND_FIELD.match(f.strip())]
+
+
+def band_import_rule(field: str) -> tuple[str, int]:
+    """The (band, priority_uncertain) a band field imports as (S2).
+
+    A single band in the closed set imports as itself, uncertain 0. A compound
+    (`P0/P1`) imports as the LOWER band — the numerically higher member — with
+    priority_uncertain=1, because the compound means "urgent, not yet certain
+    which" and resolving it to the stronger band would edit the author's prose.
+    """
+    members = field.split("/")
+    lower = f"P{max(int(m[1:]) for m in members)}"
+    return lower, 1 if len(members) > 1 else 0
+
+
+def related_ids(body: str) -> list[int]:
+    """Ids named by `related: **…**` fields — lint's production marker regex."""
+    return [int(x) for m in lint.RELATED_MARKER.finditer(body)
+            for x in ledger_parse.ENTRY_ID.findall(m.group(1))]
+
+
+def blocked_on_ids(body: str) -> list[int]:
+    """Ids named by `blocked on #N` prose or a `blocked-on: **…**` field."""
+    ids = [int(m.group(1)[1:]) for m in BLOCKED_ON_PROSE.finditer(body)]
+    for m in lint.BLOCKED_ON_HUMAN_MARK.finditer(body):
+        ids += [int(x) for x in ledger_parse.ENTRY_ID.findall(m.group(1))]
+    return ids
+
+
 class _UsageParser(argparse.ArgumentParser):
     def error(self, message):  # argparse exits 2; the contract says 64
         self.exit(EX_USAGE, f"{self.prog}: error: {message}\n")
@@ -112,7 +151,7 @@ def build_analysis(text: str, *, ledger_path: str) -> dict:
             "digest": hashlib.sha256(body.encode()).hexdigest(),
             "body": body,
         })
-    return {
+    a = {
         "ledger_path": ledger_path,
         "open_ids": sorted(open_ids),
         "landed_ids": sorted(landed_ids),
@@ -124,6 +163,94 @@ def build_analysis(text: str, *, ledger_path: str) -> dict:
         "conflicts": {},
         "seed": {},
     }
+    _detect_conflicts(a, text)
+    return a
+
+
+def _flag(conflicts: dict, category: str, *, id, detail: str, ids=None):
+    conflicts.setdefault(category, []).append({"id": id, "detail": detail, "ids": ids})
+
+
+def _detect_conflicts(a: dict, text: str) -> None:
+    """Every conflict the dry-run can detect. Output, never an error (#346)."""
+    c = a["conflicts"]
+    open_ids, landed_ids = set(a["open_ids"]), set(a["landed_ids"])
+    exists = open_ids | landed_ids | {i for e in a["entries"] for i in e["ids"]}
+    head_counts = {}
+    for e in a["entries"]:
+        for i in e["ids"]:
+            head_counts[i] = head_counts.get(i, 0) + 1
+    for i in sorted(set(open_ids & landed_ids)
+                    | {i for i, n in head_counts.items() if n > 1}):
+        _flag(c, "duplicate ids", id=i,
+              detail=f"#{i} heads {head_counts.get(i, 0)} entr"
+              f"{'y' if head_counts.get(i, 0) == 1 else 'ies'}"
+              + ("; in BOTH open and landed" if i in open_ids and i in landed_ids else ""))
+    for e in a["entries"]:
+        first = e["ids"][0] if e["ids"] else None
+        if not e["ids"]:
+            _flag(c, "entry head without an id", id=None,
+                  detail=e["body"].splitlines()[0][:80])
+            continue
+        if e["section"] == "stray":
+            for i in e["ids"]:
+                _flag(c, "entry outside both sections", id=i,
+                      detail=f"#{i} heads an entry in neither ## Open nor ## Recently landed")
+        if len(e["ids"]) > 1:
+            _flag(c, "combined entries surviving", id=first, ids=e["ids"],
+                  detail="one entry head names " + "/".join(f"#{i}" for i in e["ids"]))
+        bands = band_fields(e["body"])
+        if not bands:
+            _flag(c, "missing band (P2 by contract)", id=first,
+                  detail=f"#{first} carries no band field — imports as P2")
+        for b in bands:
+            if b not in ledger_store.PRIORITY_BANDS:
+                lower, uncertain = band_import_rule(b)
+                note = (f"compound band '{b}' → imports as {lower}, priority_uncertain=1"
+                        if "/" in b else
+                        f"band '{b}' is outside the closed set P0..P3")
+                _flag(c, "band outside closed set", id=first, detail=f"#{first}: {note}")
+        marks = [m.strip() for m in ledger_parse.ORIGIN_MARK.findall(e["body"])]
+        known = [m for m in marks if m in ledger_parse.KNOWN_ORIGINS]
+        if len(marks) == 1 and not known:
+            _flag(c, "origin outside closed set", id=first,
+                  detail=f"#{first}: origin '{marks[0]}' is not human|loop|unknown")
+        elif len(marks) > 1:
+            _flag(c, "origin outside closed set", id=first,
+                  detail=f"#{first}: {len(marks)} origin markers — the contract says one")
+        elif not marks and any(i >= ORIGIN_CONTRACT_MIN_ID for i in e["ids"]):
+            _flag(c, "origin absent at id >= 216", id=first,
+                  detail=f"#{first} is past the #216 origin contract and carries no marker")
+        for r in sorted(set(related_ids(e["body"])) - exists):
+            _flag(c, "related id does not exist", id=r,
+                  detail=f"#{first} names related #{r}, which no entry or section holds")
+        for b in sorted(set(blocked_on_ids(e["body"])) - exists):
+            _flag(c, "blocked-on id does not exist", id=b,
+                  detail=f"#{first} is blocked on #{b}, which no entry or section holds")
+    _verify_seed(a, text)
+
+
+def _verify_seed(a: dict, text: str) -> None:
+    """What the store's id sequence WOULD seed at (R1) — asserted, never written."""
+    derived = max(set(a["open_ids"]) | set(a["landed_ids"])) + 1
+    header_m = lint.NEXT_ID.search(text)
+    header = int(header_m.group(1)) if header_m else None
+    seed, detail, ok = None, "", True
+    try:
+        seed = ledger_store.derive_next_id(text)
+    except ledger_store.SeedError as exc:
+        ok, detail = False, str(exc)
+        _flag(a["conflicts"], "seed verification", id=None, detail=detail)
+    max_head = max((i for e in a["entries"] for i in e["ids"]), default=0)
+    if ok and seed <= max_head:
+        # A stray entry head above the parsed maximum would mint a colliding id.
+        ok = False
+        detail = f"seed {seed} does not exceed entry-head id #{max_head}"
+        _flag(a["conflicts"], "seed verification", id=None, detail=detail)
+    if ok:
+        detail = f"seed {seed} == MAX(id)+1 and exceeds every existing id"
+    a["seed"] = {"header": header, "derived": derived, "seed": seed,
+                 "ok": ok, "detail": detail}
 
 
 def _read_ledger(path: str) -> str:

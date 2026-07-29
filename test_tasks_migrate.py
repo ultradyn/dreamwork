@@ -336,10 +336,12 @@ def test_per_entry_digests_cover_every_entry(module):
     import hashlib
     d = _derived(FIXTURE)
     a = _analyse(module)
-    digests = {tuple(e["ids"]): e["digest"] for e in a["entries"]}
-    assert len(digests) == len(d["entries"])
-    for ids, body in d["entries"]:
-        assert digests[tuple(ids)] == hashlib.sha256(body.encode()).hexdigest()
+    # Pairwise, not keyed: the duplicate id heads two entries with the same
+    # id tuple, and a dict would silently collapse one (found by the red run).
+    assert len(a["entries"]) == len(d["entries"])
+    for entry, (ids, body) in zip(a["entries"], d["entries"]):
+        assert entry["ids"] == ids
+        assert entry["digest"] == hashlib.sha256(body.encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------
