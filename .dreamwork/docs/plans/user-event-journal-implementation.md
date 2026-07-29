@@ -568,9 +568,19 @@ files; not one adapter parameterised five ways over the same file.
 
 **20 · `E1 envelope`.** Decide authority, method, path, media type,
 `Content-Length` well-formedness **before** the body read; enforce a complete
-bounded read; interrupted and over-limit bodies get no receipt (see
+bounded read; ~~interrupted and~~ over-limit bodies get no receipt (see
 §"Amendments this plan proposes" for what they *do* get).
-*Test:* `test_an_interrupted_body_creates_no_receipt` — a raw `socket` that
+**SUPERSEDED for interrupted bodies 2026-07-29 (`2ada41b5`, #371): his Q2
+ruling — "keep a partial witness marked incomplete" — means an interrupted
+body is NOT refused: it proceeds, claims a receipt like any registered
+envelope, and the handler's durable received→rejected path answers `202`,
+never a transport `400`. The gate `if short: send_error(400); return` is
+gone from `do_POST`; the witness (`short`/`got`) is kept in BOTH the journal
+and non-journal paths. The test below is renamed
+`test_an_interrupted_body_proceeds_and_creates_a_receipt` and asserts the
+new contract (202 + receipt); the companion
+`test_an_interrupted_body_is_still_witnessed_incomplete` pins the marker.**
+*Test:* `test_an_interrupted_body_proceeds_and_creates_a_receipt` — a raw `socket` that
 sends `Content-Length: 500` and then 100 bytes and closes.
 *Red line:* the `len(body) != nbytes` check — which does **not exist today**
 (measured above), so this increment's red is available immediately and against
@@ -791,7 +801,7 @@ applies, per the brief.
 
 | fixture | first passes at | note |
 |---|---|---|
-| 1 · authority / unknown route / bad framing / interrupted / over-limit ⇒ no receipt | **20** | over-limit already 413s; interrupted is new (M22) |
+| 1 · authority / unknown route / bad framing / ~~interrupted~~ / over-limit ⇒ no receipt | **20** | over-limit already 413s; interrupted SUPERSEDED 2026-07-29 (#371, his Q2 ruling: proceeds marked incomplete, 202 + receipt) |
 | 2 · malformed + schema-invalid ⇒ `202`, status URL, durable `rejected`, retry preserves identity | **24** (needs 22) | |
 | 3 · journal fsync failure ⇒ no `202` | **22, partially** | **FINDING** — see below |
 | 4 · crash after commit before response ⇒ retry returns one receipt | **22** | real `os._exit` child |

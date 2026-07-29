@@ -182,7 +182,12 @@ class E1Envelope(HttpHarness):
     already exists from the #371 incomplete-witness work, so it is NOT
     discriminating — see the amended plan row. The gate is."""
 
-    def test_an_interrupted_body_creates_no_receipt(self):
+    def test_an_interrupted_body_proceeds_and_creates_a_receipt(self):
+        # His 05:43 ruling (law 2, #371): an interrupted body is KEPT as a
+        # partial witness marked incomplete and ALLOWED TO PROCEED — it is
+        # no longer refused as a transport-envelope failure. So: 202 (the
+        # durable received path answers, never a transport 400), and the
+        # envelope claims a journal receipt like any registered envelope.
         # A raw socket: promise 500 bytes, send 100, close. urllib cannot
         # express this (it always sends a complete body), so a urllib version
         # of this test would pass with the gate absent — the #320 trap.
@@ -193,10 +198,9 @@ class E1Envelope(HttpHarness):
         response = self.raw_post(
             "/command", b"x" * sent, content_length=promised)
         status_line = response.split(b"\r\n", 1)[0]
-        # The interrupted body is a transport-envelope failure: 400, and no
-        # journal receipt.
-        self.assertIn(b"400", status_line, status_line)
-        self.assertEqual(self.receipt_count(), 0)
+        self.assertIn(b"202", status_line, status_line)
+        self.assertNotIn(b"400", status_line, status_line)
+        self.assertEqual(self.receipt_count(), 1)
 
     def test_a_complete_body_still_creates_a_receipt(self):
         # The positive half: a complete, well-formed body DOES create a
