@@ -281,3 +281,53 @@ def test_verify_history_body_tamper_fails(module, tmp_path):
     assert any("#5" in f and "body" in f for f in fails), fails
 
 
+# ---------------------------------------------------------------------------
+# Live-repo acceptance — this repo's REAL tasks.md + REAL git history.
+# Everything is derived at runtime: the 74/70/4 figures are snapshots, not
+# constants (the precondition rule), so the test asserts the STRUCTURE that
+# must hold for any history, not today's numbers.
+# ---------------------------------------------------------------------------
+from test_tasks_migrate_import import LIVE_LEDGER
+
+
+def test_live_history_recovers_real_groomed_ids(module, tmp_path):
+    text = LIVE_LEDGER.read_text()
+    a = module.build_analysis(text, ledger_path=str(LIVE_LEDGER))
+    groomed = {c["id"] for c in
+               a["conflicts"].get("section id without an entry", [])}
+    assert groomed, "live ledger lost its groomed ids — test has no anchor"
+    snaps = module.git_snapshots(str(LIVE_LEDGER))
+    rec = module.recover_groomed_history(a, snaps)
+    # every groomed id is recovered OR unrecoverable — no third state
+    assert set(rec["tasks"]) | set(rec["unrecoverable"]) == groomed
+    assert set(rec["tasks"]).isdisjoint(rec["unrecoverable"])
+    assert rec["tasks"], "no recoverable ids — the walk found nothing"
+    # every event is synthetic migration:git (R3 ruling: never human/loop)
+    assert rec["events"], "recovered ids must yield first-sight events"
+    assert all(e["actor"] == "migration:git" and e["cause"] == "migration_git"
+               for e in rec["events"])
+    # full workflow: verbatim + history, then verify clean (real ledger path —
+    # --verify walks git history from the --ledger path, so it must be in-git)
+    db = _scratch(tmp_path)
+    assert module.main(["--import", "--ledger", str(LIVE_LEDGER), "--to", db],
+                       out=io.StringIO()) == 0
+    module.import_history_into_db(text, a, db, snaps)
+    out = io.StringIO()
+    rc = module.main(["--verify", "--ledger", str(LIVE_LEDGER), "--to", db],
+                     out=out)
+    assert rc == 0, out.getvalue()
+    conn = _ro(db)
+    for i in rec["tasks"]:
+        assert conn.execute("SELECT 1 FROM task WHERE id = ?", (i,)).fetchone(), \
+            f"#{i} recovered but has no row"
+        n = conn.execute(
+            "SELECT COUNT(*) FROM task_event WHERE task_id = ? "
+            "AND actor = 'migration:git'", (i,)).fetchone()[0]
+        assert n >= 1, f"#{i} row has no migration:git backing event"
+    for i in rec["unrecoverable"]:
+        assert not conn.execute("SELECT 1 FROM task WHERE id = ?",
+                                (i,)).fetchone(), \
+            f"#{i} unrecoverable but has a row — fabrication"
+
+
+

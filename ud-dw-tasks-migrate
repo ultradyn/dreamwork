@@ -851,18 +851,23 @@ def _verify_reported_resolutions(a: dict, by_id: dict) -> list[str]:
 # stub would be fabrication. An id that never had an entry head in any
 # commit is honestly UNRECOVERABLE and gets no row (reported, not invented).
 
-def git_snapshots(ledger_relpath: str = ".dreamwork/tasks.md"):
+def git_snapshots(ledger_path: str = ".dreamwork/tasks.md"):
     """Chronological ``(sha, epoch, ledger_text)`` for every commit touching
     the ledger. Pure over git's deterministic ``log --reverse`` order; the
-    same history always yields the same sequence."""
+    same history always yields the same sequence. ``ledger_path`` may be
+    absolute or relative; ``git show <sha>:<path>`` needs the repo-root-
+    relative form, derived here from ``git rev-parse --show-toplevel``."""
+    top = Path(subprocess.check_output(
+        ["git", "rev-parse", "--show-toplevel"], text=True).strip())
+    rel = str(Path(ledger_path).resolve().relative_to(top))
     raw = subprocess.check_output(
-        ["git", "log", "--reverse", "--format=%H %ct", "--", ledger_relpath],
+        ["git", "log", "--reverse", "--format=%H %ct", "--", rel],
         stderr=subprocess.DEVNULL, text=True)
     out = []
     for line in raw.splitlines():
         sha, ct = line.split()
         blob = subprocess.check_output(
-            ["git", "show", f"{sha}:{ledger_relpath}"], stderr=subprocess.DEVNULL)
+            ["git", "show", f"{sha}:{rel}"], stderr=subprocess.DEVNULL)
         out.append((sha, int(ct), blob.decode("utf-8", "replace")))
     return out
 
