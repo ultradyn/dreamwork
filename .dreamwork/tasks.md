@@ -36,7 +36,9 @@ Next id: **485**
   review surface** — its questions.md pairing and archive-on-answered lifecycle does not fit
   research. Until this lands, research ships as markdown and options ship via the review pipeline.
   · needs `watch.py` + `review_artifact.py` — a lane, not the coordinator · `transitions.md` binds
-  on any arrival/departure; `watch-design.md` in the same commit · related: **#422, #325, #436**
+  on any arrival/departure; `watch-design.md` in the same commit. Cross-refs in prose above: the
+  kind contract from `#422`, the template-builder drift `#325` ended, and `#436`'s build-time
+  artifact contract.
 
 ## Open
 - **#477** — the 2s tick TELEPORTS a section it catches mid-open · P1 · bug/motion · origin: **loop**
