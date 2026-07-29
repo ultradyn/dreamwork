@@ -56,8 +56,8 @@ declare({
           'select-range on #bdlimit-in across forced tick(); click −/+; ' +
           'hold + (pointerdown) for repeats; hold + across a mid-hold tick',
   traceWindow: 'tick survival samples after setLiveContent (node identity); ' +
-               'hold sampled ~1.1s (400ms delay + several 80ms repeats); ' +
-               'hold-across-tick forces one /command + tick mid-hold'
+               'hold driven deterministically via page.clock (400ms delay + ' +
+               '80ms repeats, runFor); hold-across-tick forces one /command + tick mid-hold'
 });
 
 // ── planted ledger long enough for the #499 control ───────────────────────
@@ -442,7 +442,16 @@ const forceTick = async () => {
      zero === 0);
 }
 
-/* ── (d) hold [+] — at least 2 repeats after the initial step ─────────── */
+/* ── (d) hold [+] — at least 2 repeats after the initial step ───────────
+   #532: the hold was sampled over 1100ms of wall-clock and asserted
+   delta≥3. Under CPU contention headless Chromium throttles the
+   setTimeout(400)/setInterval(80) timers, so a correct feature read
+   delta<3 in 1/3 gate runs. Fixed with page.clock: install fakes the
+   page's timers so runFor fires the 400ms delay and each 80ms repeat
+   exactly as the production constants say — no wall-clock race, no
+   throttling, no assertion loosened. The only timers in the hold path
+   are bdStepHoldStart's; displayBurnLimitValue reads burnLimitPref
+   synchronously, so value reads are instant regardless of re-render. */
 {
   const startVal = 10;
   await p.evaluate(v => {
@@ -459,17 +468,25 @@ const forceTick = async () => {
   await plus.scrollIntoViewIfNeeded();
   const box = await plus.boundingBox();
   ok('precondition (d): [+] button has a hit target', !!box && box.width > 0);
+  // page.clock: the only timers in the hold path are the production
+  // setTimeout(400) delay and setInterval(80) repeat (bdStepHoldStart).
+  // install fakes them so runFor fires at least as often as the constants
+  // say — virtual time also advances with real time between calls, so
+  // repeats may fire extra, never fewer. delta is always ≥ the runFor
+  // minimum (7), comfortably above the ≥3 assertion. No wall-clock race,
+  // no throttling under load, no assertion loosened.
+  await p.clock.install();
   const vals = [];
   vals.push(await p.evaluate(() => displayBurnLimitValue()));
   await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await p.mouse.down();
-  const t0 = Date.now();
-  while (Date.now() - t0 < 1100) {
-    await sleep(60);
+  await p.mouse.down();            // pointerdown → bdStepNudge(1) + setTimeout(400)
+  await p.clock.runFor(400);       // fire the 400ms first-delay → interval arms
+  for (let i = 0; i < 6; i++) {    // 6 × 80ms repeats — comfortably above ≥3
+    await p.clock.runFor(80);
     vals.push(await p.evaluate(() => displayBurnLimitValue()));
   }
   await p.mouse.up();
-  await sleep(100);
+  await p.clock.resume();          // real-time flow for the remaining sections
   const maxV = Math.max(...vals.filter(n => Number.isFinite(n)));
   const deltas = maxV - startVal;
   notes.push(`(d) hold samples=${JSON.stringify(vals)} delta=${deltas}`);
@@ -479,7 +496,11 @@ const forceTick = async () => {
      deltas >= 3);
 }
 
-/* ── (e) hold [+] ACROSS a forced data tick — repeat continues ────────── */
+/* ── (e) hold [+] ACROSS a forced data tick — repeat continues ──────────
+   #532: same page.clock treatment as (d). The hold's timers are already
+   faked from (d)'s install + resume; runFor drives them deterministically
+   through the swap. The module-level interval survives the node swap
+   (production claim) — value keeps rising after setLiveContent. */
 {
   const startVal = 15;
   await p.evaluate(v => {
@@ -497,9 +518,11 @@ const forceTick = async () => {
      !!box && box.width > 0);
 
   await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await p.mouse.down();
-  // Wait past the 400ms first-delay so the interval is armed, plus a step.
-  await sleep(700);
+  await p.mouse.down();            // pointerdown → first nudge (16), setTimeout(400)
+  // Drive past the 400ms delay so the interval is armed, plus two repeats.
+  await p.clock.runFor(400);        // fire the 400ms first-delay → interval arms
+  await p.clock.runFor(80);         // one repeat → 17
+  await p.clock.runFor(80);         // one repeat → 18
   const midHold = await p.evaluate(() => ({
     v: displayBurnLimitValue(),
     holding: !!_bdStepHold,
@@ -532,15 +555,15 @@ const forceTick = async () => {
       v: displayBurnLimitValue(),
     };
   });
-  // Keep holding — sample further rises after the swap.
+  // Keep holding — drive more repeats after the swap (module-level interval
+  // survives: value keeps rising despite the node replacement).
   const afterVals = [tickE.v];
-  const t1 = Date.now();
-  while (Date.now() - t1 < 550) {
-    await sleep(50);
+  for (let i = 0; i < 3; i++) {
+    await p.clock.runFor(80);
     afterVals.push(await p.evaluate(() => displayBurnLimitValue()));
   }
   await p.mouse.up();
-  await sleep(100);
+  await p.clock.resume();
   const maxAfter = Math.max(...afterVals.filter(n => Number.isFinite(n)));
   notes.push(`(e) midHold=${JSON.stringify(midHold)} tickE=${JSON.stringify(tickE)} ` +
              `afterVals=${JSON.stringify(afterVals)} maxAfter=${maxAfter}`);
