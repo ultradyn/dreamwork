@@ -282,6 +282,28 @@ def render_report(a: dict) -> str:
     out.append("ID SET")
     out.append("  " + " ".join(f"#{i}" for i in sorted(set(a['open_ids']) | set(a['landed_ids']))))
     out.append("")
+    seed = a["seed"]
+    out.append("SEED (R1 — the sequence lives in the store, seeded and verified)")
+    out.append(f"  header Next id:  {seed['header'] if seed['header'] is not None else '(absent)'}")
+    out.append(f"  MAX(id)+1:       {seed['derived']}")
+    out.append(f"  would seed at:   {seed['seed'] if seed['seed'] is not None else '(unverifiable)'}"
+               f"  — {'OK: ' if seed['ok'] else 'CONFLICT: '}{seed['detail']}")
+    out.append("")
+    conflicts = a["conflicts"]
+    n = sum(len(v) for v in conflicts.values())
+    out.append(f"CONFLICTS ({n}) — output, never errors; exit stays 0 (#346's ruling)")
+    if not conflicts:
+        out.append("  none")
+    for category in sorted(conflicts):
+        rows = conflicts[category]
+        out.append(f"  {category} ({len(rows)})")
+        for r in rows:
+            out.append(f"    · {r['detail']}")
+    out.append("")
+    out.append("DIGESTS (per entry — sha256 of the verbatim body; --import will prove these bytes)")
+    for e in a["entries"]:
+        label = "/".join(f"#{i}" for i in e["ids"]) if e["ids"] else "(no id)"
+        out.append(f"  {label} [{e['section']}] sha256:{e['digest']}")
     return "\n".join(out)
 
 
