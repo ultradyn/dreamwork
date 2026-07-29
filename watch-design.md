@@ -2272,6 +2272,33 @@ exact numbers so the weight mapping is learnable rather than argued about.
   in, `depart` → ease out); reduced motion snaps. Keyboard focus reaches the
   same readout (`tabindex` on level-track columns). Accent is not spent.
 
+**#298 — the column inspector, a richer reading on the same seam.** The
+glance tip answers a passing hover; the inspector (`.bdinsp`) answers a
+*deliberate* look — a hover that **dwells 700ms**, a keyboard focus
+(immediate: focus is already deliberate), or a **tap** (pinned until
+dismissed). It is not a second hover: same data attributes, same
+pose→ease-in / depart idiom, same floats-over-the-chart premise.
+
+- **What it adds** is what the geometry cannot say: the **exact interval**
+  (`Wed 29 Jul, 14:00 – 18:00`, `– now` for the open period) and the
+  **coverage state** — a period with no ledger commit *carries* the
+  previous level rather than measuring it (the chart's own rule), so the
+  inspector says `level carried — no ledger commits`; the current period
+  adds `period in progress`. Values are the column's own served numbers —
+  detail *about values already summarised*, never a hidden dataset.
+- **It follows the column**: horizontally centred on the active column,
+  **clamped to the panel's edges** so an edge column never sends it
+  off-chart, anchored above the level track so it never sits on a
+  neighbour. Laid out in JS (`bdinspLay`) because centring-plus-clamping
+  is not expressible in CSS.
+- **Dismissal**: pointer-leave (unless pinned), focus-leave, tap the same
+  column again, tap outside the chart, **Escape**, or scroll — a scrolled
+  page moves the column out from under the reading, so it departs rather
+  than drifting on stale coordinates. Tap never calls `preventDefault`,
+  so chart scroll is never the inspector's to break. Reduced motion snaps.
+- **Restraint**: a pinned reading is not hover's to move — dwelling on
+  another column does not displace a tap-pinned inspector.
+
 **No velocity score, deliberately.** A rate computed over a day of a loop
 that has been alive for a day is a claim about the future dressed as a
 measurement, and the page would then be believed about it.

@@ -1130,6 +1130,37 @@ class TestCollector(unittest.TestCase):
             # median of [0,1,2] = 1
             self.assertEqual(r["commit_median"], 1)
 
+    def test_burndown_inspector_page_wiring(self):
+        # #298 — structural: the column inspector rides #417's seam (same
+        # data attributes, same arrival idiom), carries the interval and
+        # coverage state the glance tip does not, and is reachable by
+        # dwell, focus and tap with Escape/scroll dismissal. The exact
+        # values are the browser guard's job (dev/capture/bdhover.mjs);
+        # this pins the wiring that guard depends on.
+        for token in ('class="bdinsp" hidden role="status"',
+                      'data-t0="${b.t0}" data-t1="${b.t0 + s.step}"',
+                      'data-covered="${c > 0 ? 1 : 0}"',
+                      'function bdinspHTML(col)',
+                      'function bdinspLay(bd, col, el)',
+                      'function showBdInsp(col)',
+                      'function hideBdInsp(immediate)',
+                      "'level carried — no ledger commits'",
+                      "'period in progress'",
+                      'bdinspSchedule(col)',
+                      "e.key === 'Escape' && bdinspCol"):
+            self.assertIn(token, watch.PAGE)
+        # the clamp is a clamp: centred on the column, bounded by the panel
+        self.assertIn("Math.max(0, Math.min(cx - w / 2, bdr.width - w))",
+                      watch.PAGE)
+        # hover is not the sole path: focus shows the same inspector,
+        # tap pins without preventDefault (chart scroll unbroken)
+        self.assertIn("showBdTip(col);\n  showBdInsp(col);", watch.PAGE)
+        self.assertIn("bdinspPin = true; showBdInsp(col);", watch.PAGE)
+        # reduced-motion parity: the inspector declares the same media rule
+        self.assertIn(".bdinsp { transition:none; }", watch.PAGE)
+        self.assertIn(".bdinsp.pose", watch.PAGE)
+        self.assertIn(".bdinsp.depart", watch.PAGE)
+
     def test_ledger_series_lands_every_id_in_a_combined_head(self):
         """#301/#399: ledger_series counts a combined landed HEAD as two ids.
 

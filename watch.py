@@ -829,6 +829,37 @@ STYLE = """<style>
   @media (prefers-reduced-motion: reduce) {
     .bdtip { transition:none; }
   }
+  /* #298 column inspector — the RICHER reading on #417's seam, not a
+     second hover. The glance tip stays one ellipsised line across the
+     head; the inspector is what a DELIBERATE look gets (a hover that
+     dwells, a focus, a tap): the exact interval, the level, the flow,
+     the commits, and the coverage state the chart's geometry cannot say
+     (a level with no ledger commit that period is CARRIED, not measured).
+     It follows the active column — anchored above the level track,
+     horizontally centred on the column and CLAMPED to the track's edges
+     so an edge column never sends it off-chart and it never sits on a
+     neighbour. Floats, so the constant-height premise holds exactly as
+     for .bdtip. Same arrival idiom (pose → ease in, depart → ease out,
+     snap under reduced motion) — a smaller instance of the same gesture,
+     never a second one (transitions.md). Accent is not spent. */
+  .bdinsp { position:absolute; top:0; left:0; z-index:3;
+            pointer-events:none; font-size:.7rem; color:var(--dim);
+            background:color-mix(in srgb, var(--bg) 92%, transparent);
+            border:1px solid var(--line); border-radius:3px;
+            padding:.3rem .5rem; white-space:nowrap; max-width:100%;
+            overflow:hidden; text-overflow:ellipsis;
+            transition:opacity .42s ease, filter .42s ease,
+                       transform .42s cubic-bezier(.32,.1,.2,1); }
+  .bdinsp[hidden] { display:none; }
+  .bdinsp.pose { transition:none !important; opacity:0;
+    filter:blur(6px); transform:translateY(3px); }
+  .bdinsp.depart { opacity:0; filter:blur(6px); transform:translateY(-3px); }
+  .bdinsp .bdnum { color:var(--lit); }
+  .bdin-iv { color:var(--dimmer); font-size:.65rem; margin-bottom:.1rem; }
+  .bdin-cov { color:var(--dimmer); font-size:.65rem; margin-top:.1rem; }
+  @media (prefers-reduced-motion: reduce) {
+    .bdinsp { transition:none; }
+  }
   .bdhalf { flex:1 1 0; display:flex; }
   .bdtop { align-items:flex-end; }
   /* the standing opacity transition is what `.dreamin` needs to ease BACK
@@ -3406,11 +3437,17 @@ function burnPanel(d) {
     const c = b.commits || 0;
     const title = `${stamp} · ${b.open} open · ${b.arrived} arrived · ` +
       `${b.landed} landed · ${c} commit${c === 1 ? '' : 's'}`;
+    /* #298: the inspector needs what the glance tip does not — the exact
+       interval (t0→t1) and the coverage state. A period with no ledger
+       commit CARRIES the previous level rather than measuring it (the
+       chart's own rule), so the inspector must be able to say so. */
     const focus = focusable
       ? ` tabindex="0" role="listitem"` +
         ` data-open="${b.open}" data-arrived="${b.arrived}"` +
         ` data-landed="${b.landed}" data-commits="${c}"` +
-        ` data-stamp="${esc(stamp)}"`
+        ` data-stamp="${esc(stamp)}"` +
+        ` data-t0="${b.t0}" data-t1="${b.t0 + s.step}"` +
+        ` data-covered="${c > 0 ? 1 : 0}"`
       : '';
     return `<div class="bdcol"${focus} title="${esc(title)}"` +
       ` aria-label="${esc(title)}">`;
@@ -3420,6 +3457,11 @@ function burnPanel(d) {
   // from the same walk the columns do, not from a second reading.
   let h = label('burndown') + `<div class="bd">` +
     `<div class="bdtip" hidden role="status" aria-live="polite"></div>` +
+    /* #298: the inspector floats beside the tip — one per panel, refilled
+       per column, laid out in JS (it must centre on a column and clamp to
+       the track, which CSS cannot express). role=status like the tip: the
+       same reading by another path, never a live shout. */
+    `<div class="bdinsp" hidden role="status"></div>` +
     `<div class="bdhead"><span class="bdnum">${s.open}</span> open · ` +
     `${s.arrived} arrived · ${s.landed} landed · ` +
     `${BURN_STEP_NAME[s.step] || 'bucketed'}</div>` +
@@ -6902,7 +6944,9 @@ function showBdTip(col) {
 // pointer + focus, delegated — columns are rebuilt every tick
 addEventListener('pointerover', e => {
   const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
-  if (col) showBdTip(col);
+  if (!col) return;
+  showBdTip(col);
+  bdinspSchedule(col);             // #298: a hover that dwells inspects
 });
 addEventListener('pointerout', e => {
   const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
@@ -6913,10 +6957,14 @@ addEventListener('pointerout', e => {
   // leave the tip up while focus stays on the column
   if (document.activeElement === col) return;
   hideBdTip(false);
+  bdinspCancel();
+  if (!bdinspPin) hideBdInsp(false);   // a pinned (tapped) reading stays
 });
 addEventListener('focusin', e => {
   const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
-  if (col) showBdTip(col);
+  if (!col) return;
+  showBdTip(col);
+  showBdInsp(col);   // #298: focus is already deliberate — no dwell
 });
 addEventListener('focusout', e => {
   const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
@@ -6924,7 +6972,116 @@ addEventListener('focusout', e => {
   const to = e.relatedTarget;
   if (to && to.closest && to.closest('.bdnet .bdcol[data-open]')) return;
   hideBdTip(false);
+  bdinspCancel();
+  if (!bdinspPin) hideBdInsp(false);
 });
+/* #298 — the column inspector: the richer reading a DELIBERATE look gets.
+   The #417 glance tip answers a passing hover; the inspector answers a
+   hover that DWELLS (700ms), a keyboard focus (immediate — focus is
+   already deliberate), or a tap (pinned until dismissed). Same seam, same
+   arrival idiom, same data attributes — never a second hover. */
+let bdinspCol = null, bdinspPin = false, bdinspDwell = null;
+let bdinspHideTimer = null;
+const BD_DWELL = 700;
+function bdstampFull(t) {
+  const d = new Date(t * 1000);
+  return d.toLocaleDateString(undefined,
+    { weekday: 'short', day: 'numeric', month: 'short' }) + ' ' +
+    d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+function bdinspHTML(col) {
+  const d = col.dataset;
+  const t1 = +d.t1, now = Date.now() / 1000;
+  const iv = bdstampFull(+d.t0) + ' – ' + (t1 > now ? 'now' : bdstampFull(t1));
+  // coverage the geometry cannot say: a period with no ledger commit
+  // CARRIES the previous level; the current period is still arriving.
+  const cov = [d.covered === '1' ? 'measured'
+                                : 'level carried — no ledger commits'];
+  if (t1 > now) cov.push('period in progress');
+  return `<div class="bdin-iv">${esc(iv)}</div>` +
+    `<div><span class="bdnum">${esc(d.open)}</span> open · ` +
+    `${esc(d.arrived)} arrived · ${esc(d.landed)} landed · ` +
+    `<span class="bdnum">${esc(d.commits)}</span> commit` +
+    `${d.commits === '1' ? '' : 's'}</div>` +
+    `<div class="bdin-cov">${esc(cov.join(' · '))}</div>`;
+}
+function bdinspLay(bd, col, el) {
+  const bdr = bd.getBoundingClientRect();
+  const r = col.getBoundingClientRect();
+  const track = bd.querySelector('.bdnet');
+  const tr = track ? track.getBoundingClientRect() : r;
+  const w = el.offsetWidth, h = el.offsetHeight;
+  // centre on the column, CLAMPED to the panel so an edge column never
+  // sends it off-chart and it never sits on a neighbour
+  const cx = r.left - bdr.left + r.width / 2;
+  el.style.left = Math.max(0, Math.min(cx - w / 2, bdr.width - w)) + 'px';
+  el.style.right = 'auto';
+  // above the LEVEL TRACK, never merely above the panel: only the one-line
+  // head sits between the track and the panel's top, and three lines do
+  // not fit there — clamping at 0 hangs the inspector over the columns it
+  // exists to explain. It floats past the panel's top instead, over what
+  // sits above (nothing between here and the page clips overflow).
+  el.style.top = (tr.top - bdr.top - h - 4) + 'px';
+}
+function bdinspCancel() {
+  if (bdinspDwell) { clearTimeout(bdinspDwell); bdinspDwell = null; }
+}
+function hideBdInsp(immediate) {
+  const el = document.querySelector('.bd .bdinsp');
+  bdinspCancel();
+  if (!el || el.hidden) { bdinspCol = null; bdinspPin = false; return; }
+  if (bdinspHideTimer) { clearTimeout(bdinspHideTimer); bdinspHideTimer = null; }
+  const finish = () => {
+    el.hidden = true; el.classList.remove('depart', 'pose');
+    el.innerHTML = ''; bdinspCol = null; bdinspPin = false;
+  };
+  if (!!immediate || bdtipReduced()) { finish(); return; }
+  el.classList.remove('pose');
+  el.classList.add('depart');
+  bdinspHideTimer = setTimeout(finish, 450);
+}
+function showBdInsp(col) {
+  const bd = col && col.closest && col.closest('.bd');
+  const el = bd && bd.querySelector('.bdinsp');
+  if (!el || !col.dataset || col.dataset.t0 === undefined) return;
+  bdinspCancel();
+  if (bdinspHideTimer) { clearTimeout(bdinspHideTimer); bdinspHideTimer = null; }
+  const same = bdinspCol === col && !el.hidden;
+  bdinspCol = col;
+  el.innerHTML = bdinspHTML(col);
+  el.hidden = false;               // visible before measuring
+  bdinspLay(bd, col, el);
+  if (same) { el.classList.remove('depart', 'pose'); return; }
+  el.classList.remove('depart');
+  if (bdtipReduced()) { el.classList.remove('pose'); return; }
+  el.classList.add('pose');        // enter-snap, then ease in (#417 idiom)
+  void el.offsetWidth;
+  requestAnimationFrame(() => el.classList.remove('pose'));
+}
+function bdinspSchedule(col) {
+  if (bdinspPin) return;           // a pinned reading is not hover's to move
+  bdinspCancel();
+  bdinspDwell = setTimeout(() => showBdInsp(col), BD_DWELL);
+}
+/* tap selects / dismisses — no preventDefault, so chart scroll is never
+   the inspector's to break. A tap on another column moves the pin; a tap
+   outside the chart lets it go. */
+addEventListener('click', e => {
+  const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
+  if (col) {
+    if (bdinspPin && bdinspCol === col) hideBdInsp(false);
+    else { bdinspPin = true; showBdInsp(col); }
+    return;
+  }
+  if (bdinspPin) hideBdInsp(false);
+});
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && bdinspCol) { hideBdTip(true); hideBdInsp(false); }
+});
+/* a scrolled page moves the column out from under the reading — depart,
+   never drift along stale coordinates. */
+addEventListener('scroll', () => { if (bdinspCol) hideBdInsp(false); },
+  { passive: true, capture: true });
 /* switching a card's mode: the indicator slides, the placeholder follows,
    and the field keeps whatever is typed in it — the text is the point, the
    mode is only where it goes. */
