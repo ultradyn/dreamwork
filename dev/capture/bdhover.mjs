@@ -247,3 +247,118 @@ for (const idx of [0, lastIdx]) {
      !!m && m.bottom <= m.trackTop + 1);
   await leaveAll();
 }
+
+/* ── hover→focus parity, then dismissal ──────────────────────────────────
+   Focus shows the SAME inspector, immediately (focus is deliberate — no
+   dwell). Escape departs it. Tap pins; a second tap on the same column
+   lets it go, and a pin survives the pointer leaving. */
+{
+  const hBefore = await p.evaluate(
+    `Math.round(document.querySelector('.bd').getBoundingClientRect().height)`);
+  const t0 = Date.now();
+  await p.evaluate(`document.querySelectorAll('.bdnet .bdcol[data-open]')[${busyIdx}].focus()`);
+  await sleep(220);
+  const fm = await p.evaluate(INSP);
+  const want = buckets[busyIdx];
+  const fvals = fm && (fm.lines[1] || '').match(
+    /^(\d+) open · (\d+) arrived · (\d+) landed · (\d+) commits?$/);
+  notes.push(`focus col[${busyIdx}] after ${Date.now() - t0}ms: ` +
+             JSON.stringify(fm && fm.lines));
+  ok('#298 hover→focus parity: focus shows the same reading, immediately',
+     !!fm && Date.now() - t0 < 600 && !!fvals &&
+     +fvals[1] === want.open && +fvals[2] === want.arrived &&
+     +fvals[3] === want.landed && +fvals[4] === (want.commits || 0));
+  ok('#298: focus names the same interval hover does',
+     !!fm && fm.lines[0] && fm.lines[0].includes('–'));
+  const hDuring = await p.evaluate(
+    `Math.round(document.querySelector('.bd').getBoundingClientRect().height)`);
+  ok('#298: panel height unchanged with the inspector open (it floats)',
+     hDuring === hBefore);
+  await p.screenshot({ path: `${OUT}/bdhover-desktop.png`, fullPage: false });
+  // Escape departs
+  await p.keyboard.press('Escape');
+  await sleep(600);
+  ok('#298: Escape dismisses the inspector',
+     (await p.evaluate(INSP)) === null);
+  await p.evaluate(`document.activeElement && document.activeElement.blur()`);
+
+  // tap pins: click, then the pointer leaving does NOT dismiss
+  await p.evaluate(`document.querySelectorAll('.bdnet .bdcol[data-open]')[${quietIdx}]` +
+    `.dispatchEvent(new MouseEvent('click', { bubbles: true }))`);
+  await sleep(500);
+  const pinned = await p.evaluate(INSP);
+  ok('#298: tap selects the column (inspector arrives)', !!pinned);
+  await p.evaluate(`document.querySelectorAll('.bdnet .bdcol[data-open]')[${quietIdx}]` +
+    `.dispatchEvent(new PointerEvent('pointerout',
+      { bubbles: true, relatedTarget: document.body }))`);
+  await sleep(600);
+  ok('#298: a tapped (pinned) reading survives the pointer leaving',
+     (await p.evaluate(INSP)) !== null);
+  // second tap on the same column dismisses
+  await p.evaluate(`document.querySelectorAll('.bdnet .bdcol[data-open]')[${quietIdx}]` +
+    `.dispatchEvent(new MouseEvent('click', { bubbles: true }))`);
+  await sleep(600);
+  ok('#298: a second tap on the same column dismisses it',
+     (await p.evaluate(INSP)) === null);
+}
+
+/* ── mobile: still clamped, still above the columns ───────────────────── */
+{
+  await p.setViewportSize({ width: 390, height: 844 });
+  await sleep(500);
+  const m = await dwellAndRead(lastIdx);
+  notes.push(`mobile col[${lastIdx}]: ${JSON.stringify(m &&
+    { left: m.left | 0, right: m.right | 0, bdL: m.bdL | 0, bdR: m.bdR | 0,
+      bottom: m.bottom | 0, trackTop: m.trackTop | 0 })}`);
+  ok('#298: at 390px the edge column still clamps inside the panel',
+     !!m && m.left >= m.bdL - 1 && m.right <= m.bdR + 1 &&
+     m.bottom <= m.trackTop + 1);
+  await p.screenshot({ path: `${OUT}/bdhover-mobile.png`, fullPage: false });
+  await leaveAll();
+  await p.setViewportSize({ width: 1100, height: 1500 });
+  await sleep(400);
+}
+
+/* ── reduced motion: the same reading, no travel ──────────────────────── */
+{
+  const ctx = await br.newContext({ reducedMotion: 'reduce',
+                                    viewport: { width: 1100, height: 1500 } });
+  const rp = await ctx.newPage();
+  rp.on('pageerror', e => errs.push(String(e)));
+  await rp.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await sleep(1000);
+  const tr = await rp.evaluate(`new Promise(res => {
+    const col = document.querySelectorAll('.bdnet .bdcol[data-open]')[${busyIdx}];
+    if (!col) return res({ err: 'no col' });
+    const ops = [];
+    const t0 = performance.now();
+    requestAnimationFrame(() => col.focus());
+    (function step() {
+      const t = performance.now() - t0;
+      const el = document.querySelector('.bd .bdinsp');
+      const op = el && !el.hidden
+        ? parseFloat(getComputedStyle(el).opacity) : 0;
+      ops.push(op);
+      if (t < 500) requestAnimationFrame(step);
+      else res({ ops, lines: el && !el.hidden
+        ? (el.innerText || '').trim().split('\\n').map(s => s.trim()) : [] });
+    })();
+  })`);
+  const mid = (tr.ops || []).filter(o => o > 0.03 && o < 0.97);
+  const want = buckets[busyIdx];
+  const rvals = (tr.lines || [])[1] && tr.lines[1].match(
+    /^(\d+) open · (\d+) arrived · (\d+) landed · (\d+) commits?$/);
+  notes.push(`reduced focus: lines=${JSON.stringify(tr.lines)} ` +
+    `mid=${mid.length} ops=${[...new Set((tr.ops || []).map(o =>
+      Math.round(o * 100)))].join(',')}`);
+  ok('#298 reduced motion: the same reading still arrives (function intact)',
+     !!rvals && +rvals[1] === want.open && +rvals[4] === (want.commits || 0));
+  ok('#298 reduced motion: it snaps — no travel frames', mid.length === 0);
+  await rp.screenshot({ path: `${OUT}/bdhover-reduced.png`, fullPage: false });
+  await ctx.close();
+}
+
+ok('no page errors', errs.length === 0);
+await br.close();
+try { srv.kill(); } catch (e) {}
+finish();
