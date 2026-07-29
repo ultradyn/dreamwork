@@ -2242,10 +2242,20 @@ POSTURE_STOPS_PACE = ("idle", "steady", "hot")
 # honest shape (his "3 stops" was a maybe/IDK about the control, which is a
 # later increment's problem to render, not a reason to drop a level).
 POSTURE_STOPS_ASKING = ("ask", "inform", "near-auto", "auto")
+# #342 — the delivery posture axis: when he is interrupted. instant (default)
+# wakes the loop the moment he sends something; batched rides the durable
+# receipt and drains on the next tick's cursor read. Absent = instant, so a
+# pre-axis posture file behaves identically. Closed set, fail loud — the same
+# outcome as pace/asking.
+POSTURE_STOPS_DELIVERY = ("instant", "batched")
 # Delegation posture labels, shown beside the integer target. The integer is
 # authoritative; the label is a derived display string.
 DELEGATION_POSTURES = ("own", "assist", "delegate")
-POSTURE_AXES = ("pace", "asking", "delegation")
+# delivery is a RECOGNISED axis (an unknown axis name warns), but it is
+# OPTIONAL — absent is the default (instant), so check_posture never warns on
+# its absence the way it does for pace/asking/delegation. The clean-bill
+# denominator accounts for that (see check_posture).
+POSTURE_AXES = ("pace", "asking", "delegation", "delivery")
 
 # The conversion of today's run-mode values into the three-axis vocabulary
 # (#445 Q2: "convert the current modes into the new values"). Stated as a
@@ -2422,15 +2432,33 @@ def check_posture(dw: Path, watch, rep: Report) -> None:
             else:
                 valid += 1
                 dlg_label = delegation_posture(n)
-    # Clean bill only when all three axes are valid, and it carries the count
-    # so coverage can never shrink to silence beside a finding (the rule the
-    # lane-containment check follows: a check that contradicts itself in one
-    # run gets read as noise and then ignored).
-    if valid == len(POSTURE_AXES):
-        rep.add(OK, "posture",
-                f"{valid} of {len(POSTURE_AXES)} axes valid · "
-                f"pace={pace} asking={asking} "
-                f"delegation={dlg} ({dlg_label})")
+    # DELIVERY (#342) — an OPTIONAL axis: absent is the default (instant), so
+    # it NEVER warns on absence the way pace/asking/delegation do (those fall
+    # back to a run-mode derivation; delivery has no derivation — it is just
+    # instant). A present invalid value ERRORs: a closed set fails loud, the
+    # same outcome as pace/asking, never a silent fallback that drops his
+    # choice.
+    delivery = values.get("delivery")
+    delivery_ok = delivery is None or delivery in POSTURE_STOPS_DELIVERY
+    if delivery is not None and not delivery_ok:
+        rep.add(ERROR, "posture",
+                f"delivery {delivery!r} is not one of "
+                f"{', '.join(POSTURE_STOPS_DELIVERY)} — a closed set fails "
+                f"loud, like pace and asking")
+    # Clean bill only when the three required axes are valid AND delivery (if
+    # present) is valid, carrying the count so coverage can never shrink to
+    # silence beside a finding. Delivery is optional, so it joins the "of N"
+    # denominator only when it is actually set — a pre-axis three-line file
+    # still reads "3 of 3", not "3 of 4" (which would imply delivery is
+    # missing rather than default).
+    if valid == 3 and delivery_ok:
+        denom = 3 + (1 if delivery is not None else 0)
+        row = (f"{denom} of {denom} axes valid · "
+               f"pace={pace} asking={asking} "
+               f"delegation={dlg} ({dlg_label})")
+        if delivery is not None:
+            row += f" delivery={delivery}"
+        rep.add(OK, "posture", row)
 
 
 PLUGIN_KIND = re.compile(r"^[a-z0-9]+-[a-z0-9-]*[a-z0-9]$")

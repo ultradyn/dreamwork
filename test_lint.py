@@ -5471,6 +5471,77 @@ class TestPostureFile:
         assert any("inert" in w for w in warns), warns
         assert not self._rows(dw, lint.OK), "an inert file must not get a clean bill"
 
+    # ── #342 delivery axis ────────────────────────────────────────────────
+    def test_delivery_closed_set_has_both_stops(self, tmp_path):
+        # PRECONDITION (the hollow-check rule): assert the set's membership
+        # explicitly, not just iterate. If the set were narrowed, iterating
+        # passes over the narrowing.
+        assert set(lint.POSTURE_STOPS_DELIVERY) == {"instant", "batched"}, \
+            lint.POSTURE_STOPS_DELIVERY
+        assert "delivery" in lint.POSTURE_AXES, lint.POSTURE_AXES
+
+    def test_delivery_both_stops_parse_clean(self, tmp_path):
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        for stop in lint.POSTURE_STOPS_DELIVERY:
+            (dw / "posture").write_text(
+                f"pace: idle\nasking: ask\ndelegation: 0\ndelivery: {stop}\n")
+            assert not self._rows(dw, lint.ERROR), \
+                f"delivery={stop!r} should be valid: {self._rows(dw, lint.ERROR)}"
+
+    def test_unknown_delivery_errors_loud(self, tmp_path):
+        # THE closed-set red: an unknown delivery must ERROR, not silently
+        # fall back. Production line that reds it: the `delivery not in
+        # POSTURE_STOPS_DELIVERY` membership test in check_posture.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text(
+            "pace: idle\nasking: ask\ndelegation: 0\ndelivery: postal\n")
+        errs = self._rows(dw, lint.ERROR)
+        assert len(errs) == 1, errs
+        assert "postal" in errs[0] and "delivery" in errs[0], errs[0]
+
+    def test_absent_delivery_is_silent_not_warned(self, tmp_path):
+        # Delivery is OPTIONAL — absent is the instant default, not a
+        # derivation gap. So a three-line pre-axis file must NOT warn about a
+        # missing delivery, and its clean bill still reads "3 of 3" (not
+        # "3 of 4", which would imply delivery is missing rather than default).
+        # Production line: the `delivery is None` short-circuit + the optional
+        # denominator in the clean-bill branch.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text("pace: hot\nasking: ask\ndelegation: 0\n")
+        warns = [w for w in self._rows(dw, lint.WARN) if "delivery" in w]
+        assert warns == [], warns
+        ok = self._rows(dw, lint.OK)
+        assert len(ok) == 1, ok
+        assert "3 of 3" in ok[0], ok[0]
+        assert "delivery" not in ok[0], ok[0]
+
+    def test_delivery_present_joins_clean_bill_count(self, tmp_path):
+        # A four-axis file with a valid delivery reads "4 of 4" and names the
+        # delivery value — so coverage cannot shrink to silence beside a
+        # finding, and a reader sees the axis is set.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text(
+            "pace: hot\nasking: ask\ndelegation: 0\ndelivery: batched\n")
+        ok = self._rows(dw, lint.OK)
+        assert len(ok) == 1, ok
+        assert "4 of 4" in ok[0], ok[0]
+        assert "delivery=batched" in ok[0], ok[0]
+
+    def test_delivery_alone_is_valid(self, tmp_path):
+        # A file that overrides ONLY delivery (no pace/asking/delegation) is
+        # legitimate — those stay derived, delivery is set. It must not ERROR;
+        # the delivery axis is recognised (no "unknown axis" warn) and valid.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text("delivery: batched\n")
+        assert not self._rows(dw, lint.ERROR), self._rows(dw, lint.ERROR)
+        unknown = [w for w in self._rows(dw, lint.WARN) if "unknown axis" in w]
+        assert unknown == [], unknown
+
 
 class TestDerivePosture:
     """The run-mode → three-axis conversion (#445 Q2).

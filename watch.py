@@ -388,6 +388,11 @@ POSTURE_DELEGATION_DESC = {
     "assist": "a helper on average · target between 0.5 and 1.5",
     "delegate": "several helpers · target 2+; pairs may share one worktree",
 }
+# #342 — delivery: when he is interrupted. Contract copy, not marketing.
+POSTURE_DELIVERY_DESC = {
+    "instant": "wake the loop now · every kind fires the moment you send it",
+    "batched": "drain on the next tick · do-now/do-next still pre-empt",
+}
 # Hoisted early so lint can `import watch` without waiting for the ledger
 # section thousands of lines later. Single definition — the ledger block
 # reuses this name, never restates.
@@ -5595,6 +5600,10 @@ function readPostPending() {
     if (POSTURE_STOPS_PACE.indexOf(p.pace) < 0) return null;
     if (POSTURE_STOPS_ASKING.indexOf(p.asking) < 0) return null;
     if (typeof p.delegation !== 'number' || p.delegation < 0) return null;
+    // delivery is optional in a stale pending cache — default it to instant
+    // rather than rejecting, so a pre-#342 pending entry still resumes.
+    if (p.delivery != null && POSTURE_STOPS_DELIVERY.indexOf(p.delivery) < 0)
+      return null;
     if (typeof p.until !== 'number') return null;
     if (p.phase === 'cancel') {
       if (Date.now() >= p.until) { localStorage.removeItem(k); return null; }
@@ -5616,6 +5625,7 @@ function writePostPending(draft, until, owner) {
     if (!k) return;
     localStorage.setItem(k, JSON.stringify({
       pace: draft.pace, asking: draft.asking, delegation: draft.delegation,
+      delivery: draft.delivery,
       until, owner: owner || postTabId(),
     }));
   } catch (e) {}
@@ -5626,6 +5636,7 @@ function writePostCancel(draft) {
     if (!k) return;
     localStorage.setItem(k, JSON.stringify({
       pace: draft.pace, asking: draft.asking, delegation: draft.delegation,
+      delivery: draft.delivery,
       phase: 'cancel', until: Date.now() + 800, owner: postTabId(),
     }));
   } catch (e) {}
@@ -5641,10 +5652,12 @@ function committedPosture(d) {
   const pace = POSTURE_STOPS_PACE.indexOf(p.pace) >= 0 ? p.pace : POSTURE_STOPS_PACE[0];
   const asking = POSTURE_STOPS_ASKING.indexOf(p.asking) >= 0
     ? p.asking : POSTURE_STOPS_ASKING[0];
+  const delivery = POSTURE_STOPS_DELIVERY.indexOf(p.delivery) >= 0
+    ? p.delivery : 'instant';
   let dlg = 0;
   try { dlg = Math.max(0, parseInt(p.delegation, 10) || 0); } catch (e) { dlg = 0; }
   return {
-    pace, asking, delegation: dlg,
+    pace, asking, delegation: dlg, delivery,
     source: p.source === 'file' ? 'file' : 'derived',
     delegation_label: p.delegation_label || delegationLabel(dlg),
   };
@@ -5805,6 +5818,7 @@ async function commitPosture(draft, gen, opts) {
         pace: draft.pace,
         asking: draft.asking,
         delegation: draft.delegation,
+        delivery: draft.delivery,
         from: location.pathname + location.search,
         tab: postTabId(),
         orphan: orphan || false,
@@ -5824,6 +5838,7 @@ async function commitPosture(draft, gen, opts) {
         pace: draft.pace,
         asking: draft.asking,
         delegation: draft.delegation,
+        delivery: draft.delivery,
         source: 'file',
         delegation_label: delegationLabel(draft.delegation),
       };
@@ -5843,9 +5858,10 @@ function armPostureDraft(next) {
   const msg = document.getElementById('pmsg');
   if (msg) msg.textContent = '';
   const cur = committedPosture(data);
-  // Re-selecting the fully committed triple cancels any pending arm.
+  // Re-selecting the fully committed point cancels any pending arm.
   if (next.pace === cur.pace && next.asking === cur.asking
-      && next.delegation === cur.delegation && cur.source === 'file') {
+      && next.delegation === cur.delegation
+      && next.delivery === cur.delivery && cur.source === 'file') {
     postArmGen++;
     postArmShouldCommit = false;
     writePostCancel(cur);
@@ -5864,7 +5880,7 @@ function armPostureDraft(next) {
   postArmShouldCommit = true;
   postDraft = {
     pace: next.pace, asking: next.asking, delegation: next.delegation,
-    source: 'file',
+    delivery: next.delivery, source: 'file',
   };
   writePostPending(postDraft, until, postTabId());
   paintPostureSelection(postDraft, false);
@@ -5873,9 +5889,11 @@ function armPostureDraft(next) {
 function pickPostureAxis(axis, stop) {
   if (axis === 'pace' && POSTURE_STOPS_PACE.indexOf(stop) < 0) return;
   if (axis === 'asking' && POSTURE_STOPS_ASKING.indexOf(stop) < 0) return;
+  if (axis === 'delivery' && POSTURE_STOPS_DELIVERY.indexOf(stop) < 0) return;
   const base = postDraft || committedPosture(data);
   const next = {
     pace: base.pace, asking: base.asking, delegation: base.delegation,
+    delivery: base.delivery,
   };
   next[axis] = stop;
   armPostureDraft(next);
@@ -5887,6 +5905,7 @@ function stepPostureDelegation(delta) {
   if (n > POSTURE_DELEGATION_UI_MAX) n = POSTURE_DELEGATION_UI_MAX;
   armPostureDraft({
     pace: base.pace, asking: base.asking, delegation: n,
+    delivery: base.delivery,
   });
 }
 function posturePicker(d) {
@@ -5894,7 +5913,7 @@ function posturePicker(d) {
   const arm = pendingPostIsLive(pending) ? pending : null;
   const cur = arm
     ? { pace: arm.pace, asking: arm.asking, delegation: arm.delegation,
-        source: 'file' }
+        delivery: arm.delivery || 'instant', source: 'file' }
     : committedPosture(d);
   if (arm) postDraft = cur;
   const paceChips = POSTURE_STOPS_PACE.map(n =>
@@ -5912,6 +5931,16 @@ function posturePicker(d) {
     ` aria-checked="${n === cur.asking ? 'true' : 'false'}"` +
     ` aria-describedby="pdesc-text"` +
     ` onclick="pickPostureAxis('asking','${esc(n)}')">${esc(n)}</button>`
+  ).join('');
+  // #342: delivery — a fourth axis row reusing the pace/asking chip idiom
+  // verbatim (same .sgbtn.pchip class, same pickPostureAxis, the shared arm).
+  // No second gesture; the chip arrives and changes state the same way.
+  const deliveryChips = POSTURE_STOPS_DELIVERY.map(n =>
+    `<button type="button" role="radio" class="sgbtn pchip` +
+    `${n === cur.delivery ? ' on' : ''}" data-stop="${esc(n)}"` +
+    ` aria-checked="${n === cur.delivery ? 'true' : 'false'}"` +
+    ` aria-describedby="pdesc-text"` +
+    ` onclick="pickPostureAxis('delivery','${esc(n)}')">${esc(n)}</button>`
   ).join('');
   const dlgLab = delegationLabel(cur.delegation);
   const srcNote = cur.source === 'file'
@@ -5951,6 +5980,12 @@ function posturePicker(d) {
     `${esc(dlgLab)}</span></div>` +
     `<div class="pstephint">target, not a cap · 0 is occasional, not forbidden</div>` +
     `</div></div>` +
+    // #342 delivery axis — same .paxis/.paxis-chips shape as pace/asking.
+    `<div class="paxis" data-axis="delivery">` +
+    `<div class="paxis-lab" id="delivery-lab">delivery · when interrupted</div>` +
+    `<div class="sgroup paxis-chips" role="radiogroup" data-axis="delivery"` +
+    ` aria-labelledby="delivery-lab">` +
+    `<div class="sgind"></div>${deliveryChips}</div></div>` +
     `<div class="pdesc" id="pdesc" role="tooltip" aria-hidden="true">` +
     `<span class="pdesc-text" id="pdesc-text"></span></div>` +
     `<div class="parm" id="parm">` +
@@ -5973,6 +6008,8 @@ function postDescFor(axis, stop) {
   if (axis === 'asking' && POSTURE_ASKING_DESC[stop]) return POSTURE_ASKING_DESC[stop];
   if (axis === 'delegation' && POSTURE_DELEGATION_DESC[stop])
     return POSTURE_DELEGATION_DESC[stop];
+  if (axis === 'delivery' && POSTURE_DELIVERY_DESC[stop])
+    return POSTURE_DELIVERY_DESC[stop];
   return '';
 }
 function hidePostDesc(immediate) {
@@ -6102,7 +6139,8 @@ function syncPostureFromData() {
     if (document.getElementById('posture'))
       paintPostureSelection({
         pace: pending.pace, asking: pending.asking,
-        delegation: pending.delegation, source: 'file',
+        delegation: pending.delegation, delivery: pending.delivery || 'instant',
+        source: 'file',
       }, true);
     postArmShouldCommit = false;
     clearPostArmUI();
@@ -6113,7 +6151,8 @@ function syncPostureFromData() {
       postArmShouldCommit = true;
     const draft = {
       pace: pending.pace, asking: pending.asking,
-      delegation: pending.delegation, source: 'file',
+      delegation: pending.delegation, delivery: pending.delivery || 'instant',
+      source: 'file',
     };
     postDraft = draft;
     if (document.getElementById('posture'))
@@ -6134,9 +6173,12 @@ function syncPostureFromData() {
         const cur = committedPosture(data);
         if (p && !p.phase
             && (cur.pace !== p.pace || cur.asking !== p.asking
-                || cur.delegation !== p.delegation || cur.source !== 'file'))
+                || cur.delegation !== p.delegation
+                || cur.delivery !== (p.delivery || 'instant')
+                || cur.source !== 'file'))
           commitPosture({
             pace: p.pace, asking: p.asking, delegation: p.delegation,
+            delivery: p.delivery || 'instant',
           }, gen, { orphan: true });
       }, 200);
     }
@@ -6167,7 +6209,8 @@ window.addEventListener('storage', e => {
   postArmShouldCommit = false;
   const draft = {
     pace: pending.pace, asking: pending.asking,
-    delegation: pending.delegation, source: 'file',
+    delegation: pending.delegation, delivery: pending.delivery || 'instant',
+    source: 'file',
   };
   postDraft = draft;
   paintPostureSelection(draft, true);
@@ -10281,6 +10324,8 @@ def _get_page():
         + json.dumps(list(lint.POSTURE_STOPS_PACE)) + ";\n"
         + "const POSTURE_STOPS_ASKING = "
         + json.dumps(list(lint.POSTURE_STOPS_ASKING)) + ";\n"
+        + "const POSTURE_STOPS_DELIVERY = "
+        + json.dumps(list(lint.POSTURE_STOPS_DELIVERY)) + ";\n"
         + "const DELEGATION_POSTURES = "
         + json.dumps(list(lint.DELEGATION_POSTURES)) + ";\n"
         + "const POSTURE_DELEGATION_UI_MAX = "
@@ -10291,6 +10336,8 @@ def _get_page():
         + json.dumps(POSTURE_ASKING_DESC, ensure_ascii=True) + ";\n"
         + "const POSTURE_DELEGATION_DESC = "
         + json.dumps(POSTURE_DELEGATION_DESC, ensure_ascii=True) + ";\n"
+        + "const POSTURE_DELIVERY_DESC = "
+        + json.dumps(POSTURE_DELIVERY_DESC, ensure_ascii=True) + ";\n"
     )
     _PAGE_CACHE = _PAGE_TEMPLATE.replace("/*__POSTURE_VOCAB__*/", vocab)
     return _PAGE_CACHE
@@ -12796,9 +12843,11 @@ SUMMARY_DENIED = frozenset({
 
 
 def _summary_posture(v):
-    # Only the four enum/int axes; delegation_label is display chrome and a
-    # fifth key posture might grow never rides out unreviewed.
-    return {k: v.get(k) for k in ("pace", "asking", "delegation", "source")}
+    # The enum/int axes + delivery (#342); delegation_label is display chrome
+    # and never rides out unreviewed. delivery is real posture an external
+    # consumer needs to route on, not chrome.
+    return {k: v.get(k) for k in
+            ("pace", "asking", "delegation", "delivery", "source")}
 
 
 def _summary_skill_identity(v):
@@ -12987,6 +13036,8 @@ def parse_posture_text(raw):
             out["pace"] = v
         elif k == "asking" and v in lint.POSTURE_STOPS_ASKING:
             out["asking"] = v
+        elif k == "delivery" and v in lint.POSTURE_STOPS_DELIVERY:
+            out["delivery"] = v
         elif k == "delegation":
             try:
                 n = int(v)
@@ -13024,6 +13075,7 @@ def resolve_posture(target):
         "pace": base["pace"],
         "asking": base["asking"],
         "delegation": int(base["delegation"]),
+        "delivery": file_vals.get("delivery", DELIVERY_DEFAULT),
         "source": "derived",
     }
     if file_vals:
@@ -13035,12 +13087,19 @@ def resolve_posture(target):
     return out
 
 
-def write_posture(target, pace, asking, delegation):
-    """Persist a complete three-axis override. Returns False if refused."""
+def write_posture(target, pace, asking, delegation, delivery=None):
+    """Persist a posture override. Returns False if refused.
+
+    Writes the three required axes always; writes delivery only when it is
+    passed (None → omitted, so absent reads as the instant default — a caller
+    that has no opinion on delivery gets today's three-line file). A caller
+    that sets delivery passes it through and the fourth line lands."""
     lint = _posture_vocab()
     if pace not in lint.POSTURE_STOPS_PACE:
         return False
     if asking not in lint.POSTURE_STOPS_ASKING:
+        return False
+    if delivery is not None and delivery not in lint.POSTURE_STOPS_DELIVERY:
         return False
     try:
         n = int(delegation)
@@ -13049,7 +13108,10 @@ def write_posture(target, pace, asking, delegation):
     if n < 0:
         return False
     path = os.path.join(target, ".dreamwork", "posture")
-    body = f"pace: {pace}\nasking: {asking}\ndelegation: {n}\n"
+    lines = [f"pace: {pace}", f"asking: {asking}", f"delegation: {n}"]
+    if delivery is not None:
+        lines.append(f"delivery: {delivery}")
+    body = "\n".join(lines) + "\n"
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         atomic_write_text(path, body)
@@ -13081,6 +13143,54 @@ def posture_equal(a, b):
                 and int(a.get("delegation")) == int(b.get("delegation")))
     except (TypeError, ValueError):
         return False
+
+
+# #342 — the delivery posture axis (instant|batched). Absent = instant, so the
+# default is today's behaviour (every wake line fires). The loop gates which
+# kinds wake; the cursor read on every tick is the guarantee nothing is lost.
+DELIVERY_DEFAULT = "instant"
+
+
+def delivery_line(mode, source=""):
+    """Source-tagged watch-events.log line for a committed delivery change.
+
+    Pure; one_line on the mode so nothing forges a second event. The ceremony
+    posture/run-mode already use (dual-write + one line on real change), not a
+    second one."""
+    return f"delivery via watch{from_hint(source)}: {one_line(str(mode))}"
+
+
+# #342 — per-kind wake routing. The receipt commits UNCONDITIONALLY in do_POST
+# (the E3 invariant); these decide only whether the watch-events.log wake line
+# — the *interrupt* — fires on top. do-now/do-next pre-empt even in batched
+# mode (a do-now that does not pre-empt is a do-now that lied — his Q2 ruling);
+# every other command kind (add-idea, maintenance, plugin kinds) and the
+# /answer, /comment, /ask routes wake only in instant mode, riding the durable
+# receipt and the tick's cursor read otherwise. Withholding the wake line IS
+# batching.
+PREEMPT_KINDS = ("do-now", "do-next")
+
+
+def delivery_mode(target):
+    """Effective delivery posture: 'instant' (default) or 'batched' (#342).
+
+    Per-tick re-read of `.dreamwork/posture` via read_posture_file — the same
+    contract pace/asking/delegation use, so an on-disk change reaches a
+    running loop without restart. Absent axis → instant (today's behaviour)."""
+    return read_posture_file(target).get("delivery", DELIVERY_DEFAULT)
+
+
+def emits_wake(kind, target):
+    """Per-kind wake routing (#342): does this kind fire the wake line?
+
+    Pre-empt kinds (do-now/do-next) wake regardless of mode; every other kind
+    — add-idea, maintenance, plugin kinds — and the /answer, /comment, /ask
+    ROUTES (passed as their path string, which is never a pre-empt kind) wake
+    only in instant mode. The receipt always commits in do_POST; this is the
+    interrupt half only. Pure in `kind`; reads delivery posture from disk."""
+    if kind in PREEMPT_KINDS:
+        return True
+    return delivery_mode(target) == DELIVERY_DEFAULT
 
 
 def persistent_port(target):
@@ -13852,8 +13962,10 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 text = read_text(path)
                 new_text = append_human_question(text, question, stamp)
                 atomic_write_text(path, new_text)
-            log_event(target, f'question for dreamer{from_hint(req.get("from"))}: '
-                      f'"{one_line(question)}" -> .dreamwork/answers.md')
+            # #342: /ask is a batched kind — wakes only in instant mode.
+            if emits_wake("/ask", target):
+                log_event(target, f'question for dreamer{from_hint(req.get("from"))}: '
+                          f'"{one_line(question)}" -> .dreamwork/answers.md')
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_answer(self):
@@ -13885,10 +13997,12 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 # construct itself: the check for it greps the source, and an
                 # explanation quoting what it forbids is a violation of it.)
                 atomic_write_text(qpath, new_text)
-            log_event(target,
-                      f'answer{from_hint(req.get("from"))}: "{one_line(title)}"'
-                      f' -> .dreamwork/questions.md '
-                      f'(fold the answer, act, move to Answered)')
+            # #342: /answer is a batched kind — wakes only in instant mode.
+            if emits_wake("/answer", target):
+                log_event(target,
+                          f'answer{from_hint(req.get("from"))}: "{one_line(title)}"'
+                          f' -> .dreamwork/questions.md '
+                          f'(fold the answer, act, move to Answered)')
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_comment(self):
@@ -13918,9 +14032,11 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 atomic_write_text(qpath, new_text)   # #370, as above
             hint = ("(re-evaluate — a note on an answered entry may amend it)"
                     if section == "Answered" else "(fold with the entry)")
-            log_event(target,
-                      f'follow-up{from_hint(req.get("from"))}: '
-                      f'"{one_line(title)}" -> .dreamwork/questions.md {hint}')
+            # #342: /comment is a batched kind — wakes only in instant mode.
+            if emits_wake("/comment", target):
+                log_event(target,
+                          f'follow-up{from_hint(req.get("from"))}: '
+                          f'"{one_line(title)}" -> .dreamwork/questions.md {hint}')
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_decide(self):
@@ -14006,7 +14122,11 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 self._reject("domain_invalid"); return
             if kind != "do-next" and not text:
                 self._reject("schema_invalid"); return
-            log_event(target, command_line(kind, text, req.get("from")))
+            # #342: the receipt already committed in do_POST (E3). The wake
+            # line is the interrupt half — pre-empt kinds always fire; the
+            # rest fire only in instant mode (batched kinds ride the cursor).
+            if emits_wake(kind, target):
+                log_event(target, command_line(kind, text, req.get("from")))
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_tint(self):
@@ -14064,16 +14184,21 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                        "application/json")
 
         def _handle_posture(self):
-            """Three-axis posture override (#445).
+            """Four-axis posture override (#445 + #342 delivery).
 
             Dual-write: authoritative gitignored `.dreamwork/posture` plus
-            one watch-events.log line when the three-axis point actually
-            changes. Identical final is 200 + no event. The client arms a
-            single shared 10s pending across all three axes (one file, one
-            ceremony) and only POSTs the final triple; this handler never
+            one watch-events.log line when a posture point actually changes
+            — a `posture via watch` line for the pace/asking/delegation
+            triple, a `delivery via watch` line for the delivery axis. Both
+            are the SAME ceremony run-mode already uses (dual-write + one
+            line on real change), not two. Identical final is 202 + no event.
+            The client arms a single shared 10s pending across every axis
+            (one file) and only POSTs the final point; this handler never
             debounce-timer itself. Closed sets imported from lint — never
             restated. Delegation is a non-negative integer TARGET, never a
-            cap (his #445 Q3).
+            cap (his #445 Q3). Delivery absent in the request preserves the
+            axis's current value (a pace change must not silently reset wake
+            routing); absent on disk is the instant default.
             """
             req = self._read_json()
             if req is None:
@@ -14092,37 +14217,56 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             if delegation < 0:
                 self._reject("domain_invalid"); return
             current = resolve_posture(target)
-            if (current.get("pace") == pace
-                    and current.get("asking") == asking
-                    and int(current.get("delegation", -1)) == delegation
-                    and current.get("source") == "file"):
+            # Delivery: the request may omit it (preserve the current value so
+            # a triple-only edit never silently resets wake routing); an empty
+            # value or no file yet falls back to the instant default.
+            delivery = str((req or {}).get("delivery", "")).strip()
+            if not delivery:
+                delivery = current.get("delivery", DELIVERY_DEFAULT)
+            if delivery not in lint.POSTURE_STOPS_DELIVERY:
+                self._reject("domain_invalid"); return
+            triple_same = (current.get("pace") == pace
+                           and current.get("asking") == asking
+                           and int(current.get("delegation", -1)) == delegation)
+            delivery_same = current.get("delivery", DELIVERY_DEFAULT) == delivery
+            if triple_same and delivery_same and current.get("source") == "file":
                 # Identical file-backed final: silent. (Derived-source match
                 # still writes the file so an explicit override is durable.)
                 self._send_receipt(json.dumps({
                     "ok": True, "pace": pace, "asking": asking,
-                    "delegation": delegation, "changed": False,
+                    "delegation": delegation, "delivery": delivery,
+                    "changed": False,
                 }), "application/json")
                 return
             # Also silent when the on-disk file already holds exactly this
-            # triple (resolve may have filled source=file already above).
+            # point (resolve may have filled source=file already above).
             file_vals = read_posture_file(target)
             if (file_vals.get("pace") == pace
                     and file_vals.get("asking") == asking
                     and file_vals.get("delegation") == delegation
-                    and len(file_vals) == 3):
+                    and file_vals.get("delivery", DELIVERY_DEFAULT) == delivery
+                    and len(file_vals) >= 3):
                 self._send_receipt(json.dumps({
                     "ok": True, "pace": pace, "asking": asking,
-                    "delegation": delegation, "changed": False,
+                    "delegation": delegation, "delivery": delivery,
+                    "changed": False,
                 }), "application/json")
                 return
-            if not write_posture(target, pace, asking, delegation):
+            if not write_posture(target, pace, asking, delegation, delivery):
                 self.send_error(500)
                 return
-            log_event(target, posture_line(pace, asking, delegation,
-                                           req.get("from")))
+            changed = False
+            if not triple_same:
+                log_event(target, posture_line(pace, asking, delegation,
+                                               req.get("from")))
+                changed = True
+            if not delivery_same:
+                log_event(target, delivery_line(delivery, req.get("from")))
+                changed = True
             self._send_receipt(json.dumps({
                 "ok": True, "pace": pace, "asking": asking,
-                "delegation": delegation, "changed": True,
+                "delegation": delegation, "delivery": delivery,
+                "changed": changed,
                 "delegation_label": lint.delegation_posture(delegation),
             }), "application/json")
 
@@ -14239,9 +14383,9 @@ def __getattr__(name):
     if name == "PAGE":
         return _get_page()
     if name in (
-        "POSTURE_STOPS_PACE", "POSTURE_STOPS_ASKING", "DELEGATION_POSTURES",
-        "POSTURE_AXES", "derive_posture", "delegation_posture",
-        "RUN_MODE_TO_POSTURE",
+        "POSTURE_STOPS_PACE", "POSTURE_STOPS_ASKING", "POSTURE_STOPS_DELIVERY",
+        "DELEGATION_POSTURES", "POSTURE_AXES", "derive_posture",
+        "delegation_posture", "RUN_MODE_TO_POSTURE",
     ):
         return getattr(_posture_vocab(), name)
     raise AttributeError(f"module 'watch' has no attribute {name!r}")

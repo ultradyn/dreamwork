@@ -3464,7 +3464,8 @@ class TestSummary(unittest.TestCase):
             self.assertIn(s["answers_health"],
                           {"ok", "missing", "unreadable", "empty"})
             self.assertEqual(set(s["posture"]),
-                             {"pace", "asking", "delegation", "source"})
+                             {"pace", "asking", "delegation", "delivery",
+                              "source"})
             self.assertEqual(set(s["skill_identity"]),
                              {"commit", "skill_version"})
             self.assertEqual(set(s["burndown_counts"]),
@@ -6858,8 +6859,12 @@ class TestPosture(unittest.TestCase):
                     "pace": "hot", "asking": "inform",
                     "delegation": 1, "from": "/",
                 }), 202)
+            # #342: a POST that omits delivery preserves the axis at its
+            # default (instant) — the file is now four-axis. The omitted
+            # delivery equals the default, so no delivery line fires.
             self.assertEqual(watch.read_posture_file(d), {
                 "pace": "hot", "asking": "inform", "delegation": 1,
+                "delivery": "instant",
             })
             log = os.path.join(d, ".dreamwork", "watch-events.log")
             with open(log, encoding="utf-8") as f:
@@ -6868,6 +6873,10 @@ class TestPosture(unittest.TestCase):
             self.assertIn(
                 "posture via watch [/]: pace=hot asking=inform delegation=1",
                 lines[0])
+            # the omitted delivery did not change (instant == instant), so no
+            # delivery line fires beside the posture line
+            with open(log, encoding="utf-8") as f:
+                self.assertNotIn("delivery via watch", f.read())
             # identical final is idempotent: 202, no second event
             self.assertEqual(
                 self._post(base + "/posture", {
@@ -7041,6 +7050,406 @@ class TestPosture(unittest.TestCase):
         m = re.search(r'<div class="pdesc"[^>]*>', body)
         self.assertIsNotNone(m, 'pdesc shell missing from posturePicker')
         self.assertNotRegex(m.group(0), r'(?<!aria-)hidden')
+
+    # ── #342 delivery posture axis ────────────────────────────────────────
+    def test_delivery_vocabulary_is_imported_from_lint_not_restated(self):
+        """Production line: watch.POSTURE_STOPS_DELIVERY is lint's object (is)."""
+        import lint
+        self.assertIs(watch.POSTURE_STOPS_DELIVERY, lint.POSTURE_STOPS_DELIVERY)
+        self.assertEqual(set(watch.POSTURE_STOPS_DELIVERY),
+                         {"instant", "batched"})
+
+    def test_parse_posture_delivery_absent_is_instant(self):
+        """Absent delivery → instant (today's behaviour); present batched parses.
+
+        Production line: the `delivery` branch in parse_posture_text. Delete
+        it and a batched file reads as {} (no delivery key), so resolve falls
+        back to instant and the routing test below reds.
+        """
+        self.assertEqual(watch.parse_posture_text(""), {})
+        self.assertEqual(
+            watch.parse_posture_text("pace: hot\ndelegation: 0\ndevice: x"),
+            {"pace": "hot", "delegation": 0})
+        self.assertEqual(
+            watch.parse_posture_text("delivery: batched"),
+            {"delivery": "batched"})
+        # garbage value is dropped here (lint ERRORs on hand-edits)
+        self.assertEqual(
+            watch.parse_posture_text("delivery: postal"),
+            {})
+
+    def test_resolve_posture_carries_delivery_default_and_override(self):
+        """Production line: resolve_posture → read_posture_file / DELIVERY_DEFAULT."""
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["delivery"], "instant")
+            self.assertTrue(watch.write_posture(d, "hot", "ask", 0, "batched"))
+            r2 = watch.resolve_posture(d)
+            self.assertEqual(r2["delivery"], "batched")
+            self.assertEqual(r2["source"], "file")
+
+    def test_write_posture_delivery_is_optional_and_validated(self):
+        """Production line: write_posture delivery membership guard."""
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            # omitted → three-axis file (backward compatible)
+            self.assertTrue(watch.write_posture(d, "hot", "ask", 0))
+            self.assertNotIn("delivery", watch.read_posture_file(d))
+            # provided → four-axis file
+            self.assertTrue(watch.write_posture(d, "hot", "ask", 0, "batched"))
+            self.assertEqual(watch.read_posture_file(d)["delivery"], "batched")
+            # invalid delivery refused, file untouched at its last good state
+            self.assertFalse(watch.write_posture(d, "hot", "ask", 0, "postal"))
+            self.assertEqual(watch.read_posture_file(d)["delivery"], "batched")
+
+    def test_delivery_line_is_one_line_and_from_safe(self):
+        self.assertEqual(
+            watch.delivery_line("batched"),
+            "delivery via watch: batched")
+        self.assertEqual(
+            watch.delivery_line("instant", "/"),
+            "delivery via watch [/]: instant")
+        # free text cannot forge a second events line
+        self.assertEqual(
+            watch.delivery_line("batched\nforged", "/"),
+            "delivery via watch [/]: batched forged")
+
+    def test_post_delivery_dual_writes_file_and_one_event_on_change(self):
+        """Production line: _handle_posture delivery branch + delivery_line.
+
+        A real delivery change writes the file and emits exactly one delivery
+        line; an identical re-POST is idempotent (no second line).
+        """
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            # establish a file-backed posture (delivery defaults to instant)
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+            }), 202)
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            # change ONLY delivery: the triple is unchanged, so no posture line
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "delivery": "batched", "from": "/",
+            }), 202)
+            self.assertEqual(
+                watch.read_posture_file(d)["delivery"], "batched")
+            with open(log, encoding="utf-8") as f:
+                dlines = [ln for ln in f if "delivery via watch" in ln]
+            self.assertEqual(len(dlines), 1, dlines)
+            self.assertIn("delivery via watch [/]: batched", dlines[0])
+            # no posture line fired for a delivery-only change
+            with open(log, encoding="utf-8") as f:
+                self.assertEqual(
+                    [ln for ln in f if "posture via watch" in ln], [])
+            # idempotent: same delivery, no second line
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "delivery": "batched",
+            }), 202)
+            with open(log, encoding="utf-8") as f:
+                self.assertEqual(
+                    [ln for ln in f if "delivery via watch" in ln].__len__(), 1)
+
+    def test_post_delivery_preserved_when_omitted(self):
+        """A triple-only POST must not silently reset delivery.
+
+        Production line: the `if not delivery: delivery = current...` branch
+        in _handle_posture. Without it, an omitted delivery defaults to
+        instant and a batched file reverts — a pace change silently rewiring
+        wake routing.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "delivery": "batched",
+            }), 202)
+            # change pace WITHOUT mentioning delivery — batched must survive
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "hot", "asking": "ask", "delegation": 0,
+            }), 202)
+            pf = watch.read_posture_file(d)
+            self.assertEqual(pf["pace"], "hot")
+            self.assertEqual(pf["delivery"], "batched")
+
+    def test_post_delivery_rejects_unknown(self):
+        """Production line: the delivery closed-set guard in _handle_posture."""
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "delivery": "postal",
+            }), 202)  # E5: durable rejected, not a sync 400
+            self.assertFalse(
+                os.path.exists(os.path.join(d, ".dreamwork", "posture")))
+
+    def test_collect_and_summary_expose_delivery(self):
+        """Production line: resolve_posture delivery + _summary_posture."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertEqual(watch.collect(d)["posture"]["delivery"], "instant")
+            self.assertTrue(watch.write_posture(d, "hot", "ask", 0, "batched"))
+            self.assertEqual(
+                watch.collect(d)["posture"]["delivery"], "batched")
+
+    # ── #342 surface 3: the delivery dashboard chip ──────────────────────
+    def test_page_carries_delivery_vocabulary(self):
+        """The closed set is injected from lint (single source), not restated."""
+        self.assertIn(
+            "const POSTURE_STOPS_DELIVERY = "
+            + json.dumps(list(watch.POSTURE_STOPS_DELIVERY)),
+            watch.PAGE)
+
+    def test_delivery_chip_reuses_the_posture_picker_idiom(self):
+        """The delivery chip is a fourth axis row in the posture picker,
+        reusing the EXACT pace/asking idiom (same class, same picker fn, the
+        shared 10s arm) — authoring a second gesture is the failure
+        transitions.md / CLAUDE.md name. Asserted in source (browser guards
+        are the coordinator's merge-gate, not this lane's).
+
+        Production line: posturePicker builds a delivery .paxis row whose
+        chips come from POSTURE_STOPS_DELIVERY.map and fire pickPostureAxis.
+        """
+        # the chip row lives inside posturePicker, beside the other axes
+        idx = watch.PAGE.index('function posturePicker(')
+        end = watch.PAGE.find('/* Shared description for posture', idx)
+        self.assertGreater(end, idx)
+        body = watch.PAGE[idx:end]
+        self.assertIn('data-axis="delivery"', body)
+        self.assertIn('delivery-lab', body)
+        # driven from the closed set (not a hardcoded two-chip list)
+        self.assertIn('POSTURE_STOPS_DELIVERY.map', body)
+        self.assertIn("pickPostureAxis('delivery'", body)
+        # same chip class as pace/asking — no second gesture
+        self.assertIn("class=\"sgbtn pchip", body)
+        # no second arm: delivery routes through the shared posture arm, not
+        # its own. A second arm would be a second ceremony.
+        self.assertNotIn('armDelivery', watch.PAGE)
+        self.assertNotIn('commitDelivery', watch.PAGE)
+
+    def test_delivery_posts_through_the_shared_arm_and_posture_route(self):
+        """Production lines: commitPosture carries delivery in the POST body
+        and through the shared 10s arm (RUN_ARM_MS, one /posture route).
+
+        Scoped to the JSON.stringify POST body — a bare or function-wide
+        'delivery: draft.delivery' assertion is hollow (the optimistic
+        data.posture update and the pending cache carry it too), so the check
+        is sliced to the bytes the POST actually sends. A dropped field reds
+        here; the two other copies do not satisfy it.
+        """
+        # Slice the JSON.stringify({...}) the /posture fetch sends, not the
+        # whole fn (and not the tint POST, whose body:stringify comes first).
+        fi = watch.PAGE.index("fetch('/posture'")
+        si = watch.PAGE.index("body: JSON.stringify({", fi)
+        se = watch.PAGE.index("}),", si)
+        post_body = watch.PAGE[si:se]
+        self.assertIn('pace: draft.pace', post_body)
+        self.assertIn('delivery: draft.delivery', post_body)
+        # committedPosture carries delivery so the chip paints its selection
+        cp_i = watch.PAGE.index('function committedPosture(')
+        cp_end = watch.PAGE.index('function delegationLabel(', cp_i)
+        self.assertIn('POSTURE_STOPS_DELIVERY', watch.PAGE[cp_i:cp_end])
+        # no second arm: delivery routes through the shared posture arm
+        self.assertNotIn('armDelivery', watch.PAGE)
+
+    def test_delivery_desc_table_covers_both_stops(self):
+        """Contract copy present for both stops (hover descriptions)."""
+        for stop in watch.POSTURE_STOPS_DELIVERY:
+            self.assertIn(stop, watch.POSTURE_DELIVERY_DESC)
+            self.assertTrue(watch.POSTURE_DELIVERY_DESC[stop].strip())
+        self.assertIn('POSTURE_DELIVERY_DESC', watch.PAGE)
+        # postDescFor serves the delivery axis
+        pdf_i = watch.PAGE.index('function postDescFor(')
+        pdf_end = watch.PAGE.index('function hidePostDesc(', pdf_i)
+        self.assertIn("axis === 'delivery'", watch.PAGE[pdf_i:pdf_end])
+
+
+class TestDeliveryWakeRouting(unittest.TestCase):
+    """#342 lane B surface 2 — per-kind wake routing.
+
+    The receipt commits UNCONDITIONALLY in do_POST (E3); the watch-events.log
+    wake line's emission is conditional on (kind, mode). do-now/do-next
+    pre-empt even in batched mode; every other kind and the /answer, /comment,
+    /ask routes wake only in instant mode. Withholding the wake line IS
+    batching — the item rides the durable receipt and the tick's cursor read.
+    """
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _post(self, url, obj):
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    def _wake_lines(self, d):
+        """Every watch-events.log line — each is a wake line the tail monitor
+        wakes on. NOT filtered to 'via watch', because the /answer, /comment
+        and /ask wake lines carry no such marker; filtering to it would hide
+        them and make a withheld-line check pass trivially (the hollow trap)."""
+        log = os.path.join(d, ".dreamwork", "watch-events.log")
+        if not os.path.exists(log):
+            return []
+        with open(log, encoding="utf-8") as f:
+            return [ln for ln in f if ln.strip()]
+
+    def _witnessed(self, d):
+        """submissions.log paths — present iff the route ran end-to-end through
+        do_POST (the witness runs after the durable receipt, so its presence
+        proves the receipt committed)."""
+        path = os.path.join(d, ".dreamwork", "submissions.log")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return [json.loads(ln)["path"] for ln in f if ln.strip()]
+
+    def test_emits_wake_matrix_pure(self):
+        """Production line: emits_wake — the routing decision table.
+
+        PRECONDITION asserted at runtime (the hollow-check rule): the core
+        command kinds are exactly the four in COMMANDS, so a kind added later
+        is covered by the 'not a pre-empt kind' branch instead of slipping
+        past a hand-copied list.
+        """
+        core = set(watch.COMMAND_KINDS)
+        self.assertEqual(core, {"add-idea", "do-next", "do-now", "maintenance"},
+                         core)
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            instant = d
+            batched = os.path.join(d, "b")
+            os.makedirs(os.path.join(batched, ".dreamwork"))
+            self.assertTrue(
+                watch.write_posture(batched, "idle", "ask", 0, "batched"))
+            # pre-empt kinds wake in BOTH modes
+            for kind in watch.PREEMPT_KINDS:
+                self.assertTrue(watch.emits_wake(kind, instant), kind)
+                self.assertTrue(watch.emits_wake(kind, batched), kind)
+            self.assertEqual(set(watch.PREEMPT_KINDS), {"do-now", "do-next"})
+            # every other kind + plugin kinds + the routes wake only instant
+            for kind in ("add-idea", "maintenance", "some-plugin"):
+                self.assertTrue(watch.emits_wake(kind, instant), kind)
+                self.assertFalse(watch.emits_wake(kind, batched), kind)
+            for route in ("/answer", "/comment", "/ask"):
+                self.assertTrue(watch.emits_wake(route, instant), route)
+                self.assertFalse(watch.emits_wake(route, batched), route)
+
+    def test_command_preempt_kinds_wake_in_batched(self):
+        """Live: do-now/do-next wake even in batched mode; receipt always lands.
+
+        Production line: the `if emits_wake(kind, target):` gate in
+        _handle_command. Remove it and add-idea wakes in batched too (next
+        test); make emits_wake always-False and do-now stops waking here.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertTrue(
+                watch.write_posture(d, "idle", "ask", 0, "batched"))
+            base = self._serve(d)
+            for kind in ("do-now", "do-next"):
+                payload = {"kind": kind, "text": "preempt " + kind} \
+                    if kind != "do-next" else {"kind": "do-next", "text": ""}
+                self.assertEqual(self._post(base + "/command", payload), 202)
+            wakes = self._wake_lines(d)
+            self.assertTrue(any("do-now" in w for w in wakes), wakes)
+            self.assertTrue(any("do-next" in w for w in wakes), wakes)
+            # the receipt committed for both (E3 — unconditional)
+            self.assertEqual(self._witnessed(d).count("/command"), 2)
+
+    def test_command_batched_kinds_withhold_wake_in_batched(self):
+        """Live: add-idea/maintenance withhold the wake line in batched mode.
+
+        Production line: the `if emits_wake(kind, target):` gate. The receipt
+        still commits — withholding the wake IS batching; the cursor drains it.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertTrue(
+                watch.write_posture(d, "idle", "ask", 0, "batched"))
+            base = self._serve(d)
+            self.assertEqual(self._post(base + "/command",
+                                        {"kind": "add-idea", "text": "parked"}), 202)
+            self.assertEqual(self._post(base + "/command",
+                                        {"kind": "maintenance", "text": "groom"}), 202)
+            wakes = self._wake_lines(d)
+            self.assertFalse(any("add-idea" in w for w in wakes), wakes)
+            self.assertFalse(any("maintenance" in w for w in wakes), wakes)
+            # the receipt committed for both even though no wake fired
+            self.assertEqual(self._witnessed(d).count("/command"), 2)
+
+    def test_command_all_kinds_wake_in_instant(self):
+        """Live: in instant mode (the default) every command kind wakes.
+
+        Production line: emits_wake returns True in instant mode for non-
+        pre-empt kinds (delivery_mode == DELIVERY_DEFAULT). A posture file
+        with no delivery axis — or absent — is instant.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)  # no posture file → instant
+            base = self._serve(d)
+            self.assertEqual(self._post(base + "/command",
+                                        {"kind": "add-idea", "text": "now"}), 202)
+            self.assertEqual(self._post(base + "/command",
+                                        {"kind": "do-now", "text": "now"}), 202)
+            wakes = self._wake_lines(d)
+            self.assertTrue(any("add-idea" in w for w in wakes), wakes)
+            self.assertTrue(any("do-now" in w for w in wakes), wakes)
+
+    def test_answer_ask_comment_withhold_wake_in_batched(self):
+        """Live: /answer, /comment, /ask withhold the wake line in batched.
+
+        Production line: the `if emits_wake(<route>, target):` gate in each of
+        the three handlers. The receipt commits in every case (E3).
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertTrue(
+                watch.write_posture(d, "idle", "ask", 0, "batched"))
+            base = self._serve(d)
+            self.assertEqual(self._post(base + "/answer", {
+                "question": "A real open question?", "answer": "yes"}), 202)
+            self.assertEqual(self._post(base + "/comment", {
+                "question": "A real open question?", "comment": "a note",
+                "section": "Open"}), 202)
+            self.assertEqual(self._post(base + "/ask", {
+                "question": "a new question"}), 202)
+            wakes = self._wake_lines(d)
+            # /answer's wake line is 'answer: "..." -> .dreamwork/questions.md
+            # (fold the answer...)' — distinct markers, no 'via watch'.
+            self.assertFalse(any("fold the answer" in w for w in wakes), wakes)
+            self.assertFalse(any("follow-up" in w for w in wakes), wakes)
+            self.assertFalse(any("question for dreamer" in w for w in wakes),
+                             wakes)
+            # all three receipts committed despite no wake
+            witnessed = self._witnessed(d)
+            for route in ("/answer", "/comment", "/ask"):
+                self.assertIn(route, witnessed)
+
+    def test_answer_ask_comment_wake_in_instant(self):
+        """Live: in instant mode the three routes wake (today's behaviour)."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)  # instant
+            base = self._serve(d)
+            self.assertEqual(self._post(base + "/answer", {
+                "question": "A real open question?", "answer": "yes"}), 202)
+            self.assertEqual(self._post(base + "/ask", {
+                "question": "a new one"}), 202)
+            wakes = self._wake_lines(d)
+            self.assertTrue(any("fold the answer" in w for w in wakes), wakes)
+            self.assertTrue(any("question for dreamer" in w for w in wakes),
+                            wakes)
 
 
 class TestDeployAction(unittest.TestCase):
