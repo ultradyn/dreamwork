@@ -1183,8 +1183,8 @@ says aloud that the file no longer matches. **The per-tick re-read is load-
 bearing** (`#426`): it is the only way an on-disk change reaches a running
 loop, and this file inherits the same contract.
 
-**The three axes** — pace and asking are closed sets of named stops; the
-delegation axis carries a number whose label is derived for display.
+**The posture axes** — pace, asking and delivery are closed sets of named
+stops; the delegation axis carries a number whose label is derived for display.
 
 - **`pace`** — how often the loop acts. Three stops: `idle` (idle-friendly,
   no proactive fan-out), `steady` (continuous bounded work), `hot` (urgent /
