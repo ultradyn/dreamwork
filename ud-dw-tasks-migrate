@@ -673,6 +673,16 @@ def _populate_events(conn: sqlite3.Connection, events: list) -> int:
     ).fetchone()[0]
     if have > 0 or not events:
         return 0
+    # FK-safe honesty filter: an id visible in git history as a bold span
+    # but with no task row (an unrecoverable groomed id — #6 in the test
+    # fixture, #101 #222 #223 #267 live) gets NO event. task_event.task_id
+    # REFERENCES task(id), so an event for a rowless id would fail the FK;
+    # and fabricating one would be dishonest (no row → no first-sight event,
+    # the same rule as the unrecoverable groomed four).
+    have_ids = set(r[0] for r in conn.execute("SELECT id FROM task"))
+    events = [e for e in events if e["task_id"] in have_ids]
+    if not events:
+        return 0
     for e in chain_events(events):
         conn.execute(
             "INSERT INTO task_event(task_id, at, cause, from_state,"
