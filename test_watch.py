@@ -8136,3 +8136,338 @@ class TestDeployRefusalCopy(unittest.TestCase):
         self.assertNotRegex(page, r"rv\.status === 403")
         # writeVerdict must carry detail through, or the copy can never select.
         self.assertRegex(page, r"detail:\s*\(j && j\.detail\)")
+
+
+# ── #289 — review decisions on the watch dashboard ──────────────────────
+# Three surfaces: the LEFT JOIN in list_reviews (data), the artifactRow
+# render (JS, via node-eval), and the /decide POST handler (HTTP against a
+# REAL temp store). Every check names the production line it targets so a
+# revert fails the named test. Temp stores only — never the main checkout's
+# live .dreamwork/ledger.sqlite3.
+
+def _store_target(root):
+    """A store-mode target: the .dreamwork skeleton + a seeded, cut-over
+    ledger store (watermark present so source_of_truth=='store')."""
+    make_target(root)
+    dw = os.path.join(root, ".dreamwork")
+    os.makedirs(os.path.join(dw, "review"), exist_ok=True)
+    import ledger_store
+    from ledger_parse import _WATERMARK_KEY
+    store = ledger_store.open_store(watch.store_path(dw), seed_next_id=1)
+    store.conn.execute(
+        "INSERT OR REPLACE INTO meta(key,value) VALUES(?,?)",
+        (_WATERMARK_KEY, "2026-07-30T00:00:00Z"))
+    store.close()
+    return dw
+
+
+def _record_decision(dw, artifact, qtitle, decision):
+    import ledger_store
+    import ledger_write
+    store = ledger_store.open_store(watch.store_path(dw))
+    try:
+        ledger_write.record_review_decision(
+            store, artifact, qtitle, decision, actor="watch")
+    finally:
+        store.close()
+
+
+def _review_artifact(rd, name, body="<p>x"):
+    path = os.path.join(rd, name)
+    with open(path, "w") as f:
+        f.write("<!doctype html>" + body)
+    return path
+
+
+class TestReviewDecisionJoin(unittest.TestCase):
+    """list_reviews LEFT JOINs review_decision (store-mode); degrades to
+    decision=None ('unlinked') in markdown-mode and on rows with no record."""
+
+    def test_join_carries_decision_and_question_title_per_row(self):
+        with tempfile.TemporaryDirectory() as d:
+            dw = _store_target(d)
+            rd = os.path.join(dw, "review")
+            _review_artifact(rd, "acc.html")
+            _review_artifact(rd, "rej.html")
+            _review_artifact(rd, "pen.html")
+            _review_artifact(rd, "none.html")
+            # PRODUCTION LINE: ledger_write.record_review_decision writes the
+            # v2 row (artifact, question_title, decision, decided_at, actor).
+            _record_decision(dw, "acc.html", "Q-accept", "accepted")
+            _record_decision(dw, "rej.html", "Q-reject", "rejected")
+            _record_decision(dw, "pen.html", "Q-pending", "pending")
+            # Runtime precondition: the target really is store-mode, or the
+            # join half of the check has no subject.
+            self.assertEqual(watch.source_of_truth(dw), "store")
+            rows = {r["name"]: r for r in watch.list_reviews(rd, dw)}
+            self.assertEqual(rows["acc.html"]["decision"], "accepted")
+            self.assertEqual(rows["acc.html"]["question_title"], "Q-accept")
+            self.assertEqual(rows["rej.html"]["decision"], "rejected")
+            self.assertEqual(rows["rej.html"]["question_title"], "Q-reject")
+            self.assertEqual(rows["pen.html"]["decision"], "pending")
+            self.assertEqual(rows["pen.html"]["question_title"], "Q-pending")
+            # No row -> decision/question_title None (the 'unlinked' state).
+            self.assertIsNone(rows["none.html"]["decision"])
+            self.assertIsNone(rows["none.html"]["question_title"])
+
+    def test_markdown_mode_degrades_to_unlinked_no_store(self):
+        # A markdown-mode target (no cutover watermark) has NO decision data:
+        # every row reads decision=None, which artifactRow renders as
+        # 'unlinked' — distinct from 'pending' by contract.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            rd = os.path.join(dw, "review")
+            os.makedirs(rd, exist_ok=True)
+            _review_artifact(rd, "plain.html")
+            # Precondition: genuinely markdown-mode (no store file).
+            self.assertNotEqual(watch.source_of_truth(dw), "store")
+            self.assertFalse(watch.store_path(dw).exists())
+            rows = watch.list_reviews(rd, dw)
+            self.assertEqual(len(rows), 1)
+            self.assertIsNone(rows[0]["decision"])
+            self.assertIsNone(rows[0]["question_title"])
+            # _review_decisions returns {} wholesale in markdown-mode, so a
+            # row can never accidentally read 'pending' from a missing store.
+            self.assertEqual(watch._review_decisions(dw), {})
+
+    def test_join_tolerates_a_missing_review_decision_table(self):
+        # A store that has not yet been migrated to the v2 review_decision
+        # shape must degrade (return {}), never crash collect().
+        with tempfile.TemporaryDirectory() as d:
+            dw = _store_target(d)
+            rd = os.path.join(dw, "review")
+            _review_artifact(rd, "x.html")
+            import sqlite3
+            # Drop the table to simulate a pre-v2 store; the read-only open
+            # in _review_decisions must catch and degrade.
+            conn = sqlite3.connect(str(watch.store_path(dw)))
+            conn.execute("DROP TABLE IF EXISTS review_decision")
+            conn.commit()
+            conn.close()
+            self.assertEqual(watch.source_of_truth(dw), "store")
+            self.assertEqual(watch._review_decisions(dw), {})
+            rows = watch.list_reviews(rd, dw)
+            self.assertIsNone(rows[0]["decision"])
+
+
+class TestArtifactRowRender(unittest.TestCase):
+    """artifactRow (JS) renders the four decision states distinctly. Evaluated
+    in node with stubbed esc/pipBtn so the assertion is on REAL rendered HTML,
+    not the source text — reverting a branch changes the bytes it prints."""
+
+    def _artifact_row_html(self, fixtures):
+        page = watch._get_page()
+        # Extract the function body by brace-matching from its signature.
+        start = page.index("function artifactRow(")
+        depth = 0
+        end = None
+        for i in range(start, len(page)):
+            if page[i] == "{":
+                depth += 1
+            elif page[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        self.assertIsNotNone(end, "could not extract artifactRow from bundle")
+        fn = page[start:end]
+        script = (
+            "const esc = t => String(t==null?'':t)"
+            ".replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')"
+            ".replace(/\"/g,'&quot;');\n"
+            "const pipBtn = (url,label) => `<button data-pipurl=\"${esc(url)}\""
+            " aria-label=\"pop out ${esc(label)}\">PIP</button>`;\n"
+            + fn + "\n"
+            "const fs = " + json.dumps(fixtures) + ";\n"
+            "console.log(JSON.stringify(fs.map(r => artifactRow(r,'review'))));\n"
+        )
+        import subprocess
+        proc = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, timeout=10)
+        if proc.returncode != 0:
+            self.fail("node eval failed: " + proc.stderr)
+        return json.loads(proc.stdout)
+
+    def test_four_states_render_distinctly_and_unlinked_has_no_marker(self):
+        # PRODUCTION LINE: artifactRow's `hasDec` gate. accepted/rejected/
+        # pending get a `.rdecision` marker; unlinked (no decision) renders
+        # NONE — absence is its own state, distinct from 'pending' by contract.
+        fixtures = [
+            {"name": "a.html", "decision": "accepted",
+             "question_title": "Q1", "created_known": True, "created": 1,
+             "mtime": 1, "show_modified": False},
+            {"name": "r.html", "decision": "rejected",
+             "question_title": "Q2", "created_known": True, "created": 1,
+             "mtime": 1, "show_modified": False},
+            {"name": "p.html", "decision": "pending",
+             "question_title": "Q3", "created_known": True, "created": 1,
+             "mtime": 1, "show_modified": False},
+            {"name": "u.html", "decision": None, "question_title": None,
+             "created_known": True, "created": 1, "mtime": 1,
+             "show_modified": False},
+        ]
+        html = self._artifact_row_html(fixtures)
+        by = dict(zip(["a", "r", "p", "u"], html))
+        # data-decision carries all four.
+        self.assertIn('data-decision="accepted"', by["a"])
+        self.assertIn('data-decision="rejected"', by["r"])
+        self.assertIn('data-decision="pending"', by["p"])
+        self.assertIn('data-decision="unlinked"', by["u"])
+        # accepted/rejected/pending each carry a marker; unlinked does NOT.
+        self.assertIn("rdecision raccepted", by["a"])
+        self.assertIn("rdecision rrejected", by["r"])
+        self.assertIn("rdecision rpending", by["p"])
+        self.assertNotIn("rdecision", by["u"],
+                         "unlinked must render NO marker — its distinction "
+                         "from pending. Reverting the hasDec gate breaks this.")
+        # The marker links to /question?qid=<title> (a decision row always
+        # carries question_title, NOT NULL by contract).
+        self.assertIn('/question?qid=Q1', by["a"])
+        self.assertIn('/question?qid=Q3', by["p"])
+
+    def test_glyph_distinguishes_verdict_within_the_done_dim(self):
+        # accepted ✔ and rejected ✘ both dim (done) but differ by glyph.
+        fixtures = [
+            {"name": "a.html", "decision": "accepted",
+             "question_title": "Q", "created_known": True, "created": 1,
+             "mtime": 1, "show_modified": False},
+            {"name": "r.html", "decision": "rejected",
+             "question_title": "Q", "created_known": True, "created": 1,
+             "mtime": 1, "show_modified": False},
+        ]
+        html = self._artifact_row_html(fixtures)
+        self.assertIn("\u2714", html[0])   # ✔
+        self.assertIn("\u2718", html[1])   # ✘
+
+
+class TestDecideHandler(unittest.TestCase):
+    """/decide records a review decision; conflict and markdown-mode are
+    readable refusals, not 500s. Drives the REAL handler over HTTP against a
+    REAL temp store."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.target = self.tmp.name
+        _store_target(self.target)  # store-mode, with a review dir
+        probe = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+        port = probe.server_address[1]
+        probe.server_close()
+        self.authority = watch.RequestAuthority(
+            ["127.0.0.1"], port)
+        self.server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", port),
+            watch.make_handler(self.target, authority=self.authority))
+        threading.Thread(target=self.server.serve_forever,
+                         daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{port}"
+        self.host = f"127.0.0.1:{port}"
+
+    def _post(self, body):
+        data = json.dumps(body).encode()
+        req = urllib.request.Request(
+            self.base + "/decide", data=data,
+            headers={"Host": self.host,
+                     "Content-Type": "application/json"},
+            method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as exc:
+            raw = exc.read()
+            try:
+                return exc.code, json.loads(raw)
+            except ValueError:
+                return exc.code, raw
+
+    def test_decide_happy_path_records_and_wakes(self):
+        # PRODUCTION LINE: the handler calls
+        # ledger_write.record_review_decision(store, artifact,
+        # question_title, decision, actor=..., at=...) — the real signature.
+        status, body = self._post({
+            "artifact": "plan.html", "question_title": "ship it?",
+            "decision": "accepted"})
+        self.assertEqual(status, 202)
+        self.assertTrue(body.get("ok"))
+        self.assertEqual(body.get("decision"), "accepted")
+        # The decision really landed in the store.
+        dec = watch._review_decisions(os.path.join(self.target, ".dreamwork"))
+        self.assertEqual(dec["plan.html"], ("accepted", "ship it?"))
+        # It wakes the loop via watch-events.log (one event per line).
+        with open(os.path.join(self.target, ".dreamwork",
+                               "watch-events.log")) as f:
+            line = f.read().strip()
+        self.assertIn("review-decision", line)
+        self.assertIn("plan.html", line)
+        self.assertIn("accepted", line)
+
+    def test_decide_conflict_is_a_readable_refusal_not_500(self):
+        # PRODUCTION LINE: ledger_write.DecisionConflict is caught and surfaced
+        # as a durable rejected receipt (domain_invalid/decision_conflict),
+        # never a 500. A final decision is not silently reassignable.
+        self._post({"artifact": "d.html", "question_title": "Q1",
+                    "decision": "accepted"})
+        status, body = self._post({"artifact": "d.html",
+                                   "question_title": "Q2",
+                                   "decision": "rejected"})
+        self.assertEqual(status, 202)
+        self.assertFalse(body.get("ok"))
+        self.assertTrue(body.get("rejected"))
+        self.assertEqual(body.get("reason"), "domain_invalid")
+        self.assertEqual(body.get("detail"), "decision_conflict")
+        # The first decision is untouched (not silently reassigned).
+        dec = watch._review_decisions(os.path.join(self.target, ".dreamwork"))
+        self.assertEqual(dec["d.html"], ("accepted", "Q1"))
+
+    def test_decide_markdown_mode_refuses_not_500(self):
+        # A markdown-mode target (no store) refuses with domain_invalid/
+        # no_store, never a 500. The read join already degrades to 'unlinked'
+        # there, so refusing the write is the honest counterpart.
+        with tempfile.TemporaryDirectory() as md:
+            make_target(md)
+            probe = http.server.ThreadingHTTPServer(
+                ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+            port = probe.server_address[1]
+            probe.server_close()
+            server = http.server.ThreadingHTTPServer(
+                ("127.0.0.1", port),
+                watch.make_handler(md, authority=watch.RequestAuthority(
+                    ["127.0.0.1"], port)))
+            t = threading.Thread(target=server.serve_forever, daemon=True)
+            t.start()
+            try:
+                base = f"http://127.0.0.1:{port}"
+                host = f"127.0.0.1:{port}"
+                data = json.dumps({"artifact": "x.html",
+                                   "question_title": "Q",
+                                   "decision": "accepted"}).encode()
+                req = urllib.request.Request(
+                    base + "/decide", data=data,
+                    headers={"Host": host,
+                             "Content-Type": "application/json"},
+                    method="POST")
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    status, body = r.status, json.loads(r.read())
+                self.assertEqual(status, 202)
+                self.assertTrue(body.get("rejected"))
+                self.assertEqual(body.get("detail"), "no_store")
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_decide_rejects_bad_decision_and_missing_fields(self):
+        for body in (
+            {"artifact": "x.html", "question_title": "Q",
+             "decision": "maybe"},
+            {"artifact": "", "question_title": "Q",
+             "decision": "accepted"},
+            {"artifact": "x.html", "decision": "accepted"},
+        ):
+            status, resp = self._post(body)
+            self.assertEqual(status, 202, body)
+            self.assertTrue(resp.get("rejected"), body)
+            self.assertEqual(resp.get("reason"), "schema_invalid", body)
