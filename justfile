@@ -408,15 +408,36 @@ deploy rev="HEAD":
     # socket, verify via /proc/<pid>/cmdline, signal that pid alone.
     python3 dev/deploy_state.py --stop-deployed --port "$port" --snap "$snap" \
       || { echo "deploy refused: could not identify the process to stop on :$port — left it alone"; exit 1; }
-    sleep 1
-    nohup python3 "$snap" --target "$PWD" --dev >"$dir/serve.log" 2>&1 &
-    for _ in $(seq 1 20); do
-      curl -sf "http://127.0.0.1:$port/" >/dev/null && break
-      sleep 0.25
-    done
-    curl -sf -o /dev/null "http://127.0.0.1:$port/" \
-      && echo "deployed {{rev}} ($(git rev-parse --short {{rev}})) on :$port" \
-      || { echo "deploy failed — see $dir/serve.log"; exit 1; }
+    # #508 — wait for the port to be REALLY free before starting the new
+    # server, and confirm it STAYS free. The old server ran with --dev
+    # (autoreload); this recipe's `mv` overwrote the snapshot it watches, so
+    # autoreload os.execv'd the old process IN PLACE (same pid) and its
+    # close-on-exec socket flickered free during the exec before rebinding.
+    # stop_deployed's poll can grade that flicker as 'free' and return success
+    # while the old process rebinds — so the new server would die on bind
+    # (invisible under `nohup … &`) and the old curl readiness would print
+    # 'deployed' against the OLD process. Refuse if the port never stays free.
+    python3 dev/deploy_state.py --wait-port-free --port "$port" \
+      || { echo "deploy refused: :$port never freed after stop (the old process re-exec'd/respawned) — his dashboard was left running, the new server was not started"; exit 1; }
+    # #508 — the deployed server no longer runs with --dev: autoreload (implied
+    # by --dev) was the mechanism that re-exec'd the old process in place on
+    # this recipe's own `mv`, creating the residual port-holder the race needs.
+    # The deployed snapshot is frozen between deploys and this recipe restarts
+    # it on every deploy, so autoreload serves no purpose here — the GENERATION
+    # still bumps on the fresh process, so open tabs reload on redeploy as
+    # before. (--dev's only other effect is a dev fps counter, which the
+    # dashboard the human watches does not need.)
+    nohup python3 "$snap" --target "$PWD" >"$dir/serve.log" 2>&1 &
+    newpid=$!
+    # #508 — success is TRUE BY CONSTRUCTION: the listener on :$port must be
+    # $newpid (the process this recipe just spawned) running $snap. The old
+    # curl-liveness readiness graded whatever answered — the re-exec'd old
+    # process, whose argv matches the new snap — and printed a false
+    # 'deployed'. This verifies IDENTITY (pid + argv), so a foreign/respawned
+    # holder or a new server that died on bind fails LOUDLY instead.
+    python3 dev/deploy_state.py --verify-deployed --port "$port" --snap "$snap" --expect-pid "$newpid" \
+      || { echo "deploy failed: the new server (pid $newpid) did not take :$port — the old process may still hold it, or the new server died on bind/boot. See $dir/serve.log"; exit 1; }
+    echo "deployed {{rev}} ($(git rev-parse --short {{rev}})) on :$port (pid $newpid, identity-verified)"
 
 # Does a watch.py change that touches PRESENTATION have a styleguide entry
 # near it? Prints violations; silence means the check found nothing to complain
