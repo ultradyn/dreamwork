@@ -171,8 +171,10 @@ const fileBeforeHover = fileText(filePath);
 
 // Idle layout snapshot BEFORE hover — production line for reflow is the
 // shell's permanent min-height (and the absence of display:none collapse).
-// If pdesc collapsed when idle, #parm.top would jump when open.
-const layoutIdle = await p.evaluate(() => {
+// Measure RELATIVE to #posture: Playwright's hover scrolls the chip into
+// view, so absolute page tops jump even when the card's internal layout
+// is rock-steady (observed: 349px scroll, 0px section Δh).
+const snapLayout = () => p.evaluate(() => {
   const shell = document.getElementById('pdesc');
   const parm = document.getElementById('parm');
   const sec = document.getElementById('posture');
@@ -182,13 +184,17 @@ const layoutIdle = await p.evaluate(() => {
   const cr = sec.getBoundingClientRect();
   const cs = getComputedStyle(shell);
   return {
-    shellH: sr.height, shellTop: sr.top,
-    parmTop: pr.top, secH: cr.height,
+    shellH: sr.height,
+    // offsets inside the section — scroll-invariant
+    shellOff: sr.top - cr.top,
+    parmOff: pr.top - cr.top,
+    secH: cr.height,
     open: shell.classList.contains('open'),
     display: cs.display, opacity: cs.opacity,
     minH: cs.minHeight,
   };
 });
+const layoutIdle = await snapLayout();
 notes.push('layout idle: ' + JSON.stringify(layoutIdle));
 ok('pdesc reserves height when idle (shell > 0, display not none)',
    !!layoutIdle && layoutIdle.shellH > 8
@@ -213,33 +219,26 @@ ok('hover left posture file bytes unchanged',
 ok('hover left events log posture lines unchanged',
    postureLines(logPath).length === linesBeforeHover);
 
-// Open layout — #parm top must match idle (end-state text cannot catch a reflow).
-const layoutOpen = await p.evaluate(() => {
-  const shell = document.getElementById('pdesc');
-  const parm = document.getElementById('parm');
-  const sec = document.getElementById('posture');
-  if (!shell || !parm || !sec) return null;
-  const sr = shell.getBoundingClientRect();
-  const pr = parm.getBoundingClientRect();
-  const cr = sec.getBoundingClientRect();
-  return {
-    shellH: sr.height, shellTop: sr.top,
-    parmTop: pr.top, secH: cr.height,
-    open: shell.classList.contains('open'),
-  };
-});
+// Open layout — relative offsets must match idle.
+const layoutOpen = await snapLayout();
 notes.push('layout open: ' + JSON.stringify(layoutOpen));
 // Precondition: open actually painted different text/state than idle.
 ok('open layout precondition: shell is open and taller-or-equal idle reserve',
    !!layoutOpen && layoutOpen.open
    && layoutIdle && layoutOpen.shellH + 0.5 >= layoutIdle.shellH);
 const parmDelta = Math.abs(
-  (layoutOpen && layoutOpen.parmTop) - (layoutIdle && layoutIdle.parmTop));
+  (layoutOpen && layoutOpen.parmOff) - (layoutIdle && layoutIdle.parmOff));
+const shellDelta = Math.abs(
+  (layoutOpen && layoutOpen.shellH) - (layoutIdle && layoutIdle.shellH));
 const secDelta = Math.abs(
   (layoutOpen && layoutOpen.secH) - (layoutIdle && layoutIdle.secH));
-notes.push(`reflow deltas: parmTop=${parmDelta.toFixed(2)} secH=${secDelta.toFixed(2)}`);
-ok(`hover does not reflow #parm (Δtop=${parmDelta.toFixed(2)}px, want ≤1)`,
+notes.push(`reflow deltas: parmOff=${parmDelta.toFixed(2)} shellH=${shellDelta.toFixed(2)} secH=${secDelta.toFixed(2)}`);
+// Production line: `.pdesc { min-height:2.6em }` + no display:none. If the
+// shell collapsed when idle, parmOff would jump by ~shellH when open.
+ok(`hover does not reflow #parm inside card (Δoff=${parmDelta.toFixed(2)}px, want ≤1)`,
    parmDelta <= 1);
+ok(`hover does not grow/shrink #pdesc (Δh=${shellDelta.toFixed(2)}px, want ≤1)`,
+   shellDelta <= 1);
 ok(`hover does not grow/shrink #posture (Δh=${secDelta.toFixed(2)}px, want ≤1)`,
    secDelta <= 1);
 
