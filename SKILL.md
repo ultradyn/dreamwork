@@ -151,6 +151,17 @@ deferred widening `run-mode`. Today's vocabulary lives in `lint.py`
   (`#445` Q3). Two subagents may pair on one worktree, talking via the
   `subagent-protocols` handshake, bundled at
   `<skill-dir>/subagent-protocols-for-subagents.md`.
+- **orchestration** — `hands-on` / `orchestrator` (`#510`, his ruling:
+  mode not identity; binary; absent → `hands-on`). Whether the
+  coordinator's own hands touch the work — orthogonal to delegation,
+  which is only the fleet-size number. `hands-on` = the coordinator
+  implements increments inline between dispatches (the long-standing
+  default). `orchestrator` = the coordinator implements **nothing**
+  inline: every increment is dispatched to a lane, and the coordinator's
+  role is adjudication, review, merge-gates, and the ledger. It answers
+  a different question than `delegation: 4` does — a coordinator can run
+  a fleet of four and still implement inline (`hands-on`), and that
+  combination is what the axis makes sayable.
 
 **Absent posture → derived from run-mode** (the mapping lives in
 `lint.derive_posture`, the single source): `lackadaisical` → idle pace;
@@ -165,9 +176,13 @@ do **not** invent kill/sandbox authority from it alone (`#288`).
 **Restate the posture at each tick, don't just re-read it** (#513, human
 steer). The file read is silent; what keeps the loop honest is saying the
 resolved axes back to yourself at tick start — *pace hot, asking near-auto,
-delegation 4, delivery batched* — and checking the last few ticks against
+delegation 4, delivery batched, orchestration hands-on* — and checking the
+last few ticks against
 them: a `delegation: 4` posture with zero lanes out is drift; so is
-implementing inline what a lane could carry. The steer named the failure
+implementing inline what a lane could carry — and under `orchestration:
+orchestrator`, ANY coordinator-implemented increment is drift, however
+small: dispatch it or file it, and let the merge-gate be the hands. The
+steer named the failure
 exactly: *"agents drifting back into implementing themselves or not using
 subagents where they could otherwise."* A manual refresh button was
 considered and rejected — the reminder belongs to the tick, not to him.
@@ -589,12 +604,14 @@ results, no ceremony.
   dashboard after a 10s arm, dual-written with one `watch-events.log` line
   on change. Authoritative over any status mirror; machine-local /
   gitignored. See `file-formats.md`.
-- `.dreamwork/posture` — four-axis posture override (#445 ratifies #443;
-  delivery added by #342): `pace:` / `asking:` / `delegation:` / `delivery:`,
+- `.dreamwork/posture` — five-axis posture override (#445 ratifies #443;
+  delivery added by #342; orchestration by #510): `pace:` / `asking:` /
+  `delegation:` / `delivery:` / `orchestration:`,
   one axis per line. Absent → pace/asking/delegation derive
   from run-mode via `lint.derive_posture` (no silent change); absent delivery
-  → `instant` (pre-axis behaviour). Present → overrides any axis independently.
-  Pace, asking and delivery are closed sets; delegation
+  → `instant` (pre-axis behaviour); absent orchestration → `hands-on`
+  (pre-axis behaviour). Present → overrides any axis independently.
+  Pace, asking, delivery and orchestration are closed sets; delegation
   is an average-concurrency target (steers, never gates). Machine-local /
   gitignored, re-read every tick like run-mode. See `file-formats.md`.
 - `.dreamwork/status.json` — live loop status for the watch.py dashboard,
