@@ -3271,6 +3271,29 @@ Next id: **485**
 - **#80** — Pick a second dogfood target (hark or c2c) · P3 · chore · 30m ·
   **blocked**: human pick
 
+- **#418** — a `#264` in any rendered text should be hoverable for its info and clickable to its
+  task page · P2 · Web UI/cross-cutting · origin: **human** · **human via watch `add-idea`
+  2026-07-28 15:03** · verbatim: *"for after sqlite and `/tasks` impl, when dreamwork tasks are
+  referenced like `#264`, it'd be great if I could hover to get their info (and click to open
+  their task page)"*
+  · **he stated the dependency himself**, which is the useful part: this is *after* `#294`'s
+  SQLite cutover and `#281`'s `/tasks` page. Both are prerequisites for the honest reason — the
+  hover needs **single-entry fetch by id**, which is exactly the read verb `#346` is designing
+  (`?t=<id>`), and building it against a Markdown re-parse would be a second implementation
+  thrown away at cutover
+  · scope is wider than it first reads: task ids appear in the ledger panel, question bodies,
+  hand-off lines, commit subjects on the git row, and review artifacts. **A treatment that only
+  works in one surface is the wrong answer** — the id is a cross-cutting reference type, so this
+  wants one linkifier consumed everywhere, in the spirit of `#331`'s one-span rule
+  · the hover surface itself is a solved problem here and must not be re-solved: `#300` landed one
+  geometrically stable popover that morphs its content between triggers, and `transitions.md`
+  governs its arrival and departure. **Reuse `#rundesc`'s idiom rather than authoring a second**
+  · open question for whoever takes it, worth settling before any code: what does hover show for
+  an id that does not resolve — a landed task, a withdrawn one, a typo? `#402`'s lesson applies:
+  *"I could not tell"* and *"nothing"* must not render the same
+  · related: **#294, #346, #281, #300**
+
+## Recently landed
 - **#417** — the burndown should show commits per period, without spending the design it already
   has · P2 · Web UI/dashboard · origin: **human** · **human via watch `add-idea` 2026-07-28 14:58**
   · verbatim: *"burndown chart should show how many commits were made each period. design needs to
@@ -3348,30 +3371,8 @@ Next id: **485**
   · **HE ASKED TO SEE ALL FOUR (2026-07-29 05:51: *"show me mockups of all 4 options please"*) and the mockups LANDED `ab7baa5`+`643198a` (lane `wt/mockups`, merge `5a6c964`).** The lane measured before building and found the renders were **already there** — ten of them, reference plus c1–c4 at desktop 554px and mobile 358px, all non-blank. The defect was the **layout**: stacked desktop/mobile pairs per option, which is a gallery and not a comparison, so seeing four options against each other meant scrolling and remembering. Fix is a **five-up strip at one scale**. **Nothing is drawn**: every cell is a real render of the real panel against the live ledger, which is the rule `#367` established the hard way — an opinion about appearance cannot be red-proved, so a mockup he cannot check is worse than none. New guard `dev/capture/burndownmock.mjs` (`DEFAULT_GUARDS` **58**) asserts the strip covers every option **as a set** rather than counting to four, that every render decodes to the **same** `naturalWidth` (a comparison at two scales is not a comparison), and that none is blank — a broken data URI renders as nothing and reads as a subtle design choice. **Coordinator-verified independently:** deleting one option's `data-option` cell reds exactly the set check and nothing else; artifact restored byte-identical, `check` reports `current`, 0 external URLs. The decision itself is still his — `rec` remains `c4` with the copy shortened, and `c2` if he wants shape.
   · **HE RULED 2026-07-29 06:23: `c3` + `c4`, overriding both the rec and the coordinator's rejection of `c3`.** *"I think c3 + c4. I like the chunkyness of the line. granted it's not that intuitively connected to the number of tasks … but yeah. it shows density of action still which is kind of nice."* **And he answered the objection rather than dismissing it:** the visual verdict rejected `c3` because a weight→commits mapping is *learned, not obvious* — his fix is *"we should show exact numbers for each column on hover of that column. then it's very easy to learn."* That converts an unlearnable encoding into a learnable one, which is a better answer than the rejection was. **The hover must show all three facts, not only commits**, because the level line already means open-count and the whole difficulty is that it now carries two things.
   · so the work is: cap weight 2-6px for commits (`c3`), the figure line in `#218`'s voice with the copy **shortened so it does not ellipsise** (`c4`, his condition), and a per-column hover. **Constraint carried from the panel's design:** every height in `.bd` is fixed so fresh data never moves the page, so neither the hover affordance nor the copy line may change the panel's height — and a hover is an **arrival**, so `transitions.md` applies with no size floor.
+  · closed 2026-07-29 15:40. Feature landed a839c57 (c3 weight line + c4 shortened copy + per-column hover, built to his 06:23 ruling). Mockups strip ab7baa5+643198a. The owed artifact rebuild is done: 9b285178 + d4e1dd5a (ruling recorded in the ask block, landed earlier) plus a2a8d7af + a1e3929d (merge d9dc1f91, lane wt/417b) — per-candidate verdicts under each detail figure (c3/c4 CHOSEN with his words, c1/c2 not chosen with the reason), and the footer no longer reads 'proposal only'. Coordinator-verified: check=current, a839c57 cited 5x in the built file, ruling words present, zero 'proposal only', offline-clean, lint clean. The lane honestly reported that the bulk had already landed rather than redoing it.
 
-- **#418** — a `#264` in any rendered text should be hoverable for its info and clickable to its
-  task page · P2 · Web UI/cross-cutting · origin: **human** · **human via watch `add-idea`
-  2026-07-28 15:03** · verbatim: *"for after sqlite and `/tasks` impl, when dreamwork tasks are
-  referenced like `#264`, it'd be great if I could hover to get their info (and click to open
-  their task page)"*
-  · **he stated the dependency himself**, which is the useful part: this is *after* `#294`'s
-  SQLite cutover and `#281`'s `/tasks` page. Both are prerequisites for the honest reason — the
-  hover needs **single-entry fetch by id**, which is exactly the read verb `#346` is designing
-  (`?t=<id>`), and building it against a Markdown re-parse would be a second implementation
-  thrown away at cutover
-  · scope is wider than it first reads: task ids appear in the ledger panel, question bodies,
-  hand-off lines, commit subjects on the git row, and review artifacts. **A treatment that only
-  works in one surface is the wrong answer** — the id is a cross-cutting reference type, so this
-  wants one linkifier consumed everywhere, in the spirit of `#331`'s one-span rule
-  · the hover surface itself is a solved problem here and must not be re-solved: `#300` landed one
-  geometrically stable popover that morphs its content between triggers, and `transitions.md`
-  governs its arrival and departure. **Reuse `#rundesc`'s idiom rather than authoring a second**
-  · open question for whoever takes it, worth settling before any code: what does hover show for
-  an id that does not resolve — a landed task, a withdrawn one, a typo? `#402`'s lesson applies:
-  *"I could not tell"* and *"nothing"* must not render the same
-  · related: **#294, #346, #281, #300**
-
-## Recently landed
 - **#471** — a single guard cannot be run on its own, and I cannot explain why the full run disagrees · P2 ·
   loop-tooling/verification · origin: **loop** · **found while verifying `#269`, 2026-07-29 05:5x**
   · `DREAMWORK_GUARDS=<one-self-serving-guard> just guards` **always fails**, for `reviewdraft` and for
