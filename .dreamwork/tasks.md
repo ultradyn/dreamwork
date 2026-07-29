@@ -1710,6 +1710,15 @@ Next id: **485**
   flat "1b" alternative (one `task` table, `wt/294`, unmerged, red-proved) arguing the split is obsolete. Keep
   the split (`50f4933`, ratified design) or flatten (`1b`)? Decide before the import stage — migrating into a
   schema that is then flattened is the two-migrations error.
+  · **RULED 2026-07-29 15:59 (his rec): FLATTEN.** *"if you're satisfied then rec: flatten."* **and the flat
+  implementation commit `5c5e534` is GONE** — it lived in the cleaned lane worktree and was never fetched;
+  only the IGC artifact (`wt/294shape` = `6b872b4b`) survives. So the next increment is **rebuild the flat
+  variant** (one `task` table, no `entry`/`task_by_entry` join, seeded+verified AUTOINCREMENT kept from
+  `50f4933`'s R1 ruling), red-first, then the import stage (`dreamwork tasks migrate --dry-run`).
+  · his two clarifying notes answered in the questions thread (15:50, 16:00): an `entry` is not the event log
+  (`task_event` is separate either way); the flat model migrates cleanly because `#353` made every entry
+  exactly one task; a task row carries the free-text body where notes/updates accumulate, so tasks update
+  many times — prose in the body, state changes in `task_event`, neither frozen.
 
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch
