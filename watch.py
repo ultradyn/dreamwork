@@ -13577,11 +13577,12 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # Human-authorized write paths under loopback or explicitly
             # configured trusted-LAN authority: /answer folds his answer;
             # /ask records his question for the dreamer; /comment threads his
-            # note; /command records steering; /tint saves project colour;
-            # /run-mode commits main-dreamer pace (#290); /posture commits
-            # the three-axis override (#445); /deploy runs `just deploy`
-            # (#462, loopback peer only, single-flight).
-            # Answer/ask/comment/command wake the loop through
+            # note; /command records steering; /decide records a review
+            # decision into the ledger store (#289); /tint saves project
+            # colour; /run-mode commits main-dreamer pace (#290); /posture
+            # commits the three-axis override (#445); /deploy runs `just
+            # deploy` (#462, loopback peer only, single-flight).
+            # Answer/ask/comment/command/decide wake the loop through
             # watch-events.log; /run-mode and /posture do too, but only when
             # the value actually changes (identical final is silent). Tint
             # and deploy do not wake: tint is presentation state; deploy
@@ -13764,6 +13765,70 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                       f'"{one_line(title)}" -> .dreamwork/questions.md {hint}')
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
+        def _handle_decide(self):
+            """#289 — record a review decision into the ledger store.
+
+            Takes ``{artifact, question_title, decision}``; opens the store
+            and calls ``ledger_write.record_review_decision``. The decision is
+            NOT a task (#264 boundary) and lives in ``review_decision`` keyed
+            by ``artifact``. A cross-question final-decision clash raises
+            ``DecisionConflict`` — surfaced as a READABLE refusal (a durable
+            ``rejected`` receipt with a ``decision_conflict`` detail), never a
+            500, because a conflict is a user-facing "no", not a server fault.
+            Markdown-mode projects have no store, so they refuse
+            (``domain_invalid``, detail ``no_store``) rather than 500. The
+            store write lands under ``.dreamwork/``, which ``watched_mtime``
+            walks, so the dashboard re-renders the new token on its own poll.
+            """
+            import ledger_store
+            import ledger_write
+            req = self._read_json()
+            if req is None:
+                self._reject("malformed_json"); return
+            try:
+                artifact = str(req["artifact"]).strip()
+                question_title = str(req["question_title"]).strip()
+                decision = str(req["decision"]).strip()
+            except (KeyError, TypeError):
+                self._reject("schema_invalid"); return
+            if not artifact or not question_title or \
+                    decision not in ledger_write.REVIEW_DECISIONS:
+                self._reject("schema_invalid"); return
+            dw = os.path.join(target, ".dreamwork")
+            if source_of_truth(dw) != "store":
+                # No store to write to (markdown-mode target). The decision
+                # join already degrades to 'unlinked' there, so refusing the
+                # write is the honest counterpart — never a 500.
+                self._reject("domain_invalid", detail="no_store"); return
+            store = None
+            try:
+                store = ledger_store.open_store(store_path(dw))
+                ledger_write.record_review_decision(
+                    store, artifact, question_title, decision,
+                    actor="watch", at=None)
+            except ledger_write.DecisionConflict:
+                # A final decision is not silently reassignable to another
+                # question: a readable refusal, not a server fault.
+                self._reject("domain_invalid", detail="decision_conflict")
+                return
+            except Exception:
+                # An unreadable/locked/corrupt store is a server fault; the
+                # receipt already committed, so a 500 is the honest answer.
+                self.send_error(500)
+                return
+            finally:
+                if store is not None:
+                    try:
+                        store.close()
+                    except Exception:
+                        pass
+            log_event(target,
+                      f'review-decision{from_hint(req.get("from"))}: '
+                      f'"{one_line(artifact)}" {decision} for '
+                      f'"{one_line(question_title)}" -> .dreamwork/ledger.sqlite3')
+            self._send_receipt(json.dumps({"ok": True, "decision": decision}),
+                               "application/json")
+
         def _handle_command(self):
             req = self._read_json()
             if req is None:
@@ -13941,6 +14006,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             "/ask": _handle_ask,
             "/comment": _handle_comment,
             "/command": _handle_command,
+            "/decide": _handle_decide,
             "/tint": _handle_tint,
             "/run-mode": _handle_run_mode,
             "/posture": _handle_posture,
