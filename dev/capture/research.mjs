@@ -88,7 +88,16 @@ await p.evaluate(() => {
     if (e.target && e.target.id === 'view') window.__rt.push(e.propertyName);
   });
 });
-await p.click(`#view [data-research="${name}"] a[href^="/research?p="]`);
+/* waitForNavigation alongside the click: with the client router it resolves
+   on the pushState; if the isInternal claim ever breaks, the click becomes a
+   FULL reload, and this keeps the reads below aimed at the new document
+   instead of throwing against a destroyed context — so the failure lands on
+   the named dissolve check (the listener died with the old document), not
+   on the guard's own scaffolding. */
+await Promise.all([
+  p.waitForNavigation({ timeout: 5000 }).catch(() => null),
+  p.click(`#view [data-research="${name}"] a[href^="/research?p="]`),
+]);
 await sleep(1600);
 const arrived = await p.evaluate(() => {
   const f = document.getElementById('reviewframe');
@@ -98,7 +107,7 @@ const arrived = await p.evaluate(() => {
     frame: !!f,
     src: f ? f.getAttribute('src') : null,
     wide: document.body.classList.contains('review'),
-    transitions: window.__rt,
+    transitions: window.__rt || [],
   };
 });
 notes.push('arrived: ' + JSON.stringify(arrived));
