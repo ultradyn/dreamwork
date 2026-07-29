@@ -49,6 +49,7 @@ unknown id, id already in landed, id matching more than one open entry.
 import argparse
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -64,6 +65,7 @@ from ledger_parse import store_path  # noqa: E402
 import lint  # noqa: E402 — NEXT_ID, the one header reader
 import ledger_store  # noqa: E402 — open the store for write verbs (#294 inc 9)
 import ledger_write  # noqa: E402 — file_task / land_task (#294 inc 9)
+from user_events.sqlite import open_journal  # noqa: E402 — the journal read API (#357)
 
 LEDGER_DEFAULT = ".dreamwork/tasks.md"
 NOTE_PREFIX = "  · "  # two-space indent, U+00B7, space — the ledger's continuation idiom
@@ -517,6 +519,175 @@ def sweep_text(text, commits, since):
 
 
 # ---------------------------------------------------------------------------
+# #357 — the warning footer every verb tacks onto stderr at exit.
+#
+# Design: `.dreamwork/docs/plans/cli-warning-layer.md` (both forks RULED:
+# the footer prints on EVERY verb (Q5); every verb carries the FULL line
+# (Q6, I1); the read-verb throttle is REFUTED — the footer is STATELESS).
+#
+# His five counts plus incomplete-data plus the journal unconsumed-receipt
+# count, in his order, one dense line on STDERR (stdout stays machine-clean
+# so `counts`/`fold --dry-run` stay pipeable). WARN, never ERROR: the footer
+# never changes an exit code and never blocks. Quiet rules hold by content —
+# a zero count is absent from the line, and a fully clean state prints
+# nothing. STATELESS: it reads the live counts every call, no memory.
+#
+# Reuse, never rebuild: every count comes from a PRODUCTION reader —
+# watch.parse_open_answers / parse_open_questions, store_ids_by_state (the
+# SAME projection `counts` uses, so the open-task number cannot diverge),
+# lint.check_unfolded_answers (the function that already computes the
+# unfolded count + its age), and the journal's head_ordinal/cursor API (the
+# same functions dev/journal_consume.py composes). A second implementation
+# of any is the defect this design refused to propose.
+# ---------------------------------------------------------------------------
+
+JOURNAL_FILENAME = "user-events.sqlite3"
+# The single consumer whose cursor the footer measures (delivery-modes.md /
+# dev/journal_consume.py). A constant so the footer and the drain cannot
+# drift on the string the cursor row is keyed by.
+_JOURNAL_CONSUMER = "coordinator"
+
+
+def _unconsumed_receipts(dw):
+    """head_ordinal − the coordinator cursor's scanned_through.
+
+    The durable 'something is waiting' signal — receipts the coordinator has
+    not yet drained. Read-only and reuse-only: open_journal + head_ordinal +
+    cursor are the same API dev/journal_consume.py composes, so the footer's
+    count cannot diverge from the drain's own (cursor, head] range. An absent
+    journal is empty (0) and is never created (the read has no side effect),
+    matching `journal_consume.py pending`'s read-only posture.
+    """
+    journal = dw / JOURNAL_FILENAME
+    if not journal.exists():
+        return 0
+    try:
+        with open_journal(journal) as j:
+            head = j.head_ordinal()
+            scanned = j.cursor(_JOURNAL_CONSUMER).scanned_through_event_ordinal
+    except sqlite3.Error:
+        return 0  # unreadable journal is not a warning the footer can carry
+    return max(0, head - scanned)
+
+
+def _store_incomplete_counts(dw):
+    """NULL ``type`` and NULL ``origin`` counts from the store (source only).
+
+    His 'data is incomplete' warnings. Read-only over the store path the
+    verbs use (``store_path``). Markdown mode has no such columns, so the
+    counts are absent there (0) — they are a store concept, queried only
+    when the store is the source of truth. ``origin`` NULL is legitimate for
+    pre-cutoff tasks (forward-only from #213/#216); the footer reports the
+    count, the squelch of legitimate noise is a separate concern not built
+    here. Both counts share ONE connection (warm reads; the design budget).
+    """
+    if source_of_truth(str(dw)) != "store":
+        return 0, 0
+    db = store_path(str(dw))
+    if not db.exists():
+        return 0, 0
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return 0, 0
+    try:
+        untyped = conn.execute(
+            "SELECT COUNT(*) FROM task WHERE type IS NULL").fetchone()[0]
+        missing = conn.execute(
+            "SELECT COUNT(*) FROM task WHERE origin IS NULL").fetchone()[0]
+    except sqlite3.Error:
+        return 0, 0
+    finally:
+        conn.close()
+    return int(untyped), int(missing)
+
+
+def _warning_counts(dw_dir):
+    """The seven counts in his order, each from its production reader.
+
+    Order is his (see the design doc's worked example —
+    ``open tasks · unanswered questions · untyped · missing origin ·
+    unconsumed receipts``, with the zero-counts absent): unchecked messages,
+    open tasks, unanswered questions, unfolded answers, untyped, missing
+    origin, unconsumed receipts.
+
+    'new question count' and 'unanswered question count' are the SAME number
+    (an open question in questions.md IS an unanswered one — there is no
+    second state between asked and answered), so the footer emits one count
+    for both. Measuring it twice would be a second reader of one fact.
+    """
+    dw = Path(dw_dir)
+    counts = []
+
+    # unchecked messages — answers.md `## Open` (watch.parse_open_answers).
+    answers = dw / "answers.md"
+    n = len(watch.parse_open_answers(answers.read_text())) if answers.exists() else 0
+    counts.append(("unchecked messages", n))
+
+    # open tasks — reuse the SAME projection `counts` uses (store or markdown),
+    # so the footer's number and the verb's number are one fact, never two.
+    if source_of_truth(str(dw)) == "store":
+        open_ids, _ = store_ids_by_state(str(dw))
+    else:
+        ledger = dw / "tasks.md"
+        open_ids, _ = watch.parse_ledger(ledger.read_text()) if ledger.exists() else ([], [])
+    counts.append(("open tasks", len(open_ids)))
+
+    # unanswered questions — questions.md `## Open` (watch.parse_open_questions).
+    questions = dw / "questions.md"
+    n = len(watch.parse_open_questions(questions.read_text())) if questions.exists() else 0
+    counts.append(("unanswered questions", n))
+
+    # unfolded answers — lint.check_unfolded_answers (the function, not a copy).
+    rep = lint.Report()
+    lint.check_unfolded_answers(dw, watch, rep)
+    counts.append(("unfolded answers",
+                   sum(1 for lvl, _, _ in rep.rows if lvl == lint.WARN)))
+
+    # incomplete-data — untyped + missing origin, from the store (source only).
+    untyped, missing = _store_incomplete_counts(dw)
+    counts.append(("untyped", untyped))
+    counts.append(("missing origin", missing))
+
+    # unconsumed receipts — journal head − coordinator cursor.
+    counts.append(("unconsumed receipts", _unconsumed_receipts(dw)))
+
+    return counts
+
+
+def _format_warnings(counts):
+    """One dense line, zeros absent; empty string when everything is clean.
+
+    The shape is deliberately a single line (not a table/box) because this
+    rides output the human already scrolled to — a multi-line footer teaches
+    him to scroll past it, the failure this design exists to prevent.
+    """
+    parts = [f"{n} {label}" for label, n in counts if n > 0]
+    if not parts:
+        return ""
+    return "warnings: " + " · ".join(parts) + "\n"
+
+
+def emit_warnings(dw_dir, rc=0, stream=None):
+    """Tack the warning footer onto stderr; return ``rc`` unchanged (#357).
+
+    Called by every verb's success path (rc == 0) at exit. WARN-only and
+    stateless: it never touches stdout (stdout stays machine-clean) and never
+    changes the exit code — a warning that blocks is a verb, and the settled
+    shape is 'tacked on', not 'gated on'. Quiet rules hold by content: a zero
+    count is absent, a clean tree prints nothing.
+
+    Returns the ``rc`` it was handed so the footer is transparent to the
+    verb's outcome (the production line the exit-code red-proof targets).
+    """
+    if rc == 0:
+        line = _format_warnings(_warning_counts(dw_dir))
+        if line:
+            (stream if stream is not None else sys.stderr).write(line)
+    return rc
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -561,7 +732,15 @@ def main(argv=None):
     ps.add_argument("--repo", default=".", help="the git repo to scan (default %(default)s)")
 
     args = p.parse_args(argv)
+    rc = _dispatch(args)
+    # #357 — the warning footer tacks onto stderr on every verb's success
+    # path. WARN-only, stateless, never touches stdout, never changes rc
+    # (emit_warnings returns the rc it was handed).
+    return emit_warnings(str(Path(args.ledger).parent), rc)
 
+
+def _dispatch(args):
+    """Run one verb and return its exit code. The footer is tacked on by main."""
     if args.cmd == "sweep":
         # Advisory by design (#404): every failure mode is a printed line and
         # exit 0 — "cannot check" must never read as "nothing to fix".

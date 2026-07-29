@@ -208,7 +208,7 @@ authorises **no code.** Specifically, it does not authorise:
 
 ---
 
-## Rulings — Q5 settled (every verb); one fork escalated (2026-07-30)
+## Rulings — Q5 settled (every verb); Q6 settled (full line, I1) (2026-07-30)
 
 Q5 is **closed: the footer prints on EVERY `dev/ledger.py` verb** — the literal
 reading of his word "tacked on," ruled at 2026-07-30 03:11. The "state-change
@@ -336,6 +336,14 @@ unconsumed in the journal. That alternative is dropped, so the count carries.)
 
 ## Open call for him — one (escalated from the IGC)
 
+> **Q6 — RULED 2026-07-30 03:52 (`rec` taken): full line every call (I1).**
+> The read verbs carry the full warning breakdown every call — the same line
+> the state-change verbs emit. The terse `⚠ N warnings` hint (I3) is dropped.
+> This closes the last fork: with Q5 (every verb) and Q6 (full line), the
+> footer is fully settled, and the IGC's refutation of the throttle (I2) stands
+> — the footer is stateless, no suppress/skip/recency logic. (The block below
+> is the open call as it stood before the ruling, kept for the reasoning.)
+>
 > **Q6 — on the read verbs, full line every time (I1) or terse hint (I3)?**
 >
 > Both are stateless (G1 ✔), both surface immediately and never suppress an
