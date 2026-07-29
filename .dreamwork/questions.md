@@ -3,21 +3,6 @@
 ## Open
 
 
-- **P2 · 2026-07-30 01:30 — #357: the CLI warning footer — on every `dev/ledger.py` verb, or only on verbs that change state?**
-  The warning-layer design (`.dreamwork/docs/plans/cli-warning-layer.md`) is settled except this one fork,
-  which is yours because it is about your reading habits. Your word was "tacked on," which reads as every
-  verb. The footer's value is highest on the state-change verbs (`fold`/`file`/`note`) — they are what can
-  CREATE the unfolded-answer situation it exists to catch. The read verbs (`counts`, `sweep`) are the ones
-  you run to LOOK; tacking the footer there means every `counts` prints a warnings line under the counts.
-  Bounded either way by the quiet rules (zero counts are absent; a clean tree prints nothing extra).
-  - **`rec: every verb`** — the literal reading of "tacked on," the shape that can never miss a state-change
-    verb, and on a clean tree `counts` prints just its counts. Cost over the alternative is one
-    suppressed-absent line on read verbs — the cheapest possible cost. (The design folds the journal
-    unconsumed-receipt count under this call: every-verb carries it, state-change-only omits it.)
-  - **the alternative: state-change verbs only** (`fold`/`file`/`note`) — quieter on read verbs, at the cost
-    of the footer not appearing on `counts`, the verb whose whole job is "tell me what is waiting."
-
-
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
@@ -52,6 +37,32 @@
     primary way we access dreamworkers
 
 ## Answered
+
+
+- **P2 · 2026-07-30 01:30 — #357: the CLI warning footer — on every `dev/ledger.py` verb, or only on verbs that change state?**
+  → answered (2026-07-30 03:11): **rec — the footer on every verb**, with one amendment worth an IGC rather than a shrug: warnings should surface *early* in the loop so the dreamworker can plan them in, and he sketched a throttle for the read verbs — after every state-change verb always; for other verbs suppress 70–80% of prints, but only while the warning is unchanged AND time since last warning < heartbeat × 0.7 AND skips since last print < 4 (every 5th call prints regardless). His instruction: evaluate the options with `/use-igcs` and surface any issues as a new question. Recorded on `#357`; the design increment carries the ruling.
+  The warning-layer design (`.dreamwork/docs/plans/cli-warning-layer.md`) is settled except this one fork,
+  which is yours because it is about your reading habits. Your word was "tacked on," which reads as every
+  verb. The footer's value is highest on the state-change verbs (`fold`/`file`/`note`) — they are what can
+  CREATE the unfolded-answer situation it exists to catch. The read verbs (`counts`, `sweep`) are the ones
+  you run to LOOK; tacking the footer there means every `counts` prints a warnings line under the counts.
+  Bounded either way by the quiet rules (zero counts are absent; a clean tree prints nothing extra).
+  - **`rec: every verb`** — the literal reading of "tacked on," the shape that can never miss a state-change
+    verb, and on a clean tree `counts` prints just its counts. Cost over the alternative is one
+    suppressed-absent line on read verbs — the cheapest possible cost. (The design folds the journal
+    unconsumed-receipt count under this call: every-verb carries it, state-change-only omits it.)
+  - **the alternative: state-change verbs only** (`fold`/`file`/`note`) — quieter on read verbs, at the cost
+    of the footer not appearing on `counts`, the verb whose whole job is "tell me what is waiting."
+  - **Answer (via watch, 2026-07-30 03:11):** rec; additional to your
+    reasoning: we want to surface these *early* in the loop so that the
+    dreamworker can plan them in. One more complex proposal is that we
+    show them after every state-change verb, and for other verbs we hide
+    them like 70-80% of the time, but only if: the warning is unchanged
+    AND time since last warning < (heartbeat period * 0.7) AND warnings
+    skipped since last print < 4 (which should print every 5th call
+    regardless). Something like that. Use /use-igcs to evaluate options
+    and ensure we have a good solution. Surface any issues in a new
+    question.
 
 - **P1 · 2026-07-29 22:31 — #287: the matt-pocock-skills bridge spec is written — five calls are yours.**
   → answered (2026-07-30 00:20): **OQ1 local ledger** — and a filed, deliberately-later task
@@ -2964,53 +2975,4 @@
   code — reformatting it is a VIEW, so it gets a control rather than a
   default.
 
-- **A goal the loop folded in on its own: "nothing fails quietly"** →
-  "yes that sounds right" via watch (2026-07-25 14:20). Confirmed and
-  kept in DREAMWORK.md's Goals. He added an idea with it, now #156: a
-  PostToolUse hook that lints `questions.md` on edit, with error
-  messages that say where the problem is, what it is, what was expected,
-  and a brief description of the spec. That fires EARLIER than anything
-  the loop has — at the moment of the malformed write, while the agent
-  that made it can still fix it — and it bundles with #138, since both
-  are Claude Code hooks and neither should ship alone.
-
-- **Daemon mode: stage-1 build go? (#96)** → "go" via watch (2026-07-25
-  10:48): the hold is lifted. Stage 1 is the dreamhub aggregator, per
-  `docs/plans/daemon-mode.md` with its five in-session decisions
-  (herdr-preferred adapter runtime, web lifecycle, ssh swarm, channel
-  plugins, PWA yes / Tauri deferred, metadreamer integrated). Next: a
-  detailed stage-1 plan, then a fresh dreamer. Note the earlier
-  retraction is now spent — this is a second, deliberate go, so treat
-  the plan as the thing being approved and check back before the build
-  widens beyond stage 1.
-
-- **ud-dreamtask design review (#50)** → "rec lgtm" via watch
-  (2026-07-25 10:47): all four recommendations taken — standalone
-  before sub-loop, the same 4.75m heartbeat regardless of task size,
-  `~/.config/dreamwork/tasks/<slug>/`, and guardrails inherited by
-  reference rather than restated. Unblocked; build per
-  `docs/plans/ud-dreamtask.md`. The 08:51 follow-up (artifact
-  scrollbars) landed with the artifacts' own scrollbar rules.
-
-- **The shader's ambient density changed unasked** → "rec" via watch
-  (2026-07-25 10:33): keep it. The world-space anchoring he asked for
-  (deterministic across split tabs) is incompatible with a pattern that
-  rescales to window height, so `WORLD_SCALE` stays at the constant
-  `2.3/900`. No code change — the answer confirms what shipped.
-
-- **Goal hierarchies (#95)** → "rec" via watch (2026-07-25 09:13): all
-  three recommendations taken. Session goals do not persist beyond
-  status.json — a session goal that outlives its session was a durable
-  sub-goal all along, and wrap promotes it into DREAMWORK.md. Selection
-  *states* the chain rather than enforcing branch focus, at least first.
-  Task `parent` is free text matching DREAMWORK.md headings. Building
-  per the stages in `docs/plans/goal-hierarchies.md`.
-  - **Note (human, via watch, 2026-07-25 09:13):** "the notes i left
-    appear in the design review question text in the webui. they should
-    be demarcated as notes in the file if they're appended (or wherever
-    they're stored they should have some tag or be oviously user notes,
-    not something written by a dreamer)" — became task #109; the file
-    half landed in 04968d1 with migration 2026-07-25-11, and the
-    rendering half is with the dreamer.
-- **Forge presence: three polarities** → "rec" via watch (2026-07-25
-  08:48), all three recommendat
+- **A goal the
