@@ -68,7 +68,7 @@ TASK_CAUSES = (
     "migration_git",  # first-sight synthetic events (R3)
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 BUSY_TIMEOUT_MS = 5_000
 # Domain tag for the task_event hash chain (#264): distinct from the journal's
 # so a task event can never verify as a receipt event.
@@ -162,6 +162,22 @@ def chain_events(events: list) -> list:
 # high-water mark via sqlite_sequence; deleting the highest row does NOT
 # reissue that id — which is the property the tests prove rather than assume.
 
+# review_decision lives in its own constant so the v1→v2 migration can recreate
+# the table from the SAME DDL (single source — a second copy would drift).
+# v2 (R5): question_id had no referent (questions are not ledger tasks; their
+# only identity is their title), so it became question_title TEXT NOT NULL.
+# actor TEXT NOT NULL records who decided (parity with the file/land verbs).
+_REVIEW_DECISION_SQL = """
+CREATE TABLE IF NOT EXISTS review_decision (
+    artifact       TEXT PRIMARY KEY,
+    question_title TEXT NOT NULL,
+    decision       TEXT NOT NULL
+                   CHECK (decision IN ('pending','accepted','rejected')),
+    decided_at     TEXT NOT NULL,
+    actor          TEXT NOT NULL
+);
+"""
+
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
@@ -221,15 +237,7 @@ CREATE TABLE IF NOT EXISTS depends (
     CHECK (task <> needs)
 );
 CREATE INDEX IF NOT EXISTS depends_by_needs ON depends(needs);
-
-CREATE TABLE IF NOT EXISTS review_decision (
-    artifact    TEXT PRIMARY KEY,
-    question_id INTEGER NOT NULL,
-    decision    TEXT NOT NULL
-                CHECK (decision IN ('pending','accepted','rejected')),
-    decided_at  TEXT NOT NULL
-);
-
+""" + _REVIEW_DECISION_SQL + """
 -- Append-only transition log. Own ordinal, distinct from the journal's.
 -- receipt_id is free TEXT here (the receipt table may live in the same file
 -- later); no FK until the journal tables are co-resident. Purge never reaches
@@ -318,7 +326,12 @@ def _seed_lookup_tables(conn: sqlite3.Connection) -> None:
 
 
 def _bootstrap_meta(conn: sqlite3.Connection) -> None:
-    """Ensure schema_version row exists; refuse a mismatched version."""
+    """Ensure schema_version row exists; migrate a lower version forward.
+
+    A first open records the current SCHEMA_VERSION. An existing store at a
+    lower version is migrated in place (inside the caller's transaction); a
+    newer version is refused (this code cannot guess a future shape).
+    """
     row = conn.execute(
         "SELECT value FROM meta WHERE key = 'schema_version'"
     ).fetchone()
@@ -329,11 +342,68 @@ def _bootstrap_meta(conn: sqlite3.Connection) -> None:
         )
         return
     stored = int(row[0])
-    if stored != SCHEMA_VERSION:
+    if stored == SCHEMA_VERSION:
+        return
+    _migrate(conn, stored)
+
+
+def _migrate(conn: sqlite3.Connection, stored: int) -> None:
+    """Apply forward schema migrations from *stored* to SCHEMA_VERSION.
+
+    Each step advances exactly one version; steps are looked up in
+    ``_MIGRATIONS`` by their source version. A *stored* version newer than
+    SCHEMA_VERSION (a downgrade) is refused: this code cannot safely guess a
+    newer shape. Runs inside the caller's open transaction, so a failed
+    migration leaves the store untouched.
+    """
+    if stored > SCHEMA_VERSION:
         raise SchemaVersionError(
-            f"ledger schema_version {stored} != supported {SCHEMA_VERSION}; "
-            "fail-closed: refuse open rather than guess"
+            f"ledger schema_version {stored} > supported {SCHEMA_VERSION}; "
+            "fail-closed: refuse open rather than guess a newer shape"
         )
+    version = stored
+    while version < SCHEMA_VERSION:
+        step = _MIGRATIONS.get(version)
+        if step is None:
+            raise SchemaVersionError(
+                f"no migration path from schema_version {version} to "
+                f"{SCHEMA_VERSION}; fail-closed"
+            )
+        step(conn)
+        version += 1
+    conn.execute(
+        "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+        (str(SCHEMA_VERSION),),
+    )
+
+
+def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
+    """Advance review_decision: question_id → question_title + actor (v2).
+
+    The v1 ``question_id`` had no referent — questions are not ledger tasks
+    and their only identity is their TITLE (what watch.py's /answer handler
+    holds) — so no int→title mapping is possible (R5). ASSERT the table is
+    empty and refuse loudly otherwise: silently dropping a live decision is
+    worse than stopping. The only live store's table is empty, so the
+    assertion holds in the one real migration. Recreate the table from the
+    single-source ``_REVIEW_DECISION_SQL``.
+    """
+    count = conn.execute(
+        "SELECT COUNT(*) FROM review_decision"
+    ).fetchone()[0]
+    if count != 0:
+        raise SchemaVersionError(
+            f"cannot migrate review_decision v1→v2: {count} row(s) carry a "
+            "question_id with no referent (questions are not tasks), so an "
+            "int→title mapping is impossible; refuse rather than drop a "
+            "review decision silently"
+        )
+    conn.execute("DROP TABLE review_decision")
+    conn.execute(_REVIEW_DECISION_SQL)
+
+
+# Source-version → migration step. Each step moves one version forward.
+_MIGRATIONS = {1: _migrate_v1_to_v2}
 
 
 # ---------------------------------------------------------------------------
