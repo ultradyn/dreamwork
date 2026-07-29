@@ -11521,16 +11521,33 @@ def summary(target):
     return out
 
 
+# #481 — machine-local derived state whose mtime carries no signal.
+# question-sigs.json is rewritten by collect() (tmp + os.replace) on first
+# sight of an entry and on every content change — always DOWNSTREAM of the
+# questions.md write this walk already sees directly, so excluding it loses
+# no real re-render. Counting it cost a spurious re-render ~2s after every
+# fresh page load, and a second one behind every real question change. The
+# .tmp twin is excluded too: the replace is two directory events, not one.
+WATCHED_MTIME_IGNORED = frozenset((QUESTION_SIGS, QUESTION_SIGS + ".tmp"))
+
+
 def watched_mtime(target):
     """The newest thing under the target, as one number the client polls.
 
-    THE DIRECTORIES ARE IN HERE, and they are the half that took #86 to find.
+    DELETIONS ARE IN HERE, and they are the half that took #86 to find.
     Statting only files makes a DELETION invisible: removing a file cannot
     raise the maximum mtime of the files that remain, so an open page goes on
-    showing what is no longer there until something unrelated is written. A
-    directory's mtime moves when an entry is added or removed, which is
-    exactly the event that was missing — and adds no re-renders of its own,
-    because a created file already carries a fresh mtime.
+    showing what is no longer there until something unrelated is written.
+
+    That signal used to be the directories' own mtimes, which move when an
+    entry is added or removed. #481 ended that: a directory's mtime moves
+    for EVERY entry, including the ignored sig store's tmp+replace, and one
+    number cannot subtract one file's contribution. So the add/remove signal
+    is now the SET of non-ignored entry names per directory, hashed into a
+    sub-second fraction of the returned float. The client only compares the
+    value for inequality, so max-mtime plus a deterministic listing
+    fingerprint is the same contract: the number changes iff the watched
+    state changes.
 
     The case that named it: unloading a plugin is deliberately the ABSENCE of
     a write rather than a remembered deletion, and the composer went on
@@ -11541,15 +11558,18 @@ def watched_mtime(target):
     paths = [os.path.join(target, "DREAMWORK.md"),
              os.path.join(target, ".git", "logs", "HEAD")]
     dw = os.path.join(target, ".dreamwork")
-    for root, _dirs, files in os.walk(dw):
-        paths.append(root)
-        paths.extend(os.path.join(root, f) for f in files)
+    listing = []
+    for root, dirs, files in os.walk(dw):
+        kept = sorted(f for f in files if f not in WATCHED_MTIME_IGNORED)
+        listing.append((root, tuple(sorted(dirs)), tuple(kept)))
+        paths.extend(os.path.join(root, f) for f in kept)
     for p in paths:
         try:
             latest = max(latest, os.path.getmtime(p))
         except OSError:
             pass
-    return latest
+    digest = hashlib.sha256(repr(sorted(listing)).encode()).digest()
+    return latest + int.from_bytes(digest[:7], "big") / (1 << 56)
 
 
 def read_tint(target):

@@ -1957,6 +1957,62 @@ class TestCollector(unittest.TestCase):
                 f.write("- new lesson\n")
             self.assertGreater(watch.watched_mtime(d), before)
 
+    def test_watched_mtime_sees_deletion(self):
+        # #86's contract, re-implemented by #481 as a name-set fingerprint
+        # rather than directory mtimes: removing a file cannot raise the max
+        # mtime of what remains, so absence has to be observed directly.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            victim = os.path.join(d, ".dreamwork", "lessons.md")
+            # precondition, derived at runtime: the file whose removal this
+            # test relies on is there to be removed.
+            self.assertTrue(os.path.exists(victim))
+            before = watch.watched_mtime(d)
+            time.sleep(0.05)
+            os.remove(victim)
+            self.assertNotEqual(watch.watched_mtime(d), before,
+                                "deletion invisible to watched_mtime")
+
+    def test_question_sigs_write_does_not_retrigger_a_render(self):
+        # #481 — the sig store is derived state: collect() rewrites it (tmp +
+        # os.replace) on first sight of an entry and on every content change,
+        # always downstream of the questions.md write the walk already sees
+        # directly. Counting it made a fresh target re-render once for
+        # nothing ~2s after load. The exclusion is safe only while BOTH
+        # halves below hold, so both are asserted from runtime-derived values.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            entry = {"title": "Sig test entry", "body": "v1",
+                     "follows": [], "answers": [], "answer": None}
+            # PRECONDITION, derived at runtime: the production writer really
+            # creates the store at the path this test exercises — if it is
+            # ever renamed or relocated this fails, instead of the exclusion
+            # passing vacuously over a file nothing writes anymore.
+            watch.track_question_updates(d, [dict(entry)])
+            sig = os.path.join(d, ".dreamwork", watch.QUESTION_SIGS)
+            self.assertTrue(os.path.exists(sig),
+                            "writer no longer creates the excluded path")
+            time.sleep(0.05)
+            before = watch.watched_mtime(d)
+            time.sleep(0.05)
+            # Half 1: a first-sight write of a NEW entry (the fresh-target
+            # case — no log_event line, so only the sig store moves) must not
+            # move watched_mtime.
+            watch.track_question_updates(
+                d, [dict(entry, title="Sig test entry two")])
+            after = watch.watched_mtime(d)
+            self.assertEqual(after, before,
+                             "question-sigs.json write re-triggered a render")
+            # Half 2: a questions.md change must STILL move it — the walk
+            # still covers the file the sig store merely derives from, so no
+            # real re-render is lost.
+            time.sleep(0.05)
+            with open(os.path.join(d, ".dreamwork", "questions.md"),
+                      "a") as f:
+                f.write("\n## still watched\n")
+            self.assertGreater(watch.watched_mtime(d), after,
+                               "questions.md is no longer watched")
+
     def test_answers_health_fault_is_loud_and_path_specific(self):
         self.assertIn("answers channel unreadable", watch.PAGE)
         self.assertIn(".dreamwork%2Fanswers.md", watch.PAGE)
