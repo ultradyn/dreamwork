@@ -237,10 +237,74 @@ whether it is really this one.
 One mono stack, two sizes (heading `1rem`, body `.8rem`, labels `.7rem`).
 No cards, borders-as-decoration, pills, or shadows in the reading views —
 structure comes from whitespace and dim uppercase labels (`.label`, letter-
-spaced). Reading column is `max-width:72ch`, centred; the review view is the
-one deliberate exception (`body.review` widens the column for the artifact +
-docked question, and **he sets the ratio between them** — see The review
-pane). Dividers are hairlines (`--line`), not boxes.
+spaced). Reading column is `max-width:72ch`, centred; there are two
+deliberate width exceptions — the review view (`body.review` widens the
+column for the artifact + docked question, and **he sets the ratio between
+them** — see The review pane) and the file view (`body.file` widens it to
+`110ch` for source — see The file view's source pane). Dividers are
+hairlines (`--line`), not boxes.
+
+### The file view's source pane (#351)
+
+His ask, typed from `/file?p=lint.py`: *"syntax highlighting for source
+code files, and a bit wider of a body + no line wrapping."* Three changes,
+and the two mechanical ones exist to serve the first — he wants to read
+code as code.
+
+- **The highlighter is #339's, reused, never rewritten.** `/filedata`
+  tokenises server-side through review_artifact.py's public `highlight()`
+  (the tested one — two highlighters would drift) and adds an `hl` field to
+  the response ONLY when the extension names a supported language
+  (`_FILE_LANG`: py, json, sh/bash, js/mjs/cjs, html/htm, sql). The client
+  never tokenises and never invents markup; it chooses between the server's
+  two renderings. An unknown extension renders plain — #339's never-guess
+  rule, inherited whole. The pane's `textContent` is still byte-exact the
+  file, the same bar #252 set for the Source mode.
+- **The caching is a decision, not an inheritance.** #339 tokenises at
+  build time because an artifact is frozen; `/file` renders on request, so
+  the highlighted markup is cached by path and validated by
+  `(mtime_ns, size)` — the same staleness predicate the whole dashboard
+  already trusts (`/mtime`), and stat is cheap beside the read the response
+  does anyway. A content digest was refused: it costs a full read per
+  request to detect what mtime already names, and "rewritten with identical
+  mtime and size" is the edge the live-reload mechanism has always
+  accepted. Bounded (32 entries); a stale entry is a highlight one edit
+  behind, never stale bytes — the content is read fresh every request.
+- **The #252 collision is an explicit condition, not an absence.** A
+  markdown file's Source mode renders plain by NAME
+  (`isMarkdownFile(param) && mode === 'source'`), so the guarantee does not
+  depend on what the server chose to send. The pytest check that used to
+  assert no `tok-` anywhere on the page is narrowed to that path (evaluated
+  against the real `buildFile`), not deleted.
+- **Wider body: `body.file .wrap { max-width:110ch }`.** A reading column
+  sized for source, not review's 1360px pane. The class is toggled beside
+  `review` at the same three route-commit sites, so the column glides on
+  the same `body.wsliding` mechanism and a direct load arrives already
+  wide. Guarded as a *derived* comparison: `/file`'s column against the
+  same browser's dashboard column, never a literal.
+- **No line wrapping, scrolling inside the pane.** `#filebody > pre` takes
+  `white-space:pre; overflow-x:auto` — the idiom `.md pre.mdcode` already
+  kept for fences, reaching the pane it was meant for. The trade is real
+  and is the one he asked for: a long line scrolls horizontally INSIDE the
+  pane, and the page never scrolls sideways (asserted at desktop and at
+  390px, where the pane holds 349px of a 390px viewport). Every other
+  `<pre>` on the page keeps `pre-wrap`. The markdown Source pane takes the
+  same nowrap — its bytes are the file — and that is the change #252's
+  note predicted.
+- **The palette is the artifact's, value for value**, spent only inside
+  the pane, with one rename: numerals and types take `--amber`, never
+  `--warn` — on this page `--warn` means broken (#136) and a numeral is
+  not broken. The three code tokens (`--accent2`, `--ok`, `--amber`) are
+  declared in `:root` beside the ramp they extend. The generic inline-code
+  chip is reset inside the pane (`#filebody > pre > code`) so it does not
+  plate the block.
+
+Guard: `dev/capture/filehl.mjs` (own target, ephemeral port): token kinds
+derived from the fixture's bytes, byte fidelity on the highlighted pane,
+distinct computed colours, the width comparison, in-container scroll at two
+viewports, the never-guess plain path, the shimmed-offer Source collision,
+and reduced-motion parity. No motion trace: the surface is static content,
+and the width glide is review's guarded mechanism reused verbatim.
 
 ### Review artifacts
 

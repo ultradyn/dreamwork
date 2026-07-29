@@ -13,6 +13,7 @@ settings to their documented files; all other routes read.
 import argparse
 import errno
 import hashlib
+import html
 import http.server
 import ipaddress
 import json
@@ -40,6 +41,14 @@ from user_events.sqlite import Envelope, open_journal
 # watch.py exactly the way it needs user_events/.
 from ledger_parse import (ENTRY_HEAD, ENTRY_ID, KNOWN_ORIGINS, ORIGIN_MARK,
                           entry_origins, ledger_entries)
+# #351: /file's syntax highlighting REUSES #339's build-time scanner from
+# review_artifact.py — the tested one — rather than growing a second
+# highlighter here (two would drift). Only the public entry points are taken;
+# the internals stay review_artifact's own. It is a sibling import like
+# ledger_parse, so `just deploy`'s --ship-siblings stages it beside the
+# snapshot the same way (derived transitively, never a hardcoded list).
+from review_artifact import SUPPORTED_LANGUAGES as _HL_SUPPORTED
+from review_artifact import highlight as _hl_document
 
 # Server generation: a fresh value every time this process (re)starts, so a
 # client can tell "same server, data changed" from "server rebuilt, reload
@@ -403,7 +412,15 @@ STYLE = """<style>
        indigo reads as activity, and this is the one thing on the page that
        must not. Same lightness family as the accent, warm against a cool
        page, so it is unmistakably not it. */
-    --warn:#fcd34d; }
+    --warn:#fcd34d;
+    /* The code-token palette (#351), spent ONLY inside /file's source pane.
+       Value-for-value the review-artifact frame's (#339), because he moves
+       between /file and /review constantly and the same token kind must be
+       the same colour in both. `--amber` is deliberately NOT `--warn`: on
+       this page `--warn` means broken (#136) and a numeral is not broken.
+       These break the one-accent rule inside a code block the way the
+       artifact already does — colouring code is the point of the pane. */
+    --accent2:#7dd3fc; --ok:#86efac; --amber:#fcd34d; }
   /* Scrollbars are chrome, and chrome should recede: hairline track,
      dim thumb, no arrows. Firefox first, then the WebKit pseudos. */
   * { scrollbar-width:thin; scrollbar-color:var(--dimmer) transparent; }
@@ -617,6 +634,34 @@ STYLE = """<style>
   .rsep { color:var(--dimmer); }
   pre { white-space:pre-wrap; color:var(--muted); margin:.4rem 0 .8rem 1ch;
         border-left:1px solid var(--line); padding-left:1ch; }
+  /* #351 — /file's source pane is CODE, and code does not wrap (his ask:
+     "no line wrapping"). A long line scrolls INSIDE the pane, never the
+     page sideways — the same contract `.md pre.mdcode` already keeps for
+     fences in rendered prose, so this is that idiom reaching the pane it
+     was always meant for, not a second one. Scoped to `#filebody > pre`
+     (the pane itself): the markdown fence keeps its own rule, and every
+     other <pre> on the page (preB peeks — prose) keeps pre-wrap. */
+  #filebody > pre { white-space:pre; overflow-x:auto; }
+  /* The highlighted pane carries a <code> inside its <pre>; the generic
+     inline-`code` chip (panel fill, padding, radius) is for prose spans and
+     would paint a plate behind the whole block. Reset it here rather than
+     weakening the prose rule. */
+  #filebody > pre > code { color:inherit; background:none; padding:0;
+                           border-radius:0; }
+  /* #339's tok- spans, emitted by the SERVER (#351 reuses review_artifact's
+     scanner; there is no tokeniser in this bundle). Palette tokens above;
+     a span whose CSS is ever lost degrades to the pane's own colour. */
+  #filebody > pre code .tok-kw { color:var(--accent); }
+  #filebody > pre code .tok-str { color:var(--ok); }
+  #filebody > pre code .tok-num { color:var(--amber); }
+  #filebody > pre code .tok-com { color:var(--dimmer); font-style:italic; }
+  #filebody > pre code .tok-fn { color:var(--accent2); }
+  #filebody > pre code .tok-typ { color:var(--amber); }
+  #filebody > pre code .tok-dec { color:var(--accent); }
+  #filebody > pre code .tok-op { color:var(--muted); }
+  #filebody > pre code .tok-tag { color:var(--accent); }
+  #filebody > pre code .tok-attr { color:var(--accent2); }
+  #filebody > pre code .tok-var { color:inherit; }
   /* ── the file view's image and binary surfaces (#336) ─────────────────
      A raster image is served by /filebytes and rendered as an <img>, framed
      like the rest of the column: hairline border on the panel fill (so its
@@ -1316,6 +1361,14 @@ STYLE = """<style>
      question docks beside it (sticky) so it can be answered with the
      review in front of you. Wider than the 72ch reading column. */
   body.review .wrap { max-width:1360px; }
+  /* /file joins the width exceptions (#351, "a bit wider of a body"): code
+     wants columns, and the wider body is what makes "no line wrapping"
+     readable rather than a scroll on every line. 110ch, not review's
+     1360px — this is still a reading column, just one sized for source.
+     The column glides on the same body.wsliding mechanism as /review (the
+     class is toggled beside 'review' at the same three sites), and a
+     direct load arrives already wide. */
+  body.file .wrap { max-width:110ch; }
   /* The column is the one thing on this page that changes SIZE, and the
      motion language says things that change travel rather than teleport
      (#107). So the width glides, on the dissolve's own easing and duration.
@@ -3624,7 +3677,8 @@ function humanSize(n) {
 /* buildFile renders the body of /file for three kinds of file (#336), and a
    markdown file in one of two MODES (#252 — `mode` comes from the route, so
    Rendered vs Source is deep-linkable):
-   - text: <pre> (or reflowed .md, per #158) — the standing behaviour.
+   - text: <pre> (or reflowed .md, per #158) — with the server's #351
+     highlighted markup when the extension names a supported language.
    - image: an <img> served from /filebytes, framed like everything else
      in the column.
    - binary (non-image): a panel that SAYS what the file is — type, size
@@ -3680,8 +3734,17 @@ function buildFile(param, fetched, mode) {
      and a markdown file's Source mode is the one pane it must not touch: he
      asked for this mode so that what he copies out of it is the file. His
      words: that is the whole point of the mode and not a detail to optimise
-     away. */
-  const src = `<pre>${esc(text)}</pre>`;
+     away. The condition is EXPLICIT (never "no hl happened to arrive") so
+     the guarantee does not depend on what the server chose to send. */
+  const renderPlain = isMarkdownFile(param) && mode === 'source';
+  /* #351 — every OTHER text file takes the server's highlighted markup when
+     it arrived (a known source extension; see file_highlight_html). The
+     markup is review_artifact's #339 output — tok- spans, escaped, its
+     round-trip proved byte-exact — so textContent is still the file. When
+     no `hl` arrived (an extension the map does not name) the render is the
+     same verbatim <pre> it always was: plain, never guessed. */
+  const src = (!renderPlain && fetched.hl) ? fetched.hl
+                                         : `<pre>${esc(text)}</pre>`;
   const body = (isMarkdownFile(param) && mode !== 'source') ? mdB(text) : src;
   return `<div id="filebody">${body}</div>`;
 }
@@ -5821,7 +5884,13 @@ async function fetchFile(param) {
       if (j && j.binary) {
         fetched = { binary: true, kind: j.kind, mime: j.mime, size: j.size };
       } else if (j && typeof j.content === 'string') {
-        fetched = { text: j.content };
+        /* #351: `hl` is the server's highlighted markup for a known source
+           extension (review_artifact's #339 scanner, cached per file
+           version). Absent for everything else; the client never tokenises
+           and never invents markup — it only chooses between the server's
+           two renderings. */
+        fetched = { text: j.content,
+                    hl: typeof j.hl === 'string' ? j.hl : null };
       }
     }
   } catch (e) {}
@@ -7639,6 +7708,7 @@ function crossfade(html, xopts) {
   const viewEl = document.getElementById('view');
   if (rmr) {
     document.body.classList.toggle('review', !!xopts.review);
+    document.body.classList.toggle('file', !!xopts.file);
     setContent(html);
     renderChrome(view, data, null);
     return;
@@ -7670,6 +7740,7 @@ function crossfade(html, xopts) {
   // mist and up from opacity 0, so the resize reads as the page opening.
   document.body.classList.add('wsliding');
   document.body.classList.toggle('review', !!xopts.review);
+  document.body.classList.toggle('file', !!xopts.file);
   setContent(html);
   renderChrome(view, data, snap);   // the heading travels; it does not reload
   // measure the docked question's resting rect BEFORE the enter transform,
@@ -7853,10 +7924,12 @@ async function navigate(name, param, opts) {
   const html = await buildCurrent();
   if (opts.transition === false) {
     document.body.classList.toggle('review', name === 'review');
+    document.body.classList.toggle('file', name === 'file');
     setContent(html);
     renderChrome(view, data, null);   // first paint: arrive, don't animate
   } else {
-    crossfade(html, { fromRect: opts.fromRect, review: name === 'review' });
+    crossfade(html, { fromRect: opts.fromRect, review: name === 'review',
+                      file: name === 'file' });
   }
   // after the new content is in layout, and only for the swap that has a
   // position worth keeping
@@ -9353,6 +9426,75 @@ def read_text(path, limit=200_000):
             return f.read(limit)
     except OSError:
         return None
+
+
+# ── #351: syntax highlighting at /file, on #339's scanner ─────────────────
+# His ask, typed from /file?p=lint.py: "syntax highlighting for source code
+# files". The tokeniser is review_artifact.py's (#339: tok- spans, no script,
+# round-trip proved byte-exact) — one highlighter, consumed here through its
+# public `highlight()`, never re-implemented.
+#
+# THE LANGUAGE COMES FROM THE EXTENSION, and an unknown one renders PLAIN.
+# #339's rule is never-guess: a misdetected language colours code wrongly,
+# which is worse than not colouring it. An artifact block DECLARES its
+# language; a file path can only state one, so the map below is the whole of
+# what is coloured — a file whose extension is not here is served without
+# markup, exactly as before. Every value must be a language the scanner
+# actually supports (the test derives that set from review_artifact rather
+# than restating it).
+_FILE_LANG = {
+    ".py": "python",
+    ".json": "json",
+    ".sh": "bash", ".bash": "bash",
+    ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
+    ".html": "html", ".htm": "html",
+    ".sql": "sql",
+}
+
+# CACHING IS A DECISION, NOT AN INHERITANCE. #339 tokenises at build time
+# because an artifact is built once and frozen; /file renders ON REQUEST, so
+# the same work would repeat for a result that cannot change per file
+# version. The cache is keyed by path and validated by (mtime_ns, size) —
+# the same staleness predicate the whole dashboard already trusts (/mtime's
+# poll wakes the page on exactly that signal), and stat is cheap beside the
+# read the response does anyway. A content digest was the alternative and is
+# deliberately not used: it costs a full read of every file on every request
+# only to detect the same change mtime already names, and "rewritten with an
+# identical mtime and size" is the edge the live-reload mechanism has always
+# accepted. Bounded, and a stale entry is only ever a highlight one edit
+# behind — the bytes served are read fresh every time, never cached.
+_FILE_HL_CACHE_MAX = 32
+_file_hl_cache = {}
+
+
+def file_highlight_html(full, text):
+    """Highlighted <pre> markup for a served text file, or None when the
+    extension names no supported language (the caller then renders plain).
+
+    `text` is the string /filedata is already serving (read fresh per
+    request); the cache only spares re-tokenising it. The markup is built by
+    wrapping the escaped source in the one block shape review_artifact's
+    highlighter consumes and taking the result back — the scanner's own
+    round-trip check (it refuses partial coverage) is what makes that safe.
+    """
+    ext = os.path.splitext(full)[1].lower()
+    lang = _FILE_LANG.get(ext)
+    if lang is None:
+        return None
+    try:
+        st = os.stat(full)
+    except OSError:
+        return None
+    ent = _file_hl_cache.get(full)
+    if ent is not None and ent[0] == st.st_mtime_ns and ent[1] == st.st_size:
+        return ent[2]
+    doc = ('<pre><code class="language-%s">%s</code></pre>'
+           % (lang, html.escape(text, quote=False)))
+    out = _hl_document(doc)
+    if len(_file_hl_cache) >= _FILE_HL_CACHE_MAX:
+        _file_hl_cache.clear()
+    _file_hl_cache[full] = (st.st_mtime_ns, st.st_size, out)
+    return out
 
 
 def read_bytes(path):
@@ -12431,8 +12573,16 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                     text = read_text(full)
                     if text is None:
                         self.send_error(404); return
-                    self._send(json.dumps({"path": rel, "content": text}),
-                               "application/json")
+                    payload = {"path": rel, "content": text}
+                    # #351: highlighted markup for a known source extension,
+                    # cached per file version (see file_highlight_html). The
+                    # field is ABSENT for everything else — an unknown
+                    # extension renders plain (#339's never-guess), and the
+                    # client never invents markup of its own.
+                    hl = file_highlight_html(full, text)
+                    if hl is not None:
+                        payload["hl"] = hl
+                    self._send(json.dumps(payload), "application/json")
                     return
                 if kind in ("image", "binary") and full:
                     try:
