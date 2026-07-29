@@ -103,6 +103,53 @@ class TestT1TaskSeamNeverOpensLedger:
 
 
 # ---------------------------------------------------------------------------
+# T1b — every verb maps to the right ledger verb at argv level (C1)
+# ---------------------------------------------------------------------------
+
+class TestT1bVerbArgvMapping:
+    """T1b — `close` shells to the `fold` verb and `list_open` to `counts`.
+
+    Production line: the verb literal in `tracker_adapter.close`'s argv
+    (`"fold"`, the third element). Reddens on: swapping `"fold"` for `"note"`
+    — the exact injection applied at the 500bridge merge gate on 2026-07-30,
+    which passed the suite at 11 tests GREEN (a green red-run: the suite
+    asserted `create`'s argv and C1's never-open invariant, but no test
+    asserted WHICH verb close/list_open invoke, so `close` silently not
+    landing was invisible). This class is the finding acted on. Runtime
+    precondition: fake_runner captured an argv, or membership passes on
+    nothing; and the ledger file genuinely exists at the path passed."""
+
+    def test_close_invokes_fold_with_id_note_and_ledger(self, tmp_path):
+        target = make_target(tmp_path)
+        ledger = target / ".dreamwork" / "tasks.md"
+        assert ledger.is_file(), "precondition: the ledger must exist"
+        runner, argvs = fake_runner()
+        tracker_adapter.close(CORE, target, 42, note="done", runner=runner)
+        assert argvs, "precondition: close must shell out (argv captured)"
+        argv = argvs[0]
+        assert any("ledger.py" in a for a in argv), "must call dev/ledger.py"
+        assert "fold" in argv, \
+            "close must invoke the `fold` verb — anything else does not land"
+        assert "42" in argv, "must pass the task id"
+        assert "--note" in argv and "done" in argv, "must pass the note"
+        assert str(ledger) in argv, "must pass the ledger path to --ledger"
+
+    def test_list_open_invokes_counts_with_ledger_and_no_write_verb(self, tmp_path):
+        target = make_target(tmp_path)
+        ledger = target / ".dreamwork" / "tasks.md"
+        assert ledger.is_file(), "precondition: the ledger must exist"
+        runner, argvs = fake_runner()
+        tracker_adapter.list_open(CORE, target, runner=runner)
+        assert argvs, "precondition: list_open must shell out (argv captured)"
+        argv = argvs[0]
+        assert any("ledger.py" in a for a in argv), "must call dev/ledger.py"
+        assert "counts" in argv, "list_open must invoke the `counts` verb"
+        assert "fold" not in argv and "file" not in argv and "note" not in argv, \
+            "a read consumer must not invoke a state-change verb"
+        assert str(ledger) in argv, "must pass the ledger path to --ledger"
+
+
+# ---------------------------------------------------------------------------
 # T2 — #294 cutover is invisible (C1)
 # ---------------------------------------------------------------------------
 
