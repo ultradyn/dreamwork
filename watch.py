@@ -752,6 +752,18 @@ STYLE = """<style>
      no state change, no transition. */
   .md .mdquote { margin:.45rem 0; padding:.1rem 0 .1rem 1ch;
                  border-left:2px solid var(--border); color:var(--dim); }
+  /* #525 — a GFM pipe table is structure, not chrome. Dim rules (--line, the
+     quietest structural line on the page), header one step up the luminance
+     ramp (same rule as .mdh / **bold**), tabular nums so columns of figures
+     hold still. No fill, no accent, no radius: a table is quieter than the
+     prose rail, not louder. Static — no state change, no transition. */
+  .md .mdtable { margin:.45rem 0; border-collapse:collapse; width:100%;
+                 font-variant-numeric:tabular-nums; color:var(--muted); }
+  .md .mdtable th, .md .mdtable td {
+    border:1px solid var(--line); padding:.22rem .6ch;
+    text-align:left; vertical-align:top; font-weight:inherit; }
+  .md .mdtable th { color:var(--lit); }
+  .md .mdtable td { color:var(--muted); }
   /* emphasis is luminance, not weight (see mdSpans) */
   .md strong, .anstext strong, .follow strong {
     font-weight:inherit; color:var(--bright); }
@@ -2531,7 +2543,7 @@ const linkifyReview = (escaped, title) => {
    reflow through mdB. Source code and other files at `/file` stay verbatim
    in a <pre>. JSON is neither (#178). Status and git have their own components.
 
-   Five things must survive the join, because each one carries meaning a
+   Six things must survive the join, because each one carries meaning a
    joined line would destroy:
      · a blank line is a paragraph break
      · a leading `- ` is a real list item and its INDENT is its nesting —
@@ -2541,20 +2553,45 @@ const linkifyReview = (escaped, title) => {
      · a `#` heading stands alone
      · a leading `>` is a blockquote (#521) — consecutive quote lines form
        ONE block; a `>` inside a fence stays code (fences win)
+     · a GFM pipe table (#525) — header row + `|---|` delimiter + body rows;
+       cells keep their pipes as structure, not prose; a fence still wins
+       over pipes; a malformed pair (no delimiter, ragged column count)
+       degrades to prose rather than half-rendering
    Every other line break is a wrap, and gets joined with a space. */
 const MD_BULLET = /^(\\s*)[-*]\\s+(.*)$/;
 const MD_QUOTE = /^>\\s?(.*)$/;
+/* GFM pipe-table helpers (#525). Edge pipes are optional; cells trim.
+   A delimiter cell is dashes with optional alignment colons — colons are
+   IGNORED gracefully (no alignment rendering), not a second feature. */
+const mdSplitRow = line => {
+  let s = String(line).trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').map(c => c.trim());
+};
+const mdIsDelimRow = line => {
+  const cells = mdSplitRow(line);
+  // at least one cell, every cell is :?---+?: (one or more hyphens)
+  return cells.length >= 1 &&
+    cells.every(c => /^:?-{1,}:?$/.test(c) && /-+/.test(c));
+};
+const mdLooksLikeRow = line => {
+  if (!String(line).includes('|')) return false;
+  return mdSplitRow(line).length >= 2;
+};
 function mdBlocks(text) {
   const out = [];
   let cur = null, fence = null;
   const flush = () => { if (cur) { out.push(cur); cur = null; } };
-  for (const line of String(text == null ? '' : text).split('\\n')) {
+  const lines = String(text == null ? '' : text).split('\\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (/^\\s*```/.test(line)) {                 // fence open or close
       if (fence) { out.push({ kind:'fence', text: fence.join('\\n') }); fence = null; }
       else { flush(); fence = []; }
       continue;
     }
-    if (fence) { fence.push(line); continue; }   // fences win over `>` (#521)
+    if (fence) { fence.push(line); continue; }   // fences win over `>` and pipes (#521/#525)
     if (!line.trim()) { flush(); continue; }      // blank line ends a block
     if (/^\\s*#{1,6}\\s/.test(line)) {
       flush(); out.push({ kind:'h', text: line.replace(/^\\s*#+\\s*/, '') }); continue;
@@ -2574,6 +2611,26 @@ function mdBlocks(text) {
     }
     // a non-quote line ends a quote block (do not glue prose onto it)
     if (cur && cur.kind === 'quote') flush();
+    // #525 pipe table: header + delimiter of matching column count, then
+    // consecutive pipe-looking body rows. Look-ahead is load-bearing —
+    // without a well-formed delimiter the pipes stay prose (no half-render).
+    if (mdLooksLikeRow(line) && i + 1 < lines.length && mdIsDelimRow(lines[i + 1])) {
+      const header = mdSplitRow(line);
+      const delim = mdSplitRow(lines[i + 1]);
+      if (header.length === delim.length && header.length >= 2) {
+        flush();
+        const rows = [];
+        i += 2; // consume header + delimiter
+        while (i < lines.length && lines[i].trim() && mdLooksLikeRow(lines[i])) {
+          rows.push(mdSplitRow(lines[i]));
+          i++;
+        }
+        i--; // outer for-loop will advance
+        out.push({ kind: 'table', header, rows });
+        continue;
+      }
+      // ragged header/delimiter column counts → fall through to prose
+    }
     if (cur) { cur.text += ' ' + line.trim(); continue; }   // a wrap: join it
     cur = { kind:'p', indent:0, text: line.trim() };
   }
@@ -2589,12 +2646,24 @@ function mdRender(text, inline) {
   const blocks = mdBlocks(text);
   const levels = [...new Set(blocks.filter(b => b.kind === 'li')
     .map(b => b.indent))].sort((a, b) => a - b);
+  const mdTable = b => {
+    // cells run the SAME inline pipeline as paragraphs/quotes (linkifyMd etc.)
+    const th = b.header.map(c => `<th>${inline(c)}</th>`).join('');
+    const body = b.rows.map(r => {
+      // pad/truncate to header width so a ragged body row cannot add columns
+      const cells = b.header.map((_, j) => (r[j] != null ? r[j] : ''));
+      return '<tr>' + cells.map(c => `<td>${inline(c)}</td>`).join('') + '</tr>';
+    }).join('');
+    return `<table class="mdtable"><thead><tr>${th}</tr></thead>` +
+           `<tbody>${body}</tbody></table>`;
+  };
   return blocks.map(b =>
     b.kind === 'fence' ? `<pre class="mdcode">${esc(b.text)}</pre>` :
     b.kind === 'h' ? `<div class="mdh">${inline(b.text)}</div>` :
     b.kind === 'li' ? `<div class="mdli" style="--lvl:${levels.indexOf(b.indent)}">` +
                       `${inline(b.text)}</div>` :
-    b.kind === 'quote' ? `<blockquote class="mdquote">${inline(b.text)}</blockquote>`
+    b.kind === 'quote' ? `<blockquote class="mdquote">${inline(b.text)}</blockquote>` :
+    b.kind === 'table' ? mdTable(b)
                     : `<p>${inline(b.text)}</p>`).join('');
 }
 /* Inline markdown the loop actually writes: **bold**, *em*, `code`. Bold is

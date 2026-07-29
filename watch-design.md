@@ -1374,16 +1374,19 @@ reason, neither of them markdown: `status.json` (#130) and the git tail
 component of its own (below). JSON at `/file` is still neither prose nor a
 toggle yet (#178).
 
-Five things survive the join, because each carries meaning a joined line
+Six things survive the join, because each carries meaning a joined line
 would destroy: a **blank line** is a paragraph break; a leading **`- `** is a
 real list item and its **indent is its nesting**; a **``` fence** is code;
 a **`#` heading** stands alone; a leading **`>`** is a **blockquote**
 (#521) — consecutive `>` lines form one block, reflow, and still take
-inline markdown. A `>` line inside a fence stays code (fences win). Nesting
-is the *rank* of a bullet's indent among the indents actually present, not
-its column count — a question body arrives carrying the source file's own
-2-space indent, and absolute columns would push every sub-bullet a level
-too deep.
+inline markdown; a **GFM pipe table** (#525) — header + `|---|` delimiter
++ body rows, cells through the same inline pipeline as prose. A `>` or a
+pipe-table-looking region inside a fence stays code (fences win). A
+malformed table (missing delimiter, header/delimiter column-count mismatch)
+degrades to prose rather than half-rendering. Nesting is the *rank* of a
+bullet's indent among the indents actually present, not its column count —
+a question body arrives carrying the source file's own 2-space indent, and
+absolute columns would push every sub-bullet a level too deep.
 
 **A blockquote is quieter, not louder (#521).** Rendered as
 `<blockquote class="mdquote">`: a 2px `--border` left rule inside the prose
@@ -1391,6 +1394,17 @@ rail, text at `--dim` (one step dimmer than body `--muted`). Not a coloured
 callout — emphasis on this page is luminance, and a quote steps down the
 ramp. Static styling; no state change, no transition. Guard:
 `dev/capture/mdquote.mjs`.
+
+**A pipe table is structure, not chrome (#525).** Rendered as
+`<table class="mdtable">`: dim rules (`1px solid var(--line)` — the quietest
+structural line), header cells at `--lit` (one step up the luminance ramp,
+same rule as `.mdh` / `**bold**`), body at `--muted`, `font-variant-numeric:
+tabular-nums` so columns of figures hold still. No fill, no accent, no
+radius, no alignment-colon rendering (colons in the delimiter are ignored
+gracefully). Cells take the same inline pipeline as paragraphs and quotes
+(`linkifyMd` etc.), so a `[text](target)` inside a cell behaves exactly as
+it does in prose. Static styling; no state change, no transition. Guard:
+`dev/capture/mdtable.mjs`.
 
 **Inline emphasis is luminance, not weight.** `**bold**` renders as
 `--bright` at the same weight; the page already says "more important" with

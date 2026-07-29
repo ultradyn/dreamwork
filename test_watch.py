@@ -4067,9 +4067,12 @@ class TestAppShell(unittest.TestCase):
         # (same mdB as dashboard peeks); source code at /file does not.
         for token in ('function mdBlocks', 'function mdRender', 'const mdSpans',
                       'const mdB =', 'const mdBReview =',
-                      # the five things a join must not destroy (#521 quote)
+                      # the six things a join must not destroy (#521 quote,
+                      # #525 pipe table)
                       "kind:'fence'", "kind:'h'", "kind:'li'", "kind: 'quote'",
+                      "kind: 'table'",
                       'const MD_BULLET =', 'const MD_QUOTE =',
+                      'const mdSplitRow =', 'class="mdtable"',
                       # prose surfaces
                       'mdBReview(q.body.trim(), q.title)', 'mdB(d.content)',
                       # the files peek renders through mdB — pinned as a

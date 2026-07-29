@@ -199,10 +199,16 @@ status-sync *args:
 #                quote line count at runtime. Production lines: mdBlocks
 #                quote kind, mdRender blockquote branch, linkifyMd promote
 #                and literal branches, fence-before-quote order.
+#   mdtable      ordinary (OUT, PORT) on the shared server (#525). Plants a
+#                GFM pipe table (header+delimiter+body with an inline md link
+#                in a cell), a fence holding pipe-looking lines, and a
+#                malformed ragged pair; derives table/body row counts at
+#                runtime. Production lines: mdBlocks table kind, fence-before-
+#                pipes order, mdRender cell inline pipeline (linkifyMd).
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel headcrumb reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade rundesc markrail devoverlay autogrow dissolve burndownmock bdhover reviewask staleremedy rejectwrite posture summaryjson qsignal qfocus qroll research restcollapse qlinkpip mdquote bdinput"
+    DEFAULT_GUARDS="headertravel headcrumb reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade rundesc markrail devoverlay autogrow dissolve burndownmock bdhover reviewask staleremedy rejectwrite posture summaryjson qsignal qfocus qroll research restcollapse qlinkpip mdquote bdinput mdtable"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}
