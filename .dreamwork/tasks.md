@@ -274,6 +274,14 @@ Next id: **484**
   · **read together with `#445`** (four question/attention modes) and `#421` — a questionnaire is the surface
   those modes would ask through, and *"cut back on any superfluous elements"* is the design constraint he
   stated up front rather than a later review note.
+  · **SURVEY DONE `5f99b4b` + amendment `298a024`** — `.dreamwork/docs/plans/questionnaire-survey.md` covers
+  pag-server's question form (the `ask_user` tool: 1-4 structured questions, select/text modes, labelled +
+  described options, auto-"Other", per-question notes, progressive validation), the keep/cut mapping for our
+  context (cut: tab wizard, hotkey chrome, mermaid/svg RHS previews, is_secret, GenServer-blocking sync asks,
+  timeout UI; keep: select modes with labelled options, auto-Other, notes, progressive validation,
+  required/optional, persist-until-answered), and the push-back — pag is a partial model (no authorship
+  vocabulary, no threading, one-shot answers, no attention-mode axis), and `#294` must add question/contribution
+  tables before any build. **The FEATURE stays blocked on `#294`** — only the survey half is done.
 - **#466** — bundle the `subagent-protocols` skill with dreamwork, so a lane's two-way channel is part of the
   loop rather than a path a brief happens to name · **P2** · packaging/subagents · origin: **human** ·
   **human via watch 2026-07-29 03:45**, inside his `#445` answer
