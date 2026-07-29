@@ -34,6 +34,7 @@ Stable exit codes (asserted by test_tasks_migrate.py / test_tasks_migrate_import
 
 Usage: ud-dw-tasks-migrate --dry-run [--ledger PATH] [--report PATH]
        ud-dw-tasks-migrate --import --to SCRATCH.db [--ledger PATH]
+       ud-dw-tasks-migrate --import-history --to SCRATCH.db [--ledger PATH]
        ud-dw-tasks-migrate --verify --to SCRATCH.db [--ledger PATH]
 
 Import rules (all ruled in increments 2–3 or #346; nothing guessed):
@@ -50,14 +51,39 @@ Import rules (all ruled in increments 2–3 or #346; nothing guessed):
 - related: symmetric pairs (a<b) between entry-headed ids; depends: directed
   edges from the two recognised blocked-on forms; dangling targets skip;
 - a section id with no entry head (groomed landed prose — reported as
-  "section id without an entry") gets NO row: body/title are verbatim-only
-  and NOT NULL, so a stub would be fabrication; R3's git-history import owns
-  those ids, and verification fails if one appears before then;
+  "section id without an entry") gets NO row from --import: body/title are
+  verbatim-only and NOT NULL, so a stub would be fabrication. R3's
+  --import-history owns those ids (below);
 - the sequence is seeded by ledger_store (verified, re-seed only upward) and
   asserted == the ledger's next id after import;
 - idempotent: a second --import over the same DB populates nothing and
   reports a no-op with identical verification; a DIVERGENT DB fails
   verification loudly, naming every divergent row.
+
+History-import rules (R3, increment 5; ruled 2026-07-29 05:48):
+
+- --import-history walks ``git log --reverse -- .dreamwork/tasks.md`` and, for
+  each groomed id, recovers its entry body at the LAST commit it headed one,
+  plus first-sight + landed metadata. An id with no entry head in ANY commit
+  is honestly UNRECOVERABLE (no row, no event, reported) — its body cannot be
+  fabricated and body/title are NOT NULL;
+- provenance: the task row's columns come from the recovered verbatim body
+  (origin/band/type parsed exactly as --import parses them — "origin stays as
+  parsed"); the SYNTHETIC provenance lives entirely on the events
+  (actor='migration:git', cause='migration_git'), never on the row and never
+  attributed to the human or the loop, so a reconstructed event is always
+  distinguishable from a witnessed one (R3 ruling). source_line is NULL — a
+  history row has no line in the current ledger;
+- events: a first-sight event per recovered id (from_state NULL → its
+  first-seen section), plus a landed event where the history shows an
+  open→landed transition. They are hash-chained per the journal contract
+  (H_i = SHA-256(domain_tag || H_(i-1) || length_framed(canonical))) and
+  inserted in chain order, so ordinal follows the chain;
+- scratch-only (.dreamwork/ refused, exit 77); idempotent (a DB already
+  holding migration:git events is a true no-op); --verify then checks a
+  groomed row MUST be backed by migration:git events (else fabrication), the
+  chain MUST recompute from genesis, and — with git available — each backed
+  row matches the recovered body.
 """
 
 from __future__ import annotations
