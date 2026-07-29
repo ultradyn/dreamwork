@@ -3,6 +3,7 @@
 
 import contextlib
 import errno
+import html
 import http.server
 import inspect
 import io
@@ -5732,19 +5733,100 @@ class TestFileViewMode(unittest.TestCase):
     """
 
     def test_source_is_the_existing_verbatim_path_and_is_never_rewritten(self):
-        # ONE expression, and it is the same `<pre>${esc(text)}</pre>` every
-        # non-markdown file at /file has always rendered — both modes read
-        # `src`, so there is no second renderer to drift.
-        self.assertIn("const src = `<pre>${esc(text)}</pre>`;", watch.PAGE)
+        # The verbatim `<pre>${esc(text)}</pre>` is still the fallback every
+        # unhighlighted file renders — both markdown modes read `src`, so
+        # there is no second renderer to drift.
+        self.assertIn("`<pre>${esc(text)}</pre>`", watch.PAGE)
         self.assertIn(
             "const body = (isMarkdownFile(param) && mode !== 'source') "
             "? mdB(text) : src;", watch.PAGE)
-        # ...and nothing tokenising may appear on this path. #339's highlighter
-        # is a build-time function in review_artifact.py and must stay there;
-        # `tok-` is the class prefix it emits.
-        self.assertNotIn("tok-", watch.PAGE,
-                         "the page must carry no tokeniser output: Source's "
-                         "bytes are the point of the mode (#252 vs #351)")
+        # The render-plain condition is EXPLICIT, never "no hl happened to
+        # arrive": the guarantee must not depend on what the server chose to
+        # send (#252's own note about the #351 collision).
+        self.assertIn(
+            "const renderPlain = isMarkdownFile(param) && mode === 'source';",
+            watch.PAGE,
+            "Source must NAME its render-plain condition (#252 vs #351)")
+        self.assertIn("(!renderPlain && fetched.hl) ? fetched.hl", watch.PAGE,
+                      "the highlighted branch must be gated by the negation "
+                      "of that same condition")
+
+    def _buildfile_eval(self, expr):
+        """Evaluate `expr` against the REAL `isMarkdownFile`/`buildFile`
+        source, cut out of the page bundle (the fileBase harness's shape).
+        `esc` needs a DOM, so it is stubbed by its exact contract — escape
+        & < >, nothing else — and `mdB` by a marker, so the branch taken is
+        observable. If either function changes shape this stops finding it
+        (loud), which is the point."""
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — the buildFile gate did NOT run")
+        cuts = []
+        for pat, name in (
+                (r"function isMarkdownFile\(p\) \{.*?\n\}", "isMarkdownFile"),
+                (r"function buildFile\(param, fetched, mode\) \{.*?\n\}",
+                 "buildFile")):
+            m = re.search(pat, watch.PAGE, re.S)
+            self.assertIsNotNone(
+                m, f"{name} is not in the page in the shape this test reads "
+                   "it — fix the cut, do not delete the test")
+            cuts.append(m.group(0))
+        prelude = ("const esc = t => String(t ?? '')"
+                   ".replace(/&/g,'&amp;').replace(/</g,'&lt;')"
+                   ".replace(/>/g,'&gt;');\n"
+                   "const mdB = t => 'MD:' + t;\n")
+        r = subprocess.run(
+            [node, "-e", prelude + "\n".join(cuts) +
+             "\nconsole.log(JSON.stringify(" + expr + "))"],
+            capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_source_mode_renders_plain_even_when_highlight_markup_arrived(self):
+        """The `assertNotIn("tok-", watch.PAGE)` this class used to hold,
+        NARROWED to the Source path rather than deleted (#351's collision
+        with #252): the page now legitimately carries `tok-` — the server
+        highlights source files, and the palette CSS lives in STYLE — so a
+        global absence would fail on the feature itself. What must still
+        hold is that a markdown file's Source mode shows no tokeniser output
+        even when `hl` arrived, because that pane's bytes are the point of
+        the mode. Evaluated against the real buildFile, not restated."""
+        hostile = '# t <script> & "q"\n'
+        # derived precondition, not a fixture hope: the bytes offered really
+        # need escaping, else "escaped exactly" below is a weak claim
+        self.assertTrue(all(c in hostile for c in ('<', '&', '"')))
+        hl = ('<pre><code class="language-python">'
+              '<span class="tok-kw">def</span></code></pre>')
+        self.assertIn("tok-", hl)   # else every NotIn below is vacuous
+        escaped = (hostile.replace('&', '&amp;').replace('<', '&lt;')
+                   .replace('>', '&gt;'))
+        # a markdown file in Source mode: the verbatim pre, no tok-, even
+        # though the server offered highlighted markup
+        src_mode = self._buildfile_eval(
+            "buildFile('a/b.md', {text: %s, hl: %s}, 'source')"
+            % (json.dumps(hostile), json.dumps(hl)))
+        self.assertNotIn("tok-", src_mode,
+                         "Source's bytes are the point of the mode (#252)")
+        self.assertEqual(src_mode,
+                         '<div id="filebody"><pre>' + escaped + '</pre></div>')
+        # a source file in either mode takes the server's markup...
+        py = self._buildfile_eval(
+            "buildFile('x.py', {text: 'def f():\\n    pass\\n', hl: %s}, "
+            "'rendered')" % json.dumps(hl))
+        self.assertIn(hl, py)
+        # ...and an extension the map does not name renders the same
+        # verbatim pre it always did: plain, never guessed (#339's rule)
+        plain = self._buildfile_eval(
+            "buildFile('x.txt', {text: %s, hl: null}, 'rendered')"
+            % json.dumps(hostile))
+        self.assertNotIn("tok-", plain)
+        self.assertIn('<pre>' + escaped + '</pre>', plain)
+        # Rendered markdown is mdB's, untouched by any of this
+        rend = self._buildfile_eval(
+            "buildFile('a.md', {text: '# hi\\n', hl: null}, 'rendered')")
+        self.assertEqual(rend, '<div id="filebody">MD:# hi\n</div>')
 
     def test_the_mode_is_read_from_the_route_and_written_back_to_it(self):
         # Read in exactly one place...
@@ -5820,6 +5902,207 @@ class TestFileViewMode(unittest.TestCase):
         # a ratio, not a pixel offset: the two panes are different heights
         self.assertIn("window.scrollY / range", watch.PAGE)
         self.assertIn("if (modeSwap) restoreScrollRatio(keepRatio);", watch.PAGE)
+
+
+class TestFileSourceHighlight(unittest.TestCase):
+    """#351 — /file highlights source, runs wider, and does not wrap lines.
+
+    His words, typed from /file?p=lint.py: "syntax highlighting for source
+    code files, and a bit wider of a body + no line wrapping." Three changes,
+    three sets of guarantees:
+
+    - the highlighter is review_artifact.py's #339 scanner, REUSED through
+      its public highlight() — there is no second tokeniser to drift;
+    - the language comes from the extension and an unknown one renders plain
+      (#339's never-guess rule, which /file inherits whole);
+    - the /filedata cache is keyed by path and validated by (mtime_ns, size)
+      — the same staleness predicate the dashboard already trusts — and the
+      wrap/width change is scoped to the pane it was asked for.
+    """
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _get(self, url):
+        with urllib.request.urlopen(url, timeout=5) as r:
+            return r.status, r.read().decode("utf-8")
+
+    def test_the_language_map_only_names_supported_languages(self):
+        import review_artifact
+        # DERIVED, never restated: the supported set is the scanner's own,
+        # so a language removed there fails here without an edit.
+        self.assertTrue(review_artifact.SUPPORTED_LANGUAGES)
+        self.assertTrue(watch._FILE_LANG)
+        for ext, lang in watch._FILE_LANG.items():
+            self.assertIn(lang, review_artifact.SUPPORTED_LANGUAGES,
+                          f"{ext} maps to {lang}, which the scanner does "
+                          "not tokenise — that is guessing by another name")
+            self.assertTrue(ext.startswith(".") and ext == ext.lower(),
+                            f"{ext!r} must be a lowercase dot-extension")
+
+    def test_highlight_round_trips_the_served_bytes(self):
+        # The pane's textContent must be the file. #339 proves the scanner
+        # byte-exact; what is NOT proved there is the seam THIS adds — the
+        # escape/wrap/highlight/unescape round-trip through the public
+        # entry point — so it is proved here on hostile bytes.
+        src = '# c <tag> & "q"\ndef f(a):\n    return "x" + \'y\' — 1\n'
+        self.assertTrue(all(c in src for c in ('<', '&', '"', '—')))
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "x.py")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(src)
+            hl = watch.file_highlight_html(p, src)
+        self.assertIsNotNone(hl)
+        # preconditions, derived at runtime: the markup really is the
+        # highlighted block shape, and it really tokenised (three kinds,
+        # so "round-trip" is not passing over an all-fallback scan)
+        m = re.search(r"<pre><code[^>]*>(.*?)</code></pre>", hl, re.S)
+        self.assertIsNotNone(m)
+        kinds = set(re.findall(r'class="tok-([a-z]+)"', m.group(1)))
+        self.assertGreaterEqual(len(kinds), 3,
+                                f"only {kinds} token kinds — the fixture "
+                                "stopped exercising the scanner")
+        text = html.unescape(re.sub(r"<[^>]+>", "", m.group(1)))
+        self.assertEqual(text, src)
+
+    def test_unknown_extension_renders_plain(self):
+        with tempfile.TemporaryDirectory() as d:
+            for name in ("x.txt", "x.md", "x.rst", "Makefile", "x.py.bak",
+                         "x.fish"):
+                p = os.path.join(d, name)
+                with open(p, "w") as f:
+                    f.write("def f(): pass\n")
+                self.assertIsNone(watch.file_highlight_html(p, "def f(): pass\n"),
+                                  f"{name} must render plain — never guess")
+
+    def test_the_cache_is_a_cache_and_mtime_invalidates_it(self):
+        watch._file_hl_cache.clear()
+        self.addCleanup(watch._file_hl_cache.clear)
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "m.py")
+            src1 = "# one\ndef a():\n    return 1\n"
+            with open(p, "w") as f:
+                f.write(src1)
+            h1 = watch.file_highlight_html(p, src1)
+            self.assertIsNotNone(h1)
+            # IDENTITY is the claim: the same file version returns the same
+            # object, which is the only form "the tokeniser did not run
+            # again" can take.
+            self.assertIs(watch.file_highlight_html(p, src1), h1)
+            # a new version recomputes...
+            src2 = "# two\ndef b():\n    return 2\n"
+            with open(p, "w") as f:
+                f.write(src2)
+            os.utime(p, (1700000000, 1700000000))
+            h2 = watch.file_highlight_html(p, src2)
+            self.assertIsNot(h2, h1)
+            # ...and the precondition that gives that meaning: the two
+            # versions really tokenise to different markup, else
+            # "invalidated" is vacuous.
+            self.assertNotEqual(h1, h2)
+            self.assertIn("two", h2)
+            # The predicate IS mtime, not content — the recorded decision.
+            # The same bytes at a new mtime recompute; that is the edge the
+            # /mtime poll has always accepted, not a bug found late.
+            os.utime(p, (1700000100, 1700000100))
+            self.assertIsNot(watch.file_highlight_html(p, src2), h2)
+
+    def test_the_cache_is_bounded(self):
+        watch._file_hl_cache.clear()
+        self.addCleanup(watch._file_hl_cache.clear)
+        with tempfile.TemporaryDirectory() as d:
+            for i in range(watch._FILE_HL_CACHE_MAX + 5):
+                p = os.path.join(d, "f%d.py" % i)
+                src = "x = %d\n" % i
+                with open(p, "w") as f:
+                    f.write(src)
+                watch.file_highlight_html(p, src)
+        self.assertLessEqual(len(watch._file_hl_cache),
+                             watch._FILE_HL_CACHE_MAX)
+
+    def test_filedata_serves_highlight_alongside_the_bytes(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            src = "def f():\n    return '<tag>' & 1\n"
+            with open(os.path.join(d, "m.py"), "w") as f:
+                f.write(src)
+            with open(os.path.join(d, "n.txt"), "w") as f:
+                f.write("plain\n")
+            base = self._serve(d)
+            status, body = self._get(base + "/filedata?p=m.py")
+            self.assertEqual(status, 200)
+            j = json.loads(body)
+            # the bytes still arrive — highlighting ADDS a field, it does
+            # not replace the verbatim content the Source pane is made of
+            self.assertEqual(j["content"], src)
+            self.assertIn("tok-", j["hl"])
+            self.assertIn("language-python", j["hl"])
+            status, body = self._get(base + "/filedata?p=n.txt")
+            self.assertEqual(status, 200)
+            self.assertNotIn("hl", json.loads(body),
+                             "an unknown extension gets no markup at all — "
+                             "the client must never see a guess")
+
+    def test_nowrap_is_scoped_to_the_source_pane(self):
+        # The pane is code and code does not wrap; a long line scrolls
+        # INSIDE it (watch-design.md: wide content scrolls inside its own
+        # container). `.md pre.mdcode` already kept exactly this contract
+        # for fences, so the idiom is reused, not authored twice.
+        rule = re.search(r"\n  #filebody > pre \{(.*?)\}", watch.PAGE, re.S)
+        self.assertIsNotNone(rule, "the #filebody > pre rule is gone")
+        self.assertIn("white-space:pre", rule.group(1))
+        self.assertIn("overflow-x:auto", rule.group(1))
+        # ...and the change is SCOPED: every other <pre> on the page (preB
+        # peeks — prose) keeps wrapping, and so does the global rule.
+        self.assertIn("pre { white-space:pre-wrap", watch.PAGE)
+        self.assertIn(".md pre.mdcode { margin:.45rem 0; white-space:pre; "
+                      "overflow-x:auto; }", watch.PAGE)
+        # the highlighted pane carries <code>; the prose inline-code chip
+        # must be reset there or it plates the whole block
+        self.assertIn("#filebody > pre > code {", watch.PAGE)
+
+    def test_the_column_widens_on_the_file_route_only(self):
+        self.assertIn("body.file .wrap { max-width:110ch; }", watch.PAGE)
+        self.assertIn("body.review .wrap { max-width:1360px; }", watch.PAGE)
+        self.assertIn(".wrap { max-width:72ch;", watch.PAGE)
+        # the width class is committed at EVERY route commit, beside review's
+        # — derived from review's own count, so a fourth site added for one
+        # and not the other fails here without an edit
+        self.assertEqual(
+            watch.PAGE.count("classList.toggle('review',"),
+            watch.PAGE.count("classList.toggle('file',"))
+        self.assertGreaterEqual(
+            watch.PAGE.count("classList.toggle('file',"), 3)
+
+    def test_the_token_palette_is_scoped_and_warn_is_not_spent(self):
+        # every token kind the scanner emits has a rule INSIDE the pane —
+        # the kind set is derived from the emitted classes in STYLE, and
+        # compared against review_artifact's own spec names so a kind added
+        # there without CSS here is caught
+        import review_artifact
+        emitted = set()
+        for spec in (review_artifact._PY, review_artifact._JSON,
+                     review_artifact._BASH, review_artifact._JS,
+                     review_artifact._HTML, review_artifact._SQL):
+            emitted.update(name for name, _ in spec)
+        self.assertTrue(emitted)
+        for kind in emitted:
+            self.assertIn("#filebody > pre code .tok-%s {" % kind, watch.PAGE,
+                          f"tok-{kind} has no colour inside the pane")
+        # --warn means BROKEN on this page (#136); a numeral is not broken.
+        # The palette declares --amber instead, value-for-value the
+        # artifact frame's.
+        rules = re.findall(r"#filebody > pre code \.tok-[a-z]+ \{[^}]*\}",
+                           watch.PAGE)
+        self.assertTrue(rules)
+        for rule in rules:
+            self.assertNotIn("--warn", rule)
+        self.assertIn("--amber:#fcd34d;", watch.PAGE)
 
 
 class TestProjectTint(unittest.TestCase):
