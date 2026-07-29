@@ -12,6 +12,8 @@ import os
 import re
 import socket
 import struct
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -3172,6 +3174,19 @@ class TestCollector(unittest.TestCase):
                          "command via watch: add-idea: a thought")
         self.assertEqual(watch.command_line("do-next", ""),
                          "command via watch: do-next")
+        # #527: the receipt id suffix so a drained receipt can be matched
+        # to a wake-line it already acted on (F1). Absent when there is no
+        # receipt (legacy E2 baseline that commits none).
+        self.assertEqual(
+            watch.command_line("do-now", "ship it", receipt_id="abc123"),
+            "command via watch: do-now: ship it [receipt abc123]")
+        self.assertEqual(
+            watch.command_line("do-next", "", receipt_id="xyz"),
+            "command via watch: do-next [receipt xyz]")
+        # the suffix lands AFTER the page hint, not between it and the kind
+        self.assertEqual(
+            watch.command_line("do-now", "x", "/review?p=p.html", "abc"),
+            "command via watch [/review?p=p.html]: do-now: x [receipt abc]")
 
     def test_command_line_carries_the_page_it_came_from(self):
         # #126: which artifact he was reading is usually the point, so the
@@ -7326,6 +7341,16 @@ class TestDeliveryWakeRouting(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code
 
+    def _post_body(self, url, obj):
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
+
     def _wake_lines(self, d):
         """Every watch-events.log line — each is a wake line the tail monitor
         wakes on. NOT filtered to 'via watch', because the /answer, /comment
@@ -7556,6 +7581,69 @@ class TestDeliveryWakeRouting(unittest.TestCase):
                 self.assertEqual(len(wakes), 1, (delivery, wakes))
                 self.assertIn("plan.html", wakes[0])
                 self.assertIn("accepted", wakes[0])
+
+    def test_command_wake_line_carries_the_same_receipt_id_as_the_journal(self):
+        """#527 — the wake-line's receipt id == the journal receipt's id.
+
+        Production line: the `command_line(..., rid)` call in
+        _handle_command, where `rid = self.journal_result().receipt_id` —
+        the SAME id the E3 commit in do_POST put in the journal. The
+        coordinator matches a drained receipt (channel B) to a wake-line it
+        already acted on (channel A) by this id — the join F1 of the #519
+        exactly-once audit found missing.
+
+        Reads BOTH the wake-line AND the journal receipt (via the production
+        `pending` CLI — `dev/journal_consume.py pending`, the same query the
+        tick runs) and asserts the ids agree.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)  # instant (default) — do-now always wakes
+            base = self._serve(d)
+            status, body = self._post_body(base + "/command",
+                                           {"kind": "do-now",
+                                            "text": "exactly once"})
+            # PRECONDITION: the route ran end-to-end (202, not 503), or a
+            # missing-wake / missing-id assertion is vacuous.
+            self.assertEqual(status, 202, (status, body))
+            resp = json.loads(body)
+            # PRECONDITION: the POST returned a receipt id — the E3 commit
+            # landed and the wake-line has something to carry. Without this
+            # the wake-line would carry no id and the equality below would
+            # compare nothing.
+            self.assertIn("receipt", resp, resp)
+            post_id = resp["receipt"]["receipt_id"]
+            self.assertTrue(post_id, resp)
+
+            # ── channel A: the wake-line ──────────────────────────────────
+            wakes = self._wake_lines(d)
+            # PRECONDITION: exactly one wake-line fired (do-now pre-empts in
+            # every mode); without it there is no id to read.
+            self.assertEqual(len(wakes), 1, wakes)
+            wake = wakes[0]
+            m = re.search(r'\[receipt (\S+)\]', wake)
+            self.assertIsNotNone(m, f"no receipt id in wake-line: {wake!r}")
+            wake_id = m.group(1)
+
+            # ── channel B: the journal receipt (the production `pending` CLI)
+            journal = watch._journal_path(d)
+            proc = subprocess.run(
+                [sys.executable, "dev/journal_consume.py", "pending",
+                 "--journal", journal],
+                capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            # PRECONDITION: pending listed the receipt (it committed), or
+            # an equality assertion is meaningless.
+            self.assertTrue(proc.stdout.strip(), proc.stdout)
+            journal_id = proc.stdout.strip().split('\t')[0]
+
+            # ── the join: all three ids agree ─────────────────────────────
+            self.assertEqual(wake_id, journal_id,
+                             f"wake-line id {wake_id!r} != journal id "
+                             f"{journal_id!r}\n  wake: {wake!r}\n"
+                             f"  pending: {proc.stdout!r}")
+            self.assertEqual(wake_id, post_id,
+                             f"wake-line id {wake_id!r} != POST receipt id "
+                             f"{post_id!r}")
 
 
 class TestDeployAction(unittest.TestCase):
