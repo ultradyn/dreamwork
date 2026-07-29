@@ -2504,60 +2504,6 @@ Next id: **485**
   design, which is *not* a cutover defect), **E6** (visible — a browser/motion increment, so it needs
   `transitions.md` and the design skills, not a tail bolted onto E). Then lane **G** (30–33, shares
   `watch.py` with E) and **H** (34–35)
-- **#462** — the dashboard says it is N commits behind but gives him no way to act on it · **P1** ·
-  feature/dashboard · origin: **human** · **human via watch 2026-07-29 02:30, next-up, delegate soon:** *"re
-  'this page is 3 watch.py commits behind · serving f9bb49e' on dashboard, we should have a task for adding an
-  'update & reload' button/link I think? Please delegate that to a subagent in the near future. I would like it
-  soon."*
-  · the staleness row already exists and already knows the answer — it computes the gap — so what is missing is
-  only the action, which is why he reads it as an obvious omission
-  · **it lands in `watch.py`, which lane E2 holds**, so it goes to a worktree and merges after; that is a
-  scheduling cost, not a blocker
-  · every transition it introduces obeys `transitions.md` — a button that appears when the page falls behind is
-  an arrival, not a pop, and *"it is only a small toggle"* is how a page ends up with one gesture that snaps
-  · the hard half is not the button: a reload that restarts the server he is reading must not lose his drafts
-  (`#269` keys them per target) nor his place, and it must say what happened if the restart fails
-  · related: **#461, #439**
-  · **increment 1 LANDED `f7781a5`, merged `b1551b1` — and `#462` STAYS OPEN on his consent call.** The
-  staleness row now carries its own remedy: the exact command, present **only** when behind, copyable on click,
-  confirming through the page's single `#fmsg` lifecycle, with the text selectable as the clipboard fallback.
-  Label is the command itself rather than his two-verb phrasing, per the styleguide voice. `serving_report`'s
-  `missing` is reused verbatim — no second computation of the gap
-  · **the lane's IGC refuted every cheaper option, and the decisive error on self-restart is the one worth
-  keeping.** `watch.py`'s `--autoreload` re-execs on `__file__`'s mtime — and for a **deployed** server
-  `__file__` *is* the snapshot, outside the repo, which a tree commit does not touch. So `os.execv` re-serves
-  byte-identical bytes and the staleness is unchanged **by construction**. A browser reload fails the same way.
-  "Update" can therefore only mean *re-snapshot from HEAD and restart*, i.e. `just deploy`
-  · it also **withdrew its own first refutation** after I pushed back: it had argued a failed redeploy leaves the
-  failure invisible *"because the page that would report it is the page the restart destroys"*, which is false —
-  a restart destroys the server, not the loaded document, and that is precisely why `#269`'s drafts survive one.
-  The corrected refutation is about bytes, not page death, and it is right
-  · **guard `staleremedy` registered (55 today) and verified by me on the merged tree**: 11 checks pass,
-  including gating, a **sampled** arrival (not an end-state assertion), intermediate-opacity easing, the copy,
-  the confirmation lifecycle, and reduced-motion parity — plus a runtime-derived precondition that the state
-  really moved current→behind, so the arrival cannot be vacuous. My own red: deleting the single
-  `revealStaleAction()` call failed exactly the two motion checks and nothing else
-  · **remaining and on his desk**: may the page run `just deploy` itself? Asked 02:56 with `Q1`/`Q2` declared;
-  the objection is authority, not safety
-  · **AUTHORISED, 2026-07-29 03:46 (via watch): `rec` — yes, the page may run `just deploy`.** So the
-  staleness row is an **action**, not a copyable command: loopback-only, behind the existing confirmation
-  idiom, and it must report the case where the new generation never arrives (the lane's own finding: a
-  deployed dashboard serves a snapshot, so a reload and an `--autoreload` re-exec are both byte-identical —
-  "update" can only mean re-snapshot from HEAD and restart). **Queued behind the lane holding `watch.py`**
-  · **increment 2 LANDED `09e7ea7` + `2ba0f43`, merged `21b818a` — the row now RUNS it**, on his `rec`:
-  loopback peer only, single-flight, the `RUN_ARM_MS` arm idiom reused rather than a second one, gating on
-  `writeVerdict`'s `landed`, and a 30s deadline so a deploy that never finishes is named rather than spinning
-  · **verified against a real server, identity confirmed by pid — and the probe found a defect the report
-  did not.** A non-loopback peer is rejected and **no deploy runs**; loopback starts one; a second POST in
-  flight is rejected and **exactly one** deploy ran. But both refusals were `domain_invalid`, so the page said
-  *"the value was not one the server accepts"* for a deploy already running **and** for a request from another
-  machine — the only two refusals he can reach, so that copy was wrong every time it could appear. The branch
-  that would have said *"deploy only runs from this machine"* tested `res.status === 403`, unreachable since
-  the 202 cutover: dead code reading as coverage
-  · **the fix generalises**: a rejection may carry an **optional `detail`** narrowing a closed-set reason **for
-  copy only** — `REJECTION_REASONS` stays three wide (widening it would change the journal contract) and
-  nothing gates on `detail`; `landed` remains the only verdict. Documented in `watch-design.md` as the idiom
-  any route with several refusals behind one reason takes
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses
@@ -3270,6 +3216,62 @@ Next id: **485**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#462** — the dashboard says it is N commits behind but gives him no way to act on it · **P1** ·
+  feature/dashboard · origin: **human** · **human via watch 2026-07-29 02:30, next-up, delegate soon:** *"re
+  'this page is 3 watch.py commits behind · serving f9bb49e' on dashboard, we should have a task for adding an
+  'update & reload' button/link I think? Please delegate that to a subagent in the near future. I would like it
+  soon."*
+  · the staleness row already exists and already knows the answer — it computes the gap — so what is missing is
+  only the action, which is why he reads it as an obvious omission
+  · **it lands in `watch.py`, which lane E2 holds**, so it goes to a worktree and merges after; that is a
+  scheduling cost, not a blocker
+  · every transition it introduces obeys `transitions.md` — a button that appears when the page falls behind is
+  an arrival, not a pop, and *"it is only a small toggle"* is how a page ends up with one gesture that snaps
+  · the hard half is not the button: a reload that restarts the server he is reading must not lose his drafts
+  (`#269` keys them per target) nor his place, and it must say what happened if the restart fails
+  · related: **#461, #439**
+  · **increment 1 LANDED `f7781a5`, merged `b1551b1` — and `#462` STAYS OPEN on his consent call.** The
+  staleness row now carries its own remedy: the exact command, present **only** when behind, copyable on click,
+  confirming through the page's single `#fmsg` lifecycle, with the text selectable as the clipboard fallback.
+  Label is the command itself rather than his two-verb phrasing, per the styleguide voice. `serving_report`'s
+  `missing` is reused verbatim — no second computation of the gap
+  · **the lane's IGC refuted every cheaper option, and the decisive error on self-restart is the one worth
+  keeping.** `watch.py`'s `--autoreload` re-execs on `__file__`'s mtime — and for a **deployed** server
+  `__file__` *is* the snapshot, outside the repo, which a tree commit does not touch. So `os.execv` re-serves
+  byte-identical bytes and the staleness is unchanged **by construction**. A browser reload fails the same way.
+  "Update" can therefore only mean *re-snapshot from HEAD and restart*, i.e. `just deploy`
+  · it also **withdrew its own first refutation** after I pushed back: it had argued a failed redeploy leaves the
+  failure invisible *"because the page that would report it is the page the restart destroys"*, which is false —
+  a restart destroys the server, not the loaded document, and that is precisely why `#269`'s drafts survive one.
+  The corrected refutation is about bytes, not page death, and it is right
+  · **guard `staleremedy` registered (55 today) and verified by me on the merged tree**: 11 checks pass,
+  including gating, a **sampled** arrival (not an end-state assertion), intermediate-opacity easing, the copy,
+  the confirmation lifecycle, and reduced-motion parity — plus a runtime-derived precondition that the state
+  really moved current→behind, so the arrival cannot be vacuous. My own red: deleting the single
+  `revealStaleAction()` call failed exactly the two motion checks and nothing else
+  · **remaining and on his desk**: may the page run `just deploy` itself? Asked 02:56 with `Q1`/`Q2` declared;
+  the objection is authority, not safety
+  · **AUTHORISED, 2026-07-29 03:46 (via watch): `rec` — yes, the page may run `just deploy`.** So the
+  staleness row is an **action**, not a copyable command: loopback-only, behind the existing confirmation
+  idiom, and it must report the case where the new generation never arrives (the lane's own finding: a
+  deployed dashboard serves a snapshot, so a reload and an `--autoreload` re-exec are both byte-identical —
+  "update" can only mean re-snapshot from HEAD and restart). **Queued behind the lane holding `watch.py`**
+  · **increment 2 LANDED `09e7ea7` + `2ba0f43`, merged `21b818a` — the row now RUNS it**, on his `rec`:
+  loopback peer only, single-flight, the `RUN_ARM_MS` arm idiom reused rather than a second one, gating on
+  `writeVerdict`'s `landed`, and a 30s deadline so a deploy that never finishes is named rather than spinning
+  · **verified against a real server, identity confirmed by pid — and the probe found a defect the report
+  did not.** A non-loopback peer is rejected and **no deploy runs**; loopback starts one; a second POST in
+  flight is rejected and **exactly one** deploy ran. But both refusals were `domain_invalid`, so the page said
+  *"the value was not one the server accepts"* for a deploy already running **and** for a request from another
+  machine — the only two refusals he can reach, so that copy was wrong every time it could appear. The branch
+  that would have said *"deploy only runs from this machine"* tested `res.status === 403`, unreachable since
+  the 202 cutover: dead code reading as coverage
+  · **the fix generalises**: a rejection may carry an **optional `detail`** narrowing a closed-set reason **for
+  copy only** — `REJECTION_REASONS` stays three wide (widening it would change the journal contract) and
+  nothing gates on `detail`; `landed` remains the only verdict. Documented in `watch-design.md` as the idiom
+  any route with several refusals behind one reason takes
+  · closed 2026-07-29 15:47, verified by the current coordinator: b1551b10 (inc 1, copyable remedy) and 21b818a8 (inc 2, the page runs just deploy on his 03:46 rec) resolve; staleremedy guard registered (55+) and PASS solo on current master. Entry states nothing remaining: the row is an action, loopback-only, single-flight, armed, 30s deadline, and the two refusal copies he can reach were found wrong by the coordinator's own probe and fixed via the optional-detail idiom documented in watch-design.md.
+
 - **#473** — a question can be updated and he has no way to notice · **P1** · dashboard/questions ·
   origin: **human** ·
   **human via watch 2026-07-29 06:21:** *"it was not obvious that this question had updated, we should show
