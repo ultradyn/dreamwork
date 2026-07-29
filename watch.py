@@ -13225,14 +13225,33 @@ def skill_identity(target=None):
 QUESTION_SIGS = "question-sigs.json"
 
 
+def _sig_text(s):
+    """Collapse whitespace so a re-wrap of the same words is the same
+    signature (#509). The loop re-writes questions.md on tick, and a long
+    entry's body lines get re-wrapped; a line-break-only change is not a
+    content change, so the digest is over the WORDS, not the column the
+    writer happened to wrap at — otherwise the longest entry (#229: nested
+    tables, code fences, ~100 lines) phantom-fires question-updated on
+    every rewrite. Note/answer text is already single-spaced by the parser,
+    but one normalisation over every text field is the rule that keeps the
+    class from recurring on any entry the re-wrap touches."""
+    return " ".join((s or "").split())
+
+
 def _entry_content_digest(entry):
     """Stable digest of one questions.md entry's visible content."""
     payload = {
-        "title": entry.get("title") or "",
-        "body": entry.get("body") or "",
-        "follows": entry.get("follows") or [],
-        "answers": entry.get("answers") or [],
-        "answer": entry.get("answer"),
+        "title": _sig_text(entry.get("title")),
+        "body": _sig_text(entry.get("body")),
+        "follows": [
+            {**f, "text": _sig_text(f.get("text"))}
+            for f in (entry.get("follows") or [])
+        ],
+        "answers": [
+            {**a, "text": _sig_text(a.get("text"))}
+            for a in (entry.get("answers") or [])
+        ],
+        "answer": _sig_text(entry.get("answer")),
     }
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
