@@ -4049,7 +4049,11 @@ class TestAppShell(unittest.TestCase):
                       'const MD_BULLET =',
                       # prose surfaces
                       'mdBReview(q.body.trim(), q.title)', 'mdB(d.content)',
-                      'expand(n, mdB(d.files[n]))', 'mdInline(txt)'):
+                      # the files peek renders through mdB — pinned as a
+                      # PREFIX, never the whole call: restcollapse added
+                      # keep args (`file:${n}`) and a full-call literal went
+                      # stale on a change that kept the thing being asserted
+                      'expand(n, mdB(d.files[n])', 'mdInline(txt)'):
             self.assertIn(token, watch.PAGE)
         # #158: /file branches on kind — .md (and kin) through mdB; else pre.
         # The branch is by EXTENSION, never content sniff, and the escape is
