@@ -4897,6 +4897,26 @@ class TestAppShell(unittest.TestCase):
         self.assertIn('.qsec > summary', watch.PAGE)
         self.assertNotIn('.qsec summary {', watch.PAGE)
 
+    def test_expand_peeks_carry_data_keep_for_fold_restore(self):
+        # restcollapse: expand() peeks must ride snapshotFolds, keyed stably
+        # (not by the counted summary — "the rest (N)" shifts while identity
+        # does not). Without data-keep the live tick re-closes under him.
+        self.assertIn("const expand = (s, inner, cls='', keep='')", watch.PAGE)
+        self.assertIn('data-keep="${esc(keep)}"', watch.PAGE)
+        for token in ("'status-rest'",
+                      "'dreams-archive'",
+                      '`dream:${d.name}`',
+                      '`file:${n}`'):
+            self.assertIn(token, watch.PAGE)
+        # status overflow must not key on the summary text alone
+        self.assertIn("expand(`the rest (${rest.length + deep.length})`",
+                      watch.PAGE)
+        # keep is the last arg on that call
+        self.assertRegex(
+            watch.PAGE,
+            r"expand\(`the rest \(\$\{rest\.length \+ deep\.length\}\)`[\s\S]*?"
+            r"'status-rest'\)")
+
     def test_page_heading_is_persistent_chrome(self):
         # #110: the heading is the page's frame, not view content — it lives
         # in the shell as a sibling of #view, survives navigation, and its

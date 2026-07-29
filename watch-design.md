@@ -805,9 +805,11 @@ contains *all* the cards, so "nothing that moves is left below the toggle".
 Reviews, files, status and the tint picker are all below that toggle, the
 section swings by ~1250px, and his report was that the questions "just appear
 and disappear". A justification that is checkable and false gets believed —
-this one was, for the whole life of #141. The plain `expand()` peeks are still
-instant and the same test would now say they should not be; `transitions.md`
-records that as unexamined rather than decided.
+this one was, for the whole life of #141. The plain `expand()` peeks now
+travel on open/close via `foldDetailsLocal` (#277); their *open state* also
+rides `data-keep` through `snapshotFolds` (status-rest, file:*, dream:*,
+dreams-archive) so a live tick does not re-close them under him — the same
+#141 rule the questions section already had.
 
 ### More detail: what expands, what navigates, what hovers
 
@@ -2723,7 +2725,10 @@ through `innerHTML`, so without this it would snap shut under him every two
 seconds. `snapshotFolds`/`restoreFolds` key on `data-keep` rather than
 position and only ever *re-open*, exactly as the card snapshot does; any
 future section gets the same behaviour by carrying the attribute. They run
-**before** the regroups, which measure.
+**before** the regroups, which measure. The plain `expand()` peeks opt in the
+same way (`status-rest`, `file:<name>`, `dream:<name>`, `dreams-archive`) —
+a counted summary is never the key, because the count shifts while the
+disclosure's identity does not.
 
 `.qsec > summary` uses the child combinator on purpose: a question card inside
 carries its own `<details><summary>`, and a descendant rule here would be one

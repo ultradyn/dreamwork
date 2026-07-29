@@ -2324,8 +2324,21 @@ const pipBtn = (url, label) =>
   `<button class="pipbtn" type="button" title="pop out — floats while you` +
   ` navigate" aria-label="pop out ${esc(label)}" data-pipurl="${esc(url)}"` +
   ` data-piplabel="${esc(label)}">${PIP_SVG}</button>`;
-const expand = (s, inner, cls='') =>
-  `<details class="peek"><summary class="${cls}">${s}</summary>${inner}</details>`;
+/* expand(): plain read peeks — dreams, .md files, status overflow.
+
+   `keep` is a content-stable id for snapshotFolds / restoreFolds. It is NOT
+   the summary text: summaries carry live counts (`the rest (6)`,
+   `archive (3)`) that shift while the disclosure's identity does not. Without
+   data-keep the live tick rebuilds the dashboard through innerHTML and the
+   disclosure reappears closed under him (~2s /mtime poll; status.json
+   rewrites force a re-render). Same class as #141 qsec / #494 tip: open state
+   is his, nowhere on disk; restore is silent (`el.open = true`, no re-pose).
+   Counted summaries MUST pass keep explicitly. */
+const expand = (s, inner, cls='', keep='') => {
+  const attr = keep ? ` data-keep="${esc(keep)}"` : '';
+  return `<details class="peek"${attr}><summary class="${cls}">${s}</summary>` +
+         `${inner}</details>`;
+};
 /* Backticked references become links only when the destination is known.
    `github.com/…` is an external URL; target files come from the collector's
    closed set. Everything else stays code — a broken link is a false promise. */
@@ -3072,7 +3085,7 @@ VIEWS_JS = """
 function dreamBlock(d) {
   return expand(
     `${esc(d.name)}<span class="age" data-mt="${d.mtime}"></span>`,
-    mdB(d.content));
+    mdB(d.content), '', `dream:${d.name}`);
 }
 /* ── the questions channel's health (#136) ────────────────────────────────
    "Nothing needs you" and "the loop's channel to you is broken" produce the
@@ -3255,7 +3268,7 @@ function statusBlock(s, handoffs) {
         `<div class="stk">${esc(String(a.name || '?'))}</div>` +
         Object.keys(a).filter(k => !ST_AGENT_GLANCE.includes(k))
           .map(k => stField(k, a[k])).join('') + `</div>`).join('') +
-      rest.map(k => stField(k, s[k])).join(''), 'dim');
+      rest.map(k => stField(k, s[k])).join(''), 'dim', 'status-rest');
   return h + `</div>`;
 }
 /* ── the dashboard's questions section folds (#141) ───────────────────────
@@ -3713,7 +3726,8 @@ function buildDashboard(d) {
        (d.dreams.map(dreamBlock).join('') || '<div class="dim">none active</div>') +
        (d.dreams_archive.length
          ? expand(`archive (${d.dreams_archive.length})`,
-                  d.dreams_archive.map(dreamBlock).join(''), 'dim') : '');
+                  d.dreams_archive.map(dreamBlock).join(''), 'dim',
+                  'dreams-archive') : '');
   h += qSection(d);
   h += `<div class="dim"><a href="/answers">questions for the dreamer · ${d.answers_open.length} open</a></div>`;
   if (d.reviews.length) {
@@ -3726,7 +3740,7 @@ function buildDashboard(d) {
   }
   h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
-         expand(n, mdB(d.files[n]))).join('');
+         expand(n, mdB(d.files[n]), '', `file:${n}`)).join('');
   // ...then how the work itself is going (#142). Below the questions and the
   // reviews on purpose: the top of this page is what NEEDS him — a fault,
   // what just happened, what he must answer — and the burndown is context
@@ -7927,9 +7941,11 @@ const EXPAND_SURFACES = [
     list: GIT_LIST },
 ];
 /* Human-click fold for a <details> that is not a member of a keyed list
-   (#250). Reuses travelCard / revealBody / dreamAway — the qsec shape —
-   and deliberately does NOT snapshot open across ticks (no data-keep, no
-   positional sentinel). reduced-motion still toggles; only timing drops. */
+   (#250). Reuses travelCard / revealBody / dreamAway — the qsec shape.
+   Open-state survival across ticks is not this function's job: expand()
+   peeks and .qsec carry data-keep so snapshotFolds restores them; listless
+   missing-aid answered details deliberately omit it and re-close on tick.
+   reduced-motion still toggles; only timing drops. */
 function foldDetailsLocal(det) {
   if (!det) return;
   if (rmr) { det.open = !det.open; return; }
@@ -8015,7 +8031,10 @@ addEventListener('click', e => {
    These were native <details> toggles with no animation: closing one snapped
    the body away. They now go through the same foldDetailsLocal path as the
    keyed-list fallback (#250), so the body departs on the mist idiom and
-   everything below travels rather than jumping. reduced-motion: native toggle. */
+   everything below travels rather than jumping. reduced-motion: native toggle.
+   Open state rides data-keep via expand()'s keep arg + snapshotFolds
+   (status-rest, file:*, dream:*, dreams-archive) — same #141 rule the
+   questions section already had; without it the tick re-closes under him. */
 addEventListener('click', e => {
   const sum = e.target.closest && e.target.closest('.peek > summary');
   if (!sum || rmr) return;

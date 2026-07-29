@@ -396,12 +396,13 @@ exception; an element leaving fades rather than vanishing.
   frame goes **past** the final position — the border-box failure stated as
   the thing it does, with no dependence on when the traced click landed.
 
-  **The remaining instant disclosures are unexamined, not decided.** The
-  plain `expand()` peeks — dreams, the archive, the `.md` files, the status
-  overflow — still toggle natively. The rule that used to excuse them was
-  "nothing that moves sits below the toggle", and that rule was checkably
-  false about the questions section for the whole life of #141; it is no
-  truer about these. Do not read their silence as a decision.
+  **The plain `expand()` peeks travel on his gesture and hold open across
+  the tick.** Open/close goes through `foldDetailsLocal` (#277 — body
+  departs on the mist, panels below travel). Open state rides `data-keep`
+  via `expand(..., keep)` + `snapshotFolds` (`status-rest`, `file:*`,
+  `dream:*`, `dreams-archive`); a restore is silent (`el.open = true`, no
+  re-pose), same contract as #141 / #494. What remains unexamined is only
+  whether every *other* listless `<details>` on the page has opted in.
 - **The departure has two beats** (#277). A leaving element should dissolve
   *in place first*, then leave — not blur and travel at the same moment,
   which reads as "mush then snap" because the thing is already moving by the
