@@ -203,30 +203,6 @@ Next id: **485**
   required/optional, persist-until-answered), and the push-back — pag is a partial model (no authorship
   vocabulary, no threading, one-shot answers, no attention-mode axis), and `#294` must add question/contribution
   tables before any build. **The FEATURE stays blocked on `#294`** — only the survey half is done.
-- **#473** — a question can be updated and he has no way to notice · **P1** · dashboard/questions ·
-  origin: **human** ·
-  **human via watch 2026-07-29 06:21:** *"it was not obvious that this question had updated, we should show
-  the updated ago or something as well as having an event get posted to the user (for notifications) that a
-  question was updated. Add tasks for these."*
-  · **two deliverables and they are different mechanisms**, which is why they are one task only if they share
-  a definition of *updated*: (a) an **updated-ago** on the entry in the questions view, beside the existing
-  date and age; (b) an **event posted for notification** when a question changes, so he learns about it
-  without looking
-  · **the hard part is what counts as an update**, and it is not the file mtime: entries thread, so a
-  coordinator follow-up, a shrink, a rewritten rec and a new sub-decision are all edits to an existing entry,
-  while an unrelated entry's answer also rewrites `questions.md`. Per-entry, not per-file — and nothing
-  currently records when an entry last changed, so this needs a stored timestamp the way `#463` needed
-  created-vs-modified
-  · **it is the same class of defect as `#419`** (he could not find `#264`'s question) and as `#467` (the
-  `→ answered` marker the parser could not see): the loop changes something and assumes he will notice.
-  Tonight `#465` and `#275` were both rewritten smaller and he had no signal either time — he found out by
-  re-reading
-  · **`#456` is prior art for the age display** (` · ` between date and age, dim pad zero) and the notification
-  half should reuse `watch-events.log` rather than inventing a second channel — noting that channel is
-  best-effort and lossy by design, which is a real limit on (b) and may make it the weaker half
-  · blocked on nothing · related: **#472, #419, #467**
-  · **LANDED `b9c1051` (lane `wt/qsignal`, merge `aa9581f`, 2026-07-29 06:46), with the weaker half labelled as weak.** *Updated* is a **per-entry content digest** in `.dreamwork/question-sigs.json` — explicitly not the file mtime, and the lane wrote down what it rejected and why: git history (commit lag — the coordinator commits minutes after writing), a format marker (would change a parsed contract it did not own), and mtime (a neighbour's answer rewrites the whole file). Granularity suppresses a difference `ageStr` cannot show, reusing `#463`'s lesson rather than an exact inequality. **Half (b) is honestly derated:** the `watch-events.log` notification landed but that channel is **best-effort and lossy by design**, so the *display* half is the reliable deliverable — which is the right way round, since a notification he cannot trust is worse than none.
-
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
@@ -3294,6 +3270,31 @@ Next id: **485**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#473** — a question can be updated and he has no way to notice · **P1** · dashboard/questions ·
+  origin: **human** ·
+  **human via watch 2026-07-29 06:21:** *"it was not obvious that this question had updated, we should show
+  the updated ago or something as well as having an event get posted to the user (for notifications) that a
+  question was updated. Add tasks for these."*
+  · **two deliverables and they are different mechanisms**, which is why they are one task only if they share
+  a definition of *updated*: (a) an **updated-ago** on the entry in the questions view, beside the existing
+  date and age; (b) an **event posted for notification** when a question changes, so he learns about it
+  without looking
+  · **the hard part is what counts as an update**, and it is not the file mtime: entries thread, so a
+  coordinator follow-up, a shrink, a rewritten rec and a new sub-decision are all edits to an existing entry,
+  while an unrelated entry's answer also rewrites `questions.md`. Per-entry, not per-file — and nothing
+  currently records when an entry last changed, so this needs a stored timestamp the way `#463` needed
+  created-vs-modified
+  · **it is the same class of defect as `#419`** (he could not find `#264`'s question) and as `#467` (the
+  `→ answered` marker the parser could not see): the loop changes something and assumes he will notice.
+  Tonight `#465` and `#275` were both rewritten smaller and he had no signal either time — he found out by
+  re-reading
+  · **`#456` is prior art for the age display** (` · ` between date and age, dim pad zero) and the notification
+  half should reuse `watch-events.log` rather than inventing a second channel — noting that channel is
+  best-effort and lossy by design, which is a real limit on (b) and may make it the weaker half
+  · blocked on nothing · related: **#472, #419, #467**
+  · **LANDED `b9c1051` (lane `wt/qsignal`, merge `aa9581f`, 2026-07-29 06:46), with the weaker half labelled as weak.** *Updated* is a **per-entry content digest** in `.dreamwork/question-sigs.json` — explicitly not the file mtime, and the lane wrote down what it rejected and why: git history (commit lag — the coordinator commits minutes after writing), a format marker (would change a parsed contract it did not own), and mtime (a neighbour's answer rewrites the whole file). Granularity suppresses a difference `ageStr` cannot show, reusing `#463`'s lesson rather than an exact inequality. **Half (b) is honestly derated:** the `watch-events.log` notification landed but that channel is **best-effort and lossy by design**, so the *display* half is the reliable deliverable — which is the right way round, since a notification he cannot trust is worse than none.
+  · closed 2026-07-29 15:41, verified by the current coordinator: b9c10512 resolves; the per-entry content digest mechanism is live (.dreamwork/question-sigs.json, 69 entries signed); the updated-ago render exists beside the created age (watch.py:2568/2645/4061/4083); qsignal guard registered (verified during #472's fold). The notification half landed honestly derated — watch-events.log is best-effort and lossy by design, and the display half is the reliable deliverable, which the entry records as the right way round. Both deliverables exist; the derating is documented, not pending.
+
 - **#417** — the burndown should show commits per period, without spending the design it already
   has · P2 · Web UI/dashboard · origin: **human** · **human via watch `add-idea` 2026-07-28 14:58**
   · verbatim: *"burndown chart should show how many commits were made each period. design needs to
