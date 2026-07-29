@@ -66,8 +66,10 @@ import argparse
 import hashlib
 import re
 import sqlite3
+import subprocess
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 EX_OK = 0
@@ -717,6 +719,150 @@ def _verify_reported_resolutions(a: dict, by_id: dict) -> list[str]:
             failures.append(f"task #{c['id']}: dry-run says imports as "
                             f"unknown; DB has {row['origin']!r}")
     return failures
+
+
+# ---------------------------------------------------------------------------
+# Git-history recovery + synthetic events (R3, #294 increment 5).
+# ---------------------------------------------------------------------------
+# R3's ruling (05:48): git history imports as synthetic first-sight events
+# attributed actor='migration:git' — NEVER to the human or the loop — so a
+# reconstructed event is always distinguishable from a witnessed one. The 74
+# "section id without an entry" ids (a bold `**#N**` span in groomed landed
+# prose, no entry head in the current file) get a task row here ONLY when a
+# verbatim body is recovered from history; body/title are NOT NULL and a
+# stub would be fabrication. An id that never had an entry head in any
+# commit is honestly UNRECOVERABLE and gets no row (reported, not invented).
+
+def git_snapshots(ledger_relpath: str = ".dreamwork/tasks.md"):
+    """Chronological ``(sha, epoch, ledger_text)`` for every commit touching
+    the ledger. Pure over git's deterministic ``log --reverse`` order; the
+    same history always yields the same sequence."""
+    raw = subprocess.check_output(
+        ["git", "log", "--reverse", "--format=%H %ct", "--", ledger_relpath],
+        stderr=subprocess.DEVNULL, text=True)
+    out = []
+    for line in raw.splitlines():
+        sha, ct = line.split()
+        blob = subprocess.check_output(
+            ["git", "show", f"{sha}:{ledger_relpath}"], stderr=subprocess.DEVNULL)
+        out.append((sha, int(ct), blob.decode("utf-8", "replace")))
+    return out
+
+
+def _length_framed(*parts) -> bytes:
+    """8-byte big-endian length prefix per part (journal contract; matches
+    user_events.digest.length_framed so the framing cannot drift)."""
+    out = bytearray()
+    for part in parts:
+        data = part.encode("utf-8") if isinstance(part, str) else bytes(part)
+        out.extend(len(data).to_bytes(8, "big"))
+        out.extend(data)
+    return bytes(out)
+
+
+def genesis_hash() -> str:
+    """H_0 = SHA-256(journal_id || schema_version) — the task-event chain seed."""
+    return hashlib.sha256(
+        f"ud-dreamwork.task-ledger{ledger_store.SCHEMA_VERSION}".encode()).hexdigest()
+
+
+def canonical_event_bytes(e: dict) -> bytes:
+    """``length_framed(canonical_event)`` — the stable fields, never the hash."""
+    return _length_framed(str(e["task_id"]), e["at"], e["cause"],
+                          e["from_state"] or "", e["to_state"] or "",
+                          e["actor"], e.get("detail") or "")
+
+
+def hash_event(prev_hash: str, canonical: bytes) -> str:
+    """H_i = SHA-256(domain_tag || H_(i-1) || length_framed(canonical_event_i)).
+
+    DOMAIN_TAG comes from ledger_store (the table's own tag); prev_hash is
+    load-bearing (B3): drop it and an earlier mutation stops moving the head.
+    """
+    return hashlib.sha256(
+        ledger_store.DOMAIN_TAG + prev_hash.encode("ascii") + canonical).hexdigest()
+
+
+def chain_events(events: list) -> list:
+    """Order events deterministically and append prev_hash/hash per the chain.
+
+    Order is ``(at, task_id, rank)`` with first-sight (from_state is None)
+    before landed, so the same history always produces the same chain.
+    """
+    ordered = sorted(events, key=lambda e: (
+        e["at"], e["task_id"], 0 if e["from_state"] is None else 1))
+    prev, chained = genesis_hash(), []
+    for e in ordered:
+        h = hash_event(prev, canonical_event_bytes(e))
+        chained.append({**e, "prev_hash": prev, "hash": h})
+        prev = h
+    return chained
+
+
+def _history_event(task_id, epoch, from_state, to_state, sha, kind) -> dict:
+    """One synthetic migration:git lifecycle event reconstructed from history."""
+    at = datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+    return {"task_id": task_id, "at": at, "cause": "migration_git",
+            "from_state": from_state, "to_state": to_state,
+            "actor": "migration:git", "receipt_id": None,
+            "detail": f"reconstructed {kind} from git history ({sha[:12]})"}
+
+
+def recover_groomed_history(a: dict, snapshots: list) -> dict:
+    """Recover bodies + lifecycle for groomed ids from chronological snapshots.
+
+    Pure: no git, no DB. ``snapshots`` is the chronological ``(sha, epoch,
+    text)`` list. Returns ``{tasks, events, unrecoverable, groomed}`` where
+    tasks/events are UNCHAINED (call ``chain_events`` for the hash field).
+    A groomed id with no entry head in any commit is unrecoverable: no row,
+    no event, reported honestly (body is NOT NULL and a stub is fabrication).
+    """
+    watch = _load_watch_or_die()
+    groomed = {c["id"] for c in
+               a["conflicts"].get("section id without an entry", [])}
+    first, last_body, landed, prev_sec = {}, {}, {}, {}
+    for sha, epoch, text in snapshots:
+        o, l = watch.parse_ledger(text)
+        oids, lids = {int(x) for x in o}, {int(x) for x in l}
+        heads = {i: body for ids, body in
+                 ledger_parse.ledger_entries(text) for i in ids}
+        for i in groomed:
+            sec = "open" if i in oids else ("landed" if i in lids else None)
+            if i not in first and (sec is not None or i in heads):
+                first[i] = (sha, epoch, sec)
+            if i in heads:                       # keeps updating → last version
+                last_body[i] = (heads[i], sha, epoch)
+            if prev_sec.get(i) == "open" and sec == "landed" and i not in landed:
+                landed[i] = (sha, epoch)
+            if sec is not None:
+                prev_sec[i] = sec
+    cur_open = set(a["open_ids"])
+    tasks, events, unrecoverable = {}, [], set()
+    for i in sorted(groomed):
+        if i not in last_body:
+            unrecoverable.add(i)
+            continue
+        body, _, _ = last_body[i]
+        band, unc = entry_band(body)
+        tasks[i] = {
+            "id": i, "state": "open" if i in cur_open else "landed",
+            "title": head_title(body), "body": body,
+            "priority": band, "priority_uncertain": unc,
+            "type": entry_type(body), "origin": entry_origin([i], body),
+            "blocked_on": blocked_on_text(body),
+            "body_digest": hashlib.sha256(body.encode()).hexdigest(),
+            "source_line": None,
+        }
+        fsha, fepoch, fsec = first[i]
+        events.append(_history_event(i, fepoch, None, fsec or "open", fsha,
+                                     "first sight"))
+        if i in landed:
+            lsha, lepoch = landed[i]
+            events.append(_history_event(i, lepoch, "open", "landed", lsha,
+                                         "landed"))
+    return {"tasks": tasks, "events": events,
+            "unrecoverable": unrecoverable, "groomed": groomed}
+
 
 
 def render_report(a: dict) -> str:

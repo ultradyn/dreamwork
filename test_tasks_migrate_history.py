@@ -83,14 +83,26 @@ def _groomed(a):
 # ---------------------------------------------------------------------------
 # Recovery — bodies + first-sight / landed metadata.
 # ---------------------------------------------------------------------------
+def _last_head_body(target):
+    """The ledger_parse body of `target` at its last-headed snapshot (raw,
+    including the trailing newline ledger_parse keeps — same bytes the
+    verbatim import stores, so the digest matches)."""
+    want = None
+    for _, _, text in SNAPSHOTS:
+        heads = {i: b for ids, b in ledger_parse.ledger_entries(text) for i in ids}
+        if target in heads:
+            want = heads[target]
+    return want
+
+
 def test_recover_extracts_last_verbatim_body(module):
     a = _analysis(module, CURRENT[2])
     assert _groomed(a) == {5, 6, 7}, "fixture lost its groomed shape"
     r = module.recover_groomed_history(a, SNAPSHOTS)
     assert set(r["tasks"]) == {5, 7}, "recoverable ids wrong"
-    assert r["tasks"][5]["body"] == FIVE_V2, "must be the LAST verbatim body"
+    assert r["tasks"][5]["body"] == _last_head_body(5), "must be the LAST verbatim body"
     assert r["tasks"][5]["state"] == "landed"
-    assert r["tasks"][7]["body"] == SEVEN
+    assert r["tasks"][7]["body"] == _last_head_body(7)
 
 
 def test_recover_marks_unrecoverable_when_no_head_ever(module):
