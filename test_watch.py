@@ -3464,7 +3464,8 @@ class TestSummary(unittest.TestCase):
             self.assertIn(s["answers_health"],
                           {"ok", "missing", "unreadable", "empty"})
             self.assertEqual(set(s["posture"]),
-                             {"pace", "asking", "delegation", "source"})
+                             {"pace", "asking", "delegation", "delivery",
+                              "source"})
             self.assertEqual(set(s["skill_identity"]),
                              {"commit", "skill_version"})
             self.assertEqual(set(s["burndown_counts"]),
