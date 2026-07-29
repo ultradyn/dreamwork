@@ -3777,6 +3777,38 @@ class TestAppShell(unittest.TestCase):
         self.assertIn("function renderKinds()", watch.PAGE)  # the button row
         self.assertIn("function renderMenu()", watch.PAGE)   # the hover menu
 
+    def test_command_submit_decays_to_sticky_kind(self):
+        # #337: after a steering command LANDS, the composer decays back to
+        # the one sticky kind. A mode that persists silently raises the
+        # authority of his NEXT message, so the composer settles on the
+        # least dangerous one — #257's danger reasoning for do-now,
+        # generalised. The PROPERTY on COMMANDS drives it, never a
+        # hardcoded pair of kinds: derive the expectation from the table at
+        # runtime, so a hypothetical third kind with sticky:false is covered
+        # by the same assertion without being added here.
+        sticky = [c["kind"] for c in watch.COMMANDS if c.get("sticky")]
+        self.assertEqual(sticky, ["add-idea"],
+                         "add-idea is the only kind that may persist")
+        decaying = [c["kind"] for c in watch.COMMANDS if not c.get("sticky")]
+        self.assertGreaterEqual(len(decaying), 2,
+                                "one decaying kind would prove nothing about "
+                                "the property — that a PAIR decays is the point")
+        self.assertIn("do-next", decaying)
+        self.assertIn("do-now", decaying)
+        # The submit path reads the property off the LIVE table — COMMANDS is
+        # a `let` because plugin kinds join it (#86) — so a kind with
+        # sticky:false (or no `sticky` at all) decays whether it is core or
+        # contributed. No kind may be named in the decay itself:
+        # `kind === 'do-now'` was the special case this replaced, and
+        # re-growing it re-opens the third place a new kind must be
+        # remembered.
+        self.assertIn("COMMANDS.find(c => c.kind === kind)", watch.PAGE)
+        self.assertIn("!sent.sticky", watch.PAGE)
+        self.assertNotIn("kind === 'do-now'", watch.PAGE)
+        # the decay lands through setKind — the indicator's existing slide
+        # (transitions.md), never a second gesture.
+        self.assertIn("setKind('add-idea')", watch.PAGE)
+
     def test_command_menu_lists_every_kind(self):
         # Hover discoverability (#91): the row shows the common kinds, and the
         # menu shows ALL of them with a one-line description — so an uncommon
