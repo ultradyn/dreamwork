@@ -3,7 +3,116 @@
 ## Open
 
 
+- **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
+  **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
+  instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
+  file. `#465` is the guard that refuses such a commit — it reads which paths each lane declared and blocks
+  anyone else touching them.
+
+  **You also asked why it needs the global hook path. It does not — I framed that badly.** Your
+  `core.hooksPath` is global (`~/.config/git/hooks`, holding c2c's `pre-commit`/`pre-push` plus a
+  `commit-msg`), and because that setting exists git ignores `.git/hooks` entirely, which is the only reason
+  the global dir came up at all. Setting `core.hooksPath` **repo-locally** overrides it for this repo alone.
+
+  **`Q1` — which install?** New **`rec`: repo-local**, a tracked `.githooks/` here whose `pre-commit` runs
+  c2c's hook first and then the guard. Blast radius is this repo; c2c keeps working here. The honest cost:
+  a repo-local path also shadows `commit-msg` and `pre-push`, so the dir must forward all three or they
+  silently stop applying — that is the work, and it is why the global install looked simpler.
+  Global-and-chained is still available if you would rather have it everywhere.
+
+  **Since you last read this, `#468` R2 landed** and needs no hook at all: `lane_guard.py pre-merge <branch>`
+  checks the same preconditions before a merge. So some protection now exists either way.
+
+  **If you say nothing:** the guard stays committed and inert, and the stray-edit protection does not exist —
+  the status quo that cost the held merge. `DREAMWORK_LANE_GUARD_BYPASS=1` remains the escape.
+  - **Note (human, via watch, 2026-07-29 05:51):** why can't we enable #465
+    without this? And also, what is 465?
+
+
+- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
+  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
+  then, nothing blocks and nothing is delivered by hand.
+  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
+    as an open question that we'll revisit once dreamhub is stable and the
+    primary way we access dreamworkers
+
+## Answered
+
+- **P2 · 2026-07-30 04:45 — #504: the composer 'chat' design is done — an IGC made it the first slice of #229, and four forks are yours.**
+  → answered (2026-07-30 07:48): **rec ×4.** The composer-chat design proceeds as the first slice of #229 with the design's four defaults. Implementation unblocked; queued behind the watch.py UI lanes.
+  **Sub-decisions:** `Q1`, `Q2`, `Q3`, `Q4`
+  Design: `.dreamwork/docs/plans/composer-chat.md` (design only; no code authorised; the implementation
+  anchor stays `#373`).
+
+  The headline is the reconciliation, not a fork: a real IGC (A/B/C × G1–G5) decided your `chat` command
+  **is** the main-dreamer first slice of `#229`/`#270`'s approved spine — not a separate channel. A separate
+  store was refuted (a second durable inbox competing with the `#263` receipt), as was riding
+  `/command`+`questions.md` (no queryable unread home, no enforceable reply channel). So the message path,
+  thread model and reply channel are `#229`'s, and your *"get unread at the start of a loop iteration"* is,
+  by name, the `#342` cursor read (`dev/journal_consume.py pending`). One pushback, stated plainly in the
+  doc: *"tracked in the db, but only just in case"* understates the receipt — under `#342` it is the
+  delivery path, not a backup.
+
+  Four genuine forks, each with a rec; **`rec` takes all four.**
+
+  - **`Q1` — the POST route home.** `rec`: a new **`/command` chat kind** — reuses the existing route, the
+    receipt seam and the composer row; thinnest path, and matches your "command" framing. The alternative is
+    a new `/chat` write route, reserved for `#373`'s full surface (a `watch.py` change plus an E2Shadow
+    extension).
+  - **`Q2` — the UI word.** Implementation never says `thread` (`#229`'s vocabulary rule). `rec`: the UI
+    says **"topic chat"** too. The alternative keeps your word "thread" in the human-facing label only;
+    behaviour is identical either way.
+  - **`Q3` — the delivery default under `#342`.** `rec`: **batched** — rides the tick cursor read, exactly
+    your "get unread at iteration start", joining the ambiguous class `#342` already ruled batched. The
+    alternative is `instant` (pre-empts like `do-now`).
+  - **`Q4` — does this slice ship a visible chat surface?** `rec`: a **minimal chat list reusing the
+    dashboard**, deferring `#373`'s global `/chat` index and dedicated route. The alternative lands only the
+    loop-side path now, all UI later.
+
+  **If you say nothing:** nothing is built — the design authorises no code, and the recs stand as the
+  design's defaults when `#373` is planned.
+  Accepted answers: `rec` (takes all four) · per-question (`Q1: …`) · free text.
+  - **Answer (via watch, 2026-07-30 07:48):** rec (all 4)
+
+- **P2 · 2026-07-30 06:05 — #510: an 'Orchestrator' option in Posture — three calls, after the IGC you asked for.**
+  → answered (2026-07-30 07:46): **rec ×3.** Orchestration is a MODE, not an identity; a binary axis `hands-on` | `orchestrator`, absent → `hands-on`; land the axis, do NOT enable the `hierarchical` run-mode value. Implementation dispatched as lane-510impl (the design's split: lane does WebUI+lint, coordinator does SKILL.md docs).
+  **Sub-decisions:** `Q1`, `Q2`, `Q3`
+  Design: `.dreamwork/docs/plans/orchestrator-posture.md` (design only; no code authorised). Your 04:54
+  do-next. The IGC (I1–I5 × G1–G5) settles *how* it integrates — **a fifth posture axis**, not a fold onto
+  `delegation`, not the `hierarchical` run-mode value, not a control-only toggle, not a sibling file. What
+  it does not settle is *what* "Orchestrator" is, and that is the first call. One finding worth your eye:
+  the fleet concept you're gesturing at already exists, teed up and disabled, as the `hierarchical`
+  run-mode value (`watch.py:343`) — so this is less "invent where it goes" than "it wants to be a posture
+  axis, not the run-mode value it's parked as" (run-mode bundles decisions, `#443`; an axis is the
+  unbundled form).
+
+  - **`Q1` — the referent: orchestration MODE, or orchestrator IDENTITY?** Mode = the coordinator
+    dispatches + reviews and implements nothing inline (the coordinator-only-loop mode
+    `dogfood-orchestration.md` records; your "you main opus 5 claude orchestrator" usage). Identity =
+    which model/session runs the loop. **`rec: mode.`** Identity is a dispatch/provenance fact you set by
+    which session you run / which alias you dispatch — recorded at dispatch, not a posture dial; a
+    gitignored, tick-re-read posture file is the wrong home for "who was dispatched." If you mean
+    identity, say so — the integration is different and this IGC does not apply.
+  - **`Q2` — the closed set and name (if mode).** **`rec: a binary axis `hands-on` | `orchestrator`,
+    absent → `hands-on` (today).** `orchestrator` = the coordinator implements nothing inline — every
+    increment is dispatched, the coordinator's role is adjudication/review/ledger. `hands-on` = today
+    (implements inline, may also delegate). Binary because solo-vs-fleet is already `delegation`'s job
+    (`delegation: 0` = solo); a third "solo" stop would duplicate it. The other stop's label is open
+    (`hands-on` rec; `implementer`/`inline` alternatives); a three-stop `solo | mixed | orchestrator` is
+    available if you want "mixed" nameable.
+  - **`Q3` — the `hierarchical` run-mode (#264/#288).** **`rec: land the axis, do NOT enable
+    `hierarchical` as a run-mode value.** The axis is the dial `hierarchical` always wanted to be;
+    enabling the value re-bundles decisions (`#443`) and still needs #264/#288, while the axis needs
+    neither. Alternative: land both, the axis being what a later `hierarchical` convenience bundle sets.
+
+  **If you say nothing:** nothing is built — the design authorises no code, and the recs stand as the
+  defaults when the implementation split (subagent WebUI, coordinator docs, per your instruction) is
+  planned.
+  Accepted answers: `rec` (takes all three) · per-question (`Q1: …`) · free text.
+  - **Answer (via watch, 2026-07-30 07:46):** 1. rec 2. rec 3. rec
+
 - **P2 · 2026-07-30 07:05 — #505: the wholesale-rerender smell — the IGC is done, four calls are yours.**
+  → answered (2026-07-30 07:44): **Q1 rec (vendored morphdom) · Q2 modified · Q3 rec · Q4 rec.** Q2's answer lifts the no-build single-file constraint: 'we had a python stdlib constraint, but otherwise building the webui bundle and breaking up watch.py into modules are good and reasonable things.' The IGC's build-step refutation premise is removed for the future; the vendored-morphdom phase 1 (#view only, corpse-rule guard) stands 'for the moment'. Implementation unblocked; queued behind lane-523burndown (setContent region).
   **Sub-decisions:** `Q1`, `Q2`, `Q3`, `Q4`
   Design: `.dreamwork/docs/plans/render-architecture.md` (design only; no code authorised). Your 03:48
   report: every data.json poll resets UI state inside question cards (text selection deselects; the chrome
@@ -43,112 +152,6 @@
     a python stdlib constraint, but otherwise building the webui bundle
     and breaking up watch.py into modules are good and reasonable
     things. 3. rec 4. rec
-
-- **P2 · 2026-07-30 06:05 — #510: an 'Orchestrator' option in Posture — three calls, after the IGC you asked for.**
-  **Sub-decisions:** `Q1`, `Q2`, `Q3`
-  Design: `.dreamwork/docs/plans/orchestrator-posture.md` (design only; no code authorised). Your 04:54
-  do-next. The IGC (I1–I5 × G1–G5) settles *how* it integrates — **a fifth posture axis**, not a fold onto
-  `delegation`, not the `hierarchical` run-mode value, not a control-only toggle, not a sibling file. What
-  it does not settle is *what* "Orchestrator" is, and that is the first call. One finding worth your eye:
-  the fleet concept you're gesturing at already exists, teed up and disabled, as the `hierarchical`
-  run-mode value (`watch.py:343`) — so this is less "invent where it goes" than "it wants to be a posture
-  axis, not the run-mode value it's parked as" (run-mode bundles decisions, `#443`; an axis is the
-  unbundled form).
-
-  - **`Q1` — the referent: orchestration MODE, or orchestrator IDENTITY?** Mode = the coordinator
-    dispatches + reviews and implements nothing inline (the coordinator-only-loop mode
-    `dogfood-orchestration.md` records; your "you main opus 5 claude orchestrator" usage). Identity =
-    which model/session runs the loop. **`rec: mode.`** Identity is a dispatch/provenance fact you set by
-    which session you run / which alias you dispatch — recorded at dispatch, not a posture dial; a
-    gitignored, tick-re-read posture file is the wrong home for "who was dispatched." If you mean
-    identity, say so — the integration is different and this IGC does not apply.
-  - **`Q2` — the closed set and name (if mode).** **`rec: a binary axis `hands-on` | `orchestrator`,
-    absent → `hands-on` (today).** `orchestrator` = the coordinator implements nothing inline — every
-    increment is dispatched, the coordinator's role is adjudication/review/ledger. `hands-on` = today
-    (implements inline, may also delegate). Binary because solo-vs-fleet is already `delegation`'s job
-    (`delegation: 0` = solo); a third "solo" stop would duplicate it. The other stop's label is open
-    (`hands-on` rec; `implementer`/`inline` alternatives); a three-stop `solo | mixed | orchestrator` is
-    available if you want "mixed" nameable.
-  - **`Q3` — the `hierarchical` run-mode (#264/#288).** **`rec: land the axis, do NOT enable
-    `hierarchical` as a run-mode value.** The axis is the dial `hierarchical` always wanted to be;
-    enabling the value re-bundles decisions (`#443`) and still needs #264/#288, while the axis needs
-    neither. Alternative: land both, the axis being what a later `hierarchical` convenience bundle sets.
-
-  **If you say nothing:** nothing is built — the design authorises no code, and the recs stand as the
-  defaults when the implementation split (subagent WebUI, coordinator docs, per your instruction) is
-  planned.
-  Accepted answers: `rec` (takes all three) · per-question (`Q1: …`) · free text.
-  - **Answer (via watch, 2026-07-30 07:46):** 1. rec 2. rec 3. rec
-
-- **P2 · 2026-07-30 04:45 — #504: the composer 'chat' design is done — an IGC made it the first slice of #229, and four forks are yours.**
-  **Sub-decisions:** `Q1`, `Q2`, `Q3`, `Q4`
-  Design: `.dreamwork/docs/plans/composer-chat.md` (design only; no code authorised; the implementation
-  anchor stays `#373`).
-
-  The headline is the reconciliation, not a fork: a real IGC (A/B/C × G1–G5) decided your `chat` command
-  **is** the main-dreamer first slice of `#229`/`#270`'s approved spine — not a separate channel. A separate
-  store was refuted (a second durable inbox competing with the `#263` receipt), as was riding
-  `/command`+`questions.md` (no queryable unread home, no enforceable reply channel). So the message path,
-  thread model and reply channel are `#229`'s, and your *"get unread at the start of a loop iteration"* is,
-  by name, the `#342` cursor read (`dev/journal_consume.py pending`). One pushback, stated plainly in the
-  doc: *"tracked in the db, but only just in case"* understates the receipt — under `#342` it is the
-  delivery path, not a backup.
-
-  Four genuine forks, each with a rec; **`rec` takes all four.**
-
-  - **`Q1` — the POST route home.** `rec`: a new **`/command` chat kind** — reuses the existing route, the
-    receipt seam and the composer row; thinnest path, and matches your "command" framing. The alternative is
-    a new `/chat` write route, reserved for `#373`'s full surface (a `watch.py` change plus an E2Shadow
-    extension).
-  - **`Q2` — the UI word.** Implementation never says `thread` (`#229`'s vocabulary rule). `rec`: the UI
-    says **"topic chat"** too. The alternative keeps your word "thread" in the human-facing label only;
-    behaviour is identical either way.
-  - **`Q3` — the delivery default under `#342`.** `rec`: **batched** — rides the tick cursor read, exactly
-    your "get unread at iteration start", joining the ambiguous class `#342` already ruled batched. The
-    alternative is `instant` (pre-empts like `do-now`).
-  - **`Q4` — does this slice ship a visible chat surface?** `rec`: a **minimal chat list reusing the
-    dashboard**, deferring `#373`'s global `/chat` index and dedicated route. The alternative lands only the
-    loop-side path now, all UI later.
-
-  **If you say nothing:** nothing is built — the design authorises no code, and the recs stand as the
-  design's defaults when `#373` is planned.
-  Accepted answers: `rec` (takes all four) · per-question (`Q1: …`) · free text.
-  - **Answer (via watch, 2026-07-30 07:48):** rec (all 4)
-
-- **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
-  **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
-  instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
-  file. `#465` is the guard that refuses such a commit — it reads which paths each lane declared and blocks
-  anyone else touching them.
-
-  **You also asked why it needs the global hook path. It does not — I framed that badly.** Your
-  `core.hooksPath` is global (`~/.config/git/hooks`, holding c2c's `pre-commit`/`pre-push` plus a
-  `commit-msg`), and because that setting exists git ignores `.git/hooks` entirely, which is the only reason
-  the global dir came up at all. Setting `core.hooksPath` **repo-locally** overrides it for this repo alone.
-
-  **`Q1` — which install?** New **`rec`: repo-local**, a tracked `.githooks/` here whose `pre-commit` runs
-  c2c's hook first and then the guard. Blast radius is this repo; c2c keeps working here. The honest cost:
-  a repo-local path also shadows `commit-msg` and `pre-push`, so the dir must forward all three or they
-  silently stop applying — that is the work, and it is why the global install looked simpler.
-  Global-and-chained is still available if you would rather have it everywhere.
-
-  **Since you last read this, `#468` R2 landed** and needs no hook at all: `lane_guard.py pre-merge <branch>`
-  checks the same preconditions before a merge. So some protection now exists either way.
-
-  **If you say nothing:** the guard stays committed and inert, and the stray-edit protection does not exist —
-  the status quo that cost the held merge. `DREAMWORK_LANE_GUARD_BYPASS=1` remains the escape.
-  - **Note (human, via watch, 2026-07-29 05:51):** why can't we enable #465
-    without this? And also, what is 465?
-
-
-- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
-  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
-  then, nothing blocks and nothing is delivered by hand.
-  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
-    as an open question that we'll revisit once dreamhub is stable and the
-    primary way we access dreamworkers
-
-## Answered
 
 
 - **P2 · 2026-07-30 03:40 — #357 Q6: on the read verbs (`counts`, `sweep`), full warning line every time, or a terse `⚠ N warnings` hint?**
