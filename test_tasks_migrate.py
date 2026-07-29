@@ -422,7 +422,13 @@ def test_per_entry_digests_cover_every_entry(module):
 
 
 # ---------------------------------------------------------------------------
-# Live-repo acceptance — this repo's real tasks.md (the brief's floors).
+# Live-repo acceptance — this repo's real tasks.md. The equality assertions
+# derive both sides at runtime; non-vacuousness rides on the seed (the one
+# quantity that can never shrink), NOT on count floors — the original
+# `open >= 130 / landed >= 230` floors expired the week they were written
+# because open tasks legitimately complete and grooming legitimately removes
+# landed heads. A count floor on a live ledger is a check with an expiry
+# date nobody can see.
 # ---------------------------------------------------------------------------
 def test_live_ledger_acceptance(module):
     text = LIVE_LEDGER.read_text()
@@ -432,8 +438,12 @@ def test_live_ledger_acceptance(module):
     rc = module.main(["--dry-run", "--ledger", str(LIVE_LEDGER)], out=out)
     assert rc == 0
     a = module.build_analysis(text, ledger_path=str(LIVE_LEDGER))
-    assert a["open_count"] == len(d["open"]) and a["open_count"] >= 130
-    assert a["landed_count"] == len(d["landed"]) and a["landed_count"] >= 230
+    assert a["open_count"] == len(d["open"])
+    assert a["landed_count"] == len(d["landed"])
+    # Monotonic floor: ids are never reused, so the seed (MAX(id)+1) only
+    # ever grows. 486 was the verified seed at the increment-3 census; the
+    # live ledger can never legitimately fall below it.
+    assert a["seed"]["seed"] >= 486
     assert a["disjoint"] is True
     assert a["conflicts"].get("entry outside both sections", []) == []
     assert a["conflicts"].get("entry head without an id", []) == []
