@@ -1174,6 +1174,18 @@ STYLE = """<style>
   .qhealth.unreadable .qhbody { color:var(--lit); }
   .qhealth.missing .qhbody { color:var(--dim); }
   .qh { color:var(--warn); }
+  /* #452 — the focused question's said-missing state. The rail idiom at
+     DIM level, not --warn: the channel is healthy and the question is
+     simply gone, so it must not wear the fault colour — and it must not
+     render as an empty list either (#402). The head is the page's small
+     uppercase-label idiom; the body states what happened and guesses at
+     nothing. */
+  .qmissing { border-left:2px solid var(--dimmer); padding-left:.8rem;
+    margin:.3rem 0 .9rem; }
+  .qmissing .qmisshead { color:var(--dim); text-transform:uppercase;
+    letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
+  .qmissing .qmissbody { color:var(--lit); max-width:56ch; }
+  .qmissing .qmissback { margin-top:.5rem; }
   /* a send that did not land wears the same colour, because it is the same
      failure seen from the writing end: the channel to him did not work and
      nothing else on the page would have said so */
@@ -3851,6 +3863,46 @@ function buildReview(name, q, d) {
       (dock ? reviewSplitBar(pct) : '') +
       dock +
     `</div>`;
+}
+/* #452 — ONE question on its own page: a surface the loop's churn cannot
+   shift under him mid-answer. The key (`qid` in the URL) is the question's
+   TITLE identity — the same string `data-qid` already carries to survive
+   regrouping — chosen for what survives it: body rewrites, priority
+   re-sorts and the open→answered fold all keep the title, and those three
+   ARE the churn this page exists for (the loop rewrote #449's entry three
+   times in fifteen minutes while he was reading it). A RETITLE breaks the
+   key, and that case fails LOUD, in the .qmissing notice below — never a
+   blank page and never a different question ("I could not tell" and
+   "nothing" must not render the same). #294's planned question_id can
+   later be accepted beside the title without invalidating a single link. */
+function buildQuestion(title, d) {
+  if (!d) return '<div class="dim">loading…</div>';
+  if (title) {
+    const oi = (d.questions_open || []).findIndex(x => x.title === title);
+    if (oi >= 0)
+      return `<div id="qfocus">` +
+        qaCard(d.questions_open[oi], 'o' + oi) + `</div>`;
+    /* the fold, followed: answering re-indexes the entry into
+       answered_entries while he watches, and the page moves WITH it — a
+       live question reported as gone is the failure this route exists to
+       prevent. Same title, same card, new 'a<n>' address. */
+    const ai = d.answered_entries.findIndex(x => x.title === title);
+    if (ai >= 0)
+      return `<div id="qfocus">` +
+        qaCard(d.answered_entries[ai], 'a' + ai) + `</div>`;
+  }
+  /* Unresolved. The notice says WHAT (the key names nothing live), WHY
+     (most likely a retitle), and the way back — and it guesses at nothing:
+     a near title is a different question. Not --warn: the channel is fine,
+     the question is simply gone, and a fault colour would cry broken over
+     an edit. */
+  return `<div id="qfocus"><div class="qmissing">` +
+    `<div class="qmisshead">not found</div>` +
+    `<div class="qmissbody">this link names a question the list no longer ` +
+    `has — it was most likely re-titled or removed while you watched. ` +
+    `No other question has been substituted for it.</div>` +
+    `<div class="qmissback"><a href="/questions">&larr; back to questions</a></div>` +
+    `</div></div>`;
 }
 /* ── the review split (#305) ──────────────────────────────────────────────
    An INVISIBLE affordance still has to be operable by everything that
