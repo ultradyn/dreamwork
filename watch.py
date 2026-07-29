@@ -2639,6 +2639,25 @@ const qfocusLink = title =>
   ` <a class="qfocus" href="/question?qid=${encodeURIComponent(title)}"` +
   ` title="focus this question — open it on its own page"` +
   ` aria-label="focus this question on its own page">focus</a>`;
+/* #454 — the way to roll an OPEN question up to the top of its scroll:
+   the card clamps to a 5-6 line card rather than vanishing behind a
+   title, because a title alone does not say whether an entry still needs
+   him and the rolled top of the body does. A REAL BUTTON, the same
+   argument the focus link makes three ways: keyboard operation is native,
+   aria-expanded says the disclosure state to AT, and it rides the card's
+   own arrival rather than appearing. Open state ONLY — the styleguide's
+   axis already answers for the other two: awaiting still needs the loop
+   (it does not collapse), and folded IS the collapse (#111). Emitted
+   everywhere the focus link is, including the dock, where CSS declines it
+   (the dock card is the reading surface; it is never rolled) — which is
+   why `.qroll` is listed in dom.mjs's dockHeadline chrome strip (#474's
+   rule: headline chrome is a node, and the node is listed there).
+   Suppressed on the focus page itself, like the focus link. */
+const qrollBtn = title =>
+  (typeof view !== 'undefined' && view && view.name === 'question') ? '' :
+  ` <button type="button" class="qroll" aria-expanded="true"` +
+  ` title="roll this question up to its first lines"` +
+  ` aria-label="roll this question up to its first lines">roll up</button>`;
 const qaInner = (q, key) => {
   const st = qaState(q, key);
   const body = q.body && q.body.trim() ? mdBReview(q.body.trim(), q.title) : '';
@@ -2693,11 +2712,12 @@ const qaInner = (q, key) => {
      simply been hidden. */
   const up = qUpdatedHtml(q);
   const focus = qfocusLink(q.title);
+  const roll = st === 'open' ? qrollBtn(q.title) : '';
   if (st === 'folded')
     return `<details class="qfold"><summary class="qt">${qtHtml(q.title)}${up}` +
       (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : '') +
       `${focus}</summary><div class="qbody">${body}${foot}</div>${compose}</details>`;
-  return `<div class="qbody"><div class="qt">${qtHtml(q.title)}${up}${focus}</div>` +
+  return `<div class="qbody"><div class="qt">${qtHtml(q.title)}${up}${roll}${focus}</div>` +
          `${body}${foot}</div>${compose}`;
 };
 /* Two identities, deliberately. `data-qkey` ADDRESSES the entry in live data
