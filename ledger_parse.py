@@ -25,6 +25,8 @@ entry/origin grammar only; the format itself is governed by
 """
 
 import re
+import sqlite3
+from pathlib import Path
 
 # An entry opens with a leading bold token (`- **#…**`); only that token
 # numbers it. A `#N` deeper in the body is a cross-reference, never the
@@ -108,3 +110,119 @@ def open_section_text(text: str) -> str | None:
     if start is None:
         return None
     return "\n".join(lines[start:end])
+
+
+# ---------------------------------------------------------------------------
+# Post-cutover store read path (#294 cutover / R4).
+#
+# The store becomes the single source when its cutover watermark is present.
+# ledger_parse is the ONE read module for both Markdown and store, so the
+# flip dispatches here. These functions use raw sqlite3 (stdlib) — ledger_parse
+# stays a leaf module (no repo imports), so watch.py's deployed snapshot and
+# every consumer can import it without a cycle.
+#
+# The watermark is a ONE-WAY flip: present -> store is the source; absent ->
+# Markdown. Never dual-write, never two truths (design M2 — the shadow-run
+# rival is the second derived truth #264 exists to remove).
+# ---------------------------------------------------------------------------
+
+# Co-residence with #263's journal is planned but not yet landed; until then
+# the store is a sibling of user-events.sqlite3 (design inc-1 notes).
+STORE_FILENAME = "ledger.sqlite3"
+_WATERMARK_KEY = "ledger_cut_over"
+
+
+def store_path(dreamwork_dir) -> Path:
+    """The ledger store path for a ``.dreamwork/``-like directory."""
+    return Path(dreamwork_dir) / STORE_FILENAME
+
+
+def _read_meta_value(db: Path, key: str) -> str | None:
+    """One meta value from the store, or None when absent / unreadable."""
+    if not db.exists():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT value FROM meta WHERE key = ?", (key,)
+        ).fetchone()
+        return row[0] if row else None
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
+def cutover_watermark(dreamwork_dir) -> str | None:
+    """The store's cutover watermark, or None when not yet cut over.
+
+    Watermark present -> the store is the source of truth. This is the key
+    the reader flip checks; it is written exactly once, at cutover, and
+    never removed (rollback re-runs forward, keeping the store as source).
+    """
+    return _read_meta_value(store_path(dreamwork_dir), _WATERMARK_KEY)
+
+
+def is_cut_over(dreamwork_dir) -> bool:
+    """True iff the store's cutover watermark is present (store is source)."""
+    return cutover_watermark(dreamwork_dir) is not None
+
+
+def source_of_truth(dreamwork_dir) -> str:
+    """``'store'`` when the cutover watermark is present, else ``'markdown'``.
+
+    The single dispatch point a flipped consumer calls: it answers "where do
+    I read the ledger?" in one word, and the answer is authoritative because
+    the watermark is a one-way, never-removed flip.
+    """
+    return "store" if is_cut_over(dreamwork_dir) else "markdown"
+
+
+def store_entries(dreamwork_dir) -> list[tuple[list[int], str]]:
+    """``(ids, body)`` per task row from the store -- the post-cutover
+    projection of :func:`ledger_entries`.
+
+    Same return shape, so a consumer flipped to the store drops in
+    unchanged. Each row is one id (combined entries were split at #353, so
+    the store is one row per permanent id); the body is the verbatim text
+    the import stored.
+    """
+    db = store_path(dreamwork_dir)
+    if not db.exists():
+        return []
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        rows = conn.execute(
+            "SELECT id, body FROM task ORDER BY id"
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [([int(r[0])], r[1]) for r in rows]
+
+
+def store_ids_by_state(dreamwork_dir) -> tuple[list[str], list[str]]:
+    """``(open_ids, landed_ids)`` from the store -- the post-cutover
+    projection of ``watch.parse_ledger``.
+
+    Returns strings to match ``parse_ledger``'s contract (callers normalise
+    to int at the seam, as the existing consumers do).
+    """
+    db = store_path(dreamwork_dir)
+    if not db.exists():
+        return [], []
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        open_ids = [str(r[0]) for r in conn.execute(
+            "SELECT id FROM task WHERE state = 'open' ORDER BY id")]
+        landed_ids = [str(r[0]) for r in conn.execute(
+            "SELECT id FROM task WHERE state = 'landed' ORDER BY id")]
+    except sqlite3.Error:
+        return [], []
+    finally:
+        conn.close()
+    return open_ids, landed_ids
