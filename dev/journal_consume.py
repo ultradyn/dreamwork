@@ -20,14 +20,19 @@ Two subcommands, both taking the store path the way ``dev/ledger.py`` verbs take
             journal is treated as empty rather than created, so the read has no
             filesystem side effect).
 
-  consume   Read-then-advance as ONE act.  Derives the verification material
-            (the high-end event hash + ordinal) from a fresh
-            ``events_since_cursor`` read in the SAME invocation, then calls
-            ``advance_cursor`` with it — the CAS that verifies the chain prefix
-            up to that ordinal and refuses unless ``expected ==`` the verified
-            head.  Prints the count + receipt ids consumed.  Refuses non-zero
-            on verification failure (the journal changed underfoot); the cursor
-            is left unmoved because ``advance_cursor`` only writes on success.
+  consume   Three acts (#526): read, **route each drained receipt through its
+            adapter's reconcile** (the exactly-once proof against the
+            applied-ledger — a receipt already applied writes nothing; one not
+            applied is reported UNAPPLIED), then read-then-advance.  The
+            advance derives the verification material (the high-end event hash
+            + ordinal) from the SAME ``events_since_cursor`` read, then calls
+            ``advance_cursor`` — the CAS that verifies the chain prefix up to
+            that ordinal and refuses unless ``expected ==`` the verified head.
+            Prints the count, applied/unapplied sub-counts, and one UNAPPLIED
+            line per unapplied receipt.  Refuses non-zero on verification
+            failure (the journal changed underfoot); the cursor is left unmoved
+            because ``advance_cursor`` only writes on success.  The proof
+            writes the applied-ledger (``--applied``) but never the cursor.
 
 ATOMICITY SEAM (named, not hidden): the read and the advance are TWO separate
 API calls, not one transaction.  Between them a concurrent writer may append.
@@ -41,6 +46,15 @@ already-chained row (corruption/tampering), which the bounded rebuild inside
 so that refusal is not inducible through the real API; the tests reach it by
 simulating the corruption with a direct SQL mutation and assert refuse +
 cursor-unmoved at the seam the API does expose (see test_journal_consume.py).
+
+#526 SEAM (named): the proof loop runs between the read and the advance.  It
+writes the applied-ledger (a side effect on a separate file) but never the
+cursor, so a crash in the loop leaves the cursor unmoved and the next tick
+re-reads and re-proves the same range — and a receipt already proven APPLIED
+writes nothing on the re-prove, so the crash window cannot double-apply.  This
+is the wiring the #519 audit's F4 found missing: ``apply``'s exactly-once proof
+was exercised only by tests; ``consume`` now imports ``apply`` and routes every
+drained receipt through ``reconcile``/the adapter registry before advancing.
 
 Consumer name is the literal ``'coordinator'`` (delivery-modes.md §"How an
 agent consumes the cursor in batched mode").
@@ -60,7 +74,7 @@ agent consumes the cursor in batched mode").
 
 USAGE
   python3 dev/journal_consume.py pending [--journal PATH]
-  python3 dev/journal_consume.py consume [--journal PATH]
+  python3 dev/journal_consume.py consume [--journal PATH] [--applied PATH]
   python3 dev/journal_consume.py show <receipt-id> [--journal PATH]
 """
 from __future__ import annotations
@@ -74,6 +88,7 @@ from pathlib import Path
 # as `python3 dev/journal_consume.py` (sys.path[0] is then `dev/`, not the cwd).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from user_events.sqlite import open_journal  # noqa: E402  — the public API
+from user_events import apply  # noqa: E402  — the exactly-once proof (lane D); wiring it into the drain (#526)
 
 # The single consumer this drain serves (delivery-modes.md).  A constant so the
 # tick command line never has to name it and two tools cannot drift on the
@@ -86,6 +101,34 @@ CONSUMER = "coordinator"
 EVENT_KIND = "receipt.created"
 
 JOURNAL_DEFAULT = ".dreamwork/user-events.sqlite3"
+
+# --- #526: the drain's applied-receipts proof ledger. ---
+#
+# The audit (#519 F4) found that ``apply``'s exactly-once proof
+# (``prove_applied``/``reconcile``/the adapter registry) was exercised ONLY by
+# tests — no production module imported it, and ``consume`` was a two-act
+# read-then-advance with no middle act.  This is that middle act: every drained
+# receipt is routed through its adapter's ``reconcile`` against this one managed
+# file BEFORE the cursor advances.  A receipt whose marker is already present
+# proves ``APPLIED`` and writes nothing (the ``apply.py`` APPLIED branch); one
+# whose marker is absent proves ``NOT_APPLIED`` and is reported UNAPPLIED for
+# the coordinator to act on (its marker lands here, so a replay of the same
+# range is a no-op by construction).
+#
+# This file is the durable surface the proof needs.  It is a SINGLE generation
+# the drain ever writes — a monotonic marker log (no fork, no rollback), so
+# every marker that lands is committed — which is why the proof takes the
+# committed-lineage marker path (the identity check is not consulted there;
+# markers accumulate and each is provable on its own).  The generation never
+# advances because the drain only ever appends, which is the honest model for a
+# flat marker log.  (The per-receipt generation/claim/finish CAS is lane E's
+# HTTP-cutover mechanism, which the drain does not use — see ``_prove_drained``.)
+APPLIED_LEDGER_DEFAULT = ".dreamwork/applied.md"
+APPLIED_LEDGER_GENERATION = 1
+# The application reference written into each marker's identity.  The
+# committed-lineage proof path checks the marker, not the identity, so this
+# value does not affect the verdict; it names the drain as the applier.
+APPLIED_REF = "coordinator-drain"
 
 # Stable exit codes (asserted by the test).  pending's empty path and consume's
 # 0-event path return EX_OK; a verification refusal returns EX_SOFTWARE (a
@@ -150,16 +193,76 @@ def cmd_pending(args, out) -> int:
     return EX_OK
 
 
+def _prove_drained(applied_path: str, ev) -> "apply.Proof":
+    """Route one drained event through its adapter's ``reconcile`` (#526 middle act).
+
+    Looks up the adapter for the event's route in ``apply``'s registry and runs
+    ONE ``reconcile`` pass against the applied-ledger: prove, then act per the
+    post-crash table — ``APPLIED`` finishes only (no write, the
+    ``apply.py:318-321`` branch); ``NOT_APPLIED`` writes the marker once then
+    finishes; ``UNKNOWN`` surfaces without mutating.  The verdict is returned so
+    ``consume`` can report the UNAPPLIED receipts (the ones the coordinator must
+    act on).
+
+    This is the wiring the audit's F4 found missing: a production module now
+    imports ``apply`` and calls ``reconcile``/``adapter_for``, so a replay of an
+    already-applied receipt proves ``APPLIED`` and writes nothing — the
+    exactly-once property the design names (delivery-modes.md:168-170) is now
+    built into the drain that runs.
+
+    An UNREGISTERED route (no adapter in the registry) cannot be proven or
+    marked: it returns ``NOT_APPLIED`` so ``consume`` lists it UNAPPLIED for the
+    coordinator to act on, but no marker lands — the proof covers only the
+    adapter-backed routes, and an unregistered route is delivered by another
+    channel.  In normal operation the cursor advances past it once (it leaves
+    ``(cursor, head]``), so it is not re-drained; only an artificial replay (a
+    rewound cursor) would re-list it.
+
+    ``finish`` is a NO-OP here: the drain's completion is the cursor advance
+    (read-then-advance, unchanged), NOT lane E's per-receipt claim/finish CAS.
+    Reconcile takes ``finish`` as a callback precisely so the proof→write
+    decision is independent of the journal's completion mechanics, and the
+    drain's completion mechanic is the range cursor, not the per-receipt CAS.
+    The marker this writes IS the durable "applied" record; finish adds nothing
+    the cursor advance does not already do.
+    """
+    try:
+        adapter = apply.adapter_for(ev.route)
+    except KeyError:
+        return apply.Proof.NOT_APPLIED
+    return apply.reconcile(
+        applied_path,
+        receipt_id=ev.receipt_id,
+        adapter=adapter.route,
+        application_ref=APPLIED_REF,
+        append_effect=lambda text, rid=ev.receipt_id: adapter.append_effect(text, rid),
+        reserved_successor=APPLIED_LEDGER_GENERATION,
+        committed_lineage=(APPLIED_LEDGER_GENERATION,),
+        has_marker=lambda text, rid=ev.receipt_id: adapter.has_marker(text, rid),
+        finish=lambda: None,
+    )
+
+
 def cmd_consume(args, out, err) -> int:
     """Read-then-advance as one act: drain (coordinator_cursor, head].
 
-    The verification material (high-end event hash + ordinal) is derived from a
-    FRESH events_since_cursor read in this same invocation, then handed to
-    advance_cursor — the CAS that verifies the chain prefix to that ordinal and
-    refuses unless expected == the verified head.  A crash between read and
-    advance cannot skip events: the cursor only moves at the advance (the last
-    step), so a crash before it leaves the cursor unmoved and the next tick
-    re-reads the same range.
+    THREE acts now (#526): read, **route each drained receipt through its
+    adapter's reconcile** (the exactly-once proof — a receipt already applied
+    writes nothing; one not applied is reported UNAPPLIED), then advance.  The
+    read-then-advance contract is UNCHANGED: the cursor advances only over what
+    was read (the high-end event's hash + ordinal from the SAME read), and a
+    verification refusal still returns EX_SOFTWARE with the cursor unmoved
+    (``advance_cursor`` only writes on success).  The proof writes the
+    applied-ledger (a side effect on a separate file) but never the cursor —
+    the cursor still moves only at the advance, so a crash between the proof
+    loop and the advance leaves the cursor unmoved and the next tick re-reads
+    (and re-proves) the same range.  A receipt proven APPLIED on the re-prove
+    writes nothing, so the crash window cannot double-apply.
+
+    Output: a ``consumed N`` line, ``applied``/``unapplied`` sub-counts, then
+    one ``UNAPPLIED`` line per unapplied receipt (id, kind, route) — the list
+    the coordinator must act on.  Applied receipts are summarised by the count
+    (their content is recoverable via ``show <id>``).
     """
     journal = Path(args.journal)
     if not journal.exists():
@@ -171,12 +274,26 @@ def cmd_consume(args, out, err) -> int:
         if not events:
             out.write("consumed 0 event(s)\n")
             return EX_OK
-        head = events[-1]
-        # Read-then-advance as one act: expected + scanned_through come straight
-        # from the read above (the high-end row's event_hash == head_hash() and
-        # its ordinal == head_ordinal() — the contract events_since_cursor hands
-        # a batched consumer).  advance_cursor verifies the prefix and refuses
+        # --- #526 middle act: route each drained receipt through the proof.
+        # A receipt already applied (its marker is in the ledger) proves APPLIED
+        # and writes nothing; one not applied writes its marker once and is
+        # reported UNAPPLIED.  This loop writes the applied-ledger only — it
+        # never touches the cursor, so the read-then-advance contract below is
+        # unchanged.
+        applied = []
+        unapplied = []
+        for ev in events:
+            verdict = _prove_drained(args.applied, ev)
+            if verdict is apply.Proof.APPLIED:
+                applied.append(ev)
+            else:  # NOT_APPLIED (written + reported) or UNKNOWN (reported, no write)
+                unapplied.append(ev)
+        # --- advance (unchanged): read-then-advance over what was read.
+        # expected + scanned_through come straight from the read above (the
+        # high-end row's event_hash == head_hash() and its ordinal ==
+        # head_ordinal()).  advance_cursor verifies the prefix and refuses
         # unless expected matches the verified head; on refuse it writes nothing.
+        head = events[-1]
         result = j.advance_cursor(
             CONSUMER,
             expected=head.event_hash,
@@ -193,8 +310,12 @@ def cmd_consume(args, out, err) -> int:
             )
             return EX_SOFTWARE
         out.write(f"consumed {len(events)} event(s)\n")
-        for ev in events:
-            out.write(ev.receipt_id + "\n")
+        out.write(f"applied {len(applied)}\n")
+        out.write(f"unapplied {len(unapplied)}\n")
+        for ev in unapplied:
+            out.write(
+                f"UNAPPLIED\t{ev.receipt_id}\t{EVENT_KIND}\t{ev.route}\n"
+            )
         return EX_OK
 
 
@@ -277,6 +398,14 @@ def _parser() -> argparse.ArgumentParser:
     pc.add_argument(
         "--journal", default=JOURNAL_DEFAULT,
         help="journal db path (default: %(default)s)",
+    )
+    pc.add_argument(
+        "--applied", default=APPLIED_LEDGER_DEFAULT,
+        help=(
+            "applied-receipts proof ledger path — each drained receipt is "
+            "routed through its adapter's reconcile against this file (#526); "
+            "default: %(default)s"
+        ),
     )
 
     ps = sub.add_parser(
