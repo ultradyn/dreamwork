@@ -2092,3 +2092,57 @@ WARN means worth knowing but not broken (an absent file on a fresh
 target is the usual case). It degrades rather than crashing when
 `watch.py` is mid-edit by another agent, reporting entries as unverified
 instead of claiming they are fine.
+
+## The SQLite ledger cutover — `ledger.sqlite3`, `tasks.md.deprecated`, the `tasks.md` shim (#294)
+
+The cutover moves the task ledger from one committed Markdown file to one
+machine-local SQLite store. Design: `.dreamwork/docs/plans/ledger-sqlite.md`.
+Tool: `ud-dw-tasks-migrate --cutover --target-dir <dir>`. The cutover is a
+**one-way flip**: once the store's watermark is present, the store is the
+only source of truth — never dual-write, never two truths.
+
+**`.dreamwork/ledger.sqlite3`** (machine-local, **gitignored**). The flat
+schema is in `ledger_store.py` (`_SCHEMA_SQL`): one `task` row per permanent
+id (`AUTOINCREMENT`, seeded from `MAX(parse_ledger ids)+1` and verified
+against the Markdown `Next id` header — an unseeded or drifted seed is a
+hard `SeedError`, never a silent start-at-1). `task_event` is an append-only
+hash-chained transition log; `related` is symmetric n:n (`a < b`), `depends`
+is directed. The `meta` table carries:
+
+- `schema_version` — the store's version marker; a mismatch is a hard open
+  refusal (`SchemaVersionError`), the lane-H mixed-version fail-closed.
+- `ledger_cut_over` — **the cutover watermark**. Absent means Markdown is the
+  source; present (an ISO-8601 timestamp) means the store is the source.
+  Written exactly once at cutover; never removed (rollback re-runs forward
+  and writes it again). `ledger_parse.is_cut_over` / `source_of_truth` are
+  the dispatch point a flipped consumer calls.
+- `cutover_holder`, `cutover_token`, `cutover_lease_until` — the exclusive
+  cutover lease (#263's CAS-on-meta primitive, reused verbatim). While the
+  lease is active, a second cutover fails closed (`CutoverBusy`).
+
+**`tasks.md.deprecated`** — the original ledger content, byte-for-byte, with
+a leading YAML frontmatter deprecation block. Never auto-deleted (his #294
+standing rule):
+
+```yaml
+---
+deprecated: true
+reason: "ledger migrated to SQLite store (ledger.sqlite3)"
+canonical-access: "dreamwork tasks ..."
+recovery: "tasks migrate --rollback <backup>"
+migrated-at: "<ISO-8601>"
+---
+```
+
+**`tasks.md`** (post-cutover) — a **one-line shim** carrying only a #458
+migration notice (`<!--dreamwork-migration-notice … -->`) pointing at the
+store and at `tasks.md.deprecated`. A stale agent that reads this path every
+tick finds the notice and self-heals; the shim carries **no ledger data**, so
+it cannot be mistaken for the source. `migration_notice.parse_notice` reads
+it back.
+
+**Rollback** (`--rollback <backup>`) restores the backup `tasks.md`, deletes
+the store, and **re-runs the migration forward** under a fresh lease — it
+**never restores a legacy direct writer** (#263's rule). The watermark is
+written again, so the version gate (`guard_markdown_write`) still refuses a
+direct Markdown mutation after rollback.

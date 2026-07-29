@@ -2,10 +2,16 @@
 
 **Tasks:** #294 (migration, cutover, rollback, git-history import, `tasks.md.deprecated`,
 mixed-writer freeze). Consumers: #287, #289, #342, #281's badge, #229/#270's CLI seam
-**Status:** design ratified 2026-07-29 05:48 (`rec` on R1–R4 + C1). **Increment 1
-landed:** schema + seeded sequence in `ledger_store.py` / `test_ledger_store.py` —
-open/create/seed/verify only. **Still no cutover, no import, no migration script, no
-shim, no rename of `tasks.md`.** Shipping the rest stays gated on #263 lane H and #352.
+**Status:** design ratified 2026-07-29 05:48 (`rec` on R1–R4 + C1). **Increments 1–5
+landed:** schema + seeded sequence (`ledger_store.py`), `--dry-run`, `--backup`,
+`--import`, `--verify`, `--import-history` (first-sight synthetic events,
+`actor='migration:git'`, hash chain). **Increment 6 (R4) landed:** `--cutover` (the
+7-step ordering: #263 lease reused, freeze, import+verify under lease, one-way watermark
+reader-flip, rename+shim, watch-events line, release) and `--rollback` (restore + re-run
+forward, never restores a legacy direct writer). Red-first fixtures 6, 8, 9, 10
+landed in `test_tasks_migrate_cutover.py`. **Still coordinator-owned:** the live
+execution, the lint.py #362 retirement + inverse-invariant replacement, and the
+re-pointing of watch.py/lint.py/task_origins.py/status_sync.py consumers at `ledger_parse.source_of_truth`.
 **Date:** 2026-07-29
 **Depends on:** `user-event-journal.md` (#263 — contract approved `"rec"` 01:27; lanes
 A–F and E merged, G/H authorised, **not yet fully landed**) and
