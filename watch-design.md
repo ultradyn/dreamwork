@@ -2417,6 +2417,20 @@ exact numbers so the weight mapping is learnable rather than argued about.
   height**. Arrival reuses the rundesc atmospheric blur+drift (`pose` → ease
   in, `depart` → ease out); reduced motion snaps. Keyboard focus reaches the
   same readout (`tabindex` on level-track columns). Accent is not spent.
+  **No native `title=`** on the columns (#487): the tip and inspector are
+  the one hover surface; a browser tooltip stacked on them is the second
+  surface the brief forbade. `aria-label` keeps the same facts for AT.
+
+**#487 — granularity is a cycle control.** The head's step name
+(`hourly` / `every four hours` / `daily` / `weekly` / `every four weeks` —
+the same ladder as `BURN_STEPS`) is a real `<button class="bdstep">`, not
+bare prose. Click / Enter / Space advances one step on the ladder and wraps;
+`aria-label` announces `granularity <name> — activate to cycle`. The
+preference is per-target in `localStorage` and re-fetches
+`/data.json?burn_step=N` so only the burndown re-buckets — the server
+honours a forced member of `BURN_STEPS` and otherwise keeps the auto pick
+that holds the chart under `BURN_COLUMNS`. Dotted underline is the
+affordance (same family as `.gservact`); accent is not spent.
 
 **#298 — the column inspector, a richer reading on the same seam.** The
 glance tip answers a passing hover; the inspector (`.bdinsp`) answers a
@@ -2432,11 +2446,17 @@ pose→ease-in / depart idiom, same floats-over-the-chart premise.
   inspector says `level carried — no ledger commits`; the current period
   adds `period in progress`. Values are the column's own served numbers —
   detail *about values already summarised*, never a hidden dataset.
-- **It follows the column**: horizontally centred on the active column,
-  **clamped to the panel's edges** so an edge column never sends it
-  off-chart, anchored above the level track so it never sits on a
-  neighbour. Laid out in JS (`bdinspLay`) because centring-plus-clamping
-  is not expressible in CSS.
+- **#487 pin — consistent location, not column-centred.** Room is measured
+  from the rendered layout: the inspector fits in the **right half** of the
+  panel when `(offsetWidth + pad) ≤ panelWidth / 2` — no guessed px
+  breakpoint. **RHS** when there is room (right-aligned; sits below
+  `.bdtip` when the tip is up so they never share pixels). **Above** the
+  chart when there is not — and when above, **also above the tip line**, so
+  the glance stats (`N open · a↑ b↓ · c commits · stamp`) and the details
+  never overlap. Laid out in JS (`bdinspLay`); `data-bdslot` records the
+  chosen slot. Moving between slots reuses the same pose/depart arrival
+  (transitions.md) — a smaller instance of the route change, not a second
+  gesture.
 - **Dismissal**: pointer-leave (unless pinned), focus-leave, tap the same
   column again, tap outside the chart, **Escape**, or scroll — a scrolled
   page moves the column out from under the reading, so it departs rather

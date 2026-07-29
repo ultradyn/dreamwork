@@ -809,6 +809,16 @@ STYLE = """<style>
   .bdhead { color:var(--dim); font-size:.7rem; margin-bottom:.4rem;
             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .bdhead .bdnum { color:var(--lit); }
+  /* #487: granularity cycle control — looks like a control (underline
+     affordance, pointer), keyboard-native as a real <button>, announces
+     via its aria-label. Accent is not spent (panel rule #142). */
+  .bdstep { background:none; border:none; font:inherit; color:var(--muted);
+            padding:0; margin:0; cursor:pointer;
+            text-decoration:underline; text-decoration-style:dotted;
+            text-underline-offset:2px; }
+  .bdstep:hover { color:var(--lit); text-decoration-style:solid; }
+  .bdstep:focus-visible { color:var(--lit); outline:1px solid var(--muted);
+    outline-offset:2px; border-radius:2px; }
   .bdtrack { display:flex; align-items:stretch; gap:2px; }
   .bdnet { height:30px; }
   .bdflow { height:34px; margin-top:9px; }
@@ -840,19 +850,19 @@ STYLE = """<style>
   @media (prefers-reduced-motion: reduce) {
     .bdtip { transition:none; }
   }
-  /* #298 column inspector — the RICHER reading on #417's seam, not a
+  /* #298/#487 column inspector — the RICHER reading on #417's seam, not a
      second hover. The glance tip stays one ellipsised line across the
      head; the inspector is what a DELIBERATE look gets (a hover that
      dwells, a focus, a tap): the exact interval, the level, the flow,
      the commits, and the coverage state the chart's geometry cannot say
      (a level with no ledger commit that period is CARRIED, not measured).
-     It follows the active column — anchored above the level track,
-     horizontally centred on the column and CLAMPED to the track's edges
-     so an edge column never sends it off-chart and it never sits on a
-     neighbour. Floats, so the constant-height premise holds exactly as
-     for .bdtip. Same arrival idiom (pose → ease in, depart → ease out,
-     snap under reduced motion) — a smaller instance of the same gesture,
-     never a second one (transitions.md). Accent is not spent. */
+     #487 pin: consistent location — right-hand side of the panel when the
+     inspector's measured width fits in the right half (room from layout,
+     not a guessed breakpoint); otherwise above the chart AND above .bdtip
+     so the two never overlap. Floats, so the constant-height premise
+     holds. Same arrival idiom (pose → ease in, depart → ease out, snap
+     under reduced motion) — a smaller instance of the same gesture, never
+     a second one (transitions.md). Accent is not spent. */
   .bdinsp { position:absolute; top:0; left:0; z-index:3;
             pointer-events:none; font-size:.7rem; color:var(--dim);
             background:color-mix(in srgb, var(--bg) 92%, transparent);
@@ -3416,6 +3426,10 @@ const burnKey = d => ((d && d.burndown && d.burndown.buckets) || [])
 const BURN_STEP_NAME = { 3600: 'hourly', 14400: 'every four hours',
                          86400: 'daily', 604800: 'weekly',
                          2419200: 'every four weeks' };
+/* #487: the ladder the head cycles through — same seconds as BURN_STEPS,
+   fine → coarse, wrapping. One list, never a second vocabulary. */
+const BURN_STEP_ORDER = [3600, 14400, 86400, 604800, 2419200];
+let burnStepPref = null;   // null = server auto; else a BURN_STEP_ORDER entry
 /* a bucket's label. Hourly buckets want a clock; daily and wider want a
    date, because "00:00" five times in a row is not a time axis. */
 const bstamp = (t, step) => {
@@ -3568,8 +3582,9 @@ function burnPanel(d) {
     : Math.max(0, ...bs.map(b => b.commits || 0));
   /* #417: columns carry the exact numbers the hover/focus readout names
      (open + flow + commits). Level-track columns are keyboard-focusable so
-     the mapping is learnable without a pointer. title= remains the
-     weakest fallback (touch-unfriendly) for the same numbers. */
+     the mapping is learnable without a pointer. #487: no native title= —
+     .bdtip/.bdinsp are the one hover surface; a browser tooltip stacked
+     on them is the second surface the brief forbade. */
   const col = (b, focusable) => {
     const stamp = bstamp(b.t0, s.step);
     const c = b.commits || 0;
@@ -3587,22 +3602,26 @@ function burnPanel(d) {
         ` data-t0="${b.t0}" data-t1="${b.t0 + s.step}"` +
         ` data-covered="${c > 0 ? 1 : 0}"`
       : '';
-    return `<div class="bdcol"${focus} title="${esc(title)}"` +
+    return `<div class="bdcol"${focus}` +
       ` aria-label="${esc(title)}">`;
   };
   // The head states the three totals it is a picture of, so a chart too
   // small to read is still a fact. `open` is the CURRENT count and it comes
   // from the same walk the columns do, not from a second reading.
+  // #487: the step name is a cycle control (click / Enter / Space), not
+  // bare prose — next ladder step, wrapping, announced via aria-live.
+  const stepName = BURN_STEP_NAME[s.step] || 'bucketed';
+  const stepAria = `granularity ${stepName} — activate to cycle`;
   let h = label('burndown') + `<div class="bd">` +
     `<div class="bdtip" hidden role="status" aria-live="polite"></div>` +
-    /* #298: the inspector floats beside the tip — one per panel, refilled
-       per column, laid out in JS (it must centre on a column and clamp to
-       the track, which CSS cannot express). role=status like the tip: the
-       same reading by another path, never a live shout. */
+    /* #298/#487: the inspector is the richer reading; pin is RHS-or-above
+       (bdinspLay), not column-centred. role=status like the tip. */
     `<div class="bdinsp" hidden role="status"></div>` +
     `<div class="bdhead"><span class="bdnum">${s.open}</span> open · ` +
     `${s.arrived} arrived · ${s.landed} landed · ` +
-    `${BURN_STEP_NAME[s.step] || 'bucketed'}</div>` +
+    `<button type="button" class="bdstep" role="button"` +
+    ` data-step="${s.step}"` +
+    ` aria-label="${esc(stepAria)}">${esc(stepName)}</button></div>` +
     `<div class="bdtrack bdnet" role="list" ` +
       `aria-label="open count per period; line weight is ledger commits">` +
       bs.map(b => col(b, true) +
@@ -6136,7 +6155,8 @@ async function ensureData() {
     if (serverGen === null) serverGen = gen;
     lastMtime = mtime;
     fetchedAt = Date.now();
-    setData(await (await fetch('/data.json')).json());
+    if (burnStepPref === null) burnStepPref = loadBurnStepPref();
+    setData(await (await fetch(dataJsonUrl())).json());
   } catch (e) {}
   return data;
 }
@@ -7242,6 +7262,55 @@ function regroupBars(before) {
     }, CARD_MS + 150);
   });
 }
+/* #487 — cycle the burndown's bucket width. The ladder is BURN_STEP_ORDER
+   (same seconds as the server's BURN_STEPS). Preference rides localStorage
+   keyed by target so a reload keeps the reading he picked; null means the
+   server auto-picks. Fetching /data.json?burn_step=N is the only write
+   surface — collect re-buckets, nothing else changes. */
+function burnStepStorageKey() {
+  try {
+    return 'dw:burn-step:' + ((data && data.target) || '');
+  } catch (e) { return 'dw:burn-step'; }
+}
+function loadBurnStepPref() {
+  try {
+    const v = parseInt(localStorage.getItem(burnStepStorageKey()), 10);
+    if (BURN_STEP_ORDER.indexOf(v) >= 0) return v;
+  } catch (e) {}
+  return null;
+}
+function dataJsonUrl() {
+  const s = burnStepPref;
+  return (s && BURN_STEP_ORDER.indexOf(s) >= 0)
+    ? '/data.json?burn_step=' + s : '/data.json';
+}
+async function cycleBurnStep() {
+  const cur = (data && data.burndown && data.burndown.step)
+    || BURN_STEP_ORDER[0];
+  let i = BURN_STEP_ORDER.indexOf(cur);
+  if (i < 0) i = 0;
+  const next = BURN_STEP_ORDER[(i + 1) % BURN_STEP_ORDER.length];
+  burnStepPref = next;
+  try { localStorage.setItem(burnStepStorageKey(), String(next)); }
+  catch (e) {}
+  try {
+    const wasBurn = burnKey(data);
+    setData(await (await fetch(dataJsonUrl())).json());
+    const burnBefore = (burnKey(data) !== wasBurn) ? snapshotBars() : null;
+    if (view && view.name === 'dashboard') {
+      const html = await buildCurrent();
+      setLiveContent(html);
+      if (burnBefore) regroupBars(burnBefore);
+    }
+  } catch (e) {}
+}
+addEventListener('click', e => {
+  const btn = e.target.closest && e.target.closest('.bdstep');
+  if (!btn) return;
+  e.preventDefault();
+  cycleBurnStep();
+});
+
 /* #417 per-column hover/focus readout. Shows open + arrived + landed +
    commits so the level line's two meanings (height = open, weight =
    commits) are never left implied. The tip is an arrival: rundesc's
@@ -7364,22 +7433,45 @@ function bdinspHTML(col) {
     `<div class="bdin-cov">${esc(cov.join(' · '))}</div>`;
 }
 function bdinspLay(bd, col, el) {
+  /* #487: consistent pin, not column-centred. RHS of the panel when the
+     inspector's measured width fits in the right half (room derived from
+     rendered layout — no guessed px breakpoint); otherwise above the
+     chart. When above, also above .bdtip so the glance stats line and the
+     details never overlap. Same pose/depart arrival; only the resting
+     slot changes. */
   const bdr = bd.getBoundingClientRect();
-  const r = col.getBoundingClientRect();
   const track = bd.querySelector('.bdnet');
-  const tr = track ? track.getBoundingClientRect() : r;
+  const tr = track ? track.getBoundingClientRect() : bdr;
+  const tip = bd.querySelector('.bdtip');
+  const tipOn = tip && !tip.hidden;
+  const tipR = tipOn ? tip.getBoundingClientRect() : null;
   const w = el.offsetWidth, h = el.offsetHeight;
-  // centre on the column, CLAMPED to the panel so an edge column never
-  // sends it off-chart and it never sits on a neighbour
-  const cx = r.left - bdr.left + r.width / 2;
-  el.style.left = Math.max(0, Math.min(cx - w / 2, bdr.width - w)) + 'px';
-  el.style.right = 'auto';
-  // above the LEVEL TRACK, never merely above the panel: only the one-line
-  // head sits between the track and the panel's top, and three lines do
-  // not fit there — clamping at 0 hangs the inspector over the columns it
-  // exists to explain. It floats past the panel's top instead, over what
-  // sits above (nothing between here and the page clips overflow).
-  el.style.top = (tr.top - bdr.top - h - 4) + 'px';
+  const pad = 4;
+  // room = inspector fits entirely in the right half of the panel
+  const hasRoom = (w + pad * 2) <= (bdr.width / 2);
+  el.dataset.bdslot = hasRoom ? 'rhs' : 'above';
+  if (hasRoom) {
+    el.style.left = Math.max(0, bdr.width - w) + 'px';
+    el.style.right = 'auto';
+    // below the tip when it is up (no overlap); otherwise above the track
+    let top = tr.top - bdr.top - h - pad;
+    if (tipR) {
+      const tipBot = tipR.bottom - bdr.top;
+      top = Math.max(top, tipBot + pad);
+    }
+    el.style.top = top + 'px';
+  } else {
+    // centred horizontally, fully above chart AND above the tip line
+    el.style.left = Math.max(0, Math.min((bdr.width - w) / 2,
+                                         bdr.width - w)) + 'px';
+    el.style.right = 'auto';
+    let top = tr.top - bdr.top - h - pad;
+    if (tipR) {
+      const tipTop = tipR.top - bdr.top;
+      top = Math.min(top, tipTop - h - pad);
+    }
+    el.style.top = top + 'px';
+  }
 }
 function bdinspCancel() {
   if (bdinspDwell) { clearTimeout(bdinspDwell); bdinspDwell = null; }
@@ -8528,7 +8620,8 @@ async function tick() {
     if (mtime !== lastMtime && Date.now() >= holdRerenderUntil) {
       lastMtime = mtime; fetchedAt = Date.now();
       const wasGit = gitKey(data), wasBurn = burnKey(data);
-      setData(await (await fetch('/data.json')).json());
+      if (burnStepPref === null) burnStepPref = loadBurnStepPref();
+      setData(await (await fetch(dataJsonUrl())).json());
       // the data lands instantly; surviving cards then travel from where
       // they were to where the new grouping put them (#104/#77). What the
       // human is mid-way through typing rides across the swap (#118).
@@ -10907,7 +11000,7 @@ def _burn_step(span):
     return BURN_STEPS[-1]
 
 
-def ledger_series(target, path=LEDGER_PATH, now=None):
+def ledger_series(target, path=LEDGER_PATH, now=None, step=None):
     """Arrivals, completions and the open count over the ledger's own history.
 
     An id ARRIVES at the first commit that mentions it anywhere, and is
@@ -10915,6 +11008,11 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
     Both are first-seen events, which is what makes them survive grooming:
     that section is pruned, so anything derived from its current contents
     would lose a completion every time the coordinator tidies.
+
+    ``step`` (#487): when it is a member of ``BURN_STEPS``, that width is
+    used instead of the auto ladder — the head's cycle control forces a
+    coarser or finer reading. Anything else (including ``None``) keeps the
+    auto pick that holds the chart under ``BURN_COLUMNS``.
     """
     out = {"state": None, "note": None, "buckets": [], "step": 0,
            "open": 0, "arrived": 0, "landed": 0, "from": 0, "to": 0}
@@ -11012,7 +11110,10 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
 
     first = revs[0][1]
     last = max(revs[-1][1], int(now if now is not None else time.time()))
-    step = _burn_step(last - first)
+    auto = _burn_step(last - first)
+    # #487: a forced step from the cycle control wins; unknown/None → auto
+    if step not in BURN_STEPS:
+        step = auto
     n = int((last - first) // step) + 1
     buckets = [{"t0": first + i * step, "arrived": 0, "landed": 0,
                 "open": 0, "commits": 0}
@@ -11099,16 +11200,17 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
     return out
 
 
-def ledger_stats(target):
-    """`ledger_series`, cached on HEAD.
+def ledger_stats(target, step=None):
+    """`ledger_series`, cached on HEAD (+ optional forced step, #487).
 
     Cached because the walk is one `git show` per ledger commit — 139 today,
     and it only ever grows. Per-revision parses are memoised globally on the
     commit sha as well, because history is immutable, so a NEW head costs
     only the commits that are new. The cache key is the truthful one for a
     repository-history answer: the target (which fixes the ledger's path
-    inside its repo, #217) and its HEAD — a tick with an unmoved HEAD
-    reuses the answer, a new commit recomputes it.
+    inside its repo, #217), its HEAD, and the forced step (or None for the
+    auto ladder) — a tick with an unmoved HEAD reuses the answer, a new
+    commit or a cycle-control click recomputes it.
     """
     try:
         head = subprocess.run(
@@ -11116,10 +11218,15 @@ def ledger_stats(target):
             capture_output=True, timeout=10).stdout.decode().strip()
     except (OSError, subprocess.SubprocessError):
         head = ""
-    key = (os.path.abspath(target), head)
+    forced = step if step in BURN_STEPS else None
+    key = (os.path.abspath(target), head, forced)
     if key not in _LEDGER_CACHE:
-        _LEDGER_CACHE.clear()
-        _LEDGER_CACHE[key] = ledger_series(target)
+        # keep only this key's peers for the same HEAD cheap: drop other
+        # HEADs entirely (history moved); keep other forced steps for this
+        # HEAD so cycling back is free.
+        if any(k[0] == key[0] and k[1] != head for k in _LEDGER_CACHE):
+            _LEDGER_CACHE.clear()
+        _LEDGER_CACHE[key] = ledger_series(target, step=forced)
     return _LEDGER_CACHE[key]
 
 
@@ -12168,7 +12275,7 @@ def track_question_updates(target, entries):
     return entries
 
 
-def collect(target):
+def collect(target, burn_step=None):
     now = time.time()
     dw = os.path.join(target, ".dreamwork")
     questions = read_text(os.path.join(dw, "questions.md"))
@@ -12230,8 +12337,9 @@ def collect(target):
         "deployed": serving_cached(target),
         # the ledger's own history as a time series (#142) — no new
         # instrumentation, because tasks.md is versioned and its ids are
-        # permanent
-        "burndown": ledger_stats(target),
+        # permanent. burn_step (#487) is the cycle control's forced
+        # granularity; None keeps the auto ladder.
+        "burndown": ledger_stats(target, step=burn_step),
         # his colour for this project (#143). It rides /data.json rather than
         # the shell so the EXISTING mtime poll carries it: he picks a tint in
         # one window and every other window on this project follows within a
@@ -13114,7 +13222,18 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                                "/review", "/question", "/research"):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
-                self._send(json.dumps(collect(target)), "application/json")
+                # #487: optional burn_step lets the head's cycle control
+                # re-bucket without a second walk of any other series.
+                qs = urllib.parse.parse_qs(parsed.query)
+                raw = (qs.get("burn_step") or [None])[0]
+                try:
+                    burn_step = int(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    burn_step = None
+                if burn_step not in BURN_STEPS:
+                    burn_step = None
+                self._send(json.dumps(collect(target, burn_step=burn_step)),
+                           "application/json")
             elif parsed.path == "/summary.json":
                 # Q5: a whitelist view of collect() (summary()), for any
                 # non-loopback consumer. /data.json serves full documents and
