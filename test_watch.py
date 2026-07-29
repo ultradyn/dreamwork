@@ -1161,6 +1161,86 @@ class TestCollector(unittest.TestCase):
         self.assertIn(".bdinsp.pose", watch.PAGE)
         self.assertIn(".bdinsp.depart", watch.PAGE)
 
+    def test_burndown_step_cycle_control_wiring(self):
+        # #487 — the granularity label is a cycle control: affordance,
+        # keyboard, announced state. Granularities are the ladder already
+        # in BURN_STEPS / BURN_STEP_NAME, never a second list.
+        for token in ('class="bdstep"',
+                      'function cycleBurnStep',
+                      'BURN_STEP_ORDER',
+                      "role=\"button\"",
+                      'aria-label',
+                      "burn_step="):
+            self.assertIn(token, watch.PAGE)
+        # every server ladder step is named and cycled — derive from the
+        # server constant so a new BURN_STEPS entry cannot go dark
+        for sec in watch.BURN_STEPS:
+            self.assertIn(str(sec), watch.PAGE)
+            self.assertIn(str(sec),
+                          str(getattr(watch, 'BURN_STEPS', ())))
+        # the head's step name is the control, not bare prose
+        self.assertIn('bdstep', watch.PAGE)
+        self.assertRegex(watch.PAGE,
+                         r'bdstep[^>]*(role="button"|tabindex)')
+
+    def test_ledger_series_honours_a_forced_step(self):
+        # #487 — cycling needs a step the auto ladder would not pick.
+        # A ~2h ledger auto-picks hourly; forcing daily must re-bucket.
+        LED = "## Open\n\n{open}\n## Recently landed\n\n{done}\n"
+        entry = "- **#{i}** — task {i} · P2 · task\n"
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [
+                (LED.format(open=entry.format(i=1), done=""), T),
+                (LED.format(open=entry.format(i=1) + entry.format(i=2),
+                            done=""), T + 3600),
+                (LED.format(open=entry.format(i=2),
+                            done="- **#1** — x · landed `aaa1111`\n"),
+                 T + 7200),
+            ])
+            auto = watch.ledger_series(d, now=T + 7200)
+            forced = watch.ledger_series(d, now=T + 7200, step=86400)
+            # precondition: auto really is finer than the forced step, so
+            # a no-op step= param would make the length check vacuous
+            self.assertEqual(auto["step"], 3600,
+                             "fixture span must auto-pick hourly")
+            self.assertLess(auto["step"], 86400)
+            self.assertGreater(len(auto["buckets"]), 1)
+            self.assertEqual(forced["step"], 86400)
+            self.assertLess(len(forced["buckets"]), len(auto["buckets"]))
+            # same totals — rebucket, not a second walk of history
+            self.assertEqual(forced["arrived"], auto["arrived"])
+            self.assertEqual(forced["landed"], auto["landed"])
+
+    def test_burndown_no_native_column_title(self):
+        # #487 — one hover surface: wherever .bdtip/.bdinsp exist, the
+        # native title= tooltip on the same column is gone.
+        # Find the column template emission (data-open is level-track only).
+        idx = watch.PAGE.find('data-open="${b.open}"')
+        self.assertGreater(idx, 0, "level-track column template missing")
+        # window around the column open-tag: no title= on that element
+        window = watch.PAGE[idx - 200:idx + 400]
+        self.assertIn('class="bdcol"', window)
+        # the native tooltip was `title="${esc(title)}"` on the same tag
+        self.assertNotRegex(window, r'<div class="bdcol"[^>]*\btitle=')
+
+    def test_burndown_insp_pins_rhs_or_above(self):
+        # #487 — consistent pin: RHS when room (measured from layout),
+        # above chart+tip when not. Never follows the column centre.
+        self.assertIn('function bdinspLay(bd, col, el)', watch.PAGE)
+        lay = watch.PAGE[watch.PAGE.index('function bdinspLay'):
+                         watch.PAGE.index('function bdinspLay') + 900]
+        # room is derived from rendered widths, not a guessed px breakpoint
+        self.assertIn('offsetWidth', lay)
+        self.assertIn('bdr.width', lay)
+        # two placements: right-hand side, and above (including the tip)
+        self.assertTrue('right' in lay.lower() or 'bdr.width - w' in lay,
+                        "RHS placement missing from bdinspLay")
+        self.assertIn('bdtip', lay)
+        # old centre-on-column clamp is gone (consistent pin replaces it)
+        self.assertNotIn('cx - w / 2', lay)
+
     def test_ledger_series_lands_every_id_in_a_combined_head(self):
         """#301/#399: ledger_series counts a combined landed HEAD as two ids.
 
