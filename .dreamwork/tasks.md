@@ -454,26 +454,6 @@ Next id: **485**
   it** — a retry hides the mechanism and keeps the false red for whoever runs it next
   · **FIXED AT THE MECHANISM `1454717` + `376e6df` (lane `wt/falsered`, merge `6fe795d`, 2026-07-29 05:13).** `test_this_repo_passes_its_own_linter` now lints a **detached `git worktree` snapshot at HEAD** (~94ms) instead of the live working tree, so the assertion is about **one SHA** rather than about whatever eight concurrent lanes happen to be doing to the checkout. That is the right shape: the third false red tonight was another lane committing `Lane-owns:` lines to 44 briefs mid-run, and no amount of retrying fixes a test whose subject moves. **If git cannot make the snapshot the failure surfaces** — there is deliberately no fall back to the live tree, which would reintroduce exactly this. Non-vacuity is asserted at runtime and properly: not merely that `.dreamwork` exists but that the ledger **parses to a non-zero open-entry count** through the same loader lint uses, so a lost or stubbed tree fails loudly instead of passing over nothing. It enumerated **7 sibling live-tree sites** in `plans/suite-under-lanes.md` and fixed only the one that actually false-redred, which is the correct scope call. **One coverage shift the lane did not claim and the coordinator is recording rather than leaving to be discovered:** a HEAD snapshot excludes **uncommitted** work, so this test no longer notices a lint error I have written but not yet committed. That is acceptable because it is not this test's job — `dev/lane_guard.py` and the pre-commit path cover the uncommitted case — but the guard is now dogfooding *the committed repo*, and anyone reading it as "the tree is clean" would be over-reading it.
 
-- **#424** — `just test` is a single shared lock, so N concurrent lanes cannot each verify · P2 ·
-  loop-tooling/orchestration · origin: **loop** · found when `#419` reported guards blocked at 17:01
-  · guards bind **39890-39899** and the recipe hard-aborts if any port in the range is held (the
-  `#203` trap, and that abort is correct). So with four lanes live and every brief instructing
-  *"then `just test`"*, **at most one lane can ever run it** — the others either wait indefinitely
-  or report a blocked suite. `#419` waited, refused to force-kill, and said so; the reaper also
-  refused (correctly — I checked, the holder's parent `just guards` was alive and writing)
-  · **the brief's instruction is therefore unsatisfiable at fan-out and I have written it into five
-  briefs today.** *"Check `ss -ltnp | grep 3989` and say if you waited"* tells a lane how to notice
-  the collision and nothing about what to do for the next fourteen minutes
-  · options: **(a)** a per-lane port range derived from the worktree name, so four lanes get four
-  disjoint decades — needs the range to stop being a constant; **(b)** the coordinator owns `just
-  test` and lanes run `pytest` + `lint` only, verifying guards once at merge — cheapest, and it
-  matches who actually merges; **(c)** a lock file with a queue, which serialises honestly but makes
-  a lane's wall-clock unpredictable. **Rec: (b)**, with the brief saying so instead of asking a lane
-  to wait
-  · this is a **dogfooding finding about the orchestrator mode itself**, which is the second thing
-  he asked to be measured — parallel lanes are cheap until they share a lock nobody modelled
-  · related: **#203, #423, #428**
-
 - **#423** — `ccc @grok` 401s recur, and the loop has no signal for a dead runner · P2 ·
   loop-tooling/orchestration · origin: **loop** · **recurrence of landed `#410`**
   · grok was 401 from **05:52 to 14:50** (his fix), worked for three lanes, then went 401 again at
@@ -3216,6 +3196,27 @@ Next id: **485**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#424** — `just test` is a single shared lock, so N concurrent lanes cannot each verify · P2 ·
+  loop-tooling/orchestration · origin: **loop** · found when `#419` reported guards blocked at 17:01
+  · guards bind **39890-39899** and the recipe hard-aborts if any port in the range is held (the
+  `#203` trap, and that abort is correct). So with four lanes live and every brief instructing
+  *"then `just test`"*, **at most one lane can ever run it** — the others either wait indefinitely
+  or report a blocked suite. `#419` waited, refused to force-kill, and said so; the reaper also
+  refused (correctly — I checked, the holder's parent `just guards` was alive and writing)
+  · **the brief's instruction is therefore unsatisfiable at fan-out and I have written it into five
+  briefs today.** *"Check `ss -ltnp | grep 3989` and say if you waited"* tells a lane how to notice
+  the collision and nothing about what to do for the next fourteen minutes
+  · options: **(a)** a per-lane port range derived from the worktree name, so four lanes get four
+  disjoint decades — needs the range to stop being a constant; **(b)** the coordinator owns `just
+  test` and lanes run `pytest` + `lint` only, verifying guards once at merge — cheapest, and it
+  matches who actually merges; **(c)** a lock file with a queue, which serialises honestly but makes
+  a lane's wall-clock unpredictable. **Rec: (b)**, with the brief saying so instead of asking a lane
+  to wait
+  · this is a **dogfooding finding about the orchestrator mode itself**, which is the second thing
+  he asked to be measured — parallel lanes are cheap until they share a lock nobody modelled
+  · related: **#203, #423, #428**
+  · closed 2026-07-29 15:52 as option (b), which had already become the de facto convention: every brief this session says targeted pytest + lint only, and the coordinator verifies guards once on the merged tree (demonstrated on all six lane merges today). The convention is now written where a brief-writer finds it — SKILL.md's Subagents section — rather than carried in per-brief prose. The per-lane port-range idea (a) and the lock queue (c) are recorded as rejected: (b) matches who actually merges.
+
 - **#462** — the dashboard says it is N commits behind but gives him no way to act on it · **P1** ·
   feature/dashboard · origin: **human** · **human via watch 2026-07-29 02:30, next-up, delegate soon:** *"re
   'this page is 3 watch.py commits behind · serving f9bb49e' on dashboard, we should have a task for adding an
