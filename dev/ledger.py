@@ -934,6 +934,67 @@ def _verb_reviews(args, dw_dir):
 
 
 # ---------------------------------------------------------------------------
+# #558 — groom: backfill NULL origins to 'unknown' (the truthful pre-contract
+# value), store-mode only. The audited surface for that backfill — never raw
+# SQL outside it.
+#
+# `unknown` is not a guess: lint.check_task_origins (lint.py, #213) names it
+# a first-class value ("not a failure: the truthful origin of every post-
+# cutoff task filed before this contract existed"), and the store CHECK
+# constraint admits it:
+#   origin TEXT CHECK (origin IS NULL OR origin IN ('human','loop','unknown'))
+# (ledger_store.py:262). Before this verb, that column stayed NULL forever
+# and the #357 footer printed a `missing origin` count that could not shrink
+# on its own; groom is the one audited way to make it do so.
+# ---------------------------------------------------------------------------
+
+def _verb_groom(dw_dir):
+    """Backfill the store's NULL ``origin`` to ``'unknown'`` (#558).
+
+    ``'unknown'`` is the truthful origin of a task filed before the #213
+    origin contract — ``lint.check_task_origins`` names it a first-class
+    value ("not a failure"), and the store CHECK constraint admits it
+    (``origin IS NULL OR origin IN ('human','loop','unknown')``,
+    ``ledger_store.py:262``). This verb is the AUDITED surface for that
+    backfill — never raw SQL outside it. It reports the count of rows
+    changed and is idempotent: once every NULL is ``'unknown'``, the
+    ``WHERE origin IS NULL`` clause matches nothing and a second run
+    reports 0.
+
+    MARKDOWN-MODE DECISION: refuse. The store's NULL ``origin`` is a
+    COLUMN state; markdown mode has no such column — origins are TEXT
+    claims an entry makes (``origin: **human**``), classified by
+    ``classify_origin``. A markdown "groom" would be a TEXT REWRITE
+    (inserting ``origin: **unknown**`` into entry bodies), a fundamentally
+    different act from a column UPDATE, and ``check_task_origins`` already
+    enforces that governed entries (id >= 216) carry exactly one marker.
+    There is no "missing origin" column to backfill in markdown mode — the
+    #357 footer's missing-origin count is a STORE concept (0 in markdown),
+    so refusing keeps one act per surface and never invents a markdown
+    write the cutover retired.
+    """
+    if source_of_truth(dw_dir) != "store":
+        sys.stderr.write(
+            "groom: markdown mode has no origin column — origins are text "
+            "claims an entry makes, not a backfillable NULL; the store is "
+            "the source of truth after the #294 cutover\n")
+        return 1
+    store = ledger_store.open_store(store_path(dw_dir))
+    try:
+        # The audited backfill. rowcount is the changed rows; a re-run on a
+        # store with no NULL origin matches nothing (idempotent).
+        cur = store.conn.execute(
+            "UPDATE task SET origin='unknown' WHERE origin IS NULL")
+        changed = cur.rowcount
+        store.conn.commit()
+    finally:
+        store.close()
+    sys.stdout.write(
+        f"groom: backfilled {changed} NULL origin(s) to 'unknown'\n")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -1012,6 +1073,12 @@ def main(argv=None):
     prev_get.add_argument("--ledger", default=LEDGER_DEFAULT,
                           help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
 
+    pgroom = sub.add_parser(
+        "groom",
+        help="backfill the store's NULL origins to 'unknown' (store-mode only) [#558]")
+    pgroom.add_argument("--ledger", default=LEDGER_DEFAULT,
+                        help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
     args = p.parse_args(argv)
     rc = _dispatch(args)
     # #357 — the warning footer tacks onto stderr on every verb's success
@@ -1052,6 +1119,13 @@ def _dispatch(args):
         return _verb_get(args, dw_dir)
     if args.cmd == "reviews":
         return _verb_reviews(args, dw_dir)
+
+    # #558 — groom dispatches on source_of_truth itself (it is store-mode
+    # only and refuses markdown with a named reason), so like the #497 read
+    # verbs it runs BEFORE the markdown-existence gate below. It mutates the
+    # STORE only (never the markdown file).
+    if args.cmd == "groom":
+        return _verb_groom(dw_dir)
 
     # #294 inc 9: write verbs (fold, file, note) dispatch on source_of_truth.
     # Store mode → the store write verbs; markdown mode → today's text path.
