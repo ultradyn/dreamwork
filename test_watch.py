@@ -670,6 +670,115 @@ class TestCollector(unittest.TestCase):
         # `h += chatList(d);` — a `/* h += chatList(d); */` comment does not.
         self.assertRegex(body, r"(?m)^[ \t]*h \+= chatList\(d\);")
 
+    def test_dashboard_groups_questions_parts_under_one_q_and_a_section(self):
+        """#564 — the two questions parts (qSection + the dim /answers link)
+        are grouped under ONE visible 'Q & A' section header, whose own
+        margin-top (var(--space), the section-rhythm token) is the real gap
+        above the group.
+
+        Rendered through the REAL buildDashboard assembly (extracted from the
+        page), never a hand-built fragment. The neighbouring callees are
+        stubbed to sentinels on purpose: chatList is lane-562chat's LIVE
+        region (this lane must not depend on its internals), and
+        burnPanel/reviews/posture/etc are other surfaces — so the assertion
+        is on buildDashboard's ASSEMBLY ORDERING, not on their contents. The
+        real parts under test (label, qSummary, qSection, buildDashboard) are
+        the real extracted source.
+
+        PRODUCTION LINE whose change reds this: the `h += label('Q & A');`
+        statement in buildDashboard, between the chatList call and qSection.
+        Removing it drops the section header (and the gap it carries), and
+        every assertion below that names the header reds.
+        """
+        import subprocess, shutil
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — Q&A group render gate did NOT run")
+        page = watch._get_page()
+
+        def extract(sig):
+            # brace-match from the signature to its function body's close.
+            # Every ${...} in these bodies is balanced, so a naive depth
+            # count lands on the real closing brace (same approach
+            # test_dashboard_renders_minimal_topic_chat_list uses).
+            start = page.index(sig)
+            depth = 0
+            for i in range(start, len(page)):
+                if page[i] == "{":
+                    depth += 1
+                elif page[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return page[start:i + 1]
+            self.fail("could not extract " + sig)
+
+        qsummary = extract("const qSummary =")
+        qsection = extract("function qSection(d) {")
+        dashboard = extract("function buildDashboard(d) {")
+
+        # chatList is stubbed to a sentinel so this lane's test does not bind
+        # to lane-562chat's live region; the other heavy callees are stubbed
+        # to '' (or a marker) for the same reason — only the ordering is graded.
+        script = (
+            "const label = t => `<div class=\"label\">${t}</div>`;\n"
+            "const QNONE = { ok:'none', empty:'none', "
+            "missing:'none', unreadable:'none' };\n"
+            "const REVIEWS_DASH_CAP = 5;\n"
+            "const qHealth = d => '';\n"
+            "const servingLine = d => '';\n"
+            "const gitRow = c => '';\n"
+            "const dreamBlock = dm => '';\n"
+            "const expand = (s,i,c,k) => '';\n"
+            "const chatList = d => `<div class=\"label\">topic chats"
+            " · 1</div>`;\n"
+            "const artifactRow = (r,k) => '';\n"
+            "const mdB = (t,n) => '';\n"
+            "const burnPanel = d => `<div class=\"label\">burndown</div>`;\n"
+            "const statusBlock = (s,h) => '';\n"
+            "const posturePicker = d => '';\n"
+            "const tintPicker = d => '';\n"
+            + qsummary + "\n"
+            + qsection + "\n"
+            + dashboard + "\n"
+            + "const d = " + json.dumps({
+                "open_questions": 0, "questions_open": [],
+                "questions_health": "ok", "answers_open": [],
+                "chats": [{"id": "c1"}], "git": [], "dreams": [],
+                "dreams_archive": [], "reviews": [], "files": {},
+                "status": {}, "pending_handoffs": 0,
+            }) + ";\n"
+            "process.stdout.write(buildDashboard(d));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        if proc.returncode != 0:
+            self.fail("node eval failed: " + proc.stderr)
+        h = proc.stdout
+        # PRECONDITIONS (a green without these proves nothing): the
+        # neighbouring regions and both questions parts really rendered, so
+        # the ordering assertions below have real subjects to order.
+        self.assertIn("topic chats", h)   # chats region marker (stubbed)
+        self.assertIn('class="qsec"', h)  # the real qSection part rendered
+        self.assertIn("/answers", h)      # the real dim /answers link rendered
+        self.assertIn("burndown", h)      # the "rest" below the group (stubbed)
+        # THE GROUPING: a 'Q & A' section header, real, emitted by buildDashboard
+        self.assertIn('<div class="label">Q & A</div>', h)
+        # ...sited BETWEEN the chats region and the rest, with BOTH questions
+        # parts after it: the group is chatList < Q&A < qSection < /answers.
+        chats = h.index("topic chats")
+        qa = h.index('<div class="label">Q & A</div>')
+        qsec = h.index('class="qsec"')
+        ans = h.index("/answers")
+        burn = h.index("burndown")
+        self.assertLess(chats, qa,
+                        "Q & A header must follow the chats region")
+        self.assertLess(qa, qsec,
+                        "the questions block must follow the Q & A header")
+        self.assertLess(qsec, ans,
+                        "the /answers link follows the questions block")
+        self.assertLess(ans, burn,
+                        "the group sits above the rest of the dashboard")
+
     def test_question_update_stamp_is_per_entry_not_file_mtime(self):
         # #473 — "updated" means THIS entry's content changed after first
         # sight, not that questions.md was rewritten (a neighbour's answer
