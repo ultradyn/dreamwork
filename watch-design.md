@@ -739,7 +739,24 @@ distinct from `pending` by contract; `data-decision` carries all four so CSS
 and clients can key off it. A row with a decision carries `question_title`
 (NOT NULL in the table), so the token links to `/question?qid=<title>` — the
 question the artifact was raised against. Markdown-mode projects (no store)
-degrade to `unlinked` on every row; the join is a no-op there. `answerRecord` is deliberately not
+degrade to `unlinked` on every row; the join is a no-op there.
+
+**The reviews panel is a window, not the list (#545).** The dashboard's
+`reviews` section caps at the most recent `REVIEWS_DASH_CAP` (5) rows — the
+first five of the #463 birth-newest-first order it already renders, never a
+second ordering — and names the total honestly in a dim link line
+(`all N reviews →`) only when there are more. At or below the cap it is
+unchanged: no link, no "5 of 5". The full list is its own subject, so it is
+**navigate**, not expand (the *More detail* principle): `/reviews` lists
+every artifact through the one `artifactRow` factory — a row there and a row
+on the dashboard are the same row — and earns the URL. No new motion: the
+cap is content on an existing panel and a live re-render commits instantly,
+the same stance as the burndown panel's conditional controls. `/reviews`
+carries its own `routeOf`/`TINT`/`SEED`/`TITLE_ROUTE` entry like every
+destination; a fourth per-route table added here is added to
+`test_watch.py`'s diff too. Guard: `dev/capture/reviews5.mjs`.
+
+`answerRecord` is deliberately not
 `qaCard`: its Open author is the human, it has no human answer/comment controls,
 and Answered records are quiet disclosures. The compact ask form clears only
 after a confirmed `/ask` success; refused/unreachable sends keep the words and
