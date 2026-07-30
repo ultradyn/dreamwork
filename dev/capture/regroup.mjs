@@ -46,7 +46,15 @@ const TRACE = `((ms) => new Promise(res => {
   const below = cards().filter(c => c.getBoundingClientRect().top >
                                     first.getBoundingClientRect().top)[0];
   const neighbour = below ? below.dataset.qid : null;
-  first.dataset.trace = 'target';        // survives only if the node survives
+  // #540 — the node-identity probe. 'first' is a JS reference to the card
+  // held in this closure; the per-frame sameNode below reads
+  // document.contains(first) && first.dataset.qid === target. A data-* attr
+  // was tried first and is WRONG: morphdom patches attributes from the server
+  // HTML (which lacks data-trace), so the attr is stripped even when the node
+  // is preserved — the probe read false on a correct page. A JS reference
+  // cannot be patched away, and first.dataset.qid === target catches the
+  // identity theft positional fallback performs (morphdom morphs this node's
+  // data-qid to a DIFFERENT card when the qid key is absent).
   const frames = [];
   const t0 = performance.now();
   (function step() {
@@ -59,7 +67,7 @@ const TRACE = `((ms) => new Promise(res => {
     frames.push({ t: Math.round(performance.now() - t0),
       target: byId[target] || null,
       neighbour: neighbour ? (byId[neighbour] || null) : null,
-      sameNode: !!document.querySelector('.qa[data-trace=target]'),
+      sameNode: !!(first && document.contains(first) && first.dataset.qid === target),
       // FLIP's signature: an inline transform on a card. reduced motion
       // must never produce one.
       flipping: [...cards()].filter(c => c.style.transform).length,
@@ -144,13 +152,24 @@ ok('#77 the answered card really moves (else the travel check is vacuous) '
 ok('#77 the answered card TRAVELS (frames strictly part-way, at any frame rate) '
  + `(${between(tps, tps[0], tps.at(-1))} of ${tps.length} part-way)`,
    between(tps, tps[0], tps.at(-1)) >= 1);
-// The view re-renders through innerHTML, so the NODE is replaced; identity
-// is carried by data-qid and the FLIP animates the new node from the old
-// node's rect. That is what must hold: the question is continuously present
-// and its motion is continuous. (Preserving the nodes themselves would need
-// a keyed reconciler for the list — see the dream.)
+// #505 landed the keyed list reconciler the comment below used to say was
+// missing: the view NO LONGER rebuilds through innerHTML — morphdom
+// (getNodeKey: viewNodeKey, keyed by data-qid) keeps the SAME node for a
+// card across a regroup and moves it. `target` (qid present every frame) is
+// the weaker existence-by-qid check; `sameNode` (the SAME JS node, probed
+// via the closure reference above) is the identity check the #505 phase-2
+// gate proved this guard was not making — its `sameNode` trace field was
+// collected but no ok() read it, and deleting viewNodeKey's qid branch
+// passed every guard. No frame should break sameNode under keyed reconcile
+// (the node is never destroyed), and none does — measured across the
+// baseline runs for #540. Positional fallback (qid branch deleted) morphs
+// this node's data-qid to a different card, so sameNode goes false: the red.
 ok('#77 the question is continuously present under one identity',
    n.frames.every(x => x.target));
+ok('#505 the answered card is the SAME node across the regroup '
+ + '(keyed reconcile preserves the element, not just its qid) '
+ + `[${n.frames.filter(x => x.sameNode).length}/${n.frames.length} frames]`,
+   n.frames.every(x => x.sameNode));
 ok('#77 the travel is a FLIP, not a re-layout',
    n.frames.some(x => x.flipping > 0));
 // #113: a card crossing headings travels by position and HEIGHT. Since #111
@@ -203,6 +222,9 @@ ok('reduced motion: no card is ever FLIPped',
   ok('reduced motion: ...and the neighbour LANDS instantly too, no frame part-way '
    + `(${between(rNps, rNps[0], rNps.at(-1))} part-way of ${rNps.length})`,
      between(rNps, rNps[0], rNps.at(-1)) === 0);
+  ok('reduced motion: same node identity across the regroup too '
+   + `[${r.frames.filter(x => x.sameNode).length}/${r.frames.length} frames]`,
+     r.frames.every(x => x.sameNode));
 }
 
 notes.push('target positions  : ' + JSON.stringify(uniq(tops(n.frames))));
