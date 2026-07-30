@@ -12816,9 +12816,16 @@ def append_human_question(text, question, stamp):
 #   <!-- dw-turn role=human|agent at=<iso>[ receipt=<id>] -->
 #   <one-lined text>
 #   <!-- /dw-turn -->
-# `one_line` so a pasted newline cannot forge a second turn (the #126 rule, one
-# level into the chat store). Indexes (title, turn count, status) are DERIVED at
-# read time — chat.json carries identity only, never a second source of truth.
+# Two rules together make his text unforgeable as a turn (the #126 rule, one
+# level into the chat store): the writer `one_line`s the body, so a pasted
+# newline cannot push a forged marker to column 0; and the parser anchors BOTH
+# markers at line start, so a marker typed INTO the body stays inline prose and
+# can never open or close a turn. Either rule alone is insufficient — measured
+# at the #504 salvage gate: `one_line` alone still parsed a fabricated
+# role=agent turn out of marker-bearing text (the binding test is
+# test_chat_turn_text_cannot_forge_an_agent_turn).
+# Indexes (title, turn count, status) are DERIVED at read time — chat.json
+# carries identity only, never a second source of truth.
 CHAT_DIR = "chats-v1"
 CHAT_PREVIEW_N = 80
 
@@ -12837,9 +12844,9 @@ def _chat_turn_block(role, text, at, receipt_id=None):
 
 
 _CHAT_TURN_RE = re.compile(
-    r"<!--\s*dw-turn\s+role=(?P<role>\w+)\s+at=(?P<at>\S+)"
+    r"^<!--\s*dw-turn\s+role=(?P<role>\w+)\s+at=(?P<at>\S+)"
     r"(?:\s+receipt=(?P<rid>\S+))?\s*-->\s*"
-    r"(?P<body>.*?)\s*<!--\s*/dw-turn\s*-->", re.DOTALL)
+    r"(?P<body>.*?)^<!--\s*/dw-turn\s*-->", re.DOTALL | re.MULTILINE)
 
 
 def _parse_chat_turns(text):
