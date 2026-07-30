@@ -10271,16 +10271,16 @@ function popoutDoc(url, label) {
         if (plus) { const b = plus.getBoundingClientRect();
           ripple(b.left + b.width / 2, b.top + b.height / 2); }
         document.getElementById('cmdtext').value = '';
+        clearDraft();  // unguarded ON PURPOSE: already inside cv.landed, and
+        // an isDurable() here would read as a gate while gating nothing (#163)
         // #570 — a manual resize disabled autosize for that composition; a
-        // submit re-enables it (and the box resets to its floor below), so
-        // the next thought grows again. The manual size is not persisted
-        // (his words: "then it returns to normal behavior"); #571 may add a
-        // setting for that, out of scope here.
+        // submit re-enables it (the box resets to its floor in the fitText
+        // call below), so the next thought grows again. The manual size is
+        // not persisted (his words: "then it returns to normal behavior");
+        // #571 may add a setting for that, out of scope here.
         const cmdTa = document.getElementById('cmdtext');
         cmdTa._manual = false;
         cmdTa._fitH = null;
-        clearDraft();  // unguarded ON PURPOSE: already inside cv.landed, and
-        // an isDurable() here would read as a gate while gating nothing (#163)
         // #337: a landed STEERING command does not keep its kind — the
         // composer decays back to the default (the entry marked `default`,
         // else the far-left kind), so his NEXT message is never silently

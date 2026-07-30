@@ -6927,6 +6927,46 @@ class TestAppShell(unittest.TestCase):
             "reduced-motion must still drop the height travel on the "
             "composer (function stays; timing goes)")
 
+    def test_composer_manually_resizable_and_autoexpand_gates_on_manual(self):
+        # #570 — the composer box is manually resizable; a drag disables
+        # autoexpand until the next submit. This pins the SOURCE contracts
+        # (the behavioral cycle is dev/capture/resize.mjs through the real
+        # render + submit path); the half only a source test can see is the
+        # LANE BOUNDARY: the answer/note boxes (`.qfield textarea`, the Q&A
+        # region another lane owns) must STAY `resize:none`, because autosize
+        # owns their height and #570 is composer-only.
+        #
+        # PRODUCTION LINES whose change reds each half:
+        #  - `resize:vertical` on #cmdform textarea  -> removing it (back to
+        #    resize:none) reds the composer-resizable half.
+        #  - `resize:none` on .qfield textarea       -> the answer-box rule;
+        #    changing it reds the lane-boundary half.
+        #  - `if (ta._manual) return;` in fitText    -> the autoexpand-disable
+        #    gate; removing it reds the disable half.
+        #  - `cmdTa._manual = false;` in the submit  -> the re-enable; removing
+        #    it reds the re-enable half.
+        cmdform = re.findall(r'#cmdform\s+textarea\s*\{([^}]*)\}', watch.PAGE)
+        body = next((b for b in cmdform if re.search(r'min-height\s*:', b)), None)
+        self.assertIsNotNone(body, f"no #cmdform textarea rule among {cmdform!r}")
+        self.assertRegex(
+            body, r'resize\s*:\s*vertical\b',
+            f"#570: the composer box must be manually resizable "
+            f"(resize:vertical); rule body was {body!r}")
+        # the lane boundary: the answer/note boxes stay non-resizable
+        qfield = re.findall(r'\.qfield\s+textarea\s*\{([^}]*)\}', watch.PAGE)
+        qbody = next((b for b in qfield if re.search(r'min-height\s*:\s*44px', b)), None)
+        self.assertIsNotNone(qfield, f"no .qfield textarea rule among {qfield!r}")
+        self.assertRegex(
+            qbody or qfield[0], r'resize\s*:\s*none\b',
+            f"#570: the answer/note boxes (.qfield textarea, Q&A region) must "
+            f"STAY resize:none — autosize owns their height and #570 is "
+            f"composer-only; rule body was {(qbody or qfield[0])!r}")
+        # the JS gate + the submit re-enable
+        self.assertIn("if (ta._manual) return;", watch.PAGE,
+                      "#570: fitText must yield to a manual drag (the _manual gate)")
+        self.assertIn("cmdTa._manual = false;", watch.PAGE,
+                      "#570: a submit must re-enable autoexpand (clear _manual)")
+
 
 class TestSubmissionLog(unittest.TestCase):
     """#199 — his words are on disk before anything can refuse them.
