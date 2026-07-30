@@ -606,42 +606,16 @@ exception; an element leaving fades rather than vanishing.
   the fall takes — a breath spends about as long fading out as fading in, a
   sawtooth spends one frame — so the assertion is on the fraction of moving
   samples that are falling.
-- **Run-mode 10s arm (#290).** Selecting a main-dreamer mode does not
-  POST immediately: a shared pending deadline drains for 10s (linear bar
-  100%→0% plus tabular `arms in Ns` text), and every reselection resets
-  that deadline. The commit is one POST + one events line only when the
-  mode actually changes. Reduced motion **hides the bar** and keeps the
-  second-by-second text countdown and the same application time —
-  function identical, continuous width animation gone. Cross-tab pending
-  rides `localStorage` keyed by absolute target; do not invent a second
-  countdown. Guard: `dev/capture/runmode.mjs` (intermediate bar widths
-  under motion, ≤2 under RM, reset, event exactly-once, hierarchical
-  disabled).
 - **Burndown column hover (#417).** A per-column readout (`.bdtip`) names
   open · arrived↑/landed↓ · commits so the level line's two meanings
   (height = open, weight = commits) are learnable. It is an **arrival** —
-  no size floor — and reuses the rundesc atmospheric envelope rather than
-  a second idiom: start pose (opacity 0, blur, 3px rise) then ease in;
+  no size floor — and rides the page's atmospheric arrival envelope rather
+  than a second idiom: start pose (opacity 0, blur, 3px rise) then ease in;
   departure adds `.depart` and dissolves upward. The tip floats
   (`position:absolute` inside `.bd`) so it never changes the panel's
   constant height. Reduced motion snaps both ways. Guard:
   `dev/capture/burndown.mjs` (numbers derived from served data, mid-frame
   opacity, RM parity).
-- **Run-mode description morph (#300).** One shared `#rundesc` shell under
-  the chips explains the hovered/focused mode. **First arrival** snaps the
-  shell to a pose (opacity 0, blur, 4px rise) then eases in on the page's
-  atmospheric envelope; **final departure** (Escape, pointer-leave, blur)
-  adds `.depart` and dissolves upward — the same soft exit as `.cmdmsg`.
-  **Button→button** holds the shell fixed (`min-height` so geometry does
-  not jump) while `.rundesc-text` dissolves (`.out`: opacity→0, blur 6px)
-  and the new sentence resolves (`.in` start pose, then clear). Rapid
-  hover retargets the pending mode without restarting the dissolve, so a
-  fast sweep still lands the last mode rather than cancelling forever.
-  Reduced motion snaps text with identical copy and `aria-describedby`.
-  Hover/focus/dismiss are pure presentation — they must not arm, write
-  pending, or POST. Guard: `dev/capture/rundesc.mjs` (one surface,
-  geometry span, zero side effects including arm countdown + pending
-  localStorage, rAF `between()` on text opacity, RM parity, hover≡focus).
 - **The review split (#305) — where a DRAG is the one thing that does not
   travel.** `/review`'s two columns are separated by an invisible bar he can
   drag. Dragging is *continuous input*: his pointer already supplies every

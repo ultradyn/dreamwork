@@ -2189,7 +2189,7 @@ file is absent, and `arming override…` while the shared arm is live.
 
 **Hover description reserves layout (#488).** `#pdesc` is always in flow
 with a permanent `min-height` (empty space is intentional). Show/hide is
-opacity + the rundesc blur/drift idiom only — never `display:none`, never
+opacity + the page's atmospheric blur/drift idiom only — never `display:none`, never
 the HTML `hidden` attribute, never insert/remove — so the card and
 everything below it do not reflow when the text arrives or departs.
 Hover/focus never arms, POSTs, or touches localStorage.
@@ -2510,7 +2510,7 @@ exact numbers so the weight mapping is learnable rather than argued about.
   weight = commits, flow = arrived↑/landed↓; the tip names all of them so the
   line is never left implying only one meaning. Floats over the chart
   (`.bdtip`, position absolute inside `.bd`) so it **never changes panel
-  height**. Arrival reuses the rundesc atmospheric blur+drift (`pose` → ease
+  height**. Arrival rides the page's atmospheric blur+drift (`pose` → ease
   in, `depart` → ease out); reduced motion snaps. Keyboard focus reaches the
   same readout (`tabindex` on level-track columns). Accent is not spent.
   **No native `title=`** on the columns (#487): the tip and inspector are
@@ -3184,7 +3184,8 @@ IS: `just deploy` snapshots `watch.py` from HEAD and restarts, and the
 `GENERATION` bump reloads this tab.
 
 **Arm, then POST — #290's cooldown, not a second one.** First click arms for
-`RUN_ARM_MS` (10s, the run-mode arm reused); re-click cancels; only the deadline
+`RUN_ARM_MS` (10s, the arm constant the posture control already reuses);
+re-click cancels; only the deadline
 POSTs `/deploy`. The server refuses a non-loopback peer and a second deploy
 while one is in flight (durable `rejected`, so `writeVerdict.landed` is false
 — never `res.ok` alone, E5b). The POST returns as soon as the runner is
