@@ -11192,20 +11192,56 @@ def peer_is_loopback(client_address):
         return False
 
 
-def _default_deploy_runner(target):
-    """Run `just deploy` in `target` (the watched project: justfile + port).
+# #567: where `just deploy`'s output lands while the recipe runs. Beside the
+# deployed dir's `serve.log` — the SAME ~/.cache/dreamwork/deployed the recipe
+# itself writes its new server's output to — NOT under the target's
+# `.dreamwork/`: watched_mtime walks that tree, and an append-mode log would
+# bump the /mtime poll on every printed line, arming spurious mid-deploy
+# reloads. None resolves to that default deploy dir; tests point this at a tmp
+# dir so the log is isolated and the broken-pipe mechanism (a print-after-stop
+# that dies on a pipe the dying server held) is observable against the REAL
+# runner rather than a stand-in.
+_deploy_log_dir = None
 
-    May kill this process — that is the recipe's job. stdout/stderr are
-    captured for diagnostics on the rare path where the process survives.
+
+def _deploy_log_path():
+    """Resolve deploy.log's path (override hook for tests)."""
+    d = _deploy_log_dir or os.path.expanduser("~/.cache/dreamwork/deployed")
+    return os.path.join(d, "deploy.log")
+
+
+def _default_deploy_runner(target):
+    """Run `just deploy` in `target`, detached from this server's lifetime (#567).
+
+    The recipe's `--stop-deployed` kills the process running THIS function —
+    the deployed server that received POST /deploy. Two things must survive
+    that death or the deploy self-bricks:
+      1. The recipe's OUTPUT — written to a FILE (deploy.log beside the
+         deployed dir's serve.log), never a pipe whose read end the dying
+         server holds. capture_output=True's pipes close when the server dies,
+         and the recipe's next print (its own progress, AFTER --stop-deployed)
+         hits a broken pipe (SIGPIPE) and dies mid-flight — before it ships the
+         snapshot or starts the new server. That is the #567 incident: his
+         dashboard went dark until a shell redeploy.
+      2. The recipe PROCESS — spawned with start_new_session=True so it is in
+         its own process group; a signal aimed at the server cannot reach it,
+         and reparented to init it outlives its spawner.
+    The runner thread still wait()s, so the single-flight slot is held for the
+    deploy's life; when the server is stopped the thread dies with the process
+    and the slot dies with it — the new server starts with a clear slot.
     """
     try:
-        subprocess.run(
-            ["just", "deploy"],
-            cwd=str(target),
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        log_path = _deploy_log_path()
+        os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
+        with open(log_path, "ab") as log:
+            proc = subprocess.Popen(
+                ["just", "deploy"],
+                cwd=str(target),
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            proc.wait()
     except (OSError, subprocess.SubprocessError):
         pass
 
@@ -15075,8 +15111,17 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             restarts the server). Single-flight: a second POST while one is
             running is a durable rejection, not a second runner. The POST
             returns as soon as the runner is scheduled; success for the
-            loaded document is a new GENERATION on /mtime, not this body —
-            the process may die when the deploy stops the listening snap.
+            loaded document is a new GENERATION on /mtime, not this body.
+
+            The runner is DETACHED (#567): `just deploy` runs in its own
+            session with output to a file, so the recipe completes even
+            though its `--stop-deployed` kills THIS process mid-recipe. The
+            old runner captured output on pipes the dying server held, so the
+            first print after the stop broke the pipe and the deploy died
+            before it could ship the snapshot or start the new server — his
+            dashboard went dark until a shell redeploy. The single-flight
+            slot dies with this process (correct: the new server starts clear).
+
             Body is ignored (no schema); empty `{}` is fine.
             """
             # Optional body parse: ignore content; malformed JSON is not a
