@@ -444,17 +444,25 @@ await p.screenshot({ path: join(OUT, 'mdquote-desktop.png'), fullPage: true });
 await p.setViewportSize({ width: 390, height: 844 });
 await sleep(300);
 await p.screenshot({ path: join(OUT, 'mdquote-mobile-390.png'), fullPage: true });
-// also write to a stable screenshots path the lane can read_file
-const SHOT_DIR = join(dirname(new URL(import.meta.url).pathname),
-  '..', '..', 'screenshots', 'lane-521md');
-mkdirSync(SHOT_DIR, { recursive: true });
-await p.setViewportSize({ width: 1100, height: 900 });
-await sleep(200);
-await p.screenshot({ path: join(SHOT_DIR, 'mdquote-desktop.png'), fullPage: true });
-await p.setViewportSize({ width: 390, height: 844 });
-await sleep(200);
-await p.screenshot({ path: join(SHOT_DIR, 'mdquote-mobile-390.png'), fullPage: true });
-notes.push('screenshots: ' + SHOT_DIR);
+// committed evidence PNGs refresh only under DW_UPDATE_EVIDENCE=1 (#539). A
+// plain run NEVER writes screenshots/: headless re-capture is byte-unstable,
+// so an unconditional write dirties the tree on every run. These are pure
+// evidence (the lane read_file's them) — no verdict above reads the PNGs.
+if (process.env.DW_UPDATE_EVIDENCE === '1') {
+  const SHOT_DIR = join(dirname(new URL(import.meta.url).pathname),
+    '..', '..', 'screenshots', 'lane-521md');
+  mkdirSync(SHOT_DIR, { recursive: true });
+  await p.setViewportSize({ width: 1100, height: 900 });
+  await sleep(200);
+  await p.screenshot({ path: join(SHOT_DIR, 'mdquote-desktop.png'), fullPage: true });
+  notes.push('evidence refreshed (DW_UPDATE_EVIDENCE=1): ' +
+             join(SHOT_DIR, 'mdquote-desktop.png'));
+  await p.setViewportSize({ width: 390, height: 844 });
+  await sleep(200);
+  await p.screenshot({ path: join(SHOT_DIR, 'mdquote-mobile-390.png'), fullPage: true });
+  notes.push('evidence refreshed (DW_UPDATE_EVIDENCE=1): ' +
+             join(SHOT_DIR, 'mdquote-mobile-390.png'));
+}
 
 await br.close();
 finish();
