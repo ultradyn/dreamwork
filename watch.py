@@ -317,8 +317,8 @@ COMMANDS = (
     # #263 receipt and is BATCHED under #342 (Q3) — it wakes only in instant
     # mode and otherwise drains on the tick's cursor read. Implementation
     # vocabulary is chat/turn/reply, never `thread` (#229); the UI word is
-    # "topic chat" (Q2). See composer-chat.md for the spine this rides.
-    {"kind": "chat", "label": "topic chat", "common": True, "sticky": True,
+    # "chat" (Q2; label shortened from "topic chat", #543). See composer-chat.md for the spine this rides.
+    {"kind": "chat", "label": "chat", "common": True, "sticky": True,
      "desc": "message the agent · the dreamworker replies in chat"},
     {"kind": "add-idea", "label": "add idea", "common": True, "sticky": True,
      "desc": "park a thought; the loop picks it up when it chooses next"},
