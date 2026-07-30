@@ -68,7 +68,12 @@ The trade, bounded: *duplicate trivia (a `read_text`, an age formatter), never
 duplicate an interpreter (a parser, a counter, a classifier).*
 
 `dreamhub.py` stays one stdlib file so `just deploy`'s snapshot pattern
-applies to it unchanged — with one caveat that line used to hide (#310):
+applies to it unchanged. That is a **deploy convenience, not a standing
+prohibition** — his 2026-07-30 ruling on `#505` Q2 lifted the no-build
+single-file constraint (the Python-stdlib one stands), and deploy has since
+learned to ship a directory anyway (`#480`). So "one file" here means the hub
+has not yet needed to be more; it is not a rule against it.
+There is one caveat the original line hid (#310):
 `just deploy` snapshots **`watch.py` only**, and the hub path-loads
 `deployed.py` from its own directory (`_load_deployed`). A hub copied
 somewhere alone still serves; it silently loses every `.stale` line, which

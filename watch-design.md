@@ -11,9 +11,11 @@ file current as the page evolves.
 
 ## What it is
 
-One stdlib-only file serving a single app shell with four client-routed
-views — dashboard, questions, file viewer, review — plus the raw review
-artifacts the review view embeds. The dashboard shows dreams (with live
+A stdlib-only Python server serving a single app shell with client-routed
+views — dashboard, questions, answers, file viewer, review, research and
+chat — plus the raw review artifacts the review view embeds. The client is
+one app: the shell and its assets are served whole, and the router picks the
+view from the URL. The dashboard shows dreams (with live
 ages), main files, the commits panel (five rows, live ages, maintenance
 markers highlighted), migrations
 vs target version, roll weights, and `.dreamwork/status.json` (loop writes
@@ -36,7 +38,24 @@ carries a `+` command opener (steer the loop without a chat turn).
   stand". The two are not collapsed (the `skill_identity` docstring's
   two-question discipline). The crumb is omitted entirely when there is no
   recorded version, rather than rendering a bare separator dot.
-- **Stdlib only, self-contained**; no dependencies, no build step.
+- **Python stdlib only. A built web UI is permitted** (ruled 2026-07-30 07:44,
+  answering `#505` Q2): *"we don't have a no-build single-file constraint. We
+  had a python stdlib constraint, but otherwise building the webui bundle and
+  breaking up watch.py into modules are good and reasonable things."* So the
+  constraint that survives is **the Python one** — the server imports nothing
+  outside the stdlib and no `pip install` stands between a checkout and a
+  running dashboard. What that ruling lifted is the packaging half: client
+  assets may live in their own files, a bundle step may produce them, and
+  `watch.py` may become a package. This bullet said "no dependencies, no build
+  step" for four days after the ruling, and that staleness is what made the
+  split read as forbidden.
+  **It is not licence for a second renderer.** The page has one render
+  authority, and `DREAMWORK.md`'s second-truth rule is untouched by this: a
+  port that *reimplements* each feature beside the existing one is still
+  refused (`dreamhub-design.md`, "one renderer, and it is the Python one" —
+  *two renderers only agree on the day they are written*). Build tooling over
+  the client we have is the permitted direction; a rival implementation of it
+  is a separate decision nobody has made.
 - **Loopback by default; trusted LAN only by explicit contract.** The default
   remains `127.0.0.1`. A singular numeric `--bind`, repeatable exact
   `--allow-host`, and navigable allowed `--url-host` may opt into an explicitly
@@ -2861,9 +2880,13 @@ is right for a chart about ledger history.
 must read its own `.dreamwork/tasks.md` history, and `git -C sub log --
 .dreamwork/tasks.md` would otherwise walk the parent repo and read the repo
 ROOT's ledger — silently. The first-sight grammar (`ENTRY_HEAD`, `ENTRY_ID`,
-`ORIGIN_MARK`, the entry walker) is lint.py's #213 grammar held VERBATIM —
-watch.py is one file by design and cannot import it — and a test pins the
-two identical, the one-copy rule `LEDGER_ENTRY` already states.
+`ORIGIN_MARK`, the entry walker) is `ledger_parse.py`'s #213 grammar, and
+both `watch.py` and `lint.py` **import** it rather than holding copies. This
+paragraph used to say the grammar was duplicated verbatim because "watch.py
+is one file by design and cannot import it", with a test pinning the two
+copies identical; that extraction has since happened, so the one-copy rule
+`LEDGER_ENTRY` states is now enforced by there being one definition rather
+than by a test comparing two.
 
 **Both kinds of nothing say so, inside the same `.bd` box.** A project that
 is not a git checkout, and one that keeps no versioned ledger, are ordinary
