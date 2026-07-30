@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""dev/replay_events.py — replay the task_event journal, reconstruct the store.
+"""dev/replay_events.py — replay the task_event journal, reconstruct the
+transition chain (lifecycle).
+
+The task **entity** (title/body/priority/origin/type/blocked_on/body_digest)
+is NOT carried by the journal and is stubbed on replay — the store's task
+table is the authoritative home for the entity, not this log (see #294/#550).
 
 A stdlib-only tool (like the rest of ``dev/``) that replays the
-``task_event`` journal and reconstructs the SQLite task store, proving three
-things (#460):
+``task_event`` journal and reconstructs the transition chain (the lifecycle),
+proving three things (#460):
 
   1. **Determinism** — the same journal replayed twice yields a byte-identical
      store (SQLite is byte-deterministic for an identical op sequence from an
@@ -87,7 +92,9 @@ EVENT_FIELDS = ("task_id", "at", "cause", "from_state",
 
 # Placeholder values for task columns the journal does NOT carry. A replayed
 # task row keeps the right id and state (the journal captures those) but its
-# title/body are stubs — the #294 finding this tool exists to surface.
+# title/body are stubs — the #294/#550 finding this tool exists to surface:
+# the journal is a lifecycle log, and the entity is an authoritative table
+# whose home is the store, not this log (see the module docstring).
 _REPLAY_TITLE = "<reconstructed from task_event journal>"
 _REPLAY_BODY = "<title/body not captured by the task_event journal (#294)>"
 
@@ -303,14 +310,14 @@ def verify_chain(events: list) -> list:
 def cli(argv=None) -> int:
     p = argparse.ArgumentParser(
         prog="replay_events.py",
-        description="Replay the task_event journal and reconstruct the store (#460).")
+        description="Replay the task_event journal and reconstruct the transition chain (entity columns stubbed — #294/#550).")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    pr = sub.add_parser("replay", help="reconstruct a store from a .jsonl journal")
+    pr = sub.add_parser("replay", help="reconstruct the transition chain from a .jsonl journal (entity columns stubbed — #294/#550)")
     pr.add_argument("journal")
     pr.add_argument("out")
 
-    pe = sub.add_parser("export", help="export a store's task_events to .jsonl")
+    pe = sub.add_parser("export", help="export a store's task_events (the transition chain) to .jsonl")
     pe.add_argument("store")
     pe.add_argument("out")
 
