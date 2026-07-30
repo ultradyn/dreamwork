@@ -16,7 +16,8 @@
    any target. usage: node projtitle.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, writeFileSync, cpSync, rmSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { serveVerified } from './serve.mjs';
+import { waitFor } from './dom.mjs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
@@ -51,18 +52,11 @@ cpSync('dev/capture/fixture', DIR, { recursive: true });
    anchored identity. */
 const longParam = '.dreamwork/review/fixture-review.html';
 
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
-                  { stdio: 'ignore' });
-process.on('exit', () => { try { srv.kill(); } catch (e) {} });
-await sleep(2500);
-
 const BASE = `http://127.0.0.1:${PORT}`;
+const srv = await serveVerified(DIR, PORT);   // #428/#461: poll+identity, no fixed sleep
+process.on('exit', () => { try { srv.kill(); } catch (e) {} });
 {
   const d = await (await fetch(`${BASE}/data.json`)).json();
-  if (d.target !== DIR) {
-    console.log(`FAIL :${PORT} is serving ${d.target}, not ${DIR}`);
-    process.exit(1);
-  }
   notes.push(`target ${d.target}`);
   notes.push(`open_questions ${d.open_questions}`);
 }
@@ -75,7 +69,7 @@ p.on('pageerror', e => errs.push(String(e)));
 
 async function go(path) {
   await p.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
-  await sleep(1200);
+  await waitFor(p, '#hproj');   // #428 render readiness (the title the guard reads)
 }
 
 const read = () => p.evaluate(() => {

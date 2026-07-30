@@ -15,7 +15,9 @@
    usage: node motion.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, rmSync, cpSync, writeFileSync, readFileSync } from 'node:fs';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { serveVerified } from './serve.mjs';
+import { waitFor } from './dom.mjs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 
@@ -68,24 +70,15 @@ commit('fix: the third row', 3 * D);
 commit('chore: the second row', 2 * D);
 commit('feat: the newest row', 60);
 
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
-                  { stdio: 'ignore' });
-process.on('exit', () => { try { srv.kill(); } catch (e) {} });
-await sleep(2500);
 const BASE = `http://127.0.0.1:${PORT}`;
-{
-  const d = await (await fetch(`${BASE}/data.json`)).json();
-  if (d.target !== DIR) {
-    console.log(`FAIL :${PORT} is serving ${d.target}, not ${DIR}`);
-    process.exit(1);
-  }
-}
+const srv = await serveVerified(DIR, PORT);   // #428/#461: poll+identity, no fixed sleep
+process.on('exit', () => { try { srv.kill(); } catch (e) {} });
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const ctx = await br.newContext({ viewport: { width: 1100, height: 1400 } });
 const p = await ctx.newPage();
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-await sleep(1300);
+await waitFor(p, '.git .commit[data-sha]');   // #428 render readiness (the commits panel)
 
 /* a plain tick: rewrite status.json, which is what the loop does every few
    seconds. It re-renders the whole dashboard and changes no commit. */
