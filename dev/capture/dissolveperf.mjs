@@ -81,7 +81,8 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { waitFor } from './dom.mjs';
 import { readFileSync } from 'node:fs';
-const OUT = process.argv[2], PORT = process.argv[3] || '39899';
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv), PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const loadavg = () => { try { return readFileSync('/proc/loadavg', 'utf8').split(' ')[0]; } catch { return '?'; } };

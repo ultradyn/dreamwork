@@ -42,10 +42,11 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pathToFileURL } from 'node:url';
+import { outdir } from './outdir.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../..');
-const OUT = process.argv[2] || join(REPO, '.dreamwork/docs/measurements/367-markrail');
+const OUT = outdir(process.argv, { default: join(REPO, '.dreamwork/docs/measurements/367-markrail') });
 const SCRATCH = '/tmp/367-markrail';
 mkdirSync(OUT, { recursive: true });
 

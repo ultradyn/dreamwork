@@ -35,7 +35,8 @@ const freePort = () => new Promise(res => {
   const s = createServer();
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
 });
-const OUT = process.argv[2];
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv);
 // OWN-SERVER GUARD: ephemeral port, argv[3] deliberately ignored (#471).
 // #461 taught that adopting argv[3] forces this onto the shared recipe port,
 // serveVerified refuses, and the assertions never run.

@@ -22,7 +22,8 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
 
-const OUT = process.argv[2];
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv);
 /* #475/#461: posture starts its OWN watch.py for a scratch target, so it
    must take a free port and IGNORE argv[3]. The `guards` recipe always passes
    {{port}} (its own shared server's port) to every guard, and this guard

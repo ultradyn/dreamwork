@@ -15,7 +15,8 @@ import { waitFor } from './dom.mjs';
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-const OUT = process.argv[2], PORT = process.argv[3] || '39890';
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv), PORT = process.argv[3] || '39890';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });

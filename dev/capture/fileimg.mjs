@@ -45,7 +45,8 @@ import { mkdirSync, writeFileSync, rmSync, cpSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { deflateSync } from 'node:zlib';
 import { join } from 'node:path';
-const OUT = process.argv[2];
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 

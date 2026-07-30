@@ -42,7 +42,8 @@ import { mkdirSync, writeFileSync, readFileSync, rmSync, cpSync } from 'node:fs'
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { serveVerified } from './serve.mjs';
-const OUT = process.argv[2];
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 const freePort = () => new Promise(res => {

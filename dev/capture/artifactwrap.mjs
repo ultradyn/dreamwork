@@ -39,7 +39,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { makeReporter } from './report.mjs';
 
-const OUT = process.argv[2], PORT = process.argv[3] || '39899';
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv), PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`;
 mkdirSync(OUT, { recursive: true });
 

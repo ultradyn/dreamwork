@@ -24,7 +24,8 @@ import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
 import { serveVerified } from './serve.mjs';
 
-const OUT = process.argv[2];
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv);
 mkdirSync(OUT, { recursive: true });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

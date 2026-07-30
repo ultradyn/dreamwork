@@ -12,7 +12,8 @@ import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
 import { dockHeadlineParts } from './dom.mjs';
 
-const OUT = process.argv[2], PORT = process.argv[3] || '39887';
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv), PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 mkdirSync(OUT, { recursive: true });
 

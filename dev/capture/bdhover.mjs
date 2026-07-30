@@ -41,7 +41,8 @@ import { makeReporter } from './report.mjs';
 import { serveVerified } from './serve.mjs';
 import { waitFor } from './dom.mjs';
 
-const OUT = process.argv[2];
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 const freePort = () => new Promise(res => {
