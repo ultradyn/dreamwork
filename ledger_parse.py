@@ -205,6 +205,43 @@ def store_entries(dreamwork_dir) -> list[tuple[list[int], str]]:
     return [([int(r[0])], r[1]) for r in rows]
 
 
+def store_records(dreamwork_dir) -> list[dict]:
+    """One dict per task row from the store -- the full-record read (#497).
+
+    GENUINE GAP (#497): :func:`store_entries` returns only ``(id, body)``;
+    the read-only task CLI's ``list``/``get`` verbs need the structured
+    columns (title, state, priority, type, origin). This is the ONE store
+    reader for full rows, read-only via the ``?mode=ro`` idiom (parity with
+    :func:`store_entries` / :func:`store_ids_by_state` -- a second store
+    reader in a consumer is the defect #352 exists to prevent). Markdown-mode
+    (no store) returns ``[]``. Rows are ascending by id.
+
+    The dict KEYS are the read verbs' stable output contract -- a future
+    binary rewrite of the CLI must reproduce them: ``id`` (int), ``state``
+    (``"open"|"landed"``), ``title`` (str), ``body`` (str), ``priority``
+    (str|None), ``type`` (str|None), ``origin`` (str|None), ``blocked_on``
+    (str|None).
+    """
+    db = store_path(dreamwork_dir)
+    if not db.exists():
+        return []
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        rows = conn.execute(
+            "SELECT id, state, title, body, priority, type, origin, blocked_on"
+            " FROM task ORDER BY id"
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [
+        {"id": int(r[0]), "state": r[1], "title": r[2], "body": r[3],
+         "priority": r[4], "type": r[5], "origin": r[6], "blocked_on": r[7]}
+        for r in rows
+    ]
+
+
 def store_ids_by_state(dreamwork_dir) -> tuple[list[str], list[str]]:
     """``(open_ids, landed_ids)`` from the store -- the post-cutover
     projection of ``watch.parse_ledger``.
@@ -226,6 +263,42 @@ def store_ids_by_state(dreamwork_dir) -> tuple[list[str], list[str]]:
     finally:
         conn.close()
     return open_ids, landed_ids
+
+
+def store_review_decisions(dreamwork_dir) -> list[dict]:
+    """One dict per ``review_decision`` row -- the full review read (#497).
+
+    GENUINE GAP (#497): ``watch._review_decisions`` is a PRIVATE dashboard
+    helper that returns ``{artifact: (decision, question_title)}``, dropping
+    ``decided_at`` and ``actor``. The read-only CLI's ``reviews`` verbs need
+    the full row, so this is the ONE public store reader for review
+    decisions -- read-only via the ``?mode=ro`` idiom, the same pattern every
+    store read in this module uses. A missing store or a pre-v2 store whose
+    table is absent returns ``[]`` (no review data), never raises. Rows are
+    ascending by ``(decided_at, artifact)`` (deterministic; the verb that
+    wants newest-first reverses).
+
+    The dict KEYS are the read verbs' stable output contract: ``artifact``,
+    ``question_title``, ``decision``, ``decided_at``, ``actor``.
+    """
+    db = store_path(dreamwork_dir)
+    if not db.exists():
+        return []
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        rows = conn.execute(
+            "SELECT artifact, question_title, decision, decided_at, actor"
+            " FROM review_decision ORDER BY decided_at, artifact"
+        ).fetchall()
+    except sqlite3.Error:
+        return []  # table absent (pre-v2 store) == no review data
+    finally:
+        conn.close()
+    return [
+        {"artifact": r[0], "question_title": r[1], "decision": r[2],
+         "decided_at": r[3], "actor": r[4]}
+        for r in rows
+    ]
 
 
 def store_series_raw(dreamwork_dir) -> dict | None:
