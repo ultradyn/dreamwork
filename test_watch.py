@@ -9106,6 +9106,49 @@ class TestSubmissionIdempotency(unittest.TestCase):
             self.assertEqual(self._receipt_count(d), 2,
                              "distinct ids mint distinct receipts")
 
+    def test_replayed_rejection_returns_the_rejection_verdict(self):
+        """#274: a replayed REFUSED action returns the original rejection, so
+        the client keeps its draft on a retried refusal exactly as on the
+        first refusal.
+
+        Production line whose change reds this (the coordinator's gate
+        injection, which the lane's suite passed over — the green red-run
+        this test closes): `_replay_verdict`'s
+        `if result.state == "rejected":` branch. Sabotage it to always-ok
+        and a replayed refusal reads `ok: true` — the client clears a draft
+        nothing durable holds, the #136 lie one seam over.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            body = {"question": "A real open question?",
+                    "answer": "   ", "from": "/questions"}  # schema_invalid
+            s1, b1 = self._post_id(base + "/answer", body, "uuid-replay-R")
+            self.assertEqual(s1, 202)
+            r1 = json.loads(b1)
+            self.assertTrue(r1.get("rejected"),
+                            "precondition: the first POST really was refused")
+            rid = (r1.get("receipt") or {}).get("receipt_id")
+            self.assertTrue(rid, "precondition: the 202 carries the receipt")
+            with watch.open_journal(watch._journal_path(d)) as journal:
+                rec = journal.get_receipt(rid)
+            self.assertIsNotNone(rec, "precondition: receipt persisted")
+            self.assertEqual(rec["state"], "rejected",
+                             "precondition: the refusal is durable — else the "
+                             "replay has no verdict to carry and the test is "
+                             "vacuous")
+            # the replay: same UUID + same body (a retry of the refused
+            # attempt — a double-click or a lost-response resend)
+            s2, b2 = self._post_id(base + "/answer", body, "uuid-replay-R")
+            self.assertEqual(s2, 202)
+            r2 = json.loads(b2)
+            self.assertEqual(self._receipt_count(d), 1,
+                             "precondition: the second POST was a dedup hit, "
+                             "not a new receipt")
+            self.assertTrue(r2.get("rejected"),
+                            "a replayed refusal must return the rejection — "
+                            "ok:true clears a draft nothing holds")
+
 
 class TestShortBodyIsWitnessedAsShort(unittest.TestCase):
     """#371 — an interrupted body was recorded as a complete submission.
