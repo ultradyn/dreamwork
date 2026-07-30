@@ -19,6 +19,23 @@
    set — never the HTML string, which looks plausible either way (the
    filing named this form).
 
+   #556 — the SECOND hop. #374 escA-locked the pip button's own attributes,
+   but clicking it hands the payload to `popoutDoc`, which rebuilt
+   `<iframe src title>` from `pip.dataset.pipurl` / `pip.dataset.piplabel`.
+   Those dataset reads parse escA's `&quot;` BACK to a raw `"`, so the whole
+   payload re-enters as one value and `esc` (no `"` escape) on `title` let
+   the quote break the attribute open a second time — `onfocus` rode in on
+   the popout window's iframe, one hop past the fix. The same `escA` closes
+   it: popoutDoc now escA-encodes both `src` and `title`. This guard drives
+   the click and reads the PARSED iframe attribute set on the popout
+   document (absence-first: the popout opened AND holds an iframe, else the
+   phase is named-vacuous). Capture mechanism: Document Picture-in-Picture
+   (openPopout's first choice) is a window a Playwright context cannot reach
+   via waitForEvent('page'), so the phase neutralises
+   `window.documentPictureInPicture` up front to force openPopout's
+   `window.open` fallback — a real, tracked popup page — and reads the parsed
+   iframe there (never the HTML string).
+
    usage: node escattr.mjs <outdir> [port]   (recipe-driven: connects to
           the watch server the `just guards` recipe already holds on <port>) */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
@@ -33,8 +50,11 @@ mkdirSync(OUT, { recursive: true });
 const { ok, present, declare, finish, checks, notes, errs } = makeReporter();
 declare({
   drives: '/file?p=<quote payload> — the file-view pip button (pipBtn) renders ' +
-          'the raw query param as its label across three `"`-delimited attributes',
-  traceWindow: 'static read of the parsed DOM after render readiness; no motion trace',
+          'the raw query param as its label across three `"`-delimited attributes, ' +
+          'then a CLICK of that button opens the popout whose iframe re-interpolates ' +
+          'the same payload (two hops, one payload)',
+  traceWindow: 'static read of the parsed DOM after render readiness; the popout ' +
+               'phase also reads the popup document after the click — no motion trace',
 });
 
 // The payload carries a `"` to break the attribute and an `onfocus="…" ` to
@@ -116,5 +136,88 @@ ok('data-pipurl survived (also attribute position, now escA)',
 
 ok('no page errors', errs.length === 0);
 
+/* ── popout phase (#556): the SECOND hop. #374 escA-locked the pip button's
+   own attributes, but the click hands the payload to popoutDoc, which
+   rebuilt `<iframe src title>` from `pip.dataset.pipurl`/`pip.dataset.piplabel`.
+   Those dataset reads parse escA's `&quot;` BACK to a raw `"`, so the whole
+   payload re-enters as one value — and `esc` on `title` (no `"` escape) let
+   the quote break the attribute open again, `onfocus` riding in on the
+   popout's iframe. Read the PARSED iframe attribute set on the popout
+   document, never the HTML string (the filing named this form for the
+   first hop; the second hop is the same decision on a different document). */
+
+// Capture mechanism: Document Picture-in-Picture (openPopout's first choice)
+// is a window a Playwright context CANNOT reach via waitForEvent('page'), so
+// neutralise it up front to force openPopout's `window.open` fallback — a
+// real, tracked popup page. This is deterministic regardless of whether the
+// headless build exposes documentPictureInPicture, and it is the path the
+// brief sanctions ("driving the window.open fallback").
+await p.evaluate(() => {
+  if (window.documentPictureInPicture) delete window.documentPictureInPicture;
+});
+
+// Set up the popup listener BEFORE the click: openPopout is async (awaits
+// ensureData), so window.open fires a tick after the click — but the
+// 'page' event must be subscribed first or it races.
+const popupP = p.context().waitForEvent('page', { timeout: 15000 });
+await p.click('#meta .pipbtn');
+const popup = await popupP;
+const iframeReady = await waitFor(popup, 'iframe', 15000);
+
+// (c) absence-first precondition: a build where the popout did not open, or
+// opened without an iframe, is a named FAIL — every check below else judges
+// a popup with no iframe interpolation to read (vacuous). This is the rule:
+// assert in the check the precondition the check depends on.
+ok('precondition: the popout opened and contains an iframe (else vacuous)',
+   iframeReady && !!(await popup.evaluate(() => document.querySelector('iframe'))));
+if (!iframeReady) {
+  await popup.close().catch(() => {}); await br.close(); finish(); process.exit(1);
+}
+
+// Read the PARSED iframe's attribute set on the popout document — what the
+// browser actually built there. Unfixed `esc` on title yields an injected
+// `onfocus` and truncates title at the first `"`; escA keeps the `"` inside
+// so the set is exactly {src,title} and title carries the whole payload as
+// ONE value. Capture the FULL attribute map so a value scan (the injected
+// token) is over every attribute, mirroring the first hop.
+const ifr = await popup.evaluate(() => {
+  const f = document.querySelector('iframe');
+  if (!f) return null;
+  const attrs = f.getAttributeNames();
+  const values = {};
+  for (const a of attrs) values[a] = f.getAttribute(a);
+  return { attrs, values };
+});
+notes.push('parsed popout iframe: ' + JSON.stringify(ifr));
+
+// derive the expected src at runtime from PAYLOAD, not a literal: data-pipurl
+// was '/file?p=' + encodeURIComponent(payload) at pipBtn time, escA/esc leave
+// %22 intact, so a fixture change cannot expiry-date this check.
+const IFR_EXPECTED = ['src', 'title'];
+const EXPECTED_SRC = '/file?p=' + encodeURIComponent(PAYLOAD);
+
+// (a) the attribute set contains NO injected attribute — the definitive
+// detector (an injection always adds an ATTRIBUTE NAME). Unfixed esc yields
+// `onfocus` here.
+const ifrInjected = ifr ? ifr.attrs.filter(a => !IFR_EXPECTED.includes(a)) : ['<no iframe>'];
+ok('no injected attribute on the popout iframe (set = {src,title})',
+   !!ifr && ifrInjected.length === 0);
+ok('no `onfocus` on the popout iframe (the quote broke title open)',
+   !!ifr && !ifr.attrs.includes('onfocus'));
+
+// (b) title carries the WHOLE payload as ONE value. Unfixed esc truncates at
+// the first `"`; escA keeps it inside as &quot; so the parsed value is the
+// literal payload. This is the live vector the brief names.
+ok('popout iframe title carries the whole payload as one value (not truncated at ")',
+   !!ifr && ifr.values['title'] === PAYLOAD);
+
+// src is also attribute position; it survives because encodeURIComponent
+// quoted the `"` as %22, but escA is correct-by-position there regardless —
+// assert the exact value (derived from PAYLOAD) so the check holds if the
+// file route's URL shape ever changes.
+ok('popout iframe src survived (attribute position; " arrived as %22)',
+   !!ifr && ifr.values['src'] === EXPECTED_SRC);
+
+await popup.close().catch(() => {});
 await br.close();
 finish();
