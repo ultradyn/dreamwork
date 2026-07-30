@@ -2,6 +2,54 @@
 
 ## Open
 
+- **P2 · 2026-07-31 01:50 — #572: GitHub PR/comment etiquette — the design forks you asked to be asked about.**
+  Your add-idea (journal ord=63): a protocol of etiquette around posting as you on GitHub. Each PR/comment
+  starts with an agent-attribution header and ends with a signoff carrying an `Internal Reference: <id>` that
+  links back to a dreamwork task. The `gh` CLI gets a stdlib-python-only shim that auto-adds these. You said:
+  *"Asking Level: ask me (please treat this task as if your posture says that the asking level is to ask me
+  about design choices etc)."* — so here are the forks.
+
+  **`Q1` — the header text.** You sketched `*Written by my Agent*` and noted *"capitalization needs fixing
+  at least."* **`rec`: `*Posted by Max's dreamwork agent*`**, italic, one line, at the top of the body.
+  Alternatives: your original `*Written by my Agent*` (anonymous — whose agent?); `*AI-assisted*` (weaker —
+  says nothing about agency). The rec names whose agent it is without pretending to be you.
+
+  **`Q2` — the signoff + Internal Reference.** The footer's job is traceability: anyone reading can follow
+  the reference back to the task/receipt that produced the text. **`rec`: a two-line footer — a horizontal
+  rule, then `*Posted by Max's dreamwork agent · Internal Reference: <receipt-id>*`** where `<receipt-id>`
+  is the durable journal receipt id from the `/command` that dispatched the work (the same id the chat
+  page and the ledger already use). This needs no new id sequence — the receipt id IS the internal
+  reference, and it is already durable, unique, and linked. Alternative: a new sequential id per outbound
+  message (a second sequence to maintain and map).
+
+  **`Q3` — the `gh` shim mechanism.** Constraint: stdlib python only. **`rec`: a python script
+  (`dev/gh_shim.py`) that wraps `gh pr create` / `gh issue comment` / `gh pr comment`, reads the body
+  (from `--body`, `--body-file`, or `$EDITOR`), prepends/appends the header/footer, and delegates to the
+  real `gh` with the modified body. Installed as a shell alias or a `gh` extension (`gh-dreamwork`) — the
+  alias is simpler, the extension is more discoverable.** The script itself is ~100 lines of argparse +
+  subprocess. The harder question is the install surface: do you want it as a fish alias (one line in
+  your config), a `gh` extension (a `gh-dreamwork` executable on PATH), or both?
+
+  **`Q4` — the testing phase you specified.** You said: *"for the initial gh shim we should insert nothing,
+  then we can test with some inserted commented stuff and see if it's possible to get it 'back out' from
+  other posts (or does github sanitize it), and once we've done due testing then I will sign off on
+  release."* **`rec`: three phases, exactly as you said.** Phase 1: the shim passes bodies through
+  unchanged (verifies the interception works at all). Phase 2: it inserts the header/footer as an HTML
+  comment (`<!-- Posted by Max's dreamwork agent · Internal Reference: <id> -->`) — invisible in the
+  rendered markdown but present in the source; we verify whether GitHub preserves or strips it. Phase 3
+  (release, your signoff): the visible header/footer ships. No cryptographic signature (`<!-- sig: … -->`)
+  in v1 — it is a second system (key management, verification endpoint) and the Internal Reference already
+  gives traceability; if authenticity becomes a real concern it is a follow-up.
+
+  **`Q5` — the docs page.** The footer links to
+  `https://dreamwork.ultradyn.ai/docs/q/what-is-an-internal-reference`, which does not exist yet.
+  **`rec`: the link ships in the footer from day one (it 404s today); the page is a follow-up task in
+  dreamhub's docs surface.** Alternative: omit the link until the page exists (the reference still works
+  as a lookup key, just not a clickable one).
+
+  **If you say nothing:** nothing is built — no shim, no header/footer, no GitHub posting change. The
+  recs stand as the design's defaults when you engage.
+  Accepted answers: `rec` (takes all five) · per-question (`Q1: …`) · free text.
 
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
