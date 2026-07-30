@@ -4531,6 +4531,23 @@ class TestAppShell(unittest.TestCase):
         # snapshotReviewFrame/restoreReviewFrame preservation to it.
         self.assertIn("'/researchraw?p=' + encodeURIComponent(", watch.PAGE)
 
+    def test_page_has_reviews_route_wiring(self):
+        # #545 — /reviews lists every review artifact through the shared
+        # artifactRow factory; the dashboard caps at the most recent
+        # REVIEWS_DASH_CAP and links here. A route lives in three places
+        # (the #452 lesson): the client router, the internal-link claim,
+        # and the server's app-shell table (covered live in
+        # test_reviews_serves_shell). Two of three is a deep link that
+        # full-reloads or a link the browser sends nowhere.
+        for token in ('buildReviews', 'REVIEWS_DASH_CAP', '/reviews'):
+            self.assertIn(token, watch.PAGE)
+        self.assertIn("loc.pathname === '/reviews'", watch.PAGE)
+        self.assertIn("a.pathname === '/reviews'", watch.PAGE)
+        # The dashboard link line names the total honestly and points here
+        # only when the count exceeds the cap; the rows are the same
+        # artifactRow the /reviews listing renders (kind 'review').
+        self.assertIn("all ${d.reviews.length} reviews →", watch.PAGE)
+
     def test_narrow_review_frame_uses_measured_rvh_not_60vh(self):
         # #434 — production lines: the narrow #reviewdoc height, and the
         # review-route bottom-pad tighten. Restoring `height:60vh` is the
@@ -6458,6 +6475,23 @@ class TestAppShell(unittest.TestCase):
             status, raw = self._get(base + "/researchraw?p=window-coords.html")
             self.assertEqual(status, 200)
             self.assertIn("research body", raw)
+
+    def test_reviews_serves_shell(self):
+        # #545 — /reviews returns the one app shell like every other
+        # same-document route (deep links keep working); the client router
+        # renders the listing. A route missing from the server's allowlist
+        # is a 404 on refresh/deep-link — the table-diff test does not see
+        # the server side, so this is the live guard for it.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            rd = os.path.join(d, ".dreamwork", "review")
+            os.makedirs(rd)
+            with open(os.path.join(rd, "alpha.html"), "w") as f:
+                f.write("<!doctype html><title>A</title><p>alpha body")
+            base = self._serve(d)
+            status, body = self._get(base + "/reviews")
+            self.assertEqual(status, 200)
+            self.assertIn('id="view"', body)
 
     def test_researchraw_blocks_escape_src_and_missing(self):
         # The src/ half is the load-bearing one: a source is .html under the
