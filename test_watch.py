@@ -4703,19 +4703,19 @@ class TestAppShell(unittest.TestCase):
                                 "the property — that a PAIR decays is the point")
         self.assertIn("do-next", decaying)
         self.assertIn("do-now", decaying)
-        # The decay lands on the DEFAULT (COMMANDS[0], the far-left kind), not
-        # a hardcoded name: `chat` is the default today, but naming it here
+        # The decay lands on the DECLARED DEFAULT (the entry marked `default`,
+        # else the far-left kind), resolved by the one idiom defaultKind() —
+        # never positional, so a row reorder cannot change what his next
+        # message lands as (#547). No hardcoded name: naming add-idea here
         # would re-open the third place a new kind must be remembered. The
         # submit path reads the property off the LIVE table — COMMANDS is a
-        # `let` because plugin kinds APPEND (#86), so [0] is always a core
-        # kind — and a kind with sticky:false (or no `sticky` at all) decays
-        # whether it is core or contributed.
+        # `let` because plugin kinds APPEND (#86) — and a kind with
+        # sticky:false (or no `sticky` at all) decays whether it is core or
+        # contributed.
         self.assertIn("COMMANDS.find(c => c.kind === kind)", watch.PAGE)
         self.assertIn("!sent.sticky", watch.PAGE)
         self.assertNotIn("kind === 'do-now'", watch.PAGE)
-        self.assertRegex(
-            watch.PAGE,
-            r"setKind\(\(COMMANDS\[0\] \|\| \{\}\)\.kind\)")
+        self.assertIn("setKind(defaultKind())", watch.PAGE)
         # no hardcoded kind name in the decay — the old `setKind('add-idea')`
         # was the special case this generalised away.
         self.assertNotIn("setKind('add-idea')", watch.PAGE)
@@ -8597,22 +8597,46 @@ class TestDeliveryWakeRouting(unittest.TestCase):
     # durable home. These bind: the COMMANDS entry, the batched wake gate, the
     # application step, and the reply→replied thread model.
 
-    def test_chat_command_entry_is_far_left_default(self):
-        """Production line: the `chat` dict in COMMANDS (watch.py:~315).
+    def test_chat_far_left_and_add_idea_is_declared_default(self):
+        """Production line: the COMMANDS table (watch.py:~315).
 
-        Q1/Q2: chat is the far-left default composer kind, common (a row
-        button), and sticky (conversational — a follow-up must not require
-        re-selection). The UI label is "chat" (Q2; shortened from "topic chat",
-        #543); implementation vocab is chat/turn/reply, never `thread` (#229)
-        — asserted so a renamed label does not silently drift from his ruling.
+        Q1/Q2: chat is the far-left composer kind (NOT the default since
+        #547), common (a row button), and sticky (conversational — a
+        follow-up must not require re-selection). The UI label is "chat"
+        (Q2; shortened from "topic chat", #543); implementation vocab is
+        chat/turn/reply, never `thread` (#229) — asserted so a renamed label
+        does not silently drift from his ruling.
+
+        #547: the default kind is DECLARED, never positional. chat stays
+        far-left (Q2 stands); add-idea carries the `default` marker so it is
+        the pre-selected kind. Exactly one entry carries it — the
+        precondition the JS resolver (defaultKind) depends on: two markers
+        would be ambiguous, zero would fall back to the far-left kind, and
+        both must read loud here rather than as a silent positional drift.
         """
         chat = watch.COMMANDS[0]
         self.assertEqual(chat["kind"], "chat")
         self.assertEqual(chat["label"], "chat")
         self.assertTrue(chat["common"], chat)
         self.assertTrue(chat["sticky"], chat)
+        # chat is far-left, NOT the default — asserted so the old "chat is
+        # the default" reading cannot silently return (#547).
+        self.assertNotIn("default", chat, chat)
         # every core kind the server accepts is in the validated vocab
         self.assertIn("chat", watch.COMMAND_KINDS)
+        # #547: the default is DECLARED on add-idea, never positional. Exactly
+        # one entry carries the marker — the precondition defaultKind depends
+        # on (the resolver reads `c.default`; a literal pinning add-idea here
+        # would be the count-form of a property it could not see).
+        marked = [c for c in watch.COMMANDS if c.get("default")]
+        self.assertEqual([c["kind"] for c in marked], ["add-idea"], marked)
+        self.assertEqual(len(marked), 1, marked)
+        # the marker reaches the client verbatim (CORE_COMMANDS is json.dumps
+        # of COMMANDS), so the JS resolver reads the same flag production does.
+        self.assertIn('"default": true',
+                      "const CORE_COMMANDS = " + json.dumps(list(watch.COMMANDS)))
+        self.assertIn("const defaultKind =", watch.PAGE)
+        self.assertIn("setKind(defaultKind())", watch.PAGE)
         # add-idea stays sticky (parked thoughts still chain); chat is the
         # SECOND sticky kind — asserted so the sticky comment stays honest.
         sticky = [c["kind"] for c in watch.COMMANDS if c.get("sticky")]

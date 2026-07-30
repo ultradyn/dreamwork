@@ -301,9 +301,10 @@ def server_class(family):
 # kinds (#86) append to this list — nothing downstream assumes a fixed set.
 # `sticky` (#337): whether the composer KEEPS the kind after its command
 # lands. The sticky kinds are chat and add-idea; every STEERING kind decays
-# back to the default (COMMANDS[0], the far-left kind) at submit, because a
-# steering mode that persists silently raises the authority of his NEXT
-# message (#257's reasoning, generalised). chat and add-idea are sticky for
+# back to the default (the entry marked `default`, else the far-left kind)
+# at submit, because a steering mode that persists silently raises the
+# authority of his NEXT message (#257's reasoning, generalised). chat and
+# add-idea are sticky for
 # DIFFERENT reasons: add-idea so consecutive parked thoughts do not require
 # re-selection, and chat because it is CONVERSATIONAL, not steering — the
 # #257 authority rationale does not apply to a message channel, and a
@@ -311,16 +312,24 @@ def server_class(family):
 # a plugin kind that says nothing must not linger either — so the decay
 # needs no third place to be remembered.
 COMMANDS = (
-    # #504 — `chat` is the far-left default: his "send a message to the
+    # #504 — `chat` is the far-left kind (Q2): his "send a message to the
     # agent" entry point, the main-dreamer first slice of #229/#270. A chat
     # send is a /command POST of kind `chat` (Q1: no new route); it rides the
     # #263 receipt and is BATCHED under #342 (Q3) — it wakes only in instant
     # mode and otherwise drains on the tick's cursor read. Implementation
     # vocabulary is chat/turn/reply, never `thread` (#229); the UI word is
     # "chat" (Q2; label shortened from "topic chat", #543). See composer-chat.md for the spine this rides.
+    # NOTE: chat is far-left, NOT the default — see add-idea below (#547).
     {"kind": "chat", "label": "chat", "common": True, "sticky": True,
      "desc": "message the agent · the dreamworker replies in chat"},
+    # #547 — add-idea is the DECLARED default (the `default` marker), not
+    # positional: he wants his parked-thought entry point pre-selected. chat
+    # stays far-left (Q2 stands); only the default selection changed. The
+    # marker is read by the one resolver idiom (defaultKind in the JS), so a
+    # future reorder of the row must not change the default, and a change of
+    # default must not reorder the row. Exactly one entry carries it.
     {"kind": "add-idea", "label": "add idea", "common": True, "sticky": True,
+     "default": True,
      "desc": "park a thought; the loop picks it up when it chooses next"},
     {"kind": "do-next", "label": "do next", "common": True, "sticky": False,
      "desc": "jump this to the front of the queue (text optional)"},
@@ -10162,7 +10171,20 @@ function popoutDoc(url, label) {
   // its 0-width start reads as a glitch, not a choice (the enter-snap rule).
   const kindsEl = document.getElementById('cmdkinds');
   const menuEl = document.getElementById('cmdmenu');
-  let activeKind = (COMMANDS[0] || {}).kind;
+  // #547 — the default kind is DECLARED, never positional: the entry marked
+  // `default`, else the far-left kind as a last resort. A future reorder of
+  // the row must not change the default; a future change of default must not
+  // reorder the row. The marker rides COMMANDS (the `let` the plugin half
+  // appends to, #86), so the fallback [0] is always a core kind when nothing
+  // is marked. ONE resolver idiom, used at every read site (initial
+  // selection, plugin-unload fallback, post-submit decay) so the three
+  // cannot drift.
+  const defaultKind = (from) => {
+    const list = from || COMMANDS;
+    const marked = list.find(c => c.default);
+    return ((marked || list[0]) || {}).kind;
+  };
+  let activeKind = defaultKind();
   // The row carries the common kinds PLUS the active one when it is uncommon,
   // so whatever is selected always has a button for the indicator to sit on.
   // Rebuilding is membership-only: a common->common switch leaves the row
@@ -10250,10 +10272,10 @@ function popoutDoc(url, label) {
     const arrived = renderMenu();
     /* His selection can be a command that no longer exists — he chose it, the
        plugin unloaded, and the row would still offer a kind the server now
-       refuses with a bare 400. Fall back to the first core kind, which cannot
-       go away. */
+       refuses with a bare 400. Fall back to the declared default, which
+       cannot go away (the marker is on a core kind). */
     if (!COMMANDS.some(c => c.kind === activeKind))
-      setKind((CORE_COMMANDS[0] || {}).kind);
+      setKind(defaultKind(CORE_COMMANDS));
     else
       setKind(activeKind);                 // re-mark `.on` on the new nodes
     /* THE ARRIVAL, and the condition on it is not an exemption.
@@ -10493,18 +10515,20 @@ function popoutDoc(url, label) {
         clearDraft();  // unguarded ON PURPOSE: already inside cv.landed, and
         // an isDurable() here would read as a gate while gating nothing (#163)
         // #337: a landed STEERING command does not keep its kind — the
-        // composer decays back to the default (COMMANDS[0], the far-left
-        // kind), so his NEXT message is never silently promoted to the
-        // authority of the one he just sent. Read the property off the LIVE
-        // table (COMMANDS is a `let`; plugin kinds APPEND, #86, so [0] is
-        // always a core kind), and absent means NOT sticky, so no kind is
-        // named here and a new one is not a third place to remember. The
-        // decay rides setKind — the indicator's existing slide, not a
+        // composer decays back to the default (the entry marked `default`,
+        // else the far-left kind), so his NEXT message is never silently
+        // promoted to the authority of the one he just sent. Read the
+        // property off the LIVE table (COMMANDS is a `let`; plugin kinds
+        // APPEND, #86), and absent means NOT sticky, so no kind is named
+        // here and a new one is not a third place to remember. The default
+        // is resolved by the one idiom (defaultKind), never positional, so a
+        // row reorder cannot change what his next message lands as (#547).
+        // The decay rides setKind — the indicator's existing slide, not a
         // second gesture (transitions.md). chat and add-idea are sticky
         // (#504) and skip this, so a conversation or a run of parked
         // thoughts is not interrupted by re-selection.
         const sent = COMMANDS.find(c => c.kind === kind);
-        if (sent && !sent.sticky) setKind((COMMANDS[0] || {}).kind);
+        if (sent && !sent.sticky) setKind(defaultKind());
         fitText(document.getElementById('cmdtext'), true);  // #177: shrink back, the same gesture reversed
         // he may already have started typing again while the POST was in
         // flight, before there was any timer to cancel. Courtesy is NOT
