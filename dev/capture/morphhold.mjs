@@ -59,7 +59,8 @@
    usage: node morphhold.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, rmSync, cpSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { serveVerified } from './serve.mjs';
+import { waitFor } from './dom.mjs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 
@@ -93,18 +94,9 @@ const reset = () => {
   cpSync('dev/capture/fixture', DIR, { recursive: true });
 };
 reset();
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
-                  { stdio: 'ignore' });
-process.on('exit', () => { try { srv.kill(); } catch (e) {} });
-await sleep(2500);
 const BASE = `http://127.0.0.1:${PORT}`;
-{
-  const d = await (await fetch(`${BASE}/data.json`)).json();
-  if (d.target !== DIR) {
-    console.log(`FAIL :${PORT} is serving ${d.target}, not ${DIR}`);
-    process.exit(1);
-  }
-}
+const srv = await serveVerified(DIR, PORT);   // #428/#461: poll+identity, no fixed sleep
+process.on('exit', () => { try { srv.kill(); } catch (e) {} });
 
 /* Send through the REAL UI in the mode under test — the hold lives in the
    client's submit path, so a bare POST would drive the wrong code — then
@@ -228,7 +220,7 @@ async function phase(mode, reduced) {
   const p = await ctx.newPage();
   p.on('pageerror', e => errs.push(String(e)));
   await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
-  await sleep(1200);
+  await waitFor(p, '.qa.open');   // #428 render readiness (the card the hold anchors on)
   const r = await p.evaluate(RACE(mode, 400, 2600));
   await ctx.close();
   return r;

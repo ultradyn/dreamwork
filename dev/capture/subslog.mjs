@@ -30,6 +30,7 @@
    usage: node subslog.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
+import { waitFor } from './dom.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -68,7 +69,10 @@ const dbName = () => p.evaluate(
   `(typeof subsDbName === 'function' ? subsDbName() : null)`);
 
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
-await sleep(1200);
+// #428: networkidle fires when data.json is fetched but the client JS that
+// defines __dwSubmissions and builds the .qa cards has not run; a fixed sleep
+// graded a half-rendered page under load. Wait for the card the guard drives.
+await waitFor(p, '.qa.open');
 
 {
   const before = await all();
@@ -105,7 +109,7 @@ const OKTEXT = 'an answer that lands, witnessed ' + process.pid;
 const REJTEXT = 'a note the file will not take ' + process.pid;
 {
   await p.reload({ waitUntil: 'networkidle' });
-  await sleep(1200);
+  await waitFor(p, '.qa.open');   // #428 render readiness (same as the first load)
   await p.evaluate(`(async () => {
     const card = document.querySelector('.qa.open');
     // #266 correctly fails closed when a card cannot resolve its logical live

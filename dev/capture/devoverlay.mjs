@@ -27,7 +27,9 @@
    NOT bind 39880–39899. usage: node devoverlay.mjs <outdir> [port ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, cpSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
+import { serveVerified } from './serve.mjs';
+import { waitFor } from './dom.mjs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
@@ -65,28 +67,11 @@ const DIR = join(OUT, 'devoverlay-target');
 rmSync(DIR, { recursive: true, force: true });
 cpSync('dev/capture/fixture', DIR, { recursive: true });
 
-const srv = spawn(
-  'python3',
-  ['watch.py', '--target', DIR, '--port', String(PORT), '--dev'],
-  { stdio: 'ignore' },
-);
-process.on('exit', () => { try { srv.kill(); } catch (e) {} });
-await sleep(2500);
-
 const BASE = `http://127.0.0.1:${PORT}`;
+const srv = await serveVerified(DIR, PORT, { args: ['--dev'] });   // #428/#461: poll+identity, no fixed sleep
+process.on('exit', () => { try { srv.kill(); } catch (e) {} });
 {
-  let d;
-  try {
-    d = await (await fetch(`${BASE}/data.json`)).json();
-  } catch (e) {
-    notes.push(`server not ready: ${e}`);
-    console.log('FAIL server never answered /data.json');
-    process.exit(1);
-  }
-  if (d.target !== DIR) {
-    console.log(`FAIL :${PORT} is serving ${d.target}, not ${DIR}`);
-    process.exit(1);
-  }
+  const d = await (await fetch(`${BASE}/data.json`)).json();
   notes.push(`target ${d.target}`);
   notes.push(`port ${PORT} (outside 39880-39899)`);
 }
@@ -111,7 +96,7 @@ async function withPage(w, h, path, fn) {
   const errs = [];
   page.on('pageerror', e => errs.push(String(e)));
   await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
-  await sleep(1100);
+  await waitFor(page, '#hproj');   // #428 render readiness (header chrome on every route)
   const applied = await page.evaluate(({ w, h }) => ({
     iw: window.innerWidth, ih: window.innerHeight,
     ok: window.innerWidth === w && window.innerHeight === h,
@@ -279,15 +264,13 @@ for (const vp of VIEWPORTS) {
   const REAL = process.cwd();
   let rport = await freePort();
   while ((rport >= 39880 && rport <= 39899) || rport === 35110) rport = await freePort();
-  const rsrv = spawn('python3',
-    ['watch.py', '--target', REAL, '--port', String(rport)], { stdio: 'ignore' });
+  const rbase = `http://127.0.0.1:${rport}`;
+  let rsrv;
   try {
-    await sleep(2500);
-    const rbase = `http://127.0.0.1:${rport}`;
     let names = [];
     try {
+      rsrv = await serveVerified(REAL, rport);   // #428/#461: poll+identity, no fixed sleep
       const rd = await (await fetch(`${rbase}/data.json`)).json();
-      if (rd.target !== REAL) throw new Error(`serving ${rd.target}, not ${REAL}`);
       names = (rd.reviews || []).map(r => r.name);
     } catch (e) { notes.push(`fold: real-target server unusable: ${e}`); }
     ok('fold: real target served its review corpus', names.length >= 2);
@@ -377,7 +360,7 @@ for (const vp of VIEWPORTS) {
       }
     }
   } finally {
-    try { rsrv.kill(); } catch (e) {}
+    try { rsrv && rsrv.kill(); } catch (e) {}
   }
 }
 

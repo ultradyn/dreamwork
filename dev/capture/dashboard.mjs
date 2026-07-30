@@ -22,7 +22,9 @@
    below. usage: node dashboard.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, writeFileSync, rmSync, cpSync } from 'node:fs';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { serveVerified } from './serve.mjs';
+import { waitFor } from './dom.mjs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 const OUT = process.argv[2];
@@ -85,29 +87,20 @@ commit('dreamwork(maintain:docs): the hours-and-minutes row, and a maintenance m
 commit('fix: the minutes-and-seconds row, with a deliberately very long subject that must ellipsise rather than wrap, because a wrapped row would change the panel height and #151 rests on it not doing that', 323);
 commit('feat: the newest row, seconds old', 12);
 
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
-                  { stdio: 'ignore' });
-process.on('exit', () => { try { srv.kill(); } catch (e) {} });
-await sleep(2500);
-
-/* the server must be OUR server before anything is asserted against it — a
-   readiness probe that accepts any answer eventually grades a stranger's
-   process (dreamhub, 2026-07-25). Ask for something only this target serves. */
+/* #428/#461: serveVerified polls /data.json and proves the responder is ours
+   — replacing spawn + sleep(2500) + a hand-rolled identity check, which under
+   load let python outlast the sleep and threw ECONNREFUSED over a correct
+   server. */
 const BASE = `http://127.0.0.1:${PORT}`;
-{
-  const d = await (await fetch(`${BASE}/data.json`)).json();
-  if (d.target !== DIR) {
-    console.log(`FAIL :${PORT} is serving ${d.target}, not ${DIR}`);
-    process.exit(1);
-  }
-}
+const srv = await serveVerified(DIR, PORT);
+process.on('exit', () => { try { srv.kill(); } catch (e) {} });
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const ctx = await br.newContext({ viewport: { width: 1100, height: 1100 } });
 const p = await ctx.newPage();
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-await sleep(1200);
+await waitFor(p, '.git .commit[data-sha]');   // #428 render readiness (the commits panel)
 
 const READ = `[...document.querySelectorAll('.git .commit[data-sha]')].map(r => ({
   sha: r.dataset.sha,

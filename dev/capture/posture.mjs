@@ -16,7 +16,8 @@
    usage: node posture.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, readFileSync, existsSync, writeFileSync, rmSync, cpSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { serveVerified } from './serve.mjs';
+import { waitFor } from './dom.mjs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
@@ -74,11 +75,9 @@ function postureLines(logPath) {
 const dir = join(OUT, 'target');
 rmSync(dir, { recursive: true, force: true });
 cpSync('dev/capture/fixture', dir, { recursive: true });
-const server = spawn('python3', ['watch.py', '--target', dir, '--port', String(PORT)],
-                     { stdio: 'ignore' });
+const server = await serveVerified(dir, PORT);   // #428/#461: poll+identity, no fixed sleep
 const stop = () => { try { server.kill(); } catch (e) {} };
 process.on('exit', stop);
-await sleep(2200);
 
 const br = await chromium.launch({
   args: ['--use-gl=swiftshader', '--enable-webgl'],
@@ -87,7 +86,7 @@ const ctx = await br.newContext({ viewport: { width: 1100, height: 900 } });
 const p = await ctx.newPage();
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-await sleep(700);
+await waitFor(p, '#posture');   // #428 render readiness (the section present() checks next)
 
 if (!(await present(p, '#posture', 'posture section'))) {
   await br.close();
