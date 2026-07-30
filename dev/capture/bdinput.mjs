@@ -3,8 +3,10 @@
 
    #523: under the old innerHTML swap a focused .bdlimit-in was destroyed;
    snapshotViewInputs / restoreViewInputs carried id + value + selection.
-   #505 keeps the node by id via morphdom; the snapshot pair remains as a
-   belt until lockstep deletion. Typed text still wins over fresh markup.
+   #505 p2 retired that pair: the node is now KEPT by id via morphdom, and
+   reconcileGuard's focus-gated value-stamp keeps mid-edit text from being
+   clobbered to the server value (caret/focus/scroll ride the kept node).
+   Typed text still wins over fresh markup.
 
    #524: − / + buttons flank the input; click steps; hold auto-repeats
    (module-level interval so a re-render mid-hold does not kill it).
@@ -22,9 +24,10 @@
        the swap
 
    production lines each green depends on (for red-proof injection):
-     (a)(b) restoreViewInputs(viewIn) after setLiveContent in tick()
-            AND/OR kept-node reconciliation by id
-     (a)    el.value = saved.value inside restoreViewInputs (typed wins)
+     (a)(b) kept-node reconciliation by id + reconcileGuard value-stamp
+            (document.activeElement === fromEl → toEl.value = fromEl.value)
+     (a)    the value-stamp in reconcileGuard (typed wins; caret is not an
+            attribute and rides the kept node)
      (c)    bdStepNudge / .bdlimit-step markup
      (d)    bdStepHoldStart interval arm
      (e)    pointercancel keep-hold when target.isConnected === false
@@ -158,8 +161,9 @@ const CAP = Number(pre.max);
 /* Drive the same snapshot → setLiveContent → restore path as tick(), but
    snapshot FIRST (before any await) so a concurrent poll cannot steal focus
    between "he is typing" and the capture. Production tick also snapshots
-   after its data fetch — the load-bearing line is restoreViewInputs after
-   the swap; this guard pins that call. */
+   after its data fetch — #523 no longer has its own snapshot/restore pair
+   (#505 p2): the focused input is kept by id and value-stamped in the morph,
+   so the load-bearing line is the kept node, not a restore call. */
 const forceTick = async () => {
   const r = await p.evaluate(async () => {
     const before = document.getElementById('bdlimit-in');
@@ -172,7 +176,6 @@ const forceTick = async () => {
     const askKept = snapshotAskState();
     const reviewFrame = snapshotReviewFrame();
     const beforeCards = snapshotCards();
-    const viewIn = snapshotViewInputs();
     const bdHover = snapshotBdHover();
     const was = burnKey(data);
     const genBefore = document.getElementById('view')
@@ -198,7 +201,7 @@ const forceTick = async () => {
     restoreBdHover(bdHover);
     restoreReviewFrame(reviewFrame);
     restoreCardState(kept);
-    restoreViewInputs(viewIn);   // production line (a)(b) bind
+    // #523: no restoreViewInputs — kept by id + value-stamped in the morph.
     restoreAskState(askKept);
     bindAskDraft();
     regroupCards(beforeCards);
@@ -219,7 +222,6 @@ const forceTick = async () => {
       genAfter: document.getElementById('view')
         && document.getElementById('view').innerHTML.length,
       burnChanged: burnKey(data) !== was,
-      snap: viewIn,
       after: after ? {
         value: after.value,
         start: after.selectionStart,
@@ -271,13 +273,10 @@ const forceTick = async () => {
   const aEnd = tickA && tickA.after && tickA.after.end;
   const aFocus = tickA && tickA.after && tickA.after.focused;
   notes.push(`(a) tick worked=${!!tickA.tickWorked} replaced=${!!tickA.replaced} ` +
-             `advanced=${!!tickA.advanced} snap=${JSON.stringify(tickA.snap)} ` +
+             `advanced=${!!tickA.advanced} ` +
              `after={value:${aVal},start:${aStart},end:${aEnd},focused:${aFocus}}`);
   ok('(a) precondition: the tick really ran (render gen advanced or node replaced)',
      !!tickA.tickWorked);
-  ok('(a) precondition: snapshot captured the focused input',
-     !!tickA.snap && tickA.snap.id === 'bdlimit-in' &&
-     tickA.snap.value === typed);
   ok('(a) typed value survives the data tick (typed text wins over render)',
      aVal === typed);
   ok('(a) focus stays in the limit input across the tick',
@@ -548,12 +547,11 @@ const forceTick = async () => {
     });
     setData(await (await fetch(typeof dataJsonUrl === 'function'
       ? dataJsonUrl() : '/data.json')).json());
-    const viewIn = snapshotViewInputs();
     const bdHover = snapshotBdHover();
     const html = await buildCurrent();
     setLiveContent(html);
     restoreBdHover(bdHover);
-    restoreViewInputs(viewIn);
+    // #523: no restoreViewInputs — kept by id + value-stamped (#505 p2).
     const nodeAfter = document.getElementById('bdlimit-in');
     const advanced = (window.__dwViewRenderGen || 0) > renderGen0;
     return {

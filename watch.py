@@ -6739,6 +6739,13 @@ async function buildCurrent() {
   if (view.name === 'answers') return buildAnswers(d);
   return buildDashboard(d);
 }
+/* #505 p2 — KEPT (not absorbed): #askbox is a single node kept by id under
+   reconciliation, so its value/caret/scroll/focus would mostly ride the kept
+   node — but the box AUTOGROWS (fitText on input), setting an inline
+   style.height that morphAttrs clobbers to the server floor each tick, and no
+   post-morph path re-fits it (bindAskDraft restores value only). This pair
+   re-applies that height (and the silent scroll clamp) for a focused AND an
+   unfocused box. The belt stays until the height is re-fit another way. */
 function snapshotAskState() {
   const box = document.getElementById('askbox');
   if (!box || (!box.value && box !== document.activeElement)) return null;
@@ -6755,48 +6762,12 @@ function restoreAskState(saved) {
   try { box.setSelectionRange(saved.start, saved.end); } catch (e) {}
   if (saved.focus) refocus(box);
 }
-/* #523 — any focused input/textarea inside #view survives a setContent
-   swap. The tick rebuilds #view through innerHTML, so focus, caret,
-   selection and a mid-edit value die with the node unless carried. This
-   is the targeted snapshot/restore instance of the #505 surface (not the
-   general reconciliation). Identity is the element's `id` (stable across
-   the swap — give one to any new field that needs this). His typed value
-   always wins over the fresh server markup: never clobber mid-edit text
-   with a stale render. Card textareas and #askbox also ride their own
-   seams; a second restore of the same value is a no-op. */
-function snapshotViewInputs() {
-  const root = document.getElementById('view');
-  if (!root) return null;
-  const act = document.activeElement;
-  if (!act || !root.contains(act)) return null;
-  const tag = act.tagName;
-  if (tag !== 'INPUT' && tag !== 'TEXTAREA') return null;
-  if (!act.id) return null;
-  let start = 0, end = 0, dir = 'none';
-  try {
-    const s = act.selectionStart, e = act.selectionEnd;
-    // number inputs report null for selection in Chromium — coerce so a
-    // restore never hands setSelectionRange a null (throws on text too).
-    start = (typeof s === 'number') ? s : (act.value || '').length;
-    end = (typeof e === 'number') ? e : start;
-    dir = act.selectionDirection || 'none';
-  } catch (e) {}
-  return { id: act.id, value: act.value, start, end, dir };
-}
-function restoreViewInputs(saved) {
-  if (!saved || !saved.id) return;
-  const el = document.getElementById(saved.id);
-  if (!el) return;
-  const tag = el.tagName;
-  if (tag !== 'INPUT' && tag !== 'TEXTAREA') return;
-  // Typed text wins: the fresh markup holds the server/default value.
-  if (el.value !== saved.value) el.value = saved.value;
-  const s = (typeof saved.start === 'number') ? saved.start : 0;
-  const e = (typeof saved.end === 'number') ? saved.end : s;
-  try { el.setSelectionRange(s, e, saved.dir || 'none'); }
-  catch (err) {}
-  refocus(el);
-}
+/* #505 p2: #523 (a focused input/textarea inside #view surviving a tick) is
+   now carried by keyed reconciliation, not a hand snapshot/restore pair. The
+   node is KEPT by its id, so focus, caret and selection ride the node, and
+   reconcileGuard's focus-gated value-stamp keeps mid-edit text from being
+   clobbered to the server/default. The old snapshotViewInputs/restoreViewInputs
+   pair is deleted. Give any new field a stable id and it inherits this. */
 /* #459: bind #askbox to DraftStore (ask:main). Snapshot (#118) carries a
    tick; storage carries a reload. bind is re-entrant-safe: unbind first so a
    tick re-render does not stack input listeners. Restores only into an empty
@@ -7059,6 +7030,12 @@ function restoreAnswerDrafts() {
     if (ta.value && ta.value !== before) fitText(ta, false);
   });
 }
+/* #505 p2 — KEPT (not absorbed): the dock's review <iframe> holds a
+   cross-origin browsing context (scroll/state) that is precious and
+   irrecoverable. The pair is a NO-OP when the reconciler keeps #reviewframe
+   by id (same node → fresh === saved → the replaceWith is skipped), and a
+   safety net that swaps the live frame back if the reconciler ever rebuilds
+   it. Deleting it would trade a harmless no-op for a one-way loss. */
 function snapshotReviewFrame() {
   const frame = document.getElementById('reviewframe');
   if (!frame) return null;
@@ -7090,23 +7067,29 @@ function setLiveContent(html) {
     const currentDock = document.getElementById('qdock');
     const nextDock = parsed.content.querySelector('#qdock');
     if (currentDock && nextDock) {
-      // THE FADE STATE RIDES ACROSS THE SWAP, like the scroll and the draft
-      // do (#326). The depths TRANSITION, so they are only ever allowed to
-      // move on a gesture — and a poll is not one. The server's markup carries
-      // neither class, so a fresh dock resolves the full 24px first and lands
-      // on its real value one style pass later: for half a second after every
-      // tick, both edges of a question he is only reading dimmed and lifted.
-      // The scroll position is restored below, so the state that was true
-      // before this swap is the state that is true after it; syncDockFade
-      // still runs once that restore has happened and corrects the one case
-      // where it is not — content that grew, which IS a change and does move.
-      for (const c of ['attop', 'atend'])
-        nextDock.classList.toggle(c, currentDock.classList.contains(c));
-      currentDock.replaceWith(nextDock);
+      // #505 phase 2 (Q3): reconcile the dock through the SAME keyed
+      // reconciler #view uses, not a wholesale replaceWith. Only the swap
+      // MECHANISM changes — same content, same lifecycle. childrenOnly keeps
+      // #qdock's OWN attrs, so the .attop/.atend fade depths (#326) ride the
+      // root and survive without the old hand-copy (the server carries
+      // neither, so a fresh dock used to resolve the full 24px first and
+      // land a style pass late, dimming both edges for half a second). The
+      // .qa[data-qid] card + its textarea are matched by key and KEPT, so a
+      // draft, caret and prose selection inside the dock survive a tick (the
+      // Q3 goal). Dock key = the question title (data-qid), stable across
+      // ticks (the dock answers ONE question, view.q); the dock root is
+      // positional. #reviewframe is a sibling outside #qdock, untouched here
+      // as it was under replaceWith.
+      window.__dwViewRenderGen = (window.__dwViewRenderGen || 0) + 1;
+      morphdom(currentDock, nextDock, {
+        childrenOnly: true,
+        getNodeKey: viewNodeKey,
+        onBeforeElUpdated: reconcileGuard,
+      });
     } else setContent(html);
     paintIndicators(true); ages();
-    // the new #qdock is a fresh node, so a half-typed answer is gone unless a
-    // draft is put back into it — the review-dock reload loss he reported (#269).
+    // a kept dock textarea already holds its draft; restoreAnswerDrafts is
+    // the storage backstop for a reload and declines a non-empty box.
     restoreAnswerDrafts();
     return;
   }
@@ -7214,6 +7197,61 @@ function viewNodeKey(node) {
   if (node.id) return 'id:' + node.id;
   return undefined;
 }
+/* #505 — the reconciliation rules shared by every morphdom seam (the #view
+   reconcile in setContent AND the review-dock reconcile in setLiveContent).
+   One source, so the dock and the view can never drift on what survives a
+   tick. Each rule names the human-owned state it defends from morphAttrs. */
+function reconcileGuard(fromEl, toEl) {
+  if (fromEl.classList &&
+      (fromEl.classList.contains('qaghost') ||
+       fromEl.classList.contains('ghost')))
+    return false;
+  // ages() owns .age textContent between ticks — builder markup leaves
+  // the spans empty. Skipping identical-identity age nodes preserves
+  // the filled figure and avoids a one-frame blank (dashboard #132).
+  if (fromEl.classList && fromEl.classList.contains('age') &&
+      toEl.classList && toEl.classList.contains('age')) {
+    const attrs = ['data-mt', 'data-ct', 'data-at', 'data-ut',
+                   'data-cr', 'data-day'];
+    let same = fromEl.className === toEl.className;
+    for (let i = 0; i < attrs.length; i++) {
+      if (fromEl.getAttribute(attrs[i]) !== toEl.getAttribute(attrs[i]))
+        same = false;
+    }
+    if (same) return false;
+  }
+  // Human-owned open on data-keep disclosures: builders always emit
+  // closed; open is his. Stamp onto toEl so morphAttrs does not clear
+  // it (absorbs snapshotFolds re-open). Mid-gesture height travels the
+  // same way — a kept node mid-fold must not lose its inline height.
+  if (fromEl.tagName === 'DETAILS' && fromEl.dataset && fromEl.dataset.keep) {
+    if (fromEl.open) toEl.open = true;
+    if (fromEl.style && fromEl.style.height)
+      toEl.style.height = fromEl.style.height;
+  }
+  // #505 p2: a FOCUSED input/textarea's typed value is his — the fresh
+  // markup carries the server/default, and morphdom's INPUT/TEXTAREA
+  // handler would otherwise clobber mid-edit text back to it. Stamping the
+  // live value onto toEl makes that handler see them equal and skip
+  // (absorbs snapshotViewInputs' value restore; caret, scroll and focus
+  // are not attributes and survive on the kept node without a stamp).
+  // Focus-gated on purpose: the burndown limit input's "re-render restores
+  // the previous value" contract (#499) fires on blur — when the field is
+  // NOT focused — so an unfocused input still takes the server value and
+  // an invalid/unapplied entry still resets.
+  if ((fromEl.tagName === 'INPUT' || fromEl.tagName === 'TEXTAREA') &&
+      document.activeElement === fromEl &&
+      fromEl.value !== toEl.value)
+    toEl.value = fromEl.value;
+  // Card-internal disclosures (no data-keep) and the compose dest-mode are
+  // still re-driven by snapshotCardState (kept): the mode is a multi-element
+  // UI (setCardMode toggles .qmode buttons, placeholder, aria-labels and the
+  // indicator) an attribute stamp cannot cover, so the belt stays coherent
+  // rather than half-absorbed. Box heights (autogrow) and read-scroll ride
+  // the same belts (askState / cardState).
+  if (fromEl.isEqualNode(toEl)) return false;
+  return true;
+}
 function setContent(html) {
   // I5 hash-skip: identical build → nothing to reconcile (and no gen bump).
   if (html === lastViewHtml) return;
@@ -7223,40 +7261,7 @@ function setContent(html) {
   morphdom(viewEl, '<div id="view">' + html + '</div>', {
     childrenOnly: true,
     getNodeKey: viewNodeKey,
-    onBeforeElUpdated: function(fromEl, toEl) {
-      if (fromEl.classList &&
-          (fromEl.classList.contains('qaghost') ||
-           fromEl.classList.contains('ghost')))
-        return false;
-      // ages() owns .age textContent between ticks — builder markup leaves
-      // the spans empty. Skipping identical-identity age nodes preserves
-      // the filled figure and avoids a one-frame blank (dashboard #132).
-      if (fromEl.classList && fromEl.classList.contains('age') &&
-          toEl.classList && toEl.classList.contains('age')) {
-        const attrs = ['data-mt', 'data-ct', 'data-at', 'data-ut',
-                       'data-cr', 'data-day'];
-        let same = fromEl.className === toEl.className;
-        for (let i = 0; i < attrs.length; i++) {
-          if (fromEl.getAttribute(attrs[i]) !== toEl.getAttribute(attrs[i]))
-            same = false;
-        }
-        if (same) return false;
-      }
-      // Human-owned open on data-keep disclosures: builders always emit
-      // closed; open is his. Stamp onto toEl so morphAttrs does not clear
-      // it (absorbs snapshotFolds re-open). Mid-gesture height travels the
-      // same way — a kept node mid-fold must not lose its inline height.
-      if (fromEl.tagName === 'DETAILS' && fromEl.dataset && fromEl.dataset.keep) {
-        if (fromEl.open) toEl.open = true;
-        if (fromEl.style && fromEl.style.height)
-          toEl.style.height = fromEl.style.height;
-      }
-      // Card-internal disclosures (no data-keep) and form values: still
-      // carried by snapshotCardState / snapshotViewInputs until those pairs
-      // are deleted; builders re-emit closed/default.
-      if (fromEl.isEqualNode(toEl)) return false;
-      return true;
-    },
+    onBeforeElUpdated: reconcileGuard,
   });
   // before anything measures: the review pane's height is a measurement, and
   // crossfade reads the dock's rect on the very next line after setContent.
@@ -7307,6 +7312,13 @@ function setContent(html) {
    Keyed by `data-qid` — the question itself — for exactly the reason the
    regroup is: answering re-indexes an entry out of `questions_open`, so a
    positional key would drop the text at the very moment the card moves. */
+/* #505 p2 — KEPT (not absorbed): the compose dest-mode is a DERIVED
+   multi-element UI, not a single attribute — setCardMode toggles the .qmode
+   button .on/aria-checked, the textarea placeholder/aria-label, the send
+   aria-label and slides the indicator — so an attribute stamp in
+   reconcileGuard cannot cover it. The belt also re-fits box height (fitText)
+   and force-layout scroll (putScroll). value/caret now also survive on the
+   kept card node, but mode/height/disclosures stay this belt's coherent job. */
 function snapshotCardState() {
   const act = document.activeElement;
   const m = new Map();
@@ -8004,7 +8016,8 @@ async function cycleBurnStep(back) {
   try {
     const wasBurn = burnKey(data);
     const bdHover = snapshotBdHover();   // #494: step cycle is also a swap
-    const viewIn = snapshotViewInputs(); // #523: limit input mid-edit
+    // #523 rides reconciliation now (snapshotViewInputs retired in #505 p2):
+    // a focused limit input is kept by id and value-stamped in the morph.
     setData(await (await fetch(dataJsonUrl())).json());
     const burnBefore = (burnKey(data) !== wasBurn) ? snapshotBars() : null;
     if (view && view.name === 'dashboard') {
@@ -8012,7 +8025,6 @@ async function cycleBurnStep(back) {
       setLiveContent(html);
       if (burnBefore) regroupBars(burnBefore);
       restoreBdHover(bdHover);
-      restoreViewInputs(viewIn);
     }
   } catch (e) {}
 }
@@ -8069,12 +8081,11 @@ async function rerenderBurnLimit() {
   const gen = ++_burnLimitRenderGen;
   try {
     const bdHover = snapshotBdHover();
-    const viewIn = snapshotViewInputs(); // #523 across limit re-render
+    // #523 rides reconciliation now (snapshotViewInputs retired in #505 p2).
     const html = await buildCurrent();
     if (gen !== _burnLimitRenderGen) return;   // a newer apply won
     setLiveContent(html);
     restoreBdHover(bdHover);
-    restoreViewInputs(viewIn);
   } catch (e) {}
 }
 function applyBurnLimit(raw) {
@@ -8449,6 +8460,15 @@ function bdColByT0(t0) {
   });
   return found;
 }
+/* #505 p2 — KEPT (not absorbed): the .bdtip/.bdinsp hover overlay is a
+   DERIVED UI surface the diff is structurally blind to. The server emits
+   both hidden/empty, so the reconciler would stamp `hidden`, strip the
+   .depart/.pose classes and clear their content every tick; their
+   visibility and content are recomputed by showBdTip/showBdInsp from
+   module-level state (bdinspPin, bdtipCol/bdinspCol, hide timers, lastBdPtr)
+   — and stamping stale content would show a wrong number after data changes.
+   Kept .bdcol[data-t0] nodes mean no detach/pointerout fires under
+   reconciliation, but the overlay still has to be re-driven. */
 function snapshotBdHover() {
   const tip = document.querySelector('.bd .bdtip');
   const insp = document.querySelector('.bd .bdinsp');
@@ -9665,9 +9685,9 @@ async function tick() {
       const askKept = snapshotAskState();
       const reviewFrame = snapshotReviewFrame();
       const before = snapshotCards();
-      // #523: focused input/textarea inside #view (id + caret + typed value).
-      // Targeted snapshot/restore — not the #505 general reconciliation.
-      const viewIn = snapshotViewInputs();
+      // #523 is now carried by keyed reconciliation: a focused input inside
+      // #view is KEPT by id, and reconcileGuard's value-stamp keeps mid-edit
+      // text. No snapshot/restore pair (snapshotViewInputs retired in #505 p2).
       // #494: burndown hover/pin — same carry as card state, keyed by
       // bucket t0. Snapshot BEFORE the swap; the detach fires pointerout
       // which would otherwise clear the fresh (hidden) tip/inspector.
@@ -9707,19 +9727,10 @@ async function tick() {
       // every card lives inside `.qsec`, which renders closed, so restoring
       // the card first re-filled the box and silently dropped the focus.
       restoreCardState(kept);
-      // #523 after folds/cards so refocus is not swallowed by a closed
-      // ancestor; before ask so a card textarea and #askbox keep their
-      // specialised seams when both apply.
-      restoreViewInputs(viewIn);
-      // AFTER the restore, never before it (#326). What is above and below the
-      // docked question is a fact about its scroll position, and one line
-      // earlier that position is still 0 — so syncing there answers for a
-      // question scrolled to the top and then leans on the scroll steps
-      // running before the next style pass to correct it before anything is
-      // painted. That happens to hold, which is why no guard here fails on
-      // the other order; stating the precondition costs less than the
-      // reasoning does, and the fades are a transition, so the day it stops
-      // holding it is visible motion rather than a wrong number.
+      // #523 no longer has a restore here: a focused input inside #view is
+      // KEPT by id under reconciliation, and reconcileGuard's value-stamp
+      // preserved its mid-edit value during the morph (caret/focus/scroll
+      // ride the kept node). syncDockFade still runs before paint (#326).
       syncDockFade();
       restoreAskState(askKept);
       // storage is the backstop when the snapshot was empty (reload, or he
