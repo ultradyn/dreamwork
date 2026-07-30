@@ -2831,7 +2831,58 @@ is not a git checkout, and one that keeps no versioned ledger, are ordinary
 states rather than failures; a panel that drew nothing would be
 indistinguishable from a loop that had done nothing.
 
-### The dashboard's questions section
+### The topic chats (#504, #562, #563)
+
+His messages to the dreamer and its replies, surfaced on the dashboard from
+the chats-v1 transcripts the composer's `chat` kind writes (#504). The UI
+word is "topic chat"; implementation vocabulary is chat/turn/reply, never
+`thread` (#229).
+
+**Every row is a link (#562).** A chat is its own subject, so it earns a URL
+(the navigate principle — the same warrant `/reviews` earned): each row
+links to `/chat/<id>`, which renders the conversation as turns (his / the
+dreamer's), newest last, with the chat's derived title as the heading. The
+row keeps the dim-row + `.age` annotation idiom (status · preview · turn
+count) — the `dim` class overrides the anchor's accent so it reads as a
+quiet row, not a lit link. An unknown id degrades in the page's own
+`.qmissing` voice — never a traceback, never a substituted chat. `/chatdata`
+serves the parsed transcript and validates the id as a safe path component
+**before** any join, so a hostile or typo'd id is a 404, never a traversal.
+
+**The count line tells the truth (#562).** `topic chats · X unread · Y
+total` — the unread clause only when unread > 0; the total always labelled.
+Unread is derived at read time from the transcript (the last turn is his),
+never stored — `chat.json` stays identity-only (#504's contract: title,
+count, status, unread are all derivations, not fields). A pending chat (no
+agent turn yet) is a subset of unread; a chat he followed up on after a
+reply is `replied` AND unread. The derivation lives in ONE helper
+(`_chat_record_and_turns`) that both the list and the page call, so the two
+can never disagree.
+
+**The section is always visible (#563).** Even with no chats, the label and
+`0 total` render with a quiet empty-state line — the section's presence is
+the channel's health made visible (a section that vanishes is
+indistinguishable from a broken one). The reviews panel stays
+quiet-when-empty by deliberate contrast (he has not asked to change it).
+
+**No new motion.** Arriving at `/chat/<id>` is the route dissolve every
+destination shares; the count line's text changing on a tick is the
+documented settled re-render (the panel rebuilds through innerHTML each
+tick; an arriving chat is the same settled re-render the commits list
+makes). Guard: `dev/capture/chatsurface.mjs`.
+
+### The dashboard's Q & A section (#564)
+
+The dashboard's two questions parts — the collapsible questions disclosure
+(`.qsec`, below) and the `questions for the dreamer · N open` link — are
+grouped under one visible `Q & A` section label. The label's `margin-top`
+(`var(--space)`, the section-rhythm token) is the real visual gap between
+this group and the topic-chats section above it; before #564 the questions
+disclosure sat directly under the chats list with effectively no
+separation. The grouping is static structure — no new motion, the panel's
+settled tick re-render carries it.
+
+### The dashboard's questions disclosure
 
 Collapsed by default, counting what is left to answer, and grey at zero
 (#141). His words: *"on the dashboard, the questions section should be
