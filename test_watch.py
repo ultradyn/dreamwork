@@ -965,6 +965,54 @@ class TestCollector(unittest.TestCase):
         self.assertLess(ans, burn,
                         "the group sits above the rest of the dashboard")
 
+    def test_posture_widget_is_sticky_while_countdown_live(self):
+        """#565 — the posture widget is sticky (bottom:0) so scrolling up
+        keeps its countdown visible. Sticky is CONDITIONAL: a probe proved
+        always-on `bottom:0` on the end-of-page `.posture` docks it
+        permanently (~35% of the viewport at rest), so a class toggled only
+        while a posture arm or deploy countdown is live is the sole useful
+        form — and it matches the human's own framing ("when the countdown
+        timer bar is on screen"). Sticky is not motion (transitions.md), so
+        no travel assertion; the held claim is the CSS declaration + the
+        toggle that gates it.
+
+        Production lines: the `.posture.psticky { position:sticky; bottom:0 }`
+        CSS rule; `posturePinnedLive()` (covers BOTH countdown hosts — the
+        posture arm and the deploy arm); `paintPosturePin()` called from
+        setContent so a tick rebuild re-applies the class. Drop any one and
+        a clause below fails.
+        """
+        page = watch._get_page()
+        # CSS: a sticky rule keyed on .posture + a pin class, docking at the
+        # viewport bottom (a probe showed top:0 is a no-op for an
+        # end-of-page element; only bottom:0 keeps it visible on scroll-up).
+        m = re.search(r"\.posture\.psticky\s*\{[^}]*\}", page)
+        self.assertTrue(m, ".posture.psticky sticky rule missing from CSS")
+        rule = m.group(0).replace(" ", "")
+        self.assertIn("position:sticky", rule,
+                      "sticky rule must declare position:sticky")
+        self.assertRegex(m.group(0), r"bottom:\s*0",
+                         "sticky rule must dock at bottom:0")
+        # JS: a predicate naming BOTH countdown hosts, a toggle, and a
+        # setContent re-apply (the 2s tick rebuilds #posture via morphdom,
+        # so the class must be re-applied every render or it is lost).
+        self.assertTrue(re.search(r"function\s+posturePinnedLive\b", page),
+                        "posturePinnedLive predicate missing")
+        body = page[page.index("function posturePinnedLive"):]
+        body = body[:body.index("\n}") + 2]
+        self.assertIn("postArmUntil", body,
+                      "predicate must read the posture-arm deadline")
+        self.assertIn("staleDeployPhase", body,
+                      "predicate must read the deploy-arm phase")
+        self.assertTrue(re.search(r"function\s+paintPosturePin\b", page),
+                        "paintPosturePin toggle missing")
+        # setContent (the morphdom seam) re-applies the pin after rebuild.
+        sm = re.search(r"function setContent\(html\)\s*\{", page)
+        self.assertTrue(sm, "setContent not found")
+        sbody = page[sm.start():sm.start() + 2000]
+        self.assertRegex(sbody, r"(?m)^[ \t]*paintPosturePin\(\);",
+                         "setContent must re-apply the sticky class")
+
     def test_question_update_stamp_is_per_entry_not_file_mtime(self):
         # #473 — "updated" means THIS entry's content changed after first
         # sight, not that questions.md was rewritten (a neighbour's answer

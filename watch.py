@@ -1991,6 +1991,22 @@ STYLE = """<style>
      Active stop takes --accent (live loop control). Reduced motion hides
      the bar, keeps the second-by-second text + same application time. */
   .posture { margin:.55rem 0 .35rem; }
+  /* #565 — the posture widget docks to the viewport bottom while one of its
+     countdowns is live, so scrolling up keeps the countdown visible. Sticky
+     is CONDITIONAL (the .psticky class, toggled by paintPosturePin from
+     posturePinnedLive): a headless probe proved always-on `bottom:0` on this
+     end-of-page section docks it at rest (~35% of the viewport permanently),
+     and `top:0` is a no-op for an end-of-page element, so the class — gated
+     on a live posture arm or deploy countdown, matching "when the countdown
+     timer bar is on screen" — is the only useful form. Opaque bg + a top
+     hairline (box-shadow, no layout shift) keep the docked widget readable
+     over scrolling content; the full HR+soft-fade the human sketched is
+     deferred (it needs the review-pages registered-property mask and does
+     not fight sticky — see FLAG in the merge). Sticky is not motion
+     (transitions.md), so there is no travel here, only the declaration. */
+  .posture.psticky { position:sticky; bottom:0; z-index:5;
+    background:var(--bg);
+    box-shadow:0 -1px 0 var(--line); }
   /* #488: source chip sits beside the Posture heading, not under the axes. */
   .posture-head { display:flex; align-items:baseline; gap:.55rem;
     flex-wrap:wrap; margin:var(--space) 0 .5rem; }
@@ -5698,6 +5714,7 @@ function clearPostArmUI() {
     fill.style.width = '100%';
   }
   if (count) count.textContent = '';
+  paintPosturePin();   // #565: posture arm cleared → re-evaluate the dock
 }
 function armPostureUI(draft, until, gen) {
   if (postArmTimer) { clearTimeout(postArmTimer); postArmTimer = null; }
@@ -5732,6 +5749,7 @@ function armPostureUI(draft, until, gen) {
     bar.hidden = true;
   }
   postArmUntil = until;
+  paintPosturePin();   // #565: posture arm live → dock immediately
   postArmTick = setInterval(() => {
     if (gen !== postArmGen) return;
     setCount();
@@ -6897,6 +6915,10 @@ function setContent(html) {
   // #462: the remedy may be re-created when the row is new; re-apply
   // arm/running classes and label so a mid-arm tick does not reset idle copy.
   paintStaleDeployUI();
+  // #565: re-apply the posture dock — morphdom rebuilt #posture, so the
+  // .psticky class (conditional on a live countdown) must be re-set every
+  // render or a tick while armed loses the dock.
+  paintPosturePin();
   revealReviewMods();
   revealReviewDecisions();  // #289: decision-token arrival, same idiom
   revealQuestionUpdates();  // #473: updated-ago arrival, after ages() hides dishonest ones
@@ -8868,12 +8890,29 @@ function paintStaleDeployUI() {
   }
 }
 
+/* #565 — does EITHER countdown that lives in the posture widget have a live
+   deadline right now? The widget docks (paintPosturePin) only while one is
+   live, so it is not permanently covering ~35% of the viewport. Reads the
+   posture-arm deadline + cross-tab pending, and the deploy-arm phase — the
+   two hosts that share the widget's countdown bar. */
+function posturePinnedLive() {
+  if (staleDeployPhase === 'arming' || staleDeployPhase === 'running')
+    return true;
+  if (postArmUntil && Date.now() < postArmUntil) return true;
+  return pendingPostIsLive(readPostPending());
+}
+function paintPosturePin() {
+  const el = document.getElementById('posture');
+  if (el) el.classList.toggle('psticky', posturePinnedLive());
+}
+
 function clearStaleDeployArm() {
   if (staleDeployTimer) { clearTimeout(staleDeployTimer); staleDeployTimer = null; }
   if (staleDeployTick) { clearInterval(staleDeployTick); staleDeployTick = null; }
   staleDeployUntil = 0;
   if (staleDeployPhase === 'arming') staleDeployPhase = null;
   paintStaleDeployUI();
+  paintPosturePin();   // #565: deploy arm cleared → re-evaluate the dock
 }
 
 function cancelStaleDeployArm() {
@@ -8889,6 +8928,7 @@ function armStaleDeploy() {
   staleDeployPhase = 'arming';
   staleDeployUntil = until;
   paintStaleDeployUI();
+  paintPosturePin();   // #565: deploy countdown live → dock the posture widget
   const remainingMs = () => Math.max(0, staleDeployUntil - Date.now());
   // #490: countdown is steady text that ticks once per second. Re-calling
   // note()/claim() restarts .dreamin at the poll rate (~4 Hz flash on #fmsg).
@@ -8927,6 +8967,7 @@ async function fireStaleDeploy(gen) {
   if (gen !== staleDeployGen) return;
   staleDeployPhase = 'running';
   paintStaleDeployUI();
+  paintPosturePin();   // #565: deploy running → keep the widget docked
   const c = fileConfirmation();
   c.note('updating — waiting for the new page', true);
   let landed = false;
