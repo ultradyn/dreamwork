@@ -4014,7 +4014,7 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
     if ledger_text is None:
         return
     try:
-        open_ids, _landed_ids = watch.parse_ledger(ledger_text)
+        open_ids, landed_ids = watch.parse_ledger(ledger_text)
     except Exception:
         return  # a mid-edit ledger is not a hand-off problem
 
@@ -4033,6 +4033,20 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
                 f"#{nid} is named as landed in a hand-off (by {claimer}, sha "
                 f"`{sha}`) but is still under `## Open` — fold it into the "
                 f"ledger and append a `→ folded` line (#381)")
+        elif any(p in landed_ids for p in parents):
+            # #576: the task IS landed (the coordinator folded it into the
+            # ledger) but the `→ folded` line was never appended to handoffs.md.
+            # The #381 check above only catches tasks still under `## Open`;
+            # landed-but-unfolded was invisible, which is how 24 entries
+            # accumulated unnoticed (Max's backlog concern, 2026-07-31).
+            # Same WARN, same grace: a freshly-landed hand-off sits pending
+            # for the one tick before the coordinator folds, and the fold
+            # writes the `→ folded` line in the same commit.
+            rep.add(
+                WARN, "handoffs.md",
+                f"#{nid} is landed in the ledger but has no `→ folded` line "
+                f"in handoffs.md (by {claimer}, sha `{sha}`) — append one "
+                f"under `## Folded` (#576)")
 
 
 def check_cited_shas(dw: Path, rep: Report) -> None:

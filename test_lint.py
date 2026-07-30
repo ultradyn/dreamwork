@@ -2606,16 +2606,36 @@ class TestHandoffs:
                     "landed as `def5678`\n")
         assert self._warns(tmp_path, self.LEDGER, handoffs) == []
 
+    def test_a_landed_handoff_with_fold_record_stays_silent(self, tmp_path):
+        # #576 companion to test_a_handoff_whose_task_already_landed_is_silent:
+        # a landed task WITH a `→ folded` line is consumed — silent, never
+        # nagged. Precondition: #6 is really landed.
+        watch = lint.load_watch()
+        open_ids, _ = watch.parse_ledger(self.LEDGER)
+        assert "6" not in open_ids, "precondition: #6 is really landed"
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#6** · landed `abc1234` · 2026-07-28 14:30 · by "
+                    "dreamer-6 — the fix\n\n## Folded\n\n"
+                    "- **#6** → folded (2026-07-28 14:35): merged as `def5678`\n")
+        assert self._warns(tmp_path, self.LEDGER, handoffs) == []
+
     def test_a_handoff_whose_task_already_landed_is_silent(self, tmp_path):
         # Pending (not folded) but the task is already landed: the work is done,
         # the fold record is just missing bookkeeping — not the hour-costing case.
+        # PRE-#576 this was silent; #576 now WARNs it (landed-but-unfolded was
+        # the blind spot that hid Max's 24-entry backlog). The WARN is the same
+        # grace shape as the open-but-landed signal.
         watch = lint.load_watch()
         open_ids, _ = watch.parse_ledger(self.LEDGER)
         assert "6" not in open_ids, "precondition: #6 is really landed"
         handoffs = ("# Hand-offs\n\n## Pending\n\n"
                     "- **#6** · landed `abc1234` · 2026-07-28 14:30 · by "
                     "dreamer-6 — the fix\n\n## Folded\n")
-        assert self._warns(tmp_path, self.LEDGER, handoffs) == []
+        warns = self._warns(tmp_path, self.LEDGER, handoffs)
+        assert len(warns) == 1, warns
+        assert "#6" in warns[0]
+        assert "no `→ folded` line" in warns[0]
+        assert "#576" in warns[0]
 
     def test_a_missing_file_is_silent(self, tmp_path):
         t = fresh(tmp_path)
