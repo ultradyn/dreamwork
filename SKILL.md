@@ -208,15 +208,25 @@ delivery for the ambiguous class (ideas, notes, anything not addressed to
 2. Process each event — act on it, file it as a task, or fold it into a
    question. The preview is a triage aid, not the content; when it is not
    enough, read the receipt's full payload from the journal before acting.
-3. Only then `python3 <skill-dir>/dev/journal_consume.py consume` — the
-   verifying read-then-advance that moves the cursor past what you read.
+3. Only then `python3 <skill-dir>/dev/journal_consume.py consume
+   --through <head-ordinal-from-step-1>` — the verifying
+   read-then-advance that moves the cursor past what you read, bounded
+   to exactly what the `pending` read reported (#531: an event landing
+   between the read and the consume is otherwise advanced past unread;
+   every `pending` line carries `ord=<n>`, the last line's is head).
+   Bare `consume` still advances to the live head — the right form only
+   when there was no prior read to bound against, which the rule below
+   forbids in a tick anyway.
 
-**Never consume without a prior `pending` read in the same tick.** The
-coordinator ran `consume` blind once and discarded two events' content
+**Never consume without a prior `pending` read in the same tick — and the
+consume is bounded to what that read reported.** The coordinator ran
+`consume` blind once and discarded two events' content
 unread — one was a human instruction (the #513 steer above), recovered
 only by hand-written SQL against the events table. `consume` prints
 receipt ids, not content; a blind consume is a silent loss with a green
-exit code, the exact failure batched mode exists to prevent.
+exit code, the exact failure batched mode exists to prevent. The
+`--through` bound is the same rule one level tighter: even with a prior
+read, an unbounded consume silently claims events the read never listed.
 
 ## Selecting the next task
 
