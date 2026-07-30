@@ -92,6 +92,7 @@ USAGE
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -184,6 +185,54 @@ def _format_event(ev) -> str:
         f"ord={ev.ordinal}\t{len(ev.exact_payload_bytes)}B\t"
         f"{_preview(ev.exact_payload_bytes)}"
     )
+
+
+# --- #504 remainder: the reply path. A drained chat receipt must carry what
+# the dreamer needs to answer it — the chat id (== the receipt id), the text,
+# and the exact reply command — so the drain is not just a count the loop
+# consumes past but the moment it learns a chat is waiting. This is a
+# presentation change in the consume output, not a new channel: the receipt is
+# already the durable home (the spine's `application → transcript`).
+
+# A topic-chat send rides the /command route (watch.WRITE_ROUTE_HANDLERS) with a
+# JSON body {"kind": "chat", "text": "…"}; the chat id IS the receipt id (1:1,
+# keyed in watch._handle_command). Neither is a second source of truth — both
+# are read from the one receipt the drain already holds.
+CHAT_ROUTE = "/command"
+
+
+def _chat_text(ev) -> str | None:
+    """The chat text carried by a drained receipt, or None if it is not a chat.
+
+    Returns the body's ``text`` for a ``/command`` receipt whose payload
+    decodes to ``{"kind": "chat", …}``; None for anything else (a non-chat
+    command, an unreadable body, a different route). The consume loop uses this
+    to decide which drained receipts get reply instructions without a second
+    channel — the receipt is the one home.
+    """
+    if ev.route != CHAT_ROUTE:
+        return None
+    try:
+        payload = json.loads(ev.exact_payload_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    if isinstance(payload, dict) and payload.get("kind") == "chat":
+        return str(payload.get("text", ""))
+    return None
+
+
+def _reply_command(chat_id: str) -> str:
+    """The exact reply command for a chat id (act 1's writer, by absolute path).
+
+    The dreamer runs it from the target root (where the drain ran), so the
+    default ``--target .`` applies; the reply text comes via stdin or argv (the
+    relay.py idiom) so shell-hostile bytes never meet a shell. The path is
+    absolute (this file is ``<skill>/dev/journal_consume.py``, so the tool is
+    ``<skill>/bin/ud-dw-chat``) so the command is copy-pasteable regardless of
+    cwd. It goes through ``watch.apply_chat_turn`` — import, never re-implement.
+    """
+    tool = Path(__file__).resolve().parent.parent / "bin" / "ud-dw-chat"
+    return f"python3 {tool} reply {chat_id}"
 
 
 def cmd_pending(args, out) -> int:
@@ -372,6 +421,20 @@ def cmd_consume(args, out, err) -> int:
             out.write(
                 f"UNAPPLIED\t{ev.receipt_id}\t{EVENT_KIND}\t{ev.route}\n"
             )
+        # --- #504 remainder: drained chat receipts carry what the dreamer needs
+        # to reply — the chat id (== receipt id), the text, and the exact reply
+        # command. Presented for every drained chat receipt: the drain is the
+        # moment the loop learns a chat is waiting, whether the receipt proved
+        # APPLIED (its human turn already wrote) or UNAPPLIED. The text is
+        # collapsed to one line (the #126 rule — a newline in his words must not
+        # forge a second output line); the full transcript is one `show`/`ud-dw-
+        # chat show` away.
+        chats = [(ev.receipt_id, _chat_text(ev)) for ev in drained]
+        chats = [(rid, text) for rid, text in chats if text is not None]
+        for chat_id, text in chats:
+            oneline = " ".join(text.split())
+            out.write(f"CHAT\t{chat_id}\t{oneline}\n")
+            out.write(f"  reply: {_reply_command(chat_id)}\n")
         return EX_OK
 
 

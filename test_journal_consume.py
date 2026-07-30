@@ -1070,3 +1070,76 @@ def test_consume_through_above_head_refuses_usage(tmp_path: Path):
         "a refused --through must leave a fresh cursor unmoved; got "
         f"ord={cur.scanned_through_event_ordinal} rev={cur.revision}")
 
+
+
+# ---------------------------------------------------------------------------
+# #504 remainder — the consume-side reply instructions.
+# ---------------------------------------------------------------------------
+
+def test_consume_drained_chat_carries_reply_instructions(tmp_path: Path):
+    """#504 remainder: a drained chat receipt (/command, kind=chat) carries the
+    chat id (== the receipt id), the text, and the exact reply command; a
+    non-chat command does not.
+
+    RED LINE (run): delete the CHAT emit loop in cmd_consume.  consume still
+    exits 0 and prints the counts, but the CHAT line vanishes -> the assertion
+    fails.  Production line injected: the ``for chat_id, text in chats:`` loop
+    in cmd_consume (restored byte-identical with cp).
+    """
+    cli = _load_cli()
+    path = tmp_path / "chat.sqlite3"
+    applied = tmp_path / "applied.md"
+    chat_body = b'{"kind": "chat", "text": "are we shipping #504?"}'
+    other_body = b'{"kind": "do-next", "text": "ship it"}'
+    results = _seed(path, [chat_body, other_body], route="/command")
+    chat_rid = results[0].receipt_id
+    other_rid = results[1].receipt_id
+    assert chat_rid != other_rid, "precondition: two distinct receipt ids"
+
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, err
+    lines = out.splitlines()
+
+    # exactly one CHAT line — the chat receipt, not the do-next
+    chat_lines = [ln for ln in lines if ln.startswith("CHAT\t")]
+    assert len(chat_lines) == 1, (
+        f"exactly one CHAT line (the chat receipt): {chat_lines}")
+    chat_line = chat_lines[0]
+    assert chat_line.split("\t")[1] == chat_rid, "the chat id IS the receipt id"
+    assert "are we shipping #504?" in chat_line, "his text is carried"
+
+    # the exact reply command names the chat id and the reply tool
+    reply_lines = [ln for ln in lines if "reply:" in ln and chat_rid in ln]
+    assert len(reply_lines) == 1, f"one reply command for the chat: {reply_lines}"
+    assert "bin/ud-dw-chat" in reply_lines[0] and " reply " in reply_lines[0], (
+        f"the reply command must be act-1's writer: {reply_lines[0]!r}")
+
+    # the non-chat command gets NO chat/reply line
+    assert not any(ln.startswith("CHAT\t" + other_rid) for ln in lines), (
+        "a non-chat command must not get a CHAT line")
+    assert not any("reply:" in ln and other_rid in ln for ln in lines), (
+        "a non-chat command must not get a reply command")
+
+
+def test_consume_chat_text_with_a_newline_is_collapsed_to_one_line(tmp_path: Path):
+    """#126 rule one level into the consume output: a newline in his chat text
+    must not forge a second output line.  Production line: the
+    ``" ".join(text.split())`` collapse in cmd_consume's CHAT emit."""
+    cli = _load_cli()
+    path = tmp_path / "chat-nl.sqlite3"
+    applied = tmp_path / "applied.md"
+    # a payload whose text carries a newline
+    body = b'{"kind": "chat", "text": "line one\\nsecond line"}'
+    results = _seed(path, [body], route="/command")
+    rid = results[0].receipt_id
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, err
+    chat_lines = [ln for ln in out.splitlines() if ln.startswith("CHAT\t")]
+    assert len(chat_lines) == 1, (
+        f"one CHAT line (the newline must not split it): {chat_lines}")
+    assert "line one" in chat_lines[0] and "second line" in chat_lines[0]
+    assert "\n" not in chat_lines[0], "the CHAT line is a single line"
+    assert "\\n" not in chat_lines[0].split("\t", 2)[2], (
+        "the text is collapsed to spaces, not left as a literal backslash-n")
