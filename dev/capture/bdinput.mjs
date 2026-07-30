@@ -35,12 +35,13 @@
 
    usage: node bdinput.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
-import { mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, cpSync, writeFileSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { serveVerified } from './serve.mjs';
 import { waitFor } from './dom.mjs';
 import { createServer } from 'node:http';
-import { join } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { makeReporter } from './report.mjs';
 
 import { outdir } from './outdir.mjs';
@@ -61,6 +62,80 @@ const nameThrow = (kind, e) => {
 };
 process.on('uncaughtException', e => nameThrow('uncaughtException', e));
 process.on('unhandledRejection', e => nameThrow('unhandledRejection', e));
+
+/* ── #548: bind the cap to the production constant, not the page's own max ──
+   The OLD guard derived CAP from `pre.max` (the rendered input's own max),
+   so it was self-consistent at ANY value of BURN_LIMIT_CAP — the
+   coordinator's red-run reverted 256→168 and the guard PASSED (a green
+   red-run is a finding). The rendered `max` is templated on the constant
+   (watch.py:3931 `max="${BURN_LIMIT_CAP}"`), so it tracks whatever the
+   working tree says — proven directly: max=256 normally, 168 under 256→168.
+   Binding pre.max to a value read from the SAME working-tree file is
+   therefore circular (both sides move together); the binding instead anchors
+   on the COMMITTED production constant (HEAD:watch.py), the source of truth a
+   working-tree drift diverges from. The working-tree read stays the
+   rename-detection precondition: a renamed constant → zero matches → a named
+   extraction FAIL, not an obscure crash.
+
+   production lines each green depends on (for red-proof injection):
+     (#548 bind)   watch.py:3712 `const BURN_LIMIT_CAP = 256;` (the constant)
+                   watch.py:3931 `max="${BURN_LIMIT_CAP}"`     (the render)
+     (#548 rename) the const-declaration line itself (renamed → 0 matches) */
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SKILL_ROOT = resolve(HERE, '..', '..');
+const WATCH_PY = join(SKILL_ROOT, 'watch.py');
+const CAP_RE = /const BURN_LIMIT_CAP = (\d+);/g;
+
+/* EXPECTED_CAP — the recorded value of the production constant, pinned as a
+   literal so a deliberate change to the cap must update it IN THE SAME COMMIT
+   (the #549 golden-vector discipline: a constant whose value matters gets a
+   recorded literal with provenance, and an accidental or unaccompanied drift
+   fails here). Provenance:
+     · recorded 2026-07-30, value 256
+     · watch.py `const BURN_LIMIT_CAP = 256;` (today :3712)
+     · watch.py:3931 renders it into the input's `max`
+   This is the anchor for a COMMITTED drift: if someone changes the constant
+   and commits it, HEAD and the working tree would agree and the working-tree/
+   committed binding could not fail — so the committed constant is also pinned
+   to this literal. An intentional cap change edits EXPECTED_CAP here AND the
+   production constant in the same commit; anything else is a red. */
+const EXPECTED_CAP = 256;
+const extractCap = (src, where) => {
+  const ms = [...src.matchAll(CAP_RE)];
+  // Precondition assertion: the whole binding depends on exactly one
+  // assignment. Zero (renamed/removed) or two (a second appeared) are both
+  // guard failures, loudly.
+  ok(`extraction (#548): BURN_LIMIT_CAP defined exactly once in ${where} ` +
+     `(saw ${ms.length})`, ms.length === 1);
+  return ms.length === 1 ? Number(ms[0][1]) : null;
+};
+const CAP_WT = extractCap(readFileSync(WATCH_PY, 'utf8'), 'working-tree watch.py');
+const CAP_COMMITTED = extractCap(
+  execFileSync('git', ['show', 'HEAD:watch.py'], { cwd: SKILL_ROOT, encoding: 'utf8' }),
+  'committed (HEAD) watch.py');
+if (CAP_WT == null || CAP_COMMITTED == null) {
+  finish();
+  process.exit(1);
+}
+
+/* #548 / #549 — pin the committed constant to the recorded literal. The
+   working-tree↔committed binding catches an uncommitted drift (red #1: a
+   working-tree revert renders a different max than HEAD). But a COMMITTED
+   drift (constant changed AND committed) would leave HEAD and the working
+   tree agreeing, so neither side of that binding could fail. The recorded
+   literal EXPECTED_CAP is the third leg: the committed constant must equal
+   it, so a committed drift fails here unless EXPECTED_CAP was updated in the
+   same commit (the golden-vector discipline). Derives the committed value at
+   runtime (CAP_COMMITTED, from HEAD:watch.py) so this is not a literal
+   compared to itself. */
+ok(`recorded (#548): committed BURN_LIMIT_CAP equals the recorded literal ` +
+   `(committed ${CAP_COMMITTED}, recorded ${EXPECTED_CAP})`,
+   CAP_COMMITTED === EXPECTED_CAP);
+if (CAP_COMMITTED !== EXPECTED_CAP) {
+  finish();
+  process.exit(1);
+}
+
 declare({
   drives: 'own-server planted ledger (hourly, >28 buckets); focus+type and ' +
           'select-range on #bdlimit-in across forced tick(); click −/+; ' +
@@ -156,7 +231,27 @@ if (!pre.hasInp || !pre.hasMinus || !pre.hasPlus || pre.totalN <= 28) {
   process.exit(1);
 }
 
-const CAP = Number(pre.max);
+const CAP = CAP_WT;   // #548: the page's actual cap (== committed under a clean tree)
+
+/* #548 — the binding the guard lacked. The rendered max must equal the
+   COMMITTED production constant, not the page's own max (circular: both
+   derive from the same working-tree file) nor the working-tree value (a
+   working-tree drift IS what the page renders, so it could never catch
+   itself). A constant reverted in the working tree (256→168) makes the live
+   page disagree with the committed source of truth — exactly the finding the
+   old guard read as green. Derives both comparands at runtime (pre.max from
+   the page, CAP_COMMITTED from HEAD:watch.py) so the assertion is not a
+   literal tuned to today's fixture. */
+ok(`binding (#548): rendered input max equals the production BURN_LIMIT_CAP ` +
+   `constant (rendered ${pre.max}, committed ${CAP_COMMITTED})`,
+   Number(pre.max) === CAP_COMMITTED);
+if (Number(pre.max) !== CAP_COMMITTED) {
+  try { await p.screenshot({ path: join(OUT, 'fail-cap-binding.png'), fullPage: true }); } catch (e) {}
+  await br.close();
+  try { srv.kill(); } catch (e) {}
+  finish();
+  process.exit(1);
+}
 
 /* ── helpers ──────────────────────────────────────────────────────────── */
 /* Drive the same snapshot → setLiveContent → restore path as tick(), but
