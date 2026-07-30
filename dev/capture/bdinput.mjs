@@ -85,6 +85,21 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_ROOT = resolve(HERE, '..', '..');
 const WATCH_PY = join(SKILL_ROOT, 'watch.py');
 const CAP_RE = /const BURN_LIMIT_CAP = (\d+);/g;
+
+/* EXPECTED_CAP — the recorded value of the production constant, pinned as a
+   literal so a deliberate change to the cap must update it IN THE SAME COMMIT
+   (the #549 golden-vector discipline: a constant whose value matters gets a
+   recorded literal with provenance, and an accidental or unaccompanied drift
+   fails here). Provenance:
+     · recorded 2026-07-30, value 256
+     · watch.py `const BURN_LIMIT_CAP = 256;` (today :3712)
+     · watch.py:3931 renders it into the input's `max`
+   This is the anchor for a COMMITTED drift: if someone changes the constant
+   and commits it, HEAD and the working tree would agree and the working-tree/
+   committed binding could not fail — so the committed constant is also pinned
+   to this literal. An intentional cap change edits EXPECTED_CAP here AND the
+   production constant in the same commit; anything else is a red. */
+const EXPECTED_CAP = 256;
 const extractCap = (src, where) => {
   const ms = [...src.matchAll(CAP_RE)];
   // Precondition assertion: the whole binding depends on exactly one
@@ -99,6 +114,24 @@ const CAP_COMMITTED = extractCap(
   execFileSync('git', ['show', 'HEAD:watch.py'], { cwd: SKILL_ROOT, encoding: 'utf8' }),
   'committed (HEAD) watch.py');
 if (CAP_WT == null || CAP_COMMITTED == null) {
+  finish();
+  process.exit(1);
+}
+
+/* #548 / #549 — pin the committed constant to the recorded literal. The
+   working-tree↔committed binding catches an uncommitted drift (red #1: a
+   working-tree revert renders a different max than HEAD). But a COMMITTED
+   drift (constant changed AND committed) would leave HEAD and the working
+   tree agreeing, so neither side of that binding could fail. The recorded
+   literal EXPECTED_CAP is the third leg: the committed constant must equal
+   it, so a committed drift fails here unless EXPECTED_CAP was updated in the
+   same commit (the golden-vector discipline). Derives the committed value at
+   runtime (CAP_COMMITTED, from HEAD:watch.py) so this is not a literal
+   compared to itself. */
+ok(`recorded (#548): committed BURN_LIMIT_CAP equals the recorded literal ` +
+   `(committed ${CAP_COMMITTED}, recorded ${EXPECTED_CAP})`,
+   CAP_COMMITTED === EXPECTED_CAP);
+if (CAP_COMMITTED !== EXPECTED_CAP) {
   finish();
   process.exit(1);
 }
