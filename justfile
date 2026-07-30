@@ -208,7 +208,7 @@ status-sync *args:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel headcrumb reflow qacard docktarget noteprop oneinput regroup regroupdraft popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade markrail devoverlay autogrow dissolve burndownmock bdhover reviewask reviews5 staleremedy rejectwrite posture summaryjson qsignal qfocus qroll research restcollapse qlinkpip mdquote bdinput mdtable selectkeep corpse remindbtn note82 pip83 indtrace escattr chatsurface qgroup"
+    DEFAULT_GUARDS="headertravel headcrumb reflow qacard docktarget noteprop oneinput regroup regroupdraft popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade markrail devoverlay autogrow dissolve burndownmock bdhover reviewask reviews5 staleremedy rejectwrite posture summaryjson qsignal qfocus qroll research restcollapse qlinkpip mdquote bdinput mdtable selectkeep corpse remindbtn note82 pip83 indtrace escattr chatsurface qgroup resize"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}
