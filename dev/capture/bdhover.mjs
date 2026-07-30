@@ -39,7 +39,7 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
 import { serveVerified } from './serve.mjs';
-import { waitFor } from './dom.mjs';
+import { waitFor, midFrames } from './dom.mjs';
 
 import { outdir } from './outdir.mjs';
 const OUT = outdir(process.argv);
@@ -659,6 +659,281 @@ for (const idx of [0, lastIdx, busyIdx]) {
      !!rvals && +rvals[1] === want.open && +rvals[4] === (want.commits || 0));
   ok('#298 reduced motion: it snaps — no travel frames', mid.length === 0);
   await rp.screenshot({ path: `${OUT}/bdhover-reduced.png`, fullPage: false });
+  await ctx.close();
+}
+
+/* ── #559: the hit zone is the WHOLE column (top + bottom + gap) ───────
+   Before #559 only the top (.bdnet) section was hoverable: the pointer
+   handlers resolved `.closest('.bdnet .bdcol[data-open]')`, and the bottom
+   (.bdflow) columns are a SEPARATE flex track that carries no data and is
+   not inside .bdnet — so the entire bottom half was a dead strip. #559
+   resolves a point to its net column by geometry (bdColAtPoint), so every
+   pixel of a column's full height surfaces the same reading. Preconditions
+   are asserted at runtime: the bottom section really has height, and the
+   two tracks' columns are pixel-aligned (the resolver depends on it). */
+{
+  await leaveAll();
+  const geom = await p.evaluate(`(() => {
+    const net = document.querySelector('.bd .bdnet');
+    const flow = document.querySelector('.bd .bdflow');
+    if (!net || !flow) return { err: 'no tracks' };
+    const netCols = [...net.querySelectorAll('.bdcol[data-open]')];
+    const flowCols = [...flow.querySelectorAll('.bdcol')];
+    const i = Math.min(${busyIdx}, netCols.length - 1, flowCols.length - 1);
+    const nc = netCols[i], fc = flowCols[i];
+    if (!nc || !fc) return { err: 'no col at idx ' + i };
+    const nr = nc.getBoundingClientRect(), fr = fc.getBoundingClientRect();
+    const flowR = flow.getBoundingClientRect();
+    return { i,
+      flowH: Math.round(flowR.height), flowColH: Math.round(fr.height),
+      netL: Math.round(nr.left), netR2: Math.round(nr.right),
+      flowL: Math.round(fr.left), flowR2: Math.round(fr.right),
+      flowCx: (fr.left + fr.right) / 2, flowCy: (fr.top + fr.bottom) / 2,
+      gapCx: (nr.left + nr.right) / 2, gapCy: nr.bottom + (flowR.top - nr.bottom) / 2 };
+  })()`);
+  notes.push(`#559 geom: ${JSON.stringify(geom)}`);
+  ok('#559 precondition: the bottom (.bdflow) section has real height',
+     !!geom && !geom.err && geom.flowH > 0 && geom.flowColH > 0);
+  ok('#559 precondition: net and flow columns are horizontally aligned ' +
+     '(the resolver maps a flow point to its net column by index)',
+     !!geom && !geom.err && Math.abs(geom.netL - geom.flowL) <= 2 &&
+     Math.abs(geom.netR2 - geom.flowR2) <= 2);
+  const TIP = `(() => {
+    const el = document.querySelector('.bd .bdtip');
+    if (!el || el.hidden) return null;
+    return (el.textContent || '').trim();
+  })()`;
+  const want = buckets[(geom && geom.i != null) ? geom.i : busyIdx];
+  const fx = (geom && geom.flowCx) || 0, fy = (geom && geom.flowCy) || 0;
+  // hover the BOTTOM (flow) section — the dead strip before #559
+  await p.evaluate(`document.querySelector('.bd').dispatchEvent(
+    new PointerEvent('pointerover', { bubbles:true, clientX:${fx}, clientY:${fy} }))`);
+  await sleep(120);
+  const flowTip = await p.evaluate(TIP);
+  notes.push(`#559 flow-section glance tip: "${flowTip}"`);
+  ok('#559: hovering the BOTTOM section surfaces the glance tip',
+     !!flowTip && new RegExp('^' + want.open + ' open · ').test(flowTip) &&
+     flowTip.includes((want.commits || 0) + ' commit'));
+  // the richer inspector surfaces too (a hover that dwells inspects)
+  await sleep(900);
+  const flowInsp = await p.evaluate(INSP);
+  const fv = flowInsp && (flowInsp.lines[1] || '').match(
+    /^(\d+) open · (\d+) arrived · (\d+) landed · (\d+) commits?$/);
+  notes.push(`#559 flow-section inspector: ${JSON.stringify(flowInsp && flowInsp.lines)}`);
+  ok('#559: hovering the BOTTOM section surfaces the inspector with this ' +
+     'column\'s values (parsed by role — a wrong column fails)',
+     !!fv && +fv[1] === want.open && +fv[2] === want.arrived &&
+     +fv[3] === want.landed && +fv[4] === (want.commits || 0));
+  await leaveAll();
+  // the gap between the two sections is inside a column's span too
+  const gx = (geom && geom.gapCx) || 0, gy = (geom && geom.gapCy) || 0;
+  await p.evaluate(`document.querySelector('.bd').dispatchEvent(
+    new PointerEvent('pointerover', { bubbles:true, clientX:${gx}, clientY:${gy} }))`);
+  await sleep(120);
+  const gapTip = await p.evaluate(TIP);
+  ok('#559: hovering the gap between the sections stays on the column',
+     !!gapTip && new RegExp('^' + want.open + ' open · ').test(gapTip));
+  await leaveAll();
+  // pointer leaving the top cell for the bottom cell (same column) must
+  // NOT hide the tip — the full height is one hit zone
+  await p.evaluate(`(() => {
+    const c = document.querySelectorAll('.bdnet .bdcol[data-open]')[${busyIdx}];
+    if (c) c.dispatchEvent(new PointerEvent('pointerover', { bubbles:true }));
+  })()`);
+  await sleep(150);
+  // move DOWN to the flow cell of the SAME column. Read the tip's state
+  // SYNCHRONOUSLY right after the pointerout — a depart is armed in the
+  // same tick and cleared by nothing here, so .depart membership is the
+  // load-independent signal that the full height is one hit zone (a rAF
+  // sample taken later would read text that is still present mid-depart
+  // and pass over the very thing it claims to check).
+  const afterDown = await p.evaluate(`(() => {
+    const flow = document.querySelector('.bd .bdflow');
+    const c = document.querySelectorAll('.bdnet .bdcol[data-open]')[${busyIdx}];
+    if (!flow || !c) return null;
+    const fr = flow.querySelectorAll('.bdcol')[${busyIdx}].getBoundingClientRect();
+    c.dispatchEvent(new PointerEvent('pointerout', { bubbles:true,
+      clientX:(fr.left + fr.right) / 2, clientY:(fr.top + fr.bottom) / 2,
+      relatedTarget:document.body }));
+    const tip = document.querySelector('.bd .bdtip');
+    return { hidden:tip.hidden, depart:tip.classList.contains('depart'),
+             text:(tip.textContent || '').trim() };
+  })()`);
+  notes.push(`#559 net→flow same-column: ${JSON.stringify(afterDown)}`);
+  ok('#559: leaving the top cell for the bottom cell (same column) keeps ' +
+     'the tip — no depart, no hide (the full height is one hit zone)',
+     !!afterDown && !afterDown.hidden && !afterDown.depart &&
+     new RegExp('^' + want.open + ' open · ').test(afterDown.text));
+  await leaveAll();
+}
+
+/* ── #559: the tip persists across columns and cross-dissolves ─────────
+   Once the glance tip is visible, moving to another column must NOT hide-
+   and-show it: the container stays (no opacity dip) and the content cross-
+   dissolves — old values fade out as new values fade in, on the same .42s
+   envelope the tip's own arrival/departure use. Persistence is not a
+   transition (nothing happens to the container); the content swap is the
+   one gesture one level down. Preconditions: the two columns really carry
+   different values (else the dissolve is vacuous). */
+{
+  await leaveAll();
+  const tuple = b => `${b.open}/${b.arrived}/${b.landed}/${b.commits || 0}`;
+  const aIdx = 0;
+  let bIdx = Math.min(1, buckets.length - 1);
+  for (let i = 1; i < buckets.length; i++) {
+    if (tuple(buckets[i]) !== tuple(buckets[0])) { bIdx = i; break; }
+  }
+  ok('#559 precondition: the two columns carry different values ' +
+     '(else the dissolve is vacuous)',
+     buckets.length >= 2 && tuple(buckets[aIdx]) !== tuple(buckets[bIdx]));
+  const wantB = buckets[bIdx];
+  notes.push(`#559 swap cols: a=${aIdx}(${tuple(buckets[aIdx])}) ` +
+             `b=${bIdx}(${tuple(buckets[bIdx])})`);
+  const swap = await p.evaluate(`new Promise(res => {
+    const cols = document.querySelectorAll('.bdnet .bdcol[data-open]');
+    const A = cols[${aIdx}], B = cols[${bIdx}];
+    if (!A || !B) return res({ err: 'no cols' });
+    const br = B.getBoundingClientRect();
+    const bx = (br.left + br.right) / 2, by = (br.top + br.bottom) / 2;
+    A.dispatchEvent(new PointerEvent('pointerover', { bubbles:true }));
+    setTimeout(() => {
+      const tip = document.querySelector('.bd .bdtip');
+      // real order: leave A (coords already at B), then enter B
+      A.dispatchEvent(new PointerEvent('pointerout', { bubbles:true,
+        clientX:bx, clientY:by, relatedTarget:B }));
+      // SYNCHRONOUS post-leave state: a depart is armed in THIS tick, so
+      // .depart/.hidden membership is the load-independent persistence
+      // signal (a later rAF sample would miss it — the arrive cancels it).
+      const afterLeave = { hidden: tip.hidden,
+        depart: tip.classList.contains('depart') };
+      B.dispatchEvent(new PointerEvent('pointerover', { bubbles:true,
+        clientX:bx, clientY:by }));
+      const frames = [], trans = [];
+      const onT = ev => trans.push({ type:ev.type, prop:ev.propertyName,
+        t:performance.now(), cls:(ev.target && ev.target.className) || '' });
+      tip.addEventListener('transitionstart', onT);
+      tip.addEventListener('transitionend', onT);
+      const t0 = performance.now();
+      (function step() {
+        const t = performance.now() - t0;
+        const bdi = tip.querySelector('.bdi');
+        frames.push({ t,
+          contOp: parseFloat(getComputedStyle(tip).opacity),
+          hidden: tip.hidden, bdiOp: bdi ? parseFloat(getComputedStyle(bdi).opacity) : null });
+        if (t < 760) requestAnimationFrame(step);
+        else {
+          tip.removeEventListener('transitionstart', onT);
+          tip.removeEventListener('transitionend', onT);
+          res({ frames, trans, afterLeave, err:null, finalText:(tip.textContent || '').trim() });
+        }
+      })();
+    }, 900);
+  })`);
+  const frames = (swap && swap.frames) || [];
+  const bdiOps = frames.filter(f => f.bdiOp != null).map(f => f.bdiOp);
+  // The cross-dissolve gate is midFrames (the brief's "part-way frames
+  // strictly between 0 and 1") — the container stays at full opacity
+  // (minCont) while the INCOMING layer's opacity travels 0→1, which is the
+  // dissolve. transitionstart (#442's load-independent snap detector) is
+  // logged as bdiStart for diagnosis but is NOT the gate here: it is
+  // intermittently suppressed for transitions on a FRESHLY-INSERTED layer
+  // (bdContentSwap rebuilds the .bdi each swap), so it cannot be trusted as
+  // a hard assertion. The brief mandates solo (unloaded) guard runs, where
+  // the rAF sampler reliably catches the part-way frames.
+  const ran = !!(swap && swap.trans && swap.trans.some(e =>
+    e.type === 'start' && e.prop === 'opacity' && /\bbdi\b/.test(e.cls || '')));
+  const minCont = frames.length ? Math.min(...frames.map(f => f.contOp)) : 0;
+  const everHidden = frames.some(f => f.hidden);
+  const afterLeave = (swap && swap.afterLeave) || {};
+  const nBdiStart = !!(swap && swap.trans) ? swap.trans.filter(e =>
+    e.type === 'start' && e.prop === 'opacity' && /\bbdi\b/.test(e.cls || '')).length : 0;
+  notes.push(`#559 swap: frames=${frames.length} minCont=${minCont.toFixed(2)} ` +
+    `everHidden=${everHidden} afterLeave=${JSON.stringify(afterLeave)} ` +
+    `midBdi=${midFrames(bdiOps)} ran=${ran} bdiStart=${nBdiStart} ` +
+    `bdiOps=${[...new Set(bdiOps.map(o => Math.round(o * 100)))].join(',')} ` +
+    `final="${swap && swap.finalText}"`);
+  ok('#559: the tip PERSISTS across the move — the leave arms no depart ' +
+     '(synchronous post-pointerout: no .depart, no hide)',
+     afterLeave.depart === false && afterLeave.hidden === false);
+  ok('#559: the tip PERSISTS across the move — the container is never hidden',
+     !everHidden);
+  ok('#559: the tip PERSISTS across the move — no depart/arrival interval ' +
+     '(the container stays at full opacity; no hide-and-show dip)',
+     minCont >= 0.9);
+  ok('#559: the content cross-dissolves — mid-swap opacity strictly ' +
+     'between 0 and 1 on the incoming layer (the container stays full)',
+     midFrames(bdiOps) >= 1 && minCont >= 0.9);
+  ok('#559: after the move the tip names the NEW column\'s values',
+     !!(swap && swap.finalText) &&
+     new RegExp('^' + wantB.open + ' open · ').test(swap.finalText) &&
+     swap.finalText.includes((wantB.commits || 0) + ' commit'));
+  await leaveAll();
+}
+
+/* ── #559 reduced motion: the tip still stays; the swap snaps ──────────
+   Persistence holds under reduced motion too (the tip STAYS — no vanish),
+   and the swap SNAPS: content set directly, no cross-fade layers (the RM
+   parity contract). */
+{
+  const ctx = await br.newContext({ reducedMotion: 'reduce',
+                                    viewport: { width: 1100, height: 1500 } });
+  const rp = await ctx.newPage();
+  rp.on('pageerror', e => errs.push(String(e)));
+  await rp.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await waitFor(rp, '.bdnet .bdcol[data-open]', 15000);
+  await sleep(400);
+  const tuple = b => `${b.open}/${b.arrived}/${b.landed}/${b.commits || 0}`;
+  const aIdx = 0;
+  let bIdx = Math.min(1, buckets.length - 1);
+  for (let i = 1; i < buckets.length; i++) {
+    if (tuple(buckets[i]) !== tuple(buckets[0])) { bIdx = i; break; }
+  }
+  const wantB = buckets[bIdx];
+  const rm = await rp.evaluate(`new Promise(res => {
+    const cols = document.querySelectorAll('.bdnet .bdcol[data-open]');
+    const A = cols[${aIdx}], B = cols[${bIdx}];
+    if (!A || !B) return res({ err:'no cols' });
+    const br = B.getBoundingClientRect();
+    const bx = (br.left + br.right) / 2, by = (br.top + br.bottom) / 2;
+    A.dispatchEvent(new PointerEvent('pointerover', { bubbles:true }));
+    setTimeout(() => {
+      const tip = document.querySelector('.bd .bdtip');
+      A.dispatchEvent(new PointerEvent('pointerout', { bubbles:true,
+        clientX:bx, clientY:by, relatedTarget:B }));
+      // RM finishes the depart SYNCHRONOUSLY (hideBdInsp/hideBdTip call
+      // finish() at once under reduced motion), so the rAF sampler below
+      // would never see a hidden=true that the arrive then clears. Read it
+      // in the same tick as the leave.
+      const afterLeaveHidden = tip.hidden;
+      B.dispatchEvent(new PointerEvent('pointerover', { bubbles:true,
+        clientX:bx, clientY:by }));
+      const seen = [];
+      const t0 = performance.now();
+      (function step() {
+        const t = performance.now() - t0;
+        seen.push({ t, hidden:tip.hidden,
+          bdi:!!tip.querySelector('.bdi'),
+          op:parseFloat(getComputedStyle(tip).opacity) });
+        if (t < 500) requestAnimationFrame(step);
+        else res({ seen, afterLeaveHidden, finalText:(tip.textContent || '').trim() });
+      })();
+    }, 500);
+  })`);
+  const seen = (rm && rm.seen) || [];
+  const everHidden = seen.some(s => s.hidden);
+  const everBdi = seen.some(s => s.bdi);
+  const afterLeaveHidden = rm && rm.afterLeaveHidden;
+  notes.push(`#559 RM swap: afterLeaveHidden=${afterLeaveHidden} ` +
+    `everHidden=${everHidden} everBdi=${everBdi} final="${rm && rm.finalText}"`);
+  ok('#559 RM: the tip stays across the move — the leave hides nothing ' +
+     '(synchronous post-pointerout: no hide; reduced motion still persists)',
+     afterLeaveHidden === false);
+  ok('#559 RM: the swap snaps — no cross-dissolve layers under reduced motion',
+     !everBdi);
+  ok('#559 RM: after the move the tip names the NEW column\'s values',
+     !!(rm && rm.finalText) &&
+     new RegExp('^' + wantB.open + ' open · ').test(rm.finalText));
+  await rp.screenshot({ path: `${OUT}/bdhover-rm-swap.png`, fullPage: false });
   await ctx.close();
 }
 
