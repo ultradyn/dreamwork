@@ -4022,11 +4022,16 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
     # normalises sub-ids/combined tokens to parent ledger ids via the named
     # helper — never ENTRY_ID's incidental letter-strip (#401).
     # `if nid in folded_ids: continue` is the consumed marker — the one line
-    # that stops a complied hand-off being nagged forever.
+    # that stops a complied hand-off being nagged forever. For combined ids
+    # (#521/522), the literal string is not in folded_ids but its parents are,
+    # so the consumed check must test parents too (same idiom as the delivery
+    # signal below uses handoff_parent_ids for the same reason).
     for nid, sha, claimer in pending:
         if nid in folded_ids:
             continue
         parents = watch.handoff_parent_ids(nid)
+        if any(p in folded_ids for p in parents):
+            continue
         if any(p in open_ids for p in parents):
             rep.add(
                 WARN, "handoffs.md",
