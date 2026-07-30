@@ -616,8 +616,11 @@ class TestCollector(unittest.TestCase):
 
         Evaluated in node with stubbed esc/label so the assertion is on REAL
         rendered HTML, not source text. Production line: chatRow's status +
-        preview + turn-count branch, and chatList's empty-guard (quiet when
-        there are no chats, like reviews). The UI word is "topic chats" (Q2).
+        preview + turn-count branch, and chatList's empty branch — #563 made
+        the section always visible (was `return ''` under #504). The empty
+        case asserts the new contract (label + `0 total` + the `none yet`
+        dim line); the non-empty cases assert today's #562 rendering is
+        unchanged. The UI word is "topic chats" (Q2).
         """
         import subprocess, shutil
         node = shutil.which("node")
@@ -658,8 +661,23 @@ class TestCollector(unittest.TestCase):
         if proc.returncode != 0:
             self.fail("node eval failed: " + proc.stderr)
         empty, pending, replied = json.loads(proc.stdout)
-        # empty -> "" (quiet, like reviews)
-        self.assertEqual(empty, "", empty)
+        # #563 — empty is NO LONGER quiet: the section is always visible. The
+        # label renders, the count line tells the truth (`0 total`, the unread
+        # clause absent at 0 — the same #562 rule), and the dashboard's
+        # existing dim empty-state line (`none yet`, the same copy reviews and
+        # answers already use) sits under it. Production line: chatList's empty
+        # branch (was `return ''`). NOTE: this supersedes #504's "quiet when
+        # empty" — he asked for the section to always show (#563).
+        self.assertIn("topic chats", empty, empty)
+        self.assertIn("0 total", empty, empty)
+        self.assertNotIn("unread", empty,
+                         "0 chats → no unread clause (the #562 rule at 0)")
+        self.assertIn("none yet", empty, empty)
+        # PRECONDITION that empty differs from non-empty (else a renderer that
+        # always emitted rows, or always the empty state, would pass): empty
+        # carries no chat-row link, pending/replied do (asserted below).
+        self.assertNotIn("chatrow", empty, empty)
+        self.assertNotIn('href="/chat/', empty, empty)
         # pending -> the topic-chats label + the pending status + preview
         self.assertIn("topic chats", pending)
         self.assertIn("pending", pending)

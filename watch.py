@@ -4076,16 +4076,23 @@ function chatRow(c) {
     ` <span class="age">${turn}</span></a>`;
 }
 function chatList(d) {
-  if (!d.chats || !d.chats.length) return '';
-  // #562 — the count line tells the truth: "X unread · Y total", the unread
-  // clause ONLY when unread > 0; the total is always labelled "Y total". The
-  // text changing on a tick is the already-documented settled re-render
-  // (innerHTML each tick) — no new motion, the same stance as the commits list.
-  const total = d.chats.length;
-  const unread = d.chats.filter(c => c.unread).length;
+  // #563 — the section is ALWAYS visible, even when there are no chats (he
+  // asked for it: the topic-chats section should always show). The label
+  // renders whether or not chats exist, the count line tells the truth at 0
+  // (`0 total`, the unread clause absent — the same #562 rule), and an empty
+  // state takes the dashboard's existing dim-line idiom (the same `none yet`
+  // reviews and answers use — no new token). This REMOVES the appear/vanish
+  // the old `return ''` guard produced: a section that is always present has
+  // no arrival/departure to animate, the smallest possible motion story
+  // (transitions.md — the panel still re-renders through innerHTML each tick,
+  // the same settled re-render the commits list makes, so no new gesture).
+  const chats = (d && d.chats) || [];
+  const total = chats.length;
+  const unread = total ? chats.filter(c => c.unread).length : 0;
   const cnt = unread > 0 ? `${unread} unread · ${total} total`
                          : `${total} total`;
-  return label(`topic chats · ${cnt}`) + d.chats.map(chatRow).join('');
+  return label(`topic chats · ${cnt}`) +
+    (total ? chats.map(chatRow).join('') : '<div class="dim">none yet</div>');
 }
 /* #562 — /chat/<id>: the conversation itself. A chat is its own subject, so
    it earns a URL (watch-design.md's navigate principle — the same warrant
@@ -4149,12 +4156,15 @@ function buildDashboard(d) {
                   d.dreams_archive.map(dreamBlock).join(''), 'dim',
                   'dreams-archive') : '');
   // #504 — the topic-chat list (Q4): his messages to the agent and their
-  // replies, the main-dreamer first slice of #229/#270. Quiet when empty
-  // (like reviews) so a target with no chats sees nothing; a pending chat
-  // (awaiting the dreamer's reply) is the actionable state. Reuses the
-  // dashboard's dim-row + .age annotation idiom — no new token, no motion
-  // (this panel re-renders through innerHTML on every tick; a new chat
-  // arriving is the same settled re-render the commits list does).
+  // replies, the main-dreamer first slice of #229/#270. #563 made the section
+  // ALWAYS visible (was quiet-when-empty like reviews): the label + `0 total`
+  // + a dim `none yet` line render even with no chats, so a chatless target
+  // still sees the section. A pending chat (awaiting the dreamer's reply) is
+  // the actionable state. Reuses the dashboard's dim-row + .age annotation
+  // idiom — no new token, no motion (this panel re-renders through innerHTML
+  // on every tick; a new chat arriving is the same settled re-render the
+  // commits list does). NOTE the deliberate contrast: the reviews panel stays
+  // quiet-when-empty (he has not asked to change it).
   h += chatList(d);
   // #564 — the two questions parts grouped under one visible "Q & A"
   // section. `label()` is the dashboard's section idiom, and its margin-top
