@@ -18,8 +18,9 @@
      c3  #4/#5 combined origin: **loop**, and #1 is DELETED (groomed —
          a first sight already happened and cannot be un-happened)
 
-   …so the truthful answer is human 1 · loop 3 · historical unknown 1,
-   five first sightings.
+   …so the truthful answer is human 1 · historical unknown 1 · loop 3,
+   five first sightings (segment order is user · unknown · loop, #544:
+   unknown sits as the gap between the two knowns).
 
    RED-FIRST, for the failure this guard exists to name: with the
    classifier sabotaged to fail OPEN (`else "loop"` in entry_origins —
@@ -276,8 +277,8 @@ ok('the burndown panel carries the provenance block (else everything ' +
    first sight is final; #1 was deleted and still counts, because first
    sight cannot be un-happened. */
 ok('the counts are the planted first sightings, exactly — ' +
-   'human 1 · loop 3 · historical unknown 1',
-   rd.legend === 'human 1 · loop 3 · historical unknown 1');
+   'human 1 · historical unknown 1 · loop 3',
+   rd.legend === 'human 1 · historical unknown 1 · loop 3');
 ok('...and the unknown remainder is NOT rolled into loop (the sabotage ' +
    'this guard was shown red against)', !/loop 4/.test(rd.legend));
 ok('the denominator names its source and its scope',
@@ -285,23 +286,23 @@ ok('the denominator names its source and its scope',
    rd.srcs[0] === '5 first sightings in recorded git history');
 ok('a complete history does NOT claim to be incomplete',
    !rd.srcs.some(s => s.includes('incomplete')));
-ok('the bar is three segments in human / loop / unknown order',
-   rd.segClasses.join(',') === 'phuman,ploop,punknown');
-ok('...and their geometry IS the counts: 20% / 60% / 20% of the bar',
+ok('the bar is three segments in human / unknown / loop order (#544)',
+   rd.segClasses.join(',') === 'phuman,punknown,ploop');
+ok('...and their geometry IS the counts in that order: 20% / 20% / 60%',
    rd.segPcts.every(x => x >= 0) &&
    Math.abs(rd.segPcts[0] - 0.2) < 0.02 &&
-   Math.abs(rd.segPcts[1] - 0.6) < 0.02 &&
-   Math.abs(rd.segPcts[2] - 0.2) < 0.02 &&
+   Math.abs(rd.segPcts[1] - 0.2) < 0.02 &&
+   Math.abs(rd.segPcts[2] - 0.6) < 0.02 &&
    Math.abs(rd.segPcts.reduce((a, b) => a + b, 0) - 1) < 0.03);
 ok('colour never carries the split alone: unknown is a HATCH, ' +
    'human and loop are solid',
-   rd.segBg[2].includes('gradient') &&
-   rd.segBg[0] === 'none' && rd.segBg[1] === 'none');
+   rd.segBg[1].includes('gradient') &&
+   rd.segBg[0] === 'none' && rd.segBg[2] === 'none');
 ok('...and the legend keys wear their segment\'s ramp step',
    new Set(rd.keyColors).size === 3);
 ok('every segment states its count on hover (detail already summarised ' +
    'on screen — the hover idiom, not the only copy)',
-   rd.segTitles.join('|') === 'human 1|loop 3|historical unknown 1');
+   rd.segTitles.join('|') === 'human 1|historical unknown 1|loop 3');
 ok('the aria-label is the whole datum in words',
    !!rd.aria && rd.aria.includes('human 1') && rd.aria.includes('loop 3') &&
    rd.aria.includes('historical unknown 1') &&
@@ -331,15 +332,15 @@ await p.close();
   notes.push(`mobile: ${JSON.stringify(rm)}`);
   ok('mobile: the same datum, whole — labels, counts and denominator ' +
      'do not disappear at 390px',
-     rm.present && rm.legend === 'human 1 · loop 3 · historical unknown 1' &&
+     rm.present && rm.legend === 'human 1 · historical unknown 1 · loop 3' &&
      rm.srcs[0] === '5 first sightings in recorded git history');
   ok('mobile: the datum itself never sticks out of the viewport, and ' +
      'the legend is not clipped (the composer menu\'s 390px overflow is ' +
      'pre-existing — measured on d278b7b — and not this surface)',
      rm.provOverflow === false && rm.legendClipped === false);
-  ok('mobile: the segments keep their proportions',
+  ok('mobile: the segments keep their proportions (loop is the 60% third)',
      rm.segPcts.every(x => x >= 0) &&
-     Math.abs(rm.segPcts[1] - 0.6) < 0.02);
+     Math.abs(rm.segPcts[2] - 0.6) < 0.02);
   await capturePair(mp, 'mobile');
   await mp.close();
 }
@@ -361,7 +362,7 @@ await p.close();
   const rs = await sp.evaluate(READ);
   notes.push(`shallow: ${JSON.stringify(rs)}`);
   ok('a shallow clone answers from what it can see (and no further)',
-     rs.present && rs.legend === 'human 1 · loop 3 · historical unknown 0');
+     rs.present && rs.legend === 'human 1 · historical unknown 0 · loop 3');
   ok('...and NAMES the incompleteness rather than reading as fact',
      rs.srcs.some(s => s.includes('coverage is incomplete')));
   ok('...in the aria-label too, because the label is the whole datum',
