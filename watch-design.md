@@ -2113,63 +2113,34 @@ passed against it.
 
 ### The run mode (#290)
 
-Main-dreamer **pace**, settable on the dashboard between `status` and `tint`.
-His words: add a run mode with options like lackadaisical, continuous/hot, a
-few helpers, and (later) hierarchical; track it so the agent can check status;
-emit a monitored event; 10s cooldown with a progress bar that resets on every
-change.
+Main-dreamer **pace**, one line in `.dreamwork/run-mode`. His words: a run
+mode with options like lackadaisical, continuous/hot, a few helpers; track it
+so the agent can check status; emit a monitored event.
 
-**Authority is the file, not status.json.** `.dreamwork/run-mode` is one line
-from the closed `RUN_MODES` set (`lackadaisical` default, `hot`, `assisted`),
-machine-local and gitignored — operational posture on this host, not a
-portable project default. `collect()` exposes `run_mode` so every open window
-converges on the existing `/mtime` poll. `status.json` may mirror later; it
-never owns the value. `hierarchical` is **visible and disabled** until #264
-and #288 make that tier honest — discoverable, not selectable.
+**The dashboard picker was removed (#547), superseded by posture.** The
+three-axis posture control below is the sibling that grew to cover run-mode's
+bundled decisions; its `pace` axis (`idle` / `steady` / `hot`) is where
+run-mode's `lackadaisical` / `hot` / `assisted` now live. The picker surface
+— the chips, the shared 10s arm, the `#rundesc` description popover (#300),
+and their CSS — is gone from the page, and its two guards
+(`dev/capture/runmode.mjs`, `dev/capture/rundesc.mjs`) are deleted.
 
-**Shared 10s arm, then one POST.** Selecting a mode writes a pending
-`{mode, until}` into `localStorage` keyed by absolute `data.target` so every
-tab on this project shares one countdown. Each selection resets the deadline.
-Only the final mode is POSTed; the server atomically writes the file and, on
-a real change, appends `run-mode via watch[ /path]: <mode>` to
-`watch-events.log`. Identical final → 200, no event. Re-selecting the already
-committed mode cancels the pending arm.
-
-**The control is the standing sliding group** (`.sgroup` / `.sgind` /
-`.sgbtn`), so geometry and motion are free. Active mode takes `--accent`
-(live loop control, not a settled preference like tint). The arm UI is a
-linear bar draining 100%→0% over the remaining time plus tabular
-`arms in Ns · <mode>` text. **Reduced motion hides the bar and keeps the
-second-by-second text and the same application time** — timing may change,
-function may not. A refused write reverts the selection and says so in
-`--warn`, never confirming a write that did not land.
-
-**One shared description surface (#300).** Hovering or focusing any chip
-explains that mode in a single `#rundesc` below the group and **above** the
-arm/countdown — never a per-button tooltip, never over the countdown.
-`RUN_MODE_DESC` holds one sentence per mode, traced to the behavioural
-contract in `file-formats.md` / `SKILL.md` (what continues, stops, commits),
-not marketing. Button→button keeps the shell fixed (`min-height:2.6em`) while
-the words dissolve and resolve; first arrival and final departure reuse the
-atmospheric blur/drift idiom (`transitions.md`). Keyboard focus shows the
-same text; every chip's `aria-describedby="rundesc-text"` resolves to that
-live node. Escape / pointer-leave / blur dismiss with **no mode side effect**
-— hover must never call `pickRunMode`, write pending, or POST. Reduced motion
-swaps text instantly with identical meaning and the same wiring.
+**Authority is the file, not status.json — and the file STAYS.** Removing the
+picker did not remove the route or the file: other readers exist.
+`.dreamwork/run-mode` is one line from the closed `RUN_MODES` set
+(`lackadaisical` default, `hot`, `assisted`), machine-local and gitignored —
+operational posture on this host, not a portable project default. `POST
+/run-mode` (still wired) dual-writes the file and, on a real change, appends
+`run-mode via watch[ /path]: <mode>` to `watch-events.log`; identical final →
+202, no event. `collect()` exposes `run_mode` so every open window converges
+on the `/mtime` poll, and posture derives from it (`lint.derive_posture`)
+when `.dreamwork/posture` is absent. `hierarchical` is rejected as unknown
+(not in `RUN_MODES`) — a planned name in the docs only.
 
 **Consumption honesty.** The file + the events line are how an agent learns
-the mode. This dashboard does not, by itself, change a running session's
-scheduler; the loop that tails the events log (or re-reads the file on tick)
-must apply policy per its own skill protocol.
-
-`dev/capture/runmode.mjs` is the browser guard for the arm/commit path: real
-10s arm intermediate progress, reset, commit, event exactly-once,
-hierarchical disabled, reduced-motion text path, and cross-tab pending via
-storage. `dev/capture/rundesc.mjs` guards the description surface: one
-stable box across every chip, zero arm/file/event side effects on
-hover/focus/Escape (including pending localStorage and the countdown text,
-because a 10s arm is silent to POST for ten seconds), per-frame morph
-`between()` intermediates, reduced-motion parity, and hover≡focus text.
+the mode. The dashboard no longer sets it; the loop that tails the events log
+(or re-reads the file on tick) must apply policy per its own skill protocol,
+and setting the mode now means editing the file or POSTing `/run-mode`.
 
 ### The three-axis posture (#445)
 

@@ -7407,9 +7407,9 @@ class TestRunMode(unittest.TestCase):
                          ("lackadaisical", "hot", "assisted"))
         self.assertEqual(watch.RUN_MODE_DEFAULT, "lackadaisical")
         self.assertIn(watch.RUN_MODE_DEFAULT, watch.RUN_MODES)
-        self.assertEqual(tuple(watch.RUN_MODES_PLANNED), ("hierarchical",))
-        for m in watch.RUN_MODES_PLANNED:
-            self.assertNotIn(m, watch.RUN_MODES)
+        # #547: RUN_MODES_PLANNED was picker-only and is removed with the
+        # dashboard picker. "hierarchical" stays rejected as unknown —
+        # covered by test_write_refuses_outside_set / test_post_rejects.
 
     def test_read_falls_back_when_absent_or_unknown(self):
         with tempfile.TemporaryDirectory() as d:
@@ -7490,51 +7490,28 @@ class TestRunMode(unittest.TestCase):
                 with open(log, encoding="utf-8") as f:
                     self.assertEqual([ln for ln in f if "run-mode" in ln], [])
 
-    def test_page_carries_vocabulary_wiring_and_arm(self):
+    def test_run_mode_vocabulary_wired_picker_removed(self):
+        """#547: the run-mode picker is gone, but the vocabulary it validated
+        against stays wired so the server's /run-mode route and read_run_mode
+        agree with the page. The picker-only constants are absent (negative
+        assertions prove the removal is complete — a leftover re-adds a dead
+        surface and a dead guard subject)."""
         self.assertIn("const RUN_MODES = " + json.dumps(list(watch.RUN_MODES)),
                       watch.PAGE)
         self.assertIn("const RUN_MODE_DEFAULT = "
                       + json.dumps(watch.RUN_MODE_DEFAULT), watch.PAGE)
-        self.assertIn("const RUN_MODES_PLANNED = "
-                      + json.dumps(list(watch.RUN_MODES_PLANNED)), watch.PAGE)
-        for token in ('function runModePicker(', 'function pickRunMode(',
-                      "fetch('/run-mode'", 'RUN_ARM_MS',
-                      'dw:run-mode-pending:', 'hierarchical',
-                      'runbarfill', 'prefers-reduced-motion'):
-            self.assertIn(token, watch.PAGE)
-
-    def test_run_mode_desc_is_contract_copy_and_wired(self):
-        """#300 — shared description surface, one per mode, no marketing."""
-        # every selectable + planned mode has a line
-        for m in list(watch.RUN_MODES) + list(watch.RUN_MODES_PLANNED):
-            self.assertIn(m, watch.RUN_MODE_DESC)
-            self.assertTrue(watch.RUN_MODE_DESC[m].strip())
-        # no extra keys invent a mode the file cannot hold
-        for k in watch.RUN_MODE_DESC:
-            self.assertIn(k, set(watch.RUN_MODES) | set(watch.RUN_MODES_PLANNED))
-        # behavioural words from file-formats.md / SKILL.md, not slogans
-        self.assertIn("no proactive fan-out",
-                      watch.RUN_MODE_DESC["lackadaisical"])
-        self.assertIn("coordinator only", watch.RUN_MODE_DESC["hot"])
-        self.assertIn("helpers", watch.RUN_MODE_DESC["assisted"])
-        self.assertIn("#264", watch.RUN_MODE_DESC["hierarchical"])
-        self.assertIn("#288", watch.RUN_MODE_DESC["hierarchical"])
-        # page embeds the table and the pure-presentation surface
-        self.assertIn("const RUN_MODE_DESC = ", watch.PAGE)
-        for token in ('id="rundesc"', 'id="rundesc-text"',
-                      'function showRunDesc(', 'function hideRunDesc(',
-                      'aria-describedby="rundesc-text"'):
-            self.assertIn(token, watch.PAGE)
-        # hover path must not call the arm/write path by name in showRunDesc
-        # (structural: the function exists and pickRunMode is separate)
-        self.assertIn('function pickRunMode(', watch.PAGE)
-        idx = watch.PAGE.index('function showRunDesc(')
-        end = watch.PAGE.index('function rundescPointerInside(', idx)
-        body = watch.PAGE[idx:end]
-        self.assertNotIn('pickRunMode(', body)
-        self.assertNotIn("fetch('/run-mode'", body)
-        self.assertNotIn('writeRunPending(', body)
-        self.assertNotIn('commitRunMode(', body)
+        # RUN_ARM_MS is SHARED with posture's arm, so it stays wired.
+        self.assertIn("const RUN_ARM_MS =", watch.PAGE)
+        # picker-only constants — gone with the picker.
+        self.assertNotIn("const RUN_MODES_PLANNED =", watch.PAGE)
+        self.assertNotIn("const RUN_MODE_DESC =", watch.PAGE)
+        # the picker surface itself is gone from the page.
+        for gone in ('function runModePicker(', 'function pickRunMode(',
+                     'runbarfill', 'dw:run-mode-pending:',
+                     'function showRunDesc(', 'function syncRunModeFromData(',
+                     'id="rundesc"', 'id="runmode"'):
+            self.assertNotIn(gone, watch.PAGE,
+                             "run-mode picker remnant in PAGE: " + gone)
 
     def test_post_path_is_witnessed_like_other_writes(self):
         with tempfile.TemporaryDirectory() as d:
