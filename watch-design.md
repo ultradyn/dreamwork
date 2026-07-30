@@ -767,13 +767,13 @@ section does:
 each answered `<details>` carries a content-stable `aid` from
 `parse_answered_answers` (SHA-256 over title, resolution `when`, body,
 `follows`, plus a 0-based occurrence ordinal among exact-content twins) on
-both `data-aid` (list FLIP) and `data-keep` (the existing
-`snapshotFolds`/`restoreFolds` seam — **re-open only**, never close). Not
-positional `a+i` and not title alone: duplicate titles, reorder, and deletion
-of another record must keep open on the same logical body. A body edit may
-fail to restore (prefer miss over opening the wrong record). No third
-snapshot path. `dev/capture/answers.mjs` proves node replacement plus the
-three identity cases.
+both `data-aid` (list FLIP) and `data-keep` (reconciliation key so the
+reconciler keeps the node — #505; formerly the `snapshotFolds`/`restoreFolds`
+marker — **re-open only**, never close). Not positional `a+i` and not title
+alone: duplicate titles, reorder, and deletion of another record must keep
+open on the same logical body. A body edit may fail to restore (prefer miss
+over opening the wrong record). No third snapshot path. `dev/capture/answers.mjs`
+proves tick work plus the three identity cases.
 
 **Missing `aid` fails closed (#247).** If the server entry has no `aid`,
 `answerRecord` emits a plain `<details class="aq answered">` with **neither**
@@ -819,9 +819,9 @@ section swings by ~1250px, and his report was that the questions "just appear
 and disappear". A justification that is checkable and false gets believed —
 this one was, for the whole life of #141. The plain `expand()` peeks now
 travel on open/close via `foldDetailsLocal` (#277); their *open state* also
-rides `data-keep` through `snapshotFolds` (status-rest, file:*, dream:*,
+rides `data-keep` as a reconciliation key (status-rest, file:*, dream:*,
 dreams-archive) so a live tick does not re-close them under him — the same
-#141 rule the questions section already had.
+#141 rule the questions section already had, now structural under #505.
 
 ### More detail: what expands, what navigates, what hovers
 
@@ -980,29 +980,35 @@ unrepresentable) and the status panel's fold-by-complement (demote what you
 do not recognise, never drop it). **When his state is involved, prefer the
 failure that loses nothing.**
 
-Two seams exist; extend one rather than adding a third.
-`snapshotCardState`/`restoreCardState` carries a card's text, caret, focus,
-scroll, destination mode and every `<details>` inside it (#118, #111), keyed
-by `data-qid`. The box's grown **height** (#177) is not carried — it is
-re-fit from the restored content (`fitText(ta, false)` in `restoreCardState`,
-snapped), so it cannot drift from the text the snapshot also restored. `snapshotFolds`/`restoreFolds` carries a section's
-`open`, keyed by `data-keep` (#141) — a new section opts in by carrying the
-attribute. Answered disclosures on `/answers` opt in the same way (#238), with
-`data-keep` equal to their content-stable `aid` (not list index). Both run
-**before** the regroups, which measure, and **folds run before cards** (#179,
-above).
+**#505 — keyed reconciliation of `#view`** is the structural answer. `setContent`
+morphs `#view`'s children (vendored morphdom + content-hash skip) keyed by the
+identities the page already maintains (`data-qid`, `data-aid`, `data-sha`,
+`data-review`, `data-keep`, then `id`). Survivor nodes are literally kept, so
+prose selection (R1), caret, focus, open disclosures and listeners ride the
+node rather than a growing snapshot inventory. Views stay pure HTML-string
+builders; this is the one seam that commits them. Snapshot/restore pairs that
+pre-date #505 remain only as belts while lockstep deletion proves each
+redundant against its guards.
+
+Two legacy seams still exist for coverage during the deletion sequence;
+extend reconciliation rather than adding a third. `snapshotCardState`/
+`restoreCardState` re-applies a card's text, caret, focus, scroll, destination
+mode and every `<details>` inside it (#118, #111), keyed by `data-qid` — on
+kept nodes this is a no-op when values already match. The box's grown
+**height** (#177) is re-fit from the restored content (`fitText(ta, false)`,
+snapped). `data-keep` is a **reconciliation key** so the reconciler keeps the
+disclosure node (#141/#505) — a new section opts in by carrying the attribute.
+Answered disclosures on `/answers` opt in the same way (#238), with
+`data-keep` equal to their content-stable `aid` (not list index).
 
 **#523 — any focused `input`/`textarea` inside `#view` survives the tick.**
-The poll rebuilds `#view` through `innerHTML`, so focus, caret, selection and
-a mid-edit value die with the node. `snapshotViewInputs`/`restoreViewInputs`
-is the targeted snapshot/restore instance of the #505 surface (not the general
-keyed reconciliation — that awaits his ruling and will absorb this pair).
 Identity is the element's stable **`id`** (give one to any new field that
-needs this; the burndown limit input is `#bdlimit-in`). **His typed value
-always wins** over the fresh server markup — never clobber mid-edit text with
-a stale render. Runs after folds/cards so `refocus` is not swallowed by a
-closed ancestor. Card textareas and `#askbox` keep their specialised seams; a
-second restore of the same value is a no-op.
+needs this; the burndown limit input is `#bdlimit-in`) — also a reconciliation
+key, so the node is kept under #505. `snapshotViewInputs`/`restoreViewInputs`
+remains as a belt until lockstep deletion. **His typed value always wins**
+over the fresh server markup. Runs after folds/cards so `refocus` is not
+swallowed by a closed ancestor. Card textareas and `#askbox` keep their
+specialised seams; a second restore of the same value is a no-op.
 
 ### The persistent chrome
 
@@ -2857,15 +2863,12 @@ it teleports no card. The summary still names what is inside
 hides the fact that something is in flight.
 
 **What he opened survives the tick**, which is #118's rule one level up. A
-section he expanded exists nowhere on disk and the tick rebuilds the dashboard
-through `innerHTML`, so without this it would snap shut under him every two
-seconds. `snapshotFolds`/`restoreFolds` key on `data-keep` rather than
-position and only ever *re-open*, exactly as the card snapshot does; any
-future section gets the same behaviour by carrying the attribute. They run
-**before** the regroups, which measure. The plain `expand()` peeks opt in the
-same way (`status-rest`, `file:<name>`, `dream:<name>`, `dreams-archive`) —
-a counted summary is never the key, because the count shifts while the
-disclosure's identity does not.
+section he expanded exists nowhere on disk; under #505 the reconciler keeps
+nodes keyed by `data-keep`, so open rides the node rather than a re-apply.
+Any future section gets the same behaviour by carrying the attribute. The
+plain `expand()` peeks opt in the same way (`status-rest`, `file:<name>`,
+`dream:<name>`, `dreams-archive`) — a counted summary is never the key,
+because the count shifts while the disclosure's identity does not.
 
 `.qsec > summary` uses the child combinator on purpose: a question card inside
 carries its own `<details><summary>`, and a descendant rule here would be one

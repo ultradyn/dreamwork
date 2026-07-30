@@ -327,8 +327,8 @@ for (const reduced of [false, true]) {
   });
   if (taId) {
     const sel = `#${taId}`;
-    // grow the box to a few rows, then mark the node so we can PROVE the tick
-    // replaced it (a tick that never happened cannot test survival)
+    // grow the box to a few rows; vacuity is __dwViewRenderGen advancing
+    // (#505 keeps the node — tag survival is no longer the re-render tell)
     const before = await p.evaluate(async (s) => {
       const t = document.querySelector(s); if (!t) return null;
       t.value = '';
@@ -342,25 +342,33 @@ for (const reduced of [false, true]) {
       return +t.getBoundingClientRect().height.toFixed(2);
     }, sel);
     // a quiet tick: the loop writing its own files, questions unchanged
+    const gen0 = await p.evaluate(() => {
+      if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
+      return window.__dwViewRenderGen || 0;
+    });
     await p.evaluate(() => fetch('/command', { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'add-idea', text: 'autogrow guard tick' }) }));
-    // wait for the tick's innerHTML swap (the tagged node disappears)
-    let replaced = false;
+    // wait for setContent to run (gen advanced) or legacy node replace
+    let tickWorked = false;
     for (let i = 0; i < 30; i++) {
       await sleep(200);
-      const gone = await p.evaluate(s => { const t = document.querySelector(s); return !t || !t.dataset.autogrowTag; }, sel);
-      if (gone) { replaced = true; break; }
+      tickWorked = await p.evaluate(g0 => {
+        const advanced = (window.__dwViewRenderGen || 0) > g0;
+        const t = document.querySelector('textarea[id^="qi"]');
+        const replaced = t && !t.dataset.autogrowTag;
+        return advanced || !!replaced;
+      }, gen0);
+      if (tickWorked) break;
     }
     const after = await p.evaluate(s => { const t = document.querySelector(s); return t ? +t.getBoundingClientRect().height.toFixed(2) : null; }, sel);
-    ok('tick-survival: the tick really replaced the box node', replaced);
+    ok('tick-survival: the tick really ran (render gen advanced or node replaced)',
+       tickWorked);
     notes.push(`tick-survival: height ${before} -> ${after} across the tick`);
-    // SNAPPED restore: the height is back immediately. A survived height
-    // within one line of before is the contract; an animated re-grow would
-    // read at the fresh box's floor here, far short of a grown box.
+    // SNAPPED restore / kept height: within one line of before is the contract.
     const tol = Math.max(8, (before || 0) * 0.15);
     ok(`tick-survival: the grown height survives the tick (${before} -> ${after}, tol ${tol.toFixed(1)})`,
-       replaced && before && after && Math.abs(after - before) < tol);
+       tickWorked && before && after && Math.abs(after - before) < tol);
   } else {
     ok('tick-survival: an open answer box exists to grow across a tick', false);
   }

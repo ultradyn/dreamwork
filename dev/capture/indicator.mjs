@@ -133,7 +133,12 @@ for (const which of ['first', 'last']) {
     ind.classList.remove('snap');
     return ${READ};
   })()`);
-  await p.evaluate(`setContent(buildDashboard(data))`);
+  // #505 hash-skip: setContent no-ops when html === lastViewHtml. Clear so
+  // paintIndicators(true) actually re-runs (the laundering path under test).
+  await p.evaluate(`(() => {
+    if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
+    setContent(buildDashboard(data));
+  })()`);
   await sleep(120);
   const healed = await p.evaluate(READ);
   notes.push(`laundering: forced offset ${broken.dLeft}/${broken.dTop} -> ` +
