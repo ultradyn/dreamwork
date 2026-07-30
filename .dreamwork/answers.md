@@ -3,9 +3,31 @@
 ## Open
 
 - **2026-07-31 — Pending hand-offs to fold: are these things that need to be folded in to mast…**
-  Pending hand-offs to fold: are these things that need to be folded in to master but haven't yet been? If we have a backlog this large for these, we need to address that in our dreamwork loop --- this is a lot!
+  → answered (2026-07-31 05:40): **You are right, and I found the blind spot.**
+  There are 27 Pending entries with "landed" hand-offs that have NO
+  corresponding `→ folded` line — they were never folded into the ledger.
+  Most are pre-cutover tasks (2026-07-28/29) whose state lived in
+  `tasks.md` (now `tasks.md.deprecated`); a few (#421, #513, #498, #499)
+  are post-cutover coordinator work where I filed the Pending entry and
+  forgot to write the Folded line.
 
-  23 hand-offs to fold: #544, #547, #401, #430, #429, #425, #441, #360, #447, #449, #455, #456, #457, #450, #436b, #421, #513, #498, #499, #505, #521/522, #523/524, #521/522tick1h old60bbfe7f handoffs: #570 folded line
+  The lint check (#381) only flags tasks that are open-in-store-but-landed-
+  in-handoffs — it does NOT flag "Pending landed but never folded." That
+  cross-check did not exist, so the backlog was invisible to the suite
+  (432 green). Filed as **#576 (P2)**: add the cross-check so a Pending
+  entry without a corresponding Folded line is flagged within a grace
+  window.
+
+  **What I am doing about it now:** the gitignore/tidy task you asked for
+  is done (tree clean, `gitignore.example` committed, runtime state
+  properly ignored). The fold backlog is next — the 27 entries need their
+  `→ folded` lines, verifying each task's actual state in the store or
+  deprecated ledger first. The questions.md truncation that lost archived
+  answers (#233, #229) is also recovered and filed as **#575 (P1)**: the
+  #533 truncation guard has a blind spot for the commit path that let a
+  154-line loss through.
+
+  **Human:** Pending hand-offs to fold: are these things that need to be folded in to master but haven't yet been? If we have a backlog this large for these, we need to address that in our dreamwork loop --- this is a lot!
 
 ## Answered
 
