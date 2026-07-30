@@ -300,12 +300,26 @@ def server_class(family):
 # button in the composer, the rest live in the hover menu. Plugin-contributed
 # kinds (#86) append to this list — nothing downstream assumes a fixed set.
 # `sticky` (#337): whether the composer KEEPS the kind after its command
-# lands. add-idea is the only sticky kind; every steering kind decays back
-# to it at submit, because a mode that persists silently raises the
-# authority of his NEXT message (#257's reasoning, generalised). Absent
-# means NOT sticky — a plugin kind that says nothing must not linger
-# either — so the decay needs no third place to be remembered.
+# lands. The sticky kinds are chat and add-idea; every STEERING kind decays
+# back to the default (COMMANDS[0], the far-left kind) at submit, because a
+# steering mode that persists silently raises the authority of his NEXT
+# message (#257's reasoning, generalised). chat and add-idea are sticky for
+# DIFFERENT reasons: add-idea so consecutive parked thoughts do not require
+# re-selection, and chat because it is CONVERSATIONAL, not steering — the
+# #257 authority rationale does not apply to a message channel, and a
+# follow-up should never require re-selecting it. Absent means NOT sticky —
+# a plugin kind that says nothing must not linger either — so the decay
+# needs no third place to be remembered.
 COMMANDS = (
+    # #504 — `chat` is the far-left default: his "send a message to the
+    # agent" entry point, the main-dreamer first slice of #229/#270. A chat
+    # send is a /command POST of kind `chat` (Q1: no new route); it rides the
+    # #263 receipt and is BATCHED under #342 (Q3) — it wakes only in instant
+    # mode and otherwise drains on the tick's cursor read. Implementation
+    # vocabulary is chat/turn/reply, never `thread` (#229); the UI word is
+    # "topic chat" (Q2). See composer-chat.md for the spine this rides.
+    {"kind": "chat", "label": "topic chat", "common": True, "sticky": True,
+     "desc": "message the agent · the dreamworker replies in chat"},
     {"kind": "add-idea", "label": "add idea", "common": True, "sticky": True,
      "desc": "park a thought; the loop picks it up when it chooses next"},
     {"kind": "do-next", "label": "do next", "common": True, "sticky": False,
@@ -4020,6 +4034,27 @@ function burnPanel(d) {
   h += commitFigBlock(s);
   return h + `</div>`;
 }
+/* #504 — the minimal topic-chat list (Q4). His messages to the agent and
+   their replies, surfaced from the chats-v1 transcripts the /command `chat`
+   application step writes. UI word is "topic chat" (Q2); implementation vocab
+   is chat/turn/reply, never `thread` (#229). Reuses the dashboard's dim-row +
+   .age annotation idiom — no new token, no new motion (the panel re-renders
+   through innerHTML each tick; an arriving chat is the same settled re-render
+   the commits list makes). Quiet when empty, like reviews. A pending chat
+   (no agent turn yet — awaiting the dreamer's reply) is the in-flight state. */
+function chatRow(c) {
+  const pend = c.status === 'pending';
+  const turn = c.turns === 1 ? '1 turn' : `${c.turns} turns`;
+  // status first (it is the actionable bit), then the last turn's preview,
+  // then a dim count — the same `.age` annotation the review rows use.
+  return `<div class="dim" data-chat="${esc(c.id)}" data-status="${esc(c.status)}">` +
+    `${pend ? 'pending' : 'replied'} · ${esc(c.preview)}` +
+    ` <span class="age">${turn}</span></div>`;
+}
+function chatList(d) {
+  if (!d.chats || !d.chats.length) return '';
+  return label(`topic chats · ${d.chats.length}`) + d.chats.map(chatRow).join('');
+}
 function buildDashboard(d) {
   let h = `<div id="sections">`;
   // a fault first (it is one line, and usually absent), then what the loop has
@@ -4034,6 +4069,14 @@ function buildDashboard(d) {
          ? expand(`archive (${d.dreams_archive.length})`,
                   d.dreams_archive.map(dreamBlock).join(''), 'dim',
                   'dreams-archive') : '');
+  // #504 — the topic-chat list (Q4): his messages to the agent and their
+  // replies, the main-dreamer first slice of #229/#270. Quiet when empty
+  // (like reviews) so a target with no chats sees nothing; a pending chat
+  // (awaiting the dreamer's reply) is the actionable state. Reuses the
+  // dashboard's dim-row + .age annotation idiom — no new token, no motion
+  // (this panel re-renders through innerHTML on every tick; a new chat
+  // arriving is the same settled re-render the commits list does).
+  h += chatList(d);
   h += qSection(d);
   h += `<div class="dim"><a href="/answers">questions for the dreamer · ${d.answers_open.length} open</a></div>`;
   if (d.reviews.length) {
@@ -10438,16 +10481,19 @@ function popoutDoc(url, label) {
         document.getElementById('cmdtext').value = '';
         clearDraft();  // unguarded ON PURPOSE: already inside cv.landed, and
         // an isDurable() here would read as a gate while gating nothing (#163)
-        // #337: a landed command does not keep its kind — the composer
-        // decays back to the one sticky kind, so his NEXT message is never
-        // silently promoted to the authority of the one he just sent.
-        // Read the property off the LIVE table (COMMANDS is a `let`; plugin
-        // kinds join it, #86), and absent means NOT sticky, so no kind is
+        // #337: a landed STEERING command does not keep its kind — the
+        // composer decays back to the default (COMMANDS[0], the far-left
+        // kind), so his NEXT message is never silently promoted to the
+        // authority of the one he just sent. Read the property off the LIVE
+        // table (COMMANDS is a `let`; plugin kinds APPEND, #86, so [0] is
+        // always a core kind), and absent means NOT sticky, so no kind is
         // named here and a new one is not a third place to remember. The
         // decay rides setKind — the indicator's existing slide, not a
-        // second gesture (transitions.md).
+        // second gesture (transitions.md). chat and add-idea are sticky
+        // (#504) and skip this, so a conversation or a run of parked
+        // thoughts is not interrupted by re-selection.
         const sent = COMMANDS.find(c => c.kind === kind);
-        if (sent && !sent.sticky) setKind('add-idea');
+        if (sent && !sent.sticky) setKind((COMMANDS[0] || {}).kind);
         fitText(document.getElementById('cmdtext'), true);  // #177: shrink back, the same gesture reversed
         // he may already have started typing again while the POST was in
         // flight, before there was any timer to cancel. Courtesy is NOT
@@ -12758,6 +12804,143 @@ def append_human_question(text, question, stamp):
     return prefix + text[at:].lstrip()
 
 
+# ── #504 composer `chat` — the chats-v1 transcript (main-dreamer first slice
+# of #229/#270). A chat send is a /command POST of kind `chat`; the #263
+# receipt is the durable home (committed in do_POST before dispatch), and this
+# application step writes the CONVERSATIONAL truth: an append-only transcript of
+# framed turns. The receipt id is the chat identity for this slice (1:1 — a send
+# creates a chat; #373 adds follow-up threading + the worker). Reply
+# instructions attach at consume (journal_consume), not here; the main dreamer
+# replies by appending an agent turn through the dreamwork CLI to this same
+# transcript. Format (#229 `dw-turn` framing), each turn:
+#   <!-- dw-turn role=human|agent at=<iso>[ receipt=<id>] -->
+#   <one-lined text>
+#   <!-- /dw-turn -->
+# Two rules together make his text unforgeable as a turn (the #126 rule, one
+# level into the chat store): the writer `one_line`s the body, so a pasted
+# newline cannot push a forged marker to column 0; and the parser anchors BOTH
+# markers at line start, so a marker typed INTO the body stays inline prose and
+# can never open or close a turn. Either rule alone is insufficient — measured
+# at the #504 salvage gate: `one_line` alone still parsed a fabricated
+# role=agent turn out of marker-bearing text (the binding test is
+# test_chat_turn_text_cannot_forge_an_agent_turn).
+# Indexes (title, turn count, status) are DERIVED at read time — chat.json
+# carries identity only, never a second source of truth.
+CHAT_DIR = "chats-v1"
+CHAT_PREVIEW_N = 80
+
+
+def _chat_root(target):
+    """`.dreamwork/chats-v1/` — the chat transcript store root."""
+    return os.path.join(target, ".dreamwork", CHAT_DIR)
+
+
+def _chat_turn_block(role, text, at, receipt_id=None):
+    """One `dw-turn` block for the append-only transcript. Pure; testable."""
+    rid = f" receipt={receipt_id}" if receipt_id else ""
+    return (f"<!-- dw-turn role={role} at={at}{rid} -->\n"
+            f"{one_line(text)}\n"
+            f"<!-- /dw-turn -->\n")
+
+
+_CHAT_TURN_RE = re.compile(
+    r"^<!--\s*dw-turn\s+role=(?P<role>\w+)\s+at=(?P<at>\S+)"
+    r"(?:\s+receipt=(?P<rid>\S+))?\s*-->\s*"
+    r"(?P<body>.*?)^<!--\s*/dw-turn\s*-->", re.DOTALL | re.MULTILINE)
+
+
+def _parse_chat_turns(text):
+    """[{role, at, receipt, body}] in file order. Degrades to [] on absent."""
+    if not text:
+        return []
+    out = []
+    for m in _CHAT_TURN_RE.finditer(text):
+        out.append({
+            "role": m.group("role"),
+            "at": m.group("at"),
+            "receipt": m.group("rid") or "",
+            "body": one_line(m.group("body")),
+        })
+    return out
+
+
+def _chat_preview(text, n=CHAT_PREVIEW_N):
+    """One-line, length-capped preview — a title/label, never a second truth."""
+    s = one_line(text)
+    return s[:n - 1].rstrip() + "…" if len(s) > n else s
+
+
+def apply_chat_turn(target, chat_id, role, text, at=None, receipt_id=None):
+    """Append one turn to chats-v1/<chat_id>/transcript.md (+ chat.json).
+
+    Creates the chat on its first turn (main-dreamer mode). The transcript is
+    append-only conversational truth; chat.json carries identity only.
+    `role` is 'human' (his send, written here) or 'agent' (a reply the
+    dreamwork CLI appends). Returns True on success, False on a bad id / IO
+    failure (the receipt already committed, so this never refuses the 202).
+    """
+    if not chat_id:
+        return False
+    cdir = os.path.join(_chat_root(target), chat_id)
+    try:
+        os.makedirs(cdir, exist_ok=True)
+    except OSError:
+        return False
+    stamp = at or time.strftime("%Y-%m-%dT%H:%M:%S")
+    meta = os.path.join(cdir, "chat.json")
+    if not os.path.exists(meta):
+        atomic_write_text(meta, json.dumps({
+            "id": chat_id,
+            "mode": "main-dreamer",
+            "created_from_receipt": receipt_id or chat_id,
+            "created": stamp,
+        }, indent=2) + "\n")
+    tpath = os.path.join(cdir, "transcript.md")
+    prev = read_text(tpath) or ""
+    atomic_write_text(tpath, prev + _chat_turn_block(role, text, stamp, receipt_id))
+    return True
+
+
+def list_chats(target):
+    """Derived chat records for the dashboard's minimal topic-chat list (Q4).
+
+    One per chats-v1/<id>/ dir that has a transcript. Title / turn count /
+    status are DERIVED from the transcript (no second source of truth).
+    `status` is 'replied' once an agent turn exists (the dreamer replied —
+    "a reply creates the chat's first agent turn"), else 'pending'. Newest
+    first by chat.json `created`, dir-name fallback. Degrades to [] when the
+    store is absent (the slice ships before the apply lane wires the write).
+    """
+    root = _chat_root(target)
+    if not os.path.isdir(root):
+        return []
+    chats = []
+    for name in os.listdir(root):
+        cdir = os.path.join(root, name)
+        if not os.path.isdir(cdir):
+            continue
+        turns = _parse_chat_turns(read_text(os.path.join(cdir, "transcript.md")))
+        if not turns:
+            continue
+        meta = _safe_json(read_text(os.path.join(cdir, "chat.json"))) or {}
+        humans = [t for t in turns if t["role"] == "human"]
+        agents = [t for t in turns if t["role"] == "agent"]
+        first_human = humans[0]["body"] if humans else turns[0]["body"]
+        chats.append({
+            "id": meta.get("id", name),
+            "title": _chat_preview(first_human),
+            "mode": meta.get("mode", "main-dreamer"),
+            "turns": len(turns),
+            "status": "replied" if agents else "pending",
+            "created": meta.get("created", ""),
+            "last_at": turns[-1]["at"],
+            "last_by": turns[-1]["role"],
+            "preview": _chat_preview(turns[-1]["body"]),
+        })
+    chats.sort(key=lambda c: c.get("created") or c["id"], reverse=True)
+    return chats
+
+
 def answers_health(text, entries=None):
     """Health of the optional human-to-dreamer answers ledger."""
     if text is None:
@@ -13645,6 +13828,12 @@ def collect(target, burn_step=None):
         # current increment then reloads; the server already reloads via
         # GENERATION on re-deploy.
         "skill_identity": skill_identity(target),
+        # #504 — the topic-chat list (Q4): derived chat records from the
+        # chats-v1 transcripts. Rides the /mtime poll (transcripts live under
+        # .dreamwork/, which watched_mtime walks), so a sent chat reaches an
+        # open dashboard on the next tick with no new channel. His words →
+        # SUMMARY_DENIED (see summary()).
+        "chats": list_chats(target),
     }
 
 
@@ -13689,6 +13878,8 @@ SUMMARY_DENIED = frozenset({
     "deployed",          # serving state + machine-local paths/notes
     "plugin_commands",   # machine UI vocabulary (prose desc/label), not a
                          #   project-status summary, and reveals the plugin set
+    "chats",             # #504 topic-chat transcripts — his words + the
+                         #   dreamer's replies, the same class as dreams
 })
 
 
@@ -15053,6 +15244,18 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 result = self.journal_result()
                 rid = result.receipt_id if result else None
                 log_event(target, command_line(kind, text, req.get("from"), rid))
+            # #504: a `chat` send's application step — write the human turn to
+            # the chats-v1 transcript (conversational truth; the receipt is the
+            # durable home, already committed in do_POST). The receipt id is the
+            # chat identity. Runs once per receipt: #274's replay verdict
+            # short-circuits a dedup hit before this handler, so a
+            # double-click/retry never double-writes the turn. Best-effort —
+            # the receipt committed, so an IO failure never refuses the 202.
+            if kind == "chat":
+                result = self.journal_result()
+                cid = (result.receipt_id if result and result.receipt_id
+                       else str(uuid.uuid4()))
+                apply_chat_turn(target, cid, "human", text, receipt_id=cid)
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_tint(self):
