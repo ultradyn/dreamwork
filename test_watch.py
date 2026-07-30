@@ -11,11 +11,13 @@ import io
 import json
 import os
 import re
+import signal
 import socket
 import struct
 import subprocess
 import sys
 import tempfile
+import textwrap
 import threading
 import time
 import unittest
@@ -8933,6 +8935,127 @@ class TestDeliveryWakeRouting(unittest.TestCase):
                              f"{post_id!r}")
 
 
+# --- #567: the page-triggered deploy must survive the death of its spawner ---
+#
+# The defect: `just deploy`'s `--stop-deployed` kills the very server that ran
+# the runner. The old runner did `subprocess.run(capture_output=True)`, so the
+# recipe's stdout was a PIPE whose read end the dying server held; the recipe's
+# first print AFTER the stop hit a broken pipe (SIGPIPE) and died mid-flight,
+# before it shipped the snapshot or started the new server — his dashboard went
+# dark until a shell redeploy. The fix detaches the spawn: own process group
+# (start_new_session=True) + output to a FILE (never a pipe the dying server
+# reads). The fixture below reproduces the INCIDENT against the REAL runner: a
+# standin parent server spawns the runner, the recipe stops the parent, then
+# PRINTS — that print is the thing that died, and it is the thing the test pins.
+#
+# Production line whose removal reds the test: the `stdout=log` +
+# `start_new_session=True` Popen in `_default_deploy_runner` (revert to
+# `subprocess.run(..., capture_output=True)` and the recipe's print-after-stop
+# breaks the pipe the standin held, so marker.done is never written, the new
+# listener never starts, and AFTER-STOP never reaches the log).
+
+# A standin for the DEPLOYED server that receives POST /deploy: it imports the
+# REAL watch, points the deploy log at an isolated dir, claims the slot, and
+# spawns the REAL runner (`just deploy` in the fixture target). It records its
+# own pid so the recipe can stop it, then stays alive until killed — exactly
+# the lifetime of the server that runs the runner in production.
+_DEPLOY_STANDIN_567 = textwrap.dedent('''\
+    import os, sys, time
+    target, log_dir, repo_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+    sys.path.insert(0, repo_dir)
+    import watch
+    # The REAL runner (no test fake) and a clean single-flight slot.
+    watch._deploy_runner = None
+    watch._deploy_inflight = False
+    # Isolated log so the broken-pipe mechanism is observable, not the shared
+    # ~/.cache/dreamwork/deployed/deploy.log.
+    watch._deploy_log_dir = log_dir
+    with open(os.path.join(target, "parent.pid"), "w") as _f:
+        _f.write(str(os.getpid()))
+    # Spawn the runner thread -> _default_deploy_runner -> `just deploy`.
+    watch.start_deploy(target)
+    while True:
+        time.sleep(1)
+''')
+
+# The fixture's `just deploy` recipe. The ORDER is the incident: it PRINTS,
+# then STOPS the parent (the standin that spawned it), then PRINTS AGAIN. That
+# second print is the one that broke the pipe the dying server held (#567);
+# `set -e` turns the broken-pipe write into recipe death, so the steps after it
+# (the marker, the new listener) never run under the old code. `just` streams
+# recipe output straight to its own stdout (the pipe/file the runner set), so
+# the print really reaches the mechanism under test.
+_DEPLOY_RECIPE_567 = textwrap.dedent('''\
+    deploy:
+        #!/usr/bin/env bash
+        set -euo pipefail
+        port=$(cat port.txt)
+        echo "BEFORE-STOP"
+        # STOP the parent (the standin that spawned this recipe), then wait
+        # for it to REALLY die — synchronous, like the real --stop-deployed.
+        pid=$(cat parent.pid)
+        kill -TERM "$pid" 2>/dev/null || true
+        for _ in $(seq 1 200); do
+          if [ ! -d "/proc/$pid" ]; then break; fi
+          sleep 0.05
+        done
+        # THIS print dies on a broken pipe under the old runner: the parent
+        # held the read end of this stdout; it is now dead; the write hits
+        # SIGPIPE/EPIPE and set -e exits the recipe before the steps below.
+        echo "AFTER-STOP"
+        # Reached only if the print above survived -> the spawn is detached.
+        echo done > marker.done
+        nohup python3 new_listener.py "$port" >/dev/null 2>&1 &
+        newpid=$!
+        echo "$newpid" > new.pid
+        echo "DEPLOY-DONE"
+''')
+
+# The new server the recipe starts (the deployed server's replacement): binds
+# the port and stays up so the test can prove the deploy completed end-to-end.
+_DEPLOY_NEW_LISTENER_567 = textwrap.dedent('''\
+    import socket, sys, time
+    port = int(sys.argv[1])
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(("127.0.0.1", port))
+    s.listen(8)
+    while True:
+        time.sleep(1)
+''')
+
+
+def _deploy_free_port():
+    """A free 127.0.0.1 port, never the live dashboard or a guard range."""
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    p = s.getsockname()[1]
+    s.close()
+    assert p != 35110 and not (39880 <= p <= 39899), p
+    return p
+
+
+def _deploy_is_listening(port):
+    s = socket.socket()
+    s.settimeout(0.3)
+    try:
+        return s.connect_ex(("127.0.0.1", port)) == 0
+    finally:
+        s.close()
+
+
+def _deploy_proc_alive(pid):
+    """True if `pid` is a running (non-zombie) process."""
+    try:
+        with open("/proc/%d/status" % pid) as f:
+            for line in f:
+                if line.startswith("State:"):
+                    return line.split()[1] != "Z"
+    except FileNotFoundError:
+        return False
+    return False
+
+
 class TestDeployAction(unittest.TestCase):
     """#462 increment 2 — page-triggered `just deploy`.
 
@@ -9127,6 +9250,127 @@ class TestDeployAction(unittest.TestCase):
         self.assertIn("m.textContent = text", arm_body)
         self.assertNotIn(
             "c.note(`arms in ${left}s — then this page updates`", arm_body)
+
+    def test_runner_detaches_so_deploy_completes_after_parent_death(self):
+        """#567 — the runner detaches `just deploy` so the recipe completes
+        end-to-end even though it stops the very server that spawned it.
+
+        This is the INCIDENT as the red, not a unit smell: a standin parent
+        server (a separate process) spawns the REAL `_default_deploy_runner`,
+        whose fixture recipe PRINTS, then STOPS the parent, then PRINTS AGAIN.
+        That print-after-stop is the write that broke the pipe the dying server
+        held; under the old runner it SIGPIPE'd the recipe to death before it
+        could ship or start anything. The fix (own session + output to a file)
+        lets the recipe finish, so the new listener is up and the post-stop
+        line really reached the log.
+
+        Production line whose removal reds this test: the `stdout=log` +
+        `start_new_session=True` Popen in `_default_deploy_runner`. Revert it
+        to `subprocess.run(..., capture_output=True)` and the recipe dies at
+        the print-after-stop: marker.done is never written, the new listener
+        never binds, and AFTER-STOP never reaches deploy.log.
+        """
+        repo_dir = os.path.dirname(os.path.abspath(__file__))
+        port = _deploy_free_port()
+        with tempfile.TemporaryDirectory() as tmp:
+            target = tmp
+            log_dir = os.path.join(tmp, "logs")
+            os.makedirs(log_dir)
+            # Fixture: a justfile whose `deploy` recipe stops its spawner mid-
+            # flight, a new-listener the recipe starts, and the port it binds.
+            with open(os.path.join(target, "justfile"), "w") as f:
+                f.write(_DEPLOY_RECIPE_567)
+            with open(os.path.join(target, "new_listener.py"), "w") as f:
+                f.write(_DEPLOY_NEW_LISTENER_567)
+            with open(os.path.join(target, "port.txt"), "w") as f:
+                f.write(str(port))
+            standin = os.path.join(tmp, "standin.py")
+            with open(standin, "w") as f:
+                f.write(_DEPLOY_STANDIN_567)
+
+            parent = subprocess.Popen(
+                [sys.executable, standin, target, log_dir, repo_dir],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True)
+            new_pid = None
+            try:
+                # Wait for the recipe to run to completion (marker.done +
+                # new listener) or time out. Under the OLD runner the recipe
+                # dies at the print-after-stop and neither ever appears.
+                deadline = time.time() + 30
+                marker = os.path.join(target, "marker.done")
+                while time.time() < deadline:
+                    if (os.path.exists(marker)
+                            and _deploy_is_listening(port)):
+                        break
+                    time.sleep(0.1)
+                # Give the listener's pid file a moment to flush.
+                npid_path = os.path.join(target, "new.pid")
+                if os.path.exists(npid_path):
+                    try:
+                        new_pid = int(open(npid_path).read().strip())
+                    except ValueError:
+                        new_pid = None
+
+                # === PRECONDITIONS (asserted at runtime, not assumed) ===
+                # 1. The standin really died — the recipe's stop reached it.
+                self.assertFalse(_deploy_proc_alive(parent.pid), (
+                    "precondition failed: the standin parent is still alive "
+                    f"(pid {parent.pid}) — the recipe never stopped it, so "
+                    "this test cannot prove the deploy outlived its spawner"))
+                # 2. The recipe really printed AFTER the stop — the pipe/file
+                #    mechanism is the thing being pinned. (Checked via the log
+                #    content below; grouped with the fix assertions for the
+                #    discriminating failure message.)
+
+                # === THE FIX (each binds the detached-spawn contract) ===
+                self.assertTrue(os.path.exists(marker), (
+                    "#567 not fixed: marker.done was never written — the "
+                    "recipe died at the print-after-stop (broken pipe: the "
+                    "dying server held the read end of stdout). The deploy "
+                    "self-bricks exactly as in the incident."))
+                self.assertTrue(_deploy_is_listening(port), (
+                    "#567 not fixed: the new listener never came up — the "
+                    "recipe died before it could start the replacement server"))
+                self.assertIsNotNone(new_pid, (
+                    "#567 not fixed: the recipe never wrote new.pid — it "
+                    "died before starting the new server"))
+                self.assertTrue(_deploy_proc_alive(new_pid), (
+                    "#567 not fixed: the new server (pid %s) is not alive"
+                    % new_pid))
+                # Identity: the listener is a DIFFERENT process from the
+                # standin it replaced (the deployed cycle, not a survivor).
+                self.assertNotEqual(new_pid, parent.pid, (
+                    "the new listener has the standin's pid — the deploy did "
+                    "not replace the server, it IS the server"))
+                # The recipe's print-after-stop really reached the log file
+                # (the broken-pipe mechanism pinned): the old runner's pipe is
+                # gone, so this is the direct evidence the output is detached.
+                deploy_log = os.path.join(log_dir, "deploy.log")
+                self.assertTrue(os.path.exists(deploy_log), (
+                    "#567 not fixed: deploy.log was never written — output is "
+                    "still on a pipe the runner captures, not a detached file"))
+                log_text = open(deploy_log, errors="replace").read()
+                self.assertIn("BEFORE-STOP", log_text, (
+                    "the recipe's pre-stop print is missing from deploy.log"))
+                self.assertIn("AFTER-STOP", log_text, (
+                    "#567 not fixed: the recipe's print-AFTER-stop never "
+                    "reached deploy.log — it died on the broken pipe the "
+                    "dying server held. This is the incident's mechanism."))
+                self.assertIn("DEPLOY-DONE", log_text, (
+                    "the recipe did not run to completion — DEPLOY-DONE is "
+                    "missing from deploy.log"))
+            finally:
+                # Clean up anything still alive (the standin should be dead;
+                # the new listener is the one that lingers on success).
+                for pid in (parent.pid, new_pid):
+                    if pid is None:
+                        continue
+                    if _deploy_proc_alive(pid):
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
 
 
 class TestQuestionPriority(unittest.TestCase):
