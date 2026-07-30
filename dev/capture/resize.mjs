@@ -46,12 +46,13 @@
      - the submit path clearing `cmdtext._manual`         -> reds "submit
        re-enables" (autoexpand stays off for the next thought).
 
-   Own target and own server on port 39894 (39890-39893 are taken by merged
-   lanes; 39894 is free), so it runs standalone without the shared suite's
-   plumbing. The justfile is coordinator-owned, so this guard is not yet in
-   DEFAULT_GUARDS — run it directly:
-     node dev/capture/resize.mjs <outdir>
-   usage: node resize.mjs <outdir> [port, ignored — self-serves on 39894] */
+   Own target and own server on an EPHEMERAL port (the selectkeep/corpse
+   shape). A self-serving guard must not hardcode a port in the guard range:
+   the shared suite's harness already holds the base port it was invoked
+   with, so a fixed 3989x collides with it and serveVerified throws the
+   stale-server error — the guard dies before judging (#471). freePort()
+   sidesteps the range entirely.
+   usage: node resize.mjs <outdir> [port, ignored — self-serves ephemeral] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, rmSync, cpSync } from 'node:fs';
 import { serveVerified } from './serve.mjs';
@@ -59,9 +60,14 @@ import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 import { outdir } from './outdir.mjs';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
 
 const OUT = outdir(process.argv);
-const PORT = 39894;                       // #570: the lane's own guard port
+const freePort = () => new Promise(res => {
+  const s = createServer();
+  s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
+});
+const PORT = await freePort();            // #570: own-server guard, no fixed port
 mkdirSync(OUT, { recursive: true });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
