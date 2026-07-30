@@ -10,6 +10,8 @@ nothing, and this repo has caught three that were passing on their own bug.
 
 import ast
 import pathlib
+import subprocess
+import sys
 
 import dev.styleguide_audit as a
 
@@ -202,6 +204,41 @@ def test_ui_constants_track_the_client_assets_at_head():
         "prefix, so a literal here is a UI change the filter cannot see. "
         "Extract it to client/ (and add it to CLIENT_ASSETS)."
         % sorted(crept_back)
+    )
+
+
+def test_the_cli_actually_runs_end_to_end():
+    """`main()` had NO test, and a crash in it looked exactly like a pass.
+
+    Every other test here drives the pure functions on synthetic fixtures, so
+    `main()` — which is what `just audit-styleguide` invokes — was covered by
+    nothing. A real defect shipped through that hole during #397: the HEAD
+    guard called `git(...).split(...)`, but `git()` returns a CompletedProcess,
+    so the recipe died with an AttributeError while the whole suite stayed
+    green. This runs the CLI the way the justfile does and requires it to
+    reach a verdict.
+
+    Exit 0 (no misses) and 1 (misses reported) are both real verdicts. Exit 2
+    is the vacuous-filter refusal, and anything else — a traceback — is the
+    bug this exists to catch.
+    """
+    proc = subprocess.run(
+        [sys.executable, "dev/styleguide_audit.py", "HEAD~1..HEAD",
+         "--window", "3"],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode in (0, 1), (
+        "audit-styleguide did not reach a verdict (exit %d).\n"
+        "stderr:\n%s" % (proc.returncode, proc.stderr[-2000:])
+    )
+    assert "Traceback" not in proc.stderr, (
+        "audit-styleguide raised:\n%s" % proc.stderr[-2000:]
+    )
+    # precondition: it really did classify something, rather than printing an
+    # empty report that would satisfy the assertions above on any input
+    assert "watch.py commits:" in proc.stdout, (
+        "audit-styleguide produced no classification line — the checks above "
+        "would pass on a silent no-op.\nstdout:\n%s" % proc.stdout[-2000:]
     )
 
 

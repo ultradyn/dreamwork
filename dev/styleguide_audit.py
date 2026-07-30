@@ -658,7 +658,10 @@ def main(argv=None):
     # Post-#397 the client is files, so the check is that those files exist and
     # are tracked. Pre-#397 it is that UI_CONSTANTS still name literals in
     # watch.py. Either satisfies; NEITHER is the refusal.
-    tracked = set(git("ls-tree", "-r", "--name-only", "HEAD").split("\n"))
+    tracked = set(
+        git("ls-tree", "-r", "--name-only", "HEAD", check=False)
+        .stdout.splitlines()
+    )
     assets_present = [a for a in CLIENT_ASSETS if a in tracked]
     head_src = watchpy_source_at("HEAD")
     consts_present = set()
