@@ -19,8 +19,10 @@ tree is a check with an expiry date nobody can see.
 """
 
 import ast
+import importlib.util
 import os
 import pathlib
+import shutil
 
 import watch
 
@@ -161,16 +163,57 @@ def test_data_siblings_ships_every_client_asset():
     )
 
 
-def test_client_dir_resolves_beside_the_link_not_through_it():
+def test_client_dir_resolves_beside_the_link_not_through_it(tmp_path):
     """#425: watch.py becomes a symlink to deprecated/watch.py.
 
-    `abspath` keeps the link's own directory (the repo root, where client/
+    `abspath` keeps the LINK's own directory (the repo root, where client/
     lives); `realpath` would resolve into deprecated/ and the assets would
-    vanish. Pin the property rather than the spelling.
+    vanish. This is the load-bearing choice of the whole extraction, so it is
+    checked under the layout that makes it load-bearing.
+
+    An earlier version of this test asserted `CLIENT_DIR == dirname(abspath(
+    watch.__file__)) + "/client"`, which restated the implementation and — on
+    today's tree, where watch.py is a regular file — could not fail: abspath
+    and realpath agree until a symlink exists, so swapping the production call
+    to `realpath` left it GREEN. So build #425's layout for real: the module
+    under deprecated/, a symlink at the root, the assets beside the LINK.
+
+    Production line: `CLIENT_DIR`'s `os.path.abspath(__file__)` in watch.py.
+    Change it to `realpath` and the import below raises FileNotFoundError.
     """
-    assert watch.CLIENT_DIR == os.path.join(
-        os.path.dirname(os.path.abspath(watch.__file__)), "client")
-    assert os.path.isdir(watch.CLIENT_DIR)
+    root = tmp_path / "root"
+    (root / "deprecated").mkdir(parents=True)
+    shutil.copy(watch.__file__, root / "deprecated" / "watch.py")
+    # Every sibling watch.py resolves relative to itself, taken from
+    # DATA_SIBLINGS rather than listed here — vendor/morphdom.min.js is also
+    # read at import, and a future addition must not turn this test red for
+    # the wrong reason.
+    for rel in watch.DATA_SIBLINGS:
+        dst = root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / rel, dst)
+    link = root / "watch.py"
+    link.symlink_to(pathlib.Path("deprecated") / "watch.py")
+
+    # Preconditions: the layout must really be #425's, or this proves nothing.
+    assert link.is_symlink(), "fixture did not create a symlink"
+    assert os.path.realpath(link) != str(link), "symlink does not redirect"
+    assert not (root / "deprecated" / "client").exists(), (
+        "fixture put client/ where realpath would ALSO find it — the two "
+        "spellings would agree and the test could not fail"
+    )
+
+    spec = importlib.util.spec_from_file_location("watch_via_link", str(link))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)          # raises if CLIENT_DIR resolved wrong
+
+    assert mod.CLIENT_DIR == str(root / "client"), (
+        "CLIENT_DIR resolved to %r, not beside the link at %r — #425 would "
+        "deploy a dashboard with no css or js" % (mod.CLIENT_DIR, root / "client")
+    )
+    # and it genuinely loaded through that path, rather than resolving to a
+    # plausible directory nobody read
+    assert mod.STYLE == watch.STYLE and mod.ROUTER_JS == watch.ROUTER_JS
 
 
 def test_autoreload_watches_the_assets_not_just_watch_py():
@@ -181,7 +224,87 @@ def test_autoreload_watches_the_assets_not_just_watch_py():
         assert os.path.join(watch.CLIENT_DIR, name) in watched, (
             "client/%s is not in the autoreload watch set" % name
         )
-    assert watch.__file__ in watched or os.path.abspath(
-        watch.__file__) in {os.path.abspath(p) for p in watched}, (
+    assert os.path.abspath(watch.__file__) in watched, (
         "watch.py itself dropped out of the autoreload watch set"
     )
+    # every entry is absolute: a relative path here survives until someone
+    # chdirs, and _sources_mtime's OSError handling would then hide the fact
+    # that watch.py had stopped being watched at all
+    assert all(os.path.isabs(p) for p in watched), (
+        "relative paths in the autoreload watch set: %r"
+        % sorted(p for p in watched if not os.path.isabs(p))
+    )
+
+
+def test_a_vanished_source_pauses_autoreload_instead_of_re_execing(tmp_path):
+    """The rename window, which the previous mitigation documented but did
+    not implement.
+
+    An editor saving `client/style.css` via rename unlinks it for an instant.
+    Re-execing then imports a file that is not there — FileNotFoundError, dev
+    server dead, no supervisor to bring it back. `_sources_mtime` must return
+    None (meaning "do not judge this tick") rather than a value the caller
+    will compare.
+
+    The old version took `max()` over whatever it could read, which DROPS
+    when the absent file is the newest — and the absent file is the one being
+    edited, so it dropped in exactly the window it was written for. Production
+    line: the `return None` in `_sources_mtime`'s except branch. Restore
+    `continue` + `max(stamps)` and this goes red.
+    """
+    real = watch._autoreload_sources()
+    assert len(real) > 1, "watch set has nothing to lose"
+
+    gone = os.path.join(str(tmp_path), "vanished-during-rename.css")
+    assert not os.path.exists(gone)
+
+    # Precondition: the vanished file must be the NEWEST of the set, or max()
+    # would not have dropped and the old code would have passed this too.
+    baseline = watch._sources_mtime()
+    assert baseline is not None, "watch set unreadable before the injection"
+    newest = max(baseline.values())
+
+    watched = real + [gone]
+    saved = watch._autoreload_sources
+    watch._autoreload_sources = lambda: watched
+    try:
+        os.utime(real[0], (newest + 100, newest + 100))
+        assert watch._sources_mtime() is None, (
+            "a watched path that is currently absent did not pause the "
+            "watcher — --autoreload would re-exec into a missing asset"
+        )
+    finally:
+        watch._autoreload_sources = saved
+        os.utime(real[0], (newest, newest))
+
+
+def test_an_empty_asset_is_refused_rather_than_served_silently(tmp_path):
+    """A mangled client used to be a mangled watch.py, which would not parse.
+
+    Read from a file it is silent instead: an empty style.css assembles to
+    `<style></style>`, the page still returns 200, and the dashboard comes up
+    unstyled with nothing saying why. `--assert-importable` cannot catch it
+    either — the module imports fine. Production line: the `if not raw: raise`
+    in `_read_client`.
+    """
+    (tmp_path / "style.css").write_bytes(b"")
+    saved = watch.CLIENT_DIR
+    watch.CLIENT_DIR = str(tmp_path)
+    try:
+        # precondition: the file exists and is readable, so this is the EMPTY
+        # case and not the already-loud missing/unreadable one
+        assert (tmp_path / "style.css").is_file()
+        assert (tmp_path / "style.css").stat().st_size == 0
+        try:
+            watch._read_client("style.css")
+        except OSError as exc:
+            assert "style.css" in str(exc), (
+                "the refusal does not name the file: %s" % exc
+            )
+        else:
+            raise AssertionError(
+                "an empty client asset loaded without complaint — the page "
+                "would serve broken with HTTP 200"
+            )
+    finally:
+        watch.CLIENT_DIR = saved

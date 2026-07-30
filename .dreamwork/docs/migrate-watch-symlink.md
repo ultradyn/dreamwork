@@ -75,6 +75,37 @@ for two hours on 2026-07-28 already.
    trap opens (dirname becomes `deprecated/`) and this check goes red. Keep
    `abspath`.
 
+   **`abspath` alone is only half of it, and the other half is not obvious**
+   (found reviewing #397, which extracted the client into `client/` and made
+   this load-bearing rather than theoretical). **CPython realpaths
+   `sys.path[0]` but NOT `__file__`.** So under this migration the two
+   disagree: `__file__` is the link's path — good, `CLIENT_DIR` and the
+   sibling lookups resolve to the repo root — while module *resolution*
+   starts in `deprecated/`, where `user_events/`, `ledger_parse.py` and
+   `lint.py` are not. Reproduced: with the line below removed, a server
+   started through the link dies with `ModuleNotFoundError: No module named
+   'user_events'`; with it, the page serves byte-identically (576,217 bytes)
+   through the link.
+
+   `watch.py` therefore carries, before its sibling imports:
+
+   ```python
+   sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+   ```
+
+   It is a no-op today (regular file, same directory already first) and it is
+   what makes this migration work. Two consequences for whoever does it:
+   **`client/` and the other siblings stay at the repo root — do NOT move
+   them into `deprecated/` alongside the module**, and if `import watch` from
+   a sibling ever resolves to a second module object, that line is the thing
+   to check first.
+
+   Related, same review: `main()`'s `except OSError` used to wrap
+   `make_handler` as well as the bind, so a missing client asset was reported
+   as *"cannot bind … another instance may be running"* — a stylesheet
+   failure pointing the reader at ports. The handler is now built outside
+   that `try`; keep it there.
+
 4. **`--target` and the port file still resolve.** Both are independent of
    `__file__`: `--target` is passed on the command line and the port file is
    `.dreamwork/watch-port` under the target. *Check.* a scratch server started

@@ -163,6 +163,17 @@ CLIENT_ASSETS = (
     "client/shader.js",
 )
 
+# Tie the two together. The vacuous-filter guard in main() tests these literal
+# paths against the git tree, while every classification goes through
+# CLIENT_PREFIX — so a typo in the PREFIX alone ("clients/") would classify
+# every commit non-UI while the guard still found all eight assets and passed.
+# That is precisely the hollow mode the guard claims to prevent, so state the
+# dependency instead of assuming it.
+assert all(a.startswith(CLIENT_PREFIX) for a in CLIENT_ASSETS), (
+    f"CLIENT_ASSETS must all live under CLIENT_PREFIX={CLIENT_PREFIX!r}; "
+    f"the vacuous-filter guard is meaningless otherwise"
+)
+
 STYLEGUIDE_FILES = ("watch-design.md", "file-formats.md")
 
 # Baseline anchors, retained from #313 for continuity. The DEFAULT RANGE is
@@ -324,8 +335,11 @@ def classify_ui(sha):
       range in <sha>'s own watch.py. Pure deletions still overlap via their
       surrounding context lines, so removing UI counts as touching UI.
 
-    A commit may be both (the extraction commit itself is), and the two
-    name lists simply merge.
+    A commit may be both — the two name lists simply merge. In practice only
+    a commit that adds `client/` files while its own watch.py still holds the
+    constants can be, and the extraction commit is NOT one: at its own rev
+    the literals are already gone, so `ui_ranges` finds nothing and only the
+    eight `client/` names come back.
     """
     touched = [f for f in sorted(touched_files(sha))
                if f.startswith(CLIENT_PREFIX)]
@@ -336,6 +350,25 @@ def classify_ui(sha):
         if ranges and spans:
             touched += touched_constants(spans, ranges)
     return bool(touched), touched
+
+
+def touches_ui_source(files):
+    """Could this commit have changed presentation — i.e. is classify_ui
+    worth asking about it at all?
+
+    Post-#397 that is watch.py OR any `client/` asset, and the `or` is the
+    whole point: a normal UI commit after the extraction touches ONLY
+    `client/`. Gating on watch.py alone made classify_ui's client/ branch
+    unreachable for exactly the commits it was written for, and the audit
+    counted them `untouched` — permanently green over the shape the
+    extraction created.
+
+    Narrower than is_relevant on purpose: that one also admits a
+    styleguide-only commit, which belongs in the window unit but must not be
+    handed to classify_ui as a UI candidate.
+    """
+    return ("watch.py" in files
+            or any(f.startswith(CLIENT_PREFIX) for f in files))
 
 
 def is_relevant(files):
@@ -517,7 +550,7 @@ def classify_range(revrange, window):
     def ui_of(full):
         """(is_ui, consts), memoised — nearest_entry asks about neighbours."""
         if full not in ui_cache:
-            if "watch.py" not in files_of(full):
+            if not touches_ui_source(files_of(full)):
                 ui_cache[full] = (False, [])
             else:
                 ui_cache[full] = classify_ui(full)
@@ -534,7 +567,7 @@ def classify_range(revrange, window):
     non_ui, untouched = 0, 0
     for i, (full, short) in enumerate(commits):
         files = files_of(full)
-        if "watch.py" not in files:
+        if not touches_ui_source(files):
             untouched += 1
             continue
         is_ui, consts = ui_of(full)

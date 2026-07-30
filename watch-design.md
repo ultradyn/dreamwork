@@ -3306,7 +3306,7 @@ design.** A healthy answer is a fact (`--dim`, `serving c552338`). An answer
 this page could not compute is a fact about the page (`--dimmer`,
 `serving — unknown · …`). A page running code older than HEAD is a **fault**
 — it invalidates everything else on screen — so it takes `--warn` and the
-rail: `this page is 2 watch.py commits behind · serving 8513719`. **That is
+rail: `this page is 2 dashboard commits behind · serving 8513719`. **That is
 the second and last use of the rail idiom**, and the comment on `.qhealth`
 used to claim it was the only one; what the two share is exactly what earns
 it — both are the page saying it cannot be trusted right now, one about the
@@ -3321,11 +3321,29 @@ check at all — which is the failure this whole page is organised against. So
 `no repo` (the ordinary answer for a target that is somebody else's project,
 carrying no `watch.py` history) still renders, dim, saying it cannot tell.
 
-**"watch.py commits", not "commits", and the extra word is load-bearing
+**"dashboard commits", not "commits", and the extra word is load-bearing
 here** in a way it is not on the hub: this line sits directly above a list of
 *all* the project's commits, where "3 commits behind" would read as a claim
-about those rows. HEAD can move thirty times without `watch.py` moving once,
-and `missing` is pathspec-filtered.
+about those rows. HEAD can move thirty times without the dashboard moving
+once, and `missing` is pathspec-filtered.
+
+The word was `watch.py` until #397, and that was exact for as long as
+`watch.py` **was** the dashboard — the css and js lived in its string
+literals, so its history was the page's history. Since the client moved to
+`client/`, the pathspec covers `watch.py` *and* the assets, and most commits
+in that count no longer touch `watch.py` at all. Naming the file would now
+be precise about the wrong thing. `dashboard` is also the noun the hub
+already uses for the same count, which the value-for-value rule wants
+regardless.
+
+**The identity is the whole dashboard, not one file.** `serving_report`
+compares `watch.py`'s bytes **and** every client asset this process loaded
+(`SELF_ASSET_SRC`) against each revision; a revision matches only if all of
+them do. That is not a refinement — before #397 it was `watch.py` alone and
+correctly so, and leaving it there would have made this rail report `current`
+for a page serving last week's stylesheet, which is #140's wound reopened by
+a refactor. `deployed.py` and `dev/deploy_state.py` compare the same set, by
+the same rule, so all three answers stay value-for-value.
 
 **Measured by bytes, and by this process's OWN bytes.** The states, the
 vocabulary and the missing-commit list are `deployed.py`'s value for value

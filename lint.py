@@ -146,10 +146,16 @@ def _metadata_clause(entry_text: str) -> str:
 def load_watch():
     """Import watch.py for its parsers.
 
-    By path, not as a package: watch.py is a single file by design (the
-    deploy snapshot depends on it) and this must not become a second reason
-    it cannot move. Returns None if it is unimportable — mid-edit by another
-    agent, say — so the rest of the checks still run.
+    By path, not as a package. The old reason given here was "watch.py is a
+    single file by design", which stopped being true at #397 — the client is
+    eight files under `client/`, and #480 already ships a sibling closure
+    beside the snapshot. What survives is the constraint that actually holds:
+    the deploy snapshot is a FILE at a conventional path, resolved from
+    `watch.py`'s own directory, so importing by path is what keeps this
+    agreeing with the deployed layout rather than with the repo's.
+
+    Returns None if it is unimportable — mid-edit by another agent, say — so
+    the rest of the checks still run.
     """
     path = SKILL_DIR / "watch.py"
     if not path.exists():

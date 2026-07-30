@@ -2681,6 +2681,98 @@ class TestCollector(unittest.TestCase):
                               "feat: a change to the dashboard"])
             self.assertTrue(all(h for h, _ in r["missing"]))
 
+    def test_serving_report_sees_a_client_only_commit(self):
+        # #397 took 10,500 lines of css and js out of watch.py, so watch.py's
+        # bytes stopped being the dashboard's identity. The ordinary UI commit
+        # now leaves this file byte-identical, and a watch.py-only comparison
+        # answers `current` while the page serves last week's stylesheet —
+        # #140's wound ("make a stale view announce itself") reopened by a
+        # refactor. Production lines: assets_match, the widened revs query,
+        # and the widened `missing` pathspec in serving_report.
+        import subprocess
+        src = b"# the running source\n"
+        css_old, css_new = b".a { color: red }\n", b".a { color: blue }\n"
+        assets = {"client/style.css": css_old}
+        with tempfile.TemporaryDirectory() as d:
+            env = dict(os.environ,
+                       GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+            run = lambda *a: subprocess.run(  # noqa: E731
+                ["git", "-C", d, *a], env=env, capture_output=True, check=True)
+            run("init", "-q")
+            os.mkdir(os.path.join(d, "client"))
+
+            def write(rel, body):
+                with open(os.path.join(d, rel), "wb") as f:
+                    f.write(body)
+
+            write("watch.py", src)
+            write("client/style.css", css_old)
+            run("add", "-A")
+            run("commit", "-q", "-m", "the running one")
+
+            # precondition: with the client in step this is plainly current,
+            # or a BEHIND below would prove nothing about the client at all
+            r = watch.serving_report(d, src=src, assets=assets)
+            self.assertEqual(r["state"], watch.SERVE_CURRENT)
+            deployed_rev = r["rev"]
+
+            # the commit shape the extraction created: client only
+            write("client/style.css", css_new)
+            run("add", "-A")
+            run("commit", "-q", "-m", "style: restyle the .a component")
+
+            # precondition, asserted not assumed: watch.py is untouched, so a
+            # watch.py-only comparison is structurally unable to see this
+            head_watch = subprocess.run(
+                ["git", "-C", d, "show", "HEAD:watch.py"],
+                capture_output=True, check=True).stdout
+            self.assertEqual(head_watch, src,
+                             "fixture moved watch.py — the test proves nothing")
+
+            r = watch.serving_report(d, src=src, assets=assets)
+            self.assertEqual(
+                r["state"], watch.SERVE_BEHIND,
+                "a client-only commit read as %r — the page would claim to be "
+                "current while serving the old stylesheet" % (r["state"],))
+            self.assertEqual(r["rev"], deployed_rev)
+            self.assertEqual([s for _, s in r["missing"]],
+                             ["style: restyle the .a component"])
+
+            # SECOND SHAPE: the running identity IS a client-only revision.
+            # This is what the WIDENED candidate list is for, and nothing
+            # above needed it — with the narrow `git log -- watch.py` list the
+            # assertions above still pass, because the revision being served
+            # there happens to touch watch.py. Here it does not, so a narrow
+            # list cannot offer it, every candidate fails, and the answer
+            # becomes SERVE_UNTRACKED: "matches no revision" for a dashboard
+            # that matches one exactly. A confident wrong answer, which is the
+            # single thing this module is built to never give.
+            run("rev-parse", "--short", "HEAD")
+            client_rev = subprocess.run(
+                ["git", "-C", d, "rev-parse", "--short", "HEAD"],
+                capture_output=True, check=True).stdout.decode().strip()
+            write("client/style.css", b".a { color: green }\n")
+            run("add", "-A")
+            run("commit", "-q", "-m", "style: green instead")
+
+            # precondition: the revision now being served touches NO watch.py,
+            # so it is absent from a watch.py-scoped candidate list
+            touched = subprocess.run(
+                ["git", "-C", d, "show", "--stat", "--format=",
+                 "--name-only", client_rev],
+                capture_output=True, check=True).stdout.decode().split()
+            self.assertNotIn("watch.py", touched)
+
+            r = watch.serving_report(d, src=src,
+                                     assets={"client/style.css": css_new})
+            self.assertEqual(
+                r["state"], watch.SERVE_BEHIND,
+                "serving a client-only revision read as %r" % (r["state"],))
+            self.assertEqual(r["rev"], client_rev)
+            self.assertEqual([s for _, s in r["missing"]],
+                             ["style: green instead"])
+
     def test_serving_report_survives_a_process_that_cannot_read_itself(self):
         # the check exists for the state where its own subject is absent, so
         # it has to RETURN a reading rather than raise — a crash reads as

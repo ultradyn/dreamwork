@@ -280,12 +280,19 @@ const gitKey = d => ((d && d.git) || []).map(c => c.sha).join(' ');
    summary is the line and the individual missing commits are its title. */
 const SERVE_TEXT = {
   current: s => `serving ${esc(s.rev || '?')}`,
-  // "watch.py commits", not "commits", and the extra word is load-bearing
+  // "dashboard commits", not "commits", and the extra word is load-bearing
   // HERE in a way it is not on the hub: this line sits directly above a list
   // of ALL of the project's commits, where "3 commits behind" would read as a
-  // claim about those rows. HEAD can move thirty times without watch.py
+  // claim about those rows. HEAD can move thirty times without the dashboard
   // moving once.
-  behind: s => `this page is ${s.missing.length} watch.py commit` +
+  //
+  // It said "watch.py commits" until #397, which was exact while watch.py WAS
+  // the dashboard — every css and js byte lived in its string literals. Once
+  // the client moved to client/, `missing` counts commits to watch.py AND the
+  // assets, so the old word named a file that most of those commits do not
+  // touch. "dashboard" is also the hub's noun for the same count, which the
+  // value-for-value rule (#147) wants anyway.
+  behind: s => `this page is ${s.missing.length} dashboard commit` +
     `${s.missing.length === 1 ? '' : 's'} behind · serving ${esc(s.rev || '?')}`,
   untracked: () => 'this page is serving code that is in no commit — ' +
     'started from an uncommitted tree',

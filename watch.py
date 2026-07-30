@@ -33,6 +33,22 @@ import uuid
 from dataclasses import dataclass
 import webbrowser
 
+# #425/#397 — make module resolution agree with CLIENT_DIR about which
+# directory this file lives in. CPython realpaths sys.path[0] but NOT
+# __file__, and #425 makes watch.py a symlink to deprecated/watch.py. So
+# without this line the two disagree: CLIENT_DIR (abspath) is the LINK's dir,
+# where client/ is, while `import watch` from a sibling — lint.py does it at
+# module level — resolves through sys.path[0] to deprecated/watch.py and
+# builds a SECOND module object whose CLIENT_DIR is deprecated/client, which
+# does not exist. That surfaces at the first page build, not at boot.
+#
+# Inserting the link's own directory first makes `import watch` find the same
+# file that is already running, so there is one module and one CLIENT_DIR.
+# A no-op today (watch.py is a regular file, so the two directories are the
+# same path and it is already on sys.path); it is what keeps #425 from
+# needing to move client/ into deprecated/ alongside the module.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from user_events.sqlite import Envelope, open_journal
 # #352: the ledger's entry/origin grammar is ONE module now, imported here
 # (and by lint.py and task_origins.py) rather than copied. These names stay
@@ -473,30 +489,61 @@ _CLIENT_ASSETS = (
 
 def _read_client(name):
     """One client asset. Decoded from bytes so the value is byte-exact —
-    text mode could translate newlines and silently change the page."""
-    with open(os.path.join(CLIENT_DIR, name), "rb") as f:
-        return f.read().decode("utf-8")
+    text mode could translate newlines and silently change the page.
+
+    An EMPTY file raises. Before the extraction a mangled client meant a
+    mangled watch.py, which failed to parse — loud, and impossible to serve.
+    Read from a file it is silent instead: an empty style.css yields
+    `<style></style>` and the page still returns 200, so the dashboard comes
+    up unstyled with nothing anywhere saying why. `--assert-importable` does
+    not catch it either, because the module imports perfectly well. This is
+    the one corruption that is cheap to detect, so it is the one refused.
+
+    Truncation is NOT detectable here and is not claimed to be: there is no
+    recorded size to compare against, and inventing a floor would be a
+    literal with an expiry date. It is bounded elsewhere instead — deploy
+    ships whole blobs out of git via atomic rename, so a short read there
+    cannot happen; in a working tree it comes from a half-written save, which
+    is what `--autoreload` re-execs on.
+    """
+    path = os.path.join(CLIENT_DIR, name)
+    with open(path, "rb") as f:
+        raw = f.read()
+    if not raw:
+        raise OSError(
+            "client asset %s is empty. The page would still assemble and "
+            "still return 200, just without it — refusing rather than "
+            "serving a dashboard that is broken in silence." % path
+        )
+    return raw.decode("utf-8")
 
 
 # Design tokens + shared shell: every watch page renders through these,
 # so a redesign is a token/component edit, not a page-by-page hunt.
 # STYLE keeps its <style> wrapper here so client/style.css is
 # real, lintable css; the assembled bytes are unchanged.
-STYLE = "<style>" + _read_client("style.css") + "</style>"
+# Read once, into a dict, so `serving_report` can answer "which revision of
+# the CLIENT am I running" from the very bytes that were loaded rather than
+# from a second read taken later — the same reason SELF_SRC is captured at
+# import. Re-reading would answer with an edit made since, which is the
+# reverse of the question.
+_CLIENT_SRC = {name: _read_client(name) for name in _CLIENT_ASSETS}
 
-APP_BODY = _read_client("app_body.html")
+STYLE = "<style>" + _CLIENT_SRC["style.css"] + "</style>"
 
-COMPONENTS_JS = _read_client("components.js")
+APP_BODY = _CLIENT_SRC["app_body.html"]
 
-VIEWS_JS = _read_client("views.js")
+COMPONENTS_JS = _CLIENT_SRC["components.js"]
 
-FAVICON_JS = _read_client("favicon.js")
+VIEWS_JS = _CLIENT_SRC["views.js"]
 
-ROUTER_JS = _read_client("router.js")
+FAVICON_JS = _CLIENT_SRC["favicon.js"]
 
-COMMAND_JS = _read_client("command.js")
+ROUTER_JS = _CLIENT_SRC["router.js"]
 
-SHADER_JS = _read_client("shader.js")
+COMMAND_JS = _CLIENT_SRC["command.js"]
+
+SHADER_JS = _CLIENT_SRC["shader.js"]
 
 
 def page_shell(title, body, js):
@@ -948,10 +995,48 @@ try:
 except OSError:
     SELF_SRC = None
 
+# ...and the other half of the same answer (#397). watch.py's bytes used to
+# BE the dashboard — every css and js byte lived in a string literal in this
+# file — so SELF_SRC alone was a complete identity. It no longer is: 10,500
+# of those lines now live under client/, and the ordinary UI commit leaves
+# this file byte-identical. Without the client here, the `.gserve` row would
+# report `current` for a dashboard serving last week's stylesheet, which is
+# exactly the #140 wound ("make a stale view announce itself") reopened by
+# refactor rather than by a proxy.
+#
+# The client half comes from _CLIENT_SRC — the strings actually loaded,
+# re-encoded — rather than from a second read, so it is the identity of what
+# is RUNNING and not of what is on disk now. utf-8 round-trips exactly, so
+# this is byte-equal to the file that was read. Non-client siblings (the
+# vendored reconciler) are read here; they are static between deploys.
+try:
+    _self_assets = {"client/" + _n: _s.encode("utf-8")
+                    for _n, _s in _CLIENT_SRC.items()}
+    for _rel in DATA_SIBLINGS:
+        if _rel not in _self_assets:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   _rel), "rb") as _f:
+                _self_assets[_rel] = _f.read()
+    SELF_ASSET_SRC = _self_assets
+except OSError:
+    SELF_ASSET_SRC = None
 
-def serving_report(target, src=None, path="watch.py"):
-    """Which revision of `path` this process is running, against `target`'s
-    history of it.
+
+def serving_report(target, src=None, path="watch.py", assets=None):
+    """Which revision of the DASHBOARD this process is running, against
+    `target`'s history of it.
+
+    The dashboard is `path` PLUS the client assets it loaded (#397) — see
+    SELF_ASSET_SRC. A revision matches only when every one of those files
+    matches it, because a client-only commit leaves `path` identical and
+    would otherwise read as `current`.
+
+    `src` and `assets` are the two halves of ONE identity, so they default
+    together: supply neither and you get this process's own. Supplying `src`
+    alone means "judge this source", and the asset half then defaults to
+    empty rather than to this process's client — mixing one identity's
+    Python with another's stylesheets would be incoherent, and it is what
+    lets a caller ask the pre-#397 question deliberately.
 
     Every failure is its own named state and none of them is "no match" —
     deployed.py's rule, and the bug it was written for: **a comparison that
@@ -962,6 +1047,14 @@ def serving_report(target, src=None, path="watch.py"):
     Never takes `.git/index.lock`: `--no-optional-locks` on every call. His
     CLAUDE.md carries a live mitigation about that lock.
     """
+    if assets is None:
+        # Only a fully-defaulted call adopts this process's client; see the
+        # docstring. SELF_ASSET_SRC is None when the assets could not be
+        # re-read at import, and that degrades to the watch.py-only answer
+        # rather than to a false match.
+        assets = SELF_ASSET_SRC if src is None else {}
+        if assets is None:
+            assets = {}
     src = SELF_SRC if src is None else src
     out = {"state": None, "rev": None, "missing": [], "note": None}
     if src is None:
@@ -1001,22 +1094,62 @@ def serving_report(target, src=None, path="watch.py"):
         out["note"] = "this project does not carry %s's history" % path
         return out
 
+    def assets_match(rev):
+        """Do the running client assets equal their blobs at `rev`?
+
+        A path ABSENT from `rev` is skipped rather than counted against it:
+        each revision is judged by what IT carried. Every revision before
+        #397 has no `client/` at all, and a target that tracks `watch.py`
+        without the client is an ordinary project rather than a broken one —
+        disqualifying those would turn every such answer into "matches no
+        revision", which is the confident-wrong-answer this module exists to
+        refuse. Where the file IS carried it is compared, which is the whole
+        of the fix: at HEAD the assets exist, so a stale client cannot pass.
+        """
+        for rel, want in assets.items():
+            try:
+                blob = g("show", "%s:%s" % (rev, rel))
+            except (OSError, subprocess.SubprocessError):
+                continue                    # not carried at this revision
+            if blob != want:
+                return False
+        return True
+
     try:
-        if g("show", "HEAD:%s" % path) == src:
-            out["state"] = SERVE_CURRENT
-            out["rev"] = g("rev-parse", "--short", "HEAD").decode().strip()
-            return out
+        head_ok = g("show", "HEAD:%s" % path) == src
     except (OSError, subprocess.SubprocessError) as exc:
         out["state"] = SERVE_ERROR
         out["note"] = "could not read %s at HEAD: %s" % (path, exc)
         return out
+    if head_ok:
+        if assets_match("HEAD"):
+            out["state"] = SERVE_CURRENT
+            out["rev"] = g("rev-parse", "--short", "HEAD").decode().strip()
+            return out
+        # watch.py matches HEAD but the client does not. Pre-#397 this state
+        # was unreachable — the css lived in watch.py — and it is exactly the
+        # one a watch.py-only comparison reports as `current`.
+
+    # Widen the candidate revisions to every file in the identity, or a
+    # client-only commit is not among them and a stale client falls through
+    # to SERVE_UNTRACKED ("matches no revision"), which is a confident wrong
+    # answer rather than a silent one. The emptiness check above stays scoped
+    # to `path`: it asks whether this target carries the dashboard at all.
+    if assets:
+        try:
+            revs = g("log", "--format=%H", "--", path,
+                     *sorted(assets)).decode().split() or revs
+        except (OSError, subprocess.SubprocessError):
+            pass                        # keep the narrower list; never fail here
 
     for rev in revs:
         try:
-            if g("show", "%s:%s" % (rev, path)) == src:
-                break
+            if g("show", "%s:%s" % (rev, path)) != src:
+                continue
         except (OSError, subprocess.SubprocessError):
             continue
+        if assets_match(rev):
+            break
     else:
         # Every revision was read and none matched. The ONLY path that may
         # say "no match", and it is reached only after the loop truly ran.
@@ -1031,7 +1164,7 @@ def serving_report(target, src=None, path="watch.py"):
         out["missing"] = [
             (line.split(" ", 1) + [""])[:2] for line in
             g("log", "--format=%h %s", "%s..HEAD" % rev, "--",
-              path).decode().splitlines()]
+              path, *sorted(assets)).decode().splitlines()]
     except (OSError, subprocess.SubprocessError) as exc:
         out["note"] = "serving an older revision; could not name it: %s" % exc
     return out
@@ -5133,24 +5266,35 @@ def _autoreload_sources():
     `just watch --autoreload --dev` would serve stale CSS until a manual
     restart — the exact loop a design lane lives in.
     """
-    return [__file__] + [os.path.join(CLIENT_DIR, name)
-                         for name in _CLIENT_ASSETS]
+    # abspath for the same reason CLIENT_DIR uses it: a relative __file__
+    # after any chdir would silently stop watching watch.py itself, and
+    # _sources_mtime's OSError handling would hide that it had.
+    return [os.path.abspath(__file__)] + [os.path.join(CLIENT_DIR, name)
+                                          for name in _CLIENT_ASSETS]
 
 
 def _sources_mtime():
-    """Newest mtime across the watched sources, or None if none can be read.
+    """{path: mtime} for every watched source, or None if ANY is absent.
 
-    A missing file is skipped rather than fatal: an editor writing a client
-    asset via rename briefly leaves it absent, and re-execing on that race
-    would be worse than waiting one interval.
+    None means "do not judge this tick", and the caller skips. That is the
+    whole mitigation for the rename window: an editor saving a client asset
+    via rename briefly unlinks it, and re-execing then imports a file that is
+    not there — `FileNotFoundError`, dev server dead, no supervisor.
+
+    A per-path MAPPING, not the newest mtime, and that is the fix rather than
+    a tidy-up. `max()` over the readable files *drops* when the absent file is
+    the newest one — and the newest one is precisely the file being edited,
+    which is the only case this guard is about. So the previous version
+    re-exec'd on a lower max during exactly the window it documented itself
+    as protecting.
     """
-    stamps = []
+    stamps = {}
     for path in _autoreload_sources():
         try:
-            stamps.append(os.path.getmtime(path))
+            stamps[path] = os.path.getmtime(path)
         except OSError:
-            continue
-    return max(stamps) if stamps else None
+            return None
+    return stamps
 
 
 def _watch_source_and_restart(interval=1.0):
@@ -5179,10 +5323,17 @@ def main(argv=None):
         net = network_options(args.bind, args.allow_host, args.url_host, port)
     except ValueError as exc:
         raise SystemExit(f"watch.py: {exc}") from exc
+    # Build the handler OUTSIDE the bind's except. It used to sit inside the
+    # try, so any OSError it raised was reported as a port conflict — and
+    # since #397 the handler reaches the client assets, which makes OSError
+    # ("client asset X is empty", a missing client/ under a bad #425 layout)
+    # a routine outcome of this call rather than an unreachable one. A missing
+    # stylesheet announced as "cannot bind — another instance may be running"
+    # sends whoever debugs it to the wrong subsystem entirely; let it raise
+    # with its own traceback instead.
+    handler = make_handler(args.target, dev=args.dev, authority=net.authority)
     try:
-        server = server_class(net.family)(
-            (net.bind, port),
-            make_handler(args.target, dev=args.dev, authority=net.authority))
+        server = server_class(net.family)((net.bind, port), handler)
     except OSError as e:
         raise SystemExit(
             f"watch.py: cannot bind {net.bind}:{port} ({e.strerror}). "

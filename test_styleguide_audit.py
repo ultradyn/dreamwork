@@ -9,6 +9,7 @@ nothing, and this repo has caught three that were passing on their own bug.
 """
 
 import ast
+import os
 import pathlib
 import subprocess
 import sys
@@ -239,6 +240,86 @@ def test_the_cli_actually_runs_end_to_end():
     assert "watch.py commits:" in proc.stdout, (
         "audit-styleguide produced no classification line — the checks above "
         "would pass on a silent no-op.\nstdout:\n%s" % proc.stdout[-2000:]
+    )
+
+
+def _client_only_repo(tmp_path, monkeypatch):
+    """A real 2-commit repo whose HEAD commit touches ONLY `client/`.
+
+    Real git, not a fake: the thing under test is what `classify_range` does
+    with a commit's file list, and every step from `git log` to the verdict is
+    part of that. A monkeypatched `touched_files` would have let the bug this
+    test exists for survive, because the bug was in the CALLER's filter, not
+    in anything a fake would have been asked.
+    """
+    monkeypatch.chdir(tmp_path)
+    # Isolate from the user's global config: a commit hook, a gpg-sign
+    # default, or a template dir would otherwise decide whether this passes.
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+
+    def run(*args):
+        subprocess.run(["git", *args], check=True, capture_output=True)
+
+    run("init", "-q", "-b", "main")
+    run("config", "user.email", "audit-test@example.invalid")
+    run("config", "user.name", "audit test")
+
+    (tmp_path / "client").mkdir()
+    (tmp_path / "client" / "style.css").write_text(".a { color: red }\n")
+    (tmp_path / "watch.py").write_text("SERVER = 1\n")
+    (tmp_path / "watch-design.md").write_text("# styleguide\n")
+    run("add", "-A")
+    run("commit", "-qm", "baseline")
+
+    # The commit under test: a new component, in client/ only, with no
+    # styleguide entry and no escape hatch — the canonical MISS.
+    (tmp_path / "client" / "style.css").write_text(
+        ".a { color: red }\n.b { color: blue }\n"
+    )
+    run("commit", "-qam", "add the .b component")
+    return a.git("rev-parse", "HEAD").stdout.strip()
+
+
+def test_a_client_only_commit_is_classified_not_skipped(tmp_path, monkeypatch):
+    """Post-extraction the NORMAL UI commit touches no watch.py at all.
+
+    `classify_ui` grew a `client/` branch at #397 and `is_relevant` grew the
+    prefix, but `classify_range`'s two filters still asked `"watch.py" in
+    files` — so the branch was unreachable for exactly the commits it was
+    written for, and every client-only commit was counted `untouched`. The
+    audit was permanently green over the shape the extraction created, and
+    nothing here could see it: the extraction commit itself touches watch.py,
+    so the audit appeared to work.
+
+    Production lines: the two `touches_ui_source(...)` calls in
+    `classify_range` (`ui_of`'s memo gate and the classification loop). Revert
+    either to `"watch.py" not in files` and this goes red.
+    """
+    head = _client_only_repo(tmp_path, monkeypatch)
+    files = a.touched_files(head)
+
+    # Preconditions, asserted rather than assumed. Control 1 in the review that
+    # found this: the same css change PLUS one line in watch.py is reported
+    # correctly even by the buggy filter, so a fixture that drifts into
+    # touching watch.py would make this test prove nothing.
+    assert "watch.py" not in files, (
+        f"fixture no longer isolates the client-only case (touched {sorted(files)})"
+    )
+    assert any(f.startswith(a.CLIENT_PREFIX) for f in files), (
+        f"fixture touches no client asset at all (touched {sorted(files)})"
+    )
+
+    res = a.classify_range("HEAD~1..HEAD", 3)
+
+    assert res["untouched"] == 0, (
+        "a client-only UI commit was skipped as untouched — classify_ui was "
+        "never asked about it"
+    )
+    assert [short for short, *_ in res["ui_miss"]] == [head[:len(res["commits"][0][1])]], (
+        f"expected the client-only commit to be reported as a MISS; got "
+        f"ui_miss={res['ui_miss']} non_ui={res['non_ui']} "
+        f"untouched={res['untouched']}"
     )
 
 
