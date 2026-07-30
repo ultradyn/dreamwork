@@ -2256,6 +2256,46 @@ the store, and **re-runs the migration forward** under a fresh lease — it
 written again, so the version gate (`guard_markdown_write`) still refuses a
 direct Markdown mutation after rollback.
 
+## The `task_event` journal `.jsonl` — portable export/replay of the transition log (#460)
+
+`dev/replay_events.py` (`export` / `replay` / `merge` / `verify`) reads and
+writes a portable form of the store's `task_event` chain. One JSON object per
+line, in chain (ordinal) order:
+
+```json
+{"task_id": 500, "at": "2026-07-29T10:00:00", "cause": "filed_from_command",
+ "from_state": null, "to_state": "open", "actor": "loop",
+ "detail": "", "receipt_id": null}
+```
+
+- **Fields:** `task_id` (int), `at` (ISO-8601), `cause`, `from_state` (null
+  for an arrival), `to_state`, `actor`, `detail` (`""`), `receipt_id`
+  (null). `receipt_id` is stored on the row but is **not** part of the hash —
+  see `ledger_store.canonical_event_bytes`.
+- **`ordinal` / `prev_hash` / `hash` are NOT carried.** Ordinal is the line
+  number, and the chain is **recomputed** from the canonical fields via the
+  shared construction (`ledger_store.chain_events` /
+  `append_chained_event`) — never restated in the tool (#352's one-applier
+  rule). That recomputation is the whole of the determinism proof: the log is
+  the canonical events and every structural column is rebuilt.
+- **The log narrates transitions, not entities.** A replayed task row keeps
+  its id and its state (the latest transition's `to_state`); `title`, `body`,
+  `priority`, `origin`, `type`, `blocked_on` and `body_digest` are NOT in
+  this log — the measured #294 finding at #460's gate, recorded in the
+  fold. A replay marks those columns as stubs rather than guessing.
+- **Merging two streams** is ONE deterministic total order — `(at, task_id,
+  arrival-rank, from_state, to_state, actor, detail)` — so `merge(a,b) ==
+  merge(b,a)` and within-stream shuffles replay byte-identically. No
+  deduplication: a genuinely shared event is a coordination bug to surface,
+  not to collapse.
+
+**Checked by the tool's own round-trip tests** (`test_replay_events.py`:
+determinism, fidelity, merge invariance), not by `lint.py` — the export's
+path is chosen by whoever runs the tool, so there is no fixed file for the
+linter to read. The honest consequence, filed at the gate as #549: the
+canonical byte format the chain is made of is exercised everywhere and pinned
+nowhere — a golden vector against this contract is the owed check.
+
 ## `review_decision` — a decision about a review artifact is a store row, not a task (#289, R5)
 
 Part of the SQLite store (`ledger.sqlite3`), schema v2. A row records ONE
