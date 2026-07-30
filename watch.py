@@ -964,8 +964,29 @@ STYLE = """<style>
     filter:blur(6px); transform:translateY(3px); }
   .bdtip.depart { opacity:0; filter:blur(6px); transform:translateY(-3px); }
   .bdtip .bdnum { color:var(--lit); }
+  /* #559 — content cross-dissolve for a live tip switching columns. The
+     CONTAINER persists: no .depart, no arrival pose, no opacity dip
+     (transitions.md — persistence is not a transition). The CONTENT cross-
+     fades on the SAME .42s opacity/filter/transform envelope the tip's own
+     arrival (.pose) and departure (.depart) already use, so it is the one
+     arrival/departure gesture one level down — never a second idiom. Old
+     content rides an outgoing .bdx ghost (the .depart shape: →opacity 0,
+     blur 6px, −3px); new content rides .bdi (the .pose→rest shape:
+     opacity 0→1, blur 6→0, +3px→0). */
+  .bdtip .bdx, .bdinsp .bdx { position:absolute; top:0; left:0; right:0;
+    pointer-events:none; opacity:1; filter:blur(0); transform:translateY(0);
+    transition:opacity .42s ease, filter .42s ease,
+               transform .42s cubic-bezier(.32,.1,.2,1); }
+  .bdtip .bdx.out, .bdinsp .bdx.out { opacity:0; filter:blur(6px);
+    transform:translateY(-3px); }
+  .bdtip .bdi, .bdinsp .bdi { opacity:0; filter:blur(6px);
+    transform:translateY(3px); transition:opacity .42s ease, filter .42s ease,
+               transform .42s cubic-bezier(.32,.1,.2,1); }
+  .bdtip .bdi.in, .bdinsp .bdi.in { opacity:1; filter:blur(0);
+    transform:translateY(0); }
   @media (prefers-reduced-motion: reduce) {
     .bdtip { transition:none; }
+    .bdtip .bdx, .bdtip .bdi, .bdinsp .bdx, .bdinsp .bdi { transition:none; }
   }
   /* #298/#487 column inspector — the RICHER reading on #417's seam, not a
      second hover. The glance tip stays one ellipsised line across the
@@ -7752,14 +7773,53 @@ function hideBdTip(immediate) {
 /* settle=true: land fully visible with no pose replay. Used by #494's
    rearm across the tick re-render — from his POV the tip never left, so
    re-posing every two seconds would be motion with nothing behind it. */
+/* #559 — cross-dissolve a live tip/inspector's CONTENT when its column
+   changes. The container persists (no .depart, no pose, no opacity dip);
+   old content becomes an outgoing .bdx ghost (the .depart envelope) and
+   new content rides .bdi (the arrival envelope), both on the same .42s the
+   surface's own arrival/departure use. Reduced motion snaps (content set
+   directly, no layers). A no-op when the values are unchanged. */
+function bdContentSwap(el, freshHTML) {
+  if (bdtipReduced()) { el.innerHTML = freshHTML; return; }
+  const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
+  const tmp = document.createElement('div'); tmp.innerHTML = freshHTML;
+  // current content: a prior swap leaves it in a .bdi layer; read that, not
+  // the layered innerHTML (else the ghost would wrap a nested .bdi).
+  const cur = el.querySelector('.bdi');
+  const curHTML = cur ? cur.innerHTML : el.innerHTML;
+  if (norm((cur || el).textContent) === norm(tmp.textContent)) {
+    el.innerHTML = freshHTML; return;     // same values — no dissolve
+  }
+  const out = document.createElement('div');
+  out.className = 'bdx';                   // outgoing ghost, old content
+  out.innerHTML = curHTML;
+  const ind = document.createElement('div');
+  ind.className = 'bdi';                   // incoming, new content
+  ind.innerHTML = freshHTML;
+  el.innerHTML = '';
+  el.append(out, ind);                     // ind in-flow sizes the box
+  void el.offsetWidth;                     // start pose, then play both
+  requestAnimationFrame(() => {
+    out.classList.add('out');              // old departs (.depart shape)
+    ind.classList.add('in');               // new arrives (.pose→rest)
+  });
+  const clear = () => { if (out.parentNode) out.remove(); };
+  out.addEventListener('transitionend', clear, { once: true });
+  setTimeout(clear, 540);                  // safety past the .42s envelope
+}
 function showBdTip(col, settle) {
   const bd = col && col.closest && col.closest('.bd');
   const tip = bd && bd.querySelector('.bdtip');
   if (!tip || !col || !col.dataset || col.dataset.open === undefined) return;
   if (bdtipHideTimer) { clearTimeout(bdtipHideTimer); bdtipHideTimer = null; }
   const same = bdtipCol === col && !tip.hidden;
+  const live = !tip.hidden && !tip.classList.contains('depart');
+  const fresh = bdtipText(col);
   bdtipCol = col;
-  tip.innerHTML = bdtipText(col);
+  // #559: a LIVE tip switching columns persists and cross-dissolves its
+  // content — no depart, no arrival pose, no opacity dip on the container.
+  if (live && !same && !settle && !bdtipReduced()) { bdContentSwap(tip, fresh); return; }
+  tip.innerHTML = fresh;
   if (same || settle) {
     tip.hidden = false;
     tip.classList.remove('depart', 'pose');
@@ -7775,8 +7835,35 @@ function showBdTip(col, settle) {
   requestAnimationFrame(() => tip.classList.remove('pose'));
 }
 // pointer + focus, delegated — columns are rebuilt every tick
+/* #559 — the hit zone is the WHOLE column: the top open-tasks section
+   (.bdnet), the bottom landed/arrivals section (.bdflow), and the gap
+   between them. The two sections are separate flex tracks whose columns
+   are pixel-aligned by index, so a point over ANY of them resolves to the
+   net column at that index (the source of truth — it carries data-open,
+   is keyboard-focusable, and feeds every reader). Geometry, not a DOM
+   walk: the flow columns carry no data and are not inside .bdnet, so the
+   old `.closest('.bdnet .bdcol[data-open]')` hit-test missed the entire
+   bottom half. Returns null off the chart (above/below/beside). */
+function bdColAtPoint(x, y) {
+  const bd = document.querySelector('.bd');
+  if (!bd) return null;
+  const net = bd.querySelector('.bdnet');
+  if (!net) return null;
+  const flow = bd.querySelector('.bdflow');
+  const top = net.getBoundingClientRect().top;
+  const bot = flow ? flow.getBoundingClientRect().bottom
+                   : net.getBoundingClientRect().bottom;
+  if (y < top - 1 || y > bot + 1) return null;   // off the column strip
+  for (const c of net.children) {
+    if (!c.dataset || c.dataset.open === undefined) continue;
+    const r = c.getBoundingClientRect();
+    if (x >= r.left && x <= r.right) return c;
+  }
+  return null;
+}
 addEventListener('pointerover', e => {
-  const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
+  let col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
+  if (!col) col = bdColAtPoint(e.clientX, e.clientY);   // #559 bottom section
   if (!col) return;
   lastBdPtr = { x: e.clientX, y: e.clientY };
   showBdTip(col);
@@ -7790,13 +7877,13 @@ addEventListener('pointermove', e => {
     lastBdPtr = { x: e.clientX, y: e.clientY };
 }, { passive: true });
 addEventListener('pointerout', e => {
-  const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
-  if (!col) return;
-  const to = e.relatedTarget;
-  if (to && col.contains(to)) return;
-  if (to && to.closest && to.closest('.bdnet .bdcol[data-open]') === col) return;
-  // leave the tip up while focus stays on the column
-  if (document.activeElement === col) return;
+  // #559: a column's full height is ONE hit zone, and moving between
+  // columns PERSISTS the tip (showBdTip cross-dissolves, never hide-and-
+  // show). Only a genuine leave — the pointer over NO column — departs.
+  if (bdColAtPoint(e.clientX, e.clientY)) return;
+  // leave the tip up while focus stays on a column (keyboard parity)
+  const ae = document.activeElement;
+  if (ae && ae.matches && ae.matches('.bdnet .bdcol[data-open]')) return;
   hideBdTip(false);
   bdinspCancel();
   if (!bdinspPin) hideBdInsp(false);   // a pinned (tapped) reading stays
@@ -7931,8 +8018,19 @@ function showBdInsp(col, settle) {
   bdinspCancel();
   if (bdinspHideTimer) { clearTimeout(bdinspHideTimer); bdinspHideTimer = null; }
   const same = bdinspCol === col && !el.hidden;
+  const live = !el.hidden && !el.classList.contains('depart');
+  const fresh = bdinspHTML(col);
   bdinspCol = col;
-  el.innerHTML = bdinspHTML(col);
+  // #559: a LIVE inspector switching columns persists and cross-dissolves
+  // its content — no depart, no arrival pose, no opacity dip on the box.
+  // .bdi (new content) is in-flow, so it sizes the box before bdinspLay.
+  if (live && !same && !settle && !bdtipReduced()) {
+    el.hidden = false;
+    bdContentSwap(el, fresh);
+    bdinspLay(bd, col, el);
+    return;
+  }
+  el.innerHTML = fresh;
   el.hidden = false;               // visible before measuring
   bdinspLay(bd, col, el);
   if (same || settle) { el.classList.remove('depart', 'pose'); return; }
@@ -8001,10 +8099,8 @@ function restoreBdHover(s) {
   bdinspCancel();
   let under = null;
   if (lastBdPtr) {
-    try {
-      const el = document.elementFromPoint(lastBdPtr.x, lastBdPtr.y);
-      under = el && el.closest && el.closest('.bdnet .bdcol[data-open]');
-    } catch (e) {}
+    try { under = bdColAtPoint(lastBdPtr.x, lastBdPtr.y); }   // #559 full-height
+    catch (e) {}
   }
   if (s.focusT0) {
     const fc = bdColByT0(s.focusT0);
