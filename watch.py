@@ -5411,6 +5411,16 @@ function remindSlotInner() {
     ' onclick="sendRemind()">remind</button>';
 }
 function paintRemindSlot() {
+  // #553: a live posture arm wins the slot. sendRemind's cooldown-end
+  // setTimeout calls this to repaint the button back, but if the human
+  // armed an override during the cooldown the 'arming override…' copy is
+  // live — repainting here would resurrect the button for ≤2s until the
+  // next data tick re-renders (morphdom self-heals). pendingPostIsLive is
+  // the same predicate the armed state itself uses (paintSlot), so there is
+  // no second test of arm-ness to drift. The next tick's posturePicker
+  // rebuilds the slot from the same predicate, so the arm is restored if
+  // it is still live then.
+  if (pendingPostIsLive(readPostPending())) return;
   const src = document.getElementById('posture-src');
   if (src) src.innerHTML = remindSlotInner();
 }

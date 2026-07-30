@@ -11,6 +11,10 @@
    - the cooldown state is module-scope JS, so a live re-render (the 2s tick)
      mid-cooldown repaints the confirmation, never a clickable button
    - after the cooldown the control is armed again (button returns)
+   - #553: the cooldown-end setTimeout does NOT clobber a live arm —
+     press remind, then arm a posture override mid-cooldown, advance past
+     the cooldown (page.clock); the slot stays 'arming override…', never
+     the resurrected button
 
    usage: node remindbtn.mjs <outdir> <port>   (own server; port ignored,
           a free one is taken — see posture.mjs for the port-collision why) */
@@ -40,10 +44,13 @@ const { ok, present, declare, finish, notes, errs } = makeReporter();
 declare({
   drives: 'scratch target on / — ambient remind button, one POST on click, ' +
           'confirmation visible, no retrigger for 10s across live re-renders, ' +
-          'button returns after cooldown',
+          'button returns after cooldown; #553: the cooldown-end setTimeout ' +
+          'does not clobber a live arm (page.clock interleaving)',
   traceWindow: 'POST observation via ctx request listener; cooldown is the ' +
                'real 10s (REMIND_COOLDOWN_MS); re-render survival sampled by ' +
-               'waiting through 2s ticks inside the cooldown',
+               'waiting through 2s ticks inside the cooldown; #553 advances ' +
+               'virtual time past the cooldown via page.clock runFor while a ' +
+               'posture arm is live',
 });
 
 // Redirect the spawned server's /remind relay away from the real shared
@@ -194,6 +201,126 @@ notes.push('rearmed after cooldown: ' + rearmed);
 ok('button returns after the cooldown (control armed again)', rearmed);
 // And it did not fire a third request by reappearing.
 ok('no extra POST from rearming', posts.length === 1);
+
+// ── #553: the cooldown-end setTimeout must not clobber a live arm ──────
+// The defect: sendRemind's setTimeout(paintRemindSlot, REMIND_COOLDOWN_MS)
+// repaints #posture-src unconditionally when the cooldown ends. If the human
+// armed a posture override DURING that window the armed state
+// ('arming override…') is live, and the timer's repaint resurrects the
+// remind button — hiding the armed copy until the next data tick (≤2s,
+// morphdom self-heals). The fix: paintRemindSlot early-returns on
+// pendingPostIsLive(readPostPending()), the same predicate the armed state
+// itself uses (paintSlot at watch.py:~5548). No second test of arm-ness.
+//
+// page.clock (bdinput (d)/(e) is the landed idiom) fakes the production
+// timers. clock.install is called BEFORE the second remind so the cooldown
+// setTimeout is created AFTER install — provably faked, firing at the
+// exact virtual time (not real time), which is what makes the interleaving
+// deterministic rather than load-dependent: a timer scheduled before
+// install fires on REAL wall time, so the real-time delta between the
+// remind and the install decides whether the clobber lands before or after
+// the arm — and under load that delta crosses 7s and the check goes green
+// over the bug. The arm is started 3s into virtual time, so its RUN_ARM_MS
+// (10s) outlives the remind cooldown's fire point by ≥3s: when the
+// cooldown-end repaint runs the arm is live by construction. The fixture's
+// content is unchanged across this phase, so the /mtime tick's hash-skip
+// holds — a re-render here would self-heal the bug and the red-run would
+// stay green over it (the exact failure mode the repo warns about: a check
+// that launders the value it was written to catch). The test's own sleep/poll
+// uses Node timers, which page.clock does NOT fake.
+const postsBefore553 = posts.length;
+// Install page.clock BEFORE the remind so the cooldown setTimeout is faked
+// (created after install). Virtual time freezes at T0 = real-now; runFor
+// fires due fake timers exactly. The page's fetch (real network I/O) and
+// the test's Node sleep/poll are unaffected by clock faking.
+await p.clock.install();
+// Press remind again for a fresh cooldown (the first expired in the rearm
+// phase above). The click triggers sendRemind → real fetch (resolves on
+// real I/O) → remindCooldownUntil = Date.now()+10000 = T0+10000 (virtual
+// Date) → setTimeout(paintRemindSlot, 10000) at virtual T0+10000 (FAKE).
+// Exactly one more POST expected.
+try {
+  await p.click('#remind-btn', { timeout: 5000 });
+} catch (e) {
+  errs.push('#553 click #remind-btn: ' + e.message.split('\n')[0]);
+}
+let confirmed553 = false;
+for (let i = 0; i < 40; i++) {
+  const st = await p.evaluate(() => {
+    const src = document.getElementById('posture-src');
+    return {
+      text: src ? src.textContent.trim() : '',
+      hasBtn: !!document.getElementById('remind-btn'),
+    };
+  });
+  if (posts.length === postsBefore553 + 1 && /sent/i.test(st.text) && !st.hasBtn) {
+    confirmed553 = true; break;
+  }
+  await sleep(100);
+}
+notes.push('#553 fresh remind: confirmed=' + confirmed553 +
+           ' posts=' + posts.length);
+ok('#553 precondition: a fresh remind started (one more POST, confirming)',
+   confirmed553 && posts.length === postsBefore553 + 1);
+// Advance 3s of virtual time — still inside the 10s cooldown (the fake
+// cooldown setTimeout fires at virtual T0+10000). This gives the arm a 3s
+// head-start so it is live for ≥3s PAST the cooldown-end repaint.
+await p.clock.runFor(3000);
+// Precondition: the cooldown is still active at this virtual time — the
+// setTimeout has NOT fired yet. If it already fired the interleaving is
+// vacuous and the check cannot catch the bug; fail loudly, never silently.
+const preArm553 = await p.evaluate(() => {
+  const src = document.getElementById('posture-src');
+  return {
+    text: src ? src.textContent.trim() : '',
+    hasBtn: !!document.getElementById('remind-btn'),
+  };
+});
+notes.push('#553 pre-arm slot (cooldown still active): ' +
+           JSON.stringify(preArm553));
+ok('#553 precondition: cooldown still active when arming (sent, no button)',
+   /sent/i.test(preArm553.text) && !preArm553.hasBtn);
+// Arm a posture override: pick a DIFFERENT pace stop ('steady' vs the
+// committed default 'idle'). This writes a live pending entry (until =
+// virtual-now + RUN_ARM_MS = T0+13000) and paints 'arming override…' in
+// the slot. Production line: pickPostureAxis → armPostureDraft → writePostPending.
+await p.evaluate(() => pickPostureAxis('pace', 'steady'));
+const armedSlot553 = await p.evaluate(() => {
+  const src = document.getElementById('posture-src');
+  return {
+    text: src ? src.textContent.trim() : '',
+    hasBtn: !!document.getElementById('remind-btn'),
+    pendingLive: pendingPostIsLive(readPostPending()),
+  };
+});
+notes.push('#553 armed slot (the arm took the slot): ' +
+           JSON.stringify(armedSlot553));
+ok('#553 precondition: the arm is live and the slot reads "arming override…"',
+   armedSlot553.pendingLive && /arming override/i.test(armedSlot553.text));
+// Advance to virtual T0+10000: fires the fake cooldown setTimeout
+// (paintRemindSlot) while the arm is still live (until T0+13000, 3s margin).
+// The arm's own commit setTimeout (T0+13000) does NOT fire.
+await p.clock.runFor(7000);
+const afterCooldown553 = await p.evaluate(() => {
+  const src = document.getElementById('posture-src');
+  const btn = document.getElementById('remind-btn');
+  return {
+    text: src ? src.textContent.trim() : '',
+    hasBtn: !!btn,
+    btnLabel: btn ? btn.textContent.trim() : '',
+    pendingLive: pendingPostIsLive(readPostPending()),
+  };
+});
+notes.push('#553 after cooldown setTimeout fired: ' +
+           JSON.stringify(afterCooldown553));
+// The fix: paintRemindSlot early-returns on pendingPostIsLive, so the armed
+// copy survives the timer. The bug: the timer resurrects the remind button,
+// visually withdrawing a state the human created.
+ok('#553 cooldown-end repaint does not clobber a live arm (slot still armed)',
+   afterCooldown553.pendingLive
+   && /arming override/i.test(afterCooldown553.text)
+   && !afterCooldown553.hasBtn);
+await p.clock.resume();
 
 await br.close();
 stop();
