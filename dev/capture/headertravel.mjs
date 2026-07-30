@@ -14,6 +14,7 @@
    reduced motion (where all of it must be instant).
    usage: node headertravel.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -75,7 +76,9 @@ for (const reduced of [false, true]) {
                   reducedMotion: reduced ? 'reduce' : 'no-preference' });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(String(e)));
-  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(900);
+  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+  // #536 render readiness — wait for the chrome (#cmdplus) the trace tags first, not a fixed sleep (#428 class)
+  await waitFor(p, '#cmdplus');
   // onto the review view (column widens)
   const onto = await p.evaluate(TRACE('/review?p='));
   await sleep(400);

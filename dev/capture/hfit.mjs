@@ -13,6 +13,7 @@
 // Ordinary guard shape: takes (OUT, PORT) — an output dir and a running
 // watch server on the fixture. See dev/capture/README.md.
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync } from 'node:fs';
 import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39890';
@@ -73,7 +74,8 @@ async function measure(page) {
   const ctx = await browser.newContext({ viewport: PHONE });
   const page = await ctx.newPage();
   await page.goto(BASE + '/', { waitUntil: 'networkidle' });
-  await sleep(700);
+  // #536 render readiness — wait for the #cmdpalette the guard measures first, not a fixed sleep (#428 class)
+  await waitFor(page, '#cmdpalette');
   const subj = await page.evaluate(() => {
     const pal = document.getElementById('cmdpalette');
     const menu = document.getElementById('cmdmenu');

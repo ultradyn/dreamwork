@@ -18,6 +18,7 @@
    Writes to the target it is pointed at, so point it at a scratch copy.
    usage: node regroup.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -99,7 +100,9 @@ for (const reduced of [false, true]) {
     reducedMotion: reduced ? 'reduce' : 'no-preference' });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(String(e)));
-  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(1000);
+  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+  // #536 render readiness — wait for the .qa.open cards the guard regroups first, not a fixed sleep (#428 class)
+  await waitFor(p, '.qa.open');
   const openCount = await p.evaluate(() => document.querySelectorAll('.qa.open').length);
   if (!openCount) {
     ok('fixture has an open question to answer (else the travel checks are vacuous)',

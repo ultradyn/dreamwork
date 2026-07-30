@@ -29,6 +29,7 @@
 
    usage: node history.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -51,7 +52,8 @@ const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webg
 const p = await br.newPage({ viewport: { width: 1100, height: 1000 } });
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
-await sleep(1200);
+// #536 render readiness — wait for the composer chrome (#cmdplus) the guard drives first, not a fixed sleep (#428 class)
+await waitFor(p, '#cmdplus');
 
 const openComposer = async () => {
   if (!await p.evaluate(`!!document.querySelector('#cmdpalette.open')`)) {

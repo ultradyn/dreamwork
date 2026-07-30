@@ -79,6 +79,7 @@
 
    usage: node dissolveperf.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { readFileSync } from 'node:fs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -176,7 +177,8 @@ async function runOnce(condInit, turb) {
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(String(e)));
   await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
-  await sleep(250);
+  // #536 render readiness — wait for the #view the guard traces first, not a fixed sleep (#428 class)
+  await waitFor(p, '#view');
   // the REAL crossfade (pushState, no reload → the rAF hook persists). Drive the
   // exact route he named, with the docked question seeded for the longest body.
   const tNav = await p.evaluate(([rp, rq]) => {

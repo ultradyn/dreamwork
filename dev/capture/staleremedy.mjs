@@ -27,7 +27,7 @@ import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { serveVerified } from './serve.mjs';
-import { midFrames, transitionWindow, framesInWindow } from './dom.mjs';
+import { midFrames, transitionWindow, framesInWindow, waitFor } from './dom.mjs';
 
 const OUT = process.argv[2];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -130,7 +130,8 @@ let beforeState;
   const p = await ctx.newPage();
   p.on('pageerror', e => errs.push(String(e)));
   await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-  await sleep(900);
+  // #536 render readiness — wait for the .gserve row the guard reads first, not a fixed sleep (#428 class)
+  await waitFor(p, '.gserve');
   beforeState = (await deployedOf()).state;
   const r = await p.evaluate(READ);
   notes.push(`current: state=${beforeState} hasAction=${r.hasAction} text=${JSON.stringify(r.text)}`);

@@ -32,6 +32,7 @@
 
    usage: node artifactwrap.mjs <outdir> <port>   (port defaults to 39899) */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -175,7 +176,8 @@ for (const w of WIDTHS) {
     continue;
   }
   served = true;
-  await new Promise(res => setTimeout(res, 150));
+  // #536 render readiness — wait for the .scroller the guard instruments first, not a fixed sleep (#428 class)
+  await waitFor(p, '.scroller');
   const g = await p.evaluate(INSTRUMENT);
 
   // precondition: there is a nav with words to break, and a table with cells.

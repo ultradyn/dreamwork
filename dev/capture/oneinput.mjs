@@ -11,6 +11,7 @@
    Writes to the target it is pointed at, so point it at a scratch copy.
    usage: node oneinput.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -71,7 +72,9 @@ for (const reduced of [false, true]) {
   const posts = [];
   p.on('request', r => { if (/\/(answer|comment)$/.test(r.url()))
     posts.push(r.url().split('/').pop()); });
-  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(1000);
+  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+  // #536 render readiness — wait for the .qa.open cards the guard answers first, not a fixed sleep (#428 class)
+  await waitFor(p, '.qa.open');
   // this script ANSWERS things, so it needs a target's worth of open cards;
   // say so rather than crashing three checks later on a null
   const open = await p.evaluate(() => document.querySelectorAll('.qa.open').length);

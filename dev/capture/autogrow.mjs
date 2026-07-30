@@ -36,7 +36,7 @@
    usage: node autogrow.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { makeReporter } from './report.mjs';
-import { midFrames } from './dom.mjs';
+import { midFrames, waitFor } from './dom.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -166,7 +166,9 @@ for (const reduced of [false, true]) {
     reducedMotion: reduced ? 'reduce' : 'no-preference' });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(String(e)));
-  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(1100);
+  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+  // #536 render readiness — wait for the .qa.open cards the guard grows first, not a fixed sleep (#428 class)
+  await waitFor(p, '.qa.open');
   const tag = reduced ? 'reduced-motion' : 'normal';
 
   // ── the answer/note box, inside the question list ───────────────────────

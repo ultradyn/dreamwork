@@ -15,6 +15,7 @@
    Port: 39891 (this lane's assigned guard port).
    usage: node rundesc.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
@@ -59,7 +60,8 @@ const ctx = await br.newContext({ viewport: { width: 1100, height: 900 } });
 const p = await ctx.newPage();
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-await sleep(700);
+// #536 render readiness — wait for the #runmode section the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '#runmode');
 
 if (!(await present(p, '#runmode', 'run mode section'))) {
   await br.close();

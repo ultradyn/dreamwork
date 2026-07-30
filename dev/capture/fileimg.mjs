@@ -38,6 +38,7 @@
 
    usage: node fileimg.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 import { serveVerified } from './serve.mjs';
 import { mkdirSync, writeFileSync, rmSync, cpSync } from 'node:fs';
@@ -186,8 +187,8 @@ for (const reduced of [false, true]) {
     history.pushState({}, '', '/file?p=' + path);
     dispatchEvent(new PopStateEvent('popstate'));
   }, 'pic.png');
-  // Wait for the view to render and the image to settle.
-  await sleep(900);
+  // #536 render readiness — wait for the #filebody img.fileimg the guard reads first, not a fixed sleep (#428 class)
+  await waitFor(p, '#filebody img.fileimg');
   const imgThere = await present(p, '#filebody img.fileimg',
     'the file view renders an <img class="fileimg">');
   if (!imgThere) { await br.close(); continue; }

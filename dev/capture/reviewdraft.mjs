@@ -59,7 +59,7 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { makeReporter } from './report.mjs';
 import { serveVerified } from './serve.mjs';
-import { resolveStoreKey } from './dom.mjs';
+import { resolveStoreKey, waitFor } from './dom.mjs';
 import { mkdirSync, rmSync, cpSync, utimesSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
@@ -116,7 +116,11 @@ p.on('pageerror', e => errs.push(String(e)));
 // the fixture's P1 open question — its title is the stable data-qid identity
 const Q = 'P1 · 2026-07-25 — a second open question, so answering the first leaves a neighbour to close the gap.';
 const URL = `${BASE}/review?p=.dreamwork/review/fixture-review.html&q=${encodeURIComponent(Q)}`;
-const load = async () => { await p.goto(URL, { waitUntil: 'networkidle' }); await sleep(1300); };
+const load = async () => {
+  await p.goto(URL, { waitUntil: 'networkidle' });
+  // #536 render readiness — wait for the #qdock the guard tags first, not a fixed sleep (#428 class)
+  await waitFor(p, '#qdock');
+};
 
 // tag the live textarea node so a re-render is detectable as an identity change
 const TAG = '__reviewdraft_probe';

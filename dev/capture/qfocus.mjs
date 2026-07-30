@@ -22,6 +22,7 @@
 
    usage: node qfocus.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -61,7 +62,8 @@ const enc = encodeURIComponent(openQ.title);
 
 /* ── the way in: a per-card focus affordance on /questions ──────────────── */
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
-await sleep(900);
+// #536 render readiness — wait for the .qa cards the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '.qa');
 const links = await p.evaluate(() =>
   [...document.querySelectorAll('.qa')].map(card => {
     const a = card.querySelector('a.qfocus');

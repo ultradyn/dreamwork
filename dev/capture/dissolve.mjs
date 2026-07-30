@@ -38,7 +38,7 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
 import { makeReporter } from './report.mjs';
-import { midFrames, transitionWindow, framesInWindow } from './dom.mjs';
+import { midFrames, transitionWindow, framesInWindow, waitFor } from './dom.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`; mkdirSync(OUT, { recursive: true });
 const { ok, declare, finish, checks, notes, errs } = makeReporter();
@@ -70,7 +70,8 @@ async function page(reduced = false) {
   const p = await c.newPage();
   p.on('pageerror', e => errs.push(String(e)));
   await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
-  await sleep(250);
+  // #536 render readiness — wait for the #view the guard traces first, not a fixed sleep (#428 class)
+  await waitFor(p, '#view');
   return { c, p };
 }
 

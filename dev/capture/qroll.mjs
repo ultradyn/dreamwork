@@ -40,6 +40,7 @@
 
    usage: node qroll.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39884';
@@ -86,7 +87,8 @@ const enc = encodeURIComponent(openQ.title);
 
 /* ── the way in: a roll affordance on every OPEN card, nowhere else ─────── */
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
-await sleep(900);
+// #536 render readiness — wait for the .qa cards the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '.qa');
 const afford = await p.evaluate(() =>
   [...document.querySelectorAll('.qa')].map(card => {
     const btn = card.querySelector('button.qroll');

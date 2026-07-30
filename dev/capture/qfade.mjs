@@ -47,6 +47,7 @@
 
    usage: node qfade.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync } from 'node:fs';
 import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39899';
@@ -252,7 +253,8 @@ const open = async (q, opts = {}) => {
   const p = await ctx.newPage();
   p.on('pageerror', e => errs.push(String(e)));
   await p.goto(urlFor(q), { waitUntil: 'networkidle' });
-  await sleep(700);
+  // #536 render readiness — wait for the #qdock .qa the guard paints first, not a fixed sleep (#428 class)
+  await waitFor(p, '#qdock .qa');
   await p.evaluate(PAINT_PLATE);
   await sleep(200);
   return { ctx, p };

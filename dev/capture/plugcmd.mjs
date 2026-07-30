@@ -52,6 +52,7 @@
 
    usage: node plugcmd.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 const OUT = process.argv[2], PORT = process.argv[3] || '39899';
@@ -120,7 +121,8 @@ unload();
 const p = await br.newPage({ viewport: { width: 1100, height: 1000 } });
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
-await sleep(1200);
+// #536 render readiness — wait for the composer chrome (#cmdplus) the guard drives first, not a fixed sleep (#428 class)
+await waitFor(p, '#cmdplus');
 await openComposer(p);
 
 /* the subject, before anything drives it: a build without the composer costs

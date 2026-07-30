@@ -30,7 +30,7 @@
    usage: node prominence.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
-import { midFrames } from './dom.mjs';
+import { midFrames, waitFor } from './dom.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -109,7 +109,8 @@ async function surface(name, sel) {
 
 // ── the dashboard: a standalone expand, and the questions fold (#141) ──────
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-await sleep(1200);
+// #536 render readiness — wait for the .qsec fold the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '.qsec');
 await surface('the questions fold', '.qsec');
 await surface('a standalone expand', '.wrap details:not(.qsec):not(.qthread)');
 

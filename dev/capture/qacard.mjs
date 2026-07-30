@@ -6,6 +6,7 @@
    usage: node qacard.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { makeReporter } from './report.mjs';
+import { waitFor } from './dom.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -68,7 +69,9 @@ const SHAPE = `(card) => { const root = card.querySelector(':scope > .qfold') ||
   order: kids.map(c => c.className || c.tagName.toLowerCase())
 }; }`;
 
-await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(900);
+await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+// #536 render readiness — wait for the .qa cards the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '.qa');
 const qs = await p.evaluate(`[...document.querySelectorAll('.qa')].map(${SHAPE})`);
 await p.screenshot({ path: `${OUT}/questions.png`, fullPage: true });
 
