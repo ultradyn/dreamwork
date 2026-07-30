@@ -24,6 +24,7 @@
    ordinary (OUT, PORT) shape — shared server, shared fixture, drives /questions.
    usage: node dreamfade.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync } from 'node:fs';
 import { makeReporter } from './report.mjs';
 
@@ -100,7 +101,9 @@ for (const reduced of [false, true]) {
     reducedMotion: reduced ? 'reduce' : 'no-preference' });
   const p = await ctx.newPage();
   const perrs = []; p.on('pageerror', e => perrs.push(String(e)));
-  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(1200);
+  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+  // #536 render readiness — wait for the .qa cards the guard reads first, not a fixed sleep (#428 class)
+  await waitFor(p, '.qa');
   const tag = reduced ? 'reduced-motion' : 'normal';
 
   // Find a FOLDED entry — the fixture seeds one (states.mjs depends on it).

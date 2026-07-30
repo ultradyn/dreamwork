@@ -22,6 +22,7 @@
    serves arbitrary repo content.
    usage: node reflow.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -67,7 +68,9 @@ const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl
 const p = await b.newPage({ viewport: { width: 1100, height: 950 } });
 const errs = []; p.on('pageerror', e => errs.push(String(e)));
 
-await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(900);
+await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+// #536 render readiness — wait for the .md prose surface the guard measures first, not a fixed sleep (#428 class)
+await waitFor(p, '.md');
 const qm = await p.evaluate(`(${MEASURE})('.md p, .md .mdli, .follow')`);
 
 /* A/B control: EVERY live question body, rendered both ways, swept across

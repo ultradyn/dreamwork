@@ -42,6 +42,7 @@
 
    usage: node filehead.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join, dirname } from 'node:path';
@@ -147,7 +148,8 @@ const ctx = await browser.newContext({
 const page = await ctx.newPage();
 page.on('pageerror', e => errs.push(String(e)));
 await page.goto(`${BASE}/file?p=${encodeURIComponent(DEEP)}`, { waitUntil: 'networkidle' });
-await sleep(700);
+// #536 render readiness — wait for the #filebody the guard reads first, not a fixed sleep (#428 class)
+await waitFor(page, '#filebody');
 
 if (!(await present(page, '#htitle', 'the file heading (#htitle)')) ||
     !(await present(page, '.fdir', 'the path metadata line (.fdir)')) ||

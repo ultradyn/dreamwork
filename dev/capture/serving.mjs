@@ -30,6 +30,7 @@
 
    usage: node serving.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync, rmSync, cpSync, writeFileSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -141,7 +142,8 @@ const read = async why => {
   // a full load, not a tick: the deployed answer is cached on HEAD and the
   // page is being asked a fresh question each time
   await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-  await sleep(900);
+  // #536 render readiness — wait for the .gserve row the guard reads first, not a fixed sleep (#428 class)
+  await waitFor(p, '.gserve');
   const r = await p.evaluate(READ);
   notes.push(`${why}: ${JSON.stringify(r)}`);
   return r;

@@ -20,6 +20,7 @@
 
    usage: node qsignal.mjs <outdir>   (argv[3] accepted and ignored) */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync, rmSync, cpSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
@@ -89,7 +90,8 @@ const errs = [];
 p.on('pageerror', e => errs.push(String(e)));
 
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
-await sleep(900);
+// #536 render readiness — wait for the .qa cards the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '.qa');
 
 // ── #472 ────────────────────────────────────────────────────────────────
 const links = await p.evaluate((titles) => {

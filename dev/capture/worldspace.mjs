@@ -6,6 +6,7 @@
 // is out of the comparison. Then the SAME screen position in windows of
 // DIFFERENT heights must show the SAME pixels.
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -21,7 +22,8 @@ async function plate(height) {
   await ctx.addInitScript(() => { const T = 1771000000000; Date.now = () => T; });
   const page = await ctx.newPage();
   await page.goto(BASE + '/', { waitUntil: 'networkidle' });
-  await sleep(900);
+  // #536 render readiness — wait for the #view the guard measures first, not a fixed sleep (#428 class)
+  await waitFor(page, '#view');
   await page.evaluate(() => { document.getElementById('view').style.display = 'none'; });
   await page.keyboard.press('l');                    // layer 1: raw fractal
   await sleep(500);

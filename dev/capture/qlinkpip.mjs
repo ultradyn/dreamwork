@@ -22,6 +22,7 @@
 
    usage: node qlinkpip.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 import { mkdirSync } from 'node:fs';
 
@@ -99,7 +100,8 @@ const knownUrl = '/file?p=' + encodeURIComponent(found.known.path);
 
 /* ── /questions: grade the rendered card ──────────────────────────────── */
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
-await sleep(1000);
+// #536 render readiness — wait for the .qa cards the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '.qa');
 
 const card = await p.evaluate(({ knownPath, unknownPath, knownUrl, extPath }) => {
   const cards = [...document.querySelectorAll('.qa')];

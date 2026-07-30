@@ -46,6 +46,7 @@
 
    usage: node qsec.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -167,7 +168,8 @@ const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webg
 const p = await br.newPage({ viewport: { width: 1100, height: 1600 } });
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-await sleep(1200);
+// #536 render readiness — wait for the .qsec fold the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '.qsec');
 
 const shut = await p.evaluate(`(() => {
   const d = document.querySelector('.qsec');

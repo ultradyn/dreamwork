@@ -22,6 +22,7 @@
 
    usage: node restcollapse.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 import { mkdirSync } from 'node:fs';
 
@@ -41,7 +42,8 @@ const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webg
 const p = await br.newPage({ viewport: { width: 1100, height: 1600 } });
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-await sleep(1000);
+// #536 render readiness — wait for the #status section the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '#status');
 
 /* ── preconditions: subject present, starts closed, carries stable keep ── */
 const pre = await p.evaluate(() => {

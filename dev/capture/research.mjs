@@ -18,6 +18,7 @@
 
    usage: node research.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 import { readdirSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -67,7 +68,8 @@ ok('the src/ source is NOT listed (non-recursive, the one builder trick)',
 
 /* ── the listing renders one row per artifact, each a real link ─────────── */
 await p.goto(`${BASE}/research`, { waitUntil: 'networkidle' });
-await sleep(900);
+// #536 render readiness — wait for the #view [data-research] rows the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '#view [data-research]');
 const rows = await p.evaluate(() =>
   [...document.querySelectorAll('#view [data-research]')].map(row => {
     const a = row.querySelector('a[href^="/research?p="]');

@@ -47,6 +47,7 @@
 
    usage: node qorder.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const OUT = process.argv[2], PORT = process.argv[3] || '39899';
@@ -84,7 +85,8 @@ const openOrder = pg => pg.evaluate(
 const band = t => (t.match(/^P([123])\s+·/) || [null, '2'])[1];
 
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
-await sleep(1200);
+// #536 render readiness — wait for the .qa cards the guard orders first, not a fixed sleep (#428 class)
+await waitFor(p, '.qa');
 
 /* the subject, before anything is measured against it — an empty list makes
    every `every` below vacuously true, which is the "run it against nothing"

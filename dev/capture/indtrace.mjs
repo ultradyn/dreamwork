@@ -5,6 +5,7 @@
 //   * on SELECT it must SLIDE (intermediate positions), and under
 //     reduced-motion it must jump with no intermediates.
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -15,7 +16,8 @@ async function run(rm) {
     reducedMotion: rm ? 'reduce' : 'no-preference' });
   const page = await ctx.newPage();
   await page.goto(BASE + '/', { waitUntil: 'networkidle' });
-  await sleep(800);
+  // #536 render readiness — wait for the #cmdind the guard traces first, not a fixed sleep (#428 class)
+  await waitFor(page, '#cmdind');
   // arm a per-frame recorder BEFORE the click so frame 0 is the start state
   const arm = () => page.evaluate(() => {
     window.__trace = [];

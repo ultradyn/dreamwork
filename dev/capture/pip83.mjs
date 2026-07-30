@@ -1,10 +1,13 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`; const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT,{recursive:true});
 const b=await chromium.launch({args:['--use-gl=swiftshader','--enable-webgl']});
 const p=await b.newPage({viewport:{width:1000,height:820}});
-await p.goto(BASE + '/',{waitUntil:'networkidle'}); await sleep(1200);
+await p.goto(BASE + '/',{waitUntil:'networkidle'});
+// #536 render readiness — wait for the .pipbtn affordance the guard counts first, not a fixed sleep (#428 class)
+await waitFor(p, '.pipbtn');
 const dash = await p.evaluate(()=>({ pip: document.querySelectorAll('.pipbtn').length,
   reviewsHavePip: !!document.querySelector('#sections .pipbtn') }));
 await p.screenshot({path:`${OUT}/dashboard-pip.png`});

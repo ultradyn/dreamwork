@@ -1,4 +1,5 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -12,7 +13,8 @@ const log = [];
 // ---------- 1. click a question's review link -> dock + FLIP ----------
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 await page.goto(BASE + '/questions', { waitUntil: 'networkidle' });
-await sleep(1200);
+// #536 render readiness — wait for the .qa cards the guard reads first, not a fixed sleep (#428 class)
+await waitFor(page, '.qa');
 await page.screenshot({ path: `${OUT}/00-questions.png` });
 const linkInfo = await page.evaluate(() => {
   const a = document.querySelector('.qa a.rev');

@@ -1,4 +1,5 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 
 // beautycap.mjs BASE OUT
 // Captures a navigation at several mid-transition timestamps so motion can be
@@ -46,7 +47,8 @@ async function scenario(tag, navFn) {
 }
 
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });
-await sleep(1400);
+// #536 render readiness — wait for the #view the guard probes first, not a fixed sleep (#428 class)
+await waitFor(page, '#view');
 await page.screenshot({ path: `${OUT}/00-dashboard-settled.png` });
 
 const s1 = await scenario('dash-to-q', () => page.click('a.q'));

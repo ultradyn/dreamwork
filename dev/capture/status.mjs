@@ -23,6 +23,7 @@
        still be findable.
    usage: node status.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -39,7 +40,9 @@ declare({
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const p = await br.newPage({ viewport: { width: 1100, height: 1400 } });
 p.on('pageerror', e => errs.push(String(e)));
-await p.goto(`${BASE}/`, { waitUntil: 'networkidle' }); await sleep(1200);
+await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+// #536 render readiness — wait for the #status section the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '#status');
 
 const raw = await p.evaluate(async () =>
   (await (await fetch('/data.json')).json()).status);

@@ -25,6 +25,7 @@
    Ordinary (OUT, PORT) on the shared server: the datum is the fixture's own
    skill-version, read through the real crumb. usage: node headcrumb.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 
 const OUT = process.argv[2];
@@ -53,7 +54,9 @@ const ctx = await br.newContext({ viewport: { width: 1100, height: 900 } });
 const p = await ctx.newPage();
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-await sleep(1200);
+// #536 render readiness — wait for the #meta crumbs area the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '#meta');
+
 
 // the version crumb is keyed 'version' in crumbsFor. Absence-first: name the
 // holder before reading it, so a build without the crumb is a named FAIL and

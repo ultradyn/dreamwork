@@ -11,6 +11,7 @@
 
    usage: node runmode.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { waitFor } from './dom.mjs';
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -53,7 +54,8 @@ const ctx = await br.newContext();
 const p = await ctx.newPage();
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-await sleep(800);
+// #536 render readiness — wait for the #runmode section the guard reads first, not a fixed sleep (#428 class)
+await waitFor(p, '#runmode');
 
 const has = await p.evaluate(() => !!document.getElementById('runmode'));
 ok('run mode section exists on the dashboard', has);
