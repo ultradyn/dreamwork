@@ -2225,6 +2225,45 @@ the HTML `hidden` attribute, never insert/remove — so the card and
 everything below it do not reflow when the text arrives or departs.
 Hover/focus never arms, POSTs, or touches localStorage.
 
+**The widget docks while a countdown is live (#565).** His ask: the posture
+widget sticky on scroll *"when the countdown timer bar is on screen."* A
+headless probe refuted the always-on form — `bottom:0` on this end-of-page
+section docks it **permanently** (~35% of the viewport at rest), and `top:0`
+is a no-op for an element already last in flow — so the dock is a conditional
+`.psticky` class, toggled by `paintPosturePin()` from `posturePinnedLive()`,
+which reads **all three** countdown hosts: the deploy phase
+(`staleDeployPhase` arming/running), the posture-arm deadline
+(`postArmUntil`), and the cross-tab pending draft (`pendingPostIsLive`).
+The class is re-applied inside `setContent` (the morphdom seam), so a live
+tick cannot undock it. The docked widget is opaque (`var(--bg)`) with a
+`box-shadow` top hairline so page content passing beneath it never reads
+through. **Sticky is not motion** — a position, not a gesture — so nothing
+here transitions and reduced-motion parity is free. Guard:
+`dev/capture/posturerecuse.mjs` (idle not-docked vs armed docked
+`bottom ≈ vh` vs cleared).
+
+**The deploy countdown is recused into the widget (#569).** His ask: the
+update countdown bar moves *"from the posture settings component"*'s chrome
+message row into **the remaining horizontal space after the label**. The
+arming/running deploy message therefore no longer lives in `#fmsg` — it
+lives in `#pdep`, a span inside `.parm` at `margin-left:auto` (the row is
+flex-wrap: `#pbar` keeps its own full-width line; `#pcount` and `#pdep`
+share the one below). Because a width cannot transition from `auto`,
+`paintDeployStatus` drives an **explicit** width on the `#pbarfill` idiom —
+measure `scrollWidth`, snap to the previous width with `transition:none`,
+reflow, travel to the new — so the label change (`arms in 3s` →
+`updating — waiting for the new page`) eases instead of jumping, per his
+*"make sure there's an appropriate css transition/animation on the bar so it
+doesn't jump around."* **Visibility IS width** (`overflow:hidden`, `0` =
+collapsed): an inline style the 2s morphdom rebuild resets is re-applied by
+the 250ms deploy tick (like `#pcount`), so the rebuild cannot flash the slot
+open or shut. **Errors stay in `#fmsg`** (refused / unreachable / timeout —
+the fault is chrome's subject, not the widget's) and clear the slot. A
+structural dividend: #490's ~4Hz `.dreamin` flash is now impossible — the
+ticking text is a plain span, never re-`claim`ed. Reduced motion snaps the
+width. Guard: `dev/capture/posturerecuse.mjs` (`transitionstart` /
+`between()` on the width, reduced-motion snap).
+
 **Consumption honesty.** The file + the events line
 (`posture via watch[ /path]: pace=… asking=… delegation=…`) are how an agent
 learns the override. The loop re-reads on tick (#426); this dashboard does
@@ -3276,27 +3315,30 @@ while one is in flight (durable `rejected`, so `writeVerdict.landed` is false
 — never `res.ok` alone, E5b). The POST returns as soon as the runner is
 scheduled; the process may die when the deploy stops the listening snap.
 
-**What the page shows.** On the page's one confirmation lifecycle (`#fmsg`,
-same `confirmationFor` as the file-path copy):
+**What the page shows.** Since **#569** the arming/running rows live in the
+posture widget's `#pdep` slot (see *The three-axis posture*), eased on an
+explicit-width transition; the **error** states stay on the page's one
+confirmation lifecycle (`#fmsg`, same `confirmationFor` as the file-path
+copy):
 
-| state | copy |
-|---|---|
-| arming | `arms in Ns — then this page updates` |
-| running | `updating — waiting for the new page` |
-| refused (another machine) | `update was refused — the update only runs from the machine serving the page` |
-| refused (already running) | `already updating — this page will pick up the new one when it lands` |
-| never finishes | `update never finished — this page is still the old one` |
-| success | a new `GENERATION` → full `location.reload()` (the page *is* the new one) |
+| state | where | copy |
+|---|---|---|
+| arming | `#pdep` | `arms in Ns — then this page updates` |
+| running | `#pdep` | `updating — waiting for the new page` |
+| refused (another machine) | `#fmsg` | `update was refused — the update only runs from the machine serving the page` |
+| refused (already running) | `#fmsg` | `already updating — this page will pick up the new one when it lands` |
+| never finishes | `#fmsg` | `update never finished — this page is still the old one` |
+| success | — | a new `GENERATION` → full `location.reload()` (the page *is* the new one) |
 
-**Arming copy is steady text that ticks (#490).** The first paint of an arm
-arrives once through `claim` (not `note` — a 10s arm must not auto-clear at
-the 5s confirmation hold). Each second change rewrites the number **in place**
-on `#fmsg`; it never re-calls `claim`/`note`, so `.dreamin` is not restarted
-at the 250ms poll rate. The pre-#490 path re-`note`d every tick and flashed
-~4 Hz after he pressed update — "no need for it to do that." Terminal states
-(running / refused / cancelled / never finished) still go through `note` and
-own the full hold-and-depart lifecycle. Guard: `dev/capture/staleremedy.mjs`
-(§3b counts mid-arm `.dreamin` adds after the legitimate arrival settles).
+**Arming copy is steady text that ticks (#490, recused by #569).** The arm's
+countdown number rewrites **in place** on `#pdep`'s plain span — never
+re-`claim`ed, never re-`note`d — so `.dreamin` is structurally never
+restarted at the 250ms poll rate. The pre-#490 path re-`note`d every tick
+and flashed ~4 Hz after he pressed update — "no need for it to do that."
+Terminal error states (refused / never finished) still go through `note` on
+`#fmsg` and own the full hold-and-depart lifecycle. Guard:
+`dev/capture/staleremedy.mjs` (§3b counts mid-arm `.dreamin` adds after the
+legitimate arrival settles, now on the `#pdep` surface).
 
 **Why two refusal rows, and the general rule they establish.** Both refusals are
 `domain_invalid`, because `REJECTION_REASONS` is a three-wide contract and this
