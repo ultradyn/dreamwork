@@ -1011,10 +1011,11 @@ def ledger_view(dw: Path):
     ``source == 'markdown'`` (today, and every target that never cuts over):
     ``text`` is ``tasks.md`` verbatim and every check runs exactly as it
     always has. ``source == 'store'`` (the cutover watermark is present):
-    ``text`` is SYNTHESIZED from the store — the import stored each entry's
-    body verbatim, head line included, so the bodies reparse; they are
-    placed under synthesized ``## Open`` / ``## Recently landed`` headings
-    in id order. Every text-consuming check then runs over live store data
+    ``text`` is SYNTHESIZED from the store — `store_entries` returns every
+    row with a ``- **#N**`` head (verbatim for the import's headed bodies,
+    synthesized from the store columns for the `file` verb's headless ones,
+    #557), so the bodies reparse; they are placed under synthesized
+    ``## Open`` / ``## Recently landed`` headings in id order. Every text-consuming check then runs over live store data
     with no change to its own code, and `watch.parse_ledger` over the
     synthesized text returns the store's id sets.
 
