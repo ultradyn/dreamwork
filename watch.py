@@ -2281,6 +2281,19 @@ COMPONENTS_JS = """
 window.DEV=/*DEV*/false;
 const esc = t => { const d = document.createElement('div');
                    d.textContent = t ?? ''; return d.innerHTML; };
+/* escA — attribute-position escape (#374). esc serialises TEXT (textContent →
+   innerHTML), which escapes `&`, `<`, `>` but NOT `"` — the HTML serialiser
+   only quotes inside attribute values. So esc's output is safe in element
+   bodies but NOT between `="`…`"`: a `"` in the value closes the attribute
+   early. The file route passes the raw `/file?p=` query param as a pip-button
+   label, so a `"` in the query string let `onfocus=` ride in on the same
+   focusable button. escA = esc plus `"` → `&quot;`, so the quote stays inside
+   the attribute and the text-position esc keeps producing readable `"`. The
+   pip-button builder's three `"`-delimited attributes use this; single-quote
+   delimited attributes would need `&#39;` too, but the builder emits none. */
+const escA = t => { const d = document.createElement('div');
+                    d.textContent = t ?? '';
+                    return d.innerHTML.replace(/"/g, '&quot;'); };
 const ageStr = mt => {
   let s = Math.max(0, Date.now()/1000 - mt);
   for (const [u, div] of [["d",86400],["h",3600],["m",60]])
@@ -2389,8 +2402,8 @@ const PIP_SVG = '<svg viewBox="0 0 22 18" width="14" height="12"' +
   ' fill="currentColor"/></svg>';
 const pipBtn = (url, label) =>
   `<button class="pipbtn" type="button" title="pop out — floats while you` +
-  ` navigate" aria-label="pop out ${esc(label)}" data-pipurl="${esc(url)}"` +
-  ` data-piplabel="${esc(label)}">${PIP_SVG}</button>`;
+  ` navigate" aria-label="pop out ${escA(label)}" data-pipurl="${escA(url)}"` +
+  ` data-piplabel="${escA(label)}">${PIP_SVG}</button>`;
 /* expand(): plain read peeks — dreams, .md files, status overflow.
 
    `keep` is a content-stable id for snapshotFolds / restoreFolds. It is NOT
