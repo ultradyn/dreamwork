@@ -313,17 +313,22 @@ def questions_truncation_guard(old_text, new_text, *, groom=False,
     return (OK, "")
 
 
-def _head_questions(dw: Path) -> str | None:
+def _head_questions(dw: Path, ref: str = "HEAD") -> str | None:
     """HEAD's questions.md for the target's repo, or None when unreadable.
 
     `git show` is read-only plumbing and takes no index lock (the active
     mitigation on this host is about `git status`). None means "no baseline"
     so a questions.md not yet tracked does not read as "nothing lost".
+
+    ``ref`` defaults to HEAD (the pre-commit comparison). The #585
+    retroactive check passes ``HEAD~1`` to compare the just-committed
+    version against its parent — catching a truncation that committed
+    *without* lint running in the pre-commit window (#575).
     """
     try:
         show = subprocess.run(
             ["git", "-C", str(dw.parent), "show",
-             "HEAD:.dreamwork/questions.md"],
+             f"{ref}:.dreamwork/questions.md"],
             capture_output=True, text=True, timeout=10)
         return show.stdout if show.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
@@ -364,6 +369,14 @@ def check_questions_truncation(dw: Path, rep: Report) -> None:
 
     Silent when there is no git baseline (a fixture, a target outside a repo):
     'cannot check' must not be a fault.
+
+    #585 — retroactive post-commit check. The HEAD-vs-working-tree
+    comparison above is structurally blind *after* a truncation commits:
+    HEAD == working tree, net loss reads 0. The retroactive arm compares
+    HEAD vs HEAD~1, so a truncation that committed without lint running
+    in the pre-commit window (#575) is caught on the next ``lint.py`` /
+    ``just test`` run. ``groom:`` on the last commit clears it (a
+    deliberate archive is the one legitimate net loss).
     """
     path = dw / "questions.md"
     if not path.exists():
@@ -377,6 +390,15 @@ def check_questions_truncation(dw: Path, rep: Report) -> None:
         head, path.read_text(), groom=_last_questions_commit_has_groom(dw))
     if level == ERROR:
         rep.add(ERROR, "questions.md", detail)
+
+    # #585: retroactive — did the last commit itself truncate?
+    parent = _head_questions(dw, ref="HEAD~1")
+    if parent is not None:
+        level2, detail2 = questions_truncation_guard(
+            parent, head, groom=_last_questions_commit_has_groom(dw))
+        if level2 == ERROR:
+            rep.add(ERROR, "questions.md",
+                    f"#585 retroactive: {detail2}")
 
 
 def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
