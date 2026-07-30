@@ -536,6 +536,118 @@ class TestNormaliseOnWrite:
             live_proc.wait()
 
 
+# ── 11. a dispatch form the probe cannot see is carried, not pruned (#537) ─
+#
+# Under the harness's native `spawn_subagent`, a lane is an independent clone:
+# no `ccc` process exists, so `pgrep -af ccc` cannot see it and `kill -0` has
+# no dispatch pid to ask about. The liveness probe is BLIND to that form. A
+# live fleet of spawn_subagent lanes was once pruned to 0 by `status_sync`
+# because the probe could not see it — an observation blind to a form clobbered
+# records of that form. An entry declaring an unobservable `dispatch`
+# (`spawn_subagent`, not the `ccc` default) must survive the liveness prune
+# verbatim, and be reaped only by the ledger (a landed task is observable
+# regardless of form). Two arms, each red-proved (#274 sibling-arm lesson):
+# the survive arm and the reap arm. A green red-run is a finding.
+
+class TestUnobservableDispatchSurvives:
+    """A dispatch form the probe cannot see is carried verbatim, not pruned.
+
+    Production line whose reversion reds the survive arm: the
+    observable/unobservable split in ``main`` plus the ``if not _observable(d)
+    return True`` short-circuit in ``_evaluable``. Revert both (ignore
+    ``dispatch``, probe every entry) and the spawn_subagent entry's brief is
+    absent from the ``ccc`` argv listing, so it reads as dead and is pruned —
+    the incident this fixes.
+    """
+
+    def test_spawn_subagent_lane_survives_with_no_live_ccc(self, tmp_path):
+        # The probe is blind to this lane: its brief is not in any live `ccc`
+        # argv, and it carries no pid. Precondition, asserted at runtime —
+        # never a literal — so the test cannot pass vacuously.
+        brief = f"/no/such/spawn-subagent-brief-537-{time.time_ns()}.md"
+        assert brief not in status_sync._argv_listing(), \
+            "precondition: the probe must be blind to this brief"
+        dreamers = [{"task": 537, "brief": brief,
+                     "dispatch": "spawn_subagent"}]
+        ledger = _ledger(537)
+        assert 537 in status_sync.open_ids(ledger), \
+            "precondition: task 537 must be open (else it is reaped, not carried)"
+        status = {"dreamers": dreamers, "current_task_ids": [],
+                  "queue": {}, "task": "on #537"}
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        # THE FIX: the live fleet survives — the entry is carried verbatim.
+        assert len(result["dreamers"]) == 1, result["dreamers"]
+        surv = result["dreamers"][0]
+        assert surv["task"] == 537, surv
+        assert surv["dispatch"] == "spawn_subagent"   # shape preserved
+        assert surv["brief"] == brief                  # nothing else changed
+        # An unobservable lane is in flight per the dispatch record, so it is
+        # counted as live — the probe cannot deny a form it cannot see.
+        assert 537 in result["current_task_ids"], result["current_task_ids"]
+
+    def test_dead_ccc_lane_still_prunes_alongside_an_unobservable(self,
+                                                                  tmp_path):
+        # The other direction (constraint 5): a genuinely-dead `ccc` lane must
+        # STILL prune — the fix must not turn unobservable-carried into
+        # never-prune. A dead-pid ccc entry + a live-by-record spawn_subagent.
+        brief_uo = f"/no/such/spawn-subagent-537-{time.time_ns()}.md"
+        assert brief_uo not in status_sync._argv_listing(), \
+            "precondition: probe blind to the unobservable brief"
+        dead_pid = _dead_pid()
+        assert not status_sync._pid_alive(dead_pid), \
+            "precondition: dead pid must be dead"
+        dreamers = [
+            {"task": 8, "pid": dead_pid, "brief": "/dead/cc-lane.md"},
+            {"task": 537, "brief": brief_uo, "dispatch": "spawn_subagent"},
+        ]
+        ledger = _ledger(537, 8)
+        assert 8 in status_sync.open_ids(ledger) \
+            and 537 in status_sync.open_ids(ledger), \
+            "precondition: both tasks must be open"
+        status = {"dreamers": dreamers, "current_task_ids": [],
+                  "queue": {}, "task": "t"}
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        tasks = {d["task"] for d in result["dreamers"]}
+        assert 8 not in tasks, "dead ccc lane must prune"       # other direction
+        assert 537 in tasks, "unobservable lane must survive"   # the fix
+        assert len(result["dreamers"]) == 1, result["dreamers"]
+
+    def test_unobservable_lane_with_landed_task_is_still_reaped(self, tmp_path):
+        # The reap arm (#274 sibling): an unobservable entry that survives the
+        # liveness prune must STILL be reaped when its task lands — landing is
+        # observable via the ledger regardless of dispatch form. Asserting the
+        # `reaped` report binds the REAP path specifically (not the liveness
+        # prune): under the unfixed code the entry is pruned by liveness and
+        # no `reaped` line appears, so this reds on fix-absent via the report.
+        brief = f"/no/such/spawn-subagent-landed-537-{time.time_ns()}.md"
+        assert brief not in status_sync._argv_listing(), \
+            "precondition: probe blind to the unobservable brief"
+        dreamers = [{"task": 999, "brief": brief,
+                     "dispatch": "spawn_subagent"}]
+        ledger = _ledger(7, 8)            # open: 7, 8 — NOT 999 (landed)
+        assert 999 not in status_sync.open_ids(ledger), \
+            "precondition: task 999 must be landed (not open)"
+        status = {"dreamers": dreamers, "current_task_ids": [999],
+                  "queue": {}, "task": "t"}
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        # Reaped — gone from dreamers and from current_task_ids.
+        assert result["dreamers"] == [], result["dreamers"]
+        assert 999 not in result["current_task_ids"], \
+            result["current_task_ids"]
+        # The reap path fired (not the liveness prune): the entry survived the
+        # blind probe and was THEN reaped by the ledger.
+        assert "reaped" in err.lower() or "not under" in err.lower(), err
+
+
 # ── 10. status.json is ephemera: read it defensively (#402) ────────────
 #
 # The brief's third deliverable, verbatim: "status.json is gitignored and
