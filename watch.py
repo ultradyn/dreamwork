@@ -9511,13 +9511,19 @@ async function requestPopout() {
   if (w && window.__closeCmd) window.__closeCmd();
 }
 /* pop a doc/review into a floating iframe window (kept identity header) so it
-   stays handy while the main tab navigates. */
+   stays handy while the main tab navigates. #556: src/title are
+   attribute-position, fed by `pip.dataset.pip*` — which parse escA's
+   `&quot;` BACK to a raw `"` on read, so the whole payload re-enters as one
+   value one hop past #374's pipBtn fix. escA (not esc) keeps the quote
+   inside the attribute; `label` is the live vector (the raw decoded label),
+   `src` carries `/file?p=<encodeURIComponent payload>` so its `"` arrives as
+   %22 — nearly safe already, but escA is correct-by-position there too. */
 function popoutDoc(url, label) {
   openPopout('dreamdoc', { width: 620, height: 560 },
     (w, base, path, tint) => {
       const doc = popoutShell(w, base, path, tint, label);
       doc.body.innerHTML = popHead(label, base, path) +
-        `<iframe src="${esc(url)}" title="${esc(label)}"></iframe>`;
+        `<iframe src="${escA(url)}" title="${escA(label)}"></iframe>`;
     });
 }
 (function () {
