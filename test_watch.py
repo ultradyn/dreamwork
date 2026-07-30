@@ -8904,6 +8904,209 @@ class TestAnswerWritesAreAtomic(unittest.TestCase):
                          "both /answer and /comment write through the atomic path")
 
 
+class TestSubmissionIdempotency(unittest.TestCase):
+    """#274 — duplicate submissions must be idempotent end to end.
+
+    The journal dedupes a RECEIPT by client_action_id (same UUID+digest → one
+    receipt), but the receipt→application join had no dedup-hit signal: a
+    replayed UUID still dispatched the handler and appended a second Answer
+    bullet. Three witnesses of this reached durable state (two byte-identical
+    answers ~188ms apart; duplicate same-timestamp receipts + Answer bullets;
+    a ruling landed as two byte-identical bullets) and one was invisible for
+    two hours.
+
+    The fix short-circuits a dedup hit (kind != 'inserted') to the original
+    receipt's verdict BEFORE the handler dispatches — the seam is in do_POST
+    between `_journal_receive` and `handler(self)`. This is the application
+    half; the journal half (receive() → replay/conflict/inserted) is complete
+    and tested in test_user_events_sqlite.py.
+    """
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _post_id(self, url, obj, action_id):
+        """POST with an explicit X-Client-Action-Id (the idempotency key).
+
+        This is the header the browser attempt store sends (#274); the test
+        drives it directly so the red line is the server join, not the client.
+        """
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json",
+                     "X-Client-Action-Id": action_id})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, r.read().decode("utf-8")
+
+    @staticmethod
+    def _answer_bullets(d):
+        """Count application side-effects: Answer sub-bullets in questions.md.
+
+        append_answer does NOT move the entry to Answered — it appends an
+        `- **Answer (via watch, …):**` sub-bullet while the entry stays in
+        Open — so a replayed POST finds the entry again and appends a SECOND
+        bullet. That is the double-application this test must catch.
+        """
+        qpath = os.path.join(d, ".dreamwork", "questions.md")
+        with open(qpath, encoding="utf-8") as f:
+            return f.read().count("**Answer (via watch,")
+
+    @staticmethod
+    def _receipt_count(d):
+        with watch.open_journal(watch._journal_path(d)) as journal:
+            return journal.receipt_count()
+
+    @staticmethod
+    def _extract_draftstore():
+        """Pull the DraftStore IIFE out of PAGE for node execution.
+
+        The module is self-contained (only globals it reads are `data`,
+        `localStorage`, `crypto`), so it runs under node with those mocked.
+        Splits on the IIFE's own open/close — there is no nested `})();`
+        inside it, so the first close is the module's.
+        """
+        import re
+        body = watch.PAGE.split("<script>", 1)[1].rsplit("</script>", 1)[0]
+        marker = "const DraftStore = (() => {"
+        head, rest = body.split(marker, 1)
+        inner, _tail = rest.split("})();", 1)
+        return marker + inner + "})();"
+
+    def test_attempt_store_stable_per_draft_fresh_after_edit(self):
+        """#274 client: the per-attempt id is stable for one composition —
+        across repeat calls AND a same-text re-save (so a double-click or a
+        retry after a re-render sends the SAME id and the journal dedupes) —
+        and fresh after an edit (an edit is a new attempt, never deduped
+        across content). Cleared with the draft on landed.
+
+        Production lines: DraftStore.attemptId (mint/get) and the
+        aid-on-text-match preservation in save()."""
+        import shutil, subprocess, textwrap
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — the JS gate did NOT run")
+        store = self._extract_draftstore()
+        script = textwrap.dedent("""\
+            // deterministic localStorage + REAL v4 UUIDs (backed by node's
+            // crypto, so the shape assertion tests _mintId's real output, not
+            // a mock). The behaviour under test is stability/drop/clear, which
+            // are deterministic regardless of the random value.
+            const _nc = require('crypto');
+            const crypto = { randomUUID: () => _nc.randomUUID() };
+            const _s = {};
+            const localStorage = {
+              getItem: k => (k in _s ? _s[k] : null),
+              setItem: (k, v) => { _s[k] = String(v); },
+              removeItem: k => { delete _s[k]; },
+            };
+            const data = { target: 'proj-T' };
+            %s
+            const lid = DraftStore.id('card', 'Q1');
+            DraftStore.save(lid, 'hello');
+            const a1 = DraftStore.attemptId(lid);          // mint for 'hello'
+            const a2 = DraftStore.attemptId(lid);          // same draft -> stable
+            DraftStore.save(lid, 'hello');                 // re-save same text -> kept
+            const a3 = DraftStore.attemptId(lid);          // still stable
+            DraftStore.save(lid, 'hello world');           // EDIT -> stale id dropped
+            const a4 = DraftStore.attemptId(lid);          // new attempt -> fresh
+            DraftStore.clear(lid);                         // landed -> record gone
+            const rec = DraftStore.get(lid);
+            process.stdout.write(JSON.stringify({
+              stable: a1 === a2 && a2 === a3,
+              freshAfterEdit: a4 !== a1,
+              cleared: rec === null || !rec.attemptId,
+              shape: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(a1)
+            }));
+        """) % store
+        out = subprocess.check_output(["node", "-e", script], text=True)
+        res = json.loads(out)
+        self.assertTrue(res['stable'],
+                        f"attempt id must be stable for one draft: {res}")
+        self.assertTrue(res['freshAfterEdit'],
+                        f"an edit must mint a fresh id (dedupe by id, not content): {res}")
+        self.assertTrue(res['cleared'],
+                        f"clear must drop the id with the draft: {res}")
+        self.assertTrue(res['shape'],
+                        f"the id must be a v4 UUID shape: {res}")
+
+    def test_covered_submit_paths_send_the_attempt_id(self):
+        """#274: the boundary across submit paths, stated and checked.
+
+        COVERED (append routes that duplicate content on re-application —
+        these mint a per-attempt id and send X-Client-Action-Id):
+          /answer, /ask, /comment, /command (main composer + popout).
+        DECLARED OUT:
+          /decide — its client POST originates in the review-artifact
+            surface, not watch.py's composer/answer region (the server
+            short-circuit still protects it once that surface sends the id);
+          /tint, /run-mode, /posture — state-setting, application-level
+            idempotent (same value = no mutation, no content duplication);
+          /deploy — single-flight guard + loopback-only already prevents a
+            double submit.
+        This pins the boundary so a new path cannot slip past uninspected.
+        """
+        # the header is sent
+        self.assertIn("'X-Client-Action-Id'", watch.PAGE)
+        # each covered path mints an attempt id from its draft store
+        for token in (
+            "DraftStore.attemptId(DraftStore.id('card', q.title))",   # /answer
+            "DraftStore.attemptId(DraftStore.id('card', entry.title))",  # /comment
+            "DraftStore.attemptId(DraftStore.id('ask', 'main'))",     # /ask
+            "DraftStore.attemptId(composerLid())",                    # /command main
+            "DraftStore.attemptId(popLid)",                           # /command popout
+        ):
+            self.assertIn(token, watch.PAGE,
+                          f"covered submit path must mint an attempt id: {token!r}")
+
+    def test_same_action_id_replays_to_one_receipt_one_application(self):
+        """#274: replay of one attempt → exactly one receipt AND one application.
+
+        Production line that must change to fail this: the dedup-hit
+        short-circuit in do_POST (kind != 'inserted' skips handler dispatch).
+        Without it the second POST re-runs _handle_answer and appends a second
+        Answer bullet — the bug's shape.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            body = {"question": "A real open question?",
+                    "answer": "one and only answer", "from": "/questions"}
+            # precondition: the entry is answerable (matched, not 409)
+            s1, _ = self._post_id(base + "/answer", body, "uuid-replay-A")
+            self.assertEqual(s1, 202, "the first POST must match the entry")
+            # same UUID + same body: a retry or double-click of one attempt
+            s2, _ = self._post_id(base + "/answer", body, "uuid-replay-A")
+            self.assertEqual(s2, 202)
+            # ONE application — the second POST did not append a bullet
+            self.assertEqual(self._answer_bullets(d), 1,
+                             "a replayed attempt must not re-apply")
+            # ONE receipt — the journal already deduped this (the red line is
+            # the application count above; this pins the journal half)
+            self.assertEqual(self._receipt_count(d), 1,
+                             "same UUID+digest must be one receipt")
+
+    def test_distinct_action_id_identical_text_is_two_attempts(self):
+        """#274: a new attempt with IDENTICAL text but a different action id is
+        a distinct intentional action — two receipts, two applications. Dedupe
+        is by client_action_id, never by content."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            body = {"question": "A real open question?",
+                    "answer": "same words different intent", "from": "/questions"}
+            self._post_id(base + "/answer", body, "uuid-distinct-A")
+            self._post_id(base + "/answer", body, "uuid-distinct-B")
+            self.assertEqual(self._answer_bullets(d), 2,
+                             "distinct ids are distinct attempts — both apply")
+            self.assertEqual(self._receipt_count(d), 2,
+                             "distinct ids mint distinct receipts")
+
+
 class TestShortBodyIsWitnessedAsShort(unittest.TestCase):
     """#371 — an interrupted body was recorded as a complete submission.
 

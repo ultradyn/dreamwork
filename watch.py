@@ -3259,11 +3259,18 @@ async function writeVerdict(res) {
            // say which one must be able to. Never gated on — `landed` is.
            detail: (j && j.detail) || null, status: res.status };
 }
-const postJSON = async (url, body) => {
+/* #274: attemptId is the per-attempt idempotency key (X-Client-Action-Id).
+   The caller mints it from its draft's attempt store so a retry or
+   double-click of one attempt sends the SAME key and the journal dedupes the
+   second; absent (CLI/curl, or a path not yet covered), the server mints a
+   per-request UUID and the request is a distinct action. */
+const postJSON = async (url, body, attemptId) => {
   const id = await subsRecord(url, body);
   let res = null;
+  const headers = {'Content-Type':'application/json'};
+  if (attemptId) headers['X-Client-Action-Id'] = attemptId;
   try { res = await fetch(url, { method:'POST',
-    headers: {'Content-Type':'application/json'},
+    headers,
     body: JSON.stringify(body) }); } catch (e) { res = null; }
   const v = await writeVerdict(res);
   if (res) res._dwv = v;   // single body read; callers ask the verdict, not res.ok
@@ -3274,13 +3281,15 @@ const postJSON = async (url, body) => {
               v.status);
   return res;
 };
-const postAnswer = (title, text) =>
-  postJSON('/answer', { question: title, answer: text, from: fromPath() });
-const postAsk = text =>
-  postJSON('/ask', { question: text, from: fromPath() });
-const postComment = (title, note, section) =>
+const postAnswer = (title, text, attemptId) =>
+  postJSON('/answer', { question: title, answer: text, from: fromPath() },
+           attemptId);
+const postAsk = (text, attemptId) =>
+  postJSON('/ask', { question: text, from: fromPath() }, attemptId);
+const postComment = (title, note, section, attemptId) =>
   postJSON('/comment',
-           { question: title, comment: note, section, from: fromPath() });
+           { question: title, comment: note, section, from: fromPath() },
+           attemptId);
 /* Why a send did not land, in his terms. The status alone ("rejected (409)")
    names the protocol and not the problem. */
 const QSEND_WHY = {
@@ -4133,7 +4142,8 @@ async function sendAsk(form) {
   const mine = ++askFlightGen;
   let res = null;
   if (msg) msg.textContent = 'asking…';
-  try { res = await postAsk(words); } catch (e) {}
+  try { res = await postAsk(words,
+      DraftStore.attemptId(DraftStore.id('ask', 'main'))); } catch (e) {}
   // Superseded or surface destroyed — do not touch a newer flight's flag.
   if (mine !== askFlightGen) return;
   askInFlight = false;
@@ -4835,7 +4845,8 @@ async function sendAnswer(key) {
   if (!el || !el.value.trim() || !q) return;
   const val = el.value.trim();
   const fromRect = el.getBoundingClientRect();   // the box the text lived in
-  const res = await postAnswer(q.title, val);
+  const res = await postAnswer(q.title, val,
+      DraftStore.attemptId(DraftStore.id('card', q.title)));
   // a failed write must NOT run the morph: the morph IS the confirmation, and
   // confirming a write that did not happen is the one thing worse than the
   // 409 itself (#136). A rejected 202 (res.ok true, body rejected:true — E5)
@@ -4885,7 +4896,8 @@ async function sendComment(key) {
   const val = el.value.trim();
   const fromRect = el.getBoundingClientRect();
   const res = await postComment(entry.title, val,
-                                key[0] === 'o' ? 'Open' : 'Answered');
+                                key[0] === 'o' ? 'Open' : 'Answered',
+      DraftStore.attemptId(DraftStore.id('card', entry.title)));
   const v = res && res._dwv;
   // a rejected 202 (res.ok true, body rejected — E5) clears the draft below,
   // which was the only copy of the note, so the verdict `landed` decides —
@@ -6829,6 +6841,7 @@ const DraftStore = (() => {
     return {
       v: d.v || 1, logicalId, project: tgt(), text: d.t,
       updatedAt: d.at || 0, meta: d.k ? { kindHint: d.k } : {},
+      attemptId: d.aid || null,
       _from: hit.from, _key: hit.key
     };
   }
@@ -6840,6 +6853,14 @@ const DraftStore = (() => {
         if (meta && meta.kindHint) rec.k = meta.kindHint;
         rec.v = 1;
         rec.at = Date.now();
+        // #274: keep the per-attempt id only while the text it was minted for
+        // is unchanged. An edit after a failure is a NEW composition, so the
+        // next submit mints fresh and dedupes against nothing; an in-flight
+        // double-click sends the same id twice and the journal dedupes the
+        // second. Reading the CURRENT record (not the one being built) is what
+        // decides — a re-save of identical text keeps the id alive.
+        const prev = get(logicalId);
+        if (prev && prev.attemptId && prev.text === text) rec.aid = prev.attemptId;
         localStorage.setItem(k1, JSON.stringify(rec));
         // migrate: once the new key holds the truth, drop the old shape so a
         // second tab does not re-promote a cleared draft from legacy alone
@@ -6876,6 +6897,56 @@ const DraftStore = (() => {
     if (res._dwv) return !!res._dwv.landed;
     return !!res.ok;
   }
+  /* #274: mint a v4 UUID. crypto.randomUUID is the clean path but is gated to
+     secure contexts (https / loopback); the dashboard is reached over LAN http
+     too, so getRandomValues — available in every context — is the real engine
+     and Math.random the last resort. Never empty: an empty id means the server
+     mints a fresh per-request UUID and a retry is a distinct action (the bug). */
+  function _mintId() {
+    try { if (crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+    try {
+      if (crypto.getRandomValues) {
+        const b = crypto.getRandomValues(new Uint8Array(16));
+        b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+        const h = x => ('0' + x.toString(16)).slice(-2);
+        return h(b[0]) + h(b[1]) + h(b[2]) + h(b[3]) + '-' +
+               h(b[4]) + h(b[5]) + '-' + h(b[6]) + h(b[7]) + '-' +
+               h(b[8]) + h(b[9]) + '-' +
+               h(b[10]) + h(b[11]) + h(b[12]) + h(b[13]) + h(b[14]) + h(b[15]);
+      }
+    } catch (e) {}
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
+  /* #274: the per-attempt idempotency key, one per composition. Sent as
+     X-Client-Action-Id so the journal dedupes a retry or double-click of the
+     SAME attempt; cleared with the draft on durable landed (a failed send
+     keeps both, so his retry dedupes against the first). Dropped by save()
+     when the text changes, so an edit after a failure mints fresh and never
+     collides with the abandoned attempt. Lives IN the draft record, so it
+     survives a restart beside the words it was minted for. */
+  function attemptId(logicalId) {
+    const k1 = v1Key(logicalId);
+    if (!k1) return _mintId();          // no target partition: unsynced, still unique
+    try {
+      const prev = get(logicalId);
+      if (prev && prev.attemptId) return prev.attemptId;
+      const aid = _mintId();
+      if (prev) {
+        // stamp the id onto the existing draft without disturbing its text
+        const hit = readRaw(logicalId);
+        if (hit) {
+          const d = parseRec(hit.raw);
+          if (d) { d.aid = aid; localStorage.setItem(k1, JSON.stringify(d)); }
+        }
+      }
+      // no draft record: nothing to persist beside (no text to retry), so the
+      // id is unsynced — still correct for the in-flight double-click in hand.
+      return aid;
+    } catch (e) { return _mintId(); }
+  }
   // bind: input→save, declare data-draft-id. No debounce. opts.meta() optional.
   function bind(el, logicalId, opts) {
     if (!el || !logicalId) return;
@@ -6898,7 +6969,7 @@ const DraftStore = (() => {
   function gc() { /* 30-day idle GC — deferred with the store backend */ }
   function onRemote() { /* C1 offer-to-load — needs the store; seam only */ }
   return {
-    id, bind, unbind, save, restore, clear, get, isDurable,
+    id, bind, unbind, save, restore, clear, get, isDurable, attemptId,
     forget, forgetProject, gc, onRemote,
     // test/guard seams: expose key builders without re-deciding shapes
     _v1Key: v1Key, _legacyKey: legacyKey
@@ -9842,8 +9913,14 @@ async function requestPopout() {
         }
         const attempt=confirmation.begin();
         try {
+          // #274: raw-fetch site owns its headers — send the per-attempt id
+          // from the popout draft's store so a double-click dedupes, same as
+          // the postJSON paths.
+          const popHeaders = { 'Content-Type': 'application/json' };
+          const popAid = DraftStore.attemptId(popLid);
+          if (popAid) popHeaders['X-Client-Action-Id'] = popAid;
           const r = await fetch(endpoint, { method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: popHeaders,
             body: JSON.stringify({ kind, text, from }) });
           // raw-fetch site: owns its Response, so reads the verdict here. A
           // rejected 202 (r.ok true) would otherwise clear his thought (#136).
@@ -10350,7 +10427,8 @@ function popoutDoc(url, label) {
       // which is #191's lesson about one gesture spelled two ways, aimed at
       // data instead of at motion.
       const attempt=confirmation.begin();
-      const r = await postJSON('/command', { kind, text, from: fromPath() });
+      const r = await postJSON('/command', { kind, text, from: fromPath() },
+          DraftStore.attemptId(composerLid()));
       const cv = r && r._dwv;
       if (r && cv && cv.landed) {
         if(!attempt.success())return;
@@ -14398,6 +14476,33 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 "request_digest": result.request_digest,
             }
 
+        def _replay_verdict(self, result):
+            """#274: a dedup-hit replay or conflict returns the ORIGINAL
+            receipt's verdict without re-applying.
+
+            The journal deduped the receipt (one row per client_action_id), so
+            `receive()` hands back the original on a second same-UUID POST. But
+            the receipt→application join used to dispatch the handler again
+            regardless, and a second Answer bullet / question / comment landed
+            byte-identical beside the first — durable, and invisible for hours.
+            The original receipt is authoritative: a replay that found
+            `received` already APPLIED once (ok — the answer folded on the
+            first insert), one that found `rejected` already REFUSED once
+            (rejected — the draft stays, as it did on the first refusal).
+
+            `_send_receipt` merges the ORIGINAL receipt identity (id/sequence/
+            digest) into the 202 + Location, so a replaying client sees a
+            consistent verdict and clears its draft only when the original was
+            durable. The precise rejection `reason` is not re-derived here (it
+            would need a transition read in sqlite.py, outside this lane): a
+            replayed rejection keeps the draft either way, and only the error
+            copy is generic."""
+            if result.state == "rejected":
+                body = {"ok": False, "rejected": True}
+            else:
+                body = {"ok": True}
+            self._send_receipt(json.dumps(body), "application/json")
+
         def _merge_receipt(self, body, receipt):
             """Merge the handler's JSON body with the receipt identity.
 
@@ -14738,6 +14843,19 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # too-long answer loses its tail rather than all of it.
             if truncated:
                 self.send_error(413)
+                return
+            # #274: a dedup hit must not re-apply. The journal already deduped
+            # the receipt (one row per client_action_id); without this seam a
+            # replayed UUID still dispatched the handler and duplicated the
+            # APPLICATION — a second byte-identical Answer bullet that stayed
+            # invisible for two hours because nothing counts them per entry.
+            # The original receipt is authoritative: short-circuit to its
+            # verdict. This runs only when the journal committed (shadow on,
+            # not truncated); the legacy no-journal path has no result and
+            # falls through to the handler as before.
+            result = self.journal_result()
+            if result is not None and result.kind != "inserted":
+                self._replay_verdict(result)
                 return
             handler(self)
 
