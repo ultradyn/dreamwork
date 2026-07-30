@@ -427,17 +427,19 @@ def test_reconcile_fully_covered_exit_zero(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 def test_reconcile_matches_by_route_and_body(tmp_path: Path):
-    """Two same-route receipts with different bodies match their own witness.
+    """A same-route witness whose BODY matches no receipt is UNMATCHED.
 
-    Guards against a matcher that keys on route alone (which would let one
-    receipt stand in for another and mis-split DRAINED/PENDING).  One-to-one: a
-    duplicate identical body consumes two receipts for two witness lines.
+    This is the case that distinguishes route+body matching from route-only: a
+    matcher keyed on route alone would pair this witness to the /answer receipt
+    (false match → DRAINED → exit 0); the route+body matcher finds no receipt
+    with the same body and reports UNMATCHED:no-receipt (exit EX_SOFTWARE).
+    Guards against a matcher that drops the body half of the key.
 
-    RED LINE (run): make _receipt_body_key / _submission_body_key ignore the
-      body (key on route only). The two distinct bodies collapse onto the first
-      receipt and the second witness line becomes UNMATCHED → exit non-zero and
-      the DRAINED id set is wrong. Production lines: _submission_body_key and
-      _receipt_body_key (the body half of the match key).
+    RED LINE (run): make _submission_body_key / _receipt_body_key ignore the
+      body (key on route only). The witness matches the receipt by route → exit
+      flips to EX_OK and no UNMATCHED line appears → both assertions fail.
+      Production lines: _submission_body_key and _receipt_body_key (the body
+      half of the match key).
     """
     cli = _load_cli()
     journal = tmp_path / "je.sqlite3"
@@ -445,18 +447,15 @@ def test_reconcile_matches_by_route_and_body(tmp_path: Path):
     (target / ".dreamwork").mkdir(parents=True)
     subs = target / ".dreamwork" / "submissions.log"
 
-    specs = [("/answer", b'{"text":"first"}'), ("/answer", b'{"text":"second"}')]
-    seeded = _seed(journal, specs)
-    seeded_ids = [r.receipt_id for r in seeded]
-    for route, body in specs:
-        assert _witness(target, route, body), f"witness {body!r}"
-    _advance_to(journal, 2)  # cursor at head ⇒ both DRAINED
+    # One receipt for body A; a witness for body C (same route, different body).
+    _seed(journal, [("/answer", b'{"text":"receipt-body-A"}')])
+    assert _witness(target, "/answer", b'{"text":"witness-body-C"}'), "witness"
 
     code, out, err = _run(cli, ["--journal", str(journal), "--submissions", str(subs)])
-    assert code == cli.EX_OK, f"both distinct bodies must match: {out!r}"
-    drained = sorted(_ids_for_verb(out, "DRAINED"))
-    assert drained == sorted(seeded_ids), (
-        f"both receipts must be matched one-to-one by route+body: {drained} != "
-        f"{sorted(seeded_ids)}"
+    assert code == cli.EX_SOFTWARE, (
+        f"a same-route different-body witness must be UNMATCHED, not covered; "
+        f"got exit {code} (out={out!r})"
     )
-    assert "0 unmatched" in out, out
+    assert _causes_for_verb(out, "UNMATCHED") == ["no-receipt"], (
+        f"must be UNMATCHED:no-receipt when no receipt shares the body: {out!r}"
+    )
