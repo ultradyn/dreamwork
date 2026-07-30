@@ -14328,6 +14328,33 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 "request_digest": result.request_digest,
             }
 
+        def _replay_verdict(self, result):
+            """#274: a dedup-hit replay or conflict returns the ORIGINAL
+            receipt's verdict without re-applying.
+
+            The journal deduped the receipt (one row per client_action_id), so
+            `receive()` hands back the original on a second same-UUID POST. But
+            the receipt→application join used to dispatch the handler again
+            regardless, and a second Answer bullet / question / comment landed
+            byte-identical beside the first — durable, and invisible for hours.
+            The original receipt is authoritative: a replay that found
+            `received` already APPLIED once (ok — the answer folded on the
+            first insert), one that found `rejected` already REFUSED once
+            (rejected — the draft stays, as it did on the first refusal).
+
+            `_send_receipt` merges the ORIGINAL receipt identity (id/sequence/
+            digest) into the 202 + Location, so a replaying client sees a
+            consistent verdict and clears its draft only when the original was
+            durable. The precise rejection `reason` is not re-derived here (it
+            would need a transition read in sqlite.py, outside this lane): a
+            replayed rejection keeps the draft either way, and only the error
+            copy is generic."""
+            if result.state == "rejected":
+                body = {"ok": False, "rejected": True}
+            else:
+                body = {"ok": True}
+            self._send_receipt(json.dumps(body), "application/json")
+
         def _merge_receipt(self, body, receipt):
             """Merge the handler's JSON body with the receipt identity.
 
@@ -14668,6 +14695,19 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # too-long answer loses its tail rather than all of it.
             if truncated:
                 self.send_error(413)
+                return
+            # #274: a dedup hit must not re-apply. The journal already deduped
+            # the receipt (one row per client_action_id); without this seam a
+            # replayed UUID still dispatched the handler and duplicated the
+            # APPLICATION — a second byte-identical Answer bullet that stayed
+            # invisible for two hours because nothing counts them per entry.
+            # The original receipt is authoritative: short-circuit to its
+            # verdict. This runs only when the journal committed (shadow on,
+            # not truncated); the legacy no-journal path has no result and
+            # falls through to the handler as before.
+            result = self.journal_result()
+            if result is not None and result.kind != "inserted":
+                self._replay_verdict(result)
                 return
             handler(self)
 
