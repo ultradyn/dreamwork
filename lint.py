@@ -194,6 +194,21 @@ def check_questions(dw: Path, watch, rep: Report) -> None:
         return
 
     text = path.read_text()
+    # #555 — conflict markers are silent to parse_questions (it keys on
+    # `- **Title**` entry heads), so a marker line renders as nothing — the
+    # same reader-cannot-see-what-is-there defect #554 closed for handoffs.md,
+    # in the channel to the human. Scanned from the raw text BEFORE any early
+    # return: the parse hazard is independent of the parser (proven by the
+    # born-hollow demo, which passed all four forms with watch loaded). One
+    # ERROR per marker line so each is named. Reuses the ONE #554 regex.
+    for ln in text.splitlines():
+        m = CONFLICT_MARKER_RE.match(ln)
+        if m:
+            rep.add(
+                ERROR, "questions.md",
+                f"conflict marker `{m.group(0)}` at line start ({ln!r}) — a "
+                f"merge-conflict marker left in questions.md is silent to the "
+                f"parser; resolve and remove it (#555)")
     if not text.strip():
         rep.add(OK, "questions.md", "empty")
         return
@@ -1353,6 +1368,25 @@ def check_ledger_sections(dw: Path, text: str, source: str, rep: Report) -> None
     counts must agree. A hand-edit of the deprecated file desyncs it
     exactly the way #304's original bug did, and the check stays live.
     """
+    # #555 — conflict markers in the ledger. parse_ledger keys on `## Open`
+    # and entry heads, so a marker line is silent to BOTH readers this check
+    # cross-checks — the same #548/#554 defect, in the most parse-sensitive
+    # file in the repo. `text` is tasks.md verbatim in markdown mode and the
+    # store projection in store mode (a marker in either is corruption).
+    # Scanned from the raw text BEFORE the source branch: the hazard is
+    # independent of which backend holds the ledger. One ERROR per line.
+    # The deprecated file (store mode) has its OWN scan below — both files
+    # route through this one check, but via different variables (`text` param
+    # vs the `dtext` local in the store branch), so a single loop cannot
+    # cover both. Reuses the ONE #554 regex.
+    for ln in text.splitlines():
+        m = CONFLICT_MARKER_RE.match(ln)
+        if m:
+            rep.add(
+                ERROR, "tasks.md",
+                f"conflict marker `{m.group(0)}` at line start ({ln!r}) — a "
+                f"merge-conflict marker left in the ledger is silent to "
+                f"parse_ledger; resolve and remove it (#555)")
     if source == "store":
         dep = dw / "tasks.md.deprecated"
         if not dep.exists():
@@ -1375,6 +1409,19 @@ def check_ledger_sections(dw: Path, text: str, source: str, rep: Report) -> None
                     "parses to zero ids in store mode — the history file "
                     "has rotted or been replaced (#294 R4)")
             return
+        # #555 — the FROZEN history rots the same silent way: a marker line
+        # is invisible to parse_ledger, so it must be LOUD here. This is the
+        # second scan site for the ledger family: `tasks.md.deprecated` is
+        # read only in this store branch (as `dtext`), so the `text` scan at
+        # the top of the function cannot reach it.
+        for ln in dtext.splitlines():
+            m = CONFLICT_MARKER_RE.match(ln)
+            if m:
+                rep.add(
+                    ERROR, "tasks.md.deprecated",
+                    f"conflict marker `{m.group(0)}` at line start ({ln!r}) "
+                    f"— a merge-conflict marker left in the frozen history "
+                    f"is silent to parse_ledger; resolve and remove it (#555)")
         section, mine = None, 0
         for ln in dtext.splitlines():
             stripped = ln.strip()
@@ -3235,6 +3282,34 @@ def check_brief_handoff_obligation(dw: Path, rep: Report) -> None:
     if not (root / "SKILL.md").exists():
         return
 
+    # #555 — a conflict marker in a brief is silent to every brief reader
+    # (classify_brief_handoff_scope keys on structure the way the other
+    # parsers do), the same reader-cannot-see-what-is-there defect #554
+    # closed for handoffs.md. The scan lives in the CHECK, not the
+    # classifier: classify_brief_handoff_scope only reads text for in-scope
+    # briefs (grandfathered/skipped short-circuit BEFORE the read), so it
+    # is structurally blind to markers in those — and it is a pure
+    # dict-returning function (used by test precondition assertions) that
+    # must not couple to `rep`. So this scans every brief the check already
+    # enumerated, regardless of scope: a marker is corruption in any of
+    # them. Runs before the cutoff-resolution early return so a marker is
+    # caught even when resolution would fail. One ERROR per line, naming
+    # the file. Reuses the ONE #554 regex.
+    for path in briefs:
+        try:
+            btext = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for ln in btext.splitlines():
+            m = CONFLICT_MARKER_RE.match(ln)
+            if m:
+                rep.add(
+                    ERROR, "briefs",
+                    f"{path.name}: conflict marker `{m.group(0)}` at line "
+                    f"start ({ln!r}) — a merge-conflict marker left in a "
+                    f"brief is silent to its readers; resolve and remove it "
+                    f"(#555)")
+
     cutoff = resolve_handoff_obligation_cutoff(root)
     if not cutoff:
         # THE hollow outcome, made loud: without a cutoff every brief would be
@@ -3867,6 +3942,9 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
     # are separate check regions held by other lanes, and this lane owns the
     # handoffs check region only. Prose docs (watch-design.md, transitions.md)
     # are excluded by design — markers there are ugly, not parse hazards.
+    # Landed as #555: the sweep now lives in check_questions,
+    # check_ledger_sections (text + tasks.md.deprecated), and
+    # check_brief_handoff_obligation, each reusing this one regex.
     for ln in text.splitlines():
         m = CONFLICT_MARKER_RE.match(ln)
         if m:
