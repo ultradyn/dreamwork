@@ -64,6 +64,18 @@ dev/capture/fixture/.dreamwork/run-mode
 # committing it would import one machine's key set as another's baseline.
 dev/capture/fixture/.dreamwork/.status-keys
 
+# #526: the applied-ledger — consume writes one monotonic marker per drained
+# receipt (the exactly-once proof). Machine-local by the same C1 argument as
+# the ledger store; committing it would assert another machine's drain history.
+# The .lock is the mutex the consume verb holds during a drain.
+.dreamwork/applied.md
+.dreamwork/applied.md.lock
+# #504: the topic-chat transcript store — append-only turns per chat, keyed by
+# the journal receipt id of the human's send. Machine-local conversational truth
+# (the #229 ruling: chats gitignored by default; a cross-clone export is a later
+# explicit act, never a `git add -f`). Same C1 boundary as submissions.log.
+.dreamwork/chats-v1/
+
 # worktrees for isolated dreamer spikes
 .worktrees/
 

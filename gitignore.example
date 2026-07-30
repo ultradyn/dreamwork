@@ -1,0 +1,89 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# dreamwork target-repo .gitignore — copy these lines into YOUR project's
+# .gitignore when running the dreamwork loop on it.
+#
+# Every entry below is MACHINE-LOCAL runtime state (the C1 trust boundary):
+# it describes what THIS machine's loop has seen or done, not project content.
+# Committing any of them would export one machine's history into every clone.
+#
+# Project content that SHOULD be committed (never gitignored):
+#   .dreamwork/tasks.md         — the task ledger (or the store migration notice)
+#   .dreamwork/questions.md     — open questions for the human
+#   .dreamwork/answers.md       — answered questions (archive)
+#   .dreamwork/handoffs.md      — work landed outside the ledger, pending fold
+#   .dreamwork/lessons.md       — running lessons log
+#   .dreamwork/dreams/          — dream entries (memory from earlier sessions)
+#   .dreamwork/docs/            — living docs maintained by the dreamers
+#   DREAMWORK.md                — project goals, philosophy, preferences
+#
+# This file is itself committed in the dreamwork SKILL repo so users can
+# discover it. See file-formats.md for each file's shape and contract.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# the loop's per-tick status snapshot — describes a running process, stale the
+# moment the session ends
+.dreamwork/status.json
+
+# lint.py's memo of which status.json keys this target has carried — describes
+# a gitignored file and is per-target by construction
+.dreamwork/.status-keys
+
+# derived at plugin resolution; which plugins resolve is a property of the
+# machine, so a committed copy would be another target's truth
+.dreamwork/plugin-commands.json
+
+# dashboard actions (answers, commands, run-mode) as they arrived — a recovery
+# record for the human, not project history
+.dreamwork/watch-events.log
+
+# every submission as it arrived, raw and unvalidated — ephemeral recovery, and
+# it holds whatever the human typed, so it is the last file that should be pushed
+.dreamwork/submissions.log
+
+# durable user-event journal — machine-local per target; holds exact payload bytes
+# (WAL and SHM sidecars share the prefix)
+.dreamwork/user-events.sqlite3
+.dreamwork/user-events.sqlite3-wal
+.dreamwork/user-events.sqlite3-shm
+
+# the ledger store — machine-local (same trust boundary as the journal);
+# cross-clone history is the committed text export, a later deployment choice
+.dreamwork/ledger.sqlite3
+.dreamwork/ledger.sqlite3-wal
+.dreamwork/ledger.sqlite3-shm
+.dreamwork/migration-backup/
+
+# main-dreamer pace for this host — operational posture, not a portable default
+.dreamwork/run-mode
+
+# the dashboard's per-entry "when did this question last change" store — records
+# what THIS dashboard has seen
+.dreamwork/question-sigs.json
+
+# the ledger-lint hook's last-seen mtime snapshot — records what THIS machine's
+# hook has seen
+.dreamwork/.ledger-lint-mtimes.json
+
+# the three-axis posture — describes THIS host's posture, not the project's
+.dreamwork/posture
+
+# the coordinator inbox — every line points at a report under /tmp, worthless
+# the moment the session ends
+.dreamwork/inbox.md
+
+# the applied-ledger — consume writes one marker per drained receipt (the
+# exactly-once proof); the .lock is the mutex held during a drain
+.dreamwork/applied.md
+.dreamwork/applied.md.lock
+
+# the topic-chat transcript store — append-only turns per chat; machine-local
+# conversational truth (a cross-clone export is a later explicit act)
+.dreamwork/chats-v1/
+
+# worktrees for isolated dreamer spikes
+.worktrees/
+
+# harness-local runtime state — task backends and browser automation are
+# session ephemera, not project content
+.pi/
+.playwright-mcp/

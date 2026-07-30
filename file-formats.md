@@ -2486,3 +2486,19 @@ Degrades to silence on an ABSENT store (a fresh target has no chats) and on a
 store with no chat dirs. The clean row names the count examined, so coverage
 cannot shrink to silence.
 
+## `.dreamwork/applied.md` — the exactly-once applied-ledger (#526)
+
+A single-generation monotonic marker log: `dev/journal_consume.py consume`
+writes one marker per drained receipt that the proof (`user_events.apply`)
+could not confirm as already-applied. The marker IS the durable applied
+record — a second consume of a rewound range applies nothing twice because
+the adapters' writes are zero on replay (the marker already exists).
+
+**Machine-local, gitignored** — same C1 trust boundary as the ledger store:
+it records what THIS machine's consume has proven, and committing it would
+assert another machine's drain history. The `.lock` sibling is the mutex
+the consume verb holds during a drain.
+
+Not checked by `lint.py` (a missing or empty file is the fresh-target
+default; the proof is tested at the consume boundary, not the file shape).
+

@@ -94,6 +94,12 @@ read, initialization has already happened; return to the loop.
    confirm it back to the human, and treat it as committable project
    content.
 
+   Also ensure the target repo's `.gitignore` covers the machine-local
+   dreamwork state (`.dreamwork/status.json`, `ledger.sqlite3`, `run-mode`,
+   `submissions.log`, `chats-v1/`, etc.). `gitignore.example` in this
+   skill's directory is the copy-paste block — point the human at it or
+   add the lines directly.
+
 5. **Heartbeat.** Start the wake timer — 4.75 min stays under the 5-minute
    prompt-cache TTL, keeping the loop cheap. The message carries the
    micro-protocol, and — because monitor text survives compaction while
