@@ -2106,6 +2106,39 @@ is the reliable deliverable; the event half rides `watch-events.log`, which is
 **best-effort and lossy by design** (`log_event` swallows `OSError`), so it is
 a convenience and never a notification to rely on.
 
+## `.dreamwork/.ledger-lint-mtimes.json` — the ledger-lint hook's last-seen snapshot (#387)
+
+Machine-local state written by the `ud-dreamwork-hooks` plugin's
+`posttooluse_ledger_lint.py`, and only by its **Bash route**: a Bash tool
+call carries no `file_path`, so the hook cannot know what a heredoc or
+`sed` touched. Instead it compares the mtimes of the target's
+`questions.md` and `tasks.md` against this snapshot and lints only when
+one moved.
+
+```json
+{"/abs/path/.dreamwork/questions.md": 1784970000000000000,
+ "/abs/path/.dreamwork/tasks.md": 1784970000000000001}
+```
+
+- **One key per ledger file, an absolute path; the value is `st_mtime_ns`
+  (int).** Keys appear as the hook first sees each file — a file absent
+  from the snapshot counts as *moved* on next sight, so an appearing
+  ledger file is linted rather than permanently invisible (the
+  `stored.get(name) != current[name]` comparison; `name in stored and …`
+  was the born-hollow form, caught at the gate).
+- **A mutable last-seen snapshot, NOT append-only.** It is rewritten
+  whole (best-effort — a write failure never breaks the tool call being
+  hooked) whenever a moved file was linted, so the next call's baseline
+  is the post-write state. History would be worthless here: the only
+  question the file answers is "did it move since I last looked".
+- **First-sight seeds silently.** A ledger write that happened before
+  the hook first looked has no baseline to call moved; the seed run
+  records, does not lint.
+- **Machine-local, gitignored** — it describes what this machine's hook
+  process has seen, like `.ledger-lint-mtimes.json`'s siblings
+  `question-sigs.json` and `run-mode`. It is never a source of truth
+  about the ledger; a deleted snapshot costs one re-seed, nothing else.
+
 ## Guard run-log verdict contract — registration is not execution (#471)
 
 Every guard in `dev/capture/` (whether it imports `report.mjs` or inlines the
@@ -2194,6 +2227,27 @@ one would be dishonest (no row → no first-sight). The `meta` table carries:
 - `cutover_holder`, `cutover_token`, `cutover_lease_until` — the exclusive
   cutover lease (#263's CAS-on-meta primitive, reused verbatim). While the
   lease is active, a second cutover fails closed (`CutoverBusy`).
+
+**`store_entries` synthesizes entry heads; it does not trust stored bodies
+to carry one** (#557). The #294 import stored each body verbatim, `- **#N**`
+head line included, but the `file` verb stores the note text alone — so a
+projection that reparsed bodies was blind to every post-cutover entry (66
+of 446 rows, including six then-open tasks, invisible to every store-backed
+text check). The contract: a row whose body's first line already opens
+`- **#` is returned verbatim; any other row gets a head **synthesized from
+the store columns** and prepended —
+
+```text
+- **#N** — <title> · <priority> · <type> · origin: **<origin>** ·
+```
+
+with a NULL `priority`/`type` **omitted** (the head grammar tolerates absent
+fields; inventing one would fabricate a field the store lacks) and a NULL
+`origin` becoming `unknown` (the truthful value `check_task_origins`
+records; the schema constrains origin to `human`/`loop`/`unknown`). This is
+a **projection-only** act: the stored `body` and `body_digest` are never
+touched, so every consumer reading the body column directly (the replay
+checks, the digest verifiers) sees exactly what was written.
 
 **Write verbs** (`ledger_write.py`, #294 inc 9 + follow-up). Post-cutover the
 loop's three real ledger acts go through the store, not through direct

@@ -33,6 +33,10 @@ __pycache__/
 # Machine-local by the same argument as run-mode above -- it records what THIS
 # dashboard has seen, so committing it would assert another machine's history.
 .dreamwork/question-sigs.json
+# #387: the ledger-lint hook's last-seen mtime snapshot (Bash route). Same
+# argument as question-sigs.json — it records what THIS machine's hook has
+# seen, and a deleted copy costs one silent re-seed, never data.
+.dreamwork/.ledger-lint-mtimes.json
 # and the three-axis posture beside it (#445): same properties for the same
 # reasons — machine-local, re-read every tick, and it describes THIS host's
 # posture rather than the project's, so committing it would export one
