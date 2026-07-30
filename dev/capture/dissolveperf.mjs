@@ -77,7 +77,11 @@
    machine as a feature check. This script prints the A/B distribution for a
    human/lanes to read; it does not exit non-zero on a frame count.
 
-   usage: node dissolveperf.mjs <outdir> <port> */
+   usage: node dissolveperf.mjs <outdir> <port>
+   #538: the default 10-rep trace took ~137s and the harness's 120s timeout killed
+   it mid-run (no summary). It now self-bounds to a wall-clock budget (DP_BUDGET_S,
+   default 100s) by timing the warmup and capping reps, with a per-run deadline so
+   a load spike cannot overrun. It is still a CAPTURE with NO verdict. */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { waitFor } from './dom.mjs';
 import { readFileSync } from 'node:fs';
@@ -214,22 +218,56 @@ async function runOnce(condInit, turb) {
     stall50: gaps.filter(g => g > 50).length };
 }
 
-const REPS = +(process.env.DP_REPS || 10);   // env knob for quick iterations; 10 for a real read
+const REQ_REPS = +(process.env.DP_REPS || 10);   // requested reps; capped to fit the budget below
+// #538: the default 10-rep, 5-arm trace took ~137s on this host and the harness's
+// 120s timeout killed it mid-run — so it printed NO summary at all. A capture the
+// harness kills has negative value. So bound the whole run under the harness
+// limit: time the warmup (per-arm, discarded), derive the per-run cost, and cap
+// reps so warmup + measured phase + overhead fits. 100s leaves ~20s under the
+// 120s limit for chromium launch + the data.json fetch + teardown/printing, and a
+// per-run deadline (1.5x the warmup rate) stops early if a load spike pushes
+// past the estimate. DP_BUDGET_S / DP_REPS override for a longer read off-harness.
+const BUDGET_S = +(process.env.DP_BUDGET_S || 100);
 const labels = ['baseline', 'turbulence', 'freezeBf', 'clamp', 'noFilter'];
-const seq = []; for (let i = 0; i < REPS; i++) seq.push(...labels);
+const tWarm0 = performance.now();
 for (const l of labels) await runOnce(COND[l], l === 'turbulence');   // warmup (discarded)
+const warmMs = performance.now() - tWarm0;
+const perRunMs = warmMs / labels.length;
+const OH_MS = 5000;   // launch + first navigate + teardown + printing
+const remainMs = BUDGET_S * 1000 - warmMs - OH_MS;
+const maxReps = perRunMs > 0 ? Math.max(1, Math.floor((remainMs / perRunMs) / labels.length)) : REQ_REPS;
+const REPS = Math.min(REQ_REPS, maxReps);
+const seq = []; for (let i = 0; i < REPS; i++) seq.push(...labels);
 
 console.log(`# dissolveperf #449/#483 — load ${loadavg()} on ${cores} cores; ${REPS} reps each, interleaved`);
+console.log(`# VERDICT: NONE — this is a CAPTURE, not a guard. It prints the A/B frame-time`);
+console.log(`#   distribution and exits 0 unconditionally; it GATES NOTHING. transitions.md (#444)`);
+console.log(`#   refuses a perf threshold on this never-idle host (a frame-count cutoff is a load`);
+console.log(`#   meter, not a check). So: no PASS/FAIL verdict exists by design — a measurement,`);
+console.log(`#   not a guard; what would FAIL it is the fixture missing a review/open question.`);
+console.log(`# budget: ${BUDGET_S}s (<120s harness); warmup ${warmMs.toFixed(0)}ms (${perRunMs.toFixed(0)}ms/run); ` +
+            `requested ${REQ_REPS} reps → running ${REPS}${REPS < REQ_REPS ? ' (capped to fit budget)' : ''}`);
 console.log(`# route: /questions -> /review (p=${RP}, q=longest body ${question.body.length} chars); 1440x900; DREAM_MS=1150`);
 console.log(`# metric: distinct rAF frames in [tNav, tNav+1300] (cluster<8ms=1frame); fmax=largest inter-frame gap(ms)`);
 console.log(`# baseline IS the current default (MIST_ON=true, MIST_IMPL='feimage', #453); turbulence re-serves the page with MIST_IMPL='turbulence' (#449's shelved field, same one-filter dissolve)`);
 const res = {};
 for (const l of labels) res[l] = [];
+// wall-clock deadline: the warmup-based cap is an estimate, and this host is
+// never idle — a load spike mid-run can push per-run past it. Stop starting new
+// runs once another would breach the seq budget, so the whole script stays
+// under the harness limit whatever the load does. Arms then carry unequal
+// counts; the summary handles that, and the note below names it.
+const tSeq0 = performance.now();
+let stoppedEarly = false;
 for (const l of seq) {
+  if (performance.now() - tSeq0 + perRunMs * 1.5 > remainMs) { stoppedEarly = true; break; }
   const r = await runOnce(COND[l], l === 'turbulence');
   res[l].push(r);
   console.log(`${l.padEnd(10)} mist=${r.mist.padEnd(2)} rw=${r.rewrites}${r.rewriteMiss ? '!' : ''} frames=${String(r.frames).padStart(3)} fmax=${String(r.fmax).padStart(7)} stall50=${String(r.stall50).padStart(2)} errs=${r.errs.length} [load ${loadavg()}]`);
 }
+if (stoppedEarly) console.log(`# NOTE: stopped early at the ${BUDGET_S}s budget — host load pushed per-run ` +
+  `past the warmup estimate; arms have unequal counts (${labels.map(l => l + ':' + res[l].length).join(', ')}). ` +
+  `Increase DP_BUDGET_S for a fuller read off-harness.`);
 function summ(a, k) {
   const v = a.map(r => r[k]).filter(x => x != null).sort((x, y) => x - y);
   if (!v.length) return 'n/a';
