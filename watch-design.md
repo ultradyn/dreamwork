@@ -2198,11 +2198,25 @@ quiet − / value / + with the derived label beside it. Active stop takes
 `--accent` (live loop control). Reduced motion hides the bar and keeps the
 second-by-second text and the same application time.
 
-**Source note (#488).** A dim chip sits **beside the Posture heading**
-(`.posture-head`: label + `#posture-src`), not under the axes — so a glance
-never confuses derived values with an `override · .dreamwork/posture`. The
-copy still reads `derived from run mode · pick a stop to override` when the
-file is absent, and `arming override…` while the shared arm is live.
+**The posture slot has three states, and only one earns prose (#488,
+#551).** A dim slot sits **beside the Posture heading** (`.posture-head`:
+label + `#posture-src`), not under the axes. **Armed** — a posture change
+is pending the shared 10s arm — reads `arming override…`, the only state
+whose words earn their place. **Ambient** — no change pending, whether the
+source is `.dreamwork/posture` or derived from run mode — is a single
+link-styled `remind` button: the page's dim-link idiom (accent at rest,
+underline on hover), not a chip and not a new token. The old ambient copy
+(`override · .dreamwork/posture` / `derived from run mode · pick a stop to
+override`) was retired: it said nothing useful unless a change was
+pending. Pressing `remind` POSTs `/remind`, which composes the resolved
+five-axis posture plus a pointer to SKILL.md's posture section and relays
+it to the coordinator inbox; the slot's third state confirms
+`sent · the loop has been reminded` and cannot retrigger for 10s. The
+cooldown lives in module-scope JS (like the arm's `postArmUntil`), so a
+live re-render mid-cooldown repaints the confirmation rather than
+resurrecting the button. No motion: the slot swaps state instantly,
+matching the armed↔ambient swap that already lived here. Guard:
+`dev/capture/remindbtn.mjs`.
 
 **Hover description reserves layout (#488).** `#pdesc` is always in flow
 with a permanent `min-height` (empty space is intentional). Show/hide is
