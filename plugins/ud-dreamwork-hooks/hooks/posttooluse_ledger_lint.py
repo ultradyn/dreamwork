@@ -170,10 +170,12 @@ def _bash_route(payload: dict, base: dict) -> dict:
         return {**base, "ok": True, "skipped": True,
                 "reason": "first sight — seeded ledger mtimes without linting"}
 
-    # Moved iff any ledger file the state already recorded now has a different
-    # mtime. Files absent at seed-time but present now are treated as moved
-    # (a ledger file appearing is a structural change worth one lint).
-    moved = any(name in stored and stored[name] != current[name]
+    # Moved iff any ledger file now on disk differs from its stored mtime,
+    # INCLUDING one that appeared after seeding (absent in `stored` → its
+    # .get is None, which != an int mtime, so it counts as moved). A ledger
+    # file springing into existence is a structural change worth one lint,
+    # and the state must learn of it now so it is watched from here on.
+    moved = any(stored.get(name) != current[name]
                 for name in current)
     if not moved:
         return {**base, "ok": True, "skipped": True,

@@ -265,6 +265,51 @@ class TestBashMtime:
             "a Bash event with a moved ledger mtime must have actually run "
             f"lint (no 'lint' key); got {out}")
 
+    def test_bash_appearing_file_triggers_lint(self, tmp_path):
+        """A Bash event where a ledger file APPEARS after seeding (it was
+        absent from the state) triggers a lint. A structural change — a
+        ledger file springing into existence — is exactly the kind of edit
+        the hook exists to check. The moved comparison must treat an absent
+        entry as moved, not ignore it (`stored.get(name) != current[name]`,
+        not `name in stored and ...`)."""
+        target = make_target(tmp_path)
+        dw = target / ".dreamwork"
+        state_path = dw / STATE_FILENAME
+        questions = dw / "questions.md"
+        tasks = dw / "tasks.md"
+
+        # Seed with ONLY questions.md recorded — the documented make_target
+        # does not create tasks.md, so it is genuinely absent at seed-time
+        # (the precondition this check depends on — derived at runtime).
+        seed = {str(questions): questions.stat().st_mtime_ns}
+        assert str(tasks) not in seed, (
+            "precondition failed: tasks.md is in the seed; the appearing-file "
+            "case needs it ABSENT from the stored state")
+        assert not tasks.exists(), (
+            "precondition failed: tasks.md exists at seed-time; the "
+            "appearing-file case needs it to appear AFTER seeding")
+        state_path.write_text(json.dumps(seed), encoding="utf-8")
+
+        # tasks.md now appears — the structural change.
+        tasks.write_text("# Task ledger\n\nNext id: **1**\n", encoding="utf-8")
+        assert tasks.exists(), (
+            "precondition failed: tasks.md did not appear after seeding")
+
+        fake = _fake_lint(tmp_path, """\
+            print("clean")
+        """)
+        proc = run_script(
+            LEDGER_LINT,
+            _bash_payload(target),
+            env_extra={"DREAMWORK_LINT": str(fake)},
+        )
+        out = assert_contract(proc)
+        assert out["ok"] is True, (
+            f"hook should run lint when a ledger file appears: {out}")
+        assert out.get("lint") in ("clean", "warnings"), (
+            "a Bash event where a ledger file appeared must have actually "
+            f"run lint (no 'lint' key); got {out}")
+
     def test_bash_unmoved_mtime_skips_lint(self, tmp_path):
         """A Bash event where neither ledger file moved does NOT run lint."""
         target = make_target(tmp_path)
