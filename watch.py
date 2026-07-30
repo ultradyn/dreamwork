@@ -1357,6 +1357,14 @@ STYLE = """<style>
     letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
   .qmissing .qmissbody { color:var(--lit); max-width:56ch; }
   .qmissing .qmissback { margin-top:.5rem; }
+  /* #562 — /chat/<id>: the conversation. Each turn is a dim who-label + age
+     above the body — the same dim-row + .age annotation voice the chat list
+     and the review rows already use. No new token, no motion: the page
+     arrives on the route dissolve every destination shares. */
+  .chaturn { margin:.5rem 0; }
+  .chaturn .chatmeta { color:var(--dim); }
+  .chaturn .chatwho { color:var(--muted); }
+  .chaturn .chatbody { color:var(--lit); }
   /* #452 — the per-card way into the focused page. Headline chrome, so it
      is quiet at rest (dimmer than the age it sits beside) and discovers
      itself on hover/focus with the page's ordinary link signal. No motion
@@ -4055,15 +4063,71 @@ function burnPanel(d) {
 function chatRow(c) {
   const pend = c.status === 'pending';
   const turn = c.turns === 1 ? '1 turn' : `${c.turns} turns`;
-  // status first (it is the actionable bit), then the last turn's preview,
-  // then a dim count — the same `.age` annotation the review rows use.
-  return `<div class="dim" data-chat="${esc(c.id)}" data-status="${esc(c.status)}">` +
+  // #562 — the row is a link to its /chat/<id> page (the defect was "I can't
+  // open the chat"). It keeps the dim-row + .age idiom the list already used:
+  // status first (the actionable bit), then the last turn's preview, then a
+  // dim count. `dim` overrides the anchor's accent so the row still reads as a
+  // quiet row, not a lit link — the same dim-row voice the dashboard's other
+  // annotation lines keep. encodeURIComponent is the URL-segment escape (esc
+  // does not escape "); a chat id is a safe path component regardless.
+  return `<a class="dim chatrow" href="/chat/${encodeURIComponent(c.id)}"` +
+    ` data-chat="${esc(c.id)}" data-status="${esc(c.status)}">` +
     `${pend ? 'pending' : 'replied'} · ${esc(c.preview)}` +
-    ` <span class="age">${turn}</span></div>`;
+    ` <span class="age">${turn}</span></a>`;
 }
 function chatList(d) {
   if (!d.chats || !d.chats.length) return '';
-  return label(`topic chats · ${d.chats.length}`) + d.chats.map(chatRow).join('');
+  // #562 — the count line tells the truth: "X unread · Y total", the unread
+  // clause ONLY when unread > 0; the total is always labelled "Y total". The
+  // text changing on a tick is the already-documented settled re-render
+  // (innerHTML each tick) — no new motion, the same stance as the commits list.
+  const total = d.chats.length;
+  const unread = d.chats.filter(c => c.unread).length;
+  const cnt = unread > 0 ? `${unread} unread · ${total} total`
+                         : `${total} total`;
+  return label(`topic chats · ${cnt}`) + d.chats.map(chatRow).join('');
+}
+/* #562 — /chat/<id>: the conversation itself. A chat is its own subject, so
+   it earns a URL (watch-design.md's navigate principle — the same warrant
+   /reviews earned), and each row in the list links here. The dw-turn frames
+   of transcript.md read as turns (his / the dreamer's), newest last; the
+   chat's derived title is the page heading (TITLES.chat reads d.chats). No
+   new motion: arriving is the route dissolve every destination shares, and
+   reduced-motion parity is that dissolve's own instant swap. */
+function chatTurn(t) {
+  const you = t.role === 'human';
+  // his / the dreamer's: a dim who-label + age above the body, the same
+  // dim-row + .age annotation voice the list already uses.
+  return `<div class="chaturn" data-role="${esc(t.role)}">` +
+    `<div class="chatmeta"><span class="chatwho">${you ? 'you' : 'dreamer'}</span>` +
+    ` <span class="age">${esc(t.at)}</span></div>` +
+    `<div class="chatbody">${esc(t.body)}</div></div>`;
+}
+function buildChat(fetched) {
+  // Unknown id degrades quietly, in the page's own voice — never a traceback,
+  // never a thrown exception (the same .qmissing shape buildQuestion uses).
+  if (!fetched)
+    return `<div class="qmissing"><div class="qmisshead">not found</div>` +
+      `<div class="qmissbody">this link names a chat the list no longer ` +
+      `has — it was most likely removed while you watched. No other chat ` +
+      `has been substituted for it.</div>` +
+      `<div class="qmissback"><a href="/">&larr; back to dashboard</a></div>` +
+      `</div>`;
+  return label('topic chat') +
+    (fetched.entries || []).map(chatTurn).join('');
+}
+/* the chat page needs the full transcript, which is not in /data.json (only
+   the derived summaries ride it). /chatdata?id= serves the parsed turns for
+   one chat — the /filedata idiom one surface over. Fetched fresh each build
+   so a reply landing on a live tick appears with no reload (the tick is gated
+   on an mtime change, so this is one small fetch per re-render, like
+   /data.json itself). null on any failure → buildChat degrades in-voice. */
+async function fetchChat(id) {
+  try {
+    const res = await fetch('/chatdata?id=' + encodeURIComponent(id || ''));
+    if (res.ok) return await res.json();
+  } catch (e) {}
+  return null;
 }
 /* #545 — the dashboard reviews panel caps at the most recent few rows and
    links to the full /reviews listing. The full list is its own subject and
@@ -5225,11 +5289,11 @@ let view = { name: null, param: null, q: null };
    The /filedata response carries one of those shapes; never the bytes. */
 let fileCache = { param: null, fetched: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
-const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19 };
+const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19, chat: 0.05 };
 /* per-route dissolve signature: each destination swirls from its own
    turbulence seed, so arriving somewhere has a consistent feel (pairs with
    the per-route tint). Distinct small integers give distinct fields. */
-const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61, question: 67, research: 71, reviews: 73 };
+const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61, question: 67, research: 71, reviews: 73, chat: 89 };
 /* ── the tab title (#153) ─────────────────────────────────────────────────
    The title is the ONLY part of this dashboard that exists while the tab is
    backgrounded, which is most of its life — so it answers the page's whole
@@ -5268,7 +5332,8 @@ const TITLE_ROUTE = { dashboard: () => '', questions: () => 'questions',
                       review: p => 'review ' + (p || ''),
                       question: () => 'question',
                       research: p => 'research' + (p ? ' ' + p : ''),
-                      reviews: () => 'reviews' };
+                      reviews: () => 'reviews',
+                      chat: () => 'chat' };
 /* two missed heartbeats (4.75m each) — one late beat is a busy machine, two
    is a loop that stopped. */
 const STALE_TICK_MS = 10 * 60 * 1000;
@@ -6195,6 +6260,13 @@ function routeOf(loc) {
   }
   // #545 — the full reviews listing the dashboard's cap points at.
   if (loc.pathname === '/reviews') return { name: 'reviews', param: null };
+  // #562 — /chat/<id>: one topic chat's conversation. The id is the path
+  // segment after /chat/; /chat with no id degrades to the page's not-found
+  // voice (a chat is its own subject — the navigate principle).
+  if (loc.pathname === '/chat' || loc.pathname.startsWith('/chat/')) {
+    const seg = loc.pathname.slice(6);  // after '/chat/'
+    return { name: 'chat', param: seg ? decodeURIComponent(seg) : null };
+  }
   return { name: 'dashboard', param: null };
 }
 /* THE ONE PLACE `data` IS REPLACED, and it is a function rather than an
@@ -6262,6 +6334,12 @@ async function buildCurrent() {
   if (view.name === 'file') {
     await ensureData();
     return buildFile(view.param, await fetchFile(view.param), view.mode);
+  }
+  // #562 — /chat/<id> needs ensureData (the chrome heading reads d.chats for
+  // the derived title) AND the fetched transcript (not in /data.json).
+  if (view.name === 'chat') {
+    await ensureData();
+    return buildChat(await fetchChat(view.param));
   }
   const d = await ensureData();
   if (view.name === 'review') return buildReview(view.param, view.q, d);
@@ -8444,6 +8522,14 @@ const TITLES = {
   /* #545 — the listing surface; the heading names it like the research
      listing does. */
   reviews: () => 'reviews',
+  /* #562 — the chat page's heading is the chat's DERIVED title (from d.chats,
+     the same derivation the list shows), not the bare word "chat": a chat is
+     its own subject, so its name heads the page. Falls back to 'chat' while
+     data loads or for an unknown id (the body degrades in-voice either way). */
+  chat: (v, d) => {
+    const c = ((d && d.chats) || []).find(x => x.id === v.param);
+    return c ? esc(c.title) : 'chat';
+  },
 };
 /* The copy button carries no path of its own, on purpose: it reads
    `view.param`, which is what the router parsed out of the URL and therefore
@@ -8544,6 +8630,10 @@ function crumbsFor(v, d) {
   // #545: the reviews listing's way back is the dashboard, the same single
   // home crumb the research listing carries (no artifact here, just the list).
   if (v.name === 'reviews')
+    return [{ k:'home', html:'<a href="/">&larr; dashboard</a>' }];
+  // #562: the chat page's way back is the dashboard — the chat list lives
+  // there. Same single home crumb the listings carry.
+  if (v.name === 'chat')
     return [{ k:'home', html:'<a href="/">&larr; dashboard</a>' }];
   if (!d) return [];
   // #491 — the version crumb sits BESIDE the freshness age ("updated Ns ago"),
@@ -9226,6 +9316,7 @@ async function navigate(name, param, opts) {
     : name === 'research' ? '/research' +
         (param ? '?p=' + encodeURIComponent(param) : '')
     : name === 'reviews' ? '/reviews'
+    : name === 'chat' ? '/chat/' + encodeURIComponent(param || '')
     : '/';
   /* The wide artifact column is the review idiom's, and a research DOC
      (#484, /research?p=…) is the same reading gesture over the same
@@ -9256,7 +9347,8 @@ function isInternal(a) {
       || a.pathname === '/answers'
       || a.pathname === '/file' || a.pathname === '/review'
       || a.pathname === '/question' || a.pathname === '/research'
-      || a.pathname === '/reviews';
+      || a.pathname === '/reviews'
+      || a.pathname.startsWith('/chat/');
 }
 addEventListener('click', e => {
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey ||
@@ -12480,6 +12572,13 @@ def append_human_question(text, question, stamp):
 # carries identity only, never a second source of truth.
 CHAT_DIR = "chats-v1"
 CHAT_PREVIEW_N = 80
+# A chat id is a journal receipt id (UUID hex) and a DIRECTORY NAME under
+# chats-v1/, so it must be a safe path component — no separator, no `..`. The
+# /chatdata endpoint validates against this before it ever joins the id onto a
+# path, so a typo'd or hostile id is a 404, never a traversal. Mirrors
+# bin/ud-dw-chat's _CHAT_ID (the CLI's reply guard), one definition of "what
+# counts as a chat id" shared by the writer, the reader and the route.
+_CHAT_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def _chat_root(target):
@@ -12553,15 +12652,51 @@ def apply_chat_turn(target, chat_id, role, text, at=None, receipt_id=None):
     return True
 
 
+def _chat_record_and_turns(cdir, name):
+    """Derive one chat's record (+ its parsed turns) from a chats-v1 dir.
+
+    The single source for the derivation the dashboard list and the per-chat
+    page both serve, so title / turn count / status / unread can never
+    disagree between them. Returns (record, turns); record is None when the
+    dir holds no parsed turn (list_chats skips exactly those).
+
+    #562: ``unread`` is True when the last turn is his (a human turn with no
+    agent turn after it) — derived from the parsed turns, the same place
+    status comes from. Note the relationship: pending (no agent turn yet) is
+    a SUBSET of unread — a chat he followed up on after a reply is replied
+    AND unread. chat.json stays identity-only (#504 contract)."""
+    turns = _parse_chat_turns(read_text(os.path.join(cdir, "transcript.md")))
+    if not turns:
+        return None, []
+    meta = _safe_json(read_text(os.path.join(cdir, "chat.json"))) or {}
+    humans = [t for t in turns if t["role"] == "human"]
+    agents = [t for t in turns if t["role"] == "agent"]
+    first_human = humans[0]["body"] if humans else turns[0]["body"]
+    rec = {
+        "id": meta.get("id", name),
+        "title": _chat_preview(first_human),
+        "mode": meta.get("mode", "main-dreamer"),
+        "turns": len(turns),
+        "status": "replied" if agents else "pending",
+        "unread": turns[-1]["role"] == "human",
+        "created": meta.get("created", ""),
+        "last_at": turns[-1]["at"],
+        "last_by": turns[-1]["role"],
+        "preview": _chat_preview(turns[-1]["body"]),
+    }
+    return rec, turns
+
+
 def list_chats(target):
     """Derived chat records for the dashboard's minimal topic-chat list (Q4).
 
     One per chats-v1/<id>/ dir that has a transcript. Title / turn count /
-    status are DERIVED from the transcript (no second source of truth).
-    `status` is 'replied' once an agent turn exists (the dreamer replied —
-    "a reply creates the chat's first agent turn"), else 'pending'. Newest
-    first by chat.json `created`, dir-name fallback. Degrades to [] when the
-    store is absent (the slice ships before the apply lane wires the write).
+    status / unread are DERIVED from the transcript (no second source of
+    truth) via _chat_record_and_turns. `status` is 'replied' once an agent
+    turn exists (the dreamer replied), else 'pending'. `unread` is True when
+    the last turn is his. Newest first by chat.json `created`, dir-name
+    fallback. Degrades to [] when the store is absent (the slice ships before
+    the apply lane wires the write).
     """
     root = _chat_root(target)
     if not os.path.isdir(root):
@@ -12571,24 +12706,9 @@ def list_chats(target):
         cdir = os.path.join(root, name)
         if not os.path.isdir(cdir):
             continue
-        turns = _parse_chat_turns(read_text(os.path.join(cdir, "transcript.md")))
-        if not turns:
-            continue
-        meta = _safe_json(read_text(os.path.join(cdir, "chat.json"))) or {}
-        humans = [t for t in turns if t["role"] == "human"]
-        agents = [t for t in turns if t["role"] == "agent"]
-        first_human = humans[0]["body"] if humans else turns[0]["body"]
-        chats.append({
-            "id": meta.get("id", name),
-            "title": _chat_preview(first_human),
-            "mode": meta.get("mode", "main-dreamer"),
-            "turns": len(turns),
-            "status": "replied" if agents else "pending",
-            "created": meta.get("created", ""),
-            "last_at": turns[-1]["at"],
-            "last_by": turns[-1]["role"],
-            "preview": _chat_preview(turns[-1]["body"]),
-        })
+        rec, _ = _chat_record_and_turns(cdir, name)
+        if rec:
+            chats.append(rec)
     chats.sort(key=lambda c: c.get("created") or c["id"], reverse=True)
     return chats
 
@@ -14478,9 +14598,13 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             parsed = urllib.parse.urlparse(self.path)
             # Same-document routes all return the one app shell; the client
             # router renders the matching view (deep links keep working).
-            if parsed.path in ("/", "/questions", "/answers", "/file",
+            # #562: /chat/<id> is a same-document route too — the id is a path
+            # segment, so it is matched by prefix rather than the fixed set.
+            if (parsed.path in ("/", "/questions", "/answers", "/file",
                                "/review", "/question", "/research",
-                               "/reviews"):
+                               "/reviews")
+                    or parsed.path == "/chat"
+                    or parsed.path.startswith("/chat/")):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
                 # #487: optional burn_step lets the head's cycle control
@@ -14548,6 +14672,25 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                     }), "application/json")
                     return
                 self.send_error(404)
+            elif parsed.path == "/chatdata":
+                # #562 — the parsed transcript for one chat, for the /chat/<id>
+                # page (the full turns are not in /data.json, only the derived
+                # summaries). The id is validated as a safe path component
+                # BEFORE it is joined onto _chat_root, so a hostile or typo'd
+                # id is a 404, never a traversal. The derivation goes through
+                # the SAME _chat_record_and_turns list_chats uses, so title /
+                # status / unread can never disagree between the list and the
+                # page; the page additionally gets the full parsed turns.
+                cid = urllib.parse.parse_qs(parsed.query).get("id", [""])[0]
+                if not _CHAT_ID_RE.match(cid):
+                    self.send_error(404); return
+                rec, turns = _chat_record_and_turns(
+                    os.path.join(_chat_root(target), cid), cid)
+                if not rec:
+                    self.send_error(404); return
+                payload = dict(rec)
+                payload["entries"] = turns
+                self._send(json.dumps(payload), "application/json")
             elif parsed.path == "/filebytes":
                 # #336 — raw bytes, behind the SAME resolve_confined gate as
                 # /filedata. The Content-Type is taken from INLINE_IMAGE_EXTS
