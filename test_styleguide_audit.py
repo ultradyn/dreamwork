@@ -9,6 +9,7 @@ nothing, and this repo has caught three that were passing on their own bug.
 """
 
 import ast
+import pathlib
 
 import dev.styleguide_audit as a
 
@@ -140,35 +141,67 @@ def test_hatch_does_not_match_prose_or_other_trailers():
 # under a non-UI-y name is a residual a reviewer catches; the common case — a
 # rename or removal of a known UI constant — is what this guards.)
 
-def test_ui_constants_track_watch_py_at_head():
+def test_ui_constants_track_the_client_assets_at_head():
+    """#397 moved the client to files, so the anti-hollow check moved with it.
+
+    Three ways the filter could go hollow, one assertion each: an asset the
+    audit names could vanish; the constant that loads it could be renamed so
+    the page stops assembling; or a UI-shaped string LITERAL could creep back
+    into watch.py, where the post-extraction prefix rule would never see it.
+    """
+    # 1. every registered asset exists and carries content. Size, not mere
+    #    existence — an empty file would satisfy `is_file` and serve a blank
+    #    page, and this test would have vouched for it.
+    for rel in a.CLIENT_ASSETS:
+        p = pathlib.Path(rel)
+        assert p.is_file(), (
+            "dev/styleguide_audit.py names %s but it does not exist — the "
+            "audit's HEAD guard would refuse, and UI changes to a moved "
+            "asset would be unclassified. Update CLIENT_ASSETS." % rel
+        )
+        assert p.stat().st_size > 0, (
+            "%s is empty — the page would serve a blank asset and every "
+            "check that reads it would pass vacuously" % rel
+        )
+
     src = open("watch.py").read()
     tree = ast.parse(src)
-    present = set()
+    assigned, literal_strs = set(), set()
     for node in tree.body:
-        if (
+        if not (
             isinstance(node, ast.Assign)
             and len(node.targets) == 1
             and isinstance(node.targets[0], ast.Name)
-            and isinstance(node.value, ast.Constant)
-            and isinstance(node.value.value, str)
         ):
-            present.add(node.targets[0].id)
-    # Every tracked UI constant still exists (a rename removes the old name).
-    assert set(a.UI_CONSTANTS) <= present, (
-        "a UI constant in UI_CONSTANTS is gone from watch.py — likely renamed; "
-        "update dev/styleguide_audit.py. missing=%r"
-        % sorted(set(a.UI_CONSTANTS) - present)
+            continue
+        name = node.targets[0].id
+        assigned.add(name)
+        if isinstance(node.value, ast.Constant) and isinstance(
+            node.value.value, str
+        ):
+            literal_strs.add(name)
+
+    # 2. the loader constants are still named as the assembly expects.
+    assert set(a.UI_CONSTANTS) <= assigned, (
+        "a UI constant in UI_CONSTANTS is gone from watch.py — likely "
+        "renamed; the page would stop assembling. update "
+        "dev/styleguide_audit.py. missing=%r"
+        % sorted(set(a.UI_CONSTANTS) - assigned)
     )
-    # Every UI-SHAPED module string (ends in _JS, or is STYLE/APP_BODY) is
-    # tracked — a new UI block added under a UI-y name must be registered.
-    ui_shaped = {
-        n for n in present if n.endswith("_JS") or n in ("STYLE", "APP_BODY")
+
+    # 3. no UI-shaped literal has come BACK into watch.py. Post-extraction
+    #    those are invisible to the `client/` prefix rule, so one would be a
+    #    silent hole rather than a loud drift.
+    crept_back = {
+        n for n in literal_strs
+        if n.endswith("_JS") or n in ("STYLE", "APP_BODY")
     }
-    assert ui_shaped == set(a.UI_CONSTANTS), (
-        "watch.py's UI-shaped module strings drifted from UI_CONSTANTS — "
-        "update dev/styleguide_audit.py so the filter does not silently miss "
-        "UI changes. ui_shaped=%r UI_CONSTANTS=%r"
-        % (sorted(ui_shaped), list(a.UI_CONSTANTS))
+    assert not crept_back, (
+        "UI-shaped string literal(s) are back in watch.py: %r. Since #397 "
+        "the client lives in client/ and the audit classifies by that "
+        "prefix, so a literal here is a UI change the filter cannot see. "
+        "Extract it to client/ (and add it to CLIENT_ASSETS)."
+        % sorted(crept_back)
     )
 
 

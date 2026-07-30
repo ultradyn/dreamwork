@@ -68,22 +68,28 @@ process.on('unhandledRejection', e => nameThrow('unhandledRejection', e));
    so it was self-consistent at ANY value of BURN_LIMIT_CAP — the
    coordinator's red-run reverted 256→168 and the guard PASSED (a green
    red-run is a finding). The rendered `max` is templated on the constant
-   (watch.py:3931 `max="${BURN_LIMIT_CAP}"`), so it tracks whatever the
-   working tree says — proven directly: max=256 normally, 168 under 256→168.
+   (`max="${BURN_LIMIT_CAP}"`), so it tracks whatever the working tree says —
+   proven directly: max=256 normally, 168 under 256→168.
    Binding pre.max to a value read from the SAME working-tree file is
    therefore circular (both sides move together); the binding instead anchors
-   on the COMMITTED production constant (HEAD:watch.py), the source of truth a
-   working-tree drift diverges from. The working-tree read stays the
+   on the COMMITTED production constant (HEAD:client/views.js), the source of
+   truth a working-tree drift diverges from. The working-tree read stays the
    rename-detection precondition: a renamed constant → zero matches → a named
    extraction FAIL, not an obscure crash.
 
+   #397: the constant used to live in watch.py's VIEWS_JS literal; the client
+   is files now, so both reads follow it to `client/views.js`. Reading
+   watch.py here would find zero matches and fail the extraction check for a
+   reason that has nothing to do with the cap.
+
    production lines each green depends on (for red-proof injection):
-     (#548 bind)   watch.py:3712 `const BURN_LIMIT_CAP = 256;` (the constant)
-                   watch.py:3931 `max="${BURN_LIMIT_CAP}"`     (the render)
+     (#548 bind)   client/views.js `const BURN_LIMIT_CAP = 256;` (the constant)
+                   client/views.js `max="${BURN_LIMIT_CAP}"`     (the render)
      (#548 rename) the const-declaration line itself (renamed → 0 matches) */
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_ROOT = resolve(HERE, '..', '..');
-const WATCH_PY = join(SKILL_ROOT, 'watch.py');
+const CAP_SRC = join(SKILL_ROOT, 'client', 'views.js');
+const CAP_SRC_REL = 'client/views.js';
 const CAP_RE = /const BURN_LIMIT_CAP = (\d+);/g;
 
 /* EXPECTED_CAP — the recorded value of the production constant, pinned as a
@@ -92,8 +98,9 @@ const CAP_RE = /const BURN_LIMIT_CAP = (\d+);/g;
    recorded literal with provenance, and an accidental or unaccompanied drift
    fails here). Provenance:
      · recorded 2026-07-30, value 256
-     · watch.py `const BURN_LIMIT_CAP = 256;` (today :3712)
-     · watch.py:3931 renders it into the input's `max`
+     · `const BURN_LIMIT_CAP = 256;` — in watch.py's VIEWS_JS when recorded,
+       in `client/views.js` since #397 extracted the client
+     · the same file renders it into the input's `max`
    This is the anchor for a COMMITTED drift: if someone changes the constant
    and commits it, HEAD and the working tree would agree and the working-tree/
    committed binding could not fail — so the committed constant is also pinned
@@ -109,10 +116,12 @@ const extractCap = (src, where) => {
      `(saw ${ms.length})`, ms.length === 1);
   return ms.length === 1 ? Number(ms[0][1]) : null;
 };
-const CAP_WT = extractCap(readFileSync(WATCH_PY, 'utf8'), 'working-tree watch.py');
+const CAP_WT = extractCap(readFileSync(CAP_SRC, 'utf8'),
+                          `working-tree ${CAP_SRC_REL}`);
 const CAP_COMMITTED = extractCap(
-  execFileSync('git', ['show', 'HEAD:watch.py'], { cwd: SKILL_ROOT, encoding: 'utf8' }),
-  'committed (HEAD) watch.py');
+  execFileSync('git', ['show', `HEAD:${CAP_SRC_REL}`],
+               { cwd: SKILL_ROOT, encoding: 'utf8' }),
+  `committed (HEAD) ${CAP_SRC_REL}`);
 if (CAP_WT == null || CAP_COMMITTED == null) {
   finish();
   process.exit(1);

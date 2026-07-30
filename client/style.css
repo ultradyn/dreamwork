@@ -1,0 +1,1798 @@
+
+  :root { --bg:#0b0f19; --panel:#111827; --panel2:#1e293b;
+    --line:#1f2937; --border:#334155; --text:#d1d5db; --bright:#f3f4f6;
+    --lit:#e5e7eb; --muted:#9ca3af; --dim:#6b7280; --dimmer:#4b5563;
+    --accent:#a5b4fc; --space:1.6rem; --radius:4px;
+    /* The page's SECOND colour, and the only rule it has is that it means
+       BROKEN rather than live (#136). The accent says "this is happening";
+       amber says "the channel to you has failed and you cannot see it from
+       the numbers". One user, ever: a questions.md the reader cannot see.
+       Adding it breaks the one-accent rule on purpose — a fault rendered in
+       indigo reads as activity, and this is the one thing on the page that
+       must not. Same lightness family as the accent, warm against a cool
+       page, so it is unmistakably not it. */
+    --warn:#fcd34d;
+    /* The code-token palette (#351), spent ONLY inside /file's source pane.
+       Value-for-value the review-artifact frame's (#339), because he moves
+       between /file and /review constantly and the same token kind must be
+       the same colour in both. `--amber` is deliberately NOT `--warn`: on
+       this page `--warn` means broken (#136) and a numeral is not broken.
+       These break the one-accent rule inside a code block the way the
+       artifact already does — colouring code is the point of the pane. */
+    --accent2:#7dd3fc; --ok:#86efac; --amber:#fcd34d; }
+  /* Scrollbars are chrome, and chrome should recede: hairline track,
+     dim thumb, no arrows. Firefox first, then the WebKit pseudos. */
+  * { scrollbar-width:thin; scrollbar-color:var(--dimmer) transparent; }
+  ::-webkit-scrollbar { width:7px; height:7px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--dimmer);
+                              border-radius:var(--radius); }
+  ::-webkit-scrollbar-thumb:hover { background:var(--dim); }
+  ::-webkit-scrollbar-corner { background:transparent; }
+  body { background:var(--bg); color:var(--text); margin:0;
+         padding:2.5rem 1rem;
+         font-family:ui-monospace,'JetBrains Mono',monospace; font-size:.8rem; }
+  .wrap { max-width:72ch; margin:0 auto; position:relative;
+          perspective:1500px; }
+  header { color:var(--bright); font-size:1rem; margin-bottom:.25rem; }
+  #meta { color:var(--dim); margin-bottom:2rem; }
+  #meta .q { color:var(--accent); }
+  /* The heading survives navigation, so its parts travel rather than
+     reload (#110). Crumbs are inline-block because a transform does nothing
+     to an inline box; the separator belongs to the crumb that FOLLOWS, so a
+     departing crumb takes no punctuation with it. */
+  #chrome { position:relative; }
+  .crumb, .htitle, .hproj { display:inline-block;
+    transition:transform .85s cubic-bezier(.32,.1,.2,1),
+               opacity .55s ease, filter .55s ease; }
+  /* non-breaking spaces: an inline-block collapses the leading/trailing
+     whitespace of generated content, so " · " would render flush */
+  .crumb + .crumb::before { content:"\00a0\00b7\00a0"; color:var(--dim); }
+  /* A CRUMB NEVER BREAKS INSIDE ITSELF (#284, measured at 390px). The design
+     already says the separator belongs to the crumb that FOLLOWS — that is why
+     a departing crumb takes no punctuation with it — but a crumb is an
+     inline-block whose contents wrap like any other inline content, so as soon
+     as the row was long enough to wrap it broke between the separator and the
+     mode switch and left a lone `·` on a line of its own, 17px above the crumb
+     it belonged to.
+
+     A trailing WORD JOINER (U+2060) in the separator was the first attempt and
+     it did NOT work: it suppresses a break at its own position, and Chromium
+     still took the break opportunity before the switch's atomic `inline-flex`
+     box. `nowrap` is the rule actually wanted — a crumb is a short label — and
+     the ONE exception is the path, which must wrap anywhere (`.fdir` re-enables
+     wrapping for its own text). */
+  .crumb { white-space:nowrap; }
+  /* the snapped start state for anything arriving: transition:none so it
+     BEGINS here instead of animating toward here (the enter-snap rule).
+
+     `!important` on the transition, and only on the transition. This class
+     has to beat whatever the arriving element's own component says, or the
+     rule is a lie exactly where a component has motion of its own — which is
+     everywhere it matters. It WAS a lie: `.qa` declares the same three
+     transitions at the same specificity and later in this sheet, so a
+     question card carrying `.dreamin` kept a 0.85s transition and an opacity
+     of 1, animated one frame TOWARD 0, and had the class removed. Arrivals
+     have never faded in since #104; crumbs, which declare no transition of
+     their own, always have. Source order is not a contract — a component
+     added below here would silently take it back — so the invariant is
+     stated as one. The other three properties stay overridable: they are the
+     start POSE, and a component may reasonably want its own. */
+  .dreamin { transition:none !important; opacity:0; filter:blur(4px);
+             transform:translateY(5px); }
+  /* a departing crumb is lifted out of flow at its own rect, so survivors
+     close the gap underneath it while it dreams away in place */
+  .crumb.crumbout { position:absolute; z-index:2; pointer-events:none; }
+  .crumb.crumbout::before { content:none; }
+  .crumb.crumbgone { opacity:0; filter:blur(5px); transform:translateY(-7px); }
+  /* ── the file heading lockup (#284) ──────────────────────────────────────
+     His report: a full path like `.dreamwork/docs/research/contextual-review-
+     annotations.md` competes with the document it names. So the BASENAME is
+     the `<h1>` and the exact parent path sits BENEATH it — in the crumb row,
+     which already IS this page's subdued metadata line. That is the whole
+     reason there is no new component and no new motion here: the path is a
+     crumb, so it arrives, departs and travels on the keyed route transition
+     every other crumb already uses.
+
+     IT WRAPS ANYWHERE AND IS NEVER SHORTENED (human, 2026-07-27): "a path
+     that lies about its own segments is worse than one that takes two lines."
+     No ellipsis, no middle-truncation, no reordering — and `overflow-wrap:
+     anywhere` is what lets a long directory chain break INSIDE a segment
+     rather than push the column sideways, which is the only other thing an
+     unbreakable 60-character token can do. It is selectable text, because
+     selecting it is the fallback when the clipboard is refused. */
+  .fdir { color:var(--dim); user-select:text; -webkit-user-select:text;
+          white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
+  .fcopy { background:none; border:1px solid transparent; color:var(--muted);
+    border-radius:var(--radius); font:inherit; padding:0 .3rem; cursor:pointer;
+    transition:color .3s ease, border-color .3s ease; }
+  .fcopy:hover { color:var(--accent); }
+  /* A REAL focus ring, not a colour shift. `.pipbtn` marks focus by taking
+     the accent alone, which is the same signal as hover and unreadable to
+     anyone arriving by Tab on a page whose accent is already everywhere. The
+     copy button is keyboard-first by construction (it is a <button>, so
+     Enter and Space activate it natively), so its focus state has to be
+     visible without a colour memory. */
+  .fcopy:focus-visible { color:var(--accent); border-color:var(--accent);
+    outline:1px solid var(--accent); outline-offset:2px; }
+  /* The copy confirmation is the composer's confirmation — the same
+     `.cmdmsg` component and the same `confirmationFor` lifecycle, so this
+     page has exactly ONE polite-confirmation idiom rather than a second one
+     that drifts. What is its own is WHERE it sits: absolutely positioned in
+     the gap `#meta`'s 2rem bottom margin already leaves above `#view`, so a
+     message that arrives moves NOTHING. Appearing is a transition, and the
+     cheapest way to obey that is to need no layout in the first place. */
+  .fmsg { position:absolute; top:100%; left:0; margin-top:.15rem;
+          max-width:100%; }
+  /* ── Rendered / Source (#252) ────────────────────────────────────────────
+     The page's standing sliding selection group (#121), so the outline that
+     travels, its easing and its reduced-motion landing all come for free and
+     there is no second switch idiom here. What is its own is that it sits in
+     a line of TEXT: inline-flex on the row's baseline, at the crumb row's own
+     size, so it reads as part of the metadata line rather than as a control
+     panel bolted to it.
+
+     BOTH LABELS STAY IN ONE ROW AT EVERY WIDTH (his rule), which is what
+     `flex-wrap:nowrap` is for — `.sgroup` wraps by default, and a wrapped
+     two-position switch is a stack with an indicator sliding vertically
+     through it. Two words cost under 16ch: there is no viewport where hiding
+     or stacking half of a binary choice is the better trade.
+
+     The active label takes `--accent`, i.e. `.sgbtn.on` unmodified. That is
+     the accent's rule and not an exception to it: the mode is the live state
+     of the surface he is reading, not a settled preference like the project
+     tint (whose selected label deliberately wears its own hue instead).
+
+     SOURCE ORDER IS NOT A CONTRACT, and this is the rule that proves it here:
+     `.sgroup` declares `display:flex; flex-wrap:wrap` at the same specificity
+     and LATER in this sheet, so a plain `.fmodes` lost both. The switch was
+     therefore a BLOCK-level flex container, which forces a line break before
+     and after itself — inside its own crumb — and the separator was orphaned
+     on a line of its own 17px above it (measured at 390px). `#meta` is on the
+     selector so the invariant holds wherever this block sits in the file,
+     rather than depending on it sitting below `.sgroup`. The same reasoning
+     `.dreamin`'s `!important` states in its own comment. */
+  #meta .fmodes { display:inline-flex; flex-wrap:nowrap;
+                  vertical-align:baseline; gap:.1rem; }
+  .fmodes .fmode { padding:.1rem .4rem; font-size:.7rem; white-space:nowrap; }
+  /* the row's links underline on hover; a segmented control's labels must not
+     — the indicator is what says which one is live */
+  .fmodes .fmode:hover, .fmodes .fmode:focus-visible { text-decoration:none; }
+  .fmodes .fmode:focus-visible { outline:1px solid var(--accent);
+                                 outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .crumb, .htitle, .hproj, .fcopy { transition:none; }
+  }
+  .label { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
+           font-size:.7rem; margin:var(--space) 0 .5rem; }
+  /* ── an expanded element becomes PROMINENT, not just taller (#169) ───
+     His words: expanding should grow padding above and below, so the thing he
+     opened reads as foregrounded. Expanding is a change in IMPORTANCE, not a
+     reveal — what he opened is now the subject of the page — so it is an
+     IDIOM here rather than a treatment on one component, and every disclosure
+     on this page inherits it by existing.
+
+     Two channels, both already this page's own vocabulary:
+
+       AIR. It claims space above and below. On a page with no cards, borders
+       or fills, whitespace IS the structural device, so claiming space is
+       what being foregrounded looks like here. It costs the summary an 8px
+       shift under his pointer on the click that opens it; that is what "air
+       above" means and it is the half he asked for by name.
+
+       LUMINANCE. Its summary steps one place UP the text ramp, because
+       emphasis on this page is luminance (the same rule as `**bold**`).
+       NEVER `font-weight`: a mono face steps rather than transitions, and
+       re-metricing the summary would move the very thing being opened.
+
+     The step is stated PER SURFACE, one line each, rather than as a single
+     bright colour for every open summary — each of these sits somewhere
+     different on the ramp when closed, on purpose (a settled thread at
+     `--dim`, a folded card's title at `--muted`), and one flat rule would
+     drag all of them to the same brightness. That is the shape that overruled
+     `.sgbtn` (#121) and leaked into `.qfield textarea` (#139); what is
+     generic here is the RULE (open is one step up), not the value.
+
+     THE PADDING DOES NOT TRANSITION, and that is what keeps this one gesture
+     rather than two. A card-nested disclosure measures its new rect
+     immediately after `det.open` flips (the `.qa details > summary` handler),
+     so the growth has to be in the layout by then — the CARD's height travel
+     is what animates it, carrying every card below for free. A padding
+     transition would hand `regroupCards` a start-of-transition rect and the
+     FLIP would aim at a height the card never reaches, snapping at the end.
+
+     BOTH sides, not only the bottom. `padding:.5rem 0` is load-bearing for
+     #169: top air is the half that shifts the summary 8px under the pointer,
+     and that shift *is* the prominence he asked for by name. #277 (22f9884)
+     cut it to `padding:0 0 .5rem` to quiet that shift when the fold motion
+     made it more visible; that left every disclosure bottom-only and broke
+     prominence.mjs on all four surfaces. Do not re-cut the top. */
+  details { margin:.25rem 0; }
+  details[open] { padding:.5rem 0; }
+  summary { cursor:pointer; color:var(--lit); list-style:none; }
+  details[open] > summary { color:var(--bright); }
+  summary::before { content:"+ "; color:var(--dim); }
+  details[open] > summary::before { content:"- "; }
+  .age { color:var(--dim); margin-left:.5rem; }
+  /* #385 / #456: the pad digit of a single-figure unit is quieter than the
+     value. Only the leading 0 of `05` / `09` wears this — never a genuine
+     tens digit. Opacity (not a dimmer colour token) so the pad composites
+     against the animated shader and reads close to invisible; 50% is his
+     estimate of that goal. */
+  .age .agepad { opacity:.5; }
+  /* age next to the date inside a question title. #456: the chrome's ` · `
+     sits between date and age in the markup, so no left margin here — the
+     separator carries the gap (was .35rem when the join was bare). */
+  .qt .qage { margin-left:0; font-size:.7rem; }
+  /* #463 — secondary "modified X ago" on a review row, and the named
+     "created unknown" state when birth is unavailable. Same ` · `
+     separator #456 reused for date/age (chrome's own middot), never a
+     second idiom. Dimmer than the primary age so the two facts coexist
+     without competing. No left margin: the separator owns the gap. */
+  .age.rmod, .age.ageunk, .age.qup { color:var(--dimmer); margin-left:0; }
+  .rsep { color:var(--dimmer); }
+  /* #289 — review decision on the listing row. A settled verdict
+     (accepted/rejected) dims like a folded entry: the work is done, so its
+     marker steps down the text ramp. pending is in flight, so its marker
+     stays a step brighter. 'unlinked' (no record) renders NO marker at all
+     — absence of a record is its own state, distinct from pending by
+     contract; data-decision carries all four so CSS/clients can key off it.
+     The marker links to /question when a question_title is recorded (a
+     decision row always is). Emphasis here is luminance, not colour:
+     --ok/--warn are reserved (#351 pane / #136 broken), so the glyph (✔/✘)
+     carries the verdict and the ramp carries 'done'. */
+  .rdecision { margin-left:.6ch; font-size:.7rem; white-space:nowrap;
+               /* the standing transition .dreamin eases BACK from (the
+                  enter-snap rule, #154/#463): without it the arrival pose
+                  snaps to lit rather than easing in. */
+               transition:opacity .55s ease, filter .55s ease,
+                          transform .55s ease; }
+  .rdecision.raccepted, .rdecision.rrejected { color:var(--dim); }
+  .rdecision.rpending { color:var(--muted); }
+  .rqlink { color:inherit; text-decoration:none; }
+  .rqlink:hover { text-decoration:none; }
+  .rqlink:hover .rdecision { color:var(--accent); }
+  pre { white-space:pre-wrap; color:var(--muted); margin:.4rem 0 .8rem 1ch;
+        border-left:1px solid var(--line); padding-left:1ch; }
+  /* #351 — /file's source pane is CODE, and code does not wrap (his ask:
+     "no line wrapping"). A long line scrolls INSIDE the pane, never the
+     page sideways — the same contract `.md pre.mdcode` already keeps for
+     fences in rendered prose, so this is that idiom reaching the pane it
+     was always meant for, not a second one. Scoped to `#filebody > pre`
+     (the pane itself): the markdown fence keeps its own rule, and every
+     other <pre> on the page (preB peeks — prose) keeps pre-wrap. */
+  #filebody > pre { white-space:pre; overflow-x:auto; }
+  /* The highlighted pane carries a <code> inside its <pre>; the generic
+     inline-`code` chip (panel fill, padding, radius) is for prose spans and
+     would paint a plate behind the whole block. Reset it here rather than
+     weakening the prose rule. */
+  #filebody > pre > code { color:inherit; background:none; padding:0;
+                           border-radius:0; }
+  /* #339's tok- spans, emitted by the SERVER (#351 reuses review_artifact's
+     scanner; there is no tokeniser in this bundle). Palette tokens above;
+     a span whose CSS is ever lost degrades to the pane's own colour. */
+  #filebody > pre code .tok-kw { color:var(--accent); }
+  #filebody > pre code .tok-str { color:var(--ok); }
+  #filebody > pre code .tok-num { color:var(--amber); }
+  #filebody > pre code .tok-com { color:var(--dimmer); font-style:italic; }
+  #filebody > pre code .tok-fn { color:var(--accent2); }
+  #filebody > pre code .tok-typ { color:var(--amber); }
+  #filebody > pre code .tok-dec { color:var(--accent); }
+  #filebody > pre code .tok-op { color:var(--muted); }
+  #filebody > pre code .tok-tag { color:var(--accent); }
+  #filebody > pre code .tok-attr { color:var(--accent2); }
+  #filebody > pre code .tok-var { color:inherit; }
+  /* ── the file view's image and binary surfaces (#336) ─────────────────
+     A raster image is served by /filebytes and rendered as an <img>, framed
+     like the rest of the column: hairline border on the panel fill (so its
+     own content does not fight the shader field behind it), `max-width:
+     100%` so it never breaks the 72ch reading column, `border-radius` for
+     the same soft edge every box on this page has. The .pose class is the
+     start state for the image's own arrival; see imgArrived. */
+  .fileimg-wrap { margin:.4rem 0 .8rem 1ch; padding-left:1ch;
+                  border-left:1px solid var(--line); }
+  .fileimg { display:block; max-width:100%; height:auto;
+             background:var(--panel); border:1px solid var(--border);
+             border-radius:var(--radius);
+             transition:opacity .55s ease; }
+  /* the start pose is OPT-IN: it is applied only by JS at build time, and
+     removed on `load` — so a JS error or a removed handler fails VISIBLE
+     (the image stays fully lit) rather than invisible. The rule lives here
+     rather than on .fileimg so the failure mode is "no animation", not
+     "no image". Reduced motion overrides it to opacity:1, which is the
+     same information and timing with the movement removed. */
+  .fileimg.pose { opacity:0; }
+  /* a non-image binary file: type and size as labelled facts, with a
+     download link instead of a <pre> full of mojibake. The same hairline
+     rail and dim labels every fact-list on this page uses, so it reads as
+     a quiet part of the dashboard rather than as an error panel. */
+  .filebin { margin:.4rem 0 .8rem 1ch; padding-left:1ch;
+             border-left:1px solid var(--line); }
+  .filebin-row { display:grid; grid-template-columns:6ch 1fr;
+                 gap:.5ch 1ch; margin:.32rem 0; align-items:baseline; }
+  .filebin-k { color:var(--dim); }
+  .filebin-v { color:var(--text); overflow-wrap:anywhere; }
+  .filebin-dl { display:inline-block; margin-top:.6rem; }
+  @media (prefers-reduced-motion: reduce) {
+    .fileimg { transition:none; }
+    .fileimg.pose { opacity:1; }
+  }
+  /* rendered prose (#102). Same hairline rail and colour as the <pre> it
+     replaces — this changes how the text WRAPS, not how the page reads. */
+  .md { color:var(--muted); margin:.4rem 0 .8rem 1ch;
+        border-left:1px solid var(--line); padding-left:1ch; }
+  .md > :first-child { margin-top:0; }
+  .md > :last-child { margin-bottom:0; }
+  .md p { margin:.45rem 0; }
+  .md .mdh { color:var(--lit); margin:.7rem 0 .25rem; }
+  /* a bullet hangs: the marker sits in the gutter and wrapped lines line up
+     under the text, so nesting stays legible at any column width. */
+  .md .mdli { margin:.28rem 0 .28rem calc(var(--lvl, 0) * 1.9ch);
+              padding-left:1.6ch; text-indent:-1.6ch; }
+  .md .mdli::before { content:"\00b7  "; color:var(--dim); }
+  .md pre.mdcode { margin:.45rem 0; white-space:pre; overflow-x:auto; }
+  /* #521 — a blockquote is one quieter step on the text ramp, with its own
+     left rule inside the prose rail. Not a coloured callout: emphasis on
+     this page is luminance, and a quote is quieter, not louder. Static —
+     no state change, no transition. */
+  .md .mdquote { margin:.45rem 0; padding:.1rem 0 .1rem 1ch;
+                 border-left:2px solid var(--border); color:var(--dim); }
+  /* #525 — a GFM pipe table is structure, not chrome. Dim rules (--line, the
+     quietest structural line on the page), header one step up the luminance
+     ramp (same rule as .mdh / **bold**), tabular nums so columns of figures
+     hold still. No fill, no accent, no radius: a table is quieter than the
+     prose rail, not louder. Static — no state change, no transition. */
+  .md .mdtable { margin:.45rem 0; border-collapse:collapse; width:100%;
+                 font-variant-numeric:tabular-nums; color:var(--muted); }
+  .md .mdtable th, .md .mdtable td {
+    border:1px solid var(--line); padding:.22rem .6ch;
+    text-align:left; vertical-align:top; font-weight:inherit; }
+  .md .mdtable th { color:var(--lit); }
+  .md .mdtable td { color:var(--muted); }
+  /* emphasis is luminance, not weight (see mdSpans) */
+  .md strong, .anstext strong, .follow strong {
+    font-weight:inherit; color:var(--bright); }
+  .md em, .anstext em, .follow em { font-style:italic; color:var(--muted); }
+  code { color:var(--lit); background:var(--panel);
+         border-radius:3px; padding:0 .3ch; }
+  /* a commit row (#132). No element catch-all in here: `.git div` used to
+     colour these, and that is the shape that overrode `.sgbtn` (#121) and
+     leaked into `.qfield textarea` (#139) — a rule that outlives the thing it
+     stood in for silently beats the components that render inside it later.
+     Every row part is addressed by its own class.
+     FIXED HEIGHT is #151's, not decoration: the subject ellipsises rather
+     than wrapping, so a long message cannot change the panel's height and a
+     row arriving or leaving moves the rows by exactly one row. */
+  /* THE ROW IS A <details> (#166), so the flex row moved onto its summary and
+     the margin every other disclosure wants is taken back here. `details`
+     carries `margin:.25rem 0` a hundred lines up, and 4px above and below
+     five rows is 40px of panel that grows and shrinks — #151 rests on this
+     panel's height being a CONSTANT so a landing commit moves the page by
+     exactly nothing. Zeroed at the row, not weakened at `details`, because
+     every other disclosure on the page still wants that margin. */
+  .git .commit { margin:0; color:var(--dim);
+                 /* the same travel a question card gets (#151 reuses #104's
+                    regroup); travelCard overrides this inline while it runs */
+                 transition:transform .85s cubic-bezier(.32,.1,.2,1),
+                            opacity .55s ease, filter .55s ease; }
+  .git .commit > summary { display:flex; align-items:baseline; gap:1ch;
+                 height:1.4rem; line-height:1.4rem; color:var(--dim); }
+  /* #169's step, stated for THIS surface as that rule requires: a closed row
+     sits at --dim, the dimmest summary on the page, so open is one place up
+     the ramp and not the shared --bright, which would drag the five-row panel
+     to the loudest thing on the dashboard for a peek. */
+  .git .commit[open] > summary { color:var(--muted); }
+  /* the air is #169's and it must NOT transition: `regroupCards` measures the
+     row's new rect in the same tick the toggle flips, so a growing padding
+     hands the FLIP a start-of-transition height and the travel snaps at the
+     end. Stated here because this list is the one `prominence.mjs` does not
+     reach. */
+  .git .commit[open] { padding:.5rem 0; }
+  .git .gdetail { margin:.15rem 0 .1rem 2ch; }
+  .git .gmeta { color:var(--dimmer); font-size:.7rem;
+                font-variant-numeric:tabular-nums; }
+  .git .gnone { color:var(--dimmer); font-size:.7rem; margin:.35rem 0; }
+  /* #486: a commit with no body shows its FULL subject here, in the detail,
+     because the header's .gsub may ellipsise it — otherwise the one line the
+     commit has to say is shown nowhere */
+  .git .gfullsub { margin:.1rem 0 0; }
+  /* the file list wraps as chips rather than a column: it is a glance at what
+     the commit touched, and a fifty-line list would bury the body above it */
+  .git .gfiles { display:flex; flex-wrap:wrap; gap:.2rem 1.5ch;
+                 margin:.35rem 0 .1rem; }
+  .git .gfile { color:var(--dim); font-size:.7rem; }
+  .git .gmore { color:var(--dimmer); }
+  .git .gsha { flex:0 0 auto; color:var(--dimmer); }
+  .git .gsub { flex:1 1 auto; min-width:0; overflow:hidden;
+               white-space:nowrap; text-overflow:ellipsis; }
+  .git .maint .gsub { color:var(--accent); }
+  /* the ticking half of the row: pinned right, and tabular so the digits do
+     not jitter the column every second as they change */
+  .git .cage { flex:0 0 auto; margin-left:auto;
+               font-variant-numeric:tabular-nums; }
+  /* which revision this page is RUNNING (#140), directly under the label.
+     Three brightnesses for three kinds of answer, and the ranking is the
+     whole design: a healthy answer is a fact (dim), an answer this page
+     could not compute is a fact about the page (dimmest), and a page
+     serving code older than HEAD is a FAULT — it invalidates everything
+     else on screen, so it takes `--warn` and the rail.
+     THE SECOND USE OF THE RAIL, and the comment on .qhealth used to say it
+     was the only one. What the two share is exactly what earns it: both are
+     the page saying it cannot be trusted right now — one about the file it
+     reads, one about the code it runs. Nothing that is merely important
+     gets it. */
+  /* the burndown (#142). TWO TRACKS OVER ONE SET OF COLUMNS: the level (how
+     many were open) above, the flow (arrivals up, completions down about a
+     hairline) below. Direction is what tells the two flow series apart —
+     colour is not spent on it, and the accent is not spent here at all,
+     because nothing in this panel is waiting on him.
+     EVERY HEIGHT IN HERE IS FIXED. The panel is a constant, exactly as the
+     commits panel is (#151), so fresh data changes bars and never moves the
+     page — which is what lets the bars animate on a data change without
+     dragging four panels with them. */
+  /* position:relative so the per-column hover tip can float without
+     changing layout height (#417). */
+  .bd { margin:.1rem 0 .9rem; position:relative; }
+  /* ONE LINE — #151's mechanism for #151's reason, one panel down: the
+     numbers in here change, and a head that wraps to two lines changes
+     the panel's height, which is the premise that lets the bars animate
+     without dragging everything below them. Flex so #499's limit control
+     can sit on the same row without being ellipsised off the end: the
+     count + step flex-shrink and ellipsis; the limit (when present) is
+     flex:none and always fully visible. No second row — #417 fixed height. */
+  /* min-height is sized for the #499 input's border box so the head is
+     the same height with or without the limit control — appearing must
+     not move the panel (#417). */
+  .bdhead { color:var(--dim); font-size:.7rem; margin-bottom:.4rem;
+            display:flex; align-items:center; gap:.35rem;
+            white-space:nowrap; min-height:1.45em; }
+  .bdhead-nums { flex:1 1 auto; min-width:0;
+                 overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bdhead .bdnum { color:var(--lit); }
+  /* #487: granularity cycle control — looks like a control (underline
+     affordance, pointer), keyboard-native as a real <button>, announces
+     via its aria-label. Accent is not spent (panel rule #142). */
+  .bdstep { background:none; border:none; font:inherit; color:var(--muted);
+            padding:0; margin:0; cursor:pointer;
+            text-decoration:underline; text-decoration-style:dotted;
+            text-underline-offset:2px; }
+  .bdstep:hover { color:var(--lit); text-decoration-style:solid; }
+  .bdstep:focus-visible { color:var(--lit); outline:1px solid var(--muted);
+    outline-offset:2px; border-radius:2px; }
+  /* #499: column-count limit control. Shares the head line (no new row, no
+     height change — #417). Renders when total buckets exceed the DEFAULT
+     (28), regardless of the active limit — so limit=0 (all) still leaves
+     the control up for recovery. Input is tabular and narrow; ⟳ resets
+     to 28. Accent is not spent. Conditional presence is the same line
+     growing/shrinking its content: no pose/depart of its own, because a
+     live re-render of this panel commits instantly (transitions.md /
+     #218) and inventing a second arrival idiom for a fragment of a fixed
+     line would be the snap among drifts the rule forbids. Reduced-motion
+     parity is free.
+     #524: [-] / [+] steppers flank the input (quiet chrome, real buttons).
+     No motion on the steppers — reduced-motion parity is free. Hold-to-
+     repeat lives in JS (module-level interval) so a mid-hold data tick
+     or re-render does not kill the repeat (#523 composition). */
+  .bdlimit { flex:0 0 auto; display:inline-flex; align-items:center;
+             gap:.2rem; color:var(--dim); white-space:nowrap; }
+  .bdlimit-in {
+    width:4.4ch; height:1.25em; line-height:1.15em; box-sizing:border-box;
+    font:inherit; font-size:inherit; font-variant-numeric:tabular-nums;
+    color:var(--lit); background:transparent;
+    border:1px solid var(--line); border-radius:2px;
+    padding:0 .15rem; margin:0; text-align:right; vertical-align:middle;
+  }
+  .bdlimit-in:hover { border-color:var(--muted); }
+  .bdlimit-in:focus { outline:1px solid var(--muted); outline-offset:1px;
+    border-color:var(--muted); }
+  .bdlimit-step { background:none; border:none; font:inherit;
+    color:var(--muted); cursor:pointer; padding:0 .18rem; margin:0;
+    line-height:1; border-radius:2px; min-width:1.1em; text-align:center;
+    -webkit-user-select:none; user-select:none; }
+  .bdlimit-step:hover { color:var(--lit); }
+  .bdlimit-step:focus-visible { color:var(--lit);
+    outline:1px solid var(--muted); outline-offset:2px; }
+  .bdlimit-reset { background:none; border:none; font:inherit;
+    color:var(--muted); cursor:pointer; padding:0 .12rem; margin:0;
+    line-height:1; border-radius:2px; }
+  .bdlimit-reset:hover { color:var(--lit); }
+  .bdlimit-reset:focus-visible { color:var(--lit);
+    outline:1px solid var(--muted); outline-offset:2px; }
+  .bdtrack { display:flex; align-items:stretch; gap:2px; }
+  .bdnet { height:30px; }
+  .bdflow { height:34px; margin-top:9px; }
+  .bdcol { flex:1 1 0; min-width:0; display:flex; flex-direction:column;
+           justify-content:flex-end; outline:none; }
+  /* #417 hover: a column is focusable so keyboard/touch reach the same
+     readout pointer hover does. No accent, no fill — the panel's rule is
+     that nothing here waits on him; focus only lifts the level cap one
+     ramp step so the active column is findable. */
+  .bdnet .bdcol:focus-visible .bdlevel { border-top-color:var(--muted); }
+  .bdnet .bdcol:hover .bdlevel { border-top-color:var(--muted); }
+  .bdflow .bdcol { justify-content:stretch; }
+  /* #417 per-column readout — an ARRIVAL, not a native title. Floats over
+     the chart so it never changes the panel's height (constant-height
+     premise). Reuses the rundesc atmospheric blur+drift (pose → ease in,
+     depart → ease out). Accent is not spent. Reduced motion snaps. */
+  .bdtip { position:absolute; left:0; right:0; top:0; z-index:2;
+           pointer-events:none; font-size:.7rem; color:var(--dim);
+           background:color-mix(in srgb, var(--bg) 88%, transparent);
+           padding:.15rem .4rem; white-space:nowrap; overflow:hidden;
+           text-overflow:ellipsis; border-radius:2px;
+           transition:opacity .42s ease, filter .42s ease,
+                      transform .42s cubic-bezier(.32,.1,.2,1); }
+  .bdtip[hidden] { display:none; }
+  .bdtip.pose { transition:none !important; opacity:0;
+    filter:blur(6px); transform:translateY(3px); }
+  .bdtip.depart { opacity:0; filter:blur(6px); transform:translateY(-3px); }
+  .bdtip .bdnum { color:var(--lit); }
+  /* #559 — content cross-dissolve for a live tip switching columns. The
+     CONTAINER persists: no .depart, no arrival pose, no opacity dip
+     (transitions.md — persistence is not a transition). The CONTENT cross-
+     fades on the SAME .42s opacity/filter/transform envelope the tip's own
+     arrival (.pose) and departure (.depart) already use, so it is the one
+     arrival/departure gesture one level down — never a second idiom. Old
+     content rides an outgoing .bdx ghost (the .depart shape: →opacity 0,
+     blur 6px, −3px); new content rides .bdi (the .pose→rest shape:
+     opacity 0→1, blur 6→0, +3px→0). */
+  .bdtip .bdx, .bdinsp .bdx { position:absolute; top:0; left:0; right:0;
+    pointer-events:none; opacity:1; filter:blur(0); transform:translateY(0);
+    transition:opacity .42s ease, filter .42s ease,
+               transform .42s cubic-bezier(.32,.1,.2,1); }
+  .bdtip .bdx.out, .bdinsp .bdx.out { opacity:0; filter:blur(6px);
+    transform:translateY(-3px); }
+  .bdtip .bdi, .bdinsp .bdi { opacity:0; filter:blur(6px);
+    transform:translateY(3px); transition:opacity .42s ease, filter .42s ease,
+               transform .42s cubic-bezier(.32,.1,.2,1); }
+  .bdtip .bdi.in, .bdinsp .bdi.in { opacity:1; filter:blur(0);
+    transform:translateY(0); }
+  @media (prefers-reduced-motion: reduce) {
+    .bdtip { transition:none; }
+    .bdtip .bdx, .bdtip .bdi, .bdinsp .bdx, .bdinsp .bdi { transition:none; }
+  }
+  /* #298/#487 column inspector — the RICHER reading on #417's seam, not a
+     second hover. The glance tip stays one ellipsised line across the
+     head; the inspector is what a DELIBERATE look gets (a hover that
+     dwells, a focus, a tap): the exact interval, the level, the flow,
+     the commits, and the coverage state the chart's geometry cannot say
+     (a level with no ledger commit that period is CARRIED, not measured).
+     #487 pin: consistent location — right-hand side of the panel when the
+     inspector's measured width fits in the right half (room from layout,
+     not a guessed breakpoint); otherwise above the chart AND above .bdtip
+     so the two never overlap. Floats, so the constant-height premise
+     holds. Same arrival idiom (pose → ease in, depart → ease out, snap
+     under reduced motion) — a smaller instance of the same gesture, never
+     a second one (transitions.md). Accent is not spent. */
+  /* border-box so max-width:100% INCLUDES padding + border. Content-box
+     let the box sit 100% wide then grow by ~18px of padding/border past
+     the panel — invisible on short coverage lines, exposed at 390px once
+     #498 lengthened the open-period line ("…period in progress · N%
+     elapsed") to the max-width ceiling (bdhover: right 392 vs bdR 374). */
+  .bdinsp { position:absolute; top:0; left:0; z-index:3;
+            pointer-events:none; font-size:.7rem; color:var(--dim);
+            background:color-mix(in srgb, var(--bg) 92%, transparent);
+            border:1px solid var(--line); border-radius:3px;
+            padding:.3rem .5rem; white-space:nowrap; max-width:100%;
+            box-sizing:border-box;
+            overflow:hidden; text-overflow:ellipsis;
+            transition:opacity .42s ease, filter .42s ease,
+                       transform .42s cubic-bezier(.32,.1,.2,1); }
+  .bdinsp[hidden] { display:none; }
+  .bdinsp.pose { transition:none !important; opacity:0;
+    filter:blur(6px); transform:translateY(3px); }
+  .bdinsp.depart { opacity:0; filter:blur(6px); transform:translateY(-3px); }
+  .bdinsp .bdnum { color:var(--lit); }
+  .bdin-iv { color:var(--dimmer); font-size:.65rem; margin-bottom:.1rem; }
+  .bdin-cov { color:var(--dimmer); font-size:.65rem; margin-top:.1rem; }
+  @media (prefers-reduced-motion: reduce) {
+    .bdinsp { transition:none; }
+  }
+  .bdhalf { flex:1 1 0; display:flex; }
+  .bdtop { align-items:flex-end; }
+  /* the standing opacity transition is what `.dreamin` needs to ease BACK
+     from: that class snaps the element to 0 with `transition:none
+     !important` and is removed a frame later, so the element's own
+     transition is the whole arrival. Without one here a new bucket would
+     pop in — which is precisely what #154 found `.qa` doing for the whole
+     life of #104. */
+  .bdbar { width:100%; transition:opacity .55s ease; }
+  /* THE LEVEL IS A STEP LINE, NOT A FILLED BAR, and that was decided by
+     rendering it: on a ledger whose open count runs 12 to 67 the filled
+     version is a near-uniform block, because every column is between 40 and
+     100 percent of the tallest. A 2px cap on a transparent box of the same
+     height is the same number and reads as the staircase it is. Dimmest on
+     the ramp besides, because it is the DERIVED series — the two it comes
+     from sit above it.
+     #417 c3: the cap's WEIGHT (border-top-width 2–6px) carries ledger
+     commits-per-period. Height still means open count; thickness means
+     how busy the period was. Zero commits is 1px (below the 2px floor) so
+     a quiet period is distinguishable from a single-commit one; the peak
+     is always 6px. The mapping is learned, so the per-column hover names
+     the exact numbers. Width changes travel with the bar's height on the
+     same .85s curve (regroupBars), not a snap. */
+  .bdlevel { border-top:2px solid var(--dimmer); box-sizing:border-box; }
+  .bdup { background:var(--dim); align-self:flex-end; }
+  .bddown { background:var(--muted); }
+  .bdrule { height:1px; background:var(--line); flex:0 0 1px; }
+  .bdaxis { display:flex; justify-content:space-between; color:var(--dimmer);
+            font-size:.65rem; margin-top:.3rem; }
+  .bdnote, .bdnone { color:var(--dimmer); font-size:.7rem; max-width:66ch;
+                     margin:.45rem 0 0; }
+  /* the median filed-to-landed duration (#218): ONE honest duration in the
+     panel's surrounding copy, and the population it was computed over —
+     not a mark on the chart and not a velocity score. It is the head's
+     `bdhead`/`bdnum` treatment one element down: the number is the fact, at
+     `--lit` (one step down from the head's only because the head is the
+     picture-of-the-whole and this is a derived figure), in a line that may
+     never wrap for the same reason the head and the provenance lines may
+     not — a number that changes must never move the panels below while the
+     bars travel. NO MOTION, and no transition declared: this panel
+     re-renders through innerHTML on every tick and nothing about it is a
+     gesture the page initiates (transitions.md), so reduced-motion parity
+     is the identical settled visual, the contract provenance holds one
+     rule up. THE ACCENT IS NOT SPENT: the panel's rule (#142) is that
+     nothing in it waits on him, and a median does not. */
+  .bdmed { color:var(--dim); font-size:.7rem; max-width:66ch; margin:.3rem 0 0;
+           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bdmed .bdnum { color:var(--lit); }
+  /* #417 c4: commits-per-period figure in the panel's voice (the #218
+     median treatment one element down). SHORTENED so it fits at 358px —
+     his condition, not a preference: the first render truncated to
+     "…3 periods with n…" and an ellipsis there reads as broken rather
+     than terse. NO ellipsis: the copy is short enough that overflow is
+     not the plan. Fixed-height one line, so the +19px is a deliberate
+     one-time allowance in the panel's constant layout, not a growth on
+     data change. NO MOTION, accent not spent — same contract as .bdmed. */
+  .bdcommit-copy { color:var(--dim); font-size:.7rem; max-width:66ch;
+                   margin:.3rem 0 0; white-space:nowrap; overflow:hidden; }
+  .bdcommit-copy .bdnum { color:var(--lit); }
+  /* the provenance coverage (#217): who filed each task, by FIRST SIGHT —
+     three counts and a denominator, with the historical unknown drawn as
+     itself and never folded into loop. THE ACCENT IS NOT SPENT (the
+     panel's rule, #142), and colour never carries the split alone:
+     human/loop are solid at two ramp steps and unknown is a HATCH — a
+     pattern, so it survives every tint and every colour-vision — while
+     the legend, the per-segment titles and the aria-label state the same
+     facts in words. NO MOTION: a live tick commits its DOM instantly
+     (transitions.md), so no part of this declares a transition, and
+     reduced-motion parity is the identical settled visual. The
+     count-carrying lines may never wrap — the panel's height is constant
+     within each complete/incomplete state, which is the premise the bars'
+     motion rests on — so they ellipsis like the head does, and their full
+     text rides the aria-label/title. */
+  .bdprov { margin:.45rem 0 0; }
+  .provbar { display:flex; height:3px; gap:1px; margin-bottom:.35rem; }
+  .provseg { height:100%; flex:var(--share) 1 0; }
+  .provseg.phuman { background:var(--lit); }
+  .provseg.ploop { background:var(--muted); }
+  .provseg.punknown { background:repeating-linear-gradient(45deg,
+                        var(--dimmer) 0 1px, transparent 1px 4px); }
+  .provline { font-size:.7rem; color:var(--dim);
+              white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .provline .phuman { color:var(--lit); }
+  .provline .ploop { color:var(--muted); }
+  .provline .punknown { color:var(--dimmer);
+                        border-bottom:1px dotted var(--dimmer); }
+  .provsrc { color:var(--dimmer); font-size:.7rem; margin-top:.15rem;
+             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .gserve { color:var(--dim); font-size:.7rem; margin:-.15rem 0 .55rem;
+            max-width:60ch; }
+  .gserve.unknown { color:var(--dimmer); }
+  .gserve.stale { color:var(--warn);
+                  border-left:2px solid var(--warn); padding-left:.8rem; }
+  /* #462 — the staleness row's remedy, on the page. The row already named
+     the fault; without this it tells him something is wrong and gives him no
+     way to act on it.
+
+     WHAT "UPDATE" MEANS HERE. The running process serves a fixed SNAPSHOT
+     (`just deploy` copies watch.py outside the repo and runs that), so a
+     browser reload only re-fetches the same stale bytes, and a self-re-exec
+     (the --autoreload seam at :10351) re-serves that same snapshot too — its
+     trigger is `__file__` mtime, and the served `__file__` IS the snapshot,
+     which a tree commit never touches. So the only thing that actually
+     clears the staleness is a re-snapshot from HEAD plus a restart, which is
+     `just deploy`; the GENERATION bump it causes already reloads this tab.
+
+     AUTHORISED ACTION (2026-07-29 03:46, `rec`). The row used to copy the
+     command; he consented to the page running it — loopback-only, behind the
+     existing confirmation idiom, single-flight. The click arms for RUN_ARM_MS
+     (the #290 run-mode arm, reused rather than a second cooldown), then POST
+     /deploy. Success is a new GENERATION (full reload); failure and a deploy
+     that never finishes both speak on #fmsg, never a spinner forever.
+
+     MOTION. The row is re-rendered through innerHTML every tick, so .dreamin
+     is applied only on the current→behind transition by revealStaleAction()
+     (the revealNewOpenAsks idiom: start pose on a genuinely new arrival, rAF
+     remove; first paint settles without replaying it; reduced-motion skips
+     the pose entirely), never baked in and never replayed on a tick where
+     the affordance was already present. Behind→current is a redeploy = a new
+     process = a generation change = a full reload, so the affordance departs
+     with it and needs no departure motion of its own. Arming/running are
+     class toggles on the same control (paintStaleDeployUI after setContent),
+     not a second arrival gesture. */
+  .gservact { font:inherit; color:inherit; background:none; border:0;
+    margin-left:.4ch; padding:0; cursor:pointer;
+    transition:opacity .55s ease, filter .55s ease, transform .55s ease;
+    text-decoration:underline; text-decoration-style:dotted;
+    text-underline-offset:2px; }
+  .gservact:hover { text-decoration-style:solid; }
+  .gservact:focus-visible { outline:1px solid var(--warn); outline-offset:2px; }
+  .gservact.arming { text-decoration-style:solid; color:var(--warn); }
+  .gservact.running { text-decoration-style:solid; cursor:wait;
+    opacity:.7; pointer-events:none; }
+  /* the dashboard's questions fold (#141). `> summary` and not `summary`:
+     the child combinator is what keeps this from being one of the catch-alls
+     above — a question card inside carries its OWN <details><summary>, and a
+     descendant rule here would restyle every one of them.
+     At a genuine zero the whole line drops to the dim end and keeps no
+     accent, because the accent is for things that are live and actionable. */
+  .qsec > summary { color:var(--lit); }
+  /* This one takes #169's DEFAULT step (--lit closed, --bright open) and so
+     states nothing — but its zero state deliberately does not: `.none` outranks
+     `details[open] > summary`, so a section with nothing to answer stays at the
+     dim end even while he is looking inside it. Disabled means "nothing here
+     needs you", and opening it does not change that (#141). */
+  .qsec > summary.none, .qsec > summary.none::before { color:var(--dimmer); }
+  .qsec .qsecn { color:var(--accent); }
+  .dim { color:var(--dimmer); }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  /* a card travels to its new place in the list rather than teleporting
+     there (#104/#77); the transform is set and cleared by regroupCards */
+  .qa { margin:.6rem 0 1rem;
+        transition:transform .85s cubic-bezier(.32,.1,.2,1),
+                   opacity .55s ease, filter .55s ease; }
+  /* THE QUESTION'S BODY, wrapped so the review dock has an edge that belongs
+     to the TEXT alone (#326). Everywhere else it must not exist at all, and
+     `display:contents` is how an element says that: no box is generated, so
+     margins collapse exactly as they did before it was introduced, and — the
+     half that is load-bearing rather than convenient — no box means no mask
+     and no scrollport either, which is what the narrow review layout wants
+     back. Two things read the wrapper's children as the card's own and both
+     are taught to look through it rather than at it: `cardBody` (the fold's
+     reveal and ghost) and `sendComment`'s first-thread insert. */
+  .qbody { display:contents; }
+  /* a card that has left the list entirely dreams away where it stood */
+  .qaghost { position:absolute; z-index:3; pointer-events:none;
+    transition:opacity .7s ease, transform .7s ease; }
+  /* the departure has two beats (#277): dissolve in place first, then leave.
+     Without this phase blur and travel begin together — the element is already
+     moving by the time it starts dissolving, so it reads as "mush then snap"
+     rather than "dissolve then leave". pregone softens the ghost where it
+     stands (dims, barely drifts) before .gone sends it away. The softer half
+     — blur and liquify — is the SVG mist filter (#departMist), driven per-frame
+     from rAF in dreamAway, exactly as the route dissolve drives #dissolveOut.
+     Commits skip this phase (line below) and keep their CSS blur. */
+  .qaghost.pregone {
+    transition:opacity .18s ease, transform .18s ease;
+    opacity:.8; transform:translateY(-2px); }
+  .qaghost.gone { opacity:0; transform:translateY(-10px); }
+  /* ...but WHICH WAY it dreams away follows the list it is leaving (#174).
+     A question card's neighbours travel UP to close the gap it left, so a
+     ghost that rises is continuous with them. In the commits panel the
+     gesture runs the other way: a new commit pushes the four survivors DOWN
+     one row, so the departing bottom row has to fall with them and grow out
+     of frame. Rising there reverses against everything around it, which is
+     what he saw ("the bottom commit moves *up* towards where the new one
+     appears"). Growing while fading is the page's standing departure — it is
+     what `.ghost.out` does for a whole view — so this is the same idiom with
+     its sign taken from its surroundings, not a second one. Commits keep
+     their original blur(6px) — inherited before #277 raised .gone to 8px to
+     match .pregone, so the commit gesture is byte-identical (#277 must not
+     touch it). */
+  .qaghost.commit.gone { filter:blur(6px); transform:translateY(14px) scale(1.07); }
+  /* the other end of the same gesture: the new row comes DOWN into the place
+     it now owns, growing into it, rather than rising up into it against the
+     four rows it is displacing. `.dreamin` still supplies the snap. */
+  .git .commit.dreamin { transform:translateY(-10px) scale(.94); }
+  /* content revealed by an unfold eases in on the same enter as .dreamin —
+     which snaps, so the carrier only has to supply the transition back */
+  .qreveal { transition:opacity .55s ease, filter .55s ease,
+                        transform .55s ease; }
+  @media (prefers-reduced-motion: reduce) { .qa { transition:none; } }
+  .qa .qt { color:var(--lit); }
+  /* No element catch-alls scoped inside `.qa`. There were two, and each one
+     was a bug that took a human report to find:
+
+     `.qa button` was #121 — left over from before `.qsend` and `.sgbtn` had
+     styling of their own, still winning on specificity (0,1,1 beats 0,1,0)
+     and so painting an opaque fill and a border onto buttons that had asked
+     for neither. The mode switch had said `background:none` in its own rule
+     since #103 and had never once rendered that way.
+
+     `.qa textarea` was #139, the same shape one component over: it leaked
+     `margin:.3rem 0` into `.qfield textarea`, insetting the box 5.8px inside
+     the border it shares with a send button sitting flush at 1px — so the
+     one object the field is meant to be had two different insets. Everything
+     else it declared was already stated by `.qfield textarea` or made moot by
+     the flex row, so deleting it was the whole fix.
+
+     The rule, now that it has happened twice: a catch-all that outlives the
+     components it stood in for does not announce itself, it quietly overrules
+     them, and the component's own source reads correctly the whole time. DELETE
+     it — out-specifying leaves the trap armed for the next component to render
+     in here. */
+  /* the three qaCard states (#105) are class modifiers on one card, so the
+     shared parts are styled once and only the differences are stated here.
+     awaiting: a quiet accent rail marks it apart from open questions; no
+     input box, the answer shown plainly. folded: the loop has filed it, so
+     it recedes. */
+  /* awaiting-fold is waiting on the LOOP — the one genuinely in-progress
+     thing on this page, and so the ONE deliberate exception to the opt-in
+     motion rule (#113). It breathes: a wisp of accent drifting along the
+     rail and across the label, slow and ambient like the shader, intensity
+     fading in and OUT rather than sweeping on a loop. Never a spinner.
+     The cost is bounded by construction rather than by measurement after
+     the fact — an opacity breath on a 2px rail (compositor only) and a
+     background drift across ~25 characters of .65rem label. */
+  /* the rail sits INSIDE the padding box, not on a border hanging outside
+     it, so that clipping the card while its height travels (travelCard)
+     cannot shave the rail off */
+  .qa.awaiting { position:relative;
+    padding-left:.9rem; margin-left:-.9rem; opacity:.82; }
+  .qa.awaiting::before { content:""; position:absolute; left:0;
+    top:0; bottom:0; width:2px; pointer-events:none;
+    background:linear-gradient(180deg, transparent, var(--accent) 16%,
+      var(--accent) 84%, transparent);
+    animation:qbreathe 5.5s ease-in-out infinite; }
+  .qa.awaiting .qt::before { content:"✓ "; color:var(--accent); }
+  /* one envelope, two places, same duration and easing, so the rail and the
+     label read as one organism rather than two effects */
+  @keyframes qbreathe { 0%,100% { opacity:.38; } 50% { opacity:1; } }
+  @keyframes qwisp { 0%,100% { background-position:118% 50%; }
+                     50% { background-position:-18% 50%; } }
+  /* progressive enhancement: without background-clip the label is simply
+     the dim label it has always been, never invisible text */
+  @supports (background-clip:text) or (-webkit-background-clip:text) {
+    .qa.awaiting .anstag {
+      background-image:linear-gradient(100deg, var(--dim) 0%, var(--dim) 38%,
+        var(--accent) 50%, var(--dim) 62%, var(--dim) 100%);
+      background-size:260% 100%;
+      -webkit-background-clip:text; background-clip:text;
+      color:transparent;
+      animation:qwisp 5.5s ease-in-out infinite; }
+  }
+  /* reduced motion holds the wisp STILL at its brightest instead of removing
+     it: the state must still read as in-progress. Timing changes; function
+     and legibility do not. */
+  @media (prefers-reduced-motion: reduce) {
+    .qa.awaiting::before { animation:none; opacity:1; }
+    .qa.awaiting .anstag { animation:none; background-position:50% 50%; }
+  }
+  /* folded (#111): waiting on nobody, so it collapses and sits at the dim end
+     of the ramp. NO accent — the accent is for live and actionable things and
+     a settled entry is neither. The disclosure marker is the page's standing
+     summary idiom, inherited rather than restated. */
+  .qa.folded { margin:.15rem 0 .35rem; }
+  .qa.folded .qt { color:var(--muted); font-weight:inherit; }
+  .qa.folded .qt:hover { color:var(--lit); }
+  .qa.folded .qfold { margin:0; }
+  .peek { margin:0; }
+  .qa.folded .qfold > * { color:var(--dim); }
+  .qa.folded .qfold > summary { color:var(--muted); }
+  /* ...and when he opens one, the whole card steps up (#169): a settled entry
+     he has just expanded is the thing he is reading, so its contents leave the
+     dim end with it rather than the title brightening over unchanged prose.
+     Still no accent — that is #111's line and expanding does not make an entry
+     actionable, only prominent. */
+  .qa.folded .qfold[open] > * { color:var(--muted); }
+  .qa.folded .qfold[open] > summary { color:var(--lit); }
+  .qwhen { color:var(--dimmer); margin-left:1ch; font-size:.7rem; }
+  /* inline-block so the box hugs the words: the wisp is clipped to this
+     text, so a full-column box would spread the drift across empty space
+     and invalidate a full-width strip to say nothing */
+  .anstag { color:var(--dim); text-transform:uppercase; letter-spacing:.07em;
+    font-size:.65rem; margin:.35rem 0 .15rem; display:inline-block; }
+  /* an answer is the human's, in a card whose body the loop wrote — so it
+     reads at the same brightness as his notes do (#109) */
+  .anstext { color:var(--lit); white-space:pre-wrap; }
+  /* the questions channel's health (#136). Zero entries is the same NUMBER
+     whether everything is answered or the reader cannot see the file, so the
+     page has to say which — and the broken one has to look broken. It wears
+     `--warn` and the rail idiom, which on this page marks one thing only:
+     the page saying it cannot be trusted right now. Two things qualify —
+     this, about the file it reads, and `.gserve.stale` (#140), about the
+     code it runs. The quiet state (no file yet) is one dim line and no
+     rail: a fresh target has not failed at anything. */
+  .qhealth { margin:.3rem 0 .9rem; }
+  .qhealth.unreadable { border-left:2px solid var(--warn); padding-left:.8rem; }
+  .qhealth.unreadable .qhlabel { color:var(--warn); text-transform:uppercase;
+    letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
+  .qhealth.unreadable .qhbody { color:var(--lit); }
+  .qhealth.missing .qhbody { color:var(--dim); }
+  .qh { color:var(--warn); }
+  /* #452 — the focused question's said-missing state. The rail idiom at
+     DIM level, not --warn: the channel is healthy and the question is
+     simply gone, so it must not wear the fault colour — and it must not
+     render as an empty list either (#402). The head is the page's small
+     uppercase-label idiom; the body states what happened and guesses at
+     nothing. */
+  .qmissing { border-left:2px solid var(--dimmer); padding-left:.8rem;
+    margin:.3rem 0 .9rem; }
+  .qmissing .qmisshead { color:var(--dim); text-transform:uppercase;
+    letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
+  .qmissing .qmissbody { color:var(--lit); max-width:56ch; }
+  .qmissing .qmissback { margin-top:.5rem; }
+  /* #562 — /chat/<id>: the conversation. Each turn is a dim who-label + age
+     above the body — the same dim-row + .age annotation voice the chat list
+     and the review rows already use. No new token, no motion: the page
+     arrives on the route dissolve every destination shares. */
+  .chaturn { margin:.5rem 0; }
+  .chaturn .chatmeta { color:var(--dim); }
+  .chaturn .chatwho { color:var(--muted); }
+  .chaturn .chatbody { color:var(--lit); }
+  /* #452 — the per-card way into the focused page. Headline chrome, so it
+     is quiet at rest (dimmer than the age it sits beside) and discovers
+     itself on hover/focus with the page's ordinary link signal. No motion
+     of its own: it never appears or disappears on a rendered card — it is
+     part of the card's HTML and rides the card's own arrival. */
+  .qfocus { color:var(--dimmer); font-size:.7rem; white-space:nowrap; }
+  .qfocus:hover { color:var(--accent); }
+  .qfocus:focus-visible { color:var(--accent);
+    outline:1px solid var(--accent); outline-offset:2px; }
+  /* #454 — the roll-up affordance: the same quiet headline chrome as the
+     focus link it sits beside, as a BUTTON (it acts here; the link goes
+     somewhere). Same rest/hover/focus ramp, and no motion of its own —
+     it is part of the card's HTML and rides the card's arrival. */
+  .qroll { background:none; border:0; padding:0; font:inherit;
+    color:var(--dimmer); font-size:.7rem; white-space:nowrap; cursor:pointer; }
+  .qroll:hover { color:var(--accent); }
+  .qroll:focus-visible { color:var(--accent);
+    outline:1px solid var(--accent); outline-offset:2px; }
+  /* the dock is the reading surface: its card is never rolled, so the
+     affordance the markup shares with the list declines there */
+  .qdock .qroll { display:none; }
+  /* ROLLED — the top of the scroll, never a bare title. The wrapper
+     becomes a box for the first time: #326's display:contents is what an
+     unrolled card needs (no box, margins collapse as if it were not
+     there), but a clamp needs an overflow edge and an edge needs a box.
+     The height is a line COUNT times the rendered line height, measured
+     at runtime and handed over as --rollh (rollHeight) — a pinned pixel
+     constant is #441's failure shape. The bottom edge softens with a CSS
+     mask, the rolled scroll's cut; NEVER an SVG filter — a per-card
+     filter is #449's measured jank and this feature is precisely the
+     many-filtered-elements shape. The compose box leaves with the rest
+     of the body: answering a question means reading it, and reading it
+     means unrolling. The mask fade is ~1.5 lines of the 5.5, so the
+     readable floor stays the 4-5 he asked to judge by. */
+  .qa.rolled .qbody { display:block; max-height:var(--rollh, 6.5em);
+    overflow:hidden;
+    -webkit-mask-image:linear-gradient(to bottom, #000 72%, transparent 99%);
+    mask-image:linear-gradient(to bottom, #000 72%, transparent 99%); }
+  .qa.rolled .qcompose { display:none; }
+  /* a send that did not land wears the same colour, because it is the same
+     failure seen from the writing end: the channel to him did not work and
+     nothing else on the page would have said so */
+  .qerr { color:var(--warn); font-size:.7rem; margin-top:.35rem;
+    max-width:56ch; }
+   /* the status panel (#130): three facts and a fold, never a JSON dump.
+      Colour is by SIGNIFICANCE, not by JSON type — the accent is spent on the
+      one thing here that is waiting on HIM, and everything else rides the text
+      ramp: what is happening brightest, what it serves under it, the liveness
+      facts dim, the fold dimmer. */
+   /* the push channel down (#190): the loop cannot reach him. The same fact
+      as `.qhealth.unreadable` one surface over — the channel to him failed
+      and no number on the page would have said so — so it reuses that idiom
+      verbatim: `--warn` and the rail. See watch-design.md's tokens: `--warn`
+      is enumerable, and this is a member of that class, not a new one. */
+   #status .stpush { border-left:2px solid var(--warn); padding-left:.8rem;
+     margin:.2rem 0 .7rem; }
+   #status .stpushhead { color:var(--warn); text-transform:uppercase;
+     letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
+   #status .stpushbody { color:var(--lit); }
+   #status .stneed { border-left:2px solid var(--accent); padding-left:.8rem;
+     margin:.2rem 0 .7rem; }
+  #status .stneedhead { color:var(--accent); text-transform:uppercase;
+    letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
+  #status .stneedrow { color:var(--lit); margin:.15rem 0; }
+  #status .sttask { color:var(--bright); }
+  #status .stgoal { color:var(--muted); margin:.1rem 0 .55rem; }
+  #status .stagent { display:flex; gap:1.5ch; flex-wrap:wrap;
+    margin:.2rem 0; }
+  #status .stname { color:var(--lit); flex:none; }
+  #status .stdoing { color:var(--muted); flex:1; min-width:24ch; }
+  #status .stfacts { color:var(--dim); font-size:.7rem; margin:.6rem 0 .2rem; }
+  /* non-breaking spaces: generated content renders flush against its
+     neighbour otherwise, exactly as the crumb separator found */
+  #status .stfacts span + span::before { content:"\00a0·\00a0";
+    color:var(--dimmer); }
+  #status .stfield { display:flex; gap:1ch; margin:.15rem 0;
+    align-items:baseline; }
+  /* a FIXED key column, not a minimum: the styleguide's "label the columns,
+     not the gaps" applies to a key/value list too, and a long key on a
+     min-width would shove that row's value out of line with every other
+     row's. It wraps inside its own column instead. */
+  #status .stfield > .stk { color:var(--dim); font-size:.7rem;
+    flex:none; width:14ch; overflow-wrap:anywhere; }
+  #status .stval { color:var(--muted); font-size:.75rem; }
+  #status .stagentmore { margin:.35rem 0; }
+  #status .stagentmore > .stk { color:var(--lit); font-size:.75rem; }
+  /* follow-up thread + a quiet add-a-note box on every question entry */
+  .thread { border-left:1px solid var(--line); padding-left:1ch;
+    margin:.3rem 0 .2rem; }
+  .follow { color:var(--muted); font-size:.75rem; margin:.25rem 0;
+    padding-left:2.6ch; text-indent:-2.6ch; }
+  .follow::before { content:"\21b3  "; color:var(--dim); }
+  /* authorship (#109): the human's words sit a step up the text ramp from
+     the loop's, and each carries a dim label. Luminance, not accent. */
+  .follow.human { color:var(--lit); }
+  .who { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
+    font-size:.62rem; margin-right:.7ch; }
+  /* when it was written (#128). Quieter than the author label — the order is
+     what carries the chronology, and the stamp is there to settle it. */
+  .qts { color:var(--dimmer); font-size:.62rem; margin-right:.8ch; }
+  /* the settled part of a thread collapses (#128): the resolution is the
+     point of the card, and the discussion a resolution already answered is
+     detail. Only that segment folds — see watch-design.md for why an
+     unanswered question never hides its notes. */
+  .qthread > summary { color:var(--dim); font-size:.7rem; cursor:pointer;
+    letter-spacing:.03em; }
+  .qthread > summary:hover { color:var(--muted); }
+  /* open is one step up from wherever THIS surface sits closed (#169) */
+  .qthread[open] > summary { color:var(--muted); }
+  /* ONE input per card (#103, the human's words): the same field sends an
+     answer or a note. The field and its send button share a single border
+     and a single rounded box — the wrapper carries them and clips the
+     button's corners — so they read as one object rather than a control
+     placed next to a control. The mode group sits beneath. */
+  .qcompose { margin:.45rem 0 .2rem; max-width:56ch; }
+  .qfield { display:flex; align-items:stretch;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--radius); overflow:hidden;
+    transition:border-color .3s ease; }
+  .qfield:focus-within { border-color:var(--border); }
+  /* the box states everything about itself, because nothing above it does
+     any more (#139). No margin: it fills the wrapper it shares a border with,
+     exactly as the send button does. */
+  .askform { margin:0 0 var(--space); max-width:56ch; }
+  .askform textarea { display:block; box-sizing:border-box; width:100%; min-height:5rem;
+    margin:.35rem 0; padding:.55rem; resize:vertical; color:var(--text);
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    font:inherit; font-size:.75rem; outline:none; }
+  .askform textarea:focus { border-color:var(--border); }
+  .askform button { color:var(--lit); background:var(--panel2); border:1px solid var(--line);
+    border-radius:var(--radius); padding:.35rem .7rem; font:inherit; cursor:pointer; }
+  .aq { margin:.55rem 0 1rem; padding-left:.7rem; border-left:1px solid var(--line); }
+  .aq.open { border-left-color:var(--accent);
+    /* so removing the enter-snap .dreamin eases in rather than popping
+       (#293 arrival). .dreamin's transition:none beats this while posed. */
+    transition:opacity .55s ease, filter .55s ease,
+               transform .55s cubic-bezier(.32,.1,.2,1); }
+  /* Open title is the subject of the row — same luminance step as a
+     question card's .qt (#293 makes the rule explicit so a future style
+     catch-all cannot leave the words uncoloured). */
+  .aq.open .qt { color:var(--lit); }
+  .aqbody { color:var(--muted); margin-top:.25rem; }
+  .aq > summary { color:var(--muted); cursor:pointer; }
+  @media (prefers-reduced-motion:reduce) {
+    .aq.open { transition:none; }
+    /* #177: growth is function; under reduced motion the box still fits its
+       content and scrolls past its ceiling, just without the height travel. */
+    .qfield textarea, #cmdform textarea { transition:none !important; }
+  }
+
+  /* #177 — same growth gesture as the composer (above), its own ceiling
+     (6 rows, see fitText). A 15-line box inside a question card would shove
+     the list for a ten-second sentence, which is why the two ceilings differ. */
+  .qfield textarea { flex:1; min-width:0; background:none; border:0; margin:0;
+    box-sizing:border-box; color:var(--text); font:inherit; font-size:.75rem;
+    padding:.4rem .55rem; min-height:44px; resize:none; overflow:auto;
+    outline:none; transition:height .85s cubic-bezier(.32,.1,.2,1); }
+  /* #273: send is a real control — min 44px touch/pointer target. Flex stretch
+     already matches the field height; the floor stops a short single-line box
+     from shrinking the button below the a11y floor (review dock and cards). */
+  .qsend { flex:none; background:var(--panel2); color:var(--accent);
+    border:0; border-left:1px solid var(--line); font:inherit;
+    font-size:.7rem; padding:0 1rem; cursor:pointer;
+    min-height:44px; min-block-size:44px;
+    transition:background .3s ease, color .3s ease; }
+  .qsend:hover { background:#26344a; }
+  .qmodes { margin-top:.3rem; }
+  .qmodes .sgbtn { padding:.2rem .5rem; font-size:.7rem; }
+  #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
+             height:100vh; }
+  #devbox { position:fixed; top:.6rem; right:.8rem; z-index:10;
+            color:var(--dimmer); font-size:.7rem; text-align:right;
+            /* min-width is the reservation the wordmark yields (#435): the
+               longest readout is ~"NNN.Nms avg · NNNN.Nms worst", and without
+               a floor the box shrinks to whatever one sample printed and the
+               yield would under-reserve on a quiet frame. */
+            min-width:12.5rem; pointer-events:none; }
+  /* the sparkline is narrower than the readout text beside it, so the
+     box is text-width and the canvas parks at its LEFT edge by default —
+     a gap to the wall. margin-left:auto absorbs the slack and pins the
+     graph's right edge to the text's right edge (the wall side). */
+  #devbox canvas { display:block; margin-top:.25rem; margin-left:auto;
+                    opacity:.55; }
+  /* #435: the --dev overlay and the project wordmark both claim the trailing
+     top corner on a wide window. The wordmark YIELDS the overlay's column —
+     margin-right equal to the overlay's reserved width plus its right inset
+     plus a hair of air — rather than the overlay moving or the counter being
+     removed. Settled chrome, not a gesture: no transition, reduced-motion
+     parity is free (identical settled layout). The yield is wide-only: on a
+     phone the same margin wraps the title bar and shoves the review frame
+     down, so below 720px the overlay instead drops under the chrome and the
+     wordmark keeps the trailing edge. */
+  body.dev .hproj { margin-right:calc(12.5rem + .8rem + .4rem); }
+  @media (max-width:720px) {
+    body.dev .hproj { margin-right:0; }
+    #devbox { top:4.75rem; }
+  }
+  #layerhint { position:fixed; bottom:1rem; right:1rem; z-index:10;
+    color:var(--accent); background:rgba(17,24,39,.82);
+    border:1px solid var(--line); border-radius:var(--radius);
+    padding:.25rem .6rem; font-size:.7rem; opacity:0;
+    transition:opacity .5s ease; pointer-events:none;
+    letter-spacing:.04em; }
+  /* single-document view swaps: the outgoing view liquifies into a
+     swirling mist (SVG turbulence displacement + blur, enveloped per-frame
+     in crossfade()) and drifts up as it fades; the incoming view coalesces
+     from the same mist and settles perfectly crisp. Opacity + transform
+     ride these CSS transitions; the mist (filter) is JS-driven so the
+     middle of the dissolve lingers hazy. The shader stirs in sympathy. */
+  /* The incoming view surfaces from BEHIND the outgoing ghost (z-index): it
+     starts pushed back in depth (translateZ), lower and scaled down, at true
+     opacity 0 — a delayed, slow-start opacity so it's genuinely absent for
+     the first ~150ms, then rises as it drifts forward into focus. The ghost
+     (in front) lifts up and toward the viewer as it dissolves. */
+  #view { transition:opacity .8s cubic-bezier(.62,0,.34,1) .14s,
+                     transform 1s cubic-bezier(.32,.1,.2,1),
+                     filter 1s cubic-bezier(.32,.1,.2,1);
+          transform-origin:50% 40%; will-change:opacity, transform, filter; }
+  /* the start state must SNAP (transition:none) — with the transition live,
+     adding .enter would animate *toward* opacity 0 and get removed a frame
+     later, so it never actually left ~1 (the old "pops in" bug). Snapping to
+     0 + pushed-back, then removing .enter, gives a true fade-up from depth. */
+  #view.enter { transition:none; opacity:0;
+                transform:translateY(30px) translateZ(-110px) scale(.93); }
+  /* #449/#453: the arriving view's haze rides the COMPOSITOR as a CSS blur
+     that clears as it surfaces into focus (peak ~5px at the back of the
+     dissolve, resolving to crisp at rest) — measured free (#449). Ungated
+     since #453: the dissolveIn SVG filter is defined but never applied (a
+     second full-page rasterisation fails the frame budget), so this blur is
+     the arrival's softening in every configuration; the ghost's own haze is
+     the SVG mist when it is on, the .mistoff rules below when it is not.
+     Reduced-motion zeroes it either way (transition:none below). */
+  #view { filter:blur(5px); }
+  #view:not(.enter) { filter:blur(0); }
+  /* the ghost is pinned to the box the outgoing view occupied (top/width/
+     height set in crossfade), not stretched to the wrapper — the chrome now
+     sits above #view, and a resizing column must not re-wrap the departing
+     content while it is still opaque (#107). */
+  .ghost { position:absolute; left:0; top:0; z-index:1; pointer-events:none;
+           opacity:1; transform-origin:50% 40%; filter:blur(0);
+           transition:opacity 1.05s cubic-bezier(.4,0,.66,.38),
+                      transform 1.15s cubic-bezier(.34,0,.6,.4),
+                      filter 1.15s cubic-bezier(.4,0,.66,.38); }
+  /* the ghost's haze GROWS as it departs — the same shape the mist gave
+     (crisp at rest, swirling at the height of the dissolve). Compositor blur,
+     gated on .mistoff so it never doubles up with the SVG mist when that is on. */
+  body.mistoff .ghost { filter:blur(0); }
+  body.mistoff .ghost.out { opacity:0;
+               transform:translateY(-34px) translateZ(70px) scale(1.07);
+               filter:blur(7px); }
+  @media (prefers-reduced-motion: reduce) {
+    #view, .ghost { transition:none; }
+  }
+  /* review view: the artifact fills the main column; the originating
+     question docks beside it (sticky) so it can be answered with the
+     review in front of you. Wider than the 72ch reading column. */
+  body.review .wrap { max-width:1360px; }
+  /* /file joins the width exceptions (#351, "a bit wider of a body"): code
+     wants columns, and the wider body is what makes "no line wrapping"
+     readable rather than a scroll on every line. 110ch, not review's
+     1360px — this is still a reading column, just one sized for source.
+     The column glides on the same body.wsliding mechanism as /review (the
+     class is toggled beside 'review' at the same three sites), and a
+     direct load arrives already wide. */
+  body.file .wrap { max-width:110ch; }
+  /* The column is the one thing on this page that changes SIZE, and the
+     motion language says things that change travel rather than teleport
+     (#107). So the width glides, on the dissolve's own easing and duration.
+     Gated behind .wsliding, added only for a route change: a direct load of
+     /review must arrive already wide, not animate its column on first paint.
+     overflow-x is clipped for the same window because the departing ghost is
+     pinned to its OLD width and would otherwise push a horizontal scrollbar
+     while the column narrows underneath it. */
+  body.wsliding .wrap { transition:max-width 1s cubic-bezier(.32,.1,.2,1); }
+  body.wsliding { overflow-x:hidden; }
+  @media (prefers-reduced-motion: reduce) {
+    body.wsliding .wrap { transition:none; }
+  }
+  /* THE SPLIT (#305), in his words while he was reading one: "should be able
+     to scroll the question alongside a review document… an invisible vertical
+     bar between review doc and question being answered that allows dragging
+     left/right… we also can extend the height of the review doc and RHS
+     column if the height of the window allows."
+
+     So the two are ONE window-tall pane rather than two documents stacked in
+     a scrolling page: the artifact fills its column, the question scrolls
+     inside its own, and neither runs off the bottom of the window. Reading
+     and answering stop being two scrolls.
+
+     `--rvh` is MEASURED (`fitReview`) rather than written as a calc, because
+     the top of this pane depends on how the chrome wrapped, which depends on
+     the window; the calc() is only the floor for the frames before the first
+     measurement lands. `min-height` is what keeps a short window honest — at
+     26rem the PAGE starts scrolling again instead of crushing both columns
+     into slivers. */
+  @property --rsplit { syntax:'<percentage>'; inherits:false;
+                       initial-value:70%; }
+  /* The question column's fade depths, head and foot, registered so they can
+     travel. The initial value has to be an absolute length: a registered
+     property's initial value must be computationally independent, so `1.5rem`
+     would make this whole rule invalid and the mask would never resolve.
+     ONE depth, stated twice, because the two ends lift on different states
+     (`attop` and `atend`) and a single property could not hold both. */
+  @property --qfade { syntax:'<length>'; inherits:false; initial-value:24px; }
+  @property --qfoot { syntax:'<length>'; inherits:false; initial-value:24px; }
+  #reviewwrap { display:grid; gap:0; align-items:stretch; margin-top:1rem;
+    grid-template-columns:clamp(32ch, var(--rsplit), calc(100% - 26ch))
+                          1.3rem minmax(0,1fr);
+    height:var(--rvh, calc(100dvh - 12rem)); min-height:26rem; }
+  /* The floors are in CSS, not in the drag handler, for #108's reason: a
+     clamp holds on EVERY frame and at every window width, where a JS
+     re-derivation is always one frame behind the layout it is correcting. */
+  #reviewwrap.nodock { grid-template-columns:minmax(0,1fr); }
+  #reviewdoc { display:flex; min-width:0; min-height:0; }
+  /* border-box, because the height is now 100% of a measured pane rather
+     than a vh: a content-box height plus the hairline is 2px of page scroll
+     that reads as the pane not quite fitting. */
+  #reviewframe { flex:1; width:100%; height:100%; min-height:0;
+    box-sizing:border-box; border:1px solid var(--border);
+    border-radius:var(--radius); background:var(--bg); display:block; }
+  .revname { color:var(--dim); margin-left:.6rem; font-size:.8rem; }
+  /* A DRAG is continuous input, so it needs no transition — his pointer IS
+     the motion. A keyboard step is a discrete state change and does obey
+     transitions.md, so `.rkeyed` lends the registered custom property the
+     column's own easing for exactly that gesture. */
+  #reviewwrap.rkeyed { transition:--rsplit .38s cubic-bezier(.32,.1,.2,1); }
+  /* The bar is INVISIBLE at rest and is still a control: the gutter the eye
+     already reads as space is the whole hit area, a hairline arrives on
+     hover/focus/drag rather than blinking on, and it is focusable with arrow
+     keys because a drag-only affordance is unreachable from a keyboard. */
+  /* z-index because an ANSWERED-AWAITING card hangs its accent rail .9rem
+     into this gutter (`.qa.awaiting`'s negative margin), and a positioned
+     sibling later in the DOM wins the hit test: without this the bar is dead
+     to the pointer for exactly the state he is in one second after
+     answering — a control that works until it matters. */
+  .rsplit { position:relative; z-index:2; align-self:stretch;
+    cursor:col-resize; touch-action:none; }
+  .rsplit::after { content:''; position:absolute; top:0; bottom:0; left:50%;
+    width:1px; transform:translateX(-50%); background:var(--line); opacity:0;
+    transition:opacity .45s ease, width .45s ease, background-color .45s ease; }
+  .rsplit:hover::after { opacity:1; }
+  .rsplit:focus { outline:none; }
+  /* focus and drag both widen to 2px: at 1px an indicator this tall is a
+     hair, and WCAG asks for a perimeter you can actually see. */
+  .rsplit:focus-visible::after { opacity:1; width:2px;
+                                 background:var(--accent); }
+  .rsplit.rdrag::after { opacity:1; width:2px; background:var(--border); }
+  .qdock { display:flex; flex-direction:column; min-height:0; min-width:0;
+    will-change:transform, filter; }
+  .qdock .label { margin-top:0; flex:none; }
+  /* THE QUESTION SCROLLS ALONGSIDE (#305 (a)) — and what scrolls is the
+     question's BODY, not the whole card (#326). The dock is not the scroller,
+     so `answering` stays put as a column head — it says what this column IS,
+     and a heading that scrolls away with its first paragraph makes the reader
+     ask again. The card is not the scroller either, and that is the whole of
+     #326: a scrollport that contains the answer box cannot fade its text at
+     the box without fading the box, so the scrollport stops one element
+     short. `scrollbar-gutter` keeps the text from re-wrapping the moment a
+     live re-render changes the card's length. */
+  /* the card's own 1rem bottom margin goes: "in line with the bottom of the
+     review document" is a measurable claim and 16px is a visible miss. The
+     card's border edge and the iframe's now end on the same line. */
+  .qdock > .qa { flex:1 1 auto; min-height:0; margin-bottom:0;
+    display:flex; flex-direction:column; }
+  /* BOTH EDGES FADE, and they are one gesture mirrored rather than two
+     mechanisms (#326 corrects #305 (c), which had a gradient BAND at the foot
+     and a mask at the head). His words: "the black stuff around the answer box
+     to emulate the fade thing is ugly. the text itself should fade, not be
+     covered by fake fade. and the buttons and text box shouldn't have anything
+     behind them". A band emulates a fade by painting `--bg` over whatever is
+     behind it — which on this page is the living shader — and it has to be as
+     tall as the box, so the box ends up sitting on a black plate. A mask fades
+     the GLYPHS and paints nothing at all.
+
+     Why a mask is now sayable when #305 argued it was not: the objection was
+     true of a scroller that contained the box ("a mask over the scroller
+     cannot be told about the box, and would dim his last line"). It is not
+     true of one that stops where the box begins. The mask's bottom edge IS the
+     scrollport's bottom edge, which is exactly where the text used to run into
+     the band, and the box is outside the masked element entirely — so there is
+     literally nothing behind it and nothing dimming it.
+
+     Head: making the body a scroller cut the first visible line in half
+     directly under `answering`, and half a row of glyph-tops under a heading
+     reads as a rendering fault rather than as scrolled text. Both depths are
+     registered properties so each edge ARRIVES when it is needed and departs
+     when it is not (transitions.md), instead of blinking.
+
+     The `transition` shorthand is safe HERE, where the same declaration on
+     `.qdock > .qa` would not be: a shorthand on a more specific selector
+     replaces the list wholesale, and `.qa` carries the card's own travel,
+     which the one route that also re-groups cards would then lose. `.qbody`
+     has no other transition to clobber. */
+  /* `display` is stated, and it is not a formality: the base rule makes this
+     element generate no box at all, and everything below — the flex sizing,
+     the scrollport, the mask — is silently inert without it. A block box
+     rather than a flex column, so the question's paragraphs collapse their
+     margins here exactly as they do on /questions. */
+  .qdock > .qa > .qbody { display:block; flex:1 1 auto; min-height:0;
+    overflow-y:auto; scrollbar-gutter:stable;
+    -webkit-mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade),
+      #000 calc(100% - var(--qfoot)), transparent);
+    mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade),
+      #000 calc(100% - var(--qfoot)), transparent);
+    transition:--qfade .45s ease, --qfoot .45s ease; }
+  .qdock.attop > .qa > .qbody { --qfade:0px; }
+  /* ...and the foot lifts when the body already ends at the box — his own
+     exception, carried over from #305 (c) unchanged in meaning: at the end of
+     the scroll nothing passes under the box, so a fade there would be dimming
+     his last line to hide nothing. A state with two ends, so it crosses
+     (transitions.md) rather than switching. */
+  .qdock.atend > .qa > .qbody { --qfoot:0px; }
+  /* (b) THE INPUT IS GLUED TO THE BOTTOM, in line with the artifact's bottom
+     edge — his second ask, and the reason the first one is worth anything: a
+     question you can scroll past an answer box you cannot reach is still two
+     acts. `.qcompose` stays the shared component three other surfaces render
+     and four functions address through the card (`snapshotCardState`,
+     `setCardMode`, `submitCard`, the mode group) — it is the LAST FLEX ITEM of
+     a card that does not scroll, which is glued by construction and needs
+     neither `position:sticky` nor `margin-top:auto` to be so. #305 needed both
+     and paid for them: sticky only holds a box the flow would push out of
+     view, so a SHORT question left the box floating mid-column with 200px of
+     dead space beneath it (at 1240px the artifact ended at 1200 and the box at
+     974), and the `margin-top:auto` that fixed that made every child of the
+     card a flex item, so its internal margins stopped collapsing and the dock
+     card ran ~20px taller than the same card on /questions. Both go: the
+     scroller takes the leftover space, the box takes what it needs, and the
+     body is a plain block box again, so it collapses margins the way
+     /questions does.
+     The bottom margin still goes and the .3rem padding stays, so the box's
+     border edge lands on the artifact's bottom line with air under its
+     buttons — the geometry #305 measured, reached without sticky. */
+  .qdock > .qa > .qcompose { margin-bottom:0; padding-bottom:.3rem; }
+  @media (prefers-reduced-motion:reduce) {
+    #reviewwrap.rkeyed { transition:none; }
+    .rsplit::after { transition:none; }
+    .qdock > .qa > .qbody { transition:none; }
+  }
+  /* NARROW STACKS, it does not crush. Below 900px there is no room for two
+     readable columns, so the pane goes back to being a document: one column,
+     natural heights, the page scrolls, and the bar is gone rather than
+     present-but-useless (display:none takes it out of the tab order too). */
+  @media (max-width:900px) {
+    /* #434: body padding is 2.5rem top and bottom (40px). Desktop keeps that
+       as its accepted ~40px foot; on a phone the same pad was sitting under
+       a 60vh frame that had already thrown away 200px, so reclaiming the
+       frame without also tightening the foot left 40px of "empty" that the
+       brief's <24px bar still fails. The review route alone drops the bottom
+       pad to 1rem on the stacked layout — the top pad and every other route
+       keep 2.5rem. fitReview reads paddingBottom, so --rvh grows with it. */
+    body.review { padding-bottom:1rem; }
+    #reviewwrap { grid-template-columns:minmax(0,1fr); height:auto;
+                  min-height:0; }
+    .rsplit { display:none; }
+    /* #434: 60vh was a fixed fraction of the WINDOW, not of the room left
+       under the chrome — at 390x844 that is 506px of frame and ~200px of
+       empty viewport (scrollHeight === innerHeight; nothing off-screen).
+       fitReview already measures the remaining height into --rvh for the
+       desktop pane; the narrow layout reuses that same variable so the
+       frame fills the window rather than a third of it. A docked question,
+       when present, stacks below and the page scrolls — the narrow layout's
+       own rule. No height transition: the pane is measured layout, not a
+       gesture (transitions.md); reduced-motion parity is free. */
+    #reviewdoc { height:var(--rvh, calc(100dvh - 12rem)); min-height:12rem; }
+    #reviewframe { height:100%; }
+    /* no inner scroller, so nothing is glued and nothing passes under the
+       box: both would be lying about a column that is now just a document.
+       ONE line does all of it, because the wrapper goes back to the value it
+       has on every other route: `display:contents` generates no box, and an
+       element with no box carries no scrollport and no mask. Anything that
+       switched the fades off by name would have to name each of them, and
+       #326's whole point is that they are now one element's property. */
+    .qdock > .qa > .qbody { display:contents; }
+  }
+  /* the composer: the + opener sits in the heading's left gutter; the
+     panel it toggles drifts in through a soft blur (the dream language),
+     not a hard pop. reduced-motion just shows/hides. */
+  /* CENTRE, not baseline (#123). The opener is the tallest item in this row,
+     so it defines the line's cross-size; under `baseline` the title was then
+     hung from its own baseline near the top of that line and the button, at
+     full line height, sat 3.1px lower through the middle. Centring both puts
+     them on one centreline on every route — measured identically on /, on
+     /questions and on /review — and it holds while the header TRAVELS,
+     because it is a CSS invariant rather than something JS re-derives per
+     frame. About 1px of residual is the font's own asymmetry (the box centre
+     is not the ink centre) and is deliberately not chased: a magic nudge
+     would be wrong the moment the mono stack falls back. */
+  .htitlebar { display:flex; align-items:center; gap:.55rem; }
+  /* The page's title is a real `<h1>` on every route (#284) — one top-level
+     label per document, which is what a screen reader's heading list is for,
+     and what `/file`'s copy button describes itself by. It carries NO weight
+     or size of its own: emphasis on this page is luminance (see Type &
+     geometry), and a UA-bold 2em heading would say "more important" twice
+     while changing the metrics the + is centred against (#123).
+
+     flex:1 soaks the free space so #hproj can sit on the bar's trailing
+     edge without the route word's length shoving it (#172). */
+  .htitle { display:inline; font:inherit; margin:0;
+            flex:1 1 auto; min-width:0; }
+  /* Project identity in the title bar (#172). The route word varies; the
+     project does not — so the name is pinned to the TRAILING edge of the
+     bar (margin-left:auto), not placed beside the route where a longer
+     word would slide it. Basename only in the bar; the full path rides
+     `title=` because two checkouts can share a basename (see popoutShell
+     and the openPopout comment) and a full path in an h1 competes with
+     the subject the way #284 already ruled against for file paths. Same
+     size and --bright as the heading: this is identity, not a breadcrumb. */
+  .hproj { flex:none; margin-left:auto; color:var(--bright); font:inherit;
+           white-space:nowrap; max-width:42%; overflow:hidden;
+           text-overflow:ellipsis; }
+  /* The opener hangs in the gutter LEFT of the reading column, so its offset
+     is only affordable when the gutter exists. It does not on the review
+     view's 1360px column, or in any narrow window — the button was sliced in
+     half by the page edge (#108). So the pull is CLAMPED to the room that
+     actually exists: it hangs out as far as it can, then locks; 0 parks it
+     flush with the column, still inset by the body padding.
+
+     `100%` is the containing block's width — .htitlebar's, which is the
+     column's — so `(100vw - 100%)/2` IS the gutter, with no need to name the
+     column's width (it is `ch`-sized, and `ch` would resolve against the
+     button's own font rather than the column's). Doing this in CSS rather
+     than JS is what makes the guarantee hold on every frame: the column
+     GLIDES on a route change (#107), and a measure-then-write in rAF always
+     paints one frame behind that. */
+  #cmdplus { flex:none; align-self:center;
+    margin-left:calc(-1 * clamp(0px, (100vw - 100%) / 2 - .6rem, 2.4rem));
+    width:1.7rem; height:1.7rem; display:grid; place-items:center;
+    background:transparent; color:var(--muted);
+    border:1px solid var(--border); border-radius:var(--radius);
+    font:inherit; font-size:1.15rem; line-height:1; cursor:pointer;
+    transition:color .3s ease, border-color .3s ease, background .3s ease,
+               transform .35s cubic-bezier(.32,.12,.2,1); }
+  #cmdplus:hover, #cmdplus.on { color:var(--accent);
+    border-color:var(--accent); background:rgba(99,102,241,.09); }
+  #cmdplus.on { transform:rotate(45deg); }
+  #cmdpalette { position:fixed; z-index:30; top:4rem; left:1rem;
+    width:min(38ch,92vw); background:rgba(11,15,25,.94);
+    border:1px solid var(--border); border-radius:8px; padding:1rem 1rem .85rem;
+    box-shadow:0 14px 44px rgba(0,0,0,.5); backdrop-filter:blur(7px);
+    visibility:hidden; opacity:0; transform:translateY(-8px) scale(.97);
+    filter:blur(6px); pointer-events:none;
+    transition:opacity .5s cubic-bezier(.32,.12,.2,1),
+               transform .5s cubic-bezier(.32,.12,.2,1),
+               filter .5s ease, visibility 0s linear .5s; }
+  #cmdpalette.open { visibility:visible; opacity:1; transform:none;
+    filter:none; pointer-events:auto; transition-delay:0s; }
+  #cmdpalette .label { margin-top:0; }
+  /* #177 — the box grows with what he types, on the page's one height-travel
+     gesture (.85s, the same curve #104's regroup and the card fold use), then
+     scrolls past its own ceiling. The ceiling is a per-surface contract
+     carried as `data-max-rows` (composer 15, answer 6 — see fitText);
+     reduced motion keeps the growth (function) and drops only the timing,
+     the page's standing rule.
+     #570 — the composer box is manually resizable (`resize:vertical`, the
+     same idiom `.askform textarea` already uses). A drag of the native handle
+     is continuous input, and a transition on `height` would put the box
+     behind his hand (transitions.md #305), so the press pauses the transition
+     and marks the composition manual: autosize yields to his size until the
+     next submit re-enables it (see the pointerdown/pointerup handler in the
+     composer IIFE and the `_manual` gate in fitText). `resize:none` stays on
+     the answer/note boxes (`.qfield textarea`) — autosize owns their height,
+     and the Q&A region is another lane's. */
+  /* #464 — reserve the scrollbar gutter so the text never reflows when the
+     box grows tall enough to hold every line and the bar would vanish.
+     `scrollbar-gutter:stable` is the gutter-without-furniture reading of
+     "always show": the reflow is the reported distraction, and a permanent
+     bar would add chrome the rest of the page deliberately avoids. Overflow
+     still scrolls past the 15-row ceiling; reduced-motion only drops the
+     height timing (above) and does not touch the gutter. */
+  #cmdform textarea { width:100%; box-sizing:border-box;
+    background:var(--panel); color:var(--text); border:1px solid var(--line);
+    border-radius:var(--radius); font:inherit; padding:.4rem; margin:.3rem 0;
+    min-height:3.4rem; resize:vertical; overflow:auto; scrollbar-gutter:stable;
+    transition:height .85s cubic-bezier(.32,.1,.2,1); }
+  /* command selection: a button group whose background indicator SLIDES to
+     the active option. The one piece of crisp motion in the composer, kept
+     soft (.3s, the dream easing). The selected label glows rather than
+     changing metrics — a text effect that moved layout would resize the
+     buttons and so move the target the indicator is chasing. */
+  /* ONE sliding selection group, shared by the composer's command kinds and
+     by every question card's answer/note switch (#103). Geometry and motion
+     live here; each user styles only its own buttons. */
+  .sgroup { position:relative; display:flex; flex-wrap:wrap; gap:.1rem; }
+  /* The indicator is an OUTLINE that slides, not a filled chip (#121, his
+     words: "have an outline but no bg color; they are currently opaque so
+     you can't see the animation behind it"). It still marks the active
+     option — the outline travels to it and its label glows accent — and the
+     dreaming field now shows through the whole group. */
+  .sgind { position:absolute; top:0; left:0; z-index:0; width:0; height:0;
+    background:transparent; border:1px solid var(--border);
+    border-radius:var(--radius); box-sizing:border-box;
+    transition:transform .3s cubic-bezier(.32,.12,.2,1),
+               width .3s cubic-bezier(.32,.12,.2,1),
+               height .3s cubic-bezier(.32,.12,.2,1); }
+  .sgind.snap { transition:none; }         /* land, never slide (see JS) */
+  .sgbtn { position:relative; z-index:1; background:none; font:inherit;
+    border:1px solid transparent; border-radius:var(--radius);
+    color:var(--dim); cursor:pointer;
+    transition:color .3s ease, text-shadow .3s ease; }
+  .sgbtn:hover { color:var(--muted); }
+  /* the selected label GLOWS rather than re-metricking: a text effect that
+     changed layout would resize the button the indicator is chasing */
+  .sgbtn.on { color:var(--accent);
+    text-shadow:0 0 12px rgba(165,180,252,.45); }
+  /* The tint picker (#143). It is the standing sliding group, so geometry
+     and motion come for free and the ghost rule holds — an outline that
+     travels, no fill anywhere, the dreaming field visible through every
+     button. Two things are its own:
+
+     Each label wears ITS OWN hue, because `teal` is a word until you can see
+     it, and a row of identical dim words would make him click through six to
+     find one. The swatch is on the TEXT, not a chip, which is the same
+     restraint the group already asks for.
+
+     And the selected one does NOT take `--accent` the way .sgbtn.on does —
+     it takes its own colour, brightened. The accent means "live and
+     actionable"; a settled preference is neither, and spending the accent
+     here would be the fourth thing on the page wearing it. */
+  .tintpick { margin:.2rem 0 .1rem; }
+  .tintbtn { padding:.24rem .5rem; font-size:.7rem;
+             color:color-mix(in oklab, var(--tintswatch) 55%, var(--dim)); }
+  .tintbtn:hover { color:var(--tintswatch); }
+  .tintbtn.on { color:var(--tintswatch);
+    text-shadow:0 0 12px color-mix(in oklab, var(--tintswatch) 45%,
+                                   transparent); }
+  .tintmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
+  /* #445 three-axis posture — sibling of run-mode. Asymmetry is honest:
+     pace three chips, asking four (his dictation — do not compress),
+     delegation an integer target with a derived label. One shared 10s arm
+     covers a whole posture edit (one file, one event), not three ceremonies.
+     Active stop takes --accent (live loop control). Reduced motion hides
+     the bar, keeps the second-by-second text + same application time. */
+  .posture { margin:.55rem 0 .35rem; }
+  /* #565 — the posture widget docks to the viewport bottom while one of its
+     countdowns is live, so scrolling up keeps the countdown visible. Sticky
+     is CONDITIONAL (the .psticky class, toggled by paintPosturePin from
+     posturePinnedLive): a headless probe proved always-on `bottom:0` on this
+     end-of-page section docks it at rest (~35% of the viewport permanently),
+     and `top:0` is a no-op for an end-of-page element, so the class — gated
+     on a live posture arm or deploy countdown, matching "when the countdown
+     timer bar is on screen" — is the only useful form. Opaque bg + a top
+     hairline (box-shadow, no layout shift) keep the docked widget readable
+     over scrolling content; the full HR+soft-fade the human sketched is
+     deferred (it needs the review-pages registered-property mask and does
+     not fight sticky — see FLAG in the merge). Sticky is not motion
+     (transitions.md), so there is no travel here, only the declaration. */
+  .posture.psticky { position:sticky; bottom:0; z-index:5;
+    background:var(--bg);
+    box-shadow:0 -1px 0 var(--line); }
+  /* #488: source chip sits beside the Posture heading, not under the axes. */
+  .posture-head { display:flex; align-items:baseline; gap:.55rem;
+    flex-wrap:wrap; margin:var(--space) 0 .5rem; }
+  .posture-head .label { margin:0; }
+  .posture-axes { display:flex; flex-direction:column; gap:.45rem;
+    margin:.2rem 0 .1rem; }
+  .paxis { min-width:0; }
+  .paxis-lab { color:var(--dimmer); font-size:.65rem; letter-spacing:.06em;
+    text-transform:uppercase; margin:0 0 .15rem; }
+  .paxis-chips { margin:0; }
+  .pchip { padding:.24rem .5rem; font-size:.7rem; }
+  .pchip .pchip-short { letter-spacing:0; }
+  .pstep { display:inline-flex; align-items:center; gap:.35rem;
+    margin:.05rem 0; }
+  .pstepbtn { background:none; border:1px solid var(--line); font:inherit;
+    color:var(--muted); padding:.18rem .55rem; cursor:pointer;
+    border-radius:var(--radius); line-height:1.2;
+    transition:color .3s ease, border-color .3s ease; }
+  .pstepbtn:hover { color:var(--accent); border-color:var(--border); }
+  .pstepbtn:disabled { color:var(--dimmer); cursor:default; opacity:.72; }
+  .pstepval { min-width:1.6rem; text-align:center; color:var(--lit);
+    font-variant-numeric:tabular-nums; font-size:.8rem; }
+  .psteplabel { color:var(--dim); font-size:.7rem; }
+  .pstephint { color:var(--dimmer); font-size:.65rem; margin:.1rem 0 0; }
+  .posture-src { color:var(--dimmer); font-size:.65rem; margin:0;
+    text-transform:none; letter-spacing:0; font-weight:400; }
+  .posture-src.file { color:var(--dim); }
+  /* #551: the ambient slot's 'remind' link-btn — a dim, lowercase-leaning
+     action styled as the panel's link idiom (cf. 'all N reviews →'), not a
+     chip. It inherits the slot's dim colour and lifts to the accent on hover,
+     like every inline link on the page. No new token, no motion (the slot
+     swaps state instantly, matching the armed↔ambient swap that already
+     existed here — see transitions.md: most state changes do not animate). */
+  .remind-btn { background:none; border:0; padding:0; margin:0; font:inherit;
+    color:var(--accent); cursor:pointer; text-decoration:none;
+    transition:opacity .3s ease; opacity:.82; }
+  .remind-btn:hover { opacity:1; text-decoration:underline; }
+  .remind-sent { color:var(--dim); }
+  .parm { margin:.35rem 0 0; min-height:1.15rem;
+          display:flex; flex-wrap:wrap; align-items:baseline; }
+  .pbar { height:3px; background:var(--line); border-radius:2px;
+          overflow:hidden; margin:0 0 .28rem; flex:0 0 100%; }
+  .pbar[hidden] { display:none; }
+  .pbarfill { height:100%; width:100%; background:var(--muted);
+    border-radius:2px;
+    transition:width 10s linear; transform-origin:left center; }
+  .pbarfill.snap { transition:none; }
+  .pcount { color:var(--dim); font-size:.7rem;
+            font-variant-numeric:tabular-nums; }
+  /* #569: the recused deploy countdown, in .parm's remaining horizontal
+     space (margin-left:auto docks it after the posture count). Its width
+     rides the explicit-width idiom #pbarfill uses — paintDeployStatus sets
+     style.width to the measured text width and the transition eases the
+     reflow as the label changes ('arms in 3s' -> 'updating — waiting for
+     the new page'). width cannot transition from auto, so it is explicit,
+     snap-then-travel, exactly like the arm bar. Visibility IS width (0 =
+     collapsed via overflow:hidden) — no opacity, so the 2s morphdom rebuild
+     (which resets inline styles) cannot flash it; the 250ms deploy tick
+     re-applies the width the same way #pcount's text is re-applied. Reduced
+     motion snaps. */
+  .pdep { margin-left:auto; color:var(--dim); font-size:.7rem;
+          font-variant-numeric:tabular-nums; white-space:nowrap;
+          overflow:hidden; max-width:100%;
+          transition:width .3s ease; }
+  .pdep.snap { transition:none; }
+  .pmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
+  .pmsg:empty { display:none; }
+  /* #488: description shell always reserves layout height. Visibility is
+     opacity only — never display:none / never inserted-removed — so hover
+     cannot reflow the card or anything below it. Empty space is intentional. */
+  .pdesc { margin:.28rem 0 .12rem; min-height:2.6em; max-width:100%;
+    font-size:.7rem; color:var(--dim); line-height:1.4;
+    overflow:hidden; opacity:0; pointer-events:none;
+    transition:opacity .42s ease, filter .42s ease,
+               transform .42s cubic-bezier(.32,.1,.2,1); }
+  .pdesc.open { opacity:1; pointer-events:auto; }
+  .pdesc.pose { transition:none !important; opacity:0;
+    filter:blur(6px); transform:translateY(4px); }
+  .pdesc.depart { opacity:0; filter:blur(7px); transform:translateY(-4px); }
+  .pdesc-text { display:block; max-width:100%;
+    transition:opacity .34s ease, filter .34s ease,
+               transform .34s cubic-bezier(.32,.1,.2,1); }
+  .pdesc-text.out { opacity:0; filter:blur(6px); transform:translateY(-2px); }
+  .pdesc-text.in { opacity:0; filter:blur(4px); transform:translateY(2px); }
+  @media (prefers-reduced-motion: reduce) {
+    .pbar { display:none; }
+    .pbarfill { transition:none; }
+    .pdesc, .pdesc-text { transition:none; }
+    .pdep { transition:none; }   /* #569: width snaps, function unchanged */
+  }
+  /* ── what he has sent, from this browser (#165) ───────────────────────
+     The row is the page's standing shape for a list of small facts — the
+     commits panel's, one surface over: a fixed-height flex row, the identity
+     on the left, the ticking age pinned right and tabular so the column does
+     not jitter. Nothing here is a new component; only the middle column is.
+     THE OUTCOME IS THE ONLY THING THAT TAKES COLOUR, because it is the only
+     thing he cannot recover by looking somewhere else (#175). */
+  .cmdhist { margin:.4rem 0 0; }
+  .cmdhist > summary { color:var(--dim); font-size:.7rem; }
+  .cmdhist[open] > summary { color:var(--muted); }   /* #169's per-surface step */
+  /* capped and scrolled: the panel is fixed, so an uncapped list would grow
+     off the bottom of the screen and take the send button with it */
+  .cmdhistbody { max-height:11rem; overflow-y:auto; margin-top:.3rem; }
+  .cmdhrow { display:flex; align-items:baseline; gap:.6ch;
+             font-size:.7rem; line-height:1.5; color:var(--dim); }
+  .cmdhkind { flex:0 0 auto; color:var(--dimmer); text-transform:uppercase;
+              letter-spacing:.06em; }
+  .cmdhtext { flex:1 1 auto; min-width:0; overflow:hidden;
+              white-space:nowrap; text-overflow:ellipsis; color:var(--muted); }
+  .cmdhage { flex:0 0 auto; margin-left:auto; color:var(--dimmer);
+             font-variant-numeric:tabular-nums; }
+  /* a send that did not land is the reason this list exists, so it is the one
+     thing that leaves the dim end. --warn, not the accent: the accent marks
+     what NEEDS him, and a failure from an hour ago is a fact, not an errand */
+  .cmdhrow.bad .cmdhtext { color:var(--warn); }
+  .cmdhwhy { flex:0 0 auto; color:var(--warn); }
+  .cmdhrow.pending .cmdhtext { font-style:italic; }
+  /* the honest footer: this is one browser's memory, not the project's */
+  .cmdhnote { color:var(--dimmer); font-size:.65rem; margin-top:.4rem; }
+  .tintmsg:empty { display:none; }
+  .cmdkinds { margin:.3rem 0 .1rem; }
+  .cmdkind { padding:.28rem .45rem; }
+  /* Hover discoverability: the row carries the common kinds, and the ⋯ icon
+     reveals EVERY command with a one-line description — so a rarely-used kind
+     is discoverable rather than hidden knowledge. Rendered from COMMANDS at
+     any length, so plugin-contributed kinds (#86) just appear. */
+  .cmdpick { display:flex; align-items:flex-start; gap:.1rem; }
+  .cmdmore { position:relative; display:inline-flex; align-items:center; }
+  .cmdmorebtn { background:none; border:1px solid transparent; font:inherit;
+    color:var(--dimmer); padding:.28rem .5rem; cursor:pointer; line-height:1;
+    border-radius:var(--radius); transition:color .3s ease; }
+  .cmdmore:hover .cmdmorebtn, .cmdmore:focus-within .cmdmorebtn {
+    color:var(--accent); }
+  /* no gap between icon and menu: the pointer must be able to travel from one
+     to the other without ever leaving .cmdmore, or the menu closes en route.
+     The menu is anchored to the ⋯'s RIGHT edge and grows left, because the ⋯
+     sits at the right end of the kinds row: a left-anchored menu grew right
+     past the viewport and — a `visibility:hidden` box is still LAID OUT, not
+     `display:none` — pushed a 122px horizontal scrollbar at phone width on
+     every route, palette open or shut (#312). `right:0` keeps it in bounds;
+     the clamp holds the preferred 32ch wherever it fits and never lets the
+     left edge cross the body's padding at any width. */
+  .cmdmenu { position:absolute; z-index:31; top:100%; right:0;
+    width:max(32ch,100%); max-width:calc(100vw - 2rem); padding:.3rem;
+    background:rgba(11,15,25,.97); border:1px solid var(--border);
+    border-radius:8px; box-shadow:0 14px 44px rgba(0,0,0,.55);
+    backdrop-filter:blur(7px);
+    visibility:hidden; opacity:0; transform:translateY(-6px);
+    filter:blur(5px); pointer-events:none;
+    transition:opacity .34s cubic-bezier(.32,.12,.2,1),
+               transform .34s cubic-bezier(.32,.12,.2,1),
+               filter .34s ease, visibility 0s linear .34s; }
+  .cmdmore:hover .cmdmenu, .cmdmore:focus-within .cmdmenu {
+    visibility:visible; opacity:1; transform:none; filter:none;
+    pointer-events:auto; transition-delay:0s; }
+  .cmdmenuitem { display:block; width:100%; box-sizing:border-box;
+    text-align:left; background:none; border:1px solid transparent;
+    border-radius:var(--radius); font:inherit; color:var(--muted);
+    padding:.3rem .45rem; cursor:pointer;
+    transition:background .25s ease, color .25s ease; }
+  .cmdmenuitem:hover, .cmdmenuitem:focus-visible {
+    background:var(--panel2); color:var(--lit); }
+  .cmdmenuitem.on .cmk { color:var(--accent); }
+  .cmdmenuitem .cmd { display:block; color:var(--dim); font-size:.7rem;
+    margin-top:.1rem; }
+  /* which plugin answers a command (#86), on the item that offers it. The
+     QUIETEST step of the ramp — the same --dimmer as the history's ages and
+     its footer — because this is provenance, not an errand: he needs it when
+     a command is unfamiliar or has stopped working, and never otherwise. It
+     floats right so it costs the label no room and no wrapping, which is the
+     failure #162 is about one row over. */
+  .cmdmenuitem .cmpl { float:right; color:var(--dimmer); font-size:.65rem;
+    margin-left:.75rem; }
+  /* An arriving item eases in on `.qreveal`, and it needs this rule to do it.
+     `.cmdmenuitem` declares a transition of its own at the SAME specificity
+     and LATER in this sheet, so it wins and `.qreveal` silently supplies no
+     transition at all — which is #154 exactly, one component over: the class
+     is added, the element is already at opacity 1, and nothing ever fades.
+     Restating both here is the fix that does not depend on source order (the
+     invariant `.dreamin` states in its own comment), and it keeps the hover
+     colours transitioning while the item is still on its way in. */
+  .cmdmenuitem.qreveal { transition:opacity .55s ease, filter .55s ease,
+    transform .55s ease, background .25s ease, color .25s ease; }
+  .cmdrow { display:flex; gap:.5rem; align-items:center; margin-top:.2rem; }
+  .cmdrow button { background:var(--panel2); color:var(--accent);
+    border:1px solid var(--border); border-radius:var(--radius); font:inherit;
+    padding:.25rem .8rem; cursor:pointer; }
+  #cmdpop { margin-left:auto; color:var(--muted); }
+  #cmdpop:hover { color:var(--accent); }
+  /* PiP glyph: always present, quiet at rest, accent on hover/focus — the
+     same card-chrome arrival as .qfocus/.qroll (no appear/disappear of its
+     own; rides the surface it sits on). user-select:none so a drag across
+     prose that contains a body-link pip never swallows the button into the
+     selection (#505; the pip is chrome, not copy). */
+  .pipbtn { background:none; border:none; color:var(--dim); cursor:pointer;
+    padding:0 .35rem; line-height:1; vertical-align:middle;
+    transition:color .3s ease; user-select:none; -webkit-user-select:none; }
+  .pipbtn:hover, .pipbtn:focus-visible { color:var(--accent); }
+  .pipbtn svg { display:inline-block; vertical-align:-2px; }
+  /* #506: known-internal path + its pip are ONE unbreakable unit. Without
+     nowrap the button orphans onto the next line whenever the path sits
+     near a wrap edge (the path is content; the pip is chrome that must
+     travel with it). The unit is short (a path + 14px glyph); long paths
+     already overflow as one code token. */
+  .mdfile { white-space:nowrap; }
+  /* the composer's status arrives and departs on one atmospheric envelope
+     (#255). Success remains readable for the hold while the panel stays open;
+     the panel's own courtesy-close is separate (~1.5s, #291). Reduced motion
+     keeps timing but snaps both visual states. */
+  .cmdmsg { color:var(--dim); font-size:.7rem; min-height:1em; margin-top:.5rem;
+    transition:color .4s ease, opacity .35s ease, filter .35s ease,
+               transform .35s cubic-bezier(.32,.1,.2,1); }
+  .cmdmsg.depart { opacity:0; filter:blur(7px); transform:translateY(-5px); }
+  /* no reserved slack under the buttons: the status line only takes room
+     once it has something to say, and the panel grows downward to meet it
+     (nothing above it moves). */
+  .cmdmsg:empty { display:none; }
+  .cmdmsg.ok { color:var(--accent); }
+  /* dream ripple: a soft ring expanding from a received command / answer */
+  .ripple { position:fixed; z-index:40; border-radius:50%; pointer-events:none;
+    border:1px solid var(--accent); }
+  @media (prefers-reduced-motion: reduce) {
+    #cmdplus, #cmdpalette, #layerhint, .sgind, .sgbtn, .cmdmenu,
+    .cmdmenuitem, .cmdmenuitem.qreveal, .cmdmorebtn,
+    .cmdmsg, .pipbtn { transition:none; }
+  }

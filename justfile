@@ -494,7 +494,8 @@ deploy rev="HEAD":
 # boundaries are resolved AT THE COMMIT BEING AUDITED (git show <sha>:watch.py),
 # never at HEAD — line numbers move, and judging last week's commit with
 # today's line numbers is the "literal with an expiry date" trap. A non-UI
-# commit passes by NOT TOUCHING a UI constant, not by remembering a trailer.
+# commit passes by NOT TOUCHING a `client/` asset (or, before #397 extracted
+# them, a UI constant in watch.py), not by remembering a trailer.
 # `Styleguide: n/a` survives only as a narrow escape hatch for a genuine
 # judgement case the diff filter calls wrong (reported as EXEMPT, auditable).
 #

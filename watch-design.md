@@ -56,6 +56,28 @@ carries a `+` command opener (steer the loop without a chat turn).
   *two renderers only agree on the day they are written*). Build tooling over
   the client we have is the permitted direction; a rival implementation of it
   is a separate decision nobody has made.
+- **The client lives in `client/`, one file per former constant (#397).**
+  `client/style.css`, `app_body.html`, `components.js`, `views.js`,
+  `favicon.js`, `router.js`, `command.js`, `shader.js`. `watch.py` reads them
+  at import through `_read_client()` and assembles the page exactly as the
+  string literals did — the extraction was proven by capturing the served
+  page before and after and requiring the bytes to match.
+  Four things that are load-bearing rather than incidental:
+  - **`CLIENT_DIR` uses `abspath`, never `realpath`.** #425 turns `watch.py`
+    into a symlink to `deprecated/watch.py`; `realpath` would resolve this
+    directory into `deprecated/`, where the assets are not. Never cwd (guards
+    run from elsewhere) and never `--target` (the watched project).
+  - **`style.css` is real CSS.** The `<style>` wrapper lives in the loader, so
+    the file is lintable and a bundler can read it. `STYLE` still equals
+    `"<style>" + the file + "</style>"`, and a test pins that.
+  - **Every asset is declared in `DATA_SIBLINGS`,** which is what `just
+    deploy` ships (`dev/deploy_state.py` reads that literal with
+    `ast.literal_eval`, so it cannot be computed — a test pins it equal to
+    `_CLIENT_ASSETS` instead). An asset missing there deploys a blank page.
+  - **A UI change is now a diff to `client/`, not to `watch.py`.**
+    `dev/styleguide_audit.py` classifies on that prefix, and still classifies
+    pre-#397 revisions by the old constant ranges because it walks history
+    across the extraction.
 - **Loopback by default; trusted LAN only by explicit contract.** The default
   remains `127.0.0.1`. A singular numeric `--bind`, repeatable exact
   `--allow-host`, and navigable allowed `--url-host` may opt into an explicitly
@@ -259,8 +281,9 @@ if a change needs to break a rule, update the rule here in the same commit.
 
 ### Tokens
 
-All colour/space lives in the `:root` block in `STYLE` — edit tokens, never
-hardcode. `--bg` near-black; `--panel`/`--panel2` raised fills; `--line`
+All colour/space lives in the `:root` block at the top of `client/style.css`
+(the `STYLE` constant is that file inside a `<style>` wrapper) — edit tokens,
+never hardcode. `--bg` near-black; `--panel`/`--panel2` raised fills; `--line`
 hairlines, `--border` stronger edges; a text ramp `--text` → `--lit` →
 `--bright` (up, brighter) and `--muted` → `--dim` → `--dimmer` (down,
 quieter); `--accent` indigo. `--space` (section rhythm),

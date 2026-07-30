@@ -1,0 +1,110 @@
+<canvas id="dreambg"></canvas>
+<svg id="dreamfx" width="0" height="0" aria-hidden="true"
+     style="position:absolute;width:0;height:0;pointer-events:none">
+ <!-- #453: the dissolve mist is ONE CACHED noise field, pre-rendered once to a
+      canvas (mistTexture()) and consumed via feImage — the human's texture idea
+      ("just having a single texture ... and then just like moving it"). feTile
+      wraps it across the filter region, feOffset MOVES it per frame (the flow),
+      and the displacement/blur envelopes are the ones stepFx always drove.
+      Nothing regenerates per frame: #449 measured feTurbulence re-rasterizing
+      every frame as the whole cost, with the displacement+blur math free. -->
+ <filter id="dissolveOut" x="-25%" y="-25%" width="150%" height="150%"
+         color-interpolation-filters="sRGB">
+  <feImage class="texsrc" x="0" y="0" width="256" height="256"
+           preserveAspectRatio="none" result="img"/>
+  <feTile in="img" result="tl"/>
+  <feOffset in="tl" dx="0" dy="0" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
+                     xChannelSelector="R" yChannelSelector="G" result="d"/>
+  <feGaussianBlur in="d" stdDeviation="0"/>
+ </filter>
+ <!-- dissolveIn is DEFINED BUT NOT APPLIED (#453): the second full-page
+      rasterisation is what fails the frame budget — one filtered element
+      costs ~30% of rAF frames on this route, two cost ~50%, and the incoming
+      view's mist was always its subtlest half (peak displacement lands while
+      opacity is near 0). The arrival's haze rides the compositor CSS blur
+      (5px→0, the ungated #view rules). Kept defined so a future mechanism
+      can re-apply it without re-authoring. -->
+ <filter id="dissolveIn" x="-25%" y="-25%" width="150%" height="150%"
+         color-interpolation-filters="sRGB">
+  <feImage class="texsrc" x="0" y="0" width="256" height="256"
+           preserveAspectRatio="none" result="img"/>
+  <feTile in="img" result="tl"/>
+  <feOffset in="tl" dx="0" dy="0" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
+                     xChannelSelector="R" yChannelSelector="G" result="d"/>
+  <feGaussianBlur in="d" stdDeviation="0"/>
+ </filter>
+ <!-- #449: the shelved per-frame feTurbulence versions, kept for comparison
+      (MIST_IMPL 'turbulence' in crossfade). Measured 2026-07-29: they cost
+      the dissolve +128% of rAF frames vs none. Do not re-enable casually. -->
+ <filter id="dissolveOutT" x="-25%" y="-25%" width="150%" height="150%"
+         color-interpolation-filters="sRGB">
+  <feTurbulence type="fractalNoise" baseFrequency="0.009" numOctaves="1"
+                seed="7" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
+                     xChannelSelector="R" yChannelSelector="G" result="d"/>
+  <feGaussianBlur in="d" stdDeviation="0"/>
+ </filter>
+ <filter id="dissolveInT" x="-25%" y="-25%" width="150%" height="150%"
+         color-interpolation-filters="sRGB">
+  <feTurbulence type="fractalNoise" baseFrequency="0.009" numOctaves="1"
+                seed="7" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
+                     xChannelSelector="R" yChannelSelector="G" result="d"/>
+  <feGaussianBlur in="d" stdDeviation="0"/>
+ </filter>
+ <filter id="departMist" x="-25%" y="-25%" width="150%" height="150%"
+         color-interpolation-filters="sRGB">
+  <feImage class="texsrc" x="0" y="0" width="256" height="256"
+           preserveAspectRatio="none" result="img"/>
+  <feTile in="img" result="tl"/>
+  <feOffset in="tl" dx="0" dy="0" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
+                     xChannelSelector="R" yChannelSelector="G" result="d"/>
+  <feGaussianBlur in="d" stdDeviation="0"/>
+ </filter>
+</svg>
+<div class="wrap">
+<div id="chrome">
+ <header class="htitlebar"><button id="cmdplus" type="button"
+   title="command the dream" aria-label="open command palette">+</button>
+  <h1 class="htitle" id="htitle"></h1>
+  <span class="hproj" id="hproj" hidden></span></header>
+ <div id="meta"></div>
+ <div class="cmdmsg fmsg" id="fmsg" aria-live="polite"></div>
+</div>
+<div id="view">loading…</div>
+<div id="cmdpalette" role="dialog" aria-label="command palette">
+ <form id="cmdform" autocomplete="off">
+  <div class="label">command the dream</div>
+  <div class="cmdpick">
+   <div class="sgroup cmdkinds" id="cmdkinds" role="radiogroup"
+        aria-label="command"></div>
+   <div class="cmdmore" id="cmdmore">
+    <button type="button" class="cmdmorebtn" aria-haspopup="menu"
+            aria-expanded="false" aria-label="all commands">&#8943;</button>
+    <div class="cmdmenu" id="cmdmenu" role="menu"></div>
+   </div>
+  </div>
+  <textarea id="cmdtext" placeholder="a thought for the dream…"
+            data-max-rows="15"></textarea>
+  <div class="cmdrow">
+   <button type="submit" id="cmdsend">send</button>
+   <button type="button" id="cmdpop"
+           title="pop out — stays while you navigate"><svg viewBox="0 0 22 18"
+     width="13" height="11" aria-hidden="true"><rect x="1" y="1" width="20"
+     height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"
+     /><rect x="10.5" y="8.5" width="9" height="7" rx="1.2"
+     fill="currentColor"/></svg> pop out</button>
+  </div>
+  <div class="cmdmsg" id="cmdmsg" aria-live="polite"></div>
+ </form>
+ <!-- what he has sent, from this browser (#165). A disclosure rather than a
+      standing list: the composer is for the next thought, and the last one is
+      only sometimes the question. -->
+ <details class="cmdhist" id="cmdhist">
+  <summary id="cmdhistsum">history</summary>
+  <div class="cmdhistbody" id="cmdhistbody"></div>
+ </details>
+</div>

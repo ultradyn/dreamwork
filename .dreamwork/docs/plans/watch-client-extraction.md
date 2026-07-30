@@ -3,9 +3,34 @@
 **Tasks:** #397 (this plan). Related: #264 (the evidence that filed it), #368
 (the human's own "break up the large Python files" ask), #124 (an older
 "break up watch.py" ledger entry).
-**Status:** design; **no implementation authority**. Nothing is changed in
-`watch.py`, no file is created under `client/`, no test, guard, justfile or
-deploy recipe is touched under this id.
+**Status:** ~~design; no implementation authority~~ → **IMPLEMENTED
+2026-07-31.** The extraction below was built as designed: eight files under
+`client/`, `__file__`-relative loading, the boot preamble left as a generated
+string. Proven by capturing the served page before and after and requiring
+byte equality (576,217 bytes, sha256 `08d4e0bf33cb02cb…`, `--dev` variant
+too).
+
+**Two of this plan's three reasons to decline had expired, and one of its
+four costs turned out not to exist:**
+
+- *"no build step is a constraint"* — lifted by him on 2026-07-30 (`#505` Q2).
+- *"`just deploy` BREAKS and must become a directory snapshot"* — already
+  paid by `#480`/`#425`. `ship_siblings` walks the transitive import closure
+  plus `DATA_SIBLINGS`, makes subdirectories, and writes atomically. Adding
+  the eight paths to that tuple was the whole change; the recipe was not
+  touched.
+- *"the `serving` guard BREAKS (needs one `cpSync`)"* — **it does not.**
+  `serveVerified` spawns `watch.py` from the repo root and only the TARGET is
+  the temp copy, so `client/` resolves normally. The guard passes unchanged;
+  this plan's prediction was wrong.
+- Still true and still paid: `--autoreload` needed the assets in its watched
+  set, and `dev/styleguide_audit.py` needed re-pointing. One more the plan
+  did not name: `dev/capture/bdinput.mjs` reads `BURN_LIMIT_CAP` out of
+  watch.py source, which now lives in `client/views.js`.
+
+The remaining reason to decline — that this does not unblock `#331`/`#352`,
+which are Python parser work needing the separate `#368` split — still
+stands, and is not what this was done for.
 **Date:** 2026-07-28. Every line number and count below was re-grounded against
 the tree in this session, and the method for each is stated so it can be
 re-derived.
