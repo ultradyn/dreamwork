@@ -246,6 +246,33 @@ def import_roots(src: bytes) -> list:
     return sorted(roots)
 
 
+def data_sibling_paths(src) -> list:
+    """Repo-relative data files a module declares it loads beside itself.
+
+    Imports are not the whole sibling set: watch.py vendors morphdom and
+    reads it with ``open()`` next to ``__file__`` (#505), a dependency the
+    import walk cannot see. A module declares such files in a module-level
+    ``DATA_SIBLINGS = (...)`` tuple of plain string literals; absent (or
+    anything not a literal string tuple) means none. The caller tree-filters
+    at the rev, so a stale entry is discarded, never shipped blind.
+    """
+    tree = ast.parse(src)
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "DATA_SIBLINGS"
+                   for t in node.targets):
+            continue
+        try:
+            val = ast.literal_eval(node.value)
+        except (ValueError, SyntaxError):
+            return []
+        if isinstance(val, (tuple, list)):
+            return sorted(p for p in val if isinstance(p, str))
+        return []
+    return []
+
+
 def tracked_sibling_paths(rev, roots, repo=ROOT) -> list:
     """Repo-relative paths at `rev` that provide the given import roots.
 
@@ -296,6 +323,13 @@ def sibling_closure(rev, repo=ROOT, seed="watch.py") -> list:
         paths.add(rel)
         src = resolve_blob(rev, rel, repo)
         queue.extend(tracked_sibling_paths(rev, import_roots(src), repo))
+        # data siblings (#505): declared beside the module, not imported —
+        # tree-filtered here so an untracked entry is discarded like an
+        # environment module is.
+        for p in data_sibling_paths(src):
+            mode, _sha = _ls_tree_entry(repo, rev, p)
+            if mode is not None:   # a symlinked data file ships resolved bytes
+                paths.add(p)
     return sorted(paths)
 
 

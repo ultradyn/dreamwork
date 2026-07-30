@@ -863,8 +863,10 @@ def test_ship_siblings_and_assert_importable_cli_against_real_head(tmp_path):
     # the production function would agree with it by construction and prove
     # nothing). If watch.py's imports change, update this list — the boot
     # proof below is what makes a stale list fail loud, not silently pass.
+    # The vendor pair arrives via DATA_SIBLINGS (#505), not the import walk.
     for rel in ("ledger_parse.py", "lint.py", "watch.py",
-                "user_events/__init__.py", "user_events/sqlite.py"):
+                "user_events/__init__.py", "user_events/sqlite.py",
+                "vendor/morphdom.min.js", "vendor/LICENSE.morphdom"):
         assert rel in shipped, f"{rel} missing from {sorted(shipped)}"
     for rel in shipped:
         assert (dest / rel).exists(), f"sibling {rel} was not shipped"

@@ -10950,9 +10950,17 @@ def page_shell(title, body, js):
 # #505: vendored morphdom (MIT) lives beside this file so the diff algorithm
 # is reviewable without opening the PAGE blob. Loaded once at import; the
 # page still ships as one HTML response (no separate asset request).
+# DATA_SIBLINGS: files this module loads relative to __file__ rather than
+# imports, so dev/deploy_state.py's import-derived sibling closure cannot
+# discover them on its own. deploy_state parses THIS literal (AST, never an
+# import of this module) and ships every path on it; keep it to plain string
+# literals or the parse finds nothing. First entry is the vendored reconciler.
+DATA_SIBLINGS = ("vendor/morphdom.min.js", "vendor/LICENSE.morphdom")
+
+
 def _load_morphdom_js():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "vendor", "morphdom.min.js")
+                        DATA_SIBLINGS[0])
     with open(path, encoding="utf-8") as f:
         return f.read()
 
