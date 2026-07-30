@@ -99,7 +99,7 @@ const DENIED = ['target', 'linkable_paths', 'dreams', 'dreams_archive',
                 'files', 'reviews', 'research', 'questions_open',
                 'answered_entries', 'answers_open', 'answers_answered',
                 'pending_handoffs', 'status', 'git', 'deployed',
-                'plugin_commands'];
+                'plugin_commands', 'chats'];
 for (const key of DENIED) {
   ok(`denied field ${key} is absent from /summary.json`, !(key in summary));
 }
@@ -181,9 +181,10 @@ ok('questions_health is an enum token, not prose',
    ['ok', 'missing', 'unreadable', 'empty'].includes(summary.questions_health));
 ok('answers_health is an enum token, not prose',
    ['ok', 'missing', 'unreadable', 'empty'].includes(summary.answers_health));
-ok('posture carries only the four axes + source (no display chrome)',
+ok('posture carries only the five axes + source (no display chrome)',
    JSON.stringify([...Object.keys(summary.posture)].sort()) ===
-   JSON.stringify(['asking', 'delegation', 'delivery', 'pace', 'source']));
+   JSON.stringify(['asking', 'delegation', 'delivery', 'orchestration',
+                   'pace', 'source']));
 ok('skill_identity carries only commit + skill_version',
    JSON.stringify([...Object.keys(summary.skill_identity)].sort()) ===
    JSON.stringify(['commit', 'skill_version']));

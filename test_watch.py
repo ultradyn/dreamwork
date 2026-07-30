@@ -4080,17 +4080,20 @@ class TestSummary(unittest.TestCase):
                          "got: %s" % sorted(overlap))
 
     def test_summary_drops_every_denied_field(self):
-        # Each denied key is absent from summary() by NAME. This enumerates
-        # today's denied set (the partition test above protects growth); the
-        # value here is naming what must never appear, per field.
+        # Each denied key is absent from summary() by NAME. The denied set is
+        # DERIVED from the production constant, never hand-enumerated — the
+        # hand list drifted twice (research #484, chats #504) while the
+        # partition test above kept passing, because the partition binds
+        # classification and this binds absence; both must hold per field and
+        # a literal tuned to today's set is a check with an expiry date.
+        # Precondition asserted: the denied set really has members, else a
+        # gutted constant reads as "nothing to check" rather than failing.
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
             s = watch.summary(d)
-            for key in ("target", "linkable_paths", "dreams", "dreams_archive",
-                        "files", "reviews", "questions_open",
-                        "answered_entries", "answers_open", "answers_answered",
-                        "pending_handoffs", "status", "git", "deployed",
-                        "plugin_commands"):
+            denied = set(watch.SUMMARY_DENIED)
+            self.assertGreater(len(denied), 10)
+            for key in denied:
                 self.assertNotIn(key, s,
                                  "denied collect() key leaked into summary: "
                                  + key)
