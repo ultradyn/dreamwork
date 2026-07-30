@@ -554,6 +554,122 @@ class TestCollector(unittest.TestCase):
             self.assertIsNone(data["status"])       # no status.json
             self.assertEqual(data["git"], [])       # not a git repo
 
+    def test_collect_surfaces_no_chats_when_absent(self):
+        """#504 — collect degrades to [] when there is no chats-v1 store (the
+        slice ships before the apply lane; the dashboard stays quiet).
+
+        Production line: the `list_chats(target)` call + the `if not
+        os.path.isdir(root): return []` guard. A target with no chats must
+        surface [], never throw.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            data = watch.collect(make_target(d))
+            self.assertEqual(data["chats"], [])
+
+    def test_collect_surfaces_chats_derived_from_transcripts(self):
+        """#504 — collect's `chats` key derives chat records from chats-v1
+        transcripts (title/turn count/status are derived, not a second truth).
+
+        Production line: list_chats + _parse_chat_turns. PRECONDITION asserted
+        at runtime: the two chats differ in status (one pending, one replied)
+        and in turn count, so a reader that collapsed them or ignored the
+        agent turn reds here rather than passing over a hollow derivation.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch.apply_chat_turn(d, "c-pending", "human", "a pending chat")
+            watch.apply_chat_turn(d, "c-replied", "human", "a replied chat")
+            watch.apply_chat_turn(d, "c-replied", "agent", "the reply")
+            data = watch.collect(d)
+            by_id = {c["id"]: c for c in data["chats"]}
+            self.assertEqual(set(by_id), {"c-pending", "c-replied"})
+            # PRECONDITION: the two chats genuinely differ in status + turns
+            self.assertNotEqual(by_id["c-pending"]["status"],
+                                by_id["c-replied"]["status"])
+            self.assertEqual(by_id["c-pending"]["turns"], 1)
+            self.assertEqual(by_id["c-replied"]["turns"], 2)
+            # the derivation: pending has no agent turn; replied does
+            self.assertEqual(by_id["c-pending"]["status"], "pending")
+            self.assertEqual(by_id["c-replied"]["status"], "replied")
+
+    def test_dashboard_renders_minimal_topic_chat_list(self):
+        """#504 Q4 — chatList/chatRow render the minimal topic-chat list.
+
+        Evaluated in node with stubbed esc/label so the assertion is on REAL
+        rendered HTML, not source text. Production line: chatRow's status +
+        preview + turn-count branch, and chatList's empty-guard (quiet when
+        there are no chats, like reviews). The UI word is "topic chats" (Q2).
+        """
+        import subprocess, shutil
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — chatList render gate did NOT run")
+        page = watch._get_page()
+        # extract chatRow + chatList by brace-matching from chatRow's sig
+        cs = page.index("function chatList(")
+        depth = 0
+        ce = None
+        for i in range(cs, len(page)):
+            if page[i] == "{":
+                depth += 1
+            elif page[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    ce = i + 1
+                    break
+        self.assertIsNotNone(ce, "could not extract chatRow/chatList")
+        fns = page[page.index("function chatRow("):ce]
+        script = (
+            "const esc = t => String(t==null?'':t)"
+            ".replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')"
+            ".replace(/\"/g,'&quot;');\n"
+            "const label = t => `<div class=\"label\">${t}</div>`;\n"
+            + fns + "\n"
+            "const cases = " + json.dumps([
+                {"d": {"chats": []}, "name": "empty"},
+                {"d": {"chats": [{"id": "c1", "status": "pending",
+                  "preview": "ship #504?", "turns": 1}]}, "name": "pending"},
+                {"d": {"chats": [{"id": "c2", "status": "replied",
+                  "preview": "in review", "turns": 2}]}, "name": "replied"},
+            ]) + ";\n"
+            "console.log(JSON.stringify(cases.map(c => chatList(c.d))));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        if proc.returncode != 0:
+            self.fail("node eval failed: " + proc.stderr)
+        empty, pending, replied = json.loads(proc.stdout)
+        # empty -> "" (quiet, like reviews)
+        self.assertEqual(empty, "", empty)
+        # pending -> the topic-chats label + the pending status + preview
+        self.assertIn("topic chats", pending)
+        self.assertIn("pending", pending)
+        self.assertIn("ship #504?", pending)
+        # replied -> the status word + the reply's preview (last turn)
+        self.assertIn("replied", replied)
+        self.assertIn("in review", replied)
+        # PRECONDITION that the two statuses render distinctly (else a single
+        # branch could satisfy both): pending contains 'pending' not 'replied'
+        self.assertNotIn("replied", pending, pending)
+
+    def test_build_dashboard_calls_chat_list(self):
+        """#504 Q4 — buildDashboard wires chatList into the dashboard.
+
+        Production line: the `h += chatList(d);` STATEMENT in buildDashboard.
+        Asserted line-anchored (not a bare substring) so commenting the call
+        out — which leaves the text `chatList(d)` inside a `/* … */` — still
+        reds. A substring check passed over a commented-out call (found by the
+        red-proof), which is the hollow-trap this anchor exists to close.
+        Removing it stops the surface rendering entirely.
+        """
+        page = watch._get_page()
+        m = re.search(r"function buildDashboard\(d\) \{", page)
+        self.assertTrue(m, "buildDashboard not in shell")
+        body = page[m.start():m.start() + 4000]
+        # an ACTIVE statement: a line whose non-whitespace begins with
+        # `h += chatList(d);` — a `/* h += chatList(d); */` comment does not.
+        self.assertRegex(body, r"(?m)^[ \t]*h \+= chatList\(d\);")
+
     def test_question_update_stamp_is_per_entry_not_file_mtime(self):
         # #473 — "updated" means THIS entry's content changed after first
         # sight, not that questions.md was rewritten (a neighbour's answer
@@ -4411,36 +4527,42 @@ class TestAppShell(unittest.TestCase):
         self.assertIn("function renderMenu()", watch.PAGE)   # the hover menu
 
     def test_command_submit_decays_to_sticky_kind(self):
-        # #337: after a steering command LANDS, the composer decays back to
-        # the one sticky kind. A mode that persists silently raises the
-        # authority of his NEXT message, so the composer settles on the
-        # least dangerous one — #257's danger reasoning for do-now,
-        # generalised. The PROPERTY on COMMANDS drives it, never a
-        # hardcoded pair of kinds: derive the expectation from the table at
-        # runtime, so a hypothetical third kind with sticky:false is covered
-        # by the same assertion without being added here.
+        # #337 / #504: after a STEERING command lands, the composer decays
+        # back to the default (COMMANDS[0], the far-left kind). A steering
+        # mode that persists silently raises the authority of his NEXT
+        # message, so the composer settles on the least dangerous one —
+        # #257's danger reasoning for do-now, generalised. The sticky kinds
+        # are chat (#504 — conversational; a follow-up must not require
+        # re-selection) and add-idea (parked thoughts chain); both persist,
+        # for different stated reasons. The PROPERTY on COMMANDS drives the
+        # decay, never a hardcoded pair of kinds: derive the expectation from
+        # the table at runtime, so a hypothetical fourth kind with sticky:
+        # false is covered by the same assertion without being added here.
         sticky = [c["kind"] for c in watch.COMMANDS if c.get("sticky")]
-        self.assertEqual(sticky, ["add-idea"],
-                         "add-idea is the only kind that may persist")
+        self.assertEqual(set(sticky), {"chat", "add-idea"},
+                         "chat + add-idea are the kinds that may persist")
         decaying = [c["kind"] for c in watch.COMMANDS if not c.get("sticky")]
         self.assertGreaterEqual(len(decaying), 2,
                                 "one decaying kind would prove nothing about "
                                 "the property — that a PAIR decays is the point")
         self.assertIn("do-next", decaying)
         self.assertIn("do-now", decaying)
-        # The submit path reads the property off the LIVE table — COMMANDS is
-        # a `let` because plugin kinds join it (#86) — so a kind with
-        # sticky:false (or no `sticky` at all) decays whether it is core or
-        # contributed. No kind may be named in the decay itself:
-        # `kind === 'do-now'` was the special case this replaced, and
-        # re-growing it re-opens the third place a new kind must be
-        # remembered.
+        # The decay lands on the DEFAULT (COMMANDS[0], the far-left kind), not
+        # a hardcoded name: `chat` is the default today, but naming it here
+        # would re-open the third place a new kind must be remembered. The
+        # submit path reads the property off the LIVE table — COMMANDS is a
+        # `let` because plugin kinds APPEND (#86), so [0] is always a core
+        # kind — and a kind with sticky:false (or no `sticky` at all) decays
+        # whether it is core or contributed.
         self.assertIn("COMMANDS.find(c => c.kind === kind)", watch.PAGE)
         self.assertIn("!sent.sticky", watch.PAGE)
         self.assertNotIn("kind === 'do-now'", watch.PAGE)
-        # the decay lands through setKind — the indicator's existing slide
-        # (transitions.md), never a second gesture.
-        self.assertIn("setKind('add-idea')", watch.PAGE)
+        self.assertRegex(
+            watch.PAGE,
+            r"setKind\(\(COMMANDS\[0\] \|\| \{\}\)\.kind\)")
+        # no hardcoded kind name in the decay — the old `setKind('add-idea')`
+        # was the special case this generalised away.
+        self.assertNotIn("setKind('add-idea')", watch.PAGE)
 
     def test_command_menu_lists_every_kind(self):
         # Hover discoverability (#91): the row shows the common kinds, and the
@@ -8091,13 +8213,20 @@ class TestDeliveryWakeRouting(unittest.TestCase):
         """Production line: emits_wake — the routing decision table.
 
         PRECONDITION asserted at runtime (the hollow-check rule): the core
-        command kinds are exactly the four in COMMANDS, so a kind added later
-        is covered by the 'not a pre-empt kind' branch instead of slipping
-        past a hand-copied list.
+        command kinds are exactly the five in COMMANDS (incl. #504 chat), so
+        a kind added later is covered by the 'not a pre-empt kind' branch
+        instead of slipping past a hand-copied list.
         """
         core = set(watch.COMMAND_KINDS)
-        self.assertEqual(core, {"add-idea", "do-next", "do-now", "maintenance"},
-                         core)
+        self.assertEqual(core,
+                         {"chat", "add-idea", "do-next", "do-now",
+                          "maintenance"}, core)
+        # #504 PRECONDITION: chat is the far-left default and NOT a pre-empt
+        # kind (it is batched under #342 — Q3). Asserted here so a future
+        # edit that makes chat pre-empt reds this matrix, not just the chat
+        # test that depends on it.
+        self.assertEqual(watch.COMMANDS[0]["kind"], "chat")
+        self.assertNotIn("chat", watch.PREEMPT_KINDS)
         with tempfile.TemporaryDirectory() as d:
             os.makedirs(os.path.join(d, ".dreamwork"))
             instant = d
@@ -8110,8 +8239,10 @@ class TestDeliveryWakeRouting(unittest.TestCase):
                 self.assertTrue(watch.emits_wake(kind, instant), kind)
                 self.assertTrue(watch.emits_wake(kind, batched), kind)
             self.assertEqual(set(watch.PREEMPT_KINDS), {"do-now", "do-next"})
-            # every other kind + plugin kinds + the routes wake only instant
-            for kind in ("add-idea", "maintenance", "some-plugin"):
+            # every other kind + plugin kinds + the routes wake only instant.
+            # #504: chat is in this batched family (Q3) — it withholds in
+            # batched, same as add-idea/maintenance and the /ask route.
+            for kind in ("chat", "add-idea", "maintenance", "some-plugin"):
                 self.assertTrue(watch.emits_wake(kind, instant), kind)
                 self.assertFalse(watch.emits_wake(kind, batched), kind)
             for route in ("/answer", "/comment", "/ask"):
@@ -8141,10 +8272,13 @@ class TestDeliveryWakeRouting(unittest.TestCase):
             self.assertEqual(self._witnessed(d).count("/command"), 2)
 
     def test_command_batched_kinds_withhold_wake_in_batched(self):
-        """Live: add-idea/maintenance withhold the wake line in batched mode.
+        """Live: chat/add-idea/maintenance withhold the wake line in batched mode.
 
         Production line: the `if emits_wake(kind, target):` gate. The receipt
         still commits — withholding the wake IS batching; the cursor drains it.
+        #504 adds `chat` to this batched family (Q3): a topic chat rides the
+        tick's cursor read rather than pre-empting, exactly his "get unread at
+        the start of a loop iteration".
         """
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
@@ -8152,14 +8286,17 @@ class TestDeliveryWakeRouting(unittest.TestCase):
                 watch.write_posture(d, "idle", "ask", 0, "batched"))
             base = self._serve(d)
             self.assertEqual(self._post(base + "/command",
+                                        {"kind": "chat", "text": "hi agent"}), 202)
+            self.assertEqual(self._post(base + "/command",
                                         {"kind": "add-idea", "text": "parked"}), 202)
             self.assertEqual(self._post(base + "/command",
                                         {"kind": "maintenance", "text": "groom"}), 202)
             wakes = self._wake_lines(d)
+            self.assertFalse(any("chat" in w for w in wakes), wakes)
             self.assertFalse(any("add-idea" in w for w in wakes), wakes)
             self.assertFalse(any("maintenance" in w for w in wakes), wakes)
-            # the receipt committed for both even though no wake fired
-            self.assertEqual(self._witnessed(d).count("/command"), 2)
+            # the receipt committed for all three even though no wake fired
+            self.assertEqual(self._witnessed(d).count("/command"), 3)
 
     def test_command_all_kinds_wake_in_instant(self):
         """Live: in instant mode (the default) every command kind wakes.
@@ -8296,6 +8433,157 @@ class TestDeliveryWakeRouting(unittest.TestCase):
                 self.assertEqual(len(wakes), 1, (delivery, wakes))
                 self.assertIn("plan.html", wakes[0])
                 self.assertIn("accepted", wakes[0])
+
+    # ── #504 composer `chat` (main-dreamer first slice of #229/#270) ──────
+    # A chat send is a /command POST of kind `chat` (Q1: no new route) that
+    # rides the #263 receipt and is BATCHED under #342 (Q3). The application
+    # step writes a human turn to a chats-v1 transcript; the receipt is the
+    # durable home. These bind: the COMMANDS entry, the batched wake gate, the
+    # application step, and the reply→replied thread model.
+
+    def test_chat_command_entry_is_far_left_default(self):
+        """Production line: the `chat` dict in COMMANDS (watch.py:~315).
+
+        Q1/Q2: chat is the far-left default composer kind, common (a row
+        button), and sticky (conversational — a follow-up must not require
+        re-selection). The UI label is "topic chat" (Q2); implementation vocab
+        is chat/turn/reply, never `thread` (#229) — asserted so a renamed
+        label does not silently drift from his ruling.
+        """
+        chat = watch.COMMANDS[0]
+        self.assertEqual(chat["kind"], "chat")
+        self.assertEqual(chat["label"], "topic chat")
+        self.assertTrue(chat["common"], chat)
+        self.assertTrue(chat["sticky"], chat)
+        # every core kind the server accepts is in the validated vocab
+        self.assertIn("chat", watch.COMMAND_KINDS)
+        # add-idea stays sticky (parked thoughts still chain); chat is the
+        # SECOND sticky kind — asserted so the sticky comment stays honest.
+        sticky = [c["kind"] for c in watch.COMMANDS if c.get("sticky")]
+        self.assertEqual(set(sticky), {"chat", "add-idea"}, sticky)
+
+    def test_chat_withholds_wake_in_batched(self):
+        """Live: a `chat` send withholds the wake line under delivery: batched.
+
+        Mirrors test_decide_withholds_wake_in_batched. Production line: the
+        `if emits_wake(kind, target):` gate in _handle_command — chat is not a
+        pre-empt kind, so in batched mode the wake line is withheld (Q3) and
+        the chat rides the tick's cursor read. The receipt still commits (E3)
+        and the application step still writes the transcript: withholding the
+        wake IS batching, not dropping the message.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            # PRECONDITION (hollow-check): the posture file really carries the
+            # batched axis, or delivery_mode reads instant and a withhold
+            # assertion is unmeaningful.
+            self.assertTrue(
+                watch.write_posture(d, "idle", "ask", 0, "batched"))
+            self.assertEqual(watch.read_posture_file(d)["delivery"], "batched")
+            base = self._serve(d)
+            status, body = self._post_body(base + "/command",
+                                           {"kind": "chat", "text": "hello"})
+            # PRECONDITION: the route ran end-to-end (202), or a withheld-line
+            # check is vacuous.
+            self.assertEqual(status, 202, (status, body))
+            # the receipt committed (E3 — unconditional) despite no wake
+            self.assertEqual(self._witnessed(d).count("/command"), 1)
+            # NO chat wake line in batched mode (Q3)
+            wakes = self._wake_lines(d)
+            self.assertFalse(any("chat" in w for w in wakes), wakes)
+            # the application step still wrote the human turn (the cursor
+            # drains it) — proved below in full, asserted here so a withheld
+            # wake never reads as a dropped message.
+            self.assertEqual(len(watch.list_chats(d)), 1, watch.list_chats(d))
+
+    def test_chat_send_applies_a_human_turn_to_the_transcript(self):
+        """Live: a `chat` send writes a human turn to chats-v1 (the spine's
+        application step), keyed by the receipt id.
+
+        Production line: the `apply_chat_turn(target, cid, "human", text,
+        receipt_id=cid)` call in _handle_command (the `if kind == "chat":`
+        branch). Remove the branch and a chat commits a receipt but writes no
+        transcript — the message has a durable home and no conversational
+        truth. The chat id == the journal receipt id (1:1 this slice).
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)  # instant default — wake is irrelevant here
+            base = self._serve(d)
+            status, body = self._post_body(base + "/command",
+                                           {"kind": "chat",
+                                            "text": "first message"})
+            self.assertEqual(status, 202, (status, body))
+            resp = json.loads(body)
+            # PRECONDITION: the POST returned a receipt id — the E3 commit
+            # landed and the application step has a chat id to key on.
+            self.assertIn("receipt", resp, resp)
+            rid = resp["receipt"]["receipt_id"]
+            self.assertTrue(rid, resp)
+            chats = watch.list_chats(d)
+            # exactly one chat, keyed by the receipt id, one human turn,
+            # pending (no agent reply yet)
+            self.assertEqual(len(chats), 1, chats)
+            self.assertEqual(chats[0]["id"], rid)
+            self.assertEqual(chats[0]["turns"], 1)
+            self.assertEqual(chats[0]["status"], "pending")
+            self.assertEqual(chats[0]["last_by"], "human")
+            self.assertIn("first message", chats[0]["preview"])
+
+    def test_chat_dedup_does_not_double_write_the_turn(self):
+        """Live: #274 — a replayed chat UUID does not re-apply the turn.
+
+        Production line: the `_replay_verdict` short-circuit in do_POST runs
+        BEFORE _handle_command, so the `if kind == "chat":` application branch
+        runs once per receipt. A second POST with the SAME X-Client-Action-Id
+        (a double-click / retry) dedupes the receipt and must not append a
+        second human turn to the transcript.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            headers = {"Content-Type": "application/json",
+                       "X-Client-Action-Id": "chat-once-uuid"}
+            for _ in range(2):
+                req = urllib.request.Request(
+                    base + "/command",
+                    data=json.dumps({"kind": "chat",
+                                     "text": "only once"}).encode(),
+                    method="POST", headers=headers)
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    self.assertEqual(r.status, 202)
+            chats = watch.list_chats(d)
+            # exactly one chat, exactly one turn — the retry did not append
+            self.assertEqual(len(chats), 1, chats)
+            self.assertEqual(chats[0]["turns"], 1, chats)
+
+    def test_chat_reply_turn_creates_first_agent_turn(self):
+        """The thread model (#229 §3.2): a reply appends the first agent turn
+        and the chat reads as 'replied'.
+
+        Production line: list_chats derives `status='replied'` iff an agent
+        turn exists (_parse_chat_turns + the `agents` filter in list_chats).
+        The reply itself is appended by the dreamwork CLI to the same
+        transcript; this test writes it through the same apply_chat_turn the
+        CLI lane will use (role='agent'), proving the reader is ready for the
+        reply and that "a reply creates the chat's first agent turn".
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch.apply_chat_turn(d, "chat-A", "human",
+                                  "are we shipping #504?")
+            # PRECONDITION: pending before the reply (one human turn, no agent)
+            before = watch.list_chats(d)
+            self.assertEqual(before[0]["status"], "pending")
+            self.assertEqual(before[0]["turns"], 1)
+            # the dreamer replies — the first agent turn
+            watch.apply_chat_turn(d, "chat-A", "agent", "yes, it's in review")
+            after = watch.list_chats(d)
+            self.assertEqual(len(after), 1)
+            self.assertEqual(after[0]["status"], "replied")
+            self.assertEqual(after[0]["turns"], 2)
+            self.assertEqual(after[0]["last_by"], "agent")
+            self.assertIn("shipping #504", after[0]["title"],
+                          "title is the first HUMAN turn, not the reply")
 
     def test_command_wake_line_carries_the_same_receipt_id_as_the_journal(self):
         """#527 — the wake-line's receipt id == the journal receipt's id.
