@@ -8602,13 +8602,13 @@ class TestDeliveryWakeRouting(unittest.TestCase):
 
         Q1/Q2: chat is the far-left default composer kind, common (a row
         button), and sticky (conversational — a follow-up must not require
-        re-selection). The UI label is "topic chat" (Q2); implementation vocab
-        is chat/turn/reply, never `thread` (#229) — asserted so a renamed
-        label does not silently drift from his ruling.
+        re-selection). The UI label is "chat" (Q2; shortened from "topic chat",
+        #543); implementation vocab is chat/turn/reply, never `thread` (#229)
+        — asserted so a renamed label does not silently drift from his ruling.
         """
         chat = watch.COMMANDS[0]
         self.assertEqual(chat["kind"], "chat")
-        self.assertEqual(chat["label"], "topic chat")
+        self.assertEqual(chat["label"], "chat")
         self.assertTrue(chat["common"], chat)
         self.assertTrue(chat["sticky"], chat)
         # every core kind the server accepts is in the validated vocab
