@@ -200,7 +200,7 @@ wake status today, each verified against the handler while writing this section:
 | `/answer` | `_handle_answer` (`14206`) | `if emits_wake("/answer", target):` (`14236`) → `log_event` (`14237`) | **GATED** — batched kind. COMPLIANT |
 | `/ask` | `_handle_ask` (`14181`) | `if emits_wake("/ask", target):` (`14201`) → `log_event` (`14202`) | **GATED** — batched kind. COMPLIANT |
 | `/comment` | `_handle_comment` (`14243`) | `if emits_wake("/comment", target):` (`14271`) → `log_event` (`14272`) | **GATED** — batched kind. COMPLIANT |
-| `/decide` | `_handle_decide` (`14277`) | none — unconditional `log_event` (`14334`) | **NOT GATED** — a content route with a journal receipt that wakes unconditionally, silently undoing batched mode for review decisions. Gating it behind `emits_wake` so a review decision rides the batched cursor like `/answer` and `/comment` is **in flight under #515**; until it lands, this is the one content route the ruling is not yet realised for |
+| `/decide` | `_handle_decide` (`14277`) | none — unconditional `log_event` (`14334`) | **NOT GATED** — a content route with a journal receipt that wakes unconditionally, silently undoing batched mode for review decisions. Gating it behind `emits_wake` so a review decision rides the batched cursor like `/answer` and `/comment` was landed under #515 (mode-gated behind `emits_wake`, merged `8908b96`) — every content route now realises the ruling |
 | `/tint` | `_handle_tint` (`14367`) | no `log_event` call at all | **non-waking by design** — a colour is not a thing an agent acts on; the loop learns it from the file via the 2s poll, not a wake (handler docstring: *"DELIBERATELY NOT AN EVENTS-LOG LINE, and it is the only write here that is not"*) |
 | `/run-mode` | `_handle_run_mode` (`14392`) | none — unconditional `log_event` (`14417`) on a real change | **always-instant carve-out** — control-plane (see next section) |
 | `/posture` | `_handle_posture` (`14421`) | none — posture-triple `log_event` (`14495`) + delivery-axis `log_event` (`14499`), each on a real change | **always-instant carve-out** — control-plane (see next section) |
@@ -332,7 +332,7 @@ gates named in the table above. The list below is kept as the historical record
 of what the *design doc alone* did not authorise before the ruling — it is
 history, not current state. What is current is the design-as-built state in the
 two sections above: the gates are in for four of the five content routes, and the
-one remaining gap (`/decide`) is in flight under #515.
+the `/decide` gap closed under #515 (landed).
 
 Matched to house style (`attention-modes.md`, `user-event-journal-implementation.md`
 §"What this plan does not authorise"): #342 was filed as a DESIGN task, and this
@@ -407,6 +407,6 @@ next gate has to decide.
   class; overrides the `/answer` → instant proposal); Q2 the `delivery`
   posture axis with urgent kinds pre-empting; Q3 the loop gates urgency,
   plugins may suggest. The routing **landed as #342b**; the open remainder is
-  `/decide` (#515, in flight), the `question-updated` policy (#516, RULED
+  `/decide` (#515, landed), the `question-updated` policy (#516, RULED
   2026-07-30 — mode-gated, not journaled, re-seed swallow fixed), and the
   control/journal/migrate wakes now documented here as carve-outs.
