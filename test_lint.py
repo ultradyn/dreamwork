@@ -351,6 +351,143 @@ class TestAnsweredResolutionDates:
         assert n_undated - n_dated == 1, (n_dated, n_undated)
 
 
+class TestQuestionsTruncationGuard:
+    """#533: a questions.md that is net-shorter than its last commit by more
+    than the threshold is a tail-truncation — the coordinator wrote the file
+    from a partial read and the tail fell off. watch.py is innocent (collect
+    reads, append preserves every line), so the gate is this working-tree-vs-
+    HEAD comparison."""
+
+    # A faithful miniature of the #229 entry: a long answered entry whose body
+    # carries a NESTED ASCII TABLE (the feature the incident's 16:35 grok-review
+    # note shares), plus another answered entry below it — exactly the shape
+    # whose tail was lost at 07:44.
+    def _full(self):
+        rows = "\n".join(
+            f"    │ row {i:<3} │ because {i:<6} │" for i in range(70))
+        return (
+            "# Questions for the human\n\n## Open\n\n"
+            "- **P2 · 2026-07-30 — #505: an open question.**\n"
+            "  Body prose.\n\n"
+            "## Answered\n\n"
+            "- **P1 · 2026-07-26 — #229 threaded topic chats: approve the proposal.**\n"
+            "  → answered (2026-07-26 17:11): Revision directed.\n"
+            "  The reviewed artifact is current.\n"
+            "  - **Note (human, via watch, 2026-07-26 16:12):** a note.\n"
+            "  - **Note (human, via watch, 2026-07-26 16:35):** re 229, a grok\n"
+            "    review with a nested table:\n"
+            "    ┌──────────┬──────────────┐\n"
+            "    │ Check    │ Why          │\n"
+            "    ├──────────┼──────────────┤\n"
+            f"{rows}\n"
+            "    └──────────┴──────────────┘\n"
+            "  - **Follow-up (loop, 2026-07-26 16:48):** a follow-up.\n"
+            "  - **Answer (via watch, 2026-07-26 17:10):** the answer.\n\n"
+            "- **P1 · 2026-07-25 — #202: another answered entry below.**\n"
+            "  → answered (2026-07-26): resolved.\n"
+            "  Body of the entry below.\n"
+        )
+
+    def _build_repo(self, tmp_path, qmd_text, msg="seed full questions.md"):
+        import subprocess
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "questions.md").write_text(qmd_text)
+
+        def git(*a):
+            return subprocess.run(["git", "-C", str(t), *a],
+                                  capture_output=True, text=True, check=True)
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        git("add", ".dreamwork/questions.md")
+        git("commit", "-qm", msg)
+        return t, dw
+
+    def _truncation_errors(self, t):
+        rep = lint.Report()
+        lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
+        return [d for lvl, w, d in rep.rows
+                if lvl == lint.ERROR and w == "questions.md" and "truncation" in d]
+
+    def test_a_tail_truncation_is_an_error(self, tmp_path):
+        """The 07:44 incident: a full questions.md committed, then the working
+        tree rewritten from a partial read so the #229 nested-table tail and
+        everything below it is gone. The guard must ERROR."""
+        full = self._full()
+        t, dw = self._build_repo(tmp_path, full)
+        # Truncate at the nested-table rows — mimicking the mid-content cut
+        # ("route too." -> "route ") that ended the incident file mid-entry.
+        cut = full.index("    │ row 1")
+        truncated = full[:cut].rstrip() + "\n"
+        (dw / "questions.md").write_text(truncated)
+        # Precondition DERIVED AT RUNTIME (not a literal): the loss must clear
+        # the threshold, or the assertion says nothing about the bug it names.
+        lost = len(full.splitlines()) - len(truncated.splitlines())
+        assert lost > lint.QUESTIONS_TRUNCATION_THRESHOLD, lost
+        errs = self._truncation_errors(t)
+        assert len(errs) == 1, errs
+        assert f"lost {lost} lines" in errs[0], errs[0]
+
+    def test_a_line_neutral_fold_is_not_flagged(self, tmp_path):
+        """A real fold cuts an entry from Open and pastes it (with a ruling
+        summary) into Answered — net-neutral or net-positive — and must not
+        trip a guard built for net loss. This is the false-positive the
+        threshold was set to avoid."""
+        full = self._full()
+        t, dw = self._build_repo(tmp_path, full)
+        moved = ("- **P2 · 2026-07-30 — #505: an open question.**\n"
+                 "  → answered (2026-07-30): folded with a ruling summary.\n"
+                 "  Body prose.\n\n")
+        folded = full.replace(
+            "## Open\n\n"
+            "- **P2 · 2026-07-30 — #505: an open question.**\n"
+            "  Body prose.\n\n",
+            "## Open\n\n", 1
+        ).replace("## Answered\n\n", "## Answered\n\n" + moved, 1)
+        (dw / "questions.md").write_text(folded)
+        assert self._truncation_errors(t) == []
+
+    def test_the_groom_marker_allows_a_deliberate_archive(self, tmp_path):
+        """The one legitimate net loss is a deliberate bulk-archive, signalled
+        by `groom:` in the commit touching questions.md. The guard honours it
+        on the next working-tree pass."""
+        import subprocess
+        full = self._full()
+        t, dw = self._build_repo(tmp_path, full)
+        # A prior questions.md commit carries the marker; lint reads it back.
+        (dw / "questions.md").write_text(full + "\n")
+        subprocess.run(["git", "-C", str(t), "add", ".dreamwork/questions.md"],
+                       check=True)
+        subprocess.run(["git", "-C", str(t), "commit", "-qm",
+                         "groom: archive old answered entries"], check=True)
+        cut = full.index("    │ row 1")
+        (dw / "questions.md").write_text(full[:cut].rstrip() + "\n")
+        assert self._truncation_errors(t) == []
+
+    def test_the_pure_guard_threshold_binds(self):
+        """The production line is `lost > threshold and not groom` in
+        `questions_truncation_guard`. A loss just over the threshold fires;
+        one just under does not; the groom flag suppresses even a large loss.
+        All derived at runtime from the live threshold, so a drifted constant
+        cannot hollow the test."""
+        th = lint.QUESTIONS_TRUNCATION_THRESHOLD
+        over = "\n".join("x" for _ in range(th + 5))
+        under = "\n".join("x" for _ in range(max(1, th - 5)))
+        assert lint.questions_truncation_guard(over, "")[0] == lint.ERROR
+        assert lint.questions_truncation_guard(under, "")[0] == lint.OK
+        big = "\n".join("x" for _ in range(th + 500))
+        assert lint.questions_truncation_guard(big, "", groom=True)[0] == lint.OK
+
+    def test_no_git_baseline_is_silent(self, tmp_path):
+        """A target with no .git (a fixture dir, a non-repo project) cannot be
+        compared against HEAD and must not fault — 'cannot check' is never an
+        error, here or anywhere else this linter meets git."""
+        t = target(tmp_path, **{"questions.md": self._full()})
+        assert self._truncation_errors(t) == []
+
+
 class TestLedger:
     def test_duplicate_id_is_an_error(self, tmp_path):
         # This happened: a careless replace left two #98 lines.
