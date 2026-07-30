@@ -118,30 +118,26 @@ const Q = 'P1 · 2026-07-25 — a second open question, so answering the first l
 const URL = `${BASE}/review?p=.dreamwork/review/fixture-review.html&q=${encodeURIComponent(Q)}`;
 const load = async () => { await p.goto(URL, { waitUntil: 'networkidle' }); await sleep(1300); };
 
-// tag the live textarea node so a re-render is detectable as an identity change
-const TAG = '__reviewdraft_probe';
-const tagNode = () => p.evaluate((tag) => {
-  const t = document.querySelector('#qdock textarea[id^="qi"]');
-  if (t) t[tag] = true;
-}, TAG);
 // bump .dreamwork mtime so the next /mtime poll re-renders #qdock for real
 const bumpMtime = () => {
   const f = join(DIR, '.dreamwork', 'lessons.md');
   const now = new Date();
   try { utimesSync(f, now, now); } catch (e) {}
 };
-// poll until the tagged node is gone (a genuine re-render) or the budget ends
+// #505 p2: the dock is now RECONCILED (morphdom), not replaceWith'd, so the
+// answer-box node is KEPT across a tick — a "tagged node gone" poll can no
+// longer detect a re-render. The render generation (__dwViewRenderGen, bumped
+// by both setContent and the dock reconcile) is the universal "a render
+// committed" signal, so poll for it advancing instead.
 const awaitRerender = async (budgetMs = 6000) => {
   const t0 = Date.now();
+  const gen0 = await p.evaluate(() => window.__dwViewRenderGen || 0);
   while (Date.now() - t0 < budgetMs) {
     await sleep(150);
-    const tagged = await p.evaluate((tag) => {
-      const t = document.querySelector('#qdock textarea[id^="qi"]');
-      return !!(t && t[tag]);
-    }, TAG);
-    if (!tagged) return { recreated: true, waited: Date.now() - t0 };
+    const gen = await p.evaluate(() => window.__dwViewRenderGen || 0);
+    if (gen > gen0) return { rendered: true, waited: Date.now() - t0 };
   }
-  return { recreated: false, waited: budgetMs };
+  return { rendered: false, waited: budgetMs };
 };
 const boxValue = () => p.evaluate(() => {
   const t = document.querySelector('#qdock textarea[id^="qi"]');
@@ -206,19 +202,21 @@ const TEXT = 'half-typed answer beside the artifact, mid-thought and';
 // ── MODE 2: the live re-render — the one the brief named first ───────────
 {
   await typeReal(TEXT);
-  // tag the CURRENT node, then force the tick that recreates #qdock
-  await tagNode();
+  // #505 p2: the dock is reconciled, so the answer-box node is KEPT (not
+  // recreated). Force the tick that re-renders #qdock and detect it by the
+  // render generation advancing (the universal signal under reconciliation).
   bumpMtime();
   const re = await awaitRerender();
-  notes.push(`mode 2: re-render ${re.recreated ? 'detected' : 'NOT detected'} ` +
-             `after ${re.waited}ms (tagged node ${re.recreated ? 'replaced' : 'still present'})`);
+  notes.push(`mode 2: re-render ${re.rendered ? 'detected' : 'NOT detected'} ` +
+             `after ${re.waited}ms (render gen advanced)`);
   // THE PRECONDITION: if the re-render never happened, every check below is
-  // about a node that was never recreated — so assert it FIRST, by name.
-  ok('MODE 2 precondition: the answer-box node was genuinely recreated ' +
-     '(else the survival check below proves nothing)', re.recreated);
+  // vacuous — so assert it FIRST, by name.
+  ok('MODE 2 precondition: the dock really re-rendered across the tick ' +
+     '(render gen advanced; else the survival check below proves nothing)',
+     re.rendered);
   const v = await boxValue();
   notes.push(`mode 2: box holds ${JSON.stringify(v)} after the re-render`);
-  ok('MODE 2: the draft survives the live re-render that recreated the box',
+  ok('MODE 2: the draft survives the live re-render of the docked box',
      v === TEXT);
 }
 

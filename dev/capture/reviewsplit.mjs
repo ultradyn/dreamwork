@@ -331,12 +331,11 @@ ok('...and by enough that HALF way down is neither end (else the fade ' +
     await p.evaluate(scrollQ(to));
     await sleep(700);
     const before = await p.evaluate(GEO);
-    // The swap is the thing under test and it leaves no trace of its own, so
-    // mark the live scroller and let its ABSENCE report that the tick ran.
-    // Without this the whole block reads green against a page that never
-    // polled — which is exactly what a broken trigger looks like.
-    await p.evaluate(`document.querySelector('.qdock > .qa > .qbody')
-      .dataset.pollmark = '1'`);
+    // #505 p2: the dock is RECONCILED (morphdom), not replaceWith'd, so the
+    // .qbody node is KEPT and a pollmark on it would persist. The render
+    // generation is the universal "a render committed" signal under
+    // reconciliation, so capture it before the trigger and prove it advanced.
+    const gen0 = await p.evaluate(() => window.__dwViewRenderGen || 0);
     const th = p.evaluate(TRACEV(QFADE, 3200));
     const tf = p.evaluate(TRACEV(QFOOT, 3200));
     await sleep(80);
@@ -347,15 +346,15 @@ ok('...and by enough that HALF way down is neither end (else the fade ' +
     const head = await th, foot = await tf;
     await sleep(300);
     const after = await p.evaluate(GEO);
-    const swapped = await p.evaluate(`!document
-      .querySelector('.qdock > .qa > .qbody').dataset.pollmark`);
-    say(`poll ${where}: dock replaced=${swapped}; --qfade ${before.qfade} -> ` +
+    const gen1 = await p.evaluate(() => window.__dwViewRenderGen || 0);
+    const swapped = gen1 > gen0;
+    say(`poll ${where}: dock re-rendered=${swapped} (gen ${gen0}->${gen1}); --qfade ${before.qfade} -> ` +
         `${after.qfade} over ${distinct(head)} value(s) ` +
         `(range ${range(head).toFixed(2)}px, ${head.length} frames); --qfoot ` +
         `${before.qfoot} -> ${after.qfoot} over ${distinct(foot)} value(s) ` +
         `(range ${range(foot).toFixed(2)}px); scroll ${before.scroll.top} -> ` +
         `${after.scroll.top}`);
-    ok(`the tick really did replace the dock ${where} ` +
+    ok(`the tick really did re-render the dock ${where} ` +
        `(else this check is vacuous)`, swapped === true);
     // at the top one depth is lifted and the other is down, so the pair
     // covers both directions: a 0 that must stay 0 and a 24 that must stay 24.
@@ -516,18 +515,22 @@ function travel(seen) {
      tickMax > 40 && before.scroll.top > 20);
   const r = await p.evaluate(`(async () => {
     const card = document.querySelector('.qdock > .qa');
+    const gen0 = window.__dwViewRenderGen || 0;
     await fetch('/command', { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'add-idea', text: 'reviewsplit guard tick' }) });
     await tick();
     const fresh = document.querySelector('.qdock > .qa');
     const body = fresh && fresh.querySelector(':scope > .qbody');
-    return { replaced: fresh !== card, top: body ? body.scrollTop : -1 };
+    // #505 p2: the dock is reconciled, so the card node is KEPT (fresh ===
+    // card). The render gen advancing is the proof the tick re-rendered.
+    return { kept: fresh === card, rendered: (window.__dwViewRenderGen || 0) > gen0,
+             top: body ? body.scrollTop : -1 };
   })()`);
   const after = await p.evaluate(GEO);
-  say(`tick: dock node replaced=${r.replaced}; card scroll ` +
+  say(`tick: dock re-rendered=${r.rendered} (card kept=${r.kept}); card scroll ` +
       `${before.scroll.top} -> ${r.top}; doc ${before.docW} -> ${after.docW}`);
-  ok('the tick really does replace the docked card (else vacuous)', r.replaced);
+  ok('the tick really does re-render the docked card (else vacuous)', r.rendered);
   ok('...and how far he had read into the question survives it',
      Math.abs(r.top - before.scroll.top) <= 2);
   ok('...and so does the width he dragged',

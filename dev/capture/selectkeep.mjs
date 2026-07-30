@@ -158,13 +158,13 @@ async function forceTickSample() {
     const kept = snapshotCardState();
     const askKept = snapshotAskState();
     const beforeCards = snapshotCards();
-    const viewIn = snapshotViewInputs();
+    // #523 rides reconciliation now (snapshotViewInputs retired in #505 p2):
+    // a focused input is kept by id and value-stamped in the morph.
     setData(await (await fetch(typeof dataJsonUrl === 'function'
       ? dataJsonUrl() : '/data.json')).json());
     const html = await buildCurrent();
     setLiveContent(html);
     restoreCardState(kept);
-    restoreViewInputs(viewIn);
     restoreAskState(askKept);
     bindAskDraft();
     regroupCards(beforeCards);
