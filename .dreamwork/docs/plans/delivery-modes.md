@@ -252,17 +252,30 @@ any mode. They are not content and are not a class the per-kind ruling governs.
 one-shot operational CLI event that runs once at cutover, not a dashboard route,
 and is outside the delivery ruling's scope.
 
-### `question-updated` — policy pending under #516
+### `question-updated` — mode-gated, not journaled (#516, RULED 2026-07-30)
 
-`track_question_updates` (`watch.py:12873`) runs inside `collect()` on every
-dashboard poll and, when a question entry's content digest changes, writes one
-`question-updated via watch: …` line unconditionally (`12915`) — no `emits_wake`
-branch, and it bypasses the journal/cursor entirely (a digest computed in
-`collect()`, not a receipt). This is content-adjacent (the question surface is the
-class delivery batches) yet it wakes immediately in batched mode. **Its policy is
-not yet decided:** whether to mode-gate it or declare it an always-instant sync
-signal (and whether it should be journaled) is open under **#516**, in flight.
-Until then it is a known unguarded wake on a batched-class surface.
+Ruled in `.dreamwork/docs/plans/question-updated-wake.md` and landed in the
+same increment. `track_question_updates` runs inside `collect()` on every
+dashboard poll and, when a question entry's content digest changes, emits one
+`question-updated via watch: …` line **behind `emits_wake("question-updated",
+target)`** — a per-kind signal routed under the delivery mode: fired in
+`instant`, withheld in `batched` (the tick's `questions.md` read IS the drain;
+withholding the wake IS batching, not dropping — the sig store still stamps).
+**Not journaled, by construction:** `question-sigs.json` (atomic write) +
+`questions.md` (polled every tick) are the durable delivery; journaling the
+event would file a second durable truth for content a file already holds — the
+#263 anti-pattern. The always-instant carve-out alternative is refuted by
+measurement: an unguarded per-entry content channel is what produced the
+63-event phantom storm at `2026-07-30T09:43:31` (63 of 107 live log lines,
+fired between #509's algorithm change and #534's silent-re-seed fix).
+
+The same increment fixed the **re-seed swallow** (#516 Decision 3): the #534
+re-seed branch's early return skips change detection, so a real content change
+riding the same collect as an algorithm re-seed lost its event and kept a
+stale `updated_at` — permanently (the new-algo digest of changed content never
+diffs again). Cross-algorithm change detection is impossible by construction,
+so the re-seed now stamps `now` uniformly (a visible, self-aging blip on a
+rare algo upgrade) instead of carrying the prior stamp (a hidden stale age).
 
 ## The "always part of the agent's loop" guarantee
 
@@ -394,5 +407,6 @@ next gate has to decide.
   class; overrides the `/answer` → instant proposal); Q2 the `delivery`
   posture axis with urgent kinds pre-empting; Q3 the loop gates urgency,
   plugins may suggest. The routing **landed as #342b**; the open remainder is
-  `/decide` (#515, in flight), the `question-updated` policy (#516, in flight),
-  and the control/journal/migrate wakes now documented here as carve-outs.
+  `/decide` (#515, in flight), the `question-updated` policy (#516, RULED
+  2026-07-30 — mode-gated, not journaled, re-seed swallow fixed), and the
+  control/journal/migrate wakes now documented here as carve-outs.

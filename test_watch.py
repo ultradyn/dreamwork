@@ -2566,21 +2566,36 @@ class TestCollector(unittest.TestCase):
             self.assertEqual(store[key]["digest"],
                              watch._entry_content_digest(entry),
                              "store still holds an old-algo digest")
-            # updated_at carried (first-sight here was None), not stamped now.
-            self.assertIsNone(live[0].get("updated_at"))
+            # #516 refined: the re-seed stamps `now` for a PREVIOUSLY-SEEN
+            # entry (this one has a row in the old store — cross-algo change
+            # detection is impossible, so the visible stamp replaces the
+            # silent stale one). A fresh target with NO prior row keeps None
+            # (test_question_update_stamp_is_per_entry_not_file_mtime).
+            self.assertAlmostEqual(live[0].get("updated_at") or 0,
+                                   time.time(), delta=30,
+                                   msg="re-seed did not stamp the seen entry")
 
             # second collect, unchanged content — still zero, no write storm.
             watch.track_question_updates(d, [dict(entry)])
             self.assertEqual(self._question_events(d), [],
                              "unchanged content after re-seed fired an event")
 
-    def test_reseed_carries_a_prior_real_change_stamp_silently(self):
-        # #534 — an entry that REALLY changed before the algorithm upgrade
-        # keeps its prior updated_at through the re-seed (only the algorithm
-        # changed, not the content), and emits no event for it.
-        # PRODUCTION LINE: the re-seed's `prev_at` carry-forward. Sabotage it
-        # to set updated_at=None (or time.time()) and the stamp is lost (or a
-        # phantom stamp appears).
+    def test_reseed_stamps_now_and_stays_silent(self):
+        # #516 (Decision 3) REVISES the #534 carry contract: cross-algorithm
+        # change detection is impossible (the old algo's digests are
+        # incomparable by construction and its implementation is not
+        # retained), so the re-seed cannot tell a genuinely-changed entry
+        # from an unchanged one. The #534 choice — carry each entry's prior
+        # updated_at — is the silent-lie option for the entry that DID
+        # change in the same collect (its age goes stale, permanently:
+        # the new-algo digest of its changed content means no later collect
+        # ever fires). The ruled replacement stamps `now` uniformly: a
+        # visible, self-aging blip on a rare algo upgrade over a hidden
+        # stale age. Still ZERO events — an algorithm change is not a
+        # content change.
+        # PRODUCTION LINE: the re-seed branch's per-entry `"updated_at":`
+        # value (watch.py, the `_store_algo != SIG_ALGO` arm). Restore the
+        # prev_at carry and the stamp is the stale prior, not now.
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
             entry = {"title": "Re-seed beta", "body": "para one\npara two",
@@ -2594,14 +2609,85 @@ class TestCollector(unittest.TestCase):
             watch.track_question_updates(d, live)
             self.assertEqual(self._question_events(d), [],
                              "re-seed fired a phantom question-updated")
-            # the prior REAL change stamp survives the algorithm upgrade.
-            self.assertEqual(live[0].get("updated_at"), prior,
-                             "re-seed lost the prior real-change stamp")
+            self.assertAlmostEqual(live[0].get("updated_at") or 0,
+                                   time.time(), delta=30,
+                                   msg="re-seed carried a stale stamp")
             sig = os.path.join(d, ".dreamwork", watch.QUESTION_SIGS)
-            self.assertEqual(
+            self.assertAlmostEqual(
                 json.load(open(sig))[watch._title_sig_key(entry["title"])]
-                ["updated_at"], prior,
-                "store did not carry the prior real-change stamp")
+                ["updated_at"], time.time(), delta=30,
+                msg="store did not stamp the re-seed time")
+
+    def test_reseed_stamps_now_for_a_real_change_in_the_same_collect(self):
+        # #516 Decision 3 — the SWALLOW: the store holds the OLD algo's
+        # digest of the OLD content and the live entry's content has ALSO
+        # genuinely changed; the re-seed collect must not leave the changed
+        # entry carrying its stale prior stamp (the defect the #514 F2
+        # design named: cross-algo detection is impossible, so stamp now).
+        # PRODUCTION LINE: same re-seed per-entry stamp as above — with a
+        # prev_at carry this test reads the PRIOR value, not now.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            old_entry = {"title": "Re-seed swallow", "body": "one\ntwo",
+                         "follows": [], "answers": [], "answer": None}
+            changed = dict(old_entry, body="one\nTWO CHANGED")
+            self.assertNotEqual(
+                watch._entry_content_digest(changed),
+                watch._entry_content_digest(old_entry),
+                "precondition: the word change really alters the digest")
+            prior = 1700000000.0
+            _write_old_algo_store(d, [old_entry],
+                                  stamps={old_entry["title"]: prior})
+            live = [dict(changed)]
+            watch.track_question_updates(d, live)
+            self.assertEqual(self._question_events(d), [],
+                             "a re-seed collect must stay silent (#534)")
+            self.assertAlmostEqual(live[0].get("updated_at") or 0,
+                                   time.time(), delta=30,
+                                   msg="swallow: the changed entry kept its "
+                                       "stale prior stamp")
+
+    def test_question_updated_wake_is_mode_gated(self):
+        # #516 Decision 1 — a REAL content change's question-updated event is
+        # a per-kind signal routed under the delivery mode: withheld in
+        # batched (the tick's file read IS the drain), fired in instant.
+        # The sig store still stamps either way — withholding the wake IS
+        # batching, not dropping the change.
+        # PRODUCTION LINE: the `if emits_wake("question-updated", target):`
+        # gate around the log_event call in track_question_updates. Remove
+        # the gate and the batched half fails (the event fires ungated).
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            # PRECONDITION (hollow-check): the posture file really carries
+            # the batched axis, or a withhold assertion is unmeaningful.
+            self.assertTrue(
+                watch.write_posture(d, "idle", "ask", 0, "batched"))
+            self.assertEqual(watch.read_posture_file(d)["delivery"],
+                             "batched")
+            entry = {"title": "Mode-gated epsilon", "body": "first",
+                     "follows": [], "answers": [], "answer": None}
+            watch.track_question_updates(d, [dict(entry)])  # first sight
+            changed = dict(entry, body="first CHANGED")
+            self.assertNotEqual(
+                watch._entry_content_digest(changed),
+                watch._entry_content_digest(entry),
+                "precondition: the change really alters the digest")
+            live = [dict(changed)]
+            watch.track_question_updates(d, live)
+            self.assertEqual(self._question_events(d), [],
+                             "batched mode did not withhold question-updated")
+            self.assertIsInstance(live[0].get("updated_at"), float,
+                                  "precondition: the stamp landed even "
+                                  "though the wake was withheld")
+            # instant mode: the same change shape fires.
+            self.assertTrue(
+                watch.write_posture(d, "idle", "ask", 0, "instant"))
+            changed2 = dict(entry, body="first CHANGED AGAIN")
+            watch.track_question_updates(d, [dict(changed2)])
+            events = self._question_events(d)
+            self.assertEqual(len(events), 1,
+                             "instant mode must fire question-updated")
+            self.assertIn("Mode-gated epsilon", events[0])
 
     def test_real_change_after_reseed_emits_one_event(self):
         # #534 acceptance: after a silent re-seed the channel keeps its teeth

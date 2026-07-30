@@ -13651,24 +13651,35 @@ def track_question_updates(target, entries):
 
     # #534 — an algorithm-generation change is NOT a content change, so it may
     # emit zero events. When the store was written under an older generation,
-    # recompute every live entry's digest under the CURRENT algorithm, carry
-    # forward each entry's prior updated_at (the entry itself did not change),
-    # and persist the store with the new algo. This is the silent migration:
+    # recompute every live entry's digest under the CURRENT algorithm and
+    # persist the store with the new algo. This is the silent migration:
     # content did not change, so no event may fire.
+    # #516 (Decision 3) — the stamp on re-seed is `now` for every
+    # PREVIOUSLY-SEEN entry, never the carried prior value (first sight keeps
+    # None — nothing to lie about). Cross-algorithm change detection is impossible
+    # (an old-algo digest differs from a new-algo one for UNCHANGED content by
+    # definition, and the old implementation is not retained), so a re-seed
+    # collect cannot tell a genuinely-changed entry from an unchanged one —
+    # and carrying the prior stamp was the silent-lie option for the changed
+    # one (its age went stale permanently: the new-algo digest of its changed
+    # content means no later collect ever fires). A uniform `now` is the
+    # visible, self-aging alternative; algo upgrades are rare (one ever).
     if _store_algo(store) != SIG_ALGO:
+        reseeded_at = time.time()
         for e in entries:
             key = _title_sig_key(e.get("title"))
             prev = store.get(key)
-            prev_at = (prev.get("updated_at")
-                       if isinstance(prev, dict) else None)
+            # stamp now for a PREVIOUSLY-SEEN entry — the swallow fix (#516),
+            # see the block comment. A first-sight entry (no prior row) keeps
+            # None: its content definitionally has not changed since first
+            # sight, and stamping it would lie "just updated" on first load.
+            seen_at = reseeded_at if isinstance(prev, dict) else None
             store[key] = {
                 "digest": _entry_content_digest(e),
-                # carry the prior stamp — only the algorithm changed
-                "updated_at": prev_at,
+                "updated_at": seen_at,
                 "title": (e.get("title") or "")[:120],
             }
-            e["updated_at"] = (float(prev_at)
-                               if isinstance(prev_at, (int, float)) else None)
+            e["updated_at"] = seen_at
         store["algo"] = SIG_ALGO
         _write_question_sigs(path, store)
         return entries
@@ -13696,11 +13707,17 @@ def track_question_updates(target, entries):
                 "title": (e.get("title") or "")[:120],
             }
             e["updated_at"] = now
-            log_event(
-                target,
-                "question-updated via watch: "
-                + one_line((e.get("title") or "")[:100]),
-            )
+            # #516 (Decision 1) — question-updated is a per-kind signal
+            # routed under the delivery mode, not an always-instant
+            # carve-out: withheld in batched (the tick's questions.md read
+            # IS the drain), fired in instant. The stamp above lands either
+            # way — withholding the wake IS batching, not dropping.
+            if emits_wake("question-updated", target):
+                log_event(
+                    target,
+                    "question-updated via watch: "
+                    + one_line((e.get("title") or "")[:100]),
+                )
             dirty = True
         else:
             u = prev.get("updated_at")
