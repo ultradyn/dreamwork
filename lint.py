@@ -2102,7 +2102,7 @@ NOT_GUARDS = frozenset({
     # thing added to a headline cannot red two guards again. (#413)
     "dom",
     "beautycap", "cmdcap", "menucap", "reviewcap",  # capture tools, for looking
-    "indtrace", "optrace", "rm-check2", "note82", "pip83", "worldspace",
+    "optrace", "rm-check2", "worldspace",
     # A perf A/B capture, not a guard: it measures rAF throughput in the
     # question->review dissolve under several filter conditions and prints the
     # distribution. A perf threshold on this never-idle host is a load-meter,
