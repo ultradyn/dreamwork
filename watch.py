@@ -2509,6 +2509,21 @@ def _chat_preview(text, n=CHAT_PREVIEW_N):
     return s[:n - 1].rstrip() + "…" if len(s) > n else s
 
 
+def _chat_exists(target, chat_id):
+    """A chat exists iff its transcript holds >= 1 parsed turn.
+
+    Reuses ``_parse_chat_turns`` (the production reader ``list_chats`` uses),
+    so the existence test cannot disagree with the dashboard about what counts
+    as a chat — the same discipline ``bin/ud-dw-chat reply`` applies. A dir
+    with a transcript but zero turns is not a chat you can reply to, and
+    ``list_chats`` skips exactly those, so this matches. Pure in its inputs;
+    testable. This is the reply guard: ``apply_chat_turn`` CREATES the chat on
+    its first turn, so this runs BEFORE the call so a typo'd id is a loud
+    refusal, never a forked conversation (#577)."""
+    tpath = os.path.join(_chat_root(target), chat_id, "transcript.md")
+    return bool(_parse_chat_turns(read_text(tpath)))
+
+
 def apply_chat_turn(target, chat_id, role, text, at=None, receipt_id=None):
     """Append one turn to chats-v1/<chat_id>/transcript.md (+ chat.json).
 
@@ -4969,6 +4984,59 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 apply_chat_turn(target, cid, "human", text, receipt_id=cid)
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
+        def _handle_chat_reply(self):
+            """#577 — reply to an existing topic chat from the /chat/<id> page.
+
+            A chat send (the ``chat`` branch of _handle_command) creates a NEW
+            chat; this route continues an EXISTING one by appending a human
+            turn through the ONE writer (apply_chat_turn). The reply is a
+            continuation, so the dreamer must wake to answer it — and it wakes
+            the SAME way a chat send does (the receipt committed in do_POST;
+            this is the interrupt half). Registration in WRITE_ROUTE_HANDLERS
+            gives it E2Shadow receipt + #274 replay verdict for free, so a
+            double-click/retry never double-writes the turn.
+
+            A typo'd id is a loud refusal, never a forked chat: the existence
+            guard runs BEFORE apply (apply_chat_turn creates on first turn),
+            mirroring ``bin/ud-dw-chat reply``'s discipline and reusing the
+            SAME production reader (_chat_exists → _parse_chat_turns)."""
+            req = self._read_json()
+            if req is None:
+                self._reject("malformed_json"); return
+            try:
+                cid = str(req["id"]).strip()
+                text = str(req.get("text", "")).strip()
+            except (KeyError, TypeError):
+                self._reject("schema_invalid"); return
+            # a chat id is a directory name under chats-v1/, so it must be a
+            # safe path component — validated BEFORE it is ever joined onto a
+            # path (the /chatdata gate, one route over). A bad id is refused,
+            # never traversed.
+            if not _CHAT_ID_RE.match(cid):
+                self._reject("domain_invalid"); return
+            if not text:
+                self._reject("schema_invalid"); return
+            # the existence guard: refuse rather than create. A chat that has
+            # no parsed turn is not one you can reply to.
+            if not _chat_exists(target, cid):
+                self._reject("domain_invalid", detail="no_such_chat"); return
+            # #342 wake routing — wake the same way a chat send does. A reply
+            # is not a pre-empt kind, so (like the `chat` command) it wakes
+            # only in instant mode; the receipt rides the cursor otherwise.
+            # The wake-line carries this POST's receipt id (#527), so the
+            # coordinator can match a drained receipt to a wake it acted on.
+            if emits_wake("chat", target):
+                result = self.journal_result()
+                rid = result.receipt_id if result else None
+                log_event(target, command_line("chat", text, req.get("from"), rid))
+            # best-effort write — the receipt already committed in do_POST, so
+            # an IO failure never refuses the 202. apply_chat_turn is the ONE
+            # writer; the route calls it, never re-implements it. Runs once per
+            # receipt: #274's replay verdict short-circuited a dedup hit before
+            # this handler, so a retry never appends a second turn.
+            apply_chat_turn(target, cid, "human", text)
+            self._send_receipt(json.dumps({"ok": True}), "application/json")
+
         def _handle_tint(self):
             """His colour for this project (#143).
 
@@ -5242,6 +5310,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             "/ask": _handle_ask,
             "/comment": _handle_comment,
             "/command": _handle_command,
+            "/chat-reply": _handle_chat_reply,
             "/decide": _handle_decide,
             "/tint": _handle_tint,
             "/run-mode": _handle_run_mode,
