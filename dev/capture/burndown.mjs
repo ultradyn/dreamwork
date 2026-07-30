@@ -331,10 +331,12 @@ ok('the panel spends no accent — nothing in it is waiting on him',
    deep checks; what belongs HERE is the property this fixture exists in:
    every planted entry is unmarked, so the honest split is ALL historical
    unknown and none of it loop's — the exact lie #217 was filed against
-   would read `loop 9`. Nine ids were planted as entries. */
+   would read `loop 9`. Nine ids were planted as entries. Segment order is
+   user · historical unknown · loop (#544), so the legend reads unknown
+   between the two knowns. */
 ok('...and its provenance is honest about the unknown remainder: every ' +
    'planted entry is unmarked, so none of the nine is the loop\'s',
-   /human 0 · loop 0 · historical unknown 9/.test((r0.provline || '').trim()) &&
+   /human 0 · historical unknown 9 · loop 0/.test((r0.provline || '').trim()) &&
    r0.provsegs === 3 &&
    (r0.provsrc || []).some(s => /9 first sightings in recorded git history/.test(s)));
 

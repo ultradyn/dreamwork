@@ -3752,8 +3752,13 @@ function provBlock(p) {
   if (!total)
     return `<div class="bdnote">no first sightings in recorded git history ` +
            `yet</div>`;
-  const rows = [['human', p.human, 'phuman'], ['loop', p.loop, 'ploop'],
-                ['historical unknown', p.unknown, 'punknown']];
+  /* order is user · historical unknown · loop: the unknown sits as the
+     honest gap BETWEEN the two knowns, not after them (#544). The bar,
+     legend, aria-label and hover titles all derive from this one list, so
+     they agree by construction. */
+  const rows = [['human', p.human, 'phuman'],
+                ['historical unknown', p.unknown, 'punknown'],
+                ['loop', p.loop, 'ploop']];
   const incomplete = p.history_complete === false;
   /* the aria-label is the WHOLE datum in words: the bar is a picture of
      this sentence, and the sentence is what a screen reader gets. */
