@@ -616,6 +616,20 @@ exception; an element leaving fades rather than vanishing.
   constant height. Reduced motion snaps both ways. Guard:
   `dev/capture/burndown.mjs` (numbers derived from served data, mid-frame
   opacity, RM parity).
+  **#559 — the hit zone is the full column, and a live readout persists
+  across a column switch.** The hover hit zone is the whole column — the
+  top open-tasks section (`.bdnet`), the bottom landed/arrivals section
+  (`.bdflow`), and the gap between them, all pixel-aligned by index to the
+  net column (the source of truth). Moving between columns while the
+  readout is live is *not a transition at all* — the container stays (no
+  depart, no arrival pose, no opacity dip) and the content cross-dissolves
+  on the same `.42s` envelope the tip's own arrival/departure use, old
+  values out as new values in (one gesture one level down, never a second
+  idiom; the inspector reads on the same cross-dissolve once it has
+  dwelled). First-show and final-leave keep today's arrive/depart
+  envelopes; reduced motion snaps the swap (content set directly, no
+  layers). Guard: `dev/capture/bdhover.mjs` owns the hover geometry, the
+  persistence, and the cross-dissolve.
 - **The review split (#305) — where a DRAG is the one thing that does not
   travel.** `/review`'s two columns are separated by an invisible bar he can
   drag. Dragging is *continuous input*: his pointer already supplies every
