@@ -1,5 +1,7 @@
 /* chatsurface — #562: the topic-chat list carries an unread/total count and
-   each row links to a /chat/<id> page that renders the conversation.
+   each row links to a /chat/<id> page that renders the conversation. #563: the
+   section is ALWAYS visible — a chatless target still renders the label,
+   `0 total`, and a dim `none yet` empty-state line.
 
    The defect (his words): "is that unread or total?" (the count was total-only
    and didn't say so) and "the actual issue is that I can't open the chat!" (the
@@ -41,7 +43,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const { ok, present, declare, finish, notes, errs } = makeReporter();
 declare({
-  drives: 'dashboard chat list (count line + row links) and /chat/<id> ' +
+  drives: 'dashboard chat list (count line + row links), the always-visible ' +
+          'empty state on a chatless target (#563), and /chat/<id> ' +
           '(transcript render + not-found degrade) in normal AND reduced motion',
   traceWindow: 'static reads after settle; no motion trace — the route ' +
                'dissolve is dissolve.mjs\'s gesture and the count line is a ' +
@@ -79,6 +82,20 @@ const PORT = await freePort();
 const child = await serveVerified(DIR, PORT, { expect: DIR });
 const BASE = `http://127.0.0.1:${PORT}`;
 
+// ── a CHATLESS target for the always-visible empty state (#563) ──────────
+// The shared fixture is chatless by default (no .dreamwork/chats-v1/), so a
+// fresh copy with NO apply_chat_turn is the empty case — the production
+// writer is deliberately NOT called, proving the page reads absence the same
+// way collect surfaces it (collect → []). chatList must still render the
+// label + `0 total` + a dim `none yet` line on this target (#563 made the
+// section always visible; was `return ''` under #504).
+const EDIR = join(OUT, 'target-empty');
+rmSync(EDIR, { recursive: true, force: true });
+cpSync('dev/capture/fixture', EDIR, { recursive: true });
+const EPORT = await freePort();
+const echild = await serveVerified(EDIR, EPORT, { expect: EDIR });
+const EBASE = `http://127.0.0.1:${EPORT}`;
+
 try {
   // ── preconditions: derive the unread/total split from live data ─────────
   const d = await (await fetch(`${BASE}/data.json`)).json();
@@ -108,6 +125,43 @@ try {
   const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
   const p = await br.newPage({ viewport: { width: 1280, height: 900 } });
   p.on('pageerror', e => errs.push(String(e)));
+
+  // ── Act 0: the empty state — the section is always visible (#563) ───────
+  // A chatless target still renders the section. Production line: chatList's
+  // empty branch (the absence of the old `return ''` guard + the else-arm
+  // `none yet` copy). The empty-state dim line is bound to the chat section
+  // SPECIFICALLY — it is the topic-chats label's immediate next sibling — so
+  // the answers panel's own `none yet` (watch.py) cannot satisfy this check
+  // (the hollow-trap: a bare `.dim` text match would pass over a chat
+  // regression). No motion is traced: the empty state is static DOM, so
+  // reduced-motion parity is the identical render (transitions.md).
+  await p.goto(`${EBASE}/`, { waitUntil: 'networkidle' });
+  await waitFor(p, '.label');
+  const edash = await p.evaluate(() => {
+    const labels = [...document.querySelectorAll('.label')];
+    const lab = labels.find(x => (x.textContent || '').startsWith('topic chats'));
+    // chatList emits label(...) + '<div class="dim">none yet</div>' with
+    // nothing between, so the empty-state line is the label's next element.
+    const next = lab ? lab.nextElementSibling : null;
+    return {
+      label: lab ? lab.textContent : null,
+      nextIsDim: !!(next && next.classList.contains('dim')),
+      nextText: next ? (next.textContent || '').trim() : '',
+      rowCount: document.querySelectorAll('[data-chat]').length,
+    };
+  });
+  notes.push('empty dashboard: ' + JSON.stringify(edash));
+  ok('#563 empty: the topic-chats label renders on a chatless target',
+     !!edash.label);
+  ok('#563 empty: the count line is exactly "topic chats · 0 total"',
+     edash.label === 'topic chats · 0 total');
+  ok('#563 empty: no unread clause at 0 chats',
+     edash.label && !edash.label.includes('unread'));
+  ok('#563 empty: no chat rows on a chatless target',
+     edash.rowCount === 0);
+  ok('#563 empty: the dim "none yet" line is the section body ' +
+     '(the label\'s next sibling, not the answers panel\'s own "none yet")',
+     edash.nextIsDim && edash.nextText === 'none yet');
 
   // ── Act 1: the count line tells the truth + rows are links ──────────────
   await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -221,4 +275,5 @@ try {
 }
 
 try { child.kill(); } catch (_) {}
+try { echild.kill(); } catch (_) {}
 finish();
