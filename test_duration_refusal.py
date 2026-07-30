@@ -110,10 +110,18 @@ def test_style_still_declares_the_point_three_five_seconds_the_refusal_measured(
     floor on the guard would uniquely catch. This test pins that the
     declaration the measurements compared against is still the source.
     """
-    style = (ROOT / "watch.py").read_text(encoding="utf-8")
+    # #397: the CSS lives in client/style.css now, so read the assembled
+    # constant rather than watch.py's source — that is the value the page
+    # actually serves and it survives the asset moving again.
+    style = (ROOT / "client" / "style.css").read_text(encoding="utf-8")
+    # the check is vacuous against an empty or missing asset, so say so here
+    assert len(style) > 10_000, (
+        f"client/style.css is {len(style)} chars — too small to be the "
+        f"stylesheet; this test would pass vacuously on a broken read"
+    )
     # Both main and popout carry the same .35s opacity envelope.
     assert "opacity .35s" in style or "opacity:.35s" in style, (
-        "watch.py STYLE no longer declares opacity .35s on the confirmation "
+        "STYLE no longer declares opacity .35s on the confirmation "
         "envelope — the #444 measurements compared against 350ms; update the "
         "refusal doc and re-measure if the declaration moved"
     )

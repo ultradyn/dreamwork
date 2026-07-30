@@ -209,8 +209,11 @@ let servedRev;
   // fails on a correct page. Assert the load-bearing prefix (how far behind
   // + which rev) and that the remedy is present — both derived from what
   // the page actually rendered, not a frozen full string.
+  // "dashboard commits" since #397: `missing` is pathspec-filtered over
+  // watch.py AND client/, so naming the file would be precise about the
+  // wrong thing now that most UI commits do not touch watch.py.
   const behindCore =
-    `this page is 2 watch.py commits behind · serving ${servedRev}`;
+    `this page is 2 dashboard commits behind · serving ${servedRev}`;
   ok('a page behind HEAD says so, and by how much',
      !!r.present &&
      typeof r.text === 'string' &&
@@ -231,10 +234,42 @@ let servedRev;
   ok('...and hovering gives him every commit he is missing', !!r.present &&
      /the first change he cannot see/.test(r.title) &&
      /the second change he cannot see/.test(r.title));
-  // pathspec-filtered, which is why the copy says "watch.py commits": HEAD
+  // pathspec-filtered, which is why the copy says "dashboard commits": HEAD
   // moved three times and the dashboard moved twice
-  ok('...counting watch.py commits, not every commit',
+  ok('...counting dashboard commits, not every commit',
      !!r.present && !/does not touch the dashboard/.test(r.title));
+}
+
+/* #397 — a CLIENT-ONLY commit must move this line.
+   The extraction took 10,500 lines of css and js out of watch.py, so
+   watch.py's bytes stopped being the dashboard's identity. The ordinary UI
+   commit now leaves watch.py byte-identical, and a watch.py-only comparison
+   answers `current` while the page serves the previous stylesheet — #140's
+   wound ("make a stale view announce itself") reopened by a refactor rather
+   than by a proxy. Unit tests pin serving_report's logic; this pins that the
+   RAIL the human reads actually moves, which is the thing #140 is about. */
+{
+  const before = await read('client-only baseline');
+  const beforeCount = (before.text || '').match(/is (\d+) dashboard/);
+  mkdirSync(join(DIR, 'client'), { recursive: true });
+  writeFileSync(join(DIR, 'client', 'style.css'), '.a { color: crimson }\n');
+  git(['add', 'client/style.css']);
+  git(['commit', '-q', '-m', 'style: a commit that touches no watch.py']);
+  // Precondition: the commit really is client-only. If it touched watch.py
+  // the old comparison would see it too and this check would prove nothing.
+  const touched = git(['show', '--stat', '--format=', '--name-only', 'HEAD']);
+  ok('COVERAGE #397: the new commit touches client/ and NOT watch.py',
+     /client\/style\.css/.test(touched) && !/(^|\n)watch\.py(\n|$)/.test(touched));
+
+  const r = await read('behind by a client-only commit');
+  const n = (r.text || '').match(/is (\d+) dashboard/);
+  // The count must GROW. Asserting "still behind" would pass without the fix,
+  // because the page was already behind on watch.py from the block above —
+  // the whole question is whether the client commit was counted.
+  ok('...and the rail counts it (the count grew)',
+     !!n && !!beforeCount && Number(n[1]) > Number(beforeCount[1]));
+  ok('...naming it in the hover detail, like any other missing commit',
+     /touches no watch\.py/.test(r.title || ''));
 }
 
 finished = true;

@@ -265,16 +265,23 @@ advice to enforced contract, and two new families were added.
 
 ## What must not break (unchanged, and confirmed)
 
-- **Stdlib only, no build step.** Held — `watch.py` is still the single
-  deployed file with no bundler.
+- **Stdlib only, no build step.** ~~Held~~ — **SUPERSEDED 2026-07-30** by his
+  ruling on `#505` Q2: *"we don't have a no-build single-file constraint. We
+  had a python stdlib constraint, but otherwise building the webui bundle and
+  breaking up watch.py into modules are good and reasonable things."* The
+  Python-stdlib half stands; the no-build/single-file half does not. What was
+  true when this was written (no bundler existed) is now a fact about the
+  tree, not a constraint on it.
 - **`python3 watch.py --target . --dev` still works** from a checkout. Held.
-- **Deployment.** `just deploy` still snapshots `git show HEAD:watch.py` to a
-  single file. **The split did not happen as a multi-file layout**, so this
-  concern never materialised: the file stayed one file, and the one demand-
-  driven seam that arrived (the `#505` reconciler) is a vendored ~2KB
-  dependency loaded *beside* `watch.py` at runtime (`vendor/morphdom.min.js`,
-  `watch.py:11074`), not a module split. `DATA_SIBLINGS` declares the sibling
-  so deploy carries it.
+- **Deployment.** ~~`just deploy` still snapshots `git show HEAD:watch.py` to
+  a single file.~~ **No longer true as of `#480`/`#425`:** deploy ships the
+  **transitive closure** of the snapshot's repo-local imports plus everything
+  `DATA_SIBLINGS` declares, creating subdirectories and writing each file
+  atomically (`dev/deploy_state.py`, `ship_siblings`/`sibling_closure`). The
+  deployed thing is already a small directory, not one file. The seam that
+  arrived first (the `#505` reconciler, `vendor/morphdom.min.js`) rode
+  `DATA_SIBLINGS`, and any later client assets can ride it the same way — so
+  a multi-file client layout no longer costs a deploy rewrite.
 - **The generation reload.** `/mtime` still bumps. Held.
 
 ## The seams question — did "as batches demand them" happen?

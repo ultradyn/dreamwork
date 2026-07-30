@@ -1647,3 +1647,70 @@ def test_deploy_new_ordering_completes_against_autoreload_standin(tmp_path):
             except ProcessLookupError:
                 pass
             p.wait(timeout=3)
+
+
+# --- #397: the dashboard stopped being one file, so "is it stale?" changed ---
+
+
+def test_a_stale_client_asset_is_stale_even_though_watch_py_matches(repo, tmp_path):
+    """The regression the extraction introduced into the deploy's own status.
+
+    Until #397 every css and js byte lived in watch.py's string literals, so
+    comparing that one file answered "is he looking at current code"
+    completely. Afterwards the ORDINARY ui commit touches only `client/` and
+    leaves watch.py byte-identical — and a watch.py-only comparison calls
+    that `current` while the deployed dashboard serves the previous
+    stylesheet. A stale deploy reporting itself fresh is worse than no check
+    at all; #140's apparatus exists so a stale view announces itself.
+
+    Production line: the `data_sibling_paths` loop in `stale_identity_paths`.
+    """
+    src = b"DATA_SIBLINGS = ('client/style.css',)\n" + REAL_MODULE
+    (repo / "client").mkdir()
+    (repo / "client" / "style.css").write_bytes(b".a { color: red }\n")
+    (repo / "watch.py").write_bytes(src)
+    _commit(repo)
+
+    dest = tmp_path / "deployed"
+    (dest / "client").mkdir(parents=True)
+    (dest / "client" / "style.css").write_bytes(b".a { color: red }\n")
+
+    head = ds.resolve_blob("HEAD", "watch.py", repo)
+    assert ds.dashboard_identity(head) == ["watch.py", "client/style.css"], (
+        "precondition: the identity must actually span the client, or every "
+        "assertion below is about watch.py alone"
+    )
+    assert ds.stale_identity_paths(src, head, dest, repo) == [], (
+        "precondition: a freshly deployed dashboard must read as matching"
+    )
+
+    # the commit shape the extraction created: client only, watch.py untouched
+    (repo / "client" / "style.css").write_bytes(b".a { color: blue }\n")
+    _commit(repo)
+    head2 = ds.resolve_blob("HEAD", "watch.py", repo)
+    assert head2 == src, "fixture moved watch.py — the test proves nothing"
+
+    assert ds.stale_identity_paths(src, head2, dest, repo) == \
+        ["client/style.css"], (
+            "a client-only commit left the deploy reported as matching HEAD"
+        )
+
+
+def test_a_sibling_missing_from_the_deploy_dir_is_stale_not_matching(repo, tmp_path):
+    """A comparison that could not run must never look like one that ran and
+    agreed — this file's standing rule, applied to a sibling that was never
+    shipped. Reporting `current` for a deploy with no stylesheet at all is
+    the worst available answer."""
+    src = b"DATA_SIBLINGS = ('client/style.css',)\n" + REAL_MODULE
+    (repo / "client").mkdir()
+    (repo / "client" / "style.css").write_bytes(b".a { color: red }\n")
+    (repo / "watch.py").write_bytes(src)
+    _commit(repo)
+
+    dest = tmp_path / "deployed"
+    dest.mkdir()
+    assert not (dest / "client" / "style.css").exists()
+
+    head = ds.resolve_blob("HEAD", "watch.py", repo)
+    assert ds.stale_identity_paths(src, head, dest, repo) == \
+        ["client/style.css"]

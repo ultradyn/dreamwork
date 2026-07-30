@@ -11,9 +11,11 @@ file current as the page evolves.
 
 ## What it is
 
-One stdlib-only file serving a single app shell with four client-routed
-views — dashboard, questions, file viewer, review — plus the raw review
-artifacts the review view embeds. The dashboard shows dreams (with live
+A stdlib-only Python server serving a single app shell with client-routed
+views — dashboard, questions, answers, file viewer, review, research and
+chat — plus the raw review artifacts the review view embeds. The client is
+one app: the shell and its assets are served whole, and the router picks the
+view from the URL. The dashboard shows dreams (with live
 ages), main files, the commits panel (five rows, live ages, maintenance
 markers highlighted), migrations
 vs target version, roll weights, and `.dreamwork/status.json` (loop writes
@@ -36,7 +38,46 @@ carries a `+` command opener (steer the loop without a chat turn).
   stand". The two are not collapsed (the `skill_identity` docstring's
   two-question discipline). The crumb is omitted entirely when there is no
   recorded version, rather than rendering a bare separator dot.
-- **Stdlib only, self-contained**; no dependencies, no build step.
+- **Python stdlib only. A built web UI is permitted** (ruled 2026-07-30 07:44,
+  answering `#505` Q2): *"we don't have a no-build single-file constraint. We
+  had a python stdlib constraint, but otherwise building the webui bundle and
+  breaking up watch.py into modules are good and reasonable things."* So the
+  constraint that survives is **the Python one** — the server imports nothing
+  outside the stdlib and no `pip install` stands between a checkout and a
+  running dashboard. What that ruling lifted is the packaging half: client
+  assets may live in their own files, a bundle step may produce them, and
+  `watch.py` may become a package. This bullet said "no dependencies, no build
+  step" for four days after the ruling, and that staleness is what made the
+  split read as forbidden.
+  **It is not licence for a second renderer.** The page has one render
+  authority, and `DREAMWORK.md`'s second-truth rule is untouched by this: a
+  port that *reimplements* each feature beside the existing one is still
+  refused (`dreamhub-design.md`, "one renderer, and it is the Python one" —
+  *two renderers only agree on the day they are written*). Build tooling over
+  the client we have is the permitted direction; a rival implementation of it
+  is a separate decision nobody has made.
+- **The client lives in `client/`, one file per former constant (#397).**
+  `client/style.css`, `app_body.html`, `components.js`, `views.js`,
+  `favicon.js`, `router.js`, `command.js`, `shader.js`. `watch.py` reads them
+  at import through `_read_client()` and assembles the page exactly as the
+  string literals did — the extraction was proven by capturing the served
+  page before and after and requiring the bytes to match.
+  Four things that are load-bearing rather than incidental:
+  - **`CLIENT_DIR` uses `abspath`, never `realpath`.** #425 turns `watch.py`
+    into a symlink to `deprecated/watch.py`; `realpath` would resolve this
+    directory into `deprecated/`, where the assets are not. Never cwd (guards
+    run from elsewhere) and never `--target` (the watched project).
+  - **`style.css` is real CSS.** The `<style>` wrapper lives in the loader, so
+    the file is lintable and a bundler can read it. `STYLE` still equals
+    `"<style>" + the file + "</style>"`, and a test pins that.
+  - **Every asset is declared in `DATA_SIBLINGS`,** which is what `just
+    deploy` ships (`dev/deploy_state.py` reads that literal with
+    `ast.literal_eval`, so it cannot be computed — a test pins it equal to
+    `_CLIENT_ASSETS` instead). An asset missing there deploys a blank page.
+  - **A UI change is now a diff to `client/`, not to `watch.py`.**
+    `dev/styleguide_audit.py` classifies on that prefix, and still classifies
+    pre-#397 revisions by the old constant ranges because it walks history
+    across the extraction.
 - **Loopback by default; trusted LAN only by explicit contract.** The default
   remains `127.0.0.1`. A singular numeric `--bind`, repeatable exact
   `--allow-host`, and navigable allowed `--url-host` may opt into an explicitly
@@ -240,8 +281,9 @@ if a change needs to break a rule, update the rule here in the same commit.
 
 ### Tokens
 
-All colour/space lives in the `:root` block in `STYLE` — edit tokens, never
-hardcode. `--bg` near-black; `--panel`/`--panel2` raised fills; `--line`
+All colour/space lives in the `:root` block at the top of `client/style.css`
+(the `STYLE` constant is that file inside a `<style>` wrapper) — edit tokens,
+never hardcode. `--bg` near-black; `--panel`/`--panel2` raised fills; `--line`
 hairlines, `--border` stronger edges; a text ramp `--text` → `--lit` →
 `--bright` (up, brighter) and `--muted` → `--dim` → `--dimmer` (down,
 quieter); `--accent` indigo. `--space` (section rhythm),
@@ -2861,9 +2903,13 @@ is right for a chart about ledger history.
 must read its own `.dreamwork/tasks.md` history, and `git -C sub log --
 .dreamwork/tasks.md` would otherwise walk the parent repo and read the repo
 ROOT's ledger — silently. The first-sight grammar (`ENTRY_HEAD`, `ENTRY_ID`,
-`ORIGIN_MARK`, the entry walker) is lint.py's #213 grammar held VERBATIM —
-watch.py is one file by design and cannot import it — and a test pins the
-two identical, the one-copy rule `LEDGER_ENTRY` already states.
+`ORIGIN_MARK`, the entry walker) is `ledger_parse.py`'s #213 grammar, and
+both `watch.py` and `lint.py` **import** it rather than holding copies. This
+paragraph used to say the grammar was duplicated verbatim because "watch.py
+is one file by design and cannot import it", with a test pinning the two
+copies identical; that extraction has since happened, so the one-copy rule
+`LEDGER_ENTRY` states is now enforced by there being one definition rather
+than by a test comparing two.
 
 **Both kinds of nothing say so, inside the same `.bd` box.** A project that
 is not a git checkout, and one that keeps no versioned ledger, are ordinary
@@ -3260,7 +3306,7 @@ design.** A healthy answer is a fact (`--dim`, `serving c552338`). An answer
 this page could not compute is a fact about the page (`--dimmer`,
 `serving — unknown · …`). A page running code older than HEAD is a **fault**
 — it invalidates everything else on screen — so it takes `--warn` and the
-rail: `this page is 2 watch.py commits behind · serving 8513719`. **That is
+rail: `this page is 2 dashboard commits behind · serving 8513719`. **That is
 the second and last use of the rail idiom**, and the comment on `.qhealth`
 used to claim it was the only one; what the two share is exactly what earns
 it — both are the page saying it cannot be trusted right now, one about the
@@ -3275,11 +3321,29 @@ check at all — which is the failure this whole page is organised against. So
 `no repo` (the ordinary answer for a target that is somebody else's project,
 carrying no `watch.py` history) still renders, dim, saying it cannot tell.
 
-**"watch.py commits", not "commits", and the extra word is load-bearing
+**"dashboard commits", not "commits", and the extra word is load-bearing
 here** in a way it is not on the hub: this line sits directly above a list of
 *all* the project's commits, where "3 commits behind" would read as a claim
-about those rows. HEAD can move thirty times without `watch.py` moving once,
-and `missing` is pathspec-filtered.
+about those rows. HEAD can move thirty times without the dashboard moving
+once, and `missing` is pathspec-filtered.
+
+The word was `watch.py` until #397, and that was exact for as long as
+`watch.py` **was** the dashboard — the css and js lived in its string
+literals, so its history was the page's history. Since the client moved to
+`client/`, the pathspec covers `watch.py` *and* the assets, and most commits
+in that count no longer touch `watch.py` at all. Naming the file would now
+be precise about the wrong thing. `dashboard` is also the noun the hub
+already uses for the same count, which the value-for-value rule wants
+regardless.
+
+**The identity is the whole dashboard, not one file.** `serving_report`
+compares `watch.py`'s bytes **and** every client asset this process loaded
+(`SELF_ASSET_SRC`) against each revision; a revision matches only if all of
+them do. That is not a refinement — before #397 it was `watch.py` alone and
+correctly so, and leaving it there would have made this rail report `current`
+for a page serving last week's stylesheet, which is #140's wound reopened by
+a refactor. `deployed.py` and `dev/deploy_state.py` compare the same set, by
+the same rule, so all three answers stay value-for-value.
 
 **Measured by bytes, and by this process's OWN bytes.** The states, the
 vocabulary and the missing-commit list are `deployed.py`'s value for value

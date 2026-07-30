@@ -223,6 +223,49 @@ def head_watch() -> bytes:
 # server" to "its imports resolve").
 
 
+def dashboard_identity(head_src: bytes) -> list:
+    """Every repo-relative path whose bytes decide what the browser sees.
+
+    watch.py plus its declared `DATA_SIBLINGS`, at the revision `head_src`
+    comes from. Before #397 this was watch.py alone and correctly so — the
+    css and js lived in its string literals. After it, watch.py is 5,181
+    lines of Python beside 10,500 lines of client, and the ORDINARY ui commit
+    touches only the client.
+    """
+    return ["watch.py"] + data_sibling_paths(head_src)
+
+
+def stale_identity_paths(deployed: bytes, head_src: bytes, dest,
+                         repo=ROOT) -> list:
+    """Which parts of the deployed dashboard do not match HEAD — [] if none.
+
+    Comparing watch.py alone would answer `current` for a deploy whose
+    stylesheet is a week old, because a client-only commit leaves watch.py
+    byte-identical. That is a stale deploy reporting itself fresh, which is
+    worse than not checking: #140's whole apparatus exists so a stale view
+    ANNOUNCES itself.
+
+    A sibling that is missing from `dest`, or unreadable at HEAD, counts as
+    stale rather than as matching — this file's standing rule is that a
+    comparison which could not run must never look like one that ran and
+    agreed.
+    """
+    stale = [] if deployed == head_src else ["watch.py"]
+    for rel in data_sibling_paths(head_src):
+        try:
+            with open(os.path.join(dest, rel), "rb") as f:
+                have = f.read()
+        except OSError:
+            stale.append(rel)               # never shipped, or shipped away
+            continue
+        try:
+            if have != resolve_blob("HEAD", rel, repo):
+                stale.append(rel)
+        except Exception:                                       # noqa: BLE001
+            stale.append(rel)
+    return stale
+
+
 def import_roots(src: bytes) -> list:
     """Every absolute module root `src` imports, at ANY depth, sorted.
 
@@ -834,7 +877,10 @@ def main() -> int:
     head = head_watch()
     st["deployed_sha"] = sha(deployed)[:12]
     st["head_sha"] = sha(head)[:12]
-    st["snapshot_matches_head"] = st["deployed_sha"] == st["head_sha"]
+
+    st["identity_paths"] = dashboard_identity(head)
+    st["stale_paths"] = stale_identity_paths(deployed, head, DEPLOY_DIR)
+    st["snapshot_matches_head"] = not st["stale_paths"]
     st["pid"] = listening_pid(port)
     st["head_rev"] = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                                     cwd=ROOT, capture_output=True,
@@ -866,7 +912,7 @@ def main() -> int:
         # Name what he cannot see, not just that something differs -- "behind" is
         # not actionable and "the median line is missing" is.
         behind = subprocess.run(
-            ["git", "log", "--oneline", "--", "watch.py"], cwd=ROOT,
+            ["git", "log", "--oneline", "--", *st["identity_paths"]], cwd=ROOT,
             capture_output=True, text=True).stdout.splitlines()
         st["watch_py_commits_at_head"] = behind[:1]
 
@@ -879,9 +925,14 @@ def main() -> int:
                   f"{st['process_age_vs_snapshot_s']:+}s vs snapshot); "
                   f"serving :{port} at pid {st['pid']}")
         elif not st["snapshot_matches_head"]:
-            print(f"STALE SNAPSHOT — the deployed file does NOT match HEAD "
-                  f"({st['head_rev']}); serving :{port} at pid {st['pid']}. "
-                  f"He is looking at older code. Run `just deploy`.")
+            # Name the files. "the deployed file" was unambiguous when the
+            # dashboard WAS one file; now the stale part is usually the
+            # client, and "watch.py is fine" is the wrong thing to conclude.
+            print(f"STALE SNAPSHOT — the deployed dashboard does NOT match "
+                  f"HEAD ({st['head_rev']}): "
+                  f"{', '.join(st['stale_paths'])}; serving :{port} at pid "
+                  f"{st['pid']}. He is looking at older code. "
+                  f"Run `just deploy`.")
         elif st["process_has_snapshot"] is False:
             print(f"STALE PROCESS — the deployed file matches HEAD ({st['head_rev']}) "
                   f"but the live process imported "

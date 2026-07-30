@@ -9,6 +9,10 @@ nothing, and this repo has caught three that were passing on their own bug.
 """
 
 import ast
+import os
+import pathlib
+import subprocess
+import sys
 
 import dev.styleguide_audit as a
 
@@ -140,35 +144,194 @@ def test_hatch_does_not_match_prose_or_other_trailers():
 # under a non-UI-y name is a residual a reviewer catches; the common case — a
 # rename or removal of a known UI constant — is what this guards.)
 
-def test_ui_constants_track_watch_py_at_head():
-    src = open("watch.py").read()
+def test_ui_constants_track_the_client_assets_at_head():
+    """#397 moved the client to files, so the anti-hollow check moved with it.
+
+    Three ways the filter could go hollow, one assertion each: an asset the
+    audit names could vanish; the constant that loads it could be renamed so
+    the page stops assembling; or a UI-shaped string LITERAL could creep back
+    into watch.py, where the post-extraction prefix rule would never see it.
+
+    Paths are resolved against THIS FILE's directory, not the process cwd.
+    Relative paths made all three assertions depend on where pytest happened
+    to be started: run from anywhere else, `client/style.css` and `watch.py`
+    simply are not there, and the check fails for a reason that has nothing
+    to do with what it measures.
+    """
+    repo = pathlib.Path(__file__).resolve().parent
+    # 1. every registered asset exists and carries content. Size, not mere
+    #    existence — an empty file would satisfy `is_file` and serve a blank
+    #    page, and this test would have vouched for it.
+    for rel in a.CLIENT_ASSETS:
+        p = repo / rel
+        assert p.is_file(), (
+            "dev/styleguide_audit.py names %s but it does not exist — the "
+            "audit's HEAD guard would refuse, and UI changes to a moved "
+            "asset would be unclassified. Update CLIENT_ASSETS." % rel
+        )
+        assert p.stat().st_size > 0, (
+            "%s is empty — the page would serve a blank asset and every "
+            "check that reads it would pass vacuously" % rel
+        )
+
+    src = (repo / "watch.py").read_text()
     tree = ast.parse(src)
-    present = set()
+    assigned, literal_strs = set(), set()
     for node in tree.body:
-        if (
+        if not (
             isinstance(node, ast.Assign)
             and len(node.targets) == 1
             and isinstance(node.targets[0], ast.Name)
-            and isinstance(node.value, ast.Constant)
-            and isinstance(node.value.value, str)
         ):
-            present.add(node.targets[0].id)
-    # Every tracked UI constant still exists (a rename removes the old name).
-    assert set(a.UI_CONSTANTS) <= present, (
-        "a UI constant in UI_CONSTANTS is gone from watch.py — likely renamed; "
-        "update dev/styleguide_audit.py. missing=%r"
-        % sorted(set(a.UI_CONSTANTS) - present)
+            continue
+        name = node.targets[0].id
+        assigned.add(name)
+        if isinstance(node.value, ast.Constant) and isinstance(
+            node.value.value, str
+        ):
+            literal_strs.add(name)
+
+    # 2. the loader constants are still named as the assembly expects.
+    assert set(a.UI_CONSTANTS) <= assigned, (
+        "a UI constant in UI_CONSTANTS is gone from watch.py — likely "
+        "renamed; the page would stop assembling. update "
+        "dev/styleguide_audit.py. missing=%r"
+        % sorted(set(a.UI_CONSTANTS) - assigned)
     )
-    # Every UI-SHAPED module string (ends in _JS, or is STYLE/APP_BODY) is
-    # tracked — a new UI block added under a UI-y name must be registered.
-    ui_shaped = {
-        n for n in present if n.endswith("_JS") or n in ("STYLE", "APP_BODY")
+
+    # 3. no UI-shaped literal has come BACK into watch.py. Post-extraction
+    #    those are invisible to the `client/` prefix rule, so one would be a
+    #    silent hole rather than a loud drift.
+    crept_back = {
+        n for n in literal_strs
+        if n.endswith("_JS") or n in ("STYLE", "APP_BODY")
     }
-    assert ui_shaped == set(a.UI_CONSTANTS), (
-        "watch.py's UI-shaped module strings drifted from UI_CONSTANTS — "
-        "update dev/styleguide_audit.py so the filter does not silently miss "
-        "UI changes. ui_shaped=%r UI_CONSTANTS=%r"
-        % (sorted(ui_shaped), list(a.UI_CONSTANTS))
+    assert not crept_back, (
+        "UI-shaped string literal(s) are back in watch.py: %r. Since #397 "
+        "the client lives in client/ and the audit classifies by that "
+        "prefix, so a literal here is a UI change the filter cannot see. "
+        "Extract it to client/ (and add it to CLIENT_ASSETS)."
+        % sorted(crept_back)
+    )
+
+
+def test_the_cli_actually_runs_end_to_end():
+    """`main()` had NO test, and a crash in it looked exactly like a pass.
+
+    Every other test here drives the pure functions on synthetic fixtures, so
+    `main()` — which is what `just audit-styleguide` invokes — was covered by
+    nothing. A real defect shipped through that hole during #397: the HEAD
+    guard called `git(...).split(...)`, but `git()` returns a CompletedProcess,
+    so the recipe died with an AttributeError while the whole suite stayed
+    green. This runs the CLI the way the justfile does and requires it to
+    reach a verdict.
+
+    Exit 0 (no misses) and 1 (misses reported) are both real verdicts. Exit 2
+    is the vacuous-filter refusal, and anything else — a traceback — is the
+    bug this exists to catch.
+    """
+    # cwd pinned to the repo root, derived from this file rather than assumed:
+    # the relative script path only resolves if pytest happened to be invoked
+    # from there, so without it this test reports the CLI as broken (or, worse,
+    # skips silently past it) depending on where the suite was started.
+    repo = pathlib.Path(__file__).resolve().parent
+    proc = subprocess.run(
+        [sys.executable, "dev/styleguide_audit.py", "HEAD~1..HEAD",
+         "--window", "3"],
+        capture_output=True, text=True, cwd=repo,
+    )
+    assert proc.returncode in (0, 1), (
+        "audit-styleguide did not reach a verdict (exit %d).\n"
+        "stderr:\n%s" % (proc.returncode, proc.stderr[-2000:])
+    )
+    assert "Traceback" not in proc.stderr, (
+        "audit-styleguide raised:\n%s" % proc.stderr[-2000:]
+    )
+    # precondition: it really did classify something, rather than printing an
+    # empty report that would satisfy the assertions above on any input
+    assert "dashboard commits:" in proc.stdout, (
+        "audit-styleguide produced no classification line — the checks above "
+        "would pass on a silent no-op.\nstdout:\n%s" % proc.stdout[-2000:]
+    )
+
+
+def _client_only_repo(tmp_path, monkeypatch):
+    """A real 2-commit repo whose HEAD commit touches ONLY `client/`.
+
+    Real git, not a fake: the thing under test is what `classify_range` does
+    with a commit's file list, and every step from `git log` to the verdict is
+    part of that. A monkeypatched `touched_files` would have let the bug this
+    test exists for survive, because the bug was in the CALLER's filter, not
+    in anything a fake would have been asked.
+    """
+    monkeypatch.chdir(tmp_path)
+    # Isolate from the user's global config: a commit hook, a gpg-sign
+    # default, or a template dir would otherwise decide whether this passes.
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+
+    def run(*args):
+        subprocess.run(["git", *args], check=True, capture_output=True)
+
+    run("init", "-q", "-b", "main")
+    run("config", "user.email", "audit-test@example.invalid")
+    run("config", "user.name", "audit test")
+
+    (tmp_path / "client").mkdir()
+    (tmp_path / "client" / "style.css").write_text(".a { color: red }\n")
+    (tmp_path / "watch.py").write_text("SERVER = 1\n")
+    (tmp_path / "watch-design.md").write_text("# styleguide\n")
+    run("add", "-A")
+    run("commit", "-qm", "baseline")
+
+    # The commit under test: a new component, in client/ only, with no
+    # styleguide entry and no escape hatch — the canonical MISS.
+    (tmp_path / "client" / "style.css").write_text(
+        ".a { color: red }\n.b { color: blue }\n"
+    )
+    run("commit", "-qam", "add the .b component")
+    return a.git("rev-parse", "HEAD").stdout.strip()
+
+
+def test_a_client_only_commit_is_classified_not_skipped(tmp_path, monkeypatch):
+    """Post-extraction the NORMAL UI commit touches no watch.py at all.
+
+    `classify_ui` grew a `client/` branch at #397 and `is_relevant` grew the
+    prefix, but `classify_range`'s two filters still asked `"watch.py" in
+    files` — so the branch was unreachable for exactly the commits it was
+    written for, and every client-only commit was counted `untouched`. The
+    audit was permanently green over the shape the extraction created, and
+    nothing here could see it: the extraction commit itself touches watch.py,
+    so the audit appeared to work.
+
+    Production lines: the two `touches_ui_source(...)` calls in
+    `classify_range` (`ui_of`'s memo gate and the classification loop). Revert
+    either to `"watch.py" not in files` and this goes red.
+    """
+    head = _client_only_repo(tmp_path, monkeypatch)
+    files = a.touched_files(head)
+
+    # Preconditions, asserted rather than assumed. Control 1 in the review that
+    # found this: the same css change PLUS one line in watch.py is reported
+    # correctly even by the buggy filter, so a fixture that drifts into
+    # touching watch.py would make this test prove nothing.
+    assert "watch.py" not in files, (
+        f"fixture no longer isolates the client-only case (touched {sorted(files)})"
+    )
+    assert any(f.startswith(a.CLIENT_PREFIX) for f in files), (
+        f"fixture touches no client asset at all (touched {sorted(files)})"
+    )
+
+    res = a.classify_range("HEAD~1..HEAD", 3)
+
+    assert res["untouched"] == 0, (
+        "a client-only UI commit was skipped as untouched — classify_ui was "
+        "never asked about it"
+    )
+    assert [short for short, *_ in res["ui_miss"]] == [head[:len(res["commits"][0][1])]], (
+        f"expected the client-only commit to be reported as a MISS; got "
+        f"ui_miss={res['ui_miss']} non_ui={res['non_ui']} "
+        f"untouched={res['untouched']}"
     )
 
 

@@ -38,6 +38,7 @@ this must not become the thing that reintroduces it.
 from __future__ import annotations
 
 import argparse
+import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -73,12 +74,54 @@ def snapshot_for(target: Path) -> Path:
     return DEPLOY_DIR / f"{target.name}-watch.py"
 
 
+def served_siblings(src: bytes) -> list:
+    """The files, besides watch.py, whose bytes reach the browser at `src`'s
+    revision — its module-level `DATA_SIBLINGS` literal.
+
+    #397 is why this exists. Until the client was extracted, `watch.py`'s
+    bytes WERE the dashboard: css and js lived in string literals inside it,
+    so comparing that one file answered "is he looking at current code"
+    completely. Afterwards the same comparison answers it for 5,181 lines of
+    Python and stays silent about 10,500 lines of css and js — a normal UI
+    commit now leaves watch.py byte-identical, and this module would have
+    called that `current` while the dashboard served the old page. That is
+    precisely the #129 failure this file was written to end, reopened by a
+    refactor rather than by a proxy.
+
+    Parsed per-revision, never from HEAD, for the same reason the byte
+    comparison is per-revision: a pre-extraction revision declares only
+    `vendor/morphdom.min.js` and must be judged by what IT served, not by
+    what HEAD serves. A revision with no literal (or an unparseable one)
+    yields none, which degrades to the old watch.py-only comparison rather
+    than to a false match.
+    """
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        return []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "DATA_SIBLINGS"
+                   for t in node.targets):
+            continue
+        try:
+            val = ast.literal_eval(node.value)
+        except (ValueError, SyntaxError):
+            return []
+        if isinstance(val, (tuple, list)):
+            return sorted(p for p in val if isinstance(p, str))
+        return []
+    return []
+
+
 def report(target: Path, repo: Path, path: str = "watch.py") -> dict:
     """What is running for `target`, against `repo`'s history of `path`."""
     target, repo = Path(target).resolve(), Path(repo).resolve()
     snap = snapshot_for(target)
     out = {"target": str(target), "snapshot": str(snap), "path": path,
-           "state": None, "rev": None, "missing": [], "note": None}
+           "paths": [path], "state": None, "rev": None, "missing": [],
+           "note": None}
 
     if not snap.exists():
         out["state"] = NEVER
@@ -109,15 +152,62 @@ def report(target: Path, repo: Path, path: str = "watch.py") -> dict:
         out["note"] = f"could not read {path} at HEAD in {repo}: {exc}"
         return out
 
+    # Now that HEAD is readable, widen the candidate list to every path whose
+    # bytes reach the browser. The FIRST query above stays scoped to `path`
+    # on purpose — its job is the "does this repo carry the dashboard at all"
+    # guard, and asking it about client/ would make a repo that tracks the
+    # assets but not watch.py look like a dashboard checkout.
+    #
+    # Without this widening the fix above would be half-applied: `matches`
+    # would correctly reject a stale client, but a client-only commit would
+    # not be among the revisions offered to it, so the deploy would fall
+    # through every candidate and be reported UNTRACKED — "deployed from an
+    # uncommitted tree" — which is a confident lie rather than a silent one.
+    tracked_paths = [path] + served_siblings(head_blob)
+    out["paths"] = tracked_paths
+    try:
+        revs = git(repo, "log", "--format=%H", "--", *tracked_paths).split()
+    except (subprocess.CalledProcessError, OSError) as exc:
+        out["state"] = ERROR
+        out["note"] = f"could not read the history of the dashboard: {exc}"
+        return out
+
     blob = snap.read_bytes()
-    if blob == head_blob:
+
+    def deployed_sibling(rel: str):
+        """The deployed copy of a served sibling — `ship_siblings` puts it
+        beside the snapshot, at the same repo-relative path."""
+        try:
+            return (snap.parent / rel).read_bytes()
+        except OSError:
+            return None
+
+    def matches(rev: str, src: bytes) -> bool:
+        """Does the DEPLOYED dashboard equal `rev` — watch.py AND everything
+        `rev` serves alongside it? A missing deployed sibling is a mismatch,
+        never a skip: the alternative is reporting `current` for a deploy
+        that has no stylesheet."""
+        if src != blob:
+            return False
+        for rel in served_siblings(src):
+            want = deployed_sibling(rel)
+            if want is None:
+                return False
+            try:
+                if git(repo, "show", f"{rev}:{rel}", binary=True) != want:
+                    return False
+            except subprocess.CalledProcessError:
+                return False
+        return True
+
+    if matches("HEAD", head_blob):
         out["state"] = CURRENT
         out["rev"] = git(repo, "rev-parse", "--short", "HEAD").strip()
         return out
 
     for rev in revs:
         try:
-            if git(repo, "show", f"{rev}:{path}", binary=True) == blob:
+            if matches(rev, git(repo, "show", f"{rev}:{path}", binary=True)):
                 break
         except subprocess.CalledProcessError:
             continue
@@ -133,20 +223,29 @@ def report(target: Path, repo: Path, path: str = "watch.py") -> dict:
 
     out["state"] = BEHIND
     out["rev"] = git(repo, "rev-parse", "--short", rev).strip()
+    # Name what he cannot see across the WHOLE dashboard, not just watch.py:
+    # listing only watch.py commits here would report "BEHIND by 0 commits"
+    # for a deploy that is behind purely on css, which reads as a bug in the
+    # reporter rather than as the stale deploy it is.
     out["missing"] = [
         line.split(" ", 1) for line in
-        git(repo, "log", "--format=%h %s", f"{rev}..HEAD", "--", path).splitlines()
+        git(repo, "log", "--format=%h %s", f"{rev}..HEAD",
+            "--", *tracked_paths).splitlines()
     ]
     return out
 
 
 def render(r: dict) -> str:
     state = r["state"]
+    # "watch.py commits" was accurate when watch.py WAS the dashboard. Since
+    # #397 most UI commits touch only client/, so naming the file here would
+    # tell him the one thing that is no longer the question.
+    unit = "dashboard" if len(r.get("paths") or []) > 1 else r["path"]
     if state == CURRENT:
-        return f"current ({r['rev']}) — serving HEAD's {r['path']}"
+        return f"current ({r['rev']}) — serving HEAD's {unit}"
     if state == BEHIND:
         n = len(r["missing"])
-        head = f"BEHIND by {n} {r['path']} commit{'s' if n != 1 else ''} (serving {r['rev']})"
+        head = f"BEHIND by {n} {unit} commit{'s' if n != 1 else ''} (serving {r['rev']})"
         return "\n".join([head] + [f"  missing  {h}  {s}" for h, s in r["missing"]])
     return f"{state} — {r['note']}"
 

@@ -107,6 +107,82 @@ class TestStates:
         git(repo, "commit", "-qm", "docs")
         assert deployed.report(repo, repo)["state"] == deployed.CURRENT
 
+    def test_a_stale_client_asset_is_behind_not_current(self, repo, deploy_dir):
+        """#397's regression: watch.py stopped being the whole dashboard.
+
+        Before the extraction every css and js byte lived in watch.py, so
+        comparing that one file answered the question completely. After it,
+        the ordinary UI commit touches `client/` and leaves watch.py
+        byte-identical — and this module would report `current` while the
+        deployed dashboard served the previous stylesheet. Reopening #129 by
+        refactor, and silently, which is the shape this whole file exists to
+        refuse.
+
+        Production lines: `served_siblings`, the sibling loop in `matches`,
+        and the widened `revs` query. Revert any of the three and this goes
+        red — the third to UNTRACKED rather than CURRENT, which is why it is
+        asserted specifically.
+        """
+        src = "DATA_SIBLINGS = ('client/style.css',)\nprint('v1')\n"
+        (repo / "client").mkdir()
+        (repo / "client" / "style.css").write_text(".a { color: red }\n")
+        (repo / "watch.py").write_text(src)
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "v1 with a client")
+
+        # deploy it: the snapshot AND the sibling, exactly as ship_siblings does
+        snap(deploy_dir, repo, src)
+        (deploy_dir / "client").mkdir()
+        (deploy_dir / "client" / "style.css").write_text(".a { color: red }\n")
+        assert deployed.report(repo, repo)["state"] == deployed.CURRENT, (
+            "precondition: a freshly deployed dashboard must read as current"
+        )
+
+        # the commit shape the extraction created: client only, no watch.py
+        (repo / "client" / "style.css").write_text(".a { color: blue }\n")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "restyle the .a component")
+
+        # precondition, asserted rather than assumed: watch.py really is
+        # untouched, so a watch.py-only comparison CANNOT see this commit
+        assert deployed.git(repo, "show", "HEAD:watch.py", binary=True) == \
+            src.encode(), "fixture changed watch.py — the test proves nothing"
+
+        out = deployed.report(repo, repo)
+        assert out["state"] == deployed.BEHIND, (
+            f"a client-only commit left the deploy reported as "
+            f"{out['state']!r} — he would be told he is looking at current "
+            f"code while serving the old stylesheet"
+        )
+        assert [s for _, s in out["missing"]] == ["restyle the .a component"]
+        assert "dashboard" in deployed.render(out), (
+            "the copy still names watch.py, which is no longer the unit"
+        )
+
+        # SECOND SHAPE: the DEPLOYED revision is itself client-only. Nothing
+        # above needs the widened `revs` query — the revision being served
+        # there touches watch.py, so a watch.py-scoped candidate list already
+        # offers it. Here it does not: every candidate fails and the answer
+        # becomes UNTRACKED, "deployed from an uncommitted tree", about a
+        # deploy that matches a commit exactly. This module exists to never
+        # give that answer wrongly.
+        client_rev = deployed.git(repo, "rev-parse", "--short", "HEAD").strip()
+        touched = deployed.git(repo, "show", "--stat", "--format=",
+                               "--name-only", client_rev).split()
+        assert "watch.py" not in touched, "precondition: the fixture drifted"
+
+        (deploy_dir / "client" / "style.css").write_text(".a { color: blue }\n")
+        (repo / "client" / "style.css").write_text(".a { color: green }\n")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "green instead")
+
+        out = deployed.report(repo, repo)
+        assert out["state"] == deployed.BEHIND, (
+            f"a deploy AT a client-only revision read as {out['state']!r}"
+        )
+        assert out["rev"] == client_rev
+        assert [s for _, s in out["missing"]] == ["green instead"]
+
     def test_no_snapshot_is_never_deployed_not_an_error(self, repo, deploy_dir):
         out = deployed.report(repo, repo)
         assert out["state"] == deployed.NEVER

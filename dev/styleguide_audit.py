@@ -139,6 +139,41 @@ UI_CONSTANTS = (
     "SHADER_JS",
 )
 
+# #397: since the extraction those constants are LOADED from files rather
+# than declared as literals, so a UI change is a diff to `client/` and no
+# longer a diff inside watch.py. Both shapes must keep working, because this
+# audit walks history ACROSS the extraction commit: revisions before it are
+# classified by `ui_ranges` over watch.py, revisions after it by this prefix.
+# Dropping the old path would silently reclassify every historical UI commit
+# as non-UI and turn the audit green for the wrong reason.
+CLIENT_PREFIX = "client/"
+
+# The assets the extraction produced, one per former constant. Used only to
+# refuse a vacuous filter at HEAD (see main) — the classification itself is
+# prefix-based so a NEW client file is covered the day it is added, without
+# an edit here.
+CLIENT_ASSETS = (
+    "client/style.css",
+    "client/app_body.html",
+    "client/components.js",
+    "client/views.js",
+    "client/favicon.js",
+    "client/router.js",
+    "client/command.js",
+    "client/shader.js",
+)
+
+# Tie the two together. The vacuous-filter guard in main() tests these literal
+# paths against the git tree, while every classification goes through
+# CLIENT_PREFIX — so a typo in the PREFIX alone ("clients/") would classify
+# every commit non-UI while the guard still found all eight assets and passed.
+# That is precisely the hollow mode the guard claims to prevent, so state the
+# dependency instead of assuming it.
+assert all(a.startswith(CLIENT_PREFIX) for a in CLIENT_ASSETS), (
+    f"CLIENT_ASSETS must all live under CLIENT_PREFIX={CLIENT_PREFIX!r}; "
+    f"the vacuous-filter guard is meaningless otherwise"
+)
+
 STYLEGUIDE_FILES = ("watch-design.md", "file-formats.md")
 
 # Baseline anchors, retained from #313 for continuity. The DEFAULT RANGE is
@@ -289,32 +324,69 @@ def touched_constants(spans, ranges):
 
 
 def classify_ui(sha):
-    """(is_ui, [touched constant names]) for one commit, resolved at <sha>.
+    """(is_ui, [touched constant/asset names]) for one commit, at <sha>.
 
-    A commit changes presentation iff its diff's new-image spans overlap any UI
-    constant's range in <sha>'s own watch.py. Pure deletions still overlap via
-    their surrounding context lines, so removing UI counts as touching UI.
+    Two shapes, because the client moved out of watch.py at #397 and this
+    audit walks history on both sides of that commit:
+
+    - POST-extraction: the commit touches any file under `client/`. That IS
+      the presentation change; nothing in watch.py needs to move with it.
+    - PRE-extraction: its diff's new-image spans overlap a UI constant's
+      range in <sha>'s own watch.py. Pure deletions still overlap via their
+      surrounding context lines, so removing UI counts as touching UI.
+
+    A commit may be both — the two name lists simply merge. In practice only
+    a commit that adds `client/` files while its own watch.py still holds the
+    constants can be, and the extraction commit is NOT one: at its own rev
+    the literals are already gone, so `ui_ranges` finds nothing and only the
+    eight `client/` names come back.
     """
+    touched = [f for f in sorted(touched_files(sha))
+               if f.startswith(CLIENT_PREFIX)]
     src = watchpy_source_at(sha)
-    if src is None:
-        return False, []
-    ranges = ui_ranges(src)
-    spans = diff_new_spans(sha)
-    if not ranges or not spans:
-        return False, []
-    touched = touched_constants(spans, ranges)
+    if src is not None:
+        ranges = ui_ranges(src)
+        spans = diff_new_spans(sha)
+        if ranges and spans:
+            touched += touched_constants(spans, ranges)
     return bool(touched), touched
+
+
+def touches_ui_source(files):
+    """Could this commit have changed presentation — i.e. is classify_ui
+    worth asking about it at all?
+
+    Post-#397 that is watch.py OR any `client/` asset, and the `or` is the
+    whole point: a normal UI commit after the extraction touches ONLY
+    `client/`. Gating on watch.py alone made classify_ui's client/ branch
+    unreachable for exactly the commits it was written for, and the audit
+    counted them `untouched` — permanently green over the shape the
+    extraction created.
+
+    Narrower than is_relevant on purpose: that one also admits a
+    styleguide-only commit, which belongs in the window unit but must not be
+    handed to classify_ui as a UI candidate.
+    """
+    return ("watch.py" in files
+            or any(f.startswith(CLIENT_PREFIX) for f in files))
 
 
 def is_relevant(files):
     """Could this commit participate in the audit's question at all?
 
-    True iff it touches watch.py or a styleguide file. Everything else — a
-    ledger update, a merge, a fix to `reaper.py` — is invisible to the
-    question "was this UI change documented?", and it is the UNIT the window
-    is counted in (see window_positions).
+    True iff it touches watch.py, a `client/` asset, or a styleguide file.
+    Everything else — a ledger update, a merge, a fix to `reaper.py` — is
+    invisible to the question "was this UI change documented?", and it is the
+    UNIT the window is counted in (see window_positions).
+
+    `client/` joined this set at #397: a post-extraction UI commit need not
+    touch watch.py at all, and leaving it out would drop those commits from
+    the window entirely — the entry could then sit arbitrarily far away and
+    still read as adjacent.
     """
-    return "watch.py" in files or bool(files & frozenset(STYLEGUIDE_FILES))
+    return ("watch.py" in files
+            or any(f.startswith(CLIENT_PREFIX) for f in files)
+            or bool(files & frozenset(STYLEGUIDE_FILES)))
 
 
 def window_positions(commits, files_of):
@@ -478,7 +550,7 @@ def classify_range(revrange, window):
     def ui_of(full):
         """(is_ui, consts), memoised — nearest_entry asks about neighbours."""
         if full not in ui_cache:
-            if "watch.py" not in files_of(full):
+            if not touches_ui_source(files_of(full)):
                 ui_cache[full] = (False, [])
             else:
                 ui_cache[full] = classify_ui(full)
@@ -495,7 +567,7 @@ def classify_range(revrange, window):
     non_ui, untouched = 0, 0
     for i, (full, short) in enumerate(commits):
         files = files_of(full)
-        if "watch.py" not in files:
+        if not touches_ui_source(files):
             untouched += 1
             continue
         is_ui, consts = ui_of(full)
@@ -547,7 +619,10 @@ def print_report(res, revrange, window, out=sys.stdout):
                 + len(res["ui_exempt"]) + len(res["ui_miss"]))
     print(file=out)
     print(
-        f"watch.py commits: {ui_total} UI "
+        # "dashboard", not "watch.py": since #397 a UI commit usually touches
+        # only client/, so naming the file would describe the wrong set — and
+        # this line is the one a reader takes the count from.
+        f"dashboard commits: {ui_total} UI "
         f"({len(res['ui_ok'])} with a styleguide entry within {window} "
         f"relevant commits, "
         f"{len(res['ui_by_id'])} documented by task id named in the doc, "
@@ -611,21 +686,36 @@ def main(argv=None):
     )
     args = ap.parse_args(argv)
 
-    # Refuse a vacuous filter up front: UI_CONSTANTS must still name the module
-    # constants present in watch.py at HEAD. If a rename lands without this set
-    # being updated, every commit would classify non-UI and the audit would go
-    # permanently green for the wrong reason — exactly the hollow-check failure
-    # mode this repo has paid for three times.
+    # Refuse a vacuous filter up front. The UI must be findable at HEAD by ONE
+    # of the two shapes this audit understands, or every commit classifies
+    # non-UI and the audit goes permanently green for the wrong reason —
+    # exactly the hollow-check failure mode this repo has paid for three times.
+    #
+    # Post-#397 the client is files, so the check is that those files exist and
+    # are tracked. Pre-#397 it is that UI_CONSTANTS still name literals in
+    # watch.py. Either satisfies; NEITHER is the refusal.
+    tracked = set(
+        git("ls-tree", "-r", "--name-only", "HEAD", check=False)
+        .stdout.splitlines()
+    )
+    assets_present = [a for a in CLIENT_ASSETS if a in tracked]
     head_src = watchpy_source_at("HEAD")
+    consts_present = set()
     if head_src:
-        present = {name for name, _, _ in ui_ranges(head_src)}
-        missing = [c for c in UI_CONSTANTS if c not in present]
-        if missing:
+        consts_present = {name for name, _, _ in ui_ranges(head_src)}
+
+    if len(assets_present) != len(CLIENT_ASSETS):
+        missing_consts = [c for c in UI_CONSTANTS if c not in consts_present]
+        if missing_consts:
+            missing_assets = [a for a in CLIENT_ASSETS if a not in tracked]
             print(
-                f"audit-styleguide: UI_CONSTANTS names not found in HEAD watch.py: "
-                f"{', '.join(missing)}. A rename likely landed without updating "
-                f"dev/styleguide_audit.py — the filter would now miss UI changes "
-                f"in those constants. Fix the names and re-run.",
+                f"audit-styleguide: the UI is not findable at HEAD by either "
+                f"shape. client/ assets missing: "
+                f"{', '.join(missing_assets) or 'none'}; UI_CONSTANTS not "
+                f"found in watch.py: {', '.join(missing_consts) or 'none'}. "
+                f"A rename or a move likely landed without updating "
+                f"dev/styleguide_audit.py — the filter would now miss UI "
+                f"changes entirely. Fix it and re-run.",
                 file=sys.stderr,
             )
             return 2
