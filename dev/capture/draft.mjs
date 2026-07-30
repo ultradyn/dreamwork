@@ -223,14 +223,38 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
    its item is clicked through the DOM — a visibility-gated p.click would
    hang on a shut menu that still holds a working listener. ─────────────── */
 {
+  // The #337 contract as it actually stands: NON-sticky kinds decay to
+  // COMMANDS[0] (the far-left kind — production reads
+  // `if (sent && !sent.sticky) setKind((COMMANDS[0] || {}).kind)`), and
+  // sticky kinds SKIP the decay so a conversation is not interrupted.
+  // #504 made chat sticky beside add-idea — TWO sticky kinds by design, so
+  // the old 'exactly one sticky kind' literal was the count-form of a
+  // property it could not see: it read red from d56a3c2a on while the
+  // behaviour it proxy-measured was correct. The property form: the decay
+  // target is COMMANDS[0] (not sticky[0] — they coincide today and are not
+  // the same thing), at least one kind skips decay, and skipping is real
+  // (a sticky kind KEEPS its kind after a successful send).
   const sets = await p.evaluate(`({
     sticky: COMMANDS.filter(c => c.sticky).map(c => c.kind),
     decaying: COMMANDS.filter(c => !c.sticky).map(c => c.kind),
+    target: (COMMANDS[0] || {}).kind,
   })`);
   notes.push(`sticky: ${sets.sticky.join(', ') || '(none)'}; ` +
-             `decaying: ${sets.decaying.join(', ') || '(none)'}`);
-  ok('exactly one sticky kind exists for the composer to decay TO',
-     sets.sticky.length === 1);
+             `decaying: ${sets.decaying.join(', ') || '(none)'}; ` +
+             `decay target: ${sets.target}`);
+  // A NAMED floor, deliberately: the sets are derived live, so a dropped
+  // sticky flag does not redden either arm — the kind silently reclassifies
+  // as decaying and decays CORRECTLY (verified: add-idea unstuck passed
+  // every check at 15:43). The product contract names its conversation
+  // kinds (watch.py: chat and add-idea are sticky, #337/#504), so the floor
+  // is membership, not count: any kind may JOIN the sticky set, but these
+  // two leaving it is a product change this guard exists to make loud.
+  ok('the deliberate conversation kinds are sticky (chat, add-idea — ' +
+     '#337/#504; growth joins freely, leaving is the loud event)',
+     ['chat', 'add-idea'].every(k => sets.sticky.includes(k)));
+  ok('the decay target is the far-left kind, COMMANDS[0] (plugin kinds ' +
+     'append, so [0] is always a core kind)',
+     !!sets.target);
   ok('more than one kind decays — the pair is what proves the property',
      sets.decaying.length >= 2);
   for (const k of sets.decaying) {
@@ -242,8 +266,24 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
     await sleep(600);
     const kind = await p.evaluate(
       `document.querySelector('#cmdkinds .cmdkind.on').dataset.kind`);
-    ok(`after a successful ${k}, the composer returns to ${sets.sticky[0]}`,
-       kind === sets.sticky[0]);
+    ok(`after a successful ${k}, the composer returns to ${sets.target}`,
+       kind === sets.target);
+  }
+  // The other arm: a sticky kind KEEPS its kind across a successful send.
+  // Derived from the live table, so a third sticky kind is covered without
+  // this guard being touched — and a dropped sticky flag reddens this arm
+  // while the count arm above stays green.
+  for (const k of sets.sticky) {
+    await openComposer();
+    await p.evaluate(
+      `document.querySelector('.cmdmenuitem[data-kind="${k}"]').click()`);
+    await type('via ' + k);
+    await p.evaluate(`document.getElementById('cmdform').requestSubmit()`);
+    await sleep(600);
+    const kind = await p.evaluate(
+      `document.querySelector('#cmdkinds .cmdkind.on').dataset.kind`);
+    ok(`after a successful ${k} (sticky), the composer KEEPS ${k}`,
+       kind === k);
   }
 }
 

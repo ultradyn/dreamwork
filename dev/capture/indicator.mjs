@@ -128,7 +128,14 @@ for (const which of ['first', 'last']) {
     // (No backticks in here: this string IS a template literal, and a pair of
     // them in a comment ends it — the bug TestBundleParses exists for.)
     ind.classList.add('snap');
-    ind.style.transform = 'translate(0px, 40px)';
+    // COMPOSE the damage, never replace the transform: the indicator RESTS at
+    // a non-zero transform (paintIndicators positions by layout + transform,
+    // and since #504's chat kind wrapped the row the resting delta is ~29.5px
+    // at 1100px). Assigning a bare translate replaces the rest, and the net
+    // damage is 40 minus the rest — 10.47px today, under this check's own
+    // >20px precondition, so the precondition failed while the heal worked.
+    // Appending composes: rest + 40px of real damage at any rest.
+    ind.style.transform = (ind.style.transform || '') + ' translate(0px, 40px)';
     ind.style.width = '4px';
     void ind.offsetWidth;
     ind.classList.remove('snap');
