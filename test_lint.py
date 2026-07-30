@@ -6179,6 +6179,147 @@ class TestStoreModeLint:
         assert not ERRORS(rep, "tasks.md.deprecated")
         assert levels(rep, "tasks.md.deprecated") == [lint.OK]
 
+    # ------------------------------------------------------------------
+    # #557 — the projection must synthesize entry heads for headless bodies.
+    # The #294 import stored each body verbatim, head line included, so the
+    # projection reparsed. `dev/ledger.py file` / `ledger_write.file_task`
+    # store the body WITHOUT a `- **#id**` head (the note text alone), so
+    # every entry filed after cutover was invisible to ledger_view and to
+    # every text-consuming check (parse_ledger, check_task_origins,
+    # check_handoffs's delivery signal). store_entries now synthesizes a head
+    # from the store columns for a headless body. These tests file REAL
+    # headless entries through the REAL writer (never a hand-built store) and
+    # derive the gap at runtime — the id sets come from store_ids_by_state,
+    # not a pinned literal.
+    # ------------------------------------------------------------------
+    def _file_headless(self, td, title, body, **kw):
+        """File a NEW task via the REAL store writer; its stored body is headless.
+
+        file_task stores the body verbatim (the note text) with no head — the
+        exact defect shape. Returns the new (AUTOINCREMENT) id."""
+        import ledger_write, ledger_store, ledger_parse
+        store = ledger_store.open_store(ledger_parse.store_path(td))
+        try:
+            return ledger_write.file_task(store, title, body, **kw)
+        finally:
+            store.close()
+
+    def test_the_projection_sees_a_filed_headless_open_entry(self, tmp_path):
+        """#557 born-red: a filed entry has no `- **#id**` head, so the
+        projection read FEWER open ids than the store holds. The projection
+        must synthesize the head so parse_ledger sees every open id. The gap
+        (store open set minus view open set) is DERIVED at runtime."""
+        import watch, ledger_parse
+        td = self._cut_over(tmp_path)
+        store_open_before = set(ledger_parse.store_ids_by_state(td)[0])
+        new_id = self._file_headless(
+            td, "a headless filed entry", "the body carries no head line",
+            priority="P2", type="task", origin="loop")
+        store_open = set(ledger_parse.store_ids_by_state(td)[0])
+        # Runtime preconditions — the gap this test depends on, derived not pinned.
+        assert store_open - store_open_before == {str(new_id)}, \
+            "precondition: exactly one new open id was filed"
+        rec = next(r for r in ledger_parse.store_records(td) if r["id"] == new_id)
+        assert not rec["body"].lstrip().startswith("- **#"), \
+            "precondition: the filed body is genuinely headless (the defect shape)"
+        # THE binding: the view's parsed open ids must equal the store's open ids.
+        text, source = lint.ledger_view(td)
+        assert source == "store"
+        view_open, _ = watch.parse_ledger(text)
+        gap = store_open - view_open
+        assert not gap, (
+            f"projection blind to headless open id(s) {sorted(gap, key=int)}: "
+            f"view={sorted(view_open, key=int)} store={sorted(store_open, key=int)}")
+
+    def test_the_projection_sees_a_filed_headless_landed_entry(self, tmp_path):
+        """#557 landed half: landing flips state and appends a note but never
+        adds a head, so a filed-then-landed entry is headless in `## Recently
+        landed` and was invisible there too."""
+        import watch, ledger_parse, ledger_write, ledger_store
+        td = self._cut_over(tmp_path)
+        new_id = self._file_headless(
+            td, "a headless entry that will land", "body has no head",
+            priority="P1", type="bug", origin="human")
+        store = ledger_store.open_store(ledger_parse.store_path(td))
+        try:
+            ledger_write.land_task(store, new_id, note="landed (abc1234)")
+        finally:
+            store.close()
+        store_open, store_landed = ledger_parse.store_ids_by_state(td)
+        store_landed = set(store_landed)
+        rec = next(r for r in ledger_parse.store_records(td) if r["id"] == new_id)
+        assert not rec["body"].lstrip().startswith("- **#"), \
+            "precondition: the landed filed body is still headless"
+        assert str(new_id) in store_landed and str(new_id) not in set(store_open)
+        text, _ = lint.ledger_view(td)
+        _, view_landed = watch.parse_ledger(text)
+        gap = store_landed - view_landed
+        assert not gap, (
+            f"projection blind to headless landed id(s) {sorted(gap, key=int)}: "
+            f"view={sorted(view_landed, key=int)} store={sorted(store_landed, key=int)}")
+
+    def test_a_headless_entry_with_null_columns_omits_them_not_fabricates(self, tmp_path):
+        """#557 edge (#5): priority/type are nullable, and filed entries are
+        filed with no band/type by default. A NULL field is OMITTED (the head
+        grammar tolerates absent fields — pre-#216 heads are bare), never
+        fabricated; NULL origin becomes `unknown` (the truthful value
+        check_task_origins records). The id and the single origin marker are
+        what the checks read, and both must survive."""
+        import watch, ledger_parse
+        td = self._cut_over(tmp_path)
+        new_id = self._file_headless(
+            td, "no band no type no origin", "headless body", origin=None)
+        rec = next(r for r in ledger_parse.store_records(td) if r["id"] == new_id)
+        assert rec["priority"] is None and rec["type"] is None \
+            and rec["origin"] is None, "precondition: all nullable columns NULL"
+        text, _ = lint.ledger_view(td)
+        head = None
+        for ids, body in ledger_parse.ledger_entries(text):
+            if new_id in ids:
+                head = body
+                break
+        assert head is not None, "the headless entry must now head an entry"
+        first = head.splitlines()[0]
+        assert first.startswith(f"- **#{new_id}** — "), first
+        marks = ledger_parse.ORIGIN_MARK.findall(first)
+        assert marks == ["unknown"], \
+            f"NULL origin -> unknown, exactly one marker; got {marks}"
+        # No fabricated priority/type: the only non-title `·`-field is origin.
+        # Strip the head's closing ` ·` (it carries no trailing space) first.
+        chain = first[:-2] if first.endswith(" ·") else first
+        meta = [f for f in chain.split(" · ")[1:] if f]
+        assert meta == ["origin: **unknown**"], \
+            f"NULL priority/type must be omitted, not fabricated: {first!r}"
+        view_open, _ = watch.parse_ledger(text)
+        assert str(new_id) in view_open, "the id must be visible to parse_ledger"
+
+    def test_a_headless_body_quoting_an_origin_marker_stays_single(self, tmp_path):
+        """#557 edge (#4): a headless body that quotes `origin: **x**` in
+        prose would risk a double-origin ERROR. The live tree has none
+        (coordinator-verified 0), but the shape is handled generally: the
+        synthesized head's marker is the column's value (the authority), and
+        the body's prose marker sits on a column-0 line that ends the entry,
+        so exactly one marker is read. No body mutation."""
+        import ledger_parse
+        td = self._cut_over(tmp_path)
+        new_id = self._file_headless(
+            td, "headless entry whose body quotes an origin in prose",
+            "deliberately quotes origin: **human** inside the body prose",
+            priority="P2", type="task", origin="loop")
+        rec = next(r for r in ledger_parse.store_records(td) if r["id"] == new_id)
+        assert ledger_parse.ORIGIN_MARK.search(rec["body"]), \
+            "precondition: the body genuinely quotes an origin marker"
+        text, _ = lint.ledger_view(td)
+        for ids, body in ledger_parse.ledger_entries(text):
+            if new_id in ids:
+                marks = ledger_parse.ORIGIN_MARK.findall(body)
+                assert marks == ["loop"], (
+                    "synthesized head must be the single origin authority; the "
+                    f"col-0 body marker must not double it: {marks}")
+                break
+        else:
+            assert False, "the headless entry must head an entry in the projection"
+
 
 class TestReviewDecisionIntegrity:
     """#289 — the coordinator-owned WARN half of the review_decision store:

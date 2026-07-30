@@ -187,8 +187,24 @@ def store_entries(dreamwork_dir) -> list[tuple[list[int], str]]:
 
     Same return shape, so a consumer flipped to the store drops in
     unchanged. Each row is one id (combined entries were split at #353, so
-    the store is one row per permanent id); the body is the verbatim text
-    the import stored.
+    the store is one row per permanent id). A row whose body opens with a
+    ``- **#N`` head (the #294 import stored bodies verbatim, head line
+    included) is returned verbatim. A row whose body has NO head -- every
+    entry filed via ``dev/ledger.py file`` after cutover, whose stored body
+    is the note text alone -- has a head SYNTHESIZED from the store columns
+    and prepended, so the projection reparses to the same id sets the store
+    holds and every text-consuming check sees every entry (#557):
+
+        - **#N** — <title> · <priority> · <type> · origin: **<origin>** ·
+
+    A NULL ``priority`` / ``type`` is OMITTED (the head grammar tolerates
+    absent fields -- pre-#216 heads are bare; inventing one would fabricate a
+    field), and NULL ``origin`` becomes ``unknown``, the truthful value
+    :func:`lint.check_task_origins` records (``origin`` is constrained at the
+    schema to ``human`` / ``loop`` / ``unknown``). Only the PROJECTION
+    changes -- the stored body and its ``body_digest`` are never touched, so
+    every consumer that reads the body column directly (the replay checks,
+    the digest verifiers) is unaffected.
     """
     db = store_path(dreamwork_dir)
     if not db.exists():
@@ -196,13 +212,32 @@ def store_entries(dreamwork_dir) -> list[tuple[list[int], str]]:
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         rows = conn.execute(
-            "SELECT id, body FROM task ORDER BY id"
+            "SELECT id, body, title, priority, type, origin"
+            " FROM task ORDER BY id"
         ).fetchall()
     except sqlite3.Error:
         return []
     finally:
         conn.close()
-    return [([int(r[0])], r[1]) for r in rows]
+    out: list[tuple[list[int], str]] = []
+    for id_, body, title, priority, type_, origin in rows:
+        # A body that already heads itself (the import's verbatim shape) is
+        # returned untouched; only a headless body (the `file` verb's shape)
+        # gets a synthesized head prepended (#557).
+        if body.split("\n", 1)[0].startswith("- **#"):
+            out.append(([int(id_)], body))
+            continue
+        origin_val = origin if origin in ("human", "loop", "unknown") else "unknown"
+        fields = []
+        if priority:
+            fields.append(priority)
+        if type_:
+            fields.append(type_)
+        fields.append(f"origin: **{origin_val}**")
+        head = (f"- **#{int(id_)}** — {title} · "
+                + " · ".join(fields) + " ·")
+        out.append(([int(id_)], head + "\n" + body))
+    return out
 
 
 def store_records(dreamwork_dir) -> list[dict]:
