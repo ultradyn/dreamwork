@@ -148,8 +148,8 @@ const ctx = await browser.newContext({
 const page = await ctx.newPage();
 page.on('pageerror', e => errs.push(String(e)));
 await page.goto(`${BASE}/file?p=${encodeURIComponent(DEEP)}`, { waitUntil: 'networkidle' });
-// #536 render readiness — wait for the #filebody the guard reads first, not a fixed sleep (#428 class)
-await waitFor(page, '#filebody');
+// #536 render readiness — wait for the #htitle file head the guard reads first, not a fixed sleep (#428 class)
+await waitFor(page, '#htitle');
 
 if (!(await present(page, '#htitle', 'the file heading (#htitle)')) ||
     !(await present(page, '.fdir', 'the path metadata line (.fdir)')) ||
