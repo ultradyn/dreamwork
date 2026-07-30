@@ -1152,6 +1152,23 @@ function bindAskDraft() {
   DraftStore.bind(box, lid);
   DraftStore.restore(lid, box);
 }
+/* #577 — bind the /chat/<id> reply box to a CHAT-SPECIFIC draft key
+   (chat:<id>, never the main composer's or the ask box's), so a half-typed
+   reply survives a reload of the page alone and never collides with a
+   steering thought or a question. The same discipline as bindAskDraft:
+   unbind first so a kept #chatreplybox (held by id under #523 reconciliation)
+   is not double-bound across a tick; restore only into an empty box (live
+   outranks storage, #118). view.param is the route's chat id. */
+function bindChatReplyDraft() {
+  const box = document.getElementById('chatreplybox');
+  if (!box) return;
+  const chatId = (view && view.param) || box.form && box.form.getAttribute('data-chat') || '';
+  if (!chatId) return;
+  const lid = DraftStore.id('chat', chatId);
+  if (box.__dwDraftBound) DraftStore.unbind(box);
+  DraftStore.bind(box, lid);
+  DraftStore.restore(lid, box);
+}
 /* ── DraftStore (#269 module + #459 consumers) ───────────────────────────
    One deep module every text surface consumes. localStorage-backed (IDB is
    deferred: sync write on input cannot fail mid-keystroke; an async store
@@ -1592,6 +1609,18 @@ function reconcileGuard(fromEl, toEl) {
     }
     if (same) return false;
   }
+  // #577 — the /chat reply confirmation (#chatreplymsg) is the one #255
+  // surface that lives INSIDE #view, so a tick re-render would wipe its
+  // client-set text the instant it brings the new turn — cutting a 5s hold
+  // to under one tick. The other #255 surfaces (#cmdmsg, #fmsg) sit in the
+  // chrome outside #view and never re-render; this span does. Preserve the
+  // live node while a confirmation is showing (non-empty), the same keep
+  // rule .age spans use for client-filled figures; once confirmationFor
+  // clears it (empty) it reconciles normally again. (confirmationFor owns
+  // the .dreamin/.depart classes and the ~5s timer; this only stops a tick
+  // from clobbering the node it paints on.)
+  if (fromEl.id === 'chatreplymsg' && fromEl.textContent.trim())
+    return false;
   // Human-owned open on data-keep disclosures: builders always emit
   // closed; open is his. Stamp onto toEl so morphAttrs does not clear
   // it (absorbs snapshotFolds re-open). Mid-gesture height travels the
@@ -1677,6 +1706,8 @@ function setContent(html) {
   // #459: re-bind + restore from storage. bindAskDraft unbinds first so a
   // kept #askbox is not double-bound (the binding discipline under #505).
   bindAskDraft();
+  // #577: same discipline for the /chat/<id> reply box (chat:<id> key).
+  bindChatReplyDraft();
 }
 /* ── what the human did to a card survives a tick (#118, #111) ────────────
    The tick re-renders the question list through `innerHTML`, so every card
@@ -4142,6 +4173,11 @@ async function navigate(name, param, opts) {
   // return visit is not blocked by a stuck askInFlight flag (#292 lifecycle).
   if (view && view.name === 'answers' && name !== 'answers')
     invalidateAskFlight();
+  // #577 — leaving /chat destroys the reply surface for the same reason: a
+  // late /chat-reply must not clear/tick a box that no longer exists, and a
+  // return visit must not be blocked by a stuck chatReplyInFlight flag.
+  if (view && view.name === 'chat' && name !== 'chat')
+    invalidateChatReplyFlight();
   // #284: a copy confirmation belongs to the file it was made on, and the
   // chrome SURVIVES a route change — so without this the message would follow
   // him onto another page and describe a path no longer on screen. Route
@@ -4289,6 +4325,7 @@ async function tick() {
       // storage is the backstop when the snapshot was empty (reload, or he
       // navigated away and back). Live text from the snapshot already wins.
       bindAskDraft();
+      bindChatReplyDraft();   // #577: chat:<id> draft backstop
       regroupCards(before);
       regroupCards(reviewBefore, null, REVIEW_LIST);
       regroupCards(gitBefore, null, GIT_LIST);

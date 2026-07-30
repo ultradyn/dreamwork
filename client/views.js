@@ -761,6 +761,7 @@ function chatTurn(t) {
 function buildChat(fetched) {
   // Unknown id degrades quietly, in the page's own voice — never a traceback,
   // never a thrown exception (the same .qmissing shape buildQuestion uses).
+  // No composer on this path: you cannot reply to a chat that does not exist.
   if (!fetched)
     return `<div class="qmissing"><div class="qmisshead">not found</div>` +
       `<div class="qmissbody">this link names a chat the list no longer ` +
@@ -769,7 +770,92 @@ function buildChat(fetched) {
       `<div class="qmissback"><a href="/">&larr; back to dashboard</a></div>` +
       `</div>`;
   return label('topic chat') +
-    (fetched.entries || []).map(chatTurn).join('');
+    (fetched.entries || []).map(chatTurn).join('') +
+    chatReplyComposer(fetched);
+}
+/* #577 — the reply composer on /chat/<id>. It reuses the EXISTING composer
+   components rather than a second surface: postJSON for the POST, DraftStore
+   for a chat-specific draft key (chat:<id>, never the main composer's), the
+   #255 confirmation lifecycle (confirmationFor) for success, and the .askform
+   idiom the /answers ask box already keeps. It arrives with the route (the
+   page surfaces on the dissolve every destination shares — no second motion
+   idiom; transitions.md) and the confirmation IS the #255 motion.
+
+   The textarea carries a STABLE id so #523 keyed reconciliation keeps it
+   across the tick (value/caret/focus ride the kept node); bindChatReplyDraft
+   (router.js) is the reload backstop. data-chat is the chat id, read at send
+   so a kept box on a stale tick still replies to the right conversation. */
+function chatReplyComposer(fetched) {
+  return `<form id="chatreply" class="askform" data-chat="${esc(fetched.id)}">` +
+    `<label class="label" for="chatreplybox">reply</label>` +
+    `<textarea id="chatreplybox" placeholder="A reply to the dreamer"></textarea>` +
+    `<div><button type="submit">Reply</button> ` +
+    `<span id="chatreplymsg" class="cmdmsg" aria-live="polite"></span></div></form>`;
+}
+/* one in-flight reply at a time, the #292 discipline one surface over. While
+   a POST is pending, a second submit/Ctrl+Enter is a no-op; the generation
+   counter lets only the latest reply touch the surface. Leaving /chat is
+   surface destruction (invalidateChatReplyFlight, router.js's navigate) so a
+   late response cannot clear/tick a form that no longer exists. */
+let chatReplyFlightGen = 0, chatReplyInFlight = false;
+let _chatReplyConfirm = null;
+/* lazily built: confirmationFor lives in command.js (loaded after views.js),
+   so the instance is made on first use, not at module top-level. baseClass is
+   'cmdmsg' so the surface reuses the page's ONE confirmation component — its
+   .ok accent, .depart atmospheric exit and :empty hide — rather than a second
+   idiom (transitions.md: never author a second gesture). */
+function chatReplyConfirm() {
+  if (!_chatReplyConfirm)
+    _chatReplyConfirm = confirmationFor(document, 'chatreplymsg', 'cmdmsg', rmr);
+  return _chatReplyConfirm;
+}
+function invalidateChatReplyFlight() {
+  chatReplyFlightGen++;
+  chatReplyInFlight = false;
+  if (_chatReplyConfirm) _chatReplyConfirm.clear();
+}
+async function sendChatReply(form) {
+  if (chatReplyInFlight) return;
+  const box = form.querySelector('#chatreplybox');
+  if (!box) return;
+  const words = box.value.trim();
+  if (!words) return;
+  const chatId = form.getAttribute('data-chat') || (view && view.param) || '';
+  if (!chatId) return;
+  chatReplyInFlight = true;
+  const mine = ++chatReplyFlightGen;
+  const lid = DraftStore.id('chat', chatId);
+  // the #255 lifecycle: success arrives through .dreamin, holds ~5s readable,
+  // then departs on the atmospheric exit. Rejection/connection claims replace
+  // it immediately — a falsehood must not linger through a gentle exit.
+  const attempt = chatReplyConfirm().begin();
+  // THROUGH postJSON — the one seam every submission passes, so the reply is
+  // witnessed by the client log (#175) and deduped by the journal (#274, via
+  // the per-attempt X-Client-Action-Id minted from the chat draft's store).
+  const res = await postJSON('/chat-reply', { id: chatId, text: words },
+      DraftStore.attemptId(lid));
+  // superseded (a newer reply) or surface destroyed (navigated off /chat) —
+  // do not touch a newer flight's flag or a surface that no longer exists.
+  if (mine !== chatReplyFlightGen) return;
+  chatReplyInFlight = false;
+  if (view.name !== 'chat') return;
+  const liveBox = document.getElementById('chatreplybox');
+  if (!liveBox) return;
+  const v = res && res._dwv;
+  if (res && DraftStore.isDurable(res)) {
+    if (!attempt.success()) return;       // superseded between POST and here
+    liveBox.value = '';
+    DraftStore.clear(lid);                // only on durable landed
+    // the next /mtime tick re-fetches /chatdata and the new human turn
+    // appears in the transcript; tick() commits that re-render immediately.
+    await tick();
+  } else {
+    const why = (v && v.rejected && v.reason && REJECT_WHY[v.reason])
+              || (v && QSEND_WHY[v.status]);
+    attempt.claim(!res ? 'no connection'
+      : (why ? `not written — ${why}. your words are kept`
+             : 'reply was refused — your words are kept'));
+  }
 }
 /* the chat page needs the full transcript, which is not in /data.json (only
    the derived summaries ride it). /chatdata?id= serves the parsed turns for

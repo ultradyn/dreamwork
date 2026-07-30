@@ -719,6 +719,11 @@ function popoutDoc(url, label) {
     if (e.target && e.target.id === 'askform') {
       e.preventDefault(); sendAsk(e.target);
     }
+    // #577 — the /chat/<id> reply composer (sendChatReply lives in views.js;
+    // one script scope, so it is reachable here at event time).
+    if (e.target && e.target.id === 'chatreply') {
+      e.preventDefault(); sendChatReply(e.target);
+    }
   });
   document.addEventListener('click', e => {
     const pip = e.target.closest && e.target.closest('.pipbtn');
@@ -745,6 +750,11 @@ function popoutDoc(url, label) {
     } else if (t && t.id === 'askbox') {
       e.preventDefault();
       const form = document.getElementById('askform');
+      if (form) form.requestSubmit();
+    } else if (t && t.id === 'chatreplybox') {
+      // #577 — the same shortcut, the same one-submit rule, one surface over.
+      e.preventDefault();
+      const form = document.getElementById('chatreply');
       if (form) form.requestSubmit();
     }
   });
