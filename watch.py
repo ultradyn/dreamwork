@@ -51,6 +51,12 @@ from ledger_parse import (ENTRY_HEAD, ENTRY_ID, KNOWN_ORIGINS, ORIGIN_MARK,
 # snapshot the same way (derived transitively, never a hardcoded list).
 from review_artifact import SUPPORTED_LANGUAGES as _HL_SUPPORTED
 from review_artifact import highlight as _hl_document
+# #560: the store-backed status derivation is ONE leaf module (the ledger_parse
+# idiom — deep, importable, testable without a server), imported here so the
+# derivation logic lives NOWHERE else. A sibling import like ledger_parse /
+# review_artifact, so `just deploy`'s --ship-siblings stages it beside the
+# snapshot the same way (derived transitively, never a hardcoded list).
+import status_derive
 
 # Server generation: a fresh value every time this process (re)starts, so a
 # client can tell "same server, data changed" from "server rebuilt, reload
@@ -13354,7 +13360,17 @@ def collect(target, burn_step=None):
         # session's report of landed work).
         "pending_handoffs": pending_handoff_records(
             read_text(os.path.join(dw, "handoffs.md"))),
-        "status": _safe_json(read_text(os.path.join(dw, "status.json"))),
+        # #560: the store owns queue depth post-cutover (#362 measured the
+        # hand claim drift to 115 vs 123 open; file-formats.md retires
+        # `queue` once the cutover watermark lands). status_derive regenerates
+        # the store-derivable fields from the ledger, degrading byte-for-byte
+        # to the status.json claim pre-cutover / no store. The loop-claim
+        # remainder (agents, push, deployed, prose) passes through untouched.
+        # The existing /mtime->collect() poll invalidates it — the store
+        # files live under .dreamwork/, which watched_mtime walks — so there
+        # is no second cache mechanism.
+        "status": status_derive.status_from_store(
+            dw, _safe_json(read_text(os.path.join(dw, "status.json")))),
         "git": git_tail(target),
         # which revision this process is running (#140), so a stale page
         # announces itself instead of being mistaken for a bug
