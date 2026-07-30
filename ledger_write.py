@@ -29,9 +29,7 @@ from datetime import datetime, timezone
 
 from ledger_store import (
     REVIEW_DECISIONS,
-    canonical_event_bytes,
-    genesis_hash,
-    hash_event,
+    append_chained_event,
 )
 
 # The cause values the two verbs emit — both in TASK_CAUSES (closed set).
@@ -69,35 +67,26 @@ def _now_iso() -> str:
 def _last_event_hash(conn) -> str:
     """The hash of the last task_event row by ordinal, or genesis if none.
 
-    A live transition appends one event at the end (ordinal is AUTOINCREMENT),
-    so the previous hash in the chain is always the current last row's hash.
+    Delegated to :func:`ledger_store.last_event_hash` — the ONE copy of the
+    "chain from the last row" mechanic (#460 gap-fill). Kept as a thin local
+    alias so the live write verbs read as they always did.
     """
-    row = conn.execute(
-        "SELECT hash FROM task_event ORDER BY ordinal DESC LIMIT 1"
-    ).fetchone()
-    return row[0] if row else genesis_hash()
+    from ledger_store import last_event_hash
+    return last_event_hash(conn)
 
 
 def _append_chained_event(conn, *, task_id, at, cause, from_state, to_state,
                           actor, detail="") -> None:
     """INSERT one task_event row, chained from the current last event.
 
-    Caller holds the transaction (``BEGIN IMMEDIATE … COMMIT``). The row's
-    ``prev_hash`` is the last event's hash by ordinal; its ``hash`` covers
-    the canonical bytes plus that prev. This is the live counterpart of
-    ``chain_events``'s bulk loop — one event at a time, in real time.
+    Delegates to :func:`ledger_store.append_chained_event` — the ONE apply
+    primitive the live writer and the journal replay tool both ride (#352 /
+    #460), so the chain construction has one definition. The caller holds the
+    transaction (``BEGIN IMMEDIATE … COMMIT``); this function only appends.
     """
-    event = {"task_id": task_id, "at": at, "cause": cause,
-             "from_state": from_state, "to_state": to_state,
-             "actor": actor, "detail": detail}
-    prev = _last_event_hash(conn)
-    h = hash_event(prev, canonical_event_bytes(event))
-    conn.execute(
-        "INSERT INTO task_event(task_id, at, cause, from_state, to_state,"
-        " actor, receipt_id, detail, prev_hash, hash)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (task_id, at, cause, from_state, to_state, actor, None, detail,
-         prev, h))
+    append_chained_event(
+        conn, task_id=task_id, at=at, cause=cause, from_state=from_state,
+        to_state=to_state, actor=actor, receipt_id=None, detail=detail)
 
 
 def file_task(store, title, body, *, priority=None, priority_uncertain=0,

@@ -154,6 +154,49 @@ def chain_events(events: list) -> list:
     return chained
 
 
+def last_event_hash(conn) -> str:
+    """The hash of the last ``task_event`` row by ordinal, or genesis if none.
+
+    A live transition (and a replay) append one event at the end (ordinal is
+    AUTOINCREMENT), so the previous hash in the chain is always the current
+    last row's hash. Public so the live writer and the replay tool share ONE
+    applier rather than restating the "chain from the last row" mechanic
+    (#352 — the #460 gap-fill: this and :func:`append_chained_event` are the
+    single apply primitive both ride).
+    """
+    row = conn.execute(
+        "SELECT hash FROM task_event ORDER BY ordinal DESC LIMIT 1"
+    ).fetchone()
+    return row[0] if row else genesis_hash()
+
+
+def append_chained_event(
+    conn, *, task_id, at, cause, from_state, to_state, actor,
+    receipt_id=None, detail="",
+) -> None:
+    """INSERT one ``task_event`` row, chained from the current last event.
+
+    The row's ``prev_hash`` is the last event's hash by ordinal; its ``hash``
+    covers the canonical bytes plus that prev. This is the live counterpart of
+    :func:`chain_events`'s bulk loop — one event at a time, in real time — and
+    the ONE apply primitive the live write verbs (:mod:`ledger_write`) and the
+    journal replay tool (``dev/replay_events.py``) both ride, so the chain
+    construction has one definition (#352 / #460). The caller holds the
+    transaction (``BEGIN IMMEDIATE … COMMIT``); this function only appends.
+    """
+    event = {"task_id": task_id, "at": at, "cause": cause,
+             "from_state": from_state, "to_state": to_state,
+             "actor": actor, "detail": detail}
+    prev = last_event_hash(conn)
+    h = hash_event(prev, canonical_event_bytes(event))
+    conn.execute(
+        "INSERT INTO task_event(task_id, at, cause, from_state, to_state,"
+        " actor, receipt_id, detail, prev_hash, hash)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (task_id, at, cause, from_state, to_state, actor, receipt_id, detail,
+         prev, h))
+
+
 # ---------------------------------------------------------------------------
 # Schema — flat entity (#346 post-#353, ruled 2026-07-29) + boundary (#264)
 # ---------------------------------------------------------------------------
