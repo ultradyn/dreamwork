@@ -30,6 +30,11 @@ Derived here, and nothing else is touched:
                                       ids are normalised on write (plain → int,
                                       sub-id → str), and malformed entries are
                                       skipped + reported rather than crashing.
+                                      A lane dispatched a form the probe cannot
+                                      see (`spawn_subagent`, not the `ccc`
+                                      default) is kept verbatim — the probe is
+                                      blind to it, so it must not prune it; a
+                                      landed task still reaps it (#537).
 
 Everything a human or coordinator wrote by judgement is left alone: notes,
 owed_verifications, queued_dispatches, deployed, monitors, session_goal, and
@@ -189,6 +194,32 @@ def _missing_pid(d: dict) -> bool:
     return pid is None or pid == "" or pid == 0
 
 
+# #537: dispatch forms the liveness probe can OBSERVE. The probe sees only
+# `ccc` — `pgrep -af ccc` for the argv fallback, `kill -0` on a dispatch pid
+# that is a `ccc` process. A lane dispatched any other way is UNOBSERVABLE:
+# the harness's native `spawn_subagent` is an independent clone with no `ccc`
+# process and no `wt/*` worktree, so neither signal can reach it. An
+# observation blind to a form must never clobber records of that form — a
+# live fleet of spawn_subagent lanes was once pruned to 0 by this tool
+# because the probe could not see them. An entry whose `dispatch` is absent
+# is the historical `ccc` default (observable), so every pre-#537 entry stays
+# evaluable; any value not listed here is carried verbatim through the
+# liveness step and reaped only by the ledger (a landed task is observable
+# regardless of dispatch form).
+OBSERVABLE_DISPATCH = ("ccc",)
+
+
+def _observable(d: dict) -> bool:
+    """Whether the liveness probe can evaluate this entry's dispatch form.
+
+    Absent ``dispatch`` is the ``ccc`` default (observable); a ``dispatch``
+    not in :data:`OBSERVABLE_DISPATCH` is unobservable and is carried verbatim
+    through the liveness step rather than pruned by a probe blind to it (#537).
+    """
+    via = d.get("dispatch")
+    return via is None or via in OBSERVABLE_DISPATCH
+
+
 def read_open_ids(dw, lpath):
     """Open ids under `## Open`, dispatching on source_of_truth (#294 inc 7).
 
@@ -203,18 +234,24 @@ def read_open_ids(dw, lpath):
 
 
 def _evaluable(d) -> bool:
-    """Whether an entry can be asked about at all (#402a).
+    """Whether an entry can be processed at all (#402a, #537).
 
     The syncer must never crash on a malformed entry: a sync that exits 1
     stops protecting everything after it. An entry is **evaluable** when it
-    is a dict carrying a ``task`` AND something to ask the OS about — a
-    parseable pid or a brief path. Entries that fail this are pre-filtered
-    as junk in ``main`` and reported, never reaching ``live_lanes``.
+    is a dict carrying a ``task``. For an OBSERVABLE dispatch form (#537:
+    ``ccc``, the probe-able default) the entry also needs something to ask
+    the OS about — a parseable pid or a brief path; an UNOBSERVABLE form
+    (harness-native ``spawn_subagent``) needs only the task, because the
+    probe cannot see it and the ledger alone reaps it. Entries that fail
+    this are pre-filtered as junk in ``main`` and reported, never reaching
+    ``live_lanes``.
     """
     if not isinstance(d, dict):
         return False
     if "task" not in d:
         return False
+    if not _observable(d):
+        return True                     # unobservable: no probe; ledger reaps
     if _missing_pid(d):
         return bool(d.get("brief"))
     try:                                # pid present — must be parseable
@@ -385,8 +422,24 @@ def main(argv: list[str] | None = None) -> int:
               % (len(junk), "y" if len(junk) == 1 else "ies",
                  [_entry_tag(d) for d in junk]), file=sys.stderr)
 
+    # #537: split evaluable entries by whether the liveness probe can OBSERVE
+    # their dispatch form. `ccc` is the only form the probe sees; a harness-
+    # native `spawn_subagent` clone is unobservable (no `ccc` process, no
+    # probe-able pid). An observation blind to a form must never clobber
+    # records of that form, so unobservable entries are carried verbatim past
+    # the probe and reaped only by the ledger (a landed task is observable
+    # regardless of form). Without this split a live spawn_subagent fleet was
+    # pruned to 0 because the probe could not see it.
+    observable = [d for d in clean if _observable(d)]
+    unobservable = [d for d in clean if not _observable(d)]
+    if unobservable:
+        print("status_sync: carrying %d dreamer(s) of an unobservable "
+              "dispatch form verbatim (probe-blind, e.g. spawn_subagent): %s"
+              % (len(unobservable), [_entry_tag(d) for d in unobservable]),
+              file=sys.stderr)
+
     try:
-        live_set, pid_live = live_lanes(clean)
+        live_set, pid_live = live_lanes(observable)
     except LivenessUnknown as e:
         # Could not tell which lanes are live (pgrep broken, etc.). Leave the
         # derived fields byte-identical to their author's writing and say so
@@ -397,6 +450,12 @@ def main(argv: list[str] | None = None) -> int:
               % (", ".join(DERIVED), e), file=sys.stderr)
         print(coverage(status, skipped=True))
         return 3                       # distinct from stale (1) and clean (0)
+
+    # Unobservable entries (#537) join the survivors here, verbatim — the
+    # probe cannot see them, so it must not prune them. They flow through the
+    # task-open reap below (landing is observable via the ledger regardless of
+    # dispatch form); a live pid is NOT required, only an open task.
+    pid_live = pid_live + unobservable
 
     # Reap entries whose task is no longer under `## Open` (#402a): an entry
     # whose pid is dead was already dropped by live_lanes; this catches the
