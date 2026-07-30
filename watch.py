@@ -11073,6 +11073,12 @@ _deploy_inflight = False
 # Optional override: callable(target) -> None. Tests set this; production
 # leaves it None and runs `just deploy` from the watched target.
 _deploy_runner = None
+# #551: optional override for the /remind route's coordinator inbox dir.
+# None → relay.relay's default (~/.cache/agent-comms/ud-dreamwork); a str or
+# Path → that dir; a callable → invoked with no args, returns the dir. Tests
+# set this so a check never writes the real shared inbox. Production leaves
+# it None and relay appends to the coordinator's tailed inbox.
+_remind_inbox_dir = None
 
 
 def peer_is_loopback(client_address):
@@ -14891,6 +14897,70 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 "delegation_label": lint.delegation_posture(delegation),
             }), "application/json")
 
+        def _handle_remind(self):
+            """POST /remind — send the resolved posture to the coordinator (#551).
+
+            The client sends nothing but the press; the message is composed
+            SERVER-side so a posture without its project is never ambiguous —
+            the coordinator inbox is shared across every dreamwork target on
+            this host. One short paragraph carries: the target id, the
+            resolved five-axis posture (resolve_posture, with the delegation
+            label), and a pointer to where the meaning of each choice lives
+            (SKILL.md §"Run mode (#290) and posture (#445)"; the stop
+            vocabularies are lint.py's POSTURE_STOPS_* sets; the run-mode
+            derivation is lint.derive_posture).
+
+            Delivery is relay.relay("coord", …) — the append IS the delivery
+            (relay stamps the [watch …] header), so this writes NO
+            watch-events.log line. relay is imported lazily, mirroring
+            _posture_vocab() (lint does `import watch` at its module top). The
+            inbox dir is resolved through the module-level _remind_inbox_dir
+            seam so tests redirect it and never touch the real inbox.
+            """
+            # No schema: an empty {} body is the normal press. A non-empty body
+            # that is not JSON is refused — the _handle_deploy shape — so a
+            # malformed press is a durable rejection, not a silent success.
+            if self._body and self._body.strip():
+                req = self._read_json()
+                if req is None:
+                    self._reject("malformed_json"); return
+            import relay
+            from pathlib import Path
+            p = resolve_posture(target)
+            src_phrase = ("override · .dreamwork/posture"
+                          if p.get("source") == "file"
+                          else "derived from run mode")
+            body = (
+                "posture remind · target {tid} · "
+                "pace={pace} asking={asking} delegation={dlg} ({dlab}) "
+                "delivery={dlv} orchestration={orch} · {src}. "
+                "what each choice means: see SKILL.md "
+                "\"Run mode (#290) and posture (#445)\"; the stop "
+                "vocabularies are the POSTURE_STOPS_* sets in lint.py; "
+                "the run-mode to posture derivation is lint.derive_posture."
+            ).format(
+                tid=_target_id(target),
+                pace=p.get("pace"), asking=p.get("asking"),
+                dlg=p.get("delegation"), dlab=p.get("delegation_label"),
+                dlv=p.get("delivery"), orch=p.get("orchestration"),
+                src=src_phrase,
+            )
+            inbox_dir = _remind_inbox_dir
+            if callable(inbox_dir):
+                inbox_dir = inbox_dir()
+            relay.relay("coord", body, sender="watch",
+                        inbox_dir=Path(inbox_dir) if inbox_dir else None)
+            self._send_receipt(json.dumps({
+                "ok": True, "sent": True,
+                "posture": {
+                    "pace": p.get("pace"), "asking": p.get("asking"),
+                    "delegation": p.get("delegation"),
+                    "delivery": p.get("delivery"),
+                    "orchestration": p.get("orchestration"),
+                    "source": p.get("source"),
+                },
+            }), "application/json")
+
         def _handle_deploy(self):
             """Page-triggered `just deploy` (#462).
 
@@ -14933,6 +15003,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             "/tint": _handle_tint,
             "/run-mode": _handle_run_mode,
             "/posture": _handle_posture,
+            "/remind": _handle_remind,
             "/deploy": _handle_deploy,
         }
 

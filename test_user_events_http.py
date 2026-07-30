@@ -88,6 +88,12 @@ class HttpHarness(unittest.TestCase):
         watch._deploy_inflight = False
         self.addCleanup(lambda: setattr(watch, "_deploy_runner", None))
         self.addCleanup(lambda: setattr(watch, "_deploy_inflight", False))
+        # #551 /remind appends to the coordinator inbox via relay; redirect it
+        # to a temp dir so E2's run-all-routes never writes the real shared
+        # inbox. _BaselineHarness inherits this setUp, so the journal-off run
+        # is redirected too.
+        watch._remind_inbox_dir = os.path.join(self.tmp.name, "remind-inbox")
+        self.addCleanup(lambda: setattr(watch, "_remind_inbox_dir", None))
         # Reserve a real port, then bind the tested server to it so the
         # authority checks the actual port its Host header must carry.
         probe = http.server.ThreadingHTTPServer(
@@ -304,6 +310,10 @@ class E2Shadow(HttpHarness):
                         "decision": "accepted"})[0])
         # 9. /deploy — page-triggered just deploy (#462); runner faked.
         statuses.append(self.post("/deploy", {})[0])
+        # 10. /remind — send the resolved posture to the coordinator inbox
+        #     (#551); relay redirected to a temp dir in setUp. Empty {} body
+        #     is the normal press.
+        statuses.append(self.post("/remind", {})[0])
         return statuses, self.submissions_rows()
 
     def test_every_write_route_commits_a_receipt_and_changes_nothing_else(self):
@@ -322,7 +332,8 @@ class E2Shadow(HttpHarness):
         # consciously when extending run_all_routes, and say why here.
         # 2026-07-30 #496: 8→9 — /decide (#289) joined /deploy (#462) in the
         # dispatch; both needed payloads in run_all_routes.
-        self.assertEqual(len(WRITE_ROUTES), 9, WRITE_ROUTES)
+        # 2026-07-30 #551: 9→10 — /remind joined the dispatch; empty-body press.
+        self.assertEqual(len(WRITE_ROUTES), 10, WRITE_ROUTES)
         # Every route returned 202 with the journal ON (E3 cutover moved the
         # write-route status) and 200 with the journal OFF (the pre-cutover
         # baseline, which still uses _send). The shadow must change only the
@@ -349,8 +360,8 @@ class E2Shadow(HttpHarness):
         # count assertion above (len(WRITE_ROUTES)) would still pass while a
         # route went unshadowed — UNLESS this guard fails first. This is the
         # plan's "derive the route list" discipline made executable.
-        exercised = 9  # ask, comment, answer, command, tint, run-mode,
-        #              posture, decide, deploy
+        exercised = 10  # ask, comment, answer, command, tint, run-mode,
+        #              posture, decide, deploy, remind
         self.assertEqual(len(WRITE_ROUTES), exercised, WRITE_ROUTES)
 
     @contextlib.contextmanager

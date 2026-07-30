@@ -8316,6 +8316,80 @@ class TestPosture(unittest.TestCase):
         pdf_end = watch.PAGE.index('function hidePostDesc(', pdf_i)
         self.assertIn("axis === 'orchestration'", watch.PAGE[pdf_i:pdf_end])
 
+    def test_remind_posts_resolved_posture_to_seamed_inbox(self):
+        """#551: POST /remind composes the resolved five-axis posture + a
+        SKILL.md pointer SERVER-side and appends it to the coordinator inbox
+        via relay, through the _remind_inbox_dir seam.
+
+        Production line: _handle_remind's relay.relay(...) call and
+        resolve_posture(target). The client sends nothing but the press; the
+        message is composed here so a posture without its project is never
+        ambiguous (the coord inbox is shared across every target on this host).
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            # Known five-axis point so the assertions below are meaningful, not
+            # literals tuned to a derived default. Assert the closed-set
+            # members first so a renamed stop turns this into a setup failure,
+            # not a false-green over a 400.
+            import lint
+            self.assertIn("batched", lint.POSTURE_STOPS_DELIVERY)
+            self.assertIn("orchestrator", lint.POSTURE_STOPS_ORCHESTRATION)
+            self.assertTrue(watch.write_posture(
+                d, "hot", "inform", 2, "batched", "orchestrator"))
+            inbox_dir = os.path.join(d, "remind-inbox")
+            watch._remind_inbox_dir = inbox_dir
+            self.addCleanup(
+                lambda: setattr(watch, "_remind_inbox_dir", None))
+            base = self._serve(d)
+            self.assertEqual(self._post(base + "/remind", {}), 202)
+            inbox_file = os.path.join(inbox_dir, "coord-inbox.md")
+            self.assertTrue(os.path.exists(inbox_file), inbox_file)
+            text = open(inbox_file, encoding="utf-8").read()
+            # The target id — the coordinator inbox is shared, so a posture
+            # without its project is ambiguous.
+            self.assertIn(watch._target_id(d), text)
+            # All five resolved axes (resolve_posture), derived at runtime.
+            self.assertIn("pace=hot", text)
+            self.assertIn("asking=inform", text)
+            self.assertIn("delegation=2", text)
+            self.assertIn("delivery=batched", text)
+            self.assertIn("orchestration=orchestrator", text)
+            # The where-to-look pointer for the meaning of each choice.
+            self.assertIn("SKILL.md", text)
+            # The seam redirected: the real shared inbox path never appears in
+            # what was written. Asserting the production default is absent is
+            # the proof the redirect took (a None seam would write here).
+            self.assertNotIn("agent-comms", text)
+
+    def test_remind_rejects_malformed_nonempty_body_durably(self):
+        """#551: a non-empty body that is not JSON is a durable rejection (the
+        _handle_deploy shape), not a silent success. Production line: the
+        `if req is None: self._reject("malformed_json")` branch in
+        _handle_remind — and that nothing is relayed on that branch."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            inbox_dir = os.path.join(d, "remind-inbox")
+            watch._remind_inbox_dir = inbox_dir
+            self.addCleanup(
+                lambda: setattr(watch, "_remind_inbox_dir", None))
+            base = self._serve(d)
+            req = urllib.request.Request(
+                base + "/remind", data=b"not json at all",
+                method="POST",
+                headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    status, body = r.status, r.read()
+            except urllib.error.HTTPError as e:
+                status, body = e.code, e.read()
+            self.assertEqual(status, 202)
+            j = json.loads(body)
+            self.assertTrue(j.get("rejected"), body)
+            # The rejection branch relayed nothing.
+            self.assertFalse(os.path.exists(
+                os.path.join(inbox_dir, "coord-inbox.md")))
+
 
 class TestDeliveryWakeRouting(unittest.TestCase):
     """#342 lane B surface 2 — per-kind wake routing.
