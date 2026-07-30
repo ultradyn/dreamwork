@@ -839,7 +839,11 @@ class TestCollector(unittest.TestCase):
         if not node:
             self.skipTest("node not available — buildChat gate did NOT run")
         page = watch._get_page()
+        # buildChat now composes chatReplyComposer (#577), so the harness must
+        # extract it too or buildChat's call is an undefined reference in the
+        # sandbox — the test reaching the real render is what caught the wiring.
         fns = (_extract_js_fn(page, "function chatTurn(") + "\n" +
+               _extract_js_fn(page, "function chatReplyComposer(") + "\n" +
                _extract_js_fn(page, "function buildChat("))
         script = (
             "const esc = t => String(t==null?'':t)"
@@ -870,6 +874,13 @@ class TestCollector(unittest.TestCase):
         # his / the dreamer's: both roles are labelled
         self.assertIn("you", rendered)
         self.assertIn("dreamer", rendered)
+        # #577 — a found chat renders the reply composer below the transcript
+        # (born-red: the composer is absent before #577). The not-found path
+        # renders none — you cannot reply to a chat that does not exist.
+        self.assertIn('id="chatreplybox"', rendered,
+                      "a found chat renders the reply composer")
+        self.assertNotIn('id="chatreplybox"', notfound,
+                         "the not-found path renders no composer")
         # unknown id degrades quietly, the page's own voice — never empty
         self.assertTrue(notfound and "not found" in notfound,
                         "an unknown id degrades in the page's voice")
@@ -9478,6 +9489,169 @@ class TestDeliveryWakeRouting(unittest.TestCase):
             self.assertEqual(after[0]["last_by"], "agent")
             self.assertIn("shipping #504", after[0]["title"],
                           "title is the first HUMAN turn, not the reply")
+
+    def test_chat_reply_appends_one_human_turn(self):
+        """#577 — a reply from the /chat/<id> page POSTs /chat-reply, which
+        appends one HUMAN turn to an existing conversation through the ONE
+        writer (apply_chat_turn). Turn count N → N+1; the new turn is his.
+
+        Production line: the `apply_chat_turn(target, cid, "human", text)`
+        call in _handle_chat_reply. Remove it and a reply commits a receipt
+        but writes no turn — the message has a durable home and no
+        conversational truth, the exact defect #504's chat-send test guards
+        one route over.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            # an existing conversation: his send + the dreamer's reply
+            watch.apply_chat_turn(d, "chat-577", "human", "are we shipping?")
+            watch.apply_chat_turn(d, "chat-577", "agent", "yes, in review")
+            # PRECONDITION: 2 turns, replied (last_by agent) — so an appended
+            # human turn is a real change the assertions below can see (the
+            # hollow-check: a 1-turn chat would let a no-op reply pass N→N+1
+            # on a count that could not distinguish append from create).
+            before = watch.list_chats(d)
+            self.assertEqual(len(before), 1)
+            self.assertEqual(before[0]["turns"], 2)
+            self.assertEqual(before[0]["last_by"], "agent")
+            base = self._serve(d)
+            status, body = self._post_body(
+                base + "/chat-reply", {"id": "chat-577", "text": "great, thanks"})
+            self.assertEqual(status, 202, (status, body))
+            self.assertTrue(json.loads(body).get("ok"), body)
+            after = watch.list_chats(d)
+            # still exactly one chat (no fork), one more turn, the new turn his
+            self.assertEqual(len(after), 1, "a reply must not fork the chat")
+            self.assertEqual(after[0]["turns"], 3, after)
+            self.assertEqual(after[0]["last_by"], "human", after)
+            self.assertEqual(after[0]["status"], "replied", after)
+
+    def test_chat_reply_to_unknown_id_is_refused_not_forked(self):
+        """#577 — a reply to a chat id that does not exist is REFUSED, never a
+        forked conversation. apply_chat_turn creates the chat on its first
+        turn, so the existence guard must run BEFORE the call — a typo'd id
+        must not mint a new chat under that id.
+
+        Production line: the `if not _chat_exists(target, cid):` guard in
+        _handle_chat_reply (which reuses _parse_chat_turns, the same reader
+        list_chats uses). Remove it and the reply creates chat 'no-such-chat'
+        — the fork the brief forbids.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch.apply_chat_turn(d, "chat-real", "human", "a real chat")
+            base = self._serve(d)
+            status, body = self._post_body(
+                base + "/chat-reply",
+                {"id": "no-such-chat", "text": "a typo'd reply"})
+            self.assertEqual(status, 202, (status, body))
+            resp = json.loads(body)
+            self.assertFalse(resp.get("ok"), body)
+            self.assertTrue(resp.get("rejected"), body)
+            # the typo'd id created NO chat — list_chats still has only the
+            # real one. This is the red line: a forked conversation is the
+            # failure this guard exists to prevent.
+            chats = watch.list_chats(d)
+            self.assertEqual([c["id"] for c in chats], ["chat-real"], chats)
+
+    def test_chat_reply_with_empty_text_is_refused(self):
+        """#577 — a reply with empty text (whitespace only) is refused before
+        any turn is written. Same schema gate the chat send applies.
+
+        Production line: the `if not text: self._reject("schema_invalid")`
+        guard in _handle_chat_reply. Remove it and an empty reply appends a
+        blank human turn to the transcript.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch.apply_chat_turn(d, "chat-577", "human", "first turn")
+            before = watch.list_chats(d)[0]["turns"]
+            self.assertEqual(before, 1, "PRECONDITION: one turn to grow into")
+            base = self._serve(d)
+            status, body = self._post_body(
+                base + "/chat-reply", {"id": "chat-577", "text": "   "})
+            self.assertEqual(status, 202, (status, body))
+            resp = json.loads(body)
+            self.assertFalse(resp.get("ok"), body)
+            self.assertTrue(resp.get("rejected"), body)
+            # the turn count did not grow — no blank turn appended
+            self.assertEqual(watch.list_chats(d)[0]["turns"], 1)
+
+    def test_chat_reply_wakes_the_same_way_a_chat_send_does(self):
+        """#577 — a reply wakes the loop the same way a chat send does: a
+        watch-events.log line, gated on instant delivery (the #342 rule, one
+        kind over). In batched mode neither a chat send nor a reply writes a
+        wake line; in instant mode both do.
+
+        Production line: the `if emits_wake("chat", target):` gate + the
+        `log_event(target, command_line("chat", ...))` call in
+        _handle_chat_reply. Remove the gate and a batched-mode reply writes a
+        wake line the chat send does not — the two would diverge.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch.apply_chat_turn(d, "chat-577", "human", "are we shipping?")
+            watch.apply_chat_turn(d, "chat-577", "agent", "yes")
+            # PRECONDITION: batched delivery, under which a chat send withholds
+            # its wake line (asserted below) — so a withheld reply wake line is
+            # meaningful, not vacuous (the hollow-check).
+            self.assertTrue(watch.write_posture(d, "idle", "ask", 0, "batched"))
+            self.assertEqual(watch.read_posture_file(d)["delivery"], "batched")
+            base = self._serve(d)
+            # a chat SEND in batched mode writes no chat wake line
+            ss, _ = self._post_body(base + "/command",
+                                    {"kind": "chat", "text": "a new chat"})
+            self.assertEqual(ss, 202, "PRECONDITION: the send route ran")
+            sends = [w for w in self._wake_lines(d) if "chat" in w]
+            self.assertFalse(sends, "PRECONDITION: a batched send writes no wake")
+            # a reply in the same batched mode writes no wake line either
+            rs, _ = self._post_body(base + "/chat-reply",
+                                    {"id": "chat-577", "text": "a reply"})
+            self.assertEqual(rs, 202)
+            self.assertFalse(
+                [w for w in self._wake_lines(d) if "chat" in w],
+                "a batched reply wakes the same way a batched send does: not at all")
+
+    def test_chat_reply_composer_uses_a_chat_specific_draft_key(self):
+        """#577 — the reply composer persists its draft under a CHAT-SPECIFIC
+        key (DraftStore.id('chat', <chat id>)), not the main composer's
+        (composer:main) or the ask box's (ask:main). A half-typed reply must
+        never collide with a steering thought or a question, and must survive
+        a reload of /chat/<id> alone.
+
+        Structural pin (the codebase's idiom for client-wiring contracts —
+        see test_covered_submit_paths_send_the_attempt_id): the assembled page
+        wires the chat reply surface to its OWN draft key and to the
+        /chat-reply route. Born-red: the composer does not exist before #577,
+        so every token below is absent. The behavioural half (two logical ids
+        really do not collide) is DraftStore's own contract; this pins the
+        wiring that names the key.
+        """
+        # the chat-specific draft key (chat:<id>), scoped to the chat in hand
+        self.assertIn("DraftStore.id('chat', chatId)", watch.PAGE)
+        # the reply POST goes to the chat-reply route, never /command
+        self.assertIn("'/chat-reply'", watch.PAGE)
+        # the binder that restores the draft across a tick/reload (chat:<id>)
+        self.assertIn('bindChatReplyDraft', watch.PAGE)
+
+    def test_chat_reply_confirmation_survives_a_tick_rerender(self):
+        """#577 — the reply confirmation (#chatreplymsg) is the one #255
+        surface that lives INSIDE #view, so a /mtime tick re-render would
+        wipe its client-set text the instant it brings the new turn — cutting
+        the ~5s hold to under one tick. The other #255 surfaces (#cmdmsg,
+        #fmsg) sit in the chrome outside #view and never re-render; this span
+        does, so reconcileGuard keeps the live node while a confirmation is
+        showing (non-empty), the same keep rule .age spans use.
+
+        Structural pin (born-red: the rule is absent before #577). The rule
+        is load-bearing runtime defence, not cosmetic — remove it and the
+        confirmation vanishes on the first tick after a reply, before its
+        hold is up.
+        """
+        self.assertIn(
+            "fromEl.id === 'chatreplymsg'", watch.PAGE,
+            "reconcileGuard must keep #chatreplymsg across a tick while it "
+            "holds a confirmation (it is the one #255 surface inside #view)")
 
     def test_command_wake_line_carries_the_same_receipt_id_as_the_journal(self):
         """#527 — the wake-line's receipt id == the journal receipt's id.
