@@ -71,4 +71,7 @@ Lane-owns: `dev/journal_consume.py`, `bin/` (new tool file only), `file-formats.
   and anything flagged for the coordinator (file-formats edits are
   yours; SKILL.md/watch.py needs are flags).
   Use `dev/relay.py` if present; never `attn`.
+- Then append one line to `.dreamwork/handoffs.md` **inside your worktree**
+  and commit it there:
+  `- **#504** · landed \`<sha>\` · <YYYY-MM-DD HH:MM> · by <you> — <what>`.
 - Do not claim a model you were not dispatched as.

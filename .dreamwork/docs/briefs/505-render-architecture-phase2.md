@@ -73,4 +73,7 @@ reuse the existing idiom, never author a second one.
   vs kept-with-reason, the dock key choice, every red-proof (production
   line → test that failed), guard runs, and anything flagged.
   Use `dev/relay.py` if present; never `attn`.
+- Then append one line to `.dreamwork/handoffs.md` **inside your worktree**
+  and commit it there:
+  `- **#505** · landed \`<sha>\` · <YYYY-MM-DD HH:MM> · by <you> — <what>`.
 - Do not claim a model you were not dispatched as.
