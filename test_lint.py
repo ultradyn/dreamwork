@@ -2945,6 +2945,213 @@ class TestHandoffs:
             inspect.getsource(lint.check_handoffs)
 
 
+class TestConflictMarkerSweep555:
+    """#555 — the #554 marker rejection extended to the other tool-parsed
+    ledger docs.
+
+    The same silent-corruption class, per surface: each parser keys on its
+    own head grammar the way parse_handoffs does, so a bare conflict-marker
+    line matches none of those keys and falls through to nothing — the
+    reader cannot see what is there. `tasks.md` (parse_ledger, the most
+    parse-sensitive file in the repo), `tasks.md.deprecated` (the frozen
+    history, also parse_ledger), `questions.md` (parse_questions), and
+    `briefs/*.md` (classify_brief_handoff_scope) each have the shape.
+
+    ONE regex — the module-level CONFLICT_MARKER_RE #554 landed — re-used,
+    not restated (#137 single-definition rule). The idiom is the #554 one:
+    raw-text scan at the TOP of each check, BEFORE any parser-dependent
+    early return, one ERROR per marker line so each is named.
+
+    Born-hollow (recorded per surface by the red-first run of these very
+    tests against the PRE-scan code): every one of the four marker forms
+    passed the CURRENT checks silently — the assertion ``len(errs) == 1``
+    failed at ``0`` because no check produced a ``conflict marker`` ERROR.
+    The hole was demonstrated by planting each, not theorised.
+    """
+
+    # The four real git/diff3 emissions — exactly seven of the char at col 0.
+    MARKERS = [
+        "<<<<<<< HEAD",          # merge: ours, with a label
+        "||||||| e2acedf5",      # diff3 base + sha — the live #548 incident line
+        "=======",               # the separator (a bare seven-= line)
+        ">>>>>>> branch",        # merge: theirs, with a label
+    ]
+    # The brief's four negative forms: a markdown hr, an ATX heading, a
+    # setext `===` underline, and a prose line carrying `=====` mid-line.
+    # None is a 7-char marker at column 0, and none may trip the scan.
+    NEG_LINES = ["---", "## A heading", "===", "prose with a ===== run mid-line"]
+
+    # ── questions.md (check_questions, parse_questions) ──────────────────
+    def _q_errs(self, tmp_path, body):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "questions.md").write_text(body)
+        rep = lint.Report()
+        lint.check_questions(dw, lint.load_watch(), rep)
+        return [d for lvl, w, d in rep.rows
+                if lvl == lint.ERROR and "conflict marker" in d]
+
+    @pytest.mark.parametrize("marker_line", MARKERS)
+    def test_questions_md_marker_is_an_error(self, tmp_path, marker_line):
+        """Production line: the CONFLICT_MARKER_RE scan on the raw text at the
+        top of check_questions + its rep.add(ERROR, "questions.md", ...).
+        parse_questions keys on `- **Title**` entry heads; a marker matches
+        none and renders as nothing, so it must be LOUD here.
+        """
+        head = marker_line[0]
+        assert marker_line.startswith(head * 7), "precondition: seven at col 0"
+        assert not marker_line.startswith(head * 8), "precondition: not eight"
+        body = ("# Questions\n\n## Open\n\n"
+                "- **A real open question** · P2 · the ask\n\n"
+                + marker_line + "\n\n## Answered\n")
+        assert marker_line in body, "precondition: the marker line is really present"
+        errs = self._q_errs(tmp_path, body)
+        assert len(errs) == 1, errs
+        assert head * 7 in errs[0], errs[0]
+
+    def test_questions_md_negatives_are_silent(self, tmp_path):
+        body = ("# Questions\n\n## Open\n\n"
+                "- **A real open question** · P2 · the ask\n\n"
+                + "\n".join(self.NEG_LINES) + "\n\n## Answered\n")
+        for nl in self.NEG_LINES:
+            assert nl in body, "precondition: each negative line is present"
+        assert self._q_errs(tmp_path, body) == [], \
+            "a non-marker markdown/prose line must not trip the scan"
+
+    # ── tasks.md markdown (check_ledger_sections, parse_ledger) ──────────
+    def _ledger_errs(self, text):
+        rep = lint.Report()
+        lint.check_ledger_sections(Path("."), text, "markdown", rep)
+        return [d for lvl, w, d in rep.rows
+                if lvl == lint.ERROR and "conflict marker" in d]
+
+    @pytest.mark.parametrize("marker_line", MARKERS)
+    def test_tasks_md_marker_is_an_error(self, marker_line):
+        """Production line: the CONFLICT_MARKER_RE scan on the `text` param at
+        the top of check_ledger_sections + its rep.add(ERROR, "tasks.md", ...).
+        In markdown mode `text` IS tasks.md verbatim; parse_ledger keys on
+        `## Open`/entry heads, so a marker is silent to both readers.
+        """
+        head = marker_line[0]
+        assert marker_line.startswith(head * 7), "precondition: seven at col 0"
+        assert not marker_line.startswith(head * 8), "precondition: not eight"
+        text = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
+                "- **#7** — a task · P2 · task\n\n"
+                + marker_line + "\n\n## Recently landed\n\n"
+                "- **#5** — landed `abc1234`\n")
+        assert marker_line in text, "precondition: the marker line is really present"
+        errs = self._ledger_errs(text)
+        assert len(errs) == 1, errs
+        assert head * 7 in errs[0], errs[0]
+
+    def test_tasks_md_negatives_are_silent(self):
+        # Negatives placed AFTER the real ledger structure so a stray
+        # `## A heading` cannot move the Open section boundary (#304).
+        text = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
+                "- **#7** — a task · P2 · task\n\n"
+                "## Recently landed\n\n"
+                "- **#5** — landed `abc1234`\n\n"
+                + "\n".join(self.NEG_LINES) + "\n")
+        for nl in self.NEG_LINES:
+            assert nl in text, "precondition: each negative line is present"
+        assert self._ledger_errs(text) == [], \
+            "a non-marker markdown/prose line must not trip the scan"
+
+    # ── tasks.md.deprecated store mode (check_ledger_sections store branch) ──
+    def _dep_errs(self, tmp_path, dep_text):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md.deprecated").write_text(dep_text)
+        rep = lint.Report()
+        lint.check_ledger_sections(dw, "unused", "store", rep)
+        return [d for lvl, w, d in rep.rows
+                if lvl == lint.ERROR and "conflict marker" in d]
+
+    @pytest.mark.parametrize("marker_line", MARKERS)
+    def test_tasks_md_deprecated_marker_is_an_error(self, tmp_path, marker_line):
+        """Production line: the CONFLICT_MARKER_RE scan on `dtext` inside the
+        store branch of check_ledger_sections + its rep.add(ERROR,
+        "tasks.md.deprecated", ...). The deprecated file is the FROZEN history
+        read only in store mode; a marker rots it the same silent way.
+        """
+        head = marker_line[0]
+        assert marker_line.startswith(head * 7), "precondition: seven at col 0"
+        assert not marker_line.startswith(head * 8), "precondition: not eight"
+        dep = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
+               "- **#7** — a task · P2 · task\n\n"
+               + marker_line + "\n\n## Recently landed\n\n"
+               "- **#5** — landed `abc1234`\n")
+        assert marker_line in dep, "precondition: the marker line is really present"
+        errs = self._dep_errs(tmp_path, dep)
+        assert len(errs) == 1, errs
+        assert head * 7 in errs[0], errs[0]
+
+    def test_tasks_md_deprecated_negatives_are_silent(self, tmp_path):
+        dep = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
+               "- **#7** — a task · P2 · task\n\n"
+               "## Recently landed\n\n"
+               "- **#5** — landed `abc1234`\n\n"
+               + "\n".join(self.NEG_LINES) + "\n")
+        for nl in self.NEG_LINES:
+            assert nl in dep, "precondition: each negative line is present"
+        assert self._dep_errs(tmp_path, dep) == [], \
+            "a non-marker markdown/prose line must not trip the scan"
+
+    # ── briefs/*.md (check_brief_handoff_obligation) ─────────────────────
+    def _brief_errs(self, tmp_path, brief_body, name="900-marker.md"):
+        t = fresh(tmp_path)
+        root = t
+        dw = root / ".dreamwork"
+        (root / "SKILL.md").write_text("# skill\n", encoding="utf-8")
+        briefs = dw / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        (briefs / name).write_text(brief_body, encoding="utf-8")
+        rep = lint.Report()
+        lint.check_brief_handoff_obligation(dw, rep)
+        return [d for lvl, w, d in rep.rows
+                if lvl == lint.ERROR and "conflict marker" in d]
+
+    @pytest.mark.parametrize("marker_line", MARKERS)
+    def test_brief_marker_is_an_error(self, tmp_path, marker_line):
+        """Production line: the CONFLICT_MARKER_RE scan over the globbed brief
+        files in check_brief_handoff_obligation + its rep.add(ERROR,
+        "briefs", ...). The scan lives in the CHECK, not the classifier,
+        because classify_brief_handoff_scope only reads text for in-scope
+        briefs (grandfathered/skipped short-circuit before read) — a marker
+        in any brief is corruption regardless of scope.
+        """
+        head = marker_line[0]
+        assert marker_line.startswith(head * 7), "precondition: seven at col 0"
+        assert not marker_line.startswith(head * 8), "precondition: not eight"
+        body = "# Brief\n\n" + marker_line + "\n\nDo the work.\n"
+        assert marker_line in body, "precondition: the marker line is really present"
+        errs = self._brief_errs(tmp_path, body)
+        assert len(errs) == 1, errs
+        assert head * 7 in errs[0], errs[0]
+        assert "900-marker.md" in errs[0], \
+            "the ERROR must name the brief file so the reader can find it"
+
+    def test_brief_negatives_are_silent(self, tmp_path):
+        body = "# Brief\n\n" + "\n".join(self.NEG_LINES) + "\n\nDo the work.\n"
+        for nl in self.NEG_LINES:
+            assert nl in body, "precondition: each negative line is present"
+        assert self._brief_errs(tmp_path, body) == [], \
+            "a non-marker markdown/prose line must not trip the scan"
+
+    def test_each_swept_check_references_the_shared_regex(self):
+        """A module-level constant nothing imports is a check waiting to be
+        silently dropped; this asserts each swept check is wired to the ONE
+        shared CONFLICT_MARKER_RE so a refactor that detaches any is caught.
+        Mirrors the #554 wiring test for check_handoffs.
+        """
+        import inspect
+        for fn in (lint.check_questions, lint.check_ledger_sections,
+                   lint.check_brief_handoff_obligation):
+            assert "CONFLICT_MARKER_RE" in inspect.getsource(fn), fn.__name__
+
+
 class TestCitedShas:
     """#350: a ledger entry that cites a commit which does not exist.
 
