@@ -522,7 +522,17 @@ def main(argv: list[str] | None = None) -> int:
     else:
         status["queue"], status["current_task_ids"], status["dreamers"] = (
             want_queue, live, pruned)
-    spath.write_text(json.dumps(status, indent=2) + "\n")
+    # #541: write atomically — serialise to a temp file in the SAME directory
+    # as status.json, then `os.replace` (a same-filesystem rename, atomic on
+    # POSIX/NTFS). A plain `spath.write_text` truncates the real file the
+    # instant it opens it, so a crash mid-write tears status.json — and every
+    # reader downstream must then treat a torn file as the normal case (#402).
+    # This is the one writer that can prevent it. Mirrors watch.py's
+    # question-sigs idiom (_write_question_sigs): tmp + os.replace.
+    tmp = str(spath) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(status, indent=2) + "\n")
+    os.replace(tmp, spath)
     print("\n".join(changes) if changes
           else "already in sync (%d open, %d live)" % (len(ids), len(live)))
     return 0

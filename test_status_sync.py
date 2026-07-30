@@ -798,3 +798,115 @@ def test_store_mode_strips_the_retired_fields(tmp_path):
         "current_task_ids regrown post-cutover (#294 T2)"
     assert "dreamers" in written, \
         "the strip must not take the still-owned dreamers field with it"
+
+
+# ── #541: atomic status.json write (tmp + os.replace) ───────────────────
+#
+# status_sync.py writes status.json with a plain `spath.write_text` (the
+# single writer in the system). A crash mid-write tears the file, and every
+# reader downstream must then treat a truncated status.json as the normal
+# case (#402). The fix is the watch.py question-sigs idiom: serialise to a
+# temp file in the SAME directory, then `os.replace` (a same-filesystem
+# atomic rename). These two tests bind that — criterion (a) the write lands
+# on the real path via os.replace; criterion (b) a failure raised mid-write
+# leaves the pre-existing file byte-identical.
+#
+# Production line that must change for BOTH to fail: `spath.write_text(...)`
+# at status_sync.py:525.
+
+
+def test_status_write_lands_via_os_replace(tmp_path, monkeypatch):
+    """#541 criterion (a): the write reaches the real status.json through
+    `os.replace`, with the tmp source in the same directory (same-dir rename
+    is atomic on POSIX/NTFS; cross-dir is not)."""
+    status = {"task": "541", "deployed": "author-held"}
+    target = _write_target(tmp_path, status, _ledger(541))
+    spath = target / ".dreamwork" / "status.json"
+
+    replaced = []
+    real_replace = os.replace
+
+    def spy(src, dst):
+        replaced.append((str(src), str(dst)))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(status_sync.os, "replace", spy)
+
+    rc, _out, err = _run(status, _ledger(541), tmp_path)
+    assert rc == 0, err
+
+    assert replaced, (
+        "status.json write must go through os.replace, not a direct "
+        "write_text (#541)")
+    dests = [dst for _src, dst in replaced]
+    assert str(spath) in dests, (
+        "os.replace must target the real status.json path (%s); got %r"
+        % (spath, dests))
+    # the tmp source must share status.json's directory, else the rename
+    # is cross-filesystem and not atomic.
+    for src, dst in replaced:
+        if str(dst) == str(spath):
+            assert os.path.dirname(src) == os.path.dirname(str(spath)), (
+                "tmp file must live in the same directory as status.json "
+                "so os.replace is a same-filesystem atomic rename; got %s"
+                % src)
+
+
+def test_status_write_failure_leaves_existing_file_intact(tmp_path, monkeypatch):
+    """#541 criterion (b): a crash mid-write must leave the pre-existing
+    status.json byte-identical. With tmp+os.replace the only file a failed
+    write can tear is the throwaway tmp; with a direct write_text the real
+    file is truncated the instant it is opened for writing.
+
+    Two interception points are patched because the two code shapes write
+    through different calls: the OLD code calls `Path.write_text` (which
+    binds io.open at import, so patching builtins.open does NOT reach it),
+    and the NEW code calls the builtin `open` on a tmp path (which resolves
+    `builtins.open` at call time, so patching builtins.open DOES reach it).
+    Both are torn so the test stays honest under either shape.
+    """
+    import builtins
+
+    original = {"task": "541", "deployed": "author-held", "marker": "ORIGINAL"}
+    target = _write_target(tmp_path, original, _ledger(541))
+    spath = target / ".dreamwork" / "status.json"
+    original_bytes = spath.read_bytes()
+    # Precondition the byte-identical comparison depends on: a real
+    # pre-existing file was there to protect (comparing against nothing is
+    # meaningless). Derived at runtime, not a literal tuned to this fixture.
+    assert original_bytes, "fixture precondition: pre-existing status.json"
+
+    real_open = builtins.open
+
+    def tearing_open(path, mode="r", *a, **kw):
+        f = real_open(path, mode, *a, **kw)
+        # Crash mid-WRITE of any status.json-shaped path: under the old code
+        # that is the real file (torn); under the new code it is *.tmp (the
+        # throwaway, and replace is never reached).
+        if "w" in mode and "status.json" in str(path):
+            f.write("{torn-by-crash")
+            f.flush()
+            raise OSError("simulated crash mid-write")
+        return f
+
+    real_write_text = Path.write_text
+
+    def tearing_write_text(self, data, *a, **kw):
+        # OLD code path: writes straight onto the real status.json.
+        if "status.json" in str(self):
+            with real_open(self, "w", encoding="utf-8") as f:
+                f.write("{torn-by-crash")
+            raise OSError("simulated crash mid-write")
+        return real_write_text(self, data, *a, **kw)
+
+    monkeypatch.setattr(builtins, "open", tearing_open)
+    monkeypatch.setattr(Path, "write_text", tearing_write_text)
+
+    with pytest.raises(OSError):
+        status_sync.main(["--target", str(target)])
+
+    after = spath.read_bytes()
+    assert after == original_bytes, (
+        "status.json was torn by a failed write — a crash mid-write must "
+        "leave the pre-existing file byte-identical (#541); got %r"
+        % after[:40])
