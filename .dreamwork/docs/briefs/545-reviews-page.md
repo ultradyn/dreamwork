@@ -60,7 +60,7 @@ Two parts, one lane, both in `watch.py`:
 - **NEVER `read_file` an image** (glm-5.2 API 400 kills the lane).
   Screenshots go to your scratch outdir; the coordinator renders the
   visual verdict.
-- **ONE handoffs.md `## Pending` line** appended before your final
+- **ONE `.dreamwork/handoffs.md` `## Pending` line** appended before your final
   commit (#398 obligation): id, sha, date, lane name, what landed, red
   proof, flags.
 - **Commit with `git commit --only <paths>`**; new files need

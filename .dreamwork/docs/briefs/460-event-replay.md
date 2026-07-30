@@ -60,7 +60,7 @@ One tool + one test file, no watch.py, no browser, no guards.
   text — the coordinator lands it.
 - **No image reads** (glm-5.2 API 400 kills the lane). No browser work
   at all in this lane.
-- **ONE handoffs.md `## Pending` line** before your final commit (#398
+- **ONE `.dreamwork/handoffs.md` `## Pending` line** before your final commit (#398
   obligation). **`git commit --only <paths>`**; new files need
   `git add` first.
 - Verification: your new tests green, full `python3 -m pytest test_lint.py -q`
