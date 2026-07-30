@@ -5118,10 +5118,12 @@ class TestAppShell(unittest.TestCase):
         self.assertIn("d.questions_health === 'ok'", watch.PAGE)
         # and it must not simply be `!n`
         self.assertNotIn('const calm = !n;', watch.PAGE)
-        # what he opened survives the tick, or it snaps shut every 2s (#118)
-        for token in ('function snapshotFolds', 'function restoreFolds',
-                      "querySelectorAll('details[data-keep]')",
-                      'restoreFolds(folds)'):
+        # what he opened survives the tick, or it snaps shut every 2s (#118).
+        # The mechanism changed under #505: the snapshotFolds/restoreFolds
+        # pair is deleted, and the keyed reconciler now stamps human-owned
+        # `open` onto the incoming node so morphAttrs cannot clear it.
+        for token in ("if (fromEl.tagName === 'DETAILS' && fromEl.dataset && fromEl.dataset.keep) {",
+                      'if (fromEl.open) toEl.open = true;'):
             self.assertIn(token, watch.PAGE)
         # the child combinator is what keeps `> summary` from restyling every
         # question card's own disclosure (the catch-all rule, #121/#139)
