@@ -366,6 +366,20 @@ build state, so where the toolchain has a shared cache (compiler cache,
 shared target/store dirs), set it up; if the project lacks one, suggest it
 (questions.md). Storage ballooning is real.
 
+**At lane completion, look at the tree before treating the lane as done**
+(#535, from the #423 audit): a lane that *worked but did not commit* is
+invisible to every automated signal — `sweep` reads commit subjects, the
+lane-containment registry sees only `wt/*` linked worktrees (a harness's
+`spawn_subagent` isolation is an independent clone, not one), and
+`status_sync` knows alive-or-gone, not gone-with-work-left-behind. So when
+a lane's completion notice arrives (or is reconciled after compaction),
+run `git -C <lane-tree> log --oneline` since dispatch and
+`git -C <lane-tree> status --porcelain`: commits + clean → fold normally;
+none + clean → it crashed before working, retire quietly; **none + dirty
+→ worked-but-undelivered — commit or salvage on the lane's behalf and
+record it** (the `gate2`/`da197b87` recovery was this case, found by
+luck). One command at one step, at lane *exit* — not a tick-time probe.
+
 **A worktree brief declares what it owns** (#465). The disjointness rule is
 void the moment a lane edits the main checkout instead of its worktree —
 and a brief cannot enforce it on its own, because the incident's brief
