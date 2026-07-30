@@ -13337,6 +13337,38 @@ def _title_sig_key(title):
     return hashlib.sha256((title or "").encode("utf-8")).hexdigest()[:16]
 
 
+# #534 — version the sig store so a digest-ALGORITHM change (the #509
+# whitespace normalisation was the live instance) does not fire one phantom
+# question-updated event per entry on the first collect after deploy. A store
+# written under an older algorithm sees every stored digest differ and would
+# burst ~21 phantom events for content that did not change. The fix: stamp the
+# store with the `algo` it was written under, and on a mismatch re-seed SILENTLY
+# — recompute every live entry's digest under the CURRENT algorithm, persist the
+# store with the new `algo`, and emit ZERO events (an event says "his question
+# file changed"; an algorithm upgrade is not that).
+#
+# The generations are an explicit append-only list so the NEXT algorithm change
+# is a one-line addition (a new trailing alias + bump SIG_ALGO), not a
+# re-discovery of this task. `v0` is an UNMARKED store (or one predating this
+# field) — the pre-#509 raw-text digests that live stores still hold.
+_SIG_ALGO_GENERATIONS = ("sigtext-v0", "sigtext-v1")
+SIG_ALGO = _SIG_ALGO_GENERATIONS[-1]   # the generation the code writes now
+
+
+def _store_algo(store):
+    """The algorithm generation a loaded store was written under.
+
+    A store predating #534 carries no `algo` key, so it is treated as the
+    oldest generation (`sigtext-v0`): unmarked == pre-normalisation raw
+    digests. An unrecognised marker is also treated as the oldest, since the
+    only safe thing to do with an unknown algorithm is re-seed to the current
+    one (and the next-oldest known alias would skip a real upgrade)."""
+    algo = store.get("algo") if isinstance(store, dict) else None
+    if algo in _SIG_ALGO_GENERATIONS:
+        return algo
+    return _SIG_ALGO_GENERATIONS[0]
+
+
 def track_question_updates(target, entries):
     """Stamp per-entry updated_at from content digests; emit event on change.
 
@@ -13355,6 +13387,30 @@ def track_question_updates(target, entries):
             store = loaded
     except (OSError, json.JSONDecodeError, ValueError, TypeError):
         store = {}
+
+    # #534 — an algorithm-generation change is NOT a content change, so it may
+    # emit zero events. When the store was written under an older generation,
+    # recompute every live entry's digest under the CURRENT algorithm, carry
+    # forward each entry's prior updated_at (the entry itself did not change),
+    # and persist the store with the new algo. This is the silent migration:
+    # content did not change, so no event may fire.
+    if _store_algo(store) != SIG_ALGO:
+        for e in entries:
+            key = _title_sig_key(e.get("title"))
+            prev = store.get(key)
+            prev_at = (prev.get("updated_at")
+                       if isinstance(prev, dict) else None)
+            store[key] = {
+                "digest": _entry_content_digest(e),
+                # carry the prior stamp — only the algorithm changed
+                "updated_at": prev_at,
+                "title": (e.get("title") or "")[:120],
+            }
+            e["updated_at"] = (float(prev_at)
+                               if isinstance(prev_at, (int, float)) else None)
+        store["algo"] = SIG_ALGO
+        _write_question_sigs(path, store)
+        return entries
 
     dirty = False
     for e in entries:
@@ -13390,15 +13446,24 @@ def track_question_updates(target, entries):
             e["updated_at"] = float(u) if isinstance(u, (int, float)) else None
 
     if dirty:
-        try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(store, f, indent=0, sort_keys=True)
-            os.replace(tmp, path)
-        except OSError:
-            pass
+        store["algo"] = SIG_ALGO
+        _write_question_sigs(path, store)
     return entries
+
+
+def _write_question_sigs(path, store):
+    """Atomically persist the sig store (tmp + os.replace); best-effort.
+
+    Lifted out of track_question_updates so the #534 silent re-seed and the
+    normal change path share one writer with one algo-stamping discipline."""
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(store, f, indent=0, sort_keys=True)
+        os.replace(tmp, path)
+    except OSError:
+        pass
 
 
 def collect(target, burn_step=None):
@@ -13407,11 +13472,16 @@ def collect(target, burn_step=None):
     questions = read_text(os.path.join(dw, "questions.md"))
     q_open = parse_open_questions(questions)
     q_answered = parse_answered(questions)
-    # #473: stamp updated_at per entry before the payload leaves. Open first
-    # (what he is looking at); answered second so a folded rewrite also
-    # signals. One store covers both sections.
-    track_question_updates(target, q_open)
-    track_question_updates(target, q_answered)
+    # #473: stamp updated_at per entry before the payload leaves. One call
+    # over BOTH sections (open first — what he is looking at — then answered)
+    # so the sig store sees them together. #534: this is load-bearing for the
+    # silent algorithm re-seed — collect used to make two calls on one shared
+    # store, and a re-seed in the first (open) would stamp the store's algo
+    # current while the answered entries still held OLD-algo digests, so the
+    # second call compared new digests against stale ones and fired a phantom
+    # question-updated per answered entry. One call migrates both sections
+    # atomically: the store is re-seeded or it is not, never half.
+    track_question_updates(target, q_open + q_answered)
     answers = read_text(os.path.join(dw, "answers.md"))
     a_open = parse_open_answers(answers)
     a_answered = parse_answered_answers(answers)
