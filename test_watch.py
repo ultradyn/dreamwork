@@ -60,6 +60,23 @@ def make_target(root):
     return root
 
 
+def _extract_js_fn(page, sig):
+    """Brace-match one `function name(` block out of the generated shell, so
+    a node-eval assertion grades REAL rendered HTML rather than source text.
+    Used by the chat-surface render tests (#504/#562)."""
+    start = page.index(sig)
+    bi = page.index("{", start)
+    depth = 0
+    for i in range(bi, len(page)):
+        if page[i] == "{":
+            depth += 1
+        elif page[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return page[start:i + 1]
+    raise AssertionError("unbalanced braces extracting " + sig)
+
+
 # #509 — a fixture DERIVED FROM the real answered #229 entry's triggering
 # features: a hard-wrapped title, a `-> answered` resolution head inside a
 # long rewrappable prose body, and a note carrying a box-drawing (nested)
@@ -669,6 +686,173 @@ class TestCollector(unittest.TestCase):
         # an ACTIVE statement: a line whose non-whitespace begins with
         # `h += chatList(d);` — a `/* h += chatList(d); */` comment does not.
         self.assertRegex(body, r"(?m)^[ \t]*h \+= chatList\(d\);")
+
+    def test_list_chats_derives_unread_from_last_turn(self):
+        """#562 — a chat is UNREAD when the last turn of its transcript is his
+        (a human turn with no agent turn after it). Derived at read time from
+        the parsed turns — the same place status comes from; chat.json stays
+        identity-only.
+
+        Production line: the `unread` derivation in list_chats's per-chat
+        record (``turns[-1]["role"] == "human"``). Drop it and unread is gone.
+
+        PRECONDITION asserted at runtime: a replied-and-read chat and a
+        replied-and-unread chat are BOTH 'replied' but differ in unread — so
+        a derivation that tied unread to status (or omitted it) reds here
+        rather than passing over a hollow definition. The relationship the
+        brief names is honoured: pending (no agent turn) is a SUBSET of
+        unread."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            # pending: one human turn — unread (and pending, a subset of unread)
+            watch.apply_chat_turn(d, "c-pending", "human", "are we shipping?")
+            # replied + read: human then agent — last turn is the dreamer's
+            watch.apply_chat_turn(d, "c-read", "human", "ship it?")
+            watch.apply_chat_turn(d, "c-read", "agent", "yes, landed")
+            # replied + UNREAD: he followed up AFTER the reply
+            watch.apply_chat_turn(d, "c-followup", "human", "first msg")
+            watch.apply_chat_turn(d, "c-followup", "agent", "a reply")
+            watch.apply_chat_turn(d, "c-followup", "human", "and again")
+            by_id = {c["id"]: c for c in watch.list_chats(d)}
+            self.assertEqual(set(by_id),
+                             {"c-pending", "c-read", "c-followup"})
+            # PRECONDITION: the two replied chats genuinely differ in unread
+            self.assertEqual(by_id["c-read"]["status"], "replied")
+            self.assertEqual(by_id["c-followup"]["status"], "replied")
+            self.assertNotEqual(by_id["c-read"]["unread"],
+                                by_id["c-followup"]["unread"])
+            # the derivation itself
+            self.assertIs(by_id["c-pending"]["unread"], True)   # subset of unread
+            self.assertIs(by_id["c-read"]["unread"], False)
+            self.assertIs(by_id["c-followup"]["unread"], True)
+
+    def test_chatlist_count_line_shows_unread_and_total(self):
+        """#562 — the count line tells the truth: `topic chats · X unread ·
+        Y total` with the unread clause ONLY when unread > 0; the total is
+        always labelled `Y total`.
+
+        Production line: chatList's count-line branch (the unread filter +
+        the conditional clause). Evaluated in node against real rendered HTML.
+
+        PRECONDITION asserted at runtime: the two cases differ in whether any
+        chat is unread, so the unread-clause-only-when-positive branch has
+        both arms exercised and a single-branch implementation reds."""
+        import shutil
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — chatList count gate did NOT run")
+        page = watch._get_page()
+        fns = (_extract_js_fn(page, "function chatRow(") + "\n" +
+               _extract_js_fn(page, "function chatList("))
+        script = (
+            "const esc = t => String(t==null?'':t)"
+            ".replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');\n"
+            "const label = t => `<div class=\"label\">${t}</div>`;\n"
+            + fns + "\n"
+            "const cases = " + json.dumps([
+                {"chats": [{"id": "a", "status": "pending", "preview": "p1",
+                            "turns": 1, "unread": True},
+                           {"id": "b", "status": "replied", "preview": "p2",
+                            "turns": 2, "unread": False}]},
+                {"chats": [{"id": "c", "status": "replied", "preview": "p3",
+                            "turns": 2, "unread": False}]},
+            ]) + ";\n"
+            "console.log(JSON.stringify(cases.map(c => chatList(c))));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        if proc.returncode != 0:
+            self.fail("node eval failed: " + proc.stderr)
+        with_unread, without_unread = json.loads(proc.stdout)
+        # PRECONDITION: the two cases genuinely differ in unread presence
+        self.assertIn("unread", with_unread)
+        self.assertNotIn("unread", without_unread)
+        # unread > 0 → "N unread · M total" (N/M derived from the case data,
+        # never a literal tuned to today's fixture)
+        unread_n = 1  # only the first chat in the with_unread case is unread
+        self.assertIn(f"{unread_n} unread · 2 total", with_unread)
+        # unread == 0 → "M total", no unread clause
+        self.assertIn("1 total", without_unread)
+
+    def test_chatrow_is_a_link_to_its_chat_page(self):
+        """#562 — each row links to /chat/<id>. The row used to be an inert
+        <div>; the defect was 'I can't open the chat'. Now it is an anchor.
+
+        Production line: chatRow's `<a href="/chat/...">` element. Reverting
+        it to a <div> (or dropping the href) reds the link assertion."""
+        import shutil
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — chatRow link gate did NOT run")
+        page = watch._get_page()
+        fns = _extract_js_fn(page, "function chatRow(")
+        script = (
+            "const esc = t => String(t==null?'':t)"
+            ".replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');\n"
+            + fns + "\n"
+            "console.log(JSON.stringify(chatRow({id:'c-42',status:'replied',"
+            "preview:'in review',turns:2,unread:false})));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        if proc.returncode != 0:
+            self.fail("node eval failed: " + proc.stderr)
+        row = json.loads(proc.stdout)
+        self.assertIn('href="/chat/c-42"', row,
+                      "the row must link to its /chat/<id> page")
+        self.assertIn('class="dim', row,
+                      "the row keeps the dim-row idiom the list already uses")
+        self.assertNotIn('<div class="dim"', row,
+                         "the row is no longer an inert <div>")
+
+    def test_buildchat_renders_transcript_turns_newest_last(self):
+        """#562 — /chat/<id> renders the conversation: the dw-turn frames read
+        as turns (his / the dreamer's), newest last, and an unknown id degrades
+        quietly in the page's own voice (never a traceback).
+
+        Production line: buildChat's turn-rendering loop + its not-found
+        degrade. Evaluated in node against real rendered HTML. PRECONDITION:
+        the two turns differ in body so an order-swap or a single-turn
+        renderer reds."""
+        import shutil
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — buildChat gate did NOT run")
+        page = watch._get_page()
+        fns = (_extract_js_fn(page, "function chatTurn(") + "\n" +
+               _extract_js_fn(page, "function buildChat("))
+        script = (
+            "const esc = t => String(t==null?'':t)"
+            ".replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');\n"
+            "const label = t => `<div class=\"label\">${t}</div>`;\n"
+            + fns + "\n"
+            "const entries = " + json.dumps([
+                {"role": "human", "at": "2026-07-31T01:00:00",
+                 "receipt": "", "body": "first message"},
+                {"role": "agent", "at": "2026-07-31T01:05:00",
+                 "receipt": "", "body": "the dreamer replied"},
+            ]) + ";\n"
+            "console.log(JSON.stringify([buildChat({title:'t',status:'replied',"
+            "entries:entries}), buildChat(null)]));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        if proc.returncode != 0:
+            self.fail("node eval failed: " + proc.stderr)
+        rendered, notfound = json.loads(proc.stdout)
+        # PRECONDITION: the two turns differ in body
+        self.assertIn("first message", rendered)
+        self.assertIn("the dreamer replied", rendered)
+        # newest LAST (file order = chronological): the reply follows the msg
+        self.assertLess(rendered.index("first message"),
+                        rendered.index("the dreamer replied"),
+                        "turns render newest-last, in transcript order")
+        # his / the dreamer's: both roles are labelled
+        self.assertIn("you", rendered)
+        self.assertIn("dreamer", rendered)
+        # unknown id degrades quietly, the page's own voice — never empty
+        self.assertTrue(notfound and "not found" in notfound,
+                        "an unknown id degrades in the page's voice")
 
     def test_question_update_stamp_is_per_entry_not_file_mtime(self):
         # #473 — "updated" means THIS entry's content changed after first
@@ -6492,6 +6676,33 @@ class TestAppShell(unittest.TestCase):
             status, body = self._get(base + "/reviews")
             self.assertEqual(status, 200)
             self.assertIn('id="view"', body)
+
+    def test_chat_route_serves_shell_and_chatdata(self):
+        """#562 — /chat/<id> serves the one app shell (deep links render
+        client-side) and /chatdata?id= returns the parsed transcript for a
+        real chat, 404 for an unknown id. Production line: the do_GET
+        shell-serve allowlist for /chat and the /chatdata endpoint."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch.apply_chat_turn(d, "c-real", "human", "a real question")
+            watch.apply_chat_turn(d, "c-real", "agent", "a real reply")
+            base = self._serve(d)
+            # /chat/<id> serves the shell (deep link keeps working)
+            status, body = self._get(base + "/chat/c-real")
+            self.assertEqual(status, 200)
+            self.assertIn('id="view"', body)
+            # /chatdata?id=<real> returns the parsed turns + the derivation
+            status, payload = self._get(base + "/chatdata?id=c-real")
+            self.assertEqual(status, 200)
+            j = json.loads(payload)
+            self.assertEqual(j["id"], "c-real")
+            self.assertEqual(j["status"], "replied")
+            roles = [t["role"] for t in j["entries"]]
+            self.assertEqual(roles, ["human", "agent"])
+            # /chatdata?id=<unknown> degrades to 404, never a traceback
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self._get(base + "/chatdata?id=no-such-chat")
+            self.assertEqual(cm.exception.code, 404)
 
     def test_researchraw_blocks_escape_src_and_missing(self):
         # The src/ half is the load-bearing one: a source is .html under the
