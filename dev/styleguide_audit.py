@@ -619,7 +619,10 @@ def print_report(res, revrange, window, out=sys.stdout):
                 + len(res["ui_exempt"]) + len(res["ui_miss"]))
     print(file=out)
     print(
-        f"watch.py commits: {ui_total} UI "
+        # "dashboard", not "watch.py": since #397 a UI commit usually touches
+        # only client/, so naming the file would describe the wrong set — and
+        # this line is the one a reader takes the count from.
+        f"dashboard commits: {ui_total} UI "
         f"({len(res['ui_ok'])} with a styleguide entry within {window} "
         f"relevant commits, "
         f"{len(res['ui_by_id'])} documented by task id named in the doc, "

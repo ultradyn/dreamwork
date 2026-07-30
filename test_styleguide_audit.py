@@ -151,12 +151,19 @@ def test_ui_constants_track_the_client_assets_at_head():
     audit names could vanish; the constant that loads it could be renamed so
     the page stops assembling; or a UI-shaped string LITERAL could creep back
     into watch.py, where the post-extraction prefix rule would never see it.
+
+    Paths are resolved against THIS FILE's directory, not the process cwd.
+    Relative paths made all three assertions depend on where pytest happened
+    to be started: run from anywhere else, `client/style.css` and `watch.py`
+    simply are not there, and the check fails for a reason that has nothing
+    to do with what it measures.
     """
+    repo = pathlib.Path(__file__).resolve().parent
     # 1. every registered asset exists and carries content. Size, not mere
     #    existence — an empty file would satisfy `is_file` and serve a blank
     #    page, and this test would have vouched for it.
     for rel in a.CLIENT_ASSETS:
-        p = pathlib.Path(rel)
+        p = repo / rel
         assert p.is_file(), (
             "dev/styleguide_audit.py names %s but it does not exist — the "
             "audit's HEAD guard would refuse, and UI changes to a moved "
@@ -167,7 +174,7 @@ def test_ui_constants_track_the_client_assets_at_head():
             "check that reads it would pass vacuously" % rel
         )
 
-    src = open("watch.py").read()
+    src = (repo / "watch.py").read_text()
     tree = ast.parse(src)
     assigned, literal_strs = set(), set()
     for node in tree.body:
@@ -223,10 +230,15 @@ def test_the_cli_actually_runs_end_to_end():
     is the vacuous-filter refusal, and anything else — a traceback — is the
     bug this exists to catch.
     """
+    # cwd pinned to the repo root, derived from this file rather than assumed:
+    # the relative script path only resolves if pytest happened to be invoked
+    # from there, so without it this test reports the CLI as broken (or, worse,
+    # skips silently past it) depending on where the suite was started.
+    repo = pathlib.Path(__file__).resolve().parent
     proc = subprocess.run(
         [sys.executable, "dev/styleguide_audit.py", "HEAD~1..HEAD",
          "--window", "3"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, cwd=repo,
     )
     assert proc.returncode in (0, 1), (
         "audit-styleguide did not reach a verdict (exit %d).\n"
@@ -237,7 +249,7 @@ def test_the_cli_actually_runs_end_to_end():
     )
     # precondition: it really did classify something, rather than printing an
     # empty report that would satisfy the assertions above on any input
-    assert "watch.py commits:" in proc.stdout, (
+    assert "dashboard commits:" in proc.stdout, (
         "audit-styleguide produced no classification line — the checks above "
         "would pass on a silent no-op.\nstdout:\n%s" % proc.stdout[-2000:]
     )
