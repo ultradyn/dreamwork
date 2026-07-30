@@ -4006,6 +4006,11 @@ function chatList(d) {
   if (!d.chats || !d.chats.length) return '';
   return label(`topic chats · ${d.chats.length}`) + d.chats.map(chatRow).join('');
 }
+/* #545 — the dashboard reviews panel caps at the most recent few rows and
+   links to the full /reviews listing. The full list is its own subject and
+   earns a URL (watch-design.md's navigate principle), so the panel is a
+   window onto it rather than the whole thing. */
+const REVIEWS_DASH_CAP = 5;
 function buildDashboard(d) {
   let h = `<div id="sections">`;
   // a fault first (it is one line, and usually absent), then what the loop has
@@ -4035,8 +4040,19 @@ function buildDashboard(d) {
        unavailable the row says so by name rather than lying with mtime.
        Secondary "modified X ago" only when created is known and differs;
        the chrome's ` · ` is the same separator #456 used for date/age. */
-    h += label('reviews') + d.reviews.map(r => artifactRow(r, 'review'))
+    /* #545 — cap the panel at the most recent REVIEWS_DASH_CAP rows: take
+       the first of what the section already renders (#463 birth-newest-
+       first, ascending filename tie-break) — no second ordering. Render
+       exactly as before when the total is within the cap (no link, no
+       "5 of 5" noise); only when there are more does the link line name
+       the total honestly and point at the full /reviews listing. The rows
+       are the same artifactRow the /reviews page renders — a row here and
+       a row there are the same row. */
+    const shown = d.reviews.slice(0, REVIEWS_DASH_CAP);
+    h += label('reviews') + shown.map(r => artifactRow(r, 'review'))
         .join('');
+    if (d.reviews.length > shown.length)
+      h += `<div class="dim"><a href="/reviews">all ${d.reviews.length} reviews →</a></div>`;
   }
   h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
@@ -4411,6 +4427,20 @@ function buildResearch(name, d) {
       `<code>review_artifact.py</code>, the one template pipeline.</div>`;
   return label('research') +
     d.research.map(r => artifactRow(r, 'research')).join('');
+}
+/* #545 — every review artifact on one page, the listing shape the review
+   and research surfaces already share: one artifactRow factory, the same
+   dock-link behaviour and created/modified age pair. The dashboard's cap
+   points here; this is the full list that earned a URL (watch-design.md's
+   navigate principle: the full list is its own subject). A row on the
+   dashboard and a row here are the same row — kind is still 'review', so
+   the dock-link and decision marker are unchanged. */
+function buildReviews(d) {
+  if (!d) return '<div class="dim">loading…</div>';
+  if (!d.reviews.length)
+    return label('reviews') + '<div class="dim">none yet</div>';
+  return label('reviews') +
+    d.reviews.map(r => artifactRow(r, 'review')).join('');
 }
 /* #452 — ONE question on its own page: a surface the loop's churn cannot
    shift under him mid-answer. The key (`qid` in the URL) is the question's
@@ -5136,11 +5166,11 @@ let view = { name: null, param: null, q: null };
    The /filedata response carries one of those shapes; never the bytes. */
 let fileCache = { param: null, fetched: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
-const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22, question: 0.18, research: -0.08 };
+const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19 };
 /* per-route dissolve signature: each destination swirls from its own
    turbulence seed, so arriving somewhere has a consistent feel (pairs with
    the per-route tint). Distinct small integers give distinct fields. */
-const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61, question: 67, research: 71 };
+const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61, question: 67, research: 71, reviews: 73 };
 /* ── the tab title (#153) ─────────────────────────────────────────────────
    The title is the ONLY part of this dashboard that exists while the tab is
    backgrounded, which is most of its life — so it answers the page's whole
@@ -5178,7 +5208,8 @@ const TITLE_ROUTE = { dashboard: () => '', questions: () => 'questions',
                       file: p => p || 'file',
                       review: p => 'review ' + (p || ''),
                       question: () => 'question',
-                      research: p => 'research' + (p ? ' ' + p : '') };
+                      research: p => 'research' + (p ? ' ' + p : ''),
+                      reviews: () => 'reviews' };
 /* two missed heartbeats (4.75m each) — one late beat is a busy machine, two
    is a loop that stopped. */
 const STALE_TICK_MS = 10 * 60 * 1000;
@@ -6044,6 +6075,8 @@ function routeOf(loc) {
     const sp = new URLSearchParams(loc.search);
     return { name: 'research', param: sp.get('p') };
   }
+  // #545 — the full reviews listing the dashboard's cap points at.
+  if (loc.pathname === '/reviews') return { name: 'reviews', param: null };
   return { name: 'dashboard', param: null };
 }
 /* THE ONE PLACE `data` IS REPLACED, and it is a function rather than an
@@ -6116,6 +6149,7 @@ async function buildCurrent() {
   if (view.name === 'review') return buildReview(view.param, view.q, d);
   if (view.name === 'question') return buildQuestion(view.param, d);
   if (view.name === 'research') return buildResearch(view.param, d);
+  if (view.name === 'reviews') return buildReviews(d);
   if (!d) return '<div class="dim">loading…</div>';
   if (view.name === 'questions') return buildQuestions(d);
   if (view.name === 'answers') return buildAnswers(d);
@@ -8214,6 +8248,9 @@ const TITLES = {
      to a line and a half, and it is rendered in full by the card directly
      below. When the key resolves nowhere the missing notice says so. */
   question: () => 'question',
+  /* #545 — the listing surface; the heading names it like the research
+     listing does. */
+  reviews: () => 'reviews',
 };
 /* The copy button carries no path of its own, on purpose: it reads
    `view.param`, which is what the router parsed out of the URL and therefore
@@ -8311,6 +8348,10 @@ function crumbsFor(v, d) {
                               'research: ' + v.param) });
     return row;
   }
+  // #545: the reviews listing's way back is the dashboard, the same single
+  // home crumb the research listing carries (no artifact here, just the list).
+  if (v.name === 'reviews')
+    return [{ k:'home', html:'<a href="/">&larr; dashboard</a>' }];
   if (!d) return [];
   // #491 — the version crumb sits BESIDE the freshness age ("updated Ns ago"),
   // and a bare migration filename in that slot read as "this file changed Ns
@@ -8991,6 +9032,7 @@ async function navigate(name, param, opts) {
     : name === 'question' ? '/question?qid=' + encodeURIComponent(param || '')
     : name === 'research' ? '/research' +
         (param ? '?p=' + encodeURIComponent(param) : '')
+    : name === 'reviews' ? '/reviews'
     : '/';
   /* The wide artifact column is the review idiom's, and a research DOC
      (#484, /research?p=…) is the same reading gesture over the same
@@ -9020,7 +9062,8 @@ function isInternal(a) {
   return a.pathname === '/' || a.pathname === '/questions'
       || a.pathname === '/answers'
       || a.pathname === '/file' || a.pathname === '/review'
-      || a.pathname === '/question' || a.pathname === '/research';
+      || a.pathname === '/question' || a.pathname === '/research'
+      || a.pathname === '/reviews';
 }
 addEventListener('click', e => {
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey ||
@@ -14219,7 +14262,8 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # Same-document routes all return the one app shell; the client
             # router renders the matching view (deep links keep working).
             if parsed.path in ("/", "/questions", "/answers", "/file",
-                               "/review", "/question", "/research"):
+                               "/review", "/question", "/research",
+                               "/reviews"):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
                 # #487: optional burn_step lets the head's cycle control
