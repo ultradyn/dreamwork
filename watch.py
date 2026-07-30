@@ -4156,6 +4156,16 @@ function buildDashboard(d) {
   // (this panel re-renders through innerHTML on every tick; a new chat
   // arriving is the same settled re-render the commits list does).
   h += chatList(d);
+  // #564 — the two questions parts grouped under one visible "Q & A"
+  // section. `label()` is the dashboard's section idiom, and its margin-top
+  // (var(--space), the section-rhythm token) IS the real visual gap above
+  // the group: previously qSection sat directly under the chats list with
+  // only the `.25rem` a bare <details> carries. The gap is achieved entirely
+  // on the questions side — chatList above is another lane's region and is
+  // not touched. Static structure, so the panel's settled tick re-render
+  // (#504) carries it with no new motion; the group's internal rhythm is
+  // unchanged (grouping + separation, not a redesign of the cards).
+  h += label('Q & A');
   h += qSection(d);
   h += `<div class="dim"><a href="/answers">questions for the dreamer · ${d.answers_open.length} open</a></div>`;
   if (d.reviews.length) {
