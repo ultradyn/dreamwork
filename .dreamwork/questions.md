@@ -79,6 +79,44 @@
   - **Follow-up (loop, 2026-07-31 07:20):** verified all 25 are landed; #576 now catches the gap; backlog
     cleared to 0 WARNs. Nothing for you to do here — recorded for your awareness.
 
+- **P2 · 2026-07-31 07:30 — #571: persistent user settings — four design calls.**
+  Your steer (receipt 09a8897b): *"Add persistent user settings in the database, probably just store it as jsonb
+  if you can. indexed by userid … check `~/src/refs/amr-ui/` for a good example."* Design at
+  `.dreamwork/docs/plans/user-settings.md` (design only; authorises no code). The amr-ui reference's
+  **registry model maps** (code-declared registry: kinds, defaults, tags, descriptions, enum closed-sets;
+  store holds only non-default overrides; generic page iterates it) — its **storage layer does not** (it is
+  per-browser localStorage; #228 ruled settings server-side, converging across tabs AND browsers). An IGC
+  (I1–I5 × G1–G5) refuted three shapes (metadata-in-DB un-lintable; fold-into-posture overloads it;
+  localStorage per-browser), leaving two survivors that tie — escalated as Q1.
+
+  **`Q1` — store shape: table in the ledger store, or a separate store?** **`rec: I1 — a `user_setting`
+  table in the ledger store.** It is already this machine's gitignored WAL+FULL sqlite store with a
+  migration ladder; one more `CREATE TABLE` reuses `LedgerStore` verbatim. A separate `.dreamwork/
+  settings.sqlite3` (I2) is not wrong (`user-events.sqlite3` is the precedent) but opens a second
+  connection/WAL/schema-ladder for mutable key/value overrides that have no reason to live apart. The fork:
+  if you want settings to travel independently of tasks (a future export/import profile), I2 earns its file.
+
+  **`Q2` — value shape: one TEXT+JSON column, or typed columns?** **`rec: one `value` TEXT column with
+  JSON validation in code`** — matching your "jsonb" sketch. `(userid, key, value)` where `value` is a
+  JSON-encoded scalar validated by the registry's per-kind `validate()` on write. `userid` is a
+  forward-looking constant (`'local'`) until #275/#276 multi-user.
+
+  **`Q3` — the registry's home: a new `settings.py`, or reuse `lint.py`?** **`rec: a new `settings.py`
+  module`** declaring the registry (`SETTINGS`-equivalent), imported by both `lint.py` (lint check) and
+  `watch.py` (read/write + `collect()`). Single-source; keeps frontend-preference metadata out of the
+  linter's concerns; testable in isolation.
+
+  **`Q4` — relationship to posture: sibling, or superset?** **`rec: sibling — settings subsume posture's
+  PATTERN, not its TABLE.** Posture stays as-is (its own file, closed set, `/posture` route, tick-read
+  contract) because it is operational state the scheduler reads every tick. User settings are the
+  generalisation for *non-operational* preferences (dither, composer-toggle default). Posture axes are NOT
+  user settings; they share a pattern, not a table.
+
+  **If you say nothing:** nothing is built — the design authorises no code, and the recs stand as defaults
+  when #571's implementation is planned. First consumers queued: #573 (ask-me toggle), #570 (autoexpand
+  persistence), #295 (dither button-group — the gfx section you named).
+  Accepted answers: `rec` (takes all four) · per-question (`Q1: …`) · free text.
+
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
