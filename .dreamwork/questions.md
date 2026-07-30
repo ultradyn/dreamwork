@@ -3,19 +3,6 @@
 ## Open
 
 
-- **P2 · 2026-07-30 10:05 — #497: read-only task CLI — Python thin verbs, or a small binary + dispatcher?**
-  Implementation is near, and the task carries your recorded open decision. The candidates:
-  thin Python verbs in `dev/ledger.py`'s shape (`list [--state] [--sort] [--json]`, `get <id>`,
-  `count [--state] [--json]`, `reviews list|get`) vs your 01:05 note's small fast binary with a
-  git-style `dreamwork-thingy` dispatch. **Rec: Python thin verbs.** The read primitives already
-  exist in Python (`ledger_parse.store_entries`, `store_ids_by_state`, the `review_decision`
-  table), the #352 parser-unification prereq has landed, and a git-style dispatcher does not
-  exist — building one to serve four read verbs is a second project whose cost lands before any
-  benefit. The binary's real advantage (startup speed) doesn't bind on verbs a coordinator runs
-  a few times per tick. If the binary matters later, the verbs' output contract survives a rewrite.
-  - **Answer (via watch, 2026-07-30 16:31):** rec
-
-
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
@@ -50,6 +37,24 @@
     primary way we access dreamworkers
 
 ## Answered
+
+- **P2 · 2026-07-30 10:05 — #497: read-only task CLI — Python thin verbs, or a small binary + dispatcher?**
+  → answered (2026-07-30 16:31): **rec — Python thin verbs.** The read-only task CLI ships as thin
+  Python verbs in `dev/ledger.py`'s shape (`list [--state] [--sort] [--json]`, `get <id>`,
+  `count [--state] [--json]`, `reviews list|get`) riding the existing `ledger_parse` primitives; the
+  small binary + git-style dispatcher is out (a second project whose cost lands before any benefit;
+  startup speed does not bind on per-tick verbs). The verbs' output contract must survive a future
+  rewrite if the binary ever matters. Recorded on `#497`; implementation unblocked.
+  Implementation is near, and the task carries your recorded open decision. The candidates:
+  thin Python verbs in `dev/ledger.py`'s shape (`list [--state] [--sort] [--json]`, `get <id>`,
+  `count [--state] [--json]`, `reviews list|get`) vs your 01:05 note's small fast binary with a
+  git-style `dreamwork-thingy` dispatch. **Rec: Python thin verbs.** The read primitives already
+  exist in Python (`ledger_parse.store_entries`, `store_ids_by_state`, the `review_decision`
+  table), the #352 parser-unification prereq has landed, and a git-style dispatcher does not
+  exist — building one to serve four read verbs is a second project whose cost lands before any
+  benefit. The binary's real advantage (startup speed) doesn't bind on verbs a coordinator runs
+  a few times per tick. If the binary matters later, the verbs' output contract survives a rewrite.
+  - **Answer (via watch, 2026-07-30 16:31):** rec
 
 - **P2 · 2026-07-30 04:45 — #504: the composer 'chat' design is done — an IGC made it the first slice of #229, and four forks are yours.**
   → answered (2026-07-30 07:48): **rec ×4.** The composer-chat design proceeds as the first slice of #229 with the design's four defaults. Implementation unblocked; queued behind the watch.py UI lanes.
