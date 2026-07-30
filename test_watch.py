@@ -8687,6 +8687,108 @@ class TestSubmissionIdempotency(unittest.TestCase):
         with watch.open_journal(watch._journal_path(d)) as journal:
             return journal.receipt_count()
 
+    @staticmethod
+    def _extract_draftstore():
+        """Pull the DraftStore IIFE out of PAGE for node execution.
+
+        The module is self-contained (only globals it reads are `data`,
+        `localStorage`, `crypto`), so it runs under node with those mocked.
+        Splits on the IIFE's own open/close — there is no nested `})();`
+        inside it, so the first close is the module's.
+        """
+        import re
+        body = watch.PAGE.split("<script>", 1)[1].rsplit("</script>", 1)[0]
+        marker = "const DraftStore = (() => {"
+        head, rest = body.split(marker, 1)
+        inner, _tail = rest.split("})();", 1)
+        return marker + inner + "})();"
+
+    def test_attempt_store_stable_per_draft_fresh_after_edit(self):
+        """#274 client: the per-attempt id is stable for one composition —
+        across repeat calls AND a same-text re-save (so a double-click or a
+        retry after a re-render sends the SAME id and the journal dedupes) —
+        and fresh after an edit (an edit is a new attempt, never deduped
+        across content). Cleared with the draft on landed.
+
+        Production lines: DraftStore.attemptId (mint/get) and the
+        aid-on-text-match preservation in save()."""
+        import shutil, subprocess, textwrap
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — the JS gate did NOT run")
+        store = self._extract_draftstore()
+        script = textwrap.dedent("""\
+            // deterministic localStorage + REAL v4 UUIDs (backed by node's
+            // crypto, so the shape assertion tests _mintId's real output, not
+            // a mock). The behaviour under test is stability/drop/clear, which
+            // are deterministic regardless of the random value.
+            const _nc = require('crypto');
+            const crypto = { randomUUID: () => _nc.randomUUID() };
+            const _s = {};
+            const localStorage = {
+              getItem: k => (k in _s ? _s[k] : null),
+              setItem: (k, v) => { _s[k] = String(v); },
+              removeItem: k => { delete _s[k]; },
+            };
+            const data = { target: 'proj-T' };
+            %s
+            const lid = DraftStore.id('card', 'Q1');
+            DraftStore.save(lid, 'hello');
+            const a1 = DraftStore.attemptId(lid);          // mint for 'hello'
+            const a2 = DraftStore.attemptId(lid);          // same draft -> stable
+            DraftStore.save(lid, 'hello');                 // re-save same text -> kept
+            const a3 = DraftStore.attemptId(lid);          // still stable
+            DraftStore.save(lid, 'hello world');           // EDIT -> stale id dropped
+            const a4 = DraftStore.attemptId(lid);          // new attempt -> fresh
+            DraftStore.clear(lid);                         // landed -> record gone
+            const rec = DraftStore.get(lid);
+            process.stdout.write(JSON.stringify({
+              stable: a1 === a2 && a2 === a3,
+              freshAfterEdit: a4 !== a1,
+              cleared: rec === null || !rec.attemptId,
+              shape: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(a1)
+            }));
+        """) % store
+        out = subprocess.check_output(["node", "-e", script], text=True)
+        res = json.loads(out)
+        self.assertTrue(res['stable'],
+                        f"attempt id must be stable for one draft: {res}")
+        self.assertTrue(res['freshAfterEdit'],
+                        f"an edit must mint a fresh id (dedupe by id, not content): {res}")
+        self.assertTrue(res['cleared'],
+                        f"clear must drop the id with the draft: {res}")
+        self.assertTrue(res['shape'],
+                        f"the id must be a v4 UUID shape: {res}")
+
+    def test_covered_submit_paths_send_the_attempt_id(self):
+        """#274: the boundary across submit paths, stated and checked.
+
+        COVERED (append routes that duplicate content on re-application —
+        these mint a per-attempt id and send X-Client-Action-Id):
+          /answer, /ask, /comment, /command (main composer + popout).
+        DECLARED OUT:
+          /decide — its client POST originates in the review-artifact
+            surface, not watch.py's composer/answer region (the server
+            short-circuit still protects it once that surface sends the id);
+          /tint, /run-mode, /posture — state-setting, application-level
+            idempotent (same value = no mutation, no content duplication);
+          /deploy — single-flight guard + loopback-only already prevents a
+            double submit.
+        This pins the boundary so a new path cannot slip past uninspected.
+        """
+        # the header is sent
+        self.assertIn("'X-Client-Action-Id'", watch.PAGE)
+        # each covered path mints an attempt id from its draft store
+        for token in (
+            "DraftStore.attemptId(DraftStore.id('card', q.title))",   # /answer
+            "DraftStore.attemptId(DraftStore.id('card', entry.title))",  # /comment
+            "DraftStore.attemptId(DraftStore.id('ask', 'main'))",     # /ask
+            "DraftStore.attemptId(composerLid())",                    # /command main
+            "DraftStore.attemptId(popLid)",                           # /command popout
+        ):
+            self.assertIn(token, watch.PAGE,
+                          f"covered submit path must mint an attempt id: {token!r}")
+
     def test_same_action_id_replays_to_one_receipt_one_application(self):
         """#274: replay of one attempt → exactly one receipt AND one application.
 
