@@ -1914,12 +1914,19 @@ STYLE = """<style>
   #cmdpalette .label { margin-top:0; }
   /* #177 — the box grows with what he types, on the page's one height-travel
      gesture (.85s, the same curve #104's regroup and the card fold use), then
-     scrolls past its own ceiling. `resize:none` because autosize OWNS the
-     height: a manual drag and a content fit fighting over `height` is a box
-     that loses the user's resize on the next keystroke. The ceiling is a
-     per-surface contract carried as `data-max-rows` (composer 15, answer 6 —
-     see fitText); reduced motion keeps the growth (function) and drops only
-     the timing, the page's standing rule. */
+     scrolls past its own ceiling. The ceiling is a per-surface contract
+     carried as `data-max-rows` (composer 15, answer 6 — see fitText);
+     reduced motion keeps the growth (function) and drops only the timing,
+     the page's standing rule.
+     #570 — the composer box is manually resizable (`resize:vertical`, the
+     same idiom `.askform textarea` already uses). A drag of the native handle
+     is continuous input, and a transition on `height` would put the box
+     behind his hand (transitions.md #305), so the press pauses the transition
+     and marks the composition manual: autosize yields to his size until the
+     next submit re-enables it (see the pointerdown/pointerup handler in the
+     composer IIFE and the `_manual` gate in fitText). `resize:none` stays on
+     the answer/note boxes (`.qfield textarea`) — autosize owns their height,
+     and the Q&A region is another lane's. */
   /* #464 — reserve the scrollbar gutter so the text never reflows when the
      box grows tall enough to hold every line and the bar would vanish.
      `scrollbar-gutter:stable` is the gutter-without-furniture reading of
@@ -1930,7 +1937,7 @@ STYLE = """<style>
   #cmdform textarea { width:100%; box-sizing:border-box;
     background:var(--panel); color:var(--text); border:1px solid var(--line);
     border-radius:var(--radius); font:inherit; padding:.4rem; margin:.3rem 0;
-    min-height:3.4rem; resize:none; overflow:auto; scrollbar-gutter:stable;
+    min-height:3.4rem; resize:vertical; overflow:auto; scrollbar-gutter:stable;
     transition:height .85s cubic-bezier(.32,.1,.2,1); }
   /* command selection: a button group whose background indicator SLIDES to
      the active option. The one piece of crisp motion in the composer, kept
@@ -8310,6 +8317,12 @@ function lineHeightOf(ta, cs) {
 }
 function fitText(ta, animate) {
   if (!ta) return;
+  // #570 — once the user has dragged the composer's resize handle, autosize
+  // yields to his height for the rest of this composition: a content fit would
+  // otherwise overwrite his resize on the next keystroke (the box #177 noted
+  // `resize:none` to prevent). A submit (or a close that re-renders the box)
+  // clears `_manual` and re-enables growth.
+  if (ta._manual) return;
   const rows = parseInt(ta.dataset.maxRows, 10);
   if (!rows) return;                          // no ceiling: leave the box alone
   const cs = getComputedStyle(ta);
@@ -8343,6 +8356,7 @@ function fitText(ta, animate) {
     void ta.offsetWidth;
     ta.style.transition = '';
   }
+  ta._fitH = target;                          // #570: the height autosize owns
 }
 /* snap a box to its floor — used after a send clears it, where the CARD's own
    regroup already owns the height travel and a second transition on the
@@ -8352,6 +8366,8 @@ function clearBox(ta) {
   if (!ta) return;
   ta.style.transition = 'none';
   ta.style.height = '';
+  ta._manual = false;            // #570: a send re-enables autosize for the next box
+  ta._fitH = null;               //   (no inline height to diverge from)
   void ta.offsetWidth;
   ta.style.transition = '';
 }
@@ -10127,6 +10143,34 @@ function popoutDoc(url, label) {
   }
   renderMenu();
   setKind(activeKind);              // paint the initial row + selection
+  // #570 — the composer box is manually resizable (CSS `resize:vertical`). A
+  // drag of the native handle is continuous input, and the box's height
+  // transition (.85s, #177) would put it behind his hand (transitions.md #305:
+  // his pointer already supplies every intermediate position), so the press
+  // PAUSES the transition for its whole duration: the box follows the pointer
+  // rather than trailing it. A height change on release means he dragged it,
+  // and that marks the composition manual — autosize yields to his size until
+  // the next submit (the `_manual` gate in fitText), which re-enables growth.
+  // `#cmdtext` is a static node (outside #view), so these listeners live once.
+  (function () {
+    const ta = document.getElementById('cmdtext');
+    if (!ta) return;
+    let pressH = null;
+    ta.addEventListener('pointerdown', () => {
+      pressH = ta.getBoundingClientRect().height;
+      ta.style.transition = 'none';      // a drag is continuous: no transition
+    });
+    const release = () => {
+      if (pressH == null) return;
+      const endH = ta.getBoundingClientRect().height;
+      if (Math.abs(endH - pressH) > 1) ta._manual = true;   // he dragged it
+      pressH = null;
+      void ta.offsetWidth;
+      ta.style.transition = '';           // restore for autosize's growth (#177)
+    };
+    ta.addEventListener('pointerup', release);
+    ta.addEventListener('pointercancel', release);
+  })();
   // the shell is served before /data.json returns, so the plugin half is
   // normally still in flight here and arrives via the tick below; this covers
   // the case where it landed first and nothing would otherwise ask for it
@@ -10227,6 +10271,14 @@ function popoutDoc(url, label) {
         if (plus) { const b = plus.getBoundingClientRect();
           ripple(b.left + b.width / 2, b.top + b.height / 2); }
         document.getElementById('cmdtext').value = '';
+        // #570 — a manual resize disabled autosize for that composition; a
+        // submit re-enables it (and the box resets to its floor below), so
+        // the next thought grows again. The manual size is not persisted
+        // (his words: "then it returns to normal behavior"); #571 may add a
+        // setting for that, out of scope here.
+        const cmdTa = document.getElementById('cmdtext');
+        cmdTa._manual = false;
+        cmdTa._fitH = null;
         clearDraft();  // unguarded ON PURPOSE: already inside cv.landed, and
         // an isDurable() here would read as a gate while gating nothing (#163)
         // #337: a landed STEERING command does not keep its kind — the
