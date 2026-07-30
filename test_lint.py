@@ -6135,3 +6135,91 @@ class TestReviewDecisionIntegrity:
         rows = [(lvl, d) for lvl, w, d in rep.rows if w == "review_decision"]
         assert rows and not ERRORS(rep, "review_decision"), \
             "markdown-mode must REPORT the check is moot, not vanish"
+
+
+class TestChatsV1Lint:
+    """#504 — lint.check_chats_v1: malformed transcripts and bad chat.json WARN
+    (never ERROR — the store degrades silently when a reader skips a chat); an
+    absent store and an empty store degrade to silence.
+
+    The WELL-FORMED chats are written through the PRODUCTION writer
+    (watch.apply_chat_turn); the DEFECTS (a torn transcript, a bad chat.json)
+    are hand-built because the production writer cannot produce them — that is
+    exactly what the detector exists to catch. The production line each
+    red-proof targets is named in each docstring and sabotaged on lint.py (the
+    detector), never on watch.py; restored byte-identical with cp.
+    """
+
+    def _dw(self, tmp_path):
+        return tmp_path / ".dreamwork"
+
+    def _run(self, dw):
+        rep = lint.Report()
+        lint.check_chats_v1(dw, lint.load_watch(), rep)
+        return rep
+
+    def _warns(self, rep):
+        return [d for lvl, w, d in rep.rows if w == "chats-v1" and lvl == lint.WARN]
+
+    def test_absent_store_is_silent(self, tmp_path):
+        # no .dreamwork/ at all — a fresh target has no chats
+        dw = self._dw(tmp_path)
+        rep = self._run(dw)
+        assert not [r for r in rep.rows if r[1] == "chats-v1"], \
+            "a fresh target with no chats-v1 store must report nothing"
+
+    def test_wellformed_chat_is_ok_with_count(self, tmp_path):
+        watch = lint.load_watch()
+        watch.apply_chat_turn(str(tmp_path), "c1", "human", "are we shipping?")
+        watch.apply_chat_turn(str(tmp_path), "c1", "agent", "yes")
+        rep = self._run(self._dw(tmp_path))
+        assert not self._warns(rep), f"a well-formed chat must not warn: {self._warns(rep)}"
+        oks = [d for lvl, w, d in rep.rows if w == "chats-v1" and lvl == lint.OK]
+        assert oks and "1" in oks[0], \
+            "the OK row must name the count examined, or coverage can shrink to silence"
+
+    def test_empty_store_is_silent_not_a_vacuous_ok(self, tmp_path):
+        # a store root with NO chat dirs must print nothing, not 'all well-formed'
+        (self._dw(tmp_path) / "chats-v1").mkdir(parents=True)
+        rep = self._run(self._dw(tmp_path))
+        assert not [r for r in rep.rows if r[1] == "chats-v1"], \
+            "a store with no chat dirs must not print a vacuous OK"
+
+    def test_malformed_transcript_warns(self, tmp_path):
+        """Production line: the `if openers != len(turns)` branch in
+        check_chats_v1. Sabotage it (drop the branch) and this test reds."""
+        watch = lint.load_watch()
+        watch.apply_chat_turn(str(tmp_path), "c-good", "human", "fine")
+        cdir = self._dw(tmp_path) / "chats-v1" / "c-bad"
+        cdir.mkdir(parents=True)
+        # a line-start opener with NO close marker: 1 opener, 0 parsed turns
+        (cdir / "transcript.md").write_text(
+            "<!-- dw-turn role=human at=2026-07-30T01:00:00 -->\n"
+            "torn, no close marker\n")
+        rep = self._run(self._dw(tmp_path))
+        warns = self._warns(rep)
+        assert any("c-bad" in d and "malformed" in d for d in warns), \
+            f"a torn transcript must be named: {warns}"
+        assert not any("c-good" in d for d in warns), \
+            "a well-formed chat must not be flagged"
+
+    def test_chat_json_not_valid_warns(self, tmp_path):
+        """Production line: the `if data is None` branch in check_chats_v1."""
+        watch = lint.load_watch()
+        watch.apply_chat_turn(str(tmp_path), "c4", "human", "hi")
+        (self._dw(tmp_path) / "chats-v1" / "c4" / "chat.json").write_text("{not json")
+        rep = self._run(self._dw(tmp_path))
+        warns = self._warns(rep)
+        assert any("c4" in d and "not valid JSON" in d for d in warns), \
+            f"an invalid chat.json must be named: {warns}"
+
+    def test_chat_json_id_disagrees_with_dir_warns(self, tmp_path):
+        """Production line: the `data.get('id') != cdir.name` branch."""
+        watch = lint.load_watch()
+        watch.apply_chat_turn(str(tmp_path), "c5", "human", "hi")
+        (self._dw(tmp_path) / "chats-v1" / "c5" / "chat.json").write_text(
+            json.dumps({"id": "WRONG", "mode": "main-dreamer", "created": "x"}))
+        rep = self._run(self._dw(tmp_path))
+        warns = self._warns(rep)
+        assert any("c5" in d and "WRONG" in d and "disagrees" in d for d in warns), \
+            f"a chat.json id that disagrees with the dir must be named: {warns}"

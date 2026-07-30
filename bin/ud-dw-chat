@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""ud-dw-chat — the dreamer's chat CLI (#504 remainder: the reply path).
+
+The main dreamer answers a topic chat by appending an AGENT turn to a
+chats-v1 transcript. This is the one supported way to reply: it goes through
+``watch.apply_chat_turn`` — the writer that one-lines the body and whose parser
+anchors both ``dw-turn`` markers at line start, so the two anti-forgery rules
+(load-bearing at 5cea6e0f) CANNOT be bypassed. Import it; never re-implement it.
+
+A chat id is the journal receipt id of the human's send (1:1 — a send creates a
+chat; ``watch._handle_command`` keys the transcript dir on the receipt id). So
+``reply <chat-id>`` answers the chat whose first human turn that receipt wrote.
+
+  list                      derived chat records (reuses watch.list_chats)
+  show <chat-id>            the full decoded transcript
+  reply <chat-id> [text...] append an AGENT turn (text via argv OR stdin)
+
+REPLY contract
+  - Text comes from argv (joined with a space) OR, when none is given, from
+    stdin (the relay.py idiom — his words can carry shell-hostile bytes, so a
+    pipe never meets a shell metacharacter).
+  - A reply to a chat id that DOES NOT EXIST is a LOUD refusal (EX_USAGE),
+    never a created chat: a typo'd id must not fork a conversation. Existence
+    is tested with the SAME production reader (``watch._parse_chat_turns``)
+    the dashboard uses, so the CLI and the list cannot disagree about what
+    counts as a chat.
+  - ``apply_chat_turn`` creates the chat on its first turn; the existence guard
+    in front of it is what makes reply refuse rather than create.
+
+USAGE
+  python3 <skill-dir>/bin/ud-dw-chat list [--target DIR]
+  python3 <skill-dir>/bin/ud-dw-chat show <chat-id> [--target DIR]
+  python3 <skill-dir>/bin/ud-dw-chat reply <chat-id> [text...] [--target DIR]
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+from pathlib import Path
+
+# `watch.py` lives at the repo root; this tool lives in `bin/`. Add the root
+# so `import watch` works when run as `python3 bin/ud-dw-chat` from the root
+# (sys.path[0] is then `bin/`, not the cwd) — the same idiom dev/ledger.py uses.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import watch  # noqa: E402  — the production reader + the one writer (apply_chat_turn)
+
+TARGET_DEFAULT = "."
+
+# Stable exit codes (mirrors dev/journal_consume.py). A usage refusal is
+# EX_USAGE; an IO failure appending the turn is EX_SOFTWARE (the chat existed,
+# so a retry is safe — re-running reply re-appends, which is a property the
+# dedup-by-content reader tolerates but the dreamer should not rely on).
+EX_OK = 0
+EX_USAGE = 64
+EX_SOFTWARE = 70
+
+# A chat id is a journal receipt id (a UUID hex string). It becomes a DIRECTORY
+# NAME under chats-v1/, so it must be a safe path component — no separator, no
+# `..`. This also makes a typo'd id a loud refusal rather than a traversal.
+_CHAT_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _chat_exists(target, chat_id):
+    """A chat exists iff its transcript holds >= 1 parsed turn.
+
+    Reuses ``watch._parse_chat_turns`` (the production reader ``list_chats``
+    uses) so the existence test cannot disagree with the dashboard about what
+    counts as a chat. A dir with a transcript but zero turns is not a chat you
+    can reply to — and ``list_chats`` skips exactly those, so this matches.
+    """
+    tpath = os.path.join(watch._chat_root(target), chat_id, "transcript.md")
+    return bool(watch._parse_chat_turns(watch.read_text(tpath)))
+
+
+def cmd_list(args, out) -> int:
+    """Derived chat records, one per line, newest first (reuses list_chats)."""
+    chats = watch.list_chats(args.target)
+    if not chats:
+        return EX_OK  # the quiet rule: empty prints nothing
+    for c in chats:
+        out.write(
+            f"{c['id']}\t{c['status']}\t{c['turns']}t\t{c['preview']}\n"
+        )
+    return EX_OK
+
+
+def cmd_show(args, out, err) -> int:
+    """The full decoded transcript of one chat (reuses _parse_chat_turns)."""
+    if not _CHAT_ID.match(args.chat_id):
+        err.write(f"ud-dw-chat show: bad chat id {args.chat_id!r}\n")
+        return EX_USAGE
+    tpath = os.path.join(
+        watch._chat_root(args.target), args.chat_id, "transcript.md")
+    turns = watch._parse_chat_turns(watch.read_text(tpath))
+    if not turns:
+        err.write(f"ud-dw-chat show: no chat {args.chat_id!r}\n")
+        return EX_USAGE
+    out.write(f"chat {args.chat_id}  ({len(turns)} turn(s))\n")
+    for t in turns:
+        rid = f" receipt={t['receipt']}" if t["receipt"] else ""
+        out.write(f"\n[{t['role']} @ {t['at']}{rid}]\n{t['body']}\n")
+    return EX_OK
+
+
+def cmd_reply(args, out, err) -> int:
+    """Append one AGENT turn through watch.apply_chat_turn (the one writer)."""
+    if not _CHAT_ID.match(args.chat_id):
+        err.write(f"ud-dw-chat reply: bad chat id {args.chat_id!r}\n")
+        return EX_USAGE
+    # Text from argv (joined) OR stdin (the relay.py idiom). The dreamer's
+    # reply words may carry shell-hostile bytes; a pipe never meets a shell
+    # metacharacter, and apply_chat_turn one-lines the body so a newline in the
+    # text can never forge a second turn.
+    if args.text:
+        text = " ".join(args.text)
+    elif not sys.stdin.isatty():
+        text = sys.stdin.read()
+    else:
+        err.write(
+            "ud-dw-chat reply: no text — pass words on the command line or "
+            "pipe the reply via stdin\n")
+        return EX_USAGE
+    if not text.strip():
+        err.write("ud-dw-chat reply: empty reply text\n")
+        return EX_USAGE
+    # A reply to an id that does not exist is a LOUD refusal, never a created
+    # chat — apply_chat_turn creates on first turn, so this guard must run
+    # BEFORE the call. A typo'd id forks no conversation.
+    if not _chat_exists(args.target, args.chat_id):
+        err.write(
+            f"ud-dw-chat reply: no chat {args.chat_id!r} — a reply creates no "
+            f"chat (typo? run `ud-dw-chat list`)\n")
+        return EX_USAGE
+    ok = watch.apply_chat_turn(args.target, args.chat_id, "agent", text)
+    if not ok:
+        err.write(
+            f"ud-dw-chat reply: could not append the turn to "
+            f"{args.chat_id!r}\n")
+        return EX_SOFTWARE
+    out.write(f"replied to {args.chat_id} (1 agent turn appended)\n")
+    return EX_OK
+
+
+def _parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="ud-dw-chat",
+        description=(
+            "The dreamer's chat CLI (#504): reply to a topic chat by appending "
+            "an AGENT turn through watch.apply_chat_turn."
+        ),
+    )
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    pl = sub.add_parser(
+        "list", help="derived chat records (reuses watch.list_chats)")
+    pl.add_argument(
+        "--target", default=TARGET_DEFAULT,
+        help="target project dir (default: %(default)s)")
+
+    ps = sub.add_parser(
+        "show", help="print the full decoded transcript of one chat")
+    ps.add_argument("chat_id", help="the chat id (= the receipt id)")
+    ps.add_argument(
+        "--target", default=TARGET_DEFAULT,
+        help="target project dir (default: %(default)s)")
+
+    pr = sub.add_parser(
+        "reply",
+        help="append an AGENT turn (text via argv OR stdin)")
+    pr.add_argument("chat_id", help="the chat id to reply to (= the receipt id)")
+    pr.add_argument(
+        "text", nargs="*",
+        help="the reply text (joined with spaces); if omitted, read stdin")
+    pr.add_argument(
+        "--target", default=TARGET_DEFAULT,
+        help="target project dir (default: %(default)s)")
+    return p
+
+
+def main(argv=None, out=None, err=None) -> int:
+    """Dispatch one subcommand. Returns a stable exit code; never raises
+    SystemExit (mirrors dev/journal_consume.py)."""
+    if argv is None:
+        argv = sys.argv[1:]
+    if out is None:
+        out = sys.stdout
+    if err is None:
+        err = sys.stderr
+    parser = _parser()
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else EX_USAGE
+        return EX_OK if code == 0 else EX_USAGE
+    if args.cmd == "list":
+        return cmd_list(args, out)
+    if args.cmd == "show":
+        return cmd_show(args, out, err)
+    if args.cmd == "reply":
+        return cmd_reply(args, out, err)
+    return EX_USAGE  # argparse(required=True) makes this unreachable
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

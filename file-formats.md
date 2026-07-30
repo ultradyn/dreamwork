@@ -2298,3 +2298,97 @@ dangling `question_title`, and a prose claim in the declared V1 grammar
 free-prose verdict scanning is the measured false-positive failure this repo
 distrusts) that conflicts the store. Where prose and store disagree, the
 store is the authority. Both exits report what was examined.
+
+## `.dreamwork/chats-v1/<id>/` — the topic-chat transcript store (#504)
+
+A topic chat is conversational truth: an append-only transcript of framed
+turns under `.dreamwork/chats-v1/<chat-id>/`. The chat id IS the journal
+receipt id of the human's send (1:1 — a send creates a chat; the composer
+`chat` command keys the dir on the receipt id in `watch._handle_command`).
+The receipt is the durable home; the transcript is the application step's
+conversational truth (the spine's `application → transcript`).
+
+Two files per chat:
+
+```text
+.dreamwork/chats-v1/<id>/
+  transcript.md   # append-only conversational truth (the turns)
+  chat.json       # identity ONLY (id/mode/created_from_receipt/created)
+```
+
+### `transcript.md` — the `dw-turn` framing, and the two anti-forgery rules
+
+Each turn is one block:
+
+```text
+<!-- dw-turn role=human|agent at=<iso>[ receipt=<id>] -->
+<one-lined text>
+<!-- /dw-turn -->
+```
+
+His chat text must never forge a turn (the `#126` rule, one level into the
+chat store). **Two rules together make it unforgeable, and either alone is
+insufficient** — measured at the #504 salvage gate, where `one_line` alone
+still parsed a fabricated `role=agent` turn out of marker-bearing text (the
+binding test is `test_chat_turn_text_cannot_forge_an_agent_turn`):
+
+- **The writer one-lines the body** (`watch.one_line`): a pasted newline
+  cannot push a forged marker to column 0.
+- **The parser anchors BOTH markers at line start** (`watch._CHAT_TURN_RE`,
+  `^<!--` for the opener and `^<!-- /dw-turn` for the close, both
+  `re.MULTILINE`): a marker typed INTO the body stays inline prose and can
+  never open or close a turn.
+
+The writer is `watch.apply_chat_turn(target, chat_id, role, text, …)` —
+import it, never re-implement it. `role` is `human` (his send, written by the
+composer's application step) or `agent` (a reply the dreamer appends via
+`bin/ud-dw-chat reply`). Both go through the same writer, so both obey both
+rules. A reply to a chat id that does not exist is a LOUD refusal (never a
+created chat — a typo'd id must not fork a conversation); the existence test
+reuses `watch._parse_chat_turns`, the same reader the dashboard uses.
+
+### `chat.json` — identity only, never a second truth
+
+`chat.json` carries identity only — `id`, `mode`, `created_from_receipt`,
+`created`. **Title, turn count, and status are DERIVED at read time** from the
+transcript (`watch.list_chats`), never stored: `status` is `replied` once an
+agent turn exists (a reply creates the chat's first agent turn), else
+`pending`. The `id` MUST agree with the dir name, because the dir IS the
+identity a reply targets.
+
+### Who writes vs reads
+
+- **Writers:** the composer's application step (a human turn, via
+  `watch.apply_chat_turn` in `watch._handle_command`) and the reply CLI
+  (`bin/ud-dw-chat reply`, an agent turn, via the same `apply_chat_turn`).
+  Both are the one writer; nothing else appends a turn.
+- **Readers:** the dashboard's topic-chat list (`watch.list_chats`, derived
+  records), `bin/ud-dw-chat` (`list`/`show`/the reply existence test), and
+  `lint.check_chats_v1`. All reuse `watch._parse_chat_turns` / `list_chats` —
+  never a second parser.
+
+### Consume-side reply instructions (#504 remainder)
+
+When the coordinator's tick drains a chat receipt (`dev/journal_consume.py
+consume`), the drained chat item carries what the dreamer needs to answer it:
+the chat id (== the receipt id), the text, and the exact reply command
+(`python3 <skill>/bin/ud-dw-chat reply <chat-id>`). This is a presentation
+change in the consume output, not a new channel — the receipt is already the
+durable home.
+
+### Checked by `lint.check_chats_v1` (WARN, never ERROR)
+
+The store degrades silently when a reader skips a chat (it loses that chat's
+view, not other data), so the check WARNs rather than ERRORs:
+
+- **A turn block that does not parse** — a line-start `dw-turn` opener the
+  production parser (`watch._parse_chat_turns`) does not turn into a turn
+  (a torn close marker, an incomplete header). Detected by comparing
+  line-start opener count to parsed-turn count.
+- **A bad `chat.json`** — not valid JSON, or whose `id` disagrees with the
+  dir name.
+
+Degrades to silence on an ABSENT store (a fresh target has no chats) and on a
+store with no chat dirs. The clean row names the count examined, so coverage
+cannot shrink to silence.
+

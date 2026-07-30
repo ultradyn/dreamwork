@@ -4426,6 +4426,89 @@ def check_review_decision_integrity(dw: Path, rep: Report) -> None:
                 f"conflicted{suffix}")
 
 
+# Counts line-start ``dw-turn`` openers — the SAME column-0 anchor the parser
+# (``watch._CHAT_TURN_RE``) requires, so the count and the parser cannot
+# disagree about what an opener is. A marker NOT at column 0 is inline prose
+# (the anti-forgery rule at 5cea6e0f), never an opener, so it is not counted.
+_CHAT_OPENER = re.compile(r"^<!--\s*dw-turn\s+role=", re.MULTILINE)
+
+
+def check_chats_v1(dw: Path, watch, rep: Report) -> None:
+    """#504 — the chats-v1 transcript store: malformed transcripts and bad
+    chat.json WARN (proportionate — never ERROR; the store degrades silently
+    when a reader skips a chat, it does not lose other data).
+
+    Two defects, both WARN:
+
+    1. **A turn block that does not parse.** The transcript is append-only
+       conversational truth; ``watch._parse_chat_turns`` is its ONE reader (the
+       same one ``list_chats`` and the reply CLI use). A line-start ``dw-turn``
+       opener the parser does NOT turn into a turn means a malformed block — a
+       torn close marker, a structurally incomplete header — and the reader
+       sees fewer turns than the transcript wrote. Counted by comparing
+       line-start openers to parsed turns; a disagreement names the dir.
+
+    2. **A bad chat.json.** ``chat.json`` carries IDENTITY only (never a second
+       truth — title/turns/status are derived at read time). It must be valid
+       JSON, and its ``id`` must agree with the dir name, because the dir IS
+       the identity a reply targets (``apply_chat_turn`` keys on it, and the
+       reply CLI's existence check follows it).
+
+    Degrades to silence on an ABSENT store (a fresh target has no chats) and on
+    a store with no chat dirs (reports nothing rather than a vacuous OK — a
+    check that examined zero chats must not print "all well-formed"). Reports
+    the count examined on the clean row so coverage cannot shrink to silence.
+    Reuses the production reader ``watch._parse_chat_turns`` / ``watch._safe_json``
+    rather than a second copy of either.
+    """
+    area = "chats-v1"
+    if watch is None:
+        return
+    root = dw / watch.CHAT_DIR
+    if not root.is_dir():
+        return  # absent store → degrade silently (a fresh target has no chats)
+    examined = 0
+    findings = 0
+    for cdir in sorted(p for p in root.iterdir() if p.is_dir()):
+        transcript = cdir / "transcript.md"
+        if not transcript.exists():
+            continue
+        examined += 1
+        text = transcript.read_text(encoding="utf-8", errors="replace")
+        # (1) a turn block that does not parse: an opener the production reader
+        # does not turn into a turn (torn close, incomplete header). The opener
+        # counter is anchored at line start, matching the parser's anchor.
+        openers = len(_CHAT_OPENER.findall(text))
+        turns = watch._parse_chat_turns(text)
+        if openers != len(turns):
+            findings += 1
+            rep.add(WARN, area, (
+                f"{cdir.name}: transcript has {openers} dw-turn opener(s) but "
+                f"{len(turns)} parsed — a turn block is malformed (the reader "
+                f"sees fewer turns than were written)"))
+        # (2) chat.json must be valid JSON and its id must agree with the dir.
+        meta = cdir / "chat.json"
+        if meta.exists():
+            data = watch._safe_json(
+                meta.read_text(encoding="utf-8", errors="replace"))
+            if data is None:
+                findings += 1
+                rep.add(WARN, area,
+                        f"{cdir.name}: chat.json is not valid JSON")
+            elif not isinstance(data, dict) or data.get("id") != cdir.name:
+                findings += 1
+                rep.add(WARN, area, (
+                    f"{cdir.name}: chat.json id {data.get('id')!r} disagrees "
+                    f"with the dir name (the dir is the identity a reply "
+                    f"targets)"))
+    if examined == 0:
+        return  # a store with no chat dirs reports nothing (not a vacuous OK)
+    if findings == 0:
+        rep.add(OK, area,
+                f"{examined} chat(s) examined, all transcripts and chat.json "
+                f"well-formed")
+
+
 def run_checks(dw: Path, watch, rep: Report) -> None:
     """Every check, in one place, because a SECOND copy of this list drifted.
 
@@ -4472,6 +4555,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_related_markers(dw, watch, rep)
     check_lesson_near_duplicates(dw, rep)
     check_review_decision_integrity(dw, rep)
+    check_chats_v1(dw, watch, rep)
     check_status_keys(dw, rep)
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are
     # the tool's own, so this only says anything when linting this repo.
