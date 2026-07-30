@@ -35,6 +35,50 @@ export async function waitFor(page, selector, timeoutMs = 15000) {
   }
 }
 
+/* ── server readiness at the navigation seam (#388) ────────────────────────
+ *
+ * Under CPU starvation a guard's own watch.py takes seconds longer to bind
+ * its socket — measured at load ~23 on 16 cores, startup was 7.7x baseline
+ * (1422ms vs 185ms), and once bound the kernel keeps the listen socket
+ * alive (0 drops across every run), so the failure is STARTUP, not mid-run
+ * death. The guards that spawned their own server with a fixed
+ * `await sleep(2500)` had no bound on that wait: under extreme load the
+ * sleep finished before watch.py bound, and the guard's first `fetch` or
+ * `goto` surfaced raw `TypeError: fetch failed [cause] ECONNREFUSED` — the
+ * worst class a guard has, the "threw before finishing" verdict that is
+ * neither pass nor fail and reads as a page problem rather than the
+ * infrastructure failure it is.
+ *
+ * NOT a timeout bump (#388's explicit boundary): a longer sleep hides a
+ * dead server; this NAMES it. The deadline is bounded and the last cause is
+ * carried in the message so the reader is sent to the infrastructure. */
+
+/** Poll `base` until it accepts a connection and responds, or throw a named
+ *  error on deadline. The failure it converts is the ECONNREFUSED a starved
+ *  watch.py produces before it binds — turned into "the server never came up
+ *  in Ns", which names the harness, not the page. Returns true on ready;
+ *  never returns on deadline (throws). Composed with `serveVerified` (spawn
+ *  + identity) and `waitFor` (DOM): a guard does serveVerified →
+ *  waitForServer → goto → waitFor(selector). The `intervalMs` default
+ *  matches serve.mjs's poll cadence. */
+export async function waitForServer(
+  base, { timeoutMs = 15000, intervalMs = 150 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let lastCause = null;
+  while (Date.now() < deadline) {
+    try {
+      await fetch(base);
+      return true;
+    } catch (e) {
+      lastCause = e?.cause?.code ?? String(e?.cause ?? e?.message ?? e);
+    }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  throw new Error(
+    `waitForServer: ${base} never came up in ${timeoutMs}ms` +
+    (lastCause ? ` (last: ${lastCause})` : ''));
+}
+
 /** textContent of the review dock's question headline with the live age
  *  removed -- the stable part, which is what identifies the question.
  *  Returns null when the dock is empty, so a caller cannot mistake a missing

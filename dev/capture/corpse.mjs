@@ -25,6 +25,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
+import { waitForServer } from './dom.mjs';
 
 import { outdir } from './outdir.mjs';
 const OUT = outdir(process.argv);
@@ -50,8 +51,11 @@ cpSync('dev/capture/fixture', DIR, { recursive: true });
 const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
                   { stdio: 'ignore' });
 process.on('exit', () => { try { srv.kill(); } catch (e) {} });
-await sleep(2500);
 const BASE = `http://127.0.0.1:${PORT}`;
+// #388: poll until the server accepts connections (bounded deadline, honest
+// failure), not a fixed sleep — under CPU starvation watch.py takes seconds
+// longer to bind and the old sleep(2500) raced it, surfacing raw ECONNREFUSED.
+await waitForServer(BASE);
 {
   const d = await (await fetch(`${BASE}/data.json`)).json();
   if (d.target !== DIR) {
