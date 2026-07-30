@@ -2859,11 +2859,12 @@ reply is `replied` AND unread. The derivation lives in ONE helper
 (`_chat_record_and_turns`) that both the list and the page call, so the two
 can never disagree.
 
-**The section is always visible (#563).** Even with no chats, the label and
-`0 total` render with a quiet empty-state line — the section's presence is
-the channel's health made visible (a section that vanishes is
-indistinguishable from a broken one). The reviews panel stays
-quiet-when-empty by deliberate contrast (he has not asked to change it).
+**The section is always visible (#563, in flight — lane-563chatvis).** Even
+with no chats, the label and `0 total` render with a quiet empty-state
+line — the section's presence is the channel's health made visible (a
+section that vanishes is indistinguishable from a broken one). The reviews
+panel stays quiet-when-empty by deliberate contrast (he has not asked to
+change it).
 
 **No new motion.** Arriving at `/chat/<id>` is the route dissolve every
 destination shares; the count line's text changing on a tick is the
