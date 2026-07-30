@@ -308,11 +308,13 @@ whether it is really this one.
 One mono stack, two sizes (heading `1rem`, body `.8rem`, labels `.7rem`).
 No cards, borders-as-decoration, pills, or shadows in the reading views —
 structure comes from whitespace and dim uppercase labels (`.label`, letter-
-spaced). Reading column is `max-width:72ch`, centred; there are two
+spaced). Reading column is `max-width:72ch`, centred; there are three
 deliberate width exceptions — the review view (`body.review` widens the
 column for the artifact + docked question, and **he sets the ratio between
 them** — see The review pane) and the file view (`body.file` widens it to
-`110ch` for source — see The file view's source pane). Dividers are
+`110ch` for source — see The file view's source pane), and the question focus view
+(`body.question` widens it to `1040px` for the dual column — see The question
+focus view's dual column). Dividers are
 hairlines (`--line`), not boxes.
 
 ### The file view's source pane (#351)
@@ -740,6 +742,48 @@ only colour a band can paint. The same plate measures the fade as a fade: the
 ink profile of the strip above the box falls toward the box and reaches the
 page colour at its edge, with the precondition (there IS text in that strip,
 and the question DOES overflow) derived at runtime and asserted first.
+
+### The question focus view's dual column (#583)
+
+His ask, focused on one question: *"a dual column design where the
+answer/note response field is taller than normal and is vertically centered
+relative to the midpoint of [the question's visible height]… smooth and
+elegant and always present regardless of where you are scrolling."* So the
+`/question?qid=<title>` focus view answers alongside what it reads: the
+question body is the left reading column and the answer/note compose is the
+right, taller-than-normal response column that follows him through a long
+question.
+
+- **The split is CSS-driven and focus-scoped, never a second card.** `qaCard`
+  is the one component the dashboard, `/questions`, the dock and the
+  answer-submit morph all render through, so changing its structure is out of
+  scope. Instead `buildQuestion` marks the focus container `#qfocus.qdual`,
+  and a `#qfocus.qdual`-scoped grid lays the same card's `.qbody` (col 1) and
+  `.qcompose` (col 2) side by side. The dashboard is unchanged because the
+  scope never reaches it — `.qbody` is `display:contents` everywhere but here,
+  where it becomes the left column.
+- **A third deliberate width exception.** A second column needs room the
+  `72ch` reading column does not give, so `body.question .wrap` widens to
+  `1040px` — the same body-class + `body.wsliding` glide idiom `/review` and
+  `/file` use, toggled at the same three route-commit sites, so the column
+  travels rather than snapping. Below `min-width:1000px` the columns stack and
+  the compose is its normal self, so a phone loses nothing.
+- **The geometry is his, read as the visible midpoint.** The response column's
+  vertical centre is the midpoint of the question's *visible* portion —
+  `[max(top,0), min(bottom,vh)]` — which is continuous (no jump as an edge
+  crosses the viewport), always inside the viewport, and equal to the screen
+  centre exactly when the question fills it. "Always present regardless of
+  scroll" is `position: sticky`: the column rides the viewport while the
+  question scrolls beside it; `positionQuestionColumn()` only sets *where*
+  inside it, as `--qcol-top` written on `document.body` (never the compose —
+  morphdom reconciles `#view`'s children every tick, and an inline `top` on
+  the compose would be the one attribute the fresh markup omits, so the column
+  would jump every two seconds).
+- **No new motion idiom.** Route arrival and departure reuse the existing
+  dissolve (the column surfaces with the view); the column-width glide reuses
+  `body.wsliding`; the scroll-follow is continuous-input-driven and sets `top`
+  directly per frame (no transition), so it is reduced-motion-safe by
+  construction — function preserved, no timing to remove.
 
 ### Components (idioms)
 

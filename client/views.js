@@ -1330,12 +1330,21 @@ function buildReviews(d) {
    blank page and never a different question ("I could not tell" and
    "nothing" must not render the same). #294's planned question_id can
    later be accepted beside the title without invalidating a single link. */
+/* #583 — the dual-column marker. `#qfocus` already scopes the focus view
+   uniquely (it exists on no other route), and `.qdual` is the layout-split
+   branch the CSS keys the two-column grid off: the question body (`.qbody`)
+   becomes the left reading column and the answer/note compose (`.qcompose`)
+   the right, taller-than-normal response column. The split is CSS-driven and
+   focus-scoped on purpose — `qaCard` is the shared component the dashboard,
+   /questions and the dock all render through, and changing its structure is
+   out of scope; only the focus container opts the same card into two columns.
+   The missing-key branch does NOT carry it (no card → nothing to split). */
 function buildQuestion(title, d) {
   if (!d) return '<div class="dim">loading…</div>';
   if (title) {
     const oi = (d.questions_open || []).findIndex(x => x.title === title);
     if (oi >= 0)
-      return `<div id="qfocus">` +
+      return `<div id="qfocus" class="qdual">` +
         qaCard(d.questions_open[oi], 'o' + oi) + `</div>`;
     /* the fold, followed: answering re-indexes the entry into
        answered_entries while he watches, and the page moves WITH it — a
@@ -1343,7 +1352,7 @@ function buildQuestion(title, d) {
        prevent. Same title, same card, new 'a<n>' address. */
     const ai = d.answered_entries.findIndex(x => x.title === title);
     if (ai >= 0)
-      return `<div id="qfocus">` +
+      return `<div id="qfocus" class="qdual">` +
         qaCard(d.answered_entries[ai], 'a' + ai) + `</div>`;
   }
   /* Unresolved. The notice says WHAT (the key names nothing live), WHY
@@ -1512,6 +1521,62 @@ addEventListener('scroll', e => {
   const t = e.target;
   if (t && t.nodeType === 1 && t.classList.contains('qbody')) syncDockFade();
 }, true);
+/* #583 — the dual-column response follows him through a long question. His
+   geometry: the response column's vertical centre is the midpoint of the
+   question's VISIBLE portion — what is actually on screen — so it pairs with
+   whatever part he is reading rather than sitting at a fixed screen midpoint
+   while the question scrolls past it. Read as a single midpoint of
+   [max(top,0), min(bottom,vh)]: continuous (no jump as an edge crosses the
+   viewport), always inside the viewport, and equal to the screen centre
+   exactly when the question fills it. "Always present regardless of scroll"
+   is `position: sticky` (CSS) — the column rides the viewport while the
+   question scrolls beside it; this function only sets WHERE inside it, so the
+   column tracks the question instead of the screen.
+
+   The value lives on `document.body` as `--qcol-top`, never on the compose:
+   morphdom reconciles #view's children every tick, and an inline `top` on the
+   compose would be the one attribute the fresh markup does not carry, so it
+   would reset to the CSS floor every two seconds and the column would jump.
+   `body` is outside #view entirely, so the property is never reconciled away,
+   and it inherits down to the compose the CSS rule reads it on. The rule only
+   applies under `#qfocus.qdual`, so a stale value left on body after leaving
+   the route has no consumer — cleared anyway for tidiness. */
+function positionQuestionColumn() {
+  const focus = document.getElementById('qfocus');
+  const dual = focus && focus.classList.contains('qdual');
+  const body = document.body;
+  if (!dual) {
+    body.style.removeProperty('--qcol-top');
+    return;
+  }
+  const card = focus.querySelector('.qa');
+  const q = card && card.querySelector('.qbody');
+  const comp = card && card.querySelector('.qcompose');
+  if (!q || !comp) { body.style.removeProperty('--qcol-top'); return; }
+  const vh = window.innerHeight;
+  const r = q.getBoundingClientRect();
+  // the question's VISIBLE portion, clamped to the viewport
+  const top = Math.max(r.top, 0);
+  const bottom = Math.min(r.bottom, vh);
+  let centre = (top + bottom) / 2;
+  const hc = comp.offsetHeight;
+  // keep the response column fully in view; if it is taller than the viewport
+  // (it never is — it is the compose box — but the clamp must not invert)
+  // just centre on the screen
+  if (hc > 0 && hc < vh)
+    centre = Math.max(hc / 2, Math.min(centre, vh - hc / 2));
+  else
+    centre = vh / 2;
+  body.style.setProperty('--qcol-top', Math.round(centre - hc / 2) + 'px');
+}
+let qcolRaf = 0;
+const scheduleQCol = () => {
+  if (qcolRaf) return;
+  qcolRaf = requestAnimationFrame(() => { qcolRaf = 0; positionQuestionColumn(); });
+};
+addEventListener('scroll', scheduleQCol, true);
+addEventListener('resize', scheduleQCol);
+
 /* every number on this page that can drift without a disk change is written
    HERE, once a second, as TEXT into nodes that already exist — never through
    a re-render. That was already the shape; #132 is what makes it load-bearing

@@ -1089,6 +1089,52 @@
   .qsend:hover { background:#26344a; }
   .qmodes { margin-top:.3rem; }
   .qmodes .sgbtn { padding:.2rem .5rem; font-size:.7rem; }
+  /* ── #583: the dual-column /question focus view ─────────────────────────
+     One question, answered alongside itself. The focus view splits the shared
+     card into two columns — the question body (left, the reading column) and
+     the answer/note compose (right, taller than normal) — so the response is
+     always present while he reads a long question. The split is CSS-driven and
+     scoped to #qfocus.qdual because qaCard is the one component the dashboard,
+     /questions and the dock all render through; only the focus container opts
+     the same card into two columns, so the dashboard is unchanged.
+
+     The geometry (his spec): the response column's vertical centre is the
+     midpoint of the question's VISIBLE portion, so it pairs with whatever he
+     is reading rather than sitting at a fixed screen midpoint. "Always present
+     regardless of scroll" is position: sticky — the column rides the viewport
+     while the question scrolls beside it — and positionQuestionColumn() sets
+     WHERE inside it via --qcol-top (written on body, never the compose, so a
+     /mtime tick's morphdom of #view cannot reset it). A second column needs
+     room the 72ch reading column does not give, so /question is a width
+     exception beside /review and /file on the same body.wsliding glide; below
+     the breakpoint the columns stack and the compose is its normal self, so a
+     phone loses nothing. */
+  @media (min-width:1000px) {
+    body.question .wrap { max-width:1040px; }
+    /* open/awaiting: the card's direct children are .qbody + .qcompose */
+    #qfocus.qdual .qa:not(.folded) {
+      display:grid; grid-template-columns:minmax(0,72ch) minmax(32ch,1fr);
+      column-gap:2rem; align-items:start; min-height:100vh; }
+    /* folded: summary + .qbody + .qcompose live inside the <details> */
+    #qfocus.qdual .qfold {
+      display:grid; grid-template-columns:minmax(0,72ch) minmax(32ch,1fr);
+      column-gap:2rem; align-items:start; }
+    /* .qbody is display:contents off the focus view (the dock and the card
+       share one structure that way); here it must BE the left column */
+    #qfocus.qdual .qbody { display:block; grid-column:1; }
+    #qfocus.qdual .qfold > summary { grid-column:1; }
+    /* the response column: present through the whole question, centred on the
+       visible midpoint. align-self:start keeps it at natural height so sticky
+       has room to ride; the min-height above gives the pin room to engage for
+       a short question too. top is the visible-midpoint the JS writes. */
+    #qfocus.qdual .qcompose {
+      grid-column:2; grid-row:1 / -1; align-self:start;
+      position:sticky; top:var(--qcol-top,0px);
+      margin:0; max-width:none; }
+    /* taller than normal: the focus view is for answering, so the field opens */
+    #qfocus.qdual .qcompose textarea { min-height:9rem; }
+  }
+
   #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
              height:100vh; }
   #devbox { position:fixed; top:.6rem; right:.8rem; z-index:10;

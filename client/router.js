@@ -1667,6 +1667,10 @@ function setContent(html) {
   // before anything measures: the review pane's height is a measurement, and
   // crossfade reads the dock's rect on the very next line after setContent.
   fitReview();
+  // #583: place the dual-column response at the question's visible midpoint
+  // before first paint, so it lands centred rather than flashing at the floor
+  // and snapping on the first scroll frame.
+  positionQuestionColumn();
   // fresh groups carry a 0-width indicator, so land it rather than let it
   // slide up out of nothing (the enter-snap rule)
   paintIndicators(true);
@@ -3978,6 +3982,7 @@ function crossfade(html, xopts) {
   if (rmr) {
     document.body.classList.toggle('review', !!xopts.review);
     document.body.classList.toggle('file', !!xopts.file);
+    document.body.classList.toggle('question', !!xopts.question);
     setContent(html);
     renderChrome(view, data, null);
     return;
@@ -4010,6 +4015,7 @@ function crossfade(html, xopts) {
   document.body.classList.add('wsliding');
   document.body.classList.toggle('review', !!xopts.review);
   document.body.classList.toggle('file', !!xopts.file);
+  document.body.classList.toggle('question', !!xopts.question);
   setContent(html);
   renderChrome(view, data, snap);   // the heading travels; it does not reload
   // measure the docked question's resting rect BEFORE the enter transform,
@@ -4209,11 +4215,12 @@ async function navigate(name, param, opts) {
   if (opts.transition === false) {
     document.body.classList.toggle('review', artifactDoc);
     document.body.classList.toggle('file', name === 'file');
+    document.body.classList.toggle('question', name === 'question');
     setContent(html);
     renderChrome(view, data, null);   // first paint: arrive, don't animate
   } else {
     crossfade(html, { fromRect: opts.fromRect, review: artifactDoc,
-                      file: name === 'file' });
+                      file: name === 'file', question: name === 'question' });
   }
   // after the new content is in layout, and only for the swap that has a
   // position worth keeping
