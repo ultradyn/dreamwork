@@ -1983,6 +1983,17 @@ STYLE = """<style>
   .posture-src { color:var(--dimmer); font-size:.65rem; margin:0;
     text-transform:none; letter-spacing:0; font-weight:400; }
   .posture-src.file { color:var(--dim); }
+  /* #551: the ambient slot's 'remind' link-btn — a dim, lowercase-leaning
+     action styled as the panel's link idiom (cf. 'all N reviews →'), not a
+     chip. It inherits the slot's dim colour and lifts to the accent on hover,
+     like every inline link on the page. No new token, no motion (the slot
+     swaps state instantly, matching the armed↔ambient swap that already
+     existed here — see transitions.md: most state changes do not animate). */
+  .remind-btn { background:none; border:0; padding:0; margin:0; font:inherit;
+    color:var(--accent); cursor:pointer; text-decoration:none;
+    transition:opacity .3s ease; opacity:.82; }
+  .remind-btn:hover { opacity:1; text-decoration:underline; }
+  .remind-sent { color:var(--dim); }
   .parm { margin:.35rem 0 0; min-height:1.15rem; }
   .pbar { height:3px; background:var(--line); border-radius:2px;
           overflow:hidden; margin:0 0 .28rem; }
@@ -5366,6 +5377,52 @@ let postArmShouldCommit = false;
 let postArmUntil = 0;
 // Draft of the whole triple while arming (any axis change resets the arm).
 let postDraft = null;
+// #551: the posture slot's 'remind' button. The ambient #posture-src slot
+// (both file and derived sources) carries a link-styled 'remind' button that
+// POSTs /remind; on a 202 the slot confirms and the control cannot retrigger
+// for REMIND_COOLDOWN_MS. The cooldown state is MODULE-SCOPE — exactly like
+// postArmUntil — so a live re-render (the 2s tick rebuilds posturePicker)
+// mid-cooldown repaints the confirming state, never a clickable button. It is
+// never read back from the DOM: posturePicker reads remindCooldownUntil when
+// it builds the slot HTML, so morphdom sees the confirming state in both the
+// live DOM and the new HTML and does not revert it.
+let remindCooldownUntil = 0;
+let remindInFlight = false;
+const REMIND_COOLDOWN_MS = 10000;
+function remindSlotInner() {
+  // The #posture-src inner HTML for the AMBIENT (non-armed) state. The armed
+  // 'arming override…' state is handled by its callers and stays unchanged.
+  if (remindCooldownUntil && Date.now() < remindCooldownUntil)
+    return '<span class="remind-sent">sent · the loop has been reminded</span>';
+  return '<button type="button" class="remind-btn" id="remind-btn"' +
+    ' onclick="sendRemind()">remind</button>';
+}
+function paintRemindSlot() {
+  const src = document.getElementById('posture-src');
+  if (src) src.innerHTML = remindSlotInner();
+}
+async function sendRemind() {
+  // One press composes the reminder SERVER-side (target id + resolved posture
+  // + SKILL.md pointer); the client sends nothing but the press. On a 202 the
+  // slot confirms and locks for REMIND_COOLDOWN_MS; an in-flight guard also
+  // prevents a double-POST before the first resolves.
+  if (remindInFlight) return;
+  if (remindCooldownUntil && Date.now() < remindCooldownUntil) return;
+  remindInFlight = true;
+  try {
+    const res = await fetch('/remind', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const rv = await writeVerdict(res);
+    if (rv.landed) {
+      remindCooldownUntil = Date.now() + REMIND_COOLDOWN_MS;
+      paintRemindSlot();
+      setTimeout(() => { paintRemindSlot(); }, REMIND_COOLDOWN_MS);
+    }
+  } catch (e) { /* transient: the slot stays armed for another press */ }
+  remindInFlight = false;
+}
 function postPendingKey() {
   return (data && data.target) ? ('dw:posture-pending:' + data.target) : null;
 }
@@ -5490,14 +5547,16 @@ function paintPostureSelection(draft, snap) {
   if (src) {
     const live = pendingPostIsLive(readPostPending());
     if (live) {
+      // Armed: a posture change is pending. UNCHANGED from #445 — only this
+      // state earns words in the slot.
       src.textContent = 'arming override…';
       src.className = 'posture-src file';
-    } else if (draft.source === 'file') {
-      src.textContent = 'override · .dreamwork/posture';
-      src.className = 'posture-src file';
     } else {
-      src.textContent = 'derived from run mode · pick a stop to override';
-      src.className = 'posture-src';
+      // Ambient (#551): both file and derived sources carry the 'remind'
+      // link-btn. The old 'override · .dreamwork/posture' / 'derived from run
+      // mode' text was ruled useless unless a change is pending.
+      src.className = 'posture-src' + (draft.source === 'file' ? ' file' : '');
+      src.innerHTML = remindSlotInner();
     }
   }
 }
@@ -5757,15 +5816,16 @@ function posturePicker(d) {
     ` onclick="pickPostureAxis('orchestration','${esc(n)}')">${esc(n)}</button>`
   ).join('');
   const dlgLab = delegationLabel(cur.delegation);
-  const srcNote = cur.source === 'file'
-    ? 'override · .dreamwork/posture'
-    : 'derived from run mode · pick a stop to override';
+  // #551: the slot is 'arming override…' while a change is pending (arm),
+  // else the 'remind' link-btn (remindSlotInner reads the module-scope
+  // cooldown so a live re-render mid-cooldown repaints the confirming state).
+  const srcInner = arm ? esc('arming override…') : remindSlotInner();
   // #488: source chip beside the heading; pdesc always in flow (no hidden).
   return `<section class="posture" id="posture" aria-label="posture">` +
     `<div class="posture-head">` +
     `<div class="label">posture</div>` +
     `<div class="posture-src${cur.source === 'file' ? ' file' : ''}"` +
-    ` id="posture-src">${esc(srcNote)}</div></div>` +
+    ` id="posture-src">${srcInner}</div></div>` +
     `<div class="posture-axes">` +
     `<div class="paxis" data-axis="pace">` +
     `<div class="paxis-lab" id="pace-lab">pace</div>` +
@@ -11073,6 +11133,14 @@ _deploy_inflight = False
 # Optional override: callable(target) -> None. Tests set this; production
 # leaves it None and runs `just deploy` from the watched target.
 _deploy_runner = None
+# #551: optional override for the /remind route's coordinator inbox dir.
+# None → relay.relay's default (~/.cache/agent-comms/ud-dreamwork); a str or
+# Path → that dir; a callable → invoked with no args, returns the dir. Tests
+# set this (setattr) so a check never writes the real shared inbox; the
+# browser guard redirects its spawned server via the DREAMWORK_REMIND_INBOX_DIR
+# env var (read once at load). Production leaves it None and relay appends to
+# the coordinator's tailed inbox.
+_remind_inbox_dir = os.environ.get("DREAMWORK_REMIND_INBOX_DIR") or None
 
 
 def peer_is_loopback(client_address):
@@ -14891,6 +14959,70 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 "delegation_label": lint.delegation_posture(delegation),
             }), "application/json")
 
+        def _handle_remind(self):
+            """POST /remind — send the resolved posture to the coordinator (#551).
+
+            The client sends nothing but the press; the message is composed
+            SERVER-side so a posture without its project is never ambiguous —
+            the coordinator inbox is shared across every dreamwork target on
+            this host. One short paragraph carries: the target id, the
+            resolved five-axis posture (resolve_posture, with the delegation
+            label), and a pointer to where the meaning of each choice lives
+            (SKILL.md §"Run mode (#290) and posture (#445)"; the stop
+            vocabularies are lint.py's POSTURE_STOPS_* sets; the run-mode
+            derivation is lint.derive_posture).
+
+            Delivery is relay.relay("coord", …) — the append IS the delivery
+            (relay stamps the [watch …] header), so this writes NO
+            watch-events.log line. relay is imported lazily, mirroring
+            _posture_vocab() (lint does `import watch` at its module top). The
+            inbox dir is resolved through the module-level _remind_inbox_dir
+            seam so tests redirect it and never touch the real inbox.
+            """
+            # No schema: an empty {} body is the normal press. A non-empty body
+            # that is not JSON is refused — the _handle_deploy shape — so a
+            # malformed press is a durable rejection, not a silent success.
+            if self._body and self._body.strip():
+                req = self._read_json()
+                if req is None:
+                    self._reject("malformed_json"); return
+            import relay
+            from pathlib import Path
+            p = resolve_posture(target)
+            src_phrase = ("override · .dreamwork/posture"
+                          if p.get("source") == "file"
+                          else "derived from run mode")
+            body = (
+                "posture remind · target {tid} · "
+                "pace={pace} asking={asking} delegation={dlg} ({dlab}) "
+                "delivery={dlv} orchestration={orch} · {src}. "
+                "what each choice means: see SKILL.md "
+                "\"Run mode (#290) and posture (#445)\"; the stop "
+                "vocabularies are the POSTURE_STOPS_* sets in lint.py; "
+                "the run-mode to posture derivation is lint.derive_posture."
+            ).format(
+                tid=_target_id(target),
+                pace=p.get("pace"), asking=p.get("asking"),
+                dlg=p.get("delegation"), dlab=p.get("delegation_label"),
+                dlv=p.get("delivery"), orch=p.get("orchestration"),
+                src=src_phrase,
+            )
+            inbox_dir = _remind_inbox_dir
+            if callable(inbox_dir):
+                inbox_dir = inbox_dir()
+            relay.relay("coord", body, sender="watch",
+                        inbox_dir=Path(inbox_dir) if inbox_dir else None)
+            self._send_receipt(json.dumps({
+                "ok": True, "sent": True,
+                "posture": {
+                    "pace": p.get("pace"), "asking": p.get("asking"),
+                    "delegation": p.get("delegation"),
+                    "delivery": p.get("delivery"),
+                    "orchestration": p.get("orchestration"),
+                    "source": p.get("source"),
+                },
+            }), "application/json")
+
         def _handle_deploy(self):
             """Page-triggered `just deploy` (#462).
 
@@ -14933,6 +15065,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             "/tint": _handle_tint,
             "/run-mode": _handle_run_mode,
             "/posture": _handle_posture,
+            "/remind": _handle_remind,
             "/deploy": _handle_deploy,
         }
 

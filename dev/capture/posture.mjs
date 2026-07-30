@@ -123,8 +123,8 @@ ok('pace includes idle, steady, hot',
 ok('delegation stepper present with value + label',
    struct.step.dec && struct.step.inc
    && struct.step.val != null && !!struct.step.label);
-ok('source note names derivation when no override file',
-   /derived|run mode/i.test(struct.src));
+ok('ambient slot (no override file) shows the remind button (#551)',
+   /remind/i.test(struct.src));
 
 // ── #488 source chip beside the Posture heading ─────────────────────────
 // Geometry, not DOM ancestry alone: same-row means |label.top − src.top|
@@ -423,8 +423,8 @@ ok('reload selects pace=steady from the file',
    afterReload.on.includes('steady'));
 ok('reload selects asking=inform from the file',
    afterReload.ask.includes('inform'));
-ok('reload source note names the override file',
-   /override|posture/i.test(afterReload.src));
+ok('reload slot (override file) shows the remind button (#551)',
+   /remind/i.test(afterReload.src));
 
 await br.close();
 stop();
