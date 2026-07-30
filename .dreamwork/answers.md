@@ -2,6 +2,11 @@
 
 ## Open
 
+- **2026-07-31 — Pending hand-offs to fold: are these things that need to be folded in to mast…**
+  Pending hand-offs to fold: are these things that need to be folded in to master but haven't yet been? If we have a backlog this large for these, we need to address that in our dreamwork loop --- this is a lot!
+
+  23 hand-offs to fold: #544, #547, #401, #430, #429, #425, #441, #360, #447, #449, #455, #456, #457, #450, #436b, #421, #513, #498, #499, #505, #521/522, #523/524, #521/522tick1h old60bbfe7f handoffs: #570 folded line
+
 ## Answered
 
 - **2026-07-28 — I cannot see any question for #264 in the webui, how am I meant to provide a…** → answered
