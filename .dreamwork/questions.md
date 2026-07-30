@@ -57,6 +57,28 @@
     provide the alias as a backup. 4. rec. no need for a sig at all
     probably, but the option is there for us if we want. 5. rec
 
+- **P2 · 2026-07-31 ~07:20 — (your ask via /answers) the hand-off fold backlog: not unmerged, and now caught.**
+  Your ask: *"Pending hand-offs to fold: are these things that need to be folded into master but haven't
+  yet been? If we have a backlog this large for these, we need to address that in our dreamwork loop."*
+
+  **No — the work is on master.** I checked all 25 ids you listed (#544, #547, #401, #430, #429, #425, #441,
+  #360, #447, #449, #455, #456, #457, #450, #436, #421, #513, #498, #499, #505, #521, #522, #523, #524,
+  #570) against the store: **25 of 25 are `landed`.** The sha cited in each Pending entry IS where it
+  landed on master. "Folded" is the coordinator's bookkeeping acknowledgment (recording the landing into
+  the ledger), not the merge — so a "to fold" backlog is unacknowledged work, not unmerged work.
+
+  **The gap was real, and you were right that the loop needs to address it.** What was broken: a hand-off
+  could claim a landing, the work would merge, and the coordinator never wrote the `→ folded` line — so the
+  Pending list grew silently with entries whose tasks were already done. Nothing detected that. **#576**
+  (landed last session, `e55f148` + `73c5354`) is the fix: `lint.check_handoffs` now WARNs when a Pending
+  entry's task is `landed` in the store but has no Folded line. I cleared the existing backlog to zero
+  (21 retrospective fold lines). `lint.py` now reports `handoffs.md 94 pending, 117 folded, 0 malformed`
+  with no #576 warnings. The blind spot is closed going forward — any future landed-but-unfolded entry
+  surfaces as a lint WARN rather than accumulating.
+
+  - **Follow-up (loop, 2026-07-31 07:20):** verified all 25 are landed; #576 now catches the gap; backlog
+    cleared to 0 WARNs. Nothing for you to do here — recorded for your awareness.
+
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
