@@ -45,7 +45,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeReporter } from './report.mjs';
 
-const OUT = process.argv[2];
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv);
 mkdirSync(OUT, { recursive: true });
 
 const HERE = dirname(fileURLToPath(import.meta.url));

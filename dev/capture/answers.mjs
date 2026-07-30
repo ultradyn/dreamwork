@@ -4,7 +4,8 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { makeReporter } from './report.mjs';
-const OUT=process.argv[2], PORT=+(process.argv[3]||39890);
+import { outdir } from './outdir.mjs';
+const OUT=outdir(process.argv), PORT=+(process.argv[3]||39890);
 const { ok, declare, finish, checks, notes, errs } = makeReporter();
 declare({
   drives: '/answers end to end: #askbox expose + ask submit + live tick survival, ' +

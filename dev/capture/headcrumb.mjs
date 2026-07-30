@@ -28,7 +28,8 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 
-const OUT = process.argv[2];
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv);
 const PORT = process.argv[3];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const BASE = `http://127.0.0.1:${PORT}`;

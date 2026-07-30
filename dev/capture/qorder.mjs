@@ -50,7 +50,8 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 import { waitFor } from './dom.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-const OUT = process.argv[2], PORT = process.argv[3] || '39899';
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv), PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });

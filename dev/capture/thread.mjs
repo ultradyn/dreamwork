@@ -34,7 +34,8 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
-const OUT = process.argv[2], PORT = process.argv[3] || '39887';
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv), PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });

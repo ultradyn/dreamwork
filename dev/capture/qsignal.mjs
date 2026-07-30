@@ -26,8 +26,9 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { serveVerified } from './serve.mjs';
 import { makeReporter } from './report.mjs';
+import { outdir } from './outdir.mjs';
 
-const OUT = process.argv[2] || '.';
+const OUT = outdir(process.argv, { default: '.' });
 // #461/#471: own-server guards take freePort() and IGNORE argv[3].
 const freePort = () => new Promise(res => {
   const s = createServer();

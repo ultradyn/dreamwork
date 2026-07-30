@@ -5,7 +5,8 @@ import { waitFor } from './dom.mjs';
 // Captures a navigation at several mid-transition timestamps so motion can be
 // judged across frames, plus a settled shot. Two scenarios: dashboard->questions
 // and questions->file. Records frames (continuity), warp pulse, ghost presence.
-const OUT = process.argv[2], PORT = process.argv[3] || '39887';
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv), PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const OFFSETS = [150, 400, 800, 1200];   // ms after nav to snapshot
 const sleep = ms => new Promise(r => setTimeout(r, ms));

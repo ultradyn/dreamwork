@@ -35,7 +35,8 @@ import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 
-const OUT = process.argv[2];
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 /* #330: the guard used to write its evidence plates into the COMMITTED path

@@ -21,11 +21,12 @@ import { copyFileSync, mkdirSync, writeFileSync, readFileSync, existsSync } from
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pathToFileURL } from 'node:url';
+import { outdir } from './outdir.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../..');
 const SRC = join(REPO, '.dreamwork/review/review-essential-marks.html');
-const OUT = resolve(process.argv[2] || join(REPO, '.dreamwork/docs/measurements/367-tabs'));
+const OUT = resolve(outdir(process.argv, { default: join(REPO, '.dreamwork/docs/measurements/367-tabs') }));
 const SCRATCH_DIR = '/tmp/367-marktab-scratch';
 const SCRATCH = join(SCRATCH_DIR, 'review-essential-marks.html');
 

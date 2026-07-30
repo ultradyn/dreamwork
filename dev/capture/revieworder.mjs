@@ -8,7 +8,8 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 import { cpSync, mkdirSync, readdirSync, renameSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-const OUT = process.argv[2];
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv);
 mkdirSync(OUT, { recursive: true });
 const target = join(OUT, 'target');
 cpSync(new URL('./fixture', import.meta.url), target, { recursive: true });

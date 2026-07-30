@@ -68,7 +68,8 @@ const freePort = () => new Promise(res => {
   const s = createServer();
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
 });
-const OUT = process.argv[2];
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv);
 // OWN-SERVER GUARD: ephemeral port, argv[3] ignored (#471). The old hardcoded
 // 39894 was doubly wrong: in a full run argv[3]=39899 won and collided with the
 // shared server, and 39894 itself sits INSIDE the reserved 39890-39899 range that

@@ -6,7 +6,8 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 import { mkdirSync } from 'node:fs';
 import { makeReporter } from './report.mjs';
 import { dockHeadlineParts } from './dom.mjs';
-const OUT = process.argv[2], PORT = process.argv[3] || '39951';
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv), PORT = process.argv[3] || '39951';
 const BASE = `http://127.0.0.1:${PORT}`;
 mkdirSync(OUT, { recursive: true });
 const { ok, declare, finish, checks, notes } = makeReporter();

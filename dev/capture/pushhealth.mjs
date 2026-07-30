@@ -31,7 +31,8 @@ import { mkdirSync, writeFileSync, rmSync, cpSync, readFileSync } from 'node:fs'
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
 import { serveAllVerified } from './serve.mjs';
-const OUT = process.argv[2], PORT = +(process.argv[3] || 39893);
+import { outdir } from './outdir.mjs';
+const OUT = outdir(process.argv), PORT = +(process.argv[3] || 39893);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 

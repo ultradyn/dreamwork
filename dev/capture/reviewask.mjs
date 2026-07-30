@@ -31,8 +31,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { makeReporter } from './report.mjs';
+import { outdir } from './outdir.mjs';
 
-const OUT = process.argv[2] || '.';
+const OUT = outdir(process.argv, { default: '.' });
 const PORT = process.argv[3] || ''; // accepted for DEFAULT_GUARDS contract; unused
 mkdirSync(OUT, { recursive: true });
 
