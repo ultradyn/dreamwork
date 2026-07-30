@@ -256,6 +256,108 @@ def check_questions(dw: Path, watch, rep: Report) -> None:
         )
 
 
+# A questions.md that is NET shorter than its last committed form by more than
+# this many lines is a tail-truncation (#533), not any normal act. Every
+# legitimate questions.md edit is line-neutral or net-positive: a fold cuts an
+# entry from `## Open` and pastes it (with a ruling summary) into `## Answered`
+# (+3 typical); an answer/note append adds lines; surfacing a question adds a
+# whole entry. The loop never bulk-deletes — the 07:44 incident lost 122 lines
+# in one silent write. Measured, not guessed: the incident is 122; the largest
+# real fold on this repo (+103/-100) is net +3. 50 sits clear of every real
+# change and well under the loss it exists to catch.
+QUESTIONS_TRUNCATION_THRESHOLD = 50
+
+
+def questions_truncation_guard(old_text, new_text, *, groom=False,
+                               threshold=QUESTIONS_TRUNCATION_THRESHOLD):
+    """Is `new_text` a tail-truncated form of `old_text`?
+
+    Pure — testable without a filesystem. A net loss of more than `threshold`
+    lines is a probable truncation: the coordinator wrote the file from a
+    partial read and the tail fell off. `groom` is the escape hatch for the
+    one legitimate net loss (a deliberate bulk-archive), signalled by a
+    ``groom:`` marker in the commit message. Returns ``(level, detail)`` —
+    ERROR when the loss is unexplained, OK otherwise (silent on the clean
+    case; `check_questions` owns the file's OK row).
+    """
+    old_n = len((old_text or "").splitlines())
+    new_n = len((new_text or "").splitlines())
+    lost = old_n - new_n
+    if lost > threshold and not groom:
+        return (ERROR,
+                f"lost {lost} lines vs HEAD (net; threshold {threshold}) — "
+                f"probable tail-truncation (#533): a fold is line-neutral and "
+                f"the loop never bulk-deletes. If this is a deliberate archive, "
+                f"mark the commit `groom:`.")
+    return (OK, "")
+
+
+def _head_questions(dw: Path) -> str | None:
+    """HEAD's questions.md for the target's repo, or None when unreadable.
+
+    `git show` is read-only plumbing and takes no index lock (the active
+    mitigation on this host is about `git status`). None means "no baseline"
+    so a questions.md not yet tracked does not read as "nothing lost".
+    """
+    try:
+        show = subprocess.run(
+            ["git", "-C", str(dw.parent), "show",
+             "HEAD:.dreamwork/questions.md"],
+            capture_output=True, text=True, timeout=10)
+        return show.stdout if show.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _last_questions_commit_has_groom(dw: Path) -> bool:
+    """True if the most recent commit touching questions.md carries ``groom:``.
+
+    lint runs on the working tree before a commit exists, so the in-progress
+    change's message is not yet written; the last *committed* message is the
+    available signal. A deliberate bulk-archive is committed with ``groom:``
+    and lint honours it on the next pass.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(dw.parent), "log", "-1", "--format=%B",
+             "--", ".dreamwork/questions.md"],
+            capture_output=True, text=True, timeout=10)
+        return out.returncode == 0 and "groom:" in (out.stdout or "")
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def check_questions_truncation(dw: Path, rep: Report) -> None:
+    """#533: catch a tail-truncation of questions.md before it is committed.
+
+    At 07:44 on 2026-07-30 the coordinator wrote questions.md from a partial
+    read and 122 lines of the #229 thread (the nested-table note and everything
+    below it) silently fell off. The signature correctly fired; nothing
+    compared the result to what was there before, so the loss was committed at
+    ``0f97df03`` and only restored at ``fd53d82a``. This check is that
+    comparison: the working tree against HEAD. A net loss over the threshold is
+    not any normal act (a fold is line-neutral; appends add), so it is an ERROR
+    until explained by a ``groom:`` marker. watch.py is innocent — ``collect()``
+    only reads and every writer is an ``append_*`` that preserves every line —
+    so the gate belongs here, at the file the coordinator rewrites.
+
+    Silent when there is no git baseline (a fixture, a target outside a repo):
+    'cannot check' must not be a fault.
+    """
+    path = dw / "questions.md"
+    if not path.exists():
+        return  # check_questions owns the absent case
+    if not (dw.parent / ".git").exists():
+        return  # no git baseline to compare against
+    head = _head_questions(dw)
+    if head is None:
+        return  # questions.md not yet tracked; nothing to compare
+    level, detail = questions_truncation_guard(
+        head, path.read_text(), groom=_last_questions_commit_has_groom(dw))
+    if level == ERROR:
+        rep.add(ERROR, "questions.md", detail)
+
+
 def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
     """How many answered entries the page renders with NO resolved date (#411).
 
@@ -4334,6 +4436,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     called by `main()` and by the tests, cannot drift from itself.
     """
     check_questions(dw, watch, rep)
+    check_questions_truncation(dw, rep)
     check_answered_resolution_dates(dw, watch, rep)
     check_resolution_marker_outside_title(dw, watch, rep)
     check_resolution_marker_after_subbullet(dw, watch, rep)
