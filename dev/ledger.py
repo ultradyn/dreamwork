@@ -36,6 +36,10 @@ USAGE
   python3 dev/ledger.py file <title> [--note <text>] [--priority P] [--type T] [--origin O] [--ledger PATH] [--dry-run]
   python3 dev/ledger.py note <id> --note <text> [--ledger PATH] [--dry-run]
   python3 dev/ledger.py sweep [--since REF] [--ledger PATH] [--repo PATH]
+  python3 dev/ledger.py list [--state open|landed] [--sort id|id-desc] [--json] [--ledger PATH]
+  python3 dev/ledger.py get <id> [--ledger PATH]
+  python3 dev/ledger.py count [--state open|landed] [--json] [--ledger PATH]
+  python3 dev/ledger.py reviews list|get <artifact> [--ledger PATH]
 
 `counts` prints the open and landed id counts from `watch.parse_ledger`
 with the expression that produced them — the same anchored read every
@@ -47,6 +51,7 @@ block, and preserves the block byte-exact otherwise. Fold refuses on:
 unknown id, id already in landed, id matching more than one open entry.
 """
 import argparse
+import json
 import os
 import re
 import sqlite3
@@ -62,6 +67,8 @@ import watch  # noqa: E402  — the production parser, reused not copied
 from ledger_parse import ledger_entries, open_section_text  # noqa: E402
 from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
 from ledger_parse import store_path  # noqa: E402
+from ledger_parse import classify_origin, store_records  # noqa: E402  — #497 read verbs
+from ledger_parse import store_review_decisions  # noqa: E402  — #497 reviews verbs
 import lint  # noqa: E402 — NEXT_ID, the one header reader
 import ledger_store  # noqa: E402 — open the store for write verbs (#294 inc 9)
 import ledger_write  # noqa: E402 — file_task / land_task (#294 inc 9)
@@ -688,6 +695,245 @@ def emit_warnings(dw_dir, rc=0, stream=None):
 
 
 # ---------------------------------------------------------------------------
+# #497 — read-only task verbs (list / get / count / reviews).
+#
+# Ruled 2026-07-30 16:31 ("rec -- Python thin verbs"): four read verb groups
+# over the store, riding ledger_parse primitives. READ-ONLY -- no verb here
+# mutates the store, the ledger files, or the journal. The store read goes
+# through ledger_parse (the ONE read module for both markdown and store);
+# a second store reader in this file would be the defect #352 exists to
+# prevent.
+#
+# OUTPUT CONTRACT -- the deliverable. A future binary rewrite of these verbs
+# must reproduce this contract byte-for-byte; it is documented here in one
+# place (stdout of a read verb is consumed by humans/scripts, not a file the
+# loop writes for a tool to parse, so it lives in this docstring rather than
+# file-formats.md -- no tool parses it yet, and adding a lint check for an
+# unconsumed shape would be premature scope):
+#
+#   list --json  -> a JSON ARRAY, one object per task, each with EXACTLY:
+#                     id (int) . state ("open"|"landed") . title (str)
+#                     priority (str|null) . type (str|null) . origin (str|null)
+#                   (body is omitted -- list is a summary; --state filters by
+#                   state; --sort id (asc, default) | id-desc orders the array.)
+#   count --json -> a JSON OBJECT mapping each counted state to an int.
+#                   No --state: {"open": N, "landed": M}; --state open: {"open": N}.
+#   get <id>     -> human-readable full record (no --json in the ruled shape):
+#                   a `#<id>  <state>` line, one `field: value` line per
+#                   populated structured field, a blank line, then the verbatim
+#                   body. Unknown id -> one-line stderr + exit 1.
+#   reviews list -> human-readable, one line per decision (newest first):
+#                   `<artifact>  <decision>  <decided_at>  <actor>  - <question_title>`
+#   reviews get <artifact> -> human-readable full row; unknown -> exit 1.
+#
+# Human shapes are stable: fixed columns on single lines, the body verbatim.
+# `count` is the --json/--state sibling of `counts`: counts annotates the
+# markdown expression and carries neither flag; count carries both and emits
+# machine output. Markdown-mode (no store) list/count ride the same primitives
+# the markdown `counts` uses; reviews is store-only (the table is a store
+# concept -- /decide itself refuses markdown-mode writes, watch.py:_handle_decide).
+# ---------------------------------------------------------------------------
+
+# Closed value sets the verbs expose (parity with ledger_store.ENTRY_STATES).
+_READ_STATES = ("open", "landed")
+_READ_SORTS = ("id", "id-desc")
+
+
+def _read_records(dw_dir):
+    """All task records from the current source of truth, ascending by id.
+
+    Store mode -> ``store_records`` (full structured rows). Markdown mode ->
+    ``ledger_entries`` + ``watch.parse_led`` (the primitives ``counts`` uses)
+    -- no new Markdown grammar. ``priority``/``type`` have no production
+    reader in markdown (#346 measured them with a scan that is deliberately
+    not a shared primitive), so they are None there and populated only in
+    store mode; ``origin`` reuses ``classify_origin`` (the ONE origin
+    grammar); ``title`` is the head-line prose after the id token.
+    """
+    if source_of_truth(dw_dir) == "store":
+        return store_records(dw_dir)
+    ledger = Path(dw_dir) / "tasks.md"
+    if not ledger.exists():
+        return []
+    return _markdown_records(ledger.read_text())
+
+
+def _markdown_records(text):
+    """Records from the markdown ledger via the ONE entry grammar (#497).
+
+    Reuses ``ledger_parse.ledger_entries`` (entries) + ``watch.parse_ledger``
+    (open/landed id sets) -- no new Markdown parsing. ``title`` is the
+    head-line prose after the id token (presentation of an entry the grammar
+    already identified, not a second grammar).
+    """
+    open_ids, landed_ids = watch.parse_ledger(text)
+    open_set, landed_set = set(open_ids), set(landed_ids)
+    recs = []
+    for ids, body in ledger_entries(text):
+        head = body.split("\n", 1)[0]
+        for tid in ids:
+            sid = str(tid)
+            state = ("open" if sid in open_set
+                     else "landed" if sid in landed_set else "open")
+            recs.append({
+                "id": int(tid), "state": state, "title": _head_title(head),
+                "body": body, "priority": None, "type": None,
+                "origin": classify_origin(body), "blocked_on": None,
+            })
+    return recs
+
+
+def _head_title(head_line):
+    """Title prose off an entry head line (presentation, not a grammar).
+
+    A head looks like ``- **#497** -- the title . P2 . task . origin: **loop**``;
+    this strips the leading ``- **...**`` bold token and the `` -- `` separator
+    and keeps the prose up to the first `` . `` (where the metadata chain
+    begins). For a head with no `` -- `` returns ''.
+    """
+    rest = head_line
+    if rest.startswith("- **"):
+        end = rest.find("**", 4)
+        if end != -1:
+            rest = rest[end + 2:]
+    rest = rest.strip()
+    # The entry idiom separates the title from its metadata with ` -- ` then
+    # chains metadata with ` . `.
+    if rest.startswith("—"):
+        rest = rest[1:].strip()
+    if " · " in rest:
+        rest = rest.split(" · ", 1)[0]
+    return rest
+
+
+def _records_for(args, dw_dir):
+    """Records filtered by ``--state`` and ordered by ``--sort``."""
+    recs = _read_records(dw_dir)
+    if getattr(args, "state", None):
+        recs = [r for r in recs if r["state"] == args.state]
+    sort = getattr(args, "sort", "id") or "id"
+    recs.sort(key=lambda r: r["id"], reverse=(sort == "id-desc"))
+    return recs
+
+
+def _record_json(r, body):
+    """The JSON object for one record -- EXACTLY the contract keys."""
+    d = {"id": r["id"], "state": r["state"], "title": r["title"],
+         "priority": r["priority"], "type": r["type"], "origin": r["origin"]}
+    if body:
+        d["body"] = r["body"]
+        d["blocked_on"] = r["blocked_on"]
+    return d
+
+
+def _list_line(r):
+    """One stable human line per task for `list`."""
+    parts = [f"#{r['id']}", r["state"]]
+    for key in ("priority", "type", "origin"):
+        if r[key]:
+            parts.append(r[key])
+    return f"{'  '.join(parts)}  — {r['title']}"
+
+
+def _record_text(r):
+    """The stable human full-record shape for `get`."""
+    lines = [f"#{r['id']}  {r['state']}", f"title: {r['title']}"]
+    for key in ("priority", "type", "origin", "blocked_on"):
+        if r.get(key):
+            lines.append(f"{key}: {r[key]}")
+    lines += ["", r["body"].rstrip("\n")]
+    return "\n".join(lines) + "\n"
+
+
+def _verb_list(args, dw_dir):
+    recs = _records_for(args, dw_dir)
+    if getattr(args, "json", False):
+        sys.stdout.write(json.dumps([_record_json(r, body=False) for r in recs]) + "\n")
+        return 0
+    if not recs:
+        sys.stdout.write("(no tasks)\n")
+        return 0
+    for r in recs:
+        sys.stdout.write(_list_line(r) + "\n")
+    return 0
+
+
+def _verb_get(args, dw_dir):
+    recs = _read_records(dw_dir)
+    match = next((r for r in recs if r["id"] == args.id), None)
+    if match is None:
+        sys.stderr.write(f"ledger: #{args.id} not found\n")
+        return 1
+    sys.stdout.write(_record_text(match))
+    return 0
+
+
+def _verb_count(args, dw_dir):
+    """Counts by state -- the --json/--state sibling of `counts`.
+
+    Rides the SAME primitives `counts` uses (store_ids_by_state / parse_ledger)
+    so the count can never diverge from `counts`'s figure. The difference:
+    `count` carries --state (filter to one state) and --json (machine output);
+    `counts` annotates the markdown expression and carries neither.
+    """
+    if source_of_truth(dw_dir) == "store":
+        open_ids, landed_ids = store_ids_by_state(dw_dir)
+    else:
+        ledger = Path(dw_dir) / "tasks.md"
+        if not ledger.exists():
+            open_ids, landed_ids = [], []
+        else:
+            open_ids, landed_ids = watch.parse_ledger(ledger.read_text())
+    counts = {"open": len(open_ids), "landed": len(landed_ids)}
+    if args.state:
+        counts = {args.state: counts.get(args.state, 0)}
+    if args.json:
+        sys.stdout.write(json.dumps(counts) + "\n")
+        return 0
+    for st in _READ_STATES:
+        if st in counts:
+            sys.stdout.write(f"{st}: {counts[st]}\n")
+    return 0
+
+
+def _review_line(r):
+    """One stable human line per decision for `reviews list` (newest first)."""
+    return (f"{r['artifact']}  {r['decision']}  {r['decided_at']}"
+            f"  {r['actor']}  — {r['question_title']}")
+
+
+def _review_text(r):
+    """The stable human full-row shape for `reviews get`."""
+    return "\n".join([
+        f"artifact: {r['artifact']}", f"question_title: {r['question_title']}",
+        f"decision: {r['decision']}", f"decided_at: {r['decided_at']}",
+        f"actor: {r['actor']}",
+    ]) + "\n"
+
+
+def _verb_reviews(args, dw_dir):
+    """reviews list|get -- read the review_decision table (store-mode only)."""
+    if source_of_truth(dw_dir) != "store":
+        sys.stderr.write("reviews: no ledger store (markdown mode)\n")
+        return 1
+    rows = store_review_decisions(dw_dir)
+    if args.reviews_cmd == "get":
+        row = next((r for r in rows if r["artifact"] == args.artifact), None)
+        if row is None:
+            sys.stderr.write(f"reviews: {args.artifact!r} not found\n")
+            return 1
+        sys.stdout.write(_review_text(row))
+        return 0
+    # list -- newest first (the primitive returns ascending by decided_at).
+    if not rows:
+        sys.stdout.write("(no review decisions)\n")
+        return 0
+    for r in reversed(rows):
+        sys.stdout.write(_review_line(r) + "\n")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -731,6 +977,41 @@ def main(argv=None):
     ps.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
     ps.add_argument("--repo", default=".", help="the git repo to scan (default %(default)s)")
 
+    # #497 — read-only task verbs. list/get/count over the store (or markdown
+    # for list/count); reviews over the review_decision table (store-mode only).
+    plist = sub.add_parser("list", help="list tasks (read-only) [#497]")
+    plist.add_argument("--state", choices=_READ_STATES, default=None,
+                       help="filter to one state (default: both)")
+    plist.add_argument("--sort", choices=_READ_SORTS, default="id",
+                       help="row order (default id ascending)")
+    plist.add_argument("--json", action="store_true",
+                       help="emit a JSON array (stable field names; see module docstring)")
+    plist.add_argument("--ledger", default=LEDGER_DEFAULT,
+                       help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
+    pget = sub.add_parser("get", help="show one task's full record (read-only) [#497]")
+    pget.add_argument("id", type=int, help="the task id")
+    pget.add_argument("--ledger", default=LEDGER_DEFAULT,
+                      help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
+    pcnt = sub.add_parser("count", help="count tasks by state (read-only) [#497]")
+    pcnt.add_argument("--state", choices=_READ_STATES, default=None,
+                      help="count one state only (default: both)")
+    pcnt.add_argument("--json", action="store_true",
+                      help="emit a JSON object {state: count}")
+    pcnt.add_argument("--ledger", default=LEDGER_DEFAULT,
+                      help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
+    prev = sub.add_parser("reviews", help="read the review_decision table (store-mode only) [#497]")
+    prev_sub = prev.add_subparsers(dest="reviews_cmd", required=True)
+    prev_list = prev_sub.add_parser("list", help="list all review decisions (newest first)")
+    prev_list.add_argument("--ledger", default=LEDGER_DEFAULT,
+                           help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+    prev_get = prev_sub.add_parser("get", help="one review decision by artifact")
+    prev_get.add_argument("artifact", help="the artifact name (review_decision primary key)")
+    prev_get.add_argument("--ledger", default=LEDGER_DEFAULT,
+                          help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
     args = p.parse_args(argv)
     rc = _dispatch(args)
     # #357 — the warning footer tacks onto stderr on every verb's success
@@ -758,6 +1039,19 @@ def _dispatch(args):
 
     ledger_path = Path(args.ledger)
     dw_dir = str(ledger_path.parent)
+
+    # #497 — read-only verbs dispatch on source_of_truth themselves and never
+    # touch the markdown file, so they run BEFORE the markdown-existence gate
+    # below (a store-mode project need not keep tasks.md around). They ride
+    # ledger_parse primitives and mutate nothing.
+    if args.cmd == "count":
+        return _verb_count(args, dw_dir)
+    if args.cmd == "list":
+        return _verb_list(args, dw_dir)
+    if args.cmd == "get":
+        return _verb_get(args, dw_dir)
+    if args.cmd == "reviews":
+        return _verb_reviews(args, dw_dir)
 
     # #294 inc 9: write verbs (fold, file, note) dispatch on source_of_truth.
     # Store mode → the store write verbs; markdown mode → today's text path.
