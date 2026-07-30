@@ -3,6 +3,7 @@
 
 import contextlib
 import errno
+import hashlib
 import html
 import http.server
 import inspect
@@ -112,6 +113,50 @@ def _long_entry_229_md(body, body_width=72):
         + body_block + "\n\n"
         + _LONG_ENTRY_229_NOTE
     )
+
+
+# #534 — the OLD (sigtext-v0) digest algorithm: the raw-text payload the
+# store held BEFORE the #509 whitespace normalisation. Live stores in the
+# wild still hold these digests, so the re-seed test must build a store with
+# them. This mirrors `_entry_content_digest` EXACTLY minus the `_sig_text`
+# collapse (the one thing the v0->v1 change touched), so the runtime
+# precondition "old digest != new digest" is meaningful and not an artefact
+# of a hand-faked hash.
+def _old_algo_digest(entry):
+    payload = {
+        "title": entry.get("title"),
+        "body": entry.get("body"),
+        "follows": entry.get("follows") or [],
+        "answers": entry.get("answers") or [],
+        "answer": entry.get("answer"),
+    }
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
+
+
+def _write_old_algo_store(target, entries, algo=None, stamps=None):
+    """Write a question-sigs.json as if produced by an older algorithm.
+
+    `entries` are the live entry dicts (title/body/...); each is recorded
+    under its title key with the OLD-algo digest. `algo` controls the store's
+    `algo` marker (None => unmarked, the pre-#534 shape live stores have).
+    `stamps` (optional) maps title -> a prior updated_at to carry, modelling
+    an entry that really did change before the algorithm upgrade."""
+    store = {}
+    for e in entries:
+        key = watch._title_sig_key(e.get("title"))
+        store[key] = {
+            "digest": _old_algo_digest(e),
+            "updated_at": (stamps or {}).get(e.get("title")),
+            "title": (e.get("title") or "")[:120],
+        }
+    if algo is not None:
+        store["algo"] = algo
+    path = os.path.join(target, ".dreamwork", watch.QUESTION_SIGS)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(store, f)
+    return path
 
 
 class TestRequestAuthority(unittest.TestCase):
@@ -2353,6 +2398,235 @@ class TestCollector(unittest.TestCase):
             self.assertEqual(len(events), 1,
                              "a real word change must emit exactly one event")
             self.assertIn("#229", events[0])
+
+    def _question_events(self, d):
+        log = os.path.join(d, ".dreamwork", "watch-events.log")
+        if not os.path.exists(log):
+            return []
+        with open(log, encoding="utf-8") as f:
+            return [ln for ln in f if "question-updated" in ln]
+
+    def test_old_algo_store_reseeds_silently(self):
+        # #534 — when _entry_content_digest's algorithm changes (the #509
+        # whitespace normalisation was the live instance), a store written by
+        # the OLD algorithm sees every stored digest differ and would emit one
+        # phantom question-updated event per entry on the first collect after
+        # deploy (~21 phantom events at 09:43:31 on the 2026-07-30 deploy).
+        # The store is versioned: an absent/older `algo` re-seeds SILENTLY —
+        # every digest recomputed under the CURRENT algorithm, ZERO events.
+        #
+        # PRODUCTION LINE whose change reds this: track_question_updates's
+        # algo-mismatch re-seed branch. Sabotage it to skip the re-seed (fall
+        # through to the normal compare, where every old digest != new digest
+        # fires an event) and the "zero events" assertion fails.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            # a body whose line-structure the OLD algo keeps but the NEW algo
+            # (_sig_text) collapses — so the two digests genuinely differ.
+            entry = {"title": "Re-seed alpha", "body": "line one\nline two\n"
+                     "line three", "follows": [], "answers": [], "answer": None}
+            # PRECONDITION (derived at runtime): the fixture is not vacuous —
+            # the old-algo digest really differs from the new-algo one. A
+            # single-line body would hash equal under both and the re-seed
+            # would have nothing to do.
+            self.assertNotEqual(_old_algo_digest(entry),
+                                watch._entry_content_digest(entry),
+                                "precondition: old/new digests differ")
+            _write_old_algo_store(d, [entry])  # unmarked => treated as v0
+            sig = os.path.join(d, ".dreamwork", watch.QUESTION_SIGS)
+            self.assertNotIn("algo", json.load(open(sig)),
+                             "precondition: store predates the algo field")
+
+            live = [dict(entry)]
+            watch.track_question_updates(d, live)
+            # ZERO events — an algorithm upgrade is not a content change.
+            self.assertEqual(self._question_events(d), [],
+                             "re-seed fired a phantom question-updated")
+            # the store is now stamped current and holds the NEW digest.
+            store = json.load(open(sig))
+            self.assertEqual(store.get("algo"), watch.SIG_ALGO,
+                             "store not stamped with the current algo")
+            key = watch._title_sig_key(entry["title"])
+            self.assertEqual(store[key]["digest"],
+                             watch._entry_content_digest(entry),
+                             "store still holds an old-algo digest")
+            # updated_at carried (first-sight here was None), not stamped now.
+            self.assertIsNone(live[0].get("updated_at"))
+
+            # second collect, unchanged content — still zero, no write storm.
+            watch.track_question_updates(d, [dict(entry)])
+            self.assertEqual(self._question_events(d), [],
+                             "unchanged content after re-seed fired an event")
+
+    def test_reseed_carries_a_prior_real_change_stamp_silently(self):
+        # #534 — an entry that REALLY changed before the algorithm upgrade
+        # keeps its prior updated_at through the re-seed (only the algorithm
+        # changed, not the content), and emits no event for it.
+        # PRODUCTION LINE: the re-seed's `prev_at` carry-forward. Sabotage it
+        # to set updated_at=None (or time.time()) and the stamp is lost (or a
+        # phantom stamp appears).
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            entry = {"title": "Re-seed beta", "body": "para one\npara two",
+                     "follows": [], "answers": [], "answer": None}
+            self.assertNotEqual(_old_algo_digest(entry),
+                                watch._entry_content_digest(entry),
+                                "precondition: old/new digests differ")
+            prior = 1700000000.0
+            _write_old_algo_store(d, [entry], stamps={entry["title"]: prior})
+            live = [dict(entry)]
+            watch.track_question_updates(d, live)
+            self.assertEqual(self._question_events(d), [],
+                             "re-seed fired a phantom question-updated")
+            # the prior REAL change stamp survives the algorithm upgrade.
+            self.assertEqual(live[0].get("updated_at"), prior,
+                             "re-seed lost the prior real-change stamp")
+            sig = os.path.join(d, ".dreamwork", watch.QUESTION_SIGS)
+            self.assertEqual(
+                json.load(open(sig))[watch._title_sig_key(entry["title"])]
+                ["updated_at"], prior,
+                "store did not carry the prior real-change stamp")
+
+    def test_real_change_after_reseed_emits_one_event(self):
+        # #534 acceptance: after a silent re-seed the channel keeps its teeth
+        # — a REAL content change still emits exactly ONE question-updated
+        # event (the re-seed must not swallow genuine changes forever).
+        # PRODUCTION LINE: the re-seed must stamp the store current so the
+        # NEXT collect takes the normal compare path. Sabotage the re-seed to
+        # leave the store un-stamped and every later collect re-seeds again,
+        # swallowing the real change (zero events => this fails).
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            entry = {"title": "Re-seed gamma", "body": "first\nsecond",
+                     "follows": [], "answers": [], "answer": None}
+            self.assertNotEqual(_old_algo_digest(entry),
+                                watch._entry_content_digest(entry),
+                                "precondition: old/new digests differ")
+            _write_old_algo_store(d, [entry])
+            watch.track_question_updates(d, [dict(entry)])  # silent re-seed
+            self.assertEqual(self._question_events(d), [])
+
+            # a REAL content change (different words), not an algorithm flip.
+            changed = dict(entry, body="first\nSECOND CHANGED")
+            self.assertNotEqual(
+                watch._entry_content_digest(changed),
+                watch._entry_content_digest(entry),
+                "precondition: the word change really alters the digest")
+            watch.track_question_updates(d, [changed])
+            events = self._question_events(d)
+            self.assertEqual(len(events), 1,
+                             "a real change after re-seed must emit one event")
+            self.assertIn("Re-seed gamma", events[0])
+
+    def test_collect_reseeds_both_sections_atomically_silently(self):
+        # #534 regression: collect() processes the OPEN and ANSWERED sections
+        # over one shared store. An earlier two-call design re-seeded the open
+        # entries and stamped the store current while the answered entries
+        # still held OLD-algo digests — so the second call compared new
+        # digests against stale ones and fired a phantom event per answered
+        # entry. collect() now passes both sections to one call, so the re-seed
+        # is atomic across sections.
+        # PRODUCTION LINE: collect()'s single track_question_updates call. Revert
+        # it to two calls and the answered entry phantom-fires on re-seed.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            qpath = os.path.join(d, ".dreamwork", "questions.md")
+            open_body = "open line one\nopen line two"   # multi-line => v0!=v1
+            ans_body = "answered line one\nanswered line two"
+            with open(qpath, "w") as f:
+                f.write("# Questions for the human\n\n## Open\n\n"
+                        "- **Open re-seed**\n  " + open_body.replace("\n", "\n  ")
+                        + "\n\n## Answered\n\n"
+                        "- **Answered re-seed -> resolved.**\n  "
+                        + ans_body.replace("\n", "\n  ") + "\n")
+            parsed = watch.collect(d)  # parse to get the live entry dicts
+            open_e = parsed["questions_open"][0]
+            ans_e = parsed["answered_entries"][0]
+            # PRECONDITION: both entries' old/new digests differ, else the
+            # re-seed has nothing to migrate and the phantom can't show.
+            self.assertNotEqual(_old_algo_digest(open_e),
+                                watch._entry_content_digest(open_e),
+                                "precondition: open old/new digests differ")
+            self.assertNotEqual(_old_algo_digest(ans_e),
+                                watch._entry_content_digest(ans_e),
+                                "precondition: answered old/new digests differ")
+            # pre-seed a store with OLD-algo digests for BOTH sections.
+            _write_old_algo_store(d, [open_e, ans_e])
+
+            data = watch.collect(d)
+            self.assertEqual(self._question_events(d), [],
+                             "re-seed fired a phantom across sections")
+            sig = os.path.join(d, ".dreamwork", watch.QUESTION_SIGS)
+            store = json.load(open(sig))
+            self.assertEqual(store.get("algo"), watch.SIG_ALGO)
+            # BOTH sections' digests migrated to the current algorithm.
+            self.assertEqual(
+                store[watch._title_sig_key(open_e["title"])]["digest"],
+                watch._entry_content_digest(open_e),
+                "open entry not re-seeded to the current algo")
+            self.assertEqual(
+                store[watch._title_sig_key(ans_e["title"])]["digest"],
+                watch._entry_content_digest(ans_e),
+                "answered entry not re-seeded to the current algo")
+
+    def test_unrecognised_algo_marker_reseeds_silently(self):
+        # #534 — a store carrying an algo marker the code does NOT know
+        # (a future generation, or a typo) is treated as the oldest known
+        # generation and re-seeded to the current one. The only safe thing to
+        # do with an unknown algorithm is re-seed; guessing "current" would
+        # skip a real upgrade, and the next-oldest known alias would too.
+        # PRODUCTION LINE: _store_algo's unknown-marker fallback. Sabotage it
+        # to return SIG_ALGO for an unknown marker and the re-seed is skipped,
+        # so the store keeps an old-algo digest (assertion fails).
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            entry = {"title": "Re-seed delta", "body": "a\nb\nc",
+                     "follows": [], "answers": [], "answer": None}
+            self.assertNotEqual(_old_algo_digest(entry),
+                                watch._entry_content_digest(entry),
+                                "precondition: old/new digests differ")
+            _write_old_algo_store(d, [entry], algo="sigtext-future")
+            watch.track_question_updates(d, [dict(entry)])
+            self.assertEqual(self._question_events(d), [],
+                             "unknown algo marker fired a phantom event")
+            sig = os.path.join(d, ".dreamwork", watch.QUESTION_SIGS)
+            store = json.load(open(sig))
+            self.assertEqual(store.get("algo"), watch.SIG_ALGO,
+                             "unknown marker did not re-seed to current")
+
+    def test_current_algo_store_is_not_reseeded(self):
+        # #534 — a store already stamped current with correct digests takes
+        # the NORMAL path: unchanged content emits no event and the store is
+        # not pointlessly rewritten. This guards against a re-seed that fires
+        # on every collect (which would also swallow real changes — see the
+        # sibling "real change after reseed" test).
+        # PRODUCTION LINE: the `algo == SIG_ALGO` guard ahead of the re-seed.
+        # Sabotage it to re-seed unconditionally and this still passes for the
+        # WRONG reason (no events either way) — the discriminating red is the
+        # sibling real-change test, which is why both exist.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            entry = {"title": "Current algo", "body": "stable body",
+                     "follows": [], "answers": [], "answer": None}
+            # write a store already under the CURRENT algo with correct digests
+            store = {"algo": watch.SIG_ALGO}
+            store[watch._title_sig_key(entry["title"])] = {
+                "digest": watch._entry_content_digest(entry),
+                "updated_at": None,
+                "title": entry["title"],
+            }
+            sig = os.path.join(d, ".dreamwork", watch.QUESTION_SIGS)
+            os.makedirs(os.path.dirname(sig), exist_ok=True)
+            with open(sig, "w") as f:
+                json.dump(store, f)
+            before_mtime = os.path.getmtime(sig)
+            time.sleep(0.05)
+            watch.track_question_updates(d, [dict(entry)])
+            self.assertEqual(self._question_events(d), [],
+                             "unchanged current-algo content fired an event")
+            # no content change => no write (mtime unchanged).
+            self.assertEqual(os.path.getmtime(sig), before_mtime,
+                             "current-algo store was pointlessly rewritten")
 
     def test_answers_health_fault_is_loud_and_path_specific(self):
         self.assertIn("answers channel unreadable", watch.PAGE)

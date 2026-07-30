@@ -2078,6 +2078,21 @@ sight stores the digest with `updated_at` null; a later digest change stamps the
 clock and emits one `question-updated via watch: <title>` line to
 `watch-events.log`.
 
+The store also carries one top-level `algo` field (#534) naming the digest
+algorithm **generation** the per-entry digests were written under —
+`sigtext-v1` today (`_sig_text` whitespace-normalised), `sigtext-v0` the
+unmarked pre-normalisation raw-text digests the live store held before the
+#509 normalisation landed. A store predating the field has no `algo` key and
+is treated as `v0`. On load, if the stored `algo` is absent, older, or
+unrecognised, every live entry's digest is recomputed under the CURRENT
+algorithm, the store is re-stamped current, and **zero events fire** — a
+digest-algorithm change is not a content change, so it must not announce
+itself as one (the #509 deploy fired ~21 phantom `question-updated` events
+for entries whose content had not moved). Each entry's prior `updated_at` is
+carried through the re-seed. The generations are an append-only list in
+`watch.py` (`_SIG_ALGO_GENERATIONS`); the next algorithm change is a new
+trailing alias plus a `SIG_ALGO` bump, never a re-discovery.
+
 The definition is **per-entry content**, and the three alternatives were
 rejected for reasons worth keeping: **file mtime** moves when a *neighbour*
 entry is answered, since every entry lives in one file; **git history of
