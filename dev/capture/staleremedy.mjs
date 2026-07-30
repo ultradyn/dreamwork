@@ -190,7 +190,10 @@ let beforeState;
   await p.click('.gservact');
   await sleep(200);
   const armed = await p.evaluate(READ);
-  const armNote = (await p.locator('#fmsg').textContent()) || '';
+  // #569: the arming countdown was recused from #fmsg into the posture
+  // widget's #pdep slot; read it there (the .gservact button still carries
+  // the short "arms in Ns" label too).
+  const armNote = (await p.locator('#pdep').textContent()) || '';
   notes.push(`arm: arming=${armed.arming} text=${JSON.stringify(armed.actionText)} ` +
              `note=${JSON.stringify(armNote)}`);
   ok('arm: first click arms the control (RUN_ARM_MS idiom)',
@@ -206,13 +209,16 @@ let beforeState;
   await ctx.close();
 }
 
-// ── 3b. #490 — arm countdown is steady text, not a 4 Hz flash ────────────
-// Production line: armStaleDeploy's setCount calling c.note/claim every
-// poll tick. show() re-adds .dreamin on every note, so a 250ms interval
-// restarts the arrival gesture ~4×/s. Red: reinstate unconditional
-// c.note(`arms in ${left}s — then this page updates`, true) inside setCount
-// (the pre-#490 body). Threshold is "after the one legitimate arrival,
-// zero further .dreamin adds" — not a poll-rate literal.
+// ── 3b. #490/#569 — arm countdown is steady text on #pdep, no .dreamin ──
+// Production line: armStaleDeploy's setCount → paintDeployStatus (#pdep).
+// #490's original concern was a ~4 Hz .dreamin flash when the arm countdown
+// re-noted #fmsg every 250ms poll. #569 recused the countdown into #pdep,
+// which uses paintDeployStatus (plain text + an explicit width, exactly like
+// the posture arm's #pcount) and NEVER adds .dreamin — so the flash is
+// structurally impossible. This check binds that: #pdep carries the steady
+// arming countdown and never takes the .dreamin class. Red: route the
+// countdown back through confirmationFor's note/claim (which re-adds
+// .dreamin on every show), or drop paintDeployStatus from setCount.
 {
   const ctx = await br.newContext({ viewport: { width: 1100, height: 1000 } });
   const p = await ctx.newPage();
@@ -220,11 +226,10 @@ let beforeState;
   await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
   await p.waitForSelector('.gservact');
   await p.click('.gservact');
-  // Let the one legitimate arrival finish (.dreamin added then cleared on rAF).
   await sleep(350);
   const flash = await p.evaluate(async () => {
-    const m = document.getElementById('fmsg');
-    if (!m) return { ok: false, why: 'no #fmsg' };
+    const m = document.getElementById('pdep');
+    if (!m) return { ok: false, why: 'no #pdep' };
     let dreaminAdds = 0;
     let textChanges = 0;
     let lastText = m.textContent;
@@ -242,8 +247,6 @@ let beforeState;
       attributes: true, attributeFilter: ['class'],
       childList: true, characterData: true, subtree: true,
     });
-    // Window long enough that a 250ms poll re-note would fire several times
-    // (and long enough to cross a second boundary for a legitimate tick).
     await new Promise(r => setTimeout(r, 1400));
     mo.disconnect();
     return {
@@ -251,12 +254,12 @@ let beforeState;
       final: m.textContent, stillArming: /arms in/.test(m.textContent || ''),
     };
   });
-  notes.push(`#490 flash: ${JSON.stringify(flash)}`);
-  ok('#490 precondition — arm countdown is on #fmsg after settle',
+  notes.push(`#490/#569 flash: ${JSON.stringify(flash)}`);
+  ok('#490/#569 precondition — arm countdown is on #pdep after settle',
      flash.ok === true && flash.stillArming === true);
-  // The flash itself: any mid-arm .dreamin restart is the bug. A second
-  // boundary may rewrite the number (textChanges ≥ 0); that is not a flash.
-  ok('#490 arm countdown does not re-fire .dreamin after arrival',
+  // #pdep uses plain text (paintDeployStatus), so .dreamin never appears on
+  // it — the #490 flash is structurally impossible after the #569 recuse.
+  ok('#490/#569 arm countdown never takes .dreamin (plain-text idiom)',
      flash.ok === true && flash.dreaminAdds === 0);
   await ctx.close();
 }

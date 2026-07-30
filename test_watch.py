@@ -983,6 +983,144 @@ class TestCollector(unittest.TestCase):
         self.assertLess(ans, burn,
                         "the group sits above the rest of the dashboard")
 
+    def test_posture_widget_is_sticky_while_countdown_live(self):
+        """#565 — the posture widget is sticky (bottom:0) so scrolling up
+        keeps its countdown visible. Sticky is CONDITIONAL: a probe proved
+        always-on `bottom:0` on the end-of-page `.posture` docks it
+        permanently (~35% of the viewport at rest), so a class toggled only
+        while a posture arm or deploy countdown is live is the sole useful
+        form — and it matches the human's own framing ("when the countdown
+        timer bar is on screen"). Sticky is not motion (transitions.md), so
+        no travel assertion; the held claim is the CSS declaration + the
+        toggle that gates it.
+
+        Production lines: the `.posture.psticky { position:sticky; bottom:0 }`
+        CSS rule; `posturePinnedLive()` (covers BOTH countdown hosts — the
+        posture arm and the deploy arm); `paintPosturePin()` called from
+        setContent so a tick rebuild re-applies the class. Drop any one and
+        a clause below fails.
+        """
+        page = watch._get_page()
+        # CSS: a sticky rule keyed on .posture + a pin class, docking at the
+        # viewport bottom (a probe showed top:0 is a no-op for an
+        # end-of-page element; only bottom:0 keeps it visible on scroll-up).
+        m = re.search(r"\.posture\.psticky\s*\{[^}]*\}", page)
+        self.assertTrue(m, ".posture.psticky sticky rule missing from CSS")
+        rule = m.group(0).replace(" ", "")
+        self.assertIn("position:sticky", rule,
+                      "sticky rule must declare position:sticky")
+        self.assertRegex(m.group(0), r"bottom:\s*0",
+                         "sticky rule must dock at bottom:0")
+        # JS: a predicate naming BOTH countdown hosts, a toggle, and a
+        # setContent re-apply (the 2s tick rebuilds #posture via morphdom,
+        # so the class must be re-applied every render or it is lost).
+        self.assertTrue(re.search(r"function\s+posturePinnedLive\b", page),
+                        "posturePinnedLive predicate missing")
+        body = page[page.index("function posturePinnedLive"):]
+        body = body[:body.index("\n}") + 2]
+        self.assertIn("postArmUntil", body,
+                      "predicate must read the posture-arm deadline")
+        self.assertIn("staleDeployPhase", body,
+                      "predicate must read the deploy-arm phase")
+        self.assertTrue(re.search(r"function\s+paintPosturePin\b", page),
+                        "paintPosturePin toggle missing")
+        # setContent (the morphdom seam) re-applies the pin after rebuild.
+        sm = re.search(r"function setContent\(html\)\s*\{", page)
+        self.assertTrue(sm, "setContent not found")
+        sbody = page[sm.start():sm.start() + 2000]
+        self.assertRegex(sbody, r"(?m)^[ \t]*paintPosturePin\(\);",
+                         "setContent must re-apply the sticky class")
+
+    def test_deploy_countdown_recused_into_posture_widget(self):
+        """#569 — the deploy update message is recused from #fmsg (the chrome)
+        INTO the posture widget's countdown row: a #pdep slot in .parm's
+        remaining horizontal space, with a CSS width transition so the label
+        reflow ('arms in 3s' -> 'updating — waiting for the new page') eases
+        rather than snaps. The width rides the explicit-width idiom #pbarfill
+        already uses (width can't transition from auto), so there is no second
+        motion mechanism.
+
+        Production lines: posturePicker's #pdep slot (rendered HTML, evaled in
+        node); paintDeployStatus (sets explicit width + the transition);
+        armStaleDeploy/fireStaleDeploy routing the live message to #pdep; the
+        .pdep width transition in CSS. Drop any and a clause below fails.
+        """
+        import subprocess, shutil
+        page = watch._get_page()
+        # 1. posturePicker renders a #pdep slot inside .parm — eval the REAL
+        #    function with stubs so the assertion is on rendered HTML.
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — #pdep render gate did NOT run")
+        pp = _extract_js_fn(page, "function posturePicker(d)")
+        script = (
+            "const esc = t => String(t==null?'':t)"
+            ".replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')"
+            ".replace(/\"/g,'&quot;');\n"
+            "const readPostPending = () => null;\n"
+            "const pendingPostIsLive = () => false;\n"
+            "const POSTURE_STOPS_PACE=['idle','steady','hot'];\n"
+            "const POSTURE_STOPS_ASKING=['ask','near-auto','auto'];\n"
+            "const POSTURE_STOPS_DELIVERY=['instant','hold','queue'];\n"
+            "const POSTURE_STOPS_ORCHESTRATION=['hands-on','assist','delegate'];\n"
+            "const POSTURE_DELEGATION_UI_MAX=3;\n"
+            "const delegationLabel = n => 'own';\n"
+            "const remindSlotInner = () => '<button>r</button>';\n"
+            "const committedPosture = d => ({pace:'idle',asking:'ask',"
+            "delegation:0,delivery:'instant',orchestration:'hands-on',"
+            "source:'derived',delegation_label:'own'});\n"
+            + pp + "\nconsole.log(posturePicker({posture:{}}));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0,
+                         "posturePicker node eval failed: " + proc.stderr)
+        out = proc.stdout
+        # the slot lives inside .parm (between parm open and its close), and
+        # is a polite live region (it carries the deploy countdown).
+        self.assertIn('class="parm"', out)
+        parm_open = out.index('class="parm"')
+        # find the </div> that closes .parm: the pmsg section div follows parm
+        parm_close = out.index('class="pmsg"', parm_open)
+        parm_html = out[parm_open:parm_close]
+        self.assertIn('id="pdep"', parm_html,
+                      "#pdep deploy slot must render inside .parm")
+        self.assertIn('aria-live="polite"', parm_html,
+                      "#pdep must be an aria-live region (deploy countdown)")
+        # 2. paintDeployStatus drives an EXPLICIT width (auto can't transition)
+        #    — the same idiom #pbarfill uses.
+        self.assertTrue(re.search(r"function\s+paintDeployStatus\b", page),
+                        "paintDeployStatus missing")
+        pds = _extract_js_fn(page, "function paintDeployStatus(")
+        self.assertIn("scrollWidth", pds,
+                      "paintDeployStatus must measure natural width")
+        self.assertRegex(pds, r"\.style\.width",
+                         "paintDeployStatus must set an explicit width")
+        # 3. the live deploy message routes to #pdep, not #fmsg.
+        arm = _extract_js_fn(page, "function armStaleDeploy()")
+        self.assertRegex(arm, r"paintDeployStatus\(",
+                         "arming countdown must route to the posture slot")
+        self.assertNotIn("getElementById('fmsg')", arm,
+                         "arming countdown must leave #fmsg (it is recused)")
+        fire = _extract_js_fn(page, "async function fireStaleDeploy(")
+        # bind the SPECIFIC 'updating' routing — fireStaleDeploy also calls
+        # paintDeployStatus('') on its error branches, so a bare
+        # paintDeployStatus( match is not discriminating (a sabotage that
+        # rerouted only the 'updating' line to #fmsg passed it: green red-run).
+        self.assertRegex(fire, r"paintDeployStatus\(\s*'updating",
+                         "running 'updating' message must route to the slot")
+        self.assertIn("updating — waiting for the new page", fire,
+                      "the running message text must be preserved")
+        # 4. the .pdep CSS carries the width transition (reduced motion snaps).
+        dm = re.search(r"\.pdep\s*\{[^}]*\}", page)
+        self.assertTrue(dm, ".pdep CSS rule missing")
+        self.assertRegex(dm.group(0), r"transition:[^;]*width",
+                         ".pdep must transition width so the reflow eases")
+        # reduced motion snaps: the ONLY .pdep rule with transition:none is
+        # the reduced-motion one (the base rule carries transition:width).
+        self.assertRegex(page, r"\.pdep\s*\{[^}]*transition:\s*none",
+                         "reduced motion must snap the .pdep width")
+
     def test_question_update_stamp_is_per_entry_not_file_mtime(self):
         # #473 — "updated" means THIS entry's content changed after first
         # sight, not that questions.md was rewritten (a neighbour's answer
@@ -9618,14 +9756,22 @@ class TestDeployAction(unittest.TestCase):
         # Deploy is a registered write route (E2 derives from the table).
         self.assertIn('"/deploy": _handle_deploy',
                       inspect.getsource(watch.make_handler))
-        # #490: mid-arm countdown must not re-call note/claim (restarts
-        # .dreamin ~4 Hz). The in-place textContent path + lastLeft gate
-        # are the production lines; reinstate unconditional c.note in
-        # setCount to red the browser half (staleremedy.mjs §3b).
+        # #490/#569: the mid-arm countdown must not re-call note/claim
+        # (restarts .dreamin ~4 Hz). #569 recused it into #pdep via
+        # paintDeployStatus (plain text + explicit width, like #pcount —
+        # never .dreamin), so the flash is structurally impossible. The
+        # lastLeft gate + paintDeployStatus routing are the production lines;
+        # reinstate a c.note (or the old #fmsg in-place write) in setCount to
+        # red the browser half (staleremedy.mjs §3b).
         arm_body = watch.PAGE.split("function armStaleDeploy(")[1].split(
             "function fireStaleDeploy(")[0]
         self.assertIn("lastLeft", arm_body)
-        self.assertIn("m.textContent = text", arm_body)
+        self.assertIn(
+            "paintDeployStatus(`arms in ${left}s — then this page updates`)",
+            arm_body)
+        # the old #fmsg in-place write + unconditional c.note are both gone
+        # (the countdown was recused out of #fmsg into #pdep).
+        self.assertNotIn("m.textContent = text", arm_body)
         self.assertNotIn(
             "c.note(`arms in ${left}s — then this page updates`", arm_body)
 

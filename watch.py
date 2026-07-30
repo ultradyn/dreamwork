@@ -1998,6 +1998,22 @@ STYLE = """<style>
      Active stop takes --accent (live loop control). Reduced motion hides
      the bar, keeps the second-by-second text + same application time. */
   .posture { margin:.55rem 0 .35rem; }
+  /* #565 — the posture widget docks to the viewport bottom while one of its
+     countdowns is live, so scrolling up keeps the countdown visible. Sticky
+     is CONDITIONAL (the .psticky class, toggled by paintPosturePin from
+     posturePinnedLive): a headless probe proved always-on `bottom:0` on this
+     end-of-page section docks it at rest (~35% of the viewport permanently),
+     and `top:0` is a no-op for an end-of-page element, so the class — gated
+     on a live posture arm or deploy countdown, matching "when the countdown
+     timer bar is on screen" — is the only useful form. Opaque bg + a top
+     hairline (box-shadow, no layout shift) keep the docked widget readable
+     over scrolling content; the full HR+soft-fade the human sketched is
+     deferred (it needs the review-pages registered-property mask and does
+     not fight sticky — see FLAG in the merge). Sticky is not motion
+     (transitions.md), so there is no travel here, only the declaration. */
+  .posture.psticky { position:sticky; bottom:0; z-index:5;
+    background:var(--bg);
+    box-shadow:0 -1px 0 var(--line); }
   /* #488: source chip sits beside the Posture heading, not under the axes. */
   .posture-head { display:flex; align-items:baseline; gap:.55rem;
     flex-wrap:wrap; margin:var(--space) 0 .5rem; }
@@ -2036,9 +2052,10 @@ STYLE = """<style>
     transition:opacity .3s ease; opacity:.82; }
   .remind-btn:hover { opacity:1; text-decoration:underline; }
   .remind-sent { color:var(--dim); }
-  .parm { margin:.35rem 0 0; min-height:1.15rem; }
+  .parm { margin:.35rem 0 0; min-height:1.15rem;
+          display:flex; flex-wrap:wrap; align-items:baseline; }
   .pbar { height:3px; background:var(--line); border-radius:2px;
-          overflow:hidden; margin:0 0 .28rem; }
+          overflow:hidden; margin:0 0 .28rem; flex:0 0 100%; }
   .pbar[hidden] { display:none; }
   .pbarfill { height:100%; width:100%; background:var(--muted);
     border-radius:2px;
@@ -2046,6 +2063,22 @@ STYLE = """<style>
   .pbarfill.snap { transition:none; }
   .pcount { color:var(--dim); font-size:.7rem;
             font-variant-numeric:tabular-nums; }
+  /* #569: the recused deploy countdown, in .parm's remaining horizontal
+     space (margin-left:auto docks it after the posture count). Its width
+     rides the explicit-width idiom #pbarfill uses — paintDeployStatus sets
+     style.width to the measured text width and the transition eases the
+     reflow as the label changes ('arms in 3s' -> 'updating — waiting for
+     the new page'). width cannot transition from auto, so it is explicit,
+     snap-then-travel, exactly like the arm bar. Visibility IS width (0 =
+     collapsed via overflow:hidden) — no opacity, so the 2s morphdom rebuild
+     (which resets inline styles) cannot flash it; the 250ms deploy tick
+     re-applies the width the same way #pcount's text is re-applied. Reduced
+     motion snaps. */
+  .pdep { margin-left:auto; color:var(--dim); font-size:.7rem;
+          font-variant-numeric:tabular-nums; white-space:nowrap;
+          overflow:hidden; max-width:100%;
+          transition:width .3s ease; }
+  .pdep.snap { transition:none; }
   .pmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
   .pmsg:empty { display:none; }
   /* #488: description shell always reserves layout height. Visibility is
@@ -2069,6 +2102,7 @@ STYLE = """<style>
     .pbar { display:none; }
     .pbarfill { transition:none; }
     .pdesc, .pdesc-text { transition:none; }
+    .pdep { transition:none; }   /* #569: width snaps, function unchanged */
   }
   /* ── what he has sent, from this browser (#165) ───────────────────────
      The row is the page's standing shape for a list of small facts — the
@@ -5715,6 +5749,7 @@ function clearPostArmUI() {
     fill.style.width = '100%';
   }
   if (count) count.textContent = '';
+  paintPosturePin();   // #565: posture arm cleared → re-evaluate the dock
 }
 function armPostureUI(draft, until, gen) {
   if (postArmTimer) { clearTimeout(postArmTimer); postArmTimer = null; }
@@ -5749,6 +5784,7 @@ function armPostureUI(draft, until, gen) {
     bar.hidden = true;
   }
   postArmUntil = until;
+  paintPosturePin();   // #565: posture arm live → dock immediately
   postArmTick = setInterval(() => {
     if (gen !== postArmGen) return;
     setCount();
@@ -6013,7 +6049,10 @@ function posturePicker(d) {
     `<div class="parm" id="parm">` +
     `<div class="pbar" id="pbar" hidden aria-hidden="true">` +
     `<div class="pbarfill" id="pbarfill"></div></div>` +
-    `<span class="pcount" id="pcount" aria-live="polite"></span></div>` +
+    `<span class="pcount" id="pcount" aria-live="polite"></span>` +
+    // #569: the deploy update countdown is recused here from #fmsg — the
+    // posture row's remaining horizontal space, after the posture countdown.
+    `<span class="pdep" id="pdep" aria-live="polite"></span></div>` +
     `<div class="pmsg" id="pmsg" aria-live="polite"></div></section>`;
 }
 /* Shared description for posture stops — presentation only; never arms. */
@@ -6914,6 +6953,15 @@ function setContent(html) {
   // #462: the remedy may be re-created when the row is new; re-apply
   // arm/running classes and label so a mid-arm tick does not reset idle copy.
   paintStaleDeployUI();
+  // #565: re-apply the posture dock — morphdom rebuilt #posture, so the
+  // .psticky class (conditional on a live countdown) must be re-set every
+  // render or a tick while armed loses the dock.
+  paintPosturePin();
+  // #569: re-apply the recused deploy countdown (#pdep) — morphdom rebuilt
+  // the slot empty, so a tick while deploying must repopulate it (and a tick
+  // after clear must collapse it), like paintStaleDeployUI re-applies the
+  // button. deployStatusText() is '' when no deploy is live.
+  paintDeployStatus(deployStatusText());
   revealReviewMods();
   revealReviewDecisions();  // #289: decision-token arrival, same idiom
   revealQuestionUpdates();  // #473: updated-ago arrival, after ages() hides dishonest ones
@@ -8894,12 +8942,76 @@ function paintStaleDeployUI() {
   }
 }
 
+/* #565 — does EITHER countdown that lives in the posture widget have a live
+   deadline right now? The widget docks (paintPosturePin) only while one is
+   live, so it is not permanently covering ~35% of the viewport. Reads the
+   posture-arm deadline + cross-tab pending, and the deploy-arm phase — the
+   two hosts that share the widget's countdown bar. */
+function posturePinnedLive() {
+  if (staleDeployPhase === 'arming' || staleDeployPhase === 'running')
+    return true;
+  if (postArmUntil && Date.now() < postArmUntil) return true;
+  return pendingPostIsLive(readPostPending());
+}
+function paintPosturePin() {
+  const el = document.getElementById('posture');
+  if (el) el.classList.toggle('psticky', posturePinnedLive());
+}
+
+/* #569 — the deploy update message recused into the posture widget's #pdep
+   slot. Width rides the explicit-width idiom #pbarfill uses: width cannot
+   transition from auto, so we measure the text's natural width, snap to the
+   previous explicit width (transition off), then travel to the new one
+   (transition on). That eases the reflow as the label changes — 'arms in
+   3s' -> 'updating — waiting for the new page' — instead of snapping. Clear
+   travels the width back to 0 (overflow:hidden makes 0 invisible, so there
+   is no opacity to flash on the morphdom rebuild). pdepW tracks the previous
+   width across calls (module-scope, like postArmUntil). */
+let pdepW = 0;
+function paintDeployStatus(text) {
+  const el = document.getElementById('pdep');
+  if (!el) return;
+  if (text) {
+    el.textContent = text;
+    el.classList.add('snap');            // transition:none while measuring
+    el.style.width = 'auto';
+    void el.offsetWidth;                 // reflow at natural width
+    const w = el.scrollWidth;            // natural content width
+    el.style.width = pdepW + 'px';       // snap back to previous explicit
+    void el.offsetWidth;
+    el.classList.remove('snap');         // transition restored
+    el.style.width = w + 'px';           // travel previous -> new
+    pdepW = w;
+  } else {
+    el.classList.remove('snap');
+    el.style.width = '0px';              // travel natural -> 0
+    pdepW = 0;
+    // clear the text once the collapse has played so an empty slot measures
+    // 0 (and is genuinely empty) on the next show.
+    const node = el;
+    setTimeout(() => { if (node.style.width === '0px') node.textContent = ''; }, 320);
+  }
+}
+/* The deploy status text for the current phase (mirrors paintStaleDeployUI's
+   button label) — used to re-apply #pdep after a tick rebuild (setContent),
+   the same way paintStaleDeployUI re-applies the button. */
+function deployStatusText() {
+  if (staleDeployPhase === 'arming') {
+    const s = Math.max(0, Math.ceil((staleDeployUntil - Date.now()) / 1000));
+    return s > 0 ? `arms in ${s}s — then this page updates` : '';
+  }
+  if (staleDeployPhase === 'running') return 'updating — waiting for the new page';
+  return '';
+}
+
 function clearStaleDeployArm() {
   if (staleDeployTimer) { clearTimeout(staleDeployTimer); staleDeployTimer = null; }
   if (staleDeployTick) { clearInterval(staleDeployTick); staleDeployTick = null; }
   staleDeployUntil = 0;
   if (staleDeployPhase === 'arming') staleDeployPhase = null;
   paintStaleDeployUI();
+  paintDeployStatus(deployStatusText());  // #569: re-apply/clear #pdep with the phase
+  paintPosturePin();   // #565: deploy arm cleared → re-evaluate the dock
 }
 
 function cancelStaleDeployArm() {
@@ -8908,17 +9020,19 @@ function cancelStaleDeployArm() {
 }
 
 function armStaleDeploy() {
-  const c = fileConfirmation();
   const until = Date.now() + RUN_ARM_MS;
   staleDeployGen++;
   const gen = staleDeployGen;
   staleDeployPhase = 'arming';
   staleDeployUntil = until;
   paintStaleDeployUI();
+  paintPosturePin();   // #565: deploy countdown live → dock the posture widget
   const remainingMs = () => Math.max(0, staleDeployUntil - Date.now());
-  // #490: countdown is steady text that ticks once per second. Re-calling
-  // note()/claim() restarts .dreamin at the poll rate (~4 Hz flash on #fmsg).
-  // claim (not note) so a 10s arm is not auto-cleared at the 5s hold.
+  // #490: countdown is steady text that ticks once per second. #569 recused
+  // it into the posture widget's #pdep slot — paintDeployStatus eases the
+  // width as the number ticks and never adds .dreamin (the posture arm's
+  // #pcount is plain text too; one countdown idiom, so the ~4 Hz flash the
+  // old #fmsg claim/re-note caused is structurally impossible here).
   let lastLeft = -1;
   const setCount = () => {
     if (gen !== staleDeployGen) return;
@@ -8927,13 +9041,7 @@ function armStaleDeploy() {
     if (left === lastLeft) return;  // same second — do nothing
     lastLeft = left;
     paintStaleDeployUI();
-    const text = `arms in ${left}s — then this page updates`;
-    const m = document.getElementById('fmsg');
-    if (m && /^arms in \\d+s — then this page updates$/.test(m.textContent || '')) {
-      m.textContent = text;  // tick the number in place; no arrival gesture
-    } else {
-      c.claim(text, true);   // first paint of this arm only
-    }
+    paintDeployStatus(`arms in ${left}s — then this page updates`);
   };
   setCount();
   if (staleDeployTick) clearInterval(staleDeployTick);
@@ -8953,8 +9061,12 @@ async function fireStaleDeploy(gen) {
   if (gen !== staleDeployGen) return;
   staleDeployPhase = 'running';
   paintStaleDeployUI();
+  paintPosturePin();   // #565: deploy running → keep the widget docked
   const c = fileConfirmation();
-  c.note('updating — waiting for the new page', true);
+  // #569: the running message is recused into the posture widget (#pdep).
+  // Errors (refused / network / timeout) stay in #fmsg — they are notices,
+  // not the live countdown — and clear the slot.
+  paintDeployStatus('updating — waiting for the new page');
   let landed = false;
   try {
     const res = await fetch('/deploy', {
@@ -8969,6 +9081,7 @@ async function fireStaleDeploy(gen) {
     if (!landed) {
       staleDeployPhase = null;
       paintStaleDeployUI();
+      paintDeployStatus('');   // #569: clear the slot; the refusal is a notice
       /* The two ways this route refuses are both `domain_invalid`, so the
          generic copy ("the value was not one the server accepts") is wrong for
          both — and these are the ONLY two refusals he can provoke. `detail`
@@ -8988,6 +9101,7 @@ async function fireStaleDeploy(gen) {
   } catch (e) {
     staleDeployPhase = null;
     paintStaleDeployUI();
+    paintDeployStatus('');   // #569: clear the slot; the network error is a notice
     c.note('update was refused — the page could not reach the server', false);
     return;
   }
@@ -9016,6 +9130,7 @@ async function fireStaleDeploy(gen) {
       clearInterval(staleDeployWait); staleDeployWait = null;
       staleDeployPhase = null;
       paintStaleDeployUI();
+      paintDeployStatus('');   // #569: clear the slot; the timeout is a notice
       c.note(
         'update never finished — this page is still the old one',
         false);
