@@ -3699,14 +3699,17 @@ const BURN_STEP_NAME = { 3600: 'hourly', 14400: 'every four hours',
 const BURN_STEP_ORDER = [3600, 14400, 86400, 604800, 2419200];
 let burnStepPref = null;   // null = server auto; else a BURN_STEP_ORDER entry
 /* #499: client-side column-count limit. Default 28; <=0 means all/max;
-   hard cap 168. Preference is per-target in localStorage (same family as
+   hard cap 256 (#546: raised from 168 — measured free: columns flex-shrink
+   with min-width:0 so no track/page overflow at any limit or viewport; the
+   only effect is thinner columns, already sub-pixel at 168 on mobile).
+   Preference is per-target in localStorage (same family as
    burn_step — URL params would fight the posture picker's shared-arm
    idiom less, but the page already keeps small UI state for this panel in
    localStorage, and that is the tie-breaker). Cross-tab: each tab reads
    on load; no storage-event fanout (burn_step does not either) so it
    never races the posture pending key. */
 const BURN_LIMIT_DEFAULT = 28;
-const BURN_LIMIT_CAP = 168;
+const BURN_LIMIT_CAP = 256;
 // null = use default; number is the stored preference (0 = all).
 let burnLimitPref = null;
 let _burnLimitDidLoad = false;
