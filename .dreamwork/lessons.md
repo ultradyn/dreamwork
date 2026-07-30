@@ -3254,3 +3254,25 @@ this shape and convert opportunistically.)
 - **Red-proving the path you were told to fix leaves the seam's sibling arm unbound** (2026-07-30, #274 gate). The lane's five replay/attempt tests bound the ok-path replay end to end (one receipt, one application, real server, real journal) and every one was discriminating — but the verdict mapper the lane added (`_replay_verdict`) has TWO arms, and nothing bound the rejected arm: sabotaging `if result.state == "rejected":` to always-ok passed all five while a retried REFUSAL told the client `ok: true` — clearing a draft nothing durable holds, the #136 lie one seam over. The lane had even written the rejected contract into its own docstring; the red set just never visited it. The shape to check for at gates: **when the fix adds a branch that maps N cases, the red set must name an injection per arm, not per path** — "the dedup seam" is one path, "accepted replay" and "refused replay" are two arms, and the one nobody typed in the bug report is the one the tests forget. Closed gate-side with a born-red binding test (`test_replayed_rejection_returns_the_rejection_verdict`, AssertionError at the verdict assertion with every precondition green).
 
 - **A lane worktree can be dirty at CREATION with the main checkout's uncommitted state** (2026-07-30, found gating the late 520deploy notice; hypothesis, evidence-consistent). A stale harness clone (527recon's tree, `.grok-1/.../subagent-019fafe8-…12a806c01584`) held a dirty questions.md (+8/−130) whose content was the main checkout's *post-truncation* file: HEAD (branched pre-truncation, tail present) → working tree (truncated + the 07:44-07:48 answers) — the diff is exactly the #533 incident's shape, and the file mtime (08:11:56) is the tree's creation time. The parsimonious read: harness worktree setup copied the main checkout's *dirty* file over the clean checkout at creation. Consequence for the #535 exit-dirtiness check: **`git status --porcelain` at lane completion must be read against dirtiness at CREATION, not assumed clean-by-construction** — a lane can inherit a dirty tree and the completion probe would misattribute the coordinator's uncommitted state to the lane. (Nothing was salvageable: the fossil's unique content was precisely what master deliberately restored away at `fd53d82a`.) **Corroborated same-day**: lane-526proof's tree holds the identical fossil (+8/−130, mtime 08:06:49 — six minutes before the 527 tree's), two independent lane trees created in the same window both carrying the main checkout's dirty file at creation; and the four harness instance dirs (`.grok`, `.grok-1`, `.grok-2`, `.grok-shared`) are views of ONE physical tree (same device:inode), so a "leftover worktrees" census sees 4 entries for 1 tree.
+
+- **A glm-5.2 lane cannot read an image — a UI brief that says "look at your
+  screenshot" is a crash instruction, not a step.** lane-504chat (glm-5.2)
+  died mid-verification on `API 400: messages.content.type is invalid,
+  allowed values: ['text']` — 102 model calls in, after committing, while
+  doing exactly what its brief asked (visual check of its own PNG). The
+  harness rejected the image content block; the lane had no recovery. For UI
+  lanes: grok-4.5 can see (when its credentials work); a glm lane's brief
+  must say text-only verification and leave the visual verdict to the
+  coordinator, who reviews the lane's screenshots. (2026-07-30, #504 salvage
+  gate.)
+- **A #535 porcelain check keyed on MASTER's head sha is hollow against a
+  harness clone — the object does not exist there, and `2>/dev/null` turns
+  the failure into "no commits".** The salvage check ran
+  `git log <master-sha>..HEAD` in the lane's independent clone; the sha was
+  committed after the clone was cut, so git exited nonzero, the redirect hid
+  it, and an empty result read as "crashed before working" — wrong: the lane
+  had committed and the screenshots were the only thing that contradicted
+  the verdict. Compare against the LANE's own base (`git log --oneline -5`,
+  or the dispatch-time sha recorded at spawn), never master's. Assert the
+  precondition the check depends on — the range's start point must resolve.
+  (2026-07-30, same gate.)
