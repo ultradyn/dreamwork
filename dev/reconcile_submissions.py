@@ -109,7 +109,7 @@ SUBMISSIONS_DEFAULT = ".dreamwork/submissions.log"
 # route added to watch fails that test here until this constant is updated.
 SUBMISSION_ROUTES = frozenset({
     "/answer", "/ask", "/comment", "/command", "/decide",
-    "/tint", "/run-mode", "/posture", "/deploy",
+    "/tint", "/run-mode", "/posture", "/deploy", "/remind",
 })
 
 # Stable exit codes (asserted by the test).  EX_OK: fully covered; EX_SOFTWARE:
