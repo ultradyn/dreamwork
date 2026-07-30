@@ -2572,6 +2572,10 @@ class TestHandoffs:
         rep = self._run(tmp_path, ledger, handoffs)
         return [d for lvl, w, d in rep.rows if w == "handoffs.md" and lvl == lint.WARN]
 
+    def _errors(self, tmp_path, ledger, handoffs):
+        rep = self._run(tmp_path, ledger, handoffs)
+        return [d for lvl, w, d in rep.rows if w == "handoffs.md" and lvl == lint.ERROR]
+
     def test_a_handoff_naming_a_landed_task_that_is_still_open_is_flagged(self, tmp_path):
         # THE precondition the check depends on, derived at runtime not a literal.
         watch = lint.load_watch()
@@ -2806,6 +2810,139 @@ class TestHandoffs:
                     "dreamer-5 — the fix\n\n## Folded\n")
         warns = self._warns(tmp_path, self.LEDGER, handoffs)
         assert any("#5" in w and "grammar" in w for w in warns), warns
+
+    # #554 — the four git conflict-marker forms, EXACTLY seven of the char at
+    # column 0. Each is a real git/diff3 emission, not a synthetic shape.
+    @pytest.mark.parametrize("marker_line", [
+        "<<<<<<< HEAD",          # merge: ours, with a label
+        "||||||| e2acedf5",      # diff3 base + sha — the live #548 incident line
+        "=======",               # the separator (a bare seven-= line)
+        ">>>>>>> branch",        # merge: theirs, with a label
+    ])
+    def test_each_conflict_marker_form_at_line_start_is_an_error(
+            self, tmp_path, marker_line):
+        """#554 — a merge-conflict marker left in handoffs.md is silent to
+        parse_handoffs, so it must be LOUD at ERROR.
+
+        parse_handoffs keys on `##` section heads and `- **#id**` entry heads;
+        a bare marker line matches neither and falls through to `continue`, so
+        it renders as nothing to the parser AND to this check — which is what
+        happened at the #548 merge: a ``||||||| e2acedf5`` line lived committed
+        in this file and 397/397 tests passed. A marker is a
+        reader-cannot-see-what-is-there defect (data loss, silent by nature),
+        so this is ERROR, never WARN.
+
+        Born-hollow: every one of these four forms passed the CURRENT suite
+        before this check existed — the hole was demonstrated by planting each,
+        not theorised. Production line: the ``CONFLICT_MARKER_RE.match(ln)``
+        branch plus the ``rep.add(ERROR, "handoffs.md", ...)`` it guards inside
+        check_handoffs; sabotage either and this test fails.
+        """
+        # Precondition (derived at runtime, never a literal): the line really
+        # does begin with exactly seven of its marker char at column 0, and not
+        # eight — the shape the regex is built for and the shape git emits. A
+        # fixture that drifted to six or eight would hollow the meaning, so the
+        # gap to both bounds is asserted, not assumed.
+        head = marker_line[0]
+        assert marker_line.startswith(head * 7), \
+            "precondition: line begins with seven of its marker char"
+        assert not marker_line.startswith(head * 8), \
+            "precondition: not eight — eight-plus is never a git marker form"
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#6** · landed `abc1234` · 2026-07-28 14:30 · by "
+                    "dreamer-6 — the fix\n\n## Folded\n"
+                    + marker_line + "\n")
+        errs = self._errors(tmp_path, self.LEDGER, handoffs)
+        assert len(errs) == 1, errs
+        assert "conflict marker" in errs[0], errs[0]
+        assert head * 7 in errs[0], errs[0]
+
+    @pytest.mark.parametrize("line", [
+        "---",                               # markdown hr — not a marker
+        "## A heading",                      # ATX heading — not a marker
+        "prose with a ===== run mid-line",   # = inside prose — not at col 0
+    ])
+    def test_markdown_and_prose_forms_are_not_conflict_markers(
+            self, tmp_path, line):
+        """#554 NEGATIVE — the marker rule must not cry wolf on markdown/prose.
+
+        The three forms the brief names: a ``---`` hr, a ``##`` heading, and a
+        prose line carrying ``=====`` mid-line. None is a conflict marker, and
+        none may trip the check — a rule that false-positives on ordinary
+        markdown is one the writer mutes, and a muted check is worse than none.
+        The over-matching axis is this test's; the under-matching axis (regex
+        matches nothing) is the positive test's above.
+        """
+        # Precondition (non-circular, structural): the line's first seven chars
+        # are not one of the four 7-char marker sequences at column 0 — so this
+        # fixture is genuinely in the negative class, derived from the string
+        # rather than restated from the regex under test.
+        seven = ("<<<<<<<", "=======", ">>>>>>>", "|||||||")
+        assert line[:7] not in seven, \
+            "precondition: this line is not a 7-char marker at column 0"
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#6** · landed `abc1234` · 2026-07-28 14:30 · by "
+                    "dreamer-6 — the fix\n\n## Folded\n" + line + "\n")
+        assert self._errors(tmp_path, self.LEDGER, handoffs) == [], \
+            "a non-marker markdown/prose line must not trip the check"
+
+    def test_an_eight_equals_line_is_not_the_seven_equals_separator(
+            self, tmp_path):
+        """#554 boundary — the ``=======`` separator is EXACTLY seven ``=``.
+
+        The regex's negative lookahead pins exactly-seven; an eight-``=`` line
+        is the boundary case and must stay silent. This guards the lookahead
+        specifically — it is the subtlest line in the regex and the brief's
+        ``exactly seven =`` requirement, and a regression to ``={7}`` (no
+        lookahead) would flag it.
+        """
+        line = "========"  # eight =
+        # Precondition: really eight equals — the count, not a literal echo.
+        assert line.count("=") == 8, "precondition: eight equals, not seven"
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#6** · landed `abc1234` · 2026-07-28 14:30 · by "
+                    "dreamer-6 — the fix\n\n## Folded\n" + line + "\n")
+        assert self._errors(tmp_path, self.LEDGER, handoffs) == [], \
+            "an eight-= line is not the seven-= separator and must be silent"
+
+    def test_the_marker_check_runs_even_when_the_watch_parser_is_absent(
+            self, tmp_path):
+        """#554 — the parse hazard is independent of the parser, so the scan
+        runs BEFORE the ``watch is None`` early return.
+
+        load_watch returns None when watch.py is unimportable (mid-edit by
+        another agent). A conflict marker is still a corruption then — the
+        parser being absent does not make a ``|||||||`` line safe — so the scan
+        must fire regardless. Guards the placement of the scan: move it after
+        the early return and this test fails (the marker would pass silently,
+        exactly the born-hollow state).
+        """
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(self.LEDGER)
+        (dw / "handoffs.md").write_text(
+            "# Hand-offs\n\n## Pending\n\n"
+            "- **#6** · landed `abc1234` · 2026-07-28 14:30 · by dreamer-6 — fix\n"
+            "\n## Folded\n||||||| e2acedf5\n")
+        rep = lint.Report()
+        # watch=None is the state load_watch returns on an unimportable watch.py.
+        lint.check_handoffs(dw, None, rep)
+        errs = [d for lvl, w, d in rep.rows
+                if w == "handoffs.md" and lvl == lint.ERROR]
+        assert len(errs) == 1 and "conflict marker" in errs[0], errs
+
+    def test_the_conflict_marker_regex_is_wired_into_check_handoffs(self):
+        """#554 — the regex is referenced by the check that uses it.
+
+        A module-level constant that nothing imports is a check waiting to be
+        silently dropped; this asserts the wiring so a refactor that detaches
+        ``CONFLICT_MARKER_RE`` from ``check_handoffs`` is caught.
+        """
+        import inspect
+        assert hasattr(lint, "CONFLICT_MARKER_RE")
+        assert "CONFLICT_MARKER_RE.match(ln)" in \
+            inspect.getsource(lint.check_handoffs)
 
 
 class TestCitedShas:

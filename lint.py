@@ -3790,6 +3790,26 @@ def _brief_commit_time(root: Path, path: Path) -> float | None:
         return None
 
 
+# #554 — git merge-conflict markers, EXACTLY seven of the char at line start
+# (column 0, the only position git ever emits them at). Four diff3/merge forms:
+# `<<<<<<<` (ours) and `>>>>>>>` (theirs) may carry a label after a space;
+# `|||||||` is the diff3 base (the `||||||| e2acedf5` line that lived committed
+# in handoffs.md through the #548 merge while 397/397 tests passed); `=======`
+# is the separator (always a bare seven-`=` line). The negative lookahead
+# makes each EXACTLY seven — eight-plus never comes from git, and pinning seven
+# keeps a longer run (a markdown setext `=`-underline, a prose `=====` wall)
+# out of the match. Matched line-by-line (re.match anchors at column 0), so a
+# `=` run MID-prose (`foo ===== bar`) is silent because it is not at the start.
+# ONE definition, module-level, so the other parse-sensitive ledger docs can
+# reject the same forms through it rather than restating the pattern (the #137
+# single-definition rule); see check_handoffs's wider-scope note below.
+CONFLICT_MARKER_RE = re.compile(
+    r'<{7}(?!<)'      # <<<<<<<  — ours, may carry a label
+    r'|={7}(?!=)'     # =======  — the separator, exactly seven =
+    r'|>{7}(?!>)'     # >>>>>>>  — theirs, may carry a label
+    r'|\|{7}(?!\|)')  # |||||||  — diff3 base, may carry the base sha
+
+
 def check_handoffs(dw: Path, watch, rep: Report) -> None:
     """The delivery half of the single-writer rule (#381).
 
@@ -3826,6 +3846,35 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
         text = path.read_text()
     except OSError:
         return
+    # #554 — conflict markers are the ONE corruption this file's parser is
+    # structurally blind to. parse_handoffs keys on `##` section heads and
+    # `- **#id**` entry heads; a git merge-conflict marker line matches none of
+    # those, so it falls straight through to `continue` and renders as nothing
+    # — which is exactly what happened at the #548 merge: a `||||||| e2acedf5`
+    # line sat committed in this file and the full suite passed. A marker is a
+    # reader-cannot-see-what-is-there defect (data loss, silent by nature), so
+    # this is ERROR, never WARN. Scanned from the raw text BEFORE the
+    # `watch is None` early return: the parse hazard is independent of the
+    # parser — proven by the born-hollow demo, which passed all four forms with
+    # watch loaded. One ERROR per marker line so each is named.
+    #
+    # Wider scope (#554 decision): the same rejection SHOULD apply to every
+    # tool-parsed ledger doc — `tasks.md`/`tasks.md.deprecated` (parse_ledger,
+    # the most parse-sensitive file in the repo), `questions.md`
+    # (parse_questions), and `briefs/*.md` (classify_brief_handoff_scope) —
+    # because each parser keys on its own head grammar the way parse_handoffs
+    # does, so a marker is the same silent corruption there. NOT done here: those
+    # are separate check regions held by other lanes, and this lane owns the
+    # handoffs check region only. Prose docs (watch-design.md, transitions.md)
+    # are excluded by design — markers there are ugly, not parse hazards.
+    for ln in text.splitlines():
+        m = CONFLICT_MARKER_RE.match(ln)
+        if m:
+            rep.add(
+                ERROR, "handoffs.md",
+                f"conflict marker `{m.group(0)}` at line start ({ln!r}) — a "
+                f"merge-conflict marker left in handoffs.md is silent to the "
+                f"parser; resolve and remove it (#554)")
     if watch is None:
         return  # the parser lives in watch; without it this check cannot run
     pending, folded_ids, malformed = watch.parse_handoffs(text)
