@@ -4703,19 +4703,19 @@ class TestAppShell(unittest.TestCase):
                                 "the property — that a PAIR decays is the point")
         self.assertIn("do-next", decaying)
         self.assertIn("do-now", decaying)
-        # The decay lands on the DEFAULT (COMMANDS[0], the far-left kind), not
-        # a hardcoded name: `chat` is the default today, but naming it here
+        # The decay lands on the DECLARED DEFAULT (the entry marked `default`,
+        # else the far-left kind), resolved by the one idiom defaultKind() —
+        # never positional, so a row reorder cannot change what his next
+        # message lands as (#547). No hardcoded name: naming add-idea here
         # would re-open the third place a new kind must be remembered. The
         # submit path reads the property off the LIVE table — COMMANDS is a
-        # `let` because plugin kinds APPEND (#86), so [0] is always a core
-        # kind — and a kind with sticky:false (or no `sticky` at all) decays
-        # whether it is core or contributed.
+        # `let` because plugin kinds APPEND (#86) — and a kind with
+        # sticky:false (or no `sticky` at all) decays whether it is core or
+        # contributed.
         self.assertIn("COMMANDS.find(c => c.kind === kind)", watch.PAGE)
         self.assertIn("!sent.sticky", watch.PAGE)
         self.assertNotIn("kind === 'do-now'", watch.PAGE)
-        self.assertRegex(
-            watch.PAGE,
-            r"setKind\(\(COMMANDS\[0\] \|\| \{\}\)\.kind\)")
+        self.assertIn("setKind(defaultKind())", watch.PAGE)
         # no hardcoded kind name in the decay — the old `setKind('add-idea')`
         # was the special case this generalised away.
         self.assertNotIn("setKind('add-idea')", watch.PAGE)
@@ -7407,9 +7407,9 @@ class TestRunMode(unittest.TestCase):
                          ("lackadaisical", "hot", "assisted"))
         self.assertEqual(watch.RUN_MODE_DEFAULT, "lackadaisical")
         self.assertIn(watch.RUN_MODE_DEFAULT, watch.RUN_MODES)
-        self.assertEqual(tuple(watch.RUN_MODES_PLANNED), ("hierarchical",))
-        for m in watch.RUN_MODES_PLANNED:
-            self.assertNotIn(m, watch.RUN_MODES)
+        # #547: RUN_MODES_PLANNED was picker-only and is removed with the
+        # dashboard picker. "hierarchical" stays rejected as unknown —
+        # covered by test_write_refuses_outside_set / test_post_rejects.
 
     def test_read_falls_back_when_absent_or_unknown(self):
         with tempfile.TemporaryDirectory() as d:
@@ -7490,51 +7490,28 @@ class TestRunMode(unittest.TestCase):
                 with open(log, encoding="utf-8") as f:
                     self.assertEqual([ln for ln in f if "run-mode" in ln], [])
 
-    def test_page_carries_vocabulary_wiring_and_arm(self):
+    def test_run_mode_vocabulary_wired_picker_removed(self):
+        """#547: the run-mode picker is gone, but the vocabulary it validated
+        against stays wired so the server's /run-mode route and read_run_mode
+        agree with the page. The picker-only constants are absent (negative
+        assertions prove the removal is complete — a leftover re-adds a dead
+        surface and a dead guard subject)."""
         self.assertIn("const RUN_MODES = " + json.dumps(list(watch.RUN_MODES)),
                       watch.PAGE)
         self.assertIn("const RUN_MODE_DEFAULT = "
                       + json.dumps(watch.RUN_MODE_DEFAULT), watch.PAGE)
-        self.assertIn("const RUN_MODES_PLANNED = "
-                      + json.dumps(list(watch.RUN_MODES_PLANNED)), watch.PAGE)
-        for token in ('function runModePicker(', 'function pickRunMode(',
-                      "fetch('/run-mode'", 'RUN_ARM_MS',
-                      'dw:run-mode-pending:', 'hierarchical',
-                      'runbarfill', 'prefers-reduced-motion'):
-            self.assertIn(token, watch.PAGE)
-
-    def test_run_mode_desc_is_contract_copy_and_wired(self):
-        """#300 — shared description surface, one per mode, no marketing."""
-        # every selectable + planned mode has a line
-        for m in list(watch.RUN_MODES) + list(watch.RUN_MODES_PLANNED):
-            self.assertIn(m, watch.RUN_MODE_DESC)
-            self.assertTrue(watch.RUN_MODE_DESC[m].strip())
-        # no extra keys invent a mode the file cannot hold
-        for k in watch.RUN_MODE_DESC:
-            self.assertIn(k, set(watch.RUN_MODES) | set(watch.RUN_MODES_PLANNED))
-        # behavioural words from file-formats.md / SKILL.md, not slogans
-        self.assertIn("no proactive fan-out",
-                      watch.RUN_MODE_DESC["lackadaisical"])
-        self.assertIn("coordinator only", watch.RUN_MODE_DESC["hot"])
-        self.assertIn("helpers", watch.RUN_MODE_DESC["assisted"])
-        self.assertIn("#264", watch.RUN_MODE_DESC["hierarchical"])
-        self.assertIn("#288", watch.RUN_MODE_DESC["hierarchical"])
-        # page embeds the table and the pure-presentation surface
-        self.assertIn("const RUN_MODE_DESC = ", watch.PAGE)
-        for token in ('id="rundesc"', 'id="rundesc-text"',
-                      'function showRunDesc(', 'function hideRunDesc(',
-                      'aria-describedby="rundesc-text"'):
-            self.assertIn(token, watch.PAGE)
-        # hover path must not call the arm/write path by name in showRunDesc
-        # (structural: the function exists and pickRunMode is separate)
-        self.assertIn('function pickRunMode(', watch.PAGE)
-        idx = watch.PAGE.index('function showRunDesc(')
-        end = watch.PAGE.index('function rundescPointerInside(', idx)
-        body = watch.PAGE[idx:end]
-        self.assertNotIn('pickRunMode(', body)
-        self.assertNotIn("fetch('/run-mode'", body)
-        self.assertNotIn('writeRunPending(', body)
-        self.assertNotIn('commitRunMode(', body)
+        # RUN_ARM_MS is SHARED with posture's arm, so it stays wired.
+        self.assertIn("const RUN_ARM_MS =", watch.PAGE)
+        # picker-only constants — gone with the picker.
+        self.assertNotIn("const RUN_MODES_PLANNED =", watch.PAGE)
+        self.assertNotIn("const RUN_MODE_DESC =", watch.PAGE)
+        # the picker surface itself is gone from the page.
+        for gone in ('function runModePicker(', 'function pickRunMode(',
+                     'runbarfill', 'dw:run-mode-pending:',
+                     'function showRunDesc(', 'function syncRunModeFromData(',
+                     'id="rundesc"', 'id="runmode"'):
+            self.assertNotIn(gone, watch.PAGE,
+                             "run-mode picker remnant in PAGE: " + gone)
 
     def test_post_path_is_witnessed_like_other_writes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -8597,22 +8574,46 @@ class TestDeliveryWakeRouting(unittest.TestCase):
     # durable home. These bind: the COMMANDS entry, the batched wake gate, the
     # application step, and the reply→replied thread model.
 
-    def test_chat_command_entry_is_far_left_default(self):
-        """Production line: the `chat` dict in COMMANDS (watch.py:~315).
+    def test_chat_far_left_and_add_idea_is_declared_default(self):
+        """Production line: the COMMANDS table (watch.py:~315).
 
-        Q1/Q2: chat is the far-left default composer kind, common (a row
-        button), and sticky (conversational — a follow-up must not require
-        re-selection). The UI label is "chat" (Q2; shortened from "topic chat",
-        #543); implementation vocab is chat/turn/reply, never `thread` (#229)
-        — asserted so a renamed label does not silently drift from his ruling.
+        Q1/Q2: chat is the far-left composer kind (NOT the default since
+        #547), common (a row button), and sticky (conversational — a
+        follow-up must not require re-selection). The UI label is "chat"
+        (Q2; shortened from "topic chat", #543); implementation vocab is
+        chat/turn/reply, never `thread` (#229) — asserted so a renamed label
+        does not silently drift from his ruling.
+
+        #547: the default kind is DECLARED, never positional. chat stays
+        far-left (Q2 stands); add-idea carries the `default` marker so it is
+        the pre-selected kind. Exactly one entry carries it — the
+        precondition the JS resolver (defaultKind) depends on: two markers
+        would be ambiguous, zero would fall back to the far-left kind, and
+        both must read loud here rather than as a silent positional drift.
         """
         chat = watch.COMMANDS[0]
         self.assertEqual(chat["kind"], "chat")
         self.assertEqual(chat["label"], "chat")
         self.assertTrue(chat["common"], chat)
         self.assertTrue(chat["sticky"], chat)
+        # chat is far-left, NOT the default — asserted so the old "chat is
+        # the default" reading cannot silently return (#547).
+        self.assertNotIn("default", chat, chat)
         # every core kind the server accepts is in the validated vocab
         self.assertIn("chat", watch.COMMAND_KINDS)
+        # #547: the default is DECLARED on add-idea, never positional. Exactly
+        # one entry carries the marker — the precondition defaultKind depends
+        # on (the resolver reads `c.default`; a literal pinning add-idea here
+        # would be the count-form of a property it could not see).
+        marked = [c for c in watch.COMMANDS if c.get("default")]
+        self.assertEqual([c["kind"] for c in marked], ["add-idea"], marked)
+        self.assertEqual(len(marked), 1, marked)
+        # the marker reaches the client verbatim (CORE_COMMANDS is json.dumps
+        # of COMMANDS), so the JS resolver reads the same flag production does.
+        self.assertIn('"default": true',
+                      "const CORE_COMMANDS = " + json.dumps(list(watch.COMMANDS)))
+        self.assertIn("const defaultKind =", watch.PAGE)
+        self.assertIn("setKind(defaultKind())", watch.PAGE)
         # add-idea stays sticky (parked thoughts still chain); chat is the
         # SECOND sticky kind — asserted so the sticky comment stays honest.
         sticky = [c["kind"] for c in watch.COMMANDS if c.get("sticky")]

@@ -164,7 +164,7 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
   await type(TEXT);
   await p.evaluate(`(() => {
     const bs = [...document.querySelectorAll('#cmdkinds .cmdkind')];
-    bs[0].click();                       // switch back to a default kind
+    bs[0].click();                       // switch to the far-left kind (chat)
   })()`);
   await sleep(400);
   const live = await p.evaluate(`document.getElementById('cmdtext').value`);
@@ -223,25 +223,29 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
    its item is clicked through the DOM — a visibility-gated p.click would
    hang on a shut menu that still holds a working listener. ─────────────── */
 {
-  // The #337 contract as it actually stands: NON-sticky kinds decay to
-  // COMMANDS[0] (the far-left kind — production reads
-  // `if (sent && !sent.sticky) setKind((COMMANDS[0] || {}).kind)`), and
-  // sticky kinds SKIP the decay so a conversation is not interrupted.
-  // #504 made chat sticky beside add-idea — TWO sticky kinds by design, so
-  // the old 'exactly one sticky kind' literal was the count-form of a
-  // property it could not see: it read red from d56a3c2a on while the
-  // behaviour it proxy-measured was correct. The property form: the decay
-  // target is COMMANDS[0] (not sticky[0] — they coincide today and are not
-  // the same thing), at least one kind skips decay, and skipping is real
-  // (a sticky kind KEEPS its kind after a successful send).
+  // The #337 contract as it actually stands: NON-sticky kinds decay to the
+  // DECLARED DEFAULT (the entry marked `default`, else the far-left kind),
+  // and sticky kinds SKIP the decay so a conversation is not interrupted.
+  // Production reads `if (sent && !sent.sticky) setKind(defaultKind())`,
+  // where defaultKind resolves the marker the SAME way this guard does
+  // below (find the `default` entry, else COMMANDS[0]) — so this guard and
+  // production share one idiom, not two that could drift (#547). #504 made
+  // chat sticky beside add-idea — TWO sticky kinds by design, so the old
+  // 'exactly one sticky kind' literal was the count-form of a property it
+  // could not see: it read red from d56a3c2a on while the behaviour it
+  // proxy-measured was correct. The property form: the decay target is the
+  // declared default (not sticky[0] — add-idea is both today and they are
+  // not the same thing), at least one kind skips decay, and skipping is
+  // real (a sticky kind KEEPS its kind after a successful send).
   const sets = await p.evaluate(`({
     sticky: COMMANDS.filter(c => c.sticky).map(c => c.kind),
     decaying: COMMANDS.filter(c => !c.sticky).map(c => c.kind),
-    target: (COMMANDS[0] || {}).kind,
+    target: ((COMMANDS.find(c => c.default) || COMMANDS[0]) || {}).kind,
+    marked: COMMANDS.filter(c => c.default).map(c => c.kind),
   })`);
   notes.push(`sticky: ${sets.sticky.join(', ') || '(none)'}; ` +
              `decaying: ${sets.decaying.join(', ') || '(none)'}; ` +
-             `decay target: ${sets.target}`);
+             `decay target: ${sets.target}; marked: ${sets.marked.join(',')}`);
   // A NAMED floor, deliberately: the sets are derived live, so a dropped
   // sticky flag does not redden either arm — the kind silently reclassifies
   // as decaying and decays CORRECTLY (verified: add-idea unstuck passed
@@ -252,9 +256,17 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
   ok('the deliberate conversation kinds are sticky (chat, add-idea — ' +
      '#337/#504; growth joins freely, leaving is the loud event)',
      ['chat', 'add-idea'].every(k => sets.sticky.includes(k)));
-  ok('the decay target is the far-left kind, COMMANDS[0] (plugin kinds ' +
-     'append, so [0] is always a core kind)',
-     !!sets.target);
+  // #547 PRECONDITION the decay-target derivation depends on: exactly one
+  // entry carries the `default` marker. Two markers would be ambiguous;
+  // zero makes the resolver fall back to the far-left kind (chat) and the
+  // target assertion below reddens. The target is the DECLARED default
+  // (add-idea), not the far-left kind — derived the same way production's
+  // defaultKind does, so this arm fails if the marker is removed/moved.
+  ok('exactly one kind carries the default marker (defaultKind precondition)',
+     sets.marked.length === 1);
+  ok('the decay target is the declared default, add-idea (#547: the marked ' +
+     'kind, derived the same way production resolves it — not the far-left kind)',
+     sets.target === 'add-idea' && sets.marked[0] === 'add-idea');
   ok('more than one kind decays — the pair is what proves the property',
      sets.decaying.length >= 2);
   for (const k of sets.decaying) {

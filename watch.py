@@ -301,9 +301,10 @@ def server_class(family):
 # kinds (#86) append to this list — nothing downstream assumes a fixed set.
 # `sticky` (#337): whether the composer KEEPS the kind after its command
 # lands. The sticky kinds are chat and add-idea; every STEERING kind decays
-# back to the default (COMMANDS[0], the far-left kind) at submit, because a
-# steering mode that persists silently raises the authority of his NEXT
-# message (#257's reasoning, generalised). chat and add-idea are sticky for
+# back to the default (the entry marked `default`, else the far-left kind)
+# at submit, because a steering mode that persists silently raises the
+# authority of his NEXT message (#257's reasoning, generalised). chat and
+# add-idea are sticky for
 # DIFFERENT reasons: add-idea so consecutive parked thoughts do not require
 # re-selection, and chat because it is CONVERSATIONAL, not steering — the
 # #257 authority rationale does not apply to a message channel, and a
@@ -311,16 +312,24 @@ def server_class(family):
 # a plugin kind that says nothing must not linger either — so the decay
 # needs no third place to be remembered.
 COMMANDS = (
-    # #504 — `chat` is the far-left default: his "send a message to the
+    # #504 — `chat` is the far-left kind (Q2): his "send a message to the
     # agent" entry point, the main-dreamer first slice of #229/#270. A chat
     # send is a /command POST of kind `chat` (Q1: no new route); it rides the
     # #263 receipt and is BATCHED under #342 (Q3) — it wakes only in instant
     # mode and otherwise drains on the tick's cursor read. Implementation
     # vocabulary is chat/turn/reply, never `thread` (#229); the UI word is
     # "chat" (Q2; label shortened from "topic chat", #543). See composer-chat.md for the spine this rides.
+    # NOTE: chat is far-left, NOT the default — see add-idea below (#547).
     {"kind": "chat", "label": "chat", "common": True, "sticky": True,
      "desc": "message the agent · the dreamworker replies in chat"},
+    # #547 — add-idea is the DECLARED default (the `default` marker), not
+    # positional: he wants his parked-thought entry point pre-selected. chat
+    # stays far-left (Q2 stands); only the default selection changed. The
+    # marker is read by the one resolver idiom (defaultKind in the JS), so a
+    # future reorder of the row must not change the default, and a change of
+    # default must not reorder the row. Exactly one entry carries it.
     {"kind": "add-idea", "label": "add idea", "common": True, "sticky": True,
+     "default": True,
      "desc": "park a thought; the loop picks it up when it chooses next"},
     {"kind": "do-next", "label": "do next", "common": True, "sticky": False,
      "desc": "jump this to the front of the queue (text optional)"},
@@ -352,10 +361,12 @@ TINT_DEFAULT = "indigo"
 
 # #290 main-dreamer run modes. Authoritative file is gitignored machine-local
 # `.dreamwork/run-mode` (not status.json, not tint). v1 selectable set only;
-# hierarchical is visible-but-disabled UI until #264/#288 make it honest.
+# the dashboard picker was removed in #547 (superseded by posture), but the
+# /run-mode POST route and the file stay — the coordinator reads them on
+# tick and posture derives from run-mode. `hierarchical` is rejected as
+# unknown (not in RUN_MODES); it stays a planned name in the docs only.
 RUN_MODES = ("lackadaisical", "hot", "assisted")
 RUN_MODE_DEFAULT = "lackadaisical"
-RUN_MODES_PLANNED = ("hierarchical",)
 RUN_ARM_MS = 10_000
 # #462 — after POST /deploy lands, how long the loaded document waits for a
 # new GENERATION before naming the failure. just deploy's own readiness is
@@ -364,19 +375,9 @@ RUN_ARM_MS = 10_000
 # deploy does not leave a spinner forever. Copy decision as much as timing:
 # the page must say something, in the styleguide voice, when nothing arrives.
 DEPLOY_WAIT_MS = 30_000
-# #300 — one shared hover/focus description per mode. Copy is the behavioural
-# contract (file-formats.md / SKILL.md run-mode paragraph), never marketing.
-# hierarchical is not selectable; its line names why it stays disabled.
-RUN_MODE_DESC = {
-    "lackadaisical":
-        "idle-friendly · no proactive fan-out · the default pace",
-    "hot":
-        "continuous bounded work · coordinator only · no helper fan-out",
-    "assisted":
-        "continuous work · a few disjoint helpers under existing ownership",
-    "hierarchical":
-        "planned · needs concurrency (#264) and containment (#288)",
-}
+# #547: the run-mode description surface (#300, RUN_MODE_DESC) was picker-
+# only and is removed with the dashboard picker. The mode vocabulary and
+# what each pace means live in file-formats.md / SKILL.md (single source).
 
 # Soft upper bound for the dashboard stepper only — the file and the loop
 # accept any non-negative integer; this is a control affordance, not a cap
@@ -1948,56 +1949,6 @@ STYLE = """<style>
     text-shadow:0 0 12px color-mix(in oklab, var(--tintswatch) 45%,
                                    transparent); }
   .tintmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
-  /* #290 run mode — same sliding group as tint/command kinds. Active mode
-     takes the accent (it is live loop control, not a settled preference).
-     Hierarchical is discoverable but disabled until #264/#288. The 10s arm
-     progress is a linear width on the fill; reduced motion hides the bar and
-     keeps the second-by-second text countdown so function is identical. */
-  .runmode { margin:.55rem 0 .35rem; }
-  .runmodes { margin:.2rem 0 .1rem; }
-  .runchip { padding:.24rem .55rem; font-size:.7rem; }
-  .runchip:disabled, .runchip[aria-disabled="true"] {
-    color:var(--dimmer); cursor:default; opacity:.72; text-shadow:none; }
-  .runchip:disabled:hover, .runchip[aria-disabled="true"]:hover {
-    color:var(--dimmer); }
-  .runarm { margin:.35rem 0 0; min-height:1.15rem; }
-  .runbar { height:3px; background:var(--line); border-radius:2px;
-            overflow:hidden; margin:0 0 .28rem; }
-  .runbar[hidden] { display:none; }
-  .runbarfill { height:100%; width:100%; background:var(--muted);
-    border-radius:2px;
-    transition:width 10s linear; transform-origin:left center; }
-  .runbarfill.snap { transition:none; }
-  .runcount { color:var(--dim); font-size:.7rem;
-              font-variant-numeric:tabular-nums; }
-  .runmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
-  .runmsg:empty { display:none; }
-  /* #300 — one shared description surface for the run-mode chips.
-     Geometry is stable while open (min-height holds the longest line), so
-     button→button swaps morph words in place rather than spawning a new
-     tooltip per chip. Sits ABOVE the arm/countdown, never over it.
-     Arrival/departure: atmospheric blur+drift (cmdmsg's idiom). Swaps:
-     shell fixed, text dissolves then resolves. Reduced motion: instant. */
-  .rundesc { margin:.28rem 0 .12rem; min-height:0; max-width:100%;
-    font-size:.7rem; color:var(--dim); line-height:1.4;
-    overflow:hidden;
-    transition:opacity .42s ease, filter .42s ease,
-               transform .42s cubic-bezier(.32,.1,.2,1); }
-  .rundesc[hidden] { display:none; }
-  .rundesc.open { min-height:2.6em; }   /* shell holds across mode swaps */
-  .rundesc.pose { transition:none !important; opacity:0;
-    filter:blur(6px); transform:translateY(4px); }
-  .rundesc.depart { opacity:0; filter:blur(7px); transform:translateY(-4px); }
-  .rundesc-text { display:block; max-width:100%;
-    transition:opacity .34s ease, filter .34s ease,
-               transform .34s cubic-bezier(.32,.1,.2,1); }
-  .rundesc-text.out { opacity:0; filter:blur(6px); transform:translateY(-2px); }
-  .rundesc-text.in { opacity:0; filter:blur(4px); transform:translateY(2px); }
-  @media (prefers-reduced-motion: reduce) {
-    .runbar { display:none; }
-    .runbarfill { transition:none; }
-    .rundesc, .rundesc-text { transition:none; }
-  }
   /* #445 three-axis posture — sibling of run-mode. Asymmetry is honest:
      pace three chips, asking four (his dictation — do not compress),
      delegation an integer target with a derived label. One shared 10s arm
@@ -4097,7 +4048,8 @@ function buildDashboard(d) {
   // and this one is the longer view of it.
   h += burnPanel(d);
   h += statusBlock(d.status, d.pending_handoffs);
-  h += runModePicker(d);   // loop control, after status, before preference
+  // #547: the run-mode picker was removed (superseded by posture below);
+  // the /run-mode route and .dreamwork/run-mode file stay — other readers.
   h += posturePicker(d);   // #445 three-axis override of run-mode's posture
   h += tintPicker(d);      // last, and dim: a preference, not status
   return h + `</div>`;
@@ -5359,576 +5311,6 @@ async function pickTint(name) {
     msg.textContent = 'could not save the tint — the file was refused';
   }
 }
-/* ── #290 main-dreamer run mode ───────────────────────────────────────────
-   Authoritative file is `.dreamwork/run-mode` (gitignored). The dashboard
-   shares one pending mode/deadline across tabs via localStorage; every
-   selection resets a 10s arm; only the final mode POSTs and emits one
-   monitored event. Identical final is idempotent server-side. Hierarchical
-   is visible and disabled (planned until #264/#288). Reduced motion drops
-   the width animation but keeps second text + the same application time. */
-let runArmGen = 0;
-let runArmTimer = null;
-let runArmTick = null;
-// Only the tab that called pickRunMode POSTs. Followers that adopt via the
-// storage listener (or setContent resume without ownership) display the same
-// countdown but do not dual-fire /run-mode — that would double the event path.
-// After a hard refresh, sessionStorage owner id can reclaim commit ownership.
-let runArmShouldCommit = false;
-let runArmUntil = 0;   // last armed deadline; avoids bar snap-restart on tick
-function runPendingKey() {
-  return (data && data.target) ? ('dw:run-mode-pending:' + data.target) : null;
-}
-function runTabId() {
-  try {
-    let id = sessionStorage.getItem('dw:run-mode-tab');
-    if (!id) {
-      id = 't' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-      sessionStorage.setItem('dw:run-mode-tab', id);
-    }
-    return id;
-  } catch (e) { return 'anon'; }
-}
-// How long after `until` an unclaimed arm stays readable for orphan reclaim
-// (tab-close mid-arm). Must exceed the deferred reclaim delay (1500ms).
-const RUN_ORPHAN_GRACE_MS = 3000;
-function readRunPending() {
-  try {
-    const k = runPendingKey();
-    if (!k) return null;
-    const p = JSON.parse(localStorage.getItem(k) || 'null');
-    if (!p || typeof p.mode !== 'string') return null;
-    if (RUN_MODES.indexOf(p.mode) < 0) return null;
-    if (typeof p.until !== 'number') return null;
-    // Cancel tombstones: readable until `until`, then GC (M1). Live peers
-    // still see them for converge-to-mode during the short grace window.
-    if (p.phase === 'cancel') {
-      if (Date.now() >= p.until) { localStorage.removeItem(k); return null; }
-      return p;
-    }
-    // Arm pending: do NOT purge at `until` — orphan reclaim (tab close) reads
-    // the same record after the deadline. GC only after orphan grace.
-    if (Date.now() >= p.until + RUN_ORPHAN_GRACE_MS) {
-      localStorage.removeItem(k);
-      return null;
-    }
-    return p;
-  } catch (e) { return null; }
-}
-function pendingIsLiveArm(p) {
-  return !!(p && !p.phase && typeof p.until === 'number' && Date.now() < p.until);
-}
-function writeRunPending(mode, until, owner) {
-  try {
-    const k = runPendingKey();
-    if (!k) return;
-    const body = { mode, until, owner: owner || runTabId() };
-    localStorage.setItem(k, JSON.stringify(body));
-  } catch (e) { /* private mode / full disk — live UI still arms locally */ }
-}
-function writeRunCancel(mode) {
-  // Distinguish cancel from "initiator cleared pending to POST": followers
-  // must paint the committed mode now (cancel produces no mtime change).
-  // `until` is the tombstone expiry (M1), not an arm deadline.
-  try {
-    const k = runPendingKey();
-    if (!k) return;
-    localStorage.setItem(k, JSON.stringify({
-      mode, phase: 'cancel', until: Date.now() + 800, owner: runTabId(),
-    }));
-  } catch (e) {}
-}
-function clearRunPending() {
-  try {
-    const k = runPendingKey();
-    if (k) localStorage.removeItem(k);
-  } catch (e) {}
-}
-function committedRunMode(d) {
-  const m = (d && d.run_mode) || RUN_MODE_DEFAULT;
-  return RUN_MODES.indexOf(m) >= 0 ? m : RUN_MODE_DEFAULT;
-}
-function paintRunModeSelection(mode, snap) {
-  document.querySelectorAll('.sgroup.runmodes').forEach(g => {
-    g.querySelectorAll('.sgbtn').forEach(b => {
-      if (b.disabled) return;
-      const on = b.dataset.mode === mode;
-      b.classList.toggle('on', on);
-      b.setAttribute('aria-checked', on ? 'true' : 'false');
-    });
-    slideIndicator(g, !!snap);
-  });
-}
-function clearRunArmUI() {
-  if (runArmTimer) { clearTimeout(runArmTimer); runArmTimer = null; }
-  if (runArmTick) { clearInterval(runArmTick); runArmTick = null; }
-  runArmUntil = 0;
-  const bar = document.getElementById('runbar');
-  const fill = document.getElementById('runbarfill');
-  const count = document.getElementById('runcount');
-  if (bar) bar.hidden = true;
-  if (fill) {
-    fill.classList.add('snap');
-    fill.style.width = '100%';
-  }
-  if (count) count.textContent = '';
-}
-function armRunModeUI(mode, until, gen) {
-  // Stop prior timers without zeroing runArmUntil before we compare — a
-  // setContent rebuild with the same deadline must resume mid-drain, not
-  // snap the fill back to 100%.
-  if (runArmTimer) { clearTimeout(runArmTimer); runArmTimer = null; }
-  if (runArmTick) { clearInterval(runArmTick); runArmTick = null; }
-  const bar = document.getElementById('runbar');
-  const fill = document.getElementById('runbarfill');
-  const count = document.getElementById('runcount');
-  const rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const remainingMs = () => Math.max(0, until - Date.now());
-  const setCount = () => {
-    if (gen !== runArmGen) return;
-    if (!count) return;
-    const s = Math.ceil(remainingMs() / 1000);
-    count.textContent = s > 0
-      ? `arms in ${s}s · ${mode}`
-      : `applying ${mode}…`;
-  };
-  setCount();
-  if (!rm && bar && fill) {
-    bar.hidden = false;
-    const left = remainingMs();
-    // remaining fraction of the full arm — not always 100%, so a tick that
-    // rebuilds the DOM mid-arm continues the drain instead of restarting.
-    const frac = Math.max(0, Math.min(1, left / RUN_ARM_MS));
-    fill.classList.add('snap');
-    fill.style.transitionDuration = '0ms';
-    fill.style.width = (frac * 100) + '%';
-    void fill.offsetWidth;
-    fill.style.transitionDuration = Math.max(0, left) + 'ms';
-    fill.classList.remove('snap');
-    fill.style.width = '0%';
-  } else if (bar) {
-    bar.hidden = true;
-  }
-  runArmUntil = until;
-  runArmTick = setInterval(() => {
-    if (gen !== runArmGen) return;
-    setCount();
-    if (remainingMs() <= 0 && runArmTick) {
-      clearInterval(runArmTick); runArmTick = null;
-    }
-  }, 250);
-  runArmTimer = setTimeout(() => {
-    if (gen !== runArmGen) return;
-    if (runArmShouldCommit) commitRunMode(mode, gen);
-    else {
-      // Display-only path: do NOT race the owner at the same deadline.
-      // Orphan reclaim is deferred so a live initiator always wins the CAS.
-      // Pending must still be readable after `until` (see readRunPending grace).
-      clearRunArmUI();
-      setTimeout(() => {
-        if (gen !== runArmGen) return;
-        const p = readRunPending();
-        const cur = committedRunMode(data);
-        if (p && !p.phase && p.mode === mode && cur !== mode)
-          commitRunMode(mode, gen, { orphan: true });
-        else
-          paintRunModeSelection(committedRunMode(data), true);
-      }, 1500);
-    }
-  }, remainingMs());
-}
-/** Claim the pending arm for a single POST. Returns false if a peer already
- *  claimed or the pending is not ours to fire — prevents dual-POST at the
- *  shared deadline (owner + follower timers both firing). */
-function claimRunPending(mode, { orphan = false } = {}) {
-  try {
-    const k = runPendingKey();
-    if (!k) return false;
-    const raw = localStorage.getItem(k);
-    if (!raw) return false;
-    const p = JSON.parse(raw);
-    if (!p || p.phase === 'cancel' || p.mode !== mode) return false;
-    if (p.owner && p.owner !== runTabId()) {
-      // Not the arming tab: only orphan reclaim after deadline + 1s may claim
-      // (live owner still has exclusive window at `until`).
-      if (!orphan) return false;
-      if (typeof p.until === 'number' && Date.now() < p.until + 1000)
-        return false;
-    }
-    localStorage.removeItem(k);   // claim — peer re-read sees null
-    return true;
-  } catch (e) { return false; }
-}
-async function commitRunMode(mode, gen, opts) {
-  if (gen !== runArmGen) return;
-  const msg = document.getElementById('runmsg');
-  const orphan = !!(opts && opts.orphan);
-  // CAS: only one tab POSTs for a given arm. Identical final stays server-side
-  // idempotent if a second request still slips through.
-  if (!claimRunPending(mode, { orphan })) {
-    runArmShouldCommit = false;
-    clearRunArmUI();
-    paintRunModeSelection(committedRunMode(data), true);
-    return;
-  }
-  let ok = false;
-  try {
-    const res = await fetch('/run-mode', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mode,
-        from: location.pathname + location.search,
-        // diagnostic only — server ignores unknown fields
-        tab: runTabId(),
-        orphan: orphan || false,
-      }),
-    });
-    // raw-fetch site: owns its Response, so reads the verdict here. A rejected
-    // 202 (res.ok true) would otherwise commit a mode that did not land (#136).
-    const rv = await writeVerdict(res);
-    ok = rv.landed;
-  } catch (e) { ok = false; }
-  if (gen !== runArmGen) return;
-  if (ok) {
-    runArmShouldCommit = false;
-    clearRunArmUI();
-    if (msg) msg.textContent = '';
-    if (data) data.run_mode = mode;
-    paintRunModeSelection(mode, true);
-  } else if (msg) {
-    msg.textContent = 'could not save the run mode — the write was refused';
-    clearRunPending();
-    runArmShouldCommit = false;
-    clearRunArmUI();
-    paintRunModeSelection(committedRunMode(data), true);
-  }
-}
-function pickRunMode(mode) {
-  if (RUN_MODES.indexOf(mode) < 0) return;  // hierarchical etc.
-  const msg = document.getElementById('runmsg');
-  if (msg) msg.textContent = '';
-  const cur = committedRunMode(data);
-  // re-selecting the committed mode cancels any pending arm
-  if (mode === cur) {
-    runArmGen++;
-    runArmShouldCommit = false;
-    writeRunCancel(cur);           // peers must converge (cancel ≠ commit-clear)
-    clearRunArmUI();
-    paintRunModeSelection(mode, false);
-    // drop tombstone after storage has fired in other tabs
-    setTimeout(() => {
-      const p = readRunPending();
-      if (p && p.phase === 'cancel') clearRunPending();
-    }, 100);
-    return;
-  }
-  const until = Date.now() + RUN_ARM_MS;
-  runArmGen++;
-  const gen = runArmGen;
-  runArmShouldCommit = true;   // this tab owns the final POST
-  writeRunPending(mode, until, runTabId());
-  paintRunModeSelection(mode, false);
-  armRunModeUI(mode, until, gen);
-}
-function runModePicker(d) {
-  const pending = readRunPending();
-  // Only a still-counting arm paints as selected pending; expired-but-
-  // reclaimable pending must not look like an active countdown.
-  const arm = pendingIsLiveArm(pending) ? pending : null;
-  const cur = arm ? arm.mode : committedRunMode(d);
-  // aria-describedby always points at the one shared surface (#300).
-  // Hover/focus only rewrite that surface — never arm, POST, or localStorage.
-  const chips = RUN_MODES.map(n =>
-    `<button type="button" role="radio" class="sgbtn runchip` +
-    `${n === cur ? ' on' : ''}" data-mode="${esc(n)}"` +
-    ` aria-checked="${n === cur ? 'true' : 'false'}"` +
-    ` aria-describedby="rundesc-text"` +
-    ` onclick="pickRunMode('${esc(n)}')">${esc(n)}</button>`).join('') +
-    RUN_MODES_PLANNED.map(n =>
-      `<button type="button" role="radio" class="sgbtn runchip" data-mode="${esc(n)}"` +
-      ` aria-checked="false" aria-disabled="true" disabled` +
-      ` aria-describedby="rundesc-text"` +
-      ` title="planned — needs #264 concurrency and #288 containment">` +
-      `${esc(n)}</button>`).join('');
-  return `<section class="runmode" id="runmode" aria-label="run mode">` +
-    label('run mode') +
-    `<div class="sgroup runmodes" role="radiogroup" aria-label="run mode">` +
-    `<div class="sgind"></div>${chips}</div>` +
-    `<div class="rundesc" id="rundesc" role="tooltip" hidden aria-hidden="true">` +
-    `<span class="rundesc-text" id="rundesc-text"></span></div>` +
-    `<div class="runarm" id="runarm">` +
-    `<div class="runbar" id="runbar" hidden aria-hidden="true">` +
-    `<div class="runbarfill" id="runbarfill"></div></div>` +
-    `<span class="runcount" id="runcount" aria-live="polite"></span></div>` +
-    `<div class="runmsg" id="runmsg" aria-live="polite"></div></section>`;
-}
-/* ── #300 shared run-mode description ───────────────────────────────────
-   Pure presentation. Hover, focus, Escape and pointer-leave never write a
-   mode, never arm, never touch localStorage or POST /run-mode. One shell
-   morphs its text in place so the eye never meets a second tooltip. */
-let rundescMode = null;
-let rundescPendingMode = null;  // retarget mid-dissolve without cancelling it
-let rundescMorphGen = 0;
-let rundescHideTimer = null;
-let rundescMorphTimer = null;
-function rundescReduced() {
-  return matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-function runDescFor(mode) {
-  if (!mode) return '';
-  if (typeof RUN_MODE_DESC !== 'undefined' && RUN_MODE_DESC[mode])
-    return RUN_MODE_DESC[mode];
-  return '';
-}
-function hideRunDesc(immediate) {
-  const shell = document.getElementById('rundesc');
-  const text = document.getElementById('rundesc-text');
-  if (!shell) return;
-  if (rundescHideTimer) { clearTimeout(rundescHideTimer); rundescHideTimer = null; }
-  if (rundescMorphTimer) { clearTimeout(rundescMorphTimer); rundescMorphTimer = null; }
-  if (!shell.classList.contains('open') && shell.hidden) {
-    rundescMode = null;
-    rundescPendingMode = null;
-    return;
-  }
-  rundescMorphGen++;   // cancel any in-flight morph
-  rundescPendingMode = null;
-  const rm = !!immediate || rundescReduced();
-  const finish = () => {
-    shell.classList.remove('open', 'pose', 'depart');
-    shell.setAttribute('aria-hidden', 'true');
-    shell.hidden = true;
-    if (text) {
-      text.textContent = '';
-      text.classList.remove('out', 'in');
-    }
-    rundescMode = null;
-    rundescPendingMode = null;
-  };
-  if (rm) { finish(); return; }
-  shell.classList.add('depart');
-  const onEnd = e => {
-    if (e.target !== shell || e.propertyName !== 'opacity') return;
-    shell.removeEventListener('transitionend', onEnd);
-    finish();
-  };
-  shell.addEventListener('transitionend', onEnd);
-  rundescHideTimer = setTimeout(finish, 550);
-}
-function rundescResolveText(text, shell) {
-  // End of dissolve: paint the LATEST pending mode (rapid hover retargets
-  // without restarting the dissolve, which would cancel forever).
-  const mode = rundescPendingMode || rundescMode;
-  const body = runDescFor(mode);
-  if (!body) return;
-  text.textContent = body;
-  shell.dataset.mode = mode;
-  rundescMode = mode;
-  rundescPendingMode = null;
-  text.classList.remove('out');
-  text.classList.add('in');
-  void text.offsetWidth;
-  text.classList.remove('in');
-}
-function showRunDesc(mode) {
-  // Presentation only. Must never arm, write pending state, commit, or POST.
-  // (Those live in pick/commit helpers — this function only paints text.)
-  const body = runDescFor(mode);
-  if (!body) return;
-  const shell = document.getElementById('rundesc');
-  const text = document.getElementById('rundesc-text');
-  if (!shell || !text) return;
-  if (rundescHideTimer) { clearTimeout(rundescHideTimer); rundescHideTimer = null; }
-  shell.classList.remove('depart');
-  const rm = rundescReduced();
-  const first = !shell.classList.contains('open') || shell.hidden;
-
-  if (first) {
-    rundescMorphGen++;
-    if (rundescMorphTimer) { clearTimeout(rundescMorphTimer); rundescMorphTimer = null; }
-    text.classList.remove('out', 'in');
-    text.textContent = body;
-    shell.dataset.mode = mode;
-    shell.hidden = false;
-    shell.setAttribute('aria-hidden', 'false');
-    shell.classList.add('open');
-    if (rm) {
-      shell.classList.remove('pose');
-    } else {
-      shell.classList.add('pose');
-      void shell.offsetWidth;
-      shell.classList.remove('pose');
-    }
-    rundescMode = mode;
-    rundescPendingMode = null;
-    return;
-  }
-
-  // Already open on this mode and not mid-dissolve — nothing to do.
-  if (mode === rundescMode && text.textContent === body
-      && !text.classList.contains('out')) return;
-
-  // Button→button: shell stays open; text dissolves then resolves.
-  if (rm) {
-    rundescMorphGen++;
-    if (rundescMorphTimer) { clearTimeout(rundescMorphTimer); rundescMorphTimer = null; }
-    text.classList.remove('out', 'in');
-    text.textContent = body;
-    shell.dataset.mode = mode;
-    rundescMode = mode;
-    rundescPendingMode = null;
-    return;
-  }
-
-  // Mid-dissolve: retarget the resolve leg only. Restarting .out would
-  // cancel the in-flight transitionend/timeout forever under rapid hover.
-  rundescPendingMode = mode;
-  if (text.classList.contains('out')) return;
-
-  const gen = rundescMorphGen;  // do not bump — hide is what cancels
-  text.classList.remove('in');
-  // Start the dissolve from the live computed style. Do NOT thrash
-  // transition:none first: that cost ~130ms of still-at-1 frames under
-  // load before the browser painted the fall, and the morph guard's
-  // short window then saw only endpoints (false red, real motion).
-  text.classList.add('out');
-  let done = false;
-  const finishMorph = () => {
-    if (done) return;
-    done = true;
-    if (rundescMorphTimer) { clearTimeout(rundescMorphTimer); rundescMorphTimer = null; }
-    text.removeEventListener('transitionend', once);
-    // hideRunDesc bumps gen; a live morph keeps the same gen.
-    if (gen !== rundescMorphGen) return;
-    rundescResolveText(text, shell);
-  };
-  const once = e => {
-    if (e.target !== text || e.propertyName !== 'opacity') return;
-    finishMorph();
-  };
-  text.addEventListener('transitionend', once);
-  rundescMorphTimer = setTimeout(finishMorph, 380);
-}
-function rundescPointerInside(node) {
-  const sec = document.getElementById('runmode');
-  return !!(sec && node && sec.contains(node));
-}
-// Document-level once: the section is rebuilt by the tick's innerHTML, so a
-// per-element bind would die every two seconds. Hover never selects.
-document.addEventListener('pointerover', e => {
-  const b = e.target && e.target.closest && e.target.closest('#runmode .runchip');
-  if (!b) return;
-  showRunDesc(b.dataset.mode);
-});
-document.addEventListener('pointerout', e => {
-  const sec = document.getElementById('runmode');
-  if (!sec) return;
-  // Leaving the whole section (not merely crossing a chip) dismisses.
-  if (!rundescPointerInside(e.target)) return;
-  if (rundescPointerInside(e.relatedTarget)) return;
-  // Keep open while a chip holds keyboard focus.
-  if (sec.querySelector('.runchip:focus')) return;
-  hideRunDesc();
-});
-document.addEventListener('focusin', e => {
-  const b = e.target && e.target.closest && e.target.closest('#runmode .runchip');
-  if (b) showRunDesc(b.dataset.mode);
-});
-document.addEventListener('focusout', e => {
-  const sec = document.getElementById('runmode');
-  if (!sec) return;
-  // Defer: focus may be moving to a sibling chip.
-  setTimeout(() => {
-    if (!sec.isConnected) return;
-    if (sec.contains(document.activeElement)) {
-      const b = document.activeElement.closest
-        && document.activeElement.closest('.runchip');
-      if (b) showRunDesc(b.dataset.mode);
-      return;
-    }
-    // Pointer still over the section keeps it open.
-    if (sec.matches(':hover')) return;
-    hideRunDesc();
-  }, 0);
-});
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape') return;
-  const shell = document.getElementById('rundesc');
-  if (!shell || !shell.classList.contains('open')) return;
-  hideRunDesc();
-  // Presentation only — do not cancel an arm, do not blur a chip forcibly
-  // unless that would leave the tooltip stranded (it is already dismissed).
-});
-function syncRunModeFromData() {
-  // After a re-render or remote tick: resume shared pending if live, else
-  // follow the authoritative file. Never invent a pending from server alone.
-  const pending = readRunPending();
-  if (pending && pending.phase === 'cancel') {
-    if (document.querySelector('.sgroup.runmodes'))
-      paintRunModeSelection(pending.mode, true);
-    runArmShouldCommit = false;
-    clearRunArmUI();
-    return;
-  }
-  if (pending && !pending.phase) {
-    // Ownership is timer+flag state, NOT picker DOM. An initiator that
-    // navigates to /questions mid-arm must still POST at the deadline —
-    // reclaim via sessionStorage owner id (survives reload; lost on tab close).
-    if (pending.owner && pending.owner === runTabId())
-      runArmShouldCommit = true;
-    if (document.querySelector('.sgroup.runmodes'))
-      paintRunModeSelection(pending.mode, true);
-    if (pendingIsLiveArm(pending)) {
-      // Still counting: keep commit/display timer alive even without picker DOM.
-      runArmGen++;
-      armRunModeUI(pending.mode, pending.until, runArmGen);
-    } else if (runArmShouldCommit || !pending.owner || pending.owner === runTabId()) {
-      // Past until, still reclaimable: fire claim now (reload after deadline).
-      runArmGen++;
-      commitRunMode(pending.mode, runArmGen, { orphan: !runArmShouldCommit });
-    } else {
-      // Follower seeing expired pending: schedule orphan reclaim once.
-      runArmGen++;
-      const gen = runArmGen, mode = pending.mode;
-      setTimeout(() => {
-        if (gen !== runArmGen) return;
-        const p = readRunPending();
-        const cur = committedRunMode(data);
-        if (p && !p.phase && p.mode === mode && cur !== mode)
-          commitRunMode(mode, gen, { orphan: true });
-      }, 200);
-    }
-    return;
-  }
-  if (document.querySelector('.sgroup.runmodes'))
-    paintRunModeSelection(committedRunMode(data), true);
-  // No live pending: drop ownership/timers. Do not do this merely because
-  // the dashboard picker is absent while an arm is still shared.
-  runArmShouldCommit = false;
-  clearRunArmUI();
-}
-window.addEventListener('storage', e => {
-  if (!e.key || e.key.indexOf('dw:run-mode-pending:') !== 0) return;
-  if (!data || e.key !== runPendingKey()) return;
-  // another tab rewrote the shared pending — adopt UI without write-back
-  const pending = readRunPending();
-  runArmGen++;
-  if (!pending) {
-    // Peer cleared pending to POST. Keep the armed selection (do not snap
-    // to stale data.run_mode); /mtime carries the committed file.
-    runArmShouldCommit = false;
-    clearRunArmUI();
-    return;
-  }
-  if (pending.phase === 'cancel') {
-    runArmShouldCommit = false;
-    clearRunArmUI();
-    paintRunModeSelection(pending.mode, true);
-    return;
-  }
-  runArmShouldCommit = false;
-  paintRunModeSelection(pending.mode, true);
-  armRunModeUI(pending.mode, pending.until, runArmGen);
-});
 /* ── #445 three-axis posture controls ───────────────────────────────────
    Sibling of run-mode. Authority is `.dreamwork/posture` when present;
    otherwise the UI paints the derivation from run-mode (lint.derive_posture
@@ -7278,11 +6660,9 @@ function setContent(html) {
   revealReviewMods();
   revealReviewDecisions();  // #289: decision-token arrival, same idiom
   revealQuestionUpdates();  // #473: updated-ago arrival, after ages() hides dishonest ones
-  // #290: resume shared pending (or re-sync the committed selection)
-  // without inventing a new deadline — kept nodes already hold arm state;
-  // this still covers first paint and any rebuilt bar.
-  syncRunModeFromData();
-  // #445: same arm-resume idiom for the three-axis posture control.
+  // #445: arm-resume idiom for the three-axis posture control (the run-mode
+  // picker it used to sit beside was removed in #547; posture derives from
+  // .dreamwork/run-mode via collect(), independent of any picker surface).
   syncPostureFromData();
   // #454: rolled questions re-roll here, on the same argument as the
   // drafts below — every render commits through this seam, and the tick's
@@ -9199,7 +8579,7 @@ function armStaleDeploy() {
   if (staleDeployTick) clearInterval(staleDeployTick);
   staleDeployTick = setInterval(setCount, 250);
   if (staleDeployTimer) clearTimeout(staleDeployTimer);
-  // Remaining, not a fixed RUN_ARM_MS — same as #290 armRunModeUI, so a
+  // Remaining, not a fixed RUN_ARM_MS — same shape the posture arm uses, so a
   // mid-arm rebuild and the guard's compressed clock both land correctly.
   staleDeployTimer = setTimeout(() => {
     if (gen !== staleDeployGen) return;
@@ -10162,7 +9542,20 @@ function popoutDoc(url, label) {
   // its 0-width start reads as a glitch, not a choice (the enter-snap rule).
   const kindsEl = document.getElementById('cmdkinds');
   const menuEl = document.getElementById('cmdmenu');
-  let activeKind = (COMMANDS[0] || {}).kind;
+  // #547 — the default kind is DECLARED, never positional: the entry marked
+  // `default`, else the far-left kind as a last resort. A future reorder of
+  // the row must not change the default; a future change of default must not
+  // reorder the row. The marker rides COMMANDS (the `let` the plugin half
+  // appends to, #86), so the fallback [0] is always a core kind when nothing
+  // is marked. ONE resolver idiom, used at every read site (initial
+  // selection, plugin-unload fallback, post-submit decay) so the three
+  // cannot drift.
+  const defaultKind = (from) => {
+    const list = from || COMMANDS;
+    const marked = list.find(c => c.default);
+    return ((marked || list[0]) || {}).kind;
+  };
+  let activeKind = defaultKind();
   // The row carries the common kinds PLUS the active one when it is uncommon,
   // so whatever is selected always has a button for the indicator to sit on.
   // Rebuilding is membership-only: a common->common switch leaves the row
@@ -10250,10 +9643,10 @@ function popoutDoc(url, label) {
     const arrived = renderMenu();
     /* His selection can be a command that no longer exists — he chose it, the
        plugin unloaded, and the row would still offer a kind the server now
-       refuses with a bare 400. Fall back to the first core kind, which cannot
-       go away. */
+       refuses with a bare 400. Fall back to the declared default, which
+       cannot go away (the marker is on a core kind). */
     if (!COMMANDS.some(c => c.kind === activeKind))
-      setKind((CORE_COMMANDS[0] || {}).kind);
+      setKind(defaultKind(CORE_COMMANDS));
     else
       setKind(activeKind);                 // re-mark `.on` on the new nodes
     /* THE ARRIVAL, and the condition on it is not an exemption.
@@ -10493,18 +9886,20 @@ function popoutDoc(url, label) {
         clearDraft();  // unguarded ON PURPOSE: already inside cv.landed, and
         // an isDurable() here would read as a gate while gating nothing (#163)
         // #337: a landed STEERING command does not keep its kind — the
-        // composer decays back to the default (COMMANDS[0], the far-left
-        // kind), so his NEXT message is never silently promoted to the
-        // authority of the one he just sent. Read the property off the LIVE
-        // table (COMMANDS is a `let`; plugin kinds APPEND, #86, so [0] is
-        // always a core kind), and absent means NOT sticky, so no kind is
-        // named here and a new one is not a third place to remember. The
-        // decay rides setKind — the indicator's existing slide, not a
+        // composer decays back to the default (the entry marked `default`,
+        // else the far-left kind), so his NEXT message is never silently
+        // promoted to the authority of the one he just sent. Read the
+        // property off the LIVE table (COMMANDS is a `let`; plugin kinds
+        // APPEND, #86), and absent means NOT sticky, so no kind is named
+        // here and a new one is not a third place to remember. The default
+        // is resolved by the one idiom (defaultKind), never positional, so a
+        // row reorder cannot change what his next message lands as (#547).
+        // The decay rides setKind — the indicator's existing slide, not a
         // second gesture (transitions.md). chat and add-idea are sticky
         // (#504) and skip this, so a conversation or a run of parked
         // thoughts is not interrupted by re-selection.
         const sent = COMMANDS.find(c => c.kind === kind);
-        if (sent && !sent.sticky) setKind((COMMANDS[0] || {}).kind);
+        if (sent && !sent.sticky) setKind(defaultKind());
         fitText(document.getElementById('cmdtext'), true);  // #177: shrink back, the same gesture reversed
         // he may already have started typing again while the POST was in
         // flight, before there was any timer to cancel. Courtesy is NOT
@@ -11113,12 +10508,8 @@ _PAGE_TEMPLATE = page_shell('dreamwork watch', APP_BODY,
                   + "const RUN_MODES = " + json.dumps(list(RUN_MODES)) + ";\n"
                   + "const RUN_MODE_DEFAULT = "
                   + json.dumps(RUN_MODE_DEFAULT) + ";\n"
-                  + "const RUN_MODES_PLANNED = "
-                  + json.dumps(list(RUN_MODES_PLANNED)) + ";\n"
                   + "const RUN_ARM_MS = " + json.dumps(RUN_ARM_MS) + ";\n"
                   + "const DEPLOY_WAIT_MS = " + json.dumps(DEPLOY_WAIT_MS) + ";\n"
-                  + "const RUN_MODE_DESC = "
-                  + json.dumps(RUN_MODE_DESC, ensure_ascii=True) + ";\n"
                   + "/*__POSTURE_VOCAB__*/"
                   + MORPHDOM_JS
                   + COMPONENTS_JS + VIEWS_JS + FAVICON_JS + SHADER_JS
