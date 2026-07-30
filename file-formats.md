@@ -1437,7 +1437,7 @@ constraint from nothing. That is why the array is reaped, not just written.
 **Entry shape:**
 
 ```json
-{"task": 263, "pid": 1970752, "brief": "/abs/path/to/brief.md"}
+{"task": 263, "pid": 1970752, "brief": "/abs/path/to/brief.md", "dispatch": "ccc"}
 ```
 
 | Field | Type | Means |
@@ -1445,8 +1445,11 @@ constraint from nothing. That is why the array is reaped, not just written.
 | `task` | **int (plain) or str (sub-id)** | the task this lane is working. Mirrors `current_task_ids`' id vocabulary (#402b): a **plain** id is an int (`263`), a **sub-id** is a string of digits then one letter (`"392a"`). A quoted plain id (`"263"`) is always wrong — `status_sync` normalises it to int on write, so a bad value read in does not survive. **Tolerate on read, normalise on write**: the file has more than one writer (the coordinator at dispatch, the syncer at reap), so the syncer accepts either type on read and writes back the canonical form. |
 | `pid` | int | the lane's dispatch process. **The pid is exact** (`kill -0`); a dead pid means a dead lane and the entry is reaped. A lane whose recorded pid is gone but whose argv still names the brief is a live lane whose wrapper exited, and the brief path is the order-independent fallback. |
 | `brief` | string | the absolute path to the lane's brief, used as the fallback liveness signal when no pid is recorded (order-independent: the brief is found *wherever* it appears in argv, so a flag between binary and alias does not hide it). |
+| `dispatch` | string, optional | the dispatch form, recorded at dispatch time (#537). **Absent is the historical `ccc` default (observable)**, so every pre-#537 entry stays evaluable by the liveness probe. A value not in `status_sync.OBSERVABLE_DISPATCH` (`"spawn_subagent"` — a harness-native clone with no `ccc` process and no `wt/*` worktree, so neither the pid probe nor the argv fallback can ever see it) is **carried verbatim past the liveness probe and reaped only by the ledger** (its task leaving `## Open`), never by the probe: an observation blind to a form must not prune records of that form. A live `spawn_subagent` fleet was once pruned to 0 by exactly that mistake. The closed set lives in `status_sync.py` as the single source; a new dispatch form joins it only by being listed there. |
 
-**An entry is reaped when EITHER signal says "not an owner":**
+**An entry is reaped when EITHER signal says "not an owner"** (an entry whose
+`dispatch` is unobservable skips signal 1 — the probe has nothing to ask —
+and is reaped by signal 2 alone):
 
 1. **Its pid is dead** — `kill -0` returns "no such process". The lane's
    process is gone, so it owns nothing. This is the case `live_lanes`
