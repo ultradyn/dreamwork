@@ -4383,6 +4383,73 @@ class TestAppShell(unittest.TestCase):
         self.assertNotIn(
             "document.getElementById('view').innerHTML = html", sc)
 
+    def test_505p2_review_dock_is_reconciled_not_replaced(self):
+        # #505 phase 2 (Q3): the review dock is reconciled through the keyed
+        # reconciler, not wholesale-replaceWith'd. Only the swap MECHANISM
+        # changes — same content, same lifecycle. Red-proof: reintroduce
+        # `currentDock.replaceWith(nextDock)` in setLiveContent's review
+        # branch (and drop the morphdom call) → these pins go red, and the
+        # dock card/textarea would be destroyed each tick (selection/caret
+        # lost), which is the regression this prevents.
+        sl = watch.PAGE.split('function setLiveContent(html)', 1)[1][:2200]
+        self.assertIn('morphdom(currentDock', sl)
+        self.assertIn("childrenOnly: true", sl)
+        self.assertIn('getNodeKey: viewNodeKey', sl)
+        self.assertIn('onBeforeElUpdated: reconcileGuard', sl)
+        # the old wholesale swap must not survive in the review branch
+        self.assertNotIn('currentDock.replaceWith(nextDock)', sl)
+        # the fade classes ride the kept root (childrenOnly), so the manual
+        # hand-copy that the old replaceWith needed is gone
+        self.assertNotIn("nextDock.classList.toggle", sl)
+
+    def test_505p2_reconcile_guard_is_shared_and_stamps_focused_value(self):
+        # #505 phase 2: the reconciliation rules are ONE source — a named
+        # reconcileGuard used by BOTH the #view reconcile (setContent) and the
+        # review-dock reconcile (setLiveContent), so the dock and the view
+        # cannot drift on what survives a tick. The focus-gated value-stamp is
+        # the mechanism that absorbed snapshotViewInputs (a focused input's
+        # mid-edit text is kept; caret/focus ride the kept node).
+        # Red-proof A: rename reconcileGuard and leave the two call sites →
+        #   both morphdom seams break (undefined function).
+        # Red-proof B: drop the value-stamp line → bdinput's (a)/(b) go red
+        #   (a focused limit input's typed value is clobbered to the server
+        #   value across a tick).
+        self.assertIn('function reconcileGuard(fromEl, toEl)', watch.PAGE)
+        sc = watch.PAGE.split('function setContent(html)', 1)[1][:1200]
+        self.assertIn('onBeforeElUpdated: reconcileGuard', sc)
+        sl = watch.PAGE.split('function setLiveContent(html)', 1)[1][:2200]
+        self.assertIn('onBeforeElUpdated: reconcileGuard', sl)
+        # the focus-gated value-stamp (the mechanism that retired viewInputs)
+        self.assertIn('document.activeElement === fromEl', watch.PAGE)
+
+    def test_505p2_viewinputs_pair_retired(self):
+        # #505 phase 2: snapshotViewInputs / restoreViewInputs are deleted —
+        # #523 (a focused input inside #view surviving a tick) is now carried
+        # by keyed reconciliation + the value-stamp, not a hand pair.
+        # Red-proof: re-add `function snapshotViewInputs()` and the
+        # `restoreViewInputs(viewIn)` call in tick() → this pin goes red.
+        self.assertNotIn('function snapshotViewInputs()', watch.PAGE)
+        self.assertNotIn('function restoreViewInputs(', watch.PAGE)
+        tk = watch.PAGE.split('async function tick()', 1)[1][:3000]
+        self.assertNotIn('restoreViewInputs(', tk)
+
+    def test_505p2_surviving_snapshot_pairs_each_state_a_reason(self):
+        # #505 phase 2: every snapshot/restore pair that survives around the
+        # reconciled root states WHY reconciliation cannot absorb it (the
+        # brief's anti-failure rule: "a pair that survives without a reason is
+        # the failure this act exists to prevent"). The marker is a `#505 p2`
+        # keep-reason comment on the snapshot function. Red-proof: delete a
+        # keep-reason comment → this pin goes red, naming the unreasoned pair.
+        import re
+        for fn in ('snapshotCardState', 'snapshotAskState',
+                   'snapshotBdHover', 'snapshotReviewFrame'):
+            idx = watch.PAGE.find('function ' + fn + '(')
+            self.assertNotEqual(idx, -1, fn + ' missing')
+            # the keep-reason comment sits in the ~700 chars before the def
+            pre = watch.PAGE[max(0, idx - 700):idx]
+            self.assertIn('#505 p2', pre,
+                          fn + ' survives without a #505 p2 keep-reason')
+
     def test_page_has_review_route_wiring(self):
         # Static guard: /review is an in-app route that embeds the artifact
         # (from /reviewraw) and docks the originating question, which morphs
