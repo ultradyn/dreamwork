@@ -2083,6 +2083,12 @@ GUARDS_LIST = re.compile(r'DEFAULT_GUARDS="([^"]*)"')
 # about a helper on every run until nobody reads the warning.
 NOT_GUARDS = frozenset({
     "report",                                    # shared exit-handler helper
+    # Shared argv[2] validator for the guards, not a guard: it asserts nothing
+    # about the product — it refuses a missing or all-digits <outdir> (the
+    # port-as-outdir mistake that mkdir'd `39898/` in the repo root) before any
+    # guard makes its directory. One copy of the refusal; the guards that call
+    # it are the checks. Its binding tests live in test_guard_argv.py. (#376)
+    "outdir",
     # Shared server starter for the guards that run their OWN watch.py, not a
     # guard: it asserts nothing about the product. It exists because those
     # guards spawn with `stdio: 'ignore'` and then `sleep`, so a port already
