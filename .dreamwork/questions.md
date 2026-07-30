@@ -79,7 +79,7 @@
   - **Follow-up (loop, 2026-07-31 07:20):** verified all 25 are landed; #576 now catches the gap; backlog
     cleared to 0 WARNs. Nothing for you to do here — recorded for your awareness.
 
-- **P2 · 2026-07-31 07:30 — #571: persistent user settings — four design calls.**
+- **P2 · 2026-07-31 07:30 — #584 (from #571): persistent user settings — four design calls.**
   Your steer (receipt 09a8897b): *"Add persistent user settings in the database, probably just store it as jsonb
   if you can. indexed by userid … check `~/src/refs/amr-ui/` for a good example."* Design at
   `.dreamwork/docs/plans/user-settings.md` (design only; authorises no code). The amr-ui reference's
