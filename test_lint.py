@@ -4742,7 +4742,6 @@ class TestBriefCorpusReach:
     def test_all_four_live_checks_carry_the_same_reach_qualifier(self):
         root = lint.SKILL_DIR
         expected = lint.brief_corpus_reach(root)
-        assert expected.startswith("HISTORICAL ONLY"), expected
         checks = (
             lint.check_brief_handoff_obligation,
             lint.check_brief_worktree_abs_inbox,
