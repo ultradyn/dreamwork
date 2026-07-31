@@ -4257,8 +4257,12 @@ async function navigate(name, param, opts) {
   // #577 — leaving /chat destroys the reply surface for the same reason: a
   // late /chat-reply must not clear/tick a box that no longer exists, and a
   // return visit must not be blocked by a stuck chatReplyInFlight flag.
-  if (view && view.name === 'chat' && name !== 'chat')
+  // #709 — the archive toggle shares that surface: a late /chat-archive must
+  // not touch a confirmation span that no longer exists.
+  if (view && view.name === 'chat' && name !== 'chat') {
     invalidateChatReplyFlight();
+    invalidateChatArchiveFlight();
+  }
   // #284: a copy confirmation belongs to the file it was made on, and the
   // chrome SURVIVES a route change — so without this the message would follow
   // him onto another page and describe a path no longer on screen. Route

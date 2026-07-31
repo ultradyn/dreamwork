@@ -795,8 +795,62 @@ function buildChat(fetched) {
       `<div class="qmissback"><a href="/">&larr; back to dashboard</a></div>` +
       `</div>`;
   return label('topic chat') +
+    chatArchiveBar(fetched) +
     (fetched.entries || []).map(chatTurn).join('') +
     chatReplyComposer(fetched);
+}
+/* #709 — the archive / unarchive toggle on /chat/<id>. A chat that is done
+   leaves the live list; its transcript stays readable here, so the control
+   lives on the page that owns it. It arrives with the route (the dissolve
+   every destination shares — no second motion idiom; transitions.md) and
+   success rides the page's ONE #255 confirmation component (confirmationFor,
+   .cmdmsg), the same surface the reply composer uses — never a second
+   gesture. data-archive carries the NEXT state (1 to archive, 0 to restore),
+   read at click time so a kept button on a stale tick still toggles the right
+   way. Kept out of the #chatreply form (the #708 region). */
+function chatArchiveBar(fetched) {
+  const archived = !!fetched.archived;
+  const verb = archived ? 'unarchive' : 'archive';
+  return `<div class="chatbar dim">` +
+    `<button type="button" class="chatarchbtn" data-chat="${esc(fetched.id)}" ` +
+    `data-archive="${archived ? '0' : '1'}">${verb}</button>` +
+    ` <span id="chatarchmsg" class="cmdmsg" aria-live="polite"></span></div>`;
+}
+let chatArchInFlight = false;
+let _chatArchConfirm = null;
+function chatArchConfirm() {
+  if (!_chatArchConfirm)
+    _chatArchConfirm = confirmationFor(document, 'chatarchmsg', 'cmdmsg', rmr);
+  return _chatArchConfirm;
+}
+/* leaving /chat is surface destruction — a late archive response must not
+   touch a confirmation span that no longer exists. */
+function invalidateChatArchiveFlight() {
+  chatArchInFlight = false;
+  if (_chatArchConfirm) _chatArchConfirm.clear();
+}
+async function sendChatArchive(btn) {
+  if (chatArchInFlight) return;
+  const chatId = btn.getAttribute('data-chat') || (view && view.param) || '';
+  if (!chatId) return;
+  const archive = btn.getAttribute('data-archive') === '1';
+  chatArchInFlight = true;
+  const attempt = chatArchConfirm().begin();
+  // THROUGH postJSON — the one seam every submission passes, so the archive
+  // is witnessed by the client log (#175) and deduped by the journal (#274).
+  const res = await postJSON('/chat-archive', { id: chatId, archive });
+  chatArchInFlight = false;
+  if (view.name !== 'chat') return;        // navigated off — surface gone
+  if (res && DraftStore.isDurable(res)) {
+    if (!attempt.success()) return;        // superseded between POST and here
+    attempt.claim(archive ? 'archived — left the list' : 'unarchived — back in the list', true);
+    await tick();   // re-render: the button flips; the list updates next dash tick
+  } else {
+    const v = res && res._dwv;
+    const why = (v && v.rejected && v.reason && REJECT_WHY[v.reason]);
+    attempt.claim(!res ? 'no connection'
+      : (why ? `not written — ${why}` : 'not written — try again'));
+  }
 }
 /* #577 — the reply composer on /chat/<id>. It reuses the EXISTING composer
    components rather than a second surface: postJSON for the POST, DraftStore

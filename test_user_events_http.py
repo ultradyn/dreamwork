@@ -342,6 +342,24 @@ class E2Shadow(HttpHarness):
         self.assertIn(reply, watch.read_text(os.path.join(
             self.target, ".dreamwork", watch.CHAT_DIR, cid,
             "transcript.md")))
+        # 12. /chat-archive — archive an EXISTING chat (#709). Its existence
+        #     guard runs BEFORE the write, so an unknown id is a
+        #     domain_invalid refusal — and a refusal still commits a receipt
+        #     and answers 202-on/200-off, exactly like every route (#586's
+        #     trap, restated for this feature). So a bogus id here would sail
+        #     past the status AND receipt-count assertions while never
+        #     exercising the write path. Hence: seed a real chat through the
+        #     ONE turn-writer (already done above for the reply), then POST
+        #     /chat-archive and assert the BEHAVIOURAL post-condition — the
+        #     sidecar marker file exists afterwards. A test that only asserted
+        #     the 202 would pass against a route that wrote nothing (#586,
+        #     measured: 15/15 green with the post-condition deleted).
+        ac = f"e2-archive-{marker}"
+        self.assertTrue(
+            watch.apply_chat_turn(self.target, ac, "human", f"to archive {marker}"))
+        statuses.append(self.post("/chat-archive", {"id": ac, "archive": True})[0])
+        self.assertTrue(watch.is_chat_archived(self.target, ac),
+            "the archive marker must exist after /chat-archive on a real chat")
         return statuses, self.submissions_rows()
 
     def test_every_write_route_commits_a_receipt_and_changes_nothing_else(self):
@@ -365,7 +383,11 @@ class E2Shadow(HttpHarness):
         # payload is {"id", "text"} against a chat run_all seeds first via
         # apply_chat_turn, because the route refuses an id that does not
         # already exist.
-        self.assertEqual(len(WRITE_ROUTES), 11, WRITE_ROUTES)
+        # 2026-07-31 #709: 11→12 — /chat-archive joined the dispatch; payload
+        # is {"id", "archive"} against a chat run_all seeds first via
+        # apply_chat_turn, with a behavioural post-condition (the marker file)
+        # because a refusal answers 202-on/200-off identically (#586).
+        self.assertEqual(len(WRITE_ROUTES), 12, WRITE_ROUTES)
         # Every route returned 202 with the journal ON (E3 cutover moved the
         # write-route status) and 200 with the journal OFF (the pre-cutover
         # baseline, which still uses _send). The shadow must change only the
@@ -392,8 +414,8 @@ class E2Shadow(HttpHarness):
         # count assertion above (len(WRITE_ROUTES)) would still pass while a
         # route went unshadowed — UNLESS this guard fails first. This is the
         # plan's "derive the route list" discipline made executable.
-        exercised = 11  # ask, comment, answer, command, tint, run-mode,
-        #              posture, decide, deploy, remind, chat-reply
+        exercised = 12  # ask, comment, answer, command, tint, run-mode,
+        #              posture, decide, deploy, remind, chat-reply, chat-archive
         self.assertEqual(len(WRITE_ROUTES), exercised, WRITE_ROUTES)
 
     @contextlib.contextmanager
@@ -653,6 +675,34 @@ class E5Reject(HttpHarness):
         with open_journal(self._journal_path()) as j:
             row = j.get_receipt(rid)
         self.assertNotEqual(row["state"], "rejected", row["state"])
+
+    def test_chat_archive_refuses_bogus_id_and_leaves_no_marker(self):
+        # #709 + #586 — the refusal path a status-only assertion cannot see.
+        # /chat-archive refuses an id that does not exist (its _chat_exists
+        # guard runs before the write), and a refusal still commits a receipt
+        # and answers 202 — so a test that only asserted the 202 would pass
+        # against a route that wrote a phantom marker for the bogus id. The
+        # behavioural post-condition is the ABSENCE of the marker, not the
+        # status: assert the receipt IS rejected AND no marker file was left.
+        # This closes the direction-2 false-green (run_all_routes only seeds
+        # a real chat, so it cannot exercise this path).
+        self.assertIn("domain_invalid", REJECTION_REASONS, REJECTION_REASONS)
+        bogus = "no-such-chat-709"
+        self.assertFalse(watch._chat_exists(self.target, bogus))
+        status, _, body = self.post("/chat-archive", {"id": bogus,
+                                                      "archive": True})
+        self.assertEqual(status, 202, status)
+        rid = json.loads(body)["receipt"]["receipt_id"]
+        with open_journal(self._journal_path()) as j:
+            row = j.get_receipt(rid)
+        self.assertEqual(row["state"], "rejected", row["state"])
+        self.assertEqual(self._latest_reason_code(rid), "domain_invalid")
+        # the behavioural post-condition: no phantom marker for the bogus id
+        self.assertFalse(watch.is_chat_archived(self.target, bogus),
+            "a refused archive must leave no marker")
+        self.assertFalse(os.path.exists(os.path.join(
+            self.target, ".dreamwork", watch.CHAT_DIR, bogus,
+            watch.CHAT_ARCHIVED_NAME)))
 
     # --- helpers ---
 

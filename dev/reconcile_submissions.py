@@ -110,7 +110,7 @@ SUBMISSIONS_DEFAULT = ".dreamwork/submissions.log"
 SUBMISSION_ROUTES = frozenset({
     "/answer", "/ask", "/comment", "/command", "/decide",
     "/tint", "/run-mode", "/posture", "/deploy", "/remind",
-    "/chat-reply",
+    "/chat-reply", "/chat-archive",
 })
 
 # Stable exit codes (asserted by the test).  EX_OK: fully covered; EX_SOFTWARE:
