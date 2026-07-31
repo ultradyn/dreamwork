@@ -61,26 +61,30 @@ that is a legitimate outcome, not a failure.
 **Red-proof both directions. This is the one that catches real defects.**
 - *Direction 1*: inject the real defect and watch your check go red **on the discriminating
   failure message** — not on a red count. A red for the wrong reason is indistinguishable
-  from a right one in a `-q` summary. Restore by `cp` from a snapshot kept **outside the
-  repo**, verify with `cmp`. **Never `git checkout` to restore an injection** (`#349`, a
-  repeat offence here).
-  **The snapshot must be LANE-PRIVATE, not merely outside the repo** — this is `#652`, an
-  existing rule (`SKILL.md:544`), and it is repeated here because omitting it from a brief is
-  what let a lane hit the failure it prevents. **`dev/lane_scratch.py` PRINTS A PATH; it does
-  not copy anything** — `snap` is an optional subdirectory name, not a verb, and passing it a
-  filename errors with `unrecognized arguments`. Use it as
-  `SNAP=$(python3 dev/lane_scratch.py snap)` and then `cp` into `$SNAP` yourself. It resolves a
-  lane-named directory on `~/.cache` (btrfs) rather than `/tmp` (tmpfs) —
-  the substrate half of `#634`. The session scratchpad is shared by every live lane: a `#691`
-  lane found its first snapshot landing in a directory that already held another lane's
-  backups of `watch.py`, `router.js` and `test_watch.py`. Two lanes snapshotting the same file
-  silently clobber each other's restore point, which is the exact failure snapshots exist to
-  prevent. Say in your report where your snapshot went.
-  **Snapshot immediately before EACH injection, and re-snapshot after any re-apply.** A `#704`
-  lane snapshotted two files together at one moment, edited the second file afterwards, then
-  restored from that snapshot and silently lost the later edits — it had to re-apply them by
-  hand. A snapshot taken part-way through a multi-file edit is a restore point for a tree that
-  never existed. The tool was right; the sequencing was wrong.
+  from a right one in a `-q` summary.
+  **Use `dev/redproof.py`; it owns the snapshot/restore protocol** (`#683`):
+
+      python3 dev/redproof.py begin <path>     # snapshot the original, arm the entry
+      …sabotage it, run your check, watch it go red…
+      python3 dev/redproof.py restore <path>   # record the injected content, restore, verify
+      python3 dev/redproof.py check            # hand-off gate — run before you report, quote it
+
+  **Run `check` before reporting and quote its output.** It REFUSES if any injection is left
+  unrestored, which is the failure nothing could previously detect: an injection is by
+  construction a small plausible edit to real code, so a lane that gets absorbed in writing its
+  report and commits has shipped a deliberate defect with a green-looking report attached.
+  It also fails closed — an unreadable registry or a missing snapshot is a fault at exit 2, not
+  a pass — and distinguishes that from the calm zero of nothing registered (`#136`, `#671`).
+  Using the tool also discharges two rules you would otherwise have to remember. It places
+  snapshots **lane-privately** (`#652`: the session scratchpad is shared by every live lane, and
+  a `#691` lane's first snapshot landed in a directory already holding another lane's backups of
+  `watch.py`, `router.js` and `test_watch.py` — two lanes clobbering each other's restore point
+  is the exact failure snapshots exist to prevent), on `~/.cache` (btrfs) rather than `/tmp`
+  (tmpfs, the substrate half of `#634`). And because `begin` snapshots at the moment you arm the
+  injection, it cannot make the `#704` sequencing mistake — that lane snapshotted two files at
+  one moment, edited the second afterwards, restored, and silently lost the later edits.
+  **Never `git checkout` to restore an injection** (`#349`, a repeat offence here); `restore`
+  copies from the snapshot and verifies.
 - *Direction 2*: construct an input where the thing you are checking is **genuinely broken
   but your check still passes**. Report it even if you cannot close it. If none can be
   constructed, say why not. One-directional red-proofing is exactly what let three
