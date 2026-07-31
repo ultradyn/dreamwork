@@ -747,6 +747,114 @@ class TestCollector(unittest.TestCase):
             self.assertIs(by_id["c-read"]["unread"], False)
             self.assertIs(by_id["c-followup"]["unread"], True)
 
+    def test_archive_writer_sets_and_clears_marker(self):
+        """#709 — set_chat_archived creates/removes the sidecar marker;
+        is_chat_archived reads existence. The writer owns ONLY the marker,
+        disjoint from apply_chat_turn's transcript, so the ONE turn-writer
+        is untouched (#577's discipline holds on the transcript path).
+
+        Production line: set_chat_archived's create/remove branch and
+        is_chat_archived's os.path.exists. Drop the marker write in the
+        writer and is_chat_archived stays False (the post-condition the
+        route needs, per #586)."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch.apply_chat_turn(d, "c-done", "human", "all settled")
+            self.assertFalse(watch.is_chat_archived(d, "c-done"))
+            self.assertTrue(watch.set_chat_archived(d, "c-done", True))
+            self.assertTrue(watch.is_chat_archived(d, "c-done"))
+            # reversible — designed in cheap: unarchive is the symmetric inverse
+            self.assertTrue(watch.set_chat_archived(d, "c-done", False))
+            self.assertFalse(watch.is_chat_archived(d, "c-done"))
+
+    def test_archive_is_idempotent(self):
+        """#709 — archiving an archived chat (or unarchiving a live one) is a
+        no-op success, so a double-click/retry never toggles state twice.
+        Idempotence is what makes the route safe under #274's replay."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch.apply_chat_turn(d, "c-done", "human", "done")
+            self.assertTrue(watch.set_chat_archived(d, "c-done", True))
+            self.assertTrue(watch.set_chat_archived(d, "c-done", True))
+            self.assertTrue(watch.is_chat_archived(d, "c-done"))
+            watch.apply_chat_turn(d, "c-live", "human", "live")
+            self.assertTrue(watch.set_chat_archived(d, "c-live", False))
+            self.assertFalse(watch.is_chat_archived(d, "c-live"))
+
+    def test_archive_writer_refuses_bad_id_no_phantom_marker(self):
+        """#709 — a bad id is refused loudly (returns False) and leaves NO
+        marker, mirroring _chat_exists running BEFORE apply (#577): a typo'd
+        id is a refusal, never a phantom archived chat. The marker is the
+        proof the write was refused — its absence is what a #586 behavioural
+        post-condition would assert at the route."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            # empty id
+            self.assertFalse(watch.set_chat_archived(d, "", True))
+            # path-traversal id (rejected by _CHAT_ID_RE)
+            self.assertFalse(watch.set_chat_archived(d, "../escape", True))
+            # an id with no chat dir — refused, no marker created
+            self.assertFalse(watch.set_chat_archived(d, "no-such-chat", True))
+            self.assertFalse(os.path.exists(os.path.join(
+                d, ".dreamwork", watch.CHAT_DIR, "no-such-chat",
+                watch.CHAT_ARCHIVED_NAME)))
+
+    def test_archived_chat_leaves_live_list_stays_readable(self):
+        """#709 — archived chats LEAVE the list (his phrase "chats that are
+        done") but remain readable at their URL via /chatdata (which derives
+        through _chat_record_and_turns, not list_chats). #136: an empty
+        list_chats is NOT 'no chats' when archived transcripts remain on
+        disk — the state is readable, not absent.
+
+        Production line: list_chats's `if rec and not rec['archived']`
+        filter. Drop the `not rec['archived']` guard and an archived chat
+        re-appears in the live list. PRECONDITION asserted: the two chats
+        are both real (both parse a turn) and differ only in archived."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch.apply_chat_turn(d, "c-live", "human", "still talking")
+            watch.apply_chat_turn(d, "c-done", "human", "all settled")
+            watch.set_chat_archived(d, "c-done", True)
+            live = {c["id"]: c for c in watch.list_chats(d)}
+            # the live chat is listed; the archived one is not
+            self.assertIn("c-live", live)
+            self.assertNotIn("c-done", live)
+            # PRECONDITION: c-done is a real chat whose transcript still parses
+            # — the archived marker did not destroy it. /chatdata reads it.
+            done_rec, done_turns = watch._chat_record_and_turns(
+                os.path.join(d, ".dreamwork", watch.CHAT_DIR, "c-done"),
+                "c-done")
+            self.assertIsNotNone(done_rec, "archived chat must still read")
+            self.assertTrue(done_rec["archived"])
+            self.assertEqual(len(done_turns), 1)
+
+    def test_all_archived_is_distinct_from_no_chats(self):
+        """#136 — 'no archived chats' (empty live list) and 'the archive
+        state could not be read' must not render identically. When every chat
+        is archived, list_chats returns [] BUT the store holds transcripts
+        that still parse — so the dirs and their records remain readable
+        through _chat_record_and_turns. The empty list is a true 'none live',
+        not a silent read failure."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch.apply_chat_turn(d, "c-1", "human", "one")
+            watch.apply_chat_turn(d, "c-2", "human", "two")
+            watch.set_chat_archived(d, "c-1", True)
+            watch.set_chat_archived(d, "c-2", True)
+            live = watch.list_chats(d)
+            # the live list is empty — but the state is readable, not absent
+            self.assertEqual(live, [])
+            root = watch._chat_root(d)
+            readable = [n for n in os.listdir(root)
+                        if os.path.isdir(os.path.join(root, n))]
+            self.assertEqual(sorted(readable), ["c-1", "c-2"])
+            for n in readable:
+                rec, turns = watch._chat_record_and_turns(
+                    os.path.join(root, n), n)
+                self.assertIsNotNone(rec, f"{n} must still read when archived")
+                self.assertTrue(rec["archived"])
+                self.assertEqual(len(turns), 1)
+
     def test_chatlist_count_line_shows_unread_and_total(self):
         """#562 — the count line tells the truth: `topic chats · X unread ·
         Y total` with the unread clause ONLY when unread > 0; the total is

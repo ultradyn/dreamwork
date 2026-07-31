@@ -2793,6 +2793,63 @@ def apply_chat_turn(target, chat_id, role, text, at=None, receipt_id=None):
     return True
 
 
+# #709 — the archive state is a sidecar MARKER FILE, not a chat.json field.
+# chat.json is documented identity-only ("never a second source of truth"), and
+# apply_chat_turn owns it on creation, so a mutable field there would both break
+# that contract and add a read-modify-write second writer to a file the turn
+# writer touches. The marker writes a file the turn writer NEVER touches, so it
+# is not a second writer in the #577 sense (which bound the transcript path).
+# Existence IS the state — the same shape .dreamwork/watch-tint and run-mode
+# keep — so unarchive is the symmetric inverse (remove the file), designed in
+# cheap rather than retrofitted.
+CHAT_ARCHIVED_NAME = "archived"
+
+
+def _chat_archived_marker(cdir):
+    """Path to a chat's archive marker inside its chats-v1 dir."""
+    return os.path.join(cdir, CHAT_ARCHIVED_NAME)
+
+
+def is_chat_archived(target, chat_id):
+    """Whether a chat is archived (#709). Existence of the marker IS the state."""
+    return os.path.exists(_chat_archived_marker(
+        os.path.join(_chat_root(target), chat_id)))
+
+
+def set_chat_archived(target, chat_id, archived):
+    """Set or clear a chat's archive flag (#709).
+
+    The writer for archive state — owns ONLY the marker file, disjoint from
+    apply_chat_turn's transcript/chat.json, so the ONE turn-writer is
+    untouched. ``archived=True`` creates the marker; ``False`` removes it.
+    Returns True on success, False on a bad id, a non-existent chat, or IO
+    failure. Idempotent: archiving an archived chat (or unarchiving a live
+    one) is a no-op success.
+
+    The existence guard runs BEFORE the write — mirroring _chat_exists
+    running before apply in _handle_chat_reply (#577): a typo'd id is a loud
+    refusal, never a phantom marker for a chat that does not exist. Without
+    it, makedirs+marker would fork an empty dir that looks archived."""
+    if not chat_id or not _CHAT_ID_RE.match(chat_id):
+        return False
+    cdir = os.path.join(_chat_root(target), chat_id)
+    # refuse before any write: a chat that has no parsed turn is not one you
+    # can archive (same reader list_chats / _chat_exists use). Reuses the
+    # production existence test so it cannot disagree with the dashboard.
+    if not _parse_chat_turns(read_text(os.path.join(cdir, "transcript.md"))):
+        return False
+    marker = _chat_archived_marker(cdir)
+    try:
+        if archived:
+            atomic_write_text(marker, "1\n")
+        else:
+            if os.path.exists(marker):
+                os.remove(marker)
+        return True
+    except OSError:
+        return False
+
+
 def _chat_record_and_turns(cdir, name):
     """Derive one chat's record (+ its parsed turns) from a chats-v1 dir.
 
@@ -2813,6 +2870,11 @@ def _chat_record_and_turns(cdir, name):
     humans = [t for t in turns if t["role"] == "human"]
     agents = [t for t in turns if t["role"] == "agent"]
     first_human = humans[0]["body"] if humans else turns[0]["body"]
+    # #709 — `archived` is read from the sidecar marker in the SAME dir as the
+    # transcript, so it can never drift from "does this chat exist". Co-located
+    # with the derivation the list and the page both serve (#136: an archived
+    # chat is a real chat whose transcript still parses, distinct from one the
+    # reader could not see).
     rec = {
         "id": meta.get("id", name),
         "title": _chat_preview(first_human),
@@ -2820,6 +2882,7 @@ def _chat_record_and_turns(cdir, name):
         "turns": len(turns),
         "status": "replied" if agents else "pending",
         "unread": turns[-1]["role"] == "human",
+        "archived": os.path.exists(_chat_archived_marker(cdir)),
         "created": meta.get("created", ""),
         "last_at": turns[-1]["at"],
         "last_by": turns[-1]["role"],
@@ -2838,6 +2901,13 @@ def list_chats(target):
     the last turn is his. Newest first by chat.json `created`, dir-name
     fallback. Degrades to [] when the store is absent (the slice ships before
     the apply lane wires the write).
+
+    #709 — archived chats LEAVE the live list (his phrase: "chats that are
+    done"). An empty return here is NOT "no chats": every chat may be
+    archived, in which case the store holds transcripts that still parse but
+    none surface here (#136 — "no archived chats" and "the archive state
+    could not be read" must not render identically; the dirs and their
+    transcripts remain, so the state is readable, not absent).
     """
     root = _chat_root(target)
     if not os.path.isdir(root):
@@ -2848,7 +2918,9 @@ def list_chats(target):
         if not os.path.isdir(cdir):
             continue
         rec, _ = _chat_record_and_turns(cdir, name)
-        if rec:
+        # archived chats leave the live list; their transcript stays readable
+        # at /chat/<id> via /chatdata (which does not filter on archived).
+        if rec and not rec["archived"]:
             chats.append(rec)
     chats.sort(key=lambda c: c.get("created") or c["id"], reverse=True)
     return chats
@@ -5555,6 +5627,46 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             apply_chat_turn(target, cid, "human", text)
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
+        def _handle_chat_archive(self):
+            """#709 — archive or unarchive a topic chat from /chat/<id>.
+
+            An archive flag is a NEW kind of mutation to a chat, so the trap
+            is growing a second writer to the transcript. It does not: the
+            writer is ``set_chat_archived``, which owns ONLY the sidecar
+            marker file (disjoint from apply_chat_turn's transcript), so the
+            ONE turn-writer is untouched (#577's discipline holds on the
+            transcript path; this is a different file). Registration in
+            WRITE_ROUTE_HANDLERS gives it E2Shadow receipt + #274 replay for
+            free — and the marker write is idempotent, so a double-click/
+            retry is a no-op, never a double-toggle.
+
+            A typo'd id is a loud refusal, never a phantom marker: the
+            existence guard runs BEFORE the write (mirroring _handle_chat_reply
+            and reusing the SAME _chat_exists reader), so a bad id cannot leave
+            a marker for a chat that does not exist. #586's trap is inherited
+            too — a refusal still commits a receipt and answers 202-on/200-off
+            identically — so the proof a bogus id was refused is the ABSENCE of
+            the marker, not the status code (the test asserts that)."""
+            req = self._read_json()
+            if req is None:
+                self._reject("malformed_json"); return
+            try:
+                cid = str(req["id"]).strip()
+                archive = bool(req.get("archive", True))
+            except (KeyError, TypeError):
+                self._reject("schema_invalid"); return
+            if not _CHAT_ID_RE.match(cid):
+                self._reject("domain_invalid"); return
+            if not _chat_exists(target, cid):
+                self._reject("domain_invalid", detail="no_such_chat"); return
+            # best-effort — the receipt already committed in do_POST, so an IO
+            # failure never refuses the 202 (same discipline as the reply
+            # route). Idempotent: the marker write/remove is a no-op if the
+            # state already matches.
+            set_chat_archived(target, cid, archive)
+            self._send_receipt(json.dumps({"ok": True, "archived": archive,
+                                           "id": cid}), "application/json")
+
         def _handle_tint(self):
             """His colour for this project (#143).
 
@@ -5829,6 +5941,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             "/comment": _handle_comment,
             "/command": _handle_command,
             "/chat-reply": _handle_chat_reply,
+            "/chat-archive": _handle_chat_archive,
             "/decide": _handle_decide,
             "/tint": _handle_tint,
             "/run-mode": _handle_run_mode,
