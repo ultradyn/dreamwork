@@ -1033,7 +1033,7 @@ class TestCollector(unittest.TestCase):
         Removing it drops the section header (and the gap it carries), and
         every assertion below that names the header reds.
         """
-        import subprocess, shutil
+        import re, subprocess, shutil
         node = shutil.which("node")
         if not node:
             self.skipTest("node not available — Q&A group render gate did NOT run")
@@ -1059,6 +1059,168 @@ class TestCollector(unittest.TestCase):
         qsection = extract("function qSection(d) {")
         dashboard = extract("function buildDashboard(d) {")
 
+        real_callees = {"label", "qSummary", "qSection"}
+        marker_callees = {"chatList", "burnPanel"}
+
+        def discovered_dependencies(source):
+            """Return the dependencies this narrow harness can prove it saw.
+
+            This recognizes plain direct calls and bare callbacks passed to
+            Array.map. It refuses every unclassified call shape; it is not a
+            JavaScript parser and makes no claim about a callee's behaviour.
+            The only member calls admitted are the current, constrained array
+            intrinsics map/join/slice. Template interpolation may contain
+            property/arithmetic expressions, but not calls or nested braces.
+            Regex literals, optional/computed/constructor/result calls, and
+            unknown member calls are deliberately unsupported and fail loud.
+            """
+            first_brace = source.find("{")
+            if first_brace < 0 or not source.rstrip().endswith("}"):
+                self.fail("buildDashboard dependency discovery: malformed body")
+            body = source[first_brace + 1:source.rfind("}")]
+            masked = list(body)
+            i = 0
+            while i < len(body):
+                if body.startswith("//", i):
+                    end = body.find("\n", i + 2)
+                    end = len(body) if end < 0 else end
+                    masked[i:end] = " " * (end - i)
+                    i = end
+                    continue
+                if body.startswith("/*", i):
+                    end = body.find("*/", i + 2)
+                    if end < 0:
+                        self.fail("buildDashboard dependency discovery: unterminated comment")
+                    end += 2
+                    masked[i:end] = " " * (end - i)
+                    i = end
+                    continue
+                if body[i] in "'\"":
+                    quote = body[i]
+                    start = i
+                    i += 1
+                    while i < len(body) and body[i] != quote:
+                        if body[i] == "\\":
+                            i += 2
+                        elif body[i] == "\n":
+                            self.fail("buildDashboard dependency discovery: newline in string")
+                        else:
+                            i += 1
+                    if i >= len(body):
+                        self.fail("buildDashboard dependency discovery: unterminated string")
+                    i += 1
+                    masked[start:i] = " " * (i - start)
+                    continue
+                if body[i] == "`":
+                    start = i
+                    i += 1
+                    while i < len(body) and body[i] != "`":
+                        if body[i] == "\\":
+                            i += 2
+                            continue
+                        if body.startswith("${", i):
+                            end = body.find("}", i + 2)
+                            if end < 0:
+                                self.fail("buildDashboard dependency discovery: unterminated template interpolation")
+                            expression = body[i + 2:end]
+                            if "(" in expression or "{" in expression or "`" in expression:
+                                self.fail("buildDashboard dependency discovery: unsupported template interpolation")
+                            i = end + 1
+                            continue
+                        i += 1
+                    if i >= len(body):
+                        self.fail("buildDashboard dependency discovery: unterminated template")
+                    i += 1
+                    masked[start:i] = " " * (i - start)
+                    continue
+                if body[i] == "/":
+                    self.fail("buildDashboard dependency discovery: unsupported regex or division syntax")
+                i += 1
+
+            code = "".join(masked)
+            dependencies = set()
+            member_calls = {"map", "join", "slice"}
+            controls = {"if", "for", "while", "switch", "catch", "with"}
+
+            def call_end(open_index):
+                depth = 0
+                for pos in range(open_index, len(code)):
+                    if code[pos] == "(":
+                        depth += 1
+                    elif code[pos] == ")":
+                        depth -= 1
+                        if depth == 0:
+                            return pos
+                self.fail("buildDashboard dependency discovery: unbalanced call")
+
+            for match in re.finditer(r"\(", code):
+                open_index = match.start()
+                before = code[:open_index]
+                identifier = re.search(r"([A-Za-z_$][\w$]*)\s*$", before)
+                previous = before.rstrip()[-1:] or ""
+                if identifier:
+                    name = identifier.group(1)
+                    prefix = before[:identifier.start()].rstrip()
+                    if prefix.endswith("."):
+                        if prefix.endswith("?.") or name not in member_calls:
+                            self.fail("buildDashboard dependency discovery: unsupported member call " + name)
+                        args = code[open_index + 1:call_end(open_index)].strip()
+                        if name == "map":
+                            callback = re.fullmatch(r"([A-Za-z_$][\w$]*)", args)
+                            arrow = re.match(r"[A-Za-z_$][\w$]*\s*=>", args)
+                            if callback:
+                                dependencies.add(callback.group(1))
+                            elif not arrow:
+                                self.fail("buildDashboard dependency discovery: unsupported map callback")
+                        elif name == "join" and args:
+                            self.fail("buildDashboard dependency discovery: unsupported join argument")
+                        elif name == "slice" and not re.fullmatch(r"[\w$\s,+-]*", args):
+                            self.fail("buildDashboard dependency discovery: unsupported slice argument")
+                    elif name not in controls:
+                        if re.search(r"\bnew\s*$", prefix):
+                            self.fail("buildDashboard dependency discovery: unsupported constructor call " + name)
+                        dependencies.add(name)
+                elif previous in ".?])":
+                    self.fail("buildDashboard dependency discovery: unsupported dynamic call")
+
+            if not dependencies:
+                self.fail("buildDashboard dependency discovery examined no dependencies")
+
+            protected = real_callees | marker_callees
+
+            def one_edit_apart(left, right):
+                if left == right or abs(len(left) - len(right)) > 1:
+                    return False
+                if len(left) == len(right):
+                    differences = [n for n, pair in enumerate(zip(left, right))
+                                   if pair[0] != pair[1]]
+                    return (len(differences) == 1 or
+                            (len(differences) == 2 and
+                             differences[1] == differences[0] + 1 and
+                             left[differences[0]] == right[differences[1]] and
+                             left[differences[1]] == right[differences[0]]))
+                short, long = sorted((left, right), key=len)
+                return any(long[:n] + long[n + 1:] == short
+                           for n in range(len(long)))
+
+            for name in dependencies - protected:
+                for expected in protected:
+                    if one_edit_apart(name, expected):
+                        self.fail("buildDashboard dependency discovery: likely typo "
+                                  + name + " for protected " + expected)
+            return dependencies
+
+        dependencies = discovered_dependencies(dashboard)
+        # Direction-2 guards: neither a proxy-style near-miss nor a member
+        # expression may quietly widen the set of no-output sentinels.
+        with self.assertRaisesRegex(AssertionError, "likely typo lable"):
+            discovered_dependencies("function buildDashboard(d) { lable('x'); }")
+        with self.assertRaisesRegex(AssertionError, "unsupported member call qSection"):
+            discovered_dependencies("function buildDashboard(d) { d.qSection(d); }")
+        sentinel_callees = dependencies - real_callees - marker_callees
+        self.assertTrue(sentinel_callees,
+                        "buildDashboard dependency discovery produced no sentinels")
+
         # chatList is stubbed to a sentinel so this lane's test does not bind
         # to lane-562chat's live region; the other heavy callees are stubbed
         # to '' (or a marker) for the same reason — only the ordering is graded.
@@ -1067,20 +1229,11 @@ class TestCollector(unittest.TestCase):
             "const QNONE = { ok:'none', empty:'none', "
             "missing:'none', unreadable:'none' };\n"
             "const REVIEWS_DASH_CAP = 5;\n"
-            "const qHealth = d => '';\n"
-            "const servingLine = d => '';\n"
-            "const gitRow = c => '';\n"
-            "const dreamBlock = dm => '';\n"
-            "const expand = (s,i,c,k) => '';\n"
             "const chatList = d => `<div class=\"label\">topic chats"
             " · 1</div>`;\n"
-            "const artifactRow = (r,k) => '';\n"
-            "const mdB = (t,n) => '';\n"
             "const burnPanel = d => `<div class=\"label\">burndown</div>`;\n"
-            "const statusBlock = (s,h) => '';\n"
-            "const posturePicker = d => '';\n"
-            "const tintPicker = d => '';\n"
-            "const drawModePicker = () => '';\n"
+            + "".join("const " + name + " = (...args) => '';\n"
+                      for name in sorted(sentinel_callees))
             + qsummary + "\n"
             + qsection + "\n"
             + dashboard + "\n"
