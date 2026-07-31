@@ -1650,9 +1650,13 @@ def _verb_reviews(args, dw_dir):
 
 # The mutating question verbs: each must refuse before the watermark.  This
 # tuple IS the classification surface — adding a question-mutating verb means
-# adding it here, and the refusal gate below dispatches on it.
+# adding it here, and the refusal gate below dispatches on it.  The names
+# MUST match the argparse subparser names exactly — a mismatch here is the
+# shape of bug direction 2 exists to catch (the verb refuses because the set
+# never matches, not because the guard fired).
 _QUESTION_MUTATING_CMDS = frozenset({
-    "q-post", "q-answer", "q-comment", "q-fold", "q-retitle",
+    "questions-post", "questions-answer", "questions-comment",
+    "questions-fold", "questions-retitle",
 })
 
 
@@ -2309,16 +2313,19 @@ def _dispatch(args):
         return _verb_groom(dw_dir)
 
     # #645 increment 9 — questions/reviews CLI verbs over the DB API.
-    # These require a store (the schema lives there), so refuse markdown mode
-    # with the same reasoning groom uses (no store, no tables to write).
+    # These operate on the question/review tables (v3 schema), which exist in
+    # any store opened through question_store_spec — they do NOT require the
+    # task ledger to be cut over (that is a separate, earlier cutover).  The
+    # store file itself is the precondition: a store that does not exist has
+    # no tables to write.
     if args.cmd in ("questions-post", "questions-answer", "questions-comment",
                     "questions-fold", "questions-retitle",
                     "reviews-register", "reviews-link"):
-        if source_of_truth(dw_dir) != "store":
+        db_path = store_path(dw_dir)
+        if not db_path.exists():
             sys.stderr.write(
-                f"ledger: {args.cmd} requires a store — its tables live in"
-                f" the DB, not markdown; the store is the source of truth"
-                f" after the #294 cutover\n")
+                f"ledger: {args.cmd} requires a store at {db_path} —"
+                f" its tables live in the DB, not markdown\n")
             return 1
         # Pre-watermark refusal for MUTATING QUESTION verbs (design §446).
         # reviews register/link are ALLOWED pre-watermark: they write the
@@ -2326,7 +2333,7 @@ def _dispatch(args):
         # writer path for questions.  A test that sets the watermark opts
         # into the positive case (#671/#755).
         if args.cmd in _QUESTION_MUTATING_CMDS:
-            with open_database(question_store_spec(store_path(dw_dir)),
+            with open_database(question_store_spec(db_path),
                                access=Access.READ) as store:
                 cut_over = questions_cut_over(store)
             if not cut_over:
