@@ -31,6 +31,10 @@ _BRANCH_LINE = re.compile(
     r"^Branch:\s+`?([A-Za-z0-9][A-Za-z0-9._-]*)`?\s*$", re.MULTILINE
 )
 _RECEIPT = re.compile(r"([0-9a-f]{64})  ([^/\n]+\.md)\n?\Z")
+COORDINATOR_INBOX_PREFIX = (
+    "Coordinator inbox — ABSOLUTE path, append your completion summary here "
+    "when you finish: "
+)
 
 
 class DispatchFault(Exception):
@@ -101,7 +105,7 @@ def _fence_at(text: str, offset: int) -> str | None:
     return active
 
 
-def validate_prompt(prompt: str, contract: str) -> None:
+def validate_prompt(prompt: str, contract: str, coordinator_inbox: Path) -> None:
     if not prompt:
         raise DispatchFault("prompt is empty; no dispatch was attempted")
     if not contract:
@@ -129,6 +133,17 @@ def validate_prompt(prompt: str, contract: str) -> None:
         raise DispatchFault(
             "standing contract is not the final prompt section; append "
             "briefs/boilerplate.md verbatim after task-specific text"
+        )
+
+    inbox_lines = [
+        line for line in prompt[:occurrence].splitlines()
+        if line.startswith("Coordinator inbox")
+    ]
+    expected = f"{COORDINATOR_INBOX_PREFIX}{coordinator_inbox}"
+    if inbox_lines != [expected]:
+        raise DispatchFault(
+            "task-specific head must contain exactly this unambiguous coordinator "
+            f"inbox instruction: {expected}"
         )
 
 
@@ -292,9 +307,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         prompt = _read(args.prompt, "prompt")
         contract = _read(CONTRACT_PATH, "standing contract")
-        validate_prompt(prompt, contract)
+        briefs_dir = _briefs_dir()
+        coordinator_inbox = briefs_dir.parent.parent / "inbox.md"
+        validate_prompt(prompt, contract, coordinator_inbox)
         try:
-            persist_prompt(prompt)
+            persist_prompt(prompt, briefs_dir)
         except DispatchFault as exc:
             raise DispatchFault(f"could not persist validated brief: {exc}") from exc
     except DispatchFault as exc:

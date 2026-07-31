@@ -60,11 +60,17 @@ def _run(cli: Path, prompt: Path | None = None, *runner: str) -> subprocess.Comp
     )
 
 
-def _healthy_prompt(tmp_path: Path, task: int = 900, lane: str = "cx-test") -> Path:
+def _healthy_prompt(
+        tmp_path: Path, coordinator_root: Path, task: int = 900,
+        lane: str = "cx-test") -> Path:
     prompt = tmp_path / f"prompt-{lane}.txt"
     prompt.write_text(
         f"# Brief — #{task}: task-specific lane head\n\n"
-        f"Branch: {lane}\n\n" + CONTRACT,
+        f"Worktree: {coordinator_root}/.worktrees/{lane}\n"
+        f"Branch: {lane}\n"
+        "Coordinator inbox — ABSOLUTE path, append your completion summary "
+        f"here when you finish: {coordinator_root}/.dreamwork/inbox.md\n\n"
+        + CONTRACT,
         encoding="utf-8",
     )
     return prompt
@@ -72,7 +78,7 @@ def _healthy_prompt(tmp_path: Path, task: int = 900, lane: str = "cx-test") -> P
 
 def test_healthy_dispatch_is_silent_and_passes_prompt_as_one_argument(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
-    prompt = _healthy_prompt(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
     capture = tmp_path / "capture.py"
     capture.write_text(
         "import pathlib, sys\n"
@@ -92,9 +98,44 @@ def test_healthy_dispatch_is_silent_and_passes_prompt_as_one_argument(tmp_path):
     assert persisted.with_suffix(".sha256").is_file()
 
 
+def test_dispatch_refuses_the_ambiguous_hand_off_wording(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    prompt.write_text(
+        prompt.read_text(encoding="utf-8").replace(
+            "append your completion summary here when you finish",
+            "append your hand-off line here when you finish",
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 2
+    assert "exactly this unambiguous coordinator inbox instruction" in result.stderr
+    assert not (root / ".dreamwork" / "docs" / "briefs").exists()
+
+
+def test_dispatch_refuses_a_well_formed_but_fake_inbox(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    prompt.write_text(
+        prompt.read_text(encoding="utf-8").replace(
+            f"{root}/.dreamwork/inbox.md", "/tmp/stale/inbox.md"
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 2
+    assert str(root / ".dreamwork" / "inbox.md") in result.stderr
+    assert not (root / ".dreamwork" / "docs" / "briefs").exists()
+
+
 def test_linked_worktree_dispatch_persists_only_to_main_corpus(tmp_path):
     cli, main, lane = _linked_worktree_cli(tmp_path)
-    prompt = _healthy_prompt(tmp_path, task=903, lane="cx-linked")
+    prompt = _healthy_prompt(tmp_path, main, task=903, lane="cx-linked")
 
     result = _run(cli, prompt, "true")
 
@@ -111,8 +152,8 @@ def test_linked_worktree_dispatch_persists_only_to_main_corpus(tmp_path):
 
 
 def test_valid_pair_outside_corpus_does_not_count_as_verified(tmp_path):
-    cli, _, lane = _linked_worktree_cli(tmp_path)
-    prompt = _healthy_prompt(tmp_path, task=904, lane="cx-linked")
+    cli, main, lane = _linked_worktree_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, main, task=904, lane="cx-linked")
     content = prompt.read_text(encoding="utf-8")
     wrong_dir = lane / ".dreamwork" / "docs" / "briefs"
     wrong_dir.mkdir(parents=True)
@@ -131,7 +172,7 @@ def test_valid_pair_outside_corpus_does_not_count_as_verified(tmp_path):
 
 def test_corpus_resolution_failure_is_distinct_from_persistence_failure(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
-    prompt = _healthy_prompt(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
     (root / ".git").rename(root / "not-git")
 
     result = _run(cli, prompt, "true")
@@ -143,7 +184,7 @@ def test_corpus_resolution_failure_is_distinct_from_persistence_failure(tmp_path
 
 def test_relative_git_common_dir_is_rejected(tmp_path, monkeypatch):
     cli, _ = _sandbox_cli(tmp_path)
-    prompt = _healthy_prompt(tmp_path)
+    prompt = _healthy_prompt(tmp_path, tmp_path / "repo")
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
     fake_git = fake_bin / "git"
@@ -159,8 +200,8 @@ def test_relative_git_common_dir_is_rejected(tmp_path, monkeypatch):
 
 def test_same_task_dispatches_to_distinct_lanes_do_not_collide(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
-    first = _healthy_prompt(tmp_path, task=901, lane="cx-one")
-    second = _healthy_prompt(tmp_path, task=901, lane="cx-two")
+    first = _healthy_prompt(tmp_path, root, task=901, lane="cx-one")
+    second = _healthy_prompt(tmp_path, root, task=901, lane="cx-two")
 
     assert _run(cli, first, "true").returncode == 0
     assert _run(cli, second, "true").returncode == 0
@@ -172,7 +213,7 @@ def test_same_task_dispatches_to_distinct_lanes_do_not_collide(tmp_path):
 
 def test_persistence_failure_refuses_and_names_what_was_not_persisted(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
-    prompt = _healthy_prompt(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
     briefs = root / ".dreamwork" / "docs" / "briefs"
     briefs.parent.mkdir(parents=True)
     briefs.write_text("not a directory", encoding="utf-8")
@@ -187,7 +228,12 @@ def test_persistence_failure_refuses_and_names_what_was_not_persisted(tmp_path):
 def test_unnameable_prompt_refuses_before_runner_exec(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
     prompt = tmp_path / "prompt-without-lane.txt"
-    prompt.write_text("# Brief — #902: no branch identity\n\n" + CONTRACT, encoding="utf-8")
+    prompt.write_text(
+        "# Brief — #902: no branch identity\n\n"
+        "Coordinator inbox — ABSOLUTE path, append your completion summary "
+        f"here when you finish: {root}/.dreamwork/inbox.md\n\n" + CONTRACT,
+        encoding="utf-8",
+    )
 
     result = _run(cli, prompt, "true")
 
@@ -198,7 +244,7 @@ def test_unnameable_prompt_refuses_before_runner_exec(tmp_path):
 
 def test_verify_pending_rejects_changed_artifact(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
-    prompt = _healthy_prompt(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
     assert _run(cli, prompt, "true").returncode == 0
     artifact = root / ".dreamwork" / "docs" / "briefs" / "900-cx-test.md"
     artifact.write_text("wrong artifact\n", encoding="utf-8")
@@ -211,7 +257,7 @@ def test_verify_pending_rejects_changed_artifact(tmp_path):
 
 def test_verify_pending_rejects_absent_artifact(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
-    prompt = _healthy_prompt(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
     assert _run(cli, prompt, "true").returncode == 0
     artifact = root / ".dreamwork" / "docs" / "briefs" / "900-cx-test.md"
     artifact.unlink()
@@ -297,7 +343,7 @@ def test_unreadable_and_empty_are_distinct_from_invalid(tmp_path):
 
 def test_no_runner_is_a_distinct_usage_fault(tmp_path):
     cli, _ = _sandbox_cli(tmp_path)
-    prompt = _healthy_prompt(tmp_path)
+    prompt = _healthy_prompt(tmp_path, tmp_path / "repo")
 
     result = _run(cli, prompt)
 

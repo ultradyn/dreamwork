@@ -3953,6 +3953,10 @@ def resolve_handoff_obligation_cutoff(root: Path) -> str | None:
 def brief_add_commit(root: Path, rel_path: str) -> str | None:
     """The commit that first added `rel_path`, or None if untracked / never committed."""
     try:
+        subprocess.check_output(
+            ["git", "-C", str(root), "ls-files", "--error-unmatch", "--", rel_path],
+            stderr=subprocess.DEVNULL, text=True, timeout=20,
+        )
         out = subprocess.check_output(
             ["git", "-C", str(root), "log", "--diff-filter=A", "-1",
              "--format=%H", "--", rel_path],
@@ -4257,8 +4261,9 @@ def check_brief_worktree_abs_inbox(dw: Path, rep: Report) -> None:
     its own copy; the coordinator never reads it. The obligation lives in
     SKILL.md; this check makes the brief carry it once the rule has landed.
 
-    Only briefs whose body contains ``.worktrees/`` are examined. Untracked
-    briefs are skipped (mid-write). Cutoff is content-resolved from
+    Only briefs whose body contains ``.worktrees/`` are examined. Briefs not
+    tracked in the current index are skipped (mid-write or reverted), even if
+    the path was added in older history. Cutoff is content-resolved from
     WORKTREE_ABS_INBOX_PHRASE — a hollow no-cutoff is an ERROR, not a silent
     pass. Absolute = matches ABS_INBOX_PATH_RE (leading ``/`` then a basename
     ending in ``inbox.md``, so the real ``coord-inbox.md`` /
