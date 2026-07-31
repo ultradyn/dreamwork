@@ -340,7 +340,7 @@ def _skip_shape(subject):
     return "non-id"
 
 
-def sweep(text, commits):
+def sweep(text, commits, cites=None):
     """Correlate id-bearing subjects against the OPEN ids; subtract cited shas.
 
     `commits` is an iterable of (sha, subject) pairs, newest first. Returns
@@ -350,6 +350,16 @@ def sweep(text, commits):
     Merge/Fold and bare-#N are lower (#707, #590). `n_examined` counts EVERY
     commit looked at, matching subjects or not — a sweep that found nothing
     must be distinguishable from one that did not run.
+
+    `cites(sha, body) -> bool` decides whether a commit named by `sha` is
+    already acknowledged in an entry's `body`. The default is the substring
+    check #404 codified ("cite the sha, the row disappears"); callers that
+    resolve shas at different widths pass a richer predicate (#724: git's
+    `%h` abbreviates at a width that GROWS with the repo, so a 7-char
+    citation correct when written rots to 8 and the substring stops matching).
+    The pure function stays pure — the resolver is built OUTSIDE and passed
+    in, so the four #404 pins keep binding the behaviour they were written
+    for whether `cites` is substring or resolution-backed.
     """
     open_ids, _ = watch.parse_ledger(text)
     bodies = {}
@@ -358,6 +368,7 @@ def sweep(text, commits):
             bodies[tid] = body
     found = {}
     n = 0
+    _cites = cites if cites is not None else (lambda sha, body: sha in body)
     for sha, subject in commits:
         n += 1
         m = SWEEP_SUBJECT.match(subject)
@@ -370,7 +381,7 @@ def sweep(text, commits):
             # membership check is against the former, the body map the latter.
             if str(tid) not in open_ids:
                 continue
-            if sha in bodies.get(tid, ""):
+            if _cites(sha, bodies.get(tid, "")):
                 continue  # a deliberate partial: it cites its commit (#323's rule)
             found.setdefault(tid, []).append((sha, subject))
     return n, sorted(found.items())
@@ -672,6 +683,79 @@ def _default_since(repo):
     return None
 
 
+# #724 — a citation and a commit sha name the SAME object at different widths.
+# git's `%h` abbreviates at a length that GROWS with the repo, so a 7-char
+# citation correct when written rots to 8 later; the substring check #404
+# codified misses, and the entry is re-flagged forever despite citing the
+# sha it is flagged for. Resolution (`git rev-parse`: 58e3040 IS 58e3040d to
+# git) is immune to that rot; width-matching re-breaks next year. Per-sha
+# subprocess is 20x the substring check over the whole history (457 ms vs 23),
+# so the resolver below resolves only the shas that FAIL substring — measured
+# at 79 comparisons over 2896 commits, of which a handful fail — batched in
+# one `git cat-file --batch-check` process (2-3 ms). `missing` lines and
+# ambiguity are not errors here: a sha that does not resolve simply does not
+# acknowledge the commit, which is the correct answer for a typo (#136).
+_CITED_SHA = re.compile(r"\b[0-9a-f]{7,40}\b")
+
+
+def _resolved_cites(commits, bodies):
+    """A `cites(sha, body)` predicate that resolves shas git cannot abbreviate.
+
+    Substring first (the common case — a citation and a commit sha at the same
+    width still match textually), then resolution for the residue: the commit
+    sha and every 7+ hex citation in the body are resolved to full 40-char
+    object ids through one ``git cat-file --batch-check`` call, and the pair
+    counts as cited when their resolved ids match. Returns the plain substring
+    check when git cannot answer (no repo, no failures to resolve), so the
+    four #404 pins on `sweep` keep binding in every environment.
+    """
+    # collect (commit_sha, body) pairs that fail substring — the only ones
+    # whose resolution could change the answer
+    residue = []
+    for sha, subject in commits:
+        m = SWEEP_SUBJECT.match(subject)
+        if not m:
+            continue
+        id_text = next(g for g in m.groups() if g)
+        for tid in (int(x) for x in SWEEP_ID.findall(id_text)):
+            body = bodies.get(tid, "")
+            if body and sha not in body:
+                residue.append((sha, body))
+    if not residue:
+        return lambda sha, body: sha in body
+    # one batched resolve: the residue commit shas + every cited sha in the
+    # bodies that produced a residue (the small set #724 measured at ~160).
+    to_resolve = {sha for sha, _ in residue}
+    for _, body in residue:
+        to_resolve.update(_CITED_SHA.findall(body))
+    out = subprocess.run(
+        ["git", "cat-file", "--batch-check"],
+        input="\n".join(sorted(to_resolve)) + "\n",
+        capture_output=True, text=True, timeout=20,
+    )
+    full = {}  # input sha (verbatim) -> 40-char object id it resolved to
+    if out.returncode == 0:
+        resolved = [ln.split() for ln in out.stdout.splitlines() if ln.strip()]
+        for short_in, res in zip(sorted(to_resolve), resolved):
+            # res is [full_sha, 'commit', size] or [sha, 'missing']
+            if len(res) >= 2 and res[1] == "commit":
+                full[short_in] = res[0]
+    # each body's set of resolved full shas. The body sweep passes is a
+    # different string object than the one _resolved_cites saw (sweep rebuilds
+    # its own bodies map), so the set must be derived from the resolved
+    # citations IN that body each call — not cached by object identity (#724).
+
+    def _cites(sha, body):
+        if sha in body:
+            return True  # same-width citation — the common case
+        cited = full.get(sha)
+        if cited is None:
+            return False  # the commit itself does not resolve here
+        return cited in {
+            full[s] for s in _CITED_SHA.findall(body) if s in full}
+    return _cites
+
+
 def sweep_text(text, commits, since, source):
     """The advisory report — BOTH halves of the correlation are accounted for.
 
@@ -705,7 +789,16 @@ def sweep_text(text, commits, since, source):
     measured at 15 ms against the live 1.2 MB store projection, for a command
     the tick runs once.
     """
-    n, findings = sweep(text, commits)
+    # #724: build the body map once (the pure function rebuilds its own — that
+    # one stays pure), pass a resolution-backed `cites` when git can resolve.
+    # The resolver resolves only the shas that FAIL substring (measured: a
+    # handful over 2896 commits), batched in one cat-file process (~3 ms).
+    bodies = {}
+    for ids, body in ledger_entries(open_section_text(text) or ""):
+        for tid in ids:
+            bodies[tid] = body
+    cites = _resolved_cites(commits, bodies)
+    n, findings = sweep(text, commits, cites=cites)
     open_ids, landed_ids = watch.parse_ledger(text)
     where = f"since {since[:12]}" if since else "across the whole history"
     # #682: examined≠understood (#671 one layer deeper). The header carries the
