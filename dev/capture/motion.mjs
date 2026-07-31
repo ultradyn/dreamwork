@@ -188,8 +188,53 @@ const TRACE = ms => `new Promise(res => {
 const seriesOf = (frames, k, f) =>
   frames.map(x => x.at[k] && x.at[k][f]).filter(v => v !== undefined);
 
+/* ── #616: drain the PREVIOUS gesture before tracing the next ─────────────
+   The typing-commit above starts its own departure on a tick whose phase
+   this guard does not control: its re-render can land anywhere in the next
+   couple of ~2s ticks, and the ghost it makes lives 1050ms past that —
+   700ms of transition, then ~350ms of settled corpse (op 0, +14px, x1.07)
+   before node.remove(). Measured 2026-07-31 (28 runs): that corpse sat
+   INSIDE the trace window in every failing run — the ghost series LEADS
+   with a finished gesture, so the old first-to-last deltas read 0 (top
+   137->137, scale 1.07->1.07) while the fade endpoint still passed. Wait
+   for the panel to show the typing commit AND for its corpse to be gone,
+   so the trace holds exactly one departure episode.
+
+   A NAMED check rather than a bare throw: 1 of 20 validation runs saw the
+   page fail to converge for 15s (a tick stall — a mode that fails the old
+   shape harder, as "no ghost at all"), and a TimeoutError through the exit
+   handler reads as "the guard threw", diagnosing nothing. On timeout this
+   records what the page actually showed and goes red by name. */
+const HEAD7 = execFileSync('git', ['-C', DIR, 'rev-parse', 'HEAD'])
+  .toString().trim().slice(0, 7);
+let drained = true;
+try {
+  await p.waitForFunction(`(() => {
+    const first = document.querySelector('.git .commit[data-sha]');
+    return !!first && first.dataset.sha.slice(0, 7) === ${JSON.stringify(HEAD7)}
+        && !document.querySelector('.qaghost.commit');
+  })()`, null, { timeout: 30000 });
+} catch (e) {
+  drained = false;
+  notes.push('drain timeout: ' + JSON.stringify(await p.evaluate(`({
+    head: document.querySelector('.git .commit[data-sha]')?.dataset.sha,
+    want: ${JSON.stringify(HEAD7)},
+    ghosts: document.querySelectorAll('.qaghost.commit').length })`)));
+}
+ok('the page converges on the typing commit before the trace (#616 drain)',
+   drained);
+
 let cycle = null;                      // reused by #174 below
 {
+  /* #442's load-independent snap detector, armed page-side BEFORE the
+     commit (and after the #616 drain, so a stale episode cannot supply
+     the event): transitionstart fires iff the browser registered the
+     ghost's transition, whatever the frame rate did. */
+  await p.evaluate(`void (window.__ghostTrans = [],
+    addEventListener('transitionstart', e => {
+      if (e.target.matches && e.target.matches('.qaghost.commit'))
+        window.__ghostTrans.push(e.propertyName);
+    }, true))`);
   const trace = p.evaluate(TRACE(4000));
   await sleep(80);
   commit('feat: the commit whose cycle is traced', 0);
@@ -237,14 +282,34 @@ let cycle = null;                      // reused by #174 below
       return m ? Number(m[1]) : 1;
     };
     const scales = ghostFrames.map(g => scaleOf(g[0].tf));
+    const tyOf = tf => {
+      const m = /matrix\(([^)]+)\)/.exec(tf);
+      return m ? Number(m[1].split(',')[5]) : 0;
+    };
+    const tys = ghostFrames.map(g => tyOf(g[0].tf));
     notes.push(`departure: top ${tops[0]}->${tops[tops.length - 1]} ` +
                `op ${ops[0]}->${ops[ops.length - 1]} ` +
-               `scale ${scales[0]}->${scales[scales.length - 1]}`);
-    ok('the departing row falls rather than rising',
-       tops[tops.length - 1] - tops[0] >= 4);
+               `scale ${scales[0]}->${scales[scales.length - 1]} ` +
+               `ty ${tys[0]}->${tys[tys.length - 1]}`);
+    /* #616: the SIGN is read from the ghost's computed transform, maxed
+       over every sampled frame, never from a first-to-last delta — a
+       delta reads 0 whenever the sampler's first ghost frame lands late
+       in (or after) the 700ms compositor transition (#442's starvation
+       mode, and #616's corpse-led series). The gesture is monotonic
+       (ty 0->14, scale 1->1.07), so ANY frame carries the sign, and the
+       #174 regression (the generic rising departure: translateY(-10px),
+       scale 1) stays red at every frame rate — its ty never exceeds 0
+       and its scale never leaves 1. Floors mirror the old deltas. */
+    ok('the departing row falls rather than rising', Math.max(...tys) >= 4);
     ok('...growing as it goes, the way a view dissolves',
-       scales[scales.length - 1] - scales[0] >= 0.02);
+       Math.max(...scales) >= 1.02);
     ok('...and fading out', ops[ops.length - 1] < 20);
+    /* ...and the travel is a TRANSITION, not a snap to the settled pose —
+       the half the max-over-frames shape above no longer carries. The
+       browser is asked whether it animated (#442), not how many frames
+       the sampler caught. */
+    ok('...through a CSS transition rather than a snap',
+       (await p.evaluate('window.__ghostTrans')).includes('transform'));
   }
   // the arrival is the same gesture at the other end: it comes DOWN into the
   // row it now owns, growing, rather than rising up into it.
