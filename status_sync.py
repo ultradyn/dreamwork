@@ -303,6 +303,74 @@ def _ccc_model(pid: int) -> str | None:
     return None
 
 
+# #729/#440: known lane runners — the positive-identity test for the phantom
+# split, copying reaper.parse_cmdline's SHAPE (a basename check, not a cwd
+# prefix match). A process whose argv[0] is one of these is a lane runner; a
+# head/grep/tail/bash sharing the prefix is NOT, however deleted its cwd. The
+# pairing of "known runner" with "deleted worktree cwd" is what makes the
+# reaper safe where it has kill authority, and it is what separates a genuine
+# leftover from shell noise in the phantom report.
+_LANE_RUNNERS = ("ccc", "claude", "grok", "codex")
+
+
+def _is_lane_runner(pid: int) -> bool:
+    """Whether ``pid``'s argv[0] basename is a known lane runner (#440, #671).
+
+    A ``head -3``, a ``grep``, a ``tail -F``, a handshake ``bash`` — these
+    share a lane's deleted cwd but are NOT lane processes. Copying
+    reaper.parse_cmdline's shape: a basename check on the NUL-split argv[0],
+    never a substring of the raw cmdline (the #716 trap: /proc cmdline is
+    NUL-separated). This is the positive test the old "ccc process mid-exit"
+    label CLAIMED but never performed (#671: a label asserting a check that
+    was not done).
+    """
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return False
+    if not raw:
+        return False
+    first = raw.split(b"\x00", 1)[0]
+    return os.path.basename(first.decode("utf-8", "replace")) in _LANE_RUNNERS
+
+
+def _ancestor_pids() -> set[int]:
+    """Pids from ``os.getpid()`` up to init via ``/proc/<pid>/stat`` field 4.
+
+    #729: a process that is an ancestor of the thing doing the counting is by
+    construction not a lane. Exact, not heuristic, no allowlist — the
+    coordinator (claude) started in a worktree that was later removed, so its
+    cwd really IS deleted and the reading is correct; what was wrong was the
+    CLASSIFICATION. Walking the ppid chain identifies it as self, not a
+    phantom. Field 2 (comm) may contain spaces and parens, so we cut between
+    the first '(' and the last ')' like reaper.parse_proc_stat before indexing
+    field 4 (ppid) as ``rest[1]`` (fields 3.. follow comm).
+    """
+    ancestors: set[int] = set()
+    pid = os.getpid()
+    seen: set[int] = set()           # cycle guard against a corrupt stat file
+    while pid > 1 and pid not in seen:
+        ancestors.add(pid)
+        seen.add(pid)
+        try:
+            with open("/proc/%d/stat" % pid) as f:
+                text = f.read()
+        except OSError:
+            break
+        rparen = text.rfind(")")
+        if rparen < 0:
+            break
+        rest = text[rparen + 2:].split()
+        if len(rest) < 2:
+            break
+        try:
+            pid = int(rest[1])        # field 4 (ppid) == index 1 after comm
+        except ValueError:
+            break
+    return ancestors
+
+
 def discover_lanes(target: Path):
     """Live lanes the cwd probe can see, as ``(found, phantoms, agent_tool)``.
 
@@ -756,17 +824,46 @@ def main(argv: list[str] | None = None) -> int:
                  [(a["lane"], a["pid"]) for a in agent_added]),
               file=sys.stderr)
     if phantoms:
-        # #719: a ccc lane whose worktree is gone is a phantom — the process
-        # is exiting, not working. Reported (not silently dropped) so the reap
-        # loop can tell a clean exit drain from a hung-after-removal process:
-        # silently skipping would make "finished" and "worktree vanished
-        # mid-run" render identically (#136). #702's rule, inherited by #716's
-        # discovery, is that an entry the probe cannot classify must be
-        # reported. The lane name carries " (deleted)" as readlink appended it.
-        print("status_sync: excluded %d phantom lane(s) whose worktree is gone "
-              "(ccc process mid-exit, cwd no longer a directory; reported not "
-              "dropped — #719/#702): %s"
-              % (len(phantoms), phantoms), file=sys.stderr)
+        # #729: the old single bucket rendered three DIFFERENT facts as one
+        # (#136): the coordinator's own process (self), a genuine leftover
+        # lane runner (e.g. an abandoned ccc/claude/grok/codex), and a shell
+        # fragment (head/grep/tail/bash) that merely once held the cwd. All
+        # three were labelled "ccc process mid-exit" — a specificity the old
+        # code did not have (#671: it matched any cwd under .worktrees/, never
+        # read argv). Splitting the bucket and LABELLING the cases is the fix;
+        # #702 governs: an entry the tool cannot classify must be REPORTED,
+        # never silently dropped. Ancestry (exact, /proc ppid walk) separates
+        # self; the positive-identity test (copies reaper.parse_cmdline's shape,
+        # #440) separates a runner from noise.
+        ancestors = _ancestor_pids()
+        self_ph, runner_ph, other_ph = [], [], []
+        for lane, pid in phantoms:
+            if pid in ancestors:
+                self_ph.append((lane, pid))
+            elif _is_lane_runner(pid):
+                runner_ph.append((lane, pid))
+            else:
+                other_ph.append((lane, pid))
+        if self_ph:
+            print("status_sync: %d phantom entr%s the coordinator's own "
+                  "ancestry (deleted cwd under .worktrees/, but this process "
+                  "is an ancestor of status_sync; not a lane, reported not "
+                  "dropped — #729/#702): %s"
+                  % (len(self_ph), "y is" if len(self_ph) == 1 else "ies are",
+                     self_ph), file=sys.stderr)
+        if runner_ph:
+            print("status_sync: excluded %d genuine leftover lane runner(s) "
+                  "whose worktree is gone (known runner ccc/claude/grok/codex "
+                  "with deleted cwd; reported not dropped — #719/#702): %s"
+                  % (len(runner_ph), runner_ph), file=sys.stderr)
+        if other_ph:
+            print("status_sync: %d phantom entr%s a process with a deleted "
+                  "worktree cwd that is neither self nor a known runner "
+                  "(e.g. head/grep/tail/bash from a lane's pipeline; cwd under "
+                  ".worktrees/ matched the old prefix filter — #671/#729; "
+                  "reported not dropped — #702): %s"
+                  % (len(other_ph), "y is" if len(other_ph) == 1 else "ies are",
+                     other_ph), file=sys.stderr)
 
     # Normalise task ids on write (#402b): plain → int, sub-id → str. This
     # happens BEFORE the live set is derived so current_task_ids and the
