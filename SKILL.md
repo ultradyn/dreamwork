@@ -268,6 +268,16 @@ receipt ids, not content; a blind consume is a silent loss with a green
 exit code, the exact failure batched mode exists to prevent. The
 `--through` bound is the same rule one level tighter: even with a prior
 read, an unbounded consume silently claims events the read never listed.
+**Never pipe `pending` through `head`/`tail`** (#658): the coordinator did
+exactly that, saw ordinals 97/98/99, and consumed `--through 96` past a
+receipt the `tail` had scrolled off — a read whose output was truncated is
+not a read. `pending` now writes a read-coverage marker and `consume
+--through N` refuses unless that marker proves N was listed (three named
+refusals: no read on record, marker from a different journal, N beyond the
+read's head — the last names the uncovered ordinals). That makes the
+truncation LOUD, but it is not a licence to truncate: the marker proves
+every line was *printed*, not that every line was *seen*, so `pending |
+tail` still defeats it — the discipline and the refusal are both needed.
 
 ## Selecting the next task
 
