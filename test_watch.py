@@ -4860,6 +4860,93 @@ class TestCollector(unittest.TestCase):
             watch.questions_health(self.SKELETON + "\n- not a bold title\n"),
             "unreadable")
 
+    def test_unreadable_panel_names_the_path_as_leaf_text(self):
+        # #690 / #136: the unreadable panel must NAME the path in text a
+        # reader can see. health.mjs asserts this on the browser's leaf-text
+        # collection (querySelectorAll('#view *').filter(!children.length) →
+        # textContent); this is the pytest half that binds the same property
+        # at the render layer, because pytest cannot run the browser probe.
+        #
+        # The defect shape: mdInline turned the backticked path into an
+        # .mdfile span whose .wrapany head + bare-text tail split the path
+        # across two leaf nodes, so the contiguous ".dreamwork/questions.md"
+        # never reached any single leaf. The fix is to leave the path (and
+        # `## Open`) unbackticked in the body, so .qhbody renders as ONE leaf
+        # whose textContent carries the whole path.
+        #
+        # Production line whose reversion reds this: the unreadable body in
+        # QHEALTH (client/views.js) must NOT backtick `.dreamwork/questions.md`
+        # or `## Open` — re-backticking either wraps the path in a nested
+        # element and the leaf-text assertion below fails.
+        import subprocess, shutil
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — #690 leaf-text gate did NOT run")
+        page = watch._get_page()
+        # Extract the real render pipeline: const esc= .. const mdInline=,
+        # the QHEALTH object, and qHealth(). Whole-file views.js eval would
+        # trip top-level addEventListener, so extract the needed slice.
+        md_start = page.index("const esc =")
+        md_end = page.index("const mdB =", md_start)
+        md_block = page[md_start:md_end]
+        qh_start = page.index("const QHEALTH =")
+        depth, qh_end = 0, qh_start
+        for i in range(page.index("{", qh_start), len(page)):
+            if page[i] == "{":
+                depth += 1
+            elif page[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    qh_end = i + 1
+                    break
+        qh_obj = page[qh_start:qh_end] + ";"
+        qh_fn = _extract_js_fn(page, "function qHealth(d)")
+        # `data.linkable_paths` is what the scratch target's unreadable file
+        # resolves to — the path is linkable, which is the condition that
+        # triggers mdFileUnit's split. Asserting on the LINKABLE case is the
+        # discriminating one: an unbackticked body ignores linkable_paths.
+        script = (
+            "globalThis.window = { DEV: false };\n"
+            "globalThis.document = { createElement: () => {\n"
+            "  const o = { _t: '', set textContent(v) { this._t = v; },\n"
+            "    get innerHTML() { return String(this._t)\n"
+            "      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); } };\n"
+            "  return o; } };\n"
+            "globalThis.data = { linkable_paths: ['.dreamwork/questions.md'] };\n"
+            + md_block + qh_obj + qh_fn + "\n"
+            "const html = qHealth({ questions_health: 'unreadable',\n"
+            "  files: { 'questions.md': '# Q\\n\\n## Open\\n\\n## x\\nctx\\n' } });\n"
+            "process.stdout.write(html);\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        if proc.returncode != 0:
+            self.fail("node eval failed: " + proc.stderr)
+        h = proc.stdout
+        # PRECONDITION (a green without these proves nothing): a qhbody
+        # actually rendered, and the path string is somewhere in the markup.
+        self.assertIn('class="qhbody"', h, "qhbody did not render")
+        self.assertIn(".dreamwork/questions.md", h,
+                      "path absent from markup entirely — body text changed")
+        # THE ASSERTION: extract .qhbody's inner content and require it to be
+        # a LEAF (no element children) carrying the contiguous path. The
+        # browser guard collects only leaf elements' textContent, so a .qhbody
+        # with child elements contributes nothing and the path is split across
+        # its children's leaves — the #690 defect. "no '<' in the inner
+        # content" mirrors !children.length exactly (text nodes are not
+        # elements). An <a href="...path...">link</a> here would correctly
+        # FAIL this (a child element means the path is in markup, not leaf
+        # text) — that is the brief's Direction-2 false-green, closed.
+        i = h.index('class="qhbody"')
+        body_open = h.index(">", i) + 1
+        body_close = h.index("</div>", body_open)
+        inner = h[body_open:body_close]
+        self.assertNotIn("<", inner,
+                         "qhbody has child elements — the path is split across "
+                         "leaves and never reaches the guard's leaf-text whole")
+        self.assertIn(".dreamwork/questions.md", inner,
+                      "contiguous path missing from the qhbody leaf text")
+
     def test_collect_reports_questions_health(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
