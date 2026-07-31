@@ -7907,7 +7907,8 @@ class TestLedgerSkipsAreReported:
 
     EXPECTED = ["check_task_origins", "check_ledger_sections",
                 "check_landed_still_open", "check_self_completed_open",
-                "check_human_blocker", "check_landed_asks"]
+                "check_human_blocker", "check_landed_asks",
+                "check_title_blocked_claim"]
 
     def test_a_worktree_names_every_ledger_check_that_examined_nothing(self, tmp_path):
         """The defect: six checks went silent and the report said nothing."""
