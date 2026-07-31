@@ -23,10 +23,10 @@
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
     "dev/build/src/registry.js": "be11d2691bd0fb31c4e8df658bb79cf289a3ad1164319a5a1aa86174b2c9e825",
     "dev/build/src/research.js": "d792c7bd01be52922baa765afee4e5f77d9e0d35feaff0679a9f803ce1b63f73",
-    "dev/build/wrapper-exports.js": "33c49697a82b7f2a37ff2d6a97eb0b3a9af78a9f681c0fda5e7908cef16f883a"
+    "dev/build/wrapper-exports.js": "9ea5838ef66144742cb10ec8d35cea04d92ca35ea2e11060c26510cd05b6b53b"
   },
   "outputs": {
-    "client/dist/ds/index.js": "c2dc7cf54d2be972b7c44a2bd9808bdcea81e474caeade58955779e0abb90361",
+    "client/dist/ds/index.js": "f7dc2b1681d077f32cda87fd81729a24734c16b62c17bdc49d40e77c83deb4c8",
     "client/dist/ds/styles.css": "2994a6e271ec9614385089a52ba6fb1c45fe3bf0e73d717f91565140f376cd39",
     "client/dist/native.js": "e1211897fd595304a88af9107df17ec2d3b4031e371189be81e091d845830be5"
   },
