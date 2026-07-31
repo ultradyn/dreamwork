@@ -73,6 +73,11 @@ that is a legitimate outcome, not a failure.
   backups of `watch.py`, `router.js` and `test_watch.py`. Two lanes snapshotting the same file
   silently clobber each other's restore point, which is the exact failure snapshots exist to
   prevent. Say in your report where your snapshot went.
+  **Snapshot immediately before EACH injection, and re-snapshot after any re-apply.** A `#704`
+  lane snapshotted two files together at one moment, edited the second file afterwards, then
+  restored from that snapshot and silently lost the later edits — it had to re-apply them by
+  hand. A snapshot taken part-way through a multi-file edit is a restore point for a tree that
+  never existed. The tool was right; the sequencing was wrong.
 - *Direction 2*: construct an input where the thing you are checking is **genuinely broken
   but your check still passes**. Report it even if you cannot close it. If none can be
   constructed, say why not. One-directional red-proofing is exactly what let three
@@ -105,6 +110,14 @@ new files first so `--only` can see them. **Never merge, never push** — the co
 both. Never use bare `git stash`/`git stash pop`: the stash stack is shared across worktrees
 and you would pop another lane's work.
 
+**Begin every commit subject with the task id — `#NNN: <subject>`.** This is how the
+coordinator learns your work landed: `dev/ledger.py sweep` reads commit *subjects*, and `#404`
+makes that the primary landing-discovery route on the grounds that the id is there "by
+construction". Nothing constructs it — it was never written down as an instruction until
+`#705`, and a subject without an id leaves the work sitting done-but-open until someone
+notices by hand. Knowing the consequence matters more than the format: if you are doing
+something the convention did not anticipate, you now know what the id is *for*.
+
 **COMMIT INCREMENTALLY. You can be killed without warning, and uncommitted work is lost.**
 This is not the `#686` rule ("commit before you stop") — it is stronger, because stopping is
 not always your decision. Four lanes were terminated mid-flight on 2026-07-31 with no error in
@@ -126,6 +139,17 @@ Limit builds and tests to **2 threads**.
 **Do NOT use `attn`.** You report to the coordinator; the coordinator decides whether to ping
 the human. This is absolute.
 
+**Run a targeted subset, not the whole tree — the coordinator owns the single full merged-tree
+sweep.** `just pytest -q <the test files your change touches>` is your verification; the merge
+gate already re-proves the whole tree once, so N lanes each re-proving it is N−1 wasted suites
+under exactly the load this loop has measured (`#666`). Name the files you ran. **This is
+resource-aware, not just wall-clock-aware**: the scarce resource is resident memory, not CPU —
+measured, the fleet was 8.5% of CPU on a ~70%-idle machine while swap sat at 52 GB of 60. So a
+non-UI lane (docs, tooling, ledger work) can run concurrently with a guard sweep; a
+browser-binding lane cannot, because one Chromium costs more than several pytest lanes
+together. `just pytest` now prints how many other suites and browser processes are live, so
+you can see which situation you are in before adding your own load.
+
 **Verification gate.** `just test` runs pytest + `lint.py` + browser guards. **Do not run the
 full `just guards`** — several lanes are live, and a *multi-server* browser guard under high
 load returns a WRONG answer rather than a slow one (it dies before judging: `"the guard threw
@@ -139,6 +163,13 @@ quote the load figure each one prints.
 So load in the low-to-mid 20s is fine; do not refuse to run on that. A `#690` lane declined
 at 21-25 against an over-cautious threshold and handed back a diagnosis with its headline
 evidence missing, which the coordinator then had to produce at the gate.
+
+**But know what that number is.** Linux load average counts uninterruptible-sleep processes,
+so it conflates *blocked on swap-in* with *running* — the coordinator quoted it three times as
+evidence of CPU contention when the machine was ~70% CPU idle and the real constraint was
+memory (`#666`, third note). The thresholds above are still the right empirical guide, because
+they were measured against the same conflated figure. Just do not reason from load to "the CPU
+is busy": if you need the cause rather than the reading, decompose it before attributing.
 
 **A single-process static probe is explicitly authorised at any load** — one Chromium, no
 motion, no server fleet. It is load-invariant and is NOT what the paragraph above restricts.
