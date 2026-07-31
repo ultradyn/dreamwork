@@ -232,6 +232,15 @@ difference off to satisfy an impossible brief.
 Likewise, judge targeted pytest by its own before/after collected count; a whole-repo total quoted
 in a moving brief head is not that run's bar.
 
+**Filesystem measurements need a measured substrate and an exact positive control.** Use
+`M="$(dev/lane_scratch.py measure)"` as the one lane-private location; ask the kernel for its
+filesystem type (`stat -f` / `findmnt`), never infer it from `/tmp`, the repo, or any path prefix.
+Before believing a negative mtime result, set up a subject under `$M` and run
+`dev/lane_scratch.py require-mtime-change "$M/<subject>" -- <the positive-control command>` with
+the **same mmap/write mechanism** as the real probe. Success is silent; `UNSUPPORTED` means the
+control ran without advancing mtime, and `UNDETERMINED` means it did not judge. A `touch` control
+does not validate an mmap probe, and non-mtime phenomena need their own positive control.
+
 **Verification gate.** `just test` runs pytest + `lint.py` + browser guards. **Do not run the
 full `just guards`** — several lanes are live, and a *multi-server* browser guard under high
 load returns a WRONG answer rather than a slow one (it dies before judging: `"the guard threw

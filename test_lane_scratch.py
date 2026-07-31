@@ -14,7 +14,10 @@ a shared directory, which is the hazard this file exists to close.
 """
 import importlib.machinery
 import importlib.util
+import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -214,6 +217,71 @@ class TestCli:
             ["python3", str(CLI_PATH), "--no-create", "--cwd", str(repo),
              str(tmp_path.name)], text=True).strip()
         assert out
+
+    def test_measure_names_the_one_filesystem_measurement_location(self, repo):
+        out = subprocess.check_output(
+            ["python3", str(CLI_PATH), "measure", "--cwd", str(repo)],
+            text=True,
+        ).strip()
+        assert Path(out).is_dir()
+        assert out.endswith("/master/measure")
+
+
+class TestMtimePositiveControl:
+    """A negative is believable only after the substrate shows the mode."""
+
+    @staticmethod
+    def _run(path: Path, *command: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["python3", str(CLI_PATH), "require-mtime-change", str(path),
+             "--", *command],
+            capture_output=True,
+            text=True,
+        )
+
+    def test_healthy_control_is_silent(self, tmp_path):
+        probe = tmp_path / "probe"
+        probe.write_bytes(b"x")
+        old = time.time_ns() - 60_000_000_000
+        os.utime(probe, ns=(old, old))
+        result = self._run(
+            probe,
+            sys.executable,
+            "-c",
+            "import os,sys; os.utime(sys.argv[1], None)",
+            str(probe),
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == ""
+        assert result.stderr == ""
+
+    def test_control_that_exhibits_nothing_is_unsupported_not_ok(self, tmp_path):
+        probe = tmp_path / "probe"
+        probe.write_bytes(b"x")
+        result = self._run(probe, sys.executable, "-c", "pass")
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "UNSUPPORTED" in result.stderr
+        assert "positive control ran but mtime did not advance" in result.stderr
+        assert "UNDETERMINED" not in result.stderr
+
+    def test_missing_subject_is_undetermined_not_ok(self, tmp_path):
+        result = self._run(tmp_path / "missing", sys.executable, "-c", "pass")
+        assert result.returncode == 2
+        assert result.stdout == ""
+        assert "UNDETERMINED" in result.stderr
+        assert "before the positive control" in result.stderr
+        assert "UNSUPPORTED" not in result.stderr
+
+    def test_failed_control_command_is_undetermined_not_unsupported(self, tmp_path):
+        probe = tmp_path / "probe"
+        probe.write_bytes(b"x")
+        result = self._run(probe, sys.executable, "-c", "raise SystemExit(7)")
+        assert result.returncode == 2
+        assert result.stdout == ""
+        assert "UNDETERMINED" in result.stderr
+        assert "exited 7" in result.stderr
+        assert "UNSUPPORTED" not in result.stderr
 
 
 class TestThisRepoIsSeparated:
