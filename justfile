@@ -10,6 +10,10 @@ test: pytest lint guards
 
 # the Python half — asserts on generated source, not on what renders
 pytest:
+    # #666 — concurrent-test advisory before the suite. Advisory only: it gates
+    # nothing, exits 0, and the leading `-` means a crash in the helper never
+    # blocks a lane's verification (the advisory must never become a gate).
+    -python3 dev/concurrent_tests.py
     python3 -m pytest -q
 
 # this target's own `.dreamwork/` files, read through the REAL parsers — so a
