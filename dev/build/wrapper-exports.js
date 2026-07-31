@@ -7,15 +7,39 @@
 // appended into the same lexical scope, so it can name `qaCard`, `agePair`,
 // `label` &c. directly.
 //
-// #653 (P1 of the #630 transition) exports NOTHING on purpose. The build step
-// lands before anything it could export exists — the wrappers are P5's work
-// (#630 plan §2a). When they arrive, each is a CALL into a builder above:
-//
-//     export const QaCard = ({ q, k, ctx }) =>
-//       ambient(ctx, () => html(qaCard(q, k)));
-//
-// and never a second statement of the markup. That is enforced rather than
+// #630 P5 stage 2 exports ONE wrapper before the rest: QaCard is the
+// cheapest-early-signal probe required by the plan's §6-R5. It is a CALL into
+// the builder above, never a second statement of the markup. That is enforced rather than
 // remembered: `test_client_dist.py` refuses any HTML tag literal in this file,
 // and proves its own detector by first finding tag literals in
 // client/components.js — so it cannot pass by being broken.
-export {};
+import React from 'react';
+
+const HOST = 'div';
+
+/* QaCard's builder reads the page's mutable `data` and `view` bindings while
+ * formatting links. Give a design-tool preview a bounded temporary context,
+ * then restore the surrounding bundle even when the builder throws. `rmr`
+ * and `submitCard` exist in the concatenated client sources too, but qaCard
+ * does not read either while rendering; its onclick string merely names the
+ * latter for a real dashboard to resolve after mount. */
+const ambient = (ctx, render) => {
+  const previousData = data;
+  const previousView = view;
+  try {
+    data = (ctx && ctx.data) || {};
+    view = (ctx && ctx.view) || { name: null, param: null, q: null };
+    return render();
+  } finally {
+    data = previousData;
+    view = previousView;
+  }
+};
+
+export const QaCard = ({ q, k, ctx = {} }) => React.createElement(HOST, {
+  'data-dw-delegate': 'qaCard',
+  dangerouslySetInnerHTML: { __html: ambient(ctx, () => qaCard(q, k)) },
+});
+
+QaCard.displayName = 'QaCard';
+QaCard.dwBuilder = 'qaCard';

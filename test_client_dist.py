@@ -60,6 +60,8 @@ def _clone(tmp_path):
     wrap = dst / client_dist.WRAPPER_EXPORTS_REL
     wrap.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(ROOT / client_dist.WRAPPER_EXPORTS_REL, wrap)
+    shutil.copytree(ROOT / client_dist.DS_SOURCE_DIR,
+                    dst / client_dist.DS_SOURCE_DIR)
     # #630 P2: the native runtime's sources are build inputs too, so a clone
     # without them is not a faithful copy of the build's subject — every hash
     # comparison below would be run against a tree missing four of thirteen
@@ -257,6 +259,29 @@ def test_wrapper_exports_states_no_markup_of_its_own():
             "%s states markup of its own (%r). A wrapper must CALL the "
             "builder — a second statement of the same markup is the one "
             "thing that can diverge from it" % (rel, sorted(set(hits))))
+
+
+def test_qacard_is_the_only_design_wrapper_and_its_companion_files_ship():
+    wrapper = (ROOT / client_dist.WRAPPER_EXPORTS_REL).read_text(
+        encoding="utf-8")
+    assert wrapper.count("export const QaCard") == 1, (
+        "QaCard is not exported exactly once")
+    assert "export const " not in wrapper.replace("export const QaCard", ""), (
+        "P5 stage 2 must stop after QaCard's early-signal wrapper")
+
+    for rel in client_dist.DS_SOURCE_RELS:
+        source = ROOT / rel
+        shipped = ROOT / client_dist.DS_DIR / source.name
+        assert source.stat().st_size > 40, "%s is an empty-looking contract" % rel
+        assert source.read_bytes() == shipped.read_bytes(), (
+            "%s is not shipped byte-for-byte at %s" % (rel, shipped))
+
+    fixture = json.loads((ROOT / client_dist.DS_SOURCE_RELS[1]).read_text(
+        encoding="utf-8"))
+    assert fixture["q"]["title"] and fixture["q"]["body"], (
+        "QaCard fixture props do not exercise a real question")
+    assert fixture["k"].startswith("o"), (
+        "QaCard fixture does not exercise the open-card path")
 
 
 # ── #630 P2: the native runtime ──────────────────────────────────────────
