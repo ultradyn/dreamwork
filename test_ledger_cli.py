@@ -534,6 +534,11 @@ _VERB_ARGV = {
     "count": ["count"],
     "reviews": ["reviews", "list"],
     "groom": ["groom"],
+    # #627 — store-mode-only write verbs. They ride the #667 gate like every
+    # other verb, so their argv needs a valid --why (argparse-enforced) and an
+    # id the fixture holds (#10), matching fold/note's shorthand.
+    "reprioritise": ["reprioritise", "10", "P3", "--why", "x"],
+    "unblock": ["unblock", "10", "--why", "x"],
 }
 
 
@@ -682,8 +687,15 @@ def test_the_map_covers_every_verb(dev_ledger):
     Without this, a verb added later would silently escape the gate AND the
     test that is supposed to notice.
     """
-    assert _parser_verbs(dev_ledger) == set(_VERB_ARGV), (
-        f"parser verbs {_parser_verbs(dev_ledger)} vs mapped {set(_VERB_ARGV)}")
+    parser_verbs = _parser_verbs(dev_ledger)
+    mapped = set(_VERB_ARGV)
+    assert parser_verbs == mapped, (
+        f"every parser verb must have a row in _VERB_ARGV (the gate sweep's "
+        f"coverage map) and vice versa.\n"
+        f"  add to _VERB_ARGV with a minimal valid argv: "
+        f"{sorted(parser_verbs - mapped)}\n"
+        f"  remove from _VERB_ARGV (no parser entry): "
+        f"{sorted(mapped - parser_verbs)}")
 
 
 def test_every_verb_is_gated_not_just_get(migrate, dev_ledger, tmp_path):
@@ -698,7 +710,7 @@ def test_every_verb_is_gated_not_just_get(migrate, dev_ledger, tmp_path):
     _, wtdw = _wt_fixture(migrate, tmp_path, "lane-allverbs")
     ledger_arg = ["--ledger", str(wtdw / "tasks.md")]
     before = (wtdw / "tasks.md").read_bytes()
-    unrefused, wrote, wrong_stream = [], [], []
+    unrefused, wrote, wrong_stream, wrong_rc = [], [], [], []
     for verb, argv in sorted(_VERB_ARGV.items()):
         # #688 — reach needs NO ledger and dispatches BEFORE the gate, so it
         # neither takes --ledger nor can be gated by it. Excluding it here is
@@ -721,9 +733,19 @@ def test_every_verb_is_gated_not_just_get(migrate, dev_ledger, tmp_path):
         # cannot-check lines go to stdout, may put the refusal there.
         if verb != "sweep" and "#667" in out:
             wrong_stream.append(verb)
+        # The DISCRIMINATING assertion (#734). A refusal that exits 0 reads
+        # as success (#671); one that exits 1 hides inside the "no such id"
+        # answer it is refusing to give (#667, #497). The gate returns 2 —
+        # non-zero, and not 1. Sweep keeps #404's advisory exit 0 (pinned by
+        # test_sweep_refuses_without_breaking_its_advisory_exit_code).
+        if verb != "sweep" and rc != 2:
+            wrong_rc.append((verb, rc))
     assert not unrefused, f"verbs that answered from an absent store: {unrefused}"
     assert not wrote, f"verbs that refused and wrote anyway: {wrote}"
     assert not wrong_stream, f"refusal leaked onto machine-clean stdout: {wrong_stream}"
+    assert not wrong_rc, (
+        f"a store that did not resolve must exit 2, not 0 (reads as success, "
+        f"#671) or 1 (collides with 'no such id', #667): {wrong_rc}")
 
 
 def test_a_refused_write_verb_writes_nothing(migrate, dev_ledger, tmp_path):
