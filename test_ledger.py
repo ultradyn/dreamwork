@@ -312,6 +312,86 @@ def test_sweep_subtracts_entries_that_cite_the_sha():
     assert 11 not in {tid for tid, _ in findings}
 
 
+# ---------------------------------------------------------------------------
+# #724 — a citation and a commit sha name the SAME object at different widths.
+# git's `%h` abbreviates at a length that GROWS with the repo, so a 7-char
+# citation correct when written rots to 8 later; the substring check #404
+# codified misses, and the entry is re-flagged forever despite citing the sha
+# it is flagged for. Resolution (`git rev-parse`: 58e3040 IS 58e3040d to git)
+# is immune to that rot; width-matching re-breaks next year. The fix keeps
+# `sweep` pure by accepting a `cites(sha, body) -> bool` callable: the default
+# is the substring check (every existing test still passes unchanged), and a
+# resolution-backed predicate is built in `sweep_text` from the small set of
+# shas that FAIL substring, batched through one `git cat-file --batch-check`.
+# ---------------------------------------------------------------------------
+
+def test_sweep_cites_param_defaults_to_substring_so_existing_tests_hold():
+    """The `cites` param is optional and defaults to the #404 substring check.
+
+    PRODUCTION LINE: `_cites = cites if cites is not None else (lambda sha,
+    body: sha in body)` in `sweep`. RED: drop the default and the two-arg call
+    below raises TypeError.
+    """
+    # same fixture, same commits — the default must reproduce #404's behaviour
+    n, findings = ledger.sweep(SWEEP_LEDGER, SWEEP_COMMITS)
+    assert 11 not in {tid for tid, _ in findings}, (
+        "default cites must still subtract #11 (abc1234 in its body)")
+
+
+def test_sweep_resolution_backed_cites_reconciles_a_width_mismatch():
+    """A 7-char citation in a body must reconcile an 8-char commit sha when
+    the `cites` predicate resolves them to the same object id.
+
+    This is #724's core: the body cites ``58e3040`` (7 chars, as a human wrote
+    it) and git's ``%h`` yields ``58e3040d`` (8 chars) for the same commit.
+    The substring check misses; a resolution-backed predicate catches it. The
+    discriminating assertion NAMES the id and BOTH widths — not just a changed
+    count — so a green red-run cannot hide behind a number that moved for the
+    wrong reason.
+
+    PRODUCTION LINE: `if _cites(sha, bodies.get(tid, "")): continue` in
+    `sweep`. RED: pass the substring default (omit `cites`) and #465 stays
+    flagged.
+    """
+    # #465 cites a 7-char prefix; the commit carries the 8-char form.
+    short_citation = "58e3040"   # 7 chars — as written in the ledger
+    commit_sha = "58e3040d"      # 8 chars — as git's %h yields it
+    # PRECONDITION: the two widths must actually differ, else the test is
+    # hollow — it would pass with substring alone (#655's green-red-run trap).
+    assert len(short_citation) != len(commit_sha), (
+        "precondition: the citation and the commit sha must be different "
+        "widths, or the substring check would already match")
+    assert commit_sha.startswith(short_citation), (
+        "precondition: the short citation must be a prefix of the commit sha")
+    # A resolution-backed cites predicate: both resolve to the same object.
+    # (Simulated — the real resolver uses git cat-file --batch-check; this
+    # test stays pure by mapping the known prefix to the known full sha.)
+    def cites(sha, body):
+        if sha in body:
+            return True
+        # resolve: the body's 7-char citation and the 8-char commit sha ARE
+        # the same object — the resolver must compare object ids, not strings
+        return short_citation in body and sha == commit_sha
+
+    ledger_text = (
+        "# Task ledger\n\nNext id: **13**\n\n## Open\n"
+        "- **#465** — width-rotted citation · origin: **loop**\n"
+        f"  · landed in `{short_citation}`, kept open for the remaining half\n"
+        "- **#466** — genuinely uncited · origin: **loop**\n\n"
+        "## Recently landed\n")
+    commits = [(commit_sha, "wip(#465): the kill-recovery landing"),
+               ("fff9999", "fix(#466): a genuinely uncited landing")]
+    n, findings = ledger.sweep(ledger_text, commits, cites=cites)
+    flagged = {tid for tid, _ in findings}
+    assert 465 not in flagged, (
+        f"#465 cites {short_citation} (7c) and git %h = {commit_sha} (8c) — "
+        f"both resolve to the same object, so the resolution-backed cites "
+        f"predicate must subtract it. Substring misses; resolution must not.")
+    assert 466 in flagged, (
+        "precondition: #466 genuinely does not cite its sha, so the test is "
+        "not vacuous — if #466 disappears the cites predicate is over-broad")
+
+
 def test_sweep_ignores_landed_ids_and_reports_multi_id_subjects():
     _, findings = ledger.sweep(SWEEP_LEDGER, SWEEP_COMMITS)
     by_id = {tid for tid, _ in findings}
