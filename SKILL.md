@@ -353,6 +353,16 @@ both needed, and the discipline is the half that closes that case.
 
 Two kinds, nothing in between:
 
+**Dispatch through the checked route:** `just dispatch-lane <prompt-file>
+<@agent> [ccc options]`. The prompt file ends with `briefs/boilerplate.md`
+appended verbatim; `dev/dispatch_lane.py` validates that exact delivered string
+and then replaces itself with `ccc`, passing the prompt as one argv item.
+Direct `ccc` lane dispatch is unsupported: shell quoting can turn a command
+substitution into the literal prompt `$(cat ...)` while every process-level
+health signal still looks normal. This pre-launch check proves what the wrapper
+passes, not what a downstream process ultimately received; `/proc/<pid>/cmdline`
+inspection is a separate, stronger check with a short observation window.
+
 - **Utility subagents** — narrow tools: answer a question (e.g. an Explore
   agent for "how does X work?" or "what's relevant to Y?") or run a scoped
   mechanical job. Focused prompt in, focused answer out. No dream files.

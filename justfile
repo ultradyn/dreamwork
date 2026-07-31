@@ -22,6 +22,13 @@ pytest *ARGS:
 lint:
     python3 lint.py
 
+# #768 — the one supported ccc lane-dispatch route. The wrapper reads and
+# validates the exact prompt string, then appends it as one argv item; direct
+# shell command substitution can silently deliver a literal `$(cat ...)`.
+# Usage: just dispatch-lane prompt.txt @cx-coder -y
+dispatch-lane prompt agent *CCC_ARGS:
+    python3 dev/dispatch_lane.py --prompt "{{prompt}}" -- ccc {{CCC_ARGS}} "{{agent}}"
+
 # #653 (P1 of #630) — rebuild client/dist from client/*.js.
 #
 # DEV-TIME ONLY. `client/dist/` is committed, so serving and deploying never
