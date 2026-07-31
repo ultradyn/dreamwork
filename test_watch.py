@@ -10788,8 +10788,29 @@ class TestAnswerWritesAreAtomic(unittest.TestCase):
         # writes; this is the construct that must not come back.
         src = inspect.getsource(watch)
         self.assertNotIn('open(qpath, "w"', src)
-        self.assertEqual(src.count("atomic_write_text(qpath"), 2,
-                         "both /answer and /comment write through the atomic path")
+        # #632 moved the write itself into `rewrite_append_only`, so the two
+        # routes no longer name `atomic_write_text` directly — they reach it
+        # through the one door, which is a STRONGER version of what this
+        # assertion has always defended: there is now a single place where
+        # either route can write questions.md at all. Both halves are checked,
+        # because "both routes go through the door" and "the door writes
+        # atomically" are separately falsifiable and the property needs both.
+        # The DEFECT CONSTRUCT itself, forbidden by name: a bounded read of a
+        # file this module then writes back. Matching the construct rather
+        # than counting call sites is what keeps the check honest when a
+        # fourth durable route is added.
+        self.assertNotIn("read_text(qpath", src,
+                         "#632: a capped read must never feed a write of "
+                         "questions.md")
+        self.assertGreaterEqual(src.count("rewrite_append_only("), 4,
+                                "/ask, /answer and /comment each write "
+                                "through the one door (plus its definition)")
+        door = inspect.getsource(watch.rewrite_append_only)
+        self.assertIn("atomic_write_text(path, new_text)", door,
+                      "the door itself must write through the atomic path")
+        self.assertIn("read_text_full(path)", door,
+                      "#632: the door must read WHOLE — a capped read here is "
+                      "what deleted twelve answered entries")
 
 
 class TestSubmissionIdempotency(unittest.TestCase):

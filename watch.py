@@ -713,9 +713,35 @@ def age_str(seconds):
 
 
 def read_text(path, limit=200_000):
+    """A BOUNDED read, for DISPLAY. Never use it on a path that writes back.
+
+    #632: the limit is silent — a file over it comes back short with nothing
+    said, and that is fine for rendering and catastrophic for a
+    read-modify-write. `/answer` read questions.md through this, appended his
+    answer to the SHORT text, and wrote the result over the full file: 12
+    answered entries deleted, no archive, cut mid-word. Write paths take
+    `read_text_full` instead, and `rewrite_append_only` is the door that makes
+    that non-optional.
+    """
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             return f.read(limit)
+    except OSError:
+        return None
+
+
+def read_text_full(path):
+    """The WHOLE file, or None — the reader every durable write path uses.
+
+    A separate name rather than `read_text(path, limit=None)` on purpose. The
+    #632 defect was a display default leaking into a durability path, and a
+    default is exactly what review does not see; a distinct name at the call
+    site is the thing a reader notices when the next handler is written. The
+    cost of reading these files whole is a quarter of a megabyte.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
     except OSError:
         return None
 
@@ -2462,6 +2488,81 @@ def atomic_write_text(path, text):
         raise
 
 
+def first_lost_line(old, new):
+    """The first non-blank line of `old` missing from `new`, or None (#632).
+
+    These files are APPEND-ONLY through the HTTP handlers: `append_subbullet`
+    inserts a block and copies every other line, `append_human_question`
+    inserts an entry above `## Answered`, a chat turn concatenates. None of
+    them may remove a line. So the invariant is not "the file got bigger" —
+    it is that every line still there, in order, which is a SUBSEQUENCE test
+    and is exactly strong enough to catch truncation, deletion and reordering
+    while permitting any insertion.
+
+    NON-BLANK lines only, and that is a deliberate weakening. `rstrip()` in
+    `append_human_question` legitimately collapses trailing blanks to one, so
+    a whole-line test would refuse a correct write. Losing a blank line is
+    cosmetic; losing a line with content on it never is.
+
+    Why this rather than "the answered-entry count must not decrease": that
+    rule fights normal operation. The loop FOLDS entries from Open to
+    Answered by editing the file directly, which legitimately moves entries
+    around, and a count rule would either fire on folds or be too loose to
+    catch a partial deletion. This invariant cannot false-positive on a fold
+    for the simple reason that a fold does not come through these handlers at
+    all — nothing the server writes here is ever allowed to lose a line.
+    """
+    it = iter(new.splitlines())
+    for line in old.splitlines():
+        if not line.strip():
+            continue
+        for candidate in it:
+            if candidate == line:
+                break
+        else:
+            return line
+    return None
+
+
+def rewrite_append_only(path, mutate, *, seed_missing=False):
+    """The ONE door through which a durable human-channel file is rewritten.
+
+    Read the file WHOLE, apply an append-only mutation, verify nothing was
+    lost, write atomically. Returns `(status, value)`:
+
+      ("missing", None)    the file is not there and the caller wanted it
+      ("unmatched", None)  the mutation found no entry to attach to
+      ("lossy", line)      REFUSED — `line` is the first content line dropped
+      ("ok", new_text)     written
+
+    This exists because #632 was not really a bug in any one handler. Three
+    handlers each did read → mutate → write, each read through the bounded
+    `read_text`, and each would have had to remember not to. Collapsing them
+    onto one function makes the safe read and the loss check structural
+    rather than remembered: a fourth handler written next month gets both by
+    calling this, and cannot get neither.
+
+    REFUSING IS SAFE HERE, and that is not a general claim about refusal —
+    it is a specific consequence of `log_submission` (#199), which has
+    already written his exact words to `submissions.log` before dispatch even
+    began. So a refusal costs a fold, not his input, whereas the silent write
+    it replaces cost twelve answered entries. That asymmetry is the whole
+    argument for failing closed on this path.
+    """
+    text = read_text_full(path)
+    if text is None and not seed_missing:
+        return ("missing", None)
+    old = text or ""
+    new_text, matched = mutate(old)
+    if not matched:
+        return ("unmatched", None)
+    lost = first_lost_line(old, new_text)
+    if lost is not None:
+        return ("lossy", lost)
+    atomic_write_text(path, new_text)
+    return ("ok", new_text)
+
+
 def append_human_question(text, question, stamp):
     """Append a human question without letting pasted Markdown forge records.
 
@@ -2603,7 +2704,11 @@ def apply_chat_turn(target, chat_id, role, text, at=None, receipt_id=None):
             "created": stamp,
         }, indent=2) + "\n")
     tpath = os.path.join(cdir, "transcript.md")
-    prev = read_text(tpath) or ""
+    # #632: WHOLE read. A transcript is append-only and grows without bound, so
+    # reading it through the display cap would silently drop the oldest turns
+    # of every chat that passed 200,000 chars — the same defect that deleted
+    # twelve answered entries, on a file whose whole purpose is to be a record.
+    prev = read_text_full(tpath) or ""
     atomic_write_text(tpath, prev + _chat_turn_block(role, text, stamp, receipt_id))
     return True
 
@@ -4553,6 +4658,30 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             self.end_headers()
             self.wfile.write(data)
 
+        def _refuse_lossy(self, target, route, path, line):
+            """A write that would have LOST a line was refused (#632).
+
+            This is a backstop that should never fire: with the whole-file read
+            in place there is no known way to reach it. It exists because the
+            thing it guards against was silent for an unknown length of time
+            and cost twelve of his answered entries, and the second occurrence
+            of a failure is the repo's own signal to write the check rather
+            than patch the instance (#509 was the first).
+
+            It SHOUTS on the way out. `log_event` puts it on the dashboard's
+            own event stream, so a refusal is visible where he already looks
+            rather than only in a response body he may never see — the one
+            property #632 lacked entirely.
+            """
+            log_event(target,
+                      f"REFUSED a lossy rewrite of {os.path.basename(path)} "
+                      f"via {route}: it would have dropped "
+                      f'"{one_line(line)[:90]}". His words are safe in '
+                      f".dreamwork/submissions.log — fold them by hand.")
+            self.send_error(500, "lossy rewrite refused",
+                            f"the write would have dropped: "
+                            f"{one_line(line)[:200]}")
+
         def _reject(self, reason_code, detail=None):
             """Record a durable rejection and respond 202 (E5).
 
@@ -4928,9 +5057,16 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             path = os.path.join(target, ".dreamwork", "answers.md")
             stamp = time.strftime("%Y-%m-%d")
             with ANSWER_LOCK:
-                text = read_text(path)
-                new_text = append_human_question(text, question, stamp)
-                atomic_write_text(path, new_text)
+                # seed_missing: answers.md may legitimately not exist yet, and
+                # append_human_question seeds the skeleton. #632's full read
+                # and loss check still apply.
+                status, value = rewrite_append_only(
+                    path,
+                    lambda text: (append_human_question(text, question, stamp),
+                                  True),
+                    seed_missing=True)
+            if status == "lossy":
+                self._refuse_lossy(target, "/ask", path, value); return
             # #342: /ask is a batched kind — wakes only in instant mode.
             if emits_wake("/ask", target):
                 log_event(target, f'question for dreamer{from_hint(req.get("from"))}: '
@@ -4951,21 +5087,25 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             qpath = os.path.join(target, ".dreamwork", "questions.md")
             stamp = time.strftime("%Y-%m-%d %H:%M")
             with ANSWER_LOCK:
-                text = read_text(qpath)
-                if text is None:
-                    self.send_error(404)
-                    return
-                new_text, matched = append_answer(text, title, answer, stamp)
-                if not matched:
-                    self.send_error(409)
-                    return
+                # #632: the read is WHOLE and the write is loss-checked, both
+                # inside rewrite_append_only. This used to read through the
+                # bounded `read_text` and write the short result back over the
+                # full file, which is what deleted twelve answered entries.
                 # Atomic, like /ask thirty lines up (#370). Opening this path in
                 # plain write mode empties the file before it writes, so a
                 # failure between those two moments loses every question he ever
                 # asked and every answer he ever gave. (Phrased without the
                 # construct itself: the check for it greps the source, and an
                 # explanation quoting what it forbids is a violation of it.)
-                atomic_write_text(qpath, new_text)
+                status, value = rewrite_append_only(
+                    qpath,
+                    lambda text: append_answer(text, title, answer, stamp))
+            if status == "missing":
+                self.send_error(404); return
+            if status == "unmatched":
+                self.send_error(409); return
+            if status == "lossy":
+                self._refuse_lossy(target, "/answer", qpath, value); return
             # #342: /answer is a batched kind — wakes only in instant mode.
             if emits_wake("/answer", target):
                 log_event(target,
@@ -4989,16 +5129,16 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             qpath = os.path.join(target, ".dreamwork", "questions.md")
             stamp = time.strftime("%Y-%m-%d %H:%M")
             with ANSWER_LOCK:
-                text = read_text(qpath)
-                if text is None:
-                    self.send_error(404)
-                    return
-                new_text, matched = append_comment(text, title, note, stamp,
-                                                    section)
-                if not matched:
-                    self.send_error(409)
-                    return
-                atomic_write_text(qpath, new_text)   # #370, as above
+                status, value = rewrite_append_only(   # #370 + #632, as above
+                    qpath,
+                    lambda text: append_comment(text, title, note, stamp,
+                                                section))
+            if status == "missing":
+                self.send_error(404); return
+            if status == "unmatched":
+                self.send_error(409); return
+            if status == "lossy":
+                self._refuse_lossy(target, "/comment", qpath, value); return
             hint = ("(re-evaluate — a note on an answered entry may amend it)"
                     if section == "Answered" else "(fold with the entry)")
             # #342: /comment is a batched kind — wakes only in instant mode.
