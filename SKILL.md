@@ -245,7 +245,11 @@ delivery for the ambiguous class (ideas, notes, anything not addressed to
 `.dreamwork/docs/plans/delivery-modes.md`):
 
 1. `python3 <skill-dir>/dev/journal_consume.py pending` — read-only; one
-   line per event, receipt id first, 80-char preview. Quiet on empty.
+   line per event, receipt id first, 80-char preview. Quiet on empty. It
+   also states its coverage on **stderr** — `listed N receipt(s),
+   ordinals L..H (consume --through H)` — so a `| tail` that truncates
+   the listing cannot truncate the count, and step 3 is a copy-paste.
+   Fewer lines in hand than that count is a truncated read (#712).
 2. Process each event — act on it, file it as a task, or fold it into a
    question. The preview is a triage aid, not the content; when it is not
    enough, read the receipt's full payload from the journal before acting.
@@ -255,6 +259,10 @@ delivery for the ambiguous class (ideas, notes, anything not addressed to
    to exactly what the `pending` read reported (#531: an event landing
    between the read and the consume is otherwise advanced past unread;
    every `pending` line carries `ord=<n>`, the last line's is head).
+   That ordinal must be **the** head of that read, not merely inside it
+   (#712) — a lower bound came from an older or truncated view, so it is
+   refused. There is no partial drain and none is needed: consuming
+   nothing re-lists the whole range next tick, losing nothing.
    Bare `consume` still advances to the live head — the right form only
    when there was no prior read to bound against, which the rule below
    forbids in a tick anyway.
@@ -272,12 +280,17 @@ read, an unbounded consume silently claims events the read never listed.
 exactly that, saw ordinals 97/98/99, and consumed `--through 96` past a
 receipt the `tail` had scrolled off — a read whose output was truncated is
 not a read. `pending` now writes a read-coverage marker and `consume
---through N` refuses unless that marker proves N was listed (three named
-refusals: no read on record, marker from a different journal, N beyond the
-read's head — the last names the uncovered ordinals). That makes the
-truncation LOUD, but it is not a licence to truncate: the marker proves
-every line was *printed*, not that every line was *seen*, so `pending |
-tail` still defeats it — the discipline and the refusal are both needed.
+--through N` refuses unless N is exactly the head that marker records
+(four named refusals: no read on record, marker from a different journal,
+N beyond the read's head — which names the uncovered ordinals — and N
+below it, which names the ordinals that would be advanced past). That
+makes the truncation LOUD, but it is not a licence to truncate: **the
+marker proves every line was *printed*, not that every line was *seen***,
+and no in-process check can prove the second — so `pending | tail -3`
+followed by `consume --through <the head you can still see>` still
+consumes the lines the tail removed, with only the stderr coverage count
+disagreeing with what you hold (#712). The discipline and the refusals are
+both needed, and the discipline is the half that closes that case.
 
 ## Selecting the next task
 

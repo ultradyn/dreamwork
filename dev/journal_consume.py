@@ -59,6 +59,35 @@ Two subcommands, both taking the store path the way ``dev/ledger.py`` verbs take
             ``pending``'s own stdout (``pending | tail``): it proves every line
             was printed, not that every line was seen — named, not closed.
 
+  #712     The residue of that, and the honest statement of the limit.  #658
+            bounded ``--through`` from ABOVE only, so the traced loss survived:
+            ``pending`` prints 96..99, the operator's ``tail -3`` shows 97..99,
+            and ``consume --through 96`` is INSIDE the listed range — no
+            refusal, 96 consumed unread.  Two changes, and they do different
+            jobs:
+              * ``--through`` must now EQUAL the head of the read on record, so
+                a fourth named refusal covers a bound BELOW it (the traced
+                case).  This proves the bound came from that read.  Partial
+                drains go with it and are not missed: the alternative to
+                consuming part of a range is consuming none of it, and an
+                unadvanced range is re-listed in full next tick.
+              * ``pending`` prints its coverage statement to STDERR, which a
+                stdout pipe does not touch, so a truncated view is visibly
+                inconsistent with what was listed.
+            WHAT THIS DOES NOT DO, stated because the reverse would be the real
+            failure: it does not establish that anything was SEEN.  "Seen"
+            cannot be established from inside a process that only controls
+            "printed" — any value ``pending`` prints either survives the
+            truncation (and is then relayable by a truncated reader, proving
+            nothing) or does not (and is then unavailable to an honest reader
+            who used that truncation).  The only binding form is to require the
+            identity of the FIRST listed line, which a ``tail`` removes; it was
+            rejected as per-tick ceremony that a shell reflex discharges
+            without reading.  The remaining open case is the natural variant:
+            hold 97..99, consume ``--through 99``, and 96 is consumed unread
+            with only the stderr line as a signal.  See
+            ``.dreamwork/lane-712-report.md`` for the IGC.
+
 ATOMICITY SEAM (named, not hidden): the read and the advance are TWO separate
 API calls, not one transaction.  Between them a concurrent writer may append.
 That is SAFE BY CONSTRUCTION: the chain is append-only, so the prefix
@@ -171,21 +200,34 @@ def _write_pending_read(journal_path: Path, journal_id: str, through: int) -> No
 
 
 def _load_pending_read(journal_path: Path) -> dict | None:
-    """Read the marker sidecar, or None if absent or unparseable (#658).
+    """Read the marker sidecar, or None if absent, unparseable or malformed (#658).
 
-    None covers BOTH the absent case (bootstrap) and a corrupt/unparseable
-    marker — both degrade to the same named refusal in ``consume``, and a
-    corrupt marker must not raise (a guard whose subject may not exist has to
-    degrade to a reading, never throw — lessons.md #622).  Returns the parsed
-    dict on success.
+    None covers BOTH the absent case (bootstrap) and a corrupt marker — both
+    degrade to the same named refusal in ``consume``, and a corrupt marker must
+    not raise (a guard whose subject may not exist has to degrade to a reading,
+    never throw — lessons.md #622).  Returns the parsed dict on success.
+
+    #712: "corrupt" means MALFORMED, not merely unparseable.  The docstring
+    above already promised this; the code only delivered it for bad JSON, so a
+    parseable-but-shapeless marker (``{}``, or ``through`` as a string) reached
+    the ``mark["through"]`` comparisons in ``consume`` and raised there —
+    exactly the throw this function exists to prevent, one layer down.  Both
+    fields are checked here so every caller can index them.
     """
     mp = _pending_read_path(journal_path)
     if not mp.exists():
         return None
     try:
-        return json.loads(mp.read_text())
+        mark = json.loads(mp.read_text())
     except (ValueError, OSError):
         return None
+    if not isinstance(mark, dict):
+        return None
+    if not isinstance(mark.get("journal_id"), str):
+        return None
+    if not isinstance(mark.get("through"), int) or isinstance(mark["through"], bool):
+        return None
+    return mark
 
 # --- #526: the drain's applied-receipts proof ledger. ---
 #
@@ -307,7 +349,7 @@ def _reply_command(chat_id: str) -> str:
     return f"python3 {tool} reply {chat_id}"
 
 
-def cmd_pending(args, out) -> int:
+def cmd_pending(args, out, err) -> int:
     """Read-only: list receipt.created events in (coordinator_cursor, head].
 
     Never advances.  An absent journal is empty (and is NOT created — the read
@@ -318,6 +360,21 @@ def cmd_pending(args, out) -> int:
     marker records the head ordinal and the journal id; it is the one side
     effect of an otherwise read-only verb, and it is ephemeral coordination
     state (a sibling ``.pending-read`` file), never the journal itself.
+
+    #712: the coverage statement also goes to STDERR — ``pending: listed N
+    receipt(s), ordinals L..H``.  ``pending | tail -3`` truncates fd 1 and does
+    not touch fd 2, so the count and the full range still reach the operator
+    while the listing in their hands is short.  That is the whole reason it is
+    on stderr rather than in a trailer: a trailer rides the channel being
+    truncated, so whether it survives depends on WHICH truncation was used
+    (``tail`` keeps it, ``head`` and ``grep`` remove it).  stdout stays
+    byte-for-byte the documented record — one line per event, receipt id first
+    — so no parser sees a line that is not an event.
+
+    This is VISIBILITY, not proof.  It makes a truncated view visibly
+    inconsistent with what was listed; it cannot make anyone look.  Nothing
+    here establishes that a line was SEEN (see the module docstring's #712
+    note).
     """
     journal = Path(args.journal)
     if not journal.exists():
@@ -340,8 +397,19 @@ def cmd_pending(args, out) -> int:
     for ev in events:
         out.write(_format_event(ev) + "\n")
     # The head this read reported is the last event's ordinal — the value a
-    # bounded consume's --through must not exceed.
-    _write_pending_read(journal, journal_id, events[-1].ordinal)
+    # bounded consume's --through must now EQUAL (#712).
+    head = events[-1].ordinal
+    _write_pending_read(journal, journal_id, head)
+    # #712: the coverage statement, on the channel a stdout pipe cannot reach.
+    # Both ends are derived from the events actually printed, never assumed —
+    # the low end is what a `tail` removes and is therefore the whole point of
+    # printing it.  The exact next command is included so the normal tick is a
+    # copy-paste rather than a transcription (#612: the hot path gets shorter
+    # to think about, not longer).
+    err.write(
+        f"pending: listed {len(events)} receipt(s), ordinals "
+        f"{events[0].ordinal}..{head} (consume --through {head})\n"
+    )
     return EX_OK
 
 
@@ -471,16 +539,19 @@ def cmd_consume(args, out, err) -> int:
             # every line of the pending read (the `pending | tail` failure).  So
             # a bounded consume additionally refuses unless the marker the prior
             # `pending` wrote proves `through` was inside the range it printed.
-            # Three named refusal cases (#136), only the last of which is the
+            # FOUR named refusal cases (#136), the last two of which are the
             # bug; the others degrade to a workable escape (bare consume):
             #   absent  → no pending read on record (bootstrap — first run,
             #             cleared state).  Bare `consume` is the right form.
             #   mismatch→ the marker is from a different journal (stale
             #             sidecar).  Bare `consume` is the right form.
             #   uncovered→ through exceeds the read's head: ordinals in
-            #              (read_head, through] were never listed.  THIS is
-            #              the truncation bug — re-run pending (do not tail it)
+            #              (read_head, through] were never listed.  #658's
+            #              truncation bug — re-run pending (do not tail it)
             #              and consume --through the head it prints.
+            #   below   → through is under the read's head: the bound is not
+            #             from that read at all, so it is from an older or
+            #             truncated view of it.  #712's traced loss.
             mark = _load_pending_read(Path(args.journal))
             if mark is None:
                 err.write(
@@ -506,6 +577,36 @@ def cmd_consume(args, out, err) -> int:
                     f"(read reported head {mark['through']}; uncovered "
                     f"ordinals {uncovered}) — re-run `pending` without "
                     f"`head`/`tail` and consume --through the head it prints\n"
+                )
+                return EX_USAGE
+            if through < mark["through"]:
+                # --- #712: the traced loss, which #658's bound does not catch.
+                # `pending` printed 96..99; the operator piped it through
+                # `tail -3`, held 97..99, and consumed `--through 96` carried
+                # over from an EARLIER read.  96 is inside the listed range, so
+                # #658's `through > mark` check is satisfied and 96 is consumed
+                # unread.  The tell is that the bound is not the head of the
+                # read on record: a --through below it did not come from that
+                # read, so it came from an older or truncated view of it.
+                # Name the ordinals this consume would advance the cursor over
+                # — a "range mismatch" that does not say what is lost is not
+                # discriminating.  Partial drains are the collateral, and they
+                # cost nothing: the alternative to consuming part of a range is
+                # consuming none of it, and an unadvanced range is re-listed in
+                # full next tick.
+                over = list(range(cursor_ordinal + 1, through + 1))
+                shown = over if len(over) <= 8 else over[:8] + ["…"]
+                err.write(
+                    f"consume: --through {through} is BELOW the head of the "
+                    f"read on record ({mark['through']}) — a bound that did "
+                    f"not come from that read came from an older or truncated "
+                    f"view of it, and ordinals {shown} would be advanced past "
+                    f"on that basis. Re-run `pending` (do not pipe it through "
+                    f"`head`/`tail`) and consume --through "
+                    f"{mark['through']}; or consume nothing this tick — an "
+                    f"unadvanced range is re-listed in full, so skipping loses "
+                    f"nothing. Bare `consume` (no --through) is never gated by "
+                    f"the marker.\n"
                 )
                 return EX_USAGE
         events = j.events_since_cursor(CONSUMER)
@@ -678,11 +779,11 @@ def _parser() -> argparse.ArgumentParser:
             "landing between that read and this consume stays pending (#531). "
             "Without it, consume advances to the live head (today's semantics). "
             "Refuses EX_USAGE below/at the cursor (a stale ordinal must not "
-            "rewind or no-op silently) or above the head.  #658: also refuses "
-            "unless the prior `pending`'s read-coverage marker proves ORDINAL "
-            "was inside the range it printed (so `pending | tail` cannot hide "
-            "lines the consume then advances past).  Bare `consume` is never "
-            "gated by the marker."
+            "rewind or no-op silently) or above the head.  #658/#712: ORDINAL "
+            "must EQUAL the head of the read on record — above it advances "
+            "past ordinals never listed, below it means the bound came from an "
+            "older or truncated view rather than that read.  Bare `consume` is "
+            "never gated by the marker."
         ),
     )
 
@@ -713,7 +814,7 @@ def main(argv=None, out=None, err=None) -> int:
         code = e.code if isinstance(e.code, int) else EX_USAGE
         return EX_OK if code == 0 else EX_USAGE
     if args.cmd == "pending":
-        return cmd_pending(args, out)
+        return cmd_pending(args, out, err)
     if args.cmd == "consume":
         return cmd_consume(args, out, err)
     if args.cmd == "show":
