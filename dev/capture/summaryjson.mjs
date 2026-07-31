@@ -23,6 +23,8 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
 import { serveVerified } from './serve.mjs';
+import { readPostureAxesFile, expectedSummaryPostureKeys }
+  from './posturekeys.mjs';
 
 import { outdir } from './outdir.mjs';
 const OUT = outdir(process.argv);
@@ -175,6 +177,20 @@ if (dreamFiles.length) {
      !summaryBlob.includes(probe));
 }
 
+// ── the posture axis set, DERIVED from lint.py (#661) ───────────────────
+// The expected /summary.json posture keys are lint.py's POSTURE_AXES (the
+// closed-set source of truth every recognised posture axis must be listed in)
+// plus `source` (where the axes came from: 'derived'|'file'), and nothing
+// else. The projection (_summary_posture, watch.py) and POSTURE_AXES
+// (lint.py) are TWO INDEPENDENT declarations — a literal here was the trap
+// #510 fell into (shipped orchestration, the guard's list didn't widen, and
+// it was repaired later by b9248b11). Deriving from POSTURE_AXES means the
+// next axis widens both at once, with no hand-maintained literal to drift.
+// The cardinality precondition turns a broken parse (regex drifted, the
+// tuple rewritten) into a LOUD red rather than a silently-empty set (#671).
+const EXPECTED_POSTURE = expectedSummaryPostureKeys(
+  readPostureAxesFile('lint.py'));
+
 // ── the fields that DO leave are safe by shape ──────────────────────────
 ok('open_questions is an integer count',
    Number.isInteger(summary.open_questions));
@@ -182,10 +198,22 @@ ok('questions_health is an enum token, not prose',
    ['ok', 'missing', 'unreadable', 'empty'].includes(summary.questions_health));
 ok('answers_health is an enum token, not prose',
    ['ok', 'missing', 'unreadable', 'empty'].includes(summary.answers_health));
-ok('posture carries only the five axes + source (no display chrome)',
-   JSON.stringify([...Object.keys(summary.posture)].sort()) ===
-   JSON.stringify(['asking', 'delegation', 'delivery', 'orchestration',
-                   'pace', 'source']));
+// ── the posture axis set: derived, not restated (#661) ──────────────────
+// EXPECTED_POSTURE is read from lint.py's POSTURE_AXES + 'source' (see top),
+// not hand-maintained here — so widening the projection's axis set widens
+// this check at the same time. A missing or unexpected key is named in the
+// failure (not just "mismatch"), so the drift is readable from the run.
+const actualPosture = new Set(Object.keys(summary.posture));
+const missingPosture = [...EXPECTED_POSTURE].filter(k => !actualPosture.has(k));
+const extraPosture = [...actualPosture].filter(k => !EXPECTED_POSTURE.has(k));
+ok('posture carries exactly POSTURE_AXES + source (no display chrome; #661)',
+   missingPosture.length === 0 && extraPosture.length === 0);
+if (missingPosture.length)
+  notes.push('posture keys MISSING vs POSTURE_AXES+source: ' +
+             missingPosture.join(', '));
+if (extraPosture.length)
+  notes.push('posture keys UNEXPECTED (display chrome leaked?): ' +
+             extraPosture.join(', '));
 ok('skill_identity carries only commit + skill_version',
    JSON.stringify([...Object.keys(summary.skill_identity)].sort()) ===
    JSON.stringify(['commit', 'skill_version']));
