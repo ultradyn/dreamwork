@@ -1569,6 +1569,40 @@ class TestDocMapPlans:
         t = self.build(tmp_path, "alpha, beta", ["beta", "alpha"])
         assert self.warns(t) == []
 
+    def test_a_plan_named_only_in_the_lifecycle_column_is_still_missing(self, tmp_path):
+        # #699: the enumeration a reader consults lives in the description column
+        # (col 2); a plan named only in the lifecycle column (col 3) cannot be
+        # *found*, so it must be reported missing. Unioning the whole row let a
+        # col-3 parenthetical pass for an enumeration entry — a false match.
+        t = fresh(tmp_path)
+        docs = t / ".dreamwork" / "docs"
+        (docs / "plans").mkdir(parents=True)
+        for name in ("alpha", "gamma"):
+            (docs / "plans" / f"{name}.md").write_text("# a plan\n")
+        # col 2 enumerates only alpha; col 3 names the bare slug `gamma`.
+        row = "| `.dreamwork/docs/plans/` | Active feature plans (alpha) | Prune (gamma) |\n"
+        (docs / "doc-map.md").write_text(
+            "# Doc map\n\n| Doc | Covers | Cur |\n|---|---|---|\n" + row)
+        cols = row.split("|")  # ['', path, desc, lifecycle, '']
+        assert "gamma" not in cols[2], "precondition: gamma absent from enumeration"
+        assert "gamma" in cols[3], "precondition: gamma named only in lifecycle"
+        (warn,) = self.warns(t)
+        assert "omits" in warn and "gamma" in warn, warn
+
+    def test_a_row_without_the_column_shape_fails_closed(self, tmp_path):
+        # #699: a row the check cannot split into `path | desc | lifecycle` must
+        # not guess a match — it fails closed, because an unparseable row is the
+        # case where reporting OK would be the dangerous answer.
+        t = fresh(tmp_path)
+        docs = t / ".dreamwork" / "docs"
+        (docs / "plans").mkdir(parents=True)
+        (docs / "plans" / "alpha.md").write_text("# a plan\n")
+        # No second `|`: no description column can be isolated.
+        (docs / "doc-map.md").write_text(
+            "# Doc map\n\n| Doc | Covers | Cur |\n|---|---|---|\n"
+            "| `.dreamwork/docs/plans/` | Active feature plans (alpha)\n")
+        assert any("shape" in w for w in self.warns(t)), self.warns(t)
+
     def test_a_missing_row_is_not_silence(self, tmp_path):
         t = fresh(tmp_path)
         (t / ".dreamwork" / "docs" / "plans").mkdir(parents=True)

@@ -3398,8 +3398,22 @@ def check_doc_map_plans(dw: Path, rep: Report) -> None:
     if not m:
         rep.add(WARN, "doc-map.md", "no `.dreamwork/docs/plans/` row — the plans are unmapped")
         return
+    # `m.group(1)` is everything after the path column — the description
+    # (which holds the enumeration) AND the lifecycle note. A plan named only
+    # in the lifecycle column is not something a reader can *find*, so the
+    # match is scoped to the description column alone: the first pipe-delimited
+    # field after the path. Unioning the whole row let a name in an unrelated
+    # parenthetical pass for an enumeration entry (#699). Fail closed on a row
+    # whose shape does not isolate a description column — a row this cannot
+    # parse is exactly the case where it must not report a match.
+    if "|" not in m.group(1):
+        rep.add(WARN, "doc-map.md",
+                "plans row is not the expected `path | description | lifecycle` "
+                "shape — cannot identify the enumeration column")
+        return
+    desc_col = m.group(1).split("|", 1)[0]
     listed = set()
-    for paren in re.findall(r"\(([^()]*)\)", m.group(1)):
+    for paren in re.findall(r"\(([^()]*)\)", desc_col):
         listed |= {n.strip() for n in paren.split(",") if n.strip()}
     if not listed:
         rep.add(WARN, "doc-map.md", "plans row names no plans — it used to enumerate them")
