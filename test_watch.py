@@ -4912,13 +4912,25 @@ class TestPendingEventCount(unittest.TestCase):
     the SAME projection ``dev/journal_consume.py pending`` lists — surfaced on
     ``collect()['status']['pending_events']``.
 
-    Honesty rules (the brief's, and lessons.md #348/#349): the expected count
-    is DERIVED from ``head_ordinal()`` and the cursor ordinal the drain
-    advanced to, NEVER from ``events_since_cursor`` itself. Building expected
-    by calling the projection under test is the hollow trap — reverting the
-    projection would change nothing the test could see. ``head_ordinal`` is a
-    DIFFERENT method (it counts all events, not the cursor-bounded subset), so
-    ``expected = head_ordinal - cursor`` is independent of the projection.
+    Honesty rule: the expected count is DERIVED from ``head_ordinal()`` and the
+    cursor ordinal the drain advanced to, NEVER from ``events_since_cursor``
+    itself. Building expected by calling the projection under test is the
+    hollow trap — reverting the projection would change nothing the test could
+    see. ``head_ordinal`` is a DIFFERENT method (it counts all events, not the
+    cursor-bounded subset), so ``expected = head_ordinal - cursor`` is
+    independent of the projection.
+
+    (Citation corrected in review: this rule is lessons.md:1949 —
+    *"A check that only compares outputs to each other cannot find a systematic
+    error — one value must come from outside the system."* — not #348/#349,
+    which this docstring named. Those two are real entries and the discipline
+    they carry was followed, but they are about REVERTING a red injection
+    (lessons.md:761: *"snapshot to scratch and restore from the snapshot …
+    `git checkout` is correct only once the work under test is committed"*),
+    not about where an expected value comes from. The corrected citation also
+    indicts the formula below: ``head_ordinal`` and ``cursor`` are both the
+    system's own outputs, so the two readings can only be systematically wrong
+    together — which is exactly what the kind filter turned out to be.)
 
     THE LIMIT OF THAT FORMULA, named rather than relied on: ``head_ordinal``
     counts EVERY event kind, and ``events_since_cursor`` projects only
