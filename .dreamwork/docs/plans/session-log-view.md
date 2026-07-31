@@ -338,25 +338,41 @@ or the component. **INFERRED** split, from the two tasks' wording.
 
 ## 8. "Should use new component system and only be available via that"
 
-The sentence presupposes a component system that does not exist yet
-(`client/` is eight extracted files; `views.js` string-builders remain the
-one render authority). Whether one *should* exist is exactly `#591` /
-`#505` G2 — open, and explicitly not to be decided by accident
-(`#591`: "Do not let the bundle step decide this by accident";
-`DREAMWORK.md:54-57` makes it load-bearing for the claude-design goal;
-`render-architecture.md:121-124` states G2). **This design does not
-pre-empt that ruling.** What it does instead:
+The sentence presupposes a component system that did not exist yet when
+this was written (`client/` was eight extracted files; `views.js`
+string-builders were the one render authority). Whether one *should* exist
+was exactly `#591` / `#505` G2 — **now ruled** (2026-07-31 17:03, `#591`,
+receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`; `rec` on all three): **the
+UI is transitioning to a component-based React web UI** — **G2 reads
+per-surface** (one render authority *per surface*; a **derived** surface is
+not a second authority), the claude-design breakpoint is **component-level
+and staged** (tokens + `client/style.css` first, delegating wrappers
+second), and the framework is **React**. `DREAMWORK.md:54-57` carries the
+ruling for the loop; `render-architecture.md:166-177` carries the pinned
+G2 reading. **The second-truth rule stays in force**: the wrappers are
+*derived* — compiled from the same `client/*.js` `watch.py` already serves,
+restating no markup, so nothing can diverge — and new surfaces are born as
+components with no builder twin; a hand-maintained twin beside an existing
+renderer stays refused. **This design was written before the ruling and
+needed nothing to comply with it** — the ruling-independent contract below
+is exactly the shape the ruling asks for. What it does:
 
 - **The component contract is ruling-independent.** One component,
   `SessionLog`, with a narrow surface: *in* — the §3 event stream + an
   expand-state map; *out* — DOM under one mount point + `expand`/`collapse`
   /`follow` intents. Everything in §§3–7 (data model, API, scan path,
   visual spec, motion) is unchanged by whichever way G2 goes.
-- **What DOES depend on the ruling is only the binding**: whether
-  `SessionLog` is (a) the first citizen of a new component system, or (b) a
-  view module under the existing single render authority (registered like
-  every view, `watch-design.md:202`). His *"make 1 simple component now but
-  let us swap it out later"* licenses (b) as the interim in either world.
+- **The binding is now informed by the ruling, though not forced by it**:
+  whether `SessionLog` is (a) the first citizen of the new component
+  system, or (b) a view module under the existing single render authority
+  (registered like every view, `watch-design.md:202`). `#630`'s
+  component-transition plan names new surfaces, this one explicitly, as
+  **(a)** — *"component-native (session view born there; conversions
+  join)"* — but defers the concrete call to this view's own implementation
+  (*"P4 session view (#613's calls stay theirs)"*). His *"make 1 simple
+  component now but let us swap it out later"* still licenses (b) as an
+  interim in either world, so the contract above needs no revision for
+  whichever way that lands.
 - **"only be available via that"** is read as: the session view must never
   grow a second, hand-rolled rendering path in `views.js` that the
   component system would then have to replicate — the two-renderers trap
@@ -376,7 +392,8 @@ derivable; append-only under growth (prefix-hash measurement); rescan 1.0 s
 (§10); no session-identity record anywhere in the loop's files; stdlib has
 no inotify; stdlib constraint survives while no-build retired
 (`watch-design.md:41-51`); "No websockets" is the standing live-reload
-design (`watch-design.md:193`); `#591` open; `#180` prior art (poll note,
+design (`watch-design.md:193`); `#591` ruled 2026-07-31 — component-based
+React web UI, per-surface G2 (§8); `#180` prior art (poll note,
 `resolve_confined` concern); server is `ThreadingHTTPServer`
 (`watch.py:308`) so per-subscriber threads are viable.
 
