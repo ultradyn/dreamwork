@@ -100,8 +100,8 @@ coordinator its single writer.
 ## Rebase
 
 Rebased successfully onto local `master` at
-`b6d98794f27c8ea289ef52781e94719214bc7934`; no conflicts. Post-rebase
-implementation commits were `42aa10f1` (harness) and `c2e2093b` (repair).
+`82252c35dd5552e96aa2fd92bb6b0ccb435f18c7`; no conflicts. Post-rebase
+implementation commits were `d2308b14` (harness) and `1a0eb6a8` (repair).
 
 ## Out of scope
 
