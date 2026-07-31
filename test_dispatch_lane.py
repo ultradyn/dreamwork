@@ -221,3 +221,24 @@ def test_just_recipe_is_the_documented_ccc_route():
     assert "python3 dev/dispatch_lane.py" in justfile
     assert "just dispatch-lane <prompt-file> <@agent>" in " ".join(skill.split())
     assert "Direct `ccc` lane dispatch is unsupported" in skill
+
+
+def test_dispatch_lane_recipe_is_at_prefixed_so_the_route_is_silent():
+    """The supported route is `just dispatch-lane`, not the bare wrapper.
+    `just` echoes every un-@-prefixed recipe line before running it, so without
+    the '@' the route prints the expanded command on every healthy dispatch —
+    contradicting the wrapper's own silence and the #768 ledger's claim that
+    'contract-appended is rc=0 and SILENT (#755)'.  The assertion would fail if
+    someone removed the '@' prefix from the dispatch-lane recipe body."""
+    justfile = (ROOT / "justfile").read_text(encoding="utf-8")
+    recipe_start = justfile.index("dispatch-lane prompt agent *CCC_ARGS:")
+    recipe_body = justfile[recipe_start:]
+    recipe_lines = [
+        line for line in recipe_body.splitlines()
+        if "dispatch_lane.py" in line and not line.lstrip().startswith("#")
+    ]
+    assert len(recipe_lines) == 1, "expected exactly one dispatch_lane.py line"
+    assert recipe_lines[0].lstrip().startswith("@"), (
+        "dispatch-lane recipe must be @-prefixed: without it just echoes the "
+        "expanded command on every dispatch, so the route is not silent (#769)"
+    )
