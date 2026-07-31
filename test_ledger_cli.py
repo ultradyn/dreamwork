@@ -528,6 +528,7 @@ _VERB_ARGV = {
     "file": ["file", "a new task"],
     "note": ["note", "10", "--note", "x"],
     "sweep": ["sweep"],
+    "reach": ["reach"],
     "list": ["list"],
     "get": ["get", "10"],
     "count": ["count"],
@@ -699,6 +700,12 @@ def test_every_verb_is_gated_not_just_get(migrate, dev_ledger, tmp_path):
     before = (wtdw / "tasks.md").read_bytes()
     unrefused, wrote, wrong_stream = [], [], []
     for verb, argv in sorted(_VERB_ARGV.items()):
+        # #688 — reach needs NO ledger and dispatches BEFORE the gate, so it
+        # neither takes --ledger nor can be gated by it. Excluding it here is
+        # correct, not a gap: the gate protects ledger-reading verbs from
+        # answering from an empty ledger, and reach never reads one.
+        if verb == "reach":
+            continue
         rc, out, err = _run(dev_ledger, argv + ledger_arg)
         blob = out + err
         if "did not resolve here (#667)" not in blob:

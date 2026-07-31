@@ -325,6 +325,89 @@ def test_sweep_counts_every_commit_examined_even_with_no_findings():
 
 
 # ---------------------------------------------------------------------------
+# #688 — reach(): the pure function that collapses duplicate sha sets and
+# reports only branches with at least one + commit. The integration path
+# (git cherry, fold hook) is in test_ledger_reach.py; these pin the
+# collapsing/filter logic against synthetic marks, so a regression in the
+# algorithm is caught independently of git's patch-id behaviour.
+#
+# Mark grammar: (marker, sha, subject) where marker is '+' (not
+# patch-equivalent) or '-' (patch-equivalent, strong evidence it's on base).
+# ---------------------------------------------------------------------------
+
+def _reach_marks():
+    """A synthetic branch set exercising the three cases that matter.
+
+    - ``live-work``: one + commit, one - commit  → reported (the gap)
+    - ``cherry-picked``: only - commits          → NOT reported (already on base)
+    - ``pi-agent-aaa``: same shas as ``live-work`` → collapsed into an alias
+    - ``scratch-only``: one + commit, unique shas → reported (its own row)
+    """
+    return [
+        ("live-work", [("+", "aaa111", "fix(#42): a real change"),
+                       ("-", "bbb222", "")]),
+        ("cherry-picked", [("-", "ccc333", "")]),
+        ("pi-agent-aaa", [("+", "aaa111", "fix(#42): a real change"),
+                          ("-", "bbb222", "")]),
+        ("scratch-only", [("+", "ddd444", "wip: experiment")]),
+    ]
+
+
+def test_reach_reports_only_branches_with_a_plus_commit():
+    n, sup, rows = ledger.reach(_reach_marks())
+    names = {b for b, _, _ in rows}
+    assert "live-work" in names, "a + commit must surface the branch"
+    assert "scratch-only" in names
+    assert "cherry-picked" not in names, (
+        "a branch with only - commits (all on base) must NOT be reported — "
+        "that is #676 finding 2's strong-evidence side")
+
+
+def test_reach_collapses_duplicate_sha_sets_into_one_row():
+    n, sup, rows = ledger.reach(_reach_marks())
+    by_name = {b: (aliases, plus) for b, aliases, plus in rows}
+    # pi-agent-aaa shares live-work's sha set → alias, not a separate row
+    assert "pi-agent-aaa" not in by_name, (
+        "a duplicate sha set must collapse (#676 finding 3), not get its own row")
+    assert "pi-agent-aaa" in by_name["live-work"][0], (
+        "and it must be named as an alias of the surviving row")
+    assert sup == 1, (
+        f"one duplicate was suppressed; got {sup} — the count lets the report "
+        f"say how many were hidden, not just that some were (#671)")
+
+
+def test_reach_counts_every_branch_examined_so_did_not_run_is_distinguishable():
+    marks = _reach_marks()
+    n, sup, rows = ledger.reach(marks)
+    assert n == len(marks), (
+        "n_examined must count EVERY branch, so 'found nothing' differs from "
+        "'did not run' (#404, #671 — the same contract sweep carries)")
+
+
+def test_reach_text_always_prints_the_examined_count():
+    """PRODUCTION LINE: the `examined N branches` clause in reach_text's header.
+    RED: drop it and the header no longer carries the count, so a reach that
+    enumerated nothing reads as a clean result (#671, #404's trap)."""
+    text = ledger.reach_text(_reach_marks(), "master")
+    assert "examined 4 branches" in text, (
+        f"the examined count must be in the header: {text!r}")
+    # A + is a question, never a verdict (#590, #676 finding 2)
+    assert "a + is a question, not a verdict" in text, (
+        f"the closing line must not promote a + to a verdict: {text!r}")
+
+
+def test_reach_text_clean_result_differs_from_could_not_check():
+    """#404's ruled contract carried one layer in (#671): a clean report and a
+    cannot-check must not render identically. The clean path says 'nothing to
+    review (this ran)'; an empty branch list is handled by the CLI layer."""
+    marks = [("branch-x", [("-", "aaa", "")])]  # only - commits → no rows
+    text = ledger.reach_text(marks, "master")
+    assert "nothing to review (this ran" in text, (
+        f"a clean result must name itself as having run: {text!r}")
+    assert "examined 1 branches" in text
+
+
+# ---------------------------------------------------------------------------
 # #681 — the store-mode `file` verb surfaces a bad enum as one-line stderr +
 # exit 2, not a bare sqlite traceback. file_task (ledger_write) does the
 # validation; _file_store (here) is the catch that turns WriteError into the
