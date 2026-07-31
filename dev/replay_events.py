@@ -74,6 +74,9 @@ from typing import Iterable
 # and as `import dev.replay_events` from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from dreamwork_db import StoreSpec  # noqa: E402 — the one connection door (#645 i5)
+from dreamwork_db import core as db_core  # noqa: E402
+
 # Ride the ONE copy of the chain construction + the ONE apply primitive.
 # Importing these (rather than restating them) is the #352 contract.
 import ledger_store
@@ -163,8 +166,13 @@ def export_journal(store_path) -> list:
     Opens read-only so the source store is never mutated. Returns exactly the
     canonical fields + ``receipt_id``; ``ordinal``/``prev_hash``/``hash`` are
     dropped (they are structural and recomputed at replay).
+
+    The connection comes from ``dreamwork_db.core._connect`` (#645 increment 5);
+    its READ path opens ``?mode=ro`` with ``query_only=ON``.
     """
-    conn = sqlite3.connect(f"file:{Path(store_path).resolve()}?mode=ro", uri=True)
+    conn = db_core._connect(
+        StoreSpec(path=Path(store_path), busy_timeout_ms=5000), db_core.Access.READ
+    )
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(

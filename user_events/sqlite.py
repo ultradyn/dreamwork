@@ -26,6 +26,8 @@ from user_events.digest import (
     length_framed,
     request_digest,
 )
+from dreamwork_db import core as db_core  # the one connection door (#645)
+from dreamwork_db import StoreSpec
 
 PathLike = Union[str, os.PathLike]
 
@@ -1592,12 +1594,22 @@ def open_journal(path: PathLike) -> Journal:
 
     Creates the parent directory durably, applies WAL + FULL + busy_timeout,
     installs the schema, and ensures a schema_version row.
+
+    The connection itself comes from ``dreamwork_db.core._connect`` — the one
+    configured door (#645 increment 5).  Core's WRITE path applies WAL,
+    ``synchronous=FULL``, ``busy_timeout`` and ``foreign_keys=ON`` with
+    ``isolation_level=None`` (autocommit), which is the mode the Journal needs:
+    it manages its own ``BEGIN IMMEDIATE``/``COMMIT`` per command.  ``_apply_pragmas``
+    is still called for defence-in-depth — it is idempotent over what core sets,
+    and a future edit to core that dropped one would surface here rather than
+    silently change the journal's durability boundary.
     """
     p = Path(path)
-    _ensure_parent_durable(p)
     # Default isolation: DML needs explicit commit. PRAGMA journal_mode=WAL
     # must run outside a multi-statement transaction.
-    conn = sqlite3.connect(str(p))
+    conn = db_core._connect(
+        StoreSpec(path=p, busy_timeout_ms=BUSY_TIMEOUT_MS), db_core.Access.WRITE
+    )
     conn.row_factory = sqlite3.Row
     try:
         _apply_pragmas(conn)

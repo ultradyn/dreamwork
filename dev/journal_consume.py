@@ -455,7 +455,13 @@ def _non_listed_events(journal_path, cursor_ord: int, head: int) -> list[tuple[i
     than leave the ordinals it knows are there invisible (#136 — "nothing needs
     you" and "something is hiding" must not render identically).
     """
-    conn = sqlite3.connect(str(journal_path))
+    # READ connection through the one door (#645 increment 5). Core's READ path
+    # opens ``?mode=ro`` with ``query_only=ON`` — the journal is not mutated.
+    from dreamwork_db import StoreSpec  # noqa: E402 — local import keeps the
+    from dreamwork_db import core as db_core  # noqa: E402 — module's cold path lean
+    conn = db_core._connect(
+        StoreSpec(path=Path(journal_path), busy_timeout_ms=5000), db_core.Access.READ
+    )
     try:
         rows = conn.execute(
             "SELECT event_ordinal, event_kind FROM events "
