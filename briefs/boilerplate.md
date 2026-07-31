@@ -199,8 +199,21 @@ browser-binding lane cannot, because one Chromium costs more than several pytest
 The recipe first prints how many other suites and browser processes are live, so you can see
 which situation you are in before adding your own load.
 
-**Lane bars are command-, snapshot-, and interpreter-relative.** Run `python3 lint.py`: require NO ERRORs and inspect every WARN message against the measured baseline; a worktree may add `tasks.md` ledger-absent/zero-entry, `status.json`-absent, and `ledger checks`-examined-nothing WARNs because those artifacts do not travel. To inspect live data with the WORKTREE interpreter use `python3 lint.py --target /home/xertrov/.llm-general/skills/ud-dreamwork`, but a stale interpreter need not reproduce current output.
-Likewise, judge targeted pytest by its own before/after collected count; a whole-repo total quoted in a moving brief head is not that run's bar.
+**Lane bars are command-, snapshot-, and interpreter-relative.** Run `python3 lint.py`: require
+NO ERRORs and inspect every WARN message against the measured baseline. A worktree may add
+`tasks.md` ledger-absent/zero-entry, `status.json`-absent, and `ledger checks`-examined-nothing
+WARNs because those artifacts do not travel. To inspect live data with the WORKTREE interpreter,
+use `python3 lint.py --target /home/xertrov/.llm-general/skills/ud-dreamwork`; a stale interpreter
+need not reproduce current output.
+
+When a brief asks for real-path parity, freeze the subject (a read-only backup, copied fixture,
+or pinned revision) and pin the baseline interpreter revision; vary only the intended interpreter
+change. Report raw live readings as context, not as the proof. Otherwise concurrent movement can
+make an honest "not identical" look like the lane's regression — or tempt it to round the
+difference off to satisfy an impossible brief.
+
+Likewise, judge targeted pytest by its own before/after collected count; a whole-repo total quoted
+in a moving brief head is not that run's bar.
 
 **Verification gate.** `just test` runs pytest + `lint.py` + browser guards. **Do not run the
 full `just guards`** — several lanes are live, and a *multi-server* browser guard under high
