@@ -288,6 +288,19 @@ def test_open_section_keeps_the_last_entry_after_an_indented_body_heading():
         "indented `## What to build` body heading")
 
 
+def test_open_section_tolerates_trailing_whitespace_on_its_heading():
+    """#753: column-0 anchoring must not make the heading byte-exact."""
+    trailing_space = OPEN_SECTION_EMBEDDED_HEADING.replace(
+        "## Open\n", "## Open \n", 1)
+
+    expected = open_section_text(OPEN_SECTION_EMBEDDED_HEADING)
+    actual = open_section_text(trailing_space)
+
+    assert actual == expected, (
+        "a trailing space on the column-0 `## Open` heading hid the entire "
+        "Open section")
+
+
 SWEEP_LEDGER = """\
 # Task ledger
 
@@ -348,6 +361,37 @@ def test_sweep_reports_the_uncited_open_landing_with_its_sha():
 def test_sweep_subtracts_entries_that_cite_the_sha():
     _, findings = ledger.sweep(SWEEP_LEDGER, SWEEP_COMMITS)
     assert 11 not in {tid for tid, _ in findings}
+
+
+def test_sweep_refuses_when_the_open_and_body_projections_disagree():
+    """#753: a second parser failure must not render as an all-clear."""
+    starved = """\
+# Task ledger
+
+## Open
+- **#1** — canonical entry · origin: **loop**
+column-zero prose starves #1's body here
+- **stage #2** — malformed head only ledger_entries accepts
+
+## Recently landed
+"""
+    open_ids, _ = watch.parse_ledger(starved)
+    body_ids = {
+        tid for ids, _body in ledger_entries(open_section_text(starved) or "")
+        for tid in ids
+    }
+    assert open_ids == {"1"} and body_ids == {1, 2}, (
+        "precondition: the independent readers must disagree for a non-heading "
+        "parser reason")
+
+    out = ledger.sweep_text(starved, [], "", "markdown")
+
+    assert "DID NOT REVIEW" in out, (
+        f"sweep reported a verdict despite disagreeing projections: {out!r}")
+    assert "1 unexpected parsed body id(s): #2" in out, (
+        f"the refusal must name the entry it cannot classify: {out!r}")
+    assert "nothing to review" not in out, (
+        f"projection blindness must not render like a clean sweep: {out!r}")
 
 
 # ---------------------------------------------------------------------------
