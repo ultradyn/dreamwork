@@ -11,6 +11,11 @@ mockups *before* the component design locks, so the artifact shows
 alternatives, not a fait accompli. Draft questions:
 `.dreamwork/docs/plans/session-log-questions-draft.md`.
 
+Revised 2026-07-31 by `lane-663indicator`: `#662` (the "never a spinner"
+promotion corrected here and scoped at its sources) and `#663` (his 18:53
+answers folded — `guides: G1`, `marker: M1`, tool rows gone native in §7c,
+the indicator redesigned in §7b).
+
 Every claim below is tagged **VERIFIED** (measured against a real file or
 cited code) or **INFERRED** (a reading of his words or a judgment call).
 
@@ -41,6 +46,20 @@ cited code) or **INFERRED** (a reading of his words or a judgment call).
   before forwarding to the web UI.
 - *"Ask clarifying questions about this early on … show UI mockup artifacts
   for review before locking in UI component design and function."*
+
+**Answered 2026-07-31 18:53** (`questions.md`, the `#613` entry — his words
+verbatim): **`guides: G1`. `marker: M1`**, with a scoping sentence that
+governs the whole visual layer, not just the marker: *"we don't care so
+much about being truly faithful to tui limitations, just want to keep the
+design a bit evocative of that"* — **evocative-of-TUI, not
+faithful-to-TUI**. Tool child rows: *"you are welcome to redesign this
+part to be less intrusive and include native / special case rendering for
+tool calls we care about"*, with hiding empty args named as the minimum
+(§7c). The live indicator was **reopened as lane work** (`#662`, `#663`):
+loading animations are good, braille-stepping is *"better than many but
+still kinda boring"*, he wants *"an interesting thematic one"*, with
+`~/src/forum`'s peek icon as inspiration and explicitly not to copy (§7b).
+`Q1`/`Q2`/`Q3` (§6, §8) remain open with him.
 
 ## 2. The source data, measured — Claude Code session JSONL
 
@@ -128,8 +147,9 @@ event = { ev: open | update | close, node }
   rows across ticks — the same identity discipline as `data-qid`
   (`transitions.md`, the regroup).
 - **Thin rows carry labels and counts, never bodies.** `label` is the
-  collapsed one-liner (`tool 8.1 · Edit asdf.txt (+123 −48)`,
-  `agent turn 8 (29 steps)`); the body — args, response, full diff, prose —
+  collapsed one-liner (`8.1 · edit asdf.txt (+123 −48)`,
+  `agent turn 8 (29 steps)` — the per-tool label grammar is §7c);
+  the body — args, response, full diff, prose —
   is fetched lazily via `ref` when a row expands (§6, `/session/peek`).
   This is what makes "no DB references within a turn" work: `ref` points at
   the source file, and the server serves the range on demand.
@@ -296,16 +316,30 @@ or the component. **INFERRED** split, from the two tasks' wording.
 
 ## 7. What the view shows (UI spec — see the mockup for the look)
 
+His 2026-07-31 scoping sentence governs this whole section:
+**evocative-of-TUI, not faithful-to-TUI**. Re-read under it, two earlier
+calls turn out to have been argued on fidelity grounds that no longer
+count for anything: option B's stepping cycle was credited as *"authentic
+TUI"* (authenticity was its one listed virtue, and he called it boring
+anyway), and M2's brackets took his mock's `[+]` notation more literally
+than he meant it. Braille cells stay in the design as **material** — one
+character cell holds eight addressable dots, which §7b spends — not as
+fidelity.
+
 - **Thin rows.** One line each (~1.5em), full-row hit target, mono, the
   house luminance ramp (`--text`/`--muted`/`--dim`/`--dimmer` — emphasis is
   luminance, never a second font; `client/style.css:2-5,34`). The commits
   panel rows (`client/style.css:358-390`) are the closest existing idiom
   and the mockup matches their density.
-- **Tree + indent guides.** Children indent by a fixed step; a **faint
-  vertical guide** (1px, `--line`-grade) marks each open ancestor level —
-  the **INFERRED** completion of his cut-off "maybe we add faint" sentence,
-  shown in the mockup with an alternative (no guides, indent only) so he
-  can refuse it cheaply.
+- **Tree + indent guides — his call: `G1`** (2026-07-31). Children indent
+  by a fixed step; a **faint vertical guide** (1px, `--line`-grade) marks
+  each open ancestor level. (This began as the **INFERRED** completion of
+  his cut-off "maybe we add faint" sentence; he confirmed it, so it is now
+  his.)
+- **Disclosure marker — his call: `M1`** (2026-07-31): quiet chevrons
+  `▸/▾`, the page's details idiom, dimmer than the labels they precede so
+  the labels keep the luminance ramp. His mock's `[+]`/`[-]` notation was
+  a structure-sketch, as suspected, not a visual spec.
 - **Auto-expand the frontier.** At every node, the most recent child is
   expanded by default; as new children arrive the previous frontier folds
   and the new one opens — the view "descends and ascends". Two hard rules
@@ -320,21 +354,147 @@ or the component. **INFERRED** split, from the two tasks' wording.
     reveal/ghost, the `foldDetailsLocal`/`travelCard` family
     (`transitions.md`, the section fold). Reduced motion: instant, function
     intact. A tick that lands mid-travel resumes it (`#477`).
-- **The `⠏` progress indicator.** His mock uses a braille spinner glyph on
-  live nodes. House tension, named rather than glossed: the wisp's design
-  says *"Never a spinner"* (`client/style.css:824`; `transitions.md`, the
-  awaiting-fold wisp — the one standing motion exception breathes instead).
-  Both readings ship in the mockup: **(a)** a static `⠏` that *breathes* on
-  the wisp's envelope (opacity in and out, ~5.5 s — TUI glyph, house
-  motion); **(b)** a stepping braille cycle (`⠋⠙⠹⠸…`, authentic TUI, but a
-  loop that sweeps — precisely what the wisp rule refused). Rec: (a). The
-  glyph is the TUI half of "TUI inspired but pretty"; the breath is the
-  pretty half.
+- **The live indicator — redesigned; §7b.** The first version of this
+  plan rejected his braille-stepping option by citing a standing *"Never a
+  spinner"* house motion language at `client/style.css:824`. That was
+  `#662`: the line number was wrong (the sentence sat at `:884` when
+  `#662` was filed; the `#662` fix's own insertion at the `:761` site
+  moved it to `:887` — line citations rot, which is the whole lesson),
+  and the sentence is **scoped** — it describes the awaiting-fold wisp,
+  *"the ONE deliberate exception to the opt-in motion rule (#113)"*
+  (`client/style.css:887`, the wisp comment; `transitions.md`, the wisp
+  section), an element with no progress to count. The only other
+  occurrence (`client/style.css:761`) refuses a *spinner forever* — an
+  indeterminate state with no exit — not loading animation. Both source
+  sites now carry their scope inline so the promotion cannot recur. Nothing in the house rules forbids a moving
+  indicator here; `#113`'s reduced-motion discipline still binds it like
+  every animation.
 - **Collapsed labels carry the summary**: `agent turn 8 (29 steps)`,
-  `Edit asdf.txt (+123 −48)`, `page 3 · compacted 288k → 20k`. Counts come
-  from bookmarks/scan, diffs from `toolUseResult` at peek time.
-- **Depth cap in practice is 4** (page > turn > step > detail), so the
-  indent budget at the 32ch floor is safe; the mockup shows the narrow case.
+  `edit asdf.txt (+123 −48)`, `page 3 · compacted 288k → 20k`. Counts come
+  from bookmarks/scan, diffs from `toolUseResult` at peek time; the
+  per-tool label grammar is §7c.
+- **Depth cap in practice is 3 rows** (page > turn > step) plus an
+  expanded step's indented body — §7c retires the old fourth level — so
+  the indent budget at the 32ch floor loosens; the mockup shows the
+  narrow case.
+
+### 7b. The tally — a step odometer on an always-clockwise ratchet
+
+His steer (2026-07-31): loading animations are good; braille-stepping is
+*"better than many but still kinda boring"*; he wants **interesting and
+thematic**, with `~/src/forum`'s peek icon as inspiration, explicitly not
+to copy. The reference, read at source
+(`app/javascript/stylesheets/design-scarce-mono.scss:1429-1472`,
+`app/views/nodes/_ledger_peek_icon.html.erb`, and the Alpine scope at
+`_ledger_row.html.erb:6` — `togglePeek() { this.arm += 90; this.group +=
+180 }`): a two-bar `+`/`−` icon where every toggle advances the same way
+round, so open and close both turn clockwise and the icon **never
+unwinds** — its current angle is a memory of every toggle there has ever
+been. The transferable quality is not the shape: it is **monotonic
+accumulation driven by discrete meaningful acts**, instead of a
+wall-clock loop that returns to where it started.
+
+The session log owns a better ratchet than toggles: the transcript is
+**append-only** (§2, measured) — work accrues and never rewinds. So the
+indicator should *be* the progress:
+
+- **One braille cell as an odometer wheel.** Each record landing in the
+  live turn (thinking, tool call, tool result, text) advances the wheel
+  one dot around the cell's perimeter, clockwise (dot order 1 2 3 7 8 6
+  5 4): `⠁⠃⠇⡇⣇⣧⣷⣿`. A full cell then **empties** one dot per record the
+  same way round — the hole sweeps clockwise: `⣾⣼⣸⢸⠸⠘⠈⠀` — and fills
+  again. Sixteen states, phase = records mod 16, direction never
+  reverses. The glyph is a memory of the turn's work the way the forum
+  icon's angle is a memory of its toggles.
+- **Motion means a record landed; stillness plus breath means waiting.**
+  Between records the glyph breathes on the wisp's envelope (~5.5 s
+  opacity — the house's existing "alive, nothing to report" idiom,
+  correctly scoped this time: the *wait* gets the breath, the *work* gets
+  the ratchet). A landing record pulses the glyph briefly bright as its
+  dot arrives, then the breath resumes. A wall-clock spinner animates
+  hardest when the agent is most wedged; the tally cannot lie that way —
+  which is what makes it interesting rather than decorative, and thematic
+  twice over (the append-only log it mirrors; the TUI cell it inhabits).
+- **Placement.** Every live-spine row (the live turn and its running
+  step) shows the same turn-wheel, advancing together — one clock per
+  turn, one shared breath envelope (the wisp's one-organism rule). A new
+  turn starts a fresh wheel at `⠀`.
+- **Delivery.** v1 events arrive in ~2 s batches (§6), so a batch of N
+  records steps the wheel N times at ~120 ms per step rather than
+  teleporting — an eased ratchet, still monotonic. `#614`'s push
+  transport tightens the granularity without touching the design.
+- **Reduced motion is not "nothing happens":** the wheel still changes
+  state per landed record — a discrete repaint, no transition, exactly
+  the forum icon's own reduced-motion answer (`transition: none`; the
+  state still lands) — while the breath holds at a legible constant
+  opacity (the wisp's answer) and the arrival pulse is dropped.
+
+**Alternatives, with costs** (all three live in the mockup):
+
+| option | what it is | what it costs |
+|---|---|---|
+| **T1 · the tally** (rec) | the event-ratcheted odometer above | motion is data-driven, so a long silent Bash call shows only the breath (honest, but quieter than a spinner); needs ~10 lines of client state no pure-CSS loop needs |
+| T2 · the snake | a 5-dot arc advancing clockwise on wall-clock (`⣇⣦⣴⣸⢹⠻⠟⡏`), pure CSS `steps()` | always-clockwise but wall-clock: it animates identically whether the agent is working or wedged, and it sits one reshuffle from the stock cycle he already called boring |
+| B · stock stepping cycle | `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` | his own verdict is the cost: *"better than many but still kinda boring"* |
+
+Option A (a static `⠏` breathing on the wisp envelope — the first plan's
+rec) is **withdrawn**, not merely outranked: its stated justification was
+compliance with the rule `#662` corrects, and with that rule gone it is a
+progress indicator that never registers progress.
+
+### 7c. Tool rows — native rendering, measured against the real session
+
+His words (2026-07-31): *"the tools [args, response] children, is there a
+better way of showing that? If the arguments are empty should hide that
+one at the very least. But yeah you are welcome to redesign this part to
+be less intrusive and include native / special case rendering for tool
+calls we care about."* Hiding empty args is the floor. Which calls earn
+special-casing is judged from what the transcripts contain — measured
+over the §2 session's 6,439 `tool_use` records (**VERIFIED**, all rows):
+
+| tool | n | share | native fuel in the record |
+|---|---|---|---|
+| Bash | 5,622 | 87.3% | args `command` + `description`; result `stdout`/`stderr`/`interrupted` — **no exit code is recorded** |
+| Edit | 344 | 5.3% | `toolUseResult.structuredPatch` (hunks with `lines`) |
+| Read | 185 | 2.9% | `file.filePath`/`numLines`/`startLine`/`totalLines`; result p95 415 kB |
+| Write | 150 | 2.3% | `filePath` + `structuredPatch` |
+| all others | 138 | 2.1% | playwright 72 (screenshots to 220 kB base64), ToolSearch 24, SendMessage 11, TaskStop 10, Agent 9, TaskList 5, … |
+
+The redesign, from those numbers:
+
+- **The `args`/`response` child pair dies.** A tool step is a **leaf**:
+  one thin row; expanding it opens **one body** (the peekbody idiom) with
+  the args rendered compactly at top — *when non-empty* — and the result
+  below, both lazily fetched by byte range (§3). Two pseudo-rows per tool
+  step were a tree level carrying nothing the body does not — across the
+  measured session's 6,439 tool steps, ~12,900 chrome rows. Retiring the
+  level is also what drops the depth cap to 3 (§7 above).
+- **Hide empty args — the floor, measured real:** `TaskList` (5 of 5
+  calls) and `browser_close` (2 of 2) take no arguments at all; the
+  generic shape rendered an `args` child with literally nothing in it.
+- **The four natives** (97.8% of calls between them):
+  - **Bash** — label `$ <command>` (truncated ~40ch; args `description`
+    as the hover title), the `$` doing the TUI-evocation. Right column:
+    stdout line count when clean; `stderr n lines` in `--bad` when
+    `is_error` or stderr is non-empty. **Not** `exit 0` — the transcript
+    records no exit code (measured; the first mockup invented one). Body:
+    stdout tail, stderr first when present.
+  - **Edit** — label `edit <basename> (+a −d)`, figures summed from
+    `structuredPatch`; body is the real diff, `+`/`−` in `--ok`/`--bad`
+    (the mockup's existing peekbody idiom — now verified derivable).
+  - **Write** — label `write <basename> · <size>`; body is the
+    `structuredPatch` diff when the file existed, else the content head.
+  - **Read** — label `read <basename> · <n> lines` (`@<start>` when
+    offset); body is the content **head**, never the 415 kB p95 payload.
+- **Agent** (9 calls) takes a half-native label — `agent → <name> ·
+  <model>` — because its row is `#615`'s mount point: the subagent's own
+  tree hangs under the dispatching step once the per-client tasks land.
+  Label now, mount later.
+- **Everything else** takes the generic leaf: tool name as label, args
+  size + result size in the right column, the one-body expansion. Binary
+  or base64 result content (playwright screenshots, `isImage`) is
+  summarised by size, never inlined. A tool joins the native set when its
+  rows earn it in real transcripts, not speculatively.
 
 ## 8. "Should use new component system and only be available via that"
 
@@ -395,13 +555,26 @@ no inotify; stdlib constraint survives while no-build retired
 design (`watch-design.md:193`); `#591` ruled 2026-07-31 — component-based
 React web UI, per-surface G2 (§8); `#180` prior art (poll note,
 `resolve_confined` concern); server is `ThreadingHTTPServer`
-(`watch.py:308`) so per-subscriber threads are viable.
+(`watch.py:308`) so per-subscriber threads are viable; tool distribution
+over the measured session (§7c table — Bash 87.3%, the four natives
+97.8%, `TaskList`/`browser_close` the real empty-args cases); Bash
+results carry **no exit code** (`stdout`/`stderr`/`interrupted` only);
+Edit/Write carry `structuredPatch`, Read carries
+`file.numLines`/`startLine`/`totalLines`; the forum peek icon's ratchet
+read at source (`_ledger_row.html.erb:6` — `arm += 90; group += 180`,
+always clockwise, reduced motion kills only the transition); "never a
+spinner" is scoped at both its occurrences (`client/style.css:887` the
+wisp — `:884` pre-fix, shifted by the fix's own `:761` insertion — and
+`:761` the deploy timeout; `#662`).
 
-**INFERRED (each flagged in place):** faint indent guides complete his cut
-sentence; the "only via component system" reading (§8); the v1
-tick-delivery deviation from "no polling" (§6); hidden-chrome suppression
-(§3); partial-trailing-line handling (§4); the `#613`/`#614` transport
-split (§6); POST classification of `/session/watch` (§6).
+**INFERRED (each flagged in place):** the "only via component system"
+reading (§8); the v1 tick-delivery deviation from "no polling" (§6);
+hidden-chrome suppression (§3); partial-trailing-line handling (§4); the
+`#613`/`#614` transport split (§6); POST classification of
+`/session/watch` (§6). **Judged rather than asked** (his instruction):
+the native set's cut line and label grammar (§7c — the measured four plus
+`Agent`); the tally's placement, batching ease, and reduced-motion answer
+(§7b). (Guides left this list: `G1` is his call now, 2026-07-31.)
 
 ## 10. Point B (`#615`) — scoped, not designed
 
