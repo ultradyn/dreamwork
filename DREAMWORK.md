@@ -40,6 +40,37 @@ dreamwork-version: 5853e1789929
     managing an agent's lifecycle (spawning, steering, compacting,
     retiring) becomes something the system does deliberately rather
     than something the human improvises per client.
+- **Current focus (his, 2026-07-31): make `watch.py` modular and its UI a real
+  frontend.** *"refactoring watch.py into a modular and flexible architecture so
+  it's easily reusable by dreamhub, extracting the UI into a separate frontend
+  that is built and served by watch.py/dreamhub + compatible with claude design.
+  goal is to have good structure for long term maintenance and principled
+  structured dev."* `#397` did the first half — the eight UI constants are real
+  files under `client/` now — and the bundle step (`#505`) is what follows.
+  **Not exclusive:** *"current focus does not imply exclusivity, but we should
+  prioritize related tasks within orchestration budgets + make sure we stay
+  consistent with the goal."* Unrelated work still lands; it just does not
+  outrank this when both are ready.
+  - Claude-design compatibility is a stated target, and it needs a component
+    surface a design tool can consume. That is exactly what `#505` G2 (second
+    render authority) is still unruled on — so it is now load-bearing for a
+    goal, and must not arrive as a side effect of tooling.
+- **Dogfooding the loop is a goal, not a side effect** (his, 2026-07-31):
+  *"whenever we notice friction or issues with the loop procedures / work flow
+  (including user friction, subagent issues, and issues you yourself find), log
+  tasks in the db to investigate/fix these issues."* Paired with: *"process the
+  dreamwork loop faithfully; if you need to improvise, consider whether this
+  would be a good thing to fix permanently (if so: log a task)."* Improvising is
+  allowed and is *evidence* — the question after each one is whether the loop
+  should have needed it.
+- **Dreamhub's end state has a front door** (his, 2026-07-31, extending the
+  `#275` Q3 ruling above): one frontend for many projects, each with its own
+  dreamworker, all reachable through one webui — *"dreamhub with login
+  (supporting user/pass, oauth, etc), that a user can use to see/manage all
+  projects + useful taskboard (which projects have things waiting, etc)."* The
+  taskboard's job is cross-project triage: which of them are waiting on him.
+  This does not relax the standing bar on public/WAN serving — a login is what
+  would eventually clear that bar, not a reason to skip the reviewed design.
 - The loop stays cheap (cache-warm heartbeat), never gets stuck or bored,
   and is always steerable in a few words (`do now` / `do next` /
   `add idea`).
@@ -513,6 +544,28 @@ dreamwork-version: 5853e1789929
   about three stops. *"IDK that I will leave up to you, but we get 3 dimensions
   of input is the point"* — the stops are the loop's call, the three dimensions
   are not.
+- **Talk to him through the dashboard, not the chat** (human-set 2026-07-31):
+  *"primary method of communication with the user should be via dreamwork webui
+  (use questions, chats, etc). The direct chat interface should be reserved for
+  select dogfooding and recovery in case of errors."* So a finding, a proposal
+  or a status worth his attention goes to `questions.md` or a chat the dashboard
+  surfaces; the chat turn is for dogfooding the loop and for getting unstuck.
+  This raises the stake on every format contract — a `questions.md` that parses
+  to nothing is now the **primary** channel failing silently, not a secondary
+  one, and this repo has already seen that exact failure.
+- **Every lane returns a dogfood report** (human-set 2026-07-31): each subagent
+  ends its report with a section on friction it hit *with the loop itself* — an
+  unclear brief, missing or wrong tooling, a convention that cost it time. His
+  reason: *"so you get good feedback."* Blank is valid **if stated**; an omitted
+  section reads as no friction, which is not the same as none found. It goes in
+  the dispatch prompt, because a lane reads its prompt once and reliably and
+  re-reads a relay only between increments.
+- **Never stop a running lane to apply a change — relaying to it is fine**
+  (human-set 2026-07-31): *"you can give them new requirements, that's fine ofc
+  … just don't stop them."* The cost he named is quota: a restart throws away
+  the work already done *and* the context needed to redo it, where a relay costs
+  one message. So steer in flight, and fold the same change into the next
+  dispatch prompt.
 
 ## Plugins
 
