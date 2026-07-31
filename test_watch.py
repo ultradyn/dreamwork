@@ -996,36 +996,40 @@ class TestCollector(unittest.TestCase):
                         "the group sits above the rest of the dashboard")
 
     def test_posture_widget_is_sticky_while_countdown_live(self):
-        """#565 — the posture widget is sticky (bottom:0) so scrolling up
-        keeps its countdown visible. Sticky is CONDITIONAL: a probe proved
-        always-on `bottom:0` on the end-of-page `.posture` docks it
-        permanently (~35% of the viewport at rest), so a class toggled only
-        while a posture arm or deploy countdown is live is the sole useful
-        form — and it matches the human's own framing ("when the countdown
-        timer bar is on screen"). Sticky is not motion (transitions.md), so
-        no travel assertion; the held claim is the CSS declaration + the
-        toggle that gates it.
+        """#565 docked the posture widget bottom:0 so scrolling up keeps its
+        countdown visible; #674 narrowed the dock to .parm (the progress bar
+        + the "arms in …" line), NOT the whole .posture component. Sticky is
+        CONDITIONAL — always-on `bottom:0` docks at rest — so a class toggled
+        only while a posture arm or deploy countdown is live is the useful
+        form, matching his framing ("when the countdown timer bar is on
+        screen"). Sticky is not motion (transitions.md), so no travel
+        assertion; the held claim is the CSS declaration + the toggle that
+        gates it.
 
-        Production lines: the `.posture.psticky { position:sticky; bottom:0 }`
+        Production lines: the `.parm.psticky { position:sticky; bottom:0 }`
         CSS rule; `posturePinnedLive()` (covers BOTH countdown hosts — the
-        posture arm and the deploy arm); `paintPosturePin()` called from
-        setContent so a tick rebuild re-applies the class. Drop any one and
-        a clause below fails.
+        posture arm and the deploy arm); `paintPosturePin()` toggling .psticky
+        on #parm, called from setContent so a tick rebuild re-applies the
+        class. Drop any one and a clause below fails.
         """
         page = watch._get_page()
-        # CSS: a sticky rule keyed on .posture + a pin class, docking at the
-        # viewport bottom (a probe showed top:0 is a no-op for an
-        # end-of-page element; only bottom:0 keeps it visible on scroll-up).
-        m = re.search(r"\.posture\.psticky\s*\{[^}]*\}", page)
-        self.assertTrue(m, ".posture.psticky sticky rule missing from CSS")
+        # CSS: a sticky rule keyed on .parm + a pin class, docking at the
+        # viewport bottom. The OLD whole-component rule (.posture.psticky)
+        # is gone (#674): assert it is absent so the scope cannot silently
+        # widen back.
+        m = re.search(r"\.parm\.psticky\s*\{[^}]*\}", page)
+        self.assertTrue(m, ".parm.psticky sticky rule missing from CSS")
         rule = m.group(0).replace(" ", "")
         self.assertIn("position:sticky", rule,
                       "sticky rule must declare position:sticky")
         self.assertRegex(m.group(0), r"bottom:\s*0",
                          "sticky rule must dock at bottom:0")
-        # JS: a predicate naming BOTH countdown hosts, a toggle, and a
-        # setContent re-apply (the 2s tick rebuilds #posture via morphdom,
-        # so the class must be re-applied every render or it is lost).
+        self.assertNotRegex(page, r"\.posture\.psticky\s*\{",
+                            "#674: the sticky rule must key on .parm, not the "
+                            "whole .posture component (his scope fix)")
+        # JS: a predicate naming BOTH countdown hosts, a toggle that carries
+        # the class on #parm, and a setContent re-apply (the 2s tick rebuilds
+        # #parm via morphdom, so the class must be re-applied every render).
         self.assertTrue(re.search(r"function\s+posturePinnedLive\b", page),
                         "posturePinnedLive predicate missing")
         body = page[page.index("function posturePinnedLive"):]
@@ -1036,6 +1040,12 @@ class TestCollector(unittest.TestCase):
                       "predicate must read the deploy-arm phase")
         self.assertTrue(re.search(r"function\s+paintPosturePin\b", page),
                         "paintPosturePin toggle missing")
+        pp = _extract_js_fn(page, "function paintPosturePin()")
+        self.assertRegex(pp, r"getElementById\(\s*['\"]parm['\"]",
+                         "#674: paintPosturePin must carry .psticky on #parm, "
+                         "not the whole #posture component")
+        self.assertNotIn("getElementById('posture')", pp,
+                         "the pin must not target #posture (#674 scope fix)")
         # setContent (the morphdom seam) re-applies the pin after rebuild.
         sm = re.search(r"function setContent\(html\)\s*\{", page)
         self.assertTrue(sm, "setContent not found")
@@ -1095,32 +1105,90 @@ class TestCollector(unittest.TestCase):
             "shape that left the dock raised (#636)")
 
     def test_the_docked_posture_widget_paints_no_opaque_background(self):
-        """#636 — the docked posture widget must not paint a fill.
+        """#636 — the docked posture widget must not paint a fill, and #674
+        both narrowed the dock to .parm and removed the top hairline.
 
-        #565 gave `.posture.psticky` `background:var(--bg)` to keep the docked
-        widget readable over scrolling content. But `--bg` is the FLAT page
-        colour and `#dreambg` (the fractal canvas, z-index:-1) is what the
-        page actually shows, so the opaque rule punched a flat #0b0f19
-        rectangle through the shader field for the whole countdown — the "blue
-        bg" the human named, MEASURED as rgb(11, 15, 25) against a live
-        canvas, with the widget's edges visible at the .wrap boundary.
+        #565 gave the docked widget `background:var(--bg)` for readability;
+        #636 made it transparent because --bg is the FLAT page colour while
+        #dreambg is what the page shows (an opaque fill punches a flat
+        rectangle through the shader field — the "blue bg" he named). #674's
+        narrowed .parm dock carries NO background declaration at all, which
+        is even stronger: a rule that names no `background` paints no fill.
 
-        His instruction was explicit: it should be transparent. That overrides
-        #565's readability rationale (recorded here because it was a real
-        reason, not an oversight); the top hairline stays and still marks the
-        dock edge without painting a fill.
+        #674 also removed the box-shadow top hairline #565 added to mark the
+        dock edge: it appeared above "posture / arming override…" because it
+        rode the whole .posture section, and he said it "shouldn't be there".
+        The .pbar (a 3px line) is itself a visible boundary; the real
+        readability fix is the deferred fade/mask, not a hairline.
         """
         page = watch._get_page()
-        m = re.search(r"\.posture\.psticky\s*\{[^}]*\}", page)
-        self.assertTrue(m, ".posture.psticky sticky rule missing from CSS")
+        m = re.search(r"\.parm\.psticky\s*\{[^}]*\}", page)
+        self.assertTrue(m, ".parm.psticky sticky rule missing from CSS")
         rule = m.group(0).replace(" ", "").replace("\n", "")
-        self.assertIn("background:transparent", rule,
-                      "the docked widget must not paint a fill (#636)")
         self.assertNotIn("background:var(--bg)", rule,
-                         "the opaque --bg fill is the blue block he named")
-        # the dock edge is still marked — a hairline, not a fill.
-        self.assertIn("box-shadow:", rule,
-                      "the top hairline marks the dock edge; keep it")
+                         "the opaque --bg fill is the blue block he named (#636)")
+        # #674: the dock carries NO box-shadow hairline (item 1).
+        self.assertNotIn("box-shadow:", rule,
+                         "#674: the top hairline is removed — it appeared above "
+                         "'posture / arming override…' and he said it shouldn't "
+                         "be there")
+        # the whole-component rule is gone, so its hairline cannot return via
+        # that selector either.
+        self.assertNotRegex(page, r"\.posture\.psticky\s*\{",
+                            "#674: the whole-component dock rule must be gone")
+
+    def test_posture_countdown_lists_all_five_axes(self):
+        """#674 — the "arms in Ns · …" countdown line lists the WHOLE pending
+        posture point, all five axes. It had only pace/asking/delegation; he
+        noticed orchestration (orchestrator/hands-on, #510) missing. delivery
+        (#342) was also absent in source — the brief described it as present
+        and was wrong; measured on the pre-#674 build the line read
+        `arms in 10s · steady · ask · 0`, three values. Both are now carried.
+
+        The assertion EXECUTES the real label expression (extracted from
+        armPostureUI and evaled in node with a sample draft) so a
+        comment-only reference to the axes cannot pass it — the produced
+        string must carry all five axis values. The OLD three-axis label
+        drops 'batched' and 'orchestrator', reddening the gate.
+
+        WHAT THIS GATE CANNOT SEE, and where the cover comes from: it feeds
+        its OWN draft, so it holds the label EXPRESSION and nothing about the
+        data reaching it. Drop `orchestration` from the object armPostureDraft
+        builds and the expression's `|| 'hands-on'` fallback prints a value
+        the user never picked — measured: picking `orchestrator` then rendered
+        `arms in 10s · idle · ask · 0 · instant · hands-on` — and this gate
+        still passes. `dev/capture/posturerecuse.mjs` covers that half by
+        clicking the real chips and reading #pcount back.
+        """
+        import subprocess, shutil
+        page = watch._get_page()
+        arm = _extract_js_fn(page, "function armPostureUI(draft, until, gen)")
+        # the production label expression — a multi-line '+' concat with no
+        # inner ';', so a non-greedy capture reaches its terminator.
+        lm = re.search(r"const label = [\s\S]*?;", arm)
+        self.assertTrue(lm, "the label expression is missing from armPostureUI")
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — five-axes gate did NOT run")
+        # a draft whose VALUES are all distinct, so each assertion is owed to
+        # exactly one axis and cannot ride a value that appears twice.
+        draft = ("{pace:'steady',asking:'near-auto',delegation:3,"
+                 "delivery:'batched',orchestration:'orchestrator'}")
+        script = "const draft=" + draft + ";\n" + lm.group(0) \
+            + "\nconsole.log(label);\n"
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0,
+                         "label node eval failed: " + proc.stderr)
+        out = proc.stdout
+        # precondition: the fixture distinguishes — assert the gap that the
+        # OLD code leaves (delivery + orchestration absent) before the values.
+        self.assertIn("·", out, "params are ' · '-separated")
+        for needle in ("steady", "near-auto", "3", "batched",
+                       "orchestrator"):
+            self.assertIn(needle, out,
+                          "the countdown params line must list all five axes; "
+                          "missing %r (#674)" % needle)
 
     def test_deploy_countdown_recused_into_posture_widget(self):
         """#569 — the deploy update message is recused from #fmsg (the chrome)

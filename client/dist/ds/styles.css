@@ -1669,36 +1669,49 @@
      Active stop takes --accent (live loop control). Reduced motion hides
      the bar, keeps the second-by-second text + same application time. */
   .posture { margin:.55rem 0 .35rem; }
-  /* #565 — the posture widget docks to the viewport bottom while one of its
+  /* #565 docked the posture widget to the viewport bottom while one of its
      countdowns is live, so scrolling up keeps the countdown visible. Sticky
      is CONDITIONAL (the .psticky class, toggled by paintPosturePin from
-     posturePinnedLive): a headless probe proved always-on `bottom:0` on this
-     end-of-page section docks it at rest (~35% of the viewport permanently),
-     and `top:0` is a no-op for an end-of-page element, so the class — gated
-     on a live posture arm or deploy countdown, matching "when the countdown
-     timer bar is on screen" — is the only useful form. A top hairline
-     (box-shadow, no layout shift) marks the dock edge; the full HR+soft-fade
-     the human sketched is deferred (it needs the review-pages
-     registered-property mask and does not fight sticky — see FLAG in the
-     merge). Sticky is not motion (transitions.md), so there is no travel
-     here, only the declaration.
+     posturePinnedLive): always-on `bottom:0` docks at rest, and the class —
+     gated on a live posture arm or deploy countdown, matching "when the
+     countdown timer bar is on screen" — is the useful form. Sticky is not
+     motion (transitions.md): no travel here, only the declaration.
 
-     #636 — the fill is TRANSPARENT, on his explicit instruction ("it has a
-     blue bg (should be transparent)"). #565 painted `background:var(--bg)`
-     to keep the docked widget readable over scrolling content, which was a
-     real reason and is recorded here rather than deleted. What it missed is
-     that `--bg` is the FLAT page colour while `#dreambg` (the fractal
-     canvas, z-index:-1) is what the page actually shows: an opaque --bg fill
-     punches a flat #0b0f19 rectangle through the shader field for the whole
-     countdown, with the widget's edges visible at the .wrap boundary —
-     measured rgb(11, 15, 25) against a live canvas. That block is the thing
-     he named. The readability tension is real and now UNRESOLVED: content
-     scrolls visibly behind the docked widget. Left that way deliberately —
-     the honest fix is a fade/mask, which is the deferred sketch above, not a
-     fill. */
-  .posture.psticky { position:sticky; bottom:0; z-index:5;
-    background:transparent;
-    box-shadow:0 -1px 0 var(--line); }
+     #674 — the dock is narrowed to .parm (the progress bar + the "arms in …"
+     line beneath it), NOT the whole .posture component. His words: the
+     bottom-sticking "should only apply to the progress bar and 'arms in …'
+     line", not the whole control, so paintPosturePin now toggles .psticky on
+     #parm. RE-MEASURED against the narrower subtree, which is the whole point
+     of #565's 35% number: armed in a 1000x700 viewport, #parm is 21px tall —
+     3.0% — against 315px (45%) for the whole .posture section on the same
+     page. So the constraint that made the dock conditional does not bind the
+     smaller one. The gate stays anyway, and NOT out of caution: .parm only
+     carries content while a countdown is live (the bar is hidden and the
+     count empty otherwise), so an always-on dock would pin an empty 21px
+     strip over the page forever for no gain, and he asked about scope, not
+     timing.
+
+     The class must live on an element that is a SIBLING of .posture, not a
+     child of it: sticky is clamped by its parent's box, so a sticky .parm
+     inside the section only reaches the section's own top edge — measured
+     top=975 in a 700px viewport, i.e. it never docks at all. That is why
+     posturePicker closes </section> before emitting .parm.
+
+     #636 made any docked fill TRANSPARENT on his explicit instruction ("it
+     has a blue bg (should be transparent)"): --bg is the FLAT page colour
+     while #dreambg is what the page shows, so an opaque fill punches a flat
+     rectangle through the shader field. .parm carries no fill of its own, so
+     the transparency carries forward by omission.
+
+     #674 — the top hairline (box-shadow #565 added to mark the dock edge) is
+     REMOVED. It appeared above "posture / arming override…" because it rode
+     the whole .posture section; narrowing the dock to .parm would move its
+     home to between the axis chips and the bar — a divider nobody asked for.
+     The .pbar (a 3px line) is itself a visible boundary, the narrower row is
+     far less intrusive, and he explicitly said the line "shouldn't be
+     there". The real readability fix for a transparent dock is the deferred
+     fade/mask, not a hairline. */
+  .parm.psticky { position:sticky; bottom:0; z-index:5; }
   /* #488: source chip sits beside the Posture heading, not under the axes. */
   .posture-head { display:flex; align-items:baseline; gap:.55rem;
     flex-wrap:wrap; margin:var(--space) 0 .5rem; }

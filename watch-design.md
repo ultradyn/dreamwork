@@ -2466,6 +2466,15 @@ quiet − / value / + with the derived label beside it. Active stop takes
 `--accent` (live loop control). Reduced motion hides the bar and keeps the
 second-by-second text and the same application time.
 
+**The arming line lists the WHOLE pending point — all five axes (#674).**
+While the arm is live, `#pcount` reads `arms in Ns · pace · asking ·
+delegation · delivery · orchestration`, the full posture point about to be
+committed. It carried only the first three for a long time; he noticed
+orchestration (`orchestrator`/`hands-on`, #510) missing — delivery (#342)
+was absent too, the renderer having never learned either. Defaults mirror
+`resolve_posture`'s absent fallbacks (`instant` / `hands-on`) so the line
+never reads "undefined".
+
 **The posture slot has three states, and only one earns prose (#488,
 #551).** A dim slot sits **beside the Posture heading** (`.posture-head`:
 label + `#posture-src`), not under the axes. **Armed** — a posture change
@@ -2493,22 +2502,45 @@ the HTML `hidden` attribute, never insert/remove — so the card and
 everything below it do not reflow when the text arrives or departs.
 Hover/focus never arms, POSTs, or touches localStorage.
 
-**The widget docks while a countdown is live (#565).** His ask: the posture
+**The widget docks while a countdown is live (#565, narrowed to .parm by #674).** His ask: the posture
 widget sticky on scroll *"when the countdown timer bar is on screen."* A
 headless probe refuted the always-on form — `bottom:0` on this end-of-page
-section docks it **permanently** (~35% of the viewport at rest), and `top:0`
+section docks it **permanently** (~35% of the viewport at rest for the whole
+component), and `top:0`
 is a no-op for an element already last in flow — so the dock is a conditional
 `.psticky` class, toggled by `paintPosturePin()` from `posturePinnedLive()`,
 which reads **all three** countdown hosts: the deploy phase
 (`staleDeployPhase` arming/running), the posture-arm deadline
 (`postArmUntil`), and the cross-tab pending draft (`pendingPostIsLive`).
 The class is re-applied inside `setContent` (the morphdom seam), so a live
-tick cannot undock it. The docked widget is opaque (`var(--bg)`) with a
-`box-shadow` top hairline so page content passing beneath it never reads
-through. **Sticky is not motion** — a position, not a gesture — so nothing
+tick cannot undock it. **#674 narrowed the dock to `.parm`** (the progress
+bar + the "arms in …" line beneath it), not the whole `.posture` component —
+his words: the bottom-sticking "should only apply to the progress bar and
+'arms in …' line" — so `paintPosturePin()` now toggles `.psticky` on `#parm`.
+`.parm` is emitted as a **sibling** of the `<section>`, not a child, because
+sticky is clamped by its parent's box: a sticky `.parm` inside `.posture`
+reaches only the section's own top edge (measured `top=975` in a 700px
+viewport) and never docks at all. Re-measured against the narrower subtree —
+the point of #565's 35% number — armed `.parm` is **21px, 3.0% of a 700px
+viewport**, against 315px (45%) for the whole section on the same page, so the
+constraint that made the dock conditional does not bind the smaller one. The
+gate stays regardless: `.parm` only carries content while a countdown is live,
+so an always-on dock would pin an empty strip forever for no gain, and he
+asked about scope, not timing. The docked row carries **no
+fill** (#636 — `var(--bg)` is the flat page colour while `#dreambg` is what
+the page shows, so an opaque fill punched a flat rectangle through the
+shader field; transparency is his explicit call, the readability tension left
+for the deferred fade/mask) and **no top hairline** (#674 — #565's
+`box-shadow` rode the whole `.posture` section and appeared above "posture /
+arming override…"; the `.pbar` is itself a visible boundary, and he said the
+line "shouldn't be there"). **Sticky is not motion** — a position, not a gesture — so nothing
 here transitions and reduced-motion parity is free. Guard:
 `dev/capture/posturerecuse.mjs` (idle not-docked vs armed docked
-`bottom ≈ vh` vs cleared).
+`bottom ≈ vh` vs cleared; asserts the class is on `#parm` and never the whole
+`#posture`, and that `#parm` carries no hairline in any of its three forms —
+computed `box-shadow`, a border, or a painted `::before`/`::after`, the last
+of which is invisible both to `getComputedStyle(el)` and to the pytest gate's
+grep of the rule text).
 
 **The deploy countdown is recused into the widget (#569).** His ask: the
 update countdown bar moves *"from the posture settings component"*'s chrome
