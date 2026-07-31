@@ -5305,9 +5305,18 @@ class TestPendingEventCount(unittest.TestCase):
     def _drain(self, through):
         """Advance the coordinator cursor via the PRODUCTION drain CLI.
 
-        Uses ``dev/journal_consume.py consume --through`` (the tool the
-        coordinator runs each tick) so the cursor move is the real one, and
-        asserts the cursor landed at ``through`` afterwards — the ordinal the
+        Models the real tick the coordinator runs each heartbeat:
+        ``pending`` (read) → process → ``consume --through`` (advance).  The
+        read is load-bearing, not decorative: #658 made ``consume --through``
+        REFUSE unless a prior ``pending`` proved the bound was inside the range
+        it listed, so the third step alone is now a discipline-violating drain
+        the tool rejects.  This helper previously performed only the third step
+        and called it the whole tick — #658 made that latent inaccuracy speak
+        (it was the suite's single RED).  Running ``pending`` first is the fix
+        and the more faithful model: the head the drain is bounded to comes
+        FROM the read, exactly as the live tick does it.
+
+        Asserts the cursor landed at ``through`` afterwards — the ordinal the
         expected count is derived from.
         """
         import importlib.util
@@ -5319,6 +5328,15 @@ class TestPendingEventCount(unittest.TestCase):
         spec = importlib.util.spec_from_loader("journal_consume", loader)
         mod = importlib.util.module_from_spec(spec)
         loader.exec_module(mod)
+        # Act 1 of the tick: the read.  pending is read-only and writes the
+        # read-coverage marker consume --through then requires (#658).  A
+        # non-zero exit here is a setup failure, not a drain result.
+        p_out, p_err = io.StringIO(), io.StringIO()
+        p_code = mod.main(
+            ["pending", "--journal", self._journal()],
+            out=p_out, err=p_err)
+        self.assertEqual(p_code, 0, f"pending failed: {p_err.getvalue()!r}")
+        # Act 3 of the tick: the bounded advance over (cursor, through].
         out, err = io.StringIO(), io.StringIO()
         code = mod.main(
             ["consume", "--journal", self._journal(), "--through", str(through)],
