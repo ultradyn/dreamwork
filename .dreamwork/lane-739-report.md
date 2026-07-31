@@ -2,7 +2,7 @@
 
 ## Verdict
 
-PASS. Added the single neighbouring-surface stub `const drawModePicker = () => '';` to the Q&A assembly-order harness in `test_watch.py`. Production code is unchanged. This follows the task entry's diagnosis: “The fix is to add drawModePicker to the stub sentinels, exactly as chatList and burnPanel are stubbed.” Commit after rebasing onto current local `master`: `da097b710050e33f2706b0db8bd95afd6b3ecf3e`.
+PASS. Added the single neighbouring-surface stub `const drawModePicker = () => '';` to the Q&A assembly-order harness in `test_watch.py`. Production code is unchanged. This follows the task entry's diagnosis: “The fix is to add drawModePicker to the stub sentinels, exactly as chatList and burnPanel are stubbed.” Commit after rebasing onto current local `master`: `30405b6b`.
 
 ## Red-proof
 
@@ -25,7 +25,7 @@ It listed both `client/views.js` injections, with shas `4fa675692932` and `58180
 - After rebase, `python3 -m pytest test_watch.py -k 'questions_parts or Collector'`: `169 passed, 314 deselected in 5.41s`.
 - After rebase, full `python3 -m pytest test_watch.py`: `483 passed in 67.37s`.
 - No browser guards were run, per the lane brief.
-- Rebase: local `master` had moved five commits; `git rebase master` completed without conflicts. New commit sha is `da097b710050e33f2706b0db8bd95afd6b3ecf3e`.
+- Rebase: local `master` moved twice during the lane (five commits, then four more); both `git rebase master` runs completed without conflicts. Final fix commit sha is `30405b6b`.
 
 ## Harness recommendation
 
