@@ -185,6 +185,25 @@ def test_new_event_extends_chain_built_by_pre_move_code(tmp_path, migrate):
         f"new land event did not extend the pre-move chain: {after!r}")
 
 
+def test_field_only_and_self_verifying_chain_are_false_green(
+        tmp_path, monkeypatch, migrate):
+    """Demonstrate the weak checks that pass when file silently drops its event."""
+    path = tmp_path / "false-green.sqlite3"
+    ledger_store.open_store(path, seed_next_id=900).close()
+    monkeypatch.setattr(
+        TaskRepository, "_append_chained_event", lambda self, **kwargs: None)
+    with open_database(task_store_spec(path), access=Access.WRITE) as handle:
+        task_id = ledger_write.file_task(handle, "wrong write", "body")
+    state = _captured_write_state(path)
+    assert state["tasks"] and state["tasks"][0][0] == task_id, (
+        f"field-only check unexpectedly failed to see the committed row: {state!r}")
+    assert state["events"] == [], (
+        f"precondition: the injected writer must silently drop the event: {state!r}")
+    assert migrate.verify_task_event_chain(str(path)) == [], (
+        "FALSE GREEN construction failed: an empty chain should verify against "
+        "itself even though the filed task has no event")
+
+
 @pytest.mark.parametrize("command", [
     "file", "land", "reprioritise", "unblock", "retitle",
 ])
