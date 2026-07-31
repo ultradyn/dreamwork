@@ -124,6 +124,8 @@ from user_events.sqlite import (  # noqa: E402 — #263's lease + version-gate p
     CutoverBusy,
     VersionMismatchError,
 )
+from dreamwork_db import StoreSpec  # noqa: E402 — the one connection door (#645 i5)
+from dreamwork_db import core as db_core  # noqa: E402
 
 REPO = Path(__file__).resolve().parent
 
@@ -784,8 +786,10 @@ def verify_db(text: str, a: dict, db_path: str, snapshots_fn=None) -> list[str]:
     """
     failures = []
     try:
-        conn = sqlite3.connect(f"file:{Path(db_path).resolve()}?mode=ro",
-                               uri=True)
+        # READ connection through the one door (#645 increment 5); ``?mode=ro``.
+        conn = db_core._connect(
+            StoreSpec(path=Path(db_path), busy_timeout_ms=5000), db_core.Access.READ
+        )
     except sqlite3.Error as exc:
         return [f"cannot open scratch DB {db_path}: {exc}"]
     conn.row_factory = sqlite3.Row
@@ -1260,7 +1264,10 @@ def verify_task_event_chain(db_path: str) -> list[str]:
     exempting ``actor='migration:git'`` rows and a mutated synthetic row
     passes — a silent forgery.
     """
-    conn = sqlite3.connect(f"file:{Path(db_path).resolve()}?mode=ro", uri=True)
+    # READ connection through the one door (#645 increment 5); ``?mode=ro``.
+    conn = db_core._connect(
+        StoreSpec(path=Path(db_path), busy_timeout_ms=5000), db_core.Access.READ
+    )
     conn.row_factory = sqlite3.Row
     failures = []
     try:

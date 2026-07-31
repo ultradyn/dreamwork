@@ -34,6 +34,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+# The connection door for every store (#645 increment 5). Loaded by path from
+# the repo root (test_user_events_cli.py), where dreamwork_db is importable.
+from dreamwork_db import StoreSpec  # noqa: E402
+from dreamwork_db import core as db_core  # noqa: E402
+
 # --- Stable exit codes (documented above; asserted by the test) ---
 EX_OK = 0
 EX_USAGE = 64
@@ -106,17 +111,22 @@ def _open_ro(journal_path):
     ``PRAGMA query_only=ON`` refuses every write on this handle, so a read
     command physically cannot mutate the journal — the read-only property is
     enforced by SQLite, not by a convention a later edit could forget.
+
+    The connection comes from ``dreamwork_db.core._connect`` (#645 increment 5),
+    whose READ path opens ``?mode=ro`` and sets ``query_only=ON`` +
+    ``busy_timeout`` + ``foreign_keys=ON`` with ``isolation_level=None`` and a
+    deferred read transaction.
     """
     p = Path(journal_path)
     if not p.is_file():
         raise _CliError(EX_NOINPUT, f"journal not found: {p}")
     try:
-        conn = sqlite3.connect(str(p))
+        conn = db_core._connect(
+            StoreSpec(path=p, busy_timeout_ms=5000), db_core.Access.READ
+        )
     except sqlite3.Error as e:
         raise _CliError(EX_SOFTWARE, f"cannot open journal: {e}")
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA query_only=ON")
-    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 

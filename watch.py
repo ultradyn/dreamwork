@@ -3468,8 +3468,14 @@ def _review_decisions(dw_dir):
     db = store_path(dw_dir)
     if not db.exists():
         return {}
+    # READ connection through the one door (#645 increment 5). Core's READ path
+    # opens ``?mode=ro`` with ``query_only=ON``; soft-failure is preserved.
+    from dreamwork_db import StoreSpec
+    from dreamwork_db import core as db_core
     try:
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        conn = db_core._connect(
+            StoreSpec(path=db, busy_timeout_ms=5000), db_core.Access.READ
+        )
     except sqlite3.Error:
         return {}
     try:
