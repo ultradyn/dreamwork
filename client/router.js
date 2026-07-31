@@ -1194,6 +1194,8 @@ function bindChatReplyDraft() {
   if (box.__dwDraftBound) DraftStore.unbind(box);
   DraftStore.bind(box, lid);
   DraftStore.restore(lid, box);
+  fitText(box, false);   // #708: size to the restored value, and re-fit a kept
+                         // box whose inline height a /mtime tick clobbered
 }
 /* ── DraftStore (#269 module + #459 consumers) ───────────────────────────
    One deep module every text surface consumes. localStorage-backed (IDB is
@@ -3200,6 +3202,15 @@ addEventListener('input', e => {
   try { title = decodeURIComponent(card.dataset.qid); } catch (er) { return; }
   if (title) dwDraft.save(title, t.value);
   fitText(t, true);                           // #177: the box grows with what he typed
+});
+/* #708 — the /chat reply box grows with the same gesture as the answer box.
+   Its draft persists through DraftStore under key chat:<id> (bound in
+   bindChatReplyDraft); this listener owns only the height. The id guard makes
+   it a no-op on the answer/note boxes the listener above already owns. */
+addEventListener('input', e => {
+  const t = e.target;
+  if (!t || t.id !== 'chatreplybox') return;
+  fitText(t, true);
 });
 /* opening or closing a disclosure INSIDE a card HIMSELF — the folded entry
    (#111) or its settled follow-up thread (#128) — is the same moment as the

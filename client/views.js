@@ -811,11 +811,28 @@ function buildChat(fetched) {
    (router.js) is the reload backstop. data-chat is the chat id, read at send
    so a kept box on a stale tick still replies to the right conversation. */
 function chatReplyComposer(fetched) {
-  return `<form id="chatreply" class="askform" data-chat="${esc(fetched.id)}">` +
+  /* #708 — full-width reply box with an integrated send button, matching the
+     question answer/note field. The field treatment is the page's ONE compose
+     idiom (.qfield: textarea + button share a single border and rounded box),
+     reused here rather than authored a second time. NOT the whole .qcompose
+     component — a chat reply has no answer/note mode group, so only the field
+     is adopted. The send button stays type="submit" inside the real <form>:
+     the question box uses type="button" + onclick="submitCard()" because it is
+     not a form, but #chatreply IS one (command.js handles its submit), and
+     copying the reference's button literally would move the button inside the
+     field AND sever the only path that sends a reply. The .qsend class carries
+     the integrated visual (flex-none, the shared border, the accent label).
+     data-max-rows="6" adopts the reference's auto-grow ceiling (#177).
+     #chatreplybox keeps its id (#523 keyed reconciliation); #chatreplymsg stays
+     a direct child identifiable to reconcileGuard's keep-rule (#577). */
+  return `<form id="chatreply" data-chat="${esc(fetched.id)}">` +
     `<label class="label" for="chatreplybox">reply</label>` +
-    `<textarea id="chatreplybox" placeholder="A reply to the dreamer"></textarea>` +
-    `<div><button type="submit">Reply</button> ` +
-    `<span id="chatreplymsg" class="cmdmsg" aria-live="polite"></span></div></form>`;
+    `<div class="qfield">` +
+    `<textarea id="chatreplybox" placeholder="A reply to the dreamer"` +
+    ` data-max-rows="6"></textarea>` +
+    `<button type="submit" class="qsend">send</button>` +
+    `</div>` +
+    `<span id="chatreplymsg" class="cmdmsg" aria-live="polite"></span></form>`;
 }
 /* one in-flight reply at a time, the #292 discipline one surface over. While
    a POST is pending, a second submit/Ctrl+Enter is a no-op; the generation
@@ -870,6 +887,7 @@ async function sendChatReply(form) {
   if (res && DraftStore.isDurable(res)) {
     if (!attempt.success()) return;       // superseded between POST and here
     liveBox.value = '';
+    fitText(liveBox, false);              // #708: shrink back, the gesture reversed
     DraftStore.clear(lid);                // only on durable landed
     // the next /mtime tick re-fetches /chatdata and the new human turn
     // appears in the transcript; tick() commits that re-render immediately.

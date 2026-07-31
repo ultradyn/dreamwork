@@ -1114,6 +1114,15 @@
      any more (#139). No margin: it fills the wrapper it shares a border with,
      exactly as the send button does. */
   .askform { margin:0 0 var(--space); max-width:56ch; }
+  /* #708 — the /chat reply composer. It adopts the .qfield field treatment
+     (the integrated send button the answer/note box uses) but is full-width:
+     a reply is the page's subject, and the 72ch column is the right cap for
+     it, not .askform's 56ch. So #chatreply drops the .askform class (which
+     would both cap the width at 56ch and run its .askform textarea catch-all
+     onto a .qfield textarea — the leak shape #139/#121 already warn about)
+     and carries its own margin only. The .qfield inside fills the form, which
+     fills the column. Scoped by id, so it cannot widen #askform on /answers. */
+  #chatreply { margin:0 0 var(--space); }
   .askform textarea { display:block; box-sizing:border-box; width:100%; min-height:5rem;
     margin:.35rem 0; padding:.55rem; resize:vertical; color:var(--text);
     background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);

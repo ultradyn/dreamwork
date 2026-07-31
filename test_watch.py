@@ -10884,6 +10884,57 @@ class TestDeliveryWakeRouting(unittest.TestCase):
             "reconcileGuard must keep #chatreplymsg across a tick while it "
             "holds a confirmation (it is the one #255 surface inside #view)")
 
+    def test_chat_reply_send_button_is_a_submitting_control(self):
+        """#708 — the integrated send button must stay a SUBMITTING control.
+
+        The reference it now resembles (the answer/note box) uses
+        type=\"button\" + onclick=\"submitCard()\" because it is NOT a form.
+        The chat reply IS a real <form> (#chatreply), and its only send path
+        is the document-level submit listener (command.js:
+        `e.target.id === 'chatreply' -> sendChatReply`). A button copied
+        literally from the reference — type=\"button\", no onclick — would
+        render correctly and DO NOTHING, because nothing fires a submit event.
+        That is this task's named trap: the page looks right and the feature
+        is broken.
+
+        Structural pin (the codebase's idiom for client-wiring contracts —
+        see test_covered_submit_paths_send_the_attempt_id). The discriminating
+        property is type=\"submit\": that is what makes a click reach the
+        existing submit listener, so asserting it is asserting the send path,
+        not the button's presence (a button present and unwired is precisely
+        the trap this catches). Born-red against the literal reference markup.
+        """
+        # the button inside #chatreply is type="submit", so a click fires the
+        # submit event the document listener routes to sendChatReply
+        self.assertIn('<button type="submit" class="qsend">send</button>',
+                      watch.PAGE,
+                      "the chat reply send button must be a submitting "
+                      "control — type=\"button\" (the reference) severs the "
+                      "only send path")
+        # and the submit path itself is wired (the listener this button must
+        # reach). Both halves: the control that fires submit, and the handler.
+        self.assertIn("e.target.id === 'chatreply'", watch.PAGE)
+        self.assertIn("sendChatReply(e.target)", watch.PAGE)
+
+    def test_chat_reply_box_is_full_width_without_widening_answers(self):
+        """#708 — full-width reply box, WITHOUT a width regression on /answers.
+
+        The #chatreply composer drops the .askform class (which caps at 56ch)
+        so it is full-width on /chat, where a reply is the page's subject. The
+        regression to guard is the brief's named Direction 2: a full-width rule
+        that ALSO widens #askform on /answers, a page this task did not touch.
+        The protection is structural — the width rule is scoped to #chatreply
+        by id — and this pins the thing that must NOT change: .askform keeps
+        its 56ch cap, so /answers is unchanged. (Born-red against a rule that
+        raised .askform's max-width or deleted the cap.)
+        """
+        # .askform (the /answers ask box) keeps its narrow cap — the
+        # full-width treatment is #chatreply's alone, scoped by id
+        self.assertIn('.askform { margin:0 0 var(--space); max-width:56ch; }',
+                      watch.PAGE,
+                      ".askform must keep its 56ch cap — the full-width reply "
+                      "box is #chatreply's own, not a widened .askform")
+
     def test_command_wake_line_carries_the_same_receipt_id_as_the_journal(self):
         """#527 — the wake-line's receipt id == the journal receipt's id.
 
