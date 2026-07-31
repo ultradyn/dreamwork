@@ -146,3 +146,160 @@ says the lane writes its report and nothing else so the coordinator owns the
 hand-off line. I treated `inbox.md` as the explicit delivery channel distinct
 from the forbidden shared `.dreamwork/handoffs.md`; I did not touch
 `handoffs.md`.
+
+---
+
+# #630 P5 stage 2 re-land — reproducible artifact repair
+
+## Verdict and headline proof
+
+**PASS.** Two builds from distinct absolute subjects, one with a physically
+local `node_modules` copy and one using the invoking checkout's fallback,
+produced byte-identical output. `cmp` passed for every output and the paired
+sha256 readings were:
+
+- `client/dist/ds/index.js` — `f7dc2b1681d077f32cda87fd81729a24734c16b62c17bdc49d40e77c83deb4c8`
+- `client/dist/ds/styles.css` — `2994a6e271ec9614385089a52ba6fb1c45fe3bf0e73d717f91565140f376cd39`
+- `client/dist/native.js` — `e1211897fd595304a88af9107df17ec2d3b4031e371189be81e091d845830be5`
+
+The subjects were
+`/home/xertrov/.cache/ud-dreamwork/lane-scratch/ud-dreamwork/cx-630p5c/measure/byte-proof.iHc70U/pytest/test_the_build_is_reproducible0/build-a`
+and
+`/home/xertrov/.cache/ud-dreamwork/lane-scratch/ud-dreamwork/cx-630p5c/measure/byte-proof.iHc70U/pytest/test_the_build_is_reproducible0/build-from-a-different-absolute-path`.
+This is the invariant check. A supplementary scan
+found no `/home/`, `/opt/`, `/srv/`, or lane name in committed artifacts, but
+that spelling-dependent scan is not claimed as the proof.
+
+## What changed and why
+
+- Reverted revert `911b6ab7` as instructed. The immediate `git diff master
+  --stat` was non-empty and listed the wrapper, `client/dist/ds/`,
+  `dev/build/`, `client_dist.py`, and `test_client_dist.py` surfaces.
+- Replaced the design bundle's absolute `NODE_PATH` resolution with a
+  temporary `node_modules` symlink plus esbuild `--preserve-symlinks`.
+  Module labels are now the stable virtual `node_modules/react/...` path,
+  independent of checkout and toolchain location.
+- Strengthened the reproducibility test to build twice from different
+  absolute roots and different dependency topologies, assert both non-empty
+  output inventories, compare every output pair, then compare against the
+  committed artifacts.
+- Closed the lane/gate gap: when this lane's `dev/build/node_modules` was
+  moved aside, `just pytest test_client_dist.py` ran **30 passed, 0 skipped**
+  by using the main-worktree toolchain. Before the change the same command was
+  **28 passed, 2 skipped**; the reproducibility test explicitly skipped.
+- Rebuilt and committed `client/dist/ds/index.js` and its manifest. The
+  wrapper, fixture, declaration, prompt, equality guard, and mechanical
+  one-export §6-R5 fence are restored unchanged.
+
+The manifest distinction is now sharper: checkout location and the presence
+of a local install no longer change output hashes, so **"built somewhere
+else" collapses to the same bytes** rather than masquerading as stale output.
+A manifest mismatch therefore still cannot narrate which real input/tool/output
+change occurred, but it no longer confounds staleness with filesystem location.
+That removes this `#136` false-red class instead of adding a special spelling
+check for it.
+
+No surface was converted, nothing was mounted into a live route, `watch.py`
+was untouched, and no external service was authenticated to or uploaded to.
+The earlier finding stands: claude.ai/design still has to judge a package whose
+`ds/index.js` expects dashboard-shell DOM and morphdom during execution.
+
+## Red-proof, both directions
+
+### Reproducibility invariant
+
+Direction 1 restored the real defect, not a proxy: it removed the controlled
+symlink and `--preserve-symlinks`, and reinstated
+`NODE_PATH=NODE_MODULES`. The injected source was read back before running the
+test. The precise assertion failed before committed-output comparison:
+
+> `building client/dist/ds/index.js from two different absolute paths, with and without local node_modules, produced different bytes — the artifact leaks its build location`
+
+Direction 2 constructed a genuinely broken check input that initially passed:
+both absolute build subjects pointed through symlinks to the same physical
+fallback toolchain. Removing `--preserve-symlinks` then leaked the same real
+toolchain path into both artifacts, so pairwise equality stayed green and only
+the later committed-artifact comparison reddened. The test now physically
+copies `node_modules` into one subject while leaving the other absent; the two
+dependency locations genuinely differ, and the exact old fallback goes red at
+the pairwise assertion above. No further path/topology false-green was found:
+the compared output inventory is asserted equal and non-empty before hashes
+are compared, and the committed-output comparison remains a second net.
+
+The fixed file was snapshotted under the lane-private directory returned by
+`dev/lane_scratch.py snap`. After each injection, `dev/redproof.py restore`
+restored it; an explicit `cp` from the fixed snapshot and `cmp` verified the
+restored bytes. Final gate:
+
+> `check: clean — 1 injection(s) registered, all restored and absent from the working tree and from this branch's commits`
+
+The consulted lesson title resolved uniquely:
+**A red for the wrong reason is indistinguishable from a red for the right one
+in a `-q` summary**.
+
+## Verification
+
+- Explicit two-path `cmp` proof — **PASS**, all three hashes paired above.
+- `just pytest test_client_dist.py` with lane-local node_modules absent —
+  **30 passed**, zero skips; advisory reported no other pytest suites and 35
+  browser/guard processes.
+- Focused `wrappereq` guard on post-rebase ephemeral port `45259` — **PASS**;
+  preflight load **21.80** on 16 cores; **1 of 1** registered guard ran and judged. It
+  catches wrapper serialization diverging from the `qaCard` builder.
+- `python3 lint.py` — **clean, 5 warnings**, matching the current lane bar;
+  `client/dist` reports **14 inputs and 3 outputs** current.
+- `python3 dev/redproof.py check` — clean, quoted above.
+- Rebased onto local `master` `d09b2598b8e3c104f4c0da2baa43dce923ae85f8`
+  after it moved during report writing — cleanly, with no conflicts or hand
+  resolution.
+
+Post-rebase commits before this report:
+
+- `1f546d11` — reapply the reverted #630 stage-2 increment
+- `b04b0003` — `fix(#630): make design bundle path-independent`
+- `f0d2a574` — `test(#630): vary build path and dependency topology`
+- `8ce116a1` — `test(#630): vary physical toolchain location`
+
+## Issue evidence relied on
+
+- `#630`: **"P5 STAGE 2 MERGED THEN REVERTED. Merge eaef072a, revert
+  911b6ab7. The wrapper work is sound and the lane's proofs held; the committed
+  BUILD ARTIFACT is what failed"** — restore the increment; repair the artifact.
+- `#755`: **"The check reports a contradiction for a human to resolve; it does
+  not resolve it."** — no platform-path substring repair was added; byte
+  identity exposes the contradiction.
+- `#671`: **"the report accounts for BOTH halves of the correlation it
+  performs"** — both output inventories and their non-emptiness are asserted
+  before comparison.
+- `#136`: **"present-but-unparseable is a fault and must look like one"** —
+  missing toolchains remain an explicit skip, while the lane/main toolchain
+  asymmetry no longer skips.
+- `#702`: **"Nothing connects them and nothing complains when 'lanes' is
+  populated and 'dreamers' is empty"** — the analogous local/fallback
+  toolchain split is now connected in one test rather than inferred.
+- `#651`: **"a guard's message must name a mode the guard can actually detect,
+  and the way to know is to construct that mode and watch it fail"** — the
+  exact fallback defect produced the quoted location-leak assertion.
+- `#440`: **"a single supported way"** — dependency resolution is normalized
+  inside the real builder; no wrapper or second build implementation was added.
+
+## DOGFOOD REPORT
+
+The brief's hypothesis about the lane/gate gap was correct and more valuable
+than the first code fix: `just pytest test_client_dist.py` had skipped exactly
+the two build tests when a worktree lacked `node_modules`, while the main gate
+had an install and judged them. The skip count was visible, but a green summary
+made it easy to report the file as passed. Reusing the main-worktree install
+closes that ordinary lane case without making every pytest invocation run
+`npm ci`.
+
+The unexpected finding was that “two absolute source paths” is not sufficient
+when both builds resolve dependencies through the same physical absolute
+fallback: the same leaked path appears twice and compares equal. The proof must
+vary the dependency's physical location too. That refinement is now executable
+in `test_client_dist.py`, not left as report prose.
+
+The corrected task-specific inbox wording is no longer contradictory: the
+absolute `inbox.md` is the report-notification lane, while
+`.dreamwork/handoffs.md` remains coordinator-only. No other brief or tooling
+friction was found.
