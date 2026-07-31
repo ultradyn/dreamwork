@@ -32,10 +32,28 @@ lint:
 # `npm ci` (not `install`) so the toolchain is the pinned one in
 # dev/build/package-lock.json; node_modules is gitignored, the way every other
 # node dependency in this repo is.
+#
+# #695 — reinstall when the INSTALLED TREE no longer matches the lockfile, not
+# when a single binary happens to be missing. The old presence test
+# (`[ -x .bin/esbuild ]`) saw esbuild and skipped `npm ci` when #630 added
+# react/react-dom, so the build silently failed on every worktree whose
+# node_modules predated the change. A stamp records the lockfile's sha256 and a
+# build compares it: a no-op is a hash compare (~3ms), not `npm ci`'s
+# delete-and-recreate (~418ms warm, and it churns node_modules every time — the
+# trap that gets a guard deleted within a day). The stamp lives INSIDE
+# node_modules so deleting the install deletes the stamp, which is the
+# reinstall trigger; a stamp that survived its install's deletion would be the
+# false-green. package.json/lockfile divergence is left to `npm ci` itself,
+# which errors loudly on the same path.
 build-client:
     #!/usr/bin/env bash
     set -euo pipefail
-    [ -x dev/build/node_modules/.bin/esbuild ] || (cd dev/build && npm ci --no-audit --no-fund)
+    stamp=dev/build/node_modules/.lock-stamp
+    want=$(sha256sum dev/build/package-lock.json | cut -d' ' -f1)
+    if [ ! -f "$stamp" ] || [ "$(cat "$stamp")" != "$want" ]; then
+        (cd dev/build && npm ci --no-audit --no-fund)
+        echo "$want" > "$stamp"
+    fi
     python3 dev/build_client.py
 
 # the derived halves of status.json, recomputed from the ledger and from live
