@@ -28,7 +28,8 @@ alive while still passing a naive string assertion. The lane caught it only by e
 check on its own initiative. Extend it on yours.
 
 **DO NOT append a hand-off line to `.dreamwork/handoffs.md`. That file has a single writer
-and it is not you** (`lessons.md:2704`, and `#687`). It is an ownership rule reached after the
+and it is not you** (the lesson *"Both wordings of the hand-off instruction are wrong, and I
+found the second by hitting it twice"*, and `#687`). It is an ownership rule reached after the
 alternatives were tried and failed twice in twenty minutes: a lane appending to `## Pending`
 while the coordinator edits `## Folded` produces a content conflict on *every* merge. **You
 write your report and nothing else; the coordinator writes the hand-off line from it at
@@ -52,7 +53,8 @@ Note the `$`, which only the `=` arm carries and which is load-bearing: the othe
 markers are followed by a branch or base name so they cannot be anchored, while `=======`
 stands alone — and an unanchored `={7}` matches any rule-of-equals divider of seven or more
 characters, which false-positives on this repo's own prose and test files. This repo
-discusses conflict markers in prose (`.dreamwork/lessons.md:3295`), so a substring test is
+discusses conflict markers in prose (the lesson *"A conflict resolver that greps for three
+marker forms misses the fourth"*), so a substring test is
 wrong by construction.
 
 If the rebase is genuinely hard, **hand back the analysis instead of a bad resolution** —
@@ -117,6 +119,10 @@ travel. Use this exact invocation:
 
 (The refusal does name the working form, so this costs one wasted call rather than a wrong
 citation — `#667` built that gate deliberately. This just saves you the call.)
+
+**Cite a lesson by its exact bolded title, not by `lessons.md:<line>`.** Confirm the title
+resolves to exactly one lesson head with `grep`; zero matches means it drifted, and two matches
+are ambiguous. A line coordinate can silently move to unrelated content while looking valid.
 
 **The path you invoke is the INTERPRETER; `--target`/`--ledger` is only the SUBJECT.** A
 brief head may cite a tool by its skill-dir path
