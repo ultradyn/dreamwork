@@ -16,6 +16,7 @@ injection it names — the helper sabotaged to swallow its error and return
 instead of throwing, watched to fail the deadline assertions, then restored
 byte-identical with `cp`. See `.dreamwork/lessons.md`.
 """
+import os
 import re
 import socket
 import time
@@ -37,10 +38,22 @@ def _dead_port():
 
 
 def _node_e(src):
-    """Run a node ESM snippet (cwd = repo root) and return CompletedProcess."""
+    """Run a node ESM snippet (cwd = repo root) and return CompletedProcess.
+
+    `FORCE_COLOR=0` because this stdout is PARSED, not read. node colourises a
+    bare number through util.inspect, so under any parent that exports
+    FORCE_COLOR — agent CLIs do, which is how this was found — the deadline
+    snippet's `console.log(elapsed)` arrives as `\\x1b[33m656\\x1b[39m` and
+    `int()` dies on a run where the code under test was CORRECT: an
+    environment-dependent red, the kind that gets dismissed as flake. Setting
+    it here rather than in the one snippet keeps the next snippet honest too.
+    `NO_COLOR`/`NODE_DISABLE_COLORS` cannot do this job — node ignores both
+    when FORCE_COLOR is set, and says so on stderr.
+    """
     return subprocess.run(
         ["node", "--input-type=module", "-e", src],
         cwd=str(ROOT), capture_output=True, text=True, timeout=60,
+        env={**os.environ, "FORCE_COLOR": "0"},
     )
 
 
