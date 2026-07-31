@@ -261,3 +261,144 @@ class TestCli:
                             "--cwd", str(repo)], capture_output=True, text=True, env=env)
         assert r.returncode == 1
         assert "require" in r.stderr
+
+
+# ── #710: an injection committed mid-branch, restored, and committed again ──
+
+def _commit(repo: Path, *paths: str, msg: str = "wip") -> str:
+    _git(repo, "add", *paths)
+    _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", msg)
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _blob_sha_at(repo: Path, rev: str, path: str) -> str:
+    """sha1 of the CONTENT `rev` holds for `path` — the scan's own comparison."""
+    out = subprocess.check_output(
+        ["git", "-C", str(repo), "cat-file", "blob", f"{rev}:{path}"])
+    return rp._sha(out)
+
+
+@pytest.fixture
+def lane(repo: Path) -> Path:
+    """`repo` with a lane branch cut from master — the shape #710 describes.
+
+    A fixture branch, never a live lane branch and never master."""
+    _git(repo, "switch", "-q", "-c", "lane-fixture")
+    return repo
+
+
+def _poison(lane: Path) -> tuple[str, str]:
+    """The #710 sequence: inject, COMMIT while sabotaged, restore, commit again.
+
+    Returns (poisoned_sha, clean_sha). Committing mid-injection is not lane
+    misbehaviour — COMMIT INCREMENTALLY mandates it — which is why the tree at
+    hand-off is clean and only history is poisoned."""
+    _begin(lane, "router.js")
+    (lane / "router.js").write_text("export function route() { return false; }\n")
+    poisoned = _commit(lane, "router.js", msg="wip(#710): mid red-proof")
+    _restore(lane, "router.js")
+    (lane / "router.js").write_text(
+        "export function route() { return Boolean(guard); }\n")
+    clean = _commit(lane, "router.js", msg="fix(#710): the real fix")
+    return poisoned, clean
+
+
+class TestInjectionInHistoryIsRefused:
+    """THE #710 red run: clean tree, poisoned history, and the gate was blind."""
+
+    def test_the_commit_holding_the_injection_is_named(self, lane, capsys):
+        poisoned, clean = _poison(lane)
+        entries, _ = rp._read_registry(lane)
+
+        # PRECONDITIONS, asserted rather than assumed: a refusal is only
+        # evidence if the scan had a range to look at and actually read blobs
+        # in it, and if the TREE is clean so history is the ONLY possible cause.
+        rep = rp.scan_history(lane, entries)
+        assert rep["commits"] == 2, rep
+        assert rep["blobs_read"] == 2, rep
+        wt = rp._sha((lane / "router.js").read_bytes())
+        assert wt != entries[0]["injected_sha"], "tree is dirty; test proves nothing"
+        assert _blob_sha_at(lane, poisoned, "router.js") == entries[0]["injected_sha"]
+
+        exit = _check(lane)
+        out, err = capsys.readouterr()
+        assert exit == 1
+        assert poisoned[:12] in err, err
+        assert "router.js" in err
+        # discriminating: it names the poisoned commit, not every commit
+        assert clean[:12] not in err, err
+        # and it names the remedy, because refusing without one strands the lane
+        assert "squash" in err.lower(), err
+
+    def test_a_clean_branch_passes_and_says_what_it_examined(self, lane, capsys):
+        """#590: a zero is a question about whether you looked. So say."""
+        _begin(lane, "router.js")
+        (lane / "router.js").write_text("SABOTAGE\n")
+        _restore(lane, "router.js")           # restored BEFORE committing
+        (lane / "router.js").write_text(
+            "export function route() { return Boolean(guard); }\n")
+        _commit(lane, "router.js", msg="fix(#710): only clean commits")
+
+        entries, _ = rp._read_registry(lane)
+        rep = rp.scan_history(lane, entries)
+        assert rep["commits"] == 1 and rep["blobs_read"] == 1, rep
+
+        exit = _check(lane)
+        out, _ = capsys.readouterr()
+        assert exit == 0
+        assert "examined 1 commit" in out, out
+        assert "read 1 blob" in out, out
+
+
+class TestTheScanCannotLookAtNothingAndPass:
+    """#671: a scan that examined nothing must not render as a clean branch."""
+
+    def test_an_unresolvable_base_is_a_fault_not_a_pass(self, lane, capsys):
+        _begin(lane, "router.js")
+        (lane / "router.js").write_text("SABOTAGE\n")
+        _restore(lane, "router.js")
+        _git(lane, "branch", "-D", "master")   # no master, no main -> no range
+        exit = _check(lane)
+        _, err = capsys.readouterr()
+        assert exit == 2, err
+        assert "base" in err.lower()
+
+    def test_a_zero_commit_range_does_not_read_as_clean(self, repo, capsys):
+        """HEAD == base: genuinely nothing in history, and it must SAY that
+        rather than print a clean bill of a history it never saw."""
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("SABOTAGE\n")
+        _restore(repo, "router.js")
+        entries, _ = rp._read_registry(repo)
+        assert rp.scan_history(repo, entries)["commits"] == 0
+        exit = _check(repo)
+        out, _ = capsys.readouterr()
+        assert exit == 0
+        assert "EXAMINED NO COMMIT" in out, out
+
+
+class TestKnownHole:
+    """Direction 2, executable: the branch the scan still gets wrong.
+
+    Kept as a passing test asserting the WRONG answer, so that closing the
+    hole fails here loudly instead of silently — and so the hole cannot be
+    forgotten the way a paragraph in a report can."""
+
+    def test_a_fork_point_moved_past_the_injection_hides_it(self, lane, capsys):
+        poisoned, clean = _poison(lane)
+        # The coordinator merges (fast-forward here), then the lane keeps going
+        # on the same branch. merge-base is now PAST the poisoned commit.
+        _git(lane, "branch", "-f", "master", clean)
+        (lane / "router.js").write_text("export function route() { return guard; }\n")
+        _commit(lane, "router.js", msg="fix(#710): second increment")
+
+        entries, _ = rp._read_registry(lane)
+        rep = rp.scan_history(lane, entries)
+        assert rep["commits"] == 1, rep          # only the post-merge commit
+        assert rep["hits"] == []
+
+        # ...while master demonstrably holds the injection, forever.
+        assert _blob_sha_at(lane, poisoned, "router.js") == entries[0]["injected_sha"]
+        assert _git(lane, "merge-base", "--is-ancestor", poisoned, "master") == ""
+
+        assert _check(lane) == 0                 # <- the false green, on purpose
