@@ -2,7 +2,7 @@
 
 ## Verdict
 
-PASS. Added the single neighbouring-surface stub `const drawModePicker = () => '';` to the Q&A assembly-order harness in `test_watch.py`. Production code is unchanged. This follows the task entry's diagnosis: “The fix is to add drawModePicker to the stub sentinels, exactly as chatList and burnPanel are stubbed.” Commit after rebasing onto current local `master`: `02d017fb`.
+PASS. Added the single neighbouring-surface stub `const drawModePicker = () => '';` to the Q&A assembly-order harness in `test_watch.py`. Production code is unchanged. This follows the task entry's diagnosis: “The fix is to add drawModePicker to the stub sentinels, exactly as chatList and burnPanel are stubbed.” Commit after rebasing onto current local `master`: `7f0658d8`.
 
 ## Red-proof
 
@@ -25,7 +25,7 @@ It listed both `client/views.js` injections, with shas `4fa675692932` and `58180
 - After final rebase, `python3 -m pytest test_watch.py -k 'questions_parts or Collector'`: `169 passed, 314 deselected in 6.36s`.
 - After final rebase, full `python3 -m pytest test_watch.py`: `483 passed in 67.41s`.
 - No browser guards were run, per the lane brief.
-- Rebase: local `master` moved three times during the lane (five commits, then four, then one); all `git rebase master` runs completed without conflicts. Final fix commit sha is `02d017fb`.
+- Rebase: local `master` moved four times during the lane (five commits, then four, then one, then one docs-only commit); all `git rebase master` runs completed without conflicts. Final fix commit sha is `7f0658d8`. The two pytest commands above ran after the last code-bearing base change; the final base delta touched only `.dreamwork` reports/questions.
 
 ## Harness recommendation
 
