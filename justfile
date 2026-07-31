@@ -475,6 +475,12 @@ provenance-evidence:
 reap *ARGS:
     python3 dev/reaper.py {{ARGS}}
 
+# #686 — the supported way to remove a lane worktree. Unlike the process
+# reaper above, this checks for tracked dirt and unmerged commits before it
+# invokes `git worktree remove`; --force enumerates everything it overrides.
+reap-lane *ARGS:
+    python3 dev/reap.py {{ARGS}}
+
 # edit-and-see, for whoever is CHANGING the page. Deliberately not the
 # persisted port: that one belongs to the deployed instance the human is
 # reading, and two servers wanting it is a fight nobody wins. Pass a port
