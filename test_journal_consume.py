@@ -1423,3 +1423,234 @@ def test_consume_through_empty_pending_refuses_past_zero(tmp_path: Path):
     assert "never listed" in err, (
         f"the refusal must name ord=1 as never listed; got {err!r}")
     assert "1" in err
+
+
+# ---------------------------------------------------------------------------
+# #712 — the marker proved a line was PRINTED, not SEEN.
+#
+# #658 bounded `--through` from ABOVE only, so the traced loss survived it:
+# `pending` prints 96..99, the operator's `tail -3` shows 97..99, and `consume
+# --through 96` is INSIDE the listed range — #658's check is satisfied and 96 is
+# consumed unread.  Two changes are pinned here and they do DIFFERENT jobs, so
+# they are tested separately and neither is allowed to stand in for the other:
+#   * `--through` must EQUAL the head of the read on record (a fourth named
+#     refusal for a bound BELOW it) — this REFUSES the traced command;
+#   * `pending`'s coverage statement goes to stderr, which a stdout pipe does
+#     not touch — this makes the truncation VISIBLE, and nothing more.
+# Neither establishes that a line was SEEN; see the module docstring's #712 note
+# and .dreamwork/lane-712-report.md for why that is not establishable here.
+# ---------------------------------------------------------------------------
+
+def test_consume_through_below_read_head_refuses_naming_the_lost_ordinal(tmp_path: Path):
+    """#712 direction 1: the traced loss, reproduced and then refused.
+
+    The trace, verbatim from the task: pending lists 96..99 and marks
+    through=99; the operator pipes through ``tail -3`` and holds 97..99;
+    ``consume --through 96`` is run from an earlier read; 96 is INSIDE the
+    listed range so #658's marker is satisfied and there is NO refusal; ordinal
+    96 is consumed unread.
+
+    The truncation is simulated on the REAL output rather than asserted about:
+    the operator's view is the last three lines of what ``pending`` actually
+    printed, and the ordinal at stake is derived as one the full listing
+    contains and that view does not.  The load-bearing precondition is that
+    #658's own check would NOT have fired (the ordinal is at or below the
+    marker's head) — without it this test would be re-proving #658 and would
+    pass on the unfixed code.
+
+    RED LINE (run): delete the ``if through < mark['through']`` refusal branch
+      in cmd_consume.  The consume proceeds and advances the cursor over the
+      unseen ordinal → the ``code == EX_USAGE`` and cursor-unmoved assertions
+      fail.  Production line injected: the below-the-read-head refusal in
+      cmd_consume.
+    """
+    cli = _load_cli()
+    path = tmp_path / "below.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"a":0}', b'{"a":1}', b'{"a":2}', b'{"a":3}'])
+    n = len(seeded)
+    assert n >= 4, "precondition: enough events that a tail -3 view is short"
+
+    # The honest read: pending prints the whole range and marks its head.
+    code, out, err = _run(cli, ["pending", "--journal", str(path)])
+    assert code == 0, f"pending exited {code} (err={err!r})"
+    listed = _ord_fields(out)
+    assert listed == list(range(1, n + 1)), (
+        f"precondition: pending must list 1..{n}; got {listed}")
+
+    # The operator's `tail -3`: they hold the LAST three lines of that output.
+    held = _ord_fields("\n".join(out.splitlines()[-3:]))
+    assert len(held) < len(listed), (
+        "precondition: the truncated view must be genuinely shorter than the "
+        f"listing, else there is nothing to lose (held {held}, listed {listed})")
+    # The ordinal at stake: listed, and NOT in the view — derived, not a literal
+    # tuned to this fixture (the lowest such is what the operator carries over).
+    unseen = [o for o in listed if o not in held]
+    assert unseen, "precondition: the tail must have removed at least one ordinal"
+    lost = unseen[0]
+
+    mark = _pending_read_marker(cli, path)
+    assert mark is not None, "precondition: the pending read wrote its marker"
+    # THE PRECONDITION THIS WHOLE TEST DEPENDS ON: #658's check does not fire.
+    # `lost` is inside the listed range, so `through > mark['through']` is
+    # false and the pre-#712 code reaches the advance with no refusal at all.
+    assert lost <= mark["through"], (
+        f"precondition: ordinal {lost} must be INSIDE the marked range "
+        f"(head {mark['through']}) — otherwise #658 already refuses this and "
+        "this test proves nothing new")
+    assert lost < mark["through"], (
+        f"precondition: the bound {lost} must be strictly BELOW the read head "
+        f"{mark['through']} — that gap is the signal #712 reads")
+
+    with open_journal(path) as j:
+        before = j.cursor(CONSUMER).scanned_through_event_ordinal
+    assert before == 0, "precondition: fresh cursor"
+
+    code, out2, err2 = _run(cli, ["consume", "--through", str(lost),
+                                  "--journal", str(path),
+                                  "--applied", str(applied)])
+    assert code == cli.EX_USAGE, (
+        f"consume --through {lost} must REFUSE: the read on record printed "
+        f"through {mark['through']}, so a bound of {lost} came from an older "
+        f"or truncated view and would advance past an unseen ordinal; got "
+        f"exit {code} (out={out2!r})")
+    assert out2 == "", "a refusal must write nothing to stdout"
+    # The refusal must NAME the ordinal that would be lost — "range mismatch"
+    # without naming what goes is not discriminating (the brief's words).
+    assert str(lost) in err2, (
+        f"the refusal must name ordinal {lost} specifically; got {err2!r}")
+    assert str(mark["through"]) in err2, (
+        f"the refusal must name the head of the read on record "
+        f"({mark['through']}) so the operator can see the gap; got {err2!r}")
+    assert "BELOW" in err2, (
+        f"the refusal must name the below-the-read-head case, distinct from "
+        f"#658's 'never listed' case (#136); got {err2!r}")
+    # The escape must be reachable from the message alone (no wedge), and it is
+    # not "delete the marker file".
+    assert "bare `consume`" in err2.lower(), (
+        f"the refusal must name the non-wedging escape; got {err2!r}")
+
+    with open_journal(path) as j:
+        after = j.cursor(CONSUMER).scanned_through_event_ordinal
+    assert after == before, (
+        f"a refused consume must leave the cursor at {before}; got {after} — "
+        f"ordinal {lost} was consumed unread, which is the #712 loss")
+
+    # Not a wedge: the escape in the message works, and so does the honest form.
+    code3, out3, err3 = _run(cli, ["consume", "--through", str(mark["through"]),
+                                   "--journal", str(path),
+                                   "--applied", str(applied)])
+    assert code3 == 0, (
+        f"consuming --through the read's own head must proceed; got {code3} "
+        f"({err3!r}) — the refusal above must not have wedged the tick")
+    assert f"consumed {n} event(s)" in out3
+
+
+def test_pending_coverage_line_reaches_stderr_when_stdout_is_truncated(tmp_path: Path):
+    """#712: the coverage statement rides stderr, which a stdout pipe cannot cut.
+
+    ``pending | tail -3`` truncates fd 1 and does not touch fd 2, so the count
+    and the full ordinal range still reach the operator while the listing in
+    their hands is short.  A trailer on stdout would not do this — it rides the
+    channel being truncated, so its survival depends on which truncation was
+    used.  This test pins the CHANNEL, not just the text, by asserting the line
+    is in stderr AND that stdout is still exactly the event record.
+
+    This is a VISIBILITY property.  It does not establish that anything was
+    seen, and the sibling test above is the one that refuses.
+
+    RED LINE (run): write the coverage line to ``out`` instead of ``err`` in
+      cmd_pending — i.e. the in-band trailer this was chosen over.  The
+      truncated view then drops it, stderr is empty, and both the
+      ``in err`` and the stdout-line-count assertions fail.  Production line
+      injected: the ``err.write(...)`` coverage statement in cmd_pending.
+    """
+    cli = _load_cli()
+    path = tmp_path / "cover.sqlite3"
+    seeded = _seed(path, [b'{"a":0}', b'{"a":1}', b'{"a":2}', b'{"a":3}'])
+    n = len(seeded)
+    assert n >= 4, "precondition: more events than the truncated view holds"
+
+    code, out, err = _run(cli, ["pending", "--journal", str(path)])
+    assert code == 0, f"pending exited {code} (err={err!r})"
+
+    # stdout is UNCHANGED as the record: one line per event, no trailer in it.
+    stdout_lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(stdout_lines) == n, (
+        f"stdout must be exactly {n} event lines — a coverage line in the "
+        f"record would break `line.split('\\t')[0]` parsers; got "
+        f"{len(stdout_lines)}: {stdout_lines!r}")
+    listed = _ord_fields(out)
+    assert listed == list(range(1, n + 1)), f"precondition: 1..{n}; got {listed}"
+
+    # The operator's `tail -3` view: strictly shorter than what was listed.
+    held = _ord_fields("\n".join(out.splitlines()[-3:]))
+    assert len(held) < n, (
+        f"precondition: the truncated view ({held}) must be shorter than the "
+        f"{n} listed, else there is no inconsistency to make visible")
+    lowest = listed[0]
+    assert lowest not in held, (
+        f"precondition: ordinal {lowest} must be the one the tail removed; "
+        f"held {held}")
+
+    # The coverage statement survived the truncation, on stderr.
+    assert f"listed {n} receipt(s)" in err, (
+        f"stderr must state the count the operator can compare against the "
+        f"{len(held)} lines they hold; got {err!r}")
+    assert f"{lowest}..{listed[-1]}" in err, (
+        f"stderr must name the full range, including ordinal {lowest} which "
+        f"the truncation removed from their view; got {err!r}")
+    # The exact next command, so the normal tick is copy-paste and the bound
+    # cannot be mistranscribed (#712 requires --through to EQUAL this head).
+    assert f"--through {listed[-1]}" in err, (
+        f"stderr must name the exact bound for the consume; got {err!r}")
+
+    # The quiet rule holds: an empty read says nothing on either channel.
+    empty = tmp_path / "quiet.sqlite3"
+    with open_journal(empty) as j:
+        assert j.head_ordinal() == 0, "precondition: fresh empty journal"
+    code2, out2, err2 = _run(cli, ["pending", "--journal", str(empty)])
+    assert code2 == 0 and out2 == "" and err2 == "", (
+        f"pending is quiet on empty on BOTH channels; got {out2!r} / {err2!r}")
+
+
+def test_malformed_marker_degrades_to_the_named_absent_refusal(tmp_path: Path):
+    """#712: a parseable-but-shapeless marker must degrade, not throw.
+
+    ``_load_pending_read``'s docstring already promised that a corrupt marker
+    returns None and falls to the named absent refusal — but it only delivered
+    that for bad JSON.  ``{}`` parses fine and then raised ``KeyError`` at the
+    ``mark["journal_id"]`` comparison in consume: the throw the guard exists to
+    prevent, one layer down (a guard whose subject may not exist must degrade
+    to a reading, never throw).
+
+    RED LINE (run): delete the ``isinstance`` shape checks in
+      ``_load_pending_read``.  ``{}`` is returned as a valid marker and the
+      consume raises KeyError instead of refusing → the call errors out before
+      any assertion.  Production line injected: the shape validation in
+      ``_load_pending_read``.
+    """
+    cli = _load_cli()
+    path = tmp_path / "malformed.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"a":0}', b'{"a":1}'])
+    n = len(seeded)
+
+    _run(cli, ["pending", "--journal", str(path)])
+    mp = cli._pending_read_path(Path(str(path)))
+    assert mp.exists(), "precondition: pending wrote a marker to overwrite"
+    for bad in ("{}", '{"journal_id": "x"}', '{"journal_id": "x", "through": "3"}'):
+        mp.write_text(bad)
+        assert cli._load_pending_read(Path(str(path))) is None, (
+            f"a malformed marker ({bad}) must read as absent, not as a marker")
+        code, out, err = _run(cli, ["consume", "--through", str(n),
+                                    "--journal", str(path),
+                                    "--applied", str(applied)])
+        assert code == cli.EX_USAGE, (
+            f"a malformed marker ({bad}) must fall to the named absent "
+            f"refusal; got {code}")
+        assert "no pending read" in err, (
+            f"the refusal must name the absent case (#136); got {err!r}")
+        with open_journal(path) as j:
+            assert j.cursor(CONSUMER).scanned_through_event_ordinal == 0, (
+                "a refused consume must leave the cursor unmoved")
