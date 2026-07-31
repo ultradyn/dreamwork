@@ -66,8 +66,11 @@ that is a legitimate outcome, not a failure.
   repeat offence here).
   **The snapshot must be LANE-PRIVATE, not merely outside the repo** — this is `#652`, an
   existing rule (`SKILL.md:544`), and it is repeated here because omitting it from a brief is
-  what let a lane hit the failure it prevents. Use `dev/lane_scratch.py snap`, which places
-  the snapshot in a lane-named directory on `~/.cache` (btrfs) rather than `/tmp` (tmpfs) —
+  what let a lane hit the failure it prevents. **`dev/lane_scratch.py` PRINTS A PATH; it does
+  not copy anything** — `snap` is an optional subdirectory name, not a verb, and passing it a
+  filename errors with `unrecognized arguments`. Use it as
+  `SNAP=$(python3 dev/lane_scratch.py snap)` and then `cp` into `$SNAP` yourself. It resolves a
+  lane-named directory on `~/.cache` (btrfs) rather than `/tmp` (tmpfs) —
   the substrate half of `#634`. The session scratchpad is shared by every live lane: a `#691`
   lane found its first snapshot landing in a directory that already held another lane's
   backups of `watch.py`, `router.js` and `test_watch.py`. Two lanes snapshotting the same file
@@ -110,13 +113,20 @@ new files first so `--only` can see them. **Never merge, never push** — the co
 both. Never use bare `git stash`/`git stash pop`: the stash stack is shared across worktrees
 and you would pop another lane's work.
 
-**Begin every commit subject with the task id — `#NNN: <subject>`.** This is how the
-coordinator learns your work landed: `dev/ledger.py sweep` reads commit *subjects*, and `#404`
-makes that the primary landing-discovery route on the grounds that the id is there "by
-construction". Nothing constructs it — it was never written down as an instruction until
-`#705`, and a subject without an id leaves the work sitting done-but-open until someone
-notices by hand. Knowing the consequence matters more than the format: if you are doing
-something the convention did not anticipate, you now know what the id is *for*.
+**Name the task id in every commit subject, in the form `verb(#NNN): <subject>`** — e.g.
+`feat(#577):`, `test(#577):`, `fix(#688):`, `docs(#700):`. The verb must be one of
+`merge fix feat close perf refactor guard docs test design`.
+
+**The form is not cosmetic and `#NNN: <subject>` DOES NOT WORK.** `dev/ledger.py sweep` is how
+the coordinator learns your work landed, and `#404` makes it the primary landing-discovery
+route on the grounds the id is in the subject "by construction". Its pattern is
+`^(?:merge|fix|…|design)\((#\d+)\)` — anchored, and it requires the parens. Measured:
+`'#704: skip the collision test'` → **MISSED**; `'design(#700): the gate is a file'` → matched.
+So a subject that names the id in the wrong shape is exactly as invisible as one that omits it,
+and it is worse, because it *looks* compliant. This paragraph said `#NNN:` for about half an
+hour on 2026-07-31 and was wrong; a `#700` lane measured it against the actual regex and
+reported it (`#707` tracks widening the pattern, which is the better long-run fix — until then,
+write the form the tool can read).
 
 **COMMIT INCREMENTALLY. You can be killed without warning, and uncommitted work is lost.**
 This is not the `#686` rule ("commit before you stop") — it is stronger, because stopping is
