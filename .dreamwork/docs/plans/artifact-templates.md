@@ -79,11 +79,16 @@ the human serialises through that one agent however many are idle. On a
 day when he sent six bug reports in an hour, the queue was the file, not
 the work.
 
-This does not justify splitting the file for its own sake: stdlib-only
-and no build step are load-bearing, and a component vocabulary is a
-smaller, better-motivated seam than a package layout. But it does mean
-the payoff is larger than tidiness, and it argues for pulling components
-into their own module rather than a section of the same file.
+This does not justify splitting the file for its own sake: **stdlib-only is
+load-bearing; "no build step" is not** — that pairing was retired
+2026-07-30 (`#505` Q2, commit `0f97df03`: *"we don't have a no-build
+single-file constraint. We had a python stdlib constraint, but otherwise
+building the webui bundle and breaking up watch.py into modules are good
+and reasonable things"*) — and a component vocabulary is a smaller,
+better-motivated seam than a package layout regardless of that constraint.
+But it does mean the payoff is larger than tidiness, and it argues for
+pulling components into their own module rather than a section of the
+same file.
 
 ## Stages
 

@@ -195,10 +195,24 @@ behaviour against, no uptime or SLA published, and no security audit referenced.
 
 These are properties of *this* hub, and each one rules something out:
 
-**C1 — Stdlib-only, single-file, no build step.** Both `dreamhub.py` and
-`watch.py` are pure-stdlib Python (`watch-design.md`: *"Stdlib only,
-self-contained; no dependencies, no build step"*). This is a product constraint,
-not a preference. It collides head-on with shoo's ES256 `id_token`: **Python's
+**C1 — Stdlib-only.** ~~single-file, no build step~~ — that pairing was
+retired 2026-07-30 (`#505` Q2, commit `0f97df03`: *"we don't have a
+no-build single-file constraint... breaking up watch.py into modules are
+good and reasonable things"*), and separately, on 2026-07-31 17:03 (`#591`,
+receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`; `rec` on all three), the UI
+was ruled to be **transitioning to a component-based React web UI** — **G2
+reads per-surface** (a **derived** surface is not a second authority), the
+claude-design breakpoint is **component-level and staged**, and the
+framework is **React**. Neither change touches the constraint this section
+is actually about: `DREAMWORK.md`'s second-truth rule stays in force (the
+React surface is derived, compiled from the same `client/*.js` `watch.py`
+already serves, restating no markup — not a hand-maintained twin), and
+**what did not expire, and is this section's whole point, is the Python
+half.** Both `dreamhub.py` and `watch.py` are pure-stdlib Python
+(`watch-design.md`: *"the server imports nothing outside the stdlib and no
+`pip install` stands between a checkout and a running dashboard"*). This is
+a product constraint, not a preference. It collides head-on with shoo's
+ES256 `id_token`: **Python's
 standard library cannot verify an ES256 (or RS256) signature.** I confirmed this
 directly: `hashlib` and `hmac` are present but do only symmetric primitives;
 `ssl` exposes no general-purpose ECDSA-verify on arbitrary data; the only
