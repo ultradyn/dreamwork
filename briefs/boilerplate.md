@@ -119,6 +119,15 @@ travel. Use this exact invocation:
 (The refusal does name the working form, so this costs one wasted call rather than a wrong
 citation — `#667` built that gate deliberately. This just saves you the call.)
 
+**The path you invoke is the INTERPRETER; `--target`/`--ledger` is only the SUBJECT.** A
+brief head may cite a tool by its skill-dir path
+(`python3 /home/…/skills/ud-dreamwork/<tool>.py`) — that is a symlink into the MAIN
+checkout, so it runs the code you have NOT fixed. If your task edits a tool the brief tells
+you to run, invoke the WORKTREE'S copy (`python3 dev/<tool>.py`), which runs your fix. The
+one legitimate use of the skill-dir path is the pre-fix BASELINE — running the unfixed tool
+deliberately to capture the before state (`#592`, `#607`). That is a technique, not a
+mistake; a rule that bans the skill-dir path would forbid it.
+
 **Volume** (`#612`): land your change as the fewest lines that carry the meaning. A correct
 change that triples a doc's length gets reverted by the next reader.
 
