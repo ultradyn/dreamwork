@@ -272,16 +272,34 @@ session **id**, validated against the discovered set. No request parameter
 is ever joined into a filesystem path. Same fail-closed posture, second
 gate, deliberately narrow.
 
-**Discovery — a measured gap.** Nothing today records which session IS the
-running dreamwork agent (grepped `heartbeat.py`, `status_sync.py`,
-`status_derive.py`, `SKILL.md`: no session identity anywhere). Two honest
-options: **(a)** infer — newest-mtime `*.jsonl` in the client project dirs
-for the target cwd (and its `.worktrees/*` slugs), marked live if mtime is
-recent; **(b)** self-report — the loop writes `{client, session_id}` into
-`.dreamwork/status.json` at orient (a loop-side change, and exactly the
-per-client seam `#615`'s onboarding tasks want). Rec in the questions
-draft: (a) for v1 with the switcher as the correction affordance, (b) folded
-into onboarding as the durable fix.
+**Discovery — was a measured gap; RULED 2026-07-31 and now CLOSED (`#665`).**
+The original finding and both options are kept verbatim below, because the
+ruling is only legible against what was asked. Nothing then recorded which
+session IS the running dreamwork agent (grepped `heartbeat.py`,
+`status_sync.py`, `status_derive.py`, `SKILL.md`: no session identity
+anywhere). Two honest options: **(a)** infer — newest-mtime `*.jsonl` in the
+client project dirs for the target cwd (and its `.worktrees/*` slugs), marked
+live if mtime is recent; **(b)** self-report — the loop writes
+`{client, session_id}` into `.dreamwork/status.json` at orient (a loop-side
+change, and exactly the per-client seam `#615`'s onboarding tasks want). Rec
+in the questions draft: (a) for v1 with the switcher as the correction
+affordance, (b) folded into onboarding as the durable fix.
+
+**He answered (b) and rejected (a) by omission** — *"for the main dreamwork
+agent, we can record its session in status.json (note: this is easy to detect
+via env var, but the env var name changes per cli client …)"*. That is the
+stronger half rather than merely the cheaper one: inference is ambiguous the
+moment two sessions run against one target, which is the normal case here.
+Built in `#665`: `client_env.py` holds the per-client variable registry, the
+main agent writes `agent_session` into `status.json` at orient, and the shape
+is in `file-formats.md`. It records ABSENCE honestly for a client with no
+session variable rather than inferring one.
+
+Option (a) is dead **as an identity mechanism** and survives only as what it
+was always better at: populating the `GET /session/list` switcher with
+sessions the loop does *not* own. "Which sessions exist here" and "which
+session IS the agent" are different questions, and only the second one was
+ruled.
 
 **The inotify question, honestly.** There is **no inotify module in the
 Python stdlib**, and the stdlib-only constraint survives (ruled 2026-07-30
@@ -598,10 +616,46 @@ What a per-supported-client task must answer before anyone writes one:
 3. **The adapter mapping** — that client's records → §3's standardized
    nodes/events; what `system_prompt`/compaction/turn mean there, if
    anything (`ccc` runners: unknown; each needs the research he predicted).
-4. **Discovery + identity** — how the loop learns child session ids for
-   that client, and where onboarding records it (the §6 self-report seam is
-   the natural home; `dev-support-onboarding-impl` gains one step per
-   client, which is exactly how he asked for it to be folded in).
+4. **Discovery + identity — the environment-variable surface.** RULED and
+   built (`#665`): the loop self-reports into `status.json`'s
+   `agent_session` at orient, and `client_env.CLIENTS` is the ONE home for
+   the variable names. **A client is not supported until a row has been
+   MEASURED for it** — an unmeasured client stays absent from the registry
+   rather than being guessed at (`plans/harness-containment.md`: *"do not
+   invent a capability matrix"*). The measurement is four questions, not
+   one, and answering only the first is the trap:
+
+   a. **Which variable carries the session id** — his words, *"identifying
+      the best env var to use for session id"*. Verify it against something
+      independent rather than accepting a plausible-looking name: for
+      Claude Code, `CLAUDE_CODE_SESSION_ID` is the uuid segment of the
+      harness scratchpad path, which is how `#652` confirmed it.
+   b. **Which sibling variables separate a SUBAGENT from the main agent** —
+      the other half of his ask (*"other similar env vars should be
+      recorded too so we can have the right info about subagents or
+      whatever and not get confused"*). **Never assume the session id does
+      this.** For Claude Code it emphatically does not: every concurrent
+      lane inherits the SAME `CLAUDE_CODE_SESSION_ID` (`#652`), and only
+      `CLAUDE_CODE_CHILD_SESSION` — present in a subagent, absent in the
+      coordinator — tells them apart.
+   c. **Which variable identifies the CLIENT itself**, and whether a
+      harness launched as a CHILD of another client would inherit it. An
+      inherited marker makes a registry report the parent; the only real
+      defence is the child harness setting its own marker, so this is
+      measured rather than assumed. `client_env` refuses (`client: null`)
+      when two registry rows match at once instead of picking one.
+   d. **What the honest answer is when the client has NO session
+      variable** — record it absent, never inferred, which is `#613`'s
+      `system_prompt` discipline applied here.
+      `client_env.Client(session_id_var=None)` is that state, and it is
+      deliberately distinct from an unmeasured client (simply absent from
+      the registry).
+
+   Then append the row to `client_env.CLIENTS` with a test asserting its
+   measured names. **Still open for `#615` specifically:** how the loop
+   learns that client's CHILD session ids (the subagent transcripts of
+   point 1). `agent_session` does not answer that — it names the main
+   agent's session only.
 5. **Cost bounds** — a dispatch fans out to many files; the retire rule
    (§5.4) and a per-target watcher cap need numbers per client.
 
