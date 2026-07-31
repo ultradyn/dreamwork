@@ -101,6 +101,11 @@ citation — `#667` built that gate deliberately. This just saves you the call.)
 **Volume** (`#612`): land your change as the fewest lines that carry the meaning. A correct
 change that triples a doc's length gets reverted by the next reader.
 
+**Shipping an experiment?** Its gate is a file: its own tracked `.dreamwork/<name>`, absent
+means off, plus a `file-formats.md` row — the `watch-tint`/`run-mode` family. Do not go
+looking for a flag system; `#700` measured that there is none and `SKILL.md`'s Guardrails
+now carries the rule.
+
 **Choosing between rival options?** Use IGC — `./igc-method.md`, **in your own worktree**. It
 is checked into this repo, so the worktree-local path always resolves; do not go looking under
 `~/.claude-p/` (a `ccc` lane reported that path unreachable from its harness).
