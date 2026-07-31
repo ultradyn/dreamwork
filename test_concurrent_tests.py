@@ -14,6 +14,7 @@ advisory's contract is advisory: exit 0 always, per #404's shape).
 """
 import importlib.machinery
 import importlib.util
+import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
@@ -176,3 +177,32 @@ class TestInvocationForms:
     def test_empty_argv_is_none(self):
         assert ct.classify([]) is None
         assert ct.classify([""]) is None
+
+
+class TestJustPytestRecipe:
+    """The supported recipe preserves its advisory and forwards lane args."""
+
+    @staticmethod
+    def _dry_run(*args):
+        result = subprocess.run(
+            ["just", "--dry-run", "pytest", *args],
+            cwd=REPO,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return [line.rstrip() for line in
+                (result.stdout + result.stderr).splitlines()]
+
+    def test_arguments_reach_pytest_after_advisory(self):
+        lines = self._dry_run("-q", "test_lint.py")
+        assert lines[-2:] == [
+            "python3 dev/concurrent_tests.py",
+            "python3 -m pytest -q -q test_lint.py",
+        ]
+
+    def test_bare_invocation_stays_the_full_suite(self):
+        assert self._dry_run()[-2:] == [
+            "python3 dev/concurrent_tests.py",
+            "python3 -m pytest -q",
+        ]
