@@ -203,8 +203,11 @@ class TestRestoreRecordsInjected:
         (repo / "router.js").write_text(sabotage)
         _restore(repo, "router.js")
         entries, _ = rp._read_registry(repo)
-        e = rp._find(entries, "router.js")
-        assert e["state"] == rp.RESTORED
+        # _find returns only ARMED entries now (#717); a restored record is
+        # looked up by its (path, sha). Exactly one restored entry expected.
+        restored = [e for e in entries if e.get("state") == rp.RESTORED]
+        assert len(restored) == 1, entries
+        e = restored[0]
         assert e["injected_sha"] is not None
         assert "BUG" in e["injected_hint"]
 
@@ -429,3 +432,108 @@ class TestKnownHole:
         assert _blob_sha_at(lane, poisoned, "router.js") != entries[0]["injected_sha"]
         assert rep["hits"] == []
         assert _check(lane) == 0                 # <- the false green, on purpose
+
+
+# ── #717: a second injection to one file must not overwrite the first ──
+
+def _inject(repo: Path, path: str, body: str) -> None:
+    """begin -> sabotage -> restore, one distinct injection."""
+    _begin(repo, path)
+    (repo / path).write_text(body)
+    _restore(repo, path)
+
+
+class TestTwoInjectionsToOneFileAreBothCounted:
+    """THE #717 red run: two distinct injections to ONE file, both restored,
+    and check reports 2 naming both — not 1 with the first silently gone."""
+
+    def test_two_distinct_injections_count_as_two_and_name_both_hints(
+            self, repo, capsys):
+        # PRECONDITION: the two injections differ, so this is two injections,
+        # not the same one twice. Derived at runtime, not a literal, so a
+        # future fixture change cannot collapse the case into a tautology.
+        body_a = "export function route() { return false; /* BUG A */ }\n"
+        body_b = "export function route() { return null; /* BUG B */ }\n"
+        assert rp._sha(body_a.encode()) != rp._sha(body_b.encode())
+
+        _inject(repo, "router.js", body_a)
+        _inject(repo, "router.js", body_b)
+
+        # the registry holds TWO restored entries for the one path
+        entries, _ = rp._read_registry(repo)
+        restored = [e for e in entries if e.get("state") == rp.RESTORED]
+        assert len(restored) == 2, entries
+
+        exit = _check(repo)
+        out, _ = capsys.readouterr()
+        assert exit == 0, out
+        # discriminating: the count is 2, and BOTH hints are named — a count
+        # alone is not (it could name the same hint twice)
+        assert "2 injection(s) registered" in out, out
+        assert "BUG A" in out, out
+        assert "BUG B" in out, out
+
+    def test_the_same_sabotage_restored_twice_is_one_not_two(self, repo, capsys):
+        """The dedup arm of #717: observing the same state twice is one
+        injection, not two — an injection is a state, not an act."""
+        body = "export function route() { return false; /* BUG */ }\n"
+        _inject(repo, "router.js", body)
+        _inject(repo, "router.js", body)   # identical bytes second time
+
+        entries, _ = rp._read_registry(repo)
+        restored = [e for e in entries if e.get("state") == rp.RESTORED]
+        assert len(restored) == 1, entries
+
+        exit = _check(repo)
+        out, _ = capsys.readouterr()
+        assert exit == 0
+        assert "1 injection(s) registered" in out, out
+
+
+class TestTheHistoryScanSeesEveryInjectedSha:
+    """The reason #717 stopped being cosmetic: a registry that keeps only the
+    last injection per path blinds the #710 scan, which matches commits against
+    EACH recorded sha. Two injections, the FIRST committed mid-branch — the scan
+    must name that commit, not miss it because the second injection overwrote
+    the record."""
+
+    def test_a_committed_first_injection_is_caught_after_a_second(self, lane, capsys):
+        # injection 1: committed while sabotaged, then restored
+        _begin(lane, "router.js")
+        (lane / "router.js").write_text(
+            "export function route() { return false; /* BUG A */ }\n")
+        poisoned = _commit(lane, "router.js", msg="wip(#717): mid red-proof A")
+        sha_a_committed = _blob_sha_at(lane, poisoned, "router.js")
+        _restore(lane, "router.js")
+
+        # injection 2: a different sabotage, restored before any commit
+        _begin(lane, "router.js")
+        (lane / "router.js").write_text(
+            "export function route() { return null; /* BUG B */ }\n")
+        _restore(lane, "router.js")
+        (lane / "router.js").write_text(
+            "export function route() { return Boolean(guard); }\n")
+        _commit(lane, "router.js", msg="fix(#717): the real fix")
+
+        # PRECONDITIONS: two distinct shas recorded (the old bug kept one),
+        # and BUG A's committed blob IS one of them — otherwise the scan has
+        # nothing to match and the test proves nothing.
+        entries, _ = rp._read_registry(lane)
+        restored = [e for e in entries if e.get("state") == rp.RESTORED]
+        assert len(restored) == 2, entries
+        recorded_shas = {e["injected_sha"] for e in restored}
+        assert sha_a_committed in recorded_shas, (
+            "BUG A's sha is not recorded — the scan cannot catch it; the test "
+            "would pass under the old bug by never having the sha to match")
+
+        rep = rp.scan_history(lane, entries)
+        assert rep["commits"] == 2 and rep["blobs_read"] == 2, rep
+        assert len(rep["hits"]) == 1, rep
+        assert rep["hits"][0]["commit"] == poisoned, rep["hits"]
+
+        exit = _check(lane)
+        _, err = capsys.readouterr()
+        assert exit == 1, err
+        assert poisoned[:12] in err, err
+        assert "BUG A" in err, err
+
