@@ -977,9 +977,11 @@ def _sweep_fixture(migrate, tmp_path, name="main"):
     return root, dw
 
 
-def _sweep(dev_ledger, root, dw):
-    rc, out, err = _run(dev_ledger, [
-        "sweep", "--ledger", str(dw / "tasks.md"), "--repo", str(root)])
+def _sweep(dev_ledger, root, dw, since=None):
+    args = ["sweep", "--ledger", str(dw / "tasks.md"), "--repo", str(root)]
+    if since is not None:
+        args += ["--since", since]
+    rc, out, err = _run(dev_ledger, args)
     assert rc == 0, f"#404 ruled sweep exit-0 advisory, got {rc}: {err!r}"
     return out
 
@@ -1066,14 +1068,23 @@ def test_sweep_reports_how_many_subjects_it_understood_not_just_examined(
     _plant(root, "#10 — a bare lane commit")
     _plant(root, "docs: a commit with no id")
 
-    out = _sweep(dev_ledger, root, dw)
+    # Pin the window open so the report is judged on its OWN contract (#682:
+    # id-bearing vs skipped), not on `_default_since` — a `Fold #N` commit
+    # planted as a subject-to-classify is also a window boundary (#714), and
+    # letting it bound the window here would hide three of the six subjects
+    # for a reason unrelated to what this test asserts.
+    since = _git(root, "rev-list", "--max-parents=0", "HEAD").stdout.strip()
+    out = _sweep(dev_ledger, root, dw, since=since)
 
     # The id-bearing count derives from the SAME pattern + git log the sweep
     # sees — never a literal. A count the test invents cannot catch the
-    # classification drifting from the real pattern.
+    # classification drifting from the real pattern. The window matches what
+    # sweep examines (`since..HEAD`), so the seed commit outside it is not
+    # counted either.
+    rng = [f"{since}..HEAD"]
     subjects = [
         line.split("\x1f", 1)[1] for line in _git(
-            root, "log", "--format=%h\x1f%s").stdout.splitlines()
+            root, "log", "--format=%h\x1f%s", *rng).stdout.splitlines()
         if "\x1f" in line]
     expected_idb = sum(
         1 for s in subjects if dev_ledger.SWEEP_SUBJECT.match(s))

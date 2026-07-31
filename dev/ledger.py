@@ -279,6 +279,11 @@ SWEEP_SUBJECT = re.compile(
     r"|(?:Merge|Fold) (#\d+)"        # g2: Merge/Fold #N — lower confidence
     r"|(#\d+)[\s:—–-])")             # g3: bare #N + separator — lower confidence
 SWEEP_ID = re.compile(r"#(\d+)")
+# A reconciliation fold subject: `fold #NNN:` (lowercase, old) or `Fold #NNN`
+# (capital, current). #714 measured both real on master (41 + 47). The space
+# refuses `fold(#N):` lane-verb commits (a lane writing a Folded line, not a
+# reconciliation). Subject-anchored only — see `_default_since`.
+_FOLD_SUBJECT = re.compile(r"^[Ff]old ")
 # Post-landing subjects (#682 named the trap; #707 widens to surface them at
 # lower confidence rather than silence them). `_subject_class` reuses this.
 _MERGE_FOLD = re.compile(r"^(?:Merge|Fold) #\d")
@@ -576,18 +581,38 @@ def _git_subjects(repo, since):
 
 
 def _default_since(repo):
-    """The most recent fold commit — the last time landings were reconciled."""
+    """The most recent fold commit — the last time landings were reconciled.
+
+    #714: the convention is ``Fold #NNN`` (capital), but it was ``fold #NNN:``
+    (lowercase) for the first ~half of the repo's history — both real, both
+    measured (47 capital, 41 lowercase on master). A case-sensitive ``^fold``
+    anchored the capital form out of the window, opening it ~555 commits wide
+    instead of ~63.
+
+    The match is anchored on the SUBJECT, not the full message: ``git log
+    --grep`` searches the body too, and a body line starting ``fold`` (this
+    repo has them — ``feat(#294)``'s body opens ``fold dispatches on
+    source_of_truth:``) would narrow the window past real landings, which is
+    the dangerous direction for an advisory tool whose safe error is scanning
+    too widely, not too narrowly. Reading subjects and matching in Python
+    keeps the anchor where the convention actually lives. The trailing space
+    in ``[Ff]old `` refuses the ``fold(#N):`` lane-verb form (a lane commit,
+    not a reconciliation fold).
+    """
     try:
         out = subprocess.run(
-            ["git", "-C", str(repo), "log", "--format=%H", "-n", "1",
-             "--grep=^fold "],
+            ["git", "-C", str(repo), "log", "--format=%H%x1f%s"],
             capture_output=True, text=True, timeout=20,
         )
     except (OSError, subprocess.SubprocessError):
         return None
     if out.returncode != 0:
         return None
-    return out.stdout.strip() or None
+    for line in out.stdout.splitlines():
+        sha, sep, subject = line.partition("\x1f")
+        if sep and _FOLD_SUBJECT.match(subject):
+            return sha
+    return None
 
 
 def sweep_text(text, commits, since, source):
