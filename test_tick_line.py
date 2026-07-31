@@ -117,15 +117,27 @@ class TestTracksTheFile:
         assert "2 open" in few
         assert "39 open" in many
 
-    def test_ccc_live_count_follows_the_process_table(self, tmp_path,
-                                                      monkeypatch):
+    def test_live_counts_follow_the_process_table(self, tmp_path,
+                                                  monkeypatch):
         target = make_target(
             tmp_path, posture=HOT,
             dreamers=[{"task": 1, "pid": 111}, {"task": 2, "pid": 222}])
         monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: True)
-        assert "2 ccc-live" in tick_line.facts(target)
+        assert "2 ccc + 0 agent-tool live" in tick_line.facts(target)
         monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: False)
-        assert "0 ccc-live" in tick_line.facts(target)
+        assert "0 ccc + 0 agent-tool live" in tick_line.facts(target)
+
+    def test_live_counts_distinguish_dispatch_paths(self, tmp_path,
+                                                    monkeypatch):
+        target = make_target(tmp_path, posture=HOT, dreamers=[
+            {"task": 1, "pid": 111},
+            {"task": 2, "pid": 222, "dispatch": "ccc"},
+            {"task": 3, "pid": 333, "dispatch": "agent_tool"},
+        ])
+        monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: True)
+        out = tick_line.facts(target)
+        assert "2 ccc + 1 agent-tool live" in out
+        assert "ccc-live" not in out
 
     def test_recorded_count_follows_the_authored_lanes_field(self, tmp_path):
         none = tick_line.facts(make_target(tmp_path / "a", posture=HOT))
@@ -139,21 +151,19 @@ class TestTracksTheFile:
 class TestNoUnqualifiedFleetSize:
     """The count the loop cannot measure must never be asserted.
 
-    `live_lanes` probes `pgrep -af ccc`, so Agent-tool lanes are structurally
-    invisible to it: six lanes were out and it answered 0 while this was
-    written. Every number here therefore names how it was obtained, and the
-    bare phrasing that would imply a total is forbidden outright.
+    Every number names how it was obtained, and the bare phrasing that would
+    imply an unqualified total is forbidden outright.
     """
 
     def test_agent_tool_fleet_does_not_render_as_an_empty_fleet(self,
                                                                tmp_path):
-        """The measured live case: lanes recorded, none of them probeable."""
+        """Recorded lanes alone do not imply an observable live lane."""
         out = tick_line.facts(make_target(
             tmp_path, posture=HOT,
             lanes=[{"lane": "lane-%d" % i, "model": "opus"}
                    for i in range(6)]))
         assert "lanes 6 recorded" in out
-        assert "0 ccc-live" in out
+        assert "0 ccc + 0 agent-tool live" in out
         # The phrasing that would have inverted his signal.
         assert "0 lanes live" not in out
 
@@ -224,7 +234,10 @@ class TestTheContradictionIsAdjacent:
 
     def test_counts_immediately_precede_the_delegation_target(self, tmp_path):
         out = tick_line.facts(make_target(tmp_path, posture=HOT))
-        assert "lanes 0 recorded · 0 ccc-live · delegation 5" in out
+        assert (
+            "lanes 0 recorded · 0 ccc + 0 agent-tool live · delegation 5"
+            in out
+        )
 
 
 class TestOneSourcePerCount:
@@ -278,12 +291,12 @@ class TestUnprobeableLanesDoNotBreakTheProbe:
     """#537: a `spawn_subagent` entry in `dreamers` has no probe-able process,
     so it must be carried past the liveness step rather than asked about."""
 
-    def test_spawn_subagent_entry_does_not_raise_or_inflate_ccc_live(self,
-                                                                    tmp_path):
+    def test_spawn_subagent_entry_does_not_raise_or_inflate_live_counts(
+            self, tmp_path):
         out = tick_line.facts(make_target(
             tmp_path, posture=HOT,
             dreamers=[{"task": 1, "pid": 111, "dispatch": "spawn_subagent"}]))
-        assert "0 ccc-live" in out
+        assert "0 ccc + 0 agent-tool live" in out
 
 
 class TestFailsClosed:
@@ -329,7 +342,7 @@ class TestFailsClosed:
         target = make_target(tmp_path, posture=HOT, open_ids=(1, 2, 3))
         (Path(target) / ".dreamwork" / "posture").write_bytes(b"\xff\xfe\x00")
         out = tick_line.facts(target)
-        assert "lanes 0 recorded · 0 ccc-live" in out
+        assert "lanes 0 recorded · 0 ccc + 0 agent-tool live" in out
         assert "3 open" in out
 
     def test_liveness_unknown_is_not_rendered_as_zero(self, tmp_path,

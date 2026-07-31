@@ -270,24 +270,8 @@ def _read_status(target: str) -> dict:
 def _fleet_fact(target: str) -> str:
     """The fleet, as TWO labelled numbers — never one unqualified "fleet size".
 
-    THERE IS NO SINGLE HONEST FLEET COUNT IN THIS SYSTEM TODAY, and pretending
-    otherwise is the whole trap. `status_sync.live_lanes` derives liveness from
-    `pgrep -af ccc` plus `kill -0` on recorded pids, so it sees the `ccc`
-    dispatch path and nothing else. Harness-native Agent-tool lanes run inside
-    the harness process; they have no `ccc` process and no probe-able pid, and
-    they are therefore **structurally invisible to it** — not by an oversight
-    that could be patched, but by what the probe is. MEASURED while this file
-    was written: six lanes were out (five Agent-tool, one `ccc @glm52`) and the
-    probe answered 0.
-
-    A line reading `delegation 5 · 0 lanes live` under those conditions is not
-    a small inaccuracy. It is the precise inverse of the signal #673 asks for,
-    fired on every beat — and a reminder that cries wolf every beat is one the
-    reader learns to skip, which ends with the reminder present and the drift
-    continuing. So the count is not routed as-is.
-
-    The two sources fail in OPPOSITE directions, which is what makes reporting
-    both worth its characters rather than merely verbose:
+    The two sources fail in different directions, which makes reporting both
+    useful rather than merely verbose:
 
       `recorded`  — `status.json["lanes"]`, written by the coordinator's own
                     judgement. Sees every dispatch form *when it is kept up*,
@@ -297,14 +281,13 @@ def _fleet_fact(target: str) -> str:
                     five dispatches and six merges because nobody updated it.
                     It is NOT an upper bound; it is a snapshot that drifts in
                     whichever direction the last edit left it, indefinitely.
-      `ccc-live`  — the OS measurement. Cannot be inflated by forgetfulness;
-                    it is blind to Agent-tool lanes. A lower bound, and the
-                    only one of the two that self-corrects.
+      `live`      — the OS measurement over observable `dreamers`. Since #675
+                    this includes both ccc and Agent-tool lanes; each survivor
+                    retains its `dispatch`, so the two counts are available
+                    here and render separately rather than under a stale label.
 
     Each is labelled by HOW IT WAS OBTAINED, so neither can be read as "the
-    fleet". Where they disagree the reader learns something real — and the
-    reader who knows `recorded` is hand-maintained (not an upper bound) knows
-    which to trust when they do.
+    fleet". Where they disagree the reader learns something real.
 
     #718: `recorded` and the runner breakdown both read the SAME `lanes` list.
     The breakdown is now a PARENTHETICAL of the count, not a `·`-separated
@@ -331,9 +314,14 @@ def _fleet_fact(target: str) -> str:
         raise status_sync.LivenessUnknown("dreamers is not a list")
     clean = [d for d in raw if status_sync._evaluable(d)]
     observable = [d for d in clean if status_sync._observable(d)]
-    live, _pruned = status_sync.live_lanes(observable)
+    _live, pruned = status_sync.live_lanes(observable)
+    ccc_live = sum(d.get("dispatch") in (None, "ccc") for d in pruned)
+    agent_live = sum(d.get("dispatch") == "agent_tool" for d in pruned)
+    if ccc_live + agent_live != len(pruned):
+        raise status_sync.LivenessUnknown("live lane has unknown dispatch")
 
-    return "lanes %s%s%d ccc-live" % (recorded, SEP, len(live))
+    return "lanes %s%s%d ccc + %d agent-tool live" % (
+        recorded, SEP, ccc_live, agent_live)
 
 
 def _unresolved(label: str, exc: BaseException) -> str:
