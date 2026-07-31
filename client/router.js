@@ -457,7 +457,15 @@ function armPostureUI(draft, until, gen) {
     if (gen !== postArmGen) return;
     if (!count) return;
     const s = Math.ceil(remainingMs() / 1000);
-    const label = draft.pace + ' · ' + draft.asking + ' · ' + draft.delegation;
+    // #674: the params line lists the WHOLE pending point, all five axes —
+    // pace · asking · delegation · delivery · orchestration. It had only the
+    // first three; he noticed orchestration missing (orchestrator/hands-on,
+    // #510). delivery (#342) was absent too — see REPORT.md for the
+    // brief-vs-source discrepancy. Defaults mirror resolve_posture's absent
+    // fallbacks so the line never reads "undefined".
+    const label = draft.pace + ' · ' + draft.asking + ' · ' + draft.delegation
+      + ' · ' + (draft.delivery || 'instant')
+      + ' · ' + (draft.orchestration || 'hands-on');
     count.textContent = s > 0
       ? `arms in ${s}s · ${label}`
       : `applying ${label}…`;
@@ -740,6 +748,15 @@ function posturePicker(d) {
     `<div class="sgind"></div>${orchChips}</div></div>` +
     `<div class="pdesc" id="pdesc" role="tooltip" aria-hidden="true">` +
     `<span class="pdesc-text" id="pdesc-text"></span></div>` +
+    // #674: .parm (the bar + "arms in …" line) is emitted OUTSIDE the
+    // .posture <section> so its position:sticky bounds to the tall dashboard
+    // container, not the short section. Sticky is bounded by the parent's box,
+    // so a sticky child of .posture clamps to .posture's top edge and never
+    // reaches the viewport bottom — measured: armed #parm stuck at top=958
+    // (≈ .posture's top) vs viewport bottom 700. As a sibling of the section,
+    // .parm pins to viewport bottom correctly. The axes chips (which he said
+    // should NOT dock) stay inside .posture and scroll away.
+    `</section>` +
     `<div class="parm" id="parm">` +
     `<div class="pbar" id="pbar" hidden aria-hidden="true">` +
     `<div class="pbarfill" id="pbarfill"></div></div>` +
@@ -747,7 +764,7 @@ function posturePicker(d) {
     // #569: the deploy update countdown is recused here from #fmsg — the
     // posture row's remaining horizontal space, after the posture countdown.
     `<span class="pdep" id="pdep" aria-live="polite"></span></div>` +
-    `<div class="pmsg" id="pmsg" aria-live="polite"></div></section>`;
+    `<div class="pmsg" id="pmsg" aria-live="polite"></div>`;
 }
 /* Shared description for posture stops — presentation only; never arms. */
 let pdescKey = null;
@@ -3700,7 +3717,10 @@ function posturePinnedLive() {
   return pendingPostIsLive(readPostPending());
 }
 function paintPosturePin() {
-  const el = document.getElementById('posture');
+  // #674: the dock is the progress bar + "arms in …" line (#parm), not the
+  // whole posture component. The class is the lever #565 established; only
+  // its host changed.
+  const el = document.getElementById('parm');
   if (el) el.classList.toggle('psticky', posturePinnedLive());
 }
 

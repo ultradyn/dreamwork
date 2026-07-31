@@ -62,31 +62,38 @@ function between(frames, first, last) {
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 
-// ═══ 1. STICKY DOCK (#565) ═══════════════════════════════════════════════
-// Use a viewport short enough that #posture (near the page bottom) sits below
-// the fold at scrollY=0, so "docked" vs "not docked" is unambiguous.
+// ═══ 1. STICKY DOCK (#565, narrowed to .parm by #674) ════════════════════
+// Use a viewport short enough that #parm (near the page bottom) sits below
+// the fold at scrollY=0, so "docked" vs "not docked" is unambiguous. #674
+// moved the .psticky class from the whole #posture component to #parm (the
+// bar + "arms in …" line), so every class/geometry check reads #parm.
 {
   const ctx = await br.newContext({ viewport: { width: 1000, height: 700 } });
   const p = await ctx.newPage();
   p.on('pageerror', e => errs.push(String(e)));
   await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-  await p.waitForSelector('#posture');
+  await p.waitForSelector('#parm');
   await sleep(300);
   const vh = 700;
-  // idle: no arm → no .psticky → #posture in natural flow (below the fold at
-  // the top of the page), NOT docked.
+  // idle: no arm → no .psticky → #parm in natural flow (below the fold at
+  // the top of the page), NOT docked. #674: the class must NOT leak back onto
+  // #posture (the whole component).
   await p.evaluate(() => window.scrollTo(0, 0));
   await sleep(120);
   const idle = await p.evaluate(() => {
-    const el = document.getElementById('posture');
-    const r = el.getBoundingClientRect();
+    const parm = document.getElementById('parm');
+    const r = parm.getBoundingClientRect();
     return { top: Math.round(r.top), bottom: Math.round(r.bottom),
-             psticky: el.classList.contains('psticky') };
+             psticky: parm.classList.contains('psticky'),
+             postureSticky: document.getElementById('posture')
+               .classList.contains('psticky') };
   });
   notes.push(`idle @top: ${JSON.stringify(idle)}`);
-  ok('#565 idle: no .psticky class when no countdown is live',
+  ok('#674 idle: no .psticky on #parm when no countdown is live',
      idle.psticky === false);
-  ok('#565 idle: #posture is NOT docked (below the fold, not pinned to bottom)',
+  ok('#674 idle: .psticky is NOT on the whole #posture component',
+     idle.postureSticky === false);
+  ok('#565 idle: #parm is NOT docked (below the fold, not pinned to bottom)',
      idle.top >= vh);   // natural flow, below the viewport
 
   // arm a posture change → paintPosturePin adds .psticky on the live arm.
@@ -95,41 +102,48 @@ const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webg
   await sleep(100);
   await p.click('.paxis-chips[data-axis="pace"] .pchip[data-stop="steady"]');
   await sleep(250);
-  const armedClass = await p.evaluate(() =>
-    document.getElementById('posture').classList.contains('psticky'));
-  ok('#565 armed: .psticky is applied while the posture arm is live',
-     armedClass === true);
+  const armedClass = await p.evaluate(() => ({
+    parm: document.getElementById('parm').classList.contains('psticky'),
+    posture: document.getElementById('posture').classList.contains('psticky'),
+  }));
+  ok('#674 armed: .psticky is on #parm while the posture arm is live',
+     armedClass.parm === true);
+  ok('#674 armed: .psticky is NOT on the whole #posture component',
+     armedClass.posture === false);
 
-  // scroll back to the top: the docked widget stays visible at the bottom.
+  // scroll back to the top: the docked #parm stays visible at the bottom.
   await p.evaluate(() => window.scrollTo(0, 0));
   await sleep(150);
   const docked = await p.evaluate(() => {
-    const el = document.getElementById('posture');
+    const el = document.getElementById('parm');
     const r = el.getBoundingClientRect();
     return { top: Math.round(r.top), bottom: Math.round(r.bottom),
              psticky: el.classList.contains('psticky') };
   });
   notes.push(`armed @top: ${JSON.stringify(docked)}`);
-  ok('#565 armed: #posture stays visible (top inside the viewport) on scroll-up',
+  ok('#565 armed: #parm stays visible (top inside the viewport) on scroll-up',
      docked.top < vh && docked.psticky === true);
-  ok('#565 armed: #posture is docked to the viewport bottom (bottom ≈ vh)',
+  ok('#565 armed: #parm is docked to the viewport bottom (bottom â vh)',
      Math.abs(docked.bottom - vh) <= 2);
 
-  // #636 — the docked widget must not PAINT. --bg is the flat page colour;
-  // #dreambg (z-index:-1) is what the page shows, so an opaque fill punches a
-  // flat rectangle through the shader for the whole countdown. Computed, not
-  // declared: a var() that resolves to the page colour still reads as a block.
+  // #636/#674 — the docked #parm must not PAINT, and (#674) must carry NO
+  // top hairline. --bg is the flat page colour; #dreambg (z-index:-1) is what
+  // the page shows, so an opaque fill punches a flat rectangle through the
+  // shader. The hairline #565 added rode the whole .posture section and
+  // appeared above "posture / arming overrideâ¦"; narrowing the dock to .parm
+  // removed it (the .pbar is itself a visible boundary). Computed, not
+  // declared.
   const fill = await p.evaluate(() => {
-    const cs = getComputedStyle(document.getElementById('posture'));
+    const cs = getComputedStyle(document.getElementById('parm'));
     const cv = document.getElementById('dreambg');
     return { bg: cs.backgroundColor, shadow: cs.boxShadow,
              canvas: cv ? getComputedStyle(cv).display : null };
   });
-  notes.push(`#636 docked fill: ${JSON.stringify(fill)}`);
-  ok(`#636 docked: the fill is transparent, not a block (${fill.bg})`,
+  notes.push(`#636/#674 docked fill: ${JSON.stringify(fill)}`);
+  ok(`#636 docked: the #parm fill is transparent, not a block (${fill.bg})`,
      fill.bg === 'rgba(0, 0, 0, 0)' || fill.bg === 'transparent');
-  ok('#636 docked: the top hairline still marks the dock edge',
-     fill.shadow !== 'none');
+  ok('#674 docked: #parm carries NO top hairline (box-shadow removed)',
+     fill.shadow === 'none');
 
   // clear the arm (module-scope, like the staleremedy guard sets staleDeploy*)
   // and confirm the dock releases — back to natural flow, below the fold.
@@ -141,12 +155,12 @@ const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webg
   });
   await sleep(120);
   const released = await p.evaluate(() => {
-    const el = document.getElementById('posture');
+    const el = document.getElementById('parm');
     const r = el.getBoundingClientRect();
     return { top: Math.round(r.top), psticky: el.classList.contains('psticky') };
   });
   notes.push(`cleared @top: ${JSON.stringify(released)}`);
-  ok('#565 cleared: .psticky removed when no countdown is live',
+  ok('#565 cleared: .psticky removed from #parm when no countdown is live',
      released.psticky === false);
   await ctx.close();
 }
@@ -238,18 +252,18 @@ async function widthTrace(page, short, long) {
                            reason: 'domain_invalid', detail: 'not_local' }),
   }));
   await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-  await p.waitForSelector('#posture');
+  await p.waitForSelector('#parm');
   await sleep(300);
 
   await p.evaluate(() => armStaleDeploy());
   await sleep(200);
   const armed = await p.evaluate(() => ({
-    psticky: document.getElementById('posture').classList.contains('psticky'),
+    psticky: document.getElementById('parm').classList.contains('psticky'),
     phase: staleDeployPhase,
   }));
   notes.push(`#636 deploy armed: ${JSON.stringify(armed)}`);
   // precondition: without the raise there is nothing for the release to prove
-  ok('#636 precondition: a live deploy arm docks the widget',
+  ok('#636 precondition: a live deploy arm docks #parm',
      armed.psticky === true && armed.phase === 'arming');
 
   // fire it now rather than waiting out RUN_ARM_MS; drop the arm's own timer
@@ -261,7 +275,7 @@ async function widthTrace(page, short, long) {
   });
   await sleep(400);
   const after = await p.evaluate(() => {
-    const el = document.getElementById('posture');
+    const el = document.getElementById('parm');
     return { psticky: el.classList.contains('psticky'),
              position: getComputedStyle(el).position,
              phase: staleDeployPhase,
@@ -273,7 +287,7 @@ async function widthTrace(page, short, long) {
      /refused/.test(after.fmsg));
   ok('#636 refused: .psticky is released (the dock does not stay welded)',
      after.psticky === false);
-  ok('#636 refused: #posture is back in natural flow (not position:sticky)',
+  ok('#636 refused: #parm is back in natural flow (not position:sticky)',
      after.position !== 'sticky');
   await ctx.close();
 }
