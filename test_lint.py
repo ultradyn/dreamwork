@@ -5353,6 +5353,230 @@ Next id: **5**
         assert not any(lvl == lint.ERROR for lvl, _, _ in rep.rows), rep.render()
 
 
+class TestTitleBlockedClaim:
+    """#725 — a title claiming blocked-ness while blocked_on is empty.
+
+    `list` prints titles, not notes, so a title that embeds a condition that
+    later becomes false misleads exactly where a correction underneath is
+    invisible. #630, #631 and #641 all read as blocked for six hours after
+    their rulings landed. The check finds the CLASS: an open title containing
+    the claim idiom "blocked on" while the structured blocked_on field is
+    empty is a contradiction the ledger can detect for itself.
+
+    The pattern is "blocked on" (the CLAIM form), not bare "blocked" — the
+    discrimination #707's lesson governs. Measured on 170 open titles, the
+    claim form catches exactly three real instances and zero descriptions; the
+    bare word catches those three plus three legitimate descriptions.
+    """
+
+    # --- markdown-mode fixtures (the shared build idiom) ---
+
+    MD_CLAIM = (
+        "# Tasks\n\nNext id: **3**\n\n## Open\n\n"
+        # #1: the defect — title claims "blocked on", no structured field
+        "- **#1** — build the thing — blocked on his ruling · P1 · "
+        "origin: **loop**\n"
+        # #2: a description ABOUT blocking, not a claim — must NOT trip
+        "- **#2** — a blocked errand is invisible · P2 · origin: **loop**\n"
+    )
+
+    def _md_target(self, tmp_path, tasks):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(tasks)
+        return t
+
+    def _rows(self, t, level=None):
+        rep = lint.Report()
+        lint.check_title_blocked_claim(t / ".dreamwork", rep)
+        return [d for lvl, w, d in rep.rows
+                if w == "tasks.md" and (level is None or lvl == level)]
+
+    # --- Direction 1: the check CATCHES the real defect ---
+
+    def test_a_title_claim_with_empty_blocked_on_warns(self, tmp_path):
+        # #630's exact shape: "... — blocked on his G2 ruling" with no
+        # blocked_on field. The discriminating assertion names the id and
+        # quotes the offending title fragment, not just a count.
+        t = self._md_target(tmp_path, self.MD_CLAIM)
+        warns = self._rows(t, lint.WARN)
+        assert any("#1" in d and "blocked on his ruling" in d for d in warns), (
+            "a title claiming 'blocked on' with no structured field must WARN, "
+            "naming the id and the title fragment: %r" % warns)
+
+    def test_a_description_about_blocking_does_not_trip(self, tmp_path):
+        # #707's discipline: a title legitimately ABOUT blocking ("A blocked
+        # errand is invisible") must NOT trip. This is the false-positive the
+        # brief names, and bare "blocked" would catch it.
+        t = self._md_target(tmp_path, self.MD_CLAIM)
+        warns = self._rows(t, lint.WARN)
+        assert not any("#2" in d for d in warns), (
+            "a title describing blocking ('a blocked errand is invisible') "
+            "is not a claim and must not WARN: %r" % warns)
+
+    def test_blocked_on_writer_title_does_not_trip(self, tmp_path):
+        # The brief's named false-positive: "Fix the blocked_on writer" uses
+        # the UNDERSCORE form. "blocked on" (space) must not match it.
+        tasks = (
+            "# Tasks\n\nNext id: **2**\n\n## Open\n\n"
+            "- **#1** — fix the blocked_on writer · P2 · origin: **loop**\n"
+        )
+        t = self._md_target(tmp_path, tasks)
+        assert self._rows(t) == [], (
+            "'blocked_on' (underscore) is a field name, not a claim; bare "
+            "'blocked' would trip on it, 'blocked on' (space) must not")
+
+    def test_case_insensitive_BLOCKED_matches(self, tmp_path):
+        # #641's title: "BLOCKED on the #614 wire-protocol ruling" (all caps).
+        tasks = (
+            "# Tasks\n\nNext id: **2**\n\n## Open\n\n"
+            "- **#1** — implement the thing — BLOCKED on the #614 ruling · "
+            "P1 · origin: **loop**\n"
+        )
+        t = self._md_target(tmp_path, tasks)
+        warns = self._rows(t, lint.WARN)
+        assert any("#1" in d for d in warns), warns
+
+    def test_a_backed_claim_in_markdown_is_clean(self, tmp_path):
+        # A title claiming "blocked on" whose metadata carries
+        # blocked-on: **human** is backed — the structured field records the
+        # claim, so the title is not a contradiction.
+        tasks = (
+            "# Tasks\n\nNext id: **2**\n\n## Open\n\n"
+            "- **#1** — the thing — blocked on his ruling · P1 · "
+            "origin: **loop** · blocked-on: **human**\n"
+        )
+        t = self._md_target(tmp_path, tasks)
+        rows = self._rows(t)
+        # No WARN; the coverage OK row may appear
+        assert not [r for r in rows if "claims blocked-ness" in r], (
+            "a title backed by blocked-on: **human** is not a contradiction: %r"
+            % rows)
+
+    # --- Direction 2: the false-green the check does NOT close ---
+
+    def test_a_stale_nonempty_blocker_passes_silently(self, tmp_path):
+        # The named false-green (#590's stale-blocker case): a title claiming
+        # blocked-ness where blocked_on is genuinely NON-empty but names an
+        # already-LANDED blocker. The check sees a populated field and stays
+        # quiet — which is the documented gap, not a defect. This test PINS
+        # the gap: if someone "fixes" it here without the blocker-landing
+        # audit (#590), this test goes red and names the overreach.
+        td = self._cut_over_store(tmp_path, blocked_on="#999")
+        warns = self._rows(td, lint.WARN)
+        assert not any("claims blocked-ness" in d for d in warns), (
+            "Direction 2 documented gap: a populated blocked_on (even a stale "
+            "one) makes the check quiet by design — closing this needs #590's "
+            "blocker-landing audit, not a title check. If this test went red, "
+            "the check overreached into territory it cannot judge: %r" % warns)
+
+    # --- store-mode fixtures (the real defect site) ---
+
+    def _cut_over_store(self, tmp_path, *, blocked_on=None, title=None):
+        """A post-cutover target whose ``.dreamwork/`` store has ONE open
+        entry carrying a 'blocked on' title claim. Returns the TARGET ROOT
+        (so ``_rows`` finds ``.dreamwork/`` inside it the same way the
+        markdown fixtures do). The blocked_on column is set directly."""
+        import importlib.machinery, importlib.util, io
+        import sqlite3, ledger_parse, ledger_store
+        repo = Path(__file__).resolve().parent
+        loader = importlib.machinery.SourceFileLoader(
+            "ud_dw_tasks_migrate", str(repo / "ud-dw-tasks-migrate"))
+        spec = importlib.util.spec_from_loader("ud_dw_tasks_migrate", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        t = fresh(tmp_path)
+        td = t / ".dreamwork"
+        td.mkdir()
+        # Next id 12 with #10 (open) and #11 (landed) so the seed's
+        # MAX(id)+1 == header check holds.
+        fixture = (
+            "# Task ledger\n\nNext id: **12**\n\n## Open\n\n"
+            "- **#10** — placeholder · P2 · origin: **loop**\n\n"
+            "## Recently landed\n\n"
+            "- **#11** — a landed entry · origin: **loop** (abc1234)\n")
+        (td / "tasks.md").write_text(fixture)
+        mod.perform_cutover(str(td), out=io.StringIO())
+        assert ledger_parse.source_of_truth(td) == "store"
+        # Set #10's title and body head line to carry the claim, and
+        # optionally its blocked_on column. store_entries returns the verbatim
+        # body for headed entries (the import shape), so both the title column
+        # AND the body's head line must carry the claim — that is what the real
+        # defect data looks like (#630/#631/#641 carry it in both places).
+        ttl = title or "build the thing — blocked on his ruling"
+        db = ledger_parse.store_path(td)
+        conn = sqlite3.connect(str(db))
+        conn.execute("UPDATE task SET title = ? WHERE id = 10", (ttl,))
+        conn.execute(
+            "UPDATE task SET body = ? WHERE id = 10",
+            (f"- **#10** — {ttl} · P2 · origin: **loop**",))
+        if blocked_on is not None:
+            conn.execute(
+                "UPDATE task SET blocked_on = ? WHERE id = 10", (blocked_on,))
+        conn.commit()
+        conn.close()
+        return t
+
+    def test_store_mode_title_claim_empty_blocked_on_warns(self, tmp_path):
+        # The production defect shape: store mode, title carries "blocked on",
+        # blocked_on column is NULL. This is #630/#631/#641's actual mode.
+        td = self._cut_over_store(tmp_path)
+        warns = self._rows(td, lint.WARN)
+        assert any("#10" in d and "blocked on his ruling" in d for d in warns), (
+            "store mode: a title claiming 'blocked on' with NULL blocked_on "
+            "must WARN, naming the id and title fragment: %r" % warns)
+
+    def test_store_mode_backed_claim_is_clean(self, tmp_path):
+        # Store mode happy path: title claims "blocked on", blocked_on column
+        # is populated. The structured field backs the title — not a
+        # contradiction.
+        td = self._cut_over_store(tmp_path, blocked_on="#614")
+        rows = self._rows(td)
+        assert not any("claims blocked-ness" in r for r in rows), (
+            "store mode: a populated blocked_on backs the title claim: %r" % rows)
+
+    def test_store_mode_whitespace_blocked_on_still_warns(self, tmp_path):
+        # A whitespace-only blocked_on is empty in truth. The check strips
+        # whitespace before testing, so it must WARN as if the column were
+        # NULL — a literal comparison would let "   " through silently.
+        td = self._cut_over_store(tmp_path, blocked_on="   ")
+        warns = self._rows(td, lint.WARN)
+        assert any("#10" in d for d in warns), warns
+
+    def test_coverage_row_when_claim_is_backed(self, tmp_path):
+        # #430: a check whose subject exists must be VISIBLE once it examined
+        # something. A backed claim produces an OK coverage row, not silence.
+        td = self._cut_over_store(tmp_path, blocked_on="#614")
+        rep = lint.Report()
+        lint.check_title_blocked_claim(td / ".dreamwork", rep)
+        oks = [d for lvl, w, d in rep.rows if w == "tasks.md" and lvl == lint.OK]
+        assert any("claiming blocked-ness" in d for d in oks), (
+            "a backed claim must produce a coverage OK row, not silence: %r" % oks)
+
+    def test_silent_when_no_title_claims_blocked(self, tmp_path):
+        # Pre-adoption: no title makes a blocked-ness claim. Silence is
+        # correct — a row that is always present is a row nobody reads.
+        tasks = (
+            "# Tasks\n\nNext id: **2**\n\n## Open\n\n"
+            "- **#1** — a plain task · P2 · origin: **loop**\n"
+        )
+        t = self._md_target(tmp_path, tasks)
+        assert self._rows(t) == [], self._rows(t)
+
+    def test_absent_ledger_is_silent_not_vacuous(self, tmp_path):
+        # No ledger at all: the check records a skip (#611) rather than
+        # claiming it examined entries. A skip is the honest answer.
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        rep = lint.Report()
+        lint.check_title_blocked_claim(dw, rep)
+        assert not any(lvl == lint.ERROR for lvl, _, _ in rep.rows), rep.render()
+        # The skip is recorded for check_ledger_skips to render
+        assert "check_title_blocked_claim" in rep.ledger_skips, rep.ledger_skips
+
+
 class TestSubdecisions:
     """#421 B: a fold that drops a declared sub-decision is an ERROR.
 
