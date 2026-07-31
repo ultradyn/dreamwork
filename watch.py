@@ -586,7 +586,10 @@ def page_shell(title, body, js):
 # hardest. That is the cost the rejected option carries; it is not paid here.
 #
 # DREAMWORK.md's "two renderers only agree on the day they are written" does
-# not bite, because this is not a second renderer of the visual language: it is
+# not bite (and since 2026-07-31 / #614 that sentence is relaxed anyway — it
+# was never a state rule; see DREAMWORK.md "One fact, one home on disk" for
+# the half that still binds). It would not have bitten regardless, because
+# this is not a second renderer of the visual language: it is
 # `page_shell` — the one shell — around class names `client/style.css` already
 # defines (`.qmissing`'s dim rail idiom, #452). It declares no colour, no font
 # and no spacing of its own, so a restyle carries it along with everything

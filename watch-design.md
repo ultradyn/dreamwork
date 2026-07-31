@@ -49,13 +49,19 @@ carries a `+` command opener (steer the loop without a chat turn).
   `watch.py` may become a package. This bullet said "no dependencies, no build
   step" for four days after the ruling, and that staleness is what made the
   split read as forbidden.
-  **It is not licence for a second renderer.** The page has one render
-  authority, and `DREAMWORK.md`'s second-truth rule is untouched by this: a
-  port that *reimplements* each feature beside the existing one is still
-  refused (`dreamhub-design.md`, "one renderer, and it is the Python one" —
-  *two renderers only agree on the day they are written*). Build tooling over
-  the client we have is the permitted direction; a rival implementation of it
-  is refused.
+  **It was not, at the time, licence for a second renderer — and on
+  2026-07-31 19:09 he gave that licence separately** (answering `#614`):
+  *"also re `"one renderer, and it is the Python one"
+  (dreamhub-design.md:197)` from that doc, we should relax this now since
+  we're changing over to react based webui."* So the page moving to a React
+  render authority is the plan, not an exception. `DREAMWORK.md`'s
+  second-truth rule does not object, because it never reached rendering: he
+  scoped it to **on-disk master state** in the same message (**One fact, one
+  home on disk**, `DREAMWORK.md` Philosophy — the canonical statement; this
+  bullet is a pointer to it). Build tooling over the client we have is still
+  the *cheapest* direction, and a hand-maintained rival implementation of a
+  surface that already has one still costs two things to keep in step — but
+  that is now a cost to argue, not a rule to cite.
 - **The UI is transitioning to a component-based React web UI** (ruled
   2026-07-31 17:03, `#591`, receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`;
   `rec` on all three sub-decisions). This supersedes the earlier reading —
@@ -65,7 +71,11 @@ carries a `+` command opener (steer the loop without a chat turn).
     **derived** surface — one compiled from the same source the existing
     authority renders — is *not* a second authority. The rule was coined
     refusing a JS row renderer beside the Python one rendering *the same
-    rows* (`dreamhub-design.md`), and that is what it still refuses.
+    rows* (`dreamhub-design.md`).
+    **Superseded 2026-07-31 19:09 (`#614`), and the direction is looser, not
+    tighter:** he relaxed the renderer sentence outright, so G2 no longer
+    refuses a second renderer even of the same surface. It reads as a cost
+    now; see the paragraph below this list.
   - **The claude-design breakpoint is component-level, and staged.** Tokens
     and the real `client/style.css` ship first; delegating React wrappers
     follow as the bundle step's second stage. Not tokens-only — a tokens-only
@@ -79,16 +89,20 @@ carries a `+` command opener (steer the loop without a chat turn).
   He also directed that replacing the old inline HTML in `watch.py` with the
   new components be **prioritised at the earliest suitable time** (`#630`).
 
-  **The second-truth rule stays in force, and this ruling is built on it, not
-  against it.** The wrappers are *derived*: the bundle step compiles the same
-  `client/*.js` files `watch.py` already serves — **no markup is restated**,
-  so there is nothing that can drift. New surfaces (the live session view) are
-  written as components from their first line and have no builder twin. What
-  remains refused, unchanged, is a **hand-maintained** component library
-  beside the builders: two *maintained* truths about the same surface. If a
-  change would leave one surface described in two places that a human has to
-  keep in step, it is the thing this rule has always refused — "we are going
-  component-based" does not buy it. The analysis is
+  **The second-truth rule does not reach this, and since 2026-07-31 19:09 it
+  says so itself.** He scoped it to **on-disk master state** while relaxing the
+  renderer sentence — canonical statement: **One fact, one home on disk**,
+  `DREAMWORK.md` Philosophy. So nothing about the component transition needs
+  that rule's permission. The wrappers are still *derived* — the bundle step
+  compiles the same `client/*.js` files `watch.py` already serves, **no markup
+  restated**, nothing that can drift — and new surfaces (the live session view)
+  are written as components from their first line with no builder twin, but
+  that shape is now held by its own economics rather than by a prohibition: a
+  surface described in two places a human keeps in step costs two edits per
+  change and agrees only on the day it is written. `#630` pays that down by
+  deleting each string builder in the commit that converts its surface. A lane
+  that wants a hand-maintained twin argues the cost; it is not refused by a
+  rule. The analysis is
   `.dreamwork/review/505-g2-render-authority.html`;
   `.dreamwork/docs/plans/render-architecture.md` carries the standing record.
 - **The client lives in `client/`, one file per former constant (#397).**

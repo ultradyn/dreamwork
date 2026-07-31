@@ -605,10 +605,14 @@ STYLE = """<style>
 </style>"""
 
 SCRIPT = """<script>
-/* One renderer, and it is the Python one. The client swaps in a freshly
-   rendered fragment rather than building rows of its own — a second
-   renderer is a second set of rules about what a stalled project looks
-   like, and the two only ever agree on the day they are written.
+/* The rows are rendered in Python and this client swaps in a freshly
+   rendered fragment rather than building rows of its own — a hand-written
+   second row builder would be a second set of rules about what a stalled
+   project looks like, and the two would only ever agree on the day they
+   are written. That is a cost, not a prohibition: he relaxed "one
+   renderer, and it is the Python one" on 2026-07-31 (#614) as the web UI
+   moves to React. See dreamhub-design.md for the scope, and DREAMWORK.md
+   "One fact, one home on disk" for the state rule that is NOT relaxed.
    Between polls the ages tick locally off data-since, which is trivia
    (a formatter), not an interpreter. */
 const AGE = s => s < 60 ? Math.floor(s) + 's'
