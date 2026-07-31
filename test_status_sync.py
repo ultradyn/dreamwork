@@ -648,6 +648,105 @@ class TestUnobservableDispatchSurvives:
         assert "reaped" in err.lower() or "not under" in err.lower(), err
 
 
+# ── 12. #702: a format error must not read as a dead lane ──────────────
+#
+# The observed defect: the coordinator wrote "task": "#696" (the `#`-prefixed
+# form used everywhere else in this file), and `_base_id` matches leading
+# DIGITS (`^\d+`), so it returned None and the lane was reaped with the SAME
+# message as a genuinely dead lane — "reaped N dreamer(s) whose task is not
+# under `## Open`". A format error was indistinguishable from a correct reap,
+# which is the #136 shape ("nothing needs you" and "the channel is broken"
+# must not render identically). The fix: a task the comparison cannot reach
+# is KEPT and the format error is reported loudly; only a derivable base id
+# that is NOT open counts as genuinely landed.
+
+class TestMalformedTaskNotReapedAsDead:
+    """A `#`-prefixed task id is kept and flagged, not reaped as dead.
+
+    Production line whose reversion reds each arm: the malformed branch in
+    ``main``'s reap loop — ``if base is None: malformed.append(d);
+    pruned.append(d)``. Revert it (reap when ``base is None``, as the old
+    ``if _base_id(...) in ids`` did) and the entry vanishes from dreamers
+    while the "KEPT ... cannot reach" message never prints.
+    """
+
+    def test_hash_prefixed_task_is_kept_and_flagged_not_reaped(self, tmp_path):
+        live_proc = _spawn_lane(f"/tmp/brief-702-hash-{time.time_ns()}.md")
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(live_proc.pid), \
+                "precondition: live pid must be alive"
+            # "#696" — the form used everywhere else in this file. _base_id
+            # matches leading digits, so this yields None.
+            assert status_sync._base_id("#696") is None, \
+                "precondition: _base_id must not reach a #-prefixed id"
+            dreamers = [{"task": "#696", "pid": live_proc.pid,
+                         "brief": f"/tmp/brief-702-hash-{time.time_ns()}.md"}]
+            ledger = _ledger(696)           # 696 IS open — the lane is real
+            assert 696 in status_sync.open_ids(ledger), \
+                "precondition: task 696 must be open"
+            status = {"dreamers": dreamers, "current_task_ids": [],
+                      "queue": {}, "task": "t"}
+            rc, out, err = _run(status, ledger, tmp_path)
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json"). read_text())
+            # THE FIX: the malformed entry is KEPT, not reaped. A format error
+            # reading as "dead lane" was the observed defect.
+            assert len(result["dreamers"]) == 1, result["dreamers"]
+            assert result["dreamers"][0]["task"] == "#696", result["dreamers"]
+            # The format error is reported loudly and named distinctly from a
+            # genuine reap — the discriminating message the brief demands.
+            assert "KEPT" in err, err
+            assert "cannot reach" in err, err
+            assert "#696" in err, err
+            # The reap REPORT ("reaped N dreamer(s) whose task is not under")
+            # must NOT appear — that was the old message which made a format
+            # error read as a dead lane. Bound to the report's two-word prefix
+            # rather than the bare word "reaped", which the KEPT message itself
+            # uses in its reasoning ("not reaped because …").
+            reap_report = "reaped " in err and "whose task is not under" in err
+            assert not reap_report, \
+                "the dead-lane reap report must not fire for a malformed task" \
+                " (it read a format error as a dead lane): %s" % err
+        finally:
+            live_proc.kill()
+            live_proc.wait()
+
+    def test_genuinely_landed_task_is_still_reaped_with_the_dead_message(
+            self, tmp_path):
+        # The other direction (constraint, not vacuous): a task whose base id
+        # IS derivable and is NOT open must STILL be reaped with the "reaped"
+        # message — the malformed carve-out must not turn "keep malformed" into
+        # "keep everything". A genuinely landed lane is 999, not open.
+        live_proc = _spawn_lane(f"/tmp/brief-702-landed-{time.time_ns()}.md")
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(live_proc.pid)
+            assert status_sync._base_id(999) == 999, \
+                "precondition: a plain int yields its base"
+            dreamers = [{"task": 999, "pid": live_proc.pid,
+                         "brief": f"/tmp/brief-702-landed-{time.time_ns()}.md"}]
+            ledger = _ledger(696)           # 696 open — 999 is NOT (landed)
+            assert 999 not in status_sync.open_ids(ledger), \
+                "precondition: task 999 must be landed"
+            status = {"dreamers": dreamers, "current_task_ids": [999],
+                      "queue": {}, "task": "t"}
+            rc, out, err = _run(status, ledger, tmp_path)
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            # Reaped — gone. The dead-lane message still fires for a real reap.
+            assert result["dreamers"] == [], result["dreamers"]
+            assert "reaped" in err.lower(), \
+                "a genuinely landed task must still be reported as reaped: %s" % err
+            assert "KEPT" not in err, \
+                "the malformed message must not fire for a genuine reap: %s" % err
+        finally:
+            live_proc.kill()
+            live_proc.wait()
+
+
 # ── 10. status.json is ephemera: read it defensively (#402) ────────────
 #
 # The brief's third deliverable, verbatim: "status.json is gitignored and

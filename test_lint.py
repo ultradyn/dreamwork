@@ -744,6 +744,51 @@ class TestStatusIsAnInterface:
         rep = run(target(tmp_path, **{"status.json": "[1, 2]"}))
         assert ERRORS(rep, "status.json")
 
+    # #702: `lanes` is author-owned prose the coordinator writes at dispatch
+    # (sees every form); `dreamers` is the derived half status_sync prunes by
+    # liveness. Nothing connected them, and nothing complained while `lanes`
+    # named a real fleet and `dreamers` was empty — the tick read `0 ccc-live`
+    # beside live lanes for a whole evening. A non-empty `lanes` beside an
+    # empty `dreamers` is either a missed bookkeeping step or a stale `lanes`;
+    # both are worth a human's eye.
+    def test_lanes_populated_but_dreamers_empty_is_warned(self, tmp_path):
+        blob = json.dumps({
+            "lanes": [{"lane": "lane-x", "task": "#7"}],
+            "dreamers": [],
+        })
+        rep = run(target(tmp_path, **{"status.json": blob}))
+        assert lint.WARN in levels(rep, "status.json"), rep.rows
+        detail = next(d for _, w, d in rep.rows if w == "status.json")
+        # The WARN names both halves of the disagreement (the backticked keys
+        # do not survive a bare substring, so check the load-bearing words).
+        assert "lanes" in detail and "empty" in detail, detail
+
+    def test_lanes_and_dreamers_both_populated_is_ok(self, tmp_path):
+        # The real file's steady state (this repo, at dispatch): both halves
+        # carry the fleet. The check must not fire here.
+        blob = json.dumps({
+            "lanes": [{"lane": "lane-x", "task": "#7"}],
+            "dreamers": [{"task": 7, "pid": 1234, "brief": "/x.md"}],
+        })
+        rep = run(target(tmp_path, **{"status.json": blob}))
+        assert levels(rep, "status.json") == [lint.OK], rep.rows
+
+    def test_both_empty_is_ok(self, tmp_path):
+        # The fleet's empty-fleet steady state between dispatches: no dispatch
+        # recorded, nothing to disagree. The check must not nag an empty fleet.
+        blob = json.dumps({"lanes": [], "dreamers": []})
+        rep = run(target(tmp_path, **{"status.json": blob}))
+        assert levels(rep, "status.json") == [lint.OK], rep.rows
+
+    def test_lanes_or_dreamers_wrong_type_is_an_error(self, tmp_path):
+        # The type guard added in the same change: `lanes`/`dreamers` must be
+        # lists (a string where a list belongs makes a reader throw).
+        blob = json.dumps({"lanes": "lane-x", "dreamers": {}})
+        rep = run(target(tmp_path, **{"status.json": blob}))
+        assert ERRORS(rep, "status.json")
+        detail = next(d for _, w, d in rep.rows if w == "status.json")
+        assert "lanes is str" in detail and "dreamers is dict" in detail, detail
+
 
 class TestStatusPush:
     """#190 — `push` is how the dashboard learns the loop's channel to him is

@@ -1942,6 +1942,14 @@ STATUS_TYPES = {
     # check_status_task_ids, because that is the mistake a writer actually
     # makes and this table cannot see inside a list.
     "current_task_ids": list,
+    # `lanes` is author-owned prose the coordinator writes at dispatch; it
+    # sees every dispatch form. `dreamers` is the derived, machine-read half
+    # status_sync prunes by liveness. Their TYPE is guarded here; the
+    # cross-field disagreement between them (lanes populated while dreamers is
+    # empty) is the #702 check below in check_status, because a type guard
+    # cannot see that one is a list-of-zero beside a list-of-many.
+    "lanes": list,
+    "dreamers": list,
 }
 
 
@@ -1993,6 +2001,25 @@ def check_status(dw: Path, rep: Report) -> None:
 
     agents = data.get("agents") or []
     waiting = data.get("awaiting_human") or []
+    # #702: `lanes` is the author-owned dispatch record (sees every form);
+    # `dreamers` is the derived half `status_sync` prunes by liveness. Nothing
+    # connects them, and nothing complained while `lanes` named a real fleet
+    # and `dreamers` was empty — so the tick read `0 ccc-live` beside live
+    # lanes for a whole evening. A non-empty `lanes` beside an empty
+    # `dreamers` is either a missed bookkeeping step (dreamers never written)
+    # or a stale `lanes` the coordinator has not cleared; both are worth a
+    # human's eye, and neither is detectable from either list alone.
+    lanes = data.get("lanes") or []
+    dreamers = data.get("dreamers") or []
+    if lanes and not dreamers:
+        rep.add(
+            WARN,
+            "status.json",
+            f"`lanes` names {len(lanes)} dispatch(es) but `dreamers` is empty — "
+            f"the fleet reads as 0 ccc-live while lanes are recorded (a missed "
+            f"bookkeeping step, or a stale `lanes`; #702)",
+        )
+        return
     detail = f"valid; {len(agents)} agent(s)"
     if waiting:
         detail += f", {len(waiting)} awaiting the human"
