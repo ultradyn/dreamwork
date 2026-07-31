@@ -936,7 +936,7 @@ def test_the_build_is_reproducible_and_the_committed_output_is_its_output(
     # fallback. Pointing both builds at one external path would let that path
     # leak into both outputs and make their equality a false green.
     local_node_modules = root_a / "dev" / "build" / "node_modules"
-    local_node_modules.symlink_to(toolchain, target_is_directory=True)
+    shutil.copytree(toolchain, local_node_modules, symlinks=True)
     build_client.NODE_MODULES = str(local_node_modules)
     manifest_a = build_client.build(str(root_a))
     build_client.NODE_MODULES = str(toolchain)
