@@ -591,7 +591,7 @@ class TestDottedPathRoundTrip:
         This is the case the brief names: nobody wrote it, and it is the only
         one that exercises the bug end-to-end (the registry key, the working-
         tree read, and the history-scan path set all flow through _to_posix)."""
-        dotted = ".dreamwork/notes.md"
+        dotted = ".dreamwork/lessons.md"
         (repo / ".dreamwork").mkdir()
         original = "# title\n"
         (repo / dotted).write_text(original)
@@ -602,3 +602,81 @@ class TestDottedPathRoundTrip:
         assert (repo / dotted).read_text() == original
         assert _check(repo) == 0
 
+
+# ── #740: every path entry point stays inside the resolved worktree ──
+
+class TestPathsStayInWorktree:
+    @pytest.mark.parametrize("verb", [rp.begin, rp.restore, rp.forget])
+    @pytest.mark.parametrize("form", ["parent", "absolute"])
+    def test_every_path_entry_point_names_and_refuses_an_escape(
+            self, repo, capsys, verb, form):
+        outside = repo.parent / "victim.txt"
+        original = b"outside sentinel\n"
+        outside.write_bytes(original)
+        path = "../victim.txt" if form == "parent" else str(outside)
+
+        exit_code = verb(repo, path)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2, err
+        assert repr(path) in err, err
+        assert "outside the worktree" in err, err
+        assert outside.read_bytes() == original
+
+    def test_begin_refuses_an_in_tree_symlink_to_an_outside_file(
+            self, repo, capsys):
+        outside = repo.parent / "outside.txt"
+        outside.write_text("outside\n")
+        (repo / "link.txt").symlink_to(outside)
+
+        exit_code = rp.begin(repo, "link.txt")
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2, err
+        assert "link.txt" in err, err
+        assert "outside the worktree" in err, err
+
+    def test_restore_rechecks_a_path_that_became_an_outside_symlink(
+            self, repo, capsys):
+        outside = repo.parent / "outside.txt"
+        outside.write_text("outside bytes\n")
+        assert rp.begin(repo, "router.js") == 0
+        (repo / "router.js").unlink()
+        (repo / "router.js").symlink_to(outside)
+
+        exit_code = rp.restore(repo, "router.js")
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2, err
+        assert "router.js" in err, err
+        assert "outside the worktree" in err, err
+        assert outside.read_text() == "outside bytes\n"
+
+    def test_check_refuses_an_unsafe_legacy_registry_path(
+            self, repo, capsys):
+        outside = repo.parent / "victim.txt"
+        original = b"legacy outside sentinel\n"
+        outside.write_bytes(original)
+        rp._write_registry(repo, [{
+            "path": "../victim.txt",
+            "state": rp.RESTORED,
+            "injected_sha": rp._sha(original),
+        }])
+
+        exit_code = rp.check(repo)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2, err
+        assert "../victim.txt" in err, err
+        assert "outside the worktree" in err, err
+        assert outside.read_bytes() == original
+
+    def test_a_missing_contained_path_is_absent_not_outside(
+            self, repo, capsys):
+        exit_code = rp.begin(repo, "missing/child.txt")
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2, err
+        assert "missing/child.txt" in err, err
+        assert "does not exist in the working tree" in err, err
+        assert "outside the worktree" not in err, err
