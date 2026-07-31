@@ -128,7 +128,15 @@ is checked into this repo, so the worktree-local path always resolves; do not go
 **Mechanics.** `git commit --only <paths>` — **never `git commit -a`**. Run `git add -N` for
 new files first so `--only` can see them. **Never merge, never push** — the coordinator does
 both. Never use bare `git stash`/`git stash pop`: the stash stack is shared across worktrees
-and you would pop another lane's work.
+and you would pop another lane's work. `--only` stops you sweeping OTHER files from the index,
+but it commits the path's **full current content** — so if another agent has an uncommitted
+edit to the **same** file, your `--only` sweeps their edit too (`#624`). That agent's own
+`--only` then reports `nothing to commit, working tree clean`, which reads as failure but
+means "your write was already committed by someone else." **If you see `nothing to commit`
+after writing to a file, CHECK whether your content is already on master (`grep` for your
+line) before re-appending — re-appending creates a DUPLICATE the coordinator folds twice.**
+(For `.dreamwork/handoffs.md` specifically this is moot: you do not write it, `#687` made the
+coordinator its single writer. The rule is for any other shared file.)
 
 **Name the task id in every commit subject, in the form `verb(#NNN): <subject>`** — e.g.
 `feat(#577):`, `test(#577):`, `fix(#688):`, `docs(#700):`. The verb must be one of
