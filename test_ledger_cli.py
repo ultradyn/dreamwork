@@ -38,6 +38,8 @@ from pathlib import Path
 import pytest
 
 import ledger_parse
+from dreamwork_db import Access, open_database
+from dreamwork_db.tasks import task_store_spec
 import ledger_store
 import ledger_write
 import lint  # #671 — `ledger_view`, the #294 dispatch the sweep tests derive from
@@ -370,20 +372,19 @@ def _write_reviews(dw):
     """Write two review decisions into the scratch store via the PRODUCTION
     writer (``ledger_write.record_review_decision``). Returns the rows the
     test wrote — its own input is the independent expectation."""
-    store = ledger_store.open_store(str(dw / ledger_parse.STORE_FILENAME))
     rows = [
         {"artifact": "plan-a.html", "question_title": "first question",
          "decision": "accepted", "decided_at": "2026-07-29T01:00:00Z", "actor": "watch"},
         {"artifact": "plan-b.html", "question_title": "second question",
          "decision": "rejected", "decided_at": "2026-07-30T02:00:00Z", "actor": "human"},
     ]
-    try:
+    with open_database(
+            task_store_spec(dw / ledger_parse.STORE_FILENAME),
+            access=Access.WRITE) as store:
         for r in rows:
             ledger_write.record_review_decision(
                 store, r["artifact"], r["question_title"], r["decision"],
                 actor=r["actor"], at=r["decided_at"])
-    finally:
-        store.close()
     return rows
 
 

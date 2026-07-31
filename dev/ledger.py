@@ -81,7 +81,7 @@ from ledger_parse import store_review_decisions  # noqa: E402  — #497 reviews 
 from dreamwork_db import Access, open_database  # noqa: E402
 from dreamwork_db.tasks import task_store_spec  # noqa: E402
 import lint  # noqa: E402 — NEXT_ID, the one header reader
-import ledger_store  # noqa: E402 — open the store for write verbs (#294 inc 9)
+import ledger_store  # noqa: E402 — legacy groom compatibility
 import ledger_write  # noqa: E402 — file_task / land_task (#294 inc 9)
 from user_events.sqlite import open_journal  # noqa: E402 — the journal read API (#357)
 
@@ -433,11 +433,9 @@ def _fold_store(dw_dir, task_id, note):
     There is no text to move — the state flip IS the fold. The Markdown file
     is untouched (the store is the single source post-cutover).
     """
-    store = ledger_store.open_store(store_path(dw_dir))
-    try:
+    with open_database(
+            task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
         ledger_write.land_task(store, task_id, note=note)
-    finally:
-        store.close()
     sys.stdout.write(f"folded #{task_id} (store: state open→landed)\n")
 
 
@@ -451,15 +449,14 @@ def _file_store(dw_dir, title, body, priority, type, origin):
     own words. Exit 2 (not 1): argparse itself uses 2 for a bad argument value,
     and 1 is `get`'s "no such id" under the #497 contract.
     """
-    store = ledger_store.open_store(store_path(dw_dir))
     try:
-        new_id = ledger_write.file_task(
-            store, title, body, priority=priority, type=type, origin=origin)
+        with open_database(
+                task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
+            new_id = ledger_write.file_task(
+                store, title, body, priority=priority, type=type, origin=origin)
     except ledger_write.WriteError as exc:
         sys.stderr.write(f"ledger: {exc}\n")
         return 2
-    finally:
-        store.close()
     sys.stdout.write(f"filed #{new_id} (store)\n")
     return 0
 
@@ -471,11 +468,9 @@ def _note_store(dw_dir, task_id, note):
     appends and the Markdown file is untouched (the store is the single
     source post-cutover).
     """
-    store = ledger_store.open_store(store_path(dw_dir))
-    try:
+    with open_database(
+            task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
         ledger_write.note_task(store, task_id, note)
-    finally:
-        store.close()
     sys.stdout.write(f"noted #{task_id} (store)\n")
 
 
@@ -487,17 +482,16 @@ def _reprioritise_store(dw_dir, task_id, band, why):
     exit 2 (bad band, #681 convention) and TaskNotFound as exit 1 (the #497
     "no such id" contract), matching the existing error shapes.
     """
-    store = ledger_store.open_store(store_path(dw_dir))
     try:
-        ledger_write.reprioritise_task(store, task_id, band, why=why)
+        with open_database(
+                task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
+            ledger_write.reprioritise_task(store, task_id, band, why=why)
     except ledger_write.TaskNotFound as exc:
         sys.stderr.write(f"ledger: {exc}\n")
         return 1
     except ledger_write.WriteError as exc:
         sys.stderr.write(f"ledger: {exc}\n")
         return 2
-    finally:
-        store.close()
     sys.stdout.write(f"reprioritised #{task_id} to {band} (store)\n")
     return 0
 
@@ -510,34 +504,32 @@ def _unblock_store(dw_dir, task_id, why):
     TaskNotFound as exit 1 (operation does not apply) and WriteError (empty
     why) as exit 2.
     """
-    store = ledger_store.open_store(store_path(dw_dir))
     try:
-        ledger_write.unblock_task(store, task_id, why=why)
+        with open_database(
+                task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
+            ledger_write.unblock_task(store, task_id, why=why)
     except (ledger_write.TaskNotFound, ledger_write.NotBlocked) as exc:
         sys.stderr.write(f"ledger: {exc}\n")
         return 1
     except ledger_write.WriteError as exc:
         sys.stderr.write(f"ledger: {exc}\n")
         return 2
-    finally:
-        store.close()
     sys.stdout.write(f"unblocked #{task_id} (store)\n")
     return 0
 
 
 def _retitle_store(dw_dir, task_id, title, why):
     """Store-mode retitle: change title, append reason, and refuse no-ops."""
-    store = ledger_store.open_store(store_path(dw_dir))
     try:
-        ledger_write.retitle_task(store, task_id, title, why=why)
+        with open_database(
+                task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
+            ledger_write.retitle_task(store, task_id, title, why=why)
     except (ledger_write.TaskNotFound, ledger_write.SameTitle) as exc:
         sys.stderr.write(f"ledger: {exc}\n")
         return 1
     except ledger_write.WriteError as exc:
         sys.stderr.write(f"ledger: {exc}\n")
         return 2
-    finally:
-        store.close()
     sys.stdout.write(f"retitled #{task_id} (store)\n")
     return 0
 

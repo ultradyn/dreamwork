@@ -1215,10 +1215,10 @@ def test_unblock_cli_clears_blocked_on_and_records_why_in_history(tmp_path, caps
     # File a blocked task. file_task accepts blocked_on as a kwarg, but the CLI
     # `file` verb does not expose it — set it directly via the store writer.
     sp = ledger.store_path(str(ledger_path.parent))
-    store = ledger.ledger_store.open_store(sp)
-    tid = ledger_write.file_task(
-        store, "blocked task", "body", blocked_on="blocked on #999")
-    store.close()
+    with ledger.open_database(
+            ledger.task_store_spec(sp), access=ledger.Access.WRITE) as store:
+        tid = ledger_write.file_task(
+            store, "blocked task", "body", blocked_on="blocked on #999")
     capsys.readouterr()
 
     # DIRECTION-1 precondition: there was NO verb to clear blocked_on.
