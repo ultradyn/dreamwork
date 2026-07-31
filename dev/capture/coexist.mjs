@@ -71,12 +71,23 @@ ok('the builder route receives #view only after React unmounts',
    markup are all the ones the router uses. The direct mount is what isolates
    the registry's round-trip promise from the router's intentional
    replaceChildren() when authority changes. */
-const roundTrip = await p.evaluate(() => {
+const roundTrip = await p.evaluate(async () => {
   const view = document.getElementById('view');
   const before = view.innerHTML;
   const beforeLabel = view.querySelector('.label')?.textContent || '';
   const registry = window.dwNative.registry;
   registry.mount('research', view, data, null);
+
+  /* flushSync commits the tree, but the component's mount effect is a later
+     end state. Sample only after its seen=1 sentinel proves that effect ran,
+     so an effect-added class cannot arrive just after this assertion. */
+  let settledSeen = null;
+  for (let i = 0; i < 50; i++) {
+    settledSeen = view.querySelector('[data-dw-research-seen]')
+      ?.getAttribute('data-dw-research-seen') || null;
+    if (settledSeen === '1') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
 
   const owned = view.querySelector('[data-dw-mount="research"]');
   const research = owned?.querySelector('[data-dw-research-instance]');
@@ -128,6 +139,7 @@ const roundTrip = await p.evaluate(() => {
     beforeLabel,
     mounted: registry.mounted(),
     mountedHtmlLen,
+    settledSeen,
     research: !!research,
     delegates,
     classOffenders,
@@ -141,7 +153,7 @@ ok('precondition: #view held real reviews builder markup before the mount ' +
    roundTrip.beforeLength > 500 && roundTrip.beforeLabel.trim() === 'reviews');
 ok('precondition: the real /research component rendered rows before unmount',
    roundTrip.research && roundTrip.delegates >= 1 &&
-   roundTrip.mountedHtmlLen > 200);
+   roundTrip.mountedHtmlLen > 200 && roundTrip.settledSeen === '1');
 const classDetail = roundTrip.classOffenders.length
   ? roundTrip.classOffenders.map(o => o.element + ' class="' +
       o.className + '"').join(', ')
