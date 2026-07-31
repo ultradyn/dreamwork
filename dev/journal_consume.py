@@ -88,6 +88,23 @@ Two subcommands, both taking the store path the way ``dev/ledger.py`` verbs take
             with only the stderr line as a signal.  See
             ``.dreamwork/lane-712-report.md`` for the IGC.
 
+#722     The drain's two domains disagreed and the journal had no legal
+          move.  ``pending`` computed its reported head over
+          ``receipt.created`` only, while the cursor advances over EVERY
+          ordinal.  When the head was a ``receipt.transition`` (the live
+          state), pending reported head 116 while the head was 117:
+          ``consume --through 117`` was refused by #712's guard (correctly),
+          and ``--through 116`` did not move — no value drained it.  Two
+          changes, on the OTHER side from the guard (the guard is RIGHT and
+          survives at full strength): ``pending`` reports the TRUE journal
+          head while its LISTING stays receipt.created-only, so ``--through
+          <head>`` covers every ordinal and the guard keeps bounding against a
+          position in the log.  And the coverage line now fires whenever the
+          cursor is below the head and NAMES the non-listed ordinals with
+          their kinds — #702/#136: pre-fix pending was SILENT with a
+          transition above the cursor, so "nothing needs you" and "something
+          is hiding" rendered identically.
+
 ATOMICITY SEAM (named, not hidden): the read and the advance are TWO separate
 API calls, not one transaction.  Between them a concurrent writer may append.
 That is SAFE BY CONSTRUCTION: the chain is append-only, so the prefix

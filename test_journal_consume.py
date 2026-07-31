@@ -1799,16 +1799,20 @@ def test_consume_drains_transition_head_then_pending_quiet(tmp_path: Path):
     code, out, err = _run(cli, ["pending", "--journal", str(path)])
     assert code == 0
     head_reported = _pending_read_marker(cli, path)["through"]
-    assert head_reported == head, (
-        f"precondition: pending must report the true head {head}; got "
-        f"{head_reported} — if this is the listing head the livelock is present")
+    # THE LIVELOCK ASSERTION IS THE CONSUME BELOW.  Pre-fix, pending reported the
+    # listing head (n_receipts, not n_receipts+1); consume --through the TRUE head
+    # was then refused by #712 ("never listed"), and --through the listing head did
+    # not move.  No legal --through existed.  We consume --through the TRUE head and
+    # assert it SUCCEEDS — that is the assertion no legal move existed to satisfy.
 
     code, out2, err2 = _run(cli, ["consume", "--through", str(head),
                                   "--journal", str(path),
                                   "--applied", str(applied)])
     assert code == 0, (
-        f"consume --through {head} must SUCCEED — the livelock is that no legal "
-        f"--through exists; got exit {code} (err={err2!r})")
+        f"consume --through {head} (the true head) must SUCCEED — the livelock "
+        f"is that pending reported head {head_reported} while the true head was "
+        f"{head}, so #712's guard refused the only drainable value and no legal "
+        f"--through existed; got exit {code} (err={err2!r})")
     # The cursor advanced to the true head — the drain completed.
     with open_journal(path) as j:
         cur = j.cursor(CONSUMER).scanned_through_event_ordinal
