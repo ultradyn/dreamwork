@@ -90,3 +90,10 @@ dev/capture/fixture/.dreamwork/.status-keys
 .pi/
 .playwright-mcp/
 *.tmp.*
+
+# #653 — the pinned dev-time bundler for `just build-client`. Gitignored like
+# every other node dependency here (the browser guards resolve Playwright the
+# same way): what is COMMITTED is the build's OUTPUT, client/dist/, because
+# `just deploy` ships committed state and the dashboard must come up with no
+# node at all. `npm ci` in dev/build restores this from package-lock.json.
+dev/build/node_modules/

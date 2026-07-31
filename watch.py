@@ -74,6 +74,12 @@ from review_artifact import highlight as _hl_document
 # snapshot the same way (derived transitively, never a hardcoded list).
 import status_derive
 
+# #653: "is client/dist built from this tree?" — one implementation, shared
+# with lint.py, so the commit-time ERROR and the serving-time reading cannot
+# give different answers. Stdlib-only and a plain sibling import, so the
+# deploy closure stages it like status_derive above.
+import client_dist
+
 # Server generation: a fresh value every time this process (re)starts, so a
 # client can tell "same server, data changed" from "server rebuilt, reload
 # the shell". Sent on /mtime; the client reloads when it changes. This alone
@@ -467,8 +473,9 @@ def _posture_vocab():
 # `deprecated/`, where the assets are not. abspath keeps the LINK's own
 # directory, which is the repo root. Never cwd (guards run from elsewhere)
 # and never `--target` (that is the watched project, not this skill).
-CLIENT_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "client")
+SELF_DIR = os.path.dirname(os.path.abspath(__file__))
+
+CLIENT_DIR = os.path.join(SELF_DIR, "client")
 
 # Every asset the page is assembled from, in no particular order. One list,
 # three readers: the loader below, `--autoreload`'s watched set, and the
@@ -630,6 +637,15 @@ NOT_FOUND_PAGE = page_shell(
 # discover them on its own. deploy_state parses THIS literal (AST, never an
 # import of this module) and ships every path on it; keep it to plain string
 # literals or the parse finds nothing. First entry is the vendored reconciler.
+# #653: the last four are not read to BUILD the page — nothing under
+# client/dist/ reaches PAGE at P1 — but `client_dist.check` reads all of them
+# relative to __file__ to answer "is the committed build current", and that
+# question must be answerable on the DEPLOYED instance too. Left off this
+# tuple they would simply be absent there, and the reading would go red for
+# the rest of time on every deployment: a permanent false red is how a
+# staleness signal becomes something nobody reads. `wrapper-exports.js` is a
+# build INPUT and rides along for exactly that reason — it is one of the nine
+# files the manifest records.
 DATA_SIBLINGS = ("vendor/morphdom.min.js", "vendor/LICENSE.morphdom",
                  "client/style.css",
                  "client/app_body.html",
@@ -638,7 +654,11 @@ DATA_SIBLINGS = ("vendor/morphdom.min.js", "vendor/LICENSE.morphdom",
                  "client/favicon.js",
                  "client/router.js",
                  "client/command.js",
-                 "client/shader.js")
+                 "client/shader.js",
+                 "dev/build/wrapper-exports.js",
+                 "client/dist/manifest.json",
+                 "client/dist/ds/index.js",
+                 "client/dist/ds/styles.css")
 
 
 def _load_morphdom_js():
@@ -1168,6 +1188,16 @@ def serving_report(target, src=None, path="watch.py", assets=None):
             assets = {}
     src = SELF_SRC if src is None else src
     out = {"state": None, "rev": None, "missing": [], "note": None}
+    # #653 — the serving-time half of the staleness signal, set here so it
+    # rides EVERY return path below (a reading that is present only on the
+    # happy path is absent exactly when something is wrong).
+    #
+    # It describes this SKILL's tree, not `target`'s: client/dist lives beside
+    # this module. It is recomputed only when `serving_cached` misses, which
+    # is when HEAD moves or the process is replaced — and that covers both
+    # ways dist can go stale: a deploy is a new process, and `--autoreload`
+    # re-execs on precisely the client edit that would strand the build.
+    out["client_dist"] = client_dist.check(SELF_DIR)
     if src is None:
         out["state"] = SERVE_ERROR
         out["note"] = "this process cannot read its own source"
@@ -5734,12 +5764,21 @@ def _autoreload_sources():
     `client/style.css` edit would change nothing this watcher looked at, so
     `just watch --autoreload --dev` would serve stale CSS until a manual
     restart — the exact loop a design lane lives in.
+
+    #653: the build's OUTPUTS are sources here too, and for the mirror-image
+    reason. They reach no page yet, but the startup staleness WARNING is read
+    once per process, so without this a dev who runs `just build-client` to
+    clear a red would keep seeing the red until they restarted by hand — the
+    "edit and see nothing" loop above, one layer out. It also puts the wiring
+    in place for the phase where dist IS served.
     """
     # abspath for the same reason CLIENT_DIR uses it: a relative __file__
     # after any chdir would silently stop watching watch.py itself, and
     # _sources_mtime's OSError handling would hide that it had.
-    return [os.path.abspath(__file__)] + [os.path.join(CLIENT_DIR, name)
-                                          for name in _CLIENT_ASSETS]
+    dist = (client_dist.MANIFEST_REL,) + client_dist.OUTPUT_RELS
+    return ([os.path.abspath(__file__)]
+            + [os.path.join(CLIENT_DIR, name) for name in _CLIENT_ASSETS]
+            + [os.path.join(SELF_DIR, rel) for rel in dist])
 
 
 def _sources_mtime():
@@ -5815,6 +5854,16 @@ def main(argv=None):
         print("WARNING: trusted-LAN mode is unauthenticated; every reachable "
               "client using an allowed Host can read and write. Public/WAN "
               "exposure is unsupported.")
+    # #653 — the one HUMAN-visible surface of the staleness reading at P1.
+    # The page cannot carry it yet: rendering it would edit client/views.js,
+    # and P1's whole claim is that the served bytes do not change. So it goes
+    # where a person already looks when they start the server. Never a refusal
+    # to serve — a stale design bundle must not dark the dashboard.
+    _dist = client_dist.check(SELF_DIR)
+    if _dist["state"] != client_dist.OK:
+        print("WARNING: client/dist is %s — %s%s" % (
+            _dist["state"], _dist["note"],
+            (" (%s)" % _dist["fix"]) if _dist["fix"] else ""))
     if args.open:
         webbrowser.open(url)
     if args.autoreload or args.dev:

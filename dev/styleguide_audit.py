@@ -148,6 +148,33 @@ UI_CONSTANTS = (
 # as non-UI and turn the audit green for the wrong reason.
 CLIENT_PREFIX = "client/"
 
+# #653: `client/dist/` sits under that prefix but is BUILD OUTPUT — generated
+# by `just build-client` from the assets above and committed because deploy
+# ships committed state. It carries no presentation decision: whatever design
+# choice it embodies was made in the source it was compiled from, and that
+# source is already classified by the prefix. Counting it would demand a
+# styleguide entry for a file nobody authored — and since a rebuild rides
+# along with every UI commit, the entry would be demanded for the derived copy
+# of a change that is already documented through its real input.
+DERIVED_PREFIX = "client/dist/"
+
+assert DERIVED_PREFIX.startswith(CLIENT_PREFIX), (
+    "DERIVED_PREFIX must be a subtree of CLIENT_PREFIX, or excluding it "
+    "excludes nothing and this exclusion is silently inert"
+)
+
+
+def is_ui_asset(path):
+    """Is `path` a hand-authored client asset — i.e. presentation SOURCE?
+
+    One predicate, three call sites (`classify_ui`, `touches_ui_source`,
+    `is_relevant`). They had three copies of the same `startswith` test, and
+    an exclusion applied to two of three would have classified a commit as
+    non-UI while still counting it as a window unit — a disagreement with no
+    symptom until an audit came out wrong.
+    """
+    return path.startswith(CLIENT_PREFIX) and not path.startswith(DERIVED_PREFIX)
+
 # The assets the extraction produced, one per former constant. Used only to
 # refuse a vacuous filter at HEAD (see main) — the classification itself is
 # prefix-based so a NEW client file is covered the day it is added, without
@@ -341,8 +368,7 @@ def classify_ui(sha):
     the literals are already gone, so `ui_ranges` finds nothing and only the
     eight `client/` names come back.
     """
-    touched = [f for f in sorted(touched_files(sha))
-               if f.startswith(CLIENT_PREFIX)]
+    touched = [f for f in sorted(touched_files(sha)) if is_ui_asset(f)]
     src = watchpy_source_at(sha)
     if src is not None:
         ranges = ui_ranges(src)
@@ -367,8 +393,7 @@ def touches_ui_source(files):
     styleguide-only commit, which belongs in the window unit but must not be
     handed to classify_ui as a UI candidate.
     """
-    return ("watch.py" in files
-            or any(f.startswith(CLIENT_PREFIX) for f in files))
+    return "watch.py" in files or any(is_ui_asset(f) for f in files)
 
 
 def is_relevant(files):
@@ -385,7 +410,7 @@ def is_relevant(files):
     still read as adjacent.
     """
     return ("watch.py" in files
-            or any(f.startswith(CLIENT_PREFIX) for f in files)
+            or any(is_ui_asset(f) for f in files)
             or bool(files & frozenset(STYLEGUIDE_FILES)))
 
 

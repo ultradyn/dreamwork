@@ -43,6 +43,12 @@ from pathlib import Path
 # makes the module-level `LEDGER_ID` consume the same single core.
 import watch
 
+# #653: the same reading `watch.serving_report` carries. One implementation of
+# "is client/dist built from this tree", two surfaces — a second copy of the
+# comparison is a second answer, and the pair would disagree on the day one of
+# them was edited.
+import client_dist
+
 SKILL_DIR = Path(__file__).resolve().parent
 
 ERROR, WARN, OK = "ERROR", "WARN", "OK"
@@ -2458,6 +2464,38 @@ def ran_and_judged(log_text: str) -> bool:
 # lint check all agree on the handle; a rename reddens check_guards_execution
 # _accounting, which is the point.
 GUARD_EXECUTION_HOOK = "guard-execution"
+
+
+def check_client_dist(root: Path, rep: Report) -> None:
+    """#653 — `client/dist/` must be built from the tree it is committed with.
+
+    The #630 transition commits its build output, because `just deploy` ships
+    committed state and the dashboard must come up from a plain checkout with
+    no node. That trade buys a serve-time with no toolchain and costs exactly
+    one failure mode: **staleness**. It cannot be made impossible without a
+    serve-time build, which the no-node requirement refuses — so it is made
+    impossible to MISS, and this is the commit-time half of that (the other is
+    the same reading in `watch.serving_report`).
+
+    ERROR, not WARN, and on purpose: a stale dist is a real divergence between
+    what the repo says the design package is and what the builders say. WARN
+    is for things worth knowing; this one has a one-command fix and naming it
+    softly is how it would come to be ignored.
+
+    `root` is the skill directory. A target that is not this repo has no
+    `client_dist.py` beside a `watch.py`, and this says nothing there.
+    """
+    if not (root / "client_dist.py").exists() or not (root / "watch.py").exists():
+        return
+    reading = client_dist.check(str(root))
+    state = reading.get("state")
+    if state == client_dist.OK:
+        rep.add(OK, "client/dist", reading.get("note") or "current")
+        return
+    detail = reading.get("note") or state
+    fix = reading.get("fix")
+    rep.add(ERROR, "client/dist",
+            "%s%s" % (detail, (" — %s" % fix) if fix else ""))
 
 
 def check_guards_execution_accounting(root: Path, rep: Report) -> None:
@@ -5297,6 +5335,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     # the tool's own, so this only says anything when linting this repo.
     check_guards_registered(dw.parent, rep)
     check_guards_execution_accounting(dw.parent, rep)
+    check_client_dist(dw.parent, rep)
     # LAST, and it must stay last: the ledger checks that can skip are spread
     # through the list above and each records its own skip as it returns, so
     # the single #611 row can only be rendered once they have all had their
