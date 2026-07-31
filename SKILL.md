@@ -380,6 +380,50 @@ none + clean → it crashed before working, retire quietly; **none + dirty
 record it** (the `gate2`/`da197b87` recovery was this case, found by
 luck). One command at one step, at lane *exit* — not a tick-time probe.
 
+**A lane rebases onto its base branch when the base moves, and it does so
+BEFORE it hands off** (human-set 2026-07-31): *"subagents should rebase
+against their worktree's base branch if it's updated so that merge conflicts
+are solved before they get back to the main coordinator/orchestrator."* The
+reasoning is whose context the conflict needs: the lane knows why its lines
+are there and what its neighbours meant, while the coordinator meets the
+conflict cold at merge time with several lanes in flight. **Measured the day
+he set it** — `#655`'s lane branched 32 commits back, so its merge left
+`client/dist` stale and needed a post-merge `just build-client` the
+coordinator had to be told about by a reviewer; and `#667`'s merge hit a
+diff3 conflict in `lessons.md` that the coordinator resolved by hand with
+none of the lane's context.
+
+So the dispatch brief tells the lane, and the coordinator carries its half:
+
+- **State the base sha at dispatch** — the merge-base AND the current head of
+  the base branch, never a commit count (`#672`). A lane cannot notice that
+  its base moved if it was handed a number instead of a sha.
+- **The lane re-checks before finishing**: if `git rev-list --count
+  <base>..<base-branch>` is non-zero, rebase onto it and resolve there. Same
+  repo, so no fetch — a worktree sees the base branch directly.
+- **Order is load-bearing: rebase FIRST, hand off SECOND.** A rebase rewrites
+  every commit it moves, so a hand-off line appended before the rebase names
+  a sha that no longer exists on the branch — the ledger would then fold work
+  citing a commit the merge does not contain, which is `#590`'s
+  folding-is-not-merging failure arriving by a new door. Land, rebase,
+  *then* append the hand-off with the post-rebase sha.
+- **Append-only files conflict on almost every rebase** (`handoffs.md`,
+  `lessons.md`, `questions.md`) because both sides grow at the same EOF. The
+  resolution is nearly always keep-both, and after ANY hand resolution the
+  lane greps for all four diff3 marker forms **line-anchored** —
+  `grep -nE '^(<{7}|>{7}|={7}|\|{7})'` — because this repo's own files
+  discuss conflict markers in prose and a substring test is wrong by
+  construction (`lessons.md:3295`, and the coordinator tripped over exactly
+  this resolving `#667`).
+- **Safe here because lanes never push and never merge.** A rebase of
+  unpublished work rewrites nothing anyone else has based on. The rule stops
+  at the moment work is merged: after that, history is left alone (`#633`).
+
+If the rebase turns out to be genuinely hard — a real semantic conflict
+rather than two appends — the lane says so and hands back the analysis rather
+than forcing a resolution it is unsure of. An honest "these two changes
+disagree and here is why" is worth more than a merge that compiles.
+
 **A worktree brief declares what it owns** (#465). The disjointness rule is
 void the moment a lane edits the main checkout instead of its worktree —
 and a brief cannot enforce it on its own, because the incident's brief
@@ -433,6 +477,14 @@ stay in its worktree reads that as *its* root. Paste the form:
 Every verb now refuses and names that form rather than answering from an
 empty ledger, so a brief that forgets costs a round trip instead of a wrong
 citation — but the brief is what saves the round trip.
+
+**A brief states the base sha, and tells the lane to rebase before handing
+off.** Both halves of the rebase rule above live there: the merge-base and
+the base branch's current head as **shas, never a commit count** (`#672`),
+because a lane cannot notice its base moved if it was handed a number; and
+the instruction to rebase and resolve in the lane, **before** appending the
+hand-off, since a rebase rewrites the sha the hand-off would have named. Full
+statement and reasoning: the lane-rebase rule earlier in this section.
 
 **A brief that teaches the `cp`/`cmp` restore protocol
 names a lane-private snapshot directory** (#652). Keep that clause on one
