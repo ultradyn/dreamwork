@@ -682,3 +682,273 @@ redone.
   (`watch-design.md:81-92`) is untouched; the transcript is the loop's
   whole operating state and is *more* sensitive than `/data.json`, so
   `/session/*` is denied to `summary()`-class remote consumers by default.
+
+## 12. Numbered landing sequence
+
+Each increment below is a ~15–20 minute landing, not a phase that stays dirty
+while its neighbours catch up.  Every one ends with the existing dashboard
+working; the first eleven are dark or server-only, and the component is not
+made reachable until its complete v1 behaviour has passed in isolation.
+
+The component-system prerequisite is present in the tree, not merely in the
+ledger: `dev/build/src/native-entry.js` registers the production `Research`
+component, `client/router.js` sends registered authorities through
+`dwNative.registry`, and `watch.py` embeds `client/dist/native.js` in the
+served page.  The caller inventory below was traced from those running seams.
+
+1. **Standardised wire model — LANDED here as `34208dcd`.** Add the closed
+   node/event vocabulary, source ranges, validation and exact wire
+   serialisation; nothing imports it in production.
+   **Files/callers:** `session_log/{__init__,model}.py` and
+   `test_session_log_model.py`; the test is the only caller in this
+   increment, while the adapter in increment 2 becomes the first production
+   package caller.
+   **Proof/red:** `just pytest test_session_log_model.py` (10 tests). Changing
+   wire `ref.len` to the Python spelling `length` reds on *"source ref must
+   spell its wire length field 'len'"*.  A second injection showed the exact
+   happy-path serialisation check stays green when unknown node kinds are
+   admitted; the closed-vocabulary test then reds with `DID NOT RAISE
+   ModelError`, closing that false-green.
+   **Leaves later:** every transcript grammar, scan cursor, store, route,
+   watcher and browser consumer.
+
+2. **Claude Code record classifier, still dark.** Add a pure classifier for
+   one complete JSONL record: user-turn start, assistant text/thinking/tool,
+   tool result, compact boundary/summary, visible system note, or suppressed
+   chrome. It extracts timestamps, native tool facts and `SourceRef`, but
+   does not build a tree yet.
+   **Files/callers:** new `session_log/claude_code.py` and
+   `test_session_log_claude_code.py`; the classifier calls
+   `session_log.model`, and its fixture test is its only caller.
+   **Proof/red:** an exact table over every §2 grammar row, including
+   plain-user versus `tool_result` and `isMeta`/`isCompactSummary`. Injecting
+   `tool_result` as a user turn must red on *"tool results are steps, not turn
+   starts"*; a fixture containing an unknown chrome record must prove it is
+   suppressed rather than silently becoming `sys.note`.
+   **Leaves later:** parentage, stable ids, bookmarks and incremental state.
+
+3. **Full hierarchy scan, still dark.** Compose classified records into one
+   session/page/turn/step tree, pair `tool_use` with `tool_result`, emit
+   `open/update/close` events, and produce bookmarks for page and turn starts
+   only. This is a from-zero scan; no append cursor yet.
+   **Files/callers:** `session_log/claude_code.py` and
+   `test_session_log_claude_code.py`; the new `scan_complete` caller set is
+   the focused test only, and it calls the increment-2 classifier plus the
+   increment-1 model.
+   **Proof/red:** a non-trivial frozen transcript asserts the complete ordered
+   wire stream, stable ids, parent ids, state transitions, exact line/byte
+   refs and the exact bookmark set. Dropping the `requestId/message.id`
+   grouping must red by opening two agent turns where the oracle names one;
+   counting a tool result as a major event must red the bookmark denominator.
+   **Leaves later:** partial tails, resuming and all live consumers.
+
+4. **Incremental cursor and partial-tail equivalence, still dark.** Extend the
+   same scanner with `from_byte` state, consuming only newline-terminated
+   records and carrying enough frontier state to resume without duplicating a
+   node. Concatenated scans must equal one full scan.
+   **Files/callers:** `session_log/claude_code.py` and its focused test; the
+   test remains the only caller, now exercising both `scan_complete` and
+   `scan_incremental` through the same parser.
+   **Proof/red:** split a record mid-byte, scan twice, append its remainder and
+   require byte-for-byte equality with the one-shot result. Advancing the
+   cursor past the unterminated tail must red on *"completed tail record was
+   lost"*; replaying the prior complete line must red on duplicate node ids.
+   **Leaves later:** source discovery, subscriptions and persistence.
+
+5. **Server-derived session catalogue, still dark.** Extend the existing
+   active-session resolver with the switcher catalogue: strict UUID JSONL
+   discovery under the measured client root, target-cwd classification,
+   mtime/size/liveness metadata, and no browser-supplied path. The recorded
+   `agent_session` remains the only active identity; newest-mtime is never
+   promoted to identity.
+   **Files/callers:** `session_source.py` and `test_session_source.py`.
+   Existing callers of `resolve_target` remain `session_source.main` and its
+   focused tests; the new catalogue is test-only until `SessionService` calls
+   it in increment 6.
+   **Proof/red:** fixtures cover a symlinked projects root, two cwd slugs, an
+   unrelated target and malformed/non-UUID names. Making newest mtime the
+   active choice must red when the recorded id names the older live file;
+   returning an absolute path in the wire catalogue must red the confinement
+   assertion.
+   **Leaves later:** opening or scanning any catalogue entry.
+
+6. **Cold `SessionService`, still dark.** Add one thread-safe service that
+   resolves ids through the catalogue, runs the scanner, owns the in-memory
+   per-session event ring/cursor, builds a snapshot skeleton and parses a
+   bounded peek from a registered source range. It has no file-notification
+   thread and no HTTP caller yet.
+   **Files/callers:** new `session_log/service.py` and
+   `test_session_log_service.py`; the service calls `session_source` and the
+   adapter, while its test is its only caller.
+   **Proof/red:** register a named fixture and assert the exact snapshot,
+   cursor, event replay and structured peek; a client-supplied path must be
+   impossible at the API boundary. Replacing id lookup with `Path(id)` must
+   red on *"only a discovered session id may select a source"*.
+   **Leaves later:** wakeups, retirement, HTTP and the derived store.
+
+7. **`SessionWatcher` and retirement, still dark.** Let the service consume
+   a new `SessionWatcher` seam over `file_notify.watch_thread` (the
+   thread-native adapter already built for the `ThreadingHTTPServer` world),
+   scan from the held cursor on a change, rearm/rescan on `WATCH_LOST` or
+   `OVERFLOW`, fan events to subscribers, and stop the handle after the last
+   subscriber's bounded idle period.
+   **Files/callers:** new `session_log/watcher.py`,
+   `session_log/service.py`, `test_session_log_watcher.py` and
+   `test_session_log_service.py`; `SessionService.watch` calls
+   `SessionWatcher`, which calls `file_notify.watch_thread`, and its callback
+   calls the incremental scanner. `file_notify.py` itself is not changed.
+   **Proof/red:** every notification measurement uses a real-disk fixture
+   under the lane-private cache, never pytest's `/tmp` scratch (#634). Append
+   one complete record and require its exact node before the deadline, with
+   no sleep-as-assertion; inject watch loss and require a full rescan plus a
+   rearmed handle. A tmpfs run is explicitly not acceptable evidence.
+   **Leaves later:** HTTP registration and durable bookmarks.
+
+8. **Read routes: list and peek, no page consumer.** Construct one service per
+   `make_handler` closure and add `GET /session/list` plus bounded
+   `GET /session/peek`. Both run after `_preflight`, expose ids rather than
+   paths, and are denied from `summary()`.
+   **Files/callers:** `watch.py`, `session_log/service.py`, `test_watch.py` and
+   `test_session_log_service.py`. Direct `make_handler` callers that must stay
+   green are `watch.main`, the `test_watch` HTTP harnesses,
+   `test_user_events_http.HttpHarness`, and `test_reconcile_submissions`.
+   **Proof/red:** `just pytest test_session_log_service.py test_watch.py
+   test_user_events_http.py test_reconcile_submissions.py`. An invalid Host
+   must be rejected before a resolver spy runs; unknown ids, negative/oversize
+   ranges and ranges crossing a record must refuse with distinct responses.
+   **Leaves later:** registration, event delivery and every UI path.
+
+9. **Registration routes: watch and events, still no page consumer.** Add
+   `POST /session/watch` and `GET /session/events`; POST creates only
+   in-memory watcher/subscriber state and writes no target file, while events
+   return the per-session cursor plus the ordered delta since a caller's
+   cursor. Omitting the id selects only the recorded active session. The POST
+   is origin-gated as state-changing server work but is dispatched outside
+   `WRITE_ROUTE_HANDLERS` and before journal receipt creation: registering a
+   reader is not a tenth durable write route.
+   **Files/callers:** the same service/handler/test files as increment 8;
+   `Handler.do_POST` and `Handler.do_GET` call the service, and the same four
+   handler-construction surfaces remain in the verification list.
+   **Proof/red:** the route tests assert the full four-route closed set,
+   preflight-before-read, an unchanged write-route set, zero journal receipts,
+   no target-tree diff, exact current-session default, stale-cursor recovery
+   to a full snapshot, and retirement after disconnect.
+   Deleting the event-ring append must red on a real-disk transcript append
+   with *"watch cursor advanced without delivering its event"*.
+   **Leaves later:** cache persistence and browser polling.
+
+10. **Derived bookmark store, deliberately late and dark.** Only after
+    **increment 5 of #645** has landed its other-store core routing and the
+    no-production-raw-connect guard, add a separate
+    `.dreamwork/session-index.sqlite3` `StoreSpec`, initializer and repository
+    for the design's `session`/`bookmark` schema. Rebase over whatever later
+    #645 work has landed first; do not edit its migration ladder, and never
+    place this disposable cache in the durable ledger store.
+    **Files/callers:** new `dreamwork_db/session_index.py` and
+    `test_session_index.py`; its only caller is the focused test, and all
+    connections call `dreamwork_db.core.open_database` rather than
+    `sqlite3.connect`. No live database file is created or committed.
+    **Proof/red:** use a real-disk private database, assert WAL/timeout policy,
+    schema, major-event-only rows, transactional cursor+bookmark writes and
+    delete-one-session rebuild. A planted raw `sqlite3.connect` must red the
+    #645 increment-5 guard; a rollback injection must leave zero partial rows.
+    **Leaves later:** the service continues to work from memory until the next
+    increment, so a wrong cache cannot affect the dashboard.
+
+11. **Cache integration with rescan as the safe answer.** Inject the index
+    repository into `SessionService`: validate device/inode/first-line
+    signature and the bookmarked record, resume from a valid cursor, and drop
+    one session's rows then full-rescan on any mismatch. Route wire behaviour
+    remains identical to increments 8–9.
+    **Files/callers:** `session_log/service.py`,
+    `dreamwork_db/session_index.py`, `test_session_log_service.py`,
+    `test_session_index.py` and the route cases in `test_watch.py`; handler
+    GET/POST callers now reach the store only through the service.
+    **Proof/red:** restart a service over a real-disk fixture and require the
+    same snapshot/cursor without duplicate events; replace the inode, alter
+    the first line, and corrupt a bookmarked byte in three separate cases and
+    require the exact full-rescan result. Trusting the stale offset must red on
+    a stable-id mismatch, not merely on a changed row count.
+    **Leaves later:** no component consumes the API yet.
+
+12. **Client event reducer, bundled but unreachable.** Add a pure client-side
+    reducer for snapshots plus `open/update/close`, keyed by stable node id;
+    it derives the frontier, tracks explicit hand-open/hand-closed ids and can
+    reattach follow without knowing any transcript grammar.
+    **Files/callers:** new `dev/build/src/session-state.js`, export-only wiring
+    in `dev/build/src/native-entry.js`, `watch.py`'s literal `DATA_SIBLINGS`,
+    generated `client/dist/{native.js,manifest.json}`, a focused capture
+    probe, its `justfile` registration, and `test_client_assets.py`/
+    `test_client_dist.py`/`test_deploy_state.py`/`test_lint.py`. The build
+    entry is its only production importer; no registry entry calls it.
+    **Proof/red:** `just build-client`, the three targeted pytest files and the
+    reducer probe. Reorder/update fixtures assert identity rather than array
+    position; an injection that auto-closes a hand-open node when the frontier
+    moves must red on *"manual disclosure survived the event"*. Dist hashes
+    and deploy sibling completeness bind the committed artifact.
+    **Leaves later:** DOM, fetches and a route.
+
+13. **`SessionLog` rendering, still unregistered.** Build the thin three-level
+    tree, G1 guides, M1 chevrons, session switcher, native Bash/Edit/Write/Read
+    rows, generic leaf fallback, one body slot, tally glyph and all empty/
+    absent/stale/error states from passed-in snapshot state. Export a test
+    registration function but do not call it in production.
+    **Files/callers:** new `dev/build/src/session-log.js`, scoped rules in
+    `client/style.css`, export wiring and `DATA_SIBLINGS`, rebuilt dist/
+    manifest, `dev/capture/sessionlog.mjs`, `justfile`,
+    `test_client_assets.py`, `test_client_dist.py`, `test_deploy_state.py` and
+    `test_lint.py`. `native-entry.js` imports the component, but the production
+    registry still has no `session` authority.
+    **Proof/red:** the focused guard manually registers the export against a
+    frozen snapshot and asserts exact depth, guides/markers, no `args` or
+    `response` pseudo-rows, empty args absent, binary results summarized, and
+    reduced motion changing the tally discretely with no animation. Removing
+    the native Bash renderer must red on the literal `$ command` assertion.
+    **Leaves later:** network registration, live deltas, peek and production
+    routing.
+
+14. **Live controller and existing-tick pulse, still unregistered.** Add the
+    component controller for list/watch/events/peek, feed deltas through the
+    reducer, move the frontier with height travel, preserve manual disclosure,
+    implement follow and lazy body fetch, and extend the registry with an
+    optional `pulse` callback invoked by the router's existing two-second
+    tick. No second timer and no `/data.json` dependency are introduced.
+    **Files/callers:** `dev/build/src/{session-log,registry}.js`,
+    `client/router.js`, rebuilt dist/manifest, the session-log and coexistence
+    captures, `test_client_dist.py` and `test_watch.py`. `tick` calls
+    `registry.pulse`; existing callers of `tick` are its page timer plus
+    `sendAsk`, `sendChatArchive` and `sendChatReply`. With no production
+    `session` entry yet, the new call is an inert empty iteration.
+    **Proof/red:** the focused guard registers the test export, changes a
+    real-disk transcript while target mtime stays fixed, and requires one new
+    row through the existing tick, no extra timer, the prior frontier folded,
+    a hand-open row preserved, and exactly one bounded peek on expansion.
+    Removing `registry.pulse` must red on *"transcript event arrived without a
+    target-tree mtime change"*; coexistence/research guards prove existing
+    native and builder routes are untouched.
+    **Leaves later:** only the production route binding.
+
+15. **Atomic production activation.** Register `SessionLog` in
+    `native-entry.js`, teach `routeOf` and every governed route-title/token
+    table about `/session`, serve the same shell for that deep link, and add
+    the one navigation affordance. There is deliberately no `buildSessionLog`
+    in `client/views.js`: the surface is available only through the component
+    registry, with no builder twin to diverge.
+    **Files/callers:** `dev/build/src/native-entry.js`, `client/router.js`,
+    `client/views.js` (the dashboard navigation link only), `watch.py`,
+    rebuilt dist/manifest,
+    `test_watch.py`, `test_client_dist.py`, `test_client_assets.py`,
+    `test_deploy_state.py`, `test_lint.py`, and the focused session/coexistence/
+    research captures. `buildDashboard` is called by `buildCurrent`; `routeOf`
+    is called by router initialisation/navigation;
+    `commitCurrent` is called by `navigate` and `crossfade`; `setData` is
+    called by `ensureData`, burn-step cycling and `tick`; `_get_page` is called
+    by `make_handler` and page-assembly tests.
+    **Proof/red:** `/session` must return the common shell, resolve to exactly
+    one registry authority, register the recorded active session, paint the
+    snapshot, receive a real-disk appended event, lazy-peek one body, survive
+    navigation away/back with zero detached roots, and leave every existing
+    route green. Unregistering `session` while retaining `routeOf` must red on
+    the authority assertion rather than silently render the dashboard.
+    **Leaves later:** websocket/delta push, per-client child-session mounts,
+    search/filtering and hidden chrome remain the explicit v1 non-goals.
