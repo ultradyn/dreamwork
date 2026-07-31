@@ -170,6 +170,29 @@ def _unapplied_ids(text: str) -> list[str]:
     return ids
 
 
+def _append_transition(path: Path, receipt_id: str) -> int:
+    """Append ONE ``receipt.transition`` event via the production transition() path.
+
+    A transition shares the chain's ordinals but carries no envelope, so
+    ``events_since_cursor`` does not project it — the exact shape that
+    livelocked the drain (#722).  Returns the new head ordinal (derived from
+    head_ordinal before/after, never assumed) so the caller can assert the
+    transition landed as the head.
+    """
+    with open_journal(path) as j:
+        before = j.head_ordinal()
+        rec = j.get_receipt(receipt_id)
+        assert rec is not None, "precondition: receipt must exist to transition"
+        result = j.transition(
+            receipt_id, "validated", expected_revision=rec["revision"],
+        )
+        assert result.kind == "applied", f"transition did not apply: {result.kind}"
+        after = j.head_ordinal()
+        assert after == before + 1, (
+            f"a transition must raise the head by one ({before} -> {after})")
+        return after
+
+
 # ---------------------------------------------------------------------------
 # 1 — pending is quiet on empty (prints nothing, exit 0)
 # ---------------------------------------------------------------------------
@@ -1662,3 +1685,142 @@ def test_malformed_marker_degrades_to_the_named_absent_refusal(tmp_path: Path):
                 "a refused consume must leave the cursor unmoved")
         assert cli._load_pending_read(Path(str(path))) is None, (
             f"a malformed marker ({bad}) must read as absent, not as a marker")
+
+
+# ---------------------------------------------------------------------------
+# #722 — the journal drain livelocks when the head is a receipt.transition,
+# and pending was SILENT with an unconsumed ordinal above the cursor.
+#
+# pending computed its reported head over receipt.created only (the projection
+# filters on event_kind); the cursor advances over every ordinal.  A transition
+# at the head meant pending reported head=116 while the head was 117, so
+# consume --through 117 was refused by #712's guard (correctly — 117 was never
+# listed) and consume --through 116 did not move.  No legal --through existed.
+# These two tests pin BOTH halves of the fix and the fix did NOT weaken #712.
+# ---------------------------------------------------------------------------
+
+def test_pending_reports_true_head_and_not_listed_when_head_is_transition(tmp_path: Path):
+    """#722 defect 2 (#702/#136): when the only thing above the cursor is a
+    transition (an event_kind pending will not list), pending must still say
+    SOMETHING — it knows an ordinal is there — and must not render identically
+    to a journal that is genuinely empty.
+
+    The fixture is the live shape from #722: a receipt.created at ord 1, then a
+    receipt.transition at ord 2 (the head).  Pre-fix pending printed nothing on
+    either stream with ord=2 above the cursor.
+
+    RED LINE (run): make cmd_pending compute head over the listing only (revert
+      the true-head change).  The marker's `through` becomes 1, the `not listed`
+      report vanishes, and the `head 2` assertion fails.  Production line
+      injected: the `head = j.head_ordinal()` line in cmd_pending.
+    """
+    cli = _load_cli()
+    path = tmp_path / "transition.sqlite3"
+    seeded = _seed(path, [b'{"a":1}'])
+    rid = seeded[0].receipt_id
+    # Append a transition — it becomes ord 2, the new head, and is NOT listed.
+    trans_head = _append_transition(path, rid)
+    assert trans_head == 2, (
+        f"precondition: the transition must be the head (ord 2); got {trans_head}")
+    # The receipt.created stays at ord 1 (proven via the projection, not assumed
+    # — a seed that re-ordered would vacate the assertion).
+    with open_journal(path) as j:
+        assert j.head_ordinal() == 2
+        projected = j.events_since_cursor(CONSUMER)
+    assert len(projected) == 1 and projected[0].ordinal == 1, (
+        f"precondition: exactly one receipt.created at ord 1; got {projected}")
+
+    code, out, err = _run(cli, ["pending", "--journal", str(path)])
+    assert code == 0, f"pending exited {code} (err={err!r})"
+
+    # #722 fix 1: the marker records the TRUE head (2), not the listing head (1).
+    mark = _pending_read_marker(cli, path)
+    assert mark is not None, "pending must write the read-coverage marker"
+    assert mark["through"] == 2, (
+        f"the marker must record the TRUE journal head 2 (not the listing head "
+        f"1) — else #712's guard refuses the only drainable value; "
+        f"got {mark['through']}")
+
+    # #722 fix 2: pending is NOT silent.  It states the true head and NAMES the
+    # ordinal it will not list, with its kind (#702 — report, never drop).  This
+    # is the channel that distinguishes "nothing needs you" from "something is
+    # hiding above your cursor" (#136) — the exact distinction lost pre-fix.
+    assert "head 2" in err, (
+        f"pending must state the true head on stderr; got {err!r}")
+    assert "not listed" in err, (
+        f"pending must name the unlisted transition; got {err!r}")
+    assert "receipt.transition" in err, (
+        f"pending must name the transition's kind; got {err!r}")
+    assert "ord=2" in err, (
+        f"pending must name the transition's ordinal; got {err!r}")
+    # stdout is still the receipt record — the listing did not widen.
+    assert len(_pending_ids(out)) == 1, (
+        f"the listing stays receipt.created-only; got {out!r}")
+
+
+def test_consume_drains_transition_head_then_pending_quiet(tmp_path: Path):
+    """#722 defect 1 (the livelock): the documented tick — pending then consume
+    --through the head pending reports — must DRAIN a journal whose head is a
+    transition, and a second pending must be genuinely quiet (not the silent
+    "something is hiding" of the pinned cursor).
+
+    Reproduces the live state on a fixture: cursor at 0, ord 1 receipt.created,
+    ord 2 receipt.transition.  Pre-fix this was an exact livelock — no legal
+    --through existed.
+
+    The load-bearing assertion is the LIVELOCK one: the consume SUCCEEDS and the
+    cursor reaches the true head, proving no legal move was missing.  The
+    post-drain quiet must be the #136 calm-grey "cursor at head" quiet, not the
+    pre-fix silent-hiding quiet — distinguished by the cursor having moved.
+
+    RED LINE (run): revert the true-head fix (marker records the listing head).
+      The marker's `through` becomes 1, consume --through 2 is refused by #712
+      (2 was never listed), and the cursor stays at 0 → the `cursor == 2`
+      assertion fails on the message that names the livelock.  Production line
+      injected: the `head = j.head_ordinal()` true-head in cmd_pending (and the
+      target-ordinal widening in cmd_consume that follows from it).
+    """
+    cli = _load_cli()
+    path = tmp_path / "drain.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"a":1}', b'{"b":2}'])
+    rids = [r.receipt_id for r in seeded]
+    # Transition the second receipt — it becomes ord 3 (2 receipts + 1 transition).
+    head = _append_transition(path, rids[1])
+    n_receipts = len(seeded)
+    assert head == n_receipts + 1, (
+        f"precondition: the transition must be the head at ord {n_receipts + 1}; "
+        f"got {head}")
+    with open_journal(path) as j:
+        assert j.cursor(CONSUMER).scanned_through_event_ordinal == 0, (
+            "precondition: fresh cursor at 0")
+
+    # The tick: pending (reports the true head), then consume --through that head.
+    code, out, err = _run(cli, ["pending", "--journal", str(path)])
+    assert code == 0
+    head_reported = _pending_read_marker(cli, path)["through"]
+    assert head_reported == head, (
+        f"precondition: pending must report the true head {head}; got "
+        f"{head_reported} — if this is the listing head the livelock is present")
+
+    code, out2, err2 = _run(cli, ["consume", "--through", str(head),
+                                  "--journal", str(path),
+                                  "--applied", str(applied)])
+    assert code == 0, (
+        f"consume --through {head} must SUCCEED — the livelock is that no legal "
+        f"--through exists; got exit {code} (err={err2!r})")
+    # The cursor advanced to the true head — the drain completed.
+    with open_journal(path) as j:
+        cur = j.cursor(CONSUMER).scanned_through_event_ordinal
+    assert cur == head, (
+        f"the cursor must reach the true head {head}; got {cur} — the "
+        f"transition was not drained and the livelock persists")
+
+    # #136 calm-grey quiet: a second pending is now silent because the cursor is
+    # at the head, NOT because it is hiding something.  The cursor having moved
+    # is what makes this quiet safe rather than the pre-fix hiding quiet.
+    code3, out3, err3 = _run(cli, ["pending", "--journal", str(path)])
+    assert code3 == 0
+    assert out3 == "" and err3 == "", (
+        f"after draining to head, pending is genuinely quiet (cursor at head, "
+        f"not hiding); got {out3!r} / {err3!r}")
