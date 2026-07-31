@@ -635,9 +635,18 @@ What a per-supported-client task must answer before anyone writes one:
       recorded too so we can have the right info about subagents or
       whatever and not get confused"*). **Never assume the session id does
       this.** For Claude Code it emphatically does not: every concurrent
-      lane inherits the SAME `CLAUDE_CODE_SESSION_ID` (`#652`), and only
-      `CLAUDE_CODE_CHILD_SESSION` — present in a subagent, absent in the
-      coordinator — tells them apart.
+      lane inherits the SAME `CLAUDE_CODE_SESSION_ID` (`#652`). **And as
+      of #678 (measured 2026-07-31), no other variable does either:**
+      `CLAUDE_CODE_CHILD_SESSION` — the prior candidate — is present in
+      BOTH the coordinator and a real subagent, and `CLAUDE_PID` shares one
+      value across both roles (a subagent inherits the CLI process and its
+      environment wholesale). So claude-code's registry entry records
+      `subagent_var=None`, and `client_env` writes `is_subagent: null`
+      (unknown) for this client rather than a confident boolean that would
+      mislabel the main agent. **A variable only qualifies as a separator
+      after a side-by-side probe has shown it DIFFERS between roles** — and
+      "present in a subagent" alone is not that proof, because the
+      coordinator's env may carry it too.
    c. **Which variable identifies the CLIENT itself**, and whether a
       harness launched as a CHILD of another client would inherit it. An
       inherited marker makes a registry report the parent; the only real
