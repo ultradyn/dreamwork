@@ -51,10 +51,28 @@ dreamwork-version: 5853e1789929
   prioritize related tasks within orchestration budgets + make sure we stay
   consistent with the goal."* Unrelated work still lands; it just does not
   outrank this when both are ready.
-  - Claude-design compatibility is a stated target, and it needs a component
-    surface a design tool can consume. That is exactly what `#505` G2 (second
-    render authority) is still unruled on — so it is now load-bearing for a
-    goal, and must not arrive as a side effect of tooling.
+  - **The UI is transitioning to a component-based React web UI** (ruled
+    2026-07-31 17:03, `#591`, receipt
+    `dc9200a0-4ebf-5d3b-afab-71257155bef9`). Claude-design compatibility needs
+    a component surface a design tool can consume, and `#505` G2 (second
+    render authority) was the open question that stood in the way. It is now
+    answered, `rec` on all three sub-decisions: **G2 reads per-surface** — one
+    render authority *per surface*, and a **derived** surface is not a second
+    authority; the claude-design breakpoint is **component-level and staged**
+    (tokens + `client/style.css` first, delegating wrappers second); the
+    framework is **React**. He also directed that replacing the old inline
+    HTML in `watch.py` with the new components be **prioritised at the
+    earliest suitable time** — `#630` carries that, so the transition is
+    scheduled, not merely permitted.
+    - **This does not relax the second-truth rule above; it is the reason the
+      survivor has the shape it does.** The wrappers are compiled *from* the
+      same `client/*.js` files `watch.py` already serves — no markup restated,
+      so nothing can diverge — and new surfaces (the session view) are born as
+      components with no builder twin. A **hand-maintained** component library
+      beside the builders is still refused, for exactly the reason a
+      reimplementing port is: two maintained descriptions of one surface only
+      agree on the day they are written. "We are going component-based" is not
+      licence to write a second copy of a surface that already has one.
 - **Dogfooding the loop is a goal, not a side effect** (his, 2026-07-31):
   *"whenever we notice friction or issues with the loop procedures / work flow
   (including user friction, subagent issues, and issues you yourself find), log
