@@ -250,6 +250,44 @@ def test_assert_headings_rejects_a_second_mention_only_when_it_is_a_real_heading
 # ---------------------------------------------------------------------------
 from ledger_parse import ledger_entries, open_section_text  # noqa: E402
 
+OPEN_SECTION_EMBEDDED_HEADING = """\
+# Task ledger
+
+Next id: **754**
+
+## Open
+- **#736** — body contains Markdown headings · origin: **loop**
+  · prose before the heading
+ ## What to build
+  · this is still #736's body
+ ## Recently landed
+  · this literal heading text is still #736's body too
+- **#753** — last open entry must stay visible · origin: **loop**
+  · cites `e6e44ddc` and `96e47397`
+
+## Recently landed
+
+- **#735** — already folded · origin: **loop**
+"""
+
+
+def test_open_section_keeps_the_last_entry_after_an_indented_body_heading():
+    """#753: an indented body heading is content, not a section boundary."""
+    assert " ## What to build" in OPEN_SECTION_EMBEDDED_HEADING, (
+        "precondition: the fixture must carry the store projection's indented "
+        "body-heading shape")
+    assert " ## Recently landed" in OPEN_SECTION_EMBEDDED_HEADING, (
+        "precondition: the fixture must quote a section name inside a body")
+
+    section = open_section_text(OPEN_SECTION_EMBEDDED_HEADING)
+    parsed_ids = {
+        tid for ids, _body in ledger_entries(section) for tid in ids
+    }
+    assert 753 in parsed_ids, (
+        "#753, the fixture's last open entry, disappeared after #736's "
+        "indented `## What to build` body heading")
+
+
 SWEEP_LEDGER = """\
 # Task ledger
 
