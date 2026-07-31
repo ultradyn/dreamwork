@@ -142,7 +142,10 @@ def _sha(data: bytes) -> str:
 
 
 def _to_posix(path: str) -> str:
-    return path.replace("\\", "/").lstrip("./")
+    # removeprefix, not lstrip: lstrip takes a CHARACTER SET, so lstrip("./")
+    # eats every leading '.' or '/' and mangles dotfile/dotdir paths like
+    # .dreamwork/lessons.md -> dreamwork/lessons.md (#726).
+    return path.replace("\\", "/").removeprefix("./")
 
 
 def _snap_dir(cwd: Path | None) -> Path:

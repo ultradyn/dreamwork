@@ -537,3 +537,68 @@ class TestTheHistoryScanSeesEveryInjectedSha:
         assert poisoned[:12] in err, err
         assert "BUG A" in err, err
 
+
+# ── #726: a dotted path must survive the round trip (lstrip-as-prefix) ──
+
+class TestDottedPathRoundTrip:
+    """THE #726 red run: ``_to_posix`` used ``lstrip("./")``, which takes a
+    CHARACTER SET, not a prefix — so it ate every leading ``.`` or ``/`` and
+    mangled ``.dreamwork/lessons.md`` into the nonexistent
+    ``dreamwork/lessons.md``. ``begin`` then failed loudly (the mangled path
+    does not exist) and NO existing test covered a dotted path, because every
+    fixture used ``router.js``.
+
+    The deliverable is the case nobody wrote: a DOTTED path surviving begin →
+    restore → check with its leading dot intact, recorded under the path that
+    actually exists."""
+
+    def test_to_posix_preserves_a_leading_dot_not_strips_a_charset(self):
+        """The one-line bug: ``lstrip("./")`` is a character-set strip.
+
+        A test that only checks ``"./x"`` -> ``"x"`` passes today; the fix is
+        only pinned by a path whose leading char is ``.`` but is NOT the
+        ``./`` prefix."""
+        # the intended case still works
+        assert rp._to_posix("./watch.py") == "watch.py"
+        # THE discriminating case: a dotfile/dotdir path keeps its dot
+        assert rp._to_posix(".dreamwork/lessons.md") == ".dreamwork/lessons.md"
+        assert rp._to_posix(".git/config") == ".git/config"
+        # a bare dotfile (no slash) is preserved too
+        assert rp._to_posix(".env") == ".env"
+
+    def test_begin_on_a_dotted_path_records_the_correct_key(self, repo):
+        """``begin`` must record the path AS PASSED (dot intact), so that
+        ``check`` and the #710 history scan look at a file that exists. Under
+        the bug the registry held ``dreamwork/lessons.md`` — a nonexistent
+        file — and ``begin`` itself refused at the read step."""
+        dotted = ".dreamwork/lessons.md"
+        parent = repo / ".dreamwork"
+        parent.mkdir()
+        (repo / dotted).write_text("line\n")
+        assert _begin(repo, dotted) == 0
+        entries, _ = rp._read_registry(repo)
+        armed = [e for e in entries if e.get("state") == rp.ARMED]
+        assert len(armed) == 1, entries
+        # THE discriminating assertion: the recorded key is the dotted path,
+        # not the mangled 'dreamwork/lessons.md'.
+        assert armed[0]["path"] == dotted, (
+            f"recorded path {armed[0]['path']!r} lost its leading dot — "
+            f"check/#710 would scan a file that does not exist (#671)")
+
+    def test_a_dotted_path_survives_the_full_round_trip(self, repo):
+        """begin → sabotage → restore → check on a DOTTED path, clean exit.
+
+        This is the case the brief names: nobody wrote it, and it is the only
+        one that exercises the bug end-to-end (the registry key, the working-
+        tree read, and the history-scan path set all flow through _to_posix)."""
+        dotted = ".dreamwork/notes.md"
+        (repo / ".dreamwork").mkdir()
+        original = "# title\n"
+        (repo / dotted).write_text(original)
+        _begin(repo, dotted)
+        (repo / dotted).write_text("# title\n# INJECTED BUG\n")
+        assert _restore(repo, dotted) == 0
+        # the original came back byte-for-byte
+        assert (repo / dotted).read_text() == original
+        assert _check(repo) == 0
+
