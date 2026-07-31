@@ -109,6 +109,20 @@ showed what forgetting looks like). Fold what it reports into `## Recently
 landed` citing the sha, or cite the sha in the entry when the open state is
 deliberate.
 
+**The fold step now also runs `reach`** (#688): `fold` tacks a compact
+branch-reachability trailer onto its output, the twin of `sweep` that sweep
+cannot be. `sweep` examines commit *subjects* on master, so a branch that
+was folded but never merged has no commit on master for it to see — invisible
+by construction (#590). `reach` enumerates every local branch and
+`git cherry`-marks each against master (`-` = patch-equivalent / already
+landed; `+` = genuinely absent, or squashed, or refactored — a question,
+never a verdict). It runs at fold time because that is the moment branches
+are created and abandoned, so the check needs no second command to remember.
+It reports only branches with at least one `+`, collapses duplicate sha
+sets, and always says how many it examined — silent where there are no
+branches, loud where a gap could hide. `python3 <skill-dir>/dev/ledger.py
+reach` runs it standalone.
+
 **Then read `.dreamwork/handoffs.md`'s `## Pending`** — the supplementary
 route, for the case git cannot see: a lane on a different machine or repo,
 or landed work that is not a commit. A
