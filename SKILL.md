@@ -355,13 +355,29 @@ Two kinds, nothing in between:
 
 **Dispatch through the checked route:** `just dispatch-lane <prompt-file>
 <@agent> [ccc options]`. The prompt file ends with `briefs/boilerplate.md`
-appended verbatim; `dev/dispatch_lane.py` validates that exact delivered string
-and then replaces itself with `ccc`, passing the prompt as one argv item.
+appended verbatim; `dev/dispatch_lane.py` validates that exact delivered string,
+writes it once to `.dreamwork/docs/briefs/<task>-<lane>.md` with a sibling
+dispatch-time SHA-256 receipt, and then replaces itself with `ccc`, passing the
+prompt as one argv item. The task comes from the first-level heading and the lane
+from the prompt's unique `Branch:` line, so repeated task ids on distinct lanes do
+not overwrite one another. A persistence failure refuses the launch.
 Direct `ccc` lane dispatch is unsupported: shell quoting can turn a command
 substitution into the literal prompt `$(cat ...)` while every process-level
 health signal still looks normal. This pre-launch check proves what the wrapper
 passes, not what a downstream process ultimately received; `/proc/<pid>/cmdline`
 inspection is a separate, stronger check with a short observation window.
+
+**The wrapper records a pending brief; it does not guarantee durable
+persistence.** The `.md` and `.sha256` remain uncommitted for the lane's lifetime,
+so the coordinator runs `python3 dev/dispatch_lane.py --verify-pending` at the
+merge gate and commits both. That check distinguishes matched content, changed
+content, a missing half of the pair, an unclassifiable receipt, and no governed
+input examined. It detects ordinary edits or one-sided deletion during the
+uncommitted window; deleting both files can only be exposed by the corpus-reach
+gap, not reconstructed. This is the one supported writer, time, and destination:
+the validated dispatch wrapper writes once, before runner exec, into the brief
+corpus. A lane does not persist its own brief and an abandoned or never-started
+lane has no persistence duty to forget.
 
 - **Utility subagents** — narrow tools: answer a question (e.g. an Explore
   agent for "how does X work?" or "what's relevant to Y?") or run a scoped
