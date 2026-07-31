@@ -43,7 +43,7 @@ ROOT = pathlib.Path(__file__).resolve().parent
 CLIENT = ROOT / "client"
 
 
-def _clone(tmp_path):
+def _clone(tmp_path, name="root"):
     """A whole checkout's worth of the build's subject, in tmp_path.
 
     The red-proofs mutate build inputs and manifests. They do it HERE, never
@@ -53,7 +53,7 @@ def _clone(tmp_path):
     snapshot in the shared scratchpad. The safest snapshot is the one that
     never has to be taken.)
     """
-    dst = tmp_path / "root"
+    dst = tmp_path / name
     dst.mkdir()
     shutil.copy(ROOT / "watch.py", dst / "watch.py")
     shutil.copytree(CLIENT, dst / "client")
@@ -886,9 +886,28 @@ def test_derived_output_is_not_counted_as_a_presentation_change():
 # ── the build itself ─────────────────────────────────────────────────────
 
 
-def _esbuild():
-    path = ROOT / "dev" / "build" / "node_modules" / ".bin" / "esbuild"
-    return path if path.exists() else None
+def _node_modules():
+    """Find this checkout's install, or the shared main-worktree install."""
+    local = ROOT / "dev" / "build" / "node_modules"
+    candidates = [local]
+    common = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=ROOT, capture_output=True, text=True)
+    if common.returncode == 0:
+        candidates.append(pathlib.Path(common.stdout.strip()).parent /
+                          "dev" / "build" / "node_modules")
+    return next((path for path in candidates
+                 if (path / ".bin" / "esbuild").exists()), None)
+
+
+def _configure_toolchain(build_client):
+    node_modules = _node_modules()
+    if node_modules is None:
+        pytest.skip("dev/build/node_modules absent in this checkout and its "
+                    "main worktree — `just build-client` installs it; the "
+                    "reading this check needs is the toolchain's own output")
+    build_client.NODE_MODULES = str(node_modules)
+    build_client.ESBUILD = str(node_modules / ".bin" / "esbuild")
 
 
 def test_the_build_is_reproducible_and_the_committed_output_is_its_output(
@@ -904,18 +923,23 @@ def test_the_build_is_reproducible_and_the_committed_output_is_its_output(
     Production line: `cwd=tmp` with a relative entry name in
     `dev/build_client.py`. Pass the absolute path instead and this goes red.
     """
-    if _esbuild() is None:
-        pytest.skip("dev/build/node_modules absent — `just build-client` "
-                    "installs it; the reading this check needs is the "
-                    "toolchain's own output")
     import sys
     sys.path.insert(0, str(ROOT / "dev"))
     import build_client
+    _configure_toolchain(build_client)
 
-    root = _clone(tmp_path)
-    manifest = build_client.build(str(root))
-    assert manifest["outputs"], "the build recorded no outputs"
-    for rel, digest in manifest["outputs"].items():
+    root_a = _clone(tmp_path, "build-a")
+    root_b = _clone(tmp_path, "build-from-a-different-absolute-path")
+    manifest_a = build_client.build(str(root_a))
+    manifest_b = build_client.build(str(root_b))
+    assert manifest_a["outputs"], "the first build recorded no outputs"
+    assert manifest_b["outputs"], "the second build recorded no outputs"
+    assert manifest_a["outputs"].keys() == manifest_b["outputs"].keys(), (
+        "the two builds did not produce the same output inventory")
+    for rel, digest in manifest_a["outputs"].items():
+        assert digest == manifest_b["outputs"][rel], (
+            "building %s from two different absolute paths produced "
+            "different bytes — the artifact leaks its build location" % rel)
         committed = client_dist.sha256_file(str(ROOT / rel))
         assert committed is not None, "%s is not committed" % rel
         assert digest == committed, (
@@ -929,11 +953,10 @@ def test_the_build_refuses_an_empty_asset_rather_than_bundling_a_blank(
     """The `_read_client` discipline (`watch.py:497`), one layer out: an empty
     input bundles to a valid, silent nothing, and the manifest would then
     faithfully record the hash of a blank."""
-    if _esbuild() is None:
-        pytest.skip("dev/build/node_modules absent")
     import sys
     sys.path.insert(0, str(ROOT / "dev"))
     import build_client
+    _configure_toolchain(build_client)
 
     root = _clone(tmp_path)
     (root / "client" / "shader.js").write_bytes(b"")

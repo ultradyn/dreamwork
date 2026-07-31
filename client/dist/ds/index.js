@@ -37,9 +37,9 @@ var DreamworkDesign = (() => {
   ));
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // ../../home/xertrov/.llm-general/skills/ud-dreamwork/.worktrees/cx-630p5b/dev/build/node_modules/react/cjs/react.development.js
+  // node_modules/react/cjs/react.development.js
   var require_react_development = __commonJS({
-    "../../home/xertrov/.llm-general/skills/ud-dreamwork/.worktrees/cx-630p5b/dev/build/node_modules/react/cjs/react.development.js"(exports, module) {
+    "node_modules/react/cjs/react.development.js"(exports, module) {
       "use strict";
       if (true) {
         (function() {
@@ -1911,9 +1911,9 @@ var DreamworkDesign = (() => {
     }
   });
 
-  // ../../home/xertrov/.llm-general/skills/ud-dreamwork/.worktrees/cx-630p5b/dev/build/node_modules/react/index.js
+  // node_modules/react/index.js
   var require_react = __commonJS({
-    "../../home/xertrov/.llm-general/skills/ud-dreamwork/.worktrees/cx-630p5b/dev/build/node_modules/react/index.js"(exports, module) {
+    "node_modules/react/index.js"(exports, module) {
       "use strict";
       if (false) {
         module.exports = null;

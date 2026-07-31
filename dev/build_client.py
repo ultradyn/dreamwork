@@ -235,9 +235,18 @@ def build(root=ROOT):
         # lets a wrapper name a builder lexically (#630 plan §2a).
         with open(os.path.join(tmp, "entry.mjs"), "w", encoding="utf-8") as f:
             f.write(entry_src)
+        # Give dependency resolution a checkout-independent name. NODE_PATH
+        # exposes its absolute target to esbuild, which then writes that path
+        # into the unminified bundle's module labels. A local symlink plus
+        # `--preserve-symlinks` makes every checkout resolve React as
+        # `node_modules/react/...`, whether the build subject itself has an
+        # install or is a clean scratch copy used by the reproducibility test.
+        os.symlink(NODE_MODULES, os.path.join(tmp, "node_modules"),
+                   target_is_directory=True)
         cmd = [ESBUILD, "entry.mjs", "--bundle", "--format=iife",
                "--global-name=DreamworkDesign", "--target=es2020",
-               "--charset=utf8", "--banner:js=" + BANNER,
+               "--charset=utf8", "--preserve-symlinks",
+               "--banner:js=" + BANNER,
                "--outfile=" + index_js]
         # `cwd=tmp` and a RELATIVE entry name, because esbuild writes the
         # entry's path into the bundle as a comment. Measured, not assumed:
@@ -246,8 +255,7 @@ def build(root=ROOT):
         # rewritten the committed artifact and its hash. A manifest that
         # churns on a no-op rebuild is a staleness signal nobody can read —
         # the false-red that trains you to ignore the check.
-        env = dict(os.environ, NODE_PATH=NODE_MODULES)
-        res = subprocess.run(cmd, cwd=tmp, env=env, capture_output=True,
+        res = subprocess.run(cmd, cwd=tmp, capture_output=True,
                              timeout=300)
         if res.returncode != 0:
             raise BuildError("esbuild failed:\n%s" % res.stderr.decode(
