@@ -1286,8 +1286,13 @@ class TestPhantomWorktreeExcludedAndReported:
                 "phantom must not count as live: %s" \
                 % result["current_task_ids"]
             # The report fires and names the excluded lane (not a silent drop).
-            assert "phantom" in err.lower(), \
-                "the phantom report must fire on stderr: %s" % err
+            # #729: the ccc proxy IS a known runner (argv[0] basename == ccc), so
+            # the split phantom report lands it in the "genuine leftover lane
+            # runner" bucket — NOT the old generic "ccc process mid-exit" label
+            # that never read argv (#671). The assertion binds the RUNNER arm.
+            assert "leftover lane runner" in err, \
+                "the phantom report must fire and classify a ccc phantom as a " \
+                "known runner (not the old generic label): %s" % err
             assert "719" in err, \
                 "the report must name the excluded lane's id: %s" % err
             assert " (deleted)" in err, \
@@ -1338,6 +1343,240 @@ class TestPhantomWorktreeExcludedAndReported:
         finally:
             proc.kill()
             proc.wait()
+
+
+# ── 17. #729: the phantom list splits self / runner / other ─────────────
+#
+# The defect: status_sync printed the coordinator's own process (claude, cwd
+# deleted when the worktree merged) alongside head/grep/tail shell fragments,
+# ALL labelled "ccc process mid-exit" — a specificity the code never had
+# (it matched any cwd under .worktrees/, never read argv; #671). Three facts
+# rendered as one (#136).
+#
+# The fix has two halves, and BOTH directions are tested:
+#  (a) ancestry self-exclusion: a process in status_sync's own ppid chain is
+#      labelled "coordinator's own ancestry", not "phantom lane". Exact, via
+#      /proc/<pid>/stat field 4.
+#  (b) positive identity: a process whose argv[0] basename is a known runner
+#      (ccc/claude/grok/codex) is a genuine leftover; a head/grep/tail is NOT.
+#      Copies reaper.parse_cmdline's shape (#440).
+#
+# Direction 1 (discriminating): SELF and a genuine leftover are DISTINGUISHABLE.
+# Asserting the list merely got shorter passes against a fix that drops
+# everything — the brief states this explicitly. The assertion must name which
+# case each pid lands in.
+
+class TestPhantomBucketSplit:
+    """#729: the phantom list splits self / runner / other, all reported.
+
+    The ancestry test (#729 fix half a) is tested by a PURE function: inject a
+    known ancestor set into ``_ancestor_pids`` (monkeypatched) and assert a
+    phantom pid in that set is labelled "coordinator's own ancestry", while a
+    pid NOT in the set and NOT a runner is labelled "neither self nor a known
+    runner". Production line whose reversion reds this: the three-way branch in
+    ``main``'s phantom report (``if pid in ancestors / elif _is_lane_runner /
+    else``) plus the ``_ancestor_pids`` helper. Revert the split (one bucket)
+    and the self/runner/other labels never appear.
+    """
+
+    def _make_worktree(self, target: Path, lane: str) -> Path:
+        wt = target / ".worktrees" / lane
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "BRIEF.md").write_text("lane brief")
+        return wt
+
+    def test_coordinator_ancestor_is_labelled_self_not_phantom(
+            self, tmp_path, monkeypatch):
+        # THE DEFECT: pid 1328406 (the coordinator, a claude process whose
+        # worktree merged) appeared in the phantom list labelled "ccc process
+        # mid-exit". THE FIX: ancestry identifies it as self.
+        # Build a phantom whose pid we force into the ancestor set, so the
+        # ancestry test fires without needing a real coordinator pid.
+        wt = self._make_worktree(tmp_path, "lane-coordinator")
+        # A perl proxy so the process stays alive with a deleted cwd. We will
+        # OVERRIDE _is_lane_runner to False so the ONLY discriminator active is
+        # ancestry — isolating the self arm.
+        proc = subprocess.Popen(
+            ["claude", "-e", "sleep 30", "--", "fake"],
+            executable=_which_perl(), cwd=str(wt),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            shutil.rmtree(wt)
+            assert not status_sync._read_proc_cwd(proc.pid) is None
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            # Inject proc.pid into the ancestor set — the ancestry test is the
+            # ONLY thing that should classify it as self.
+            monkeypatch.setattr(status_sync, "_ancestor_pids",
+                                lambda: {os.getpid(), proc.pid})
+            # _is_lane_runner would return True (argv[0]=='claude'); force False
+            # to isolate the ancestry arm from the runner arm.
+            monkeypatch.setattr(status_sync, "_is_lane_runner",
+                                lambda pid: False)
+            status = {"dreamers": [], "current_task_ids": [], "queue": {},
+                      "task": "t"}
+            rc, out, err = _run(status, _ledger(729), tmp_path)
+            assert rc == 0, err
+            # DISCRIMINATING (Direction 1): the coordinator's pid is labelled
+            # SELF, not "phantom" or "leftover". A fix that drops everything
+            # passes a count-only check; this names the case.
+            assert "coordinator's own ancestry" in err, \
+                "an ancestor of status_sync must be labelled self, not a " \
+                "phantom lane: %s" % err
+            assert str(proc.pid) in err, err
+            # The phantom must NOT enter dreamers (same as before — the split
+            # is about the LABEL, not the exclusion).
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            assert result["dreamers"] == [], result["dreamers"]
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_shell_fragment_is_labelled_other_not_ccc_midexit(
+            self, tmp_path, monkeypatch):
+        # THE DEFECT (#671): a `head -3` / `grep` / `tail -F` with a deleted
+        # worktree cwd was labelled "ccc process mid-exit" — a check the code
+        # never performed. THE FIX: it is neither self nor a known runner.
+        wt = self._make_worktree(tmp_path, "lane-fragment")
+        # A perl proxy with argv[0]='head' — a shell-fragment shape, NOT a
+        # lane runner. _is_lane_runner returns False for it.
+        proc = subprocess.Popen(
+            ["head", "-e", "sleep 30"],
+            executable=_which_perl(), cwd=str(wt),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            shutil.rmtree(wt)
+            # Precondition: argv[0] is 'head', so _is_lane_runner is False —
+            # this is the #671 shape (a non-runner matching the cwd prefix).
+            assert not status_sync._is_lane_runner(proc.pid), \
+                "precondition: 'head' must NOT read as a lane runner"
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            # Ensure proc.pid is NOT in ancestor set (it isn't — it's a fresh
+            # child of the test, not an ancestor of status_sync).
+            real_ancestors = status_sync._ancestor_pids()
+            assert proc.pid not in real_ancestors, \
+                "precondition: the head proxy must not be an ancestor"
+            status = {"dreamers": [], "current_task_ids": [], "queue": {},
+                      "task": "t"}
+            rc, out, err = _run(status, _ledger(729), tmp_path)
+            assert rc == 0, err
+            # DISCRIMINATING: the old label "ccc process mid-exit" must NOT
+            # appear (#671: the label claimed a check not performed). The new
+            # label names what it actually is.
+            assert "ccc process mid-exit" not in err, \
+                "the old false-specific label must not appear for a head " \
+                "process (#671): %s" % err
+            assert "neither self nor a known runner" in err, \
+                "a shell fragment must be labelled as other, not as a ccc " \
+                "process: %s" % err
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_ccc_runner_is_labelled_leftover_not_other(
+            self, tmp_path, monkeypatch):
+        # The other direction of the split: a genuine ccc runner with a deleted
+        # cwd lands in the RUNNER bucket, not the other/self buckets. This is
+        # the #719 case (a real leftover) — the split must not misfile it.
+        wt = self._make_worktree(tmp_path, "lane-leftover")
+        proc = subprocess.Popen(
+            ["ccc", "-e", "sleep 30", "--", "--yolo", "@glm52", "brief"],
+            executable=_which_perl(), cwd=str(wt),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            assert status_sync._is_lane_runner(proc.pid), \
+                "precondition: ccc proxy must read as a lane runner"
+            assert proc.pid not in status_sync._ancestor_pids(), \
+                "precondition: ccc proxy must not be an ancestor"
+            shutil.rmtree(wt)
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            status = {"dreamers": [], "current_task_ids": [], "queue": {},
+                      "task": "t"}
+            rc, out, err = _run(status, _ledger(729), tmp_path)
+            assert rc == 0, err
+            # DISCRIMINATING: a ccc runner is a "genuine leftover lane runner",
+            # NOT "other" or "self". Three facts, three renderings (#136).
+            assert "leftover lane runner" in err, \
+                "a ccc runner with deleted cwd must be labelled a genuine " \
+                "leftover: %s" % err
+            assert "coordinator's own ancestry" not in err, \
+                "a ccc proxy is not self: %s" % err
+            assert "neither self nor a known runner" not in err, \
+                "a ccc proxy IS a known runner, not 'other': %s" % err
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_all_three_cases_reported_none_dropped(self, tmp_path, monkeypatch):
+        # #702 governs: an entry the tool cannot classify must be REPORTED,
+        # never silently dropped. With all three cases present, all three
+        # labels fire — the split does not hide the confusing ones.
+        wt_self = self._make_worktree(tmp_path, "lane-self")
+        wt_runner = self._make_worktree(tmp_path, "lane-runner")
+        wt_other = self._make_worktree(tmp_path, "lane-other")
+        self_proc = subprocess.Popen(
+            ["claude", "-e", "sleep 30", "--", "fake"],
+            executable=_which_perl(), cwd=str(wt_self)
+            if False else wt_self,  # keep cwd explicit
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        runner_proc = subprocess.Popen(
+            ["ccc", "-e", "sleep 30", "--", "--yolo", "@glm52", "brief"],
+            executable=_which_perl(), cwd=str(wt_runner),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        other_proc = subprocess.Popen(
+            ["head", "-e", "sleep 30"],
+            executable=_which_perl(), cwd=str(wt_other),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        try:
+            time.sleep(0.6)
+            assert all(status_sync._pid_alive(p.pid)
+                       for p in (self_proc, runner_proc, other_proc))
+            for wt in (wt_self, wt_runner, wt_other):
+                shutil.rmtree(wt)
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(self_proc.pid), str(runner_proc.pid),
+                           str(other_proc.pid)] if d == "/proc" else [])
+            # Force self_proc.pid into the ancestor set — isolates the self arm.
+            monkeypatch.setattr(status_sync, "_ancestor_pids",
+                                lambda: {os.getpid(), self_proc.pid})
+            status = {"dreamers": [], "current_task_ids": [], "queue": {},
+                      "task": "t"}
+            rc, out, err = _run(status, _ledger(729), tmp_path)
+            assert rc == 0, err
+            # ALL THREE labels fire — #702: none dropped.
+            assert "coordinator's own ancestry" in err, \
+                "self case must be reported: %s" % err
+            assert "leftover lane runner" in err, \
+                "runner case must be reported: %s" % err
+            assert "neither self nor a known runner" in err, \
+                "other case must be reported: %s" % err
+            # And none enter dreamers.
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            assert result["dreamers"] == [], result["dreamers"]
+        finally:
+            for p in (self_proc, runner_proc, other_proc):
+                p.kill()
+                p.wait()
 
 
 # ── 15. #720: discovery must REPOPULATE from empty under the default target ─
