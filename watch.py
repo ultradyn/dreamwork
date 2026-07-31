@@ -712,38 +712,70 @@ def age_str(seconds):
     return f"{int(seconds)}s"
 
 
-def read_text(path, limit=200_000):
-    """A BOUNDED read, for DISPLAY. Never use it on a path that writes back.
+def read_text_bounded(path, limit):
+    """`(text, truncated)` — the ONLY way to get a short read, and it says so.
 
-    #632: the limit is silent — a file over it comes back short with nothing
-    said, and that is fine for rendering and catastrophic for a
-    read-modify-write. `/answer` read questions.md through this, appended his
-    answer to the SHORT text, and wrote the result over the full file: 12
-    answered entries deleted, no archive, cut mid-word. Write paths take
-    `read_text_full` instead, and `rewrite_append_only` is the door that makes
-    that non-optional.
+    #632 part two. The bug that deleted twelve answered entries was not really
+    the 200,000 cap; it was that exceeding the cap was SILENT. A short string
+    is indistinguishable from a whole file, so every caller downstream — a
+    writer, a parser, a renderer — was entitled to believe it had everything.
+
+    So a bounded read now returns the flag with the text, and a caller has to
+    take the flag to get the string. That is the whole mechanism: it is no
+    longer possible to truncate without holding, in your hand, the fact that
+    you did. What you then DO about it is yours to decide — refuse, warn,
+    render a marker — but you cannot decide nothing by accident.
+
+    Reads one byte past the limit to distinguish "exactly the limit" from
+    "longer than the limit", because a file whose length equals the cap is not
+    truncated and must not be reported as if it were.
     """
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
-            return f.read(limit)
+            if limit is None:
+                return f.read(), False
+            text = f.read(limit + 1)
     except OSError:
-        return None
+        return None, False
+    if len(text) > limit:
+        return text[:limit], True
+    return text, False
+
+
+def read_text(path, limit=None):
+    """A file's text, or None. UNBOUNDED unless a caller names a `limit`.
+
+    THE DEFAULT USED TO BE 200_000 AND THAT WAS THE BUG (#632). Not because
+    the number was wrong — raising it only moves the cliff — but because a
+    display-shaped default reached a durability path, and defaults are exactly
+    what review does not see. `/answer` read questions.md through this
+    function, appended his answer to the SHORT text, and wrote the result back
+    over the full file: twelve answered entries gone, no archive, the file cut
+    mid-word.
+
+    Now the safe thing is what you get for saying nothing, and a bound is
+    something you must ask for by name. A caller that names a limit has said
+    so deliberately and should generally use `read_text_bounded`, which also
+    hands back whether the cut happened.
+
+    The files this reads are a few hundred kilobytes. It was never the memory
+    that justified the cap; it was habit.
+    """
+    text, _ = read_text_bounded(path, limit)
+    return text
 
 
 def read_text_full(path):
     """The WHOLE file, or None — the reader every durable write path uses.
 
-    A separate name rather than `read_text(path, limit=None)` on purpose. The
-    #632 defect was a display default leaking into a durability path, and a
-    default is exactly what review does not see; a distinct name at the call
-    site is the thing a reader notices when the next handler is written. The
-    cost of reading these files whole is a quarter of a megabyte.
+    Deliberately a synonym for `read_text(path)` now that the default is
+    unbounded. THE NAME IS THE POINT and is why it survives as its own
+    function: at a write call site, `read_text_full` states the requirement in
+    the line a reviewer is reading, so a future edit that reintroduces a bound
+    has to visibly contradict it rather than quietly change a default. The
+    source guard in test_watch.py asserts the write door calls this by name.
     """
-    try:
-        with open(path, encoding="utf-8", errors="replace") as f:
-            return f.read()
-    except OSError:
-        return None
+    return read_text(path)
 
 
 # ── #351: syntax highlighting at /file, on #339's scanner ─────────────────
@@ -4882,9 +4914,20 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 full = (resolve_confined(
                     target, os.path.join(".dreamwork", "review", name))
                     if name and "/" not in name else None)
-                text = read_text(full, limit=2_000_000) if full else None
+                text, cut = ((read_text_bounded(full, 2_000_000))
+                             if full else (None, False))
                 if text is None:
                     self.send_error(404)
+                    return
+                if cut:
+                    # #632: half an HTML document renders as a BROKEN page
+                    # with nothing to say it was cut, which is the silent
+                    # failure this whole change exists to remove. An error the
+                    # reader can see beats a page that lies quietly.
+                    self.send_error(500, "artifact too large",
+                                    "the artifact exceeds the 2,000,000 "
+                                    "character serving cap and would be "
+                                    "served truncated")
                     return
                 self._send(text, "text/html")   # self-contained artifact
             elif parsed.path == "/researchraw":
@@ -4898,9 +4941,20 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                     target, os.path.join(
                         ".dreamwork", "docs", "research", name))
                     if name and "/" not in name else None)
-                text = read_text(full, limit=2_000_000) if full else None
+                text, cut = ((read_text_bounded(full, 2_000_000))
+                             if full else (None, False))
                 if text is None:
                     self.send_error(404)
+                    return
+                if cut:
+                    # #632: half an HTML document renders as a BROKEN page
+                    # with nothing to say it was cut, which is the silent
+                    # failure this whole change exists to remove. An error the
+                    # reader can see beats a page that lies quietly.
+                    self.send_error(500, "artifact too large",
+                                    "the artifact exceeds the 2,000,000 "
+                                    "character serving cap and would be "
+                                    "served truncated")
                     return
                 self._send(text, "text/html")   # self-contained artifact
             else:

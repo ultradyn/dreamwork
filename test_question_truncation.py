@@ -249,14 +249,78 @@ def test_a_fold_IS_refused_and_that_is_the_scope_boundary():
         "the guard has been weakened and no longer catches partial deletion")
 
 
-def test_read_text_full_returns_more_than_the_capped_read(tmp_path):
+def test_read_text_full_returns_more_than_any_bounded_read(tmp_path):
     """Defends: `read_text_full` existing and being unbounded.
 
-    Without this the two readers could drift to the same behaviour and every
-    other test here would still pass while protecting nothing.
+    It is a synonym for `read_text(path)` since the default flipped, and it
+    survives for its NAME — a write call site should state that it needs the
+    whole file, so a later edit reintroducing a bound has to contradict the
+    line rather than change a default out of sight. Without this test the two
+    readers could drift together and every other test here would still pass
+    while protecting nothing.
     """
     p = tmp_path / "big.md"
     body = _oversized_questions()
     p.write_text(body, encoding="utf-8")
-    assert len(watch.read_text(str(p))) == 200_000
     assert watch.read_text_full(str(p)) == body
+    bounded, cut = watch.read_text_bounded(str(p), 200_000)
+    assert cut and len(bounded) == 200_000 and bounded != body
+
+
+# ── #632 part two: silence is no longer the default ───────────────────────
+
+def test_read_text_is_unbounded_by_default(tmp_path):
+    """THE CLASS FIX. Saying nothing gets you the whole file.
+
+    The 200,000 default is what let a display concern reach a durability path.
+    Defends: `read_text`'s signature. Red-proof: restore `limit=200_000` as the
+    default and this fails — as does the dashboard's view of every file over
+    the cap, which is how the truncation stayed invisible.
+    """
+    p = tmp_path / "big.md"
+    body = _oversized_questions()
+    p.write_text(body, encoding="utf-8")
+    assert watch.read_text(str(p)) == body
+    assert len(body) > 200_000
+
+
+def test_a_bounded_read_reports_that_it_cut(tmp_path):
+    """Defends: `read_text_bounded` returning `(text, truncated)`.
+
+    You cannot get a short string without also being handed the fact that it
+    is short. That is the property; what a caller does with it is its own
+    decision, but it can no longer decide nothing by accident.
+    """
+    p = tmp_path / "big.md"
+    body = _oversized_questions()
+    p.write_text(body, encoding="utf-8")
+
+    text, cut = watch.read_text_bounded(str(p), 1_000)
+    assert cut is True and len(text) == 1_000
+
+    text, cut = watch.read_text_bounded(str(p), None)
+    assert cut is False and text == body
+
+
+def test_a_file_exactly_the_limit_is_not_reported_as_cut(tmp_path):
+    """The off-by-one that would make the flag untrustworthy.
+
+    A file whose length equals the cap is complete. Reporting it as truncated
+    would teach callers to ignore the flag, which costs more than the flag
+    gains. Defends: the `limit + 1` read in `read_text_bounded`.
+    """
+    p = tmp_path / "exact.md"
+    p.write_text("x" * 500, encoding="utf-8")
+    assert watch.read_text_bounded(str(p), 500) == ("x" * 500, False)
+    assert watch.read_text_bounded(str(p), 499) == ("x" * 499, True)
+
+
+def test_missing_file_reads_as_none_not_as_empty(tmp_path):
+    """A missing file must stay distinguishable from an empty one.
+
+    `read_text` returning None is load-bearing all over this module (`or ""`,
+    404 branches, seed-on-absent). Defends the OSError branch of
+    `read_text_bounded` after the rewrite.
+    """
+    assert watch.read_text(str(tmp_path / "nope.md")) is None
+    assert watch.read_text_bounded(str(tmp_path / "nope.md"), 10) == (None, False)
