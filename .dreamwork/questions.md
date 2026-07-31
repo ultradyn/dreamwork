@@ -4,6 +4,9 @@
 
 - **P1 · 2026-07-31 17:20 — #613 (blocks #631): the live session-log view — three calls before the design locks.**
   **Sub-decisions:** `Q1`, `Q2`, `Q3`.
+  **NARROWED 2026-07-31 18:58 after your answer below — the visual calls are SETTLED and off your
+  plate** (`guides: G1`, `marker: M1`, tool-row redesign authorised, loading animation reopened as
+  lane work). **Only `Q1`, `Q2`, `Q3` are still waiting on you**; skip straight to them.
   Design: `.dreamwork/docs/plans/session-log-view.md` (design only; no code authorised). **Mockups,
   which you asked to see before the component design locks:** `.dreamwork/review/session-log-view.html`
   — the tree at rest and mid-stream, plus live alternatives for the three visual calls (indicator
@@ -49,6 +52,52 @@
   **If you say nothing:** nothing is built — the design authorises no code; the recs, plus the
   mockup's own A + G1 + M1, stand as the defaults when implementation is planned.
   Accepted answers: `rec` (takes all three plus the mockup's three) · per-question (`Q1: …`) · free text.
+  - **Answer (via watch, 2026-07-31 18:53):** Where does it say "never a
+    spinner" and why? Is that scoped to something maybe? I think loading
+    anims are good and useful, though we should avoid using ones that
+    are too boring. So stepping braille cycle is better than many but
+    still kinda boring. We should come up with an interesting thematic
+    one. The + to - animation in my forum for expanding some sections is
+    possible inspiration. More on that later. --- Also, the tools [args,
+    response] children, is there a better way of showing that? If the
+    arguments are empty should hide that one at the very least. But yeah
+    you are welcome to redesign this part to be less intrusive and
+    include native / special case rendering for tool calls we care
+    about. --- guides: G1. marker: M1 (we don't care so much about being
+    truly faithful to tui limitations, just want to keep the design a
+    bit evocative of that). On the note of a marker, my forum
+    (~/src/forum) has a similar theme to dreamwork and has a nice
+    animation for + expanding. the class on the svg is
+    `.cg-ledger__peek-icon` and the svg is inside button found via
+    `.cg-ledger__peek`. Take a look at that. we shouldn't use that
+    exactly, but it's inspiration maybe.
+  - **Coordinator reply (2026-07-31 18:58) — your spinner question, answered from the source.
+    You are right and the plan overreached.** "Never a spinner" is written in exactly two places
+    and **both are scoped; neither is a house rule**, so nothing stops an interesting loading
+    animation.
+    1. `client/style.css:884` and `transitions.md:596` — inside the **awaiting-fold wisp**, which
+       both files call *"the ONE deliberate exception to the opt-in motion rule (#113)"*. The
+       sentence is *"intensity fading in and OUT rather than sweeping on a loop. Never a spinner."*
+       It is defining **that one element's** character by contrast — a breath, not a sweep — for the
+       one genuinely in-progress thing on the questions page. It is a description of the wisp, not a
+       prohibition on loading indicators.
+    2. `client/style.css:761` — a **different sense entirely**: *"failure and a deploy that never
+       finishes both speak on `#fmsg`, never a spinner forever."* That is about not stranding the
+       user in an indeterminate state; `watch-design.md:3605` calls it *"a copy decision as much as
+       a timing one."*
+    So `session-log-view.md:325` promoted a scoped contrast into a standing "house motion language"
+    — **and cited it at `client/style.css:824`, which is the wrong line** (it is 884). Filed as its
+    own defect so the plan and the mockup's recommendation both get corrected rather than quietly
+    reinterpreted.
+    **Consequence: the indicator call is reopened as lane work, not an ask.** Your steer — *interesting
+    and thematic, braille-stepping is better than most but still boring* — plus the forum reference is
+    enough of a brief. Having read `.cg-ledger__peek`: the transferable idea is not the `+`/`−` shape
+    but the **always-clockwise ratchet** — each toggle advances the arm `+90°` and the group `+180°`,
+    so open and close both turn the same way and it **never unwinds**. Monotonic accumulation rather
+    than a loop returning to where it started is exactly what makes it not-boring, and it is the
+    quality worth stealing for a progress indicator.
+    **Tool rows: taken as authorised, not as an ask.** Empty `args` hidden at minimum, the child
+    rows made less intrusive, and native rendering for the calls worth special-casing.
 
 - **P1 · 2026-07-31 17:20 — #614 (blocks #641): websockets — everything you asked for lands, but the analysis
   parts ways with you on the wire protocol.** One decision.
@@ -63,8 +112,12 @@
   **serving `/data.json` marks the state changed** and the next poll refetches it — self-perpetuating,
   15 of 15 polls "changed" over 30 s, reproduced from a single fetch. Real change in the same window:
   21 bytes when quiet, 5.4 KB over 60 s including a commit — **0.6% of what was shipped**. Filed as
-  **#620** and already routed to the lane holding `watch.py`; it is a ~3-line fix that stands on its
-  own bug and lands whether or not any transport change happens.
+  **#620 and since LANDED** (`49552469`) — so this half is off your plate and off the decision. Two
+  corrections from that lane, since they change what you are being asked: the fix ships a **suffix
+  rule**, not a filename list, so `session-index.sqlite3` is covered in advance; and **excluding
+  `-wal` as well — which the plan proposed — was measured to be wrong** and was not shipped, because
+  with `-wal` also excluded a real write stops advancing `watched_mtime` at all, i.e. silent
+  blindness in place of a busy gate.
 
   **`rec`: SSE + derived deltas + the existing journaled POSTs as the RPC direction**, phased
   0→3 — push and deltas with no hand-rolled wire protocol, no second write path, reversible at each
