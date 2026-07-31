@@ -284,6 +284,33 @@ guards port="39899":
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}
     GUARD_TIMEOUT=${DREAMWORK_GUARD_TIMEOUT:-120}
+    # #606 — preflight before binding anything. A browser guard under load
+    # returns a WRONG ANSWER, not a slow one (#666: it dies before its first
+    # assertion, the #471 sentinel reads like a failure while gating nothing).
+    # So the RISK band refuses by default; the escape hatch is
+    # DREAMWORK_GUARDS_FORCE=1, and when forced the summary re-prints this
+    # line so the verdict TRAVELS WITH the result (an annotated result beats
+    # a refused one when the coordinator needs an answer now). The lane count
+    # is the actionable lever the coordinator controls ("wait for the fleet"),
+    # load is what actually breaks the guard — the two compose. See
+    # dev/guard_preflight.py for the measured thresholds and the #675 caveat
+    # (ccc-only; Agent-tool lanes are invisible to discover_lanes today).
+    _preflight=$(python3 dev/guard_preflight.py) || true
+    echo "  $_preflight"
+    case "$_preflight" in
+      *WRONG-ANSWER-RISK*)
+        if [ "${DREAMWORK_GUARDS_FORCE:-0}" != "1" ]; then
+          echo "guards: refused (wrong-answer regime). Re-run when the fleet"
+          echo "        has drained, run a subset (DREAMWORK_GUARDS=<name>),"
+          echo "        or force: DREAMWORK_GUARDS_FORCE=1 just guards"
+          echo "        (the verdict will carry the preflight line)."
+          exit 1
+        fi
+        echo "guards: DREAMWORK_GUARDS_FORCE=1 — proceeding under load; the"
+        echo "        summary will re-print the preflight so the verdict"
+        echo "        carries the fact it was run in the wrong-answer regime."
+        ;;
+    esac
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"
@@ -397,6 +424,14 @@ guards port="39899":
     # that inline the same idiom). See lint.ran_and_judged / `lint.py
     # guard-execution`. This cannot be skipped inside a run: it feeds `fail`.
     python3 lint.py guard-execution "$OUT" $GUARDS || fail=1
+    # #606 — when the run was forced under load, the verdict must CARRY that
+    # fact. A green summary that hides a wrong-answer-regime run is the exact
+    # "waved through as flaky" failure this gate exists to prevent.
+    if [ "${DREAMWORK_GUARDS_FORCE:-0}" = "1" ]; then
+      echo "  NOTE: run forced under load — $_preflight"
+      echo "        treat a PASS here with suspicion; a load-induced FAIL"
+      echo "        may be the regime, not the code."
+    fi
     exit $fail
 
 # #330 — deliberately refresh the committed provenance evidence plates.
