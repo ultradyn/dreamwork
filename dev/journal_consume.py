@@ -136,6 +136,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -388,39 +389,66 @@ def cmd_pending(args, out, err) -> int:
     with open_journal(args.journal) as j:
         events = j.events_since_cursor(CONSUMER)
         journal_id = j.journal_id  # bound the marker to THIS journal (#658)
-    if not events:
-        # Empty range: record the read head (the cursor) so a consume bound to
-        # a non-empty through is still refused — it was never listed.
-        cursor_ord = _cursor_ordinal(args.journal)
-        _write_pending_read(journal, journal_id, cursor_ord)
-        return EX_OK  # the quiet rule: empty prints nothing extra
+        head = j.head_ordinal()  # #722: the TRUE journal head (all event kinds)
+        cursor_ord = j.cursor(CONSUMER).scanned_through_event_ordinal
+    # #722: the marker records the TRUE journal head, not the receipt.created
+    # head.  The cursor advances over every ordinal (transitions share the
+    # chain), so the bound a consume honours must be a position in the log.
+    # The listing stays receipt.created-only — the drain delivers receipts;
+    # a transition has no envelope.  See the module docstring's #722 note for
+    # why this widens the head without weakening #712's guard (the guard's
+    # contract — `--through` must equal the head on record — is unchanged;
+    # only the VALUE widens to the true head).
+    _write_pending_read(journal, journal_id, head)
     for ev in events:
         out.write(_format_event(ev) + "\n")
-    # The head this read reported is the last event's ordinal — the value a
-    # bounded consume's --through must now EQUAL (#712).
-    head = events[-1].ordinal
-    _write_pending_read(journal, journal_id, head)
-    # #712: the coverage statement, on the channel a stdout pipe cannot reach.
-    # Both ends are derived from the events actually printed, never assumed —
-    # the low end is what a `tail` removes and is therefore the whole point of
-    # printing it.  The exact next command is included so the normal tick is a
-    # copy-paste rather than a transcription (#612: the hot path gets shorter
-    # to think about, not longer).
-    err.write(
-        f"pending: listed {len(events)} receipt(s), ordinals "
-        f"{events[0].ordinal}..{head} (consume --through {head})\n"
-    )
+    # #722: the coverage statement.  #712 put it on stderr; #722 makes it
+    # fire whenever the cursor is below the head — including when the
+    # listing is empty because every ordinal above the cursor is a kind
+    # pending will not list (a transition).  That was the second defect:
+    # pending knew something was there and printed nothing (#702 — report,
+    # never silently drop; #136 — "nothing needs you" and "something is
+    # hiding" must not render identically).  When head == cursor the range
+    # is genuinely empty and pending stays quiet (#136's calm grey).
+    not_listed = (_non_listed_events(args.journal, cursor_ord, head)
+                  if head > cursor_ord else [])
+    if events or not_listed:
+        parts = [f"pending: listed {len(events)} receipt(s)"]
+        if events:
+            parts.append(f"ordinals {events[0].ordinal}..{events[-1].ordinal}")
+        parts.append(f"head {head}")
+        if not_listed:
+            # Name the ordinals above the cursor pending will not list, with
+            # their kinds — #702: an entry the tool cannot classify must be
+            # REPORTED, never silently dropped.
+            described = ", ".join(f"ord={o} {k}" for o, k in not_listed)
+            parts.append(f"not listed: {described}")
+        parts.append(f"(consume --through {head})")
+        err.write(" ".join(parts) + "\n")
     return EX_OK
 
 
-def _cursor_ordinal(journal_path: str) -> int:
-    """Read the coordinator cursor's scanned_through ordinal (0 if fresh).
+def _non_listed_events(journal_path, cursor_ord: int, head: int) -> list[tuple[int, str]]:
+    """The ``(ordinal, kind)`` of events in ``(cursor_ord, head]`` pending does NOT list.
 
-    Used only to record an empty pending read's head (the cursor itself), so a
-    bounded consume against a journal whose pending was empty is still covered.
+    pending lists ``receipt.created`` only; every other kind
+    (``receipt.transition``, ``receipt.health``, ``generation.cutover`` …)
+    shares the chain's ordinals but carries no envelope to deliver.  This reads
+    them so pending can REPORT them (#702 — report, never silently drop) rather
+    than leave the ordinals it knows are there invisible (#136 — "nothing needs
+    you" and "something is hiding" must not render identically).
     """
-    with open_journal(journal_path) as j:
-        return j.cursor(CONSUMER).scanned_through_event_ordinal
+    conn = sqlite3.connect(str(journal_path))
+    try:
+        rows = conn.execute(
+            "SELECT event_ordinal, event_kind FROM events "
+            "WHERE event_ordinal > ? AND event_ordinal <= ? "
+            "AND event_kind != ? ORDER BY event_ordinal ASC",
+            (cursor_ord, head, EVENT_KIND),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [(int(r[0]), r[1]) for r in rows]
 
 
 def _prove_drained(applied_path: str, ev) -> "apply.Proof":
@@ -610,20 +638,33 @@ def cmd_consume(args, out, err) -> int:
                 )
                 return EX_USAGE
         events = j.events_since_cursor(CONSUMER)
-        if not events:
+        head_ordinal = j.head_ordinal()
+        cursor_ordinal = j.cursor(CONSUMER).scanned_through_event_ordinal
+        # #722: the advance target is the TRUE head (bare consume) or
+        # --through.  Either may land on a non-receipt event the cursor must
+        # still advance past — the cursor is a position in the append-only
+        # chain, not a count of receipts, so advancing over a transition
+        # (which carries no envelope) is a legal move and the only one that
+        # drains the journal.  The proof loop below runs over receipts only.
+        target_ord = through if through is not None else head_ordinal
+        if target_ord <= cursor_ordinal:
+            # Genuinely nothing to advance: the cursor already sits at or past
+            # the target.  (An up-to-date consumer reads this on every tick.)
             out.write("consumed 0 event(s)\n")
             return EX_OK
-        # Select the drained set + the advance target.  Without --through the
-        # whole read is drained and the target is its high end (today).  With a
-        # valid --through (cursor < through <= head, checked above) the drained
-        # set is (cursor, through] and the target is the event at `through`;
-        # events beyond `through` stay pending (the point of the bound).
-        if through is not None:
-            drained = [ev for ev in events if ev.ordinal <= through]
-            target = next(ev for ev in events if ev.ordinal == through)
+        drained = [ev for ev in events if ev.ordinal <= target_ord]
+        # The expected hash at the target ordinal.  When the target IS a
+        # receipt in `events` use its hash directly; otherwise (a transition,
+        # health mark, or cutover — not projected by events_since_cursor) derive
+        # the verified hash from the chain.  advance_cursor recomputes and
+        # refuses on mismatch, so either source is safe; verify_chain is the
+        # "don't trust stored hash" path and costs O(target) — negligible next
+        # to advance_cursor's own bounded rebuild of the same range.
+        target_ev = next((ev for ev in events if ev.ordinal == target_ord), None)
+        if target_ev is not None:
+            target_hash = target_ev.event_hash
         else:
-            drained = events
-            target = events[-1]
+            target_hash = j.verify_chain(through_ordinal=target_ord).head_hash
         # --- #526 middle act: route each DRAINED receipt through the proof.
         # The proof applies only to receipts INSIDE the advanced range (#531):
         # a receipt already applied (its marker is in the ledger) proves APPLIED
@@ -640,14 +681,14 @@ def cmd_consume(args, out, err) -> int:
             else:  # NOT_APPLIED (written + reported) or UNKNOWN (reported, no write)
                 unapplied.append(ev)
         # --- advance (read-then-advance over the bounded range): expected +
-        # scanned_through come from the `target` event (the high end of the
+        # scanned_through come from the target ordinal (the high end of the
         # advanced range — the whole-chain head without --through, or `through`
         # with it).  advance_cursor verifies the prefix and refuses unless
         # expected matches the verified head; on refuse it writes nothing.
         result = j.advance_cursor(
             CONSUMER,
-            expected=target.event_hash,
-            scanned_through=target.ordinal,
+            expected=target_hash,
+            scanned_through=target_ord,
         )
         if result.kind != "advanced":
             # Verification failed: the journal changed underfoot (an
