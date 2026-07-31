@@ -189,7 +189,7 @@ Limit builds and tests to **2 threads**.
 the human. This is absolute.
 
 **Run a targeted subset, not the whole tree — the coordinator owns the single full merged-tree
-sweep.** `just pytest -q <the test files your change touches>` is your verification; the merge
+sweep.** `python3 -m pytest -q <the test files your change touches>` is your verification; the merge
 gate already re-proves the whole tree once, so N lanes each re-proving it is N−1 wasted suites
 under exactly the load this loop has measured (`#666`). Name the files you ran. **This is
 resource-aware, not just wall-clock-aware**: the scarce resource is resident memory, not CPU —
@@ -199,7 +199,7 @@ browser-binding lane cannot, because one Chromium costs more than several pytest
 together. `just pytest` now prints how many other suites and browser processes are live, so
 you can see which situation you are in before adding your own load.
 
-**Lane bars are command-relative.** Bare `python3 lint.py` must have NO ERRORs; its four worktree-only WARNs are `tasks.md` ledger absent, `status.json` absent, `tasks.md` examined 0 entries, and `ledger checks` examined nothing — compare warning identities, not a pinned total. Reproduce the live bar with the WORKTREE interpreter as `python3 lint.py --target /home/xertrov/.llm-general/skills/ud-dreamwork`.
+**Lane bars are command-, snapshot-, and interpreter-relative.** Run `python3 lint.py`: require NO ERRORs and inspect every WARN message against the measured baseline; a worktree may add `tasks.md` ledger-absent/zero-entry, `status.json`-absent, and `ledger checks`-examined-nothing WARNs because those artifacts do not travel. To inspect live data with the WORKTREE interpreter use `python3 lint.py --target /home/xertrov/.llm-general/skills/ud-dreamwork`, but a stale interpreter need not reproduce current output.
 Likewise, judge targeted pytest by its own before/after collected count; a whole-repo total quoted in a moving brief head is not that run's bar.
 
 **Verification gate.** `just test` runs pytest + `lint.py` + browser guards. **Do not run the
