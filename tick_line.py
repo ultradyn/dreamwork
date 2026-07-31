@@ -315,13 +315,22 @@ def _fleet_fact(target: str) -> str:
     clean = [d for d in raw if status_sync._evaluable(d)]
     observable = [d for d in clean if status_sync._observable(d)]
     _live, pruned = status_sync.live_lanes(observable)
-    ccc_live = sum(d.get("dispatch") in (None, "ccc") for d in pruned)
-    agent_live = sum(d.get("dispatch") == "agent_tool" for d in pruned)
-    if ccc_live + agent_live != len(pruned):
+    unknown = [
+        d for d in pruned if d.get("dispatch") not in (None, "ccc", "agent_tool")
+    ]
+    if unknown:
         raise status_sync.LivenessUnknown("live lane has unknown dispatch")
+    ccc_live = {
+        d["task"] for d in pruned if d.get("dispatch") in (None, "ccc")
+    }
+    agent_live = {
+        d["task"] for d in pruned if d.get("dispatch") == "agent_tool"
+    }
+    if ccc_live & agent_live:
+        raise status_sync.LivenessUnknown("live task has multiple dispatch paths")
 
     return "lanes %s%s%d ccc + %d agent-tool live" % (
-        recorded, SEP, ccc_live, agent_live)
+        recorded, SEP, len(ccc_live), len(agent_live))
 
 
 def _unresolved(label: str, exc: BaseException) -> str:
