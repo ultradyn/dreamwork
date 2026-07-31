@@ -43,12 +43,13 @@ Bind any success report or follow-on write to the producing command's status, no
 pipeline element or whatever state was already present. A plausible command spelling is not
 evidence that its intended behaviour occurred.
 
-**DO NOT append a hand-off line to `.dreamwork/handoffs.md`. That file has a single writer
-and it is not you** (the lesson *"Both wordings of the hand-off instruction are wrong, and I
+**DO NOT WRITE TO `.dreamwork/handoffs.md` — specifically, do not append any hand-off line
+there. That file has a single writer and it is not you** (the lesson *"Both wordings of the hand-off instruction are wrong, and I
 found the second by hitting it twice"*, and `#687`). It is an ownership rule reached after the
 alternatives were tried and failed twice in twenty minutes: a lane appending to `## Pending`
 while the coordinator edits `## Folded` produces a content conflict on *every* merge. **You
-write your report and nothing else; the coordinator writes the hand-off line from it at
+write your completion report to the coordinator inbox named in the task-specific head and
+nothing to `.dreamwork/handoffs.md`; the coordinator writes the hand-off line from your report at
 merge.** (SKILL.md briefly said otherwise; `#687` reconciled it at `dc3ac7c3`, so the two now
 agree and neither needs to be believed over the other.)
 

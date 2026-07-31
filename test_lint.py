@@ -5128,6 +5128,65 @@ class TestBriefWorktreeAbsInbox:
         oks = [d for lvl, w, d in rep.rows if lvl == lint.OK and w == "briefs"]
         assert oks and "1 worktree-naming brief(s)" in oks[0], rep.render()
 
+    def test_a_reverted_then_recreated_brief_is_still_untracked(self, tmp_path):
+        """The scope and content snapshots must agree after commit + revert.
+
+        The old history-only classifier found the earlier add commit while
+        reading the recreated untracked bytes from disk, turning the same
+        untracked path from green before its first commit to red after revert.
+        """
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "rule lands")
+        time.sleep(1.1)
+        brief = t / ".dreamwork" / "docs" / "briefs" / "994-reverted.md"
+        brief.parent.mkdir(parents=True)
+        broken = "# Brief\n\nWorktree: `.worktrees/reverted`\n"
+        brief.write_text(broken, encoding="utf-8")
+        git("add", str(brief.relative_to(t)))
+        git("commit", "-qm", "add broken brief")
+        git("revert", "--no-edit", "HEAD")
+        brief.parent.mkdir(parents=True)
+        brief.write_text(broken, encoding="utf-8")
+
+        assert git("ls-files", "--error-unmatch", str(brief.relative_to(t)),
+                   check=False).returncode != 0
+        assert lint.brief_add_commit(t, str(brief.relative_to(t))) is None
+        scope = lint.classify_worktree_brief_abs_inbox(t)
+        assert "994-reverted.md" in scope["skipped"], scope
+        assert "994-reverted.md" not in scope["missing"], scope
+
+    def test_well_formed_fake_absolute_inbox_is_an_open_false_green(
+            self, tmp_path):
+        """Direction 2: #405's regex proves shape, not coordinator ownership."""
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "rule lands")
+        time.sleep(1.1)
+        brief = t / ".dreamwork" / "docs" / "briefs" / "993-fake.md"
+        brief.parent.mkdir(parents=True)
+        fake = "/tmp/stale-coordinator/inbox.md"
+        brief.write_text(
+            f"# Brief\n\nWorktree: `.worktrees/fake`\n\nReport to `{fake}`.\n",
+            encoding="utf-8",
+        )
+        git("add", str(brief.relative_to(t)))
+        git("commit", "-qm", "brief points at fake absolute inbox")
+
+        assert lint.ABS_INBOX_PATH_RE.search(fake), fake
+        scope = lint.classify_worktree_brief_abs_inbox(t)
+        assert "993-fake.md" in scope["in_scope"], scope
+        assert scope["missing"] == [], scope
+        rep = lint.Report()
+        lint.check_brief_worktree_abs_inbox(t / ".dreamwork", rep)
+        assert not any(lvl == lint.ERROR for lvl, _, _ in rep.rows), rep.render()
+
     def test_a_brief_that_does_not_name_a_worktree_is_not_examined(
             self, tmp_path):
         """Only `.worktrees/`-naming briefs are in the match set."""
