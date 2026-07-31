@@ -607,15 +607,21 @@ class TestDottedPathRoundTrip:
 
 class TestPathsStayInWorktree:
     @pytest.mark.parametrize("verb", [rp.begin, rp.restore, rp.forget])
-    @pytest.mark.parametrize("path", ["../victim.txt", "/tmp/victim.txt"])
+    @pytest.mark.parametrize("form", ["parent", "absolute"])
     def test_every_path_entry_point_names_and_refuses_an_escape(
-            self, repo, capsys, verb, path):
+            self, repo, capsys, verb, form):
+        outside = repo.parent / "victim.txt"
+        original = b"outside sentinel\n"
+        outside.write_bytes(original)
+        path = "../victim.txt" if form == "parent" else str(outside)
+
         exit_code = verb(repo, path)
         _, err = capsys.readouterr()
 
         assert exit_code == 2, err
         assert repr(path) in err, err
         assert "outside the worktree" in err, err
+        assert outside.read_bytes() == original
 
     def test_begin_refuses_an_in_tree_symlink_to_an_outside_file(
             self, repo, capsys):
@@ -645,3 +651,32 @@ class TestPathsStayInWorktree:
         assert "router.js" in err, err
         assert "outside the worktree" in err, err
         assert outside.read_text() == "outside bytes\n"
+
+    def test_check_refuses_an_unsafe_legacy_registry_path(
+            self, repo, capsys):
+        outside = repo.parent / "victim.txt"
+        original = b"legacy outside sentinel\n"
+        outside.write_bytes(original)
+        rp._write_registry(repo, [{
+            "path": "../victim.txt",
+            "state": rp.RESTORED,
+            "injected_sha": rp._sha(original),
+        }])
+
+        exit_code = rp.check(repo)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2, err
+        assert "../victim.txt" in err, err
+        assert "outside the worktree" in err, err
+        assert outside.read_bytes() == original
+
+    def test_a_missing_contained_path_is_absent_not_outside(
+            self, repo, capsys):
+        exit_code = rp.begin(repo, "missing/child.txt")
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2, err
+        assert "missing/child.txt" in err, err
+        assert "does not exist in the working tree" in err, err
+        assert "outside the worktree" not in err, err
