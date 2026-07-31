@@ -438,6 +438,122 @@ def test_sweep_still_subtracts_cited_shas_for_widened_forms():
 
 
 # ---------------------------------------------------------------------------
+# #723 — `wip(#NNN)`: the kill-recovery form. SWEEP_SUBJECT's verb
+# alternation does not include `wip` (it is not a landing verb: the brief's
+# approved set is `merge fix feat close perf refactor guard docs test
+# design`), so `wip(#465): lane containment …` — an ancestor of master
+# carrying 752 lines of dev/lane_guard.py — was STRUCTURALLY INVISIBLE to
+# the primary landing-discovery route. The id surfaced only via a bare-form
+# docs/hand-off commit, not via the commit that shipped the code.
+#
+# MEASURED on the live repo (2866 commits): 3 wip( commits total, only ONE
+# (#465) names an open id — the other two (#463, #326) are landed, so
+# invisible to sweep regardless. #465 is already surfaced today via the
+# bare-form commit `36c7d867`. The widening adds +0 new open ids and +1 real
+# landing row (the 752-line guard commit `58e3040d`, whose sha is 8 chars
+# but the body cites only 7, so subtraction does not catch it). That single
+# row is the whole value: the tool now points at the CODE, not the docs.
+#
+# The brief argued for a distinct PRESENTATION class ("may carry partial
+# work"). REJECTED on measurement: 3 instances, 0 partials (2 merged to
+# completion, 1 open by design). But `wip` MUST be excluded from the
+# high-confidence "verb" class — without a `_subject_class` guard it falls
+# through to `return "verb"`, classifying a kill-recovery snapshot as
+# landing-intent. The guard is correctness, not presentation.
+# ---------------------------------------------------------------------------
+
+def test_sweep_subject_widened_to_match_the_wip_kill_recovery_form():
+    """DIRECTION-1 measurement, fixture not live repo (#723 brief).
+
+    `wip(#465): lane containment …` is the convention for committing a
+    killed lane's work as-found. The #723 brief measured it invisible:
+    SWEEP_SUBJECT's verb alternation does not include `wip`. This is the
+    primary landing-discovery route (#404) blind to the form that carries
+    work nobody got to tidy.
+    PRODUCTION LINE: the wip alternative in SWEEP_SUBJECT (g4).
+    RED on the un-widened pattern: this returns None.
+    """
+    assert ledger.SWEEP_SUBJECT.match("wip(#10): lane containment"), (
+        "the wip(#) kill-recovery form — the convention for a lane's work "
+        "as-found when its process was killed — must match; #723 measured "
+        "it invisible to the primary landing-discovery route")
+    m = ledger.SWEEP_SUBJECT.match("wip(#10): x")
+    groups = [g for g in m.groups() if g]
+    assert groups == ["#10"], (
+        f"the id must be capturable from the wip form: {m.groups()!r}")
+
+
+def test_sweep_wip_is_not_classified_as_high_confidence_verb():
+    """wip is NOT a landing verb — it is a kill-recovery snapshot.
+
+    Without a `_subject_class` guard, a matched `wip(#N)` subject falls
+    through to `return "verb"`, classifying it as HIGH confidence (the verb
+    carries landing intent). That is the #707 false-attribution hazard: wip
+    carries 'I was interrupted', not 'this landed'. PRODUCTION LINE: the
+    `_subject_class` guard for wip. RED: drop the guard and the class is
+    'verb' (the fallthrough).
+    """
+    # Precondition: the pattern must actually MATCH wip, or this is hollow.
+    assert ledger.SWEEP_SUBJECT.match("wip(#10): x") is not None, (
+        "precondition: wip(#) must match post-widening, else the class test "
+        "is hollow — it passes when nothing matched at all")
+    cls = ledger._subject_class("wip(#10): lane containment")
+    assert cls != "verb", (
+        f"wip(#) must NOT be high-confidence 'verb' (landing intent) — it is "
+        f"a kill-recovery snapshot; got {cls!r}")
+
+
+def test_sweep_finds_a_wip_landing_it_previously_missed():
+    """DIRECTION-1 red: the real gap, fixture not live repo.
+
+    A `wip(#10):` commit where #10 is OPEN and uncited is the #723
+    instance: the commit that shipped real code, invisible to sweep.
+    PRODUCTION LINE: the widened SWEEP_SUBJECT + the `for tid in ...` loop.
+    RED: drop the wip alternative and #10 vanishes from findings.
+    """
+    commits = [("www0001", "wip(#10): lane containment as the lane left it")]
+    n, findings = ledger.sweep(SWEEP_LEDGER, commits)
+    by_id = {tid: shas for tid, shas in findings}
+    assert 10 in by_id, (
+        "a wip(#10): landing for an open uncited id must now be found — #723 "
+        "measured this class invisible")
+    assert any(sha == "www0001" for sha, _ in by_id[10])
+
+
+def test_sweep_still_subtracts_cited_shas_for_wip_form():
+    """The subtraction convention (#404) must hold for wip too (#707's
+    principle applied to the new form).
+
+    PRECONDITION: the wip form must MATCH after widening, or this test is
+    hollow — the #707 'green red-run is a finding' trap.
+    PRODUCTION LINE: `if sha in bodies.get(tid, ""): continue` in `sweep`,
+    now reached with wip subjects.
+    """
+    subj = "wip(#11): lane containment"
+    assert ledger.SWEEP_SUBJECT.match(subj) is not None, (
+        "precondition: the wip form must match post-widening")
+    assert "abc1234" in _sweep_open_body(11), (
+        "precondition: #11's body must cite the sha the wip commit carries")
+    commits = [("abc1234", subj)]
+    _, findings = ledger.sweep(SWEEP_LEDGER, commits)
+    assert 11 not in {tid for tid, _ in findings}, (
+        "a wip(#11): whose entry cites the sha must be subtracted")
+
+
+def test_sweep_wip_multi_id_subject_captures_all_ids():
+    """`wip(#10,#12):` must surface both open ids, matching how the verb
+    and Merge alternatives handle multi-id parens (#404: 'the parens may
+    carry several ids'). PRODUCTION LINE: the `for tid in …` loop in `sweep`
+    feeding off SWEEP_ID.findall on the wip group.
+    """
+    commits = [("www0002", "wip(#10,#12): two tasks in one kill-recovery")]
+    _, findings = ledger.sweep(SWEEP_LEDGER, commits)
+    by_id = {tid for tid, _ in findings}
+    assert 10 in by_id and 12 in by_id, (
+        "a multi-id wip(#) subject must surface every open id it names")
+
+
+# ---------------------------------------------------------------------------
 # #688 — reach(): the pure function that collapses duplicate sha sets and
 # reports only branches with at least one + commit. The integration path
 # (git cherry, fold hook) is in test_ledger_reach.py; these pin the
