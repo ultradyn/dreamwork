@@ -2,103 +2,6 @@
 
 ## Open
 
-- **P1 · 2026-07-31 17:20 — #613 (blocks #631): the live session-log view — three calls before the design locks.**
-  **Sub-decisions:** `Q1`, `Q2`, `Q3`.
-  **NARROWED 2026-07-31 18:58 after your answer below — the visual calls are SETTLED and off your
-  plate** (`guides: G1`, `marker: M1`, tool-row redesign authorised, loading animation reopened as
-  lane work). **Only `Q1`, `Q2`, `Q3` are still waiting on you**; skip straight to them.
-  Design: `.dreamwork/docs/plans/session-log-view.md` (design only; no code authorised). **Mockups,
-  which you asked to see before the component design locks:** `.dreamwork/review/session-log-view.html`
-  — the tree at rest and mid-stream, plus live alternatives for the three visual calls (indicator
-  motion, indent guides, marker glyphs), each with a `rec` you can take in one word.
-
-  Everything below was **measured against your real 82 MB / 31,784-line session**, not assumed:
-  compaction pages ARE derivable (`compact_boundary` + `isCompactSummary`), so your "if known"
-  resolves to *known*; turn and step boundaries are derivable; the file is genuinely append-only
-  under growth (a live session's first 100 KB kept an identical sha256 across three reads while it
-  grew ~300 KB), so line+byte bookmarks are stable exactly as you assumed; a full rescan costs
-  **1.0 s at 82 MB/s**, so your "if it gets inconsistent we'll just rescan" holds by measurement;
-  and subagent transcripts sit at `<session>/subagents/agent-*.jsonl` in the same grammar, which is
-  the anchor #615 needs. One finding: **`system_prompt` is never written to the transcript** by
-  Claude Code, so that slot in your hierarchy will honestly have no child rather than invent one.
-
-  - **`Q1` — your sentence *"should use new component system and only be available via that"*: may
-    I read it as "never a second hand-rolled rendering path", rather than "wait for #591"?** The
-    component system it presupposes does not exist yet — whether one should is exactly `#591` above,
-    which is explicitly not to be decided by accident. The design keeps the data model, API, scan
-    path and visuals ruling-independent; only the mount binding moves with the ruling.
-    **`rec: build the interim now`** — one `SessionLog` component with a narrow props/events
-    contract under the existing single render authority, which is precisely your *"make 1 simple
-    component now but let us swap it out later"*; when `#591` rules, that same contract is the new
-    system's first citizen. Alt: block the view until `#591` is ruled — serialises a P1 behind an
-    open ruling and buys nothing the declared seam does not already give.
-  - **`Q2` — the file watcher. There is no inotify in the Python stdlib and the stdlib-only server
-    constraint stands. Which mechanism?** **`rec: real inotify via ~70 lines of ctypes against
-    libc, behind one `SessionWatcher` seam, with an automatic bounded stat-poll (0.5–1 s) degrade`**
-    for non-Linux or init failure — your no-polling design where the platform supports it, with the
-    fallback as the same code path at worse latency rather than a quiet substitution. Alt:
-    stat-poll only for v1 — ~15 lines, cannot break, and behaviourally indistinguishable while the
-    browser still ticks at 2 s; the server-side watcher only becomes the latency floor once #614's
-    push transport lands. Cost of the rec: ctypes struct parsing, Linux-only primary, and a real
-    test for the fd lifecycle.
-  - **`Q3` — which session IS the running agent? Nothing records it today** (measured: no session
-    identity in `status.json`, the heartbeat, or any loop file). **`rec: infer for v1`** — newest
-    live-mtime `*.jsonl` in the client's project dir for the target cwd, with a visible "which
-    session" switcher as the correction affordance — **and fold self-reporting into per-client
-    onboarding** (the loop writes `{client, session_id}` into `status.json` at orient), which is the
-    same per-client seam #615's subagent tasks need anyway. Alt: self-report only (blocks the view
-    on a loop-side change landing first); infer only (ambiguous under multiple sessions forever).
-
-  **If you say nothing:** nothing is built — the design authorises no code; the recs, plus the
-  mockup's own A + G1 + M1, stand as the defaults when implementation is planned.
-  Accepted answers: `rec` (takes all three plus the mockup's three) · per-question (`Q1: …`) · free text.
-  - **Answer (via watch, 2026-07-31 18:53):** Where does it say "never a
-    spinner" and why? Is that scoped to something maybe? I think loading
-    anims are good and useful, though we should avoid using ones that
-    are too boring. So stepping braille cycle is better than many but
-    still kinda boring. We should come up with an interesting thematic
-    one. The + to - animation in my forum for expanding some sections is
-    possible inspiration. More on that later. --- Also, the tools [args,
-    response] children, is there a better way of showing that? If the
-    arguments are empty should hide that one at the very least. But yeah
-    you are welcome to redesign this part to be less intrusive and
-    include native / special case rendering for tool calls we care
-    about. --- guides: G1. marker: M1 (we don't care so much about being
-    truly faithful to tui limitations, just want to keep the design a
-    bit evocative of that). On the note of a marker, my forum
-    (~/src/forum) has a similar theme to dreamwork and has a nice
-    animation for + expanding. the class on the svg is
-    `.cg-ledger__peek-icon` and the svg is inside button found via
-    `.cg-ledger__peek`. Take a look at that. we shouldn't use that
-    exactly, but it's inspiration maybe.
-  - **Coordinator reply (2026-07-31 18:58) — your spinner question, answered from the source.
-    You are right and the plan overreached.** "Never a spinner" is written in exactly two places
-    and **both are scoped; neither is a house rule**, so nothing stops an interesting loading
-    animation.
-    1. `client/style.css:884` and `transitions.md:596` — inside the **awaiting-fold wisp**, which
-       both files call *"the ONE deliberate exception to the opt-in motion rule (#113)"*. The
-       sentence is *"intensity fading in and OUT rather than sweeping on a loop. Never a spinner."*
-       It is defining **that one element's** character by contrast — a breath, not a sweep — for the
-       one genuinely in-progress thing on the questions page. It is a description of the wisp, not a
-       prohibition on loading indicators.
-    2. `client/style.css:761` — a **different sense entirely**: *"failure and a deploy that never
-       finishes both speak on `#fmsg`, never a spinner forever."* That is about not stranding the
-       user in an indeterminate state; `watch-design.md:3605` calls it *"a copy decision as much as
-       a timing one."*
-    So `session-log-view.md:325` promoted a scoped contrast into a standing "house motion language"
-    — **and cited it at `client/style.css:824`, which is the wrong line** (it is 884). Filed as its
-    own defect so the plan and the mockup's recommendation both get corrected rather than quietly
-    reinterpreted.
-    **Consequence: the indicator call is reopened as lane work, not an ask.** Your steer — *interesting
-    and thematic, braille-stepping is better than most but still boring* — plus the forum reference is
-    enough of a brief. Having read `.cg-ledger__peek`: the transferable idea is not the `+`/`−` shape
-    but the **always-clockwise ratchet** — each toggle advances the arm `+90°` and the group `+180°`,
-    so open and close both turn the same way and it **never unwinds**. Monotonic accumulation rather
-    than a loop returning to where it started is exactly what makes it not-boring, and it is the
-    quality worth stealing for a progress indicator.
-    **Tool rows: taken as authorised, not as an ask.** Empty `args` hidden at minimum, the child
-    rows made less intrusive, and native rendering for the calls worth special-casing.
-
 - **P1 · 2026-07-31 17:20 — #614 (blocks #641): websockets — everything you asked for lands, but the analysis
   parts ways with you on the wire protocol.** One decision.
   Plan: `.dreamwork/docs/plans/ws-delta-transport.md`. Your goals — faster, more efficient, partial
@@ -240,6 +143,145 @@
 
 ## Answered
 
+- **P1 · 2026-07-31 17:20 — #613 (blocks #631): the live session-log view — three calls before the design locks.**
+  **Sub-decisions:** `Q1`, `Q2`, `Q3`.
+  **NARROWED 2026-07-31 18:58 after your answer below — the visual calls are SETTLED and off your
+  plate** (`guides: G1`, `marker: M1`, tool-row redesign authorised, loading animation reopened as
+  lane work). **Only `Q1`, `Q2`, `Q3` are still waiting on you**; skip straight to them.
+  Design: `.dreamwork/docs/plans/session-log-view.md` (design only; no code authorised). **Mockups,
+  which you asked to see before the component design locks:** `.dreamwork/review/session-log-view.html`
+  — the tree at rest and mid-stream, plus live alternatives for the three visual calls (indicator
+  motion, indent guides, marker glyphs), each with a `rec` you can take in one word.
+
+  Everything below was **measured against your real 82 MB / 31,784-line session**, not assumed:
+  compaction pages ARE derivable (`compact_boundary` + `isCompactSummary`), so your "if known"
+  resolves to *known*; turn and step boundaries are derivable; the file is genuinely append-only
+  under growth (a live session's first 100 KB kept an identical sha256 across three reads while it
+  grew ~300 KB), so line+byte bookmarks are stable exactly as you assumed; a full rescan costs
+  **1.0 s at 82 MB/s**, so your "if it gets inconsistent we'll just rescan" holds by measurement;
+  and subagent transcripts sit at `<session>/subagents/agent-*.jsonl` in the same grammar, which is
+  the anchor #615 needs. One finding: **`system_prompt` is never written to the transcript** by
+  Claude Code, so that slot in your hierarchy will honestly have no child rather than invent one.
+
+  - **`Q1` — your sentence *"should use new component system and only be available via that"*: may
+    I read it as "never a second hand-rolled rendering path", rather than "wait for #591"?** The
+    component system it presupposes does not exist yet — whether one should is exactly `#591` above,
+    which is explicitly not to be decided by accident. The design keeps the data model, API, scan
+    path and visuals ruling-independent; only the mount binding moves with the ruling.
+    **`rec: build the interim now`** — one `SessionLog` component with a narrow props/events
+    contract under the existing single render authority, which is precisely your *"make 1 simple
+    component now but let us swap it out later"*; when `#591` rules, that same contract is the new
+    system's first citizen. Alt: block the view until `#591` is ruled — serialises a P1 behind an
+    open ruling and buys nothing the declared seam does not already give.
+  - **`Q2` — the file watcher. There is no inotify in the Python stdlib and the stdlib-only server
+    constraint stands. Which mechanism?** **`rec: real inotify via ~70 lines of ctypes against
+    libc, behind one `SessionWatcher` seam, with an automatic bounded stat-poll (0.5–1 s) degrade`**
+    for non-Linux or init failure — your no-polling design where the platform supports it, with the
+    fallback as the same code path at worse latency rather than a quiet substitution. Alt:
+    stat-poll only for v1 — ~15 lines, cannot break, and behaviourally indistinguishable while the
+    browser still ticks at 2 s; the server-side watcher only becomes the latency floor once #614's
+    push transport lands. Cost of the rec: ctypes struct parsing, Linux-only primary, and a real
+    test for the fd lifecycle.
+  - **`Q3` — which session IS the running agent? Nothing records it today** (measured: no session
+    identity in `status.json`, the heartbeat, or any loop file). **`rec: infer for v1`** — newest
+    live-mtime `*.jsonl` in the client's project dir for the target cwd, with a visible "which
+    session" switcher as the correction affordance — **and fold self-reporting into per-client
+    onboarding** (the loop writes `{client, session_id}` into `status.json` at orient), which is the
+    same per-client seam #615's subagent tasks need anyway. Alt: self-report only (blocks the view
+    on a loop-side change landing first); infer only (ambiguous under multiple sessions forever).
+
+  **If you say nothing:** nothing is built — the design authorises no code; the recs, plus the
+  mockup's own A + G1 + M1, stand as the defaults when implementation is planned.
+  Accepted answers: `rec` (takes all three plus the mockup's three) · per-question (`Q1: …`) · free text.
+  - **Answer (via watch, 2026-07-31 18:53):** Where does it say "never a
+    spinner" and why? Is that scoped to something maybe? I think loading
+    anims are good and useful, though we should avoid using ones that
+    are too boring. So stepping braille cycle is better than many but
+    still kinda boring. We should come up with an interesting thematic
+    one. The + to - animation in my forum for expanding some sections is
+    possible inspiration. More on that later. --- Also, the tools [args,
+    response] children, is there a better way of showing that? If the
+    arguments are empty should hide that one at the very least. But yeah
+    you are welcome to redesign this part to be less intrusive and
+    include native / special case rendering for tool calls we care
+    about. --- guides: G1. marker: M1 (we don't care so much about being
+    truly faithful to tui limitations, just want to keep the design a
+    bit evocative of that). On the note of a marker, my forum
+    (~/src/forum) has a similar theme to dreamwork and has a nice
+    animation for + expanding. the class on the svg is
+    `.cg-ledger__peek-icon` and the svg is inside button found via
+    `.cg-ledger__peek`. Take a look at that. we shouldn't use that
+    exactly, but it's inspiration maybe.
+  - **Coordinator reply (2026-07-31 18:58) — your spinner question, answered from the source.
+    You are right and the plan overreached.** "Never a spinner" is written in exactly two places
+    and **both are scoped; neither is a house rule**, so nothing stops an interesting loading
+    animation.
+    1. `client/style.css:884` and `transitions.md:596` — inside the **awaiting-fold wisp**, which
+       both files call *"the ONE deliberate exception to the opt-in motion rule (#113)"*. The
+       sentence is *"intensity fading in and OUT rather than sweeping on a loop. Never a spinner."*
+       It is defining **that one element's** character by contrast — a breath, not a sweep — for the
+       one genuinely in-progress thing on the questions page. It is a description of the wisp, not a
+       prohibition on loading indicators.
+    2. `client/style.css:761` — a **different sense entirely**: *"failure and a deploy that never
+       finishes both speak on `#fmsg`, never a spinner forever."* That is about not stranding the
+       user in an indeterminate state; `watch-design.md:3605` calls it *"a copy decision as much as
+       a timing one."*
+    So `session-log-view.md:325` promoted a scoped contrast into a standing "house motion language"
+    — **and cited it at `client/style.css:824`, which is the wrong line** (it is 884). Filed as its
+    own defect so the plan and the mockup's recommendation both get corrected rather than quietly
+    reinterpreted.
+    **Consequence: the indicator call is reopened as lane work, not an ask.** Your steer — *interesting
+    and thematic, braille-stepping is better than most but still boring* — plus the forum reference is
+    enough of a brief. Having read `.cg-ledger__peek`: the transferable idea is not the `+`/`−` shape
+    but the **always-clockwise ratchet** — each toggle advances the arm `+90°` and the group `+180°`,
+    so open and close both turn the same way and it **never unwinds**. Monotonic accumulation rather
+    than a loop returning to where it started is exactly what makes it not-boring, and it is the
+    quality worth stealing for a progress indicator.
+    **Tool rows: taken as authorised, not as an ask.** Empty `args` hidden at minimum, the child
+    rows made less intrusive, and native rendering for the calls worth special-casing.
+  - **Note (human, via watch, 2026-07-31 18:58):** q1: rec q2: make a new
+    elegant idiomatic module for file notification stuff. it should have
+    stubs for macos and windows, but under linux we should tie into
+    inotify. if the libc ffi method is brittle (may change with system / OS
+    version / etc) then we should just do something more stable like run an
+    inotify cli command and monitor stdout or whatever. ideally this can be
+    done with asyncio so that we can just start a task to run and go from
+    there. q3: for the main dreamwork agent, we can record its session in
+    status.json (note: this is easy to detect via env var, but the env var
+    name changes per cli client; one of the items on the checklist for
+    adding new client support is identifying the best env var to use for
+    session id; other similar env vars should be recorded too so we can
+    have the right info about subagents or whatever and not get confused).
+    if there are other unknowns please let me know what questions remain.
+  - **Comment (via watch, 2026-07-31 19:04) — all three sub-decisions answered:**
+    `q1: rec`.
+    `q2:` *"make a new elegant idiomatic module for file notification stuff. it should have stubs
+    for macos and windows, but under linux we should tie into inotify. if the libc ffi method is
+    brittle (may change with system / OS version / etc) then we should just do something more
+    stable like run an inotify cli command and monitor stdout or whatever. ideally this can be
+    done with asyncio so that we can just start a task to run and go from there."*
+    `q3:` *"for the main dreamwork agent, we can record its session in status.json (note: this is
+    easy to detect via env var, but the env var name changes per cli client; one of the items on
+    the checklist for adding new client support is identifying the best env var to use for session
+    id; other similar env vars should be recorded too so we can have the right info about subagents
+    or whatever and not get confused). if there are other unknowns please let me know what
+    questions remain."*
+  - **Folded (2026-07-31 19:05) — #631 UNBLOCKED.** Q1 taken as `rec`. **Q2 is deliberately wider
+    than the rec** — a reusable file-notification module with a platform matrix, not a ~70-line
+    seam scoped to this one view; that fits the standing focus (watch.py into modules reusable by
+    dreamhub) better than the rec did, so the widening is honoured rather than trimmed. Filed as
+    **#664**, carrying his own fallback ladder (inotify, then an inotify CLI on stdout if the libc
+    FFI proves brittle — his brittleness criterion is a measurement for the lane, not a taste call)
+    and the two tensions it opens: asyncio inside a stdlib ThreadingHTTPServer that has no loop,
+    and an inotify CLI being an external binary that must degrade rather than crash where absent.
+    **Q3 took the self-report half and dropped inference by omission**, which is the stronger
+    answer — inference was always ambiguous under concurrent sessions. Filed as **#665**, and the
+    mechanism is already measured by **#652** today: `CLAUDE_CODE_SESSION_ID` is the session id,
+    `CLAUDE_CODE_CHILD_SESSION=1` distinguishes a lane from the main agent — exactly the "other
+    similar env vars … so we can have the right info about subagents" he asked for. #652 also
+    measured the trap: every lane inherits the SAME session id, so it can never identify a lane.
+    His standing invitation (*"if there are other unknowns please let me know what questions
+    remain"*) is carried in #665 with recs rather than re-asked here.
 - **P1 · 2026-07-31 17:00 — #591 (blocks #630): claude-design compatibility does NOT cost the single render
   authority — one ruling makes it official.** **Sub-decisions:** `Q1`, `Q2`, `Q3`.
   → answered (2026-07-31 17:03): **`rec` on all three** — Q1 the per-surface G2 reading is
