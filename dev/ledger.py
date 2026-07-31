@@ -279,7 +279,8 @@ SWEEP_SUBJECT = re.compile(
     r"^(?:(?:merge|fix|feat|close|perf|refactor|guard|docs|test|design)"
     r"\((#\d+(?:,#\d+)*)\)"          # g1: verb(#N) — high confidence
     r"|(?:Merge|Fold) (#\d+)"        # g2: Merge/Fold #N — lower confidence
-    r"|(#\d+)[\s:—–-])")             # g3: bare #N + separator — lower confidence
+    r"|(#\d+)[\s:—–-]"               # g3: bare #N + separator — lower confidence
+    r"|wip\((#\d+(?:,#\d+)*)\))")    # g4: wip(#N) — kill-recovery, lower (#723)
 SWEEP_ID = re.compile(r"#(\d+)")
 # A reconciliation fold subject: `fold #NNN:` (lowercase, old) or `Fold #NNN`
 # (capital, current). #714 measured both real on master (41 + 47). The space
@@ -293,20 +294,28 @@ _MERGE_FOLD = re.compile(r"^(?:Merge|Fold) #\d")
 # ~30 minutes. A separator is required so a bare `#N` token in prose does
 # not match (#707).
 _BARE_ID = re.compile(r"^#\d+[\s:—–-]")
+# Kill-recovery form (`wip(#N): …`), the convention for a killed lane's
+# work committed as-found (#723). Not a landing verb — the brief's approved
+# set excludes `wip` — so it needs its own `_subject_class` guard or it
+# falls through to high-confidence "verb".
+_WIP_ID = re.compile(r"^wip\(#\d")
 
 
 def _subject_class(subject):
-    """Confidence class for a subject SWEEP_SUBJECT MATCHED (#707).
+    """Confidence class for a subject SWEEP_SUBJECT MATCHED (#707, #723).
 
     Builds on `_skip_shape`'s categories one layer in: the verb(#N) form is
-    high confidence (the verb carries landing intent), while Merge/Fold and
-    bare-#N are the widened forms — "named" but not "landed" (#590: a count
-    is a question, never a verdict). The report splits findings on this so a
-    reader can dismiss `Merge #688:` (already folded) or `#700:` (ambiguous
-    verb) in one glance without opening the commit (#136, #612).
+    high confidence (the verb carries landing intent), while Merge/Fold,
+    bare-#N, and wip(#N) are the widened forms — "named" but not "landed"
+    (#590: a count is a question, never a verdict). The report splits
+    findings on this so a reader can dismiss `Merge #688:` (already folded),
+    `#700:` (ambiguous verb), or `wip(#465):` (kill-recovery snapshot) in
+    one glance without opening the commit (#136, #612).
     """
     if _MERGE_FOLD.match(subject):
         return "merge"          # post-landing marker — likely already folded
+    if _WIP_ID.match(subject):
+        return "wip"            # kill-recovery snapshot — not landing intent (#723)
     if _BARE_ID.match(subject):
         return "bare"           # bare lane form — verb is ambiguous
     return "verb"               # verb(#N) — high confidence
@@ -757,8 +766,8 @@ def sweep_text(text, commits, since, source):
         if widened_rows:
             lines.append(
                 f"sweep: {len(widened_rows)} more named in widened form "
-                f"(Merge/#N — lower confidence, likely folded or ambiguous; "
-                f"#590)")
+                f"(Merge/#N/wip — lower confidence, likely folded, "
+                f"ambiguous, or kill-recovery; #590)")
     return "\n".join(lines) + "\n"
 
 
