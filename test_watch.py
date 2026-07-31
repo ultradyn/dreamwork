@@ -5278,14 +5278,122 @@ class TestAppShell(unittest.TestCase):
             "routeOf yielded fewer than 2 destinations; the checks below "
             "would be vacuous — did the routeOf parse break?")
 
+        # #596: the extractor is a SCAN, not a regex, and the fourth table is
+        # what forced it. `const %s = \{([^}]*)\}` cannot read TITLES: its
+        # `review` entry holds a `}` inside a template interpolation
+        # (`${esc(...)}`) and its `chat` entry is a brace-balanced arrow body,
+        # so `[^}]*` stops at the first inner `}`, reads the table short, and
+        # reports chat/question/reviews/research missing while all four are
+        # present. That direction is at least SAFE — a dropped key is a false
+        # RED. Finding the real close with a brace depth-walk and then running
+        # `(\w+)\s*:` over the whole body is NOT safe: that regex is satisfied
+        # by a route's name appearing in a `//` comment, in a nested object
+        # literal, or inside a template string, so a genuinely MISSING route
+        # reads green. A guard unrelated text can satisfy is the exact failure
+        # this family of guards exists to prevent, so a key is taken only
+        # where a property name can appear — depth 1, immediately after `{` or
+        # `,` — with comments and string literals SKIPPED rather than
+        # searched. A `{` inside a string would still desync a bare walk, so
+        # desync fails LOUD: the close has to land on the table's `};`.
+        def skip_string(i):
+            """Index just past the string/template literal opening at `i`."""
+            q, i = router[i], i + 1
+            while i < len(router):
+                c = router[i]
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == q:
+                    return i + 1
+                if q == "`" and c == "$" and router[i + 1:i + 2] == "{":
+                    i, d = i + 2, 1
+                    while i < len(router) and d:
+                        if router[i] in "'\"`":
+                            i = skip_string(i)
+                            continue
+                        if router[i] == "{":
+                            d += 1
+                        elif router[i] == "}":
+                            d -= 1
+                        i += 1
+                    continue
+                i += 1
+            self.fail("unterminated string literal in ROUTER_JS")
+
+        ident = re.compile(r"[A-Za-z_$][\w$]*")
+
         def table_keys(table):
-            tm = re.search(r"const %s\s*=\s*\{([^}]*)\}" % table, router)
-            self.assertIsNotNone(tm, "%s table not found in ROUTER_JS" % table)
-            keys = set(re.findall(r"(\w+)\s*:", tm.group(1)))
-            self.assertGreaterEqual(
-                len(keys), 1,
-                "%s table parsed empty — regex broke on the table?" % table)
-            return keys
+            m = re.search(r"const %s\s*=\s*\{" % table, router)
+            self.assertIsNotNone(m, "%s table not found in ROUTER_JS" % table)
+            i, n = m.end() - 1, len(router)
+            depth, keys, want_key = 0, set(), False
+            while i < n:
+                c = router[i]
+                if c == "/" and router[i + 1:i + 2] == "*":
+                    i = router.find("*/", i + 2)
+                    self.assertNotEqual(
+                        i, -1, "%s: unterminated block comment" % table)
+                    i += 2
+                elif c == "/" and router[i + 1:i + 2] == "/":
+                    nl = router.find("\n", i)
+                    i = n if nl == -1 else nl + 1
+                elif c in "'\"`":
+                    j = skip_string(i)
+                    if want_key and depth == 1:
+                        # a quoted property name is still a property name
+                        k, w = router[i + 1:j - 1], j
+                        while w < n and router[w].isspace():
+                            w += 1
+                        if router[w:w + 1] == ":" and ident.fullmatch(k):
+                            keys.add(k)
+                        want_key = False
+                    i = j
+                elif c == "{":
+                    depth += 1
+                    want_key = depth == 1
+                    i += 1
+                elif c == "}":
+                    depth -= 1
+                    i += 1
+                    if depth == 0:
+                        w = i
+                        while w < n and router[w].isspace():
+                            w += 1
+                        self.assertEqual(
+                            router[w:w + 1], ";",
+                            "%s's close is not followed by `;` — the scan "
+                            "desynchronised (a brace inside a string or a "
+                            "regex?) and stopped elsewhere in the file"
+                            % table)
+                        self.assertGreaterEqual(
+                            len(keys), 2,
+                            "%s parsed fewer than 2 keys — a one-key 'set' is "
+                            "the table restated; did the scan break?" % table)
+                        return keys
+                    want_key = False
+                elif c == "," and depth == 1:
+                    want_key = True
+                    i += 1
+                elif c.isspace():
+                    i += 1
+                elif want_key and depth == 1:
+                    mk = ident.match(router, i)
+                    if mk:
+                        w = mk.end()
+                        while w < n and router[w].isspace():
+                            w += 1
+                        if router[w:w + 1] == ":":
+                            keys.add(mk.group(0))
+                            i = w + 1
+                        else:
+                            i = mk.end()
+                    else:
+                        i += 1
+                    want_key = False
+                else:
+                    i += 1
+            self.fail("%s never closed — the scan ran off the end of the file"
+                      % table)
 
         tint = table_keys("TINT")
         seed = table_keys("SEED")
@@ -5322,36 +5430,14 @@ class TestAppShell(unittest.TestCase):
         # "dreamwork watch": the same silent per-route fallback #302 (TINT/
         # SEED) and #318 (TITLE_ROUTE) guard above, on its third outing —
         # /research had no entry, so the heading read as the dashboard.
-        # TITLES cannot share `table_keys` above: its `review` entry holds a
-        # `}` inside a template interpolation (`${esc(...)}`) and its `chat`
-        # entry is a brace-balanced arrow body, so the helper's `[^}]*` stops
-        # at the first inner `}` and reads the table short, dropping every
-        # key after `review` (the naive reuse reports chat/question/reviews/
-        # research missing even when they are present — a false red, not a
-        # check). A brace depth-walk finds the real close; block comments are
-        # stripped first so a `word:` inside a comment cannot pose as, or
-        # mask, a property key. The same `(\w+)\s*:` regex then sees every
-        # entry, and the diff against `routes` stays honest.
-        ts = router.find("const TITLES = {")
-        self.assertNotEqual(ts, -1, "TITLES table not found in ROUTER_JS")
-        ob = router.find("{", ts)
-        depth, j = 0, ob
-        while j < len(router):
-            if router[j] == "{":
-                depth += 1
-            elif router[j] == "}":
-                depth -= 1
-                if depth == 0:
-                    break
-            j += 1
-        self.assertGreater(j, ob, "TITLES table has no closing brace")
-        titles_body = re.sub(r"/\*.*?\*/", "", router[ob + 1:j], flags=re.S)
-        titles_keys = set(re.findall(r"(\w+)\s*:", titles_body))
-        self.assertGreaterEqual(
-            len(titles_keys), 2,
-            "TITLES parsed fewer than 2 keys — the depth walk or the key "
-            "regex broke on the table?")
-        missing_titles = routes - titles_keys
+        # It is also the table that made `table_keys` a scan rather than a
+        # regex (see there): TITLES is the first of the four whose entries
+        # carry braces of their own, and the naive `[^}]*` reuse reads it
+        # short. The tab was RIGHT the whole time — TITLE_ROUTE has had a
+        # `research` entry since #484 — which is why looking at the page never
+        # showed it: one table of the four was wrong and the other three
+        # agreed with each other.
+        missing_titles = routes - table_keys("TITLES")
         self.assertFalse(
             missing_titles,
             "routes with no TITLES entry (the page heading falls back to the "

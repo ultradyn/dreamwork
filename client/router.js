@@ -3332,11 +3332,11 @@ const TITLES = {
      to a line and a half, and it is rendered in full by the card directly
      below. When the key resolves nowhere the missing notice says so. */
   question: () => 'question',
-  /* the research listing's heading — the bare surface name, the same word
-     the questions/answers/reviews listings use and TITLE_ROUTE builds the tab
-     from. The artifact, when one is open (`?p=`), is named in the crumb row
-     (its pip + the listing crumb), not here — #284's rule that the heading
-     names the surface and the metadata lives one line down. */
+  /* #596 — the bare surface word, like the questions/answers/reviews
+     listings and the word TITLE_ROUTE builds the tab from. #452's rule: the
+     heading names the SURFACE. An open artifact (`?p=`) is named by the tab
+     (TITLE_ROUTE appends it) and reachable from the crumb row's pip — the
+     heading stays the surface either way. */
   research: () => 'research',
   /* #545 — the listing surface; the heading names it like the research
      listing does. */
