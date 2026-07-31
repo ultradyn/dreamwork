@@ -6,6 +6,8 @@ import sqlite3
 
 import pytest
 
+from dreamwork_db import SchemaMismatch
+from dreamwork_db.migrate import MIGRATIONS
 from ledger_store import SchemaVersionError, SeedError, open_store
 
 
@@ -90,6 +92,10 @@ def test_newer_schema_version_is_refused_with_legacy_public_type(tmp_path):
         "newer schema_version must retain the exact public exception type "
         f"callers catch, got {type(caught.value)!r}"
     )
+    assert isinstance(caught.value, SchemaMismatch), (
+        "the retained legacy SchemaVersionError must also cross the new "
+        "database API as SchemaMismatch"
+    )
     assert "schema_version 3 > supported 2" in str(caught.value), (
         "newer-version refusal must name stored version 3 and supported "
         f"version 2, got {str(caught.value)!r}"
@@ -112,3 +118,13 @@ def test_new_store_seed_refusal_and_established_reopen_keep_public_type(tmp_path
             "an established store must reopen without ledger_text or "
             f"seed_next_id; got next id {reopened.next_id()}"
         )
+
+
+def test_ladder_declares_the_single_ordered_v1_to_v2_step():
+    versions = [
+        (step.source_version, step.target_version) for step in MIGRATIONS
+    ]
+    assert versions == [(1, 2)], (
+        "migration ladder must retain exactly the ordered v1->v2 step for "
+        f"increment 2, got {versions!r}"
+    )

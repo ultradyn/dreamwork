@@ -35,44 +35,22 @@ from typing import Optional, Union
 
 from dreamwork_db import Access, StoreSpec
 from dreamwork_db import core as db_core
+from dreamwork_db.migrate import (
+    SCHEMA_VERSION,
+    SchemaVersionError,
+    initialize_legacy_store,
+)
+from dreamwork_db.migrations.v001_legacy import (
+    ENTRY_STATES,
+    ORIGINS,
+    PRIORITY_BANDS,
+    REVIEW_DECISIONS,
+    TASK_CAUSES,
+    TASK_STATES,
+)
 
 PathLike = Union[str, os.PathLike]
 
-# Closed sets — CHECK constraints for values closed by definition (#346 S4).
-# Lookup tables for vocabularies that grow (type, cause).
-TASK_STATES = ("pending", "in_progress", "landed", "dropped")
-ENTRY_STATES = ("open", "landed")
-ORIGINS = ("human", "loop", "unknown")
-PRIORITY_BANDS = ("P0", "P1", "P2", "P3")
-REVIEW_DECISIONS = ("pending", "accepted", "rejected")
-# #264's enumerated causes (lookup, not CHECK — the set grows).
-TASK_CAUSES = (
-    "filed_from_command",
-    "next_up_set",
-    "next_up_cleared",
-    "filed_from_leftover",
-    "filed_from_idea",
-    "filed_from_brainstorm",
-    "filed_from_split",
-    "started_from_backlog",
-    "landed",
-    "claimed_by_agent",
-    "released",
-    "lease_expired",
-    "hold_set",
-    "hold_cleared",
-    "reprioritised",
-    "unblocked",
-    "superseded",
-    "dropped",
-    "feasibility_noted",
-    "goal_realigned",
-    "reconciled",
-    "ingested_upstream",
-    "migration_git",  # first-sight synthetic events (R3)
-)
-
-SCHEMA_VERSION = 2
 BUSY_TIMEOUT_MS = 5_000
 # Domain tag for the task_event hash chain (#264): distinct from the journal's
 # so a task event can never verify as a receipt event.
@@ -87,10 +65,6 @@ class SeedError(RuntimeError):
     not a bare ValueError — so mixed-version / migration tooling can treat a
     seed failure as a hard stop rather than a malformed field.
     """
-
-
-class SchemaVersionError(RuntimeError):
-    """Store schema_version this process cannot understand. Fail-closed."""
 
 
 # ---------------------------------------------------------------------------
@@ -199,222 +173,6 @@ def append_chained_event(
         " VALUES (?,?,?,?,?,?,?,?,?,?)",
         (task_id, at, cause, from_state, to_state, actor, receipt_id, detail,
          prev, h))
-
-
-# ---------------------------------------------------------------------------
-# Schema — flat entity (#346 post-#353, ruled 2026-07-29) + boundary (#264)
-# ---------------------------------------------------------------------------
-# task.id is INTEGER PRIMARY KEY AUTOINCREMENT so the sequence lives in the
-# store (R1). Explicit-id INSERTs (import) and auto-allocated ids share one
-# high-water mark via sqlite_sequence; deleting the highest row does NOT
-# reissue that id — which is the property the tests prove rather than assume.
-
-# review_decision lives in its own constant so the v1→v2 migration can recreate
-# the table from the SAME DDL (single source — a second copy would drift).
-# v2 (R5): question_id had no referent (questions are not ledger tasks; their
-# only identity is their title), so it became question_title TEXT NOT NULL.
-# actor TEXT NOT NULL records who decided (parity with the file/land verbs).
-_REVIEW_DECISION_SQL = """
-CREATE TABLE IF NOT EXISTS review_decision (
-    artifact       TEXT PRIMARY KEY,
-    question_title TEXT NOT NULL,
-    decision       TEXT NOT NULL
-                   CHECK (decision IN ('pending','accepted','rejected')),
-    decided_at     TEXT NOT NULL,
-    actor          TEXT NOT NULL
-);
-"""
-
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS priority_band (
-    band TEXT PRIMARY KEY
-);
-
-CREATE TABLE IF NOT EXISTS task_state_kind (
-    state TEXT PRIMARY KEY
-);
-
-CREATE TABLE IF NOT EXISTS task_cause (
-    cause TEXT PRIMARY KEY
-);
-
-CREATE TABLE IF NOT EXISTS task_type (
-    type TEXT PRIMARY KEY
-);
-
--- The flat entity: one row per permanent id, every Markdown column on it.
--- AUTOINCREMENT is load-bearing (R1): without it a deleted high-water id
--- can be reissued, which reuses a permanent id. No entry table, no
--- task_by_entry — post-#353 every entry IS one task, so the split joined
--- 1:1 forever and modelled nothing (his flatten ruling, 2026-07-29 15:59).
--- blocked_on stays verbatim prose, never an edge (#346 S1: edges live in
--- depends); body is where notes/updates accumulate across a task's life.
-CREATE TABLE IF NOT EXISTS task (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    state               TEXT    NOT NULL CHECK (state IN ('open','landed')),
-    title               TEXT    NOT NULL,
-    body                TEXT    NOT NULL,
-    priority            TEXT    REFERENCES priority_band(band),
-    priority_uncertain  INTEGER NOT NULL DEFAULT 0
-                        CHECK (priority_uncertain IN (0, 1)),
-    type                TEXT    REFERENCES task_type(type),
-    origin              TEXT    CHECK (origin IS NULL
-                                  OR origin IN ('human','loop','unknown')),
-    blocked_on          TEXT,
-    body_digest         TEXT,
-    source_line         INTEGER
-);
-
-CREATE TABLE IF NOT EXISTS related (
-    a INTEGER NOT NULL REFERENCES task(id),
-    b INTEGER NOT NULL REFERENCES task(id),
-    PRIMARY KEY (a, b),
-    CHECK (a < b)
-);
-
-CREATE TABLE IF NOT EXISTS depends (
-    task  INTEGER NOT NULL REFERENCES task(id),
-    needs INTEGER NOT NULL REFERENCES task(id),
-    PRIMARY KEY (task, needs),
-    CHECK (task <> needs)
-);
-CREATE INDEX IF NOT EXISTS depends_by_needs ON depends(needs);
-""" + _REVIEW_DECISION_SQL + """
--- Append-only transition log. Own ordinal, distinct from the journal's.
--- receipt_id is free TEXT here (the receipt table may live in the same file
--- later); no FK until the journal tables are co-resident. Purge never reaches
--- this table (#264).
-CREATE TABLE IF NOT EXISTS task_event (
-    ordinal    INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id    INTEGER NOT NULL REFERENCES task(id),
-    at         TEXT    NOT NULL,
-    cause      TEXT    NOT NULL REFERENCES task_cause(cause),
-    from_state TEXT,
-    to_state   TEXT,
-    actor      TEXT    NOT NULL,
-    receipt_id TEXT,
-    detail     TEXT,
-    prev_hash  TEXT    NOT NULL,
-    hash       TEXT    NOT NULL
-);
-CREATE INDEX IF NOT EXISTS task_event_by_task ON task_event(task_id, ordinal);
-CREATE INDEX IF NOT EXISTS task_event_by_cause ON task_event(cause, ordinal);
-
--- Materialised only because a claim needs a row to CAS against (#264).
-CREATE TABLE IF NOT EXISTS task_state (
-    task_id     INTEGER PRIMARY KEY REFERENCES task(id),
-    state       TEXT    NOT NULL REFERENCES task_state_kind(state),
-    hold        INTEGER NOT NULL DEFAULT 0,
-    hold_reason TEXT,
-    owner       TEXT,
-    claim_token TEXT,
-    lease_until TEXT,
-    revision    INTEGER NOT NULL DEFAULT 1,
-    at_ordinal  INTEGER NOT NULL REFERENCES task_event(ordinal)
-);
-"""
-
-
-def _seed_lookup_tables(conn: sqlite3.Connection) -> None:
-    """Populate closed lookup tables idempotently."""
-    for band in PRIORITY_BANDS:
-        conn.execute(
-            "INSERT OR IGNORE INTO priority_band(band) VALUES (?)", (band,)
-        )
-    for state in TASK_STATES:
-        conn.execute(
-            "INSERT OR IGNORE INTO task_state_kind(state) VALUES (?)", (state,)
-        )
-    for cause in TASK_CAUSES:
-        conn.execute(
-            "INSERT OR IGNORE INTO task_cause(cause) VALUES (?)", (cause,)
-        )
-
-
-def _bootstrap_meta(conn: sqlite3.Connection) -> None:
-    """Ensure schema_version row exists; migrate a lower version forward.
-
-    A first open records the current SCHEMA_VERSION. An existing store at a
-    lower version is migrated in place (inside the caller's transaction); a
-    newer version is refused (this code cannot guess a future shape).
-    """
-    row = conn.execute(
-        "SELECT value FROM meta WHERE key = 'schema_version'"
-    ).fetchone()
-    if row is None:
-        conn.execute(
-            "INSERT INTO meta (key, value) VALUES ('schema_version', ?)",
-            (str(SCHEMA_VERSION),),
-        )
-        return
-    stored = int(row[0])
-    if stored == SCHEMA_VERSION:
-        return
-    _migrate(conn, stored)
-
-
-def _migrate(conn: sqlite3.Connection, stored: int) -> None:
-    """Apply forward schema migrations from *stored* to SCHEMA_VERSION.
-
-    Each step advances exactly one version; steps are looked up in
-    ``_MIGRATIONS`` by their source version. A *stored* version newer than
-    SCHEMA_VERSION (a downgrade) is refused: this code cannot safely guess a
-    newer shape. Runs inside the caller's open transaction, so a failed
-    migration leaves the store untouched.
-    """
-    if stored > SCHEMA_VERSION:
-        raise SchemaVersionError(
-            f"ledger schema_version {stored} > supported {SCHEMA_VERSION}; "
-            "fail-closed: refuse open rather than guess a newer shape"
-        )
-    version = stored
-    while version < SCHEMA_VERSION:
-        step = _MIGRATIONS.get(version)
-        if step is None:
-            raise SchemaVersionError(
-                f"no migration path from schema_version {version} to "
-                f"{SCHEMA_VERSION}; fail-closed"
-            )
-        step(conn)
-        version += 1
-    conn.execute(
-        "UPDATE meta SET value = ? WHERE key = 'schema_version'",
-        (str(SCHEMA_VERSION),),
-    )
-
-
-def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
-    """Advance review_decision: question_id → question_title + actor (v2).
-
-    The v1 ``question_id`` had no referent — questions are not ledger tasks
-    and their only identity is their TITLE (what watch.py's /answer handler
-    holds) — so no int→title mapping is possible (R5). ASSERT the table is
-    empty and refuse loudly otherwise: silently dropping a live decision is
-    worse than stopping. The only live store's table is empty, so the
-    assertion holds in the one real migration. Recreate the table from the
-    single-source ``_REVIEW_DECISION_SQL``.
-    """
-    count = conn.execute(
-        "SELECT COUNT(*) FROM review_decision"
-    ).fetchone()[0]
-    if count != 0:
-        raise SchemaVersionError(
-            f"cannot migrate review_decision v1→v2: {count} row(s) carry a "
-            "question_id with no referent (questions are not tasks), so an "
-            "int→title mapping is impossible; refuse rather than drop a "
-            "review decision silently"
-        )
-    conn.execute("DROP TABLE review_decision")
-    conn.execute(_REVIEW_DECISION_SQL)
-
-
-# Source-version → migration step. Each step moves one version forward.
-_MIGRATIONS = {1: _migrate_v1_to_v2}
 
 
 # ---------------------------------------------------------------------------
@@ -601,21 +359,6 @@ class LedgerStore:
         return {r[0] for r in rows}
 
 
-def _initialize_legacy_store(conn: sqlite3.Connection) -> None:
-    """Preserve the pre-#645 schema/bootstrap behavior behind the core door."""
-    conn.executescript(_SCHEMA_SQL)
-    # executescript leaves autocommit; re-enter for the bootstrap writes.
-    conn.execute("BEGIN")
-    try:
-        _bootstrap_meta(conn)
-        _seed_lookup_tables(conn)
-    except BaseException:
-        conn.execute("ROLLBACK")
-        raise
-    else:
-        conn.execute("COMMIT")
-
-
 def open_store(
     path: PathLike,
     *,
@@ -636,7 +379,7 @@ def open_store(
     path = Path(path)
     spec = StoreSpec(
         path=path,
-        initializer=_initialize_legacy_store,
+        initializer=initialize_legacy_store,
         busy_timeout_ms=BUSY_TIMEOUT_MS,
     )
     conn = db_core._connect(spec, Access.WRITE)
