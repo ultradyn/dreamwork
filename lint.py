@@ -4666,6 +4666,97 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
                 f"in handoffs.md (sha `{sha}`, by {handoff_quote(claimer)}) "
                 f"— append one under `## Folded` (#576)")
 
+    # #679 — a sha cited as a landing/merge in handoffs.md must RESOLVE. A sha
+    # that names nothing is indistinguishable from a real one to every reader
+    # who does not resolve it, and the loop's own coordinator invented four in
+    # ten minutes (three fold-line merge shas, then a ledger note sha). ERROR,
+    # not WARN: a dead landing sha is the loop's false evidence — the
+    # surrounding prose is true, the sha is not, and "names nothing" is an
+    # ERROR (#679 hazard 2).
+    #
+    # SCOPE — the established citation contexts, not a bare scan (hazard 1).
+    # `CITED_SHA` is the proven keyword-led discriminator from
+    # `check_cited_shas` (the `fade326` alias analysis there settled "the
+    # keyword immediately introduces the token"), reused here against the SAME
+    # `text` this check already reads — extending the reader, not opening a
+    # second one. Deliberately NOT scanned, each because CITED_SHA excludes it:
+    #   - bare/prose backticked tokens with no landing keyword (a reference is
+    #     not a claim about a landing; widening reintroduces the alias false
+    #     positive `check_cited_shas` already paid to learn);
+    #   - sha256 page digests and `client/dist/manifest.json` content hashes
+    #     (the 40-char cap plus backtick delimitation rejects the 64-char form);
+    #   - pure-digit PIDs/counts (`re.search(r"[a-f]")`, the same filter);
+    #   - lane/session identifiers in `(lane \`019fb4e0\`, …)` fold notes
+    #     ("lane" is not a landing keyword). Measured on today's file: 225
+    #     candidates, 1 dead, 0 alias/digest false positives.
+    # Each dead sha is attributed to its row's task id via the parser's own
+    # `pending`/`folded_ids` structure — the binding that means a copy-pasted
+    # parser giving a different id fails this check's tests (#655's guard).
+    handoff_shas = []
+    for _m in CITED_SHA.finditer(text):
+        _token = _m.group(1)
+        if re.search(r"[a-f]", _token) and _token not in handoff_shas:
+            handoff_shas.append(_token)
+    if handoff_shas:
+        sha_to_ids = {}
+        for _row in pending:
+            for _s in _row.shas:
+                if re.search(r"[a-f]", _s):
+                    sha_to_ids.setdefault(_s, set()).add(_row.id)
+        for _nid, _fshas in folded_ids.shas_by_id.items():
+            for _s in _fshas:
+                if re.search(r"[a-f]", _s):
+                    sha_to_ids.setdefault(_s, set()).add(_nid)
+        in_repo = (dw.parent / ".git").exists()
+        _unchecked = "%d cited landing/merge sha(s) went unchecked" % len(handoff_shas)
+        try:
+            _proc = subprocess.run(
+                ["git", "-C", str(dw.parent), "cat-file", "--batch-check"],
+                input="".join("%s^{commit}\n" % s for s in handoff_shas),
+                capture_output=True, text=True, timeout=20,
+            )
+        except (OSError, subprocess.SubprocessError) as _exc:
+            rep.add(WARN if in_repo else OK, "handoffs.md",
+                    f"could not ask git about the hand-off citations "
+                    f"({type(_exc).__name__}), so {_unchecked}")
+        else:
+            if _proc.returncode != 0 and not _proc.stdout:
+                rep.add(WARN if in_repo else OK, "handoffs.md",
+                        f"git could not read this tree, so {_unchecked}"
+                        + ("" if in_repo else " (no `.git` here, which is not a fault)"))
+                return
+            _out = _proc.stdout.splitlines()
+            if len(_out) != len(handoff_shas):
+                rep.add(WARN, "handoffs.md",
+                        f"git answered for {len(_out)} of {len(handoff_shas)} "
+                        f"cited sha(s) — one line per input is expected, so "
+                        f"the rest were never examined")
+                return
+            dead = [s for s, line in zip(handoff_shas, _out)
+                    if "missing" in line or "ambiguous" in line]
+            if dead and len(dead) == len(handoff_shas):
+                # Almost certainly the wrong tree (a fresh clone, a different
+                # target), not a file full of lies. Suppressing the ERRORs is
+                # right; suppressing the fact is not (#380).
+                rep.add(OK, "handoffs.md",
+                        f"all {len(handoff_shas)} cited sha(s) are missing "
+                        f"here, read as the wrong tree rather than a wrong "
+                        f"file — so nothing was checked")
+                return
+            for s in dead:
+                ids = sorted(sha_to_ids.get(s, set()))
+                whom = (" (#" + ", #".join(ids) + ")") if ids else ""
+                rep.add(
+                    ERROR, "handoffs.md",
+                    f"`{s}` is cited as a landing or merge in handoffs.md"
+                    f"{whom} but git has no such commit — a worktree sha is "
+                    f"unreachable once the branch is merged or rebased, so "
+                    f"cite the sha on the branch you merged INTO (#679)")
+            if not dead:
+                rep.add(OK, "handoffs.md",
+                        f"{len(handoff_shas)} cited landing/merge sha(s) all "
+                        f"resolve")
+
 
 def check_cited_shas(dw: Path, rep: Report) -> None:
     """A ledger entry that cites a commit which does not exist (#350).

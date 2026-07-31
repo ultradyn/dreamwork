@@ -2972,8 +2972,152 @@ class TestHandoffs:
         assert "CONFLICT_MARKER_RE.match(ln)" in \
             inspect.getsource(lint.check_handoffs)
 
+    # ---- #679: a cited landing/merge sha must resolve ---------------------
+    #
+    # The discriminator is `CITED_SHA` (the established keyword-led regex from
+    # `check_cited_shas`), applied to the SAME text `check_handoffs` reads —
+    # extending the reader, not a second one. These git-backed fixtures mirror
+    # `check_cited_shas`'s `build` helper (real repo, one letter-bearing commit).
 
-class TestConflictMarkerSweep555:
+    def _run_git_handoffs(self, tmp_path, handoffs, ledger=None):
+        """A real git repo with one live commit, so sha resolution runs."""
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+
+        def git(*a):
+            return subprocess.run(["git", "-C", str(t), *a],
+                                  capture_output=True, text=True, check=True)
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        n = 0
+        while True:  # the short sha must carry a letter (the PID filter)
+            n += 1
+            (t / "f").write_text(str(n))
+            git("add", "f")
+            git("commit", "-qm", "a real commit")
+            live = git("rev-parse", "HEAD").stdout.strip()[:7]
+            if re.search(r"[a-f]", live):
+                break
+        assert re.search(r"[a-f]", live), live
+        (dw / "tasks.md").write_text(ledger or self.LEDGER)
+        (dw / "handoffs.md").write_text(handoffs.replace("LIVE", live))
+        rep = lint.Report()
+        lint.check_handoffs(dw, lint.load_watch(), rep)
+        return rep, live
+
+    def _herrs(self, rep):
+        return [d for lvl, w, d in rep.rows
+                if w == "handoffs.md" and lvl == lint.ERROR and "#679" in d]
+
+    def test_a_dead_cited_sha_in_a_handoff_is_an_error(self, tmp_path):
+        # Direction 1. `deadbeef` is cited as a landing but resolves to nothing;
+        # `LIVE` (a real commit in the same repo) is cited too, so the
+        # all-missing wrong-tree guard does not suppress the ERROR.
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed `deadbeef` · 2026-07-28 · by x — fix\n\n"
+                    "## Folded\n\n"
+                    "- **#6** → folded (2026-07-28): merged `LIVE`\n")
+        rep, live = self._run_git_handoffs(tmp_path, handoffs)
+        errs = self._herrs(rep)
+        assert len(errs) == 1, (errs, live)
+        assert errs[0].startswith("`deadbeef`"), errs[0]
+        assert "#5" in errs[0] and "#679" in errs[0]
+        # Precondition: the LIVE sha in the same run must NOT be flagged, or
+        # the check is flagging everything rather than discriminating.
+        assert live not in errs[0]
+
+    def test_a_live_cited_sha_in_a_handoff_resolves_clean(self, tmp_path):
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#6** · landed `LIVE` · 2026-07-28 · by x — fix\n\n"
+                    "## Folded\n")
+        rep, live = self._run_git_handoffs(tmp_path, handoffs)
+        assert self._herrs(rep) == [], (live,)
+        oks = [d for lvl, w, d in rep.rows
+               if w == "handoffs.md" and lvl == lint.OK and "resolve" in d]
+        assert oks and "1" in oks[0], oks
+
+    def test_a_dead_sha_is_attributed_to_its_combined_id_row(self, tmp_path):
+        # #655's reuse guard. The id in the ERROR comes from parse_handoffs's
+        # row extraction (combined token #5/#6), never from CITED_SHA — so a
+        # copy-pasted parser that split the combined id would mis-attribute.
+        watch = lint.load_watch()
+        pend, _, _ = watch.parse_handoffs(
+            "## Pending\n\n"
+            "- **#5/#6** · landed `deadbeef` · 2026-07-28 · by x\n")
+        assert pend and pend[0].id == "5/6", \
+            "precondition: the parser keeps the combined id token"
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5/#6** · landed `deadbeef` · 2026-07-28 · by x — fix\n\n"
+                    "## Folded\n\n"
+                    "- **#6** → folded (2026-07-28): merged `LIVE`\n")
+        rep, live = self._run_git_handoffs(tmp_path, handoffs)
+        errs = self._herrs(rep)
+        assert len(errs) == 1, errs
+        # The parser keeps the combined token #5/#6 as one element, so the
+        # attribution is "(#5/6)" — never the split form "(#5, #6)". A
+        # copy-pasted parser that split it would render differently.
+        assert "(#5/6)" in errs[0], errs[0]
+        assert "(#5, #6)" not in errs[0], errs[0]
+
+    def test_a_lane_id_in_a_fold_note_is_not_flagged(self, tmp_path):
+        # Direction 2, hazard 1. `(lane \`019fb4e0\`, …)` is a session id, not a
+        # commit; "lane" is not a landing keyword, so CITED_SHA must not see
+        # it. A bare backtick+hex scan (the over-broad `_handoff_fold_shas`)
+        # catches it — the false positive that gets a naive check turned off.
+        handoffs = ("# Hand-offs\n\n## Folded\n\n"
+                    "- **#6** → folded (2026-07-28): merged `LIVE` (lane "
+                    "`019fb4e0`, lane-x, glm-5.2)\n\n## Pending\n")
+        rep, live = self._run_git_handoffs(tmp_path, handoffs)
+        assert self._herrs(rep) == [], ("lane id flagged: %r" % ([d for _,_,d in rep.rows],))
+
+    def test_a_pending_placeholder_is_not_flagged(self, tmp_path):
+        # Direction 2. `landed \`PENDING\`` is a placeholder, not a sha — non-
+        # hex, so CITED_SHA (hex 7-40) does not see it. A different defect (no
+        # sha at all), not the "indistinguishable from real" kind #679 targets.
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed `PENDING` · 2026-07-28 · by x — fix\n\n"
+                    "## Folded\n\n"
+                    "- **#6** → folded (2026-07-28): merged `LIVE`\n")
+        rep, live = self._run_git_handoffs(tmp_path, handoffs)
+        assert self._herrs(rep) == [], ("PENDING flagged: %r" % ([d for _,_,d in rep.rows],))
+
+    def test_a_sha256_page_digest_is_not_flagged(self, tmp_path):
+        # Direction 2, hazard 1. A 64-char sha256 page digest in backticks is
+        # not a commit sha: the 40-char cap plus backtick delimitation rejects
+        # it (no position 7-40 is followed by a backtick).
+        digest = "db2b848bcd7a4723b7901cdfa96fdef5721f67336b8cdd9c71ad85ef48bfd0e0"
+        handoffs = ("# Hand-offs\n\n## Folded\n\n"
+                    "- **#6** → folded (2026-07-28): merged `LIVE`, page "
+                    f"sha256 `{digest}`\n\n## Pending\n")
+        rep, live = self._run_git_handoffs(tmp_path, handoffs)
+        assert self._herrs(rep) == [], ("digest flagged: %r" % ([d for _,_,d in rep.rows],))
+
+    def test_all_shas_missing_reads_as_the_wrong_tree_not_errors(self, tmp_path):
+        # Direction 2. A single dead cited sha in a real repo where EVERY cited
+        # sha is missing reads as the wrong tree (a fresh clone / different
+        # target), not a file of lies — OK, never ERRORs (mirrors #380).
+        handoffs = ("# Hand-offs\n\n## Folded\n\n"
+                    "- **#6** → folded (2026-07-28): merged `deadbeef`\n\n"
+                    "## Pending\n")
+        rep, live = self._run_git_handoffs(tmp_path, handoffs)
+        assert self._herrs(rep) == [], ("single dead sha ERRORed: %r" % self._herrs(rep))
+        oks = [d for lvl, w, d in rep.rows
+               if w == "handoffs.md" and "wrong tree" in d]
+        assert oks, "expected a wrong-tree OK row"
+
+    def test_in_a_non_git_tree_the_sha_check_says_it_went_unchecked(self, tmp_path):
+        # #380: a skip is always a row. A non-git tmp_path with a cited sha
+        # must not ERROR (cannot resolve) and must not stay silent.
+        rep = self._run(tmp_path, self.LEDGER,
+                        "# Hand-offs\n\n## Pending\n\n"
+                        "- **#5** · landed `abcdef1` · 2026-07-28 · by x\n\n"
+                        "## Folded\n")
+        skip = [d for lvl, w, d in rep.rows
+                if w == "handoffs.md" and "unchecked" in d]
+        assert skip, "expected an 'unchecked' skip row in a non-git tree"
+        assert self._herrs(rep) == []
     """#555 — the #554 marker rejection extended to the other tool-parsed
     ledger docs.
 
