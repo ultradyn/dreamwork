@@ -522,6 +522,23 @@ def _unblock_store(dw_dir, task_id, why):
     return 0
 
 
+def _retitle_store(dw_dir, task_id, title, why):
+    """Store-mode retitle: change title, append reason, and refuse no-ops."""
+    store = ledger_store.open_store(store_path(dw_dir))
+    try:
+        ledger_write.retitle_task(store, task_id, title, why=why)
+    except (ledger_write.TaskNotFound, ledger_write.SameTitle) as exc:
+        sys.stderr.write(f"ledger: {exc}\n")
+        return 1
+    except ledger_write.WriteError as exc:
+        sys.stderr.write(f"ledger: {exc}\n")
+        return 2
+    finally:
+        store.close()
+    sys.stdout.write(f"retitled #{task_id} (store)\n")
+    return 0
+
+
 def file_text(text, title, note, priority, type, origin):
     """Markdown-mode file: insert a new entry under ``## Open``, bump ``Next id``.
 
@@ -1714,6 +1731,16 @@ def main(argv=None):
     punb.add_argument("--ledger", default=LEDGER_DEFAULT,
                       help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
 
+    pret = sub.add_parser(
+        "retitle",
+        help="change a task's title, recording why (store-mode only) [#731]")
+    pret.add_argument("id", type=int, help="the task id to retitle")
+    pret.add_argument("title", help="the new task title")
+    pret.add_argument("--why", required=True,
+                      help="the reason — recorded in the task's history (NOT optional)")
+    pret.add_argument("--ledger", default=LEDGER_DEFAULT,
+                      help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
     ps = sub.add_parser(
         "sweep",
         help="open ids git names a landing for that the entry does not cite "
@@ -1956,17 +1983,17 @@ def _dispatch(args):
     # are store columns, not markdown text — the same reasoning groom uses).
     # Refuse markdown with a named reason rather than inventing a text rewrite
     # that would be a new #440-class parser risk.
-    if args.cmd in ("reprioritise", "unblock") and source_of_truth(dw_dir) != "store":
+    if args.cmd in ("reprioritise", "unblock", "retitle") and source_of_truth(dw_dir) != "store":
         sys.stderr.write(
-            f"ledger: {args.cmd} is store-mode only — priority/blocked_on are "
-            f"store columns, not markdown text; the store is the source of "
+            f"ledger: {args.cmd} is store-mode only — its field is a store "
+            f"column, not markdown text; the store is the source of "
             f"truth after the #294 cutover\n")
         return 1
 
     # #294 inc 9: write verbs (fold, file, note) dispatch on source_of_truth.
     # Store mode → the store write verbs; markdown mode → today's text path.
     # `counts` (inc 7) is a read consumer and dispatches below.
-    if args.cmd in ("fold", "file", "note", "reprioritise", "unblock") and source_of_truth(dw_dir) == "store":
+    if args.cmd in ("fold", "file", "note", "reprioritise", "unblock", "retitle") and source_of_truth(dw_dir) == "store":
         if args.cmd == "fold":
             _fold_store(dw_dir, args.id, args.note)
             sys.stdout.write(_reach_trailer(args.repo, dw_dir))
@@ -1978,6 +2005,8 @@ def _dispatch(args):
             return _reprioritise_store(dw_dir, args.id, args.band, args.why)
         if args.cmd == "unblock":
             return _unblock_store(dw_dir, args.id, args.why)
+        if args.cmd == "retitle":
+            return _retitle_store(dw_dir, args.id, args.title, args.why)
         # #681 — _file_store returns the exit code: 0 on success, 2 on a bad
         # enum (priority/origin), surfaced as stderr not a sqlite traceback.
         return _file_store(dw_dir, args.title, args.note or args.title,

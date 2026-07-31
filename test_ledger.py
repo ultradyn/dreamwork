@@ -1129,3 +1129,75 @@ def test_reprioritise_cli_missing_why_is_argparse_error(tmp_path, capsys):
         ledger.main(["reprioritise", "1", "P1", "--ledger", str(ledger_path)])
     assert ei.value.code == 2  # argparse uses 2 for a missing required arg
 
+
+def test_retitle_cli_changes_title_and_records_why_in_history(tmp_path, capsys):
+    """#731: title changes and the mandatory reason survives in history."""
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "stale title", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    tid = ledger._read_records(str(ledger_path.parent))[0]["id"]
+
+    rc = ledger.main([
+        "retitle", str(tid), "current title", "--why", "the ruling landed",
+        "--ledger", str(ledger_path)])
+    assert rc == 0
+    assert "retitled" in capsys.readouterr().out
+    rec = ledger._read_records(str(ledger_path.parent))[0]
+    assert rec["title"] == "current title"
+    assert "stale title" in rec["body"]
+    assert "current title" in rec["body"]
+    assert "the ruling landed" in rec["body"]
+
+
+def test_retitle_cli_same_title_refuses_not_success(tmp_path, capsys):
+    """DIRECTION 1: a retitle that changes nothing must refuse (#671)."""
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "already current", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    before = ledger._read_records(str(ledger_path.parent))[0]
+    tid = before["id"]
+
+    rc = ledger.main([
+        "retitle", str(tid), "already current", "--why", "mistaken call",
+        "--ledger", str(ledger_path)])
+    captured = capsys.readouterr()
+    assert rc == 1, f"same-title retitle must refuse (exit 1), got {rc}"
+    assert captured.out == "", f"refusal must not report success: {captured.out!r}"
+    assert "title is unchanged" in captured.err
+    after = ledger._read_records(str(ledger_path.parent))[0]
+    assert after["title"] == before["title"]
+    assert after["body"] == before["body"]
+
+
+def test_retitle_cli_missing_why_is_argparse_error(tmp_path):
+    """--why is parser-required, matching reprioritise and unblock (#627)."""
+    ledger_path = _cut_over_store(tmp_path)
+    with pytest.raises(SystemExit) as ei:
+        ledger.main([
+            "retitle", "1", "new title", "--ledger", str(ledger_path)])
+    assert ei.value.code == 2
+
+
+def test_retitle_allows_a_changed_title_that_still_claims_blockedness(
+        tmp_path, capsys):
+    """DIRECTION 2: retitle is a writer, not a second copy of lint #725.
+
+    A changed title may still contradict empty blocked_on; the existing lint
+    warning remains the authority that exposes that choice. Refusing here
+    would couple a general writer to one current lint idiom and second-guess
+    an author who supplied a mandatory reason.
+    """
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main([
+        "file", "blocked on his ruling", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    tid = ledger._read_records(str(ledger_path.parent))[0]["id"]
+
+    rc = ledger.main([
+        "retitle", str(tid), "still blocked on his ruling", "--why",
+        "author confirms it remains blocked", "--ledger", str(ledger_path)])
+    assert rc == 0
+    rec = ledger._read_records(str(ledger_path.parent))[0]
+    assert rec["title"] == "still blocked on his ruling"
+    assert rec["blocked_on"] is None, (
+        "constructed false-green: retitle succeeds while #725 still warns")
