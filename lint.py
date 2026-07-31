@@ -2551,6 +2551,14 @@ NOT_GUARDS = frozenset({
     "dom",
     "beautycap", "cmdcap", "menucap", "reviewcap",  # capture tools, for looking
     "optrace", "rm-check2", "worldspace",
+    # Shared posture-key extractor, not a guard: it asserts nothing about the
+    # product — it reads POSTURE_AXES out of this file so the summaryjson guard
+    # and the test_watch invariant can derive the expected /summary.json posture
+    # key set instead of restating a literal (#661). The guards that import it
+    # are the checks; its own honesty is pinned by test_posturekeys.py (a
+    # partial answer to #651 — nothing checks that a guard's own extractor is
+    # honest).
+    "posturekeys",
     # A perf A/B capture, not a guard: it measures rAF throughput in the
     # question->review dissolve under several filter conditions and prints the
     # distribution. A perf threshold on this never-idle host is a load-meter,

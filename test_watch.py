@@ -10485,6 +10485,43 @@ class TestPosture(unittest.TestCase):
             self.assertEqual(
                 watch.summary(d)["posture"]["orchestration"], "orchestrator")
 
+    # ── #661: the summary posture key set stays in step with POSTURE_AXES ─
+    def test_summary_posture_keys_match_posture_axes_plus_source(self):
+        """Production line: _summary_posture's output key set is POSTURE_AXES
+        + 'source', and nothing else. The guard's posture-key check was a
+        hand-maintained literal that drifted past #510 (repaired by b9248b11);
+        this invariant derives BOTH sides from independent sources — the
+        served key set from watch.summary(), the expected set from
+        lint.POSTURE_AXES — so a projection that grows an axis without the
+        closed-set source widening (or vice versa) fails here, naming the
+        key. #596's shape: diff the table against the source of truth.
+
+        Deriving both sides from the SAME source would assert nothing (#671):
+        the served keys come from watch.summary() (which calls
+        _summary_posture's own tuple), and the expected keys come from
+        lint.POSTURE_AXES (a separately-maintained closed set). They agree
+        because both were kept in step; this check is what keeps them so."""
+        import lint
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            actual = sorted(watch.summary(d)["posture"].keys())
+        # Precondition the check depends on (#590): POSTURE_AXES resolves to
+        # a real multi-axis set, or the comparison is vacuous. The axes are
+        # derived at runtime, not restated, so this has no expiry date.
+        axes = list(lint.POSTURE_AXES)
+        self.assertGreaterEqual(len(axes), 3, axes)
+        expected = sorted(set(axes) | {"source"})
+        # 'source' is NOT an axis (it is where the axes came from) — assert
+        # it is genuinely separate, or a future 'source' axis makes this a
+        # silent no-op.
+        self.assertNotIn("source", axes, axes)
+        self.assertEqual(
+            actual, expected,
+            "summary posture keys drifted from POSTURE_AXES+source — "
+            "the projection (_summary_posture) and the closed set "
+            "(lint.POSTURE_AXES) must widen together. %s vs %s"
+            % (actual, expected))
+
     # ── #510 surface 3: the orchestration dashboard chip ──────────────
     def test_page_carries_orchestration_vocabulary(self):
         """The closed set is injected from lint (single source), not restated."""
