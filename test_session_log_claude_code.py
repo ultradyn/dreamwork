@@ -9,7 +9,6 @@ with their discriminating assertions called out in the assertion messages.
 import json
 
 import pytest
-from dataclasses import replace
 
 from session_log.claude_code import (
     NODE,
@@ -1066,69 +1065,41 @@ def test_resume_after_compact_boundary_continues_page_number():
 
 # --- injection 1: advancing past the unterminated tail ---------------------
 
-def test_advancing_cursor_past_unterminated_tail_loses_completed_record():
-    """INJECTION 1.  The bug: a resume cursor advanced PAST an unterminated
-    tail (treating the partial bytes as if they ended at a newline) drops a
-    record that later completes.  The discriminating assertion reds on
-    'completed tail record was lost'.
-
-    Sabotage: set the frontier's byte cursor to the END of the partial text
-    (past the unterminated tail) rather than before it.  When the tail later
-    completes (a newline is appended), a correct resume consumes it; the
-    sabotaged resume has already skipped past it and emits nothing."""
-    # A prefix whose last line is unterminated (a partial write).
-    partial = _FROZEN_LINES[0] + "\n" + _FROZEN_LINES[1][:-3]  # chopped mid-record
+def test_partial_tail_is_recovered_when_it_completes():
+    """INJECTION 1.  A partial write leaves an unterminated tail; the scan
+    cursor must sit BEFORE it.  When the tail later completes, the resume
+    picks it up.  If the scanner advanced the cursor past the tail, the
+    completed record would be lost — this reds on 'completed tail record
+    was lost'."""
+    # Prefix whose last line is unterminated (a partial write mid-record).
+    partial = _FROZEN_LINES[0] + "\n" + _FROZEN_LINES[1][:-3]
     complete = _FROZEN_LINES[0] + "\n" + _FROZEN_LINES[1] + "\n"
-    correct_frontier = scan_complete(partial).frontier
-    # SABOTAGE: nudge the cursor past the partial tail as if it terminated.
-    sabotaged = replace(correct_frontier, byte=len(partial))
-    # When the tail completes, the correct resume yields the record; the
-    # sabotaged one has skipped it.
-    correct = scan_incremental(complete, correct_frontier)
-    skipped = scan_incremental(complete, sabotaged)
-    # Floor: the correct resume DID recover the completed record.
-    assert len(correct.events) >= 1, (
-        "precondition: the completed tail record was recovered")
-    # The discriminating assertion: skipping the tail loses a real record.
-    assert len(skipped.events) < len(correct.events), (
+    first = scan_complete(partial)
+    # The cursor must sit BEFORE the partial tail, not past it.
+    assert first.frontier.byte < len(partial), (
+        "precondition: the cursor sits before the unterminated tail")
+    # When the tail completes, the resume must recover the record.
+    rest = scan_incremental(complete, first.frontier)
+    assert len(rest.events) >= 1, (
         "completed tail record was lost")
 
 
 # --- injection 2: replaying the complete line duplicates node ids ----------
 
-def test_replaying_complete_line_in_resume_duplicates_node_ids():
-    """INJECTION 2.  The bug: a resume that re-reads the last complete line
-    of the prefix (replaying it) emits its nodes a second time, producing
-    duplicate node ids.  The discriminating assertion reds on duplicate ids.
-
-    Sabotage: set the resume cursor to the START of the prefix's last
-    complete line rather than just past it.  The resumed scan re-reads that
-    line and re-emits its nodes."""
-    # Prefix: first line only.  Frontier sits just past line 1.
+def test_resume_does_not_replay_consumed_line():
+    """INJECTION 2.  The frontier cursor must advance PAST each consumed
+    line.  If it sits at the line's start, the resume replays it and
+    re-emits nodes — duplicate node ids."""
     prefix = _FROZEN_LINES[0] + "\n"
-    correct_frontier = scan_complete(prefix).frontier
-    assert correct_frontier.byte == len(prefix)
-    # SABOTAGE: rewind the cursor to the start of line 1, so the resume
-    # replays it.
-    line1_start = 0
-    sabotaged = replace(correct_frontier, byte=line1_start)
-    # But also rewind the carried state so the replay isn't blocked by an
-    # already-open session — simulating a resume that re-reads the line
-    # without deduplicating.  (A real bug would forget to advance past the
-    # last consumed line; this reproduces that.)
-    sabotaged = replace(sabotaged, sid=None, page_id=None, page_n=-1,
-                        seq=0, bm=0)
-    rest = scan_incremental(_FROZEN_TEXT, sabotaged)
-    # The correct resume emits no event for line 1 (already consumed).
-    correct_rest = scan_incremental(_FROZEN_TEXT, correct_frontier)
-    # Collect open-node ids from the sabotaged resume's replay of line 1.
-    ids = [ev.node.id for ev in rest.events if ev.ev == "open"]
-    dupes = [i for i in ids if ids.count(i) > 1]
-    # The discriminating assertion: replaying the line duplicated an id
-    # that the prefix already emitted (sess:s1, pg:0, u:u1).
-    prefix_ids = {ev.node.id for ev in scan_complete(prefix).events
-                  if ev.ev == "open"}
-    replayed_collision = prefix_ids & set(ids)
-    assert replayed_collision or dupes, (
-        "duplicate node ids — replaying the prior complete line re-emitted "
-        "a node the prefix scan already produced")
+    first = scan_complete(prefix)
+    # The cursor must be past the consumed line.
+    assert first.frontier.byte == len(prefix), (
+        "precondition: the cursor advanced past the consumed line")
+    # Re-scanning the same text from the resulting frontier must emit
+    # nothing — the line was already consumed.  If the cursor failed to
+    # advance, the replay would re-emit the user-turn node with the same
+    # id (u:u1) → duplicate node ids.
+    replay = scan_incremental(prefix, first.frontier)
+    assert replay.events == (), (
+        "duplicate node ids — replaying the prior complete line "
+        "re-emitted nodes the prefix scan already produced")
