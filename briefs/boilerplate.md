@@ -75,6 +75,14 @@ that is a legitimate outcome, not a failure.
   report and commits has shipped a deliberate defect with a green-looking report attached.
   It also fails closed — an unreadable registry or a missing snapshot is a fault at exit 2, not
   a pass — and distinguishes that from the calm zero of nothing registered (`#136`, `#671`).
+
+  **Keep committing while sabotaged — that rule is unchanged — and let `check` catch what it
+  costs.** A clean tree is not a clean branch: `check` also scans every commit this branch adds
+  to its base and refuses if one still holds the recorded injection (`#710`), because a merge
+  makes that defect reachable from master forever. If it refuses, say so in your report and name
+  the commit: the fix is for the coordinator to **squash this one branch** at merge, not for you
+  to have committed less. This is a tool that will refuse you, not a rule you have to remember.
+
   Using the tool also discharges two rules you would otherwise have to remember. It places
   snapshots **lane-privately** (`#652`: the session scratchpad is shared by every live lane, and
   a `#691` lane's first snapshot landed in a directory already holding another lane's backups of
