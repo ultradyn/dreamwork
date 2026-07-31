@@ -1,0 +1,6 @@
+/* Claude-design token entrypoint.
+
+   Token values live only in style.css. Importing that file lets tooling
+   extract its :root custom properties without creating a second palette.
+   The served page continues to load style.css directly. */
+@import "./style.css";
