@@ -1143,3 +1143,283 @@ def test_consume_chat_text_with_a_newline_is_collapsed_to_one_line(tmp_path: Pat
     assert "\n" not in chat_lines[0], "the CHAT line is a single line"
     assert "\\n" not in chat_lines[0].split("\t", 2)[2], (
         "the text is collapsed to spaces, not left as a literal backslash-n")
+
+
+# ---------------------------------------------------------------------------
+# #658 — a read whose output was truncated is not a read.
+#
+# `pending | tail` hid ordinals the operator never saw, and `consume --through
+# <head>` then advanced past them unread.  The fix is the #654 shape: `pending`
+# writes a marker sidecar recording the ordinal range it printed; `consume
+# --through N` refuses unless that marker proves N was inside the listed range.
+# These tests prove the wiring: the marker is written, the check refuses the
+# truncation case, each named refusal (#136) is distinct, and bare consume is
+# never gated.
+# ---------------------------------------------------------------------------
+
+def _pending_read_marker(cli, journal_path: Path) -> dict | None:
+    """Read the marker sidecar a ``pending`` run wrote (or None)."""
+    return cli._load_pending_read(Path(str(journal_path)))
+
+
+def test_pending_writes_read_coverage_marker(tmp_path: Path):
+    """#658: ``pending`` records the head ordinal it printed into a sidecar, so
+    a later bounded ``consume`` can prove its --through was actually listed.
+
+    The marker carries the journal id (bound to THIS journal) and the head
+    ordinal (the last printed line's ord, derived from the output — never
+    assumed).  An empty pending read records the cursor as its head (so a
+    consume bound past zero is still covered).
+
+    RED LINE (run): delete the ``_write_pending_read`` call in cmd_pending's
+      non-empty branch.  No marker is written → the ``marker is not None``
+      assertion fails. Production line injected: the final
+      ``_write_pending_read(...)`` call in cmd_pending.
+    """
+    cli = _load_cli()
+    path = tmp_path / "marker.sqlite3"
+    bodies = [b'{"a":0}', b'{"a":1}', b'{"a":2}']
+    seeded = _seed(path, bodies)
+    n = len(seeded)
+    assert n >= 2, "precondition: a non-trivial range so the head is real"
+
+    code, out, err = _run(cli, ["pending", "--journal", str(path)])
+    assert code == 0, f"pending exited {code} (err={err!r})"
+    pending_ords = _ord_fields(out)
+    head = pending_ords[-1]  # the head the read reported (derived, not assumed)
+    assert head == n, f"precondition: pending head must be {n}, got {head}"
+
+    mark = _pending_read_marker(cli, path)
+    assert mark is not None, (
+        "pending must write the read-coverage marker sidecar")
+    assert mark["through"] == head, (
+        f"the marker's `through` must be the pending read's head {head}; "
+        f"got {mark['through']}")
+    # The marker is bound to this journal by id (the UUID minted at creation).
+    with open_journal(path) as j:
+        jid = j.journal_id
+    assert mark["journal_id"] == jid, (
+        "the marker must carry this journal's id so a marker from a different "
+        "checkout cannot satisfy a consume against this one")
+
+
+def test_consume_through_refuses_when_read_was_truncated(tmp_path: Path):
+    """#658 direction 1 (the bug): ``consume --through N`` refuses when N
+    exceeds the head the prior ``pending`` actually printed — i.e. when the
+    operator truncated their own read (``pending | tail``).
+
+    Reproduces the original loss on today's pre-fix shape, then proves the fix
+    REFUSES.  The refusal must NAME the uncovered ordinals (the brief requires
+    it name them, not merely say the check failed).  Cursor unmoved.
+
+    The truncation is simulated honestly: ``pending`` is run, its REAL head H
+    is derived from the output, then a marker is hand-written with through=H-1
+    (what the operator's eyes saw after ``tail`` dropped the last line) — so the
+    consume asks for through=H against a read that proved only through H-1.
+
+    RED LINE (run): delete the ``if through > mark['through']`` refusal branch
+      in cmd_consume.  consume proceeds and advances the cursor → the
+      ``code == EX_USAGE`` and cursor-unmoved assertions fail. Production line
+      injected: the ``through > mark['through']`` refusal in cmd_consume.
+    """
+    cli = _load_cli()
+    path = tmp_path / "trunc.sqlite3"
+    applied = tmp_path / "applied.md"
+    bodies = [b'{"a":0}', b'{"a":1}', b'{"a":2}', b'{"a":3}']
+    seeded = _seed(path, bodies)
+    n = len(seeded)
+    assert n >= 3, "precondition: enough events that truncation is meaningful"
+
+    # The honest pending read reports head H (derived from its output).
+    code, out, err = _run(cli, ["pending", "--journal", str(path)])
+    assert code == 0
+    pending_ords = _ord_fields(out)
+    H = pending_ords[-1]
+    assert H == n, f"precondition: pending head is {n}, got {H}"
+
+    # Simulate the operator's `tail` dropping the last line: overwrite the
+    # marker so it proves only through H-1 (what their eyes actually saw),
+    # while consume asks for through=H (the live head they think they read).
+    with open_journal(path) as j:
+        jid = j.journal_id
+    cli._write_pending_read(Path(str(path)), jid, H - 1)
+
+    # Cursor before — must be unmoved on refusal.
+    with open_journal(path) as j:
+        before = j.cursor(CONSUMER)
+    assert before.scanned_through_event_ordinal == 0, "precondition: fresh cursor"
+
+    code, out, err = _run(cli, ["consume", "--through", str(H),
+                                "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == cli.EX_USAGE, (
+        f"consume --through {H} must REFUSE when the read proved only "
+        f"through {H - 1} (the truncation); got exit {code} (out={out!r})")
+    assert out == "", "a refusal must write nothing to stdout"
+    # The brief requires the refusal NAME the uncovered ordinals.
+    assert str(H) in err, (
+        f"the refusal must name ordinal {H} (the uncovered one); got {err!r}")
+    assert "never listed" in err, (
+        f"the refusal must say the ordinals were never listed; got {err!r}")
+
+    # Cursor unmoved: the refusal advances nothing.
+    with open_journal(path) as j:
+        after = j.cursor(CONSUMER)
+    assert after.scanned_through_event_ordinal == 0, (
+        "a refused consume must leave the cursor unmoved (got "
+        f"{after.scanned_through_event_ordinal})")
+
+
+def test_consume_through_absent_marker_refuses_named_bootstrap(tmp_path: Path):
+    """#658/#136: a bounded consume with NO prior pending read refuses with a
+    NAMED bootstrap message — not a hard wedge, and distinct from the
+    truncation case.  The escape hatch is bare ``consume`` (no --through),
+    which never reads the marker.
+
+    The marker is genuinely absent (no pending run was made), so this is the
+    first-run / cleared-state case, and it must say so.
+
+    RED LINE (run): make the absent-marker branch proceed (delete the ``if mark
+      is None`` refusal).  consume advances the cursor → the ``code == EX_USAGE``
+      assertion fails. Production line injected: the ``mark is None`` refusal.
+    """
+    cli = _load_cli()
+    path = tmp_path / "bootstrap.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"a":0}', b'{"a":1}'])
+    n = len(seeded)
+    # Precondition: no pending read was made → no marker sidecar exists.
+    assert _pending_read_marker(cli, path) is None, (
+        "precondition: no pending read, so no marker — this is the bootstrap")
+
+    code, out, err = _run(cli, ["consume", "--through", str(n),
+                                "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == cli.EX_USAGE, (
+        f"a bounded consume with no prior read must refuse EX_USAGE; got {code}")
+    assert out == "", "a refusal writes nothing to stdout"
+    # #136: the absent case names itself, distinct from the truncation case.
+    assert "no pending read" in err, (
+        f"the refusal must name the absent-marker bootstrap case; got {err!r}")
+
+    # The escape hatch: bare consume (no --through) is NEVER gated by the
+    # marker — it is the right form when there was no prior read.
+    code2, out2, err2 = _run(cli, ["consume", "--journal", str(path),
+                                   "--applied", str(applied)])
+    assert code2 == 0, (
+        f"bare consume must never be gated by the marker; got {code2} ({err2!r})")
+    assert f"consumed {n} event(s)" in out2, (
+        f"bare consume advances to the live head; got {out2!r}")
+
+
+def test_consume_through_marker_from_different_journal_refuses(tmp_path: Path):
+    """#658/#136: a marker left by a DIFFERENT journal (a stale sidecar from
+    another checkout, or a journal that was recreated) must not satisfy a
+    consume against this one.  The journal_id binds the marker to its journal.
+
+    RED LINE (run): delete the ``mark['journal_id'] != journal_id`` refusal.
+      The mismatched marker is honoured → consume proceeds → ``code == EX_USAGE``
+      fails. Production line injected: the journal_id-mismatch refusal.
+    """
+    cli = _load_cli()
+    path = tmp_path / "mismatch.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"a":0}', b'{"a":1}'])
+    n = len(seeded)
+
+    # Run pending so a marker exists, then corrupt its journal_id so it reads
+    # as "from a different journal".
+    _run(cli, ["pending", "--journal", str(path)])
+    mp = cli._pending_read_path(Path(str(path)))
+    import json as _json
+    orig = _json.loads(mp.read_text())
+    orig["journal_id"] = "00000000-0000-0000-0000-differentjournal"
+    mp.write_text(_json.dumps(orig))
+
+    code, out, err = _run(cli, ["consume", "--through", str(n),
+                                "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == cli.EX_USAGE, (
+        f"a marker from a different journal must refuse; got {code}")
+    assert out == "", "a refusal writes nothing to stdout"
+    assert "different journal" in err, (
+        f"the refusal must name the journal-mismatch case; got {err!r}")
+
+
+def test_consume_through_honoured_when_marker_covers_it(tmp_path: Path):
+    """#658 happy path: ``pending`` then ``consume --through <head>`` proceeds
+    when the marker honestly covers the bound — the normal tick, now gated.
+
+    This is the existing #531 behaviour re-proven under the new check: the
+    marker a real pending read writes satisfies a consume bounded to that
+    read's head.  The cursor advances; a late event stays pending.
+
+    RED LINE (run): make the marker check refuse unconditionally (e.g. invert
+      ``through > mark['through']`` to ``through > 0``).  consume refuses →
+      ``code == 0`` fails. Production line injected: the comparison in the
+      uncovered-ordinal refusal branch.
+    """
+    cli = _load_cli()
+    path = tmp_path / "honour.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"a":0}', b'{"a":1}', b'{"a":2}'])
+    H = len(seeded)
+    assert H >= 2, "precondition: a non-trivial range"
+
+    code, out, err = _run(cli, ["pending", "--journal", str(path)])
+    assert code == 0
+    assert _ord_fields(out)[-1] == H, "precondition: pending head is H"
+
+    code, out, err = _run(cli, ["consume", "--through", str(H),
+                                "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, (
+        f"a bounded consume covered by the marker must proceed; got {code} "
+        f"({err!r})")
+    assert f"consumed {H} event(s)" in out
+    with open_journal(path) as j:
+        assert j.cursor(CONSUMER).scanned_through_event_ordinal == H
+
+
+def test_consume_through_empty_pending_refuses_past_zero(tmp_path: Path):
+    """#658 edge: a pending read that was EMPTY recorded head = cursor (0 on a
+    fresh journal).  A subsequent ``consume --through N`` (N > 0) must refuse —
+    those ordinals were never listed — and name them.  This closes the path
+    where an operator runs pending (empty), events land, and they consume
+    --through the new live head without re-reading.
+
+    RED LINE (run): make the empty-pending branch in cmd_pending NOT write the
+      marker (so it stays absent).  The refusal would then fire the absent-case
+      message instead of the uncovered-ordinal one → the ``never listed``
+      assertion fails. Production line injected: the ``_write_pending_read``
+      call in cmd_pending's empty branch.
+    """
+    cli = _load_cli()
+    path = tmp_path / "emptypending.sqlite3"
+    applied = tmp_path / "applied.md"
+    # Seed ONE event AFTER an empty pending read, so pending(0) then a live
+    # head of 1 is the truncation-via-empty case.
+    _seed(path, [b'{"late":true}'])  # but read pending FIRST on an empty journal
+
+    # Actually: seed after the empty pending. Build an empty journal, read
+    # pending (empty, marker head=0), then seed one event.
+    path2 = tmp_path / "emptypending2.sqlite3"
+    with open_journal(path2) as j:
+        assert j.head_ordinal() == 0, "precondition: fresh empty journal"
+    code, out, err = _run(cli, ["pending", "--journal", str(path2)])
+    assert code == 0 and out == "", "precondition: pending is empty"
+    mark = _pending_read_marker(cli, path2)
+    assert mark is not None and mark["through"] == 0, (
+        "precondition: the empty pending read recorded head=0 (the cursor)")
+
+    # An event lands after the empty read.
+    _append_one(path2, b'{"x":1}', idx=0)
+
+    code, out, err = _run(cli, ["consume", "--through", "1",
+                                "--journal", str(path2),
+                                "--applied", str(applied)])
+    assert code == cli.EX_USAGE, (
+        "consume --through 1 after an empty pending read (head 0) must refuse")
+    assert "never listed" in err, (
+        f"the refusal must name ord=1 as never listed; got {err!r}")
+    assert "1" in err

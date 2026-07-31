@@ -45,6 +45,20 @@ Two subcommands, both taking the store path the way ``dev/ledger.py`` verbs take
             (cannot advance past what exists).  The #526 proof act runs only
             over receipts inside the advanced range ``(cursor, through]``.
 
+  #658     ``pending`` also writes a read-coverage marker sidecar recording the
+            ordinal head it actually printed, and ``consume --through N``
+            refuses unless that marker proves N was inside the listed range.
+            #531 bound the advance against the LIVE head (a race); #658 tightens
+            it against the READ head — the operator who piped ``pending`` through
+            ``tail`` advanced past ordinals their eyes never saw.  Three named
+            refusals (#136): marker absent (bootstrap — bare ``consume`` is the
+            escape), marker from a different journal (stale sidecar), and N
+            beyond the read's head (the bug — names the uncovered ordinals).
+            Bare ``consume`` (no ``--through``) never reads the marker and never
+            wedges.  The marker cannot detect a SHELL-level truncation of
+            ``pending``'s own stdout (``pending | tail``): it proves every line
+            was printed, not that every line was seen — named, not closed.
+
 ATOMICITY SEAM (named, not hidden): the read and the advance are TWO separate
 API calls, not one transaction.  Between them a concurrent writer may append.
 That is SAFE BY CONSTRUCTION: the chain is append-only, so the prefix
@@ -114,6 +128,64 @@ CONSUMER = "coordinator"
 EVENT_KIND = "receipt.created"
 
 JOURNAL_DEFAULT = ".dreamwork/user-events.sqlite3"
+
+# --- #658: the read-coverage marker. ---
+#
+# `pending | tail` truncated the operator's eyes and `consume --through <head>`
+# then advanced past ordinals nobody ever saw (#658).  The fix is the #654 shape:
+# make the silent failure loud.  `pending` records the head ordinal it actually
+# printed into a sidecar; `consume --through N` refuses unless that sidecar
+# proves N was inside the listed range.  Three refusal cases, each named (#136):
+# marker absent (no read — bootstrap), marker from another journal (stale), and
+# marker whose range does not cover N (the bug).  Bare `consume` (no --through)
+# never reads the marker and never wedges — it is the escape hatch, the right
+# form only when there was no prior read to bound against.
+#
+# The sidecar is a JSON file named "<journal-path>.pending-read" (a sibling of
+# the db) so --journal overrides make it travel correctly in tests.  It is
+# ephemeral coordination state between two CLI calls in one tick, not durable
+# project content; it carries the journal_id (the UUID minted at journal
+# creation) so a marker left by a different checkout cannot be honoured.
+
+
+def _pending_read_path(journal_path: Path) -> Path:
+    """The marker sidecar for a journal path: ``<journal>.pending-read``."""
+    return Path(str(journal_path) + ".pending-read")
+
+
+def _write_pending_read(journal_path: Path, journal_id: str, through: int) -> None:
+    """Record the head ordinal a ``pending`` read actually printed (#658).
+
+    One JSON object: the journal's id (binds the marker to THIS journal — a UUID
+    minted at creation, so a marker from a different checkout cannot satisfy a
+    consume against this one) and the upper bound of the range that was printed.
+    Overwrites in place — one pending read per tick is the protocol, and the
+    latest read is the one a bounded consume must honour.
+    """
+    import time
+    payload = json.dumps(
+        {"journal_id": journal_id, "through": through,
+         "ts": time.strftime("%Y-%m-%dT%H:%M:%S")},
+    )
+    _pending_read_path(journal_path).write_text(payload)
+
+
+def _load_pending_read(journal_path: Path) -> dict | None:
+    """Read the marker sidecar, or None if absent or unparseable (#658).
+
+    None covers BOTH the absent case (bootstrap) and a corrupt/unparseable
+    marker — both degrade to the same named refusal in ``consume``, and a
+    corrupt marker must not raise (a guard whose subject may not exist has to
+    degrade to a reading, never throw — lessons.md #622).  Returns the parsed
+    dict on success.
+    """
+    mp = _pending_read_path(journal_path)
+    if not mp.exists():
+        return None
+    try:
+        return json.loads(mp.read_text())
+    except (ValueError, OSError):
+        return None
 
 # --- #526: the drain's applied-receipts proof ledger. ---
 #
@@ -240,18 +312,47 @@ def cmd_pending(args, out) -> int:
 
     Never advances.  An absent journal is empty (and is NOT created — the read
     has no filesystem side effect).  Empty prints nothing.
+
+    #658: writes the read-coverage marker sidecar so a bounded ``consume`` can
+    refuse if its ``--through`` outruns what this read actually printed.  The
+    marker records the head ordinal and the journal id; it is the one side
+    effect of an otherwise read-only verb, and it is ephemeral coordination
+    state (a sibling ``.pending-read`` file), never the journal itself.
     """
     journal = Path(args.journal)
     if not journal.exists():
-        # No journal → nothing pending; do not create it (read-only).
+        # No journal → nothing pending; do not create it (read-only).  Wipe a
+        # stale marker so a later bounded consume cannot honour a read of a
+        # journal that no longer exists (#136: the absent case is named).
+        mp = _pending_read_path(journal)
+        if mp.exists():
+            mp.unlink()
         return EX_OK
     with open_journal(args.journal) as j:
         events = j.events_since_cursor(CONSUMER)
+        journal_id = j.journal_id  # bound the marker to THIS journal (#658)
     if not events:
+        # Empty range: record the read head (the cursor) so a consume bound to
+        # a non-empty through is still refused — it was never listed.
+        cursor_ord = _cursor_ordinal(args.journal)
+        _write_pending_read(journal, journal_id, cursor_ord)
         return EX_OK  # the quiet rule: empty prints nothing extra
     for ev in events:
         out.write(_format_event(ev) + "\n")
+    # The head this read reported is the last event's ordinal — the value a
+    # bounded consume's --through must not exceed.
+    _write_pending_read(journal, journal_id, events[-1].ordinal)
     return EX_OK
+
+
+def _cursor_ordinal(journal_path: str) -> int:
+    """Read the coordinator cursor's scanned_through ordinal (0 if fresh).
+
+    Used only to record an empty pending read's head (the cursor itself), so a
+    bounded consume against a journal whose pending was empty is still covered.
+    """
+    with open_journal(journal_path) as j:
+        return j.cursor(CONSUMER).scanned_through_event_ordinal
 
 
 def _prove_drained(applied_path: str, ev) -> "apply.Proof":
@@ -347,6 +448,7 @@ def cmd_consume(args, out, err) -> int:
             # the journal directly (the same row advance_cursor writes/reads).
             cursor_ordinal = j.cursor(CONSUMER).scanned_through_event_ordinal
             head_ordinal = j.head_ordinal()
+            journal_id = j.journal_id  # #658: bind the marker to THIS journal
             if through <= cursor_ordinal:
                 # At-or-below the cursor: a rewind (through < cursor) or a
                 # no-op (through == cursor).  Neither may pass silently.
@@ -362,6 +464,48 @@ def cmd_consume(args, out, err) -> int:
                     f"consume: --through {through} is above the head "
                     f"({head_ordinal}); cannot advance past what exists — "
                     f"re-read pending and note its head\n"
+                )
+                return EX_USAGE
+            # --- #658: the read-coverage check.  A --through value honest
+            # about the LIVE head is worthless if the operator's eyes never saw
+            # every line of the pending read (the `pending | tail` failure).  So
+            # a bounded consume additionally refuses unless the marker the prior
+            # `pending` wrote proves `through` was inside the range it printed.
+            # Three named refusal cases (#136), only the last of which is the
+            # bug; the others degrade to a workable escape (bare consume):
+            #   absent  → no pending read on record (bootstrap — first run,
+            #             cleared state).  Bare `consume` is the right form.
+            #   mismatch→ the marker is from a different journal (stale
+            #             sidecar).  Bare `consume` is the right form.
+            #   uncovered→ through exceeds the read's head: ordinals in
+            #              (read_head, through] were never listed.  THIS is
+            #              the truncation bug — re-run pending (do not tail it)
+            #              and consume --through the head it prints.
+            mark = _load_pending_read(Path(args.journal))
+            if mark is None:
+                err.write(
+                    f"consume: --through {through} but no pending read is on "
+                    f"record — run `pending` first (bare `consume` with no "
+                    f"--through also advances to the live head)\n"
+                )
+                return EX_USAGE
+            if mark["journal_id"] != journal_id:
+                err.write(
+                    f"consume: --through {through} but the pending-read marker "
+                    f"is for a different journal (stale sidecar) — run "
+                    f"`pending` again, or use bare `consume`\n"
+                )
+                return EX_USAGE
+            if through > mark["through"]:
+                # Name the ordinals the read never listed — #658 requires the
+                # refusal message name them, not merely say "check failed".
+                uncovered = list(range(mark["through"] + 1, through + 1))
+                err.write(
+                    f"consume: --through {through} advances past ordinals the "
+                    f"last `pending` read never listed "
+                    f"(read reported head {mark['through']}; uncovered "
+                    f"ordinals {uncovered}) — re-run `pending` without "
+                    f"`head`/`tail` and consume --through the head it prints\n"
                 )
                 return EX_USAGE
         events = j.events_since_cursor(CONSUMER)
@@ -534,7 +678,11 @@ def _parser() -> argparse.ArgumentParser:
             "landing between that read and this consume stays pending (#531). "
             "Without it, consume advances to the live head (today's semantics). "
             "Refuses EX_USAGE below/at the cursor (a stale ordinal must not "
-            "rewind or no-op silently) or above the head."
+            "rewind or no-op silently) or above the head.  #658: also refuses "
+            "unless the prior `pending`'s read-coverage marker proves ORDINAL "
+            "was inside the range it printed (so `pending | tail` cannot hide "
+            "lines the consume then advances past).  Bare `consume` is never "
+            "gated by the marker."
         ),
     )
 
