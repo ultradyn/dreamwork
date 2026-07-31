@@ -3716,6 +3716,200 @@ def check_brief_worktree_abs_inbox(dw: Path, rep: Report) -> None:
         )
 
 
+# ── brief lane-private snapshot directory (#652) ──────────────────────
+# Distinctive phrase from the SKILL.md paragraph that made the snapshot
+# directory lane-private. Content-resolved via `git log -S`, same idiom as
+# WORKTREE_ABS_INBOX_PHRASE (#405): a reword that removes this phrase must
+# ERROR loudly rather than grandfather every brief in silence.
+LANE_SCRATCH_PHRASE = (
+    "A brief that teaches the `cp`/`cmp` restore protocol names a "
+    "lane-private snapshot directory"
+)
+# A brief teaches the #349 restore protocol when it carries the prohibition
+# that protocol exists for. Measured across 218 briefs: 67 carry some form of
+# "never `git checkout`", the wording varying only in trailing punctuation.
+RESTORE_CLAUSE_RE = re.compile(r"never\s+`?git\s+checkout", re.I)
+# The brief routed the lane to a derived private directory: it names the
+# helper (`dev/lane_scratch.py`) or the root it lives under (`lane-scratch`).
+LANE_SCRATCH_TOKEN_RE = re.compile(r"lane[_-]scratch", re.I)
+# Lane name as it appears in a worktree path, e.g. `.worktrees/lane-652scratch`.
+WORKTREE_LANE_RE = re.compile(r"\.worktrees/([A-Za-z0-9._-]+)")
+
+
+def resolve_lane_scratch_cutoff(root: Path) -> str | None:
+    """Commit that introduced the lane-private snapshot rule into SKILL.md.
+
+    Content-resolved (`git log -S` on LANE_SCRATCH_PHRASE). Oldest hit wins.
+    None is the hollow outcome the check refuses to treat as a pass.
+    """
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(root), "log", "-S", LANE_SCRATCH_PHRASE,
+             "--format=%H", "--", "SKILL.md"],
+            stderr=subprocess.DEVNULL, text=True, timeout=30,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return None
+    shas = out.split()
+    if not shas:
+        return None
+    return shas[-1]
+
+
+def brief_names_lane_private_snapshot(text: str) -> bool:
+    """Does this brief route the lane to a snapshot path it cannot collide on?
+
+    Two accepted shapes. The helper (or its root) named anywhere — the intended
+    route. Or a hand-rolled path that carries the brief's own lane name outside
+    the `.worktrees/` path it was read from, which is the property that actually
+    matters: a path another concurrent lane cannot also derive.
+    """
+    if LANE_SCRATCH_TOKEN_RE.search(text):
+        return True
+    for lane in set(WORKTREE_LANE_RE.findall(text)):
+        # Blank out the worktree paths themselves, so the lane name occurring
+        # only in `.worktrees/<lane>` does not count as a snapshot path.
+        stripped = text.replace(f".worktrees/{lane}", ".worktrees/_")
+        if re.search(r"/[\w./-]*" + re.escape(lane), stripped):
+            return True
+    return False
+
+
+def classify_brief_lane_scratch(root: Path) -> dict:
+    """Split restore-teaching briefs by whether they post-date the private-dir rule.
+
+    Returns ``{cutoff, teaching, in_scope, grandfathered, skipped, missing}``
+    where ``teaching`` is every brief carrying the restore prohibition,
+    ``in_scope`` / ``grandfathered`` / ``skipped`` are subsets of those, and
+    ``missing`` is in-scope basenames that name no lane-private snapshot path.
+    """
+    empty: dict = {
+        "cutoff": None, "teaching": [], "in_scope": [],
+        "grandfathered": [], "skipped": [], "missing": [],
+    }
+    briefs_dir = root / ".dreamwork" / "docs" / "briefs"
+    if not briefs_dir.is_dir():
+        return empty
+    cutoff = resolve_lane_scratch_cutoff(root)
+    if not cutoff:
+        return empty
+    cutoff_t = commit_unix_time(root, cutoff)
+    if cutoff_t is None:
+        return empty
+    out = {
+        "cutoff": cutoff, "teaching": [], "in_scope": [],
+        "grandfathered": [], "skipped": [], "missing": [],
+    }
+    for path in sorted(briefs_dir.glob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not RESTORE_CLAUSE_RE.search(text):
+            continue
+        out["teaching"].append(path.name)
+        rel = str(path.relative_to(root))
+        add = brief_add_commit(root, rel)
+        if not add:
+            out["skipped"].append(path.name)
+            continue
+        add_t = commit_unix_time(root, add)
+        if add_t is None:
+            out["skipped"].append(path.name)
+            continue
+        if add_t <= cutoff_t:
+            out["grandfathered"].append(path.name)
+            continue
+        out["in_scope"].append(path.name)
+        if not brief_names_lane_private_snapshot(text):
+            out["missing"].append(path.name)
+    return out
+
+
+def check_brief_lane_scratch(dw: Path, rep: Report) -> None:
+    """A brief teaching the `cp` restore protocol names a lane-private dir (#652).
+
+    The scratchpad is shared by every concurrent lane (one CLI session, one
+    ``CLAUDE_CODE_SESSION_ID``, one directory). Two lanes snapshotting to the
+    same generic name means one restore writes the other's bytes while both
+    ``cmp`` checks pass — the #349 protocol turned into silent corruption.
+
+    Scope is the briefs that carry the restore prohibition (RESTORE_CLAUSE_RE),
+    because those are the ones that put a lane in front of the hazard. Untracked
+    briefs are skipped (mid-write). Cutoff is content-resolved from
+    LANE_SCRATCH_PHRASE — a hollow no-cutoff is an ERROR, not a silent pass.
+
+    What this check does NOT do, stated so it is not mistaken for the fix: it
+    reads briefs, not lane behaviour. A brief can name the private directory and
+    the lane still snapshot somewhere else. The directory being derived is the
+    safety mechanism; this only keeps the routing from silently dropping out of
+    the boilerplate, which is the failure #644 records.
+    """
+    root = dw.parent
+    briefs_dir = dw / "docs" / "briefs"
+    if not briefs_dir.is_dir():
+        return
+    if not (root / "SKILL.md").exists():
+        return
+    # Precondition for the check's meaning: if no brief teaches the restore
+    # protocol there is nothing to examine. That is silence, not OK coverage —
+    # a check that matches nothing passes forever.
+    any_teaching = any(
+        RESTORE_CLAUSE_RE.search(p.read_text(encoding="utf-8", errors="replace"))
+        for p in briefs_dir.glob("*.md")
+        if p.is_file()
+    )
+    if not any_teaching:
+        return
+
+    cutoff = resolve_lane_scratch_cutoff(root)
+    if not cutoff:
+        rep.add(
+            ERROR, "briefs",
+            "could not resolve the lane-private snapshot cutoff from SKILL.md "
+            f"content (phrase {LANE_SCRATCH_PHRASE!r}) — every restore-teaching "
+            "brief would have been left unchecked; a reworded phrase or missing "
+            "history is a loud failure, never a silent pass (#652)",
+        )
+        return
+
+    try:
+        blob = subprocess.check_output(
+            ["git", "-C", str(root), "show", f"{cutoff}:SKILL.md"],
+            stderr=subprocess.DEVNULL, text=True, timeout=20,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        blob = ""
+    if LANE_SCRATCH_PHRASE not in blob:
+        rep.add(
+            ERROR, "briefs",
+            f"cutoff `{cutoff[:7]}` resolved from content but does not contain "
+            "the lane-private snapshot phrase — content resolution picked the "
+            "wrong commit, so every restore-teaching brief would be mis-scoped "
+            "(#652)",
+        )
+        return
+
+    scope = classify_brief_lane_scratch(root)
+    for name in scope["missing"]:
+        rep.add(
+            ERROR, "briefs",
+            f"{name} teaches the `cp` restore protocol but names no lane-private "
+            "snapshot directory — concurrent lanes share one scratchpad, so two "
+            "generic snapshot names silently restore each other's bytes with "
+            "both `cmp` checks green; route it to `dev/lane_scratch.py` (#652)",
+        )
+    n_t = len(scope["teaching"])
+    n_in = len(scope["in_scope"])
+    n_gf = len(scope["grandfathered"])
+    if n_t and not scope["missing"]:
+        rep.add(
+            OK, "briefs",
+            f"{n_t} restore-teaching brief(s), {n_in} in scope after "
+            f"lane-private snapshot rule, {n_gf} grandfathered (#652)",
+        )
+
+
 LANE_OWNS_MARKER = "lane-owns:"
 WORKTREE_BRIEF_MARKER_KNOWN = WORKTREE_BRIEF_MARKER  # alias for clarity below
 
@@ -4946,6 +5140,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_handoffs(dw, watch, rep)
     check_brief_handoff_obligation(dw, rep)
     check_brief_worktree_abs_inbox(dw, rep)
+    check_brief_lane_scratch(dw, rep)
     check_brief_lane_owns(dw, rep)
     check_lane_containment_backstop(dw, rep)
     check_related_markers(dw, watch, rep)

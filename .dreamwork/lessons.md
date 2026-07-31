@@ -765,9 +765,18 @@ this shape and convert opportunistically.)
   exactly like discriminating reds. Two of three proofs were worthless and
   nothing announced it — the tell was `git status` showing only the test file
   modified. So the rule gains a mechanism and a check. Mechanism: **snapshot to
-  scratch and restore from the snapshot** (`cp f $S/bak` / `cp $S/bak f`), which
+  a LANE-PRIVATE scratch dir and restore from the snapshot** —
+  `S="$(dev/lane_scratch.py snap)"`, then `cp f "$S/f"` / `cp "$S/f" f` — which
   cannot reach anything but the file injected into; `git checkout` is correct only
-  once the work under test is committed. Check: **after every undo, confirm the
+  once the work under test is committed. **The `$S` must be lane-private, and
+  the harness scratchpad is not** (#652, 2026-07-31): every concurrent lane is a
+  subagent of one CLI session and inherits one `CLAUDE_CODE_SESSION_ID`, so all
+  of them resolve to the *same* scratchpad — measured, same inode. Two lanes
+  snapshotting to the natural generic name (`$S/bak`, `router.js.orig`) means one
+  lane's restore writes the OTHER lane's bytes and **both `cmp` checks still
+  pass**, against the wrong baseline. Reproduced: A and B both green, A's file
+  holding B's content. `dev/lane_scratch.py` derives the path from the worktree's
+  own identity so the lane never picks it. Check: **after every undo, confirm the
   tree still contains what you meant to keep**, because a red from the harness,
   the scaffolding or the undo is indistinguishable in the output from a real one.
   That this lesson existed for three days and did not prevent the repeat is
