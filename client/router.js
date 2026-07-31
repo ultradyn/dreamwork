@@ -8,6 +8,7 @@
 const rmr = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let data = null, fetchedAt = 0, lastMtime = null, serverGen = null;
 let lastDataV = null;  // #641: the version (watched_mtime) of the last full/delta doc we hold
+let dataResponseSequence = 0;  // #741: only the newest /data.json request may commit
 /* after a local answer morph, hold the live re-render briefly so the card
    settles in place before the loop's fresh data regroups it (#79/#81).
    #234 derived the hold from the critical path instead of padding it:
@@ -1139,7 +1140,8 @@ async function ensureData() {
     fetchedAt = Date.now();
     if (burnStepPref === null) burnStepPref = loadBurnStepPref();
     if (drawMode === null) { drawMode = loadDrawModePref(); applyDrawMode(); }
-    setData(applyDataResponse(await (await fetch(dataJsonUrl())).json()));
+    const next = await fetchDataResponse();
+    if (next) setData(next);
   } catch (e) {}
   return data;
 }
@@ -2491,22 +2493,29 @@ function loadBurnStepPref() {
   } catch (e) {}
   return null;
 }
-function dataJsonUrl() {
+function dataJsonUrl(since = lastDataV) {
   const s = burnStepPref;
   let base = (s && BURN_STEP_ORDER.indexOf(s) >= 0)
     ? '/data.json?burn_step=' + s : '/data.json';
   // #641: ask for a delta from the version we hold. No lastDataV → full doc,
   // which is today's behaviour byte-for-byte (the server ignores unknown since).
-  if (lastDataV) base += (base.includes('?') ? '&' : '?') + 'since=' + encodeURIComponent(lastDataV);
+  if (since) base += (base.includes('?') ? '&' : '?') + 'since=' + encodeURIComponent(since);
   return base;
 }
 /* #641 phase 1 — apply a server delta to the doc we hold, or take the full
  * doc. The server sends {v,unchanged}, {v,base,changed,removed,check}, or the
- * full document. "Full is always the safe answer": any doubt → full. The
- * check hash lets us self-heal: if present and we can't verify, refetch full. */
-function applyDataResponse(j) {
-  if (j && j.unchanged) return null;           // no change — skip setData
+ * full document. "Full is always the safe answer": any doubt → full. */
+function applyDataResponse(j, requestedBase) {
+  if (j && j.unchanged) {
+    return requestedBase && j.v === requestedBase && lastDataV === requestedBase
+      ? null : undefined;
+  }
   if (j && j.changed) {                        // a derived delta
+    // Both identities matter: requestedBase binds the response to its fetch;
+    // lastDataV proves that document is still the one held at response time.
+    if (!requestedBase || j.base !== requestedBase || lastDataV !== requestedBase) {
+      return undefined;
+    }
     const out = Object.assign({}, data);
     (j.removed || []).forEach(k => { delete out[k]; });
     Object.assign(out, j.changed || {});
@@ -2515,6 +2524,25 @@ function applyDataResponse(j) {
   }
   lastDataV = lastMtime;                        // full doc: version is what /mtime showed
   return j;                                     // a full document
+}
+async function fetchDataResponse(forceFull = false) {
+  const sequence = ++dataResponseSequence;
+  const requestedBase = forceFull ? null : lastDataV;
+  const response = await (await fetch(dataJsonUrl(requestedBase))).json();
+  // A newer request owns the document now. In particular, a burn-step fetch
+  // must invalidate an older scheduled tick before the old response applies.
+  if (sequence !== dataResponseSequence) return null;
+  let next = applyDataResponse(response, requestedBase);
+  if (next !== undefined) return next;
+
+  // A response that cannot be proved against the requested-and-still-held
+  // base is unusable. Clear the cache identity and take the documented safe
+  // path: one request without `since`.
+  lastDataV = null;
+  const full = await (await fetch(dataJsonUrl(null))).json();
+  if (sequence !== dataResponseSequence) return null;
+  next = applyDataResponse(full, null);
+  return next === undefined ? null : next;
 }
 async function cycleBurnStep(back) {
   const cur = (data && data.burndown && data.burndown.step)
@@ -2536,7 +2564,9 @@ async function cycleBurnStep(back) {
     // #523 rides reconciliation now (snapshotViewInputs retired in #505 p2):
     // a focused limit input is kept by id and value-stamped in the morph.
     lastDataV = null;  // burn_step changed: the cached base is for a different bucketing
-    setData(applyDataResponse(await (await fetch(dataJsonUrl())).json()));
+    const nextData = await fetchDataResponse(true);
+    if (!nextData) return;
+    setData(nextData);
     const burnBefore = (burnKey(data) !== wasBurn) ? snapshotBars() : null;
     if (view && view.name === 'dashboard') {
       const html = await buildCurrent();
@@ -4427,7 +4457,7 @@ async function tick() {
       lastMtime = mtime; fetchedAt = Date.now();
       const wasGit = gitKey(data), wasBurn = burnKey(data);
       if (burnStepPref === null) burnStepPref = loadBurnStepPref();
-      const d = applyDataResponse(await (await fetch(dataJsonUrl())).json());
+      const d = await fetchDataResponse();
       if (d) {
         setData(d);
       } else {

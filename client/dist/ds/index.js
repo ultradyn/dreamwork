@@ -1583,6 +1583,7 @@ var DreamworkDesign = (() => {
   var lastMtime = null;
   var serverGen = null;
   var lastDataV = null;
+  var dataResponseSequence = 0;
   var MORPH_HOLD_MS = 1250;
   var holdRerenderUntil = 0;
   var parseMtime = (raw) => {
@@ -2290,7 +2291,8 @@ var DreamworkDesign = (() => {
         drawMode = loadDrawModePref();
         applyDrawMode();
       }
-      setData(applyDataResponse(await (await fetch(dataJsonUrl())).json()));
+      const next = await fetchDataResponse();
+      if (next) setData(next);
     } catch (e) {
     }
     return data;
@@ -3161,15 +3163,20 @@ var DreamworkDesign = (() => {
     }
     return null;
   }
-  function dataJsonUrl() {
+  function dataJsonUrl(since = lastDataV) {
     const s = burnStepPref;
     let base = s && BURN_STEP_ORDER.indexOf(s) >= 0 ? "/data.json?burn_step=" + s : "/data.json";
-    if (lastDataV) base += (base.includes("?") ? "&" : "?") + "since=" + encodeURIComponent(lastDataV);
+    if (since) base += (base.includes("?") ? "&" : "?") + "since=" + encodeURIComponent(since);
     return base;
   }
-  function applyDataResponse(j) {
-    if (j && j.unchanged) return null;
+  function applyDataResponse(j, requestedBase) {
+    if (j && j.unchanged) {
+      return requestedBase && j.v === requestedBase && lastDataV === requestedBase ? null : void 0;
+    }
     if (j && j.changed) {
+      if (!requestedBase || j.base !== requestedBase || lastDataV !== requestedBase) {
+        return void 0;
+      }
       const out = Object.assign({}, data);
       (j.removed || []).forEach((k) => {
         delete out[k];
@@ -3180,6 +3187,19 @@ var DreamworkDesign = (() => {
     }
     lastDataV = lastMtime;
     return j;
+  }
+  async function fetchDataResponse(forceFull = false) {
+    const sequence = ++dataResponseSequence;
+    const requestedBase = forceFull ? null : lastDataV;
+    const response = await (await fetch(dataJsonUrl(requestedBase))).json();
+    if (sequence !== dataResponseSequence) return null;
+    let next = applyDataResponse(response, requestedBase);
+    if (next !== void 0) return next;
+    lastDataV = null;
+    const full = await (await fetch(dataJsonUrl(null))).json();
+    if (sequence !== dataResponseSequence) return null;
+    next = applyDataResponse(full, null);
+    return next === void 0 ? null : next;
   }
   async function cycleBurnStep(back) {
     const cur = data && data.burndown && data.burndown.step || BURN_STEP_ORDER[0];
@@ -3196,7 +3216,9 @@ var DreamworkDesign = (() => {
       const wasBurn = burnKey(data);
       const bdHover = snapshotBdHover();
       lastDataV = null;
-      setData(applyDataResponse(await (await fetch(dataJsonUrl())).json()));
+      const nextData = await fetchDataResponse(true);
+      if (!nextData) return;
+      setData(nextData);
       const burnBefore = burnKey(data) !== wasBurn ? snapshotBars() : null;
       if (view && view.name === "dashboard") {
         const html = await buildCurrent();
@@ -4613,7 +4635,7 @@ var DreamworkDesign = (() => {
         fetchedAt = Date.now();
         const wasGit = gitKey(data), wasBurn = burnKey(data);
         if (burnStepPref === null) burnStepPref = loadBurnStepPref();
-        const d = applyDataResponse(await (await fetch(dataJsonUrl())).json());
+        const d = await fetchDataResponse();
         if (d) {
           setData(d);
         } else {

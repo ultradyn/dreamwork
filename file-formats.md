@@ -2200,10 +2200,21 @@ The delta is **derived** from two `collect()` outputs (the plan's `## The
 trap`), never hand-written: per-key comparison by serialized equality,
 changed keys shipped whole, `generated` excluded from both `changed` and
 `check`. The client applies it (`applyDataResponse`: overwrite `changed`,
-delete `removed`) and the reconstruction is byte-identical to a full build
-at that version — proven by a born-red round-trip test. The `check` field
-is a SHA-256 of the full document (minus `generated`); a client that
-recomputes it and finds a mismatch refetches in full (self-heal).
+delete `removed`) only when `base` matches both the version captured for that
+request and the document still held when the response arrives. Responses are
+sequenced so an older request cannot commit after a newer one. A base mismatch
+clears the cached version and refetches without `since`; reconstruction against
+a valid base is byte-identical to a full build at that version, proven from one
+shared set of Python-derived envelopes by the Python and browser appliers.
+
+The server also emits `check`, a SHA-256 of Python's sorted-key JSON bytes for
+the full document minus `generated`. It is **not yet a browser-verified safety
+property**: Python's encoding is not language-neutral (notably recursive key
+ordering, ASCII escaping, whitespace and number formatting), so hashing naïve
+`JSON.stringify` bytes would spuriously reject valid deltas. Until the wire
+defines canonical bytes that Python and JavaScript prove identical, `base`
+validation and response sequencing close the reachable stale-response case;
+`check` remains reserved validation metadata, not a claimed client self-heal.
 
 ## `/summary.json` — a whitelist view, not a projection of everything (#275 Q5)
 
