@@ -1147,6 +1147,15 @@ def test_retitle_cli_changes_title_and_records_why_in_history(tmp_path, capsys):
     assert "stale title" in rec["body"]
     assert "current title" in rec["body"]
     assert "the ruling landed" in rec["body"]
+    store = ledger.ledger_store.open_store(ledger.store_path(ledger_path.parent))
+    try:
+        event = store.conn.execute(
+            "SELECT cause, detail FROM task_event WHERE task_id = ? "
+            "ORDER BY ordinal DESC LIMIT 1", (tid,)).fetchone()
+    finally:
+        store.close()
+    assert event == ("reconciled", "the ruling landed"), (
+        "retitle must record its why in the machine-readable history too")
 
 
 def test_retitle_cli_same_title_refuses_not_success(tmp_path, capsys):
@@ -1156,6 +1165,12 @@ def test_retitle_cli_same_title_refuses_not_success(tmp_path, capsys):
     capsys.readouterr()
     before = ledger._read_records(str(ledger_path.parent))[0]
     tid = before["id"]
+    store = ledger.ledger_store.open_store(ledger.store_path(ledger_path.parent))
+    try:
+        events_before = store.conn.execute(
+            "SELECT COUNT(*) FROM task_event WHERE task_id = ?", (tid,)).fetchone()[0]
+    finally:
+        store.close()
 
     rc = ledger.main([
         "retitle", str(tid), "already current", "--why", "mistaken call",
@@ -1167,6 +1182,13 @@ def test_retitle_cli_same_title_refuses_not_success(tmp_path, capsys):
     after = ledger._read_records(str(ledger_path.parent))[0]
     assert after["title"] == before["title"]
     assert after["body"] == before["body"]
+    store = ledger.ledger_store.open_store(ledger.store_path(ledger_path.parent))
+    try:
+        events_after = store.conn.execute(
+            "SELECT COUNT(*) FROM task_event WHERE task_id = ?", (tid,)).fetchone()[0]
+    finally:
+        store.close()
+    assert events_after == events_before, "a refused retitle must append no event"
 
 
 def test_retitle_cli_missing_why_is_argparse_error(tmp_path):
