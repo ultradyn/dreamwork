@@ -82,67 +82,6 @@
   implementation is planned, and phase 0 (the `-shm` fix) proceeds regardless, since it is just a bug.
   Accepted answers: `rec` · `ws` · free text.
 
-- **P1 · 2026-07-31 17:00 — #591 (blocks #630): claude-design compatibility does NOT cost the single render
-  authority — one ruling makes it official.** **Sub-decisions:** `Q1`, `Q2`, `Q3`.
-  Analysis: `.dreamwork/review/505-g2-render-authority.html` (artifact, IGC inside) +
-  `.dreamwork/docs/plans/render-architecture.md` (§Status 2026-07-31, which also records that
-  #505's G4 "no build step" goal is **retired** per your 2026-07-30 ruling, `0f97df03`).
-
-  Your 2026-07-31 focus makes *"compatible with claude design"* a goal, and #505 G2 (one render
-  authority) looked like the casualty: a design tool needs components, this dashboard renders
-  through string builders, and the standing rule — *"two renderers only agree on the day they are
-  written"* (`dreamhub-design.md:197`) — refuses a second renderer. **Verified against claude
-  design's own ingestion spec** (the `design-sync` skill bundled in Claude Code 2.1.220, read this
-  session; public docs corroborate): it imports a compiled **React** bundle of your *real*
-  components (`window.<globalName>` + per-component `.d.ts` + usage docs), its component path is
-  React-only, a tokens-only fallback exists, and its core principle is your own rule in the tool's
-  voice: *"ship what the customer already built — the bundle is their compiled dist/, **never a
-  reimplementation**."* Your 16:38 submission (receipt `a71d1105…`) added two independent goals —
-  the component-native session view (*"only be available via that"*) and the WS/RPC state-delta
-  model — which refute "no component system" **on their own** but do not move the survivor.
-
-  The IGC (6 ideas × 8 goals) has **one All-✔ survivor**: a **derived component surface + born-native
-  new surfaces** — the bundle step compiles the same `client/*.js` files `watch.py` already serves
-  into a React package of thin delegating wrappers (no markup restated, so nothing can diverge),
-  plus the real `style.css`/tokens; new surfaces like the session view are written as components
-  from their first line, with no builder twin. Refuted: a parallel hand-maintained component library
-  (✘ G2, and ✘ the tool's own principle); wholesale migration (✘ incremental/reversible — `qaCard`
-  renders on every surface, so per-view migration forks it and the alternative is a flag day, with
-  gestures re-proven from scratch); web components (✘ verified — the runtime is React-only); no
-  component system (✘ three ways now).
-
-  - **`Q1` — ratify the per-surface reading: one render authority *per surface*, and a derived
-    surface is not a second authority?** **`rec: yes.`** G2 refuses two *maintained* truths about
-    the *same* surface (it was coined refusing a JS row renderer beside the Python one rendering
-    *the same rows*). Under this reading the builders stay the one authority for every surface they
-    own, wrappers delegate, native surfaces have no builder counterpart, and shared primitives keep
-    one truth via delegation. Alt: rule that G2 refuses even a derived surface — then claude-design
-    compatibility caps at tokens-only and the session view's component system re-derives the page's
-    primitives, which is the drift shape the rule exists to prevent.
-  - **`Q2` — the claude-design breakpoint: component-level, or tokens-level?** **`rec:
-    component-level, staged`** — tokens+CSS ship first (nearly free: `client/style.css` is a real
-    1,844-line file today and the design-sync artifact set carries it regardless), delegating
-    wrappers follow as the bundle step's second stage. Alt: tokens-only ceiling — cheapest, but the
-    tool then designs with *its* generic components wearing your skin, which is a reimplementation
-    of your UI at the tool's end, stale from the day it is made.
-  - **`Q3` — the component system's framework?** **`rec: React.`** Not preference — the only
-    immovable constraint in sight: claude design's runtime is React, and one system for both the
-    design bundle and on-page native surfaces is one vocabulary. Alt: a lighter on-page runtime
-    (preact/lit) with React only for the bundle — defensible if the page must not carry React's
-    weight, at the price of two component idioms, which is the two-truths smell one level up.
-
-  **What would reopen this:** if you want the design tool (or the page) to *recompose component
-  interiors* — the pieces inside a question card as first-class parts — only a real migration
-  delivers that, at the price its row shows. Say so and #591 reopens with that goal on the board.
-  Nothing in your stated focus asks for it, so it is priced, not asked. The session view's own UI/UX
-  design (your "ask clarifying questions early" plus mockups) is deliberately a separate, later ask
-  — this ruling only fixes *where* that surface lives.
-
-  **If you say nothing:** nothing is built — the analysis authorises no code. The recs stand as the
-  framing the bundle step is planned against, and the bundle step still cannot decide G2 by
-  accident: preventing exactly that is why this ruling exists.
-  Accepted answers: `rec` (takes all three) · per-question (`Q1: …`) · free text.
-
 - **P2 · 2026-07-31 01:50 — #572: GitHub etiquette — one fork left: may an Internal Reference name several posts?**
   You answered the other four on 2026-07-31 03:57 (`rec` on Q1, Q3, Q4, Q5, with the `gh` extension
   preferred over the alias and no signature needed). Those are settled and written up in
@@ -248,6 +187,78 @@
 
 ## Answered
 
+- **P1 · 2026-07-31 17:00 — #591 (blocks #630): claude-design compatibility does NOT cost the single render
+  authority — one ruling makes it official.** **Sub-decisions:** `Q1`, `Q2`, `Q3`.
+  Analysis: `.dreamwork/review/505-g2-render-authority.html` (artifact, IGC inside) +
+  `.dreamwork/docs/plans/render-architecture.md` (§Status 2026-07-31, which also records that
+  #505's G4 "no build step" goal is **retired** per your 2026-07-30 ruling, `0f97df03`).
+
+  Your 2026-07-31 focus makes *"compatible with claude design"* a goal, and #505 G2 (one render
+  authority) looked like the casualty: a design tool needs components, this dashboard renders
+  through string builders, and the standing rule — *"two renderers only agree on the day they are
+  written"* (`dreamhub-design.md:197`) — refuses a second renderer. **Verified against claude
+  design's own ingestion spec** (the `design-sync` skill bundled in Claude Code 2.1.220, read this
+  session; public docs corroborate): it imports a compiled **React** bundle of your *real*
+  components (`window.<globalName>` + per-component `.d.ts` + usage docs), its component path is
+  React-only, a tokens-only fallback exists, and its core principle is your own rule in the tool's
+  voice: *"ship what the customer already built — the bundle is their compiled dist/, **never a
+  reimplementation**."* Your 16:38 submission (receipt `a71d1105…`) added two independent goals —
+  the component-native session view (*"only be available via that"*) and the WS/RPC state-delta
+  model — which refute "no component system" **on their own** but do not move the survivor.
+
+  The IGC (6 ideas × 8 goals) has **one All-✔ survivor**: a **derived component surface + born-native
+  new surfaces** — the bundle step compiles the same `client/*.js` files `watch.py` already serves
+  into a React package of thin delegating wrappers (no markup restated, so nothing can diverge),
+  plus the real `style.css`/tokens; new surfaces like the session view are written as components
+  from their first line, with no builder twin. Refuted: a parallel hand-maintained component library
+  (✘ G2, and ✘ the tool's own principle); wholesale migration (✘ incremental/reversible — `qaCard`
+  renders on every surface, so per-view migration forks it and the alternative is a flag day, with
+  gestures re-proven from scratch); web components (✘ verified — the runtime is React-only); no
+  component system (✘ three ways now).
+
+  - **`Q1` — ratify the per-surface reading: one render authority *per surface*, and a derived
+    surface is not a second authority?** **`rec: yes.`** G2 refuses two *maintained* truths about
+    the *same* surface (it was coined refusing a JS row renderer beside the Python one rendering
+    *the same rows*). Under this reading the builders stay the one authority for every surface they
+    own, wrappers delegate, native surfaces have no builder counterpart, and shared primitives keep
+    one truth via delegation. Alt: rule that G2 refuses even a derived surface — then claude-design
+    compatibility caps at tokens-only and the session view's component system re-derives the page's
+    primitives, which is the drift shape the rule exists to prevent.
+  - **`Q2` — the claude-design breakpoint: component-level, or tokens-level?** **`rec:
+    component-level, staged`** — tokens+CSS ship first (nearly free: `client/style.css` is a real
+    1,844-line file today and the design-sync artifact set carries it regardless), delegating
+    wrappers follow as the bundle step's second stage. Alt: tokens-only ceiling — cheapest, but the
+    tool then designs with *its* generic components wearing your skin, which is a reimplementation
+    of your UI at the tool's end, stale from the day it is made.
+  - **`Q3` — the component system's framework?** **`rec: React.`** Not preference — the only
+    immovable constraint in sight: claude design's runtime is React, and one system for both the
+    design bundle and on-page native surfaces is one vocabulary. Alt: a lighter on-page runtime
+    (preact/lit) with React only for the bundle — defensible if the page must not carry React's
+    weight, at the price of two component idioms, which is the two-truths smell one level up.
+
+  **What would reopen this:** if you want the design tool (or the page) to *recompose component
+  interiors* — the pieces inside a question card as first-class parts — only a real migration
+  delivers that, at the price its row shows. Say so and #591 reopens with that goal on the board.
+  Nothing in your stated focus asks for it, so it is priced, not asked. The session view's own UI/UX
+  design (your "ask clarifying questions early" plus mockups) is deliberately a separate, later ask
+  — this ruling only fixes *where* that surface lives.
+
+  **If you say nothing:** nothing is built — the analysis authorises no code. The recs stand as the
+  framing the bundle step is planned against, and the bundle step still cannot decide G2 by
+  accident: preventing exactly that is why this ruling exists.
+  Accepted answers: `rec` (takes all three) · per-question (`Q1: …`) · free text.
+  - **Answer (via watch, 2026-07-31 17:03):** 1. rec (prioritize
+    replacing old inline-html in watch.py with new UI components at the
+    earliest suitable time) 2. rec 3. rec note re `16:38 goals refute
+    "no components"`, we should update any references to this (no
+    compoinents ruling) to say new ruling is transition to
+    component-based react webui.
+  → answered (2026-07-31 17:03): **`rec` on all three** — Q1 the per-surface G2 reading is
+  ratified, Q2 component-level and staged, Q3 React. Two additions beyond the recs, both folded:
+  he wants **replacing the old inline HTML in `watch.py` with the new UI components prioritised at
+  the earliest suitable time** (so the transition is not merely permitted but scheduled — #630
+  carries it), and he directs that **any reference to the old "no components" ruling be updated to
+  say the ruling is now a transition to a component-based React web UI** (#633).
 - **P2 · 2026-07-31 07:20 — (your ask via /answers) the hand-off fold backlog: not unmerged, and now caught.**
   → answered (2026-07-31 07:20): no — all 25 ids were already landed on master; the gap was the
   coordinator's missing `→ folded` bookkeeping, not unmerged work. #576 now catches it and the
