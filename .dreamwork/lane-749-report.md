@@ -21,9 +21,9 @@ page, and making it a `dev/` API would widen a one-harness contract.
 
 Commits after the first rebase onto local `master`:
 
-- `471c636e` — `test(#749): discover dashboard harness sentinels fail-closed`
-- `5ae7b6fc` — `fix(#749): refuse unclassified call syntax`
-- `7f73982e` — `fix(#749): require discovered callees to be declared`
+- `780597d9` — `test(#749): discover dashboard harness sentinels fail-closed`
+- `7e3774db` — `fix(#749): refuse unclassified call syntax`
+- `c7d4a90f` — `fix(#749): require discovered callees to be declared`
 
 ## Red-proof
 
@@ -69,7 +69,7 @@ every execution.
 
 Final snapshot gate:
 
-> `history: examined 3 commit(s) since 83d7d03c1527 (master) against 1 injected path(s); read 3 blob(s), 0 holding a recorded injection.`
+> `history: examined 4 commit(s) since 564829abca33 (master) against 1 injected path(s); read 4 blob(s), 0 holding a recorded injection.`
 >
 > `check: clean — 7 injection(s) registered, all restored and absent from the working tree and from this branch's commits`
 
@@ -104,8 +104,12 @@ marker and ordering preconditions cover only the stated Q&A assembly contract.
 - Before change, exact `python3 -m pytest test_watch.py`: **487 collected, 487
   passed in 67.99s**.
 - After the first rebase, exact `python3 -m pytest test_watch.py`: **487
-  collected, 487 passed in 68.82s**. A final post-report run is recorded below.
-- `python3 lint.py`: `clean (6 warning(s))`; there were **NO ERRORs**. The six
+  collected, 487 passed in 68.82s**.
+- After the final rebase (which brought in two #751 tests), exact `python3 -m
+  pytest test_watch.py`: **489 collected, 489 passed in 72.18s**. Thus this
+  lane's own change adds no test count; master moved the observed count 487 →
+  489 while the lane was live.
+- Final `python3 lint.py`: `clean (6 warning(s))`; there were **NO ERRORs**. The six
   warnings are pre-existing worktree/ledger-state warnings, including the
   explicit “ledger checks examined nothing” refusal.
 - No browser guards were run, as required for this non-UI lane.
@@ -130,10 +134,10 @@ marker and ordering preconditions cover only the stated Q&A assembly contract.
 
 ## Rebase
 
-Local `master` advanced from `7bd2c3cb` to `83d7d03c` while the lane was live,
-including #751's separate `test_watch.py` class. `git rebase master` completed
-without conflict. The final master check/rebase outcome and final commit sha
-are appended after this report is committed.
+Local `master` advanced from `7bd2c3cb` through `83d7d03c` and finally to
+`564829ab` while the lane was live, including #751's separate `test_watch.py`
+class. Both `git rebase master` runs completed without conflict; the final
+implementation shas above are post-rebase.
 
 ## DOGFOOD REPORT
 
