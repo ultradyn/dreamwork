@@ -13307,6 +13307,80 @@ class TestDataJsonDelta(unittest.TestCase):
             self.assertIn("generated", resp,
                           "the full document should carry generated")
 
+    def test_no_since_rebuilds_when_content_changes_within_one_version(self):
+        """#741 recovery/full fetch must not trust an aliased mtime version."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch._DATA_JSON_CACHE.clear()
+            cached = watch._data_json_cached(d, None)
+            version = cached[0]
+            qfile = os.path.join(d, ".dreamwork", "questions.md")
+            before = os.stat(qfile)
+            marker = "SAME-MTIME-MUTATION"
+            with open(qfile, "a", encoding="utf-8") as f:
+                f.write(f"\n- **{marker}** body\n")
+            os.utime(qfile, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+            self.assertEqual(
+                watch.watched_mtime(d), version,
+                "PRECONDITION: restored mtime must alias the cached version")
+            fresh = watch.collect(d, burn_step=None)
+            fresh_text = json.dumps(fresh, sort_keys=True)
+            self.assertIn(
+                marker, fresh_text,
+                "PRECONDITION: a fresh build must observe the mutation")
+
+            served = watch._data_json_response(
+                watch._data_json_cached(d, None), None)
+            self.assertIn(
+                marker, json.dumps(served, sort_keys=True),
+                "no-since served a stale cached document: the fresh build "
+                "contains SAME-MTIME-MUTATION but the response does not")
+
+    def test_no_since_rebuilds_each_burn_step_cache_key(self):
+        """A full-fetch bypass applies independently to every step cache."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch._DATA_JSON_CACHE.clear()
+            steps = (None, watch.BURN_STEPS[0])
+            for step in steps:
+                watch._data_json_cached(d, step)
+            qfile = os.path.join(d, ".dreamwork", "questions.md")
+            before = os.stat(qfile)
+            marker = "ALL-BURN-STEPS-SEE-FULL-TRUTH"
+            with open(qfile, "a", encoding="utf-8") as f:
+                f.write(f"\n- **{marker}** body\n")
+            os.utime(qfile, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+            for step in steps:
+                with self.subTest(burn_step=step):
+                    served = watch._data_json_response(
+                        watch._data_json_cached(d, step), None)
+                    self.assertIn(
+                        marker, json.dumps(served, sort_keys=True),
+                        f"no-since reused the stale burn_step={step!r} cache")
+
+    def test_two_ordinary_writes_between_polls_are_observed(self):
+        """The narrow alias does not include ordinary writes before a poll."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch._DATA_JSON_CACHE.clear()
+            first = watch._data_json_cached(d, None)
+            qfile = os.path.join(d, ".dreamwork", "questions.md")
+            time.sleep(0.01)
+            with open(qfile, "a", encoding="utf-8") as f:
+                f.write("\n- **ORDINARY-WRITE-ONE** body\n")
+            with open(qfile, "a", encoding="utf-8") as f:
+                f.write("\n- **ORDINARY-WRITE-TWO** body\n")
+
+            final = watch._data_json_cached(d, None, repr(first[0]))
+            self.assertNotEqual(
+                final[0], first[0],
+                "PRECONDITION: ordinary writes must advance the version")
+            final_text = json.dumps(final[1], sort_keys=True)
+            self.assertIn("ORDINARY-WRITE-ONE", final_text)
+            self.assertIn("ORDINARY-WRITE-TWO", final_text)
+
     def test_since_current_version_is_the_no_change_sentinel(self):
         """#136: 'no change' is a DISTINCT sentinel, never the full document
         and never the same shape as 'I could not compute a delta'."""
@@ -13351,7 +13425,7 @@ class TestDataJsonDelta(unittest.TestCase):
                 f.write("\n- **test question** body\n")
             time.sleep(0.01)
             os.utime(qfile, None)
-            e2 = watch._data_json_cached(d, None)
+            e2 = watch._data_json_cached(d, None, repr(prev_version))
             curr_version, curr_doc = e2[0], e2[1]
             self.assertGreater(curr_version, prev_version,
                                "PRECONDITION: the version must have moved for "

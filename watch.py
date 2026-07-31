@@ -3981,14 +3981,16 @@ def apply_delta(base, delta):
 _DATA_JSON_CACHE = {}
 
 
-def _data_json_cached(target, burn_step):
+def _data_json_cached(target, burn_step, since=None):
     """Return ``(version, doc, prev_version, prev_doc)`` for this burn_step,
-    building fresh only when watched_mtime moved. The previous build is kept
-    so `?since=<prev_version>` yields a delta rather than a full doc."""
+    building fresh for a full request or when watched_mtime moved. The previous
+    build is kept so `?since=<prev_version>` yields a delta rather than a full
+    doc. A request without `since` is the recovery path, so it never trusts the
+    mtime-keyed cache: the mtime can alias two different file contents."""
     key = (target, burn_step)
     version = watched_mtime(target)
     entry = _DATA_JSON_CACHE.get(key)
-    if entry is None or entry[0] != version:
+    if since is None or entry is None or entry[0] != version:
         doc = collect(target, burn_step=burn_step)
         prev = (entry[0], entry[1]) if entry else (None, None)
         entry = (version, doc, prev[0], prev[1])
@@ -5188,8 +5190,8 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 # full document for any mismatch (full is always the safe
                 # answer). A client that never sends `since` sees this route
                 # byte-identical to today.
-                doc_entry = _data_json_cached(target, burn_step)
                 since = (qs.get("since") or [None])[0]
+                doc_entry = _data_json_cached(target, burn_step, since)
                 payload = _data_json_response(doc_entry, since)
                 self._send(json.dumps(payload), "application/json")
             elif parsed.path == "/summary.json":
