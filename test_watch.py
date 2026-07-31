@@ -5302,6 +5302,32 @@ class TestPendingEventCount(unittest.TestCase):
                              "precondition: head must equal the seed count")
         return ids
 
+    def _append_after_drain(self, idx):
+        """Append ONE receipt to an ALREADY-DRAINED journal (production path).
+
+        Separate from ``_seed``, which pins a fresh journal.  The falling-count
+        fixture needs the cursor strictly inside the chain, and since #712 the
+        only honest way to reach that is a FULL drain followed by a new arrival
+        — ``consume --through`` must now equal the head the read reported, so a
+        partial drain is exactly the shape that lost ordinal 96 and the tool
+        refuses it.  This is also the more faithful model: drain, then an event
+        lands, is what the live loop does every tick.
+
+        Asserts head rose by exactly one (derived, never assumed).
+        """
+        from user_events.sqlite import Envelope, open_journal
+        with open_journal(self._journal()) as j:
+            before = j.head_ordinal()
+            r = j.receive(Envelope(
+                client_action_id=f"00000000-0000-4000-8000-{idx:012d}",
+                protocol_version="1", method="POST", route="/answer",
+                content_type="application/json",
+                body=json.dumps({"a": idx}).encode()))
+            self.assertEqual(r.kind, "inserted", r.kind)
+            self.assertEqual(j.head_ordinal(), before + 1,
+                             "precondition: the late event raised head by one")
+        return r.receipt_id
+
     def _drain(self, through):
         """Advance the coordinator cursor via the PRODUCTION drain CLI.
 
@@ -5315,6 +5341,15 @@ class TestPendingEventCount(unittest.TestCase):
         (it was the suite's single RED).  Running ``pending`` first is the fix
         and the more faithful model: the head the drain is bounded to comes
         FROM the read, exactly as the live tick does it.
+
+        #712 tightened that further: ``through`` must EQUAL the head the read
+        reported, not merely fall inside it, because a bound below the head is
+        a bound that came from an older or truncated view of the listing (the
+        traced loss: ``pending`` printed 96..99, ``tail -3`` showed 97..99, and
+        ``consume --through 96`` advanced past 96 unread).  So this helper can
+        only express a WHOLE-listing drain, and callers that need a cursor
+        mid-chain reach it by draining fully and then appending
+        (``_append_after_drain``) — the live shape.
 
         Asserts the cursor landed at ``through`` afterwards — the ordinal the
         expected count is derived from.
@@ -5369,15 +5404,23 @@ class TestPendingEventCount(unittest.TestCase):
         self.assertEqual(data["status"]["pending_events"], 3)
 
     def test_count_falls_after_a_drain(self):
-        # The discriminating case. Seed 3, drain through 2 → only ord 3 is
-        # left in (cursor, head]. Expected = head_ordinal (3) minus the cursor
-        # the drain advanced to (2) = 1. This is the assertion a "return total
-        # events" bug fails: total (3) != pending-after-cursor (1). A check
-        # that only tested the no-drain case would pass over that bug, because
-        # there total == pending; the drained case is what tells them apart.
+        # The discriminating case. Seed 2, drain the whole listing, then one
+        # event lands → only ord 3 is left in (cursor, head]. Expected =
+        # head_ordinal (3) minus the cursor the drain advanced to (2) = 1.
+        # This is the assertion a "return total events" bug fails: total (3)
+        # != pending-after-cursor (1). A check that only tested the no-drain
+        # case would pass over that bug, because there total == pending; the
+        # drained case is what tells them apart.
+        #
+        # #712: the cursor is put mid-chain by drain-then-arrive rather than by
+        # a partial `--through`, because a bound below the head of the read on
+        # record is now refused — a partial drain is the exact shape that lost
+        # ordinal 96. Drain-then-arrive is what the live loop does anyway, so
+        # the fixture got more faithful, not more contrived.
         from user_events.sqlite import open_journal
-        self._seed(3)
+        self._seed(2)
         self._drain(2)
+        self._append_after_drain(2)
         with open_journal(self._journal()) as j:
             expected = j.head_ordinal() - j.cursor(
                 "coordinator").scanned_through_event_ordinal
