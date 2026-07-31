@@ -1667,14 +1667,28 @@
      end-of-page section docks it at rest (~35% of the viewport permanently),
      and `top:0` is a no-op for an end-of-page element, so the class — gated
      on a live posture arm or deploy countdown, matching "when the countdown
-     timer bar is on screen" — is the only useful form. Opaque bg + a top
-     hairline (box-shadow, no layout shift) keep the docked widget readable
-     over scrolling content; the full HR+soft-fade the human sketched is
-     deferred (it needs the review-pages registered-property mask and does
-     not fight sticky — see FLAG in the merge). Sticky is not motion
-     (transitions.md), so there is no travel here, only the declaration. */
+     timer bar is on screen" — is the only useful form. A top hairline
+     (box-shadow, no layout shift) marks the dock edge; the full HR+soft-fade
+     the human sketched is deferred (it needs the review-pages
+     registered-property mask and does not fight sticky — see FLAG in the
+     merge). Sticky is not motion (transitions.md), so there is no travel
+     here, only the declaration.
+
+     #636 — the fill is TRANSPARENT, on his explicit instruction ("it has a
+     blue bg (should be transparent)"). #565 painted `background:var(--bg)`
+     to keep the docked widget readable over scrolling content, which was a
+     real reason and is recorded here rather than deleted. What it missed is
+     that `--bg` is the FLAT page colour while `#dreambg` (the fractal
+     canvas, z-index:-1) is what the page actually shows: an opaque --bg fill
+     punches a flat #0b0f19 rectangle through the shader field for the whole
+     countdown, with the widget's edges visible at the .wrap boundary —
+     measured rgb(11, 15, 25) against a live canvas. That block is the thing
+     he named. The readability tension is real and now UNRESOLVED: content
+     scrolls visibly behind the docked widget. Left that way deliberately —
+     the honest fix is a fade/mask, which is the deferred sketch above, not a
+     fill. */
   .posture.psticky { position:sticky; bottom:0; z-index:5;
-    background:var(--bg);
+    background:transparent;
     box-shadow:0 -1px 0 var(--line); }
   /* #488: source chip sits beside the Posture heading, not under the axes. */
   .posture-head { display:flex; align-items:baseline; gap:.55rem;

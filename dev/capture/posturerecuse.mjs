@@ -115,6 +115,22 @@ const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webg
   ok('#565 armed: #posture is docked to the viewport bottom (bottom ≈ vh)',
      Math.abs(docked.bottom - vh) <= 2);
 
+  // #636 — the docked widget must not PAINT. --bg is the flat page colour;
+  // #dreambg (z-index:-1) is what the page shows, so an opaque fill punches a
+  // flat rectangle through the shader for the whole countdown. Computed, not
+  // declared: a var() that resolves to the page colour still reads as a block.
+  const fill = await p.evaluate(() => {
+    const cs = getComputedStyle(document.getElementById('posture'));
+    const cv = document.getElementById('dreambg');
+    return { bg: cs.backgroundColor, shadow: cs.boxShadow,
+             canvas: cv ? getComputedStyle(cv).display : null };
+  });
+  notes.push(`#636 docked fill: ${JSON.stringify(fill)}`);
+  ok(`#636 docked: the fill is transparent, not a block (${fill.bg})`,
+     fill.bg === 'rgba(0, 0, 0, 0)' || fill.bg === 'transparent');
+  ok('#636 docked: the top hairline still marks the dock edge',
+     fill.shadow !== 'none');
+
   // clear the arm (module-scope, like the staleremedy guard sets staleDeploy*)
   // and confirm the dock releases — back to natural flow, below the fold.
   await p.evaluate(() => {
@@ -201,6 +217,64 @@ async function widthTrace(page, short, long) {
   notes.push(`#569 rm width: distinct=${distinct} transitionstart=${t.ranWidth}`);
   ok('#569 reduced motion: width does NOT transition (snaps, ≤2 distinct)',
      !t.ranWidth && distinct <= 2);
+  await ctx.close();
+}
+
+// ═══ 3. A FAILED DEPLOY RELEASES THE DOCK (#636) ═════════════════════════
+// #565 gates .psticky on posturePinnedLive(), which reads staleDeployPhase.
+// Every path that RAISES the pin called paintPosturePin(); the three that
+// LOWER it (refused / unreachable / never-finished) did not, so a deploy that
+// did not land welded the widget to the viewport bottom until the next
+// data-change render. Measured stuck 17s on all three before the fix.
+// Driven through the production lines (armStaleDeploy -> fireStaleDeploy)
+// with the POST refused at the route; `just deploy` is never run.
+{
+  const ctx = await br.newContext({ viewport: { width: 1000, height: 700 } });
+  const p = await ctx.newPage();
+  p.on('pageerror', e => errs.push('deployfail: ' + e));
+  await p.route('**/deploy', route => route.fulfill({
+    status: 202, contentType: 'application/json',
+    body: JSON.stringify({ ok: false, rejected: true,
+                           reason: 'domain_invalid', detail: 'not_local' }),
+  }));
+  await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await p.waitForSelector('#posture');
+  await sleep(300);
+
+  await p.evaluate(() => armStaleDeploy());
+  await sleep(200);
+  const armed = await p.evaluate(() => ({
+    psticky: document.getElementById('posture').classList.contains('psticky'),
+    phase: staleDeployPhase,
+  }));
+  notes.push(`#636 deploy armed: ${JSON.stringify(armed)}`);
+  // precondition: without the raise there is nothing for the release to prove
+  ok('#636 precondition: a live deploy arm docks the widget',
+     armed.psticky === true && armed.phase === 'arming');
+
+  // fire it now rather than waiting out RUN_ARM_MS; drop the arm's own timer
+  // first so it cannot fire a second time behind us.
+  await p.evaluate(async () => {
+    if (staleDeployTimer) { clearTimeout(staleDeployTimer); staleDeployTimer = null; }
+    if (staleDeployTick) { clearInterval(staleDeployTick); staleDeployTick = null; }
+    await fireStaleDeploy(staleDeployGen);
+  });
+  await sleep(400);
+  const after = await p.evaluate(() => {
+    const el = document.getElementById('posture');
+    return { psticky: el.classList.contains('psticky'),
+             position: getComputedStyle(el).position,
+             phase: staleDeployPhase,
+             fmsg: (document.querySelector('.fmsg') || {}).textContent || '' };
+  });
+  notes.push(`#636 after refusal: ${JSON.stringify(after)}`);
+  ok('#636 refused: the deploy phase ended', after.phase === null);
+  ok('#636 refused: the refusal is still named in #fmsg',
+     /refused/.test(after.fmsg));
+  ok('#636 refused: .psticky is released (the dock does not stay welded)',
+     after.psticky === false);
+  ok('#636 refused: #posture is back in natural flow (not position:sticky)',
+     after.position !== 'sticky');
   await ctx.close();
 }
 

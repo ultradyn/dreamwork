@@ -3759,6 +3759,30 @@ function cancelStaleDeployArm() {
   clearStaleDeployArm();
 }
 
+/* #636 — the deploy is over and it did NOT land. ONE teardown, deliberately,
+   because three hand-kept copies is exactly how this broke: #565 gated the
+   posture dock on posturePinnedLive() (which reads staleDeployPhase) and
+   taught every path that RAISES the pin to call paintPosturePin() —
+   armStaleDeploy, fireStaleDeploy's entry, clearStaleDeployArm — but the
+   three paths that LOWER it lived inline inside fireStaleDeploy and were
+   each missed. Measured on all three (refused / unreachable /
+   never-finished): the phase went back to null and the failure was named in
+   #fmsg, while #posture stayed position:sticky with .psticky 17s later.
+   setContent is the only other caller of paintPosturePin and it runs solely
+   when /mtime's mtime token moves, so on a quiet target the widget stayed
+   welded to the viewport bottom indefinitely.
+
+   This does NOT deepen #569's coupling: the deploy still owns its own
+   teardown and simply re-evaluates the shared pin predicate, the same way
+   arming does. When the countdown becomes its own component the seam to lift
+   is this function, not three scattered copies. */
+function endStaleDeploy() {
+  staleDeployPhase = null;
+  paintStaleDeployUI();
+  paintDeployStatus('');   // #569: clear the slot; the failure is a notice
+  paintPosturePin();       // #565/#636: countdown over — release the dock
+}
+
 function armStaleDeploy() {
   const until = Date.now() + RUN_ARM_MS;
   staleDeployGen++;
@@ -3819,9 +3843,7 @@ async function fireStaleDeploy(gen) {
     const rv = await writeVerdict(res);
     landed = rv.landed;
     if (!landed) {
-      staleDeployPhase = null;
-      paintStaleDeployUI();
-      paintDeployStatus('');   // #569: clear the slot; the refusal is a notice
+      endStaleDeploy();   // #636: phase + button + slot + dock, one seam
       /* The two ways this route refuses are both `domain_invalid`, so the
          generic copy ("the value was not one the server accepts") is wrong for
          both — and these are the ONLY two refusals he can provoke. `detail`
@@ -3839,9 +3861,7 @@ async function fireStaleDeploy(gen) {
       return;
     }
   } catch (e) {
-    staleDeployPhase = null;
-    paintStaleDeployUI();
-    paintDeployStatus('');   // #569: clear the slot; the network error is a notice
+    endStaleDeploy();   // #636: phase + button + slot + dock, one seam
     c.note('update was refused — the page could not reach the server', false);
     return;
   }
@@ -3868,9 +3888,7 @@ async function fireStaleDeploy(gen) {
     }
     if (Date.now() - startedAt >= waitMs) {
       clearInterval(staleDeployWait); staleDeployWait = null;
-      staleDeployPhase = null;
-      paintStaleDeployUI();
-      paintDeployStatus('');   // #569: clear the slot; the timeout is a notice
+      endStaleDeploy();   // #636: phase + button + slot + dock, one seam
       c.note(
         'update never finished — this page is still the old one',
         false);

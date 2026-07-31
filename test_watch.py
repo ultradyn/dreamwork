@@ -1042,6 +1042,85 @@ class TestCollector(unittest.TestCase):
         self.assertRegex(sbody, r"(?m)^[ \t]*paintPosturePin\(\);",
                          "setContent must re-apply the sticky class")
 
+    def test_a_failed_deploy_releases_the_posture_dock(self):
+        """#636 — a deploy that does NOT land must lower the posture dock.
+
+        #565 gates `.psticky` on `posturePinnedLive()`, which reads the deploy
+        phase; #569 recused the deploy countdown into the widget. Every path
+        that RAISES the pin calls `paintPosturePin()` (armStaleDeploy,
+        fireStaleDeploy's entry, clearStaleDeployArm). The three paths that
+        LOWER it — refused (a rejected 202), unreachable (the catch), and
+        never-finished (the DEPLOY_WAIT_MS deadline) — each nulled the phase
+        and repainted the button and the slot, but none re-evaluated the pin.
+
+        MEASURED before the fix, all three paths: `staleDeployPhase` back to
+        null, the failure named in #fmsg, and `#posture` still
+        `position:sticky` with `.psticky` 17s later. setContent is the only
+        other caller, and it runs solely when /mtime's mtime token moves — so
+        on a quiet target the widget stayed welded to the viewport bottom
+        indefinitely.
+
+        The held claim is that the teardown is ONE seam, not three hand-kept
+        copies: three copies is how this was missed when #565 added the pin.
+        Production lines: `endStaleDeploy()` and its three call sites in
+        `fireStaleDeploy`. Drop the pin release, or re-inline any one of the
+        three teardowns, and a clause below fails.
+        """
+        page = watch._get_page()
+        self.assertTrue(re.search(r"function\s+endStaleDeploy\b", page),
+                        "endStaleDeploy teardown missing")
+        end = page[page.index("function endStaleDeploy"):]
+        end = end[:end.index("\n}") + 2]
+        self.assertIn("staleDeployPhase = null", end,
+                      "the teardown must end the deploy phase")
+        self.assertIn("paintStaleDeployUI()", end,
+                      "the teardown must repaint the .gservact button")
+        self.assertIn("paintDeployStatus('')", end,
+                      "the teardown must collapse the #pdep slot")
+        self.assertIn("paintPosturePin()", end,
+                      "the teardown must release the posture dock (#636)")
+        # every failure exit of fireStaleDeploy goes through that one seam.
+        fm = re.search(r"async function fireStaleDeploy\(gen\)\s*\{", page)
+        self.assertTrue(fm, "fireStaleDeploy not found")
+        fire = page[fm.start():]
+        fire = fire[:fire.index("\n}") + 2]
+        self.assertEqual(
+            3, len(re.findall(r"\bendStaleDeploy\(\)", fire)),
+            "all three failure exits (refused / unreachable / never-finished) "
+            "must tear down through the one seam")
+        self.assertNotIn(
+            "staleDeployPhase = null", fire,
+            "fireStaleDeploy must not null the phase inline — that is the "
+            "shape that left the dock raised (#636)")
+
+    def test_the_docked_posture_widget_paints_no_opaque_background(self):
+        """#636 — the docked posture widget must not paint a fill.
+
+        #565 gave `.posture.psticky` `background:var(--bg)` to keep the docked
+        widget readable over scrolling content. But `--bg` is the FLAT page
+        colour and `#dreambg` (the fractal canvas, z-index:-1) is what the
+        page actually shows, so the opaque rule punched a flat #0b0f19
+        rectangle through the shader field for the whole countdown — the "blue
+        bg" the human named, MEASURED as rgb(11, 15, 25) against a live
+        canvas, with the widget's edges visible at the .wrap boundary.
+
+        His instruction was explicit: it should be transparent. That overrides
+        #565's readability rationale (recorded here because it was a real
+        reason, not an oversight); the top hairline stays and still marks the
+        dock edge without painting a fill.
+        """
+        page = watch._get_page()
+        m = re.search(r"\.posture\.psticky\s*\{[^}]*\}", page)
+        self.assertTrue(m, ".posture.psticky sticky rule missing from CSS")
+        rule = m.group(0).replace(" ", "").replace("\n", "")
+        self.assertIn("background:transparent", rule,
+                      "the docked widget must not paint a fill (#636)")
+        self.assertNotIn("background:var(--bg)", rule,
+                         "the opaque --bg fill is the blue block he named")
+        # the dock edge is still marked — a hairline, not a fill.
+        self.assertIn("box-shadow:", rule,
+                      "the top hairline marks the dock edge; keep it")
+
     def test_deploy_countdown_recused_into_posture_widget(self):
         """#569 — the deploy update message is recused from #fmsg (the chrome)
         INTO the posture widget's countdown row: a #pdep slot in .parm's
