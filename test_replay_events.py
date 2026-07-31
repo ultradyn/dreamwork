@@ -38,6 +38,8 @@ import pytest
 import ledger_store
 import ledger_write
 import dev.replay_events as rp
+from dreamwork_db import Access, open_database
+from dreamwork_db.tasks import task_store_spec
 
 REPO = Path(__file__).resolve().parent
 
@@ -53,17 +55,16 @@ def _build_real_store(path):
     round-trip replays against. The events span both kinds (filed + landed)
     so the precondition "≥2 event kinds" is honest.
     """
-    s = ledger_store.open_store(path, seed_next_id=500)
-    try:
-        t1 = ledger_write.file_task(s, "first task", "body one",
+    ledger_store.open_store(path, seed_next_id=500).close()
+    with open_database(task_store_spec(path), access=Access.WRITE) as handle:
+        t1 = ledger_write.file_task(handle, "first task", "body one",
                                      at="2026-07-29T10:00:00")
-        t2 = ledger_write.file_task(s, "second task", "body two",
+        ledger_write.file_task(handle, "second task", "body two",
                                      at="2026-07-29T10:00:01")
-        ledger_write.land_task(s, t1, note="done cleanly",
+        ledger_write.land_task(handle, t1, note="done cleanly",
                                 at="2026-07-29T11:00:00")
-        s.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    finally:
-        s.conn.close()
+    with sqlite3.connect(path, isolation_level=None) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     return path
 
 
@@ -149,17 +150,17 @@ def test_replay_rebuilds_chain_in_line_order_not_sorted(tmp_path):
     """
     # Build a real store where the landed event's (at, task_id) sorts BEFORE
     # the second filed event, but was APPENDED after it (ordinal order).
-    s = ledger_store.open_store(tmp_path / "src.sqlite3", seed_next_id=600)
-    try:
-        t1 = ledger_write.file_task(s, "a", "b", at="2026-07-29T09:00:00")
+    source = tmp_path / "src.sqlite3"
+    ledger_store.open_store(source, seed_next_id=600).close()
+    with open_database(task_store_spec(source), access=Access.WRITE) as handle:
+        t1 = ledger_write.file_task(handle, "a", "b", at="2026-07-29T09:00:00")
         # second filed at 10:00 (later)
-        t2 = ledger_write.file_task(s, "c", "d", at="2026-07-29T10:00:00")
+        ledger_write.file_task(handle, "c", "d", at="2026-07-29T10:00:00")
         # land t1 at 09:30 — its (at='09:30', task_id=600) sorts BETWEEN the
         # two filed events by (at,task_id), but it was appended LAST (ordinal 3).
-        ledger_write.land_task(s, t1, at="2026-07-29T09:30:00")
-        s.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    finally:
-        s.conn.close()
+        ledger_write.land_task(handle, t1, at="2026-07-29T09:30:00")
+    with sqlite3.connect(source, isolation_level=None) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     events = rp.export_journal(tmp_path / "src.sqlite3")
     # Precondition: line order is NOT (at, task_id) order (else the test is
