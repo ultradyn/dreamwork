@@ -343,7 +343,7 @@ def test_sweep_subject_widened_to_match_the_coordinator_merge_form():
 
     `Merge #688: branch-level reachability` is the commit form EVERY
     coordinator landing takes, and the #707 brief measured it MISSED today.
-    PRODUCTION LINE: the `|(?:Merge|Fold) (#\d+)` alternative in SWEEP_SUBJECT.
+    PRODUCTION LINE: the Merge/Fold alternative in SWEEP_SUBJECT.
     RED on the un-widened pattern: this returns None.
     """
     assert ledger.SWEEP_SUBJECT.match("Merge #10: branch-level reachability"), (
