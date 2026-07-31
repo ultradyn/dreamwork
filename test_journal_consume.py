@@ -1574,12 +1574,6 @@ def test_pending_coverage_line_reaches_stderr_when_stdout_is_truncated(tmp_path:
     code, out, err = _run(cli, ["pending", "--journal", str(path)])
     assert code == 0, f"pending exited {code} (err={err!r})"
 
-    # stdout is UNCHANGED as the record: one line per event, no trailer in it.
-    stdout_lines = [ln for ln in out.splitlines() if ln.strip()]
-    assert len(stdout_lines) == n, (
-        f"stdout must be exactly {n} event lines — a coverage line in the "
-        f"record would break `line.split('\\t')[0]` parsers; got "
-        f"{len(stdout_lines)}: {stdout_lines!r}")
     listed = _ord_fields(out)
     assert listed == list(range(1, n + 1)), f"precondition: 1..{n}; got {listed}"
 
@@ -1604,6 +1598,16 @@ def test_pending_coverage_line_reaches_stderr_when_stdout_is_truncated(tmp_path:
     # cannot be mistranscribed (#712 requires --through to EQUAL this head).
     assert f"--through {listed[-1]}" in err, (
         f"stderr must name the exact bound for the consume; got {err!r}")
+
+    # stdout is UNCHANGED as the record: one line per event, no trailer in it.
+    # (Checked AFTER the channel assertions above, so an in-band trailer reds
+    # on the property that decided the design — the truncated view loses it —
+    # rather than on the parser contract, which is the secondary reason.)
+    stdout_lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(stdout_lines) == n, (
+        f"stdout must be exactly {n} event lines — a coverage line in the "
+        f"record would break `line.split('\\t')[0]` parsers; got "
+        f"{len(stdout_lines)}: {stdout_lines!r}")
 
     # The quiet rule holds: an empty read says nothing on either channel.
     empty = tmp_path / "quiet.sqlite3"
