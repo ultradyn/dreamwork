@@ -200,6 +200,8 @@ append — never a deletion — so a folded hand-off is not flagged twice.
 - **#664** → folded (2026-07-31 20:33) — landed `09111986` on lane-664notify, merged `6af9665a`. file_notify.py stdlib-only leaf, unwired. Ladder inverted: inotifywait absent on 4/5 envs incl. both build boxes, so rung 2 was measured LESS available than rung 1 and deliberately not built.
 - **#672** → folded (2026-07-31 20:55) — merged `1e56e12c`. brief evidence claims falsifiable — 11 lines, SKILL.md + lessons.md
 - **#676** → folded (2026-07-31 20:55) — merged `846daa72`. branch audit — 13 classified, 0 live work, 0 new citations needed
+- **#680** → folded (2026-07-31 21:04) — merged `8f45a85f`. statx libc loader matches file_notify robust form + symbol probe; reporting half unmet, filed
+- **#681** → folded (2026-07-31 21:04) — merged `8f45a85f`. ledger.py enum validation names column + live allowed set; verified 4 ways
 
 ## Pending
 
