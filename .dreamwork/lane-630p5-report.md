@@ -85,9 +85,15 @@ Final hand-off gate:
   relevant assertions bind that dist styles byte-equal the served stylesheet,
   both sides contain a runtime-derived custom-property sentinel, the page is a
   non-vacuous real assembly, and committed dist matches its inputs/outputs.
-- `python3 lint.py` — clean with the required 5 warnings; `client/dist` OK.
-  The five are the expected worktree/store/status/duplicate-lesson/no-ledger
-  warnings, not new findings.
+- `python3 lint.py` — before rebase, clean with the required 5 warnings and
+  `client/dist` OK. After rebasing to current master, **5 ERRORs / 5 WARNs**:
+  every ERROR is the persisted-brief absolute-inbox check, across
+  `630-cx-630p5.md`, `631-glm-631i3.md`, `645-cx-645i6.md`,
+  `765-cx-765holds.md`, and `769-glm-769echo.md`; `client/dist` remains OK.
+  The worktree interpreter against the live main target reports the same five
+  ERRORs (and one live-target warning), proving they are upstream/current-master
+  state rather than this branch's client change. Historical briefs are outside
+  lane ownership and the brief expressly forbids rewriting them.
 - Browser guard: none in `dev/capture/` covers an off-page design-tool
   entrypoint or conventions document. I do not claim browser-guard coverage.
   The exact fresh-server `GET /` comparison above directly binds the narrower
@@ -143,3 +149,10 @@ The safe recovery was lane-private move → rebase → restore and hash-verify.
 That case is not described in the boilerplate, though persisted briefs make it
 predictable for any lane whose master advances past the coordinator's
 brief-persistence commit.
+
+That same master advance invalidated the brief's promised lint bar: before
+rebase the lane met exactly 5 warnings and no ERRORs; afterwards current master
+itself has five absolute-inbox brief ERRORs, including this lane's persisted
+brief. The boilerplate simultaneously says historical briefs must not be
+rewritten, so the lane cannot both repair the bar and obey scope. I left the
+upstream defect untouched and named every failing file above.
