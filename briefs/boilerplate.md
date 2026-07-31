@@ -36,6 +36,13 @@ body; the *same body* backticked a second token, and fixing only the named one l
 alive while still passing a naive string assertion. The lane caught it only by extending the
 check on its own initiative. Extend it on yours.
 
+**Read resulting state before relying on a command.** After a command mutates state or supplies
+an inventory that controls the next action, immediately read the authoritative result: merge
+ancestry/HEAD, the stored ledger entry, the worktree list, or the complete target population.
+Bind any success report or follow-on write to the producing command's status, not to a later
+pipeline element or whatever state was already present. A plausible command spelling is not
+evidence that its intended behaviour occurred.
+
 **DO NOT append a hand-off line to `.dreamwork/handoffs.md`. That file has a single writer
 and it is not you** (the lesson *"Both wordings of the hand-off instruction are wrong, and I
 found the second by hitting it twice"*, and `#687`). It is an ownership rule reached after the
