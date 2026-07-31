@@ -11,19 +11,21 @@ and continuing would let the harness silently examine less code while still
 going green, the exact false-confidence shape this task forbids.
 
 I improved the proposal in two ways. First, a discovered sentinel name must
-also have a line-anchored function or const-arrow declaration in the assembled
-page; this prevents an arbitrary misspelling from becoming a harmless stub.
+also have a top-level function or const-arrow declaration in lexically masked
+client JavaScript; declaration-shaped comment/string text is excluded.
 Second, one-edit substitutions/insertions/deletions and adjacent
 transpositions against the five protected names get a more specific likely-
 typo error. The helper remains local because its refusal diagnostics use this
-test's `self.fail`, its declaration inventory comes from this test's assembled
-page, and making it a `dev/` API would widen a one-harness contract.
+test's `self.fail`, its declaration inventory comes from the client sources
+already assembled by `watch`, and a `dev/` API would widen a one-harness contract.
 
 Commits after the first rebase onto local `master`:
 
-- `780597d9` — `test(#749): discover dashboard harness sentinels fail-closed`
-- `7e3774db` — `fix(#749): refuse unclassified call syntax`
-- `c7d4a90f` — `fix(#749): require discovered callees to be declared`
+- `2374d071` — `test(#749): discover dashboard harness sentinels fail-closed`
+- `af1de77d` — `fix(#749): refuse unclassified call syntax`
+- `f9ccd5e5` — `fix(#749): require discovered callees to be declared`
+- `8a46f33f` — `fix(#749): close fail-closed classifier gaps`
+- `011e05cc` — `fix(#749): bind exact member and template shapes`
 
 ## Red-proof
 
@@ -36,7 +38,7 @@ complete Q&A ordering test passed:
 
 That run includes all marker/precondition and relative-order assertions. An
 earlier probe using `buildCurrent(d)` refused with `unknown direct callee
-buildCurrent`; it is not in the assembled page's supported function/arrow
+buildCurrent`; it is not in the supported top-level function/arrow
 declaration inventory. This is the intended safe-side false red, and the
 declared `activeBurnLimit` probe establishes the supported path.
 
@@ -69,7 +71,7 @@ every execution.
 
 Final snapshot gate:
 
-> `history: examined 4 commit(s) since 564829abca33 (master) against 1 injected path(s); read 4 blob(s), 0 holding a recorded injection.`
+> `history: examined 7 commit(s) since c4077866656e (master) against 1 injected path(s); read 7 blob(s), 0 holding a recorded injection.`
 >
 > `check: clean — 7 injection(s) registered, all restored and absent from the working tree and from this branch's commits`
 
@@ -78,18 +80,20 @@ Final snapshot gate:
 This is deliberately a narrow recognizer, not a JavaScript parser:
 
 - It masks line/block comments and quoted strings; unterminated forms fail.
-- Template text is masked. Interpolations may contain the current simple
-  property/arithmetic expressions only; calls, nested braces, nested templates,
-  and tagged templates fail.
-- Plain identifier calls are discovered. A callee that is not a line-anchored
-  function declaration or const-arrow declaration in the page fails rather
-  than being stubbed.
+- Template text is masked. Interpolations may contain simple property chains
+  only; calls, quotes, commas, nested braces/templates, and tagged templates
+  fail. Identifier, parenthesized, and computed tags have refusal probes.
+- Plain identifier calls are discovered. A callee that is not a top-level
+  function or const-arrow declaration in lexically masked client JavaScript
+  fails rather than being stubbed. A probe excludes declaration-shaped
+  comment/template text.
 - Bare callback identifiers passed to `.map(...)` are dependencies. The
   current single-parameter arrow callbacks are accepted and their direct calls
   are scanned normally. Other callback shapes fail.
 - `.map`, `.join`, and `.slice` are the only classified member-call forms,
-  with arguments constrained to the forms currently used by `buildDashboard`.
-  Every other member/optional/computed/result call fails.
+  with receiver, callback, and argument shapes constrained to those currently
+  used by `buildDashboard`; non-empty joins and changed receiver chains have
+  refusal probes. Every other member/optional/computed/result call fails.
 - Constructor calls, tagged-template calls, regex/division syntax, unbalanced
   calls, malformed bodies, zero dependencies, and zero generated sentinels all
   fail loudly. A legitimate future use of any unsupported syntax therefore
@@ -106,7 +110,7 @@ marker and ordering preconditions cover only the stated Q&A assembly contract.
 - After the first rebase, exact `python3 -m pytest test_watch.py`: **487
   collected, 487 passed in 68.82s**.
 - After the final rebase (which brought in two #751 tests), exact `python3 -m
-  pytest test_watch.py`: **489 collected, 489 passed in 72.18s**. Thus this
+  pytest test_watch.py`: **489 collected, 489 passed in 69.78s**. Thus this
   lane's own change adds no test count; master moved the observed count 487 →
   489 while the lane was live.
 - Final `python3 lint.py`: `clean (6 warning(s))`; there were **NO ERRORs**. The six
@@ -134,10 +138,10 @@ marker and ordering preconditions cover only the stated Q&A assembly contract.
 
 ## Rebase
 
-Local `master` advanced from `7bd2c3cb` through `83d7d03c` and finally to
-`564829ab` while the lane was live, including #751's separate `test_watch.py`
-class. Both `git rebase master` runs completed without conflict; the final
-implementation shas above are post-rebase.
+Local `master` advanced from `7bd2c3cb` through `83d7d03c`, `564829ab`, and
+finally `c4077866` while the lane was live, including #751's separate
+`test_watch.py` class. All three `git rebase master` runs completed without
+conflict; the final implementation shas above are post-rebase.
 
 ## DOGFOOD REPORT
 
