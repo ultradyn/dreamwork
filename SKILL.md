@@ -411,7 +411,13 @@ So the dispatch brief tells the lane, and the coordinator carries its half:
   `lessons.md`, `questions.md`) because both sides grow at the same EOF. The
   resolution is nearly always keep-both, and after ANY hand resolution the
   lane greps for all four diff3 marker forms **line-anchored** —
-  `grep -nE '^(<{7}|>{7}|={7}|\|{7})'` — because this repo's own files
+  `grep -nE '^(<{7}|>{7}|\|{7}|={7}$)'` — note the `$`, which only the
+  `=` arm carries and which is load-bearing: the other three markers are
+  followed by a branch or base name so they cannot be anchored, while
+  `=======` stands alone, and an unanchored `={7}` matches any rule-of-equals
+  divider of seven characters or more (measured by lane-673tick against
+  `test_chain_golden.py`, which false-positives under the unanchored form).
+  Anchoring matters here because this repo's own files
   discuss conflict markers in prose and a substring test is wrong by
   construction (`lessons.md:3295`, and the coordinator tripped over exactly
   this resolving `#667`).
