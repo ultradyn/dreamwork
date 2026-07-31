@@ -2820,7 +2820,12 @@ class TestCollector(unittest.TestCase):
         # beside it are dead on a fresh page and look perfect on later ticks.
         # Every fetcher must assign through setData; a bare assignment silently
         # re-arms #208's exact failure.
-        assignments = re.findall(r"(?m)^\s*data\s*=", watch.PAGE)
+        # P3 adds a separate generated-runtime script whose minified local
+        # names are irrelevant to this router seam. Inspect the final classic
+        # script, where router.js and its live-data assignments actually live.
+        router_script = re.findall(r"<script>(.*?)</script>", watch.PAGE,
+                                   re.S)[-1]
+        assignments = re.findall(r"(?m)^\s*data\s*=", router_script)
         self.assertEqual(assignments, ["  data ="])
 
     def test_git_tail_carries_what_an_expanded_row_shows(self):
@@ -5952,7 +5957,7 @@ class TestAppShell(unittest.TestCase):
         # It deliberately does NOT reuse the review surface: no questions.md
         # pairing, no archive-on-answered lifecycle. Guard:
         # dev/capture/research.mjs.
-        for token in ('buildResearch', '/researchraw', '/research?p='):
+        for token in ('artifactRow', '/researchraw', '/research?p='):
             self.assertIn(token, watch.PAGE)
         # A route lives in three places (the #452 lesson restated at
         # test_page_has_question_route_wiring): the client router, the
@@ -8616,18 +8621,22 @@ class TestBundleParses(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("node not available — the syntax gate did NOT run")
-        body = watch.PAGE.split("<script>", 1)[1].rsplit("</script>", 1)[0]
-        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
-                                         encoding="utf-8") as f:
-            f.write(body)
-            path = f.name
-        try:
-            r = subprocess.run([node, "--check", path],
-                               capture_output=True, text=True)
-            self.assertEqual(r.returncode, 0,
-                             "the page's script does not parse:\n" + r.stderr)
-        finally:
-            os.unlink(path)
+        scripts = re.findall(r"<script>(.*?)</script>", watch.PAGE, re.S)
+        self.assertTrue(scripts, "the page has no inline scripts to check")
+        for index, body in enumerate(scripts):
+            with tempfile.NamedTemporaryFile(
+                    "w", suffix=".js", delete=False, encoding="utf-8") as f:
+                f.write(body)
+                path = f.name
+            try:
+                r = subprocess.run([node, "--check", path],
+                                   capture_output=True, text=True)
+                self.assertEqual(
+                    r.returncode, 0,
+                    "page inline script %d does not parse:\n%s" %
+                    (index + 1, r.stderr))
+            finally:
+                os.unlink(path)
 
 
 class TestFileHeadingLockup(unittest.TestCase):
@@ -13469,3 +13478,11 @@ class TestNativePageAssembly(unittest.TestCase):
                       "the router must run only after dwNative exists")
         self.assertNotIn("<script src", watch.PAGE,
                          "native.js must stay inline in the one-response page")
+
+    def test_research_route_has_one_native_render_authority(self):
+        self.assertNotIn(
+            'function buildResearch(', watch.PAGE,
+            'the converted surface must not retain its string builder')
+        self.assertIn(
+            'if (isNativeRoute(view.name)) return null;', watch.PAGE,
+            'a native route must bypass the string-builder dispatch')

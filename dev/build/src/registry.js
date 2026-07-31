@@ -2,15 +2,10 @@
  * will call. #630 P2.
  *
  * This is the SECOND registry the plan names (`component-transition.md` §2b,
- * §4-P2). The first is the string-builder dispatch in `buildCurrent`
- * (`client/router.js:1100-1112`), which is untouched by this phase and stays
- * the sole authority for every route today.
- *
- * P2 MOUNTS NOTHING. This module is loaded from `client/dist/native.js`,
- * which reaches no page: `watch.py` assembles PAGE from `client/*.js` and
- * this bundle is not among them. Wiring `buildCurrent` to consult the
- * registry is P3's first act, on the route P3 converts. What lands here is
- * the seam, proven against the real page by `dev/capture/coexist.mjs`.
+ * §4-P2). The first is the string-builder dispatch in `buildCurrent`.
+ * #751 P3 partitions them: `/research` resolves here, every other route still
+ * resolves through its builder, and the router unmounts before crossing the
+ * boundary.
  *
  * THE OWNERSHIP RULE, which is the whole coexistence story and the reason
  * this file has a `verify()`:
@@ -97,7 +92,7 @@ export function createRegistry() {
    * takes over everything inside its root, and `#view` is not ours to take
    * over — `unmount` must be able to hand `host` back exactly as it was.
    * `dev/capture/coexist.mjs` asserts that round-trip byte-for-byte. */
-  function mount(route, host, data) {
+  function mount(route, host, data, param) {
     const entry = entries.get(route);
     if (!entry) {
       throw new Error(
@@ -117,7 +112,9 @@ export function createRegistry() {
     container.setAttribute(OWNED_ATTR, route);
     host.appendChild(container);
     const root = createRoot(container);
-    const rec = { host: host, container: container, root: root, data: data };
+    const rec = {
+      host: host, container: container, root: root, data: data, param: param,
+    };
     live.set(route, rec);
     render(rec, entry, data);
     return rec;
@@ -144,7 +141,10 @@ export function createRegistry() {
    * the right trade: the page renders on a ~2s tick, not on a keystroke. */
   function render(rec, entry, data) {
     flushSync(function () {
-      rec.root.render(React.createElement(entry.component, { data: data }));
+      rec.root.render(React.createElement(entry.component, {
+        data: data,
+        param: rec.param,
+      }));
     });
   }
 

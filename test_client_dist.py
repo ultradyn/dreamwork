@@ -290,7 +290,7 @@ def test_native_js_references_the_builders_and_does_not_contain_them():
     # Lifted verbatim from client/*.js: distinctive enough not to appear by
     # chance, and each one is a top-level SIDE EFFECT or a builder body — the
     # things that must not run twice.
-    probes = ["setInterval(ages", "window.dreambg", "function buildResearch("]
+    probes = ["setInterval(ages", "window.dreambg", "function artifactRow("]
     for probe in probes:
         assert probe in index, (
             "%r is not in the design bundle, which concatenates client/*.js. "
@@ -306,8 +306,8 @@ def test_native_js_references_the_builders_and_does_not_contain_them():
     # The other half of the claim: it references them. A bundle that neither
     # contains nor references a builder would pass every assertion above by
     # having nothing to do with the builders at all.
-    assert "buildResearch" in native, (
-        "%s does not name buildResearch — the delegating wrapper is supposed "
+    assert "artifactRow" in native, (
+        "%s does not name artifactRow — the delegating wrapper is supposed "
         "to CALL it, and a bundle that neither contains nor references the "
         "builders is not derived from anything" % client_dist.NATIVE_REL)
 
@@ -359,9 +359,8 @@ def test_the_native_runtime_stays_inside_a_chosen_page_weight_budget():
 
     Measured at P2: 146920 bytes minified (React 18.3.1 + ReactDOM + the
     registry + one probe), against the plan's INFERRED 140-180 KB — so the
-    estimate held. The page is unchanged, because native.js is not on it; this
-    is the bill that falls due at P3, stated one phase early so it is a
-    decision rather than a discovery.
+    estimate held. P3 now pays that page-weight bill and keeps the same bound
+    on the runtime itself, where an ordinary builder edit cannot false-red it.
     """
     size = (ROOT / client_dist.NATIVE_REL).stat().st_size
     assert size > 50_000, (
@@ -411,7 +410,7 @@ def test_a_new_native_source_that_the_manifest_never_saw_is_stale(tmp_path):
     without the new component in it.
     """
     root = _clone(tmp_path)
-    (root / client_dist.NATIVE_SRC_DIR / "research.js").write_text(
+    (root / client_dist.NATIVE_SRC_DIR / "future-surface.js").write_text(
         "export const Research = null;\n", encoding="utf-8")
 
     manifest = _manifest(root)
@@ -423,8 +422,8 @@ def test_a_new_native_source_that_the_manifest_never_saw_is_stale(tmp_path):
     reading = client_dist.check(str(root))
     assert reading["state"] == client_dist.STALE, (
         "a native source the build never saw read as %r" % (reading["state"],))
-    assert any("research.js" in s for s in reading["stale"]) or \
-        "research.js" in (reading["note"] or ""), (
+    assert any("future-surface.js" in s for s in reading["stale"]) or \
+        "future-surface.js" in (reading["note"] or ""), (
         "the reading does not NAME the unbuilt source: %r" % (reading,))
 
 

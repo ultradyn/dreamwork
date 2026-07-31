@@ -1381,28 +1381,6 @@ function artifactRow(r, kind) {
     pipBtn('/' + kind + 'raw?p=' + encodeURIComponent(r.name), r.name) +
     age + status + `</div>`;
 }
-/* #484 — research artifacts: the review VIEW idiom (the raw self-contained
-   artifact in an iframe for style isolation; the same #reviewwrap/#reviewframe
-   nodes, which is what lets the tick's snapshotReviewFrame/restoreReviewFrame
-   preservation reach it unchanged) over a listing with NO questions.md
-   pairing and NO archive-on-answered lifecycle — research outlives the
-   decisions it informed (.dreamwork/docs/research/README.md). No dock, no
-   split: there is no question to sit beside. */
-function buildResearch(name, d) {
-  if (name)
-    return `<div id="reviewwrap" class="nodock">` +
-      `<div id="reviewdoc"><iframe id="reviewframe" src="` +
-      '/researchraw?p=' + encodeURIComponent(name) +
-      `" title="research artifact" loading="lazy"></iframe></div></div>`;
-  if (!d) return '<div class="dim">loading…</div>';
-  if (!d.research.length)
-    return label('research') +
-      `<div class="dim">no built research artifacts yet — sources live in ` +
-      `<code>.dreamwork/docs/research/src/</code> and build through ` +
-      `<code>review_artifact.py</code>, the one template pipeline.</div>`;
-  return label('research') +
-    d.research.map(r => artifactRow(r, 'research')).join('');
-}
 /* #545 — every review artifact on one page, the listing shape the review
    and research surfaces already share: one artifactRow factory, the same
    dock-link behaviour and created/modified age pair. The dashboard's cap
