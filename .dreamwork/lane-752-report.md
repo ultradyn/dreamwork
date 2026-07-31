@@ -147,15 +147,39 @@ Every id below was opened through the live absolute-ledger command.
   widened-form and says 'names' rather than 'names a landing for'.” This is the
   direct replacement for sweep's `#590` uses.
 
-## Verification state at audit landing
+## Verification and landing
 
 - Before changes: `python3 -m pytest test_lint.py` collected **535** and passed
   **535/535** in 74.29s.
 - Before changes: `python3 lint.py` exited 0, `clean (6 warning(s))`, zero
   ERRORs. The warnings are the expected worktree/store and existing state/doc
   warnings.
-- Source fixes, final verification, redproof gate, rebase result, and final sha
-  will be appended after the audit commit.
+- Audit-first commit after final rebase: `bf02e917` (`docs(#752): audit source
+  citation authority`).
+- Source-fix commit after final rebase: `e865b5bf` (`fix(#752): correct source
+  citation authority`). It fixes 15 occurrences in five permitted files. The
+  three demonstrated wrong `watch.py` occurrences remain untouched and are
+  listed above.
+- After changes and the final rebase: `python3 -m pytest test_lint.py`
+  collected **535** and passed **535/535** in 74.53s. The requested before and
+  after counts are therefore 535 and 535.
+- Focused affected surface: `python3 -m pytest test_ledger.py
+  test_journal_consume.py test_guard_preflight.py test_status_sync.py` passed
+  **160/160** in 18.60s.
+- `python3 lint.py`: exit 0, `clean (6 warning(s))`, zero ERRORs. The six are
+  the same expected worktree/store and pre-existing state/doc warnings.
+- `python3 -m py_compile dev/journal_consume.py dev/guard_preflight.py
+  dev/ledger.py lint.py status_sync.py`: exit 0.
+- `python3 dev/redproof.py check`: **“check: calm — no injections registered
+  (opt-in discipline; nothing to evaluate).”** No mechanical check was built,
+  so there was deliberately no direction-1 code injection; the audit's two
+  directions are recorded above.
+- No browser guard was run; this is non-UI tooling/comment/output work and the
+  brief assigns the merged-tree guard gate to the coordinator.
+- Rebased twice as local `master` moved during the gate. Both rebases were
+  conflict-free. Final base at verification: `c4077866`; branch was two commits
+  ahead and zero behind, and `git diff master..HEAD --check` was clean. The
+  final diff contains only this report plus the five intended source files.
 
 ## DOGFOOD REPORT
 
