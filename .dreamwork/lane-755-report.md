@@ -48,7 +48,7 @@ The required live invocation was run read-only as `just status-sync --target /ho
 
 > `queued_dispatches: checked 4 entries, 11 id references; 2 state questions, 0 unclassifiable`
 
-It named landed `#666` in the parenthetical “browser guards ... #666” and landed `#632` in the historical “#632 removed - it had LANDED” audit line, quoting both. It also found genuine derived drift (`dreamers prune 2 stale lane(s) (3 -> 1)`), so `--check` correctly exited 1 without writing. The coordinator must resolve those live author-owned lines and dreamer records; this lane did not.
+It named landed `#666` in the parenthetical “browser guards ... #666” and landed `#632` in the historical “#632 removed - it had LANDED” audit line, quoting both. The first run also found genuine derived drift (`dreamers prune 2 stale lane(s) (3 -> 1)`) and exited 1 without writing. Before final hand-off the coordinator changed the live dreamer state; the final identical `--check` returned 0 with no `stale:` line, while still reporting the two advisory state questions above. The coordinator must resolve those live author-owned lines; this lane did not.
 
 ## DOGFOOD REPORT
 
