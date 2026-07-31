@@ -362,8 +362,8 @@ def test_changed_starttime_before_sigterm_refuses_and_names_mismatch(monkeypatch
     killed, signalled, refused, skipped = reaper.do_kill(
         [rec], [rec["pid"]], False, set())
 
-    assert killed == signalled == skipped == []
     assert sent == [], "a reused pid must be refused before SIGTERM"
+    assert killed == signalled == skipped == []
     assert refused == [(rec["pid"],
                         "process identity changed before SIGTERM: gathered "
                         "starttime=123456789, current starttime=987654321; "
