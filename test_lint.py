@@ -5354,19 +5354,19 @@ Next id: **5**
 
 
 class TestTitleBlockedClaim:
-    """#725 — a title claiming blocked-ness while blocked_on is empty.
+    """#725 — a deliberately noisy ``blocked on`` phrase heuristic.
 
     `list` prints titles, not notes, so a title that embeds a condition that
     later becomes false misleads exactly where a correction underneath is
     invisible. #630, #631 and #641 all read as blocked for six hours after
-    their rulings landed. The check finds the CLASS: an open title containing
-    the claim idiom "blocked on" while the structured blocked_on field is
-    empty is a contradiction the ledger can detect for itself.
+    their rulings landed. The check mechanically finds an open title containing
+    the phrase "blocked on" while the structured blocked_on field is empty.
+    It does not parse English: negated, quoted and meta uses warn too, and the
+    message says a human must review the row.
 
-    The pattern is "blocked on" (the CLAIM form), not bare "blocked" — the
-    discrimination #707's lesson governs. Measured on 170 open titles, the
-    claim form catches exactly three real instances and zero descriptions; the
-    bare word catches those three plus three legitimate descriptions.
+    The pattern is "blocked on", not bare "blocked" — the discrimination
+    #707's lesson governs. Measured on 170 open titles, the phrase caught three
+    real instances and zero descriptions; that corpus result is not a grammar.
     """
 
     # --- markdown-mode fixtures (the shared build idiom) ---
@@ -5401,9 +5401,34 @@ class TestTitleBlockedClaim:
         # quotes the offending title fragment, not just a count.
         t = self._md_target(tmp_path, self.MD_CLAIM)
         warns = self._rows(t, lint.WARN)
-        assert any("#1" in d and "blocked on his ruling" in d for d in warns), (
+        assert any("#1" in d and "blocked on his ruling" in d
+                   and "intentionally noisy phrase heuristic" in d
+                   and "a human must review the row" in d for d in warns), (
             "a title claiming 'blocked on' with no structured field must WARN, "
-            "naming the id and the title fragment: %r" % warns)
+            "naming the id and fragment while admitting human review: %r" % warns)
+
+    def test_negated_meta_and_codespan_phrases_warn_as_noisy_matches(self, tmp_path):
+        # #746's three discriminating counterexamples. Option (b) deliberately
+        # keeps the regex cheap and lowers the claim: all three WARN, and the
+        # row must say a human judges them rather than calling them grammar.
+        titles = {
+            1: "not blocked on #614 anymore",
+            2: "Explain why jobs are blocked on CI",
+            3: "Document the `blocked on` title lint",
+        }
+        heads = "".join(
+            f"- **#{task_id}** — {title} · P2 · origin: **loop**\n"
+            for task_id, title in titles.items()
+        )
+        tasks = "# Tasks\n\nNext id: **4**\n\n## Open\n\n" + heads
+        warns = self._rows(self._md_target(tmp_path, tasks), lint.WARN)
+        for task_id, title in titles.items():
+            assert any(
+                f"#{task_id}" in row and title in row
+                and "intentionally noisy phrase heuristic" in row
+                and "a human must review the row" in row
+                for row in warns
+            ), f"#{task_id} must be surfaced as a human-reviewed phrase match: {warns!r}"
 
     def test_a_description_about_blocking_does_not_trip(self, tmp_path):
         # #707's discipline: a title legitimately ABOUT blocking ("A blocked
@@ -5450,7 +5475,8 @@ class TestTitleBlockedClaim:
         t = self._md_target(tmp_path, tasks)
         rows = self._rows(t)
         # No WARN; the coverage OK row may appear
-        assert not [r for r in rows if "claims blocked-ness" in r], (
+        assert not [r for r in rows if "contains the `blocked on` phrase" in r
+                    and "while its blocked_on field is empty" in r], (
             "a title backed by blocked-on: **human** is not a contradiction: %r"
             % rows)
 
@@ -5463,9 +5489,18 @@ class TestTitleBlockedClaim:
         # quiet — which is the documented gap, not a defect. This test PINS
         # the gap: if someone "fixes" it here without the blocker-landing
         # audit (#590), this test goes red and names the overreach.
-        td = self._cut_over_store(tmp_path, blocked_on="#999")
+        td = self._cut_over_store(tmp_path, blocked_on="#11")
+        import ledger_parse, sqlite3
+        conn = sqlite3.connect(
+            f"file:{ledger_parse.store_path(td / '.dreamwork')}?mode=ro", uri=True)
+        try:
+            blocker = conn.execute(
+                "select state from task where id = 11").fetchone()
+        finally:
+            conn.close()
+        assert blocker == ("landed",), "fixture must name an actually landed blocker"
         warns = self._rows(td, lint.WARN)
-        assert not any("claims blocked-ness" in d for d in warns), (
+        assert not any("while its blocked_on field is empty" in d for d in warns), (
             "Direction 2 documented gap: a populated blocked_on (even a stale "
             "one) makes the check quiet by design — closing this needs #590's "
             "blocker-landing audit, not a title check. If this test went red, "
@@ -5533,7 +5568,7 @@ class TestTitleBlockedClaim:
         # contradiction.
         td = self._cut_over_store(tmp_path, blocked_on="#614")
         rows = self._rows(td)
-        assert not any("claims blocked-ness" in r for r in rows), (
+        assert not any("while its blocked_on field is empty" in r for r in rows), (
             "store mode: a populated blocked_on backs the title claim: %r" % rows)
 
     def test_store_mode_whitespace_blocked_on_still_warns(self, tmp_path):
@@ -5551,7 +5586,7 @@ class TestTitleBlockedClaim:
         rep = lint.Report()
         lint.check_title_blocked_claim(td / ".dreamwork", rep)
         oks = [d for lvl, w, d in rep.rows if w == "tasks.md" and lvl == lint.OK]
-        assert any("claiming blocked-ness" in d for d in oks), (
+        assert any("containing the `blocked on` phrase" in d for d in oks), (
             "a backed claim must produce a coverage OK row, not silence: %r" % oks)
 
     def test_silent_when_no_title_claims_blocked(self, tmp_path):
@@ -8553,4 +8588,3 @@ class TestCommitCleanup:
         d = next(dd for lvl, dd in rows if lvl == lint.ERROR)
         assert value in d and "scissors" in d, \
             "must name the value and the fix"
-

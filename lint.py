@@ -1956,7 +1956,7 @@ def _entry_title(entry_text: str) -> str:
 
 
 def check_title_blocked_claim(dw: Path, rep: Report) -> None:
-    """#725 — a title claiming blocked-ness while blocked_on is empty.
+    """#725 — a ``blocked on`` title phrase while blocked_on is empty.
 
     ``#630``'s title reads *"... — blocked on his G2 ruling"*, ``#641``'s reads
     *"... — BLOCKED on the #614 wire-protocol ruling"*, and ``#631``'s reads
@@ -1968,16 +1968,20 @@ def check_title_blocked_claim(dw: Path, rep: Report) -> None:
     ``blocked_on`` (only ``get`` does), so the field that would have corrected
     the title is invisible exactly where the title is visible.
 
-    THE CHECK: an OPEN entry whose title contains the claim idiom "blocked on"
-    while its ``blocked_on`` field is empty is a contradiction the ledger can
-    detect for itself. The fix is either to retitle (the claim is stale) or to
-    set ``blocked_on`` (the claim is current but was never recorded).
+    THE CHECK is an intentionally noisy phrase heuristic: an OPEN entry whose
+    title contains "blocked on" while its ``blocked_on`` field is empty gets a
+    row for a human to review. The regex does not parse English, so negation
+    ("not blocked on"), quotation, and titles ABOUT the phrase all still match.
+    Retitle only when the phrase is a stale claim; set ``blocked_on`` only when
+    it describes a current blocker; otherwise leave the title alone.
 
-    THE DISCRIMINATION (#707): the pattern is "blocked on" (the CLAIM idiom),
-    not bare "blocked". Measured on 170 open titles, "blocked on" catches
-    exactly the three real instances and zero descriptions. A title ABOUT
-    blocking ("A blocked errand is invisible", "Fix the blocked_on writer")
-    does not use the two-word claim form and does not trip. Widening to
+    THE DISCRIMINATION (#707): the pattern is the phrase "blocked on", not bare
+    "blocked". Measured on 170 open titles, it caught exactly the three real
+    instances and zero descriptions. That measurement does not turn a phrase
+    match into a grammar: a future title can use the same words in negation,
+    quotation, or metacommentary and still trip. A title ABOUT blocking
+    ("A blocked errand is invisible", "Fix the blocked_on writer") does not use
+    the two-word phrase and does not trip. Widening to
     "waiting on" / "pending his" / "queued behind" was measured (1 / 0 / 0
     matches, the one a description) and refused.
 
@@ -2019,7 +2023,7 @@ def check_title_blocked_claim(dw: Path, rep: Report) -> None:
     for ids, body in ledger_entries(open_text):
         title = _entry_title(body)
         if not title or not TITLE_BLOCKED_CLAIM.search(title):
-            continue                    # no claim in the title; not in scope
+            continue                    # phrase absent; not in scope
         examined += 1
         if source == "store":
             populated = bool((bo_by_id.get(ids[0]) or "").strip())
@@ -2039,18 +2043,19 @@ def check_title_blocked_claim(dw: Path, rep: Report) -> None:
         frag = title[:72] + ("…" if len(title) > 72 else "")
         rep.add(
             WARN, "tasks.md",
-            f"{name}'s title claims blocked-ness (\"{frag}\") but its "
-            f"blocked_on field is empty — `list` prints titles, not notes, so "
-            f"a stale claim misleads exactly where a correction underneath is "
-            f"invisible. Retitle it, or set blocked_on to match the claim (#725)")
+            f"{name}'s title contains the `blocked on` phrase (\"{frag}\") "
+            f"while its blocked_on field is empty — this intentionally noisy "
+            f"phrase heuristic cannot distinguish a stale claim from negation, "
+            f"quotation, or metacommentary; a human must review the row. "
+            f"Retitle only if stale, or set blocked_on if current (#725)")
 
     # Coverage (#430): a check whose subject exists must be VISIBLE once it has
     # examined something, never silent on zero offenders. The subject is "any
-    # open title claiming blocked-ness"; silence pre-adoption is correct.
+    # open title containing the phrase"; silence pre-adoption is correct.
     if examined and not offenders:
         rep.add(
             OK, "tasks.md",
-            f"{examined} open title(s) claiming blocked-ness all carry a "
+            f"{examined} open title(s) containing the `blocked on` phrase carry a "
             f"blocked_on value (#725)")
 
 
