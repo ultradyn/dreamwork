@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .core import SchemaMismatch
-from .migrations import v001_legacy, v002_review
+from .migrations import v001_legacy, v002_review, v003_questions
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+_COMPOSED_BASE_VERSION = 2
 
 
 class SchemaVersionError(SchemaMismatch):
@@ -26,6 +27,7 @@ class Migration:
 
 MIGRATIONS = (
     Migration(1, 2, v002_review.upgrade),
+    Migration(2, 3, v003_questions.upgrade),
 )
 
 
@@ -68,12 +70,22 @@ def _bootstrap_meta(conn: sqlite3.Connection) -> None:
         "SELECT value FROM meta WHERE key = 'schema_version'"
     ).fetchone()
     if row is None:
+        # The composed CREATE IF NOT EXISTS baseline is v2.  New stores use
+        # the same ordered ladder as old ones rather than a second current-DDL
+        # entry point that can drift from migrations.
+        migrate(conn, _COMPOSED_BASE_VERSION)
         conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?)",
             (str(SCHEMA_VERSION),),
         )
         return
-    stored = int(row[0])
+    try:
+        stored = int(row[0])
+    except (TypeError, ValueError) as exc:
+        raise SchemaVersionError(
+            "could not determine ledger schema_version from "
+            f"{row[0]!r}; refuse open rather than report it migrated"
+        ) from exc
     if stored != SCHEMA_VERSION:
         migrate(conn, stored)
 

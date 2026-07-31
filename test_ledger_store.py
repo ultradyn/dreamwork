@@ -645,7 +645,10 @@ def test_v1_to_v2_migration_reshapes_review_decision_when_empty(tmp_path):
             f"v2 migration must drop question_id; cols={sorted(cols)}")
         version = store.conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        assert int(version) == SCHEMA_VERSION == 2
+        assert int(version) == SCHEMA_VERSION == 3, (
+            "the ordered ladder must continue through v3 after proving the "
+            f"v1→v2 reshape; got schema_version {version!r}"
+        )
     finally:
         store.close()
 
