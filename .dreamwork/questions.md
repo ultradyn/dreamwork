@@ -2,33 +2,6 @@
 
 ## Open
 
-- **P2 · 2026-07-31 01:50 — #572: GitHub etiquette — one fork left: may an Internal Reference name several posts?**
-  You answered the other four on 2026-07-31 03:57 (`rec` on Q1, Q3, Q4, Q5, with the `gh` extension
-  preferred over the alias and no signature needed). Those are settled and written up in
-  `.dreamwork/docs/plans/gh-etiquette-shim.md` — nothing there is waiting on you.
-
-  **Your Q2 pushback, half answered by the code.** *"do we want to leak the sequence id though?"* — the
-  receipt id is not a sequence. `user_events/sqlite.py:708` mints it as
-  `uuid5(NAMESPACE_URL, "ud-dreamwork.receipt:" + client_action_id)`, a hash of a random uuid4: no ordinal,
-  no timestamp, no host. Publishing one reveals nothing about how many commands you have issued or when.
-  You were right that a sequence exists — the `receipts` table has a monotonic `sequence` column — but it
-  is not what the footer would carry, and the shim will say so in its own docstring so a later change
-  cannot quietly swap one for the other.
-
-  **What is actually left.** *"what if there are multiple comments left under one /command dispatch?"* —
-  they would share one reference, because they share one cause. That is either right or wrong depending on
-  what you want the reference to promise a reader who follows it:
-
-  - **`rec` — it points at the dispatch.** One id, possibly several posts; the docs page says *"this is the
-    instruction that produced this text"*. GitHub already permalinks the individual comment, so nothing is
-    lost. No new identifier.
-  - **A per-post discriminator** (`Internal Reference: <receipt-id>#2`). Resolves to exactly one post, but
-    the shim must keep durable per-receipt state, and that counter *is* an ordinal — reintroducing the leak
-    shape you flagged, scoped to one dispatch.
-
-  **If you say nothing:** the `rec` stands and nothing is built yet regardless — Q4's phase 3 still needs
-  your signoff before anything visible ships under your name.
-
 - **P2 · 2026-07-31 07:30 — #584 (from #571): persistent user settings — four design calls.**
   Your steer (receipt 09a8897b): *"Add persistent user settings in the database, probably just store it as jsonb
   if you can. indexed by userid … check `~/src/refs/amr-ui/` for a good example."* Design at
@@ -107,6 +80,56 @@
 
 ## Answered
 
+- **P2 · 2026-07-31 01:50 — #572: GitHub etiquette — one fork left: may an Internal Reference name several posts?**
+  You answered the other four on 2026-07-31 03:57 (`rec` on Q1, Q3, Q4, Q5, with the `gh` extension
+  preferred over the alias and no signature needed). Those are settled and written up in
+  `.dreamwork/docs/plans/gh-etiquette-shim.md` — nothing there is waiting on you.
+
+  **Your Q2 pushback, half answered by the code.** *"do we want to leak the sequence id though?"* — the
+  receipt id is not a sequence. `user_events/sqlite.py:708` mints it as
+  `uuid5(NAMESPACE_URL, "ud-dreamwork.receipt:" + client_action_id)`, a hash of a random uuid4: no ordinal,
+  no timestamp, no host. Publishing one reveals nothing about how many commands you have issued or when.
+  You were right that a sequence exists — the `receipts` table has a monotonic `sequence` column — but it
+  is not what the footer would carry, and the shim will say so in its own docstring so a later change
+  cannot quietly swap one for the other.
+
+  **What is actually left.** *"what if there are multiple comments left under one /command dispatch?"* —
+  they would share one reference, because they share one cause. That is either right or wrong depending on
+  what you want the reference to promise a reader who follows it:
+
+  - **`rec` — it points at the dispatch.** One id, possibly several posts; the docs page says *"this is the
+    instruction that produced this text"*. GitHub already permalinks the individual comment, so nothing is
+    lost. No new identifier.
+  - **A per-post discriminator** (`Internal Reference: <receipt-id>#2`). Resolves to exactly one post, but
+    the shim must keep durable per-receipt state, and that counter *is* an ordinal — reintroducing the leak
+    shape you flagged, scoped to one dispatch.
+
+  **If you say nothing:** the `rec` stands and nothing is built yet regardless — Q4's phase 3 still needs
+  your signoff before anything visible ships under your name.
+  - **Answer (via watch, 2026-07-31 19:16):** rec, and the sequence
+    number for replies / events within a single /command is not much of
+    an issue. I was more thinking globally. Anyway, per-post
+    discriminator sounds fine, though we could implement pointing at
+    dispatch first and just add on `#5` or whatever later if we want to
+    add per-post discriminators.
+  - **Answer (via watch, 2026-07-31 19:17):** *"rec, and the sequence number for replies / events
+    within a single /command is not much of an issue. I was more thinking globally. Anyway, per-post
+    discriminator sounds fine, though we could implement pointing at dispatch first and just add on
+    `#5` or whatever later if we want to add per-post discriminators."*
+  - **Folded (2026-07-31 19:18) — the last fork, so `#572`'s design is now fully settled.** `rec`
+    taken: one Internal Reference may name several posts and points at the **dispatch**. His leak
+    concern is withdrawn *with its reason* — it was never about intra-command ordering but about a
+    global counter revealing volume, which the code already answers (`user_events/sqlite.py:708`
+    mints the id as `uuid5` over a random `uuid4`: no ordinal, no timestamp, no host).
+    **The actionable half is that he sequenced it:** the per-post discriminator is **deferred, not
+    declined** — ship the dispatch-level pointer alone, and leave the reference format able to gain
+    a trailing `#5` later *without a migration*. So the design obligation is forward-compatibility
+    of the id format, not the discriminator; a reference that would have to change shape to gain one
+    has failed the instruction even though it shipped what he asked for today. Recorded on `#572`,
+    along with two standing constraints easy to lose now the design is settled: the initial shim
+    inserts **nothing** and he signs off before anything real posts, and this task carries his
+    explicit *"treat as if asking posture is 'ask me' for design choices"*, which overrides the
+    ambient `near-auto`.
 - **P1 · 2026-07-31 17:20 — #614 (blocks #641): websockets — everything you asked for lands, but the analysis
   parts ways with you on the wire protocol.** One decision.
   Plan: `.dreamwork/docs/plans/ws-delta-transport.md`. Your goals — faster, more efficient, partial
