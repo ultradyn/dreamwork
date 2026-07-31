@@ -2164,6 +2164,23 @@ is the single lane-ownership definition, so the backstop and the pre-merge
 assertion share one reader — two callers, one place the parsing can drift, not
 two.
 
+### A brief asks for a dogfood report (#589)
+
+Every lane report ends with a **dogfood section** — required, not optional.
+The obligation is on the **lane's report**, which is not the same document as
+the brief the lane reads; the brief is the place the obligation is *stated*
+(dispatch-time), while the report is where it is *discharged* (lane-exit). The
+brief's standing half (``briefs/boilerplate.md``, appended verbatim to every
+dispatch) carries the line; a task-specific head does not repeat it. **Blank is
+a valid answer that is STATED** — *"no friction found"* is a real answer; an
+omitted section reads as "no friction" and is indistinguishable from a lane that
+did not look (``#136``/``#671``: a zero that examined nothing must not read as
+passing). No lint check binds this: the obligation is on the lane's report,
+which does not exist at lint time, while a brief check would inspect the brief
+— the wrong document, and a token is not a statement (``#699``). The boilerplate
+is the writer (``#400``: a lane reads what is physically in front of it), so
+that is where the obligation lives.
+
 ## `/data.json?since=<v>` — the derived delta payload (#641 phase 1)
 
 `GET /data.json` accepts an optional `since=<v>` query parameter, where `<v>`

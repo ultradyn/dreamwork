@@ -677,6 +677,24 @@ channel nobody writes fails the same way as a channel nobody reads, and
 looks just as finished** — and writing the hand-off is now the coordinator's
 merge-time duty, not the lane's.
 
+**A lane's inbox report ends with a dogfood section — required, not
+optional** (#589, his 2026-07-31 steer: *"Subagents should be instructed
+to always return a dogfood report section when finishing tasks so you get
+good feedback."*). The section's value is not in restating the result; it
+is in what the lane found **beyond** its direct task — friction with the
+loop's own tooling, a premise the brief got wrong, a hazard a sibling
+construct hides, an out-of-scope warning. Tonight's seven lanes proved it:
+the highest-value findings were the ones that lived past the named defect,
+and one — a predicted merge break — sat unread in an out-of-scope section
+the coordinator never looked at. So the obligation is **on the lane to
+write the section, and on the coordinator to read it**: a section a
+coordinator does not know to look at is the same as one never written. **Blank
+is a valid answer that is STATED** — *"no friction found"* is a real
+answer; an omitted section is not, because it reads as "no friction" and is
+indistinguishable from a lane that did not look (`#136`/`#671`: a zero that
+examined nothing must not read as passing). Say so in the dispatch prompt
+beside the hand-off obligation: both are duties a lane cannot infer.
+
 **Put it in the dispatch prompt, not the relay** — measured, not assumed.
 The first attempt relayed this obligation to three in-flight lanes; the one
 that landed did not write a line and its report never mentions the relay. A
