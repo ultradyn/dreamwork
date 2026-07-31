@@ -33,6 +33,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
+from dreamwork_db import Access, StoreSpec
+from dreamwork_db import core as db_core
+
 PathLike = Union[str, os.PathLike]
 
 # Closed sets — CHECK constraints for values closed by definition (#346 S4).
@@ -317,42 +320,6 @@ CREATE TABLE IF NOT EXISTS task_state (
 """
 
 
-def _ensure_parent_durable(path: Path) -> None:
-    """Create the parent directory and best-effort fsync it into the directory entry."""
-    parent = path.parent
-    if parent == Path("") or parent == Path("."):
-        return
-    parent.mkdir(parents=True, exist_ok=True)
-    try:
-        fd = os.open(str(parent), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    except OSError:
-        return
-    try:
-        os.fsync(fd)
-    except OSError:
-        pass
-    finally:
-        os.close(fd)
-
-
-def _apply_pragmas(conn: sqlite3.Connection) -> None:
-    """Apply durability + FK pragmas on this connection.
-
-    journal_mode=WAL is a database property. synchronous, busy_timeout and
-    foreign_keys are per-connection and must be set every open. foreign_keys
-    is OFF by default in SQLite — leaving it off would make every REFERENCES
-    a comment (#264 footgun table, #346 S4).
-    """
-    conn.execute("PRAGMA journal_mode=WAL")
-    # Pin NORMAL then FULL so the FULL line is load-bearing (user_events B1
-    # finding: SQLite 3.53's compile-time default is already FULL, so a bare
-    # FULL is a no-op and deleting it leaves the pragma test green).
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA synchronous=FULL")
-    conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
-    conn.execute("PRAGMA foreign_keys=ON")
-
-
 def _seed_lookup_tables(conn: sqlite3.Connection) -> None:
     """Populate closed lookup tables idempotently."""
     for band in PRIORITY_BANDS:
@@ -634,6 +601,21 @@ class LedgerStore:
         return {r[0] for r in rows}
 
 
+def _initialize_legacy_store(conn: sqlite3.Connection) -> None:
+    """Preserve the pre-#645 schema/bootstrap behavior behind the core door."""
+    conn.executescript(_SCHEMA_SQL)
+    # executescript leaves autocommit; re-enter for the bootstrap writes.
+    conn.execute("BEGIN")
+    try:
+        _bootstrap_meta(conn)
+        _seed_lookup_tables(conn)
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    else:
+        conn.execute("COMMIT")
+
+
 def open_store(
     path: PathLike,
     *,
@@ -652,20 +634,12 @@ def open_store(
     to open, so an unseeded first open is refused rather than defaulting to 1.
     """
     path = Path(path)
-    _ensure_parent_durable(path)
-    # isolation_level default: DML needs explicit commit.
-    conn = sqlite3.connect(str(path), isolation_level=None)
-    try:
-        _apply_pragmas(conn)
-        conn.executescript(_SCHEMA_SQL)
-        # executescript leaves autocommit; re-enter for the bootstrap writes.
-        conn.execute("BEGIN")
-        _bootstrap_meta(conn)
-        _seed_lookup_tables(conn)
-        conn.execute("COMMIT")
-    except Exception:
-        conn.close()
-        raise
+    spec = StoreSpec(
+        path=path,
+        initializer=_initialize_legacy_store,
+        busy_timeout_ms=BUSY_TIMEOUT_MS,
+    )
+    conn = db_core._connect(spec, Access.WRITE)
 
     store = LedgerStore(path=path, conn=conn)
     try:
