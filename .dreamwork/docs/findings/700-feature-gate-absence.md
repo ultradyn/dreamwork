@@ -204,3 +204,44 @@ Second, narrower: `file-formats.md` still answers a `grep gate` with
 `questions.md`'s unrelated blocking field. The rule points *from* `SKILL.md` *to*
 `file-formats.md`, which is the direction a lane actually travels; the reverse is
 untouched.
+
+## The red-proof, so it is reproducible rather than asserted
+
+The change is prose, so the check is the question a lane asks: **does the rule
+name where the gate lives?** Two stages, because "no referent" is *also* true of
+a file that stopped stating the rule — that precondition is asserted, not
+assumed (the `VOID` arm below).
+
+    RULE=$(grep -nIiE '^- .*[Ee]xperiments are feature-gated' SKILL.md)
+    [ -z "$RULE" ] && { echo VOID; exit 2; }            # examined nothing
+    N=${RULE%%:*}
+    sed -n "${N},$((N+7))p" SKILL.md | sed -n '1,/^- \*\*Judgement/p' \
+      | grep -oE '`\.dreamwork/[^`]*`|`file-formats\.md`|`watch-tint`|`run-mode`'
+
+| arm | injection | result |
+|---|---|---|
+| **green** | none | `PASS` — names `` `.dreamwork/<name>` ``, `` `watch-tint` ``, `` `run-mode` ``, `` `file-formats.md` `` |
+| **red** | restore `master`'s `- Experiments are feature-gated.` | `FAIL: the rule names NO mechanism — a lane must search the codebase to find one`, and the search it then runs returns only `client/shader.js:388` |
+| **void** | delete the rule line entirely | `VOID: SKILL.md no longer states the rule — the check examined nothing` (exit 2, not 0) |
+| **sibling** | drop `(see Guardrails)` from `:288` | `FAIL: the dreamer is told to gate with no route to how — the :924 defect, second site` |
+
+**Direction 2 — the false-green, constructed and run.** Rewrite the rule to say
+*"Add the feature's name to `.dreamwork/features`; absent from that file means
+off."* The check **PASSES**: it binds *a mechanism is named*, not *the named
+mechanism exists*. Nothing reads `.dreamwork/features` (`git grep` over `*.py`
+and `justfile`: no hits) and `file-formats.md` mentions it zero times — so a
+lane would follow a referent that is fiction and write a file nobody parses,
+which is **worse** than `master`'s no-referent case because it reads as
+followable.
+
+**Not closed, deliberately.** The obvious fix is a lint check asserting every
+`` `.dreamwork/<x>` `` named in the guardrail has a `file-formats.md` row — but
+`#699` already ruled that no string-match check can bind "a rule is stated" (a
+token is not a statement), and the rule's own referent is the placeholder
+`<name>`, which such a check must special-case. The residual risk is narrow: it
+needs someone to actively rewrite the rule to name a fiction. The three referents
+it names today (`watch-tint`, `run-mode`, `file-formats.md`) all exist and are
+`lint.py`-checked already.
+
+Restores were `cp` from `~/.cache/ud-dreamwork/lane-scratch/ud-dreamwork/lane-700gate/snap`
+(lane-private, `#652`), each verified with `cmp`. No `git checkout` (`#349`).
