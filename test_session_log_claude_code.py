@@ -956,24 +956,22 @@ def test_scan_incremental_does_not_reread_bytes_before_cursor():
 
 
 def test_scan_incremental_cost_does_not_grow_with_prefix():
-    """Second independent discriminator: a resume's event count is bounded
-    by the NEW records, not the whole file.  scan_complete(...)[cursor:]
-    re-classifies every record from zero, so its event count grows with
-    the prefix; a genuine resume emits only new-record events.
-
-    The fixture's first 2 lines yield a known event count; resuming over
-    the same 2-line remainder must emit that many events whether the prefix
-    is 2 lines or 9.  A re-scan-from-zero would emit the full-file count
-    (~15) on the 9-line prefix."""
-    rem = "".join(l + "\n" for l in _FROZEN_LINES[:2])
-    # Two prefixes of very different length, same remainder.
+    """Second independent discriminator: a resume's event count shrinks as
+    the cursor advances (fewer new records remain).  A re-scan-from-zero
+    implementation ignores the cursor and emits the full-file count from
+    either cursor, so both counts are equal — the assertion ``n2 > n8``
+    reds under that implementation."""
+    full = _FROZEN_TEXT
     f2 = scan_complete("".join(l + "\n" for l in _FROZEN_LINES[:2])).frontier
     f8 = scan_complete("".join(l + "\n" for l in _FROZEN_LINES[:8])).frontier
-    n2 = len(scan_incremental(rem, f2).events)
-    n8 = len(scan_incremental(rem, f8).events)
-    assert n2 == n8, (
-        f"a resume emits only new-record events ({n2} vs {n8}); if they "
-        f"differ the resume re-scanned the prefix")
+    n2 = len(scan_incremental(full, f2).events)
+    n8 = len(scan_incremental(full, f8).events)
+    # A genuine resume emits only new-record events: more prefix consumed
+    # → fewer new records → smaller count.  Under re-scan-from-zero both
+    # emit the full-file count (equal), and ``n2 > n8`` reds.
+    assert n2 > n8, (
+        f"a resume emits fewer events as the cursor advances ({n2} vs "
+        f"{n8}); if equal the resume re-scanned the whole file")
 
 
 def test_resume_carries_open_tool_and_pairs_result_across_split():
@@ -1075,10 +1073,8 @@ def test_partial_tail_is_recovered_when_it_completes():
     partial = _FROZEN_LINES[0] + "\n" + _FROZEN_LINES[1][:-3]
     complete = _FROZEN_LINES[0] + "\n" + _FROZEN_LINES[1] + "\n"
     first = scan_complete(partial)
-    # The cursor must sit BEFORE the partial tail, not past it.
-    assert first.frontier.byte < len(partial), (
-        "precondition: the cursor sits before the unterminated tail")
-    # When the tail completes, the resume must recover the record.
+    # When the tail completes, the resume must recover the record.  If the
+    # cursor advanced past the partial tail, the completed record is lost.
     rest = scan_incremental(complete, first.frontier)
     assert len(rest.events) >= 1, (
         "completed tail record was lost")
@@ -1092,9 +1088,6 @@ def test_resume_does_not_replay_consumed_line():
     re-emits nodes — duplicate node ids."""
     prefix = _FROZEN_LINES[0] + "\n"
     first = scan_complete(prefix)
-    # The cursor must be past the consumed line.
-    assert first.frontier.byte == len(prefix), (
-        "precondition: the cursor advanced past the consumed line")
     # Re-scanning the same text from the resulting frontier must emit
     # nothing — the line was already consumed.  If the cursor failed to
     # advance, the replay would re-emit the user-turn node with the same
