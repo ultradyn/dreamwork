@@ -325,6 +325,116 @@ def test_sweep_counts_every_commit_examined_even_with_no_findings():
 
 
 # ---------------------------------------------------------------------------
+# #707 — the widening. SWEEP_SUBJECT previously matched ONLY verb(#N); every
+# coordinator `Merge #N:` and every bare lane `#N:` commit was invisible to
+# the tool whose job is discovering landings. The widening adds Merge/Fold and
+# bare-#N forms; the report splits them into a lower-confidence class. These
+# pure-function tests pin the PATTERN widening; the report split is in
+# test_ledger_cli.py.
+#
+# The fixture SWEEP_LEDGER holds #10 and #11 OPEN; SWEEP_COMMITS uses the
+# verb(#N) form. The widened-form tests below use the SAME open ids so the
+# contrast is real: the same landing, two subject shapes, one visible today
+# and one not.
+# ---------------------------------------------------------------------------
+
+def test_sweep_subject_widened_to_match_the_coordinator_merge_form():
+    """DIRECTION-1 measurement, fixture not live repo (#707 brief).
+
+    `Merge #688: branch-level reachability` is the commit form EVERY
+    coordinator landing takes, and the #707 brief measured it MISSED today.
+    PRODUCTION LINE: the `|(?:Merge|Fold) (#\d+)` alternative in SWEEP_SUBJECT.
+    RED on the un-widened pattern: this returns None.
+    """
+    assert ledger.SWEEP_SUBJECT.match("Merge #10: branch-level reachability"), (
+        "the coordinator merge form — every landing this loop records — must "
+        "now match; #707 measured it invisible")
+    # group(1) is the verb(#N) capture; Merge/Fold land in their own group, so
+    # the id is reachable via the non-None group, not a literal group(1).
+    m = ledger.SWEEP_SUBJECT.match("Merge #10: x")
+    groups = [g for g in m.groups() if g]
+    assert groups == ["#10"], f"the id must be capturable from the widened form: {m.groups()!r}"
+
+
+def test_sweep_subject_widened_to_match_the_bare_lane_form():
+    """The form the #705 boilerplate mistakenly codified for ~30 minutes.
+
+    `#10: a landing` and `#10 — a landing` are the bare lane forms. A
+    SEPARATOR is required (colon, space, em-dash) so a bare id floating in
+    prose at the head of a non-landing subject does not match.
+    PRODUCTION LINE: the bare-id alternative in SWEEP_SUBJECT.
+    """
+    for subj in ["#10: the gate is a file", "#10 — sweep pattern", "#10 skip collision test"]:
+        m = ledger.SWEEP_SUBJECT.match(subj)
+        assert m is not None, f"bare lane form must match: {subj!r}"
+        assert "#10" in [g for g in m.groups() if g]
+    # a bare id with NO separator is not a landing subject — it is a token.
+    assert ledger.SWEEP_SUBJECT.match("#10foo") is None, (
+        "a separator after the bare id is required, or any #N token matches")
+
+
+def test_sweep_finds_a_merge_prefixed_landing_it_previously_missed():
+    """DIRECTION-1 red: the real gap, fixture not live repo.
+
+    A `Merge #10:` commit where #10 is OPEN and its entry does not cite the
+    sha is a TRUE finding today (the coordinator merged but the fold didn't
+    happen) — and it is the form that has been invisible since the store
+    cutover. Pre-widening this returned no finding for #10.
+    PRODUCTION LINE: the widened SWEEP_SUBJECT + the `for tid in ...` loop in
+    `sweep`. RED: drop the Merge alternative and #10 vanishes from findings.
+    """
+    commits = [("bbb0001", "Merge #10: branch-level reachability")]
+    n, findings = ledger.sweep(SWEEP_LEDGER, commits)
+    by_id = {tid: shas for tid, shas in findings}
+    assert 10 in by_id, (
+        "a Merge #10: landing for an open id whose entry does not cite the sha "
+        "must now be found — #707 measured this class invisible")
+    assert any(sha == "bbb0001" for sha, _ in by_id[10])
+
+
+def test_sweep_finds_a_bare_lane_landing_it_previously_missed():
+    """The bare form a lane actually writes when the boilerplate waversed.
+
+    PRODUCTION LINE: the bare-#N alternative in SWEEP_SUBJECT. RED: drop it
+    and #10 is not found.
+    """
+    commits = [("ccc0001", "#10: a lane commit in the bare form")]
+    n, findings = ledger.sweep(SWEEP_LEDGER, commits)
+    assert 10 in {tid for tid, _ in findings}, (
+        "the bare #N: form must now be found, not silently skipped as 'bare-#N'")
+
+
+def test_sweep_still_subtracts_cited_shas_for_widened_forms():
+    """The subtraction convention (#404: cite the sha, the row disappears)
+    must hold for the WIDENED forms too, or widening floods the report with
+    already-reconciled merge commits.
+
+    PRECONDITION (not an assumption): the Merge form must actually MATCH after
+    widening, or this test is hollow — it would pass today against the
+    un-widened pattern because the subject never matched at all (#707's own
+    "green red-run is a finding" trap). Asserting the match here is what makes
+    the subtraction assertion non-vacuous.
+
+    PRODUCTION LINE: `if sha in bodies.get(tid, ""): continue` in `sweep`,
+    now reached with Merge/bare subjects. RED: drop the `continue` and the
+    merge commit citing its sha would be named.
+    """
+    # #11 cites abc1234 in the fixture body; a Merge #11: form must subtract.
+    subj = "Merge #11: branch-level reachability"
+    # The precondition that makes the subtraction assertion non-vacuous:
+    assert ledger.SWEEP_SUBJECT.match(subj) is not None, (
+        "precondition: the Merge form must match post-widening, else this "
+        "test is hollow — it passes when nothing matched at all")
+    assert "abc1234" in _sweep_open_body(11), (
+        "precondition: #11's body must cite the sha the merge commit carries")
+    commits = [("abc1234", subj)]
+    _, findings = ledger.sweep(SWEEP_LEDGER, commits)
+    assert 11 not in {tid for tid, _ in findings}, (
+        "a Merge #11: whose entry cites the sha must be subtracted, or "
+        "widening re-proposes every reconciled merge")
+
+
+# ---------------------------------------------------------------------------
 # #688 — reach(): the pure function that collapses duplicate sha sets and
 # reports only branches with at least one + commit. The integration path
 # (git cherry, fold hook) is in test_ledger_reach.py; these pin the
