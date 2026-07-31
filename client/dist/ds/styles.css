@@ -758,7 +758,10 @@
      existing confirmation idiom, single-flight. The click arms for RUN_ARM_MS
      (the #290 run-mode arm, reused rather than a second cooldown), then POST
      /deploy. Success is a new GENERATION (full reload); failure and a deploy
-     that never finishes both speak on #fmsg, never a spinner forever.
+     that never finishes both speak on #fmsg, never a spinner forever —
+     "forever" is the load-bearing word (#662): the refusal is of stranding
+     the user in an indeterminate state with no exit, not of loading
+     animation as such.
 
      MOTION. The row is re-rendered through innerHTML every tick, so .dreamin
      is applied only on the current→behind transition by revealStaleAction()
@@ -882,6 +885,12 @@
      motion rule (#113). It breathes: a wisp of accent drifting along the
      rail and across the label, slow and ambient like the shader, intensity
      fading in and OUT rather than sweeping on a loop. Never a spinner.
+     SCOPE (#662): that sentence describes THIS element — a wait with no
+     progress to count, so a sweep would fake information a breath does not
+     claim. It is not a house rule against loading animation; a surface
+     with real progress to show may move (he said so, 2026-07-31). It was
+     once promoted into a standing "never a spinner" motion language and
+     used to reject an indicator he actually wanted — hence this note.
      The cost is bounded by construction rather than by measurement after
      the fact — an opacity breath on a 2px rail (compositor only) and a
      background drift across ~25 characters of .65rem label. */
