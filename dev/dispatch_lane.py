@@ -18,13 +18,13 @@ import argparse
 import hashlib
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTRACT_PATH = ROOT / "briefs" / "boilerplate.md"
-BRIEFS_DIR = ROOT / ".dreamwork" / "docs" / "briefs"
 INTEGRITY_START_TASK = 766
 _TASK_HEAD = re.compile(r"^# [^\n]*?#(\d+)\b", re.MULTILINE)
 _BRANCH_LINE = re.compile(
@@ -35,6 +35,46 @@ _RECEIPT = re.compile(r"([0-9a-f]{64})  ([^/\n]+\.md)\n?\Z")
 
 class DispatchFault(Exception):
     """An input could not be evaluated or did not carry the contract."""
+
+
+def _briefs_dir() -> Path:
+    """Locate the main checkout's corpus from this interpreter's worktree."""
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(ROOT),
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-common-dir",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise DispatchFault(f"could not determine brief corpus: could not run git: {exc}") from exc
+    common_dir_text = result.stdout.strip()
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"git exited {result.returncode}"
+        raise DispatchFault(f"could not determine brief corpus: {detail}")
+    if "\n" in common_dir_text or not common_dir_text:
+        raise DispatchFault(
+            "could not determine brief corpus: git returned no unique common directory"
+        )
+    common_dir = Path(common_dir_text)
+    if not common_dir.is_absolute():
+        raise DispatchFault(
+            "could not determine brief corpus: git returned a relative common directory "
+            f"despite --path-format=absolute: {common_dir_text}"
+        )
+    if common_dir.name != ".git" or not common_dir.is_dir():
+        raise DispatchFault(
+            "could not determine brief corpus: git common directory is not a checkout .git "
+            f"directory: {common_dir}"
+        )
+    return common_dir.parent / ".dreamwork" / "docs" / "briefs"
 
 
 def _read(path: Path, label: str) -> str:
@@ -147,8 +187,10 @@ def _verify_pair(brief: Path, receipt: Path) -> None:
         )
 
 
-def persist_prompt(prompt: str, briefs_dir: Path = BRIEFS_DIR) -> Path:
+def persist_prompt(prompt: str, briefs_dir: Path | None = None) -> Path:
     """Write the exact validated prompt and a dispatch-time hash receipt."""
+    if briefs_dir is None:
+        briefs_dir = _briefs_dir()
     task, lane = _identity(prompt)
     brief = briefs_dir / f"{task}-{lane}.md"
     receipt = brief.with_suffix(".sha256")
@@ -182,8 +224,10 @@ def persist_prompt(prompt: str, briefs_dir: Path = BRIEFS_DIR) -> Path:
     return brief
 
 
-def verify_pending(briefs_dir: Path = BRIEFS_DIR) -> int:
+def verify_pending(briefs_dir: Path | None = None) -> int:
     """Verify every governed brief/receipt pair before the merge-gate commit."""
+    if briefs_dir is None:
+        briefs_dir = _briefs_dir()
     governed = {
         path for path in briefs_dir.glob("*.md")
         if (match := re.match(r"(\d+)", path.name))

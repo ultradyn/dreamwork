@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Contract tests for the checked Dreamwork lane dispatch route (#768)."""
 
+import hashlib
+import os
+import shutil
 import subprocess
 import sys
-import shutil
 from pathlib import Path
 
 import pytest
@@ -21,7 +23,32 @@ def _sandbox_cli(tmp_path: Path) -> tuple[Path, Path]:
     cli = root / "dev" / "dispatch_lane.py"
     shutil.copy2(CLI, cli)
     (root / "briefs" / "boilerplate.md").write_text(CONTRACT, encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
     return cli, root
+
+
+def _linked_worktree_cli(tmp_path: Path) -> tuple[Path, Path, Path]:
+    main = tmp_path / "main"
+    main.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=main, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+         "commit", "--allow-empty", "-qm", "base"],
+        cwd=main,
+        check=True,
+    )
+    lane = tmp_path / "lane"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", "cx-linked", str(lane)],
+        cwd=main,
+        check=True,
+    )
+    (lane / "dev").mkdir()
+    (lane / "briefs").mkdir()
+    cli = lane / "dev" / "dispatch_lane.py"
+    shutil.copy2(CLI, cli)
+    (lane / "briefs" / "boilerplate.md").write_text(CONTRACT, encoding="utf-8")
+    return cli, main, lane
 
 
 def _run(cli: Path, prompt: Path | None = None, *runner: str) -> subprocess.CompletedProcess[str]:
@@ -63,6 +90,71 @@ def test_healthy_dispatch_is_silent_and_passes_prompt_as_one_argument(tmp_path):
     persisted = root / ".dreamwork" / "docs" / "briefs" / "900-cx-test.md"
     assert persisted.read_text(encoding="utf-8") == prompt.read_text(encoding="utf-8")
     assert persisted.with_suffix(".sha256").is_file()
+
+
+def test_linked_worktree_dispatch_persists_only_to_main_corpus(tmp_path):
+    cli, main, lane = _linked_worktree_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, task=903, lane="cx-linked")
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 0, result.stderr
+    corpus_artifact = main / ".dreamwork" / "docs" / "briefs" / "903-cx-linked.md"
+    assert corpus_artifact.is_file(), (
+        f"validated brief did not reach the main corpus: {corpus_artifact}"
+    )
+    assert corpus_artifact.read_text(encoding="utf-8") == prompt.read_text(encoding="utf-8")
+    assert corpus_artifact.with_suffix(".sha256").is_file()
+    assert not (lane / ".dreamwork" / "docs" / "briefs").exists(), (
+        "validated brief leaked into the linked worktree instead of the main corpus"
+    )
+
+
+def test_valid_pair_outside_corpus_does_not_count_as_verified(tmp_path):
+    cli, _, lane = _linked_worktree_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, task=904, lane="cx-linked")
+    content = prompt.read_text(encoding="utf-8")
+    wrong_dir = lane / ".dreamwork" / "docs" / "briefs"
+    wrong_dir.mkdir(parents=True)
+    artifact = wrong_dir / "904-cx-linked.md"
+    artifact.write_text(content, encoding="utf-8")
+    artifact.with_suffix(".sha256").write_text(
+        f"{hashlib.sha256(content.encode('utf-8')).hexdigest()}  {artifact.name}\n",
+        encoding="utf-8",
+    )
+
+    result = _run(cli)
+
+    assert result.returncode == 2
+    assert "DID NOT VERIFY" in result.stderr
+
+
+def test_corpus_resolution_failure_is_distinct_from_persistence_failure(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path)
+    (root / ".git").rename(root / "not-git")
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 2
+    assert "could not determine brief corpus" in result.stderr
+    assert "could not create brief corpus" not in result.stderr
+
+
+def test_relative_git_common_dir_is_rejected(tmp_path, monkeypatch):
+    cli, _ = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path)
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_git = fake_bin / "git"
+    fake_git.write_text("#!/bin/sh\nprintf '.git\\n'\n", encoding="utf-8")
+    fake_git.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 2
+    assert "git returned a relative common directory" in result.stderr
 
 
 def test_same_task_dispatches_to_distinct_lanes_do_not_collide(tmp_path):
