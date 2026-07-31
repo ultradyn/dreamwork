@@ -37,12 +37,6 @@ MANIFEST_REL = DIST_DIR + "/manifest.json"
 # the manifest's own key set, because "the manifest agrees with itself" is not
 # the question: the question is whether it agrees with the TREE.
 WRAPPER_EXPORTS_REL = "dev/build/wrapper-exports.js"
-DS_SOURCE_DIR = "dev/build/ds-src"
-DS_SOURCE_RELS = (
-    DS_SOURCE_DIR + "/QaCard.d.ts",
-    DS_SOURCE_DIR + "/QaCard.fixture.json",
-    DS_SOURCE_DIR + "/QaCard.prompt.md",
-)
 
 # #630 P2: the native runtime's sources. A DIRECTORY rather than a tuple of
 # names, deliberately — the native runtime will grow a file per converted

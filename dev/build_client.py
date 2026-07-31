@@ -246,9 +246,7 @@ def build(root=ROOT):
         # rewritten the committed artifact and its hash. A manifest that
         # churns on a no-op rebuild is a staleness signal nobody can read —
         # the false-red that trains you to ignore the check.
-        env = dict(os.environ, NODE_PATH=NODE_MODULES)
-        res = subprocess.run(cmd, cwd=tmp, env=env, capture_output=True,
-                             timeout=300)
+        res = subprocess.run(cmd, cwd=tmp, capture_output=True, timeout=300)
         if res.returncode != 0:
             raise BuildError("esbuild failed:\n%s" % res.stderr.decode(
                 "utf-8", "replace").strip())
@@ -259,9 +257,6 @@ def build(root=ROOT):
     # they are byte-equal is checking a copy, not a transform.
     shutil.copyfile(os.path.join(root, "client", "style.css"),
                     os.path.join(ds_dir, "styles.css"))
-    for rel in client_dist.DS_SOURCE_RELS:
-        shutil.copyfile(os.path.join(root, rel),
-                        os.path.join(ds_dir, os.path.basename(rel)))
 
     build_native(root)
 
