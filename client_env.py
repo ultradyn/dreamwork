@@ -99,7 +99,7 @@ THE TRAP, measured by `#652` and re-verified in this lane's own environment:
 `CLAUDE_CODE_SESSION_ID` names the **CLI session**, not the lane. Every
 concurrent lane inherits it byte-identically. A session id can therefore never
 be used as a lane identity, and nothing here offers it as one — that is the
-100role the `is_subagent` bit exists to fill, *"the other similar env vars … so
+role the `is_subagent` bit exists to fill, *"the other similar env vars … so
 we can have the right info about subagents or whatever and not get confused"*
 half of his answer. For claude-code that role is currently UNFILLED: no
 measured variable discriminates the roles (#678), so `is_subagent` records
