@@ -743,20 +743,32 @@ def sweep_text(text, commits, since, source):
 # lists them every run gets turned off.
 # ---------------------------------------------------------------------------
 
-def reach(branch_marks):
-    """Collapse duplicate sha sets; report branches carrying ``+`` commits.
+def reach(branch_marks, live=None):
+    """Collapse duplicate sha sets; suppress live lanes; report the rest.
 
     ``branch_marks`` is ``[(branch, [(marker, sha, subject), ...]), ...]``
     where ``marker`` is ``'+'`` (not patch-equivalent to base) or ``'-'``
     (patch-equivalent). Subject is only populated for ``'+'`` commits.
 
-    Returns ``(n_examined, n_suppressed, rows)`` where ``rows`` is a list
-    of ``(branch, aliases, [(sha, subject), ...])`` for branches with at
-    least one ``+`` commit, after collapsing branches that share an
-    identical sorted sha set into one row (#676 finding 3). ``n_examined``
-    counts every branch looked at; ``n_suppressed`` counts branches hidden
-    as duplicates of another — both are printed because a check that
-    examined nothing must not read as passing (#671, #404).
+    ``live`` is a set of branch names known to be running right now (#715),
+    or ``None`` when the liveness signal is unavailable. A live lane branch
+    ALWAYS carries ``+`` commits — that is what a live lane IS — so it is
+    the one class ``reach`` can never learn anything from, and as of #711
+    it is 100% of the output. The discriminator is LIVENESS, never the
+    ``lane-*`` name: an abandoned ``lane-*`` branch is the thing this check
+    exists to find, and name-based suppression would delete that purpose
+    while making the output look clean (#590, #706).
+
+    Returns ``(n_examined, n_dup_suppressed, n_live_suppressed, rows)``
+    where ``rows`` is a list of ``(branch, aliases, [(sha, subject), ...])``
+    for branches with at least one ``+`` commit that are NOT live, after
+    collapsing branches that share an identical sorted sha set into one row
+    (#676 finding 3). ``n_examined`` counts every branch looked at;
+    ``n_dup_suppressed`` counts branches hidden as duplicates;
+    ``n_live_suppressed`` counts ``+``-carrying groups hidden as live.
+    All three are printed because a check that examined nothing must not
+    read as passing (#671, #404), and one that suppressed everything must
+    not read as one that had nothing to say (#136).
     """
     n_examined = len(branch_marks)
     by_shas = {}
@@ -768,29 +780,56 @@ def reach(branch_marks):
             order.append(sha_key)
         else:
             by_shas[sha_key][2].append(branch)
-    n_suppressed = sum(len(d[2]) for d in by_shas.values())
+    n_dup_suppressed = sum(len(d[2]) for d in by_shas.values())
+    live_set = live or set()
+    n_live_suppressed = 0
     rows = []
     for sha_key in order:
         branch, marks, aliases = by_shas[sha_key]
         plus = [(sha, subj) for m, sha, subj in marks if m == "+"]
-        if plus:
-            rows.append((branch, aliases, plus))
-    return n_examined, n_suppressed, rows
+        if not plus:
+            continue
+        # A collapsed group is live if the survivor OR any alias is live.
+        # Suppressing by the lane-* name would miss an alias whose survivor
+        # died; the discriminator is liveness, never the name (#715, #590).
+        if {branch, *aliases} & live_set:
+            n_live_suppressed += 1
+            continue
+        rows.append((branch, aliases, plus))
+    return n_examined, n_dup_suppressed, n_live_suppressed, rows
 
 
-def reach_text(branch_marks, base):
-    """The advisory report — examined/suppressed counted, ``+`` is a question.
+def reach_text(branch_marks, base, live=None):
+    """The advisory report — the count line IS the primary output (#715).
 
     Mirrors ``sweep_text``'s contract: the examined count is ALWAYS printed
-    so 'found nothing' differs from 'did not run' (#404, #671). Only branches
-    with at least one ``+`` are reported (#688 volume), duplicates collapsed
+    so 'found nothing' differs from 'did not run' (#404, #671). Live lane
+    branches are suppressed and counted separately — after #711 they are
+    100% of the output, so the count line is the ONLY thing ``reach`` will
+    usually say. 'N suppressed as live lanes, 0 to triage' must not render
+    identically to '0 branches' (#136). Only non-live branches with at
+    least one ``+`` are reported (#688 volume), duplicates collapsed
     (#676 finding 3). The closing line never promotes a ``+`` to a verdict
     (#590, #676 finding 2).
+
+    ``live`` is ``None`` when the liveness signal is unavailable — the
+    fail-to-flood direction: every ``+`` branch is reported and the header
+    says ``[liveness unavailable]``, because a check that prints nothing is
+    indistinguishable from one that did not run (#671). A dead signal that
+    makes every lane look abandoned produces a flood; one that made every
+    lane look live would produce silence. Flood is safe; silence is not.
     """
-    n_examined, n_suppressed, rows = reach(branch_marks)
-    dup = f", {n_suppressed} duplicates suppressed" if n_suppressed else ""
-    lines = [f"reach: examined {n_examined} branches against {base}"
-             f" ({len(rows)} carry + commits{dup})"]
+    n_examined, n_dup, n_live, rows = reach(branch_marks, live)
+    parts = [f"{len(rows)} carry + commits"]
+    if n_dup:
+        parts.append(f"{n_dup} duplicates suppressed")
+    if n_live:
+        parts.append(f"{n_live} suppressed as live lanes")
+    header = (f"reach: examined {n_examined} branches against {base}"
+              f" ({', '.join(parts)})")
+    if live is None:
+        header += " [liveness unavailable — no lanes suppressed]"
+    lines = [header]
     for branch, aliases, plus in rows:
         al = f" (= {', '.join(aliases)})" if aliases else ""
         ev = ", ".join(f"`{s[:12]}` {subj}" for s, subj in plus)
@@ -799,6 +838,9 @@ def reach_text(branch_marks, base):
         lines.append(
             f"reach: {len(rows)} branch(es) may carry work not on {base} — "
             f"a + is a question, not a verdict (#590, #676)")
+    elif n_live:
+        lines.append(
+            f"reach: nothing to triage — {n_live} live lane(s) suppressed")
     else:
         lines.append(
             "reach: nothing to review (this ran — see the examined count above)")
@@ -910,7 +952,48 @@ def _git_branch_reach(repo, base="master"):
     return findings
 
 
-def _reach_trailer(repo):
+def _resolve_live_branches(dw):
+    """Branch names of lanes the liveness probe confirms running (#715).
+
+    Returns ``(live_branches, available)`` where ``live_branches`` is a
+    ``set`` of branch names and ``available`` is ``True`` when the liveness
+    signal was consulted, ``False`` when it could not be. The failure
+    direction is stated out loud in the brief: when the signal is
+    unavailable (no ``status.json``, no ``dreamers`` key, a harness change,
+    a renamed runner), every ``+`` branch must be REPORTED — the check
+    fails to flood, not to silence. So ``available=False`` yields an empty
+    set, and ``reach_text(live=None)`` marks the header
+    ``[liveness unavailable]``.
+
+    The discriminator is LIVENESS, never the ``lane-*`` name: the probe
+    reads ``status_sync.live_lanes``, which is pid-exact with a brief-path
+    fallback (#675, #402a). An abandoned ``lane-*`` branch whose dispatch
+    process is dead is NOT in this set and will be reported — that is the
+    single thing this check exists to find (#590, #706).
+    """
+    if dw is None:
+        return set(), False
+    sj = Path(dw) / "status.json"
+    if not sj.exists():
+        return set(), False
+    try:
+        data = json.loads(sj.read_text())
+    except (ValueError, OSError):
+        return set(), False
+    dreamers = data.get("dreamers")
+    if not dreamers:
+        return set(), False
+    try:
+        import status_sync
+        live_tasks, _ = status_sync.live_lanes(dreamers)
+    except Exception:
+        return set(), False
+    branches = {d.get("lane") for d in dreamers
+                if d.get("task") in live_tasks and d.get("lane")}
+    return branches, True
+
+
+def _reach_trailer(repo, dw=None):
     """Compact reach summary appended to ``fold`` output; ``''`` if silent.
 
     THE FOLD HOOK IS THE NON-OBVIOUS VALUE (#688). The coordinator runs
@@ -921,11 +1004,17 @@ def _reach_trailer(repo):
     code. Suppressed entirely when there are no branches (a young repo, a
     test fixture), so ``fold`` output stays clean where there is nothing
     to check and existing fold tests see no extra output.
+
+    ``dw`` is the ``.dreamwork/`` dir for the liveness resolver (#715);
+    when present, live lane branches are suppressed and counted. When
+    absent or unreadable the report fails to flood — every ``+`` branch
+    is reported with a ``[liveness unavailable]`` header.
     """
     findings = _git_branch_reach(repo)
     if not findings:
         return ""
-    return reach_text(findings, "master")
+    live, available = _resolve_live_branches(dw)
+    return reach_text(findings, "master", live=live if available else None)
 
 
 # ---------------------------------------------------------------------------
@@ -1617,7 +1706,10 @@ def _dispatch(args):
         if not findings:
             sys.stdout.write("reach: no branches to check (did not run)\n")
             return 0
-        sys.stdout.write(reach_text(findings, args.base))
+        live, available = _resolve_live_branches(
+            Path(args.repo) / ".dreamwork")
+        sys.stdout.write(
+            reach_text(findings, args.base, live=live if available else None))
         return 0
 
     # #667 — before any verb runs: if the store did not resolve here, every
@@ -1693,7 +1785,7 @@ def _dispatch(args):
     if args.cmd in ("fold", "file", "note") and source_of_truth(dw_dir) == "store":
         if args.cmd == "fold":
             _fold_store(dw_dir, args.id, args.note)
-            sys.stdout.write(_reach_trailer(args.repo))
+            sys.stdout.write(_reach_trailer(args.repo, dw_dir))
             return 0
         if args.cmd == "note":
             _note_store(dw_dir, args.id, args.note)
@@ -1741,7 +1833,7 @@ def _dispatch(args):
                 return 0
             _write(args.ledger, new_text)
             sys.stdout.write(f"folded #{args.id} into {args.ledger}\n")
-            sys.stdout.write(_reach_trailer(args.repo))
+            sys.stdout.write(_reach_trailer(args.repo, dw_dir))
             return 0
         if args.cmd == "file":
             new_text = file_text(text, args.title, args.note, args.priority,
