@@ -1,0 +1,392 @@
+<!--dreamwork-review-source
+title: #591 · does claude-design compatibility cost the single render authority? · analysis
+identity: #591 · G2 × claude design
+context: task #591 · analysis only · no production code · decides what the bundle step must produce
+status: awaiting one ruling
+headline: No goal has to give — the component surface is derived from the one authority, not maintained beside it.
+tag: analysis only — no code
+sub: task #591 · 31 July 2026 · authority = his 2026-07-31 focus + the 2026-07-30 Q2 ruling
+skip: Skip to your call
+skip_href: #ask
+-->
+<!--#nav-->
+<a href="#ask">your call</a><a href="#changed">what changed</a><a href="#verified">what claude design consumes</a><a href="#igc">IGC</a><a href="#derived">the derived surface</a><a class="full" href="#rule">the rule survives</a>
+<!--#lead-->
+<p id="context" class="context">Your 2026-07-31 focus makes <em>"compatible with claude design"</em>
+a stated goal (<code>DREAMWORK.md:46</code>). A design tool needs components; this dashboard renders
+through string builders; and the standing rule — <em>"two renderers only agree on the day they are
+written"</em> (<code>dreamhub-design.md:197</code>) — refuses a second renderer. So it looked like a
+goal had to give: either <strong>G2</strong> (one render authority) or the new compatibility goal.
+<strong>Verified against claude design's own ingestion spec, neither does.</strong> The tool's core
+principle is your rule, stated by the tool — and the surface it needs can be <em>derived</em> from
+the one authority rather than maintained beside it. Mid-analysis, your 16:38 composer submission
+(receipt <code>a71d1105</code>) added two more goals from an independent direction — a
+component-native session view, and a WS/delta event model — and they refute the
+<em>no-component-system</em> option on their own, while leaving the survivor standing.
+<strong>Analysis only — no code, nothing renders differently today.</strong></p>
+
+<div id="ask" class="ask-block">
+  <div class="label">One ruling — the G2 reading, the compatibility breakpoint, the framework</div>
+  <p class="ask-q">The IGC below has exactly one All-✔ survivor, so this is less open than it
+  looked. What is genuinely yours: the survivor rests on a <em>reading of your own rule</em>, on a
+  breakpoint only you can set, and on one framework call your two new goals make together.</p>
+  <ol class="ask-list">
+    <li><strong>Q1 — ratify the per-surface reading: one render authority <em>per surface</em>,
+      and a derived surface is not a second authority.</strong> <strong>Rec: yes.</strong> G2
+      refuses two <em>maintained</em> truths about the <em>same</em> surface — the rule's own
+      birthplace is a JS row renderer beside the Python one rendering <em>the same rows</em>
+      (<code>dreamhub-design.md:193–197</code>). Under this reading: surfaces the string builders
+      own stay theirs (wrappers delegate, never restate); surfaces born component-native (your
+      session view) have the component tree as their one authority and no builder counterpart,
+      ever; shared primitives keep one truth via delegation, in whichever direction.</li>
+    <li><strong>Q2 — the claude-design breakpoint: component-level or tokens-level?</strong>
+      <strong>Rec: component-level, staged</strong> — tokens+CSS ship first (nearly free:
+      <code>client/style.css</code> is a real 1,844-line file today), wrappers follow as the bundle
+      step's second stage. Alt: tokens-only ceiling — cheapest, but the tool then designs with
+      <em>its</em> generic components wearing your skin, which is the reimplementation shape at the
+      tool's end.</li>
+    <li><strong>Q3 — the component system's framework.</strong> <strong>Rec: React.</strong> Not
+      from preference: claude design's runtime is non-negotiably React (verified below), and your
+      session-view directive plus the delta model want a component system on the live page — running
+      one system for both is one vocabulary; running two (a lighter one on-page, React for the
+      bundle) is the two-truths smell one level up. Alt: a lighter on-page runtime + React-only
+      bundle — defensible if the page must not carry React's weight, at the price of maintaining
+      two component idioms.</li>
+  </ol>
+  <p class="ask-answers"><span class="key">accepted answers</span>
+  <code>rec</code> &nbsp;&middot;&nbsp; per-question (<code>Q1: …</code>) &nbsp;&middot;&nbsp;
+  free text &nbsp;&middot;&nbsp; <em>"defer"</em> is fine</p>
+  <p class="ask-answers"><strong>Sub-decisions:</strong> <code>Q1</code>, <code>Q2</code>, <code>Q3</code></p>
+</div>
+
+<p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> nothing is built —
+this analysis authorises no code. The recs stand as the framing the bundle step is planned against,
+and the bundle step still cannot decide G2 by accident: that is exactly what this ruling exists to
+prevent (<code>#591</code>'s own charge).</p>
+<!--#call-->
+<div class="call"><strong>Recommendation.</strong> <strong>No goal gives.</strong> G2 holds as a
+<em>per-surface</em> rule: the string builders stay the one authority for every surface they own
+(morphdom reconciliation stays as landed); claude design is satisfied by a <strong>derived
+surface</strong> — the bundle step compiles the same <code>client/*.js</code> files into a React
+package of thin delegating wrappers + the real <code>style.css</code>/tokens, per-component
+<code>.d.ts</code> and usage docs; and your new session view is <strong>born component-native in
+that same system</strong>, with no builder counterpart, which is one truth for that surface too.
+The delta/WS model rides both: patches re-render builder surfaces through the landed morph seam,
+and apply natively on component surfaces. A parallel hand-maintained component library is refuted
+by G2 <em>and by claude design's own stated principle</em>; wholesale migration is refuted on
+incrementality and re-proves every gesture from scratch. Full record:
+<code>.dreamwork/docs/plans/render-architecture.md</code> (§Status 2026-07-31).</div>
+<!--#aside-->
+<span class="big"><span class="pass">0</span></span>
+<small>goals have to give<br>
+one All-✔ survivor in a 6×8 matrix<br>
+G2 and claude design state the same rule<br>
+verified against the design-sync spec, not assumed<br>
+his 16:38 goals refute "no components" on their own</small>
+<!--#body-->
+<style>
+/* Page-local. Tokens only. The template's table{min-width:max-content} would make an
+   8-column matrix with in-cell errors unreadable; fixed layout + a floor, scrolling
+   inside .scroller (the 445/c19107a lesson applied, not relearned). */
+.igc-legend{font-size:.82rem;line-height:1.6;color:var(--muted);margin:.3rem 0 .5rem}
+.igc-legend .g{color:var(--lit);font-weight:600}
+.igc-table{table-layout:fixed;min-width:1400px;width:100%;font-size:.72rem}
+.igc-table th,.igc-table td{overflow-wrap:anywhere;word-break:normal;min-width:0;vertical-align:top}
+.igc-table col.ci{width:14%}
+.igc-table col.ca{width:5%}
+.igc-table col.cg{width:10.125%}
+.igc-table .dim{display:block;margin-top:.25rem;font-weight:400;line-height:1.45}
+</style>
+
+<section id="changed" aria-labelledby="changed-t">
+  <div class="label" id="changed-t">What changed since the #505 IGC — verified, not recalled</div>
+  <p class="read">The #505 design (<code>render-architecture.md</code>) refuted full vdom adoption
+  (its I3) on two goals at once: <strong>G2</strong> (a vdom beside the string builders is a second
+  render authority) and <strong>G4</strong> (no build step). Three facts have moved under it:</p>
+  <ul class="read">
+    <li><strong>G4 is retired.</strong> Your ruling, 2026-07-30 07:44 via watch (commit
+    <code>0f97df03</code>): <em>"we don't have a no-build single-file constraint. We had a python
+    stdlib constraint, but otherwise building the webui bundle and breaking up watch.py into modules
+    are good and reasonable things."</em> Half of I3's refutation is void; the plan doc now says so
+    rather than misleading its next reader. The <strong>stdlib constraint is the server's</strong>
+    and did not expire — it is a goal below.</li>
+    <li><strong>The survivor was built.</strong> #505's I5 is not a design any more: morphdom
+    v2.7.4 is vendored (<code>vendor/morphdom.min.js:1</code>), <code>setContent</code> reconciles
+    <code>#view</code> with the content-hash skip (<code>client/router.js:1550–1683</code>), and
+    the review dock reconciles through the same seam (<code>client/router.js:1459</code>, Q3
+    phase 2). The incumbent is live code, not a proposal — anything that replaces it discards
+    landed, gesture-preserving machinery.</li>
+    <li><strong>A goal appeared that the matrix never had.</strong> Your focus
+    (<code>DREAMWORK.md:43–46</code>): the UI becomes a real frontend <em>"built and served by
+    watch.py/dreamhub + compatible with claude design."</em> #397 landed the first half — eight
+    real files under <code>client/</code>, read at import by <code>watch.py</code>
+    (<code>_read_client</code>, <code>watch.py:490</code>). The bundle step is next, and #591's
+    charge is that it must not decide G2 as a side effect of tooling.</li>
+    <li><strong>Two more goals arrived mid-analysis, from an independent direction.</strong> Your
+    2026-07-31 ~16:38 composer submission (durable receipt <code>a71d1105-1e41-5c73-abe7-3f2c144f5301</code>,
+    read verbatim): a live/streamed hierarchical session view that <em>"should use new component
+    system and only be available via that"</em>, with <em>"1 simple component now but let us swap it
+    out later"</em> — and, separately, <em>"transition the frontend webui to a websockets based
+    event model (with RPC) … partial state updates / state deltas rather than full state each
+    time."</em> These are inputs to this question, <strong>not a ruling on it</strong> — they say
+    what you intend to build, and the matrix below tests whether that intent and G2 collide. They
+    enter as goals G7 and G8.</li>
+  </ul>
+</section>
+
+<section id="verified" aria-labelledby="verified-t">
+  <div class="label" id="verified-t">What claude design actually consumes — verified, with the source named</div>
+  <p class="read"><strong>Source.</strong> The <code>design-sync</code> skill Anthropic ships
+  <em>inside the Claude Code binary</em> (v2.1.220 on this machine — reproducible locally:
+  <code>grep&nbsp;-abo "design-sync"</code> over the binary finds the full skill text), corroborated
+  by the public support articles ("Get started with Claude Design", "Set up your design system")
+  and issue <code>anthropics/claude-code#71523</code>. Everything quoted below is Anthropic's own
+  text, read this session — not recalled, not assumed. The brief's belief checked out almost
+  verbatim, with one sharpening it did not have.</p>
+  <ul class="read">
+    <li><strong>It imports a compiled bundle of real components.</strong> esbuild takes the
+    package's published <code>dist/</code> entry to one IIFE assigning every export to
+    <code>window.&lt;globalName&gt;</code>; <em>"every design it produces renders these real
+    compiled components."</em> Per component it wants a <code>.d.ts</code> (<em>"the API contract it
+    codes against"</em>) and a <code>.prompt.md</code> (<em>"its usage reference"</em>).</li>
+    <li><strong>Its core principle is your rule.</strong> Verbatim: <em>"ship what the customer
+    already built — the bundle is their compiled <code>dist/</code>, never a reimplementation."</em>
+    And: <em>"What you author is composition … never a reimplementation … not to hand-write a
+    lookalike."</em> This is <code>dreamhub-design.md:197</code> in the tool's voice — the point of
+    agreement the whole analysis turns on.</li>
+    <li><strong>The sharpening: the component path is React-only.</strong> Verbatim: <em>"a
+    non-React DS has nothing for the claude.ai/design agent to build with."</em> Web components are
+    mentioned only as authoring guidance, not runtime support (<code>#71523</code> asks for a
+    non-React path; open, unanswered). So the string builders, as they stand, have <strong>no
+    component-level path at all</strong> — and neither does any framework-free derivation.</li>
+    <li><strong>A tokens-only shape exists.</strong> Verbatim: <em>"Tokens-only DS (no components):
+    emits <code>styles.css</code> only with an empty-bodied <code>_ds_bundle.js</code>."</em> CSS,
+    tokens and fonts transfer; a <code>conventions.md</code> is inlined into the design agent's
+    system prompt. The tool then composes <em>generic</em> components in your visual language.</li>
+  </ul>
+  <p class="quiet">Inferred (stated as such, not verified): that a React wrapper whose render is
+  the builder's HTML string satisfies the tool <em>well</em>, not merely mechanically. Nothing in
+  the spec forbids it — the validator renders previews and screenshots them, and a wrapper is a
+  real React 18 component with typed props — but composition granularity inside the tool will be
+  exactly the granularity we export. That caveat is priced into the matrix, not hidden.</p>
+</section>
+
+<section id="igc" aria-labelledby="igc-t">
+  <div class="label" id="igc-t">IGC — which goal gives?</div>
+  <p class="read">Method: <code>igc-method.md</code> (binary goals, ✔/✘/?, <code>All</code> rollup,
+  the decisive error under each ✘ — never a score). Context: the dashboard renders through pure
+  string builders (<code>client/components.js</code>, <code>client/views.js</code>) committed to the
+  DOM at one seam, now a keyed morphdom reconcile; the bundle step is imminent; the design-sync
+  requirements above are the verified consumption contract.</p>
+  <p class="quiet igc-legend"><strong>Goals.</strong>
+    <span class="g">G1</span> gestures preserved — every <code>transitions.md</code> family still
+    reads as the same gesture (a travel that becomes a teleport is refuted) ·
+    <span class="g">G2</span> one render authority — no second <em>maintained</em> rendering truth
+    for any surface ·
+    <span class="g">G3</span> claude-design consumable — the design agent can build with this UI,
+    per the verified spec ·
+    <span class="g">G4</span> server stays stdlib-Python-only (unexpired) ·
+    <span class="g">G5</span> incremental and reversible ·
+    <span class="g">G6</span> the dashboard keeps working throughout ·
+    <span class="g">G7</span> the session view ships component-native — his directive: the new
+    surface uses the component system and <em>"only"</em> that, first component swappable later ·
+    <span class="g">G8</span> delta-ready — his WS/RPC + state-delta direction renders efficiently
+    without forcing a renderer swap on any existing surface</p>
+  <div class="scroller"><table class="igc-table">
+    <colgroup>
+      <col class="ci"><col class="ca"><col class="cg"><col class="cg"><col class="cg"><col class="cg"><col class="cg"><col class="cg"><col class="cg"><col class="cg">
+    </colgroup>
+    <thead><tr><th>Idea</th><th>All</th><th>G1 gestures</th><th>G2 one authority</th><th>G3 claude-design</th><th>G4 stdlib server</th><th>G5 incremental</th><th>G6 keeps working</th><th>G7 session view native</th><th>G8 delta-ready</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>I1 · no component system</strong><br><span class="dim">builders stay the only idiom; claude design declined; new surfaces built as builders too</span></td>
+        <td class="fail">✘</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="fail">✘<span class="dim">the goal is stated (<code>DREAMWORK.md:46</code>) and its need verified real — with nothing shipped the design agent has nothing of ours to build with, at any level</span></td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="fail">✘<span class="dim">his directive verbatim refused: the session view <em>"should use new component system and only be available via that"</em>, and this row's only offer is a builder-rendered view. Decisive <strong>independently of claude design</strong> — retiring G3 tomorrow would not save this row</span></td>
+        <td class="unknown">?<span class="dim">dashboard-scale deltas work through the landed morph seam, but a stream-hot, append-heavy tree re-built as one string per event is unproven at stream frequency</span></td>
+      </tr>
+      <tr>
+        <td><strong>I2 · parallel component library</strong><br><span class="dim">hand-maintained React components beside the builders</span></td>
+        <td class="fail">✘</td>
+        <td class="pass">✔<span class="dim">live page untouched</span></td>
+        <td class="fail">✘<span class="dim">the refused shape verbatim: two maintained truths that <em>"only agree on the day they are written"</em> (<code>dreamhub-design.md:197</code>) — and it fails the tool's own principle too: a lookalike library is a reimplementation, the thing its spec says never to ship</span></td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+      </tr>
+      <tr>
+        <td><strong>I3 · wholesale migration</strong><br><span class="dim">a React tree becomes the one authority; builders retired</span></td>
+        <td class="fail">✘</td>
+        <td class="unknown">?<span class="dim">every <code>transitions.md</code> family re-proven against a new commit seam, and the landed morphdom pipeline (<code>router.js:1550</code>) discarded — unproven, not impossible</span></td>
+        <td class="pass">✔<span class="dim">one authority again — a different one</span></td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="fail">✘<span class="dim"><code>qaCard</code> renders on every surface (<code>components.js:586</code>): migrating view-by-view forks it into two truths mid-flight; avoiding the fork means a flag day. Neither is incremental, neither is reversible</span></td>
+        <td class="unknown">?<span class="dim">rides G5's error — a flag day is exactly when the dashboard stops working</span></td>
+        <td class="pass">✔</td>
+        <td class="pass">✔<span class="dim">component trees are delta-native — but deltas do not repair G5</span></td>
+      </tr>
+      <tr class="row-accent">
+        <td><strong>I4 · derived surface + native new surfaces</strong><br><span class="dim">React wrapper shells compiled <em>from</em> <code>client/*.js</code> by the bundle step; tokens+CSS ship with it; surfaces born component-native live in the same system with no builder counterpart</span></td>
+        <td class="pass">✔</td>
+        <td class="pass">✔<span class="dim">additive — the live page is byte-identical</span></td>
+        <td class="pass">✔<span class="dim">contested, held: a wrapper holds no markup decision, so divergence has no place to live — <em>provided</em> the build consumes the same files, never copies (the load-bearing condition, stated in §derived); native surfaces have no builder twin, so one truth per surface everywhere</span></td>
+        <td class="pass">✔<span class="dim">contested, held: the verified path exactly — React 18 package, <code>dist/</code> entry, <code>.d.ts</code>, <code>.prompt.md</code>; granularity = the builders' own vocabulary</span></td>
+        <td class="pass">✔<span class="dim">the build is dev-time; the server serves files as today</span></td>
+        <td class="pass">✔<span class="dim">a deletable bundle</span></td>
+        <td class="pass">✔</td>
+        <td class="pass">✔<span class="dim">the session view is born native here — <em>"1 simple component now, swap it out later"</em> is a component's normal lifecycle in this shape</span></td>
+        <td class="pass">✔<span class="dim">a patch updates client state; builder surfaces re-render through the landed morph seam (what every 2s tick already does), component surfaces apply it natively — the transport moving from poll to WS moves no rendering authority</span></td>
+      </tr>
+      <tr>
+        <td><strong>I5 · tokens-only ceiling</strong><br><span class="dim"><code>styles.css</code> + tokens + fonts + conventions to claude design, permanently no components shipped there</span></td>
+        <td class="unknown">?</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="unknown">?<span class="dim">verified supported — but the tool then composes <em>its</em> generic components wearing our skin. Whether that meets "compatible" is your breakpoint (Q2), not a fact this lane can settle</span></td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔<span class="dim">this row caps only what ships to claude design; the on-page component system exists regardless</span></td>
+        <td class="pass">✔</td>
+      </tr>
+      <tr>
+        <td><strong>I6 · web components</strong><br><span class="dim">custom elements over the builders — the framework-free derivation</span></td>
+        <td class="fail">✘</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="fail">✘<span class="dim">verified refuted: the runtime is React-only — <em>"a non-React DS has nothing for the claude.ai/design agent to build with."</em> The docs' web-components mention is authoring guidance, not runtime support (<code>#71523</code> open, unanswered)</span></td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔</td>
+        <td class="pass">✔<span class="dim">custom elements could host it</span></td>
+        <td class="pass">✔</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <p class="read"><strong>Survivor: I4 alone.</strong> I5 is not a rival so much as I4's first
+  stage — its entire shipping set (<code>styles.css</code>, tokens, fonts) is a subset of what the
+  design-sync artifact set carries anyway, so "tokens first, wrappers second" is one staged path,
+  and stopping after stage one is what a tokens-level answer to Q2 means. One path considered and
+  not tabled: the web upload flow (screenshots / palette files), from which the tool
+  <em>extracts</em> an approximation of a design system. That is a Claude-authored reimplementation
+  of this UI — the second-truth shape at the tool's end, stale from the day it is made — and it
+  falls to the same error as I2 without even being maintainable.</p>
+  <p class="read"><strong>The finding worth saying loudly.</strong> Your 16:38 goals flip a cell
+  claude design alone never touched: <strong>G7 refutes I1 on its own.</strong> Before the receipt,
+  "no component system" died only on the claude-design goal — retire that goal and I1 stood.
+  After it, the session-view directive kills I1 <em>independently</em>, and G8 leaves it wounded
+  (<code>?</code>) besides. The component system is now motivated from three directions at once —
+  claude design, the session view, the delta model — <strong>and none of the three moves the
+  survivor</strong>, because none of them needs a second truth about any surface the builders own.
+  What they need is a component runtime <em>beside</em> the builders with the truth split
+  per-surface, which is what I4 is.</p>
+  <p class="quiet">Zero-survivor discipline, honoured rather than dodged: the matrix does not force
+  a refuted pick because the framing was fixed first — the option that dissolves the collision
+  (derivation) did not exist in #505's matrix, because this goal did not exist. That is the repo's
+  own rule — <em>zero survivors means fix the framing</em> — applied before the fact.</p>
+</section>
+
+<section id="derived" aria-labelledby="derived-t">
+  <div class="label" id="derived-t">The derived surface, concretely — and what it costs</div>
+  <p class="read"><strong>What a wrapper is.</strong> A React component whose render calls the real
+  builder and mounts its string — no JSX restatement of any markup, no second opinion about what a
+  question card looks like:</p>
+  <pre><code class="language-javascript">export const QaCard = ({ q, k, ctx }) =>
+  ambient(ctx, () =&gt; html(qaCard(q, k)));   // qaCard: client/components.js:586 — the one truth</code></pre>
+  <p class="read"><strong>The one authority stays the authority</strong> because the bundle is
+  compiled <em>from the same files watch.py serves</em> — the build's entry concatenates
+  <code>client/*.js</code> in the load order <code>watch.py:530</code> already defines, then exports
+  the wrapper shells. The load-bearing condition, stated as a rule for the bundle step: <strong>the
+  build consumes <code>client/</code>, it never copies it.</strong> A copied builder is the second
+  truth reintroduced with extra steps.</p>
+  <p class="read"><strong>The ambient contract is small and enumerable.</strong> The builders read a
+  handful of page globals; the wrapper's <code>ambient()</code> shim supplies them:
+  <code>data</code> (<code>components.js:158,192</code> — <code>linkable_paths</code>, entry
+  lookups), <code>view</code> (<code>components.js:686,705</code> — suppresses focus/roll chrome on
+  the focus page), <code>rmr</code> (<code>components.js:505</code> — reduced motion), and the
+  <code>submitCard</code> handler a card's send button names inline
+  (<code>components.js:560</code>) — stubbed in the design tool, where a preview's click has
+  nothing to submit to. <code>client/style.css</code> (1,844 lines, real today) ships as the
+  package's stylesheet unchanged.</p>
+  <p class="read"><strong>The vocabulary already exists.</strong> <code>components.js</code> is not
+  a monolith to be broken up before any of this works: <code>qaCard</code> (<em>"THE question
+  component"</em>, <code>components.js:586</code> — its contract comment says every surface renders
+  through it), <code>expand</code>, <code>label</code>, <code>pipBtn</code>,
+  <code>followThread</code>, <code>qaCompose</code>, and the view builders
+  (<code>buildDashboard</code>, <code>views.js:878</code>) are each one export-and-wrap away.
+  Granularity in the tool equals the granularity we choose to export, and that list is a real
+  starting set.</p>
+  <p class="read"><strong>Honest costs</strong> — this is not free, it is bounded: hand-authored
+  <code>.d.ts</code> for JS builders (the spec accepts it; contracts are only as good as we write
+  them); curated fixture props for each <code>.prompt.md</code> so the design agent has realistic
+  examples; the ambient shim is glue that must be kept honest (it is small, but it is ours);
+  preview interactivity is dead by design (a stubbed <code>submitCard</code> — composition is the
+  tool's job, submission is the dashboard's). None of these is a rendering decision, which is why
+  none of them can diverge from the page.</p>
+  <p class="read"><strong>Born-native surfaces are the other half of the same shape.</strong> Your
+  session view never gets a string builder — it is written as a component from its first line, in
+  the same system the wrappers live in, and the component tree is its <em>one</em> authority. The
+  rule it must honour is the mirror of the wrapper's: <strong>a native component that needs a
+  primitive the builders own consumes the wrapper, never re-derives it</strong> — one
+  <code>agePair</code>, one <code>label</code>, one expand idiom, whoever is asking. This also
+  quietly builds the road I3 lacked: if a builder-owned surface ever <em>should</em> go native, its
+  wrapper is replaced by a native component as one surface-sized, reversible step — no flag day,
+  no fork — and G2 holds at every point in between. The delta model rides the same split: a WS
+  patch updates client state; builder surfaces re-render through the landed morph seam exactly as
+  the 2s tick does today, and native surfaces apply the delta as component state.</p>
+</section>
+
+<section id="rule" aria-labelledby="rule-t">
+  <div class="label" id="rule-t">The rule survives — and the tool agrees with it</div>
+  <p class="read">The interesting thing this task was sent to chase: the apparent conflict is a
+  point of agreement. Your rule — <em>"two renderers only agree on the day they are written"</em> —
+  exists because parallel truths drift. Claude design's spec holds the same belief about its own
+  ingestion: <em>"ship what the customer already built … never a reimplementation"</em>, <em>"not
+  to hand-write a lookalike."</em> The only options the two rules jointly refuse are the same
+  options: the parallel library (I2) and the extracted approximation. The option they jointly
+  permit is the derived bundle — which is, precisely, <em>shipping what you already built</em>.</p>
+  <p class="read"><strong>And the sharpest apparent conflict dissolves the same way.</strong> A
+  session view available <em>"only via"</em> a component system, while the dashboard keeps its
+  string builders — is that not two maintained truths? No, and the rule's own birthplace says why:
+  it was coined refusing <em>"a JS row renderer beside the Python one"</em> rendering <strong>the
+  same rows</strong> (<code>dreamhub-design.md:193–197</code>), and #505's G2 wording carries the
+  same scope — <em>"exactly one place that commits the DOM <strong>for a view</strong>"</em>
+  (<code>render-architecture.md</code>). Two renderers of one surface drift; two surfaces each
+  with one renderer have nothing to drift <em>from</em>. The drift risk in a heterogeneous page
+  lives at the <em>primitive</em> level — a second <code>agePair</code>, a lookalike
+  <code>label</code> — and that is exactly what the delegation rule above closes. This reading is
+  Q1; it is asked, not assumed.</p>
+  <blockquote class="read">What would reopen this: if you want the design tool to <strong>recompose
+  component interiors</strong> — drag the pieces <em>inside</em> a question card around as first-class
+  parts — only a real migration (I3) delivers that, at the price its row shows: the incremental
+  path forks <code>qaCard</code>, the honest path is a flag day, and every gesture in
+  <code>transitions.md</code> is re-proven from scratch. Say so and #591 reopens with that goal on
+  the board. Nothing in your stated focus asks for it, so it is priced here rather than asked.</blockquote>
+</section>
+
+<section id="not" aria-labelledby="not-t">
+  <div class="label" id="not-t">What this analysis does NOT do</div>
+  <ul class="read">
+    <li><strong>Builds no code</strong> — no wrapper, no bundle, no <code>watch.py</code> or
+    <code>client/</code> edit; the live render path (morphdom reconcile) is untouched.</li>
+    <li><strong>Runs no claude-design onboarding</strong> — nothing is uploaded anywhere; the spec
+    was read, not exercised.</li>
+    <li><strong>Does not touch <code>:35110</code></strong>, the heartbeat, the guards, or the loop.</li>
+    <li><strong>Decides nothing for you</strong> — it narrows the ask to Q1/Q2 and prices the
+    alternatives, including the one (interior recomposition) that would change the answer.</li>
+  </ul>
+</section>
+<!--#footer-->
+<p>Analysis only · no code · one authority stands · G4's retirement recorded in
+<code>.dreamwork/docs/plans/render-architecture.md</code> (§Status 2026-07-31) · question draft in
+<code>.dreamwork/docs/plans/g2-question-draft.md</code> · verified sources: bundled
+<code>design-sync</code> skill (Claude Code 2.1.220), support articles, <code>claude-code#71523</code></p>
