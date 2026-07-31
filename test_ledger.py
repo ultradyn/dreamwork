@@ -322,3 +322,29 @@ def test_sweep_counts_every_commit_examined_even_with_no_findings():
     assert n == len(SWEEP_COMMITS)  # non-matching subjects are examined too
     n0, findings0 = ledger.sweep(SWEEP_LEDGER, SWEEP_COMMITS[4:])
     assert n0 == 1 and findings0 == []
+
+
+# ---------------------------------------------------------------------------
+# #681 — the store-mode `file` verb surfaces a bad enum as one-line stderr +
+# exit 2, not a bare sqlite traceback. file_task (ledger_write) does the
+# validation; _file_store (here) is the catch that turns WriteError into the
+# #667-style refusal. PRODUCTION LINE: _file_store's `except WriteError`.
+# ---------------------------------------------------------------------------
+
+def test_file_store_bad_priority_is_exit2_stderr_no_traceback(tmp_path, capsys):
+    # Seed a real store so _file_store can open it and reach file_task.
+    sp = ledger.store_path(str(tmp_path))
+    ledger.ledger_store.open_store(sp, seed_next_id=1).close()
+    # priority '3' is not in priority_band — derive that at runtime.
+    bands = ledger.ledger_store.PRIORITY_BANDS
+    assert "3" not in bands, "precondition: '3' must not be a real band"
+
+    rc = ledger._file_store(str(tmp_path), "a title", "a body", "3", None, None)
+
+    assert rc == 2, f"a bad priority must exit 2, not {rc}"
+    err = capsys.readouterr().err
+    assert "priority: got '3'" in err and "expected one of" in err, err
+    assert "Traceback" not in err, "a bad enum must not dump a traceback"
+    # Nothing was filed.
+    assert sp.exists()
+

@@ -349,15 +349,26 @@ def _fold_store(dw_dir, task_id, note):
 
 
 def _file_store(dw_dir, title, body, priority, type, origin):
-    """Store-mode file: file_task (seeded AUTOINCREMENT id, chained filed event)."""
+    """Store-mode file: file_task (seeded AUTOINCREMENT id, chained filed event).
+
+    #681 — file_task now rejects a bad enum (priority/origin) with a WriteError
+    that names the column and the live allowed set, BEFORE the INSERT. We
+    surface it as one-line stderr + exit 2 — not a sqlite traceback — matching
+    #667's convention that a ledger call which cannot succeed says why in its
+    own words. Exit 2 (not 1): argparse itself uses 2 for a bad argument value,
+    and 1 is `get`'s "no such id" under the #497 contract.
+    """
     store = ledger_store.open_store(store_path(dw_dir))
     try:
         new_id = ledger_write.file_task(
             store, title, body, priority=priority, type=type, origin=origin)
+    except ledger_write.WriteError as exc:
+        sys.stderr.write(f"ledger: {exc}\n")
+        return 2
     finally:
         store.close()
     sys.stdout.write(f"filed #{new_id} (store)\n")
-    return new_id
+    return 0
 
 
 def _note_store(dw_dir, task_id, note):
@@ -1316,9 +1327,10 @@ def _dispatch(args):
         if args.cmd == "note":
             _note_store(dw_dir, args.id, args.note)
             return 0
-        _file_store(dw_dir, args.title, args.note or args.title,
-                    args.priority, args.type, args.origin)
-        return 0
+        # #681 — _file_store returns the exit code: 0 on success, 2 on a bad
+        # enum (priority/origin), surfaced as stderr not a sqlite traceback.
+        return _file_store(dw_dir, args.title, args.note or args.title,
+                           args.priority, args.type, args.origin)
 
     if args.cmd == "counts" and source_of_truth(dw_dir) == "store":
         open_ids, landed_ids = store_ids_by_state(dw_dir)
