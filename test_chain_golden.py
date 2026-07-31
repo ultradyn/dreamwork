@@ -144,16 +144,24 @@ GOLDEN_CANON_SHA256 = (
     "747e81af02784d7c392cf61952b08558083b72ece4e0befeca9394dbfb85f5d2")
 
 # H_0 = SHA-256(journal_id || schema_version); journal_id="ud-dreamwork.task-ledger",
-# schema_version=2 (genesis_hash docstring).
-# Recompute: python3 -c "import hashlib;print(hashlib.sha256(b'ud-dreamwork.task-ledger2').hexdigest())"
+# schema_version=3 (genesis_hash docstring). Bumped from v2 -> v3 by increment #645
+# (dreamwork_db/migrate.py SCHEMA_VERSION), which seeds genesis_hash; updated here ON
+# PURPOSE by hand from the contract one-liner below (not by calling genesis_hash — a
+# literal recomputed from the producer is x==x and cannot fail, #759).
+# Recompute: python3 -c "import hashlib;print(hashlib.sha256(b'ud-dreamwork.task-ledger3').hexdigest())"
 GOLDEN_GENESIS = (
-    "25d2c583ffdad2e48190b126da4946982c99e9d199b21e9c96a25cfa240fdc1a")
+    "2002431098ba893e189b703584228712bdc605a1128a2118b038d762958c159c")
 
 # H_i = SHA-256(domain_tag || H_(i-1) || length_framed(canonical_event_i));
 # domain_tag=b"ud-dreamwork.task-event.v1" (DOMAIN_TAG), prev=genesis.
-# Recompute: python3 -c "import hashlib;p=['549','2026-07-30T10:11:12','started_from_backlog','pending','in_progress','loop','golden-vector-549'];c=b''.join((len(x.encode()).to_bytes(8,'big')+x.encode()) for x in p);g=hashlib.sha256(b'ud-dreamwork.task-ledger2').hexdigest();print(hashlib.sha256(b'ud-dreamwork.task-event.v1'+g.encode()+c).hexdigest())"
+# prev_hash is GOLDEN_GENESIS above, so this literal MOVES IN LOCKSTEP with the
+# genesis pin: a schema-version bump changes genesis, which changes this digest.
+# That makes GOLDEN_HASH_EVENT a second pin of the same shape (it transitively
+# encodes schema_version through the genesis prev_hash). Recomputed here by hand
+# from the contract one-liner with the v3 genesis.
+# Recompute: python3 -c "import hashlib;p=['549','2026-07-30T10:11:12','started_from_backlog','pending','in_progress','loop','golden-vector-549'];c=b''.join((len(x.encode()).to_bytes(8,'big')+x.encode()) for x in p);g=hashlib.sha256(b'ud-dreamwork.task-ledger3').hexdigest();print(hashlib.sha256(b'ud-dreamwork.task-event.v1'+g.encode()+c).hexdigest())"
 GOLDEN_HASH_EVENT = (
-    "27840d6ed9d4135729fb9d427eec717af23441f0ee2e0203639762d715dd4fe5")
+    "fd7a478b7cf927e4a2e0ab9ca933fe9454e7251252040d868a31ef78ff61acd7")
 
 
 def test_genesis_hash_matches_recorded_literal():
