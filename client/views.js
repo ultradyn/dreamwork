@@ -33,10 +33,10 @@ const QHEALTH = {
     body: 'no .dreamwork/questions.md yet — the loop writes one the first ' +
           'time it needs you.' },
   unreadable: { label: 'questions unreadable',
-    body: '`.dreamwork/questions.md` has content and this page can see no ' +
+    body: '.dreamwork/questions.md has content and this page can see no ' +
           'entries in it. anything the loop has asked you is sitting in that ' +
           'file, invisible here, while this page says none. an entry is a ' +
-          'top-level bullet with a bold title, under a literal `## Open`.' },
+          'top-level bullet with a bold title, under a literal ## Open.' },
 };
 function qHealth(d) {
   const c = QHEALTH[d && d.questions_health];
