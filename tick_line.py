@@ -220,10 +220,10 @@ def _runner_tally(lanes: list) -> str:
     changes his mind, which he did twice this week.
 
     So the same move the rest of this line makes: state the live fact, not the
-    rule. `runners opus 5, ccc 1` on every beat is a mirror, and the drift it
-    reflects has never been "chose the wrong exotic tier" — it has always been
-    "reached for native by habit". A habit is broken by seeing it, not by being
-    told about it.
+    rule. `lanes 6 recorded (opus 5, ccc 1)` on every beat is a mirror, and the
+    drift it reflects has never been "chose the wrong exotic tier" — it has
+    always been "reached for native by habit". A habit is broken by seeing it,
+    not by being told about it.
 
     The runner is the FIRST TOKEN of the recorded `model`; the rest is
     qualification ("ccc @glm52 (Opus review MANDATORY before merge)" tallies as
@@ -233,6 +233,13 @@ def _runner_tally(lanes: list) -> str:
 
     Provenance is the same as `recorded`: `status.json["lanes"]` is written by
     the coordinator's judgement, so this mirrors the bookkeeping, not the OS.
+
+    RETURNS THE BREAKDOWN WITHOUT A `runners` PREFIX — it is always rendered as
+    a parenthetical of the recorded count by the caller, so the prefix would be
+    redundant and the word "runners" would re-enter the line as what looks like
+    a second fleet count (#718: two of the three counters read the same `lanes`
+    list; presenting that list's count and its composition as two `·`-separated
+    figures made one stale source read as corroboration).
     """
     counts: dict[str, int] = {}
     for lane in lanes:
@@ -245,7 +252,7 @@ def _runner_tally(lanes: list) -> str:
     if not counts:
         return ""
     ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-    return "runners " + ", ".join("%s %d" % (k, v) for k, v in ordered)
+    return ", ".join("%s %d" % (k, v) for k, v in ordered)
 
 
 def _read_status(target: str) -> dict:
@@ -283,16 +290,26 @@ def _fleet_fact(target: str) -> str:
     both worth its characters rather than merely verbose:
 
       `recorded`  — `status.json["lanes"]`, written by the coordinator's own
-                    judgement. Sees every dispatch form, so it cannot be
-                    deflated by the probe's blindness; it goes stale upward
-                    when a landed lane is not removed. An upper bound.
+                    judgement. Sees every dispatch form *when it is kept up*,
+                    but it is HAND-MAINTAINED with no automatic writer and no
+                    automatic pruner — unlike `dreamers`, which `status_sync`
+                    corrects every tick. MEASURED (#718): it froze at 3 across
+                    five dispatches and six merges because nobody updated it.
+                    It is NOT an upper bound; it is a snapshot that drifts in
+                    whichever direction the last edit left it, indefinitely.
       `ccc-live`  — the OS measurement. Cannot be inflated by forgetfulness;
-                    it is blind to Agent-tool lanes. A lower bound.
+                    it is blind to Agent-tool lanes. A lower bound, and the
+                    only one of the two that self-corrects.
 
     Each is labelled by HOW IT WAS OBTAINED, so neither can be read as "the
-    fleet". Where they disagree the reader learns something real. Where both
-    are zero against a delegation target, that is the alarm — and it is honest,
-    because `recorded` is the source that sees all dispatch forms.
+    fleet". Where they disagree the reader learns something real — and the
+    reader who knows `recorded` is hand-maintained (not an upper bound) knows
+    which to trust when they do.
+
+    #718: `recorded` and the runner breakdown both read the SAME `lanes` list.
+    The breakdown is now a PARENTHETICAL of the count, not a `·`-separated
+    second figure — so the line has one fleet number per source, and a stale
+    `recorded` cannot masquerade as two corroborating counts.
 
     `LivenessUnknown` propagates rather than being caught: "I could not tell"
     and "nothing is running" must not render as one string when one of them is
@@ -305,9 +322,9 @@ def _fleet_fact(target: str) -> str:
         recorded = "LANES UNRECORDED (status.json has no `lanes` list)"
     else:
         recorded = "%d recorded" % len(lanes)
-        runners = _runner_tally(lanes)
-        if runners:
-            recorded += SEP + runners
+        breakdown = _runner_tally(lanes)
+        if breakdown:
+            recorded += " (%s)" % breakdown
 
     raw = status.get("dreamers", [])
     if not isinstance(raw, list):

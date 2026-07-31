@@ -215,8 +215,8 @@ depends on remembering to make it.** `tick_line.py` sits downstream of
 `heartbeat` in the monitor command (`initialization.md` step 5) and appends
 the resolved axes, the open count and the fleet counts to every pulse. Read
 it as a *measurement*, not as a reminder to comply: it prints what the fleet
-IS (`lanes N recorded · runners opus 5, ccc 1 · M ccc-live`) beside what the
-posture SAYS, because a rule you believe you are already following is not
+IS (`lanes N recorded (opus 5, ccc 1) · M ccc-live`) beside what the posture
+SAYS, because a rule you believe you are already following is not
 checkable and a count is. Still do the restatement — the line feeds it, it
 does not replace it.
 
