@@ -6,7 +6,10 @@ scratchpad because it is corrected by lane dogfood reports several times a night
 every one of those corrections used to die with the session that made it (`#703`).
 
 **Corrections belong here.** When a lane reports that a rule was wrong, missing, or
-unreachable, fix it in this file in the same increment that acts on the report.
+unreachable, fix it in this file in the same increment that acts on the report. The duty
+runs both ways: when `SKILL.md` gains a lane-facing rule, reflect it here too — a rule
+stranded in the coordinator's doc never reaches a lane (`#400`), and no string-match check
+can bind "a rule is stated" (a token is not a statement, `#699`), so this rotation carries it.
 
 ## Standing rules — these bind you, and this loop has been burned by every one
 
@@ -111,6 +114,11 @@ worktree by hand before removing it. **The moment you have something coherent �
 worth keeping, a working change, even a partial one — commit it.** A commit that says "WIP:
 measured X, Y still open" is a result. An uncommitted worktree is a coin flip. Amend or add
 commits freely afterwards; the coordinator squashes nothing and reads your history.
+
+**Commit the deliverable, not just the code.** The inbox is not lossless (`#404`/`#392a`
+landed work whose report never arrived), so whatever must survive — an audit, an analysis, a
+design doc — goes into the commit, and the inbox report carries the richer context. A lane
+cannot land work without committing; that is the one channel that cannot be skipped.
 
 **Do NOT touch `:35110` (the live dashboard) or `:35113` (dev).** Bind ephemeral ports only.
 Limit builds and tests to **2 threads**.
