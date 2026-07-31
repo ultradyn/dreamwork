@@ -64,8 +64,12 @@
 # hook has seen
 .dreamwork/.ledger-lint-mtimes.json
 
-# the three-axis posture — describes THIS host's posture, not the project's
+# the posture axes — describes THIS host's posture, not the project's
 .dreamwork/posture
+
+# the free-text subagent policy override — same argument; the standing
+# default is committed in lint.py, so ignoring this loses nothing
+.dreamwork/subagent-policy
 
 # the coordinator inbox — every line points at a report under /tmp, worthless
 # the moment the session ends

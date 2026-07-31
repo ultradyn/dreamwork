@@ -375,6 +375,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
 | `.dreamwork/run-mode` | `watch.py` dashboard + the coordinator/main dreamer on tick and via `watch-events.log` | One line: one name from `watch.py`'s `RUN_MODES` (`lackadaisical`, `hot`, `assisted`). Absent/unknown → `lackadaisical`. Machine-local, **gitignored** — operational posture, not a portable project default. `status.json` may mirror it later but never owns it | `lint.py` |
 | `.dreamwork/posture` | the coordinator/main dreamer on tick (#445, #342, #510) | Axis override: `pace:`, `asking:`, `delegation:`, `delivery:`, `orchestration:` — one per line, `#` comments allowed. Absent pace/asking/delegation → derived from run-mode (see § below); absent `delivery` → `instant` (today's behaviour); absent `orchestration` → `hands-on` (today's behaviour). Closed sets on pace/asking/delivery/orchestration fail loud; delegation carries a number that steers, never gates | `lint.py` |
+| `.dreamwork/subagent-policy` | the coordinator/main dreamer on tick (#650) | **Free text — the whole file is the value.** No grammar, no keys, no comment syntax: nothing is parsed, escaped or normalised, and it round-trips byte for byte. Absent or blank → the standing default (`lint.SUBAGENT_POLICY_DEFAULT`), so a policy is always in effect. Machine-local, **gitignored** — see below. It is a posture *field*, not an axis: it does not live in `.dreamwork/posture` | `lint.py` |
 | `.dreamwork/submissions.log` | recovery — the loop, and him, after something failed | One JSON object per line, written as the FIRST act of `do_POST` before any parsing or validation. Append-only, never rewritten. Machine-local, **gitignored** — see below | `lint.py` |
 | `.dreamwork/plugin-commands.json` | `watch.py`'s composer (#86) | `{"commands": [{kind, label, desc, plugin}]}`. Written **whole** by the loop at plugin resolution, never appended — see below. Machine-local, **gitignored** | `lint.py` |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
@@ -1260,6 +1261,83 @@ existing install owns must change.
 Checked by `lint.py` (`check_posture`), which reads the closed sets from its
 own constants (the single source) and derives delegation's display label from
 `delegation_posture`.
+
+**The subagent policy is a posture FIELD, not an axis, and it is not in this
+file** (`#650`). It is free text, so it has no stops to fail loud against;
+`.dreamwork/subagent-policy` carries it and the section below says why. A
+`subagent-policy:` line written into *this* file is an **ERROR**, not an
+"unknown axis" warning: `parse_posture_text` drops it, so the policy would
+silently not be in effect — the same dropped-choice hazard run-mode fails
+loud on.
+
+## `.dreamwork/subagent-policy` — the free-text posture field (#650)
+
+His standing policy for which model a subagent gets, in his own words. It is
+**posture** — it steers how the loop dispatches work, the way `delegation`
+steers how much — but it is the first posture field that is *prose* rather
+than a stop name or a number.
+
+**Shape** — there is no shape. **The whole file is the value.** No keys, no
+`#` comments, no line grammar, no escaping, no length limit, no trailing-
+newline normalisation. What is written is what is read, byte for byte,
+including blank lines, colons, backticks, a leading `#`, and a line that
+looks exactly like a posture axis. Nothing in the content is ever validated —
+a policy that mentions `pace: warp` is prose about pace, and a checker that
+read it as an axis would fail on his own wording.
+
+**Absent or blank → the standing default**, `lint.SUBAGENT_POLICY_DEFAULT` —
+his policy, committed in code. So a policy is *always* in effect and an
+install that predates the field behaves identically to one that has it (no
+migration; the `#426` per-tick re-read carries a later edit to a running
+loop, as it does for `posture`). The default is committed rather than seeded
+into the file because the file is machine-local and gitignored: a standing
+policy that lived only there would not survive a fresh checkout and could not
+be reviewed in a diff. Clearing an override is `rm`, not an empty write — a
+blank file is inert and lint says so, so there is no invisible cleared state.
+
+**Why a sibling file rather than an axis in `.dreamwork/posture`.** Every
+posture axis is a closed set or a number, and `check_posture`'s whole shape
+is *"a value outside the vocabulary fails loud"* — the property that stops a
+silent fallback dropping his choice. Free text has no vocabulary, so it
+cannot be checked that way, and carrying it in the axis file would cost the
+**closed** axes their loudness twice over:
+
+- A multi-line value needs either an escaped single line — where a
+  hand-inserted real newline then silently truncates the policy — or a block
+  form whose unterminated case swallows every `axis: value` line below it.
+  Free text able to eat a closed axis is exactly what the fail-loud
+  discipline exists to prevent.
+- `write_posture` is a whole-file atomic overwrite fired by every posture
+  chip press. A policy sharing that file would be erased, without a word, by
+  any writer not taught to carry it through — and that writer already exists.
+
+This does **not** split one dial across two files. The posture *datatype* has
+always spanned more than one: `watch.resolve_posture` merges
+`.dreamwork/run-mode` with `.dreamwork/posture` into a single dict, and this
+is the third source it merges, exposed as `subagent_policy` with its own
+`subagent_policy_source` (`default` | `file`). That source is separate from
+the axes' `source` on purpose — a policy override must not make derived axes
+claim to be file-set. The `#445`/`#342` **widen-not-sibling** ruling governs
+closed-set *axes*, and its load-bearing premise — *"widening lets the
+closed-set discipline already guarding pace/asking guard this for free"* — is
+false by construction for free text, which gets nothing for free and
+endangers what it is stored beside. The ruling's other goal, **one control
+surface**, is untouched: there is still one `POST /posture`, one arm, one
+ceremony.
+
+**Machine-local / gitignored**, like `run-mode` and `posture`: it names this
+host's tooling and this operator's model access, not a portable project
+default.
+
+**It does not ride `/summary.json`.** The redacted external view carries the
+axes an outside consumer routes on; the policy is his authored prose (the
+`SUMMARY_DENIED` class, with dreams and chats) and stays in `collect()` /
+`/data.json` only.
+
+Checked by `lint.py` (`check_subagent_policy`), which reports **which** policy
+is in effect — override or standing default — and warns when a present file is
+blank (inert) or unreadable. It never inspects the content, because there is
+nothing there it could honestly check.
 
 ## `.dreamwork/submissions.log` — his words, before anything can lose them
 

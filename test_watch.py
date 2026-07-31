@@ -9434,6 +9434,168 @@ class TestPosture(unittest.TestCase):
         pdf_end = watch.PAGE.index('function hidePostDesc(', pdf_i)
         self.assertIn("axis === 'orchestration'", watch.PAGE[pdf_i:pdf_end])
 
+    # ── #650 the free-text subagent policy field ─────────────────────────
+    def test_subagent_policy_schema_is_imported_from_lint_not_restated(self):
+        """Single source: lint owns the schema, watch consumes it (#445/#413).
+
+        The default, the file name and the recognised-field map must be the
+        very objects lint holds — a copy here is a second truth able to
+        disagree on the day it is written.
+        """
+        import lint
+        self.assertIs(watch.SUBAGENT_POLICY_DEFAULT,
+                      lint.SUBAGENT_POLICY_DEFAULT)
+        self.assertIs(watch.SUBAGENT_POLICY_FILE, lint.SUBAGENT_POLICY_FILE)
+        self.assertIs(watch.POSTURE_TEXT_FIELDS, lint.POSTURE_TEXT_FIELDS)
+
+    def test_policy_round_trips_byte_for_byte(self):
+        """THE round-trip red: what is written is what is read, exactly.
+
+        Free text is only worth having if it survives storage unchanged. The
+        seeded standing policy goes through write -> disk -> read and must be
+        identical at every hop, including its trailing newline, backticks and
+        typos. Any normalisation (strip, re-wrap, escape) reds this.
+        """
+        import lint
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            policy = lint.SUBAGENT_POLICY_DEFAULT
+            self.assertTrue(watch.write_subagent_policy(d, policy))
+            path = os.path.join(d, ".dreamwork", "subagent-policy")
+            with open(path, "rb") as f:
+                on_disk = f.read()
+            self.assertEqual(on_disk, policy.encode("utf-8"))
+            self.assertEqual(watch.read_subagent_policy(d), policy)
+            self.assertEqual(
+                watch.resolve_posture(d)["subagent_policy"], policy)
+
+    def test_round_trip_survives_text_no_line_format_could_carry(self):
+        """The format claim, tested: the value has NO grammar.
+
+        Colons, `#` in column one, blank lines, a trailing space, a line that
+        looks exactly like a posture axis, and a line that looks like a block
+        terminator all round-trip untouched — none of them is syntax here.
+        This is what the sibling buys and what an escaped one-liner or a
+        block form inside `.dreamwork/posture` would each mangle.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            gnarly = (
+                "# leading hash, not a comment\n"
+                "pace: warp\n"
+                "\n"
+                "trailing space here \n"
+                "<<<END\n"
+                "colons: everywhere: still: fine\n"
+                "no trailing newline")
+            self.assertTrue(watch.write_subagent_policy(d, gnarly))
+            self.assertEqual(watch.read_subagent_policy(d), gnarly)
+
+    def test_absent_policy_resolves_to_the_standing_default(self):
+        """Absent = the standing default, so the loop always has a policy and
+        a pre-#650 install behaves identically (nothing to migrate)."""
+        import lint
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["subagent_policy"],
+                             lint.SUBAGENT_POLICY_DEFAULT)
+            self.assertEqual(r["subagent_policy_source"], "default")
+
+    def test_blank_policy_file_falls_back_rather_than_setting_empty(self):
+        """A blank file reads as unset: "no policy" is `rm`, not an empty
+        write, so there is no invisible cleared state. write refuses to
+        create one."""
+        import lint
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            path = os.path.join(d, ".dreamwork", "subagent-policy")
+            with open(path, "w") as f:
+                f.write("  \n\n")
+            self.assertIsNone(watch.read_subagent_policy(d))
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["subagent_policy"],
+                             lint.SUBAGENT_POLICY_DEFAULT)
+            self.assertEqual(r["subagent_policy_source"], "default")
+            self.assertFalse(watch.write_subagent_policy(d, "   \n"))
+            self.assertFalse(watch.write_subagent_policy(d, ""))
+            self.assertFalse(watch.write_subagent_policy(d, None))
+
+    def test_write_posture_cannot_erase_the_policy(self):
+        """THE decisive red for the storage choice.
+
+        `write_posture` is a whole-file atomic overwrite fired by every
+        posture chip press, and it knows nothing about the policy. If the
+        policy shared `.dreamwork/posture`, this sequence would delete it
+        without a word. Different files, so it cannot.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            policy = "keep me\nacross a chip press\n"
+            self.assertTrue(watch.write_subagent_policy(d, policy))
+            self.assertTrue(watch.write_posture(d, "hot", "ask", 0))
+            self.assertEqual(watch.read_subagent_policy(d), policy)
+            self.assertTrue(
+                watch.write_posture(d, "idle", "auto", 3, "batched",
+                                    "orchestrator"))
+            self.assertEqual(watch.read_subagent_policy(d), policy)
+            # ...and the reverse: writing a policy does not disturb the axes.
+            self.assertTrue(watch.write_subagent_policy(d, "changed\n"))
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["pace"], "idle")
+            self.assertEqual(r["asking"], "auto")
+            self.assertEqual(r["delegation"], 3)
+            self.assertEqual(r["orchestration"], "orchestrator")
+
+    def test_policy_override_does_not_flip_the_axis_source(self):
+        """`source` says where the AXES came from. A policy override must not
+        make derived axes claim to be file-set — that would be a lie about
+        which of his choices are actually recorded."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertTrue(watch.write_subagent_policy(d, "mine\n"))
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["source"], "derived")
+            self.assertEqual(r["subagent_policy_source"], "file")
+
+    def test_policy_line_in_the_posture_file_is_dropped_by_the_parser(self):
+        """The parser drops it (lint is the loud layer, as for a bad pace) —
+        and, critically, it does not become an axis or corrupt the ones
+        around it."""
+        got = watch.parse_posture_text(
+            "pace: hot\nsubagent-policy: cheap models please\nasking: ask\n")
+        self.assertEqual(got, {"pace": "hot", "asking": "ask"})
+
+    def test_collect_carries_the_policy_but_summary_does_not(self):
+        """The dashboard's own payload gets it (the control in #646 needs
+        it); the redacted external view does not — it is his authored prose,
+        the SUMMARY_DENIED class, and an external consumer routes on axes."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertTrue(watch.write_subagent_policy(d, "mine only\n"))
+            got = watch.collect(d)["posture"]
+            self.assertEqual(got["subagent_policy"], "mine only\n")
+            s = watch.summary(d)["posture"]
+            self.assertNotIn("subagent_policy", s)
+            self.assertNotIn("subagent_policy_source", s)
+            self.assertNotIn("mine only", json.dumps(watch.summary(d)))
+            # unchanged projection: the external contract did not widen
+            self.assertEqual(
+                sorted(s),
+                ["asking", "delegation", "delivery", "orchestration", "pace",
+                 "source"])
+
+    def test_policy_is_read_whole_not_through_the_bounded_reader(self):
+        """#632: `read_text` truncates silently at 200k and is for DISPLAY. A
+        durable value a control writes back must be read whole, or a later
+        write persists a short copy over the full one."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            big = "x" * 250_000 + "\nTAIL-MARKER\n"
+            self.assertTrue(watch.write_subagent_policy(d, big))
+            self.assertEqual(watch.read_subagent_policy(d), big)
+            self.assertIn("TAIL-MARKER", watch.resolve_posture(d)["subagent_policy"])
+
     def test_remind_posts_resolved_posture_to_seamed_inbox(self):
         """#551: POST /remind composes the resolved five-axis posture + a
         SKILL.md pointer SERVER-side and appends it to the coordinator inbox

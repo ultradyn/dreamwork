@@ -6141,6 +6141,174 @@ class TestPostureFile:
         unknown = [w for w in self._rows(dw, lint.WARN) if "unknown axis" in w]
         assert unknown == [], unknown
 
+    # ── #650 the free-text subagent policy, seen from the AXIS file ──────
+    def test_subagent_policy_line_in_posture_errors_loud(self, tmp_path):
+        # THE misplacement red. `parse_posture_text` drops an unrecognised
+        # key, so a policy written here is silently not in effect — the
+        # dropped-choice hazard run-mode and watch-tint fail loud on. It must
+        # ERROR (not the softer "unknown axis" WARN) and must name the file
+        # the value belongs in. Production line: the POSTURE_TEXT_FIELDS
+        # branch in check_posture.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text(
+            "pace: hot\nasking: ask\ndelegation: 0\n"
+            "subagent-policy: use the cheap model\n")
+        errs = self._rows(dw, lint.ERROR)
+        assert len(errs) == 1, errs
+        assert "subagent-policy" in errs[0], errs[0]
+        assert ".dreamwork/subagent-policy" in errs[0], errs[0]
+        # And it is NOT reported as an unknown axis: the name is recognised,
+        # the file is wrong, and telling him "unknown" would send him looking
+        # for a typo.
+        unknown = [w for w in self._rows(dw, lint.WARN) if "unknown axis" in w]
+        assert unknown == [], unknown
+
+    def test_closed_axis_still_fails_loud_when_a_policy_file_exists(
+            self, tmp_path):
+        # THE regression this whole design is judged on: adding a free-text
+        # field must not turn the validator permissive for the CLOSED axes.
+        # A present policy file — even one whose prose contains axis-shaped
+        # lines — changes nothing about `pace: warp` failing loud.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "subagent-policy").write_text(
+            "- pace: warp is a great idea\n- asking: whatever you like\n")
+        (dw / "posture").write_text("pace: warp\nasking: ask\ndelegation: 0\n")
+        errs = self._rows(dw, lint.ERROR)
+        assert len(errs) == 1, errs
+        assert "warp" in errs[0] and "pace" in errs[0], errs[0]
+
+
+class TestSubagentPolicy:
+    """The free-text subagent policy sibling file (#650).
+
+    `.dreamwork/subagent-policy` has no grammar — the whole file is the
+    value — so the check reports which policy is in effect and whether a
+    present file is inert, and never inspects the content.
+    """
+
+    def _rows(self, dw, level=None):
+        rep = lint.Report()
+        lint.check_subagent_policy(dw, rep)
+        return [d for lvl, w, d in rep.rows
+                if w == "subagent-policy" and (level is None or lvl == level)]
+
+    def _posture_rows(self, dw, level=None):
+        rep = lint.Report()
+        lint.check_posture(dw, None, rep)
+        return [d for lvl, w, d in rep.rows
+                if w == "posture" and (level is None or lvl == level)]
+
+    def test_the_standing_default_is_his_text_including_its_typos(self):
+        # The seeded standing value. Asserted by the marks that only HIS
+        # wording carries — the typo "taks", the contraction, the tool name —
+        # rather than by restating the whole policy, which would be a second
+        # copy able to disagree with the first. A normalising edit (spell-fix,
+        # re-wrap, tidy) reds this.
+        p = lint.SUBAGENT_POLICY_DEFAULT
+        assert p.endswith("\n"), repr(p[-20:])
+        lines = p.splitlines()
+        assert len(lines) == 4, lines
+        assert all(ln.startswith("- ") for ln in lines), lines
+        assert "taks" in p, "his typo was normalised away"
+        assert "won't" in p, p
+        assert "`ccc -y @glm52`" in p, p
+        assert "Sonnet 5 low or medium" in lines[0], lines[0]
+        assert "fable high" in lines[3], lines[3]
+
+    def test_absent_is_clean_and_says_the_default_is_in_effect(self, tmp_path):
+        # Absent is the NORMAL state (the standing default is committed in
+        # code), so it must not warn — but it must not be silent either: a
+        # value IS in effect, and coverage that vanishes when nothing is
+        # wrong is the #380 hazard.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        assert self._rows(dw, lint.ERROR) == [], self._rows(dw, lint.ERROR)
+        assert self._rows(dw, lint.WARN) == [], self._rows(dw, lint.WARN)
+        ok = self._rows(dw, lint.OK)
+        assert len(ok) == 1, ok
+        assert "absent" in ok[0] and "default" in ok[0], ok[0]
+
+    def test_present_policy_is_clean_and_counted(self, tmp_path):
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "subagent-policy").write_text(lint.SUBAGENT_POLICY_DEFAULT)
+        assert self._rows(dw, lint.ERROR) == [], self._rows(dw, lint.ERROR)
+        ok = self._rows(dw, lint.OK)
+        assert len(ok) == 1, ok
+        assert "override" in ok[0], ok[0]
+        assert "4 lines" in ok[0], ok[0]
+
+    def test_blank_file_warns_inert_rather_than_passing(self, tmp_path):
+        # A file that looks set and is not must not pass in silence — the
+        # same inert-file shape check_posture uses for a file that parsed to
+        # nothing. Clearing the override is `rm`, not an empty write.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "subagent-policy").write_text("   \n\n")
+        warns = self._rows(dw, lint.WARN)
+        assert len(warns) == 1, warns
+        assert "inert" in warns[0], warns[0]
+        assert self._rows(dw, lint.OK) == [], self._rows(dw, lint.OK)
+
+    def test_content_is_never_validated_against_any_vocabulary(self, tmp_path):
+        # The defining property of a FREE-TEXT field: nothing in the value is
+        # checked. His policy is prose that happens to contain colons, hashes
+        # and axis names; a checker that read those as posture would fail on
+        # his own wording and would have turned free text back into a closed
+        # set. Not one ERROR, not one WARN.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "subagent-policy").write_text(
+            "# not a comment, just his prose\n"
+            "pace: warp\n"
+            "orchestration: whatever feels right\n"
+            "delegation: heaps\n"
+            "unknown-axis: nonsense\n")
+        assert self._rows(dw, lint.ERROR) == [], self._rows(dw, lint.ERROR)
+        assert self._rows(dw, lint.WARN) == [], self._rows(dw, lint.WARN)
+
+    def test_policy_file_does_not_disturb_the_posture_clean_bill(
+            self, tmp_path):
+        # The two files are independent: a present policy leaves the axis
+        # count and its row exactly as they were, so the policy can never
+        # inflate or deflate the axes' coverage claim.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text("pace: hot\nasking: ask\ndelegation: 0\n")
+        before = self._posture_rows(dw, lint.OK)
+        (dw / "subagent-policy").write_text(lint.SUBAGENT_POLICY_DEFAULT)
+        after = self._posture_rows(dw, lint.OK)
+        assert before == after, (before, after)
+        assert "3 of 3" in after[0], after[0]
+        assert "subagent" not in after[0], after[0]
+
+    def test_the_field_is_recognised_but_is_not_an_axis(self):
+        # The schema statement: the name is known to the posture schema (so
+        # check_posture can redirect rather than say "unknown"), and it is
+        # NOT in POSTURE_AXES (so no closed-set machinery ever reaches it).
+        assert "subagent-policy" in lint.POSTURE_TEXT_FIELDS, \
+            lint.POSTURE_TEXT_FIELDS
+        assert "subagent-policy" not in lint.POSTURE_AXES, lint.POSTURE_AXES
+        assert lint.POSTURE_TEXT_FIELDS["subagent-policy"] == \
+            ".dreamwork/subagent-policy", lint.POSTURE_TEXT_FIELDS
+        assert lint.SUBAGENT_POLICY_FILE == "subagent-policy"
+
+    def test_the_check_runs_in_the_live_check_run(self, tmp_path):
+        # A check nobody calls is not a check. Drives the real entry point
+        # (`run_checks`, what the CLI runs) rather than grepping the source,
+        # and looks for the inert-file finding to prove the row came from the
+        # run and not from a default.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "subagent-policy").write_text("   \n")
+        rep = lint.Report()
+        lint.run_checks(dw, None, rep)
+        rows = [d for lvl, w, d in rep.rows if w == "subagent-policy"]
+        assert len(rows) == 1, rows
+        assert "inert" in rows[0], rows[0]
+
 
 class TestDerivePosture:
     """The run-mode → three-axis conversion (#445 Q2).
