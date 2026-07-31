@@ -249,6 +249,26 @@ dreamwork-version: 5853e1789929
   Reaping is safe for the record: an agent's full output file survives in the
   session's `tasks/` dir after it is stopped, so nothing is lost by stopping
   one whose report has been read.
+- **The posture reminder belongs to the tick, not to the coordinator's memory**
+  (human-set 2026-07-31 19:46, `do-next`): *"every loop tick the cli should
+  remind the main dreamworker what their posture is + subagent policy. This
+  prevents forgetting about it after compaction or getting stuck with no agents
+  running but plenty of work waiting."* He is naming a drift he can see from the
+  dashboard, and he is right — this session ran a stretch with **zero lanes out
+  under `delegation: 4`** while unblocked P1 work sat in the backlog. This is
+  `#513`'s steer carried one step further: `#513` said *restate* the posture
+  every tick rather than only re-reading it, and explicitly rejected a manual
+  refresh button because *"the reminder belongs to the tick, not to him"*. The
+  same reasoning now applies to the coordinator's own memory — a habit recorded
+  in `SKILL.md` can be dropped by a compaction while the monitor keeps firing,
+  so the reminder has to ride the one string that arrives on every beat.
+  **The half that makes it work is the live fact beside the axes**: `delegation
+  5` restates a rule the reader may believe they are already following, while
+  `delegation 5 · 0 lanes live` is a measurement that contradicts them. The
+  mechanism is `#673`; the caution it must respect is `#675` — today's derived
+  live count sees only the `ccc` dispatch path and reads `0` while five
+  Agent-tool lanes run, and a reminder that cries wolf every beat is one the
+  reader learns to skip.
 - **No brittle numeric thresholds in our contracts** (human-set 2026-07-29
   01:13, withdrawing `#421`'s option C): *"don't quote word counts or whatever.
   like things like that which become errors too easily (are brittle)."* A count
