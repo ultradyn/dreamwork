@@ -95,7 +95,8 @@ ORIGIN_VALUES = ("human", "loop", "unknown")
 # slice two checks below once wrote out by hand.
 from ledger_parse import (ENTRY_HEAD, ENTRY_ID, ORIGIN_MARK, ledger_entries,
                           open_section_text, origin_marks, source_of_truth,
-                          store_entries, store_ids_by_state, store_path)
+                          store_entries, store_ids_by_state, store_path,
+                          store_records)
 # #592: the #458 shim is a `dreamwork-migration-notice`, and recognising one is
 # migration_notice.py's job — the worktree excuse below must not be spendable on
 # a tasks.md that merely happens to lack a header.
@@ -1916,6 +1917,141 @@ def check_human_blocker(dw: Path, watch, rep: Report) -> None:
             OK, "tasks.md",
             f"{marked} of {len(open_ids)} open entries marked blocked-on-human "
             f"all have a question (#419)")
+
+
+# #725 — a title can embed a blocked-ness CLAIM that the structured
+# blocked_on field does not back, and `list` prints titles, not notes, so the
+# contradiction is visible exactly where a correction appended underneath is
+# invisible. The discrimination is the idiom "blocked on" (the CLAIM form),
+# not the bare word "blocked": measured on 170 open titles, "blocked on"
+# catches three real instances (#630, #631, #641) and zero descriptions,
+# while bare "blocked" catches those three PLUS three legitimate descriptions
+# ("A blocked errand is invisible", "file:// is blocked", this task's own
+# title). "Fix the blocked_on writer" — the false-positive the brief names —
+# uses the UNDERSCORE form, which "blocked on" (space) does not match.
+# Widening to "waiting on" / "pending his" / "queued behind" was measured and
+# refused: 0, 0, and 1 false-positive respectively (#188's title describes a
+# feature, not a claim — #707's discipline).
+TITLE_BLOCKED_CLAIM = re.compile(r"\bblocked on\b", re.IGNORECASE)
+
+
+def _entry_title(entry_text: str) -> str:
+    """The title portion of one ledger entry's head line.
+
+    The title sits between the `` — `` head separator and the first `` · ``
+    metadata token. Derived the same way ``_metadata_clause`` locates the
+    metadata chain, so the two cannot disagree about where the title ends.
+    A head with no `` · `` chain returns the whole post-separator text, which
+    is the title verbatim.
+    """
+    flat = " ".join(ln.strip() for ln in entry_text.split("\n"))
+    m = ENTRY_HEAD.match(flat)
+    if not m:
+        return ""
+    rest = flat[m.end():]
+    sep = re.match(r"\s*[—-]\s+", rest)
+    if not sep:
+        return ""
+    return rest[sep.end():].split(" · ", 1)[0].strip()
+
+
+def check_title_blocked_claim(dw: Path, rep: Report) -> None:
+    """#725 — a title claiming blocked-ness while blocked_on is empty.
+
+    ``#630``'s title reads *"... — blocked on his G2 ruling"*, ``#641``'s reads
+    *"... — BLOCKED on the #614 wire-protocol ruling"*, and ``#631``'s reads
+    *"... — blocked on his three design calls"*. **All three carry an empty
+    ``blocked_on`` field.** The coordinator scanned the open P1 list (which
+    prints TITLES — ``_list_line`` joins ``#id  state  — title``), read those
+    titles, and reported ``#630`` to Max as "blocked on your G2 ruling" — which
+    was false. The ruling had landed six hours earlier. ``list`` does not print
+    ``blocked_on`` (only ``get`` does), so the field that would have corrected
+    the title is invisible exactly where the title is visible.
+
+    THE CHECK: an OPEN entry whose title contains the claim idiom "blocked on"
+    while its ``blocked_on`` field is empty is a contradiction the ledger can
+    detect for itself. The fix is either to retitle (the claim is stale) or to
+    set ``blocked_on`` (the claim is current but was never recorded).
+
+    THE DISCRIMINATION (#707): the pattern is "blocked on" (the CLAIM idiom),
+    not bare "blocked". Measured on 170 open titles, "blocked on" catches
+    exactly the three real instances and zero descriptions. A title ABOUT
+    blocking ("A blocked errand is invisible", "Fix the blocked_on writer")
+    does not use the two-word claim form and does not trip. Widening to
+    "waiting on" / "pending his" / "queued behind" was measured (1 / 0 / 0
+    matches, the one a description) and refused.
+
+    "blocked_on is empty" is mode-dependent:
+      - **store mode**: the ``blocked_on`` column is NULL or whitespace.
+      - **markdown mode**: no ``blocked-on: **…**`` marker in the metadata
+        chain (the marker is the structured analog of the column).
+
+    WARN, not ERROR — same reasoning as ``check_landed_still_open``: this is a
+    stale-state detection (a title that rotted), not a structural defect. The
+    title WAS true when filed; it became false when the ruling landed, and
+    there was no writer to amend it (#627's argument). WARN names it so the
+    coordinator can act (retitle or set the field) without gating every commit
+    on a clean title bar. Named-and-accepted gap (Direction 2): a title whose
+    ``blocked_on`` is genuinely NON-empty but names an ALREADY-LANDED blocker
+    passes this check — the field is populated, so the check stays quiet. That
+    is #590's stale-blocker case and it needs the blocker's landing state,
+    which is #590's audit, not this check's job.
+    """
+    text, source = ledger_view(dw)
+    if text is None:
+        note_ledger_skip(rep, "check_title_blocked_claim")  # #611
+        return
+    open_text = open_section_text(text)
+    if open_text is None:
+        note_ledger_skip(rep, "check_title_blocked_claim")  # #611
+        return
+
+    # id -> blocked_on column (store mode): the structured field the title
+    # contradicts. Built once; a store row is one id (#353 split combined
+    # entries), so ids[0] resolves exactly.
+    bo_by_id: dict[int, str] = {}
+    if source == "store":
+        for rec in store_records(dw):
+            bo_by_id[rec["id"]] = rec.get("blocked_on") or ""
+
+    examined = 0
+    offenders: list[tuple[list[int], str]] = []
+    for ids, body in ledger_entries(open_text):
+        title = _entry_title(body)
+        if not title or not TITLE_BLOCKED_CLAIM.search(title):
+            continue                    # no claim in the title; not in scope
+        examined += 1
+        if source == "store":
+            populated = bool((bo_by_id.get(ids[0]) or "").strip())
+        else:
+            # markdown mode: the blocked-on: **…** marker is the structured
+            # analog of the column. Its vocabulary is "human" (#419), so a
+            # task-blocker title ("blocked on #614") in markdown mode trips —
+            # which is honest: no structured field records that claim either.
+            clause = _metadata_clause(body)
+            populated = bool(
+                BLOCKED_ON_HUMAN_MARK.search(re.sub(r"\s+", " ", clause)))
+        if not populated:
+            offenders.append((ids, title))
+
+    for ids, title in offenders:
+        name = "/".join(f"#{i}" for i in ids)
+        frag = title[:72] + ("…" if len(title) > 72 else "")
+        rep.add(
+            WARN, "tasks.md",
+            f"{name}'s title claims blocked-ness (\"{frag}\") but its "
+            f"blocked_on field is empty — `list` prints titles, not notes, so "
+            f"a stale claim misleads exactly where a correction underneath is "
+            f"invisible. Retitle it, or set blocked_on to match the claim (#725)")
+
+    # Coverage (#430): a check whose subject exists must be VISIBLE once it has
+    # examined something, never silent on zero offenders. The subject is "any
+    # open title claiming blocked-ness"; silence pre-adoption is correct.
+    if examined and not offenders:
+        rep.add(
+            OK, "tasks.md",
+            f"{examined} open title(s) claiming blocked-ness all carry a "
+            f"blocked_on value (#725)")
 
 
 # status.json has two readers now (watch.py and dreamhub.py), which makes it
@@ -5647,6 +5783,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_unfolded_answers(dw, watch, rep)
     check_tasks(dw, rep)
     check_human_blocker(dw, watch, rep)
+    check_title_blocked_claim(dw, rep)
     check_landed_asks(dw, watch, rep)
     check_status(dw, rep)
     check_status_task_ids(dw, rep)
