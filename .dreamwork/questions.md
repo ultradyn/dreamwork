@@ -29,28 +29,6 @@
   **If you say nothing:** the `rec` stands and nothing is built yet regardless — Q4's phase 3 still needs
   your signoff before anything visible ships under your name.
 
-- **P2 · 2026-07-31 07:20 — (your ask via /answers) the hand-off fold backlog: not unmerged, and now caught.**
-  Your ask: *"Pending hand-offs to fold: are these things that need to be folded into master but haven't
-  yet been? If we have a backlog this large for these, we need to address that in our dreamwork loop."*
-
-  **No — the work is on master.** I checked all 25 ids you listed (#544, #547, #401, #430, #429, #425, #441,
-  #360, #447, #449, #455, #456, #457, #450, #436, #421, #513, #498, #499, #505, #521, #522, #523, #524,
-  #570) against the store: **25 of 25 are `landed`.** The sha cited in each Pending entry IS where it
-  landed on master. "Folded" is the coordinator's bookkeeping acknowledgment (recording the landing into
-  the ledger), not the merge — so a "to fold" backlog is unacknowledged work, not unmerged work.
-
-  **The gap was real, and you were right that the loop needs to address it.** What was broken: a hand-off
-  could claim a landing, the work would merge, and the coordinator never wrote the `→ folded` line — so the
-  Pending list grew silently with entries whose tasks were already done. Nothing detected that. **#576**
-  (landed last session, `e55f148` + `73c5354`) is the fix: `lint.check_handoffs` now WARNs when a Pending
-  entry's task is `landed` in the store but has no Folded line. I cleared the existing backlog to zero
-  (21 retrospective fold lines). `lint.py` now reports `handoffs.md 94 pending, 117 folded, 0 malformed`
-  with no #576 warnings. The blind spot is closed going forward — any future landed-but-unfolded entry
-  surfaces as a lint WARN rather than accumulating.
-
-  - **Follow-up (loop, 2026-07-31 07:20):** verified all 25 are landed; #576 now catches the gap; backlog
-    cleared to 0 WARNs. Nothing for you to do here — recorded for your awareness.
-
 - **P2 · 2026-07-31 07:30 — #584 (from #571): persistent user settings — four design calls.**
   Your steer (receipt 09a8897b): *"Add persistent user settings in the database, probably just store it as jsonb
   if you can. indexed by userid … check `~/src/refs/amr-ui/` for a good example."* Design at
@@ -113,6 +91,11 @@
   the status quo that cost the held merge. `DREAMWORK_LANE_GUARD_BYPASS=1` remains the escape.
   - **Note (human, via watch, 2026-07-29 05:51):** why can't we enable #465
     without this? And also, what is 465?
+    → answered above (2026-07-29): the entry was rewritten for exactly these two
+    questions — "What `#465` is" says what it is, and "You also asked why it needs
+    the global hook path. It does not" retracts the framing. Only `Q1` (repo-local
+    vs global install) is still yours. Left unmarked, this note made the whole entry
+    read as awaiting a reply the loop had already written.
 
 
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
@@ -123,6 +106,32 @@
     primary way we access dreamworkers
 
 ## Answered
+
+- **P2 · 2026-07-31 07:20 — (your ask via /answers) the hand-off fold backlog: not unmerged, and now caught.**
+  → answered (2026-07-31 07:20): no — all 25 ids were already landed on master; the gap was the
+  coordinator's missing `→ folded` bookkeeping, not unmerged work. #576 now catches it and the
+  backlog was cleared to zero. Moved out of `## Open` on 2026-07-31 16:0x: its own body said
+  "nothing for you to do here", so it was inflating your queue.
+  Your ask: *"Pending hand-offs to fold: are these things that need to be folded into master but haven't
+  yet been? If we have a backlog this large for these, we need to address that in our dreamwork loop."*
+
+  **No — the work is on master.** I checked all 25 ids you listed (#544, #547, #401, #430, #429, #425, #441,
+  #360, #447, #449, #455, #456, #457, #450, #436, #421, #513, #498, #499, #505, #521, #522, #523, #524,
+  #570) against the store: **25 of 25 are `landed`.** The sha cited in each Pending entry IS where it
+  landed on master. "Folded" is the coordinator's bookkeeping acknowledgment (recording the landing into
+  the ledger), not the merge — so a "to fold" backlog is unacknowledged work, not unmerged work.
+
+  **The gap was real, and you were right that the loop needs to address it.** What was broken: a hand-off
+  could claim a landing, the work would merge, and the coordinator never wrote the `→ folded` line — so the
+  Pending list grew silently with entries whose tasks were already done. Nothing detected that. **#576**
+  (landed last session, `e55f148` + `73c5354`) is the fix: `lint.check_handoffs` now WARNs when a Pending
+  entry's task is `landed` in the store but has no Folded line. I cleared the existing backlog to zero
+  (21 retrospective fold lines). `lint.py` now reports `handoffs.md 94 pending, 117 folded, 0 malformed`
+  with no #576 warnings. The blind spot is closed going forward — any future landed-but-unfolded entry
+  surfaces as a lint WARN rather than accumulating.
+
+  - **Follow-up (loop, 2026-07-31 07:20):** verified all 25 are landed; #576 now catches the gap; backlog
+    cleared to 0 WARNs. Nothing for you to do here — recorded for your awareness.
 
 - **P2 · 2026-07-30 10:05 — #497: read-only task CLI — Python thin verbs, or a small binary + dispatcher?**
   → answered (2026-07-30 16:31): **rec — Python thin verbs.** The read-only task CLI ships as thin
