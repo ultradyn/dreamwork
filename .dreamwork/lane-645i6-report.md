@@ -213,3 +213,231 @@ Two findings:
 
 No live ledger, `questions.md`, `status.json`, ports, browser guards, or
 coordinator-owned hand-off file were touched.
+
+---
+
+# Re-landing 6b — the schema-v3 unit plus the pin it broke
+
+This section is **appended**, not a replacement: the increment above was
+reverted as `7270566e` because the merged-tree gate went red on
+`test_chain_golden.py` — a file the original lane never touched — and this
+re-dispatch restores it and fixes that one pin. The original verdict, proofs,
+and DOGFOOD REPORT above are unchanged and stand.
+
+## Verdict (re-landing)
+
+**PASS.** The revert-of-the-revert restored the entire increment intact, the
+golden pin was repinned to schema v3 **by hand from the contract** (a second
+same-shape pin `GOLDEN_HASH_EVENT` was found and moved in lockstep), and a
+red-proof shows the repinned pin is **not** a rubber stamp for migration
+correctness — a broken migration still reds the frozen-v2 fixture tests while
+the genesis pin stays green, which is the correct separation of invariants.
+
+## git diff master --stat — proof the revert restored the increment
+
+`git revert --no-edit 7270566e` (the reapply) plus the pin fix. The non-empty
+diff is the load-bearing check: an empty diff would mean the restore brought
+nothing back and everything after was built on an empty base.
+
+```text
+ .dreamwork/lane-645i6-report.md           | 215 ++++++++++++++++++++++
+ dreamwork_db/migrate.py                   |  18 +-
+ dreamwork_db/migrations/v003_questions.py | 120 ++++++++++++
+ test_chain_golden.py                      |  18 +-
+ test_dreamwork_db_migrate.py              | 293 ++++++++++++++++++++++++++++--
+ test_ledger_store.py                      |   5 +-
+ 6 files changed, 645 insertions(+), 24 deletions(-)
+```
+
+The original increment's trap material survived the revert intact: the
+"Direction 2 false-green" section above (the empty-table migration tautology
+that passes when the fixture is already v3, closed by REFUSE BEFORE MIGRATION)
+is present and unchanged. A revert-of-a-revert is exactly where a reader stops
+checking, so this was read back rather than assumed.
+
+## What went wrong: the rule is "find what PINS what you changed"
+
+`test_chain_golden.py::test_genesis_hash_matches_recorded_literal` asserts a
+hard-coded literal against `ledger_store.genesis_hash()`, and `genesis_hash()`
+is `SHA-256("ud-dreamwork.task-ledger" + SCHEMA_VERSION)`. The increment set
+`SCHEMA_VERSION = 3`, so the literal moved `25d2c583… → 2002431098ba…` and the
+gate went red.
+
+The generalisation, in my own words: **the dependency arrow points the wrong
+way.** `migrate.py` sets `SCHEMA_VERSION`; it does not name `test_chain_golden.py`
+or any golden literal. A golden pin *names the value*; the value's *producer is
+oblivious to the pin*. So a call-graph search outward from the changed module —
+callers of `migrate`, callers of `genesis_hash` — can never surface the pin,
+because nothing in that direction references it. The only search that finds it
+is a search for the *value*: grep for the literal, or for recorded hash
+literals, or for `genesis_hash`/`GOLDEN_` symbols. That is why "find the
+callers of what you changed" is necessary but not sufficient — the rule that
+covers this is **"find what pins what you changed,"** and a pin is a reverse
+dependency the producer does not declare.
+
+## Search for other pins of the same shape
+
+Searched the whole tree (excluding `.git/`) for: every recorded literal
+(`25d2c583…`, `747e81af…`, `27840d6e…`, and the new `2002431098ba…`); and the
+symbols/patterns `genesis_hash`, `GOLDEN_`, `golden`, `recorded.*hash`,
+`hexdigest` across `*.py`/`*.md`.
+
+Findings:
+
+- **A second same-shape pin exists, in the same file:** `GOLDEN_HASH_EVENT`.
+  Its test (`test_hash_event_matches_recorded_literal`) feeds `GOLDEN_GENESIS`
+  as the `prev_hash` input, so its recorded digest *transitively* encodes the
+  schema version through the genesis prev. When `GOLDEN_GENESIS` moved to v3,
+  `hash_event(v3_genesis, canonical)` no longer matched the v2-prev literal —
+  so this pin breaks for the same reason and was moved in lockstep
+  (`27840d6e… → fd7a478b…`).
+- `GOLDEN_CANON_SHA256` is **not** the same shape: it is a digest of the
+  canonical event bytes, which do not include the schema version. Unaffected,
+  and confirmed passing throughout.
+- **No other executable pins exist in the tree.** The literal strings appear
+  only in `test_chain_golden.py` (and in this lane's brief as prose).
+  `dev/replay_events.py` imports and *uses* `genesis_hash` at runtime but pins
+  no literal; the `#549`/`#460`/`#653` mentions in `handoffs.md` and docs are
+  narrative, not assertions. "Nothing else" holds for the rest of the tree.
+
+## Why the pin must stay a literal, not computed
+
+This is the substantive judgement. A golden hash that is *computed* from the
+same code that produces it — e.g. `GOLDEN_GENESIS = ledger_store.genesis_hash()`
+— asserts `x == x` and cannot fail (#759: hold the SUBJECT fixed, vary the
+INTERPRETER; here the subject and the interpreter collapse into one function).
+Such a pin would pass green for *any* seed string, *any* schema version,
+including a corrupt one, because it has no independent reference to disagree
+with. It would catch exactly nothing.
+
+The literal's entire value is that **a human chose it once, from the contract,
+and a machine cannot silently re-choose it.** The literal is the only form that
+can *disagree* with the producer. So the correct behaviour on a legitimate
+version bump is that the test **goes red and a person updates it on purpose** —
+which is exactly what happened at the merge gate, and it is the system working,
+not failing. That red is worth a great deal: it is a tripwire that forces a
+human to *acknowledge* the seed/format change, and the same tripwire catches the
+illegitimate cases (an accidental seed-string edit, a swapped field, a dropped
+part) that a computed pin would hide. The two new literals were therefore
+written by hand from the contract one-liner
+(`SHA-256(b'ud-dreamwork.task-ledger3')`), never by calling `genesis_hash()` —
+the producer output was used only as a *cross-check* (`genesis matches
+derivation: True`), never as the source of truth. Recompute comments were
+bumped `task-ledger2 → task-ledger3` so a reviewer can re-derive without
+reading the producer.
+
+## Direction 1 red-proof — the repinned pin catches genesis drift
+
+Injection (via `dev/redproof.py`): reverted `SCHEMA_VERSION` to `2` in
+`dreamwork_db/migrate.py` — the faithful regression, identical in shape to the
+incident that broke the gate. Ran the exact genesis node.
+
+Discriminating failure (only the genesis node reds; the other four golden
+nodes stay green because they consume literals, not `genesis_hash()`):
+
+```text
+>       assert ledger_store.genesis_hash() == GOLDEN_GENESIS
+E       AssertionError: assert '25d2c583ffda...25cfa240fdc1a' == '2002431098ba...8d762958c159c'
+1 failed, 4 passed in 0.18s
+```
+
+This is a genesis-seed mismatch, not a setup/migration failure. Restored;
+`dev/redproof.py check` clean (see receipt below).
+
+## Direction 2 — the pin is NOT a rubber stamp for migration correctness
+
+The new direction-2: with the pin updated to v3, break the migration and ask
+whether the suite stays green regardless. Injection: replaced the v3 DDL loop
+body (`conn.execute(statement)`) with a no-op in
+`dreamwork_db/migrations/v003_questions.py`, so `schema_version` still advances
+to 3 but **no v3 tables are created**. Ran the full targeted suite.
+
+Result — the golden pin stays **green**, but the frozen-v2 fixture tests go
+**red twice**:
+
+```text
+FAILED test_dreamwork_db_migrate.py::... - column set: + set()  - {…id, title, body_markdown, status, …}
+FAILED test_dreamwork_db_migrate.py::test_v3_constraints_bind_typed_links_decisions_and_messages - sqlite3.OperationalError: no such table: question
+2 failed, 23 passed
+```
+
+So the suite does **not** stay green when the migration is broken. Updating the
+pin to whatever `genesis_hash()` emits does **not** paper over a broken
+migration, because `genesis_hash()` is a pure function of a *constant*
+(`SCHEMA_VERSION` + the seed string) and is, by construction, independent of
+whether any DDL ran. The genesis pin and the migration pin are **orthogonal**:
+one invariant per pin. Migration correctness is owned by the frozen-v2 fixture
+tests, which load their "before" from a subject the code under test did not
+produce (#759) and assert the post-migration shape against it. The genesis pin
+owns only the seed format, and a reviewer who updates its literal signs off on
+exactly that — nothing more. This is the correct separation, and it is why
+updating the literal here is honest rather than a rubber stamp.
+
+## Red-proof restore/check receipt
+
+```text
+history: examined 2 commit(s) since 7270566e5055 (master) against 2 injected path(s); read 4 blob(s), 0 holding a recorded injection.
+check: clean — 2 injection(s) registered, all restored and absent from the working tree and from this branch's commits:
+  dreamwork_db/migrate.py (sha 1a01b5e70c95, hint: 'SCHEMA_VERSION = 2')
+  dreamwork_db/migrations/v003_questions.py (sha 35d72bbc6810, hint: 'pass  # dir2: migration broken — no DDL executed')
+```
+
+## Verification (re-landing)
+
+```text
+python3 -m pytest test_chain_golden.py test_dreamwork_db_core.py test_no_raw_connect.py test_dreamwork_db_migrate.py test_ledger_store.py test_replay_events.py:
+52 passed
+
+python3 lint.py:
+clean (5 warning(s))   # lane bar; the 5 are the gitignored-doesn't-travel set (tasks.md/status.json/ledger-checks/lessons near-dup)
+```
+
+`SCHEMA_VERSION = 3` confirmed restored after the direction-1 injection; the v3
+DDL loop body confirmed restored after the direction-2 injection.
+
+## Rebase outcome (re-landing)
+
+Local `master` was `7270566e` at dispatch and had not moved when this lane
+reported (`git rev-parse master` == merge-base == `7270566e`), so the rebase
+was a no-op (`Current branch glm-645i6b is up to date`). The line-anchored
+four-form conflict-marker scan (`grep -nE '^(<{7}|>{7}|>{7}|={7}$)'`, with the
+`$` that only the `=` arm carries) found none. Branch adds two commits on
+master: the reapply (`461b192a`) and the pin fix (`fa1e07ce`).
+
+## Re-landing relied-on issue text
+
+- `#759`: **"a proof must load its 'before' state from a source the code under
+  test did not produce."** Both the migration proof (frozen v2 fixture) and the
+  pin proof (literal derived from the contract, producer used only as
+  cross-check) hold their subject independent of the producer. The direction-2
+  finding is the direct application: `genesis_hash()` cannot witness migration
+  correctness because it shares no state with the DDL.
+- `#671`/`#136`: **"Zero entries now says `DID NOT REVIEW`…"** / **"present-
+  but-unparseable is a fault and must look like one."** A literal that disagrees
+  loudly (goes RED on a version bump) is the fault-that-looks-like-a-fault; a
+  computed literal is the silent pass.
+- `#349`/`#608`: **"Revert a deliberate RED injection with the inverse… never
+  `git checkout`."** Both injections used `dev/redproof.py begin/restore/check`,
+  lane-private snapshots, never `git checkout`.
+
+## Re-landing DOGFOOD REPORT
+
+1. The reverse-dependency hazard is not in the lane brief boilerplate's
+   "named defect site" rule. That rule says *check the sibling constructs in the
+   same unit* — but `test_chain_golden.py` is a *different unit* from
+   `migrate.py`, and the dependency between them is one-directional (pin →
+   producer). The brief head had to teach it inline. A standing rule worth
+   adding: **when you change a value that seeds a hash (a schema version, a
+   domain tag, a seed string), grep the tree for recorded hash literals and for
+   the producer's symbol — call-graph reach cannot find a pin that names you.**
+2. The `GOLDEN_HASH_EVENT` second-pin was found by *reading the test file's own
+   data flow*, not by grepping for the schema version. The literal's comment did
+   not flag the transitive dependency; it said only `prev=genesis`. A pin whose
+   value is derived from another pin should say so in its comment, or the next
+   bumper will move `GOLDEN_GENESIS` and be surprised by a second red. I added
+   that note to the comment; future bumpers get one lockstep edit, not two
+   discovered separately.
+3. No friction with `dev/redproof.py` itself — `begin`/`restore`/`check` ran
+   cleanly across two files, the `check` gate refused nothing, and the
+   lane-private snapshot paths were distinct. The tool discharged the
+   snapshot/restore and history-scan rules exactly as the brief describes.
