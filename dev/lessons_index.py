@@ -39,7 +39,14 @@ from pathlib import Path
 ACTS: list[tuple[str, str, str]] = [
     ("red-proof", "before an injection / red-proof / reverting one",
      r"\binject|red[- ]proof|\bred\b.{0,20}\bgreen\b|goes red|go red\b"
-     r"|deliberate.{0,20}bug|reinstat|false[ -]red"),
+     r"|deliberate.{0,20}bug|reinstat|false[ -]red"
+     # Hollow-check vocabulary: a check that passes over the defect it was
+     # written for IS a red-proof lesson, even when it never names the act
+     # (#761). The #505 lesson ("the header's claim-list is not the
+     # assertion-list") governs every red-proof and matched none of the
+     # terms above, because it talks about a hollow check wearing a thorough
+     # header rather than about an injection.
+     r"|\bhollow\b|claim.list|assertion.list"),
     ("worktree-dispatch", "before dispatching a lane / writing a brief / touching a worktree",
      r"worktree|dispatch|\blane\b|\blanes\b|\bbrief\b"),
     ("commit", "before committing / any git write",
@@ -161,6 +168,11 @@ def main(argv: list[str] | None = None) -> int:
     missing = [(ln, body) for ln, body in entries if ln not in classified]
     print(f"\ncoverage: {len(entries) - len(missing)}/{len(entries)} entries "
           f"classified; {len(missing)} unclassifiable (matched no act anchor)")
+    print("note: coverage depends on the act anchors above, which are "
+          "hand-maintained and unaudited — a lesson nobody's vocabulary "
+          "reaches is invisible here, the same failure this tool exists to "
+          "prevent one level up. Read the anchors against the act you are "
+          "about to perform, not just the count.")
     if missing:
         print("unclassifiable — visible, not silent (the tool's own #349 rule):")
         for ln, body in missing:
