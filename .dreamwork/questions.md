@@ -31,6 +31,15 @@
   is plugin machinery for one script. Honest limit either way: the ~11 MB consumer still reads the pipe
   when off; the *runner* never starts.
 
+  **UPDATE 2026-07-31 23:1x — Q1 is now settled by convention, not by ruling, so this no longer
+  blocks.** `#700` (landed, lane-700gate) resolved the missing convention centrally, which is what
+  that task existed to do: *an experiment ships off by default behind its own tracked
+  `.dreamwork/<name>` file — the `watch-tint`/`run-mode` family, absent means off — with a
+  `file-formats.md` row and a `lint.py` check.* `SKILL.md`'s Guardrails now carries it and the lane
+  boilerplate points at it. **That is the `rec` above, arrived at independently**, so `#691` should
+  take the `.dreamwork/recap` file and drop the plugin alternative. Left open only because you may
+  want to overrule the convention itself; the design gate you set on `#691` is untouched by this.
+
   **`Q2` — every beat, or every nth?** **`rec: every beat, with `every` as the knob`** — 303 runs/day at
   ~8% duty cycle, ~20 MB time-averaged, ~0.5M cheap tokens/day. Memory is what is scarce here (swap 55 of
   62 GB), and the thing that keeps it affordable is the 120 s timeout killing the process *group*: a
