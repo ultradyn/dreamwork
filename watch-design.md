@@ -2704,6 +2704,20 @@ there so an **agent** can resume, which makes it load-bearing rather than junk.
   would read as a scary zero rather than as all-clear. It appears only when
   events are backing up — the one time it matters.
 
+  **Three states from the data, and the third is why this is worth a
+  paragraph.** The `push` fact eight rows up already runs on this rule, and
+  the count needs it for the same reason: `0` is a MEASUREMENT (no journal, or
+  a drained one), an integer is the count, and `null` means the journal is
+  there and could not be read. Quiet-at-zero is what makes the third state
+  dangerous — the drain fails **closed** over an unreadable journal (a
+  `schema_version` drift or a torn header raises `VersionMismatchError` and
+  `journal_consume.py pending` refuses to open), so a count that failed
+  **open** and answered `0` would paint the most reassuring pixels the panel
+  has for the least reassuring reason, and keep painting them: schema drift
+  and corruption do not clear on the next tick. `null` renders as its own dim
+  fact, `drain depth unreadable`, never the accent — an unreadable journal is
+  the loop's errand, not his.
+
 `dev/capture/status.mjs` guards it against a frozen `status.json` in the
 fixture, and the check worth knowing about is the accent one — reading
 `--accent` off `:root` gives the token as authored (`#a5b4fc`) while every

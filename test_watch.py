@@ -4919,6 +4919,19 @@ class TestPendingEventCount(unittest.TestCase):
     projection would change nothing the test could see. ``head_ordinal`` is a
     DIFFERENT method (it counts all events, not the cursor-bounded subset), so
     ``expected = head_ordinal - cursor`` is independent of the projection.
+
+    THE LIMIT OF THAT FORMULA, named rather than relied on: ``head_ordinal``
+    counts EVERY event kind, and ``events_since_cursor`` projects only
+    ``receipt.created``. So ``head - cursor`` equals the pending count only on
+    a fixture whose window holds nothing else — it is itself a second reading
+    of "what is pending", correct here and wrong on a real chain carrying
+    transitions, claims, finishes, health marks or the cutover watermark. The
+    literal anti-vacuity assertions below are what actually pin the expected
+    values; the formula is a cross-check, not the authority. The kind filter
+    it therefore CANNOT discriminate has its own test
+    (``test_non_receipt_events_are_not_counted_as_pending``) — measured: a
+    count that drops ``WHERE event_kind = 'receipt.created'`` passed every
+    other test in this class while reporting 4 where the drain lists 3.
     """
 
     def setUp(self):
@@ -4938,10 +4951,12 @@ class TestPendingEventCount(unittest.TestCase):
     def _seed(self, n):
         """Insert n receipts via the PRODUCTION receive() path.
 
-        Returns nothing; asserts the precondition that head_ordinal ended at n
-        (derived, never assumed) so a seed that dropped/duplicated fails here.
+        Returns the receipt ids in insertion order (the kind-filter test needs
+        one to transition); asserts the precondition that head_ordinal ended at
+        n (derived, never assumed) so a seed that dropped/duplicated fails here.
         """
         from user_events.sqlite import Envelope, open_journal
+        ids = []
         with open_journal(self._journal()) as j:
             self.assertEqual(j.head_ordinal(), 0, "precondition: fresh journal")
             for i in range(n):
@@ -4951,8 +4966,10 @@ class TestPendingEventCount(unittest.TestCase):
                     content_type="application/json",
                     body=json.dumps({"a": i}).encode()))
                 self.assertEqual(r.kind, "inserted", f"row {i}: {r.kind}")
+                ids.append(r.receipt_id)
             self.assertEqual(j.head_ordinal(), n,
                              "precondition: head must equal the seed count")
+        return ids
 
     def _drain(self, through):
         """Advance the coordinator cursor via the PRODUCTION drain CLI.
@@ -5029,6 +5046,158 @@ class TestPendingEventCount(unittest.TestCase):
         data = watch.collect(self.root)
         self.assertIsNone(data["status"])
         self.assertNotIn("pending_events", data)  # never a top-level key
+
+    def test_non_receipt_events_are_not_counted_as_pending(self):
+        """The kind filter is load-bearing, and nothing else here discriminates it.
+
+        `events_since_cursor` projects ONLY `receipt.created`; transitions,
+        claims, finishes, health marks and the cutover watermark share the
+        chain's ordinals but are not receipts anyone drains. Every other test
+        in this class seeds receipts alone, so a count that dropped
+        `WHERE event_kind = 'receipt.created'` passes all of them — MEASURED,
+        not supposed: a hand-rolled `SELECT COUNT(*) FROM events WHERE
+        event_ordinal > cursor AND <= head` was green on all four while
+        answering 4 on the fixture below, where the drain lists 3.
+
+        The window here holds a `receipt.transition` alongside the three
+        receipts, so head_ordinal (4) and the pending count (3) DISAGREE — the
+        gap the kind filter closes, and the reason the `head - cursor` formula
+        the other tests cross-check with is not the authority.
+        """
+        from user_events.sqlite import open_journal
+        rids = self._seed(3)
+        with open_journal(self._journal()) as j:
+            # a NON-receipt event on the same chain, via the production writer
+            tr = j.transition(rids[0], "validated", expected_revision=1)
+            self.assertEqual(tr.kind, "applied", f"transition: {tr.kind}")
+            head = j.head_ordinal()
+        # anti-vacuity: the fixture really does hold a non-receipt event in
+        # the pending window, so the two readings really can disagree.
+        self.assertEqual(head, 4, "precondition: 3 receipts + 1 transition")
+        data = watch.collect(self.root)
+        self.assertEqual(data["status"]["pending_events"], 3)
+
+    def test_an_unreadable_journal_reads_unknown_not_zero(self):
+        """A journal that exists and cannot be read is None, NEVER 0 (#655).
+
+        This is the false-green the first shape shipped with. Zero is the
+        panel's quiet state, so `0` for "I could not read it" paints the most
+        reassuring pixels the status section has for its least reassuring
+        reason — and paints them PERMANENTLY: a schema drift and a torn header
+        do not clear on the next tick. It is also not symmetric with the tool
+        the count claims to agree with: over the same schema-drifted file
+        `dev/journal_consume.py pending` raises VersionMismatchError and
+        refuses to open (asserted below, so the asymmetry is measured here and
+        not merely asserted in a comment).
+
+        Three failure shapes, because they fail at three different depths:
+        the version gate inside open_journal, sqlite's own header check, and a
+        refactor that makes the projection itself raise. All three used to
+        read 0.
+        """
+        import sqlite3
+        import user_events.sqlite as ue
+
+        def count():
+            return watch.collect(self.root)["status"]["pending_events"]
+
+        self._seed(3)
+        self.assertEqual(count(), 3)  # anti-vacuity: 3 REALLY are pending
+
+        # (a) schema_version drift — permanent, and the drain refuses outright
+        conn = sqlite3.connect(self._journal())
+        conn.execute("UPDATE meta SET value='2' WHERE key='schema_version'")
+        conn.commit()
+        conn.close()
+        self.assertIsNone(count(), "schema drift must read unknown, not zero")
+        with self.assertRaises(ue.VersionMismatchError):
+            with ue.open_journal(self._journal()):
+                pass
+
+        # (b) a torn file — sqlite cannot even see a database here
+        with open(self._journal(), "r+b") as f:
+            f.seek(0)
+            f.write(b"NOTASQLITEDB")
+        self.assertIsNone(count(), "a torn journal must read unknown, not zero")
+
+        # (c) the projection itself raises — the shape a refactor introduces,
+        #     and the one a broad `except` would otherwise bury forever.
+        #     THIS SUB-CASE IS ALSO THE ONLY CHECK THAT THE DRAIN'S PROJECTION
+        #     IS WHAT RUNS, which is the brief's central demand and was
+        #     otherwise unguarded: patching `Journal.events_since_cursor` can
+        #     only change the answer if the count really goes through it. A
+        #     lookalike that hand-rolls the query reds here (measured, on the
+        #     kind-filter sabotage above) — the patch never fires and the
+        #     count comes back 3 instead of None.
+        os.remove(self._journal())
+        self._seed(3)
+        self.assertEqual(count(), 3)  # restored to a real gap first
+        with unittest.mock.patch.object(
+                ue.Journal, "events_since_cursor",
+                side_effect=TypeError("refactored out from under it")):
+            self.assertIsNone(count(),
+                              "a raising projection must read unknown, not zero")
+
+    def test_the_count_is_rendered_in_the_facts_row(self):
+        """The number REACHES HIM — the half of the ask no server test covers.
+
+        His words were that the status section should SHOW the count, and
+        `collect()` returning the right integer proves nothing about pixels.
+        MEASURED: deleting the `facts.push` line from client/views.js left the
+        entire suite (1862 tests) green and `lint.py` at zero ERRORs, and the
+        `dev/capture/status.mjs` browser guard cannot see it either — that
+        fixture has no journal, so the count is 0 and the panel is quiet by
+        design. This runs the PRODUCTION statusBlock out of the assembled
+        page, the same node-eval idiom the review-link and chat-row render
+        tests use.
+
+        Production lines whose removal reds this: the two `facts.push` arms
+        for `pending_events` in client/views.js, and the `'pending_events'`
+        entry in ST_GLANCE (dropping it dumps a quiet zero into the "rest"
+        fold as `pending events: 0`, which is the scary zero the brief names,
+        one disclosure away).
+        """
+        page = watch.PAGE
+        m = re.search(r"const ST_GLANCE = \[[^\]]*\];", page)
+        self.assertIsNotNone(m, "ST_GLANCE missing from PAGE")
+        block = m.group(0) + "\n" + _extract_js_fn(page, "function statusBlock(")
+        script = textwrap.dedent("""\
+            const ST_AGENT_GLANCE = ['name', 'in_flight'];
+            const esc = t => String(t).replace(/&/g,'&amp;')
+              .replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            const mdInline = t => esc(t);
+            const label = n => `<h2>${n}</h2>`;
+            const expand = (sum, body) => `<details><summary>${sum}</summary>${body}</details>`;
+            const stLines = v => (v == null ? [] : [String(v)]);
+            const stField = (k, v) => `<div class="stfield">` +
+              `<span class="stk">${esc(k.replace(/_/g,' '))}</span>` +
+              stLines(v).map(l => `<div class="stval">${l}</div>`).join('') +
+              `</div>`;
+            %s
+            const facts = out => {
+              const i = out.indexOf('class="stfacts"');
+              return i < 0 ? '' : out.slice(i);
+            };
+            // backing up: he sees the number, in the dim facts row
+            const busy = statusBlock({task: 'x', pending_events: 3}, []);
+            if (!facts(busy).includes('3 to drain')) process.exit(11);
+            if (busy.includes('stneed')) process.exit(12);   // never the accent
+            // drained: quiet — and NOT demoted into the fold as a scary zero
+            const idle = statusBlock({task: 'x', pending_events: 0}, []);
+            if (idle.includes('to drain')) process.exit(13);
+            if (idle.includes('pending events')) process.exit(14);
+            // unreadable: its own fact, never zero's silence
+            const dark = statusBlock({task: 'x', pending_events: null}, []);
+            if (!facts(dark).includes('drain depth unreadable')) process.exit(15);
+            if (dark.includes('to drain')) process.exit(16);
+            // a target that never adopted the field says nothing at all
+            const none = statusBlock({task: 'x'}, []);
+            if (none.includes('to drain')) process.exit(17);
+            if (none.includes('unreadable')) process.exit(18);
+            process.stdout.write('ok');
+        """) % block
+        out = subprocess.check_output(["node", "-e", script], text=True)
+        self.assertEqual(out, "ok")
 
 
 class TestSummaryRoute(unittest.TestCase):

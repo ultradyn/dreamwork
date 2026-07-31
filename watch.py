@@ -3637,7 +3637,11 @@ def collect(target, burn_step=None):
     # of the ledger-cutover gate that owns the `queue` field. The journal rides
     # the existing /mtime poll (watched_mtime walks it under .dreamwork/), so a
     # received event reaches an open dashboard on the next tick with no new
-    # channel — the same move as queue depth and chats.
+    # channel — the same move as queue depth and chats. The value is an int
+    # when the journal was read and None when it exists and could NOT be —
+    # the `push` fact's three-states-from-the-data rule, because a zero
+    # standing in for "unreadable" is the reassuring answer given for the
+    # alarming reason, and the panel is quiet at zero.
     _status = status_derive.status_from_store(
         dw, _safe_json(read_text(os.path.join(dw, "status.json"))))
     if isinstance(_status, dict):

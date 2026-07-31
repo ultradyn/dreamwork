@@ -166,8 +166,21 @@ function statusBlock(s, handoffs) {
   // It appears only when events are backing up, which is the one time it
   // matters. Derived server-side from the SAME cursor read as the drain, so it
   // cannot disagree with the tool that actually processes them.
-  if (s.pending_events)
+  //
+  // THREE STATES FROM THE DATA, the `push` fact's rule twenty lines up: a
+  // number is a measurement, and `null` means the journal is THERE and could
+  // not be read. That third state must not borrow zero's pixels. The drain
+  // fails closed and shouts over an unreadable journal (a schema drift or a
+  // torn file raises `VersionMismatchError` and refuses to open); a count that
+  // answered `0` there would paint the dashboard's most reassuring state for
+  // its least reassuring reason, and permanently — that fault does not clear
+  // on the next tick. `== null` catches null and undefined, and `typeof` keeps
+  // a `0` off this branch; still the dim ramp, because an unreadable journal
+  // is the loop's errand, not his.
+  if (typeof s.pending_events === 'number' && s.pending_events)
     facts.push(esc(`${s.pending_events} to drain`));
+  else if ('pending_events' in s && s.pending_events == null)
+    facts.push('drain depth unreadable');
   // hand-offs awaiting a fold (#381): a count + the ids, inside the facts row
   // rather than a second appearing block, so it reuses the status panel's one
   // tick-driven treatment and authors no second motion idiom. A coordinator
