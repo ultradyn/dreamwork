@@ -3327,3 +3327,35 @@ this shape and convert opportunistically.)
 - **Scope a brief by what the TASK needs, not by what other lanes own** (2026-08-01, `#751`, and the lane paid for my error with its entire budget). Dispatching P3 of the component-transition plan, I fenced `watch.py` and `test_watch.py` out of scope because `#742` was live in them. The fence was built from the *lane ledger* — who currently holds which file — and never checked against the *task*: P3's whole job is the atomic flip to the native component, and `watch.py:694-707` is the only place the page is assembled, so `client/dist/native.js` cannot reach the page without it (`:643-644` says so in a comment; `:5169-5174` serves the one assembled page for `/research` with no static route for the bundle). The lane read the fence, correctly refused to route around it, spent its budget proving the blocker, and stopped. **It was right and I was wrong, and the failure is not "I picked the wrong file list" — it is that I answered a question nobody asked.** "Which files are free?" is a scheduling question; "which files does this increment have to touch?" is the design question, and only the second one can produce a correct scope. When they conflict the answer is to *reschedule*, not to shrink the task: `#742` merged forty minutes later and the fence could simply have waited. A fence that removes a task's central seam does not make the lane safe, it makes the lane impossible — and it will not report as impossible, it will report as *blocked*, one full lane-cycle later. Two tells I should have caught at authoring time: the brief named the seam (`dev/build/src/native-entry.js` exports `window.dwNative`) while forbidding the only file that could reach it, and it described the deliverable as an *atomic* flip while splitting the atom across an ownership boundary. **Read a brief's scope section against its own deliverable sentence before dispatch; if the scope cannot express the deliverable, the scope is wrong.** The re-dispatch fences only the delta machinery (`compute_delta`/`apply_delta`/`_data_json_cached`), which `#745` genuinely occupies and P3 genuinely does not need — that fence is scoped by the task and is fine.
 
 - **A lane's durable state is its worktree and its git INDEX, not its process — so a reaped lane is RESUMED, not restarted** (2026-08-01, measured during a mass kill of all four live lanes). The harness stopped every background task at once — four `ccc` runners plus the owed suite — mid-work and with no failure of their own: one had just reported *"31 passed in 5.99s"*, one was reading ledger entries, one was running pytest. First measurement was whether the kill was real or only the wrapper: `pgrep -f 'bun/bin/codex exec'` mapped through `/proc/<pid>/cwd` showed nothing but my own probe shell, so all four were genuinely dead. **No OOM and no resource cause** — load 26.7 on 16 cores and 27 GB of 60 available, and `journalctl -k` named no kill; assuming scarcity because the box is busy would have been the easy wrong answer, and #666's real lesson is to measure the load rather than to blame it. The recovery is the part worth keeping: `git status --porcelain` in each worktree found **`#751`'s work STAGED IN ITS INDEX** — eight files across `client/dist`, `client/router.js`, `client/views.js` and `dev/build/src` — on top of a commit it had already made. **The index is on disk; process death does not touch it.** So the re-dispatch was written as a RESUME: it named the committed sha, listed the staged paths, and told the agent to run `git diff --cached` FIRST and treat that diff as its own prior reasoning — to review it rather than either re-doing the work or trusting it blindly. The other three worktrees were clean and lost only ~10 minutes of context. **What actually dies is the agent's in-context reasoning; what survives is every artifact it committed or staged** — which is the concrete reason the worktree-per-lane isolation earns its cost, and the reason "commit incrementally" is worth saying even to a lane that will finish in twenty minutes. Deliberately did NOT add boilerplate wording about it: #737 measured that night that the standing dogfood text was already reaching lanes and that more words would be volume without a measured failure class, and one killed lane out of four having staged-but-uncommitted work is not that class.
+
+- **A before/after comparison needs a subject that holds still, and a LIVE shared
+  subject does not.** `#645` increment 1 (2026-08-01) was told to prove the production
+  path unchanged by running the live ledger read before and after and showing identical
+  output. It was not identical — 169 open ids became 168, 476 landed became 478 — and
+  none of it was the lane's doing: the coordinator landed `#752` and `#755` and filed
+  `#757` while the lane ran. The brief had demanded a fixed point from a file two
+  processes were writing.
+
+  The lane built the right check instead of reporting a false pass or a false failure:
+  it made ONE read-only SQLite backup of the live store, then ran the **unchanged
+  main-checkout interpreter** and the **modified worktree interpreter** against that
+  same snapshot — `STABLE_COPY_LIST_IDENTICAL=true`, `STABLE_COPY_COUNTS_IDENTICAL=true`.
+  Then it reported the raw live before/after too, and said plainly that it was not
+  identical and why.
+
+  This is `#607`'s interpreter/subject distinction applied to TIME. `#607` established
+  that the path you invoke is the interpreter and `--target` is the subject; the
+  corollary nobody had written down is that a **parity proof must vary the interpreter
+  and hold the subject fixed**, so a subject that moves on its own destroys the
+  experiment no matter how carefully the interpreters are chosen. The instruction
+  "run it before and after and show the same output" silently assumes a fixed subject,
+  and on this loop that assumption is false by construction for every live artifact —
+  the ledger, `status.json`, the journal — because the coordinator is writing them
+  between the two runs.
+
+  The rule: **when a brief asks for real-path parity, name the snapshot step.** Freeze
+  the subject (a read-only backup, a copied fixture, a pinned rev), vary only the
+  interpreter, and report the raw live readings alongside as context rather than as
+  the proof. And the failure this prevents is not a missed bug — it is the opposite: a
+  lane that dutifully reports "not identical" and gets read as a regression, or one
+  that quietly rounds the difference off to make the brief satisfiable.
