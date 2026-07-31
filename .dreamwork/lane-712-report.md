@@ -199,8 +199,230 @@ annoyed agent adds by reflex, which is G4 again).
 
 ## Red-proof
 
-(filled in below by the lane as each direction is run)
+### Direction 1 — three injections, each red on its discriminating message
+
+All via `dev/redproof.py begin/restore`; never `git checkout` (#349). No commit
+was made while a file was sabotaged.
+
+**RED 1 — the traced loss itself.** Injected: `if through < mark["through"]:` →
+`if False:  # INJECTED` (the pre-#712 shape, which bounded `--through` from
+above only). `test_consume_through_below_read_head_refuses_naming_the_lost_ordinal`
+went red **on the loss, not on a count**:
+
+```
+AssertionError: consume --through 1 must REFUSE: the read on record printed
+through 4, so a bound of 1 came from an older or truncated view and would
+advance past an unseen ordinal; got exit 0
+(out='consumed 1 event(s)\napplied 0\nunapplied 1\nUNAPPLIED\t0f9ed4e0-…')
+assert 0 == 64
+```
+
+`consumed 1 event(s)` with exit 0 **is** the traced loss reproduced — the
+ordinal the operator's `tail` removed was drained and the cursor advanced.
+Whole file: **1 failed, 26 passed** — nothing else binds it.
+
+Restored, the refusal reads (real output, from the test's own run):
+
+```
+consume: --through 2 is BELOW the head of the read on record (3) — a bound
+that did not come from that read came from an older or truncated view of it,
+and ordinals [1, 2] would be advanced past on that basis. Re-run `pending` (do
+not pipe it through `head`/`tail`) and consume --through 3; or consume nothing
+this tick — an unadvanced range is re-listed in full, so skipping loses
+nothing. Bare `consume` (no --through) is never gated by the marker.
+```
+
+It names the ordinals at stake, the head of the read on record, and two
+escapes — neither of which is "delete the marker file".
+
+**RED 2 — the channel.** Injected: the coverage statement's `err.write(` →
+`out.write(`, i.e. **exactly idea I3**, the in-band trailer this design was
+chosen over. `test_pending_coverage_line_reaches_stderr_when_stdout_is_truncated`:
+
+```
+AssertionError: stderr must state the count the operator can compare against
+the 2 lines they hold; got ''
+assert 'listed 4 receipt(s)' in ''
+```
+
+Note **"2 lines they hold"** — the same `tail -3` that gave the operator three
+event lines now gives them two plus the trailer. The in-band form both rides
+the truncated channel and eats one of the operator's remaining lines. The
+assertion order was changed *before* this run (commit `a5c2822c`) precisely so
+the red lands on that property rather than on the parser contract; run first,
+the injection also reds **three pre-existing tests the lane did not write**
+(`test_pending_lists_events_since_cursor`, `test_pending_does_not_advance`,
+`test_consume_refuses_on_corruption_cursor_unmoved`), which independently bind
+"stdout is exactly the event record".
+
+**RED 3 — the marker shape guard.** Injected: the `isinstance` checks in
+`_load_pending_read` → `return mark`.
+`test_malformed_marker_degrades_to_the_named_absent_refusal` reds on the
+**production crash**, not on a reading of the helper:
+
+```
+>               if mark["journal_id"] != journal_id:
+E               KeyError: 'journal_id'
+dev/journal_consume.py:557: KeyError
+```
+
+The assertion order was changed first (commit `fa8ace4d`) so the black-box
+consequence is what fails; the white-box `_load_pending_read(...) is None`
+assertion now runs *after* it, so the test's scaffolding is not standing in
+front of the defect. Independently confirmed outside pytest under the same
+injection: `RAISED KeyError: 'journal_id'` from `cli.main(["consume", …])`.
+
+**Gate**, run before reporting and after the rebase:
+
+```
+history: examined 5 commit(s) since 255d6427e564 (master) against 1 injected
+path(s); read 5 blob(s), 0 holding a recorded injection.
+check: clean — 1 injection(s) registered, all restored and absent from the
+working tree and from this branch's commits:
+  dev/journal_consume.py (sha 90a3bfcec2b2, hint: 'return mark  # INJECTED: …')
+EXIT=0
+```
+
+(It registers one *path*, not one injection — three injections were made into
+that path in sequence, each `begin`/`restore`d, and it records the latest.)
+
+### Direction 2 — the cases this fix still gets wrong, constructed and RUN
+
+Both on the **fixed** code, on a throwaway fixture journal in `/tmp`. The live
+`.dreamwork/user-events.sqlite3` was never opened by anything in this lane.
+
+**(a) The natural `tail` variant — OPEN, and it is the more likely form.**
+The traced command took `--through` from an *earlier* read; the obvious thing to
+do with `tail -3` is take the head off the last line you can still see — and
+`tail` preserves the end, so that head is the *real* head:
+
+```
+pending printed 4 lines; the operator holds 3
+stderr (survives the pipe): pending: listed 4 receipt(s), ordinals 1..4 (consume --through 4)
+the head they CAN still see (tail keeps the end): ord=4
+
+consume --through 4  ->  exit 0
+stdout: consumed 4 event(s)
+cursor now: 4
+CONSUMED UNREAD: ord=1 — printed, never in the operator's hands, and NOTHING refused.
+```
+
+Every check passes: the bound equals the head of the read on record, the marker
+matches, #531's bound holds. **Ordinal 1 is consumed unread.** The only signal
+is the stderr line saying `listed 4` against the 3 lines in hand — a thing to
+*notice*, not a thing that binds. And this loop has already demonstrated that
+noticing does not happen: in the original incident `consume --through 96`
+printed `consumed 1 event(s)` immediately after a `pending` whose output filled
+three lines, and that discrepancy was not caught either. **I am claiming
+visibility, and visibility has failed here before.** Only I5 closes this, at the
+price argued above.
+
+**(b) "Read the bytes" is not what `pending` delivers at all — OPEN.**
+The brief asks whether reading the bytes is the same as seeing. On this path the
+weaker question bites first: `pending` never shows the bytes. Measured on a
+189-byte payload carrying two separate requests:
+
+```
+--- preview case: payload is 189 bytes ---
+f993874d-…  receipt.created  /command  ord=1  189B  {"kind": "add-idea", "text": "implement via subagent; we should be able to archi…
+
+second request visible in the pending line? False
+```
+
+So the honest statement of what this lane's answer proves is weaker than
+"printed" even: **the ordinal was printed, and an 80-char rendering of its
+payload was printed.** Nothing here proves a reader saw the line, and nothing
+here proves the content crossed the boundary at all — `show <id>` is the verb
+that delivers the content and nothing requires it.
+
+One thing measured that is *better* than the ledger's note on #712 assumed: the
+"there is more here than you can see" mitigation it proposes (mark lines whose
+payload exceeds the preview) **already exists in-band** — the line carries
+`189B` and the preview ends in `…`. Both present in the output above. That
+mitigation does not need building; what it does not do is make anyone follow it.
 
 ## Cited issues, with the relied-on line
 
-(filled in below)
+- **#658** (landed) — the relied-on line, from the SKILL.md clause it landed and
+  which #712 quotes: *"the marker proves every line was **printed**, not that
+  every line was **seen**, so `pending | tail` still defeats it — the discipline
+  and the refusal are both needed."* And from the ledger entry: *"Marker LANDED
+  at eb012756 (lane-658drain) … THE ORIGINAL FAILURE IS NOT CLOSED — traced at
+  the gate: pending prints 96..99, marker through=99, consume --through 96 is
+  inside the range, no refusal, receipt consumed unread."* Both of its closed
+  cases are preserved: consuming with no prior read
+  (`test_consume_through_absent_marker_refuses_named_bootstrap`) and consuming
+  *past* what a read listed (`test_consume_through_refuses_when_read_was_truncated`)
+  are untouched and green.
+- **#531** — the `--through` bound. Relied-on line (its ledger fold note):
+  *"consume --through <ordinal> bounds the advance + #526 proof loop to the
+  pending read's head (a89a0bcf, merge e54d1142); both edge refusals EX_USAGE 64
+  pre-read."* Not weakened: `test_consume_through_bounds_advance_leaves_late_event_pending`
+  passes unchanged — it consumes `--through H` where H is the head its own
+  `pending` read reported, which is exactly what #712 now *requires*, and the
+  late event still stays pending. #712 tightens the same bound in the other
+  direction and touches neither edge refusal.
+- **#136** — the rule stated as the defect. Relied-on line: *"THREE zero-states,
+  not one: missing is a quiet warning …; present-but-unparseable is a fault and
+  must look like one; genuinely empty is #141's calm grey."* Applied twice here:
+  the fourth refusal names its own case (`BELOW the head of the read on record`)
+  rather than sharing #658's "never listed" wording, and the malformed-marker
+  fix is that rule exactly — a marker that is present but shapeless was
+  rendering as an exception, not as a named state.
+- **#671** — a check that examined nothing must not read as passing. Relied-on
+  line: *"the count is real (420 commits WERE examined), the 'nothing to review'
+  is false, and the two together read as a positive all-clear."* Applied: every
+  new assertion is preceded by a derived precondition, and the load-bearing one
+  is `assert lost <= mark["through"]` — without it the direction-1 test would be
+  re-proving #658's already-closed case and would pass on unfixed code. The
+  channel test derives `held` from the real output and asserts `len(held) < n`
+  before asserting anything about stderr.
+- **#612** — volume, and the cost of ceremony on a per-tick path. Relied-on
+  line: *"A report nobody can skim is a report nobody reads."* Applied: the
+  normal tick did **not** get longer to type. `--through <head>` is what SKILL.md
+  already prescribed; the only change is that the value must be *the* head, and
+  `pending` now prints the exact command, so the step went from transcription to
+  copy-paste. Cost on the hot path: **one line of stderr per non-empty read**,
+  and zero on an empty one. The rejected I5 would have added a token per tick
+  forever, which is the #612 argument doing real work rather than decorating the
+  report.
+
+## Rebase
+
+Rebased onto local `master` at `255d6427` (`docs(#720): a green reading is
+evidence only if you know what produced it`) — read with `git rev-parse master`,
+not from the brief. Five commits replayed cleanly, **no conflicts**; the
+line-anchored `grep -nE '^(<{7}|>{7}|\|{7}|={7}$)'` over the tree returns
+nothing. `redproof.py check` re-run after the rebase (output above) because the
+rebase rewrote every sha it scans.
+
+## Verification
+
+- `python3 -m pytest -q test_journal_consume.py test_watch.py` (the two files
+  this change touches) → **502 passed, 1 deselected, 57 subtests passed** in 68s,
+  post-rebase. `test_journal_consume.py` alone: **27 passed** (24 pre-existing,
+  unchanged, + 3 new).
+- `python3 lint.py` → `clean (6 warning(s))` — the six are the known lane-worktree
+  warning that the gitignored ledger store cannot travel (#611), not findings.
+- No browser guards: non-UI lane (#666). No ports bound. Load at the time of the
+  suite run: 23-27.
+- **The live journal was never touched.** Every run used a `tmp_path` or
+  `tempfile.mkdtemp()` fixture with an explicit `--journal`.
+
+## Out of scope — found, not fixed
+
+1. **The `.pending-read` sidecar has no `file-formats.md` row.** It is a file the
+   loop writes and a tool parses, which this repo's conventions say must have its
+   shape stated there and checked by `lint.py` in the same commit. #658 landed it
+   without one, and #712 deepens the reliance on it (the marker is now compared
+   for equality, not just as an upper bound) without changing its shape. Worth a
+   row; not this lane's change to make silently.
+2. **Ledger entry #531's title is about something else.** `dev/ledger.py get 531`
+   returns *"Burndown limit number input too narrow — '128' does not fit
+   visibly"* with a fold note that correctly describes the `consume --through`
+   bound. The brief cites #531 as "the `--through` bound itself" and the note
+   agrees; the title does not. One of them is attached to the wrong id.
+3. **The real close for #712 is a wrapper, not a flag.** Stated in the IGC: if
+   the read and the consume ever run in one process, the coverage citation costs
+   nothing because no human transcribes it, and I5's decisive error evaporates.
+   That is a different shape of change from anything in this lane's volume.
