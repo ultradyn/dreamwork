@@ -5008,9 +5008,21 @@ def check_related_markers(dw: Path, watch, rep: Report) -> None:
     reciprocity complaint. Field anchoring keeps mid-sentence vocabulary from
     manufacturing phantom markers.
 
-    The OK summary reports how many entries were unparseable as well as how many
-    pairs checked: a check that counts what it examined cannot silently stop
-    examining things.
+    Reads through `ledger_view` — the #294 dispatch — so a store-mode target
+    is examined against its STORE projection, not the #458 shim that stands in
+    for `tasks.md` after cutover (#685). The shim has no entries, so the
+    pre-fix direct read examined nothing and said nothing — which read as a
+    pass. That is exactly the silent-skip the next paragraph forbids, which is
+    why this is the dispatch and not a `note_ledger_skip` row: in the main
+    checkout the data is present and readable, so finding nothing to examine is
+    a finding about the projection, not a skip.
+
+    The OK summary reports how many entries it examined and against how many
+    markers, as well as how many pairs checked and how many were unparseable:
+    a check that counts what it examined cannot silently stop examining things
+    (#671 is the worked example of this reporting shape). A run that examined
+    zero entries says so and is WARN, not a clean pass — both halves of the
+    correlation it performs (entries, markers) are on the report.
 
     ERRORs rather than WARNs, unlike `check_cited_shas`, because there is no
     legacy to grandfather: at the time of writing the live ledger has **zero**
@@ -5024,19 +5036,17 @@ def check_related_markers(dw: Path, watch, rep: Report) -> None:
     prose. Naming a `depends:` shape now, with nothing using it and 29 entries
     contradicting it, would be a contract written ahead of its evidence.
     """
-    path = dw / "tasks.md"
-    if not path.exists():
-        return
-    try:
-        text = path.read_text()
-    except OSError:
+    text, source = ledger_view(dw)   # the #294 dispatch — #685
+    if text is None:
         return
     entries = watch.ledger_entries(text)
+    n_entries = len(entries)
     # The marker may hard-wrap: the loop writes at ~72 columns, so join each
     # entry's lines before reading it, the same allowance the origin rule makes.
     claims: dict[int, set[int]] = {}
     all_ids = {i for ids, _ in entries for i in ids}
     n_unparseable = 0
+    n_markers = 0   # #685: entries that carried a `related:` field (examined)
     for ids, raw in entries:
         flat = re.sub(r"\s+", " ", raw)
         head = "/".join("#%d" % i for i in ids)
@@ -5044,6 +5054,7 @@ def check_related_markers(dw: Path, watch, rep: Report) -> None:
         found = RELATED_MARKER.findall(flat)
         if not fields:
             continue
+        n_markers += 1   # this entry carried a `related:` field (#685)
         if not found:
             # Field present, bold form absent — the #395 hole. Name the shape,
             # not a downstream reciprocity symptom about claims we never saw.
@@ -5111,15 +5122,33 @@ def check_related_markers(dw: Path, watch, rep: Report) -> None:
     # the summary was unconditional — a reader scanning for the OK line would have
     # been told the opposite of the truth by the check that found it.
     #
-    # The unparseable count is coverage (#395): had the pre-fix check printed
-    # "N pairs, K entries unparseable" the silent-skip hole would have been on
-    # screen for days. A check that counts what it examined cannot silently
-    # stop examining things.
-    if claims and not any(lvl == ERROR and w == "tasks.md" and "(#353)" in d
-                          for lvl, w, d in rep.rows):
-        pairs = {tuple(sorted((a, b))) for a, named in claims.items() for b in named}
+    # #685: the examined count is on the report (#671's shape), so a run that
+    # examined zero entries cannot read as a clean pass. The two halves of what
+    # this check correlates — entries and markers — are both named, with the
+    # source `ledger_view` actually read (it fails closed toward markdown on any
+    # store error, so the word is what was read, not an assumption).
+    has_marker_error = any(lvl == ERROR and w == "tasks.md" and "(#353)" in d
+                           for lvl, w, d in rep.rows)
+    if n_entries == 0:
+        # Zero entries is a cannot-check, not a clean bill — the dispatch found
+        # nothing to examine (broken projection, or a worktree whose store
+        # cannot travel). WARN, never OK; and never a skip row, because in the
+        # main checkout this condition should not exist (#685).
+        rep.add(WARN, "tasks.md", (
+            f"examined 0 entries against 0 markers ({source}) — the ledger "
+            f"yielded no entries, so no related-marker could be checked; this "
+            f"is not a clean result (#685)"))
+        return
+    pairs = {tuple(sorted((a, b))) for a, named in claims.items() for b in named}
+    if has_marker_error:
+        return      # ERRORs already speak; an OK summary would contradict them
+    if n_markers == 0:
+        rep.add(OK, "tasks.md",
+                f"examined {n_entries} entries against 0 markers ({source})")
+    else:
         rep.add(OK, "tasks.md", (
-            f"{len(pairs)} related pair(s), all reciprocal; "
+            f"examined {n_entries} entries against {n_markers} markers "
+            f"({source}); {len(pairs)} related pair(s), all reciprocal; "
             f"{n_unparseable} entries unparseable"))
 
 
