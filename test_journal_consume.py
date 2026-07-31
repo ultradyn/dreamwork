@@ -1645,8 +1645,10 @@ def test_malformed_marker_degrades_to_the_named_absent_refusal(tmp_path: Path):
     assert mp.exists(), "precondition: pending wrote a marker to overwrite"
     for bad in ("{}", '{"journal_id": "x"}', '{"journal_id": "x", "through": "3"}'):
         mp.write_text(bad)
-        assert cli._load_pending_read(Path(str(path))) is None, (
-            f"a malformed marker ({bad}) must read as absent, not as a marker")
+        # The BLACK-BOX consequence first, deliberately: without the shape
+        # check this line RAISES (KeyError: 'journal_id') rather than
+        # refusing, so the test's own red is the production crash and not a
+        # white-box reading of the helper that stands in front of it.
         code, out, err = _run(cli, ["consume", "--through", str(n),
                                     "--journal", str(path),
                                     "--applied", str(applied)])
@@ -1658,3 +1660,5 @@ def test_malformed_marker_degrades_to_the_named_absent_refusal(tmp_path: Path):
         with open_journal(path) as j:
             assert j.cursor(CONSUMER).scanned_through_event_ordinal == 0, (
                 "a refused consume must leave the cursor unmoved")
+        assert cli._load_pending_read(Path(str(path))) is None, (
+            f"a malformed marker ({bad}) must read as absent, not as a marker")
