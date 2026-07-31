@@ -45,6 +45,10 @@ SAFETY (a bug here kills someone else's live server)
   - DREAMWORK_REAP_NEVER_KILL=pid,pid,pid adds to a denylist (configurable; not
     hardcoded to today's pids — a literal tuned to today's machine rots).
   - pid 1, the reaper's own pid, and unreadable processes are never touched.
+  - After SIGTERM, the process EXIT is verified (bounded poll), and three
+    outcomes render distinctly: REAPED (gone), SIGNALLED (still alive —
+    reported, never auto-SIGKILLed), or refused/skipped. os.kill returning
+    means delivered, not dead; the report must not outrun the evidence (#136).
 
 VERIFY BEFORE TRUSTING (this repo means it)
   The classifier has unit tests (test_reaper.py). The live proof — start a
@@ -67,6 +71,14 @@ LIVE = "live"
 
 RULE2 = "rule2-cwd-deleted"
 RULE1 = "rule1-elapsed-stale"
+
+# After SIGTERM, poll this long for actual exit before reporting SIGNALLED
+# rather than REAPED. Bounded: os.kill returning means the signal was DELIVERED,
+# not that the process died, and "I sent a signal" must not render as "it is
+# gone" (#136). No auto-escalation to SIGKILL — report and let a human decide
+# (#288: neither posture nor a timeout confers kill authority).
+_VERIFY_TIMEOUT = 3.0
+_VERIFY_POLL = 0.05
 
 _DELETED_SUFFIX = " (deleted)"
 _SERVER_FLAGS = ("--port", "--target", "--dev", "--autoreload", "--open")
@@ -315,10 +327,60 @@ def _print_record(rec, would_kill=False):
     print(f"        cmd={rec['cmd']}")
 
 
-def do_kill(records, pid_targets, all_dead, never_kill):
-    """Reap dead-lane records only. Returns (killed, refused, skipped) lists."""
+def _process_state(pid):
+    """One-character state from /proc/<pid>/stat, or None if unreadable.
+    'Z' is a zombie: terminated, holding no resources, waiting for its parent
+    to read its exit status. For the reaper's purposes a zombie is GONE."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            s = f.read()
+        rparen = s.rfind(")")
+        rest = s[rparen + 2:].split()
+        return rest[0]  # field 3, the state char
+    except (OSError, IndexError):
+        return None
+
+
+def _wait_for_exit(pid, timeout=_VERIFY_TIMEOUT, poll=_VERIFY_POLL):
+    """Poll until the process is gone or the timeout elapses.
+
+    "Gone" is: the pid has vanished (ProcessLookupError on os.kill(pid, 0))
+    OR the process is a zombie ('Z' state) — terminated, holding no resources,
+    just waiting for its parent to read its exit status. Both mean the signal
+    landed and the process will never run again.
+
+    os.kill(pid, 0) succeeding alone does NOT establish this: a zombie passes
+    that probe (#730). Returns True if gone, False if still alive at timeout.
+    PermissionError (exists, not ours) reads as alive: the report stays honest.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            return False
+        if _process_state(pid) == "Z":
+            return True
+        time.sleep(poll)
+    return False
+
+
+def do_kill(records, pid_targets, all_dead, never_kill,
+            verify_timeout=_VERIFY_TIMEOUT):
+    """Reap dead-lane records only. Returns (killed, signalled, refused, skipped).
+
+    Three outcomes after SIGTERM, distinctly rendered by the caller:
+      killed     — SIGTERM delivered AND the process is confirmed gone (#671:
+                   a completed action that was verified, not just attempted).
+      signalled  — SIGTERM delivered, but the process is still alive after a
+                   bounded wait. Reported, never auto-escalated to SIGKILL
+                   (#288: the design earns trust by being narrow).
+      refused/skipped — unchanged.
+    """
     self_pid = os.getpid()
-    killed, refused, skipped = [], [], []
+    killed, signalled, refused, skipped = [], [], [], []
     if all_dead:
         targets = [r for r in records if r["classification"] == DEAD_LANE]
     else:
@@ -361,8 +423,13 @@ def do_kill(records, pid_targets, all_dead, never_kill):
         except PermissionError:
             skipped.append((pid, "permission denied"))
             continue
-        killed.append(rec)
-    return killed, refused, skipped
+        # os.kill returned: the signal was DELIVERED, not that the process
+        # died. Poll for actual exit before claiming it is gone (#136/#671).
+        if _wait_for_exit(pid, timeout=verify_timeout):
+            killed.append(rec)
+        else:
+            signalled.append(rec)
+    return killed, signalled, refused, skipped
 
 
 def main(argv=None):
@@ -464,7 +531,7 @@ def main(argv=None):
         print("reaper: to proceed with the sweep: add --yes.", file=sys.stderr)
         return 2
 
-    killed, refused, skipped = do_kill(
+    killed, signalled, refused, skipped = do_kill(
         records, args.pid or [], args.all_dead, never_kill)
 
     for rec in killed:
@@ -472,11 +539,20 @@ def main(argv=None):
         print(f"reaper: REAPED pid={rec['pid']} port={rec['port']} "
               f"elapsed={elapsed} target={rec['target']} rule={rec['rule']}")
         print(f"        cmd={rec['cmd']}")
+    for rec in signalled:
+        elapsed = _humanize(rec["elapsed_secs"])
+        print(f"reaper: SIGNALLED pid={rec['pid']} port={rec['port']} "
+              f"elapsed={elapsed} target={rec['target']} rule={rec['rule']}")
+        print(f"        SIGTERM delivered but the process is still alive after "
+              f"{_VERIFY_TIMEOUT:.0f}s — NOT confirmed gone.")
+        print(f"        No auto-SIGKILL (by design). To finish: kill -9 {rec['pid']} "
+              f"(a human decision, not this tool's).")
+        print(f"        cmd={rec['cmd']}")
     for pid, why in refused:
         print(f"reaper: REFUSED pid={pid}: {why}", file=sys.stderr)
     for pid, why in skipped:
         print(f"reaper: skipped pid={pid}: {why}")
-    if not killed and not refused and not skipped:
+    if not killed and not signalled and not refused and not skipped:
         print("reaper: nothing to reap (no matching dead-lane servers).")
     return 0
 
