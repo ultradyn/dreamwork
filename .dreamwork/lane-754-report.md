@@ -110,20 +110,20 @@ violated within the guard's declared settled-DOM trace window.
 - focused pytest baseline before the lane changes: 518 collected,
   516 passed, 2 skipped. After rebasing over the moving master, the same
   focused collection is 518 tests; the required final post-commit run reported
-  `518 passed in 72.57s`.
+  `518 passed in 76.52s` after the final rebase.
 - whole-repo collection was 2323 at dispatch (the supplied master baseline)
   and is 2324 after rebase. This lane adds no pytest test; the extra collected
   test arrived in the seven master commits rebased underneath it.
 
 ## Rebase, commits, and scope
 
-Master advanced by seven commits after dispatch. The first two lane commits
-rebased cleanly onto `c4077866`; there were no conflicts. Current implementation
+Master advanced by twenty commits after dispatch. The lane rebased cleanly
+twice, finally onto `92a24d21`; there were no conflicts. Current implementation
 commits are:
 
-- `1e4d9298` — `test(#754): restore coexistence closure assertions`
-- `e699d825` — `test(#754): sample class closure after mount effects`
-- `fb3b2d24` — `fix(#754): detect morphdom ownership-marker loss`
+- `0c6e60b3` — `test(#754): restore coexistence closure assertions`
+- `e5337632` — `test(#754): sample class closure after mount effects`
+- `40dcc035` — `fix(#754): detect morphdom ownership-marker loss`
 
 No fixed dashboard/dev port was bound, every started server was killed, and
 nothing was merged or pushed. `BRIEF.md` remains the untracked dispatch input
