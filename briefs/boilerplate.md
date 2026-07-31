@@ -234,6 +234,14 @@ false-green named for direction 2; every cited issue with its relied-on line quo
 rebase outcome; and anything you found that was out of scope (do not fix it — name it, and
 the coordinator files it).
 
-Then a **DOGFOOD REPORT** — required, and genuinely useful, not a formality: what about this
-loop's own tooling, docs, or briefs cost you time or misled you? My briefs have been wrong
-several times today and the lanes that said so were right.
+Then a **DOGFOOD REPORT** — required, not optional (#589): what about this
+loop's own tooling, docs, or briefs cost you time or misled you? My briefs have
+been wrong several times today and the lanes that said so were right. The
+section's value is what you found **beyond** your direct task — a premise the
+brief got wrong, a hazard a sibling construct hides, friction with a tool, an
+out-of-scope warning. Tonight's highest-value findings across seven lanes were
+exactly those, and one — a predicted merge break — sat unread in an out-of-scope
+section the coordinator never looked at, so write the section **and** know the
+coordinator reads it. **"No friction found" is a valid answer that is STATED**;
+an omitted section is not, because it reads as "no friction" and is
+indistinguishable from a lane that did not look (#136/#671).
