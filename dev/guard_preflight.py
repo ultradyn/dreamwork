@@ -104,12 +104,19 @@ def read_cores() -> int | None:
 
 
 def count_lanes(target: Path | None = None) -> int | None:
-    """Live ccc lane count via status_sync.discover_lanes, or None on failure.
+    """Live ccc lane count via ``status_sync.live_lane_count``, or None on failure.
 
-    None — not 0 — when discovery cannot run, so an instrument failure never
-    renders as "no lanes". ``target`` is the project root whose
-    ``.worktrees/`` holds lanes; resolved from cwd when omitted. #675: this
-    sees only the ccc dispatch path, never Agent-tool subagents.
+    None — not 0 — when ``/proc`` is unreadable, so an instrument failure
+    never renders as "no lanes". A CONTRACT BREAK (the accessor's shape
+    changing underneath the caller) is NOT caught here: it propagates as a
+    ``TypeError``/``ValueError``, distinct from the ``OSError`` that means
+    "/proc unreadable on this host" (#136). Those are different facts — the
+    first is a bug that must be loud, the second a legitimate unknown.
+    #728: a bare ``except Exception`` here turned #675's arity change into
+    a silent ``?`` beside a confident verdict, which is how it hid.
+    ``target`` is the project root whose ``.worktrees/`` holds lanes;
+    resolved from cwd when omitted. #675: this sees only the ccc dispatch
+    path, never Agent-tool subagents.
     """
     try:
         # status_sync is a repo-root module; a direct script run puts dev/
@@ -119,16 +126,19 @@ def count_lanes(target: Path | None = None) -> int | None:
         if _root not in _sys.path:
             _sys.path.insert(0, _root)
         import status_sync  # read-only call, no edit (#675)
-    except Exception:
+    except ImportError:
         return None
     t = target if target is not None else _main_checkout()
     if t is None:
         return None
     try:
-        found, _phantoms = status_sync.discover_lanes(t)
-    except Exception:
+        return status_sync.live_lane_count(t)  # #440: accessor, not a unpack
+    except OSError:
+        # /proc unreadable on this host — a legitimate unknown (#136).
         return None
-    return len(found)
+    # NOTE: TypeError/ValueError (a contract mismatch in the accessor) is
+    # deliberately NOT caught — see docstring. main() renders it as
+    # COUNT-BROKEN so the break is loud rather than a silent '?'.
 
 
 def _main_checkout() -> Path | None:
@@ -179,7 +189,13 @@ def render(verdict: str, load: float | None, cores: int | None,
     verdict token leads and the bracketed facts follow in a stable order."""
     load_s = f"{load:.2f}" if load is not None else "?"
     cores_s = str(cores) if cores is not None else "?"
-    lanes_s = str(lanes) if lanes is not None else "? (ccc-only; #675)"
+    if lanes is None:
+        # #728: '?' alone reads as one unknown field beside a confident
+        # verdict; name the count unavailable so a reader knows the verdict
+        # rests on load alone (the count half of #606's two legs is gone).
+        lanes_s = "? (ccc-only; #675; count unavailable)"
+    else:
+        lanes_s = str(lanes)
     ratio = ""
     if load is not None and cores:
         ratio = f" ({load / cores:.1f}x cores)"
@@ -192,6 +208,22 @@ def _recommendation(verdict: str, load: float | None,
                     lanes: int | None) -> str:
     """An actionable clause for each band (#136: a refusal that says nothing
     trains override). Names the thing the coordinator can DO."""
+    if lanes is None:
+        # #728: do NOT classify on the missing count as "no fleet" — that
+        # is the paper-over this fix removes. The count half of #606's
+        # two-legged instrument is gone; say the verdict rests on load
+        # alone and the actionable lever (the fleet) is unreadable.
+        if verdict == OK:
+            return ("load is fine but the lane count is unavailable, so the "
+                    "verdict rests on load alone (the count half is gone)")
+        if verdict == CAUTION:
+            return ("load in the measured grey zone; lane count unavailable, "
+                    "so whether a fleet is out is UNKNOWN — verdict on load "
+                    "alone, treat the fleet lever as unreadable")
+        return ("WRONG-ANSWER regime on load alone; lane count unavailable, "
+                "so an undiscovered fleet may be making it worse — run a "
+                "subset (DREAMWORK_GUARDS=<name>) or force with "
+                "DREAMWORK_GUARDS_FORCE=1")
     if verdict == OK:
         return "guards should judge honestly"
     if verdict == CAUTION:
@@ -220,10 +252,38 @@ def main(argv: list[str] | None = None) -> int:
     banner AND honor the force flag, which is shell's job.)"""
     load = read_loadavg()
     cores = read_cores()
-    lanes = count_lanes()
+    try:
+        lanes = count_lanes()
+    except (TypeError, ValueError) as e:
+        # #728/#136: a contract break in the lane-count accessor is a BUG,
+        # not a legitimate unknown — it must be loud and distinct from the
+        # '?' of an unreadable /proc. Name the error and mark the verdict
+        # as resting on load alone rather than printing '?' beside a
+        # confident one (#671).
+        print(render_count_broken(e, load, cores))
+        return 0
     verdict = classify(load, cores, lanes)
     print(render(verdict, load, cores, lanes))
     return 0
+
+
+def render_count_broken(err: Exception, load: float | None,
+                        cores: int | None) -> str:
+    """The preflight line for a lane-count accessor contract break (#728).
+
+    Distinct from render()'s '?': that means '/proc unreadable on this
+    host' (a legitimate unknown); this means 'the function I call changed
+    shape underneath me' (#136) — a bug, so the error type is named and the
+    load verdict is marked as standing on one leg (#606). The line still
+    leads with the load verdict token so the justfile's RISK grep holds."""
+    load_s = f"{load:.2f}" if load is not None else "?"
+    cores_s = str(cores) if cores is not None else "?"
+    verdict = classify(load, cores, None)
+    return (f"guard preflight: COUNT-BROKEN {verdict} [load {load_s} on "
+            f"{cores_s} cores, lane count UNAVAILABLE: "
+            f"{type(err).__name__}: {err}] — the lane-count accessor's "
+            f"contract broke (#728); verdict rests on LOAD ALONE, the "
+            f"count half is gone (#606)")
 
 
 if __name__ == "__main__":

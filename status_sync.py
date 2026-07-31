@@ -386,6 +386,22 @@ def discover_lanes(target: Path):
             sorted(agent_tool, key=lambda lp: lp[0]))
 
 
+def live_lane_count(target: Path) -> int:
+    """The ccc lane count — the one supported accessor over ``discover_lanes`` (#440).
+
+    Callers that need only the count call THIS, never a positional unpack
+    of ``discover_lanes``: #728 made a 2-tuple unpack a silent 2am gate
+    failure when #675 grew the return to three. Pinning the unpack in this
+    one function means the next arity change breaks ONE line (this one)
+    rather than every caller, and a test can pin it (#728). Raises
+    ``OSError`` if ``/proc`` is unreadable (the caller decides whether that
+    is a legitimate ``None``) and ``ValueError`` if ``discover_lanes``
+    contract changes — the latter is a bug and must stay loud (#136).
+    """
+    found, _phantoms, _agent_tool = discover_lanes(target)
+    return len(found)
+
+
 def read_open_ids(dw, lpath):
     """Open ids under `## Open`, dispatching on source_of_truth (#294 inc 7).
 
