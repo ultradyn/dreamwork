@@ -347,8 +347,8 @@ guard remains forbidden by load #666 and is unnecessary for byte parity.
 
 ## Verification performed for this recommendation
 
-- `python3 -m pytest -q test_watch.py -k delta`: **7 passed, 477 deselected,
-  6 subtests passed**. This invokes `node --test dev/data-delta.test.mjs`
+- `python3 -m pytest -q test_watch.py -k delta`: **10 passed, 477 deselected,
+  8 subtests passed**. This invokes `node --test dev/data-delta.test.mjs`
   through the Python-derived-envelope harness and retains the two deliberately
   named base-only false-greens.
 - Read-only live `collect()` type/size probes, with its question-signature
