@@ -873,7 +873,43 @@ var DreamworkDesign = (() => {
   function buildChat(fetched) {
     if (!fetched)
       return `<div class="qmissing"><div class="qmisshead">not found</div><div class="qmissbody">this link names a chat the list no longer has — it was most likely removed while you watched. No other chat has been substituted for it.</div><div class="qmissback"><a href="/">&larr; back to dashboard</a></div></div>`;
-    return label("topic chat") + (fetched.entries || []).map(chatTurn).join("") + chatReplyComposer(fetched);
+    return label("topic chat") + chatArchiveBar(fetched) + (fetched.entries || []).map(chatTurn).join("") + chatReplyComposer(fetched);
+  }
+  function chatArchiveBar(fetched) {
+    const archived = !!fetched.archived;
+    const verb = archived ? "unarchive" : "archive";
+    return `<div class="chatbar dim"><button type="button" class="chatarchbtn" data-chat="${esc(fetched.id)}" data-archive="${archived ? "0" : "1"}">${verb}</button> <span id="chatarchmsg" class="cmdmsg" aria-live="polite"></span></div>`;
+  }
+  var chatArchInFlight = false;
+  var _chatArchConfirm = null;
+  function chatArchConfirm() {
+    if (!_chatArchConfirm)
+      _chatArchConfirm = confirmationFor(document, "chatarchmsg", "cmdmsg", rmr);
+    return _chatArchConfirm;
+  }
+  function invalidateChatArchiveFlight() {
+    chatArchInFlight = false;
+    if (_chatArchConfirm) _chatArchConfirm.clear();
+  }
+  async function sendChatArchive(btn) {
+    if (chatArchInFlight) return;
+    const chatId = btn.getAttribute("data-chat") || view && view.param || "";
+    if (!chatId) return;
+    const archive = btn.getAttribute("data-archive") === "1";
+    chatArchInFlight = true;
+    const attempt = chatArchConfirm().begin();
+    const res = await postJSON("/chat-archive", { id: chatId, archive });
+    chatArchInFlight = false;
+    if (view.name !== "chat") return;
+    if (res && DraftStore.isDurable(res)) {
+      if (!attempt.success()) return;
+      attempt.claim(archive ? "archived — left the list" : "unarchived — back in the list", true);
+      await tick();
+    } else {
+      const v = res && res._dwv;
+      const why = v && v.rejected && v.reason && REJECT_WHY[v.reason];
+      attempt.claim(!res ? "no connection" : why ? `not written — ${why}` : "not written — try again");
+    }
   }
   function chatReplyComposer(fetched) {
     return `<form id="chatreply" data-chat="${esc(fetched.id)}"><label class="label" for="chatreplybox">reply</label><div class="qfield"><textarea id="chatreplybox" placeholder="A reply to the dreamer" data-max-rows="6"></textarea><button type="submit" class="qsend">send</button></div><span id="chatreplymsg" class="cmdmsg" aria-live="polite"></span></form>`;
@@ -4469,8 +4505,10 @@ var DreamworkDesign = (() => {
     if (window.__closeCmd) window.__closeCmd();
     if (view && view.name === "answers" && name !== "answers")
       invalidateAskFlight();
-    if (view && view.name === "chat" && name !== "chat")
+    if (view && view.name === "chat" && name !== "chat") {
       invalidateChatReplyFlight();
+      invalidateChatArchiveFlight();
+    }
     if (fileMsg && !(view && view.name === name && view.param === param))
       fileMsg.clear();
     view = { name, param, q: opts.q || null, mode };
@@ -5090,6 +5128,12 @@ var DreamworkDesign = (() => {
       if (plus) {
         e.preventDefault();
         open ? closeCmd() : openCmd();
+        return;
+      }
+      const arch = e.target.closest && e.target.closest(".chatarchbtn");
+      if (arch) {
+        e.preventDefault();
+        sendChatArchive(arch);
         return;
       }
       if (open && e.target.closest && !e.target.closest("#cmdpalette")) closeCmd();
