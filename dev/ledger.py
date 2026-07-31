@@ -242,12 +242,19 @@ def _prepend_at_top_of_landed(landed_lines, moved):
 # sweep (#404) — landings discoverable from git subjects, minus cited shas
 #
 # A lane cannot land work without committing, and this repo's commit
-# convention puts the id in the subject BY CONSTRUCTION — so git log is a
-# strictly more reliable landing channel than `.dreamwork/handoffs.md`,
-# which is an extra act a lane must remember. This is the discovery twin of
-# `lint.check_landed_still_open` (#323), not a second implementation: the
-# correlation rule (git names a commit the entry does not) and the
-# production helpers (`ledger_parse.open_section_text` /
+# convention puts the id in the subject — so git log is a landing channel
+# the tick can correlate without relying on a hand-off file a lane must
+# remember. #404 called that "by construction", and #707 measured the claim
+# false: the id WAS in the subject, in the form `Merge #688:` / `#700:`,
+# 252   but the pattern could not parse it — 1697 commits naming an id in a
+# form sweep could not attribute (#671). The pattern is widened below to
+# match the forms the repo actually writes; the report carries the verb and
+# splits the widened matches into a lower-confidence class (#590: a naming
+# is a question, not a verdict; #136: "named" must not read as "landed").
+#
+# This is the discovery twin of `lint.check_landed_still_open` (#323), not a
+# second implementation: the correlation rule (git names a commit the entry
+# does not) and the production helpers (`ledger_parse.open_section_text` /
 # `ledger_parse.ledger_entries`) are the same; what differs is that the
 # sweep is ADVISORY (exit 0 always), bounded to commits since a ref, and
 # matches the full verb set — a discovery sweep tolerates weak verbs
@@ -259,15 +266,43 @@ def _prepend_at_top_of_landed(landed_lines, moved):
 # guard 18, design 15, test 9, refactor 1, perf 1). The parens may carry
 # several ids (`merge(#422,#403)`); lint's CLOSE_SUBJECT takes only the
 # first, which a discovery sweep must not.
+#
+# #707 widened the pattern beyond `verb(#N)`. The repo's dominant forms
+# include the coordinator post-landing `Merge #N:`/`Fold #N` (every merge
+# this loop records) and the bare lane `#N:` — both measured MISSED by #671
+# (1697 unattributable commits). Each alternative has its own capture group
+# so `_subject_class` can tell the high-confidence verb form from the
+# lower-confidence widened forms and the report can split them (#590).
 SWEEP_SUBJECT = re.compile(
-    r"^(?:merge|fix|feat|close|perf|refactor|guard|docs|test|design)"
-    r"\((#\d+(?:,#\d+)*)\)")
+    r"^(?:(?:merge|fix|feat|close|perf|refactor|guard|docs|test|design)"
+    r"\((#\d+(?:,#\d+)*)\)"          # g1: verb(#N) — high confidence
+    r"|(?:Merge|Fold) (#\d+)"        # g2: Merge/Fold #N — lower confidence
+    r"|(#\d+)[\s:—–-])")             # g3: bare #N + separator — lower confidence
 SWEEP_ID = re.compile(r"#(\d+)")
-# Post-landing subjects the sweep must NOT re-propose as findings (#682). The
-# repo writes `Merge #N:`/`Fold #N` after a lane lands, and matching those
-# would name work that is already folded — a false proposal costing a human
-# decision every tick, which is worse than under-matching (#404, the brief).
+# Post-landing subjects (#682 named the trap; #707 widens to surface them at
+# lower confidence rather than silence them). `_subject_class` reuses this.
 _MERGE_FOLD = re.compile(r"^(?:Merge|Fold) #\d")
+# Bare lane form (`#N:` / `#N —`), the shape #705's boilerplate codified for
+# ~30 minutes. A separator is required so a bare `#N` token in prose does
+# not match (#707).
+_BARE_ID = re.compile(r"^#\d+[\s:—–-]")
+
+
+def _subject_class(subject):
+    """Confidence class for a subject SWEEP_SUBJECT MATCHED (#707).
+
+    Builds on `_skip_shape`'s categories one layer in: the verb(#N) form is
+    high confidence (the verb carries landing intent), while Merge/Fold and
+    bare-#N are the widened forms — "named" but not "landed" (#590: a count
+    is a question, never a verdict). The report splits findings on this so a
+    reader can dismiss `Merge #688:` (already folded) or `#700:` (ambiguous
+    verb) in one glance without opening the commit (#136, #612).
+    """
+    if _MERGE_FOLD.match(subject):
+        return "merge"          # post-landing marker — likely already folded
+    if _BARE_ID.match(subject):
+        return "bare"           # bare lane form — verb is ambiguous
+    return "verb"               # verb(#N) — high confidence
 
 
 def _skip_shape(subject):
@@ -277,16 +312,13 @@ def _skip_shape(subject):
     fold are indistinguishable in the output (both add zero rows), so the
     header names the dominant skip shape rather than dropping it silently —
     the same discriminability #671 gave the examined-count, one layer in.
-    The shapes are the measured corpus: Merge/Fold (already-landed — matching
-    these re-proposes folded work, the trap the brief warns against),
-    bare-#N (lane commits in a form the pattern misses), other #N, and the
-    genuinely id-free (doc/infra). Returns None for an id-bearing match,
-    which the caller counts separately.
+
+    #707 widened SWEEP_SUBJECT so `Merge #N`, `Fold #N` and bare `#N:` now
+    MATCH (they flow into findings at lower confidence via `_subject_class`),
+    so the shapes that reach here are the genuinely id-free and the id-bearing
+    subjects in forms no alternative covers. Returns None is never returned
+    because the caller only invokes this on non-matches.
     """
-    if _MERGE_FOLD.match(subject):
-        return "already-landed"
-    if re.match(r"^#\d+\b", subject):
-        return "bare-#N"
     if SWEEP_ID.search(subject):
         return "other #N"
     return "non-id"
@@ -297,10 +329,11 @@ def sweep(text, commits):
 
     `commits` is an iterable of (sha, subject) pairs, newest first. Returns
     (n_examined, findings) where findings is a list of (task_id, [(sha,
-    subject), ...]) for open ids git names a landing for that the entry does
-    not cite. `n_examined` counts EVERY commit looked at, matching subjects
-    or not — a sweep that found nothing must be distinguishable from one
-    that did not run.
+    subject), ...]) for open ids git names that the entry does not cite. The
+    report (`sweep_text`) splits these by confidence class — verb(#N) is high,
+    Merge/Fold and bare-#N are lower (#707, #590). `n_examined` counts EVERY
+    commit looked at, matching subjects or not — a sweep that found nothing
+    must be distinguishable from one that did not run.
     """
     open_ids, _ = watch.parse_ledger(text)
     bodies = {}
@@ -314,7 +347,9 @@ def sweep(text, commits):
         m = SWEEP_SUBJECT.match(subject)
         if not m:
             continue
-        for tid in (int(x) for x in SWEEP_ID.findall(m.group(1))):
+        # Exactly one alternative matched, so exactly one group is non-None.
+        id_text = next(g for g in m.groups() if g)
+        for tid in (int(x) for x in SWEEP_ID.findall(id_text)):
             # parse_ledger's ids are strings; ledger_entries' are ints — the
             # membership check is against the former, the body map the latter.
             if str(tid) not in open_ids:
@@ -617,13 +652,40 @@ def sweep_text(text, commits, since, source):
             f"(source: {source}), so no landing could be correlated. Nothing "
             f"was checked; this is not a clean result (#404, #671).")
         return "\n".join(lines) + "\n"
+    # #707: split findings by confidence class. verb(#N) is high confidence
+    # (the verb carries landing intent); Merge/Fold and bare-#N are the
+    # widened forms — "named" but not "landed" (#590: a naming is a question,
+    # never a verdict). The summary says "names", not "names a landing for",
+    # because sweep can only know an id was NAMED — whether the naming is a
+    # landing is the reader's judgement (#136: "named" must not read as
+    # "landed"; a `docs(#691)` names #691 but lands nothing). A reader who
+    # can triage a list in one pass keeps reading it (#612).
+    verb_rows, widened_rows = [], []
     for tid, landings in findings:
+        v = [(s, sub) for s, sub in landings
+             if _subject_class(sub) == "verb"]
+        w = [(s, sub) for s, sub in landings
+             if _subject_class(sub) != "verb"]
+        if v:
+            verb_rows.append((tid, v))
+        if w:
+            widened_rows.append((tid, w))
+    for tid, landings in verb_rows + widened_rows:
         ev = ", ".join(f"`{sha}` {subject}" for sha, subject in landings)
         lines.append(f"  #{tid} — {ev}")
-    lines.append(
-        f"sweep: {len(findings)} open id(s) git names a landing for that the "
-        f"entry does not cite" if findings else
-        "sweep: nothing to review (this ran — see the examined count above)")
+    if not verb_rows and not widened_rows:
+        lines.append(
+            "sweep: nothing to review (this ran — see the examined count above)")
+    else:
+        if verb_rows:
+            lines.append(
+                f"sweep: {len(verb_rows)} open id(s) git names (verb form) "
+                f"that the entry does not cite")
+        if widened_rows:
+            lines.append(
+                f"sweep: {len(widened_rows)} more named in widened form "
+                f"(Merge/#N — lower confidence, likely folded or ambiguous; "
+                f"#590)")
     return "\n".join(lines) + "\n"
 
 

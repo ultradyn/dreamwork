@@ -1055,15 +1055,15 @@ def test_sweep_reports_how_many_subjects_it_understood_not_just_examined(
     """
     root, dw = _sweep_fixture(migrate, tmp_path)
     # The four shapes #682 measured on the real corpus, in miniature: one
-    # verb(#N): landing, three Merge/Fold post-landing markers (correctly
-    # skipped — matching them re-proposes folded work), one bare-#N lane
-    # commit (genuinely id-bearing, genuinely missed — the named gap), and a
-    # no-id doc commit.
+    # verb(#N): landing (high confidence), three Merge/Fold post-landing
+    # markers (#707 widened these to lower-confidence findings — they now
+    # MATCH rather than being skipped), one bare-#N lane commit (#707
+    # widened this too), and a no-id doc commit (the only genuine skip).
     _plant(root, "fix(#10): a real landing")
     _plant(root, "Merge #11: a coordinator landing")
     _plant(root, "Fold #11 (merged abc1234)")
     _plant(root, "Merge #12: another sibling")
-    _plant(root, "#10 — a bare lane commit the pattern misses")
+    _plant(root, "#10 — a bare lane commit")
     _plant(root, "docs: a commit with no id")
 
     out = _sweep(dev_ledger, root, dw)
@@ -1229,6 +1229,82 @@ def test_sweep_ignores_store_landed_ids_and_ids_the_ledger_does_not_hold(
     assert _named_ids(out) == set(), (
         f"neither the already-landed #{landed} nor the unheld #{unknown} may "
         f"be flagged as an open landing: {out!r}")
+
+
+def test_sweep_report_names_the_coordinator_merge_form_with_a_confidence_class(
+        migrate, dev_ledger, tmp_path):
+    """DIRECTION-1 for the #707 report split, fixture not live repo.
+
+    A `Merge #NNN:` landing for an OPEN id the entry does not cite is the
+    exact class #707 measured invisible (every coordinator merge commit). The
+    widened pattern now finds it (#404's primary route recovering ~1697
+    historical commits), AND the report carries its verb so a reader can
+    dismiss it without opening the commit.
+
+    PRODUCTION LINE: `_subject_class` + the widened-class summary line in
+    `sweep_text`. RED: revert SWEEP_SUBJECT to verb(#N)-only and #NNN no
+    longer appears AND the summary line vanishes.
+
+    THE DISCRIMINATING ASSERTION is the CONFIDENCE-CLASS wording, not the
+    count: a report that folded Merge/#N into the verb findings would name
+    the id (the count goes up) but hide that it is lower confidence — which
+    is exactly the trap the #707 brief warns about. The summary must carry a
+    SEPARATE line for the widened forms.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    open_ids = sorted(int(i) for i in _fixture_ids()[0])
+    tid = open_ids[0]
+    sha = _plant(root, f"Merge #{tid}: a coordinator landing the entry omits")
+
+    out = _sweep(dev_ledger, root, dw)
+
+    # (1) the id is NAMED with its sha and subject — Direction 1 proper.
+    assert tid in _named_ids(out), (
+        f"the Merge #{tid} landing ({sha}) must now be named — #707 measured "
+        f"this class invisible to the primary route: {out!r}")
+    assert sha in out and f"Merge #{tid}" in out, (
+        f"the evidence (sha + subject) must be printed so the verb is visible: "
+        f"{out!r}")
+    # (2) the DISCRIMINATING assertion: a separate, lower-confidence summary.
+    assert "lower confidence" in out, (
+        f"the widened forms must carry their own confidence-class line, not be "
+        f"folded into the verb findings — #707's central design point: {out!r}")
+
+
+def test_sweep_report_splits_verb_findings_from_widened_findings(
+        migrate, dev_ledger, tmp_path):
+    """The two confidence classes must render as SEPARATE summary lines, or
+    widening silently merges the classes (#707's trap).
+
+    With one verb(#N) finding and one Merge #N finding, the report must carry
+    BOTH summary lines — the verb line AND the widened line. Folding them into
+    one count is exactly the false-attribution hazard the brief warns against:
+    `Merge #688:` is likely already-folded, `fix(#688):` is a landing, and
+    conflating them makes the report unreadable (#612).
+
+    PRODUCTION LINE: the two-armed summary in `sweep_text` (verb_rows +
+    widened_rows). RED: collapse to a single summary line and one class
+    vanishes — the reader can no longer tell a landing from a post-landing
+    marker at a glance.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    ids = sorted(int(i) for i in _fixture_ids()[0])
+    assert len(ids) >= 2, "fixture needs two open ids to split the classes"
+    verb_tid, merge_tid = ids[0], ids[1]
+    _plant(root, f"fix(#{verb_tid}): a verb-form landing")
+    _plant(root, f"Merge #{merge_tid}: a coordinator landing")
+
+    out = _sweep(dev_ledger, root, dw)
+
+    # PRECONDITION: both forms matched (else the split is untestable).
+    assert dev_ledger.SWEEP_SUBJECT.match(f"Merge #{merge_tid}: x"), (
+        "precondition: the Merge form must match post-widening")
+    # Both summary lines present, separately — the discriminating assertion.
+    assert "verb form" in out, (
+        f"the high-confidence verb findings get their own summary line: {out!r}")
+    assert "widened form" in out, (
+        f"the lower-confidence widened findings get a SEPARATE line, not folded "
+        f"in — #707's whole point: {out!r}")
 
 
 def test_ledger_view_refuses_the_ledger_file_with_a_named_mistake(tmp_path):
