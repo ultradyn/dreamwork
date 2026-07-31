@@ -13381,7 +13381,7 @@ class TestDataJsonDelta(unittest.TestCase):
                 f.write("\n- **test question** body\n")
             time.sleep(0.01)
             os.utime(qfile, None)
-            e2 = watch._data_json_cached(d, None)
+            e2 = watch._data_json_cached(d, None, repr(prev_version))
             curr_version, curr_doc = e2[0], e2[1]
             self.assertGreater(curr_version, prev_version,
                                "PRECONDITION: the version must have moved for "
