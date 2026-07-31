@@ -318,7 +318,7 @@ class TestAnsweredResolutionDates:
             ("Undated?", "  A body with no marker at all.\n"),
         ])
         rows = self.rows(t)
-        assert rows and "1 of 2 answered entries have no resolution date" in rows[0]
+        assert rows and "1 of 2 answered entries have no recorded human response" in rows[0]
         # the offending entry is named, so a withdrawn ask is distinguishable
         # from a dropped marker by reading the line
         assert "Undated" in rows[0]
@@ -338,7 +338,7 @@ class TestAnsweredResolutionDates:
         assert by["LAN?"] == "2026-07-26 17:49"
         assert by["Withdrawn?"] is None
         rows = self.rows(t)
-        assert rows and "1 of 2 answered entries have no resolution date" in rows[0]
+        assert rows and "1 of 2 answered entries have no recorded human response" in rows[0]
         assert "Withdrawn" in rows[0]
 
     def test_the_count_is_derived_from_the_fixture_not_pinned(self, tmp_path):
@@ -357,6 +357,40 @@ class TestAnsweredResolutionDates:
             (undated / ".dreamwork/questions.md").read_text())
             if watch.answered_at(it["body"]) is None)
         assert n_undated - n_dated == 1, (n_dated, n_undated)
+
+    def test_dated_watch_answer_and_comment_are_recorded_resolutions(self, tmp_path):
+        t = self.build(tmp_path, [
+            ("Answered?", "  - **Answer (via watch, 2026-07-31 19:16):** rec\n"),
+            ("Commented?", "  - **Comment (via watch, 2026-07-31 19:12) — ruling:**\n"),
+        ])
+        import watch
+        items = watch.parse_answered((t / ".dreamwork/questions.md").read_text())
+        assert len(items) == 2
+        assert any(it["follows"] for it in items)
+        assert any("Comment (via watch" in it["body"] for it in items)
+        assert self.rows(t) == []
+
+    def test_folded_alone_is_reported_not_accepted_as_a_resolution(self, tmp_path):
+        t = self.build(tmp_path, [
+            ("Processed without his answer?",
+             "  - **Folded (2026-07-31 19:18) — coordinator processed this.**\n"),
+        ])
+        rows = self.rows(t)
+        assert len(rows) == 1
+        assert "carry `Folded` but no recorded human response" in rows[0]
+        assert "Processed without his answer" in rows[0]
+        assert "[`Folded`]" in rows[0]
+
+    def test_future_resolution_format_is_reported_as_unclassifiable(self, tmp_path):
+        t = self.build(tmp_path, [
+            ("Resolved in a format not invented yet?",
+             "  - **Verdict (via dreambeam, 2027-01-02 03:04):** rec\n"),
+        ])
+        rows = self.rows(t)
+        assert len(rows) == 1
+        assert "dated but unclassifiable resolution record" in rows[0]
+        assert "Resolved in a format not invented yet" in rows[0]
+        assert "[`Verdict`]" in rows[0]
 
 
 class TestQuestionsTruncationGuard:
