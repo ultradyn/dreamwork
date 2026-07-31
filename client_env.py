@@ -98,10 +98,14 @@ field, because `note` is present ONLY when something was refused:
 THE TRAP, measured by `#652` and re-verified in this lane's own environment:
 `CLAUDE_CODE_SESSION_ID` names the **CLI session**, not the lane. Every
 concurrent lane inherits it byte-identically. A session id can therefore never
-be used as a lane identity, and nothing here offers it as one — that is what
-the separate `is_subagent` bit is for, and it is the *"other similar env vars
-… so we can have the right info about subagents or whatever and not get
-confused"* half of his answer.
+be used as a lane identity, and nothing here offers it as one — that is the
+100role the `is_subagent` bit exists to fill, *"the other similar env vars … so
+we can have the right info about subagents or whatever and not get confused"*
+half of his answer. For claude-code that role is currently UNFILLED: no
+measured variable discriminates the roles (#678), so `is_subagent` records
+`null` for this client rather than a confident boolean that would mislabel the
+main agent. A future client that does measure a discriminator sets
+`subagent_var` and records a real boolean.
 
 THE CEILING, stated rather than papered over: a harness launched as a CHILD of
 another (a `ccc` lane spawned from a Claude Code session) inherits the
@@ -167,16 +171,28 @@ class Client(NamedTuple):
 # MEASURED clients only. Order is significance order: the first match wins,
 # and a tie refuses. See "ADDING A CLIENT" above before appending a row.
 CLIENTS: tuple[Client, ...] = (
-    # Claude Code. Measured by #652 (2026-07-31) and re-verified in-lane:
-    # `CLAUDE_CODE_SESSION_ID` is the session uuid and is the uuid segment of
-    # the harness scratchpad path; `CLAUDE_CODE_CHILD_SESSION` is PRESENT in a
-    # subagent's environment and ABSENT in the coordinator's. `CLAUDECODE=1`
-    # is the client marker.
+    # Claude Code. `CLAUDE_CODE_SESSION_ID` is the session uuid and is the
+    # uuid segment of the harness scratchpad path — measured by #652 and
+    # re-verified in-lane. `CLAUDECODE=1` is the client marker.
+    #
+    # `subagent_var` is INTENTIONALLY None: NOTHING in this client's
+    # environment distinguishes a subagent from the main agent (#678,
+    # measured 2026-07-31). The prior candidate `CLAUDE_CODE_CHILD_SESSION`
+    # (#652's measurement, since refuted) is set in BOTH roles — verified in
+    # the coordinator's own env AND a real subagent's (lane-664notify) —
+    # because a subagent is spawned inside the same CLI process and inherits
+    # its environment wholesale. `CLAUDE_PID` shares one value across both
+    # roles for the same reason. A registry entry whose `subagent_var` is set
+    # in both roles is WORSE than an absent one: it reports a confident
+    # boolean that is wrong, and the record is read by the dashboard. `None`
+    # says "this client exposes no reliable discriminator" — the same
+    # standard `session_id_var=None` already sets for "has no var" — and
+    # `is_subagent` is left `None` for this client rather than guessed.
     Client(
         name="claude-code",
         detect=("CLAUDECODE",),
         session_id_var="CLAUDE_CODE_SESSION_ID",
-        subagent_var="CLAUDE_CODE_CHILD_SESSION",
+        subagent_var=None,
     ),
 )
 
@@ -190,11 +206,14 @@ def _absent(note: str) -> dict:
 def _truthy(raw) -> bool:
     """Is a marker variable asserting its flag?
 
-    #652 measured PRESENCE as the signal (`CLAUDE_CODE_CHILD_SESSION=1` in a
-    subagent, absent in the coordinator), so absence is `False`. The falsy
-    literals are a defensive read of a case nobody has measured — a client
-    that sets `=0` for the parent instead of unsetting it — and it cannot
-    change the measured behaviour, only the unmeasured one.
+    PRESENCE is the signal a working discriminator would use: the variable
+    is set when the flag is true, absent when it is not. (The concrete
+    example is deferred to the per-client measurement — claude-code's
+    `CLAUDE_CODE_CHILD_SESSION` is NOT such a discriminator, per #678, and
+    naming it here would re-assert the refuted claim.) The falsy literals
+    are a defensive read of a case nobody has measured — a client that sets
+    `=0` for the parent instead of unsetting it — and it cannot change the
+    measured behaviour, only the unmeasured one.
     """
     if raw is None:
         return False

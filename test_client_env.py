@@ -73,23 +73,35 @@ def _status(tmp_path: Path) -> dict:
 
 class TestIdentifyStates:
 
-    def test_resolved_client_reports_id_and_subagent_bit(self):
+    def test_resolved_client_reports_id_and_unknown_subagent_for_claude_code(self):
+        # #678 (measured 2026-07-31): nothing in claude-code's environment
+        # discriminates a subagent from the main agent. The old registry set
+        # `subagent_var='CLAUDE_CODE_CHILD_SESSION'`, but that variable is
+        # present in BOTH roles (coordinator AND a real subagent), so it
+        # reported `is_subagent: true` for the main agent — the exact
+        # confusion the field was built to prevent. The registry now records
+        # `None`, so the bit is `None` (unknown) for this client rather than
+        # a confident boolean that is wrong.
         rec = client_env.identify(
             {"CLAUDECODE": "1",
              "CLAUDE_CODE_SESSION_ID": "3a19e737-cb3f-4dde-8304-3241ac374cdb",
              "CLAUDE_CODE_CHILD_SESSION": "1"})
         assert rec["client"] == "claude-code"
         assert rec["session_id"] == "3a19e737-cb3f-4dde-8304-3241ac374cdb"
-        assert rec["is_subagent"] is True
+        assert rec["is_subagent"] is None
         assert "note" not in rec, "a resolved record explains nothing"
 
-    def test_coordinator_has_no_child_marker_and_is_measured_false(self):
-        # #652 measured PRESENCE as the signal: the marker is absent in the
-        # coordinator's environment. `False` here must mean measured-not-a-
-        # subagent, never "could not tell" — that is what `None` means.
+    def test_coordinator_role_is_also_unknown_not_measured_false(self):
+        # A coordinator's environment carries the SAME markers a subagent's
+        # does (CLAUDE_CODE_CHILD_SESSION=1 is present here too), so with
+        # `subagent_var=None` the bit stays `None`. It must not collapse to
+        # `False` (measured-not-a-subagent): that is the false confidence #678
+        # is about, and `None` (unknown) is the honest state.
         rec = client_env.identify(
-            {"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": "abc"})
-        assert rec["is_subagent"] is False
+            {"CLAUDECODE": "1",
+             "CLAUDE_CODE_SESSION_ID": "abc",
+             "CLAUDE_CODE_CHILD_SESSION": "1"})
+        assert rec["is_subagent"] is None
 
     def test_unknown_client_records_absent_with_a_reason(self):
         rec = client_env.identify({"PATH": "/usr/bin", "HOME": "/home/x"})
@@ -148,27 +160,31 @@ class TestIdentifyStates:
 
 
 class TestTheSessionIdCannotIdentifyALane:
-    """#652's measured trap, pinned so a later change cannot quietly undo it.
+    """#652's measured trap + #678's correction, pinned together.
 
     Every concurrent lane is an Agent-tool subagent of ONE CLI process and
-    inherits the SAME `CLAUDE_CODE_SESSION_ID`. So the id names the session,
-    never the lane, and the only thing that separates a lane from the main
-    agent is the sibling marker. A future "improvement" that derived a lane
-    identity from the session id would red here.
+    inherits the SAME `CLAUDE_CODE_SESSION_ID` — #652's measured trap, which
+    still holds. What no longer holds is that anything SEPARATES them: #678
+    measured that `CLAUDE_CODE_CHILD_SESSION` (the registered separator) is
+    present in BOTH roles, so a coordinator and a lane now produce
+    byte-identical records. A future change that re-introduces a working
+    discriminator reds the last assertion here.
     """
 
-    def test_lane_and_coordinator_share_an_id_and_differ_only_in_the_bit(self):
+    def test_lane_and_coordinator_share_an_id_and_now_produce_identical_records(self):
         shared = "3a19e737-cb3f-4dde-8304-3241ac374cdb"
         base = {"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": shared}
         coordinator = client_env.identify(dict(base))
         lane = client_env.identify(dict(base, CLAUDE_CODE_CHILD_SESSION="1"))
         assert coordinator["session_id"] == lane["session_id"] == shared
-        assert coordinator["is_subagent"] is False
-        assert lane["is_subagent"] is True
-        # The record carries no lane-distinguishing field other than the bit —
-        # asserted positively so adding one is a deliberate act.
-        assert {k: v for k, v in coordinator.items() if k != "is_subagent"} == \
-               {k: v for k, v in lane.items() if k != "is_subagent"}
+        # #678: neither role is distinguishable, so both are unknown — not
+        # one True and one False.
+        assert coordinator["is_subagent"] is None
+        assert lane["is_subagent"] is None
+        # The two records are byte-identical because nothing in claude-code's
+        # environment separates the roles. Asserted positively so a future
+        # working discriminator is a deliberate change, not a silent flip.
+        assert coordinator == lane
 
 
 # ── the binding checks (#655) ────────────────────────────────────────────
@@ -203,17 +219,43 @@ class TestTheRegistryIsTheOneHome:
                        "recorded_at": "2026-07-31T19:30:00+00:00"}
 
     def test_the_real_registry_names_the_measured_claude_code_variables(self):
-        """The registry's content, pinned to what #652 measured.
+        """The registry's content, pinned to what is measured.
 
         Separate from the behavioural tests on purpose: those all run against
         a synthetic registry precisely so they cannot be satisfied by the real
         names, which leaves the real names themselves unguarded unless
-        something asserts them. This is that something.
+        something asserts them. This is that something. #678 corrected the
+        `subagent_var`: `CLAUDE_CODE_CHILD_SESSION` is present in BOTH roles
+        so it is now `None` (no discriminator) rather than a name that
+        reports a confident wrong boolean.
         """
         cc = {c.name: c for c in client_env.CLIENTS}["claude-code"]
         assert cc.session_id_var == "CLAUDE_CODE_SESSION_ID"
-        assert cc.subagent_var == "CLAUDE_CODE_CHILD_SESSION"
+        assert cc.subagent_var is None
         assert "CLAUDECODE" in cc.detect
+
+    def test_a_discriminating_client_still_reports_a_confident_boolean(self):
+        """Direction 2 of #678's red-proof: the unknown is claude-code-specific.
+
+        The fix that made claude-code's bit `None` must NOT make `is_subagent`
+        permanently unknown for every client — that would be a check that can
+        never fail. A client whose registry entry has a real, working
+        `subagent_var` (here the synthetic FAKE) must still resolve a
+        confident boolean. Reverting `subagent_var` to a non-None name and
+        reading the env is the production line under test
+        (`identify`'s `if c.subagent_var is not None` branch).
+        """
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(client_env, "CLIENTS", (FAKE,))
+        try:
+            subagent = client_env.identify(
+                {"FAKE_CLI": "1", "FAKE_SESSION": "s", "FAKE_CHILD": "1"})
+            main_agent = client_env.identify(
+                {"FAKE_CLI": "1", "FAKE_SESSION": "s"})
+        finally:
+            monkeypatch.undo()
+        assert subagent["is_subagent"] is True
+        assert main_agent["is_subagent"] is False
 
     def test_only_client_env_names_the_registry_variables(self):
         """An AST guard: the var names have exactly one home.
