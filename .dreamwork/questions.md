@@ -2,7 +2,7 @@
 
 ## Open
 
-- **P1 · 2026-07-31 17:20 — #613: the live session-log view — three calls before the design locks.**
+- **P1 · 2026-07-31 17:20 — #613 (blocks #631): the live session-log view — three calls before the design locks.**
   **Sub-decisions:** `Q1`, `Q2`, `Q3`.
   Design: `.dreamwork/docs/plans/session-log-view.md` (design only; no code authorised). **Mockups,
   which you asked to see before the component design locks:** `.dreamwork/review/session-log-view.html`
@@ -50,7 +50,7 @@
   mockup's own A + G1 + M1, stand as the defaults when implementation is planned.
   Accepted answers: `rec` (takes all three plus the mockup's three) · per-question (`Q1: …`) · free text.
 
-- **P1 · 2026-07-31 17:20 — #614: websockets — everything you asked for lands, but the analysis
+- **P1 · 2026-07-31 17:20 — #614 (blocks #620): websockets — everything you asked for lands, but the analysis
   parts ways with you on the wire protocol.** One decision.
   Plan: `.dreamwork/docs/plans/ws-delta-transport.md`. Your goals — faster, more efficient, partial
   deltas, event-pushed — all survive; since you named websockets explicitly, the divergence is put
@@ -82,7 +82,7 @@
   implementation is planned, and phase 0 (the `-shm` fix) proceeds regardless, since it is just a bug.
   Accepted answers: `rec` · `ws` · free text.
 
-- **P1 · 2026-07-31 17:00 — #591: claude-design compatibility does NOT cost the single render
+- **P1 · 2026-07-31 17:00 — #591 (blocks #630): claude-design compatibility does NOT cost the single render
   authority — one ruling makes it official.** **Sub-decisions:** `Q1`, `Q2`, `Q3`.
   Analysis: `.dreamwork/review/505-g2-render-authority.html` (artifact, IGC inside) +
   `.dreamwork/docs/plans/render-architecture.md` (§Status 2026-07-31, which also records that
