@@ -5095,6 +5095,49 @@ class TestBriefWorktreeAbsInbox:
         assert m is not None, self.ABS
         assert m.group(0).endswith("/inbox.md")
 
+    def test_abs_inbox_regex_accepts_the_real_comms_convention(self):
+        """#587: the matcher must accept the loop's ACTUAL inbox convention,
+        not only a basename literally named ``inbox.md``. The real files are
+        ``coord-inbox.md`` and ``<lane-id>-inbox.md`` under the comms dir;
+        the old ``/.../inbox\\.md`` regex rejected both, so briefs invented
+        fake per-lane directories (``.../lane-X/inbox.md``) to satisfy it.
+
+        These positive assertions are the discriminating Direction-1 case:
+        they FAIL under the old regex (which matched only a literal
+        ``inbox.md`` basename) and PASS once the rule anchors on a leading
+        ``/`` plus a basename ending in ``inbox.md``.
+        """
+        real = [
+            "/home/xertrov/.cache/agent-comms/ud-dreamwork/coord-inbox.md",
+            "/home/xertrov/.cache/agent-comms/ud-dreamwork/lane-586routes-inbox.md",
+            "/home/xertrov/.cache/agent-comms/ud-dreamwork/352-inbox.md",
+        ]
+        for p in real:
+            m = lint.ABS_INBOX_PATH_RE.search(p)
+            assert m is not None, p
+            assert m.group(0).endswith("inbox.md"), (p, m.group(0))
+        # And a backtick-wrapped real path (how briefs actually cite it).
+        bt = "`/home/xertrov/.cache/agent-comms/ud-dreamwork/coord-inbox.md`"
+        assert lint.ABS_INBOX_PATH_RE.search(bt) is not None, bt
+
+    def test_abs_inbox_regex_still_rejects_non_absolute_or_non_inbox(self):
+        """#405 is about ABSOLUTENESS, so a fix that starts accepting relative
+        paths has inverted the rule, not fixed it. The relative
+        ``.dreamwork/inbox.md`` MUST still fail — that is the discriminating
+        negative (#587's whole point). Plus the looks-absolute-but-isn't
+        forms a too-permissive regex would let through (#587 Direction 2).
+        """
+        must_fail = [
+            ".dreamwork/inbox.md",            # repo-relative — the #405 defect
+            "` .dreamwork/inbox.md`",
+            "foo/.dreamwork/coord-inbox.md",  # relative, but has a slash
+            "/home/x/coord-inbox.md.bak",     # inbox.md is not the tail
+            "~/.cache/agent-comms/ud-dreamwork/coord-inbox.md",  # not POSIX-absolute
+            "C:/Users/x/coord-inbox.md",      # Windows drive, not POSIX-absolute
+        ]
+        for p in must_fail:
+            assert lint.ABS_INBOX_PATH_RE.search(p) is None, p
+
 
 class TestHumanBlocker:
     """#419 — no human blocker without a question.
