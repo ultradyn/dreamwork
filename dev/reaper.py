@@ -152,8 +152,18 @@ def parse_proc_stat(stat_text):
     return comm, starttime_ticks
 
 
+def _process_stat(pid):
+    """Return (state, starttime) from one safe /proc/<pid>/stat read."""
+    with open(f"/proc/{pid}/stat") as f:
+        stat_text = f.read()
+    _, starttime = parse_proc_stat(stat_text)
+    rparen = stat_text.rfind(")")
+    state = stat_text[rparen + 2:].split()[0]
+    return state, starttime
+
+
 # ---------------------------------------------------------------------------
-# /proc + ss gatherers (not unit-tested; exercised by the live RED proof)
+# /proc + ss gatherers
 # ---------------------------------------------------------------------------
 
 def _read_cmdline(pid):
@@ -190,12 +200,7 @@ def _clktck():
         return 100
 
 
-def _elapsed_secs(pid, btime, clktck):
-    try:
-        with open(f"/proc/{pid}/stat") as f:
-            _, starttime = parse_proc_stat(f.read())
-    except (OSError, ValueError, IndexError):
-        return None
+def _elapsed_secs(starttime, btime, clktck):
     return elapsed_from_starttime(starttime, btime, time.time(), clktck)
 
 
@@ -245,7 +250,8 @@ def _gather_one(pid, stale_hours, btime, clktck, ports_by_pid):
         port = info["port"]
     else:
         port = None
-    elapsed = _elapsed_secs(pid, btime, clktck)
+    _, starttime = _process_stat(pid)
+    elapsed = _elapsed_secs(starttime, btime, clktck)
     rec = {
         "pid": pid,
         "cwd": cwd,
@@ -254,6 +260,7 @@ def _gather_one(pid, stale_hours, btime, clktck, ports_by_pid):
         "port_requested_zero": info["port_was_zero"],
         "elapsed_secs": elapsed if elapsed is not None else 0,
         "elapsed_unknown": elapsed is None,
+        "starttime": starttime,
         "cmd": " ".join(args),
         "is_deployed": "/deployed/" in " ".join(args) and "watch.py" in " ".join(args),
     }
@@ -332,22 +339,17 @@ def _process_state(pid):
     'Z' is a zombie: terminated, holding no resources, waiting for its parent
     to read its exit status. For the reaper's purposes a zombie is GONE."""
     try:
-        with open(f"/proc/{pid}/stat") as f:
-            s = f.read()
-        rparen = s.rfind(")")
-        rest = s[rparen + 2:].split()
-        return rest[0]  # field 3, the state char
-    except (OSError, IndexError):
+        return _process_stat(pid)[0]
+    except (OSError, ValueError, IndexError):
         return None
 
 
-def _wait_for_exit(pid, timeout=_VERIFY_TIMEOUT, poll=_VERIFY_POLL):
+def _wait_for_exit(pid, starttime, timeout=_VERIFY_TIMEOUT, poll=_VERIFY_POLL):
     """Poll until the process is gone or the timeout elapses.
 
-    "Gone" is: the pid has vanished (ProcessLookupError on os.kill(pid, 0))
-    OR the process is a zombie ('Z' state) — terminated, holding no resources,
-    just waiting for its parent to read its exit status. Both mean the signal
-    landed and the process will never run again.
+    "Gone" is: the pid has vanished, its starttime no longer matches the
+    gathered process, OR it is a zombie ('Z' state) — terminated, holding no
+    resources, just waiting for its parent to read its exit status.
 
     os.kill(pid, 0) succeeding alone does NOT establish this: a zombie passes
     that probe (#730). Returns True if gone, False if still alive at timeout.
@@ -361,7 +363,13 @@ def _wait_for_exit(pid, timeout=_VERIFY_TIMEOUT, poll=_VERIFY_POLL):
             return True
         except PermissionError:
             return False
-        if _process_state(pid) == "Z":
+        try:
+            state, current_starttime = _process_stat(pid)
+        except FileNotFoundError:
+            return True
+        except (OSError, ValueError, IndexError):
+            return False
+        if current_starttime != starttime or state == "Z":
             return True
         time.sleep(poll)
     return False
@@ -415,6 +423,25 @@ def do_kill(records, pid_targets, all_dead, never_kill,
             refused.append((pid, f"{rec['classification']} (not dead-lane); "
                                  f"--kill reaps rule2 ONLY"))
             continue
+        if rec.get("starttime") is None:
+            refused.append((pid, "gathered record has no starttime; refusing SIGTERM"))
+            continue
+        try:
+            _, current_starttime = _process_stat(pid)
+        except FileNotFoundError:
+            skipped.append((pid, "already gone before SIGTERM"))
+            continue
+        except (OSError, ValueError, IndexError) as exc:
+            refused.append((pid, f"could not read /proc/{pid}/stat before SIGTERM: {exc}"))
+            continue
+        if current_starttime != rec["starttime"]:
+            refused.append((
+                pid,
+                "process identity changed before SIGTERM: gathered "
+                f"starttime={rec['starttime']}, current starttime={current_starttime}; "
+                "this pid is now a different process",
+            ))
+            continue
         try:
             os.kill(pid, 15)  # SIGTERM first; watch.py exits cleanly
         except ProcessLookupError:
@@ -425,7 +452,7 @@ def do_kill(records, pid_targets, all_dead, never_kill,
             continue
         # os.kill returned: the signal was DELIVERED, not that the process
         # died. Poll for actual exit before claiming it is gone (#136/#671).
-        if _wait_for_exit(pid, timeout=verify_timeout):
+        if _wait_for_exit(pid, rec["starttime"], timeout=verify_timeout):
             killed.append(rec)
         else:
             signalled.append(rec)

@@ -173,6 +173,18 @@ def test_parse_proc_stat_handles_parens_in_comm_and_finds_starttime():
     assert starttime == want_starttime
 
 
+def test_gathered_record_keeps_starttime(monkeypatch):
+    monkeypatch.setattr(reaper, "_read_cmdline", lambda pid: ["python3", "watch.py", "--dev"])
+    monkeypatch.setattr(reaper, "_read_cwd", lambda pid: "/tmp/live")
+    monkeypatch.setattr(reaper, "_process_stat", lambda pid: ("S", 7654321))
+    monkeypatch.setattr(reaper.time, "time", lambda: 1_000_100.0)
+
+    rec = reaper._gather_one(424240, 2.0, 1_000_000.0, 100, {})
+
+    assert rec["starttime"] == 7654321, \
+        "field 22 must survive gathering as the kill-time identity token"
+
+
 # ---------------------------------------------------------------------------
 # --all-dead safety gate (motivated by a real error during this task: an
 # ungated --all-dead swept two pids the operator was told to spare, because
@@ -185,6 +197,7 @@ def _dead_record(pid):
            "target": "/tmp/x/target", "port": 39999,
            "port_requested_zero": False, "elapsed_secs": 99999,
            "elapsed_unknown": False,
+           "starttime": 123456789,
            "cmd": f"python3 watch.py --target /tmp/x/target --port 39999",
            "is_deployed": False}
     rec["classification"], rec["rule"] = reaper.classify(
@@ -225,6 +238,7 @@ def test_all_dead_with_yes_reaps_dead_lane(monkeypatch, capsys):
         if sig == 0:
             raise ProcessLookupError  # process confirmed gone
     monkeypatch.setattr("os.kill", fake_kill)
+    monkeypatch.setattr(reaper, "_process_stat", lambda pid: ("S", fake["starttime"]))
     monkeypatch.setattr(reaper, "_VERIFY_TIMEOUT", 0.1)
     rc = reaper.main(["--kill", "--all-dead", "--yes"])
     assert rc == 0
@@ -325,17 +339,118 @@ def test_wait_for_exit_returns_true_when_pid_is_gone(monkeypatch):
         calls.append((pid, sig))
         raise ProcessLookupError
     monkeypatch.setattr("os.kill", probe)
-    assert reaper._wait_for_exit(999, timeout=1.0, poll=0.01) is True
+    assert reaper._wait_for_exit(999, 123, timeout=1.0, poll=0.01) is True
     assert calls == [(999, 0)], "a single sig-0 probe that raised ends the wait"
 
 
 def test_wait_for_exit_returns_false_when_pid_still_alive(monkeypatch):
     # The probe succeeds every time => still alive at timeout.
     monkeypatch.setattr("os.kill", lambda pid, sig: None)  # no exception
+    monkeypatch.setattr(reaper, "_process_stat", lambda pid: ("S", 123))
     slept = []
     monkeypatch.setattr(reaper.time, "sleep", lambda s: slept.append(s))
     monkeypatch.setattr(reaper.time, "monotonic", iter([0.0, 0.0, 10.0]).__next__)
-    assert reaper._wait_for_exit(999, timeout=1.0, poll=0.01) is False
+    assert reaper._wait_for_exit(999, 123, timeout=1.0, poll=0.01) is False
+
+
+def test_changed_starttime_before_sigterm_refuses_and_names_mismatch(monkeypatch):
+    rec = _dead_record(424246)
+    monkeypatch.setattr(reaper, "_process_stat", lambda pid: ("S", 987654321))
+    sent = []
+    monkeypatch.setattr("os.kill", lambda pid, sig: sent.append((pid, sig)))
+
+    killed, signalled, refused, skipped = reaper.do_kill(
+        [rec], [rec["pid"]], False, set())
+
+    assert killed == signalled == skipped == []
+    assert sent == [], "a reused pid must be refused before SIGTERM"
+    assert refused == [(rec["pid"],
+                        "process identity changed before SIGTERM: gathered "
+                        "starttime=123456789, current starttime=987654321; "
+                        "this pid is now a different process")]
+
+
+def test_missing_pid_before_sigterm_is_gone_not_identity_mismatch(monkeypatch):
+    rec = _dead_record(424249)
+    monkeypatch.setattr(
+        reaper, "_process_stat",
+        lambda pid: (_ for _ in ()).throw(FileNotFoundError()))
+    sent = []
+    monkeypatch.setattr("os.kill", lambda pid, sig: sent.append((pid, sig)))
+
+    killed, signalled, refused, skipped = reaper.do_kill(
+        [rec], [rec["pid"]], False, set())
+
+    assert killed == signalled == refused == []
+    assert sent == []
+    assert skipped == [(rec["pid"], "already gone before SIGTERM")]
+
+
+def test_changed_starttime_after_sigterm_means_original_is_gone(monkeypatch):
+    rec = _dead_record(424247)
+    stats = iter([("S", rec["starttime"]), ("S", rec["starttime"] + 1)])
+    monkeypatch.setattr(reaper, "_process_stat", lambda pid: next(stats))
+    sent = []
+    monkeypatch.setattr("os.kill", lambda pid, sig: sent.append((pid, sig)))
+
+    killed, signalled, refused, skipped = reaper.do_kill(
+        [rec], [rec["pid"]], False, set(), verify_timeout=0.1)
+
+    assert killed == [rec], "a replacement proves the gathered process is gone"
+    assert signalled == refused == skipped == []
+    assert sent == [(rec["pid"], 15), (rec["pid"], 0)]
+
+
+def test_unreadable_stat_before_sigterm_refuses_distinctly(monkeypatch):
+    rec = _dead_record(424248)
+    monkeypatch.setattr(
+        reaper, "_process_stat",
+        lambda pid: (_ for _ in ()).throw(PermissionError("denied")))
+    sent = []
+    monkeypatch.setattr("os.kill", lambda pid, sig: sent.append((pid, sig)))
+
+    killed, signalled, refused, skipped = reaper.do_kill(
+        [rec], [rec["pid"]], False, set())
+
+    assert killed == signalled == skipped == []
+    assert sent == []
+    assert refused == [(rec["pid"],
+                        f"could not read /proc/{rec['pid']}/stat before SIGTERM: denied")]
+
+
+def test_missing_gathered_starttime_refuses_before_proc_or_kill(monkeypatch):
+    rec = _dead_record(424251)
+    del rec["starttime"]
+    reads = []
+    monkeypatch.setattr(reaper, "_process_stat", lambda pid: reads.append(pid))
+    sent = []
+    monkeypatch.setattr("os.kill", lambda pid, sig: sent.append((pid, sig)))
+
+    killed, signalled, refused, skipped = reaper.do_kill(
+        [rec], [rec["pid"]], False, set())
+
+    assert killed == signalled == skipped == []
+    assert refused == [(rec["pid"],
+                        "gathered record has no starttime; refusing SIGTERM")]
+    assert reads == sent == []
+
+
+@pytest.mark.parametrize("pid,self_pid", [(0, 999), (1, 999), (424250, 424250)])
+def test_init_and_self_pids_are_protected_before_identity_read(
+        monkeypatch, pid, self_pid):
+    rec = _dead_record(pid)
+    monkeypatch.setattr(reaper.os, "getpid", lambda: self_pid)
+    reads = []
+    monkeypatch.setattr(reaper, "_process_stat", lambda value: reads.append(value))
+    sent = []
+    monkeypatch.setattr("os.kill", lambda value, sig: sent.append((value, sig)))
+
+    killed, signalled, refused, skipped = reaper.do_kill(
+        [rec], [pid], False, set())
+
+    assert killed == signalled == refused == []
+    assert skipped == [(pid, "protected (init/self)")]
+    assert reads == sent == [], "protected pids must not reach /proc or os.kill"
 
 
 def test_reaped_confirms_exit_against_a_real_victim():
@@ -346,6 +461,7 @@ def test_reaped_confirms_exit_against_a_real_victim():
     victim = subprocess.Popen(["sleep", "300"])
     assert victim.poll() is None, "precondition: victim is alive before reap"
     rec = _dead_record(victim.pid)
+    rec["starttime"] = reaper._process_stat(victim.pid)[1]
     assert rec["classification"] == "dead-lane"
     killed, signalled, refused, skipped = reaper.do_kill(
         [rec], [victim.pid], False, set(), verify_timeout=5.0)
@@ -385,6 +501,7 @@ def test_signalled_when_sigterm_is_ignored_real_victim():
     assert os.path.exists(ready.name), "precondition: victim installed SIG_IGN"
     assert victim.poll() is None, "precondition: victim alive before reap"
     rec = _dead_record(victim.pid)
+    rec["starttime"] = reaper._process_stat(victim.pid)[1]
     assert rec["classification"] == "dead-lane"
     killed, signalled, refused, skipped = reaper.do_kill(
         [rec], [victim.pid], False, set(), verify_timeout=0.4)
@@ -420,6 +537,7 @@ def test_signalled_renders_distinctly_and_names_the_pid(monkeypatch, capsys):
     assert os.path.exists(ready.name), "victim must be ready before reaping"
     try:
         rec = _dead_record(victim.pid)
+        rec["starttime"] = reaper._process_stat(victim.pid)[1]
         monkeypatch.setattr(reaper, "gather", lambda hours: [rec])
         monkeypatch.setattr(reaper, "_VERIFY_TIMEOUT", 0.3)
         rc = reaper.main(["--kill", "--pid", str(victim.pid)])
