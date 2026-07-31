@@ -1141,14 +1141,24 @@ class TestCollector(unittest.TestCase):
         """#674 — the "arms in Ns · …" countdown line lists the WHOLE pending
         posture point, all five axes. It had only pace/asking/delegation; he
         noticed orchestration (orchestrator/hands-on, #510) missing. delivery
-        (#342) was also absent in source (the brief said it was present — see
-        REPORT.md for that discrepancy); both are now carried.
+        (#342) was also absent in source — the brief described it as present
+        and was wrong; measured on the pre-#674 build the line read
+        `arms in 10s · steady · ask · 0`, three values. Both are now carried.
 
         The assertion EXECUTES the real label expression (extracted from
         armPostureUI and evaled in node with a sample draft) so a
         comment-only reference to the axes cannot pass it — the produced
         string must carry all five axis values. The OLD three-axis label
         drops 'batched' and 'orchestrator', reddening the gate.
+
+        WHAT THIS GATE CANNOT SEE, and where the cover comes from: it feeds
+        its OWN draft, so it holds the label EXPRESSION and nothing about the
+        data reaching it. Drop `orchestration` from the object armPostureDraft
+        builds and the expression's `|| 'hands-on'` fallback prints a value
+        the user never picked — measured: picking `orchestrator` then rendered
+        `arms in 10s · idle · ask · 0 · instant · hands-on` — and this gate
+        still passes. `dev/capture/posturerecuse.mjs` covers that half by
+        clicking the real chips and reading #pcount back.
         """
         import subprocess, shutil
         page = watch._get_page()

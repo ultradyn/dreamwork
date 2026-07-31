@@ -1681,11 +1681,21 @@
      line beneath it), NOT the whole .posture component. His words: the
      bottom-sticking "should only apply to the progress bar and 'arms in …'
      line", not the whole control, so paintPosturePin now toggles .psticky on
-     #parm. A re-measure (REPORT.md) puts the narrower subtree at ~6% of the
-     viewport vs #565's ~35% for the whole widget, so the conditional gate is
-     now courtesy more than necessity — but it stays: .parm only carries
-     content while a countdown is live (the bar is hidden and the count empty
-     otherwise), and he asked about scope, not timing.
+     #parm. RE-MEASURED against the narrower subtree, which is the whole point
+     of #565's 35% number: armed in a 1000x700 viewport, #parm is 21px tall —
+     3.0% — against 315px (45%) for the whole .posture section on the same
+     page. So the constraint that made the dock conditional does not bind the
+     smaller one. The gate stays anyway, and NOT out of caution: .parm only
+     carries content while a countdown is live (the bar is hidden and the
+     count empty otherwise), so an always-on dock would pin an empty 21px
+     strip over the page forever for no gain, and he asked about scope, not
+     timing.
+
+     The class must live on an element that is a SIBLING of .posture, not a
+     child of it: sticky is clamped by its parent's box, so a sticky .parm
+     inside the section only reaches the section's own top edge — measured
+     top=975 in a 700px viewport, i.e. it never docks at all. That is why
+     posturePicker closes </section> before emitting .parm.
 
      #636 made any docked fill TRANSPARENT on his explicit instruction ("it
      has a blue bg (should be transparent)"): --bg is the FLAT page colour

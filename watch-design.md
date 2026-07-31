@@ -2517,10 +2517,16 @@ tick cannot undock it. **#674 narrowed the dock to `.parm`** (the progress
 bar + the "arms in …" line beneath it), not the whole `.posture` component —
 his words: the bottom-sticking "should only apply to the progress bar and
 'arms in …' line" — so `paintPosturePin()` now toggles `.psticky` on `#parm`.
-A re-measure (REPORT.md) puts the narrower subtree at ~3% of the viewport vs
-the whole widget's ~35–45%, so the conditional gate is now courtesy more than
-necessity; it stays because `.parm` only carries content while a countdown is
-live anyway, and he asked about scope, not timing. The docked row carries **no
+`.parm` is emitted as a **sibling** of the `<section>`, not a child, because
+sticky is clamped by its parent's box: a sticky `.parm` inside `.posture`
+reaches only the section's own top edge (measured `top=975` in a 700px
+viewport) and never docks at all. Re-measured against the narrower subtree —
+the point of #565's 35% number — armed `.parm` is **21px, 3.0% of a 700px
+viewport**, against 315px (45%) for the whole section on the same page, so the
+constraint that made the dock conditional does not bind the smaller one. The
+gate stays regardless: `.parm` only carries content while a countdown is live,
+so an always-on dock would pin an empty strip forever for no gain, and he
+asked about scope, not timing. The docked row carries **no
 fill** (#636 — `var(--bg)` is the flat page colour while `#dreambg` is what
 the page shows, so an opaque fill punched a flat rectangle through the
 shader field; transparency is his explicit call, the readability tension left
@@ -2531,7 +2537,10 @@ line "shouldn't be there"). **Sticky is not motion** — a position, not a gestu
 here transitions and reduced-motion parity is free. Guard:
 `dev/capture/posturerecuse.mjs` (idle not-docked vs armed docked
 `bottom ≈ vh` vs cleared; asserts the class is on `#parm` and never the whole
-`#posture`, and that `#parm` carries no computed box-shadow).
+`#posture`, and that `#parm` carries no hairline in any of its three forms —
+computed `box-shadow`, a border, or a painted `::before`/`::after`, the last
+of which is invisible both to `getComputedStyle(el)` and to the pytest gate's
+grep of the rule text).
 
 **The deploy countdown is recused into the widget (#569).** His ask: the
 update countdown bar moves *"from the posture settings component"*'s chrome

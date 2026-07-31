@@ -2,13 +2,26 @@
    countdown recused into the posture widget with a CSS width transition).
 
    These are the two RUNTIME behaviours the pytest render tests cannot hold:
-     1. STICKY DOCK — when a posture arm is live, .posture.psticky docks to
+     1. STICKY DOCK — when a posture arm is live, `.parm.psticky` docks to
         the viewport bottom so scrolling up keeps the countdown visible; when
         idle it does not (a probe proved always-on bottom:0 docks the
-        end-of-page section permanently, so the class is conditional).
+        end-of-page element permanently, so the class is conditional).
+        #674 NARROWED the dock from the whole `.posture` section to `.parm`
+        (the progress bar + the "arms in …" line): the section was ~45% of a
+        700px viewport, `.parm` is 21px (3.0%). `.parm` is emitted as a
+        SIBLING of the section, not a child, because sticky is clamped by its
+        parent's box — a sticky `.parm` inside `.posture` reaches only
+        top≈975 in a 700px viewport, i.e. it never docks at all. The checks
+        below hold both halves: the class is on `#parm` and never on
+        `#posture`, and the docked geometry is `bottom ≈ vh`.
      2. WIDTH TRANSITION — the recused #pdep slot's width eases as its label
         changes (paintDeployStatus's explicit-width idiom), rather than
         snapping; reduced motion snaps.
+     3. THE ARMING LINE NAMES THE AXIS THE USER PICKED (#674). The pytest gate
+        evals the label EXPRESSION against a hand-made draft, so it cannot see
+        a draft that stops carrying an axis; the fallback (`|| 'hands-on'`)
+        would then print a value the user never chose and the gate stays
+        green. Only a real click can catch that, so it is checked here.
 
    Sticky is not motion (transitions.md), so the dock assertion is a position
    check (load-independent). The width transition IS motion, so it uses the
@@ -16,8 +29,8 @@
    (motion evidence) — exactly like the posture arm bar guard.
 
    Own server on a free port (39895 was held by another lane at write time;
-   freePort avoids every collision). NOT registered in the justfile (it is
-   coordinator-owned) — run solo: node posturerecuse.mjs <outdir>. */
+   freePort avoids every collision). REGISTERED in the justfile's guard list
+   since #565 merged; it also runs solo: node posturerecuse.mjs <outdir>. */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, rmSync, cpSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -123,14 +136,14 @@ const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webg
   notes.push(`armed @top: ${JSON.stringify(docked)}`);
   ok('#565 armed: #parm stays visible (top inside the viewport) on scroll-up',
      docked.top < vh && docked.psticky === true);
-  ok('#565 armed: #parm is docked to the viewport bottom (bottom â vh)',
+  ok('#565 armed: #parm is docked to the viewport bottom (bottom ≈ vh)',
      Math.abs(docked.bottom - vh) <= 2);
 
   // #636/#674 — the docked #parm must not PAINT, and (#674) must carry NO
   // top hairline. --bg is the flat page colour; #dreambg (z-index:-1) is what
   // the page shows, so an opaque fill punches a flat rectangle through the
   // shader. The hairline #565 added rode the whole .posture section and
-  // appeared above "posture / arming overrideâ¦"; narrowing the dock to .parm
+  // appeared above "posture / arming override…"; narrowing the dock to .parm
   // removed it (the .pbar is itself a visible boundary). Computed, not
   // declared.
   const fill = await p.evaluate(() => {
@@ -144,6 +157,68 @@ const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webg
      fill.bg === 'rgba(0, 0, 0, 0)' || fill.bg === 'transparent');
   ok('#674 docked: #parm carries NO top hairline (box-shadow removed)',
      fill.shadow === 'none');
+
+  // ...and the hairline must not come back by another route. A box-shadow on
+  // the element is the ONE form both the pytest gate (which greps the
+  // `.parm.psticky{…}` rule text for `box-shadow:`) and the check above can
+  // see. A `.parm.psticky::before { height:1px; background:var(--line) }`
+  // paints the same visible line, is in a SEPARATE rule the grep never reads,
+  // and is invisible to getComputedStyle(el) without the pseudo argument —
+  // both gates stay green with the line back on screen. Measured 2026-07-31
+  // during the #674 review; this closes it, along with the border form.
+  const edge = await p.evaluate(() => {
+    const painted = ps => ps.content !== 'none' &&
+      (ps.backgroundColor !== 'rgba(0, 0, 0, 0)' || ps.borderTopWidth !== '0px'
+       || ps.boxShadow !== 'none');
+    const read = id => {
+      const el = document.getElementById(id);
+      const cs = getComputedStyle(el);
+      const b = getComputedStyle(el, '::before');
+      const a = getComputedStyle(el, '::after');
+      return { shadow: cs.boxShadow, borderTop: cs.borderTopWidth,
+               borderBottom: cs.borderBottomWidth,
+               beforePainted: painted(b), afterPainted: painted(a) };
+    };
+    return { parm: read('parm'), posture: read('posture') };
+  });
+  notes.push(`#674 dock edge: ${JSON.stringify(edge)}`);
+  ok('#674 docked: no hairline smuggled in as a border on #parm',
+     edge.parm.borderTop === '0px' && edge.parm.borderBottom === '0px');
+  ok('#674 docked: no hairline smuggled in as a painted ::before/::after',
+     edge.parm.beforePainted === false && edge.parm.afterPainted === false);
+  // ...and the LITERAL thing he reported: "above 'posture / arming override…'
+  // it has a thin line now. That shouldn't be there." That edge belongs to
+  // #posture, not #parm, so no check above can see it. Hold it directly, in
+  // every form it could return in, while the arm is live.
+  ok('#674 armed: nothing draws a line above the posture heading',
+     edge.posture.shadow === 'none' && edge.posture.borderTop === '0px'
+     && edge.posture.beforePainted === false);
+
+  // #674 item 3 — the arming line names the axis THE USER PICKED, through the
+  // real click path (pickPostureAxis -> armPostureDraft -> postDraft ->
+  // armPostureUI), not through a hand-made draft. Both stops chosen here
+  // differ from the fixture's committed value AND from the label expression's
+  // `||` fallback (`instant` / `hands-on`), so a draft that quietly stops
+  // carrying an axis prints the fallback and reddens this — which is exactly
+  // the defect the pytest gate cannot see. Delegation is left alone: it is a
+  // number and shares no value with the other axes here.
+  await p.click('.paxis-chips[data-axis="orchestration"] .pchip[data-stop="orchestrator"]');
+  await sleep(200);
+  await p.click('.paxis-chips[data-axis="delivery"] .pchip[data-stop="batched"]');
+  await sleep(300);
+  const picked = await p.evaluate(() => ({
+    count: (document.getElementById('pcount') || {}).textContent || '',
+    on: [...document.querySelectorAll('.paxis-chips .pchip.on')]
+      .map(b => b.closest('.paxis-chips').dataset.axis + '=' + b.dataset.stop),
+  }));
+  notes.push(`#674 picked: ${JSON.stringify(picked)}`);
+  ok(`#674 arming line names the picked orchestration stop (${picked.count})`,
+     /\borchestrator\b/.test(picked.count));
+  ok(`#674 arming line names the picked delivery stop (${picked.count})`,
+     /\bbatched\b/.test(picked.count));
+  ok('#674 the picked stops are the ones lit in the chip rows',
+     picked.on.includes('orchestration=orchestrator')
+     && picked.on.includes('delivery=batched'));
 
   // clear the arm (module-scope, like the staleremedy guard sets staleDeploy*)
   // and confirm the dock releases — back to natural flow, below the fold.

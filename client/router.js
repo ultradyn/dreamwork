@@ -460,9 +460,18 @@ function armPostureUI(draft, until, gen) {
     // #674: the params line lists the WHOLE pending point, all five axes —
     // pace · asking · delegation · delivery · orchestration. It had only the
     // first three; he noticed orchestration missing (orchestrator/hands-on,
-    // #510). delivery (#342) was absent too — see REPORT.md for the
-    // brief-vs-source discrepancy. Defaults mirror resolve_posture's absent
-    // fallbacks so the line never reads "undefined".
+    // #510). delivery (#342) was absent too, contrary to the brief that
+    // described it as present — measured on the pre-#674 build, the line read
+    // `arms in 10s · steady · ask · 0`, three values, not four.
+    //
+    // The `||` defaults mirror committedPosture's absent fallbacks so the line
+    // never reads "undefined". They are a floor, NOT the source: every draft
+    // that reaches here is built from committedPosture (armPostureDraft,
+    // pickPostureAxis, stepPostureDelegation, syncPostureFromData) and so
+    // always carries all five. If a draft ever stops carrying one, the
+    // fallback prints a value the user never chose and the pytest gate — which
+    // evals this expression against its own draft — cannot see it. That is why
+    // posturerecuse.mjs clicks the real chips and reads #pcount back.
     const label = draft.pace + ' · ' + draft.asking + ' · ' + draft.delegation
       + ' · ' + (draft.delivery || 'instant')
       + ' · ' + (draft.orchestration || 'hands-on');
