@@ -3628,6 +3628,21 @@ def collect(target, burn_step=None):
     answers = read_text(os.path.join(dw, "answers.md"))
     a_open = parse_open_answers(answers)
     a_answered = parse_answered_answers(answers)
+    # #655 — the status section shows how many batched events are waiting for
+    # the coordinator to drain (the count `journal_consume.py pending` prints).
+    # Reused, not reimplemented: status_derive.pending_event_count calls the
+    # SAME events_since_cursor projection the drain composes, so the count and
+    # the drain agree by construction. Layered onto whatever status_from_store
+    # returned (it may be a dict or None) so the journal count is independent
+    # of the ledger-cutover gate that owns the `queue` field. The journal rides
+    # the existing /mtime poll (watched_mtime walks it under .dreamwork/), so a
+    # received event reaches an open dashboard on the next tick with no new
+    # channel — the same move as queue depth and chats.
+    _status = status_derive.status_from_store(
+        dw, _safe_json(read_text(os.path.join(dw, "status.json"))))
+    if isinstance(_status, dict):
+        _status["pending_events"] = status_derive.pending_event_count(
+            _journal_path(target))
     return {
         "target": os.path.abspath(target),
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -3677,9 +3692,10 @@ def collect(target, burn_step=None):
         # remainder (agents, push, deployed, prose) passes through untouched.
         # The existing /mtime->collect() poll invalidates it — the store
         # files live under .dreamwork/, which watched_mtime walks — so there
-        # is no second cache mechanism.
-        "status": status_derive.status_from_store(
-            dw, _safe_json(read_text(os.path.join(dw, "status.json")))),
+        # is no second cache mechanism. #655 layers pending_events (journal
+        # receipts after the coordinator cursor) onto the same dict; see the
+        # _status computation above.
+        "status": _status,
         "git": git_tail(target),
         # which revision this process is running (#140), so a stale page
         # announces itself instead of being mistaken for a bug

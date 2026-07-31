@@ -88,7 +88,7 @@ const stField = (k, v) =>
   stLines(v).map(l => `<div class="stval">${mdInline(l)}</div>`).join('') +
   `</span></div>`;
 const ST_GLANCE = ['awaiting_human', 'push', 'task', 'goal', 'agents', 'queue',
-                   'last_tick', 'last_commit'];
+                   'pending_events', 'last_tick', 'last_commit'];
 const ST_AGENT_GLANCE = ['name', 'in_flight'];
 function statusBlock(s, handoffs) {
   if (!s || typeof s !== 'object') return '';
@@ -156,6 +156,18 @@ function statusBlock(s, handoffs) {
   const facts = [];
   if (s.queue) facts.push(esc(`${s.queue.in_progress || 0} in flight · ` +
                               `${s.queue.pending || 0} pending`));
+  // #655 — batched events waiting for the coordinator to drain (receipts after
+  // the journal cursor; the same set `journal_consume.py pending` lists). The
+  // coordinator drains them itself each tick, so this is a liveness signal
+  // rather than something waiting on HIM — it rides the dim facts ramp, never
+  // the accent. Quiet at zero like the hand-offs fact one line down: an empty
+  // drain is the steady state, and a "0" sat beside the task counts would read
+  // as a scary zero rather than as all-clear (the brief names that exactly).
+  // It appears only when events are backing up, which is the one time it
+  // matters. Derived server-side from the SAME cursor read as the drain, so it
+  // cannot disagree with the tool that actually processes them.
+  if (s.pending_events)
+    facts.push(esc(`${s.pending_events} to drain`));
   // hand-offs awaiting a fold (#381): a count + the ids, inside the facts row
   // rather than a second appearing block, so it reuses the status panel's one
   // tick-driven treatment and authors no second motion idiom. A coordinator

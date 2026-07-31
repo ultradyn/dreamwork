@@ -4906,6 +4906,131 @@ class TestSummary(unittest.TestCase):
                 self.assertIsInstance(s["burndown_counts"][k], int)
 
 
+class TestPendingEventCount(unittest.TestCase):
+    """#655 — the status section shows how many batched events are waiting for
+    the coordinator to drain. The count is ``len(events_since_cursor(...))`` —
+    the SAME projection ``dev/journal_consume.py pending`` lists — surfaced on
+    ``collect()['status']['pending_events']``.
+
+    Honesty rules (the brief's, and lessons.md #348/#349): the expected count
+    is DERIVED from ``head_ordinal()`` and the cursor ordinal the drain
+    advanced to, NEVER from ``events_since_cursor`` itself. Building expected
+    by calling the projection under test is the hollow trap — reverting the
+    projection would change nothing the test could see. ``head_ordinal`` is a
+    DIFFERENT method (it counts all events, not the cursor-bounded subset), so
+    ``expected = head_ordinal - cursor`` is independent of the projection.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = make_target(self.tmp.name)
+        # collect() attaches pending_events only when status is a dict (the
+        # status panel does not render without status.json); plant a minimal
+        # one so the field has somewhere to live, the way a running loop would.
+        with open(os.path.join(self.root, ".dreamwork", "status.json"), "w") as f:
+            json.dump({"task": "x"}, f)
+
+    def _journal(self):
+        return os.path.join(self.root, ".dreamwork",
+                            watch.JOURNAL_FILENAME)
+
+    def _seed(self, n):
+        """Insert n receipts via the PRODUCTION receive() path.
+
+        Returns nothing; asserts the precondition that head_ordinal ended at n
+        (derived, never assumed) so a seed that dropped/duplicated fails here.
+        """
+        from user_events.sqlite import Envelope, open_journal
+        with open_journal(self._journal()) as j:
+            self.assertEqual(j.head_ordinal(), 0, "precondition: fresh journal")
+            for i in range(n):
+                r = j.receive(Envelope(
+                    client_action_id=f"00000000-0000-4000-8000-{i:012d}",
+                    protocol_version="1", method="POST", route="/answer",
+                    content_type="application/json",
+                    body=json.dumps({"a": i}).encode()))
+                self.assertEqual(r.kind, "inserted", f"row {i}: {r.kind}")
+            self.assertEqual(j.head_ordinal(), n,
+                             "precondition: head must equal the seed count")
+
+    def _drain(self, through):
+        """Advance the coordinator cursor via the PRODUCTION drain CLI.
+
+        Uses ``dev/journal_consume.py consume --through`` (the tool the
+        coordinator runs each tick) so the cursor move is the real one, and
+        asserts the cursor landed at ``through`` afterwards — the ordinal the
+        expected count is derived from.
+        """
+        import importlib.util
+        import importlib.machinery
+        cli_path = os.path.join(os.path.dirname(__file__), "dev",
+                                "journal_consume.py")
+        loader = importlib.machinery.SourceFileLoader(
+            "journal_consume", cli_path)
+        spec = importlib.util.spec_from_loader("journal_consume", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        out, err = io.StringIO(), io.StringIO()
+        code = mod.main(
+            ["consume", "--journal", self._journal(), "--through", str(through)],
+            out=out, err=err)
+        self.assertEqual(code, 0, f"consume failed: {err.getvalue()!r}")
+        from user_events.sqlite import open_journal
+        with open_journal(self._journal()) as j:
+            cur = j.cursor("coordinator").scanned_through_event_ordinal
+            self.assertEqual(cur, through,
+                             "precondition: cursor must land at `through`")
+
+    def test_count_is_zero_with_no_journal(self):
+        # A target with no journal has nothing pending; the field is present
+        # and reads 0 (the clean idle state), never absent-with-no-journal.
+        data = watch.collect(self.root)
+        self.assertIsInstance(data["status"], dict)
+        self.assertEqual(data["status"].get("pending_events"), 0)
+
+    def test_count_matches_undrained_receipts(self):
+        # The real defect: seed 3, drain none → count is 3. Expected is
+        # head_ordinal (3) minus the cursor (0) — independent of the
+        # projection under test.
+        from user_events.sqlite import open_journal
+        self._seed(3)
+        with open_journal(self._journal()) as j:
+            expected = j.head_ordinal() - j.cursor(
+                "coordinator").scanned_through_event_ordinal
+        self.assertEqual(expected, 3)  # anti-vacuity: the gap is real
+        data = watch.collect(self.root)
+        self.assertEqual(data["status"]["pending_events"], 3)
+
+    def test_count_falls_after_a_drain(self):
+        # The discriminating case. Seed 3, drain through 2 → only ord 3 is
+        # left in (cursor, head]. Expected = head_ordinal (3) minus the cursor
+        # the drain advanced to (2) = 1. This is the assertion a "return total
+        # events" bug fails: total (3) != pending-after-cursor (1). A check
+        # that only tested the no-drain case would pass over that bug, because
+        # there total == pending; the drained case is what tells them apart.
+        from user_events.sqlite import open_journal
+        self._seed(3)
+        self._drain(2)
+        with open_journal(self._journal()) as j:
+            expected = j.head_ordinal() - j.cursor(
+                "coordinator").scanned_through_event_ordinal
+        self.assertEqual(expected, 1)  # anti-vacuity: the drain moved the cursor
+        data = watch.collect(self.root)
+        self.assertEqual(data["status"]["pending_events"], 1)
+
+    def test_count_rides_the_status_dict_only_when_status_present(self):
+        # No status.json → no status panel → status is None and the count has
+        # nowhere to attach. This matches the panel's own rule (it does not
+        # render without status.json); the count is not invented as a
+        # top-level key that would bypass the status section's authority.
+        os.remove(os.path.join(self.root, ".dreamwork", "status.json"))
+        self._seed(2)
+        data = watch.collect(self.root)
+        self.assertIsNone(data["status"])
+        self.assertNotIn("pending_events", data)  # never a top-level key
+
+
 class TestSummaryRoute(unittest.TestCase):
     # /summary.json the route: served by watch.py's GET, behind the SAME
     # _preflight() authority gate as every other GET. Adding the read

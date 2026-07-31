@@ -17,9 +17,9 @@ idiom: one deep, leaf module, importable and testable without a server).
 watch.py imports it and calls it from `collect()`; the derivation logic lives
 NOWHERE else.
 
-A LEAF MODULE: it imports only `ledger_parse` (stdlib sqlite3 transitively),
-never `watch.py`, so the deploy snapshot imports it without a cycle exactly as
-it imports `ledger_parse`.
+A LEAF MODULE: it imports only `ledger_parse` and `user_events.sqlite`
+(both stdlib-only transitively), never `watch.py`, so the deploy snapshot
+imports it without a cycle exactly as it imports `ledger_parse`.
 
 WHAT IS DERIVED (the only rendered field the store owns):
 
@@ -62,7 +62,15 @@ covers the store. Request-path cost is one read-only sqlite3 query
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ledger_parse import source_of_truth, store_ids_by_state
+# #655 — the durable user-event journal is a second store under `.dreamwork/`,
+# and the count of undrained receipts is a store-derivable status field, so it
+# lives in this ONE leaf module beside the ledger derivation. `open_journal` is
+# the same public API `dev/journal_consume.py` (the drain) and `watch.py`
+# (the receiver) already use; importing it here keeps a single cursor reader.
+from user_events.sqlite import open_journal
 
 
 def queue_depth(open_count: int, live_count: int) -> dict:
@@ -111,3 +119,58 @@ def status_from_store(dreamwork_dir, status):
     out = dict(status)
     out["queue"] = queue_depth(open_count, len(live))
     return out
+
+
+# --- #655 — undrained journal receipts as a status count -------------------
+#
+# The dashboard journals a durable receipt for every write route, and the
+# coordinator drains them each tick with `dev/journal_consume.py`: `pending`
+# lists everything after the cursor, the coordinator processes each one, then
+# `consume --through <ordinal>` advances the cursor. The number he wants on
+# the status section is the count of receipts after the cursor — the SAME set
+# `pending` prints.
+#
+# The single consumer this drain serves (delivery-modes.md §"How an agent
+# consumes the cursor in batched mode") — the literal the cursor row is keyed
+# by, identical to `dev/journal_consume.py`'s `CONSUMER` (and
+# `dev/reconcile_submissions.py`'s). The cursor row the count reads is keyed
+# by this string, so a second spelling would read a different (empty) cursor
+# and silently report zero forever; it is reused verbatim, not re-derived.
+CONSUMER = "coordinator"
+
+
+def pending_event_count(journal_path) -> int:
+    """Count of ``receipt.created`` events in ``(coordinator_cursor, head]`` (#655).
+
+    This is the set ``dev/journal_consume.py pending`` lists — the receipts the
+    coordinator has not yet drained. It is computed by the SAME public read the
+    drain composes, ``Journal.events_since_cursor(CONSUMER)`` (the projection in
+    ``user_events/sqlite.py`` that resolves the cursor lower bound and the head
+    upper bound), so the count and the drain agree by construction: two
+    independent implementations of "what is pending" would disagree the first
+    time the schema moved, and a count that disagrees with the drain is worse
+    than no count because it would be trusted. Read-only: never advances the
+    cursor, never writes (the projection's own contract).
+
+    Degrade, never throw: no journal / unreadable / any failure → 0. A target
+    with no journal has nothing pending, and the request path never 500s over a
+    derivation (``status_from_store``'s discipline, one store over). ``len()`` is
+    taken rather than a COUNT query so the projection is the single reader — a
+    second query would be a second thing that could disagree with the drain.
+
+    ``journal_path`` is the resolved path (``watch._journal_path(target)``,
+    built from ``watch.JOURNAL_FILENAME``) so the filename stays single-source
+    in ``watch.py`` and is not copied here.
+    """
+    p = Path(journal_path)
+    if not p.exists():
+        return 0
+    try:
+        with open_journal(p) as j:
+            return len(j.events_since_cursor(CONSUMER))
+    except Exception:
+        # No derivation may refuse a /data.json over a store it cannot read
+        # (status_from_store's rule). A torn/locked/unreadable journal reads
+        # as zero pending — the same shape as no journal — and the next tick
+        # re-reads. The dashboard's liveness does not rest on the journal.
+        return 0

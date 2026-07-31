@@ -2693,6 +2693,16 @@ there so an **agent** can resume, which makes it load-bearing rather than junk.
   not the gaps" applies to a key/value list: a long key on a `min-width` shoves
   that row's value out of line with every other row's, and the reader has to
   re-find the column. It wraps inside its own column instead.
+- **Batched events to drain (#655).** The facts row carries a count of
+  `receipt.created` events the coordinator has not yet drained — the same set
+  `dev/journal_consume.py pending` lists, derived server-side from that tool's
+  own cursor read (`status_derive.pending_event_count` reuses
+  `Journal.events_since_cursor`, never a second query). It is a liveness fact,
+  not something waiting on him, so it rides the dim ramp like the queue count
+  and never the accent. **Quiet at zero**, the hand-offs idiom one fact over:
+  an empty drain is the steady state, and a `0` sat beside the task counts
+  would read as a scary zero rather than as all-clear. It appears only when
+  events are backing up — the one time it matters.
 
 `dev/capture/status.mjs` guards it against a frozen `status.json` in the
 fixture, and the check worth knowing about is the accent one — reading
