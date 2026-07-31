@@ -37,11 +37,17 @@ __pycache__/
 # argument as question-sigs.json — it records what THIS machine's hook has
 # seen, and a deleted copy costs one silent re-seed, never data.
 .dreamwork/.ledger-lint-mtimes.json
-# and the three-axis posture beside it (#445): same properties for the same
-# reasons — machine-local, re-read every tick, and it describes THIS host's
-# posture rather than the project's, so committing it would export one
+# and the posture axes beside it (#445, #342, #510): same properties for the
+# same reasons — machine-local, re-read every tick, and it describes THIS
+# host's posture rather than the project's, so committing it would export one
 # machine's settings to every checkout.
 .dreamwork/posture
+# The free-text subagent policy (#650) — the same argument again: it names
+# this host's tooling and this operator's model access. Ignored rather than
+# committed does NOT make the standing policy fragile: the default lives in
+# lint.SUBAGENT_POLICY_DEFAULT (committed), and this file is only an
+# override, so a fresh checkout still has a policy in effect.
+.dreamwork/subagent-policy
 # The coordinator inbox: every line points at a report under /tmp, so the file
 # is worthless the moment the session ends — all 8 of today's entries name
 # paths that will not exist tomorrow. Same argument that ignores status.json

@@ -2608,6 +2608,69 @@ DELEGATION_POSTURES = ("own", "assist", "delegate")
 # check_posture).
 POSTURE_AXES = ("pace", "asking", "delegation", "delivery", "orchestration")
 
+# #650 — the subagent policy: the first FREE-TEXT posture field, and the
+# reason it is NOT an axis in `.dreamwork/posture`.
+#
+# Every axis above is a closed set or a number, and that is not incidental:
+# `check_posture`'s whole shape is "a value outside the vocabulary fails
+# loud", which is the property that stops a silent fallback from dropping his
+# choice. Free text has no vocabulary, so it cannot be checked that way — and
+# carrying it INSIDE the line-oriented posture file would cost the CLOSED
+# axes their loudness, twice over:
+#
+#   * A multi-line value needs either an escaped one-liner (where a
+#     hand-inserted real newline then silently truncates the policy) or a
+#     block form whose unterminated case swallows every `axis: value` line
+#     below it. Free text able to eat a closed axis is precisely the failure
+#     this file's fail-loud discipline exists to prevent.
+#   * `write_posture` (watch.py) is a whole-file atomic overwrite, fired by
+#     every posture chip press. Any writer that did not know about the policy
+#     would erase it without a word — and the erasing writer already exists.
+#
+# So the policy lives in its own machine-local sibling,
+# `.dreamwork/subagent-policy`, whose ENTIRE CONTENT is the value: no
+# grammar, nothing to escape, nothing to misparse, and the posture file's
+# parser is untouched — so the closed-set loudness path is not merely
+# preserved, it is unmodified code.
+#
+# This does NOT split one dial across two files. The posture DATATYPE has
+# always spanned more than one file: `watch.resolve_posture` merges
+# `.dreamwork/run-mode` with `.dreamwork/posture` into a single dict, and
+# this is the third source it merges. Each file carries exactly the format it
+# can carry. The #445/#342 widen-not-sibling ruling governs closed-set AXES,
+# and its load-bearing premise — "widening lets the closed-set discipline
+# already guarding pace/asking guard this for free" — is false by
+# construction for free text, which gets nothing for free and endangers what
+# it is stored beside. The ruling's other goal, ONE control surface, is
+# untouched: there is still one `POST /posture`, one arm, one ceremony.
+SUBAGENT_POLICY_FILE = "subagent-policy"
+# Posture field names that are RECOGNISED but do not live in
+# `.dreamwork/posture`. check_posture ERRORs (rather than warning "unknown
+# axis") when one appears there: the posture parser drops the line, so his
+# policy would be silently not in effect — a dropped choice, which is the
+# run-mode/watch-tint hazard and fails loud for the same reason.
+POSTURE_TEXT_FIELDS = {"subagent-policy": f".dreamwork/{SUBAGENT_POLICY_FILE}"}
+
+# His standing subagent policy, verbatim (2026-07-31, folded by #650), and
+# the value in effect whenever `.dreamwork/subagent-policy` is absent — the
+# same absent-derives-a-default shape every other axis holds, except that the
+# default is his prose rather than a stop name. It is COMMITTED here on
+# purpose: the override file is machine-local and gitignored like `posture`
+# itself, so a standing policy that lived only there would not survive a
+# fresh checkout and could not be reviewed in a diff.
+#
+# Copied EXACTLY — wording, punctuation, and typos ("taks") included. This is
+# his policy in his voice; normalising it would make the stored policy differ
+# from the policy he wrote, and a reader could no longer tell which words
+# were his. Long lines are deliberate for the same reason: re-wrapping is a
+# change to the value.
+SUBAGENT_POLICY_DEFAULT = """\
+- easy/trivial/research/scanning tasks: Sonnet 5 low or medium
+- common UI tasks, low stakes, cheap model: use `ccc -y @glm52` (see ccc --help). This won't show up as a claude subagent but is much cheaper for us. get them to use worktrees and you can dispatch an opus5 subagent to run review-and-fix loop (see skill) over glm52's work before merging. This should be preferred over using opus5 directly.
+- when glm52 fails, or for high stakes components (eg with architectural consequences or when setting precedents); common implementation tasks, ui work, etc: opus 5 high or xhigh
+- difficult or very complex taks or those requiring insight or judgement: fable high
+"""
+
 # The conversion of today's run-mode values into the three-axis vocabulary
 # (#445 Q2: "convert the current modes into the new values"). Stated as a
 # mapping, not a rewrite — each old value lands in the new space with NO
@@ -2720,6 +2783,18 @@ def check_posture(dw: Path, watch, rep: Report) -> None:
             continue
         seen_any = True
         k, v = m.group(1), m.group(2)
+        # A free-text field written into the axis file (#650). This is not an
+        # "unknown axis" — the name is recognised, the FILE is wrong — and it
+        # is an ERROR rather than a WARN because `parse_posture_text` drops
+        # the line, so the policy he thought he set would not be in effect and
+        # nothing else would say so. Same hazard as an unknown run-mode.
+        if k in POSTURE_TEXT_FIELDS:
+            rep.add(ERROR, "posture",
+                    f"{k!r} is free text and does not live here — it belongs "
+                    f"in {POSTURE_TEXT_FIELDS[k]}, whose whole content is the "
+                    f"value. A line here is dropped by the parser, so the "
+                    f"policy would silently not be in effect")
+            continue
         if k not in POSTURE_AXES:
             rep.add(WARN, "posture",
                     f"unknown axis {k!r} — recognised: {', '.join(POSTURE_AXES)}")
@@ -2828,6 +2903,56 @@ def check_posture(dw: Path, watch, rep: Report) -> None:
         if orchestration is not None:
             row += f" orchestration={orchestration}"
         rep.add(OK, "posture", row)
+
+
+def check_subagent_policy(dw: Path, rep: Report) -> None:
+    """The free-text subagent policy sibling (#650).
+
+    `.dreamwork/subagent-policy` has NO grammar: the whole file is the value.
+    So there is nothing here to validate against a vocabulary — and that is
+    the point, not a gap. This check reports WHICH policy is in effect (the
+    override file, or the standing default) and says aloud when a present
+    file is inert, which is all a free-text field can honestly be checked
+    for.
+
+    It deliberately never inspects the CONTENT. A policy that happens to
+    contain a line reading `pace: warp` is prose about pace, not a posture
+    axis; a checker that read it as one would have quietly turned free text
+    back into a closed set, and would fail on his own wording. The closed
+    axes keep their loudness because they are in a different file, parsed by
+    code this check does not touch.
+
+    ABSENT is normal and clean: the standing default (SUBAGENT_POLICY_DEFAULT)
+    is in effect, so the loop is never without a policy. It still gets an OK
+    row rather than silence — absence is a real state here (a value IS in
+    effect), and coverage that vanishes when nothing is wrong is the #380
+    hazard.
+    """
+    path = dw / SUBAGENT_POLICY_FILE
+    if not path.exists():
+        rep.add(OK, "subagent-policy",
+                f"absent — the standing default is in effect "
+                f"({len(SUBAGENT_POLICY_DEFAULT.splitlines())} lines)")
+        return
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        rep.add(WARN, "subagent-policy",
+                f"unreadable as UTF-8 ({exc.__class__.__name__}) — the "
+                f"standing default is in effect and nothing else says so")
+        return
+    if not raw.strip():
+        # The inert-file shape check_posture already uses for a file that
+        # parsed to nothing: not an error (the default still applies), but a
+        # file that looks set and is not must not pass in silence. Clearing
+        # the override is `rm`, not an empty write.
+        rep.add(WARN, "subagent-policy",
+                "present but blank — the standing default is in effect; the "
+                "file is inert (delete it, or write a policy)")
+        return
+    rep.add(OK, "subagent-policy",
+            f"override in effect · {len(raw.splitlines())} lines, "
+            f"{len(raw)} chars")
 
 
 PLUGIN_KIND = re.compile(r"^[a-z0-9]+-[a-z0-9-]*[a-z0-9]$")
@@ -4934,6 +5059,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_watch_tint(dw, watch, rep)
     check_run_mode(dw, watch, rep)
     check_posture(dw, watch, rep)
+    check_subagent_policy(dw, rep)
     check_plugin_commands(dw, watch, rep)
     check_submissions(dw, rep)
     check_skill_version(dw, rep)

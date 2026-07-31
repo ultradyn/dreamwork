@@ -3748,6 +3748,12 @@ def _summary_posture(v):
     # delegation_label is display chrome and never rides out unreviewed.
     # delivery and orchestration are real posture an external consumer needs
     # to route on, not chrome.
+    #
+    # `subagent_policy` (#650) is DELIBERATELY not here. It is his authored
+    # prose, which is the SUMMARY_DENIED class (dreams, chats — "his words"),
+    # and it names his local tooling. An external consumer routes on the
+    # axes; it has no business reading the policy. The decision is recorded
+    # rather than defaulted, per SUMMARY_ALLOWED's own rule.
     return {k: v.get(k) for k in
             ("pace", "asking", "delegation", "delivery", "orchestration",
              "source")}
@@ -4003,12 +4009,43 @@ def read_posture_file(target):
     return parse_posture_text(raw)
 
 
+def read_subagent_policy(target):
+    """The free-text subagent policy override (#650), or None if unset.
+
+    The whole file IS the value: nothing is parsed, escaped, normalised or
+    re-wrapped, so the text round-trips byte for byte. Read through
+    `read_text_full`, NOT `read_text` — this is a durable value that a
+    control writes back, and the bounded display reader would silently return
+    a short copy that a later write would then persist over the whole (#632,
+    the defect that deleted 12 answered questions).
+
+    A present-but-blank file reads as unset, so the standing default stands
+    and "no policy" is expressed by deleting the file rather than by an empty
+    one that looks set. lint (`check_subagent_policy`) is what says aloud
+    that such a file is inert — the same division of labour posture keeps,
+    where the parser drops and lint is the loud layer.
+    """
+    lint = _posture_vocab()
+    raw = read_text_full(
+        os.path.join(target, ".dreamwork", lint.SUBAGENT_POLICY_FILE))
+    if raw is None or not raw.strip():
+        return None
+    return raw
+
+
 def resolve_posture(target):
-    """Effective three-axis posture for the dashboard and collect().
+    """Effective posture for the dashboard and collect().
 
     Absent file → derived from run-mode (lint.derive_posture). Present file
     overlays any valid axes on that derivation. Always returns pace, asking,
     delegation, source ('derived'|'file'), and delegation_label for display.
+
+    #650: the datatype also carries `subagent_policy` (free text) and its own
+    `subagent_policy_source`. That source is SEPARATE from `source` on
+    purpose — `source` says where the AXES came from, and a policy override
+    must not make the axes claim to be file-set when they are still derived.
+    The policy is a third file merged here, which is the shape this function
+    already had: it has always merged `run-mode` with `posture`.
     """
     lint = _posture_vocab()
     mode = read_run_mode(target)
@@ -4032,6 +4069,10 @@ def resolve_posture(target):
             if k in file_vals:
                 out[k] = file_vals[k]
     out["delegation_label"] = lint.delegation_posture(int(out["delegation"]))
+    policy = read_subagent_policy(target)
+    out["subagent_policy"] = (lint.SUBAGENT_POLICY_DEFAULT if policy is None
+                              else policy)
+    out["subagent_policy_source"] = "default" if policy is None else "file"
     return out
 
 
@@ -4069,6 +4110,35 @@ def write_posture(target, pace, asking, delegation, delivery=None,
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         atomic_write_text(path, body)
+        return True
+    except OSError:
+        return False
+
+
+def write_subagent_policy(target, text):
+    """Persist a subagent-policy override (#650). False if refused.
+
+    Writes `text` VERBATIM — no trailing-newline normalisation, no escaping,
+    no re-wrapping. The value IS the file, so a writer that tidied it would
+    make the stored policy differ from the policy that was set, and the
+    round-trip this field's whole design buys would be gone.
+
+    It cannot disturb the posture axes and `write_posture` cannot disturb it:
+    they are different files. That is the property that made the sibling the
+    right home — `write_posture` is a whole-file overwrite fired by every
+    chip press, and a policy sharing that file would be erased by any writer
+    that had not been taught to carry it through.
+
+    Refuses a blank write: an empty file is inert, so a caller that means "no
+    policy" must delete the file rather than leave one that looks set.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return False
+    lint = _posture_vocab()
+    path = os.path.join(target, ".dreamwork", lint.SUBAGENT_POLICY_FILE)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        atomic_write_text(path, text)
         return True
     except OSError:
         return False
@@ -5713,6 +5783,11 @@ def __getattr__(name):
         "POSTURE_STOPS_ORCHESTRATION",
         "DELEGATION_POSTURES", "POSTURE_AXES", "derive_posture",
         "delegation_posture", "RUN_MODE_TO_POSTURE",
+        # #650 — the free-text policy field's name, home and standing value.
+        # Proxied for the same reason as the stop sets: lint owns the schema
+        # and this module consumes it, never restates it.
+        "SUBAGENT_POLICY_FILE", "SUBAGENT_POLICY_DEFAULT",
+        "POSTURE_TEXT_FIELDS",
     ):
         return getattr(_posture_vocab(), name)
     raise AttributeError(f"module 'watch' has no attribute {name!r}")
