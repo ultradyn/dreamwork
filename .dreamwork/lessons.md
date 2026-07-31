@@ -764,10 +764,13 @@ this shape and convert opportunistically.)
   because the feature was ABSENT, printed one tidy `FAILED` line each, and read
   exactly like discriminating reds. Two of three proofs were worthless and
   nothing announced it — the tell was `git status` showing only the test file
-  modified. So the rule gains a mechanism and a check. Mechanism: **snapshot to
-  a LANE-PRIVATE scratch dir and restore from the snapshot** —
-  `S="$(dev/lane_scratch.py snap)"`, then `cp f "$S/f"` / `cp "$S/f" f` — which
-  cannot reach anything but the file injected into; `git checkout` is correct only
+  modified. So the rule gains a mechanism and a check. Mechanism: **snapshot the
+  FIXED file to a LANE-PRIVATE scratch dir and restore from that snapshot** —
+  `S="$(dev/lane_scratch.py snap)"`, then `cp f "$S/f"` (snapshot the FIXED file,
+  the state you must END on — never the pre-fix one, or restore silently undoes
+  your work and `cmp` certifies the wrong file, #608) / `cp "$S/f" f` (restore
+  after the red) — which cannot reach anything but the file injected into; `git
+  checkout` is correct only
   once the work under test is committed. **The `$S` must be lane-private, and
   the harness scratchpad is not** (#652, 2026-07-31): every concurrent lane is a
   subagent of one CLI session and inherits one `CLAUDE_CODE_SESSION_ID`, so all
