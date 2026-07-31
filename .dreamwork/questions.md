@@ -2,42 +2,6 @@
 
 ## Open
 
-- **P1 · 2026-07-31 17:20 — #614 (blocks #641): websockets — everything you asked for lands, but the analysis
-  parts ways with you on the wire protocol.** One decision.
-  Plan: `.dreamwork/docs/plans/ws-delta-transport.md`. Your goals — faster, more efficient, partial
-  deltas, event-pushed — all survive; since you named websockets explicitly, the divergence is put
-  to you rather than assumed.
-
-  **First, a measurement that changes the problem.** The inefficiency is real but **mislocated**.
-  `/data.json` is **917,407 bytes**, uncompressed, ~200 ms; `/mtime` is 36 bytes / 3 ms, so the poll
-  is nearly free. The damage is that the 2 s change-gate **never closes**: a sqlite read moves
-  `ledger.sqlite3-shm`'s mtime, `-shm` is not in `WATCHED_MTIME_IGNORED` (`watch.py:3654`), so
-  **serving `/data.json` marks the state changed** and the next poll refetches it — self-perpetuating,
-  15 of 15 polls "changed" over 30 s, reproduced from a single fetch. Real change in the same window:
-  21 bytes when quiet, 5.4 KB over 60 s including a commit — **0.6% of what was shipped**. Filed as
-  **#620 and since LANDED** (`49552469`) — so this half is off your plate and off the decision. Two
-  corrections from that lane, since they change what you are being asked: the fix ships a **suffix
-  rule**, not a filename list, so `session-index.sqlite3` is covered in advance; and **excluding
-  `-wal` as well — which the plan proposed — was measured to be wrong** and was not shipped, because
-  with `-wal` also excluded a real write stops advancing `watched_mtime` at all, i.e. silent
-  blindness in place of a busy gate.
-
-  **`rec`: SSE + derived deltas + the existing journaled POSTs as the RPC direction**, phased
-  0→3 — push and deltas with no hand-rolled wire protocol, no second write path, reversible at each
-  step; websocket stays available behind named triggers at phase 4. The load-bearing unknown was
-  **verified, not inferred**: a probe streamed SSE from stdlib `ThreadingHTTPServer` to real
-  Chromium, held concurrency, and auto-resumed via `Last-Event-ID` with zero client reconnect code.
-  **Alt — `ws`: websocket push-only** — same phases with phase 2 swapped for a hand-rolled RFC 6455
-  codec (~250–400 lines to write and own, hand reconnect/resume, a new Upgrade-path authority story),
-  or a vendored WS module, which would need you to relax the stdlib-only server ruling.
-  RPC stays on POST either way: **WS-RPC beside the journal is refuted independently of protocol
-  taste** — it is a second write path beside the receipt/idempotency/replay/audit spine, which is
-  the two-descriptions rule applied to writes.
-
-  **If you say nothing:** nothing is built — the plan authorises no code. `rec` is the default when
-  implementation is planned, and phase 0 (the `-shm` fix) proceeds regardless, since it is just a bug.
-  Accepted answers: `rec` · `ws` · free text.
-
 - **P2 · 2026-07-31 01:50 — #572: GitHub etiquette — one fork left: may an Internal Reference name several posts?**
   You answered the other four on 2026-07-31 03:57 (`rec` on Q1, Q3, Q4, Q5, with the `gh` extension
   preferred over the alias and no signature needed). Those are settled and written up in
@@ -143,6 +107,93 @@
 
 ## Answered
 
+- **P1 · 2026-07-31 17:20 — #614 (blocks #641): websockets — everything you asked for lands, but the analysis
+  parts ways with you on the wire protocol.** One decision.
+  Plan: `.dreamwork/docs/plans/ws-delta-transport.md`. Your goals — faster, more efficient, partial
+  deltas, event-pushed — all survive; since you named websockets explicitly, the divergence is put
+  to you rather than assumed.
+
+  **First, a measurement that changes the problem.** The inefficiency is real but **mislocated**.
+  `/data.json` is **917,407 bytes**, uncompressed, ~200 ms; `/mtime` is 36 bytes / 3 ms, so the poll
+  is nearly free. The damage is that the 2 s change-gate **never closes**: a sqlite read moves
+  `ledger.sqlite3-shm`'s mtime, `-shm` is not in `WATCHED_MTIME_IGNORED` (`watch.py:3654`), so
+  **serving `/data.json` marks the state changed** and the next poll refetches it — self-perpetuating,
+  15 of 15 polls "changed" over 30 s, reproduced from a single fetch. Real change in the same window:
+  21 bytes when quiet, 5.4 KB over 60 s including a commit — **0.6% of what was shipped**. Filed as
+  **#620 and since LANDED** (`49552469`) — so this half is off your plate and off the decision. Two
+  corrections from that lane, since they change what you are being asked: the fix ships a **suffix
+  rule**, not a filename list, so `session-index.sqlite3` is covered in advance; and **excluding
+  `-wal` as well — which the plan proposed — was measured to be wrong** and was not shipped, because
+  with `-wal` also excluded a real write stops advancing `watched_mtime` at all, i.e. silent
+  blindness in place of a busy gate.
+
+  **`rec`: SSE + derived deltas + the existing journaled POSTs as the RPC direction**, phased
+  0→3 — push and deltas with no hand-rolled wire protocol, no second write path, reversible at each
+  step; websocket stays available behind named triggers at phase 4. The load-bearing unknown was
+  **verified, not inferred**: a probe streamed SSE from stdlib `ThreadingHTTPServer` to real
+  Chromium, held concurrency, and auto-resumed via `Last-Event-ID` with zero client reconnect code.
+  **Alt — `ws`: websocket push-only** — same phases with phase 2 swapped for a hand-rolled RFC 6455
+  codec (~250–400 lines to write and own, hand reconnect/resume, a new Upgrade-path authority story),
+  or a vendored WS module, which would need you to relax the stdlib-only server ruling.
+  RPC stays on POST either way: **WS-RPC beside the journal is refuted independently of protocol
+  taste** — it is a second write path beside the receipt/idempotency/replay/audit spine, which is
+  the two-descriptions rule applied to writes.
+
+  **If you say nothing:** nothing is built — the plan authorises no code. `rec` is the default when
+  implementation is planned, and phase 0 (the `-shm` fix) proceeds regardless, since it is just a bug.
+  Accepted answers: `rec` · `ws` · free text.
+  - **Note (human, via watch, 2026-07-31 19:09):** Note: 200ms json parse
+    on frontend can cause stutters i think. might depend on the browser.
+    --- sqlite shm: ahh, yeah we should fix that. seems like you're already
+    on it 👌 --- why do SSE instead of websockets? wait i'll check the
+    ws-delta-transport.md doc. --- also re `"one renderer, and it is the
+    Python one" (dreamhub-design.md:197)` from that doc, we should relax
+    this now since we're changing over to react based webui. --- Re second
+    descriptions of state, I'm wiling to relax things a bit -- the webui
+    state is secondary, the "no second description of state, read or write"
+    behind G6 is specifically for the on-disk master state of the main
+    dreamworker and/or dreamhub. So like we shouldn't split state.json
+    across 2 files that diverge, kinda thing. The webui state is a
+    secondary kind of state and is fine to be a 'second description' of
+    state. You should update our documentation etc to reflect this. --- All
+    that said, re SSE, I am fine going with SSE. probably simplifies
+    things. Also we can do like a deeper refresh from time to time if we
+    want to be sure state is accurate and nothing was wrong from missing
+    deltas or whatever (if that does happen, though, the frontend should
+    msg the backend with a divergence alert which should contain useful
+    metadata and the divergence and be enough for us to debug reliably
+    later).
+  - **Comment (via watch, 2026-07-31 19:12) — `SSE` taken, plus two standing constraints relaxed:**
+    *"200ms json parse on frontend can cause stutters i think. might depend on the browser."* ·
+    *"sqlite shm: ahh, yeah we should fix that. seems like you're already on it"* ·
+    *"also re `\"one renderer, and it is the Python one\" (dreamhub-design.md:197)` from that doc,
+    we should relax this now since we're changing over to react based webui."* ·
+    *"Re second descriptions of state, I'm wiling to relax things a bit -- the webui state is
+    secondary, the \"no second description of state, read or write\" behind G6 is specifically for
+    the on-disk master state of the main dreamworker and/or dreamhub. So like we shouldn't split
+    state.json across 2 files that diverge, kinda thing. The webui state is a secondary kind of
+    state and is fine to be a 'second description' of state. You should update our documentation
+    etc to reflect this."* ·
+    *"All that said, re SSE, I am fine going with SSE. probably simplifies things. Also we can do
+    like a deeper refresh from time to time if we want to be sure state is accurate and nothing was
+    wrong from missing deltas or whatever (if that does happen, though, the frontend should msg the
+    backend with a divergence alert which should contain useful metadata and the divergence and be
+    enough for us to debug reliably later)."*
+  - **Folded (2026-07-31 19:16) — this is the session's most consequential ruling and it unblocks
+    two P1s.** `SSE` taken, so **#641 is unblocked**; his two additions to the plan are recorded on
+    it — a periodic deeper refresh, and a frontend→backend **divergence alert** whose bar is his own
+    (*"enough for us to debug reliably later"*), which should ride the existing journaled POST spine
+    rather than open a second write path. His 200ms-parse note argues for deltas on **responsiveness**
+    grounds, not only bandwidth — and means the deeper refresh must not reintroduce the stutter it
+    exists to catch.
+    **The bigger half is the doctrine.** He did not abolish the second-truth rule, he **scoped** it:
+    it binds the **on-disk master state** of the dreamworker/dreamhub — do not split `state.json`
+    across two diverging files — and the **webui's state is secondary and may be a second
+    description**. Together with relaxing *"one renderer, and it is the Python one"*, that is the
+    **G2 ruling `#591`/`#505` were waiting on**, so **#630 is unblocked** too. Filed as **#668** to
+    update the docs as he asked, carrying both the verbatim ruling and — deliberately — what it does
+    **not** relax, because the failure mode here is reading a scoping as a general licence.
+    `#620` (the `-shm` fix he confirmed) landed earlier today as `49552469`.
 - **P1 · 2026-07-31 17:20 — #613 (blocks #631): the live session-log view — three calls before the design locks.**
   **Sub-decisions:** `Q1`, `Q2`, `Q3`.
   **NARROWED 2026-07-31 18:58 after your answer below — the visual calls are SETTLED and off your
