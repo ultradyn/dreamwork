@@ -2,60 +2,32 @@
 
 ## Open
 
-- **P2 · 2026-07-31 01:50 — #572: GitHub PR/comment etiquette — the design forks you asked to be asked about.**
-  Your add-idea (journal ord=63): a protocol of etiquette around posting as you on GitHub. Each PR/comment
-  starts with an agent-attribution header and ends with a signoff carrying an `Internal Reference: <id>` that
-  links back to a dreamwork task. The `gh` CLI gets a stdlib-python-only shim that auto-adds these. You said:
-  *"Asking Level: ask me (please treat this task as if your posture says that the asking level is to ask me
-  about design choices etc)."* — so here are the forks.
+- **P2 · 2026-07-31 01:50 — #572: GitHub etiquette — one fork left: may an Internal Reference name several posts?**
+  You answered the other four on 2026-07-31 03:57 (`rec` on Q1, Q3, Q4, Q5, with the `gh` extension
+  preferred over the alias and no signature needed). Those are settled and written up in
+  `.dreamwork/docs/plans/gh-etiquette-shim.md` — nothing there is waiting on you.
 
-  **`Q1` — the header text.** You sketched `*Written by my Agent*` and noted *"capitalization needs fixing
-  at least."* **`rec`: `*Posted by Max's dreamwork agent*`**, italic, one line, at the top of the body.
-  Alternatives: your original `*Written by my Agent*` (anonymous — whose agent?); `*AI-assisted*` (weaker —
-  says nothing about agency). The rec names whose agent it is without pretending to be you.
+  **Your Q2 pushback, half answered by the code.** *"do we want to leak the sequence id though?"* — the
+  receipt id is not a sequence. `user_events/sqlite.py:708` mints it as
+  `uuid5(NAMESPACE_URL, "ud-dreamwork.receipt:" + client_action_id)`, a hash of a random uuid4: no ordinal,
+  no timestamp, no host. Publishing one reveals nothing about how many commands you have issued or when.
+  You were right that a sequence exists — the `receipts` table has a monotonic `sequence` column — but it
+  is not what the footer would carry, and the shim will say so in its own docstring so a later change
+  cannot quietly swap one for the other.
 
-  **`Q2` — the signoff + Internal Reference.** The footer's job is traceability: anyone reading can follow
-  the reference back to the task/receipt that produced the text. **`rec`: a two-line footer — a horizontal
-  rule, then `*Posted by Max's dreamwork agent · Internal Reference: <receipt-id>*`** where `<receipt-id>`
-  is the durable journal receipt id from the `/command` that dispatched the work (the same id the chat
-  page and the ledger already use). This needs no new id sequence — the receipt id IS the internal
-  reference, and it is already durable, unique, and linked. Alternative: a new sequential id per outbound
-  message (a second sequence to maintain and map).
+  **What is actually left.** *"what if there are multiple comments left under one /command dispatch?"* —
+  they would share one reference, because they share one cause. That is either right or wrong depending on
+  what you want the reference to promise a reader who follows it:
 
-  **`Q3` — the `gh` shim mechanism.** Constraint: stdlib python only. **`rec`: a python script
-  (`dev/gh_shim.py`) that wraps `gh pr create` / `gh issue comment` / `gh pr comment`, reads the body
-  (from `--body`, `--body-file`, or `$EDITOR`), prepends/appends the header/footer, and delegates to the
-  real `gh` with the modified body. Installed as a shell alias or a `gh` extension (`gh-dreamwork`) — the
-  alias is simpler, the extension is more discoverable.** The script itself is ~100 lines of argparse +
-  subprocess. The harder question is the install surface: do you want it as a fish alias (one line in
-  your config), a `gh` extension (a `gh-dreamwork` executable on PATH), or both?
+  - **`rec` — it points at the dispatch.** One id, possibly several posts; the docs page says *"this is the
+    instruction that produced this text"*. GitHub already permalinks the individual comment, so nothing is
+    lost. No new identifier.
+  - **A per-post discriminator** (`Internal Reference: <receipt-id>#2`). Resolves to exactly one post, but
+    the shim must keep durable per-receipt state, and that counter *is* an ordinal — reintroducing the leak
+    shape you flagged, scoped to one dispatch.
 
-  **`Q4` — the testing phase you specified.** You said: *"for the initial gh shim we should insert nothing,
-  then we can test with some inserted commented stuff and see if it's possible to get it 'back out' from
-  other posts (or does github sanitize it), and once we've done due testing then I will sign off on
-  release."* **`rec`: three phases, exactly as you said.** Phase 1: the shim passes bodies through
-  unchanged (verifies the interception works at all). Phase 2: it inserts the header/footer as an HTML
-  comment (`<!-- Posted by Max's dreamwork agent · Internal Reference: <id> -->`) — invisible in the
-  rendered markdown but present in the source; we verify whether GitHub preserves or strips it. Phase 3
-  (release, your signoff): the visible header/footer ships. No cryptographic signature (`<!-- sig: … -->`)
-  in v1 — it is a second system (key management, verification endpoint) and the Internal Reference already
-  gives traceability; if authenticity becomes a real concern it is a follow-up.
-
-  **`Q5` — the docs page.** The footer links to
-  `https://dreamwork.ultradyn.ai/docs/q/what-is-an-internal-reference`, which does not exist yet.
-  **`rec`: the link ships in the footer from day one (it 404s today); the page is a follow-up task in
-  dreamhub's docs surface.** Alternative: omit the link until the page exists (the reference still works
-  as a lookup key, just not a clickable one).
-
-  **If you say nothing:** nothing is built — no shim, no header/footer, no GitHub posting change. The
-  recs stand as the design's defaults when you engage.
-  Accepted answers: `rec` (takes all five) · per-question (`Q1: …`) · free text.
-  - **Answer (via watch, 2026-07-31 03:57):** 1. rec 2. hmm, do we want
-    to leak the sequence id though? also what if there are multiple
-    comments left under one /command dispatch? 3. rec; the extension is
-    better i feel, so we should recommend that i think but also we can
-    provide the alias as a backup. 4. rec. no need for a sig at all
-    probably, but the option is there for us if we want. 5. rec
+  **If you say nothing:** the `rec` stands and nothing is built yet regardless — Q4's phase 3 still needs
+  your signoff before anything visible ships under your name.
 
 - **P2 · 2026-07-31 07:20 — (your ask via /answers) the hand-off fold backlog: not unmerged, and now caught.**
   Your ask: *"Pending hand-offs to fold: are these things that need to be folded into master but haven't
