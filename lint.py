@@ -3831,6 +3831,62 @@ HANDOFF_OBLIGATION_PHRASE = (
 )
 
 
+def brief_corpus_reach(root: Path) -> str:
+    """Say whether the committed brief corpus reaches current task history.
+
+    The four brief checks can truthfully describe the files they examined and
+    still imply current coverage after brief persistence stops.  Compare the
+    largest leading id in the corpus with the largest task id named by a commit
+    subject, and report filenames that cannot participate in that comparison
+    rather than silently dropping them (#702).
+
+    This is an id-reach signal, not a completeness proof: multiple dispatches
+    can share one task id.  Its deliberate false-green is covered by the tests
+    and reported by #766's lane.
+    """
+    briefs_dir = root / ".dreamwork" / "docs" / "briefs"
+    paths = [p for p in briefs_dir.glob("*.md") if p.is_file()]
+    numbered: list[int] = []
+    unnumbered = 0
+    for path in paths:
+        match = re.match(r"(\d+)", path.name)
+        if match:
+            numbered.append(int(match.group(1)))
+        else:
+            unnumbered += 1
+
+    try:
+        subjects = subprocess.check_output(
+            ["git", "-C", str(root), "log", "--format=%s"],
+            stderr=subprocess.DEVNULL, text=True, timeout=30,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        subjects = ""
+    task_ids = [int(value) for value in re.findall(r"#(\d+)", subjects)]
+    unknown = f"{unnumbered} unnumbered brief(s) cannot be ordered"
+    if not numbered or not task_ids:
+        return (
+            "coverage reach UNKNOWN — "
+            f"{len(numbered)} numbered brief(s), {unknown}, "
+            f"{len(task_ids)} task id mention(s) in commit subjects"
+        )
+
+    newest_brief, newest_task = max(numbered), max(task_ids)
+    gap = newest_task - newest_brief
+    if gap > 0:
+        return (
+            f"HISTORICAL ONLY — newest numbered brief #{newest_brief}; task "
+            f"history reaches #{newest_task} ({gap}-id gap; {unknown})"
+        )
+    if gap == 0:
+        return f"current through task #{newest_task} (0-id gap; {unknown})"
+    return (
+        "coverage reach UNKNOWN — newest numbered brief "
+        f"#{newest_brief} is {-gap} id(s) ahead of task history #{newest_task}; "
+        f"{unknown}"
+    )
+
+
 def resolve_handoff_obligation_cutoff(root: Path) -> str | None:
     """The commit that introduced the hand-off dispatch obligation into SKILL.md.
 
@@ -4051,7 +4107,7 @@ def check_brief_handoff_obligation(dw: Path, rep: Report) -> None:
         rep.add(
             OK, "briefs",
             f"{n_in} brief(s) in scope after hand-off obligation, "
-            f"{n_gf} grandfathered (#398)",
+            f"{n_gf} grandfathered (#398); {brief_corpus_reach(root)}",
         )
 
 
@@ -4233,7 +4289,8 @@ def check_brief_worktree_abs_inbox(dw: Path, rep: Report) -> None:
         rep.add(
             OK, "briefs",
             f"{n_wt} worktree-naming brief(s), {n_in} in scope after "
-            f"absolute-inbox rule, {n_gf} grandfathered (#405)",
+            f"absolute-inbox rule, {n_gf} grandfathered (#405); "
+            f"{brief_corpus_reach(root)}",
         )
 
 
@@ -4446,7 +4503,8 @@ def check_brief_lane_scratch(dw: Path, rep: Report) -> None:
         rep.add(
             OK, "briefs",
             f"{n_t} restore-teaching brief(s), {n_in} in scope after "
-            f"lane-private snapshot rule, {n_gf} grandfathered (#652)",
+            f"lane-private snapshot rule, {n_gf} grandfathered (#652); "
+            f"{brief_corpus_reach(root)}",
         )
 
 
@@ -4729,7 +4787,7 @@ def check_brief_lane_owns(dw: Path, rep: Report) -> None:
             OK, "briefs",
             f"{len(wt_briefs)} worktree-naming brief(s), {len(in_scope)} in "
             f"scope after lane-owns rule, {len(grandfathered)} grandfathered "
-            f"(#465)",
+            f"(#465); {brief_corpus_reach(root)}",
         )
 
 
