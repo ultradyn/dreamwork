@@ -68,5 +68,13 @@ Cited by line so you can read the whole entry: `.dreamwork/lessons.md`.
 1. **Commit on your branch**, in the worktree, with `git commit --only <paths>` — never a bare `git commit`, other agents hold this tree and a bare commit sweeps their staged files into yours.
 2. **Append ONE line to `## Pending`** in the ABSOLUTE main-checkout path `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/handoffs.md`, naming task `#586` and your sha(s) — **and commit it**. Writing it is not committing it; the first lane ever asked for a hand-off appended it and left it unstaged. Note `handoffs.md` has `## Folded` first and `## Pending` second, both append-only.
 3. **Report to `/home/xertrov/.cache/agent-comms/ud-dreamwork/coord-inbox.md`**, every line prefixed `[lane-586routes] `, starting with your startup handshake before you work and ending with a `DONE` report naming shas, what you measured, each red-proof injection and its result, and anything you are still uncertain about.
+
+   **Your own inbox — create and watch it so I can steer you mid-task:**
+   `/home/xertrov/.cache/agent-comms/ud-dreamwork/lane-586routes/inbox.md`
+   (absolute, in the MAIN checkout's comms dir — a worktree lane given a relative
+   path writes its own copy and the coordinator never sees it.) If you have a
+   background-monitor tool, `mkdir -p` its parent, create the file, and tail it;
+   name it in your handshake. If you have no such tool, say `watching-inbox: no`
+   and I will treat the channel as one-way.
 4. **Do NOT use `attn`.** Only the coordinator talks to Max.
 5. Do not merge, do not push, do not deploy. The coordinator merges after verifying guards on the merged tree.
