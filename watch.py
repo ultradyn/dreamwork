@@ -4064,8 +4064,19 @@ def parse_posture_text(raw):
 
 
 def read_posture_file(target):
-    """Axes present and valid in `.dreamwork/posture`, or {} if absent."""
-    raw = read_text(os.path.join(target, ".dreamwork", "posture"))
+    """Axes present and valid in `.dreamwork/posture`, or {} if absent.
+
+    Read through `read_text_full` (#659) — not because `read_text` truncates
+    (since #632 it does not) but because this is the reader the NEXT control
+    reader gets copied from, and what a copy carries is the name. These axes
+    feed a read-modify-write: POST /posture carries delivery and orchestration
+    forward out of `resolve_posture`, and `write_posture` rebuilds the whole
+    file, so an axis the read did not recover is an axis the next chip press
+    erases. `read_text_full` states that requirement in the line a reviewer
+    reads, so a re-bound has to contradict it out loud instead of arriving as
+    a changed default. `read_subagent_policy` is the sibling and says the same.
+    """
+    raw = read_text_full(os.path.join(target, ".dreamwork", "posture"))
     if raw is None:
         return {}
     return parse_posture_text(raw)
@@ -4076,10 +4087,11 @@ def read_subagent_policy(target):
 
     The whole file IS the value: nothing is parsed, escaped, normalised or
     re-wrapped, so the text round-trips byte for byte. Read through
-    `read_text_full`, NOT `read_text` — this is a durable value that a
-    control writes back, and the bounded display reader would silently return
-    a short copy that a later write would then persist over the whole (#632,
-    the defect that deleted 12 answered questions).
+    `read_text_full`, NOT `read_text` — this is a durable value that a control
+    writes back, and `read_text` is the display-shaped name that still takes a
+    `limit`, so only the named-whole reader makes a re-bound here contradict
+    its own call site (#632, the defect that deleted 12 answered questions;
+    #659, which is why `read_posture_file` now reads the same way).
 
     A present-but-blank file reads as unset, so the standing default stands
     and "no policy" is expressed by deleting the file rather than by an empty

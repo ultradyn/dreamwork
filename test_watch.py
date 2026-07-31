@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for watch.py's data collector. Run: python3 test_watch.py"""
 
+import ast
 import contextlib
 import errno
 import hashlib
@@ -9586,15 +9587,89 @@ class TestPosture(unittest.TestCase):
                  "source"])
 
     def test_policy_is_read_whole_not_through_the_bounded_reader(self):
-        """#632: `read_text` truncates silently at 200k and is for DISPLAY. A
-        durable value a control writes back must be read whole, or a later
-        write persists a short copy over the full one."""
+        """#632: a durable value a control writes back must be read whole, or
+        a later write persists a short copy over the full one.
+
+        What this reds on, stated so it is not overclaimed: an explicitly
+        BOUNDED read at any cap below the fixture. It does NOT distinguish
+        `read_text_full` from `read_text`, because since #632 those are
+        synonyms — that half is #659's source guard below, which is the only
+        instrument that can see a name."""
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
             big = "x" * 250_000 + "\nTAIL-MARKER\n"
             self.assertTrue(watch.write_subagent_policy(d, big))
             self.assertEqual(watch.read_subagent_policy(d), big)
             self.assertIn("TAIL-MARKER", watch.resolve_posture(d)["subagent_policy"])
+
+    # ── #659 the reader exemplar: imitation is the transmission ──────────
+    def test_a_triple_only_press_cannot_lose_a_tail_axis(self):
+        """The BYTES half of #659, on the exemplar's own read-modify-write.
+
+        POST /posture that omits orchestration carries the current one forward
+        out of `resolve_posture`, and `write_posture` rebuilds the WHOLE file
+        — so an axis the read did not recover is an axis the press erases,
+        silently, with a 202. The fixture puts `orchestration` past 200,000
+        chars of comment padding, the historic cap and the exact shape that
+        deleted twelve answered entries, so any bound anywhere in that chain
+        reds here instead of resetting one of his axes to the default.
+
+        It is deliberately paired with the source guard below and neither is
+        redundant: this one cannot see a call site that merely names the
+        display reader, and that one cannot see a whole read someone slices
+        afterwards.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            path = os.path.join(d, ".dreamwork", "posture")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("pace: hot\nasking: ask\ndelegation: 2\n")
+                f.write("# pad\n" * 40_000)
+                f.write("orchestration: orchestrator\n")
+            self.assertGreater(os.path.getsize(path), 200_000)
+            self.assertEqual(
+                watch.read_posture_file(d).get("orchestration"),
+                "orchestrator", "the reader itself lost the tail axis")
+            self.assertEqual(
+                self._post(base + "/posture", {
+                    "pace": "idle", "asking": "auto", "delegation": 3}), 202)
+            got = watch.read_posture_file(d)
+            self.assertEqual(got.get("orchestration"), "orchestrator",
+                             "a triple-only press erased his orchestration "
+                             "axis — #632's mechanism on the posture file")
+            self.assertEqual(got.get("pace"), "idle")
+            self.assertEqual(got.get("delegation"), 3)
+
+    def test_control_readers_name_the_whole_read(self):
+        """#659: #632 removed the instances and left the ATTRACTOR.
+
+        `read_posture_file` is the nearest model anyone copies when adding a
+        control reader, and it read through `read_text` — safe today, but the
+        name carries no requirement, so the copy inherits a call site where a
+        re-bound would arrive as a changed default rather than as a visible
+        contradiction. Both durable control readers are asserted TOGETHER: a
+        safe exemplar sitting beside an unsafe one still teaches the unsafe
+        idiom, which is the whole of the bug.
+
+        Called names come from the AST, not from a substring of the source, so
+        a docstring or comment that merely mentions `read_text_full` cannot
+        green this — and both directions are asserted, because "names the safe
+        one" and "names no bounded one" are separately falsifiable.
+        """
+        for fn in (watch.read_posture_file, watch.read_subagent_policy):
+            tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+            called = {n.func.id for n in ast.walk(tree)
+                      if isinstance(n, ast.Call)
+                      and isinstance(n.func, ast.Name)}
+            self.assertIn(
+                "read_text_full", called,
+                f"{fn.__name__} must read WHOLE by name — it is the model the "
+                "next control reader gets copied from (#659)")
+            for unsafe in ("read_text", "read_text_bounded"):
+                self.assertNotIn(
+                    unsafe, called,
+                    f"{fn.__name__} calls {unsafe}: its result feeds a "
+                    "whole-file rebuild, and a short read there is #632")
 
     def test_remind_posts_resolved_posture_to_seamed_inbox(self):
         """#551: POST /remind composes the resolved five-axis posture + a
