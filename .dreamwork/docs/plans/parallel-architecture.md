@@ -26,9 +26,24 @@ and concluded it *is* the bottleneck, not just feels like one. Both halves
 of that are now sharper:
 
 - **watch.py is 15,563 lines** (verified `wc -l`, 2026-07-30) — nearly 4×
-  the original measurement, and **still the single deployed file** (the
-  single-file, no-build, one-authority deploy it predicted the split must
-  not break is intact: `watch-design.md`'s "one file by design" line).
+  the original measurement, and still the largest single file.
+  ~~**still the single deployed file** (the single-file, no-build,
+  one-authority deploy it predicted the split must not break is intact:
+  `watch-design.md`'s "one file by design" line)~~ — **that parenthesis was
+  already stale when written and is corrected here (2026-07-31, `#633`)**;
+  this doc's own "What must not break" section below supersedes all three of
+  its claims. Deploy ships a **directory**, not one file (`#480`/`#425`,
+  `ship_siblings`); **no-build was retired 2026-07-30** (his `#505` Q2 ruling,
+  `0f97df03`); and **one-authority now reads per-surface** — he ruled
+  2026-07-31 17:03 that the UI is **transitioning to a component-based React
+  web UI** (`#591`, receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`), with the
+  claude-design breakpoint component-level and staged. The second-truth rule
+  is untouched by that: the component surface is **derived** (wrappers
+  compiled from the same `client/*.js` `watch.py` serves, no markup restated),
+  and a hand-maintained twin of an existing surface is still refused. What
+  *does* survive from the original claim, and is this section's actual point,
+  is the ownership fact below: `watch.py` still admits **one writer at a
+  time**, and that is the bottleneck — not the deploy shape.
 - **The binding constraint on fan-out is file ownership, not model capacity
   and not load.** Measured at peak concurrency five
   (`dogfood-orchestration.md:313–321`): *"I could run eight. I cannot run
@@ -304,10 +319,24 @@ differed from the candidate list:**
   get one owner" is now also "the writer is one module, imported not copied"
   — a second instance of routing around the monolith by reuse, not by split.
 - **The `#112` components module** (the original's seam 1) **did not land as
-  a module split.** The components vocabulary stayed inlined. The point is
-  not that it was wrong — it is that *no batch has yet demanded it*: the
-  fleet has run for days with one `watch.py` writer at a time, and the
-  throughput loss was absorbed by routing everything else READ-ONLY.
+  a *Python* module split — but the client half has since been extracted.**
+  ~~The components vocabulary stayed inlined.~~ **Corrected 2026-07-31
+  (`#633`):** `#397` moved the eight UI constants into real files under
+  `client/`, so the components vocabulary is `client/components.js` (1,085
+  lines) today, not a Python string constant. What has *not* happened is the
+  seam this section is about: `watch.py` is still one Python module and still
+  admits one writer, so the contention this bullet measures is unrelieved.
+  The point stands for that half — *no batch has yet demanded the Python
+  split*: the fleet has run for days with one `watch.py` writer at a time,
+  and the throughput loss was absorbed by routing everything else READ-ONLY.
+  **Forward-looking:** the client side is now going further still — he ruled
+  2026-07-31 17:03 that the UI is transitioning to a component-based **React**
+  web UI (`#591`, receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`), staged and
+  component-level, with `#630` prioritising the replacement of `watch.py`'s
+  inline HTML by those components. That transition is **derived**, not a
+  rewrite beside the original — the wrappers compile from the same
+  `client/*.js` the server serves — so it does not create the second
+  maintained truth this doc's ownership rules exist to prevent.
 
 So the answer to "did the seams appear?" is **yes, but as extracted
 responsibilities and imported writers, not as a file split.** The monolith

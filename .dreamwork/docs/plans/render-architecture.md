@@ -19,12 +19,29 @@ His words and the constraint are in
 > (`vendor/morphdom.min.js`), `setContent` reconciles `#view` with the
 > content-hash skip (`client/router.js:1550`–`1683`), and the review dock
 > reconciles through the same seam (Q3 phase 2, `client/router.js:1459`).
-> Whether the claude-design goal (his 2026-07-31 focus) re-opens G2 is
+> Whether the claude-design goal (his 2026-07-31 focus) re-opens G2 was
 > **#591's question**, decided in
 > `.dreamwork/review/505-g2-render-authority.html` — not here. His 2026-07-31
 > ~16:38 submission (receipt `a71d1105…`) added two further inputs the artifact
 > weighs as goals: a component-native live session view ("only be available
 > via that") and a WS/RPC state-delta direction for the webui.
+> **(3) G2 is now ruled, and the answer is a component system.** He ruled
+> 2026-07-31 17:03 (`#591`, receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`),
+> `rec` on all three: **G2 reads per-surface** — one render authority *per
+> surface*, and a **derived** surface is not a second authority; the
+> claude-design breakpoint is **component-level and staged** (tokens +
+> `client/style.css` first, delegating wrappers second); the framework is
+> **React**. So the standing position is a **transition to a component-based
+> React web UI**, with replacing `watch.py`'s old inline HTML by those
+> components prioritised at the earliest suitable time (`#630`).
+> **The second-truth rule is untouched.** The survivor is *derived* — the
+> wrappers are compiled **from** the same `client/*.js` files `watch.py`
+> already serves, restating no markup, so nothing can diverge — and new
+> surfaces are born as components with no builder twin. A **hand-maintained**
+> component library beside the builders stays refused: that, and only that,
+> is what "two maintained truths about one surface" ever meant. Read every
+> `G2` cell below with that per-surface meaning; the matrix's own verdict for
+> **this** bug (I5, landed) is not reopened by the ruling.
 
 > re the reset when data.json is recieved … selecting text from any of the
 > questions deselects on update. selecting quesitons at the top or the
@@ -55,6 +72,14 @@ restore pairs, and **keeps `watch.py` the single deployed file with no build
 step**. His "React or equivalent" is the right *goal* (DOM diffing) and the
 wrong *mechanism* for a no-build single-file product: a vendored morphdom
 (~2KB) gives the diff without the bundle/build cost React would impose.
+
+*(Superseded in its premises, not its verdict — see the Status note above.
+The no-build/single-file constraint was retired 2026-07-30, and on 2026-07-31
+17:03 he ruled the UI **is** transitioning to a component-based **React** web
+UI (`#591`, receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`). So read the
+sentence above as "React was the wrong mechanism **for this reset bug**",
+which it remains: morphdom landed and fixed it. It is **not** a live position
+that React is wrong for this product.)*
 
 
 ## The reset inventory, measured not assumed
@@ -142,6 +167,14 @@ wholesale swap (it snapshots rects before, then animates survivors after).
   that commits the DOM for a view (`setContent` today). Two authorities
   (e.g. a vdom tree *and* the string builders) is the architecture smell
   restated, not fixed.
+  **READING PINNED 2026-07-31** — he ratified the **per-surface** reading
+  (`#591` Q1, receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`): G2 refuses two
+  *maintained* truths about the **same** surface. A **derived** surface —
+  compiled from the same source the one authority renders, restating no
+  markup — is not a second authority, and different surfaces may legitimately
+  differ. Every `G2` cell below was scored under that meaning and still holds
+  under it; what the goal never permitted, and still does not, is a
+  hand-maintained twin.
 - **G3 — selection/scroll/focus survive a poll without per-state patching.**
   R1 must be fixed *as a class*, not by adding a 12th snapshot for prose
   selection. The bar is: a state nobody has yet thought to snapshot still
@@ -224,9 +257,19 @@ wholesale swap (it snapshots rects before, then animates survivors after).
   the gestures atmospherically is unproven — hence `?`, not ✘.)
   *(2026-07-31, #591: the G4 half of this refutation is void — G4 retired,
   see the Status note. The G2 half stands unchanged for the layered shape —
-  a vdom **beside** the builders. Whether a component tree could be the ONE
-  authority, and whether the claude-design goal forces one, is a different
-  and larger decision, re-run in `.dreamwork/review/505-g2-render-authority.html`.)*
+  a vdom **beside** the builders, which is still refused. Whether a component
+  tree could be the ONE authority, and whether the claude-design goal forces
+  one, was the larger decision, re-run in
+  `.dreamwork/review/505-g2-render-authority.html` and **ruled 2026-07-31
+  17:03** (receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`): yes — the UI is
+  transitioning to a component-based **React** web UI, G2 read **per-surface**,
+  breakpoint component-level and staged. That does not resurrect I3 as written:
+  I3 is a vdom layered **over** maintained string builders producing the same
+  markup, and two maintained descriptions of one surface are exactly what the
+  ruling still refuses. What the ruling authorises instead is a **derived**
+  surface — wrappers compiled from the same `client/*.js` `watch.py` serves,
+  restating no markup — plus new surfaces born as components with no builder
+  twin.)*
 - **I4 ✔ (the survivor).** Keyed reconciliation over the existing identity
   attributes: a survivor node matched by key is *kept* (so R1's selection,
   R2's caret, R7's hover — any state on the node — survive because the node
@@ -276,6 +319,20 @@ Reported plainly, as invited:
   single-file, no-build, one-authority architecture that is *his own*
   (`watch-design.md:2737`). The "equivalent" he gestured at — a DOM-diff — is
   exactly I4, and it does not need to be React.
+  *(**Superseded as a standing position, 2026-07-31.** The record of the
+  push-back is kept because he invited it and it was right about **this bug**
+  — morphdom landed and fixed the reset. But two of its three premises have
+  since gone: the no-build constraint was retired 2026-07-30, and on
+  2026-07-31 17:03 he ruled the UI **is** transitioning to a component-based
+  **React** web UI, with G2 read **per-surface** and the claude-design
+  breakpoint component-level and staged (`#591`, receipt
+  `dc9200a0-4ebf-5d3b-afab-71257155bef9`). "React is wrong for this product"
+  is no longer true and must not be quoted as if it were. What survives from
+  the sentence is the narrow, still-live part: a component tree layered
+  **beside** maintained string builders would be a second maintained truth,
+  and that is still refused. The ruled shape avoids it by being **derived** —
+  wrappers compiled from the same `client/*.js` the server already serves,
+  restating no markup — with new surfaces born as components.)*
 
 
 ## Every transition family — its fate under the recommended shape (I5)
