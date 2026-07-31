@@ -913,8 +913,8 @@ def sweep_text(text, commits, since, source, repo="."):
 # landed with an id in the subject line — which is most work, because the
 # commit convention puts it there by construction. A branch that was folded
 # but never merged has no such commit on master to examine: it is invisible
-# to sweep BY CONSTRUCTION, not by oversight (lessons.md:3302 is the measured
-# instance).
+# to sweep BY CONSTRUCTION, not by oversight (#590 is the measured instance;
+# lessons.md:3302 records it).
 # `reach` is the sibling: for every local branch, `git cherry <base> <branch>`
 # separates patch-id-equivalent commits (`-`, already on base) from
 # genuinely-absent ones (`+`), which is the distinction a raw
