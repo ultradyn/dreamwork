@@ -13307,14 +13307,13 @@ def _store_target(root):
 
 
 def _record_decision(dw, artifact, qtitle, decision):
-    import ledger_store
     import ledger_write
-    store = ledger_store.open_store(watch.store_path(dw))
-    try:
+    from dreamwork_db import Access, open_database
+    from dreamwork_db.tasks import task_store_spec
+    with open_database(
+            task_store_spec(watch.store_path(dw)), access=Access.WRITE) as store:
         ledger_write.record_review_decision(
             store, artifact, qtitle, decision, actor="watch")
-    finally:
-        store.close()
 
 
 def _review_artifact(rd, name, body="<p>x"):

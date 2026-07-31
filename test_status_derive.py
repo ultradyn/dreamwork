@@ -27,6 +27,8 @@ import ledger_parse
 import ledger_store
 import ledger_write
 import status_derive
+from dreamwork_db import Access, open_database
+from dreamwork_db.tasks import task_store_spec
 
 _WATERMARK_KEY = "ledger_cut_over"
 
@@ -39,18 +41,20 @@ def _cut_over_store(dw, total, land_n, *, seed=500):
     the same key ``perform_cutover`` writes, which is all ``source_of_truth``
     checks. Task rows are built by the real writers, never hand-built.
     """
-    s = ledger_store.open_store(dw / "ledger.sqlite3", seed_next_id=seed)
+    path = dw / "ledger.sqlite3"
+    s = ledger_store.open_store(path, seed_next_id=seed)
     try:
         s.conn.execute(
             "INSERT INTO meta (key, value) VALUES (?, ?)",
             (_WATERMARK_KEY, "2026-07-30"))
         s.conn.commit()
-        ids = [ledger_write.file_task(s, "task %d" % i, "body %d" % i)
-               for i in range(total)]
-        for tid in ids[:land_n]:
-            ledger_write.land_task(s, tid)
     finally:
         s.close()
+    with open_database(task_store_spec(path), access=Access.WRITE) as handle:
+        ids = [ledger_write.file_task(
+            handle, "task %d" % i, "body %d" % i) for i in range(total)]
+        for tid in ids[:land_n]:
+            ledger_write.land_task(handle, tid)
     return total - land_n
 
 

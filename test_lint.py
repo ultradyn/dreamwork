@@ -7281,12 +7281,13 @@ class TestStoreModeLint:
 
         file_task stores the body verbatim (the note text) with no head — the
         exact defect shape. Returns the new (AUTOINCREMENT) id."""
-        import ledger_write, ledger_store, ledger_parse
-        store = ledger_store.open_store(ledger_parse.store_path(td))
-        try:
+        import ledger_write, ledger_parse
+        from dreamwork_db import Access, open_database
+        from dreamwork_db.tasks import task_store_spec
+        with open_database(
+                task_store_spec(ledger_parse.store_path(td)),
+                access=Access.WRITE) as store:
             return ledger_write.file_task(store, title, body, **kw)
-        finally:
-            store.close()
 
     def test_the_projection_sees_a_filed_headless_open_entry(self, tmp_path):
         """#557 born-red: a filed entry has no `- **#id**` head, so the
@@ -7319,16 +7320,17 @@ class TestStoreModeLint:
         """#557 landed half: landing flips state and appends a note but never
         adds a head, so a filed-then-landed entry is headless in `## Recently
         landed` and was invisible there too."""
-        import watch, ledger_parse, ledger_write, ledger_store
+        import watch, ledger_parse, ledger_write
+        from dreamwork_db import Access, open_database
+        from dreamwork_db.tasks import task_store_spec
         td = self._cut_over(tmp_path)
         new_id = self._file_headless(
             td, "a headless entry that will land", "body has no head",
             priority="P1", type="bug", origin="human")
-        store = ledger_store.open_store(ledger_parse.store_path(td))
-        try:
+        with open_database(
+                task_store_spec(ledger_parse.store_path(td)),
+                access=Access.WRITE) as store:
             ledger_write.land_task(store, new_id, note="landed (abc1234)")
-        finally:
-            store.close()
         store_open, store_landed = ledger_parse.store_ids_by_state(td)
         store_landed = set(store_landed)
         rec = next(r for r in ledger_parse.store_records(td) if r["id"] == new_id)
@@ -7534,13 +7536,14 @@ class TestReviewDecisionIntegrity:
         return td
 
     def _record(self, td, artifact, title, decision):
-        import ledger_store, ledger_write, ledger_parse
-        store = ledger_store.open_store(ledger_parse.store_path(td))
-        try:
+        import ledger_write, ledger_parse
+        from dreamwork_db import Access, open_database
+        from dreamwork_db.tasks import task_store_spec
+        with open_database(
+                task_store_spec(ledger_parse.store_path(td)),
+                access=Access.WRITE) as store:
             ledger_write.record_review_decision(
                 store, artifact, title, decision, actor="test")
-        finally:
-            store.close()
 
     def test_happy_rows_report_examined_not_vacuous(self, tmp_path):
         td = self._target(tmp_path)

@@ -5614,8 +5614,9 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             store write lands under ``.dreamwork/``, which ``watched_mtime``
             walks, so the dashboard re-renders the new token on its own poll.
             """
-            import ledger_store
             import ledger_write
+            from dreamwork_db import Access, open_database
+            from dreamwork_db.tasks import task_store_spec
             req = self._read_json()
             if req is None:
                 self._reject("malformed_json"); return
@@ -5634,12 +5635,13 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 # join already degrades to 'unlinked' there, so refusing the
                 # write is the honest counterpart — never a 500.
                 self._reject("domain_invalid", detail="no_store"); return
-            store = None
             try:
-                store = ledger_store.open_store(store_path(dw))
-                ledger_write.record_review_decision(
-                    store, artifact, question_title, decision,
-                    actor="watch", at=None)
+                with open_database(
+                        task_store_spec(store_path(dw)),
+                        access=Access.WRITE) as store:
+                    ledger_write.record_review_decision(
+                        store, artifact, question_title, decision,
+                        actor="watch", at=None)
             except ledger_write.DecisionConflict:
                 # A final decision is not silently reassignable to another
                 # question: a readable refusal, not a server fault.
@@ -5650,12 +5652,6 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 # receipt already committed, so a 500 is the honest answer.
                 self.send_error(500)
                 return
-            finally:
-                if store is not None:
-                    try:
-                        store.close()
-                    except Exception:
-                        pass
             # #342: /decide is a batched kind — wakes only in instant mode,
             # riding the durable receipt + the tick's cursor read otherwise
             # (same family as /answer and /comment; #514 F1).

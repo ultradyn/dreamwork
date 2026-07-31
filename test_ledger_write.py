@@ -25,15 +25,22 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import sqlite3
+import subprocess
+import types
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
 import ledger_store
 import ledger_write
+from dreamwork_db import Access, open_database
+from dreamwork_db.tasks import task_store_spec
+from dreamwork_db.tasks import TaskRepository
 
 REPO = Path(__file__).resolve().parent
 MIGRATE_CLI = REPO / "ud-dw-tasks-migrate"
+PRE_MOVE_SHA = "e72674be"
 
 
 def _load_migrate():
@@ -48,15 +55,241 @@ def _load_migrate():
 
 @pytest.fixture
 def store(tmp_path):
-    """A scratch store seeded at a known mark (closed by the fixture)."""
-    s = ledger_store.open_store(tmp_path / "l.sqlite3", seed_next_id=500)
-    yield s
-    s.close()
+    """A WRITE handle plus a test-only raw observer over one scratch store."""
+    path = tmp_path / "l.sqlite3"
+    ledger_store.open_store(path, seed_next_id=500).close()
+
+    class StoreHarness:
+        def __init__(self, handle, observer):
+            self._handle = handle
+            self.conn = observer
+            self.path = path
+
+        @property
+        def tasks(self):
+            return self._handle.tasks
+
+        def transaction(self, **kwargs):
+            return self._handle.transaction(**kwargs)
+
+        def next_id(self):
+            row = self.conn.execute(
+                "SELECT seq FROM sqlite_sequence WHERE name='task'").fetchone()
+            return int(row[0]) + 1 if row else 1
+
+    observer = sqlite3.connect(path, isolation_level=None)
+    with open_database(task_store_spec(path), access=Access.WRITE) as handle:
+        yield StoreHarness(handle, observer)
+    observer.close()
 
 
 @pytest.fixture
 def migrate():
     return _load_migrate()
+
+
+def _load_pre_move_writer():
+    source = subprocess.run(
+        ["git", "show", f"{PRE_MOVE_SHA}:ledger_write.py"], cwd=REPO,
+        check=True, capture_output=True, text=True).stdout
+    module = types.ModuleType("ledger_write_pre_move_e72674be")
+    exec(compile(source, f"{PRE_MOVE_SHA}:ledger_write.py", "exec"),
+         module.__dict__)
+    return module
+
+
+def _captured_write_state(path):
+    with sqlite3.connect(path) as conn:
+        return {
+            "tasks": conn.execute(
+                "SELECT id, state, title, body, priority, type, origin, "
+                "blocked_on, body_digest FROM task ORDER BY id").fetchall(),
+            "events": conn.execute(
+                "SELECT task_id, at, cause, from_state, to_state, actor, "
+                "detail, prev_hash, hash FROM task_event ORDER BY ordinal"
+            ).fetchall(),
+            "reviews": conn.execute(
+                "SELECT artifact, question_title, decision, decided_at, actor "
+                "FROM review_decision ORDER BY artifact").fetchall(),
+        }
+
+
+def _run_seven_commands(writer, store):
+    task_id = writer.file_task(
+        store, "original title", "original body", priority="P2",
+        type="task", origin="loop", blocked_on="blocked on #9",
+        actor="fixture", at="2026-08-01T00:00:00Z")
+    writer.note_task(store, task_id, "annotation", actor="fixture")
+    writer.reprioritise_task(
+        store, task_id, "P1", why="priority reason", actor="fixture",
+        at="2026-08-01T00:01:00Z")
+    writer.unblock_task(
+        store, task_id, why="blocker landed", actor="fixture",
+        at="2026-08-01T00:02:00Z")
+    writer.retitle_task(
+        store, task_id, "current title", why="title reason", actor="fixture",
+        at="2026-08-01T00:03:00Z")
+    writer.land_task(
+        store, task_id, note="land reason", actor="fixture",
+        at="2026-08-01T00:04:00Z")
+    writer.record_review_decision(
+        store, "design.html", "Ship it?", "accepted", actor="fixture",
+        at="2026-08-01T00:05:00Z")
+    return task_id
+
+
+def test_repository_writes_match_pre_move_store_shapes(tmp_path):
+    """All seven commands preserve the exact pre-move persisted shapes."""
+    old_path = tmp_path / "old.sqlite3"
+    new_path = tmp_path / "new.sqlite3"
+    old_store = ledger_store.open_store(old_path, seed_next_id=700)
+    ledger_store.open_store(new_path, seed_next_id=700).close()
+    try:
+        old_id = _run_seven_commands(_load_pre_move_writer(), old_store)
+    finally:
+        old_store.close()
+    with open_database(task_store_spec(new_path), access=Access.WRITE) as handle:
+        new_id = _run_seven_commands(ledger_write, handle)
+    expected = _captured_write_state(old_path)
+    actual = _captured_write_state(new_path)
+    assert old_id == new_id == 700, (
+        f"file parity differs: expected allocated id={old_id!r}, "
+        f"actual allocated id={new_id!r}")
+    for name, rows in expected.items():
+        assert rows, f"{name} parity captured no pre-move rows; refusing vacuous equality"
+        assert rows == actual[name], (
+            f"{name} parity differs after seven commands:\n"
+            f"expected store state={rows!r}\nactual store state={actual[name]!r}")
+
+
+def test_new_event_extends_chain_built_by_pre_move_code(tmp_path, migrate):
+    """A new repository event verifies after a literal pre-move writer event."""
+    path = tmp_path / "mixed.sqlite3"
+    old_store = ledger_store.open_store(path, seed_next_id=800)
+    try:
+        task_id = _load_pre_move_writer().file_task(
+            old_store, "pre-move task", "body", actor="old",
+            at="2026-08-01T01:00:00Z")
+    finally:
+        old_store.close()
+    before = _captured_write_state(path)["events"]
+    assert len(before) == 1, (
+        f"pre-move fixture must contribute one real event, got {before!r}")
+    with open_database(task_store_spec(path), access=Access.WRITE) as handle:
+        ledger_write.land_task(
+            handle, task_id, actor="new", at="2026-08-01T01:01:00Z")
+    after = _captured_write_state(path)["events"]
+    assert len(after) == 2, (
+        f"mixed chain must contain old and new events, got {after!r}")
+    assert migrate.verify_task_event_chain(str(path)) == [], (
+        f"new land event did not extend the pre-move chain: {after!r}")
+
+
+def test_field_only_and_self_verifying_chain_are_false_green(
+        tmp_path, monkeypatch, migrate):
+    """Demonstrate the weak checks that pass when file silently drops its event."""
+    path = tmp_path / "false-green.sqlite3"
+    ledger_store.open_store(path, seed_next_id=900).close()
+    monkeypatch.setattr(
+        TaskRepository, "_append_chained_event", lambda self, **kwargs: None)
+    with open_database(task_store_spec(path), access=Access.WRITE) as handle:
+        task_id = ledger_write.file_task(handle, "wrong write", "body")
+    state = _captured_write_state(path)
+    assert state["tasks"] and state["tasks"][0][0] == task_id, (
+        f"field-only check unexpectedly failed to see the committed row: {state!r}")
+    assert state["events"] == [], (
+        f"precondition: the injected writer must silently drop the event: {state!r}")
+    assert migrate.verify_task_event_chain(str(path)) == [], (
+        "FALSE GREEN construction failed: an empty chain should verify against "
+        "itself even though the filed task has no event")
+
+
+@pytest.mark.parametrize("command", [
+    "file", "land", "reprioritise", "unblock", "retitle",
+])
+def test_task_event_commands_rollback_row_when_event_append_fails(
+        store, monkeypatch, command):
+    """A BaseException between the row mutation and event leaves no change."""
+    anchor = ledger_write.file_task(
+        store, "anchor", "anchor body", priority="P2",
+        at="2026-08-01T02:00:00Z")
+    if command == "land":
+        target = anchor
+    else:
+        target = ledger_write.file_task(
+            store, f"{command} target", "target body", priority="P2",
+            blocked_on="blocked on #1",
+            at="2026-08-01T02:01:00Z")
+    before = _captured_write_state(store.path)
+    assert before["tasks"] and before["events"], (
+        f"{command} rollback fixture captured no state; refusing vacuous proof")
+
+    class InjectedCrash(BaseException):
+        pass
+
+    def fail_after_row_write(self, **_kwargs):
+        raise InjectedCrash(f"{command}: injected between row write and event append")
+
+    monkeypatch.setattr(TaskRepository, "_append_chained_event", fail_after_row_write)
+    with pytest.raises(InjectedCrash, match=f"^{command}: injected"):
+        if command == "file":
+            ledger_write.file_task(store, "doomed", "doomed body")
+        elif command == "land":
+            ledger_write.land_task(store, target)
+        elif command == "reprioritise":
+            ledger_write.reprioritise_task(
+                store, target, "P1", why="doomed reason")
+        elif command == "unblock":
+            ledger_write.unblock_task(store, target, why="doomed reason")
+        else:
+            ledger_write.retitle_task(
+                store, target, "doomed title", why="doomed reason")
+    after = _captured_write_state(store.path)
+    assert after == before, (
+        f"{command} rollback differs after injected event failure:\n"
+        f"expected store state={before!r}\nactual store state={after!r}")
+
+
+def test_all_seven_facades_open_exactly_one_default_transaction():
+    """Every facade delegates once inside the handle's default transaction."""
+    calls = []
+
+    class Repositories:
+        def __getattr__(self, name):
+            def call(*_args, **_kwargs):
+                calls.append(("repository", name))
+                return 1 if name == "file" else None
+            return call
+
+    class Handle:
+        tasks = Repositories()
+
+        @contextmanager
+        def transaction(self, *, immediate=True):
+            calls.append(("begin", immediate))
+            yield self
+            calls.append(("commit", immediate))
+
+    handle = Handle()
+    invocations = [
+        lambda: ledger_write.file_task(handle, "t", "b"),
+        lambda: ledger_write.land_task(handle, 1),
+        lambda: ledger_write.note_task(handle, 1, "n"),
+        lambda: ledger_write.reprioritise_task(handle, 1, "P1", why="w"),
+        lambda: ledger_write.unblock_task(handle, 1, why="w"),
+        lambda: ledger_write.retitle_task(handle, 1, "t2", why="w"),
+        lambda: ledger_write.record_review_decision(
+            handle, "a", "q", "accepted", actor="loop"),
+    ]
+    for invoke in invocations:
+        before = len(calls)
+        invoke()
+        command_calls = calls[before:]
+        assert command_calls[0] == ("begin", True), command_calls
+        assert command_calls[-1] == ("commit", True), command_calls
+        assert len(command_calls) == 3, (
+            f"command did not own exactly one transaction and one repository "
+            f"call: {command_calls!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +326,8 @@ def test_file_id_never_collides_with_a_higher_imported_row(tmp_path):
     strictly above the imported high-water mark, never colliding. Break by
     seeding below the imported id and allocating from the seed — collision.
     """
-    s = ledger_store.open_store(tmp_path / "l.sqlite3", seed_next_id=10)
+    path = tmp_path / "l.sqlite3"
+    s = ledger_store.open_store(path, seed_next_id=10)
     try:
         # Simulate an import: an explicit-id row above the seed.
         s.conn.execute(
@@ -103,15 +337,16 @@ def test_file_id_never_collides_with_a_higher_imported_row(tmp_path):
         hw = s.sequence_high_water("task")
         assert hw == 50, f"precondition: AUTOINCREMENT tracks the explicit id, got {hw}"
 
-        new_id = ledger_write.file_task(s, "filed after import", "body",
-                                         at="2026-07-29T10:00:00Z")
-        assert new_id > 50, (
-            f"filed id {new_id} must exceed the imported high-water 50 — "
-            "a collision would reuse a permanent id")
-        # The filed id is not 50 (the imported row's id).
-        assert new_id != 50
     finally:
         s.close()
+    with open_database(task_store_spec(path), access=Access.WRITE) as handle:
+        new_id = ledger_write.file_task(
+            handle, "filed after import", "body",
+            at="2026-07-29T10:00:00Z")
+    assert new_id > 50, (
+        f"filed id {new_id} must exceed the imported high-water 50 — "
+        "a collision would reuse a permanent id")
+    assert new_id != 50
 
 
 # ---------------------------------------------------------------------------

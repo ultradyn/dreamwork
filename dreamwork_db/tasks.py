@@ -1,18 +1,52 @@
-"""Task-store repository and binding for the legacy ledger read API."""
+"""Task-store repository and binding for the legacy ledger API."""
 
 from __future__ import annotations
 
 import re
+import hashlib
 from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
+from ledger_store import ORIGINS, REVIEW_DECISIONS, append_chained_event, last_event_hash
+
 from .core import StoreSpec
+from .migrate import initialize_legacy_store
 
 
 _KNOWN_ORIGINS = ("human", "loop")
 _STORED_ORIGINS = ("human", "loop", "unknown")
 _COMMIT_SHA = re.compile(r"\(([0-9a-f]{7,40})\)")
+_NOTE_PREFIX = "  · "
+
+
+class WriteError(RuntimeError):
+    """A task-store command could not be performed."""
+
+
+class TaskNotFound(WriteError):
+    """The requested task does not exist."""
+
+
+class BadState(WriteError):
+    """The task is not in the state required by a transition."""
+
+
+class DecisionConflict(WriteError):
+    """A final review decision belongs to a different question."""
+
+
+class NotBlocked(WriteError):
+    """The requested task has no blocker to clear."""
+
+
+class SameTitle(WriteError):
+    """The requested title is already current."""
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _epoch(iso_at: object) -> int | None:
@@ -23,7 +57,7 @@ def _epoch(iso_at: object) -> int | None:
 
 
 class TaskRepository:
-    """All task-ledger reads over one handle-owned snapshot."""
+    """All task-ledger reads and writes over one handle-owned connection."""
 
     def __init__(self, session: Any) -> None:
         self._session = session
@@ -141,7 +175,181 @@ class TaskRepository:
             "SELECT COUNT(*) FROM task WHERE origin IS NULL").fetchone()[0]
         return int(untyped), int(missing)
 
+    def _last_event_hash(self) -> str:
+        return last_event_hash(self._session)
+
+    def _append_chained_event(self, *, task_id: int, at: str, cause: str,
+                              from_state: str | None, to_state: str | None,
+                              actor: str, detail: str = "") -> None:
+        append_chained_event(
+            self._session, task_id=task_id, at=at, cause=cause,
+            from_state=from_state, to_state=to_state, actor=actor,
+            receipt_id=None, detail=detail)
+
+    def file(self, title, body, *, priority=None, priority_uncertain=0,
+             type=None, origin=None, blocked_on=None, actor="loop", at=None) -> int:
+        if not isinstance(title, str) or not title.strip():
+            raise WriteError("title must be a non-empty string (task.title NOT NULL)")
+        if not isinstance(body, str) or not body.strip():
+            raise WriteError("body must be a non-empty string (task.body NOT NULL)")
+        if at is None:
+            at = _now_iso()
+        if priority is not None:
+            bands = [r[0] for r in self._session.execute(
+                "SELECT band FROM priority_band ORDER BY band")]
+            if priority not in bands:
+                raise WriteError(
+                    "priority: got {!r}, expected one of {}".format(
+                        priority, ", ".join(bands)))
+        if origin is not None and origin not in ORIGINS:
+            raise WriteError(
+                "origin: got {!r}, expected one of {}".format(
+                    origin, ", ".join(ORIGINS)))
+        if type is not None:
+            self._session.execute(
+                "INSERT OR IGNORE INTO task_type(type) VALUES (?)", (type,))
+        cur = self._session.execute(
+            "INSERT INTO task(state, title, body, priority,"
+            " priority_uncertain, type, origin, blocked_on, body_digest)"
+            " VALUES ('open', ?, ?, ?, ?, ?, ?, ?, ?)",
+            (title, body, priority, priority_uncertain, type, origin,
+             blocked_on, hashlib.sha256(body.encode()).hexdigest()))
+        new_id = int(cur.lastrowid)
+        self._append_chained_event(
+            task_id=new_id, at=at, cause="filed_from_command",
+            from_state=None, to_state="open", actor=actor)
+        return new_id
+
+    def land(self, task_id, *, note=None, actor="loop", at=None) -> None:
+        at = at or _now_iso()
+        cur = self._session.execute(
+            "UPDATE task SET state = 'landed' WHERE id = ? AND state = 'open'",
+            (task_id,))
+        if cur.rowcount == 0:
+            row = self._session.execute(
+                "SELECT state FROM task WHERE id = ?", (task_id,)).fetchone()
+            if row is None:
+                raise TaskNotFound(f"cannot land #{task_id}: no such task")
+            raise BadState(
+                f"cannot land #{task_id}: state is {row[0]!r}, not 'open' "
+                "(CAS refused)")
+        if note:
+            self._session.execute(
+                "UPDATE task SET body = body || ? WHERE id = ?",
+                ("\n" + _NOTE_PREFIX + note, task_id))
+        self._append_chained_event(
+            task_id=task_id, at=at, cause="landed", from_state="open",
+            to_state="landed", actor=actor, detail=note or "")
+
+    def note(self, task_id, note, *, actor="loop") -> None:
+        if not isinstance(note, str) or not note.strip():
+            raise WriteError("note must be a non-empty string")
+        cur = self._session.execute(
+            "UPDATE task SET body = body || ? WHERE id = ?",
+            ("\n" + _NOTE_PREFIX + note, task_id))
+        if cur.rowcount == 0:
+            raise TaskNotFound(f"cannot note #{task_id}: no such task")
+
+    def reprioritise(self, task_id, priority, *, why, actor="loop", at=None) -> None:
+        if not isinstance(why, str) or not why.strip():
+            raise WriteError("why must be a non-empty string (the reason for the change)")
+        at = at or _now_iso()
+        bands = [r[0] for r in self._session.execute(
+            "SELECT band FROM priority_band ORDER BY band")]
+        if priority not in bands:
+            raise WriteError(
+                "priority: got {!r}, expected one of {}".format(
+                    priority, ", ".join(bands)))
+        row = self._session.execute(
+            "SELECT priority, state FROM task WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise TaskNotFound(f"cannot reprioritise #{task_id}: no such task")
+        old, state = row
+        self._session.execute(
+            "UPDATE task SET priority = ? WHERE id = ?", (priority, task_id))
+        note = "reprioritised {}→{}: {}".format(old or "—", priority, why)
+        self._session.execute(
+            "UPDATE task SET body = body || ? WHERE id = ?",
+            ("\n" + _NOTE_PREFIX + note, task_id))
+        self._append_chained_event(
+            task_id=task_id, at=at, cause="reprioritised", from_state=state,
+            to_state=state, actor=actor, detail=why)
+
+    def unblock(self, task_id, *, why, actor="loop", at=None) -> None:
+        if not isinstance(why, str) or not why.strip():
+            raise WriteError("why must be a non-empty string (the reason for the change)")
+        at = at or _now_iso()
+        row = self._session.execute(
+            "SELECT blocked_on, state FROM task WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise TaskNotFound(f"cannot unblock #{task_id}: no such task")
+        old_blocked, state = row
+        if not old_blocked or not old_blocked.strip():
+            raise NotBlocked(
+                f"cannot unblock #{task_id}: it is not blocked "
+                "(blocked_on is empty) — an unblock that unblocked nothing "
+                "must not read as success (#671)")
+        self._session.execute(
+            "UPDATE task SET blocked_on = NULL WHERE id = ?", (task_id,))
+        note = "unblocked (was: {}): {}".format(old_blocked, why)
+        self._session.execute(
+            "UPDATE task SET body = body || ? WHERE id = ?",
+            ("\n" + _NOTE_PREFIX + note, task_id))
+        self._append_chained_event(
+            task_id=task_id, at=at, cause="unblocked", from_state=state,
+            to_state=state, actor=actor, detail=why)
+
+    def retitle(self, task_id, title, *, why, actor="loop", at=None) -> None:
+        if not isinstance(title, str) or not title.strip():
+            raise WriteError("title must be a non-empty string (task.title NOT NULL)")
+        if not isinstance(why, str) or not why.strip():
+            raise WriteError("why must be a non-empty string (the reason for the change)")
+        at = at or _now_iso()
+        row = self._session.execute(
+            "SELECT title, state FROM task WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise TaskNotFound(f"cannot retitle #{task_id}: no such task")
+        old_title, state = row
+        if title == old_title:
+            raise SameTitle(
+                f"cannot retitle #{task_id}: title is unchanged — a retitle "
+                "that changed nothing must not read as success (#671)")
+        self._session.execute(
+            "UPDATE task SET title = ? WHERE id = ?", (title, task_id))
+        note = "retitled {!r}→{!r}: {}".format(old_title, title, why)
+        self._session.execute(
+            "UPDATE task SET body = body || ? WHERE id = ?",
+            ("\n" + _NOTE_PREFIX + note, task_id))
+        self._append_chained_event(
+            task_id=task_id, at=at, cause="reconciled", from_state=state,
+            to_state=state, actor=actor, detail=why)
+
+    def record_review_decision(self, artifact, question_title, decision, *,
+                               actor, at=None) -> None:
+        if decision not in REVIEW_DECISIONS:
+            raise WriteError(
+                f"decision must be one of {REVIEW_DECISIONS}, got {decision!r}")
+        at = at or _now_iso()
+        existing = self._session.execute(
+            "SELECT question_title, decision FROM review_decision "
+            "WHERE artifact = ?", (artifact,)).fetchone()
+        if existing is not None:
+            ex_title, ex_decision = existing
+            if ex_title != question_title and ex_decision != "pending":
+                raise DecisionConflict(
+                    f"artifact {artifact!r} is already decided {ex_decision!r} "
+                    f"under a different question ({ex_title!r} vs "
+                    f"{question_title!r}); a final review decision is not "
+                    "silently reassignable to another question")
+        self._session.execute(
+            "INSERT OR REPLACE INTO review_decision"
+            "(artifact, question_title, decision, decided_at, actor)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (artifact, question_title, decision, at, actor))
+
 
 def task_store_spec(path: str | Path) -> StoreSpec:
     """Bind the task repository through the core's one factory seam."""
-    return StoreSpec(path, repositories={"tasks": TaskRepository})
+    return StoreSpec(
+        path, repositories={"tasks": TaskRepository},
+        initializer=initialize_legacy_store)
