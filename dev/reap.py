@@ -210,17 +210,25 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
         return 0
 
     main = worktrees[0]
-    args = ["worktree", "remove"]
-    if force:
-        args.append("--force")
-    args.append(str(target))
+    # git's --force and the tool's --force are two different flags (#762).
+    # `git worktree remove` refuses on ANY untracked file, and BRIEF.md is
+    # untracked in every lane by construction — so a lane whose gate just
+    # PASSED could never be removed unless --force was also passed to git. That
+    # made the tool's own --force the only spelling that worked, and a
+    # coordinator who typed it habitually had silently disabled the tracked-work
+    # gate — the exact "a gate people learn to --force past is worse than no
+    # gate" failure #686 was built to avoid (#755), reintroduced one layer down.
+    # The tool's gate is the finer check: by the time we reach the removal it
+    # has established no tracked dirt and no unmerged commit (or --force
+    # overrode that refusal on purpose). git's cruder untracked-file refusal is
+    # superseded, and BRIEF.md/__pycache__ are precisely what it refuses over.
+    # So --force is passed to git UNCONDITIONALLY; the tool's own --force then
+    # means ONLY "override my gate", which is what its help text already claimed.
+    args = ["worktree", "remove", "--force", str(target)]
     removed = _git(main, *args)
     if removed.returncode:
         detail = removed.stderr.decode("utf-8", errors="replace").strip()
         print(f"REFUSE: git worktree remove failed: {detail}", file=sys.stderr)
-        if (untracked or ignored) and not force:
-            print("Rerun with --force to print and explicitly discard scratch paths.",
-                  file=sys.stderr)
         return 2
     print(f"removed linked worktree {target}")
     return 0
