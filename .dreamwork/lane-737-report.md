@@ -174,8 +174,9 @@ No mechanism or standing wording changed. The only deliverable is this report.
 - No pytest file applies because no executable or governed source file changed.
 - `python3 dev/redproof.py check` — `check: calm — no injections registered
   (opt-in discipline; nothing to evaluate).`
-- Rebased successfully onto local `master` `3db7c26b` before writing this
-  report; no conflicts.
+- Rebased successfully onto the latest local `master` before final handoff; no
+  conflicts. The census remains deliberately pinned to `3db7c26b` so its
+  denominator and counts are reproducible.
 
 ## DOGFOOD REPORT
 
