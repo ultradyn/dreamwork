@@ -7482,3 +7482,246 @@ class TestHandoffQuoteTruncation:
             "a raw hand-off line is interpolated somewhere — use handoff_quote()"
         assert src.count("handoff_quote(") == 3, \
             f"expected 3 quoted fields, found {src.count('handoff_quote(')}"
+
+
+class TestBriefLaneScratch:
+    """#652: a brief teaching the `cp` restore protocol names a lane-private dir.
+
+    Concurrent lanes share one harness scratchpad (one CLI session, one
+    `CLAUDE_CODE_SESSION_ID`, one directory — measured). Two lanes snapshotting
+    to the same generic filename means one restore writes the other's bytes
+    while BOTH `cmp` checks pass. Cutoff is content-resolved from SKILL.md
+    (LANE_SCRATCH_PHRASE), never pinned.
+
+    Production lines named per test (what must change for it to fail):
+    - flagged: the `if not brief_names_lane_private_snapshot(text)` branch in
+      classify_brief_lane_scratch / the ERROR add in check_brief_lane_scratch
+    - grandfathered: the `add_t <= cutoff_t` branch that skips pre-rule briefs
+    - scope: RESTORE_CLAUSE_RE — a brief that does not teach the protocol is
+      not put in front of the hazard and is not in scope
+    - satisfied: brief_names_lane_private_snapshot, both accepted shapes
+    - cutoff content: resolve_lane_scratch_cutoff + the phrase constant + the
+      post-resolve "phrase in blob" guard
+    - precondition: live tree has at least one restore-teaching brief (a check
+      that silently matches nothing passes forever)
+    """
+
+    PHRASE = lint.LANE_SCRATCH_PHRASE
+    TEACH = "restore by `cp` (never `git checkout`), confirm with `cmp`"
+
+    def _git_repo(self, tmp_path):
+        import subprocess
+        t = fresh(tmp_path)
+
+        def git(*a, check=True):
+            return subprocess.run(
+                ["git", "-C", str(t), *a],
+                capture_output=True, text=True, check=check)
+
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        return t, git
+
+    def _landed(self, tmp_path):
+        """Repo whose SKILL.md carries the rule, ready for post-cutoff briefs."""
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "lane-private snapshot rule lands")
+        time.sleep(1.1)
+        (t / ".dreamwork" / "docs" / "briefs").mkdir(parents=True)
+        return t, git
+
+    def _brief(self, t, git, name, body):
+        (t / ".dreamwork" / "docs" / "briefs" / name).write_text(body, encoding="utf-8")
+        git("add", f".dreamwork/docs/briefs/{name}")
+        git("commit", "-qm", f"add {name}")
+
+    def _errors(self, t):
+        rep = lint.Report()
+        lint.check_brief_lane_scratch(t / ".dreamwork", rep)
+        return [d for lvl, w, d in rep.rows if lvl == lint.ERROR and w == "briefs"], rep
+
+    def test_a_post_cutoff_teaching_brief_with_a_generic_path_is_flagged(self, tmp_path):
+        """Production line: the missing-lane-private ERROR. THE defect: the brief
+        teaches the restore protocol and points the lane at a shared scratchpad."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "999-generic.md",
+                    "# Brief\n\nWorktree: `.worktrees/lane-999x`\n\n"
+                    f"Snapshot to `$SCRATCH/router.js.orig`, {self.TEACH}\n")
+
+        scope = lint.classify_brief_lane_scratch(t)
+        assert "999-generic.md" in scope["teaching"], scope
+        assert "999-generic.md" in scope["in_scope"], scope
+        assert "999-generic.md" in scope["missing"], scope
+
+        # Both findings are true of this brief and both are reported: it names
+        # no private directory AND points at the shared scratchpad. One fix must
+        # not hide the other.
+        assert "999-generic.md" in scope["shared"], scope
+        errors, rep = self._errors(t)
+        assert len(errors) == 2, rep.render()
+        assert all("999-generic.md" in e and "#652" in e for e in errors), errors
+
+    def test_naming_the_helper_satisfies_the_rule(self, tmp_path):
+        """Production line: the LANE_SCRATCH_TOKEN_RE branch of
+        brief_names_lane_private_snapshot."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "998-helper.md",
+                    "# Brief\n\nWorktree: `.worktrees/lane-998y`\n\n"
+                    f'`S="$(dev/lane_scratch.py snap)"`, {self.TEACH}\n')
+        errors, rep = self._errors(t)
+        assert errors == [], rep.render()
+
+    def test_a_hand_rolled_path_carrying_the_lane_name_satisfies_the_rule(self, tmp_path):
+        """Production line: the WORKTREE_LANE_RE branch — the property that
+        matters is uniqueness, not a particular helper."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "997-hand.md",
+                    "# Brief\n\nWorktree: `.worktrees/lane-997z`\n\n"
+                    f"Snapshot to `/home/x/.cache/lane-997z/router.js`, {self.TEACH}\n")
+        errors, rep = self._errors(t)
+        assert errors == [], rep.render()
+
+    def test_the_lane_name_in_the_worktree_path_alone_does_not_satisfy(self, tmp_path):
+        """The false-green this check must not have: every brief names its
+        worktree, so counting that occurrence would pass everything forever."""
+        assert not lint.brief_names_lane_private_snapshot(
+            "Worktree: `/home/x/.worktrees/lane-996w`\nSnapshot to `$S/bak`.\n")
+
+    def test_a_pre_cutoff_teaching_brief_is_grandfathered(self, tmp_path):
+        """Production line: the `add_t <= cutoff_t` grandfather branch."""
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / ".dreamwork" / "docs" / "briefs").mkdir(parents=True)
+        (t / ".dreamwork" / "docs" / "briefs" / "100-old.md").write_text(
+            f"# Brief\n\nWorktree: `.worktrees/old`\n\nUse `$S/bak`, {self.TEACH}\n",
+            encoding="utf-8")
+        (t / "SKILL.md").write_text("# skill\n\nno rule yet\n", encoding="utf-8")
+        git("add", "SKILL.md", ".dreamwork/docs/briefs/100-old.md")
+        git("commit", "-qm", "teaching brief before the rule")
+        time.sleep(1.1)
+        (t / "SKILL.md").write_text(f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "rule lands later")
+
+        scope = lint.classify_brief_lane_scratch(t)
+        assert "100-old.md" in scope["grandfathered"], scope
+        assert "100-old.md" not in scope["in_scope"], scope
+        errors, rep = self._errors(t)
+        assert errors == [], rep.render()
+
+    def test_a_brief_that_does_not_teach_the_protocol_is_out_of_scope(self, tmp_path):
+        """Production line: RESTORE_CLAUSE_RE. A brief that never puts the lane
+        in front of the hazard is not required to answer it."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "995-quiet.md",
+                    "# Brief\n\nWorktree: `.worktrees/lane-995q`\n\nJust write the code.\n")
+        scope = lint.classify_brief_lane_scratch(t)
+        assert "995-quiet.md" not in scope["teaching"], scope
+        errors, rep = self._errors(t)
+        assert errors == [], rep.render()
+
+    def test_an_unresolvable_cutoff_is_loud(self, tmp_path):
+        """Production line: the no-cutoff ERROR. A reworded SKILL.md phrase must
+        not silently grandfather every brief (#405's lesson, reused)."""
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text("# skill\n\nphrase was reworded away\n",
+                                    encoding="utf-8")
+        (t / ".dreamwork" / "docs" / "briefs").mkdir(parents=True)
+        (t / ".dreamwork" / "docs" / "briefs" / "994-t.md").write_text(
+            f"# Brief\n\nUse `$S/bak`, {self.TEACH}\n", encoding="utf-8")
+        git("add", "SKILL.md", ".dreamwork/docs/briefs/994-t.md")
+        git("commit", "-qm", "no rule phrase anywhere")
+
+        errors, rep = self._errors(t)
+        assert len(errors) == 1, rep.render()
+        assert "could not resolve" in errors[0], errors[0]
+
+    def test_no_teaching_brief_is_silence_not_a_pass(self, tmp_path):
+        """Production line: the any_teaching precondition. A check that matched
+        nothing must not emit a clean OK row."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "993-none.md", "# Brief\n\nNothing about restores.\n")
+        rep = lint.Report()
+        lint.check_brief_lane_scratch(t / ".dreamwork", rep)
+        assert rep.rows == [], rep.render()
+
+    def test_the_ok_row_states_its_coverage(self, tmp_path):
+        """A check that stops matching must not look like one that examined all."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "992-ok.md",
+                    "# Brief\n\nWorktree: `.worktrees/lane-992k`\n\n"
+                    f'`S="$(dev/lane_scratch.py snap)"`, {self.TEACH}\n')
+        rep = lint.Report()
+        lint.check_brief_lane_scratch(t / ".dreamwork", rep)
+        oks = [d for lvl, w, d in rep.rows if lvl == lint.OK and w == "briefs"]
+        assert len(oks) == 1, rep.render()
+        assert "restore-teaching brief" in oks[0], oks[0]
+        assert "in scope" in oks[0] and "grandfathered" in oks[0], oks[0]
+
+    def test_this_repo_has_restore_teaching_briefs(self):
+        """Dogfood precondition: the live tree must give the check material.
+
+        Counted straight off the briefs rather than through
+        classify_brief_lane_scratch, because that returns an empty scope when
+        the cutoff is unresolvable — which would make a broken scope marker and
+        a broken cutoff indistinguishable, and both look like a pass.
+        """
+        briefs = lint.SKILL_DIR / ".dreamwork" / "docs" / "briefs"
+        teaching = [p.name for p in briefs.glob("*.md")
+                    if lint.RESTORE_CLAUSE_RE.search(
+                        p.read_text(encoding="utf-8", errors="replace"))]
+        assert len(teaching) >= 10, (
+            f"only {len(teaching)} restore-teaching briefs — the scope marker "
+            "has stopped matching, and a check that matches nothing passes forever")
+
+    def test_the_cutoff_phrase_is_on_one_line_in_this_skill_md(self):
+        """The fragility that actually bit: `git log -S` is a literal search, so
+        a line break inside LANE_SCRATCH_PHRASE makes the cutoff unresolvable and
+        the check ERRORs instead of examining anything. Cheaper to catch here."""
+        text = (lint.SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        assert lint.LANE_SCRATCH_PHRASE in text, (
+            f"{lint.LANE_SCRATCH_PHRASE!r} does not appear contiguously in "
+            "SKILL.md — rewrap the paragraph or the cutoff cannot resolve")
+
+    def test_the_helper_in_prose_does_not_excuse_a_shared_path_in_the_example(
+            self, tmp_path):
+        """Production line: the SHARED_SCRATCHPAD_RE finding. The realistic
+        failure — helper mentioned, older worked example pasted underneath. The
+        lane copies the example, so naming the helper must not buy a pass."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "991-mixed.md",
+                    "# Brief\n\nWorktree: `.worktrees/lane-991m`\n\n"
+                    "Use `dev/lane_scratch.py` for scratch.\n"
+                    f"Snapshot: `cp client/router.js $SCRATCH/router.js.orig`, {self.TEACH}\n")
+        scope = lint.classify_brief_lane_scratch(t)
+        assert "991-mixed.md" not in scope["missing"], "helper is named, so not 'missing'"
+        assert "991-mixed.md" in scope["shared"], scope
+        errors, rep = self._errors(t)
+        assert len(errors) == 1, rep.render()
+        assert "SHARED" in errors[0], errors[0]
+
+    def test_the_derived_idiom_is_not_flagged_as_shared(self, tmp_path):
+        """`$S/` after `S="$(dev/lane_scratch.py …)"` is the CORRECT idiom and
+        must not be swept up by the shared-scratchpad matcher."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "990-good.md",
+                    "# Brief\n\nWorktree: `.worktrees/lane-990g`\n\n"
+                    '`S="$(dev/lane_scratch.py snap)"`; `cp f "$S/f"`; '
+                    f"{self.TEACH}\n")
+        errors, rep = self._errors(t)
+        assert errors == [], rep.render()
+
+    def test_a_shared_path_suppresses_the_ok_row(self, tmp_path):
+        """A finding must not sit next to a clean coverage row."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "989-sh.md",
+                    "# Brief\n\nWorktree: `.worktrees/lane-989s`\n\n"
+                    f"`dev/lane_scratch.py`; snapshot to `/tmp/claude-1000/x/scratchpad/bak`, {self.TEACH}\n")
+        rep = lint.Report()
+        lint.check_brief_lane_scratch(t / ".dreamwork", rep)
+        assert [d for lvl, w, d in rep.rows if lvl == lint.OK and w == "briefs"] == [], \
+            rep.render()

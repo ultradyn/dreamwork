@@ -417,6 +417,26 @@ the path does not even exist at branch point). The same trap hits
 both as absolute paths into the main checkout — repo-relative paths are
 silently wrong in a worktree.
 
+**A brief that teaches the `cp`/`cmp` restore protocol
+names a lane-private snapshot directory** (#652). Keep that clause on one
+line — `lint.py` content-resolves its cutoff with `git log -S`, a literal
+search that a line break defeats. The harness tells every agent its scratchpad is
+"session-specific, isolated"; measured 2026-07-31, that is true of a *CLI
+session* and false of a *lane*. Lanes are subagents of one CLI process and
+inherit one `CLAUDE_CODE_SESSION_ID`, so **every concurrent lane resolves to the
+same scratchpad directory** — same inode, verified by dispatching a probe
+subagent. Two lanes snapshotting to the natural generic name (`router.js.orig`,
+`style.css.bak`) means one lane's restore writes the other lane's bytes, and
+*both* lanes' `cmp` checks still pass against the wrong baseline — the #349
+safety protocol inverted into a silent corruption vector. Route the lane to
+`dev/lane_scratch.py`, which derives a private directory from the worktree's own
+identity so the lane never picks the path:
+`S="$(dev/lane_scratch.py snap)"`, then `cp f "$S/f"` … `cp "$S/f" f` …
+`cmp f "$S/f"`. It also lands the snapshot on `~/.cache` (btrfs) rather than
+`/tmp` (tmpfs), which is the substrate half of #634. Never move the snapshot
+*inside* the repo — that reintroduces the `git checkout` hazard #349 exists to
+prevent.
+
 Dreamers are batches, not careers. A long-lived dreamer's context grows
 until fresh eyes are cheaper — bound its scope to the current batch,
 retire it when the batch lands, and spawn fresh for new work (it
