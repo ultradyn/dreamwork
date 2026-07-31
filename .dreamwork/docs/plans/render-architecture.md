@@ -34,14 +34,21 @@ His words and the constraint are in
 > **React**. So the standing position is a **transition to a component-based
 > React web UI**, with replacing `watch.py`'s old inline HTML by those
 > components prioritised at the earliest suitable time (`#630`).
-> **The second-truth rule is untouched.** The survivor is *derived* — the
-> wrappers are compiled **from** the same `client/*.js` files `watch.py`
-> already serves, restating no markup, so nothing can diverge — and new
-> surfaces are born as components with no builder twin. A **hand-maintained**
-> component library beside the builders stays refused: that, and only that,
-> is what "two maintained truths about one surface" ever meant. Read every
-> `G2` cell below with that per-surface meaning; the matrix's own verdict for
-> **this** bug (I5, landed) is not reopened by the ruling.
+> **(4) And on 2026-07-31 19:09 he scoped the second-truth rule and relaxed
+> the renderer sentence outright** (`#614`): the rule binds **on-disk master
+> state** — *"we shouldn't split state.json across 2 files that diverge"* —
+> and the web UI's state is *"a secondary kind of state … fine to be a 'second
+> description'"*; separately, *"'one renderer, and it is the Python one' …
+> we should relax this now since we're changing over to react based webui."*
+> Canonical statement: **One fact, one home on disk**, `DREAMWORK.md`
+> Philosophy. So G2 no longer refuses a second render authority even of the
+> same surface — what remains is the **cost** of two hand-maintained
+> descriptions, which is why the survivor is still *derived* (wrappers
+> compiled **from** the same `client/*.js` files `watch.py` already serves,
+> restating no markup) and new surfaces are still born as components with no
+> builder twin. Read every `G2` cell below as a cost judgement, not a
+> prohibition; the matrix's own verdict for **this** bug (I5, landed) is not
+> reopened by either ruling.
 
 > re the reset when data.json is recieved … selecting text from any of the
 > questions deselects on update. selecting quesitons at the top or the
@@ -173,8 +180,15 @@ wholesale swap (it snapshots rects before, then animates survivors after).
   compiled from the same source the one authority renders, restating no
   markup — is not a second authority, and different surfaces may legitimately
   differ. Every `G2` cell below was scored under that meaning and still holds
-  under it; what the goal never permitted, and still does not, is a
-  hand-maintained twin.
+  under it.
+  **READING RETIRED 2026-07-31 19:09 (`#614`)** — he relaxed *"one renderer,
+  and it is the Python one"* outright, and separately scoped the second-truth
+  rule to **on-disk master state** (canonical: **One fact, one home on disk**,
+  `DREAMWORK.md` Philosophy). G2 no longer *refuses* anything on the render
+  path, including a hand-maintained twin; it now prices one. The cells below
+  are unchanged in verdict — a derived surface was cheap under the old reading
+  and is cheap under this one — but a lane must read a `✘G2` as "this costs
+  two maintained descriptions of one surface", not as "this is forbidden".
 - **G3 — selection/scroll/focus survive a poll without per-state patching.**
   R1 must be fixed *as a class*, not by adding a 12th snapshot for prose
   selection. The bar is: a state nobody has yet thought to snapshot still

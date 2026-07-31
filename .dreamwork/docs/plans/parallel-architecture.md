@@ -37,10 +37,13 @@ of that are now sharper:
   `0f97df03`); and **one-authority now reads per-surface** — he ruled
   2026-07-31 17:03 that the UI is **transitioning to a component-based React
   web UI** (`#591`, receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`), with the
-  claude-design breakpoint component-level and staged. The second-truth rule
-  is untouched by that: the component surface is **derived** (wrappers
-  compiled from the same `client/*.js` `watch.py` serves, no markup restated),
-  and a hand-maintained twin of an existing surface is still refused. What
+  claude-design breakpoint component-level and staged. **Then on 2026-07-31
+  19:09 (`#614`) he relaxed the renderer sentence outright and scoped the
+  second-truth rule to on-disk master state** (canonical: **One fact, one home
+  on disk**, `DREAMWORK.md` Philosophy) — so "one-authority" is no longer a
+  render constraint at all; the component surface is still **derived**
+  (wrappers compiled from the same `client/*.js` `watch.py` serves, no markup
+  restated) because that is cheapest, not because a rule demands it. What
   *does* survive from the original claim, and is this section's actual point,
   is the ownership fact below: `watch.py` still admits **one writer at a
   time**, and that is the bottleneck — not the deploy shape.

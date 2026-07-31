@@ -18,9 +18,17 @@ dreamwork-version: 5853e1789929
       refactored into modules and then they can be imported to use in
       dreamhub."* So dreamhub is **read+write**, and the two routes he
       named are a port or an extraction — `#368` is the extraction and
-      is therefore enabling work, not tidying. A port that reimplements
-      each feature is a second truth, which is the error `#294` R2 and
-      `#264` both refuse.
+      is therefore enabling work, not tidying. **The reuse argument
+      carries this on its own**: a port writes every feature a second
+      time, so every later fix has to be made twice and every behaviour
+      re-derived from the other implementation, while an extraction
+      leaves one implementation with two callers. That is a standing
+      maintenance cost, and avoiding it is the route he named second in
+      the same breath. (Until 2026-07-31 this was argued instead as *"a
+      port is a second truth, the error `#294` R2 and `#264` refuse"*. It
+      no longer leans there: he scoped that rule to **on-disk master
+      state**, and a rendering path is not that — see **One fact, one
+      home on disk** under Philosophy.)
     - **This says nothing about where it listens.** Public/WAN serving
       stays forbidden pending a reviewed design; a writable hub raises
       that bar, because the write routes steer a loop that acts on this
@@ -64,15 +72,22 @@ dreamwork-version: 5853e1789929
     HTML in `watch.py` with the new components be **prioritised at the
     earliest suitable time** — `#630` carries that, so the transition is
     scheduled, not merely permitted.
-    - **This does not relax the second-truth rule above; it is the reason the
-      survivor has the shape it does.** The wrappers are compiled *from* the
-      same `client/*.js` files `watch.py` already serves — no markup restated,
-      so nothing can diverge — and new surfaces (the session view) are born as
-      components with no builder twin. A **hand-maintained** component library
-      beside the builders is still refused, for exactly the reason a
-      reimplementing port is: two maintained descriptions of one surface only
-      agree on the day they are written. "We are going component-based" is not
-      licence to write a second copy of a surface that already has one.
+    - **And on 2026-07-31 19:09 he went further, relaxing the renderer rule
+      itself** (answering `#614`): *"also re `"one renderer, and it is the
+      Python one" (dreamhub-design.md:197)` from that doc, we should relax
+      this now since we're changing over to react based webui."* So a React
+      renderer of a surface beside that surface's Python builder is the shape
+      of the transition, not an exception to be argued for. Until that message
+      this bullet said the second-truth rule still refused a **hand-maintained**
+      component library beside the builders; it does not — that rule binds
+      on-disk master state and does not reach rendering (**One fact, one home
+      on disk**, Philosophy). What survives is the **cost**, which is why
+      `#630`'s plan still keeps the wrappers *derived* (compiled from the same
+      `client/*.js` `watch.py` already serves, no markup restated) and deletes
+      each string builder in the same commit that converts its surface: two
+      hand-maintained descriptions of one surface only agree on the day they
+      are written. A lane that wants one now argues that cost — it is no
+      longer refused by a rule.
 - **Dogfooding the loop is a goal, not a side effect** (his, 2026-07-31):
   *"whenever we notice friction or issues with the loop procedures / work flow
   (including user friction, subagent issues, and issues you yourself find), log
@@ -149,6 +164,46 @@ dreamwork-version: 5853e1789929
   were green, because their fault-injection pinned the old status.) So when a
   contract changes *which* signal carries failure, the readers of the old
   signal are part of the change, not a follow-up.
+- **One fact, one home on disk** (his scoping, 2026-07-31 19:09, answering
+  `#614`; the rule itself is `#294` R2 and `#264`). **This is the canonical
+  statement of the second-truth rule — the most-cited constraint in this repo.
+  Every other mention of it points here.** What it binds, stated positively:
+  the **on-disk master state** of the dreamworker and of the hub keeps exactly
+  **one** authoritative home per fact — the ledger store, the journal, and
+  anything else a restart reads back as truth. Whatever else reports that fact
+  is **derived** from its home, regenerable from it, and loses to it on
+  disagreement. His words, with his own example: *"the 'no second description
+  of state, read or write' … is specifically for the on-disk master state of
+  the main dreamworker and/or dreamhub. So like we shouldn't split state.json
+  across 2 files that diverge, kinda thing."* `#264`'s design already put it
+  positively and that reading is now his: *"never dual-write two fallible
+  truths"* forbids storing one fact **twice**, not storing two facts.
+  - **The web UI's state is outside it, expressly** (same message): *"the
+    webui state is secondary, the 'no second description of state, read or
+    write' behind G6 is specifically for the on-disk master state … The webui
+    state is a secondary kind of state and is fine to be a 'second
+    description' of state."* A client-side cache of what the server last said,
+    a component's local state, state accumulated from a delta stream — none of
+    these is what this rule protects, because none of them survives a reload:
+    they are rebuilt from the master state. Divergence there is **detected and
+    reported**, not prohibited by doctrine — he asked in the same message for a
+    periodic deeper full-state refresh plus a frontend→backend divergence alert
+    *"enough for us to debug reliably later"* (`#641`).
+  - **Renderers are outside it too, and were never a state question** (same
+    message): *"also re `"one renderer, and it is the Python one"
+    (dreamhub-design.md:197)` from that doc, we should relax this now since
+    we're changing over to react based webui."* A React renderer of a surface
+    beside the Python builder for that surface is the **intended** shape of the
+    web UI transition (`#630`), not a violation of anything. What survives is a
+    cost, not a refusal: two *hand-maintained* descriptions of one surface only
+    agree on the day they are written, so a lane that wants one argues that
+    cost on its merits — it can no longer be refused by citing this rule.
+  - **This was a scoping, not an abolition**, and reading it as a general
+    licence is the failure it exists to prevent. On-disk master state is
+    exactly as strict as it was before 2026-07-31: a second parser of one file,
+    a shadow table beside the journal, a `queue` regrown in `status.json`
+    beside the store (`lint.check_status_agrees_with_ledger` ERRORs on it) —
+    each is still the same error and still refused.
 - Durable over ephemeral: asks, decisions, and memory live in files
   (questions.md, dreams, docs) — never only in chat.
 - The skill itself stays lean: principle-level lines over procedure

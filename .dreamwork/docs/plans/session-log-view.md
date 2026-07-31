@@ -509,11 +509,16 @@ not a second authority), the claude-design breakpoint is **component-level
 and staged** (tokens + `client/style.css` first, delegating wrappers
 second), and the framework is **React**. `DREAMWORK.md:54-57` carries the
 ruling for the loop; `render-architecture.md:166-177` carries the pinned
-G2 reading. **The second-truth rule stays in force**: the wrappers are
-*derived* — compiled from the same `client/*.js` `watch.py` already serves,
-restating no markup, so nothing can diverge — and new surfaces are born as
-components with no builder twin; a hand-maintained twin beside an existing
-renderer stays refused. **This design was written before the ruling and
+G2 reading. **The second-truth rule does not reach any of this** — he scoped
+it 2026-07-31 19:09 (`#614`) to **on-disk master state**, and relaxed the
+renderer sentence outright in the same message (canonical: **One fact, one
+home on disk**, `DREAMWORK.md` Philosophy). The wrappers are still *derived*
+— compiled from the same `client/*.js` `watch.py` already serves, restating
+no markup — and new surfaces are still born as components with no builder
+twin, but on cost rather than prohibition. For **this** view that is a
+distinction without a difference: it is a new surface with no existing
+builder, so there is no twin to refuse or to price. **This design was written
+before the ruling and
 needed nothing to comply with it** — the ruling-independent contract below
 is exactly the shape the ruling asks for. What it does:
 

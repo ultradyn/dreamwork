@@ -766,9 +766,12 @@ class TestRender:
         assert head.index("last tick") < head.index('class="row"')
 
     def test_the_fragment_and_the_page_use_one_renderer(self, hubfix):
-        """A second renderer is a second set of rules about what a stalled
-        project looks like, and they only agree on the day they are
-        written."""
+        """A hand-written second row builder would be a second set of rules
+        about what a stalled project looks like, and the two would agree
+        only on the day they are written. Since 2026-07-31 (#614) that is a
+        cost rather than a prohibition — he relaxed "one renderer, and it is
+        the Python one" — but nothing has paid it, so the invariant this
+        pins is still true of `dreamhub.py` and worth holding."""
         rows = rows_for(hubfix)
         now = time.time()
         assert dreamhub.render_rows(rows, now) in dreamhub.render_page(

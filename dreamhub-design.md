@@ -190,31 +190,42 @@ row growing to hold it (detail is ranked, never withheld).
 **Label the columns, not the gaps.** Every row states its facts under a header
 pair (`PROJECT` / `LAST TICK`).
 
-**One renderer, and it is the Python one.** `/` serves the page, `/rows`
-serves the same fragment, and the client swaps the fragment rather than
-building rows of its own. `/hub.json` is the machine-readable aggregate and
-is not what the page polls — polling it would mean a JS row renderer beside
-the Python one, and two renderers only agree on the day they are written.
-(This is a deviation from the plan's I7 wording, in service of the plan's own
-reuse rule.)
+**The hub's rows are rendered in Python, and the client swaps the fragment.**
+`/` serves the page, `/rows` serves the same fragment, and the client swaps
+the fragment rather than building rows of its own. `/hub.json` is the
+machine-readable aggregate and is not what the page polls — polling it would
+mean writing a second row builder here by hand, and two hand-maintained
+descriptions of one surface only agree on the day they are written. That is a
+description of how `dreamhub.py` is built today, and a live cost argument
+against changing it casually. (This is a deviation from the plan's I7 wording,
+in service of the plan's own reuse rule.)
 
-**How to read that rule (ratified 2026-07-31 17:03, `#591`, receipt
-`dc9200a0-4ebf-5d3b-afab-71257155bef9`).** This sentence is the rule's
-birthplace and is cited across the repo, so its scope is now pinned rather
-than left to the reader. It is **per-surface**: it refuses two *maintained*
-truths about the **same** surface — which is literally what it was coined
-refusing here, a JS renderer of *these rows* beside the Python one. It does
-**not** refuse heterogeneity across different surfaces, and it does **not**
-refuse a **derived** surface: something compiled *from* the same source the
-one authority already renders, restating no markup, cannot drift from it and
-so is not a second truth. Under that reading, `watch.py`'s UI is transitioning
-to a component-based **React** web UI (staged: tokens + `client/style.css`
-first, then delegating wrappers compiled from the same `client/*.js` the
-server already serves; new surfaces born as components with no builder twin).
-The hub's rows are unaffected — they still have exactly one renderer, and this
-paragraph is not licence to add a second, here or anywhere. A
-**hand-maintained** twin of any surface that already has a renderer is refused
-exactly as it was before this ruling.
+**RELAXED 2026-07-31 19:09 — this paragraph used to open "One renderer, and
+it is the Python one", and he named that sentence when he relaxed it**
+(human, answering `#614`): *"also re `"one renderer, and it is the Python
+one" (dreamhub-design.md:197)` from that doc, we should relax this now since
+we're changing over to react based webui."* Read the paragraph above as an
+engineering cost, **not as a prohibition** — a React renderer of a surface
+beside that surface's Python builder is the intended shape of the web UI
+transition (`#630`), and the loop needs no exemption to build one. The
+sentences are kept because this line is the origin of nearly every citation of
+*"two renderers only agree on the day they are written"* in the repo, and a
+reader who follows one of those citations has to land on the scope rather than
+on the prohibition.
+
+**The rule those citations were reaching for is a rule about state, and it is
+untouched.** Its canonical statement is **One fact, one home on disk** under
+Philosophy in `DREAMWORK.md`: the on-disk master state of the dreamworker and
+of the hub keeps one authoritative home per fact, and he scoped it there —
+*"specifically for the on-disk master state … we shouldn't split state.json
+across 2 files that diverge"* — while placing the **web UI's** state expressly
+outside it as *"a secondary kind of state … fine to be a 'second
+description'"*. This paragraph is a pointer, not a second copy of that rule;
+if the two ever disagree, `DREAMWORK.md` is the one that is right. The earlier
+**per-surface** reading pinned here on 2026-07-31 17:03 (`#591`, receipt
+`dc9200a0-4ebf-5d3b-afab-71257155bef9`) is superseded by the scoping rather
+than contradicted by it: a derived surface was never a second truth, and now
+neither is a second renderer.
 
 Ages tick client-side every second off `data-since`. That is invisible while
 polling works; its job appears when the hub cannot be reached, where the last

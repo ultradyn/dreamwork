@@ -114,14 +114,29 @@ territory, already ruled, not this plan's.
   the current design doc says "No websockets" in its poll bullet
   (`watch-design.md:193`) — his 16:35 receipt reopens that line, and
   whatever lands must update it; two parallel descriptions drift
-  (`dreamhub-design.md:197`; `DREAMWORK.md` second-truth rule); trusted-LAN
+  (`dreamhub-design.md:197`; `DREAMWORK.md` second-truth rule — **both scoped
+  2026-07-31 19:09, see G6 below**: the rule binds on-disk master state, and
+  the renderer sentence was relaxed outright); trusted-LAN
   is unauthenticated and WAN unsupported (`watch.py:5414–5417`), with
   `hub-public-auth.md` / `hub-ssh-auth.md` holding the public bar.
 
 ## The trap, named before the matrix
 
 A delta protocol is a second description of the state unless it is
-**derived**. This plan's delta is a generic function of two outputs of the
+**derived**.
+**Re-based 2026-07-31 19:09 (`#614`) — the trap is real but it is no longer a
+rule violation, and the difference matters to whoever builds this.** He scoped
+the second-truth rule to **on-disk master state** and placed the web UI's state
+expressly outside it (**One fact, one home on disk**, `DREAMWORK.md`
+Philosophy), so a client whose accumulated state drifts from the server's is
+not breaking doctrine — it is showing the reader something false, which is
+this repo's *"nothing fails quietly"* goal instead. Everything below stands on
+that footing: derive the delta because a hand-written one is wrong and
+expensive, not because a rule forbids it. He also named the belt he wants over
+it (a periodic deeper refresh + a frontend→backend divergence alert, recorded
+on `#641`), which is the same instinct as the runtime self-check in (2) at a
+coarser grain.
+This plan's delta is a generic function of two outputs of the
 one authority: `delta(prev, next)` where both `prev` and `next` are
 `collect()` documents, compared per top-level key, changed keys shipped
 **whole** (a key's value is replaced, never patched). No subsystem ever
@@ -176,6 +191,26 @@ ratification) that G2-no-second-render-authority is per-surface.
 - **G6 — no second description of state, read or write.** Deltas derived
   from the one builder with a reconstruction proof; the journal remains the
   only write contract.
+  **SCOPED 2026-07-31 19:09 — he named this goal by number when he did it**
+  (`#614`): *"the 'no second description of state, read or write' behind G6 is
+  specifically for the on-disk master state of the main dreamworker and/or
+  dreamhub. So like we shouldn't split state.json across 2 files that diverge,
+  kinda thing. The webui state is a secondary kind of state and is fine to be a
+  'second description' of state."* So the goal splits in two, and only one half
+  moved. **The WRITE half is untouched and is the half this matrix's ✘ cells
+  rest on:** the journal is still the only write contract, because a POST that
+  mints a receipt writes on-disk master state, and a second write transport
+  beside it is exactly what he still refuses. `I1 ✘G6` therefore stands
+  unchanged. **The READ half is relaxed:** the client's accumulated state is
+  *secondary* state and may legitimately be a second description of the
+  master, so the reconstruction proof is no longer required *by doctrine*.
+  Keep it anyway — but for its own reason, which he gave in the same message:
+  a delta that misapplies silently is a debugging problem, and his answer to
+  that is a periodic deeper full-state refresh plus a frontend→backend
+  divergence alert *"enough for us to debug reliably later"* (recorded on
+  `#641`). Divergence in secondary state is now something to **detect and
+  report**, not something a rule forbids. Canonical statement of the scoped
+  rule: **One fact, one home on disk**, `DREAMWORK.md` Philosophy.
 - **G7 — removes the measured waste.** Breakpoint: while nothing changes, a
   window transfers ~nothing (keepalive bytes); on a real change it
   transfers ~the changed bytes (measured 0.6–2 % of full), and `collect()`
@@ -185,6 +220,12 @@ ratification) that G2-no-second-render-authority is per-surface.
   hand-rolled diffing (#505 Q1) and "one renderer, and it is the Python one"
   (`dreamhub-design.md:197`). Reconnect, resume, and stream framing that the
   browser provides natively must not be reimplemented by hand here.
+  **One of those two precedents was relaxed 2026-07-31 19:09** — the renderer
+  sentence, not the morphdom one — **and G8 does not lean on it.** The goal's
+  own argument is unchanged: ~250–400 hand-owned lines of RFC 6455 against
+  `EventSource`, which ships reconnect and resume free. The matrix's verdict
+  is settled independently anyway, by him: *"re SSE, I am fine going with
+  SSE."*
 
 **Ideas:**
 
