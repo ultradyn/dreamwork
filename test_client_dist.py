@@ -908,6 +908,7 @@ def _configure_toolchain(build_client):
                     "reading this check needs is the toolchain's own output")
     build_client.NODE_MODULES = str(node_modules)
     build_client.ESBUILD = str(node_modules / ".bin" / "esbuild")
+    return node_modules
 
 
 def test_the_build_is_reproducible_and_the_committed_output_is_its_output(
@@ -926,11 +927,19 @@ def test_the_build_is_reproducible_and_the_committed_output_is_its_output(
     import sys
     sys.path.insert(0, str(ROOT / "dev"))
     import build_client
-    _configure_toolchain(build_client)
+    toolchain = _configure_toolchain(build_client)
 
     root_a = _clone(tmp_path, "build-a")
     root_b = _clone(tmp_path, "build-from-a-different-absolute-path")
+    # Exercise both resolution routes. The first checkout has its own local
+    # node_modules path; the second has none and uses the invoking checkout's
+    # fallback. Pointing both builds at one external path would let that path
+    # leak into both outputs and make their equality a false green.
+    local_node_modules = root_a / "dev" / "build" / "node_modules"
+    local_node_modules.symlink_to(toolchain, target_is_directory=True)
+    build_client.NODE_MODULES = str(local_node_modules)
     manifest_a = build_client.build(str(root_a))
+    build_client.NODE_MODULES = str(toolchain)
     manifest_b = build_client.build(str(root_b))
     assert manifest_a["outputs"], "the first build recorded no outputs"
     assert manifest_b["outputs"], "the second build recorded no outputs"
@@ -938,8 +947,9 @@ def test_the_build_is_reproducible_and_the_committed_output_is_its_output(
         "the two builds did not produce the same output inventory")
     for rel, digest in manifest_a["outputs"].items():
         assert digest == manifest_b["outputs"][rel], (
-            "building %s from two different absolute paths produced "
-            "different bytes — the artifact leaks its build location" % rel)
+            "building %s from two different absolute paths, with and without "
+            "local node_modules, produced different bytes — the artifact "
+            "leaks its build location" % rel)
         committed = client_dist.sha256_file(str(ROOT / rel))
         assert committed is not None, "%s is not committed" % rel
         assert digest == committed, (
