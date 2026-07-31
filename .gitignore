@@ -18,6 +18,7 @@ __pycache__/
 .dreamwork/user-events.sqlite3
 .dreamwork/user-events.sqlite3-wal
 .dreamwork/user-events.sqlite3-shm
+.dreamwork/user-events.sqlite3.pending-read
 # #294: the ledger store is machine-local (C1 — the same trust boundary as
 # the journal); cross-clone history is the committed text export (T3), a
 # later deployment choice. The cutover's own backup dir is likewise local.
