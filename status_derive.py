@@ -48,8 +48,11 @@ CACHE + INVALIDATION (his words — "cached, invalidated on changes"): the
 existing seam carries this with NO second mechanism. `collect()` runs fresh on
 every /data.json GET, and the client re-fetches when `/mtime` moves.
 `watched_mtime` walks ALL of `.dreamwork/` — including `ledger.sqlite3` and
-its `-wal`/`-shm` siblings — so a store write changes a file mtime, the
-`/mtime` value moves, and the next `collect()` re-derives. The module itself
+its `-wal` sibling, but NOT `-shm` (#620: a read moves the shared-memory
+index, so watching it made serving `/data.json` schedule the next refetch;
+`-wal` and the db file carry every real write, measured) — so a store write
+changes a file mtime, the `/mtime` value moves, and the next `collect()`
+re-derives. The module itself
 is STATELESS: a pure function of (dreamwork_dir, status), so there is no cache
 HERE to invalidate — the /mtime→collect() poll is the cache, and it already
 covers the store. Request-path cost is one read-only sqlite3 query

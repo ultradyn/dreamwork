@@ -2943,6 +2943,122 @@ class TestCollector(unittest.TestCase):
             self.assertGreater(watch.watched_mtime(d), after,
                                "questions.md is no longer watched")
 
+    def test_sqlite_shm_mtime_is_not_a_change_signal_but_wal_and_db_are(self):
+        """#620 — the sqlite shared-memory index must not open the change gate,
+        and `-wal` must still close it.
+
+        Live, read-only, 15 samples at 2s with no writes by the measuring
+        process: `watched_mtime` changed 15/15 and `ledger.sqlite3-shm` held
+        the maximum mtime in 14 of them; with this exclusion, 1/15, on a real
+        `handoffs.md` edit. Each changed value costs an open window a 917KB
+        `/data.json` refetch, and serving that refetch touches `-shm` again.
+
+        The SECOND half is the one that must never be "widened to be safe".
+        Excluding `-wal` as well was measured to stop a real write from
+        advancing `watched_mtime` at all — a dashboard that silently stops
+        noticing change, with nothing going red. `-wal` is the write signal.
+
+        Production line: `WATCHED_MTIME_IGNORED_SUFFIXES` and the `endswith`
+        arm of `watched_mtime`'s `kept` filter."""
+        import ledger_store
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            db = os.path.join(dw, "ledger.sqlite3")
+            # PRECONDITION, derived from a REAL store rather than from a
+            # belief about sqlite's naming: the production opener really does
+            # produce these two sidecars, so neither half below is exercising
+            # a filename nothing writes.
+            #
+            # It deliberately says NOTHING about which of them is excluded.
+            # An earlier version phrased it as "exactly one sidecar matches
+            # WATCHED_MTIME_IGNORED_SUFFIXES", which looked stronger and was
+            # weaker: red-proofing the over-broad `("-shm", "-wal")` shape
+            # then failed HERE, so the write-signal assertion this test exists
+            # for was never reached and had never been shown to discriminate.
+            store = ledger_store.open_store(db, seed_next_id=1)
+            try:
+                sidecars = sorted(f for f in os.listdir(dw)
+                                  if f.startswith("ledger.sqlite3-"))
+                for needed in ("ledger.sqlite3-shm", "ledger.sqlite3-wal"):
+                    self.assertIn(needed, sidecars,
+                                  f"the real store's sidecars are {sidecars} "
+                                  f"— without {needed} this test proves "
+                                  "nothing about it")
+            finally:
+                store.close()
+            # Re-create the three by hand: sqlite deletes the sidecars on the
+            # last close, and what is under test is the WALK, not sqlite.
+            for name in ("ledger.sqlite3-shm", "ledger.sqlite3-wal"):
+                with open(os.path.join(dw, name), "wb") as f:
+                    f.write(b"")
+            base = watch.watched_mtime(d)
+            future = time.time() + 10
+            # Half 1: the shared-memory index moves and NOTHING happens.
+            os.utime(os.path.join(dw, "ledger.sqlite3-shm"), (future, future))
+            self.assertEqual(
+                watch.watched_mtime(d), base,
+                "a -shm touch still opens the change gate — every /data.json "
+                "read re-arms the next refetch")
+            # Half 2: -wal is the write signal and MUST still fire.
+            os.utime(os.path.join(dw, "ledger.sqlite3-wal"),
+                     (future + 10, future + 10))
+            after_wal = watch.watched_mtime(d)
+            self.assertGreater(
+                after_wal, base,
+                "-wal no longer moves watched_mtime — the dashboard has gone "
+                "blind to real store writes, which is worse than the churn")
+            # Half 3: and so is the db file itself (checkpoints land there).
+            os.utime(db, (future + 20, future + 20))
+            self.assertGreater(watch.watched_mtime(d), after_wal,
+                               "the store's own file is no longer watched")
+
+    def test_an_shm_sidecar_appearing_or_vanishing_moves_nothing(self):
+        """#620 — the second arm: the LISTING fingerprint, not the mtime max.
+
+        sqlite creates and deletes `-shm`/`-wal` around the open and close of
+        a single read, and #481 hashes the per-directory name set into
+        `watched_mtime` so deletions are visible. That made the mere presence
+        of a shared-memory index a change signal in its own right (measured:
+        1 of 8 read-only polls before this, 0 of 8 after).
+
+        The store named here is `session-index.sqlite3` ON PURPOSE. It does
+        not exist yet — it is the store the session-log plan proposes — and it
+        is the reason the rule is a SUFFIX rather than the two filenames the
+        #614 plan listed: a name list would let the next store reintroduce
+        this defect silently on the day it lands.
+
+        Production line: the same `endswith` arm, via `kept` feeding
+        `listing`."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            base = watch.watched_mtime(d)
+            old = time.time() - 3600      # old, so the MAX cannot move —
+            shm = os.path.join(dw, "session-index.sqlite3-shm")
+            for _ in range(2):            # appear, then vanish
+                with open(shm, "wb") as f:
+                    f.write(b"")
+                os.utime(shm, (old, old))
+                self.assertEqual(
+                    watch.watched_mtime(d), base,
+                    "an -shm sidecar appearing changed the listing "
+                    "fingerprint, so opening the store is still a 'change'")
+                os.remove(shm)
+                self.assertEqual(
+                    watch.watched_mtime(d), base,
+                    "an -shm sidecar vanishing changed the listing "
+                    "fingerprint")
+            # CONTROL: the fingerprint still sees a real file arriving at the
+            # same old mtime — otherwise the two assertions above would pass
+            # on a walk that had stopped noticing anything at all.
+            real = os.path.join(dw, "session-index.sqlite3")
+            with open(real, "wb") as f:
+                f.write(b"")
+            os.utime(real, (old, old))
+            self.assertNotEqual(watch.watched_mtime(d), base,
+                                "the listing fingerprint sees nothing at all")
+
     def test_long_entry_digest_is_rewrap_invariant(self):
         # #509 — the loop re-wraps a long entry's body lines when it rewrites
         # questions.md; a line-break-only change (same words, different wrap
@@ -7103,6 +7219,156 @@ class TestAppShell(unittest.TestCase):
             self.assertEqual(gen, watch.GENERATION)   # generation first
             self.assertTrue(mtime)
             float(mtime)                              # watched-mtime parses
+
+    # ── #598 · the not-found surface ──────────────────────────────────────
+    #
+    # Every 404 this server sent used to carry BaseHTTPRequestHandler's stock
+    # body, so the page a mistyped link lands on was the only surface on the
+    # instance outside the design system (visual audit 2026-07-31, D3).
+    #
+    # THE TRAP THESE TESTS ARE SHAPED AROUND (lessons.md:336) is asserting the
+    # new marker on the one route the fix was aimed at while the others still
+    # fall back. So the enumeration below is the check, not a convenience: it
+    # is every request that reaches a `send_error(404)` from a distinct site in
+    # watch.py — the `do_GET` fall-through, the `do_POST` fall-through,
+    # /filedata, /chatdata, /reviewraw, /researchraw, and `_send_bytes`. (The
+    # sites left out are the race arms — `getsize` raising between the confine
+    # check and the stat — which no request can schedule.)
+    _NOTFOUND_GETS = (
+        "/tasks",                       # do_GET fall-through: THE defect
+        "/nope/deeper?x=1",             # …and one that is not a near-miss
+        "/filedata?p=no-such-file.txt",
+        "/filebytes?p=no-such-image.png",
+        "/chatdata?id=no-such-chat",
+        "/reviewraw?p=missing.html",
+        "/researchraw?p=missing.html",
+    )
+
+    def _err(self, url, data=None):
+        """(code, body, headers) for a request that must fail.
+
+        Fails the test if the request SUCCEEDS — otherwise a route that
+        quietly started returning 200 would satisfy "the stock markup is
+        gone" for the wrong reason."""
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(data).encode("utf-8") if data is not None else None,
+            method="POST" if data is not None else "GET",
+            headers={"Content-Type": "application/json"} if data is not None
+            else {})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                self.fail(f"{url} returned {r.status}, expected an error")
+        except urllib.error.HTTPError as e:
+            return (e.code, e.read().decode("utf-8"),
+                    {k.lower(): v for k, v in e.headers.items()})
+
+    @staticmethod
+    def _stock_error_body(code=404):
+        """The body the stdlib would have sent, rendered from the stdlib's own
+        template. Derived rather than pasted so the markers below cannot rot
+        into vacuous truths when a future Python rewords its error page — the
+        assertion that they are PRESENT here is what keeps them honest."""
+        return http.server.DEFAULT_ERROR_MESSAGE % {
+            "code": code, "message": "Not Found",
+            "explain": "Nothing matches the given URI.",
+        }
+
+    def test_every_404_is_the_styled_page_and_the_status_stays_404(self):
+        """#598 — all seven 404 sites, the code, the body, and the absence of
+        the stock markup.
+
+        Production line: `Handler.send_error`'s `if code != 404` branch and the
+        `NOT_FOUND_PAGE` constant it writes."""
+        stock = self._stock_error_body()
+        # The markers are only worth asserting absent if they are really the
+        # stdlib's; pin them to the rendered template first (this is the half
+        # that fails loudly instead of silently when CPython rewords the page).
+        for marker in ("<h1>Error response</h1>", "Error code: 404",
+                       "color-scheme: light dark"):
+            self.assertIn(marker, stock,
+                          "stock-404 marker no longer matches CPython's "
+                          "template — re-derive it, do not delete it")
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            cases = [(p, None) for p in self._NOTFOUND_GETS]
+            # do_POST's unknown-path fall-through: same seam, different verb.
+            cases.append(("/no-such-write", {"text": "his words"}))
+            for path, data in cases:
+                code, body, headers = self._err(base + path, data)
+                self.assertEqual(code, 404, f"{path} status")
+                # THE STATUS IS THE POINT: a pretty page served 200 lies to
+                # every tool that reads codes, this repo's guards included.
+                for marker in ("<h1>Error response</h1>", "Error code: 404",
+                               "color-scheme: light dark"):
+                    self.assertNotIn(
+                        marker, body,
+                        f"{path} still serves the stock http.server 404")
+                self.assertTrue(
+                    body == watch.NOT_FOUND_PAGE,
+                    f"{path} did not serve NOT_FOUND_PAGE "
+                    f"(got {len(body)} chars, want {len(watch.NOT_FOUND_PAGE)})")
+                self.assertEqual(
+                    headers.get("content-type"), "text/html;charset=utf-8",
+                    f"{path} content-type")
+                self.assertEqual(
+                    headers.get("content-length"),
+                    str(len(body.encode("utf-8"))),
+                    f"{path} content-length disagrees with the body")
+
+    def test_not_found_page_is_the_one_design_system(self):
+        """#598 — the page borrows the shell and the stylesheet rather than
+        keeping a second copy of the visual language.
+
+        Production line: the `NOT_FOUND_PAGE = page_shell(...)` construction."""
+        page = watch.NOT_FOUND_PAGE
+        # The ONE stylesheet, byte-for-byte the client asset — not a subset
+        # someone will forget to update when style.css moves.
+        self.assertIn(watch.STYLE, page)
+        self.assertEqual(page.count("<style>"), 1,
+                         "a second <style> block means a second place the "
+                         "visual language lives")
+        # The page's own markup declares no colour, font or spacing: strip the
+        # shared stylesheet and nothing styling-shaped may remain.
+        own = page.replace(watch.STYLE, "")
+        self.assertNotIn("style=", own)
+        self.assertIsNone(re.search(r"#[0-9a-fA-F]{3,8}\b", own),
+                          "the not-found body carries a colour of its own")
+        # The not-found voice the client already uses for a missing subject
+        # (#452's dim rail), so a restyle carries this page along with it.
+        for cls in ("qmissing", "qmisshead", "qmissbody", "qmissback"):
+            self.assertIn(cls, own)
+        # A way back — the thing the stock page most conspicuously lacked.
+        # `_top` because /reviewraw and /researchraw 404 inside an <iframe>.
+        self.assertIn('href="/"', own)
+        self.assertIn('target="_top"', own)
+        # And it says 404 in its own voice, not only in the status line.
+        self.assertIn("404", own)
+
+    def test_non_404_errors_keep_the_stock_body(self):
+        """#598 — the override is scoped to 404 on purpose.
+
+        A 421 is `_preflight` refusing a caller that is not the reader at all,
+        and it must not cost 118KB of the reader's stylesheet per probe. This
+        is the assertion that fails if the override is widened to every code.
+
+        Production line: the `if code != 404: super().send_error(...)` guard."""
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            req = urllib.request.Request(base + "/",
+                                         headers={"Host": "attacker.example"})
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req, timeout=5)
+            self.assertEqual(cm.exception.code, 421)
+            body = cm.exception.read().decode("utf-8")
+            self.assertIn("<h1>Error response</h1>", body)
+            self.assertNotIn("qmissing", body)
+            # The claim is about the STYLESHEET, so say so directly. A size
+            # bound relative to NOT_FOUND_PAGE looked equivalent and is not:
+            # it also goes red when NOT_FOUND_PAGE shrinks, which is a
+            # different defect wearing this test's name.
+            self.assertNotIn(watch.STYLE, body,
+                             "a refusal is now paying for the whole stylesheet")
 
     def test_comment_threads_and_validates(self):
         with tempfile.TemporaryDirectory() as d:
