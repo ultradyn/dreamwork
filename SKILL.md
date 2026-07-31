@@ -104,7 +104,7 @@ REVIEW` instead of reporting a clean result. It
 is advisory (exit 0 always). This is the primary route because a lane
 cannot land work without committing, and the commit convention puts the id
 in the subject by construction — git knows about every same-tree landing,
-while a hand-off line is an extra act a lane must remember (and `#392a`
+while an inbox report is an extra act a lane must remember (and `#392a`
 showed what forgetting looks like). Fold what it reports into `## Recently
 landed` citing the sha, or cite the sha in the entry when the open state is
 deliberate.
@@ -428,12 +428,12 @@ So the dispatch brief tells the lane, and the coordinator carries its half:
 - **The lane re-checks before finishing**: if `git rev-list --count
   <base>..<base-branch>` is non-zero, rebase onto it and resolve there. Same
   repo, so no fetch — a worktree sees the base branch directly.
-- **Order is load-bearing: rebase FIRST, hand off SECOND.** A rebase rewrites
-  every commit it moves, so a hand-off line appended before the rebase names
-  a sha that no longer exists on the branch — the ledger would then fold work
-  citing a commit the merge does not contain, which is `#590`'s
+- **Order is load-bearing: rebase FIRST, report the sha SECOND.** A rebase
+  rewrites every commit it moves, so a sha captured before the rebase names a
+  commit that no longer exists on the branch — the coordinator would then
+  fold work citing a sha the merge does not contain, which is `#590`'s
   folding-is-not-merging failure arriving by a new door. Land, rebase,
-  *then* append the hand-off with the post-rebase sha.
+  *then* put the post-rebase sha in your inbox report (`#687`).
 - **Append-only files conflict on almost every rebase** (`handoffs.md`,
   `lessons.md`, `questions.md`) because both sides grow at the same EOF. The
   resolution is nearly always keep-both, and after ANY hand resolution the
@@ -486,13 +486,14 @@ checking the range is free — never another lane's guard, never the suite), and
 the coordinator verifies guards once on the merged tree before folding. This
 matches who actually merges.
 
-**Inbox and hand-off paths given to a worktree lane are absolute.** A lane
+**Inbox paths given to a worktree lane are absolute.** A lane
 in `.worktrees/x` told to append to `.dreamwork/inbox.md` writes its own
 copy, and the coordinator never sees it (`inbox.md` is often untracked, so
-the path does not even exist at branch point). The same trap hits
-`.dreamwork/handoffs.md` when the brief asks the lane to write it. Give
-both as absolute paths into the main checkout — repo-relative paths are
-silently wrong in a worktree.
+the path does not even exist at branch point). Give it as an absolute path
+into the main checkout — repo-relative paths are silently wrong in a
+worktree. (A lane no longer writes `.dreamwork/handoffs.md` at all — that is
+single-writer durable shared state the coordinator owns; see `#687` /
+`lessons.md:2704`. The absolute-path rule was for the inbox, and it stays.)
 
 **A brief that asks the lane to read the ledger pastes the `--ledger` form
 with the main checkout's absolute path** (#667). `ledger.sqlite3` is
@@ -511,13 +512,14 @@ Every verb now refuses and names that form rather than answering from an
 empty ledger, so a brief that forgets costs a round trip instead of a wrong
 citation — but the brief is what saves the round trip.
 
-**A brief states the base sha, and tells the lane to rebase before handing
-off.** Both halves of the rebase rule above live there: the merge-base and
+**A brief states the base sha, and tells the lane to rebase before reporting
+the sha.** Both halves of the rebase rule above live there: the merge-base and
 the base branch's current head as **shas, never a commit count** (`#672`),
 because a lane cannot notice its base moved if it was handed a number; and
-the instruction to rebase and resolve in the lane, **before** appending the
-hand-off, since a rebase rewrites the sha the hand-off would have named. Full
-statement and reasoning: the lane-rebase rule earlier in this section.
+the instruction to rebase and resolve in the lane, **before** putting the
+sha in its inbox report, since a rebase rewrites the sha the report would
+name (`#687`). Full statement and reasoning: the lane-rebase rule earlier
+in this section.
 
 **A brief that names a guard as evidence names the assertion that guard
 would fail on** (`#672`) — a guard whose fixture cannot express the feature
@@ -606,23 +608,26 @@ commit — the message, and any document the work produced — and treat the
 inbox as where richer context *usually* arrives, never as where a
 deliverable lives (#404).
 
-**A subagent that LANDS a commit writes two things, not one** (#394): its
-report to the inbox, and one line to `.dreamwork/handoffs.md`'s
-`## Pending` — **which it must also commit**, named among its paths, because
-"write this" is not "commit this" and the first lane asked for a hand-off
-appended it and left it unstaged, exactly as instructed. Say so in its brief — that is a dispatch-time obligation, not
-something a lane can be expected to infer. The two are not redundant
-because they are read by different things at different times: the inbox
-carries judgement and is read by a coordinator, in prose, once; the
-hand-off carries the id and the sha and is read by `lint.py` and the
-dashboard, forever. So an inbox report is durable only while a coordinator
-is alive to act on it — and the case the hand-off exists for is exactly the
-other one, where the work landed and nobody folded it (`#334` sat an hour,
-`#362` was found by accident). The channel and both its readers were built
-by `#381` and verified; what was missing was anyone telling a producer to
-use it, so `## Pending` sat empty while two lanes landed. **A channel
-nobody writes fails the same way as a channel nobody reads, and looks just
-as finished.**
+**A landing leaves two records, not one** (#394; writers split by `#687` /
+`lessons.md:2704`): the lane writes its report to the absolute `inbox.md`,
+and the coordinator writes the hand-off line in `.dreamwork/handoffs.md`'s
+`## Pending` from that report at merge. The split is an ownership call, not
+a path preference — `handoffs.md` is durable shared state and wants a single
+writer, so a lane appending to `## Pending` while the coordinator edits
+`## Folded` conflicts on every merge (hit twice in twenty minutes,
+`lessons.md:2704`). The lane's whole duty is the inbox report — say so in
+its brief, because "the coordinator writes the hand-off" is not something a
+lane can infer. The two records are still not redundant: the inbox carries
+judgement and is read by a coordinator, in prose, once; the hand-off carries
+the id and the sha and is read by `lint.py` and the dashboard, forever. So
+an inbox report is durable only while a coordinator is alive to act on it —
+and the case the hand-off exists for is exactly the other one, where the
+work landed and nobody folded it (`#334` sat an hour, `#362` was found by
+accident). The channel and both its readers were built by `#381`; what was
+missing was a writer, so `## Pending` sat empty while two lanes landed. **A
+channel nobody writes fails the same way as a channel nobody reads, and
+looks just as finished** — and writing the hand-off is now the coordinator's
+merge-time duty, not the lane's.
 
 **Put it in the dispatch prompt, not the relay** — measured, not assumed.
 The first attempt relayed this obligation to three in-flight lanes; the one
