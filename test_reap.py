@@ -231,6 +231,37 @@ def test_clean_worktree_is_removed_after_reported_check(lane):
     assert str(worktree.resolve()) not in _git(root, "worktree", "list", "--porcelain")
 
 
+def test_real_lane_scratch_is_removed_without_force(lane):
+    """#762: the happy path must actually COMPLETE for a real lane.
+
+    Every lane holds an untracked ``BRIEF.md`` (the coordinator writes it and
+    never tracks it) and an ignored ``__pycache__/``. ``git worktree remove``
+    refuses on ANY untracked file, so a tool that passes ``--force`` to git only
+    when its own ``--force`` is set cannot remove a lane whose gate just PASSED.
+    The existing suite proved the gate's verdict but never the outcome (#671 in
+    the suite itself): this test asserts the directory is GONE and the worktree
+    is deregistered — the discriminating evidence is the worktree's absence, not
+    a changed exit code.
+    """
+    root, worktree = lane
+    (worktree / "BRIEF.md").write_text("lane-local brief\n", encoding="utf-8")
+    cache = worktree / "__pycache__"
+    cache.mkdir()
+    (cache / "tool.pyc").write_bytes(b"cache")
+
+    result = _run(worktree)
+
+    assert result.returncode == 0, result.stderr
+    assert "tracked-dirty=0" in result.stdout
+    assert "untracked=1" in result.stdout
+    assert "ignored=1" in result.stdout
+    assert "unmerged-commits=0" in result.stdout
+    assert "removed" in result.stdout
+    # The discriminating evidence: the gate passed AND the removal completed.
+    assert not worktree.exists()
+    assert str(worktree.resolve()) not in _git(root, "worktree", "list", "--porcelain")
+
+
 def test_just_recipe_routes_lane_reap_through_the_checked_tool():
     result = subprocess.run(
         ["just", "--dry-run", "reap-lane", "--check", "/tmp/lane"],
