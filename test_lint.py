@@ -206,6 +206,14 @@ class TestTheBugItWasBuiltFor:
         # snapshot) from the committed ledger via the REAL cutover path, so
         # lint engages store mode over real projected data — not the shim.
         _materialize_store(dw, led.read_text(), tmp_path)
+        # #592 made an ABSENT store in a linked worktree a WARN rather than an
+        # ERROR, and `frozen_tree` IS a linked worktree — so a materialization
+        # that quietly failed would now leave this dogfood passing on the
+        # excuse instead of on real store-mode data. Pin the mode it must run
+        # in, or `not rep.failed` stops meaning what the test says it means.
+        assert lint.source_of_truth(dw) == "store", \
+            "store did not materialize — the dogfood would pass on the #592 " \
+            "worktree excuse rather than on the real ledger"
         rep = run(frozen_tree)
         assert not rep.failed, rep.render()
 
@@ -6728,3 +6736,189 @@ class TestChatsV1Lint:
         warns = self._warns(rep)
         assert any("c5" in d and "WRONG" in d and "disagrees" in d for d in warns), \
             f"a chat.json id that disagrees with the dir must be named: {warns}"
+
+
+# ---------------------------------------------------------------------------
+# #592: lint inside a lane WORKTREE must not report a false tasks.md ERROR.
+#
+# `ledger.sqlite3` is gitignored, so it never travels to a linked worktree;
+# `source_of_truth` reads the cutover watermark out of that same file, so its
+# absence answers "markdown" and check_tasks falls to the #458 shim, which has
+# no `Next id` header. Every lane's verification step therefore ended red.
+#
+# Production line for this class: the `shared is not None and shared.exists()
+# and parse_notice(text)` branch in lint.check_tasks. Force it False (or make
+# lint.shared_store_for_worktree return None) and the worktree tests go red;
+# force it True unconditionally and the two "still ERRORs" tests go red. Every
+# fixture below is a REAL git worktree of a REAL post-cutover repo with a REAL
+# absent store — the excuse must be exercised against the actual absence, not
+# against a fixture that quietly kept a ledger around.
+# ---------------------------------------------------------------------------
+class TestWorktreeLedgerAbsent:
+    FIXTURE = ("# Task ledger\n\nNext id: **12**\n\n## Open\n\n"
+               "- **#10** — a clean open entry · P1 · task · origin: **human**\n\n"
+               "## Recently landed\n\n"
+               "- **#11** — a clean landed entry · P0 · implementation · "
+               "origin: **human** (abc1234)\n")
+
+    def _main_checkout(self, tmp_path):
+        """A REAL post-cutover main checkout: the #458 shim committed, the
+        gitignored store present and NOT committed — the live repo's shape."""
+        import importlib.machinery, importlib.util, io
+        import ledger_parse
+        repo = Path(__file__).resolve().parent
+        loader = importlib.machinery.SourceFileLoader(
+            "ud_dw_tasks_migrate_wt", str(repo / "ud-dw-tasks-migrate"))
+        spec = importlib.util.spec_from_loader("ud_dw_tasks_migrate_wt", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        root = fresh(tmp_path)
+        dw = root / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(self.FIXTURE)
+        mod.perform_cutover(str(dw), out=io.StringIO())
+
+        def git(*a):
+            return subprocess.run(["git", "-C", str(root), *a],
+                                  capture_output=True, text=True, check=True)
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        (root / ".gitignore").write_text(".dreamwork/ledger.sqlite3*\n")
+        git("add", ".gitignore", ".dreamwork/tasks.md",
+            ".dreamwork/tasks.md.deprecated")
+        git("commit", "-qm", "post-cutover seed")
+        assert ledger_parse.store_path(dw).exists(), \
+            "fixture precondition: the main checkout must carry a real store"
+        return root, dw
+
+    def _worktree(self, root, name="lane-x"):
+        wt = root.parent / name
+        subprocess.run(["git", "-C", str(root), "worktree", "add", "-q",
+                        "-b", name, str(wt)],
+                       capture_output=True, text=True, check=True)
+        return wt, wt / ".dreamwork"
+
+    def _preconditions(self, wtdw):
+        """The absence this class is about, asserted rather than assumed.
+
+        Without these the worktree assertions could pass on a fixture that
+        still had a ledger — the exact hollowness lessons.md:336 names.
+        """
+        import ledger_parse
+        assert not ledger_parse.store_path(wtdw).exists(), \
+            "precondition: the worktree must genuinely have NO store"
+        assert ledger_parse.source_of_truth(wtdw) == "markdown", \
+            "precondition: the markdown fallback must genuinely engage"
+        assert lint.NEXT_ID.search((wtdw / "tasks.md").read_text()) is None, \
+            "precondition: the shim must genuinely lack a `Next id` header"
+
+    def _tasks_rows(self, dw):
+        rep = lint.Report()
+        lint.check_tasks(dw, rep)
+        return rep, [(lvl, d) for lvl, w, d in rep.rows if w == "tasks.md"]
+
+    def test_a_worktree_lint_is_not_red(self, tmp_path):
+        """The defect itself: a lane worktree ended every run on a false ERROR."""
+        root, _ = self._main_checkout(tmp_path)
+        wt, wtdw = self._worktree(root)
+        self._preconditions(wtdw)
+        rep, rows = self._tasks_rows(wtdw)
+        assert not ERRORS(rep, "tasks.md"), \
+            f"a worktree's absent ledger is not a tasks.md defect: {rows}"
+        assert not rep.failed, f"the whole check must be green here: {rows}"
+        assert any(lvl == lint.WARN and "ledger absent (worktree)" in d
+                   for lvl, d in rows), \
+            f"the unrun ledger checks must still be REPORTED: {rows}"
+
+    def test_the_warn_names_the_shared_store_it_verified(self, tmp_path):
+        """The WARN must name the store it actually found, not assert one."""
+        import ledger_parse
+        root, dw = self._main_checkout(tmp_path)
+        _, wtdw = self._worktree(root, "lane-named")
+        self._preconditions(wtdw)
+        _, rows = self._tasks_rows(wtdw)
+        detail = next(d for lvl, d in rows if lvl == lint.WARN)
+        assert str(ledger_parse.store_path(dw)) in detail, \
+            f"the WARN must name the shared store it verified: {detail}"
+
+    def test_a_main_checkout_with_no_store_is_still_an_error(self, tmp_path):
+        """The half that stops this becoming a blanket silence."""
+        import ledger_parse
+        root, dw = self._main_checkout(tmp_path)
+        ledger_parse.store_path(dw).unlink()
+        for suffix in ("-wal", "-shm"):
+            side = Path(str(ledger_parse.store_path(dw)) + suffix)
+            if side.exists():
+                side.unlink()
+        assert (root / ".git").is_dir(), \
+            "precondition: a main checkout's .git is a directory"
+        assert ledger_parse.source_of_truth(dw) == "markdown", \
+            "precondition: the markdown fallback must engage here too"
+        rep, rows = self._tasks_rows(dw)
+        assert ERRORS(rep, "tasks.md"), \
+            f"a genuinely missing ledger in a main checkout must stay red: {rows}"
+
+    def test_a_worktree_whose_shared_store_is_gone_is_still_an_error(self, tmp_path):
+        """The worktree excuse is spent on ABSENCE-BY-DESIGN only. If the store
+        the worktree shares is itself gone, the ledger is really gone."""
+        import ledger_parse
+        root, dw = self._main_checkout(tmp_path)
+        _, wtdw = self._worktree(root, "lane-orphan")
+        self._preconditions(wtdw)
+        ledger_parse.store_path(dw).unlink()
+        rep, rows = self._tasks_rows(wtdw)
+        assert ERRORS(rep, "tasks.md"), \
+            f"no shared store means the ledger is genuinely gone: {rows}"
+
+    def test_a_worktree_tasks_md_that_is_not_the_shim_is_still_an_error(self, tmp_path):
+        """A real format defect in a worktree must not inherit the excuse."""
+        root, _ = self._main_checkout(tmp_path)
+        _, wtdw = self._worktree(root, "lane-garbage")
+        self._preconditions(wtdw)
+        (wtdw / "tasks.md").write_text(
+            "# Task ledger\n\n## Open\n\n- **#10** — a header-less ledger\n")
+        rep, rows = self._tasks_rows(wtdw)
+        assert ERRORS(rep, "tasks.md"), \
+            f"only the migration shim is excused, not any headerless file: {rows}"
+
+    def test_the_resolver_refuses_a_main_checkout(self, tmp_path):
+        """Unit-level: the discriminator is `.git` being a file, and a main
+        checkout must never resolve to a shared store."""
+        import ledger_parse
+        root, dw = self._main_checkout(tmp_path)
+        ledger_parse.store_path(dw).unlink()
+        assert lint.shared_store_for_worktree(dw) is None
+
+    def test_the_resolver_is_silent_when_the_store_is_present(self, tmp_path):
+        """A worktree that somehow HAS a store needs no excuse at all."""
+        root, dw = self._main_checkout(tmp_path)
+        _, wtdw = self._worktree(root, "lane-hasstore")
+        import shutil, ledger_parse
+        shutil.copy2(ledger_parse.store_path(dw), ledger_parse.store_path(wtdw))
+        assert lint.shared_store_for_worktree(wtdw) is None
+
+    def test_a_separate_git_dir_main_checkout_is_refused(self, tmp_path):
+        """A main checkout is NOT identified by `.git` being a directory alone.
+
+        `git init --separate-git-dir` gives a MAIN checkout a `.git` FILE, the
+        same shape a linked worktree has, so the `.git`-is-a-file guard cannot
+        decide this one — only the `<common>/worktrees/<name>` layout can. Found
+        by red-proofing: deleting the is-a-file guard left every other test in
+        this class green (a directory `.git` fails `read_text` into the OSError
+        path anyway), so this is the case that gives the resolver's shape check
+        something real to be right about.
+        """
+        import ledger_parse
+        root = fresh(tmp_path)
+        gitdir = fresh(tmp_path)
+        subprocess.run(["git", "init", "-q", f"--separate-git-dir={gitdir}",
+                        str(root)], capture_output=True, text=True, check=True)
+        dw = root / ".dreamwork"
+        dw.mkdir()
+        assert (root / ".git").is_file(), \
+            "precondition: --separate-git-dir must give a main checkout a .git FILE"
+        assert not ledger_parse.store_path(dw).exists(), \
+            "precondition: no store, so the resolver actually gets past its first guard"
+        assert lint.shared_store_for_worktree(dw) is None, \
+            "a separate-git-dir MAIN checkout must not be excused as a worktree"

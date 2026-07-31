@@ -89,7 +89,11 @@ ORIGIN_VALUES = ("human", "loop", "unknown")
 # slice two checks below once wrote out by hand.
 from ledger_parse import (ENTRY_HEAD, ENTRY_ID, ORIGIN_MARK, ledger_entries,
                           open_section_text, source_of_truth, store_entries,
-                          store_ids_by_state)
+                          store_ids_by_state, store_path)
+# #592: the #458 shim is a `dreamwork-migration-notice`, and recognising one is
+# migration_notice.py's job — the worktree excuse below must not be spendable on
+# a tasks.md that merely happens to lack a header.
+from migration_notice import parse_notice
 
 # #419: a blocked-on-human claim, same `key: **value**` idiom as origin/related.
 # The marker names a KIND of blocker (a human decision), not a specific question
@@ -1075,6 +1079,52 @@ def ledger_view(dw: Path):
     return path.read_text(), "markdown"
 
 
+def shared_store_for_worktree(dw: Path) -> Path | None:
+    """The MAIN checkout's ledger store when ``dw`` sits in a linked worktree,
+    else ``None``. Existence is the caller's question; this only resolves it.
+
+    #592, the defect this exists for. ``ledger.sqlite3`` is gitignored (#294 —
+    it is machine-local), so it can never appear in a linked worktree. But
+    `source_of_truth` reads the cutover watermark OUT OF that very file, so an
+    absent store answers ``'markdown'`` — indistinguishable from a repo that
+    never cut over — and `check_tasks` falls through to the #458 migration
+    notice shim, which has no ``Next id`` header. Every lane worktree therefore
+    ended its verification on a FALSE ERROR, and three consecutive hand-offs
+    taught the next lane that a lint ERROR is background noise.
+
+    Discriminating on "am I in a worktree?" ALONE would be a blanket silence,
+    so this hands back the shared checkout's store PATH and the caller requires
+    it to exist: a ledger that is genuinely gone stays a loud ERROR even when
+    the complaint is raised from inside a worktree. Only the path's EXISTENCE
+    is ever consulted — never its contents — so lint's findings still describe
+    nothing but its own ``--target``.
+
+    The link is read from git's own record: a linked worktree's ``.git`` is a
+    FILE holding ``gitdir: <common>/worktrees/<name>``, where a main checkout's
+    is a directory. That is a fact on disk rather than a subprocess, so the
+    answer cannot depend on whether `git` is runnable, and every branch below
+    fails toward ``None`` — toward the ERROR — on anything unexpected.
+    """
+    if store_path(dw).exists():
+        return None  # the store is right here; nothing to excuse
+    dot_git = dw.parent / ".git"
+    if not dot_git.is_file():
+        return None  # a main checkout (`.git/` dir) is never excused
+    try:
+        pointer = dot_git.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not pointer.startswith("gitdir:"):
+        return None
+    gitdir = Path(pointer[len("gitdir:"):].strip())
+    if not gitdir.is_absolute():
+        gitdir = (dw.parent / gitdir).resolve()
+    # `<common>/worktrees/<name>` — anything else is not a linked worktree.
+    if gitdir.parent.name != "worktrees":
+        return None
+    return store_path(gitdir.parent.parent.parent / ".dreamwork")
+
+
 def check_tasks(dw: Path, rep: Report) -> None:
     """The ledger. Its ids are permanent, so a collision is unrecoverable."""
     text, source = ledger_view(dw)
@@ -1116,7 +1166,23 @@ def check_tasks(dw: Path, rep: Report) -> None:
 
     m = NEXT_ID.search(text)
     if not m:
-        rep.add(ERROR, "tasks.md", "no `Next id: **N**` header — the next task cannot be numbered safely")
+        # #592: in a linked worktree the gitignored store cannot have
+        # travelled, so this text is the #458 migration shim and the missing
+        # header is an artefact of WHERE lint is standing, not a defect. Only
+        # excused when all three hold: the shared checkout really does carry
+        # the store, this really is a linked worktree, and the text really is
+        # the migration notice — a tasks.md that merely lacks a header still
+        # ERRORs, here as anywhere.
+        shared = shared_store_for_worktree(dw)
+        if shared is not None and shared.exists() and parse_notice(text):
+            rep.add(WARN, "tasks.md", (
+                f"ledger absent (worktree) — `{store_path(dw).name}` is "
+                f"gitignored and does not travel; the shared store is "
+                f"{shared}. The ledger checks did not run here (this row is "
+                f"the refusal to fake having run) — lint the main checkout "
+                f"for them"))
+        else:
+            rep.add(ERROR, "tasks.md", "no `Next id: **N**` header — the next task cannot be numbered safely")
     else:
         nxt = int(m.group(1))
         if ids and nxt <= max(ids):
