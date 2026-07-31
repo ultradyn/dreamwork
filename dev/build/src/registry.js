@@ -204,7 +204,13 @@ export function createRegistry() {
     const out = { mounted: [], detached: [] };
     live.forEach(function (rec, route) {
       const doc = rec.container.ownerDocument;
-      const attached = !!(doc && doc.contains(rec.container));
+      /* Morphdom may reuse the container node while stripping the marker,
+         rather than detach the node outright. Either outcome loses native
+         ownership: attachment without the registry's identity is not a live
+         component root and must not read as healthy. */
+      const attached = !!(doc && doc.contains(rec.container) &&
+        rec.container.parentNode === rec.host &&
+        rec.container.getAttribute(OWNED_ATTR) === route);
       (attached ? out.mounted : out.detached).push(route);
     });
     out.mounted.sort();

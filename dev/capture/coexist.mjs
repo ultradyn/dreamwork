@@ -65,6 +65,112 @@ ok('the builder route receives #view only after React unmounts',
    builder.mounted.length === 0 && builder.owned === 0 &&
    builder.label.trim() === 'reviews');
 
+/* Mount the production /research entry over real builder markup, then remove
+   it through the production registry. This is deliberately not P2's
+   synthetic __probe: the component, registry entry, host, data, and builder
+   markup are all the ones the router uses. The direct mount is what isolates
+   the registry's round-trip promise from the router's intentional
+   replaceChildren() when authority changes. */
+const roundTrip = await p.evaluate(async () => {
+  const view = document.getElementById('view');
+  const before = view.innerHTML;
+  const beforeLabel = view.querySelector('.label')?.textContent || '';
+  const registry = window.dwNative.registry;
+  registry.mount('research', view, data, null);
+
+  /* flushSync commits the tree, but the component's mount effect is a later
+     end state. Sample only after its seen=1 sentinel proves that effect ran,
+     so an effect-added class cannot arrive just after this assertion. */
+  let settledSeen = null;
+  for (let i = 0; i < 50; i++) {
+    settledSeen = view.querySelector('[data-dw-research-seen]')
+      ?.getAttribute('data-dw-research-seen') || null;
+    if (settledSeen === '1') break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+
+  const owned = view.querySelector('[data-dw-mount="research"]');
+  const research = owned?.querySelector('[data-dw-research-instance]');
+  const delegates = owned
+    ? owned.querySelectorAll('[data-dw-delegate]').length : -1;
+  const mountedHtmlLen = owned ? owned.innerHTML.length : -1;
+
+  /* Everything React created is inspected, including CHILDREN; only the
+     builder-owned HTML below a Delegate boundary is skipped. Those builders
+     legitimately carry their established styling/behaviour classes. */
+  const classOffenders = [];
+  function inspectRuntimeElement(el) {
+    if (el.hasAttribute('class')) {
+      const identity = ['data-dw-mount', 'data-dw-research-instance',
+                        'data-dw-delegate']
+        .filter(name => el.hasAttribute(name))
+        .map(name => '[' + name + '="' + el.getAttribute(name) + '"]')
+        .join('');
+      classOffenders.push({
+        element: el.tagName.toLowerCase() +
+          (el.id ? '#' + el.id : '') + identity,
+        className: el.getAttribute('class'),
+      });
+    }
+    if (el.hasAttribute('data-dw-delegate')) return;
+    Array.from(el.children).forEach(inspectRuntimeElement);
+  }
+  if (owned) inspectRuntimeElement(owned);
+
+  registry.unmount('research');
+  const after = view.innerHTML;
+  const beforeBytes = new TextEncoder().encode(before);
+  const afterBytes = new TextEncoder().encode(after);
+  let offset = 0;
+  while (offset < beforeBytes.length && offset < afterBytes.length &&
+         beforeBytes[offset] === afterBytes[offset]) offset += 1;
+  const byteDiff = offset === beforeBytes.length &&
+      offset === afterBytes.length ? null : {
+    offset,
+    before: offset < beforeBytes.length
+      ? '0x' + beforeBytes[offset].toString(16).padStart(2, '0') : '<end>',
+    after: offset < afterBytes.length
+      ? '0x' + afterBytes[offset].toString(16).padStart(2, '0') : '<end>',
+    beforeLength: beforeBytes.length,
+    afterLength: afterBytes.length,
+  };
+  return {
+    beforeLength: beforeBytes.length,
+    beforeLabel,
+    mounted: registry.mounted(),
+    mountedHtmlLen,
+    settledSeen,
+    research: !!research,
+    delegates,
+    classOffenders,
+    byteDiff,
+    leftovers: view.querySelectorAll('[data-dw-mount]').length,
+  };
+});
+notes.push('round-trip: ' + JSON.stringify(roundTrip));
+ok('precondition: #view held real reviews builder markup before the mount ' +
+   '(an empty host would make byte equality vacuous)',
+   roundTrip.beforeLength > 500 && roundTrip.beforeLabel.trim() === 'reviews');
+ok('precondition: the real /research component rendered rows before unmount',
+   roundTrip.research && roundTrip.delegates >= 1 &&
+   roundTrip.mountedHtmlLen > 200 && roundTrip.settledSeen === '1');
+const classDetail = roundTrip.classOffenders.length
+  ? roundTrip.classOffenders.map(o => o.element + ' class="' +
+      o.className + '"').join(', ')
+  : 'none';
+ok('THE RUNTIME ADDS NO CLASS to React-owned elements; offending element ' +
+   'and class: ' + classDetail,
+   roundTrip.classOffenders.length === 0);
+const byteDetail = roundTrip.byteDiff
+  ? 'offset ' + roundTrip.byteDiff.offset + ': ' +
+    roundTrip.byteDiff.before + ' -> ' + roundTrip.byteDiff.after +
+    ' (lengths ' + roundTrip.byteDiff.beforeLength + ' -> ' +
+    roundTrip.byteDiff.afterLength + ')'
+  : 'none';
+ok('unmounting the real /research component restores #view byte-for-byte; ' +
+   'first differing bytes: ' + byteDetail,
+   roundTrip.byteDiff === null && roundTrip.leftovers === 0);
+
 await p.evaluate(() => navigate('research', null, {
   push: true, transition: false,
 }));
@@ -91,7 +197,19 @@ ok('the ownership violation is named, never a silent blank box',
    collided.verify.detached.includes('research') &&
    collided.verify.mounted.length === 0);
 
-await p.evaluate(() => window.dwNative.registry.unmount('research'));
+const collisionCleanup = await p.evaluate(() => {
+  try {
+    window.dwNative.registry.unmount('research');
+    return null;
+  } catch (err) {
+    /* The deliberate violation let morphdom rewrite React's own children.
+       React may therefore reject cleanup with NotFoundError; the detector's
+       verdict above is the subject, and teardown of corrupted DOM must not
+       keep the guard from reporting it. */
+    return String(err);
+  }
+});
+if (collisionCleanup) notes.push('collision cleanup: ' + collisionCleanup);
 ok('no page errors before the deliberate collision',
    errs.length === 0);
 if (errs.length) notes.push(errs.join(' | '));
