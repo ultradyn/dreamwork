@@ -197,7 +197,19 @@ ok('the ownership violation is named, never a silent blank box',
    collided.verify.detached.includes('research') &&
    collided.verify.mounted.length === 0);
 
-await p.evaluate(() => window.dwNative.registry.unmount('research'));
+const collisionCleanup = await p.evaluate(() => {
+  try {
+    window.dwNative.registry.unmount('research');
+    return null;
+  } catch (err) {
+    /* The deliberate violation let morphdom rewrite React's own children.
+       React may therefore reject cleanup with NotFoundError; the detector's
+       verdict above is the subject, and teardown of corrupted DOM must not
+       keep the guard from reporting it. */
+    return String(err);
+  }
+});
+if (collisionCleanup) notes.push('collision cleanup: ' + collisionCleanup);
 ok('no page errors before the deliberate collision',
    errs.length === 0);
 if (errs.length) notes.push(errs.join(' | '));
