@@ -1060,6 +1060,9 @@ def test_sweep_says_how_many_open_ids_it_correlated_against(
     assert f"against {len(open_ids)} open ids" in out, (
         f"the ledger half of the correlation must be counted on the report's "
         f"own header, like the commit half: {out!r}")
+    assert f"/ {len(open_ids)} parsed body ids" in out, (
+        f"the header must carry seen/expected unconditionally, so a later "
+        f"projection loss announces itself before the verdict: {out!r}")
     assert "(store)" in out, (
         f"the source actually read must be named — `ledger_view` fails closed "
         f"toward markdown, so the word has to be its answer: {out!r}")
