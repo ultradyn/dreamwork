@@ -92,6 +92,18 @@ def test_persistence_failure_refuses_and_names_what_was_not_persisted(tmp_path):
     assert str(briefs) in result.stderr
 
 
+def test_unnameable_prompt_refuses_before_runner_exec(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = tmp_path / "prompt-without-lane.txt"
+    prompt.write_text("# Brief — #902: no branch identity\n\n" + CONTRACT, encoding="utf-8")
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 2
+    assert "no unique 'Branch: <lane>' line" in result.stderr
+    assert not (root / ".dreamwork" / "docs" / "briefs").exists()
+
+
 def test_verify_pending_rejects_changed_artifact(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
     prompt = _healthy_prompt(tmp_path)
