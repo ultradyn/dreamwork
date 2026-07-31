@@ -139,14 +139,26 @@ class TestTracksTheFile:
         assert "2 ccc + 1 agent-tool live" in out
         assert "ccc-live" not in out
 
-    def test_duplicate_task_does_not_inflate_a_dispatch_count(self, tmp_path,
-                                                              monkeypatch):
+    def test_paired_processes_each_count_toward_delegation(self, tmp_path,
+                                                           monkeypatch):
         target = make_target(tmp_path, posture=HOT, dreamers=[
             {"task": 1, "pid": 111, "dispatch": "ccc"},
             {"task": 1, "pid": 222, "dispatch": "ccc"},
         ])
         monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: True)
-        assert "1 ccc + 0 agent-tool live" in tick_line.facts(target)
+        assert "2 ccc + 0 agent-tool live" in tick_line.facts(target)
+
+    def test_pairing_across_dispatch_paths_renders_as_live_processes(
+            self, tmp_path, monkeypatch):
+        target = make_target(tmp_path, posture=HOT, dreamers=[
+            {"task": 1, "pid": 111, "dispatch": "ccc"},
+            {"task": 1, "pid": 222, "dispatch": "agent_tool"},
+        ])
+        monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: True)
+        assert (
+            "lanes 0 recorded · 1 ccc + 1 agent-tool live · delegation 5"
+            in tick_line.facts(target)
+        )
 
     def test_recorded_count_follows_the_authored_lanes_field(self, tmp_path):
         none = tick_line.facts(make_target(tmp_path / "a", posture=HOT))
