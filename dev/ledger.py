@@ -628,6 +628,220 @@ def sweep_text(text, commits, since, source):
 
 
 # ---------------------------------------------------------------------------
+# reach (#688) — the branch-level twin of sweep that sweep cannot be.
+#
+# `sweep` (#404) examines commit SUBJECTS on master, so it finds work that
+# landed with an id in the subject line — which is most work, because the
+# commit convention puts it there by construction. A branch that was folded
+# but never merged has no such commit on master to examine: it is invisible
+# to sweep BY CONSTRUCTION, not by oversight (#590 is the measured instance).
+# `reach` is the sibling: for every local branch, `git cherry <base> <branch>`
+# separates patch-id-equivalent commits (`-`, already on base) from
+# genuinely-absent ones (`+`), which is the distinction a raw
+# `rev-list --count` cannot make (#576). These two checks are NOT redundant
+# and neither can replace the other.
+#
+# #590's rule, carried verbatim: a non-zero count is a QUESTION, never a
+# verdict. Live work, cherry-picked content, and a real gap all produce
+# non-zero; conflating them is how an audit becomes noise that gets turned
+# off. So a `+` is a question and a `-` is strong evidence — and the output
+# must never promote a `+` to a verdict (#676 finding 2).
+#
+# #676's blind spot is carried into the check rather than rediscovered:
+# patch-id matching MISSES content that landed refactored (same intent,
+# different lines), so a `-` can still mean "the work is there, just
+# reworded" and a `+` can mean "squashed, not lost". The wording reflects
+# this. #676 finding 3: identical sha sets collapse into one row, because
+# five of six pi-agent-* branches were exact duplicates and a check that
+# lists them every run gets turned off.
+# ---------------------------------------------------------------------------
+
+def reach(branch_marks):
+    """Collapse duplicate sha sets; report branches carrying ``+`` commits.
+
+    ``branch_marks`` is ``[(branch, [(marker, sha, subject), ...]), ...]``
+    where ``marker`` is ``'+'`` (not patch-equivalent to base) or ``'-'``
+    (patch-equivalent). Subject is only populated for ``'+'`` commits.
+
+    Returns ``(n_examined, n_suppressed, rows)`` where ``rows`` is a list
+    of ``(branch, aliases, [(sha, subject), ...])`` for branches with at
+    least one ``+`` commit, after collapsing branches that share an
+    identical sorted sha set into one row (#676 finding 3). ``n_examined``
+    counts every branch looked at; ``n_suppressed`` counts branches hidden
+    as duplicates of another — both are printed because a check that
+    examined nothing must not read as passing (#671, #404).
+    """
+    n_examined = len(branch_marks)
+    by_shas = {}
+    order = []
+    for branch, marks in branch_marks:
+        sha_key = tuple(sorted(sha for _, sha, _ in marks))
+        if sha_key not in by_shas:
+            by_shas[sha_key] = [branch, marks, []]
+            order.append(sha_key)
+        else:
+            by_shas[sha_key][2].append(branch)
+    n_suppressed = sum(len(d[2]) for d in by_shas.values())
+    rows = []
+    for sha_key in order:
+        branch, marks, aliases = by_shas[sha_key]
+        plus = [(sha, subj) for m, sha, subj in marks if m == "+"]
+        if plus:
+            rows.append((branch, aliases, plus))
+    return n_examined, n_suppressed, rows
+
+
+def reach_text(branch_marks, base):
+    """The advisory report — examined/suppressed counted, ``+`` is a question.
+
+    Mirrors ``sweep_text``'s contract: the examined count is ALWAYS printed
+    so 'found nothing' differs from 'did not run' (#404, #671). Only branches
+    with at least one ``+`` are reported (#688 volume), duplicates collapsed
+    (#676 finding 3). The closing line never promotes a ``+`` to a verdict
+    (#590, #676 finding 2).
+    """
+    n_examined, n_suppressed, rows = reach(branch_marks)
+    dup = f", {n_suppressed} duplicates suppressed" if n_suppressed else ""
+    lines = [f"reach: examined {n_examined} branches against {base}"
+             f" ({len(rows)} carry + commits{dup})"]
+    for branch, aliases, plus in rows:
+        al = f" (= {', '.join(aliases)})" if aliases else ""
+        ev = ", ".join(f"`{s[:12]}` {subj}" for s, subj in plus)
+        lines.append(f"  {branch}{al} — {len(plus)} + commit(s): {ev}")
+    if rows:
+        lines.append(
+            f"reach: {len(rows)} branch(es) may carry work not on {base} — "
+            f"a + is a question, not a verdict (#590, #676)")
+    else:
+        lines.append(
+            "reach: nothing to review (this ran — see the examined count above)")
+    return "\n".join(lines) + "\n"
+
+
+# reach — the git half (subprocess stays out of the pure function)
+
+def _git_local_branches(repo):
+    """Local branch short-names; None when git cannot answer (#671)."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "for-each-ref",
+             "--format=%(refname:short)", "refs/heads/"],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return [b for b in out.stdout.splitlines() if b.strip()]
+
+
+def _git_cherry(repo, base, branch):
+    """``(marker, sha)`` pairs from ``git cherry``; None on error.
+
+    ``+`` = not patch-equivalent to anything on base (genuinely absent, or
+    squashed, or refactored — #676's blind spot). ``-`` = patch-equivalent
+    (strong evidence the content is on base). #590/#676: a ``+`` is a
+    question, never a verdict.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "cherry", base, branch],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    marks = []
+    for line in out.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        marker, sha = line[0], line[1:].strip()
+        if marker in "+-" and sha:
+            marks.append((marker, sha))
+    return marks
+
+
+def _git_subjects_for(repo, shas):
+    """``{sha: subject}`` for a set of shas; missing shas get ``''``.
+
+    One batched call — a branch set of fifteen yields one ``git log``
+    rather than fifteen. Reuses the ``\\x1f`` field separator ``_git_subjects``
+    established, so the parser is the same.
+    """
+    if not shas:
+        return {}
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "log", "--no-walk",
+             "--format=%H\x1f%s"] + list(shas),
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return dict.fromkeys(shas, "")
+    result = dict.fromkeys(shas, "")
+    if out.returncode == 0:
+        for line in out.stdout.splitlines():
+            sha, sep, subj = line.partition("\x1f")
+            if sep:
+                result[sha] = subj
+    return result
+
+
+def _git_branch_reach(repo, base="master"):
+    """Enumerate local branches and cherry-mark each against ``base``.
+
+    Returns ``[(branch, [(marker, sha, subject), ...]), ...]`` (subjects on
+    ``+`` commits only), or ``None`` when git cannot enumerate branches.
+    One ``cherry`` per branch plus one batched subject lookup — fifteen
+    branches is sixteen subprocess calls, not forty-five.
+    """
+    branches = _git_local_branches(repo)
+    if branches is None:
+        return None
+    raw = {}
+    all_plus = []
+    for branch in branches:
+        if branch == base:
+            continue
+        marks = _git_cherry(repo, base, branch)
+        if marks is None:
+            continue
+        raw[branch] = marks
+        all_plus.extend(sha for m, sha in marks if m == "+")
+    subjects = _git_subjects_for(repo, all_plus)
+    findings = []
+    for branch in branches:
+        if branch == base or branch not in raw:
+            continue
+        marks_with_subj = [
+            (m, sha, subjects.get(sha, "") if m == "+" else "")
+            for m, sha in raw[branch]
+        ]
+        findings.append((branch, marks_with_subj))
+    return findings
+
+
+def _reach_trailer(repo):
+    """Compact reach summary appended to ``fold`` output; ``''`` if silent.
+
+    THE FOLD HOOK IS THE NON-OBVIOUS VALUE (#688). The coordinator runs
+    ``fold``, so the reachability check runs at the moment branches are
+    created and abandoned — no second command to remember, which is the
+    failure mode the brief names ("the rule exists and has no home"). A
+    standalone verb nobody invokes reproduces today's situation with more
+    code. Suppressed entirely when there are no branches (a young repo, a
+    test fixture), so ``fold`` output stays clean where there is nothing
+    to check and existing fold tests see no extra output.
+    """
+    findings = _git_branch_reach(repo)
+    if not findings:
+        return ""
+    return reach_text(findings, "master")
+
+
+# ---------------------------------------------------------------------------
 # #357 — the warning footer every verb tacks onto stderr at exit.
 #
 # Design: `.dreamwork/docs/plans/cli-warning-layer.md` (both forks RULED:
@@ -1133,6 +1347,7 @@ def main(argv=None):
     pf.add_argument("id", type=int, help="the task id to fold (e.g. 440)")
     pf.add_argument("--note", required=True, help="appended as a `  · <text>` continuation line")
     pf.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
+    pf.add_argument("--repo", default=".", help="the git repo for the reach hook (default %(default)s)")
     pf.add_argument("--dry-run", action="store_true", help="print the result; do not write")
 
     pfile = sub.add_parser("file", help="file a new task under ## Open (or the store after cutover)")
@@ -1158,6 +1373,14 @@ def main(argv=None):
                     help="ref to scan from (default: the most recent fold commit)")
     ps.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
     ps.add_argument("--repo", default=".", help="the git repo to scan (default %(default)s)")
+
+    preach = sub.add_parser(
+        "reach",
+        help="branches carrying + commits not patch-equivalent on the base "
+             "(advisory; exit 0 always) [#688]")
+    preach.add_argument("--base", default="master",
+                        help="the base ref to check against (default %(default)s)")
+    preach.add_argument("--repo", default=".", help="the git repo to scan (default %(default)s)")
 
     # #497 — read-only task verbs. list/get/count over the store (or markdown
     # for list/count); reviews over the review_decision table (store-mode only).
@@ -1290,8 +1513,24 @@ def _unresolved_store_message(cmd, shared):
 
 def _dispatch(args):
     """Run one verb and return its exit code. The footer is tacked on by main."""
+    # #688 — reach is advisory and needs NO ledger: it enumerates local git
+    # branches and cherry-marks them. The store gate (#667) exists to stop a
+    # verb answering from an empty ledger, which reach never reads, so it
+    # dispatches FIRST and is structurally exempt. Same advisory spirit as
+    # sweep (#404), minus the ledger dependency sweep carries.
+    if args.cmd == "reach":
+        findings = _git_branch_reach(args.repo, args.base)
+        if findings is None:
+            sys.stdout.write("reach: git could not answer (not a repo?) — did not run\n")
+            return 0
+        if not findings:
+            sys.stdout.write("reach: no branches to check (did not run)\n")
+            return 0
+        sys.stdout.write(reach_text(findings, args.base))
+        return 0
+
     # #667 — before any verb runs: if the store did not resolve here, every
-    # answer below is built from nothing. One gate, every verb.
+    # answer below is built from nothing. One gate, every (ledger-reading) verb.
     shared = _unresolved_store(str(Path(args.ledger).parent))
     if shared is not None:
         message = _unresolved_store_message(args.cmd, shared)
@@ -1363,6 +1602,7 @@ def _dispatch(args):
     if args.cmd in ("fold", "file", "note") and source_of_truth(dw_dir) == "store":
         if args.cmd == "fold":
             _fold_store(dw_dir, args.id, args.note)
+            sys.stdout.write(_reach_trailer(args.repo))
             return 0
         if args.cmd == "note":
             _note_store(dw_dir, args.id, args.note)
@@ -1410,6 +1650,7 @@ def _dispatch(args):
                 return 0
             _write(args.ledger, new_text)
             sys.stdout.write(f"folded #{args.id} into {args.ledger}\n")
+            sys.stdout.write(_reach_trailer(args.repo))
             return 0
         if args.cmd == "file":
             new_text = file_text(text, args.title, args.note, args.priority,
