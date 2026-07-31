@@ -729,9 +729,9 @@ def cmd_consume(args, out, err) -> int:
         # command. Presented for every drained chat receipt: the drain is the
         # moment the loop learns a chat is waiting, whether the receipt proved
         # APPLIED (its human turn already wrote) or UNAPPLIED. The text is
-        # collapsed to one line (the #126 rule — a newline in his words must not
-        # forge a second output line); the full transcript is one `show`/`ud-dw-
-        # chat show` away.
+        # collapsed to one line (the lessons.md:283 rule — a newline in his
+        # words must not forge a second output line); the full transcript is
+        # one `show`/`ud-dw-chat show` away.
         chats = [(ev.receipt_id, _chat_text(ev)) for ev in drained]
         chats = [(rid, text) for rid, text in chats if text is not None]
         for chat_id, text in chats:
@@ -784,7 +784,7 @@ def cmd_show(args, out, err) -> int:
         out.write(f"\n<{len(payload)}-byte binary payload>\n")
         return EX_OK
     # Newlines are printed VERBATIM here — the deliberate exception to the
-    # lessons.md #126 collapse rule that pending/preview obey.  This output is
+    # lessons.md:283 collapse rule that pending/preview obey.  This output is
     # for an agent to READ (a payload may be a multi-line human instruction),
     # not a line-oriented log a monitor wakes on and parses one line at a time.
     out.write("\n")

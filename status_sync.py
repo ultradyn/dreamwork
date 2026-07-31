@@ -303,7 +303,7 @@ def _ccc_model(pid: int) -> str | None:
     return None
 
 
-# #729/#440: known lane runners — the positive-identity test for the phantom
+# #729: known lane runners — the positive-identity test for the phantom
 # split, copying reaper.parse_cmdline's SHAPE (a basename check, not a cwd
 # prefix match). A process whose argv[0] is one of these is a lane runner; a
 # head/grep/tail/bash sharing the prefix is NOT, however deleted its cwd. The
@@ -834,7 +834,7 @@ def main(argv: list[str] | None = None) -> int:
         # #702 governs: an entry the tool cannot classify must be REPORTED,
         # never silently dropped. Ancestry (exact, /proc ppid walk) separates
         # self; the positive-identity test (copies reaper.parse_cmdline's shape,
-        # #440) separates a runner from noise.
+        # #729) separates a runner from noise.
         ancestors = _ancestor_pids()
         self_ph, runner_ph, other_ph = [], [], []
         for lane, pid in phantoms:
