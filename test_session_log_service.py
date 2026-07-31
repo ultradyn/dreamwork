@@ -356,6 +356,25 @@ class TestSnapshotCursorConsistency:
         assert delta.events == ()
         assert delta.cursor == before
 
+    def test_peek_after_advance_reads_the_grown_source_not_stale_text(
+            self, tmp_path):
+        # Direction-2 guard: removing `held.text = text` from `_ingest` leaves
+        # every existing test green while a peek over a range an ADVANCE
+        # registered reads stale text. This test is the one that reds.
+        svc, target, root, path, text, snap = _register_fixture(tmp_path)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(_user_turn("zz", "peekme", minutes_ago=1))
+                    + "\n")
+        delta = svc.advance(SID)
+        assert delta.events  # precondition: the advance registered a new range
+        offs = _line_offsets(path.read_text())  # re-derive from the grown file
+        byte, length = offs[-1]
+        pk = svc.peek(SID, byte=byte, length=length)
+        assert pk.parse_error is None
+        # the record is a fresh re-derivation from the grown source, not the
+        # stale text; if held.text were not updated, this is the line that reds
+        assert pk.record["message"]["content"] == "peekme"
+
 
 # === bounded peek over a registered source range ==========================
 
