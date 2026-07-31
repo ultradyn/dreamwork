@@ -194,19 +194,22 @@ def _missing_pid(d: dict) -> bool:
     return pid is None or pid == "" or pid == 0
 
 
-# #537: dispatch forms the liveness probe can OBSERVE. The probe sees only
-# `ccc` — `pgrep -af ccc` for the argv fallback, `kill -0` on a dispatch pid
-# that is a `ccc` process. A lane dispatched any other way is UNOBSERVABLE:
-# the harness's native `spawn_subagent` is an independent clone with no `ccc`
-# process and no `wt/*` worktree, so neither signal can reach it. An
-# observation blind to a form must never clobber records of that form — a
-# live fleet of spawn_subagent lanes was once pruned to 0 by this tool
+# #537: dispatch forms the liveness probe can OBSERVE. `ccc` is seen by
+# `pgrep -af ccc` (the argv fallback) and `kill -0` on a dispatch pid that is
+# a `ccc` process. `agent_tool` (#675) is a non-`ccc` process discovered by
+# `discover_lanes` walking `/proc/*/cwd` — it has a pid the probe CAN reach
+# with `kill -0`, so it is observable by pid even though the argv listing
+# (pgrep ccc) never lists it. A lane dispatched any other way — the harness's
+# native `spawn_subagent`, an independent clone with no process in the
+# worktree and no probe-able pid — is UNOBSERVABLE: neither signal can reach
+# it. An observation blind to a form must never clobber records of that form
+# — a live fleet of spawn_subagent lanes was once pruned to 0 by this tool
 # because the probe could not see them. An entry whose `dispatch` is absent
 # is the historical `ccc` default (observable), so every pre-#537 entry stays
 # evaluable; any value not listed here is carried verbatim through the
 # liveness step and reaped only by the ledger (a landed task is observable
 # regardless of dispatch form).
-OBSERVABLE_DISPATCH = ("ccc",)
+OBSERVABLE_DISPATCH = ("ccc", "agent_tool")
 
 
 def _observable(d: dict) -> bool:
@@ -301,30 +304,19 @@ def _ccc_model(pid: int) -> str | None:
 
 
 def discover_lanes(target: Path):
-    """Live `ccc` lanes the cwd probe can see, as ``(found, phantoms)``.
+    """Live lanes the cwd probe can see, as ``(found, phantoms, agent_tool)``.
 
-    Walks ``/proc/*/cwd`` for paths under ``<target>/.worktrees/`` whose
-    process is a ``ccc`` dispatch (#716). ``found`` is the list of live lanes
-    (as ``(lane, pid, model)`` triples — #720 derives the model from the same
-    ``/proc`` read) a caller MERGES with coordinator-authored entries (a lane
-    running where the cwd probe cannot reach — another machine, a different
-    harness — is carried verbatim rather than erased by a narrower automatic
-    view).
-
-    ``phantoms`` (#719) is a ``ccc`` process whose cwd passed the worktree
-    prefix filter but whose worktree has been REMOVED — Linux appends
-    ``" (deleted)"`` to the readlink, the prefix still matches, and the
-    regex still yields a task id, so without a guard the phantom takes a
-    fleet slot under a corpse's name. A ccc process whose cwd is no longer a
-    directory is EXITING, not working. It is excluded from ``found`` and
-    REPORTED via ``phantoms`` — never silently dropped. The #702 rule
-    (inherited by #716's discovery: "an entry the probe cannot classify must
-    be reported, never silently dropped") reaches this case because the probe
-    *can* see the process and *can* tell the worktree is gone; silently
-    skipping would make "lane finished and was reaped" and "lane's worktree
-    vanished mid-run" render identically (#136). The signal is actionable
-    for the reap loop: it distinguishes a clean exit drain from a process
-    that hung after its worktree was removed.
+    Walks ``/proc/*/cwd`` for paths under ``<target>/.worktrees/`` (#716).
+    ``found`` is the list of live ``ccc`` lanes (as ``(lane, pid, model)``
+    triples — #720 derives the model from the same ``/proc`` read) a caller
+    MERGES with coordinator-authored entries. ``phantoms`` (#719) is a
+    ``ccc`` or non-ccc process whose cwd passed the worktree prefix filter
+    but whose worktree has been REMOVED. ``agent_tool`` (#675) is a
+    non-``ccc`` process with a lane cwd — an Agent-tool lane's shape, merged
+    into ``dreamers`` so ``current_task_ids`` does not degrade to 0 while
+    Agent-tool lanes run. A lane running somewhere the cwd probe cannot see
+    (another machine, a different harness) is carried verbatim rather than
+    erased by a narrower automatic view (#537).
 
     ``target`` is the project root (the dir whose ``.worktrees/`` holds
     lanes). It is RESOLVED before building ``wt_root`` (#720): the default
@@ -339,6 +331,17 @@ def discover_lanes(target: Path):
     wt_root = str(target.resolve()) + "/" + WORKTREE_DIR
     found = []
     phantoms = []
+    # #675: a non-ccc process whose cwd is a lane worktree is an Agent-tool
+    # lane's shape — the harness runs it with no `ccc` in argv, so the
+    # liveness probe (`_is_ccc_proc`) is blind to it. The cwd-walk discovery
+    # already does CATCHES it, then drops it at the `_is_ccc_proc` gate. We
+    # collect those separately as `agent_tool`: merged into `dreamers` (so
+    # `current_task_ids` no longer degrades to 0 while Agent-tool lanes run —
+    # the drift alarm Max asked the loop to watch for) and REPORTED on stderr
+    # (so their runner is visible, never silently mixed with ccc). A process
+    # the probe cannot classify is carried, never silently dropped (#702).
+    agent_tool = []
+    seen_lanes = set()
     for entry in os.listdir("/proc"):
         if not entry.isdigit():
             continue
@@ -349,21 +352,38 @@ def discover_lanes(target: Path):
         lane = os.path.basename(cwd.rstrip("/"))
         if not lane or lane == target.name:
             continue
-        if not _is_ccc_proc(pid):
-            continue
-        # #719: a ccc lane whose worktree has been removed is a phantom.
+        # #719: a lane whose worktree has been removed is a phantom.
         # readlink still resolves (Linux appends " (deleted)"), the prefix
         # filter still passes, but the cwd is no longer a directory — the
         # process is exiting, not working. Excluded and REPORTED, not
-        # silently dropped (#702, inherited by #716's discovery).
+        # silently dropped (#702, inherited by #716's discovery). Applies to
+        # both ccc and non-ccc: a deleted-cwd process is exiting regardless.
         if not os.path.isdir(cwd):
             phantoms.append((lane, pid))
             continue
-        found.append((lane, pid, _ccc_model(pid)))
+        if _is_ccc_proc(pid):
+            found.append((lane, pid, _ccc_model(pid)))
+            seen_lanes.add(lane)
+        else:
+            # #675: a non-ccc process in a lane worktree. An editor, a shell,
+            # or this tool's own grep could share the cwd — so this is a
+            # wider net than the ccc check, and it is MERGED into the live
+            # set knowing it over-counts (#675's stated cost). The over-count
+            # is the lesser evil against the ZERO it replaces: zero is the
+            # one value that means "nothing is running" and the drift alarm;
+            # an over-count by one transient process is self-correcting on
+            # the next tick (the process exits and is gone). Dedup by lane:
+            # a ccc lane and its grok child share the cwd, so the ccc arm
+            # (above) claims the lane and the child falls through here — the
+            # `seen_lanes` check drops the duplicate so the lane counts once.
+            if lane not in seen_lanes:
+                agent_tool.append((lane, pid))
+                seen_lanes.add(lane)
     # Stable order by lane name so the merge and the stderr report are
     # deterministic across runs reading the same process table.
     return (sorted(found, key=lambda lpm: lpm[0]),
-            sorted(phantoms, key=lambda lp: lp[0]))
+            sorted(phantoms, key=lambda lp: lp[0]),
+            sorted(agent_tool, key=lambda lp: lp[0]))
 
 
 def read_open_ids(dw, lpath):
@@ -673,7 +693,7 @@ def main(argv: list[str] | None = None) -> int:
     # a lane the probe sees but cannot classify is simply absent from the
     # discovery list — REPORTED, never silently dropped (#702's "cannot
     # compare must not read as landed", applied to discovery rather than reap).
-    discovered, phantoms = discover_lanes(Path(args.target))
+    discovered, phantoms, agent_tool = discover_lanes(Path(args.target))
     existing_lanes = {d.get("lane") for d in pruned if isinstance(d, dict)}
     added = []
     resolved = Path(args.target).resolve()
@@ -688,10 +708,36 @@ def main(argv: list[str] | None = None) -> int:
             entry["model"] = model
         added.append(entry)
         pruned.append(added[-1])
+        existing_lanes.add(lane)
     if added:
         print("status_sync: discovered %d live ccc lane(s) the field did not "
               "carry (cwd under .worktrees/; merged, not replaced): %s"
               % (len(added), [(a["lane"], a["pid"]) for a in added]),
+              file=sys.stderr)
+    # #675: Agent-tool lanes — non-ccc processes with a lane cwd. Merged into
+    # dreamers with `dispatch: "agent_tool"` so current_task_ids counts them
+    # (avoids the permanent-zero drift alarm) and so the next tick's
+    # liveness probe can reap them by pid (agent_tool is OBSERVABLE: kill -0
+    # reaches it even though pgrep ccc never lists it). REPORTED separately
+    # from ccc so the runner is visible and never silently mixed in.
+    agent_added = []
+    for lane, pid in agent_tool:
+        if lane in existing_lanes:
+            continue
+        entry = {"task": _lane_task(lane, ids), "lane": lane,
+                 "pid": pid,
+                 "brief": str(resolved / WORKTREE_DIR / lane / "BRIEF.md"),
+                 "dispatch": "agent_tool"}
+        agent_added.append(entry)
+        pruned.append(entry)
+        existing_lanes.add(lane)
+    if agent_added:
+        print("status_sync: discovered %d live agent-tool lane(s) the field "
+              "did not carry (non-ccc process with a lane cwd; merged so the "
+              "live count does not read zero while Agent-tool lanes run — "
+              "#675): %s"
+              % (len(agent_added),
+                 [(a["lane"], a["pid"]) for a in agent_added]),
               file=sys.stderr)
     if phantoms:
         # #719: a ccc lane whose worktree is gone is a phantom — the process

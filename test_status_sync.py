@@ -1079,7 +1079,7 @@ class TestDiscoveryAddsMissingLanes:
             monkeypatch.setattr(
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
-            found, _ph = status_sync.discover_lanes(tmp_path)
+            found, _ph, _at = status_sync.discover_lanes(tmp_path)
             found_pairs = [(f[0], f[1]) for f in found]
             assert ("lane-707sweep", proc.pid) in found_pairs, found
             # Task id is derived from the lane name (707 IS open here).
@@ -1239,7 +1239,7 @@ class TestPhantomWorktreeExcludedAndReported:
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
 
-            found, phantoms = status_sync.discover_lanes(tmp_path)
+            found, phantoms, _at = status_sync.discover_lanes(tmp_path)
             # THE GUARD: the phantom is NOT in found (would take a fleet slot
             # under "lane-719test (deleted)" without the guard).
             assert found == [], \
@@ -1330,7 +1330,7 @@ class TestPhantomWorktreeExcludedAndReported:
             monkeypatch.setattr(
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
-            found, phantoms = status_sync.discover_lanes(tmp_path)
+            found, phantoms, _at = status_sync.discover_lanes(tmp_path)
             # Still caught: the recreate did not produce a false green.
             assert found == [], \
                 "recreate must not let the phantom through; got %s" % found
@@ -1492,7 +1492,7 @@ class TestDiscoveryRepopulatesFromEmpty:
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
             # Discover through the symlink: resolve() normalises link → real.
-            found, _ph = status_sync.discover_lanes(link)
+            found, _ph, _at = status_sync.discover_lanes(link)
             assert any(f[0] == "lane-720target" for f in found), \
                 ("resolve() must normalise the symlink to the real path so "
                  "wt_root matches the lane cwd; got %s" % found)
@@ -1619,6 +1619,176 @@ class TestDiscoveryDerivesModel:
             assert len(result["dreamers"]) == 1, result["dreamers"]
             assert result["dreamers"][0].get("model") == "ccc @glm52", \
                 result["dreamers"]
+        finally:
+            proc.kill()
+            proc.wait()
+
+
+# ── 16. #675: a non-ccc process with a lane cwd is discovered ────────────
+#
+# An Agent-tool subagent has no `ccc` in argv, so `_is_ccc_proc` filters it
+# out — it is invisible to the ccc-only probe. But `discover_lanes` already
+# walks /proc/*/cwd, and a non-ccc process with a lane cwd IS an Agent-tool
+# lane's shape. The fix: collect those as a third list `agent_tool`, merge
+# into dreamers so `current_task_ids` does not degrade to 0 while Agent-tool
+# lanes run (the drift alarm Max asked the loop to watch for). The over-count
+# risk (an editor or shell in the worktree) is accepted — zero is worse.
+
+class TestAgentToolLaneDiscovery:
+    """#675: a non-ccc process with a lane cwd is discovered and counted.
+
+    Production line whose reversion reds the discover arm: the
+    ``agent_tool`` collection in ``discover_lanes`` plus the merge loop in
+    ``main``. Revert either (skip non-ccc processes, or skip the
+    ``agent_added`` loop) and a non-ccc lane stays absent from
+    ``dreamers`` while the tool reports "already in sync" — the #675
+    drift alarm shape: the live count reads zero while a lane runs.
+    """
+
+    def _make_worktree(self, target: Path, lane: str) -> Path:
+        wt = target / ".worktrees" / lane
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "BRIEF.md").write_text("lane brief")
+        return wt
+
+    def _spawn_cwd_ccc(self, cwd: Path, hold: float = 30.0):
+        return subprocess.Popen(
+            ["ccc", "-e", f"sleep {hold}", "--", "--yolo", "@glm52", "brief"],
+            executable=_which_perl(), cwd=str(cwd),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+
+    def _spawn_cwd_nonccc(self, cwd: Path, hold: float = 30.0):
+        """A live process whose cwd is `cwd` and whose argv[0] is NOT ccc.
+
+        Uses perl (argv[0] is `perl`, not `ccc`) so `_is_ccc_proc` returns
+        False — the exact shape of an Agent-tool lane: a process in the
+        worktree the ccc probe is blind to.
+        """
+        return subprocess.Popen(
+            ["perl", "-e", f"sleep {hold}"],
+            cwd=str(cwd),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+
+    def test_nonccc_lane_cwd_is_discovered_as_agent_tool(
+            self, tmp_path, monkeypatch):
+        wt = self._make_worktree(tmp_path, "lane-675agent")
+        proc = self._spawn_cwd_nonccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid), \
+                "precondition: spawned non-ccc lane must be alive"
+            real_cwd = status_sync._read_proc_cwd(proc.pid)
+            assert real_cwd == str(wt), \
+                "precondition: spawned lane cwd must be the worktree"
+            assert not status_sync._is_ccc_proc(proc.pid), \
+                "precondition: spawned process must NOT read as ccc"
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            found, _ph, agent_tool = status_sync.discover_lanes(tmp_path)
+            # THE DISCRIMINATING ASSERTION: the non-ccc lane appears in
+            # agent_tool, not in found. A reverted discover_lanes (ccc-only)
+            # would yield found=[] and agent_tool=[] — this test would pass
+            # for the wrong reason. The precondition (not _is_ccc_proc) and
+            # the assertion (lane IS in agent_tool) together pin the fix.
+            assert ("lane-675agent", proc.pid) in agent_tool, agent_tool
+            assert found == [], "non-ccc lane must not appear in ccc found"
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_agent_tool_lane_merged_into_dreamers(self, tmp_path, monkeypatch):
+        # The integration arm: a discovered agent-tool lane flows into
+        # dreamers and current_task_ids, so the live count does NOT read
+        # zero while the lane runs. This is the #675 binding check: a probe
+        # that answered 0 while lanes run has the same defect as the
+        # hand-maintenance it replaced.
+        wt = self._make_worktree(tmp_path, "lane-675probe")
+        proc = self._spawn_cwd_nonccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            assert not status_sync._is_ccc_proc(proc.pid)
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            status = {"dreamers": [], "current_task_ids": [], "queue": {},
+                      "task": "t"}
+            rc, out, err = _run(status, _ledger(675), tmp_path)
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            tasks = {d["task"] for d in result["dreamers"]}
+            # THE FIX: the lane is present by task id, NOT absent.
+            assert 675 in tasks, \
+                "agent-tool lane must be counted as live (not 0): %s" \
+                % result["dreamers"]
+            assert 675 in result["current_task_ids"], \
+                "agent-tool lane must be in current_task_ids"
+            entry = [d for d in result["dreamers"] if d["task"] == 675][0]
+            assert entry["dispatch"] == "agent_tool", entry
+            assert "agent-tool" in err.lower(), \
+                "the agent-tool discovery report must fire: %s" % err
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_agent_tool_lane_does_not_duplicate_a_ccc_lane(
+            self, tmp_path, monkeypatch):
+        # Direction 2 (false-green guard): a ccc lane spawns a child process
+        # (grok) that shares the cwd. Both would match the cwd-walk, but the
+        # lane must count ONCE, not twice. The dedup key is lane name: the
+        # ccc arm claims the lane first, the child falls through to
+        # agent_tool but is dropped by `seen_lanes`.
+        wt = self._make_worktree(tmp_path, "lane-675dup")
+        ccc_proc = self._spawn_cwd_ccc(wt)
+        child_proc = self._spawn_cwd_nonccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(ccc_proc.pid)
+            assert status_sync._pid_alive(child_proc.pid)
+            assert status_sync._is_ccc_proc(ccc_proc.pid)
+            assert not status_sync._is_ccc_proc(child_proc.pid)
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(ccc_proc.pid), str(child_proc.pid)]
+                if d == "/proc" else [])
+            found, _ph, agent_tool = status_sync.discover_lanes(tmp_path)
+            found_lanes = {f[0] for f in found}
+            at_lanes = {a[0] for a in agent_tool}
+            # The lane appears in ccc found (claimed first) but NOT in
+            # agent_tool (deduped by lane name).
+            assert "lane-675dup" in found_lanes, found
+            assert "lane-675dup" not in at_lanes, \
+                "a ccc lane's child must not double-count as agent_tool: %s" \
+                % agent_tool
+        finally:
+            ccc_proc.kill()
+            ccc_proc.wait()
+            child_proc.kill()
+            child_proc.wait()
+
+    def test_agent_tool_lane_survives_liveness_probe_next_tick(
+            self, tmp_path):
+        # #537 consistency: an agent_tool entry is OBSERVABLE (it has a pid
+        # kill -0 reaches), so it must survive the liveness probe on the
+        # NEXT tick — not be carried verbatim like spawn_subagent. An entry
+        # written by discovery, re-read with a live pid, must still be live.
+        wt = self._make_worktree(tmp_path, "lane-675live")
+        proc = self._spawn_cwd_nonccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            # Simulate a second tick: the entry from tick 1 is in dreamers.
+            entry = {"task": 675, "pid": proc.pid,
+                     "brief": str(wt / "BRIEF.md"),
+                     "dispatch": "agent_tool", "lane": "lane-675live"}
+            live, pruned = status_sync.live_lanes([entry])
+            assert 675 in live, \
+                "agent_tool entry with a live pid must be probed as live"
+            assert entry in pruned
         finally:
             proc.kill()
             proc.wait()
