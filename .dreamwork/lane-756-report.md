@@ -4,7 +4,7 @@
 
 Fixed. The standing boilerplate now makes lint and pytest bars command-, snapshot-, and interpreter-relative instead of pinning moving totals. It names the worktree-only lint warning messages, tells lanes to inspect every WARN message rather than totals or labels, gives the worktree-interpreter/main-target invocation, and warns that a stale interpreter need not understand current live state. It also replaces the unreachable `just pytest -q <files>` form with the supported `python3 -m pytest -q <files>` form.
 
-Commits: `6a7bcded docs(#756): make lane verification bars command-relative`; `5416d076 fix(#756): remove unreachable lane pytest command`.
+Post-rebase commits: `162e1ea7 docs(#756): make lane verification bars command-relative`; `60ffb467 fix(#756): remove unreachable lane pytest command`.
 
 ## Measurements and verification
 
@@ -42,7 +42,7 @@ The pre-store case does not justify historical brief edits: a previously dispatc
 
 ## Rebase outcome
 
-`master` remained at `8561238f`; `git rev-list --count HEAD..master` was 0, so no rebase or conflict resolution was required. Historical briefs, `lint.py`, `test_lint.py`, the justfile, and all off-limits files were left untouched.
+`master` advanced by 8 commits to `f1f588b7` after the first verification. `git rebase master` replayed all three #756 commits cleanly with no conflict resolution; the anchored four-form marker sweep found no markers. Historical briefs, `lint.py`, `test_lint.py`, the justfile, and all off-limits files were left untouched.
 
 ## DOGFOOD REPORT
 
