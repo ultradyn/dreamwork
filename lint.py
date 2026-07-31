@@ -3699,6 +3699,61 @@ def check_review_artifacts(dw: Path, rep: Report) -> None:
     # unhappy) — degrade silently rather than claim all is well.
 
 
+LESSON_LINE_CITATION = re.compile(r"lessons\.md:(\d+)")
+
+
+def check_lesson_line_citations(dw: Path, rep: Report) -> None:
+    """Resolve numeric lesson citations in live, repeatedly-read text (#764).
+
+    Lane reports are history, so this deliberately reads only lessons.md and
+    briefs/.  A line citation that drifts into continuation prose or out of the
+    file is mechanically wrong and worth a WARN; a citation that lands on the
+    wrong *lesson head* is semantically wrong but cannot be decided from the
+    coordinate alone.  Title citations close that second case for new text.
+    """
+    lessons = dw / "lessons.md"
+    try:
+        lesson_lines = lessons.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lesson_lines = []
+
+    sources = [lessons]
+    briefs = dw.parent / "briefs"
+    if briefs.is_dir():
+        sources.extend(sorted(briefs.rglob("*.md")))
+
+    examined = 0
+    findings = 0
+    for path in sources:
+        try:
+            source_lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for source_line, text in enumerate(source_lines, 1):
+            for match in LESSON_LINE_CITATION.finditer(text):
+                examined += 1
+                target_line = int(match.group(1))
+                actual = (lesson_lines[target_line - 1]
+                          if 1 <= target_line <= len(lesson_lines) else None)
+                if actual is not None and actual.startswith("- **"):
+                    continue
+                findings += 1
+                quoted = "<out of range>" if actual is None else (actual or "<blank>")
+                try:
+                    source = path.relative_to(dw.parent)
+                except ValueError:
+                    source = path
+                rep.add(
+                    WARN,
+                    "lesson citations",
+                    f"{source}:{source_line} cites lessons.md:{target_line}, whose "
+                    f"actual line is {quoted!r}, not a lesson head (#764)",
+                )
+    if examined and findings == 0:
+        rep.add(OK, "lesson citations",
+                f"{examined} numeric citation(s) resolve to lesson heads")
+
+
 CITED_SHA = re.compile(
     r"(?:landed|merged?|closed?|commit|fixed|reverted|sha)\**\s*(?:at|in|as)?\s*\**\s*"
     r"`([0-9a-f]{7,40})`", re.I)
@@ -5814,6 +5869,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_dreams(dw, rep)
     check_doc_map_plans(dw, rep)
     check_review_artifacts(dw, rep)
+    check_lesson_line_citations(dw, rep)
     check_cited_shas(dw, rep)
     check_placeholder_citations(dw, rep)
     check_handoffs(dw, watch, rep)

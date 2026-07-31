@@ -2480,6 +2480,68 @@ class TestAuthorTags:
         assert self._tag_warns(run(t)) == []
 
 
+class TestLessonLineCitations:
+    """#764 — numeric coordinates are checked only on the live text surface."""
+
+    def _target(self, tmp_path, lessons, briefs=None, reports=None):
+        root = fresh(tmp_path)
+        dw = root / ".dreamwork"
+        dw.mkdir()
+        (dw / "lessons.md").write_text(lessons)
+        for name, text in (briefs or {}).items():
+            path = root / "briefs" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        for name, text in (reports or {}).items():
+            (dw / name).write_text(text)
+        return root
+
+    def _rows(self, root):
+        rep = lint.Report()
+        lint.check_lesson_line_citations(root / ".dreamwork", rep)
+        return [(lvl, detail) for lvl, what, detail in rep.rows
+                if what == "lesson citations"]
+
+    def test_drift_into_prose_warns_with_the_actual_line(self, tmp_path):
+        root = self._target(
+            tmp_path,
+            "- **First lesson** body\ncontinuation carrying the wrong subject\n",
+            briefs={"live.md": "See `lessons.md:2`.\n"},
+        )
+        rows = self._rows(root)
+        assert len(rows) == 1 and rows[0][0] == lint.WARN, rows
+        assert "briefs/live.md:1" in rows[0][1]
+        assert "continuation carrying the wrong subject" in rows[0][1]
+
+    def test_out_of_range_warns_loudly(self, tmp_path):
+        root = self._target(
+            tmp_path,
+            "- **Only lesson** body\n",
+            briefs={"live.md": "See `lessons.md:99`.\n"},
+        )
+        rows = self._rows(root)
+        assert rows[0][0] == lint.WARN and "<out of range>" in rows[0][1], rows
+
+    def test_historical_lane_reports_are_grandfathered(self, tmp_path):
+        root = self._target(
+            tmp_path,
+            "- **Only lesson** body\n",
+            reports={"lane-old-report.md": "Stale `lessons.md:99`.\n"},
+        )
+        assert self._rows(root) == []
+
+    def test_a_wrong_but_valid_lesson_head_is_beyond_the_check(self, tmp_path):
+        """The original disease: syntax cannot establish semantic intent."""
+        root = self._target(
+            tmp_path,
+            "- **Wrong subject** body\n- **Intended subject** body\n",
+            briefs={"live.md": "Intends the second but cites `lessons.md:1`.\n"},
+        )
+        assert self._rows(root) == [
+            (lint.OK, "1 numeric citation(s) resolve to lesson heads")
+        ]
+
+
 class TestPlaceholderCitations:
     """#381's cheap half: a landing citation that is an unfilled slot.
 
