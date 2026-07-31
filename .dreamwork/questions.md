@@ -189,6 +189,12 @@
 
 - **P1 · 2026-07-31 17:00 — #591 (blocks #630): claude-design compatibility does NOT cost the single render
   authority — one ruling makes it official.** **Sub-decisions:** `Q1`, `Q2`, `Q3`.
+  → answered (2026-07-31 17:03): **`rec` on all three** — Q1 the per-surface G2 reading is
+  ratified, Q2 component-level and staged, Q3 React. Two additions beyond the recs, both folded:
+  he wants **replacing the old inline HTML in `watch.py` with the new UI components prioritised at
+  the earliest suitable time** (so the transition is not merely permitted but scheduled — #630
+  carries it), and he directs that **any reference to the old "no components" ruling be updated to
+  say the ruling is now a transition to a component-based React web UI** (#633).
   Analysis: `.dreamwork/review/505-g2-render-authority.html` (artifact, IGC inside) +
   `.dreamwork/docs/plans/render-architecture.md` (§Status 2026-07-31, which also records that
   #505's G4 "no build step" goal is **retired** per your 2026-07-30 ruling, `0f97df03`).
@@ -253,12 +259,6 @@
     "no components"`, we should update any references to this (no
     compoinents ruling) to say new ruling is transition to
     component-based react webui.
-  → answered (2026-07-31 17:03): **`rec` on all three** — Q1 the per-surface G2 reading is
-  ratified, Q2 component-level and staged, Q3 React. Two additions beyond the recs, both folded:
-  he wants **replacing the old inline HTML in `watch.py` with the new UI components prioritised at
-  the earliest suitable time** (so the transition is not merely permitted but scheduled — #630
-  carries it), and he directs that **any reference to the old "no components" ruling be updated to
-  say the ruling is now a transition to a component-based React web UI** (#633).
 - **P2 · 2026-07-31 07:20 — (your ask via /answers) the hand-off fold backlog: not unmerged, and now caught.**
   → answered (2026-07-31 07:20): no — all 25 ids were already landed on master; the gap was the
   coordinator's missing `→ folded` bookkeeping, not unmerged work. #576 now catches it and the
