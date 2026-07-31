@@ -177,6 +177,23 @@ dreamwork-version: 5853e1789929
   behind a test run. Subagent dispatch obeys the same rule — as tracked
   background jobs, never `nohup`, so the harness can show them, stop them, and
   wake the coordinator when one exits.
+- **Stop a subagent once it is finished — a short grace window, then reap**
+  (human-set 2026-07-31): *"please cleanup your subagents when you are
+  done with them / they are finished. you can keep them up for like 4 minutes
+  in case you want to get them to do something else. but otherwise clean them
+  up when they're done."* The grace window is the whole point of the rule and
+  not an exception to it: a finished lane still holds its context, so a
+  follow-up question costs nothing where a fresh dispatch would re-read
+  everything — that is what `SendMessage` is for. Past it, stop it.
+  **Do not trust the completion notification as proof the slot is free**: this
+  loop has seen an agent report `completed` and still occupy the running list
+  (`ac73773eabb79e3ce`, 2026-07-31), while other completed agents had already
+  self-reaped and returned `No task found`. The running list is the only
+  authority — read it, stop what is on it and done, and treat a `No task
+  found` as the reap having already happened rather than as an error.
+  Reaping is safe for the record: an agent's full output file survives in the
+  session's `tasks/` dir after it is stopped, so nothing is lost by stopping
+  one whose report has been read.
 - **No brittle numeric thresholds in our contracts** (human-set 2026-07-29
   01:13, withdrawing `#421`'s option C): *"don't quote word counts or whatever.
   like things like that which become errors too easily (are brittle)."* A count
