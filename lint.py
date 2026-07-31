@@ -3860,9 +3860,19 @@ def check_brief_handoff_obligation(dw: Path, rep: Report) -> None:
 WORKTREE_ABS_INBOX_PHRASE = (
     "Inbox and hand-off paths given to a worktree lane are absolute"
 )
-# An absolute path to inbox.md: leading `/` then path segments, ending in
-# `/inbox.md`. Repo-relative `.dreamwork/inbox.md` deliberately fails this.
-ABS_INBOX_PATH_RE = re.compile(r"/[\w./-]+/inbox\.md")
+# An absolute path whose basename ends in ``inbox.md``. Anchored on a
+# leading ``/`` (POSIX-absolute) so the repo-relative ``.dreamwork/inbox.md``
+# that is #405's whole defect deliberately fails. The basename check accepts
+# the loop's REAL comms convention — ``coord-inbox.md`` and
+# ``<lane-id>-inbox.md`` — not only a literal ``inbox.md`` basename, so a
+# brief citing the real coordinator inbox passes where the old
+# ``/.../inbox\.md`` regex forced briefs to invent fake ``.../lane-X/inbox.md``
+# directories (#587). The lookbehind keeps the ``/`` genuinely leading (it is
+# not preceded by ``~``, ``:``, ``.``, ``-`` or a word char), so the
+# ``~``-prefixed, Windows ``C:/`` and deep-relative forms that merely look
+# absolute do not slip through. The trailing negative lookahead makes
+# ``inbox.md`` the tail of the token, so ``inbox.md.bak`` is rejected (#587).
+ABS_INBOX_PATH_RE = re.compile(r"(?<![\w.~:-])/\S*/[\w-]*inbox\.md(?![\w.-])")
 # A brief that *names* a worktree dispatch target (not merely the word
 # "worktree"). The defect is a worktree lane handed a relative inbox path.
 WORKTREE_BRIEF_MARKER = ".worktrees/"
@@ -3949,7 +3959,9 @@ def check_brief_worktree_abs_inbox(dw: Path, rep: Report) -> None:
     Only briefs whose body contains ``.worktrees/`` are examined. Untracked
     briefs are skipped (mid-write). Cutoff is content-resolved from
     WORKTREE_ABS_INBOX_PHRASE — a hollow no-cutoff is an ERROR, not a silent
-    pass. Absolute = matches ABS_INBOX_PATH_RE (leading ``/…/inbox.md``).
+    pass. Absolute = matches ABS_INBOX_PATH_RE (leading ``/`` then a basename
+    ending in ``inbox.md``, so the real ``coord-inbox.md`` /
+    ``<lane-id>-inbox.md`` convention passes — #587).
 
     Coverage on the OK line: worktree-naming count, in-scope, grandfathered —
     so a check that stops matching cannot look the same as one that examined
