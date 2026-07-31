@@ -2,6 +2,8 @@
 
 ## Open
 
+## Answered
+
 - **2026-07-31 — Pending hand-offs to fold: are these things that need to be folded in to mast…**
   → answered (2026-07-31 05:40): **You are right, and I found the blind spot.**
   There are 27 Pending entries with "landed" hand-offs that have NO
@@ -28,8 +30,6 @@
   154-line loss through.
 
   **Human:** Pending hand-offs to fold: are these things that need to be folded in to master but haven't yet been? If we have a backlog this large for these, we need to address that in our dreamwork loop --- this is a lot!
-
-## Answered
 
 - **2026-07-28 — I cannot see any question for #264 in the webui, how am I meant to provide a…** → answered
   (2026-07-28 15:24): **You are right, it was my failure, and it is fixed two ways.**
