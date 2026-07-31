@@ -40,6 +40,7 @@ import pytest
 import ledger_parse
 import ledger_store
 import ledger_write
+import lint  # #671 — `ledger_view`, the #294 dispatch the sweep tests derive from
 import watch
 
 REPO = Path(__file__).resolve().parent
@@ -912,3 +913,264 @@ def test_a_worktree_whose_shared_store_is_gone_is_not_refused(
     _, _, err = _run(dev_ledger, ["get", "10", "--ledger", str(wtdw / "tasks.md")])
     assert "#667" not in err, (
         f"with no shared store there is nothing to point at: {err!r}")
+
+
+# ===========================================================================
+# #671 — `sweep` never got the #294 store dispatch, so after the cutover it
+# correlated git against ZERO ledger entries and called that "nothing to
+# review". MEASURED on the live repo before the fix: 442 commits examined,
+# 177 open ids never seen, and the printed verdict was
+# `sweep: nothing to review (this ran — see the examined count above)`.
+#
+# WHY THESE TESTS ARE SHAPED THE WAY THEY ARE, and it is the whole task in
+# miniature: the defect is a CONFIDENT-LOOKING OUTPUT. `sweep` exits 0 on
+# every failure mode by #404's ruling, so the check cannot be an exit code;
+# and "sweep printed something" PASSES on the broken version, because the
+# broken version prints confidently and at length. The assertion therefore has
+# to be that a PLANTED LANDING IS NAMED — a claim only a sweep that actually
+# read the store can satisfy.
+#
+# The findings are read back through the report's own printed format rather
+# than by substring, so `#12` cannot be satisfied by `#124` and the header's
+# own counts cannot be mistaken for a finding.
+# ===========================================================================
+
+SWEEP_FINDING = re.compile(r"^  #(\d+) — ", re.M)
+
+
+def _named_ids(out):
+    """The ids `sweep` actually FLAGGED, parsed from its own report format."""
+    return {int(x) for x in SWEEP_FINDING.findall(out)}
+
+
+def _plant(root, subject):
+    """An id-bearing commit with no content — returns the short sha `sweep`
+    will print (`%h`, the same format `_git_subjects` reads)."""
+    _git(root, "commit", "-q", "--allow-empty", "-m", subject)
+    return _git(root, "rev-parse", "--short", "HEAD").stdout.strip()
+
+
+def _sweep_fixture(migrate, tmp_path, name="main"):
+    """A REAL post-cutover checkout — store present, `tasks.md` the #458 shim.
+
+    The precondition that makes every test below non-vacuous is asserted here,
+    derived rather than assumed: the MARKDOWN the broken sweep read yields ZERO
+    open ids, so anything these tests observe can only have come from the
+    store. Without this the fixture could quietly keep a real `tasks.md` around
+    and the whole file would pass against the defect.
+    """
+    root = tmp_path / name
+    dw = _cutover_repo(migrate, root)
+    md_open, md_landed = watch.parse_ledger((dw / "tasks.md").read_text())
+    assert not md_open and not md_landed, (
+        f"precondition: the markdown left by the cutover must yield NO entries, "
+        f"else a markdown-reading sweep could pass; got {md_open}/{md_landed}")
+    assert ledger_parse.source_of_truth(str(dw)) == "store", \
+        "precondition: the fixture must genuinely be in store mode"
+    return root, dw
+
+
+def _sweep(dev_ledger, root, dw):
+    rc, out, err = _run(dev_ledger, [
+        "sweep", "--ledger", str(dw / "tasks.md"), "--repo", str(root)])
+    assert rc == 0, f"#404 ruled sweep exit-0 advisory, got {rc}: {err!r}"
+    return out
+
+
+def test_sweep_names_a_landing_for_an_open_id_held_only_by_the_store(
+        migrate, dev_ledger, tmp_path):
+    """THE DEFECT, and the assertion is the planted landing being NAMED.
+
+    A green sweep on a repo with known-open ids and a known id-bearing commit
+    must go RED if the open-id source returns empty — which is what #294's
+    cutover did to it. The id here is OPEN IN THE STORE ONLY; the markdown the
+    old code read is the #458 shim (asserted in `_sweep_fixture`), so naming it
+    is a claim no markdown-reading sweep can make.
+
+    PRODUCTION LINE: `text, source = lint.ledger_view(ledger_path.parent)` in
+    `_dispatch`'s sweep branch. RED: restore `ledger_path.read_text()` — the
+    defect verbatim — and this fails with "the planted landing was not named",
+    while the report still prints its confident examined-count line.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    # Derived from the fixture through the markdown reader the store was
+    # imported from, never a literal tuned to today's store.
+    open_ids, _ = _fixture_ids()
+    tid = sorted(int(i) for i in open_ids)[0]
+    sha = _plant(root, f"fix(#{tid}): a landing the entry does not cite")
+
+    out = _sweep(dev_ledger, root, dw)
+
+    assert tid in _named_ids(out), (
+        f"the planted landing for open id #{tid} ({sha}) was NOT named — "
+        f"sweep correlated against nothing and said so confidently: {out!r}")
+    assert sha in out, f"the evidence sha must be printed: {out!r}"
+
+
+def test_sweep_says_how_many_open_ids_it_correlated_against(
+        migrate, dev_ledger, tmp_path):
+    """#404 printed the examined COMMIT count so that "found nothing" differs
+    from "did not run". #671 is that rule applied to only one half: the commit
+    count stayed real while the ledger half silently went to zero. So the
+    ledger half is accounted for on the same line, with the source it came
+    from.
+
+    PRODUCTION LINE: the `against {len(open_ids)} open ids ({source})` clause
+    in `sweep_text`'s header. RED: drop it and the count assertion fails — the
+    report goes back to being confident about a number it never states.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    open_ids, _ = _fixture_ids()
+    _plant(root, "docs(#999): an id the ledger does not hold")
+
+    out = _sweep(dev_ledger, root, dw)
+
+    assert f"against {len(open_ids)} open ids" in out, (
+        f"the ledger half of the correlation must be counted on the report's "
+        f"own header, like the commit half: {out!r}")
+    assert "(store)" in out, (
+        f"the source actually read must be named — `ledger_view` fails closed "
+        f"toward markdown, so the word has to be its answer: {out!r}")
+
+
+def test_sweep_subtracts_a_cited_sha_read_from_the_store_body(
+        migrate, dev_ledger, tmp_path):
+    """DIRECTION-2 CLOSURE for the test above, and it covers real ground.
+
+    "The planted landing is named" is satisfied by a sweep that names
+    EVERYTHING, including the landings entries already cite — #404's
+    suppression convention ("cite the sha, the row disappears") failing open,
+    which is #612's volume failure arriving through the store. Subtraction also
+    rides a DIFFERENT part of the projection than the id set does: the bodies,
+    whose `- **#N**` heads `ledger_view` SYNTHESIZES for headless store rows
+    (#557). A projection that produced the right ids and unparseable bodies
+    would pass the test above and fail here.
+
+    PRODUCTION LINE: `if sha in bodies.get(tid, ""): continue` in `sweep`, now
+    reached with store bodies. RED: drop the `continue` and the cited id is
+    named too, failing the exact-set assertion.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    ids = sorted(int(i) for i in _fixture_ids()[0])
+    assert len(ids) >= 2, "fixture needs two open ids to tell the halves apart"
+    uncited, cited = ids[0], ids[1]
+
+    _plant(root, f"fix(#{uncited}): a landing the entry does not cite")
+    cited_sha = _plant(root, f"fix(#{cited}): a landing the entry DOES cite")
+    rc, _, err = _run(dev_ledger, [
+        "note", str(cited), "--note", f"landed {cited_sha}",
+        "--ledger", str(dw / "tasks.md")])
+    assert rc == 0, f"the note verb must have written the citation: {err!r}"
+
+    # The gap is DERIVED from the projection the sweep will read, not assumed:
+    # one body carries the sha, the other does not.
+    text, source = lint.ledger_view(dw)
+    bodies = {t: b for tids, b in ledger_parse.ledger_entries(
+        ledger_parse.open_section_text(text) or "") for t in tids}
+    assert cited_sha in bodies.get(cited, ""), (
+        f"precondition: #{cited}'s store body must carry {cited_sha}")
+    assert cited_sha not in bodies.get(uncited, ""), \
+        f"precondition: #{uncited}'s body must not carry it"
+
+    out = _sweep(dev_ledger, root, dw)
+
+    assert _named_ids(out) == {uncited}, (
+        f"exactly the uncited landing may be named — #{cited} cites its sha "
+        f"({cited_sha}) in the store body and must be subtracted: {out!r}")
+
+
+def test_sweep_that_read_no_entries_refuses_to_call_it_nothing_to_review(
+        migrate, dev_ledger, tmp_path):
+    """#404's ruled contract: "'cannot check' must never read as 'nothing to
+    fix'". `ledger_view` fails CLOSED TOWARD MARKDOWN on any store error, and
+    in a cut-over checkout the markdown is the #458 shim — so a store that
+    stops resolving reproduces #671 exactly, through the fix's own fallback.
+    The zero-entries case therefore has to say it did not review.
+
+    This is the MAIN-CHECKOUT shape: #667's gate is a linked-worktree gate by
+    construction (`shared_store_for_worktree`), so it does not fire here and
+    cannot cover this. Verified below rather than argued.
+
+    PRODUCTION LINE: the `if not open_ids and not landed_ids:` branch in
+    `sweep_text`. RED: delete it and the report says "nothing to review" over
+    an empty ledger — #671 verbatim.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    store = ledger_parse.store_path(dw)
+    store.unlink()
+    for suffix in ("-wal", "-shm"):
+        side = Path(str(store) + suffix)
+        if side.exists():
+            side.unlink()
+    # Derived: the ledger really does yield nothing now, and #667's gate really
+    # is not the thing answering (this is a main checkout, not a worktree).
+    text, _source = lint.ledger_view(dw)
+    md_open, md_landed = watch.parse_ledger(text)
+    assert not md_open and not md_landed, (
+        f"precondition: the ledger must yield no entries at all: {text!r}")
+    assert lint.shared_store_for_worktree(dw) is None, \
+        "precondition: #667's worktree gate must not be what answers here"
+    _plant(root, "fix(#10): a landing nothing can be correlated against")
+
+    out = _sweep(dev_ledger, root, dw)
+
+    assert "nothing to review" not in out, (
+        f"a sweep that read no entries must not report nothing to review — "
+        f"that is the #671 sentence verbatim: {out!r}")
+    assert "DID NOT REVIEW" in out, f"it must say it could not check: {out!r}"
+    assert "against 0 open ids" in out, (
+        f"and the count that makes it checkable must be printed: {out!r}")
+
+
+def test_sweep_ignores_store_landed_ids_and_ids_the_ledger_does_not_hold(
+        migrate, dev_ledger, tmp_path):
+    """DIRECTION-2 CLOSURE, found by construction rather than by reasoning.
+
+    With only the three tests above, dropping sweep's `if str(tid) not in
+    open_ids: continue` left ALL of them GREEN while the tool named landed ids
+    and ids the ledger has never held — #612's volume failure arriving through
+    the store, and the exact shape trap 2 warns about: "the planted landing is
+    named" is satisfied by a sweep that names everything.
+
+    #404's `test_sweep_ignores_landed_ids_and_reports_multi_id_subjects` does
+    catch that injection — over a MARKDOWN fixture. What it cannot reach is the
+    thing #671 introduced: post-cutover the open/landed split is no longer read
+    from headings a human wrote, it is SYNTHESIZED by `ledger_view` from
+    `store_ids_by_state`. A projection that filed landed rows under `## Open`
+    would leave that markdown test untouched and green while the live sweep
+    flagged already-folded work every tick.
+
+    PRODUCTION LINE: `open_bodies = [... if str(ids[0]) in oset]` in
+    `lint.ledger_view`. RED: widen it to `oset | lset` and the landed id is
+    named. Also red on dropping sweep's membership filter — the injection this
+    test exists because of.
+
+    THE EMPTY SET IS ONLY MEANINGFUL WITH THE HEADER ASSERTION, which is this
+    whole task's lesson turned on my own test: "sweep named nothing" is equally
+    true of a sweep that read nothing, so the non-vacuity claim — it correlated
+    against the real open ids, and it examined the planted commits — is
+    asserted rather than assumed.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    open_ids, landed_ids = _fixture_ids()
+    landed = sorted(int(i) for i in landed_ids)[0]
+    unknown = max(int(i) for i in open_ids | landed_ids) + 1000
+    assert str(unknown) not in open_ids | landed_ids, \
+        "precondition: the unknown id must genuinely be absent from the ledger"
+
+    _plant(root, f"fix(#{landed}): a landing for an id that already landed")
+    _plant(root, f"docs(#{unknown}): a landing for an id the ledger never held")
+
+    out = _sweep(dev_ledger, root, dw)
+
+    # Non-vacuity FIRST: an empty finding set means nothing unless the sweep
+    # can be shown to have read the ledger and examined the commits.
+    assert f"against {len(open_ids)} open ids (store)" in out, (
+        f"the sweep must be shown to have read the store before its silence "
+        f"counts for anything: {out!r}")
+    assert "examined 3 commits" in out, (
+        f"and to have examined the planted commits: {out!r}")
+
+    assert _named_ids(out) == set(), (
+        f"neither the already-landed #{landed} nor the unheld #{unknown} may "
+        f"be flagged as an open landing: {out!r}")

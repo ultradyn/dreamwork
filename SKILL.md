@@ -90,8 +90,17 @@ on the answer, then move the entry to Answered.
 sweep` before selecting work** (#404). It scans commit subjects since the
 most recent fold commit (`--since REF` to override) for id-bearing landings,
 correlates against the open ids, subtracts entries that already cite the
-sha, and prints the remainder **plus how many commits it examined** — a
-sweep that found nothing is distinguishable from one that did not run. It
+sha, and prints the remainder **plus how many commits it examined AND how
+many open ids it correlated them against, with the source it read them
+from** — a sweep that found nothing is distinguishable from one that did
+not run. Read BOTH counts: for a year the commit count alone was printed,
+and after the #294 cutover the ledger half silently returned zero while the
+commit count stayed real, so every tick got a confident all-clear from a
+correlation that never happened (#671). `(store)` after the open-id count
+is the normal post-cutover reading; `(markdown)` in a project that HAS cut
+over means the store did not resolve and the answer is built on whatever
+`tasks.md` still holds. A sweep that read no entries at all says `DID NOT
+REVIEW` instead of reporting a clean result. It
 is advisory (exit 0 always). This is the primary route because a lane
 cannot land work without committing, and the commit convention puts the id
 in the subject by construction — git knows about every same-tree landing,
