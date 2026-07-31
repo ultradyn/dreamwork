@@ -417,6 +417,23 @@ the path does not even exist at branch point). The same trap hits
 both as absolute paths into the main checkout — repo-relative paths are
 silently wrong in a worktree.
 
+**A brief that asks the lane to read the ledger pastes the `--ledger` form
+with the main checkout's absolute path** (#667). `ledger.sqlite3` is
+gitignored (#294) so it never travels into a worktree, and the `tasks.md`
+that does is the #458 shim — `python3 dev/ledger.py get <id>` came back
+`#NNN not found` for every id. That does not read as "you invoked it wrong";
+it reads as "that task is not in the ledger", and the next sentence of the
+brief then routes the lane to `tasks.md.deprecated` to cite a stale entry
+with confidence. lane-659attractor needed four ledger reads and got four
+false not-founds. **"From the repo root" is not enough** — a lane told to
+stay in its worktree reads that as *its* root. Paste the form:
+
+    python3 dev/ledger.py get <id> --ledger <main-checkout>/.dreamwork/tasks.md
+
+Every verb now refuses and names that form rather than answering from an
+empty ledger, so a brief that forgets costs a round trip instead of a wrong
+citation — but the brief is what saves the round trip.
+
 **A brief that teaches the `cp`/`cmp` restore protocol
 names a lane-private snapshot directory** (#652). Keep that clause on one
 line — `lint.py` content-resolves its cutoff with `git log -S`, a literal
