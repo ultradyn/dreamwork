@@ -24,3 +24,15 @@ rather than assume them.
 Guards run against a COPY, so the ones that POST /answer and /comment can
 mutate freely and the next run still starts here. Add to this file rather
 than reaching for live content when a guard needs a new shape.
+
+**A VALUE'S LENGTH IS AN INPUT SHAPE (#595).** `.dreamwork/skill-version` says
+`2026-07-25-04-fixture-unbounded-version-name-worst-case.md`, and the ugliness
+is the point — it is deliberately as long as a real migration filename, because
+the head's `version` crumb renders whatever is in that file and the page's
+"never scrolls sideways" contract is a claim about ANY length. It used to say
+`2026-07-25-fixture`. Eighteen characters fit a 390px crumb row whether or not
+they can wrap, so `hfit` passed for months while the live dashboard scrolled
+28px sideways. `hfit` now FAILS if this value drops under 40 characters — if
+that check reds, lengthen the value, do not lower the threshold. Frozen content
+protects a guard from the loop's churn; it does not protect it from a value the
+fixture author picked small.

@@ -3407,7 +3407,9 @@ function crumbsFor(v, d) {
   if (v.name === 'file') {
     const p = v.param || '', dir = fileDir(p);
     const row = [home];
-    if (dir) row.push({ k:'fdir', html:`<span class="fdir" id="fdir">${esc(dir)}</span>` });
+    // `.wrapany` is the crumb row's wrap exception, named once in style.css;
+    // `.fdir` is now only this path's colour and selectability (#595).
+    if (dir) row.push({ k:'fdir', html:`<span class="fdir wrapany" id="fdir">${esc(dir)}</span>` });
     row.push({ k:'fcopy', html: copyPathBtn(!!dir) });
     // Markdown only (#252). The key carries the PATH, so switching files
     // departs one switch and arrives another (a different file's control),
@@ -3458,12 +3460,21 @@ function crumbsFor(v, d) {
   // about what it IS. So it says so — a dim "skill" label before the name —
   // and the neighbour no longer supplies the meaning. Built only when there is
   // a name to show (an empty version file renders no crumb, not a bare dot).
+  // #595 — BOTH of these crumbs carry a value whose length is set by data, not
+  // by design: `target` is whatever absolute path this checkout lives at, and
+  // `version` is an arbitrary-length migration FILENAME. A `.crumb` is
+  // `white-space:nowrap` (#284), so neither could break and the dashboard
+  // scrolled sideways by 28px at 390px — against the styleguide's promise that
+  // it never does. They take `.wrapany` on an INNER span, the same shape `.fdir`
+  // uses, so the crumb keeps the nowrap that holds its own separator. Nothing
+  // here is tuned to today's string: any length wraps.
   const sv = d.files['skill-version'];
   const row = [
-    { k:'target', html: esc(d.target) },
+    { k:'target', html:'<span class="wrapany">' + esc(d.target) + '</span>' },
   ];
   if (sv) row.push({ k:'version',
-    html:'<span style="color:var(--dim)">skill</span> ' + esc(sv) });
+    html:'<span style="color:var(--dim)">skill</span> ' +
+         '<span class="wrapany">' + esc(sv) + '</span>' });
   row.push(
     { k:'updated', html:'<span id="upd"></span>' },
     // the count is zero whether everything is answered or the file cannot be

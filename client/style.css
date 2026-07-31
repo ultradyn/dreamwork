@@ -29,6 +29,38 @@
                               border-radius:var(--radius); }
   ::-webkit-scrollbar-thumb:hover { background:var(--dim); }
   ::-webkit-scrollbar-corner { background:transparent; }
+  /* THE PAGE NEVER MOVES SIDEWAYS BECAUSE A SCROLLBAR CAME OR WENT (#597).
+     The viewport's gutter is reserved on every route, whether that route's
+     content is tall enough to need it or not.
+
+     Without this, `/`, `/questions` and `/file` are tall and `/answers`,
+     `/reviews`, `/research` and `/chat/<id>` are not, so navigating between the
+     two kinds takes 10px of classic scrollbar out of `clientWidth` and the
+     centred column SNAPS 5px. Measured: `#htitle.x` visits exactly two values
+     across a `/` → `/answers` transition, 436.2 and 441.2, and nothing else —
+     one frame, no easing. That defeats the reason the chrome was hoisted out of
+     `#view` in the first place (transitions.md: a route change "read as 'the
+     elements jump around' rather than as the page opening up"), and it is a
+     SNAP on a page that spends real effort making a column-width change glide.
+     `scrollbar-gutter` is the property for exactly this and needs no JS.
+
+     Two things it deliberately does NOT do, both MEASURED rather than assumed.
+     It is a no-op under overlay scrollbars (macOS, touch): with Chromium's
+     `OverlayScrollbar` feature on, the computed value is still `stable` and the
+     reading column is the full 358px at 390px, against 348px with classic
+     scrollbars. So no gutter is reserved where no scrollbar ever took space,
+     and there is no permanent 10px tax on a phone — the bug is invisible there
+     and so is the fix.
+
+     And it does NOT fix `#dreambg`'s `100vw` overhang, which the visual audit
+     expected it to get for free. `vw` counts the classic scrollbar whatever the
+     gutter says, so the field still runs 10px past `clientWidth` on exactly the
+     routes that have a scrollbar and 0 past it on the ones that do not —
+     measured identical before and after this line. The field still covers
+     (`100vw` >= `clientWidth` always) and `overflow:clip` still means it creates
+     no scroll of its own, which is why that stays an opportunity and not a
+     defect. */
+  html { scrollbar-gutter:stable; }
   body { background:var(--bg); color:var(--text); margin:0;
          padding:2.5rem 1rem;
          font-family:ui-monospace,'JetBrains Mono',monospace; font-size:.8rem; }
@@ -60,8 +92,12 @@
      it did NOT work: it suppresses a break at its own position, and Chromium
      still took the break opportunity before the switch's atomic `inline-flex`
      box. `nowrap` is the rule actually wanted — a crumb is a short label — and
-     the ONE exception is the path, which must wrap anywhere (`.fdir` re-enables
-     wrapping for its own text). */
+     the exception is an UNBOUNDED-LENGTH VALUE, which must wrap anywhere. The
+     exception is `.wrapany` on an INNER span, never `white-space:normal` on the
+     crumb itself: a crumb owns its own separator (`.crumb + .crumb::before`), so
+     relaxing the crumb re-opens the very break this rule closed. An inner span
+     cannot — the nearest common ancestor of the separator and the value is the
+     crumb, and the crumb still says `nowrap`. */
   .crumb { white-space:nowrap; }
   /* the snapped start state for anything arriving: transition:none so it
      BEGINS here instead of animating toward here (the enter-snap rule).
@@ -101,8 +137,32 @@
      rather than push the column sideways, which is the only other thing an
      unbreakable 60-character token can do. It is selectable text, because
      selecting it is the fallback when the clipboard is refused. */
-  .fdir { color:var(--dim); user-select:text; -webkit-user-select:text;
-          white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
+  .fdir { color:var(--dim); user-select:text; -webkit-user-select:text; }
+  /* ── the wrap exception, named once (#595) ───────────────────────────────
+     #284 wrote these three properties for `.fdir` and its comment above called
+     the path "the ONE exception". It was not the only one, and treating it as
+     one is what shipped #595: the head's `target` and `version` crumbs carry an
+     absolute checkout path and an arbitrary-length migration FILENAME through a
+     `nowrap` crumb, and the rendered markdown's `.mdfile` carries an arbitrary
+     path through a `nowrap` unit. At 390px the dashboard scrolled sideways by
+     28px and `/file` by 32px, against a styleguide sentence that says the page
+     never does.
+
+     So the exception is a NAMED IDIOM rather than a property triple copied per
+     site: any element whose text length is set by data, not by design, carries
+     `.wrapany` and re-enables wrapping for ITS OWN text only, while the box
+     around it keeps its `nowrap`. It is always an INNER element, never the box
+     itself, and the `.mdfile` unit below is why that distinction is worth
+     stating twice: a break is allowed wherever the INNERMOST inline box ending
+     at that position permits one, so relaxing a box directly puts a break
+     opportunity at its own closing boundary — next to whatever the box was
+     supposed to be holding on to.
+
+     `word-break:break-word` rides along for #284's reason — `overflow-wrap`
+     alone leaves a 60-character unbreakable token to push the column sideways
+     in the layouts where it is the sole content of its line. */
+  .wrapany { white-space:normal; overflow-wrap:anywhere;
+             word-break:break-word; }
   .fcopy { background:none; border:1px solid transparent; color:var(--muted);
     border-radius:var(--radius); font:inherit; padding:0 .3rem; cursor:pointer;
     transition:color .3s ease, border-color .3s ease; }
@@ -1818,8 +1878,31 @@
   /* #506: known-internal path + its pip are ONE unbreakable unit. Without
      nowrap the button orphans onto the next line whenever the path sits
      near a wrap edge (the path is content; the pip is chrome that must
-     travel with it). The unit is short (a path + 14px glyph); long paths
-     already overflow as one code token. */
+     travel with it).
+
+     #595 corrected what this comment used to conclude. It said "long paths
+     already overflow as one code token" — true, and the consequence was never
+     measured: at 390px a 41-character path in `/file?p=DREAMWORK.md` reached
+     the DOCUMENT's scroll area and the whole page scrolled sideways by 32px,
+     against the styleguide's promise that it never does. `/questions` and `/`
+     escaped only because their long paths sat inside CLOSED `<details>` and had
+     no geometry — luck, not containment.
+
+     THE NOWRAP STAYS HERE AND IS NOT WEAKENED. The wrapping is bought at the
+     emit site instead (`mdFileUnit` in components.js): the path arrives already
+     split, everything but its last few characters inside a `.wrapany` span, the
+     TAIL bare in this nowrap context. So the boundary before the button is
+     unbreakable by construction, and the head breaks anywhere.
+
+     The obvious cheaper move — leave the emit alone and put `.wrapany` on the
+     `<code>` — was tried, shipped into a red proof, and MEASURED WRONG: swept
+     over path lengths 30..120 at 390px the pip orphaned at six of them, because
+     a break is allowed wherever the innermost inline box ending at that
+     position permits one, and a wrappable `<code>` ends exactly where the pip
+     begins. Four other CSS-only shapes (a word joiner, a nowrap `::after`, an
+     inline pip, an inline-block unit) orphaned at the same six lengths. That
+     sweep is now `hfit.mjs` §4 — a single length passed all of them, which is
+     how the wrong fix nearly shipped. */
   .mdfile { white-space:nowrap; }
   /* the composer's status arrives and departs on one atmospheric envelope
      (#255). Success remains readable for the hold while the panel stays open;

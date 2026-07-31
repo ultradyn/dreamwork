@@ -152,13 +152,38 @@ than once:
   eases in and dreams away, reduced motion does neither, and the ghost holds
   no address — driven over a real tick, because that is what the address
   would have cost.
-- `hfit` — no route scrolls the page sideways at phone width (#312). The
+- `hfit` — no route scrolls the page sideways at phone width (#312, #595). The
   command menu lives in the persistent chrome and a `visibility:hidden` box
   is still laid out, so a hidden `.cmdmenu` anchored at the ⋯ pushed a 122px
   horizontal scrollbar at 390px on every route. At 390px it asserts
   `documentElement.scrollWidth <= clientWidth` on each route (palette closed)
   and on the dashboard with the menu open, and it asserts the palette and a
   populated menu exist first — the check must not pass over an absent subject.
+  #595 is why it is worth reading before writing a content-shaped guard: this
+  file PASSED while the live dashboard scrolled 28px sideways, because its two
+  other subjects are crumbs whose length comes from DATA and the fixture's
+  values happened to be short. The precondition #312 wrote covered the menu it
+  was written for and nothing acquired later. Now: the fixture carries a
+  worst-case skill-version, a length precondition fails if that is ever
+  shortened back, `/file` is in the route list, and a stress section injects
+  160 characters into every unbounded slot — the contract is about ANY value,
+  and a check tuned to today's data goes quiet the day the data changes.
+- `gutter` — the page never moves sideways because a scrollbar came or went
+  (#597). Tall routes (`/`, `/questions`, `/file`) take ~10px of classic
+  scrollbar out of `clientWidth` and short ones (`/answers`, `/reviews`,
+  `/research`, `/chat/<id>`) do not, so the centred column SNAPPED 5px on every
+  navigation between the two kinds — the "elements jump around" complaint that
+  hoisting the chrome out of `#view` exists to answer, reintroduced under it.
+  Fixed by `html { scrollbar-gutter:stable }`. **This is the one guard in this
+  directory that launches with `ignoreDefaultArgs: ['--hide-scrollbars']`**, and
+  that is the finding worth carrying: Playwright hides scrollbars in headless by
+  default, so in every other guard here the scrollbar has zero width and the
+  whole class of scrollbar-driven layout effect is invisible. Its first check
+  refuses to grade anything until it confirms the scrollbar consumes width in
+  the browser actually running, so a Playwright upgrade cannot quietly turn it
+  back into the green light it replaced. Samples `#htitle.x` every frame across
+  the transition, at 1440px and 390px — a snap is one frame, and a settled
+  before/after read cannot see a page that moved and moved back.
 
 Four of those build their own target and take an ephemeral port, ignoring
 the one they are handed: `health`, `dashboard`, `identity`, `motion`.
