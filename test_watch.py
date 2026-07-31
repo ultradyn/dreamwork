@@ -948,10 +948,12 @@ class TestCollector(unittest.TestCase):
         if not node:
             self.skipTest("node not available — buildChat gate did NOT run")
         page = watch._get_page()
-        # buildChat now composes chatReplyComposer (#577), so the harness must
-        # extract it too or buildChat's call is an undefined reference in the
-        # sandbox — the test reaching the real render is what caught the wiring.
+        # buildChat now composes chatArchiveBar (#709) + chatReplyComposer
+        # (#577), so the harness must extract both too or buildChat's calls
+        # are undefined references in the sandbox — the test reaching the real
+        # render is what caught the wiring.
         fns = (_extract_js_fn(page, "function chatTurn(") + "\n" +
+               _extract_js_fn(page, "function chatArchiveBar(") + "\n" +
                _extract_js_fn(page, "function chatReplyComposer(") + "\n" +
                _extract_js_fn(page, "function buildChat("))
         script = (
@@ -966,13 +968,14 @@ class TestCollector(unittest.TestCase):
                  "receipt": "", "body": "the dreamer replied"},
             ]) + ";\n"
             "console.log(JSON.stringify([buildChat({title:'t',status:'replied',"
-            "entries:entries}), buildChat(null)]));\n"
+            "entries:entries}), buildChat({title:'t',status:'replied',"
+            "archived:true,entries:entries}), buildChat(null)]));\n"
         )
         proc = subprocess.run([node, "-e", script], capture_output=True,
                               text=True, timeout=10)
         if proc.returncode != 0:
             self.fail("node eval failed: " + proc.stderr)
-        rendered, notfound = json.loads(proc.stdout)
+        rendered, archived_render, notfound = json.loads(proc.stdout)
         # PRECONDITION: the two turns differ in body
         self.assertIn("first message", rendered)
         self.assertIn("the dreamer replied", rendered)
@@ -990,6 +993,22 @@ class TestCollector(unittest.TestCase):
                       "a found chat renders the reply composer")
         self.assertNotIn('id="chatreplybox"', notfound,
                          "the not-found path renders no composer")
+        # #709 — a found chat renders the archive toggle. data-archive carries
+        # the NEXT state (1 to archive a live chat, 0 to restore an archived
+        # one), so a live chat's button says 'archive'/1 and an archived one's
+        # says 'unarchive'/0. PRECONDITION: the two renders differ on the verb
+        # and the flag, so a button that always renders one state reds here.
+        self.assertIn('class="chatarchbtn"', rendered)
+        self.assertIn('>archive</button>', rendered)
+        self.assertIn('data-archive="1"', rendered)
+        self.assertIn('>unarchive</button>', archived_render)
+        self.assertIn('data-archive="0"', archived_render)
+        self.assertNotEqual(
+            rendered[rendered.index('chatarchbtn'):rendered.index('</button>')],
+            archived_render[archived_render.index('chatarchbtn'):archived_render.index('</button>')],
+            "live and archived must render opposite toggle states")
+        self.assertNotIn('class="chatarchbtn"', notfound,
+                         "the not-found path renders no archive toggle")
         # unknown id degrades quietly, the page's own voice — never empty
         self.assertTrue(notfound and "not found" in notfound,
                         "an unknown id degrades in the page's voice")

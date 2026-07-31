@@ -731,6 +731,10 @@ function popoutDoc(url, label) {
       popoutDoc(pip.dataset.pipurl, pip.dataset.piplabel || 'doc'); return; }
     const plus = e.target.closest && e.target.closest('#cmdplus');
     if (plus) { e.preventDefault(); open ? closeCmd() : openCmd(); return; }
+    // #709 — the /chat/<id> archive toggle (sendChatArchive lives in
+    // views.js; one script scope, reachable at event time).
+    const arch = e.target.closest && e.target.closest('.chatarchbtn');
+    if (arch) { e.preventDefault(); sendChatArchive(arch); return; }
     if (open && e.target.closest && !e.target.closest('#cmdpalette')) closeCmd();
   });
   document.addEventListener('keydown', e => {
