@@ -1033,6 +1033,54 @@ def test_sweep_says_how_many_open_ids_it_correlated_against(
         f"toward markdown, so the word has to be its answer: {out!r}")
 
 
+def test_sweep_reports_how_many_subjects_it_understood_not_just_examined(
+        migrate, dev_ledger, tmp_path):
+    """#682: examined≠understood — #671 one layer deeper. "examined N" cannot
+    tell a sweep that matched M of N from one that matched 0 of N; both print
+    the same count. The header now carries the id-bearing count (what
+    SWEEP_SUBJECT matched) and names the dominant skip shape, so a 1-of-7
+    sweep reads differently from a 7-of-7 all-clear.
+
+    PRODUCTION LINE: `_skip_shape` + the `({idbearing} id-bearing, {skipped}
+    skipped, mostly {dom})` clause in `sweep_text`'s header. RED: drop the
+    clause and the count vanishes — the report goes back to "examined N" over a
+    corpus it matched almost none of (#671's silent all-clear, one layer in).
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    # The four shapes #682 measured on the real corpus, in miniature: one
+    # verb(#N): landing, three Merge/Fold post-landing markers (correctly
+    # skipped — matching them re-proposes folded work), one bare-#N lane
+    # commit (genuinely id-bearing, genuinely missed — the named gap), and a
+    # no-id doc commit.
+    _plant(root, "fix(#10): a real landing")
+    _plant(root, "Merge #11: a coordinator landing")
+    _plant(root, "Fold #11 (merged abc1234)")
+    _plant(root, "Merge #12: another sibling")
+    _plant(root, "#10 — a bare lane commit the pattern misses")
+    _plant(root, "docs: a commit with no id")
+
+    out = _sweep(dev_ledger, root, dw)
+
+    # The id-bearing count derives from the SAME pattern + git log the sweep
+    # sees — never a literal. A count the test invents cannot catch the
+    # classification drifting from the real pattern.
+    subjects = [
+        line.split("\x1f", 1)[1] for line in _git(
+            root, "log", "--format=%h\x1f%s").stdout.splitlines()
+        if "\x1f" in line]
+    expected_idb = sum(
+        1 for s in subjects if dev_ledger.SWEEP_SUBJECT.match(s))
+
+    assert f"({expected_idb} id-bearing" in out, (
+        f"the header must state how many examined commits it actually matched "
+        f"— examined≠understood (#682, #671 one layer in): {out!r}")
+    assert f"{len(subjects) - expected_idb} skipped" in out, (
+        f"and the skip count, so a {expected_idb}-of-{len(subjects)} sweep "
+        f"does not read as an all-clear: {out!r}")
+    assert "mostly " in out, (
+        f"the dominant skip shape must be named, not dropped silently: {out!r}")
+
+
 def test_sweep_subtracts_a_cited_sha_read_from_the_store_body(
         migrate, dev_ledger, tmp_path):
     """DIRECTION-2 CLOSURE for the test above, and it covers real ground.

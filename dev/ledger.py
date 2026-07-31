@@ -57,6 +57,7 @@ block, and preserves the block byte-exact otherwise. Fold refuses on:
 unknown id, id already in landed, id matching more than one open entry.
 """
 import argparse
+import collections
 import json
 import os
 import re
@@ -262,6 +263,33 @@ SWEEP_SUBJECT = re.compile(
     r"^(?:merge|fix|feat|close|perf|refactor|guard|docs|test|design)"
     r"\((#\d+(?:,#\d+)*)\)")
 SWEEP_ID = re.compile(r"#(\d+)")
+# Post-landing subjects the sweep must NOT re-propose as findings (#682). The
+# repo writes `Merge #N:`/`Fold #N` after a lane lands, and matching those
+# would name work that is already folded — a false proposal costing a human
+# decision every tick, which is worse than under-matching (#404, the brief).
+_MERGE_FOLD = re.compile(r"^(?:Merge|Fold) #\d")
+
+
+def _skip_shape(subject):
+    """One-word shape for a subject SWEEP_SUBJECT did NOT match.
+
+    #682: examined≠understood. An unmatchable subject and one with nothing to
+    fold are indistinguishable in the output (both add zero rows), so the
+    header names the dominant skip shape rather than dropping it silently —
+    the same discriminability #671 gave the examined-count, one layer in.
+    The shapes are the measured corpus: Merge/Fold (already-landed — matching
+    these re-proposes folded work, the trap the brief warns against),
+    bare-#N (lane commits in a form the pattern misses), other #N, and the
+    genuinely id-free (doc/infra). Returns None for an id-bearing match,
+    which the caller counts separately.
+    """
+    if _MERGE_FOLD.match(subject):
+        return "already-landed"
+    if re.match(r"^#\d+\b", subject):
+        return "bare-#N"
+    if SWEEP_ID.search(subject):
+        return "other #N"
+    return "non-id"
 
 
 def sweep(text, commits):
@@ -563,8 +591,20 @@ def sweep_text(text, commits, since, source):
     n, findings = sweep(text, commits)
     open_ids, landed_ids = watch.parse_ledger(text)
     where = f"since {since[:12]}" if since else "across the whole history"
+    # #682: examined≠understood (#671 one layer deeper). The header carries the
+    # id-bearing count (matched) beside the examined count, plus the dominant
+    # skip shape, so a sweep that matched almost none of what it examined does
+    # not read as an all-clear. Re-derived here through the SAME pattern the
+    # pure function uses (#671's precedent for the open-id count), so #404's
+    # four pins on `sweep` keep binding the behaviour they were written for.
+    idbearing = sum(1 for _, s in commits if SWEEP_SUBJECT.match(s))
+    skipped = len(commits) - idbearing
+    shapes = collections.Counter(
+        _skip_shape(s) for _, s in commits if not SWEEP_SUBJECT.match(s))
+    dom = shapes.most_common(1)[0][0] if shapes else "n/a"
     lines = [f"sweep: examined {n} commits {where} against "
-             f"{len(open_ids)} open ids ({source})"]
+             f"{len(open_ids)} open ids ({source}) "
+             f"({idbearing} id-bearing, {skipped} skipped, mostly {dom})"]
     if not open_ids and not landed_ids:
         # The wording deliberately does NOT contain the clean verdict's phrase,
         # even to deny it: the #667 test asserts that phrase's ABSENCE by plain
