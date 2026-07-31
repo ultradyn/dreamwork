@@ -4655,6 +4655,75 @@ class TestGuardsExecutionAccounting:
         assert levels(rep, "justfile") == [], rep.render()
 
 
+class TestBriefCorpusReach:
+    """#766: clean historical contents must not imply current coverage."""
+
+    @staticmethod
+    def _repo(tmp_path: Path, brief_names: list[str], subjects: list[str]) -> Path:
+        root = tmp_path / "repo"
+        briefs = root / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email",
+                        "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"],
+                       check=True)
+        for name in brief_names:
+            (briefs / name).write_text("# Brief\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-qm", subjects[0]],
+                       check=True)
+        for subject in subjects[1:]:
+            subprocess.run(["git", "-C", str(root), "commit", "--allow-empty",
+                            "-qm", subject], check=True)
+        return root
+
+    def test_an_id_current_corpus_is_quiet(self, tmp_path):
+        root = self._repo(tmp_path, ["100-current.md"], ["docs(#100): current"])
+        reach = lint.brief_corpus_reach(root)
+        assert reach == (
+            "current through task #100 (0-id gap; "
+            "0 unnumbered brief(s) cannot be ordered)")
+
+    def test_a_frozen_nonempty_corpus_says_historical_from_the_line_alone(
+            self, tmp_path):
+        root = self._repo(
+            tmp_path,
+            ["100-old.md", "not-numbered.md"],
+            ["docs(#100): old brief", "fix(#107): later work"],
+        )
+        reach = lint.brief_corpus_reach(root)
+        assert "HISTORICAL ONLY" in reach
+        assert "newest numbered brief #100" in reach
+        assert "task history reaches #107 (7-id gap" in reach
+        assert "1 unnumbered brief(s) cannot be ordered" in reach
+
+    def test_unorderable_population_is_unknown_not_current(self, tmp_path):
+        root = self._repo(
+            tmp_path, ["descriptive-only.md"], ["fix(#107): later work"])
+        reach = lint.brief_corpus_reach(root)
+        assert reach.startswith("coverage reach UNKNOWN")
+        assert "1 unnumbered brief(s) cannot be ordered" in reach
+
+    def test_all_four_live_checks_carry_the_same_reach_qualifier(self):
+        root = lint.SKILL_DIR
+        expected = lint.brief_corpus_reach(root)
+        assert expected.startswith("HISTORICAL ONLY"), expected
+        checks = (
+            lint.check_brief_handoff_obligation,
+            lint.check_brief_worktree_abs_inbox,
+            lint.check_brief_lane_scratch,
+            lint.check_brief_lane_owns,
+        )
+        for check in checks:
+            rep = lint.Report()
+            check(root / ".dreamwork", rep)
+            oks = [detail for level, what, detail in rep.rows
+                   if level == lint.OK and what == "briefs"]
+            assert len(oks) == 1, rep.render()
+            assert oks[0].endswith(expected), oks[0]
+
+
 class TestBriefHandoffObligation:
     """#398: a brief written after the hand-off obligation must carry it.
 
