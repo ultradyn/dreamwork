@@ -220,10 +220,10 @@ def _runner_tally(lanes: list) -> str:
     changes his mind, which he did twice this week.
 
     So the same move the rest of this line makes: state the live fact, not the
-    rule. `runners opus 5, ccc 1` on every beat is a mirror, and the drift it
-    reflects has never been "chose the wrong exotic tier" — it has always been
-    "reached for native by habit". A habit is broken by seeing it, not by being
-    told about it.
+    rule. `lanes 6 recorded (opus 5, ccc 1)` on every beat is a mirror, and the
+    drift it reflects has never been "chose the wrong exotic tier" — it has
+    always been "reached for native by habit". A habit is broken by seeing it,
+    not by being told about it.
 
     The runner is the FIRST TOKEN of the recorded `model`; the rest is
     qualification ("ccc @glm52 (Opus review MANDATORY before merge)" tallies as
