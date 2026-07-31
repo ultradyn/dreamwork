@@ -200,6 +200,19 @@ def test_user_with_unrecognised_content_is_unclassifiable():
     assert result.kind is None
 
 
+def test_user_with_non_text_non_tool_result_block_is_unclassifiable():
+    """Direction-2 false-green closer: if _is_text_content accepted any list
+    (not just text blocks), an image-block user message would wrongly classify
+    as turn.user while every grammar-table fixture stayed green.  §2 describes
+    only string/text blocks for user turns; an image block matches no row."""
+    record = _user([{"type": "image", "source": {"data": "base64…"}}])
+    result = _classify(record)
+    assert result.outcome == UNCLASSIFIABLE, (
+        "a user message with a non-text, non-tool_result block matches no "
+        "grammar row — it must be unclassifiable, not a turn start")
+    assert result.kind is None
+
+
 def test_suppressed_and_unclassifiable_are_distinct_outcomes():
     """#136: 'suppressed by design' and 'unclassifiable' must not render
     identically.  A non-content type is suppressed; a content type with an
