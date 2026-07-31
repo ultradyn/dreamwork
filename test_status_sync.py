@@ -958,6 +958,21 @@ def _cut_over_target(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def test_queued_dispatch_landed_warning_reads_cut_over_store(tmp_path):
+    target = _cut_over_target(tmp_path)
+    dw = target / ".dreamwork"
+    line = "#11 follow-up still queued"
+    (dw / "status.json").write_text(json.dumps(
+        {"dreamers": [], "queued_dispatches": [line]}, indent=2) + "\n")
+    out_s, err_s = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out_s), contextlib.redirect_stderr(err_s):
+        rc = status_sync.main(["--target", str(target), "--check"])
+    assert rc == 0, (out_s.getvalue(), err_s.getvalue())
+    assert "WARN queued_dispatches: #11 is landed" in err_s.getvalue()
+    assert json.dumps(line) in err_s.getvalue()
+    assert "1 id reference" in out_s.getvalue()
+
+
 def test_store_mode_strips_the_retired_fields(tmp_path):
     target = _cut_over_target(tmp_path)
     dw = target / ".dreamwork"

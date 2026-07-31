@@ -75,6 +75,7 @@ from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
 # tuple from the file's actual keys — so a field added next month shows up in
 # the untouched list without anyone remembering to extend a literal.
 DERIVED = ("queue", "current_task_ids", "dreamers")
+QUEUED_ID = re.compile(r"#(\d+)\b")
 
 
 def open_ids(ledger: str) -> list[int]:
@@ -90,6 +91,73 @@ def open_ids(ledger: str) -> list[int]:
             return [int(i) for head in LEDGER_HEAD.findall(sec)
                     for i in ENTRY_ID.findall(head)]
     return []
+
+
+def read_task_ids_by_state(dw, lpath) -> tuple[list[int], list[int]]:
+    """``(open, landed)`` ids from one authoritative ledger read."""
+    if source_of_truth(str(dw)) == "store":
+        open_strs, landed_strs = store_ids_by_state(str(dw))
+        return ([int(i) for i in open_strs],
+                [int(i) for i in landed_strs])
+    ledger = lpath.read_text()
+    # Keep the existing open parser here because, unlike the set-valued
+    # dashboard parser, it preserves duplicates for main's refusal gate.
+    _, landed_strs = watch.parse_ledger(ledger)
+    return open_ids(ledger), [int(i) for i in landed_strs]
+
+
+def task_states(open_task_ids: list[int],
+                landed_task_ids: list[int]) -> dict[int, str]:
+    return ({i: "open" for i in open_task_ids}
+            | {i: "landed" for i in landed_task_ids})
+
+
+def audit_queued_dispatches(status: dict, states: dict[int, str]) -> None:
+    """Report ledger contradictions in author-owned queue prose; never edit."""
+    entries = status.get("queued_dispatches", [])
+    if not isinstance(entries, list):
+        print("WARN queued_dispatches: expected a list; unclassifiable value=%s"
+              % json.dumps(entries, ensure_ascii=False), file=sys.stderr)
+        print("queued_dispatches: checked 0 entries, 0 id references; "
+              "0 state questions, 1 unclassifiable")
+        return
+
+    references = questions = unclassifiable = 0
+    for entry in entries:
+        if not isinstance(entry, str):
+            unclassifiable += 1
+            print("WARN queued_dispatches: non-text entry; unclassifiable "
+                  "line=%s" % json.dumps(entry, ensure_ascii=False),
+                  file=sys.stderr)
+            continue
+        ids = [int(i) for i in QUEUED_ID.findall(entry)]
+        references += len(ids)
+        quoted = json.dumps(entry, ensure_ascii=False)
+        if not ids:
+            unclassifiable += 1
+            print("WARN queued_dispatches: no #NNN id; unclassifiable line=%s"
+                  % quoted, file=sys.stderr)
+            continue
+        # Check every reference. In particular, do not guess that the first
+        # id is the subject and a parenthetical id is merely context (#707).
+        for task_id in ids:
+            state = states.get(task_id)
+            if state == "open":
+                continue
+            questions += 1
+            if state == "landed":
+                fact = "is landed"
+            else:
+                fact = "is not present in the ledger (retired or non-existent)"
+            print("WARN queued_dispatches: #%d %s; line=%s; entry left "
+                  "unchanged — ledger state is a question, not a verdict"
+                  % (task_id, fact, quoted), file=sys.stderr)
+
+    print("queued_dispatches: checked %d entr%s, %d id reference%s; "
+          "%d state question%s, %d unclassifiable"
+          % (len(entries), "y" if len(entries) == 1 else "ies",
+             references, "" if references == 1 else "s",
+             questions, "" if questions == 1 else "s", unclassifiable))
 
 
 class LivenessUnknown(Exception):
@@ -477,10 +545,7 @@ def read_open_ids(dw, lpath):
     Store mode queries ``store_ids_by_state``; markdown mode parses the
     text. A missing store is fail-closed to markdown by ``source_of_truth``.
     """
-    if source_of_truth(str(dw)) == "store":
-        open_strs, _ = store_ids_by_state(str(dw))
-        return [int(x) for x in open_strs]
-    return open_ids(lpath.read_text())
+    return read_task_ids_by_state(dw, lpath)[0]
 
 
 def _evaluable(d) -> bool:
@@ -663,7 +728,7 @@ def main(argv: list[str] | None = None) -> int:
     # authoritative after the cutover watermark; markdown stays for pre-cutover.
     # Both paths return the same list[int] of open ids — the rest of main is
     # unchanged. A missing store is fail-closed to markdown by source_of_truth.
-    ids = read_open_ids(dw, lpath)
+    ids, landed_ids = read_task_ids_by_state(dw, lpath)
     if not ids:
         # An unreadable ledger and an empty one look identical to a parser, so
         # refuse rather than write `pending: 0` over a real count.
@@ -676,6 +741,13 @@ def main(argv: list[str] | None = None) -> int:
               "ledger first; `lint.py` reports this too" % dupes,
               file=sys.stderr)
         return 2
+
+    # `queued_dispatches` remains author-owned prose, but every #NNN inside
+    # it is a checkable claim about ledger state (#755). Report contradictions
+    # after the ledger's refusal gates and never add them to `changes`: a
+    # landed id can intentionally name queued follow-up work, so this is a
+    # question for the coordinator, not sync staleness and never a rewrite.
+    audit_queued_dispatches(status, task_states(ids, landed_ids))
 
     # Pre-filter malformed entries (#402a): the syncer must never crash on
     # junk. An entry that is not a dict, has no task, or carries neither a
