@@ -3359,3 +3359,37 @@ this shape and convert opportunistically.)
   the proof. And the failure this prevents is not a missed bug — it is the opposite: a
   lane that dutifully reports "not identical" and gets read as a regression, or one
   that quietly rounds the difference off to make the brief satisfiable.
+
+- **A citation must carry its own evidence, and a line number carries none — the fix
+  for two miscitation findings had the same disease as the disease** (2026-08-01,
+  `#764`, reported twice by lanes before I acted). `#748` found a plainly wrong task
+  id in a brief; `#752` found an illustration cited as the authority. The remedy both
+  landed on was: **cite `lessons.md:<line>`, not the task that appears inside the
+  lesson.** That remedy has its own rot mode, and it rotted within the day.
+
+  `lessons.md:3280` is the coordinate I put in every brief for *"the header's
+  claim-list is not the assertion-list"*. That lesson is at **3292**; line 3280 is a
+  different lesson about a `#535` porcelain check. The file is appended to by lanes
+  and by the coordinator, and entries are sometimes inserted rather than appended —
+  every insert above line N silently shifts each citation below it. **The citation was
+  correct when written**, which is the whole problem: nothing distinguishes a
+  coordinate that still points at its subject from one that no longer does.
+
+  The blast radius was measured, not estimated: four lane reports, two merge commit
+  messages, most of a night's briefs, and — the part that matters — **three entries
+  inside `lessons.md` itself**, where the `#505`, `#672` and `#696` lessons each cite
+  `3280` in their own text. A wrong citation inside the lessons file is re-copied by
+  everyone who reads it correctly.
+
+  **`lane-749` reported the drift and I did not act on it**; `#761`'s lane reported it
+  independently hours later, adding *"a lane following the literal line number would
+  find the right lesson only by luck"*. A finding reported once and ignored is a
+  finding the loop paid for twice.
+
+  The rule: **a citation should be verifiable from the citation alone.** Quoting the
+  lesson's bolded title makes `grep` the check — it either resolves or it visibly does
+  not, and it only rots when someone deliberately edits the title. A coordinate can be
+  wrong while looking exactly as right as it did the day it was written. This is the
+  same demand `#752`'s lesson already made — *cite the text that carries the
+  evidence* — applied one level up to the citation FORM rather than its target, and
+  the reason it had to be relearned is that "cite the line" felt like it satisfied it.
