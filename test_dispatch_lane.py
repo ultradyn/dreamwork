@@ -111,3 +111,13 @@ def test_no_runner_is_a_distinct_usage_fault(tmp_path):
 
     assert result.returncode == 2
     assert "runner command is missing" in result.stderr
+
+
+def test_just_recipe_is_the_documented_ccc_route():
+    justfile = (ROOT / "justfile").read_text(encoding="utf-8")
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "dispatch-lane prompt agent *CCC_ARGS:" in justfile
+    assert "python3 dev/dispatch_lane.py" in justfile
+    assert "just dispatch-lane <prompt-file> <@agent>" in " ".join(skill.split())
+    assert "Direct `ccc` lane dispatch is unsupported" in skill
