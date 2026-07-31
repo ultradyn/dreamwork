@@ -55,7 +55,42 @@ carries a `+` command opener (steer the loop without a chat turn).
   refused (`dreamhub-design.md`, "one renderer, and it is the Python one" —
   *two renderers only agree on the day they are written*). Build tooling over
   the client we have is the permitted direction; a rival implementation of it
-  is a separate decision nobody has made.
+  is refused.
+- **The UI is transitioning to a component-based React web UI** (ruled
+  2026-07-31 17:03, `#591`, receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`;
+  `rec` on all three sub-decisions). This supersedes the earlier reading —
+  live in this repo until this ruling — that the page has, and should have,
+  **no component system**. Three things were fixed at once:
+  - **G2 reads per-surface.** One render authority *per surface*. A
+    **derived** surface — one compiled from the same source the existing
+    authority renders — is *not* a second authority. The rule was coined
+    refusing a JS row renderer beside the Python one rendering *the same
+    rows* (`dreamhub-design.md`), and that is what it still refuses.
+  - **The claude-design breakpoint is component-level, and staged.** Tokens
+    and the real `client/style.css` ship first; delegating React wrappers
+    follow as the bundle step's second stage. Not tokens-only — a tokens-only
+    ceiling makes the design tool dress *its* generic components in this
+    page's skin, which is a reimplementation of this UI at the tool's end,
+    stale from the day it is made.
+  - **The framework is React**, because claude design's ingestion runtime is
+    React-only and one vocabulary should serve both the design bundle and the
+    on-page native surfaces.
+
+  He also directed that replacing the old inline HTML in `watch.py` with the
+  new components be **prioritised at the earliest suitable time** (`#630`).
+
+  **The second-truth rule stays in force, and this ruling is built on it, not
+  against it.** The wrappers are *derived*: the bundle step compiles the same
+  `client/*.js` files `watch.py` already serves — **no markup is restated**,
+  so there is nothing that can drift. New surfaces (the live session view) are
+  written as components from their first line and have no builder twin. What
+  remains refused, unchanged, is a **hand-maintained** component library
+  beside the builders: two *maintained* truths about the same surface. If a
+  change would leave one surface described in two places that a human has to
+  keep in step, it is the thing this rule has always refused — "we are going
+  component-based" does not buy it. The analysis is
+  `.dreamwork/review/505-g2-render-authority.html`;
+  `.dreamwork/docs/plans/render-architecture.md` carries the standing record.
 - **The client lives in `client/`, one file per former constant (#397).**
   `client/style.css`, `app_body.html`, `components.js`, `views.js`,
   `favicon.js`, `router.js`, `command.js`, `shader.js`. `watch.py` reads them

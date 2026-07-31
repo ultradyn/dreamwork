@@ -198,6 +198,24 @@ the Python one, and two renderers only agree on the day they are written.
 (This is a deviation from the plan's I7 wording, in service of the plan's own
 reuse rule.)
 
+**How to read that rule (ratified 2026-07-31 17:03, `#591`, receipt
+`dc9200a0-4ebf-5d3b-afab-71257155bef9`).** This sentence is the rule's
+birthplace and is cited across the repo, so its scope is now pinned rather
+than left to the reader. It is **per-surface**: it refuses two *maintained*
+truths about the **same** surface — which is literally what it was coined
+refusing here, a JS renderer of *these rows* beside the Python one. It does
+**not** refuse heterogeneity across different surfaces, and it does **not**
+refuse a **derived** surface: something compiled *from* the same source the
+one authority already renders, restating no markup, cannot drift from it and
+so is not a second truth. Under that reading, `watch.py`'s UI is transitioning
+to a component-based **React** web UI (staged: tokens + `client/style.css`
+first, then delegating wrappers compiled from the same `client/*.js` the
+server already serves; new surfaces born as components with no builder twin).
+The hub's rows are unaffected — they still have exactly one renderer, and this
+paragraph is not licence to add a second, here or anywhere. A
+**hand-maintained** twin of any surface that already has a renderer is refused
+exactly as it was before this ruling.
+
 Ages tick client-side every second off `data-since`. That is invisible while
 polling works; its job appears when the hub cannot be reached, where the last
 known tick is still a fact and its age genuinely keeps growing. A page that
