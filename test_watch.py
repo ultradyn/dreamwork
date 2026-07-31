@@ -1061,6 +1061,11 @@ class TestCollector(unittest.TestCase):
 
         real_callees = {"label", "qSummary", "qSection"}
         marker_callees = {"chatList", "burnPanel"}
+        declared_callees = set(re.findall(
+            r"(?m)^\s*function\s+([A-Za-z_$][\w$]*)\s*\(", page))
+        declared_callees.update(re.findall(
+            r"(?m)^\s*const\s+([A-Za-z_$][\w$]*)\s*=\s*"
+            r"(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>", page))
 
         def discovered_dependencies(source):
             """Return the dependencies this narrow harness can prove it saw.
@@ -1215,6 +1220,9 @@ class TestCollector(unittest.TestCase):
                     if one_edit_apart(name, expected):
                         self.fail("buildDashboard dependency discovery: likely typo "
                                   + name + " for protected " + expected)
+                if name not in declared_callees:
+                    self.fail("buildDashboard dependency discovery: unknown direct callee "
+                              + name)
             return dependencies
 
         dependencies = discovered_dependencies(dashboard)
@@ -1222,6 +1230,8 @@ class TestCollector(unittest.TestCase):
         # expression may quietly widen the set of no-output sentinels.
         with self.assertRaisesRegex(AssertionError, "likely typo lable"):
             discovered_dependencies("function buildDashboard(d) { lable('x'); }")
+        with self.assertRaisesRegex(AssertionError, "unknown direct callee lxbal"):
+            discovered_dependencies("function buildDashboard(d) { lxbal('x'); }")
         with self.assertRaisesRegex(AssertionError, "unsupported member call qSection"):
             discovered_dependencies("function buildDashboard(d) { d.qSection(d); }")
         with self.assertRaisesRegex(AssertionError, "unsupported tagged template call"):
