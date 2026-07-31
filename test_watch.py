@@ -6622,8 +6622,16 @@ class TestAppShell(unittest.TestCase):
     # too small to exercise the truncation half and too synthetic to be the
     # file he actually saw, so the byte-identical proof uses a real PNG body
     # whose length is the only thing that distinguishes "served in full"
-    # from "served up to the old limit" — and the limit is derived from
-    # watch.read_text.__defaults__ at runtime, never a literal here.
+    # from "served up to the old limit".
+    #
+    # #632 REMOVED that default — `read_text` is unbounded now, because a
+    # silent cap on a read is what deleted twelve answered entries from
+    # questions.md. So the size can no longer be derived from
+    # `watch.read_text.__defaults__` (it is None), and the historical value is
+    # named here instead. It is a SIZE TO EXCEED, not a contract: the property
+    # under test is "no cap clamps a served file", and any figure comfortably
+    # past every cap this module has ever had proves it.
+    _OLD_TEXT_CAP = 200_000
     _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
     @staticmethod
@@ -6668,7 +6676,7 @@ class TestAppShell(unittest.TestCase):
         # covers the truncation half: a file too large for the old endpoint
         # is served whole by the new one.
         import hashlib
-        OLD_LIMIT = watch.read_text.__defaults__[0]
+        OLD_LIMIT = self._OLD_TEXT_CAP
         with tempfile.TemporaryDirectory() as d:
             target = make_target(d)
             os.makedirs(os.path.join(target, ".dreamwork", "review", "evidence"))
@@ -6863,7 +6871,7 @@ class TestAppShell(unittest.TestCase):
         # corrupted images too; /filebytes has no such cap, and this test
         # would fail if anyone re-introduced one (the served length would
         # come back clamped to the limit). The limit is derived at runtime.
-        OLD_LIMIT = watch.read_text.__defaults__[0]
+        OLD_LIMIT = self._OLD_TEXT_CAP
         with tempfile.TemporaryDirectory() as d:
             target = make_target(d)
             big = self._build_png(OLD_LIMIT + 12345)
