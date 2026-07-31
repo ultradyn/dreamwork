@@ -1,0 +1,32 @@
+{
+  "asset_order": [
+    "style.css",
+    "app_body.html",
+    "components.js",
+    "views.js",
+    "favicon.js",
+    "router.js",
+    "command.js",
+    "shader.js"
+  ],
+  "inputs": {
+    "client/app_body.html": "83fe5bb68b8febabb2973637bec30a27872380debe041bde8e85406b384d0472",
+    "client/command.js": "aef7e9c9ac5a2da801f5d212463a3408616fc81967458157918c5f0c4d85d9bb",
+    "client/components.js": "d401e8145c101d01ec8b2c1cad8643ee0882954ebe11f8b129d006400ddc7ea3",
+    "client/favicon.js": "746a512fb2d23b6ac1294f4d5fdbb4bcc5809a93cae1fe6e78dbbe70882ba901",
+    "client/router.js": "b720c8674e27635b1dbf8266e642783dd584c23bb0ebc98918b0415401ca4d37",
+    "client/shader.js": "af5144a5e77597e4a9071c67f3223a0e7aaefbc4812397d19a6798c35e2092d6",
+    "client/style.css": "758e70d82851403a13574f04b58300f675fd3a1c1fa70298dbb2687a49f64a77",
+    "client/views.js": "f4ed68c08698c9206ec8c193bf69b4a7381f8aaef4ca98065bf9c582bccb34e5",
+    "dev/build/wrapper-exports.js": "33c49697a82b7f2a37ff2d6a97eb0b3a9af78a9f681c0fda5e7908cef16f883a"
+  },
+  "outputs": {
+    "client/dist/ds/index.js": "576439c3caba95ee2980410f4b25d30a23109209a3236988c80a2fc5229715d9",
+    "client/dist/ds/styles.css": "758e70d82851403a13574f04b58300f675fd3a1c1fa70298dbb2687a49f64a77"
+  },
+  "schema": 1,
+  "tool": {
+    "esbuild": "0.25.10",
+    "node": "v22.23.1"
+  }
+}

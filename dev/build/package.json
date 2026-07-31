@@ -1,0 +1,9 @@
+{
+  "name": "dreamwork-client-build",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dev-time bundler for client/dist. Node is a DEV dependency here (the guards already need it, justfile:303); it is never a serve-time one — client/dist is committed and watch.py imports nothing outside the stdlib.",
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

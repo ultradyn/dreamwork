@@ -2522,3 +2522,62 @@ the consume verb holds during a drain.
 Not checked by `lint.py` (a missing or empty file is the fresh-target
 default; the proof is tested at the consume boundary, not the file shape).
 
+## `client/dist/manifest.json` — which tree the committed build came from (#653)
+
+`just build-client` compiles `client/*.js` into `client/dist/` and **commits
+the result**: `just deploy` ships committed state only, and the dashboard must
+come up from a plain checkout with no node. That trade buys a serve-time with
+no toolchain and costs exactly one failure mode — a build made from bytes that
+are no longer here. This file is what makes that impossible to miss.
+
+```json
+{
+  "schema": 1,
+  "tool": {"esbuild": "0.25.10", "node": "v22.23.1"},
+  "asset_order": ["style.css", "app_body.html", "components.js", "..."],
+  "inputs":  {"client/style.css": "<sha256>", "dev/build/wrapper-exports.js": "<sha256>"},
+  "outputs": {"client/dist/ds/index.js": "<sha256>", "client/dist/ds/styles.css": "<sha256>"}
+}
+```
+
+- **`inputs` is every file `watch._CLIENT_ASSETS` names, plus the one
+  hand-written build input** — taken wholesale from the page's own asset list
+  rather than filtered to the files esbuild happens to read today. A filter
+  would be a second classification that can drift; over-rebuilding is cheap
+  and never wrong, under-rebuilding is the failure mode. `client_dist.check`
+  derives this set from the TREE (`client_dist.expected_inputs`), never from
+  the manifest's own keys — a manifest that simply forgot an asset records
+  only hashes that match, and a detector reading its keys would call that
+  clean.
+- **`asset_order` is an input in its own right.** The page concatenates the
+  assets in `_CLIENT_ASSETS` order and the bundle is generated in that same
+  order, so swapping two entries changes what the bundle means while every
+  file on disk stays byte-identical. Hashes cannot see that; this field can.
+- **`outputs` must be non-empty.** A manifest recording no outputs would
+  satisfy every artifact comparison by supplying none — the vacuous pass a
+  truncated or half-written manifest would otherwise take.
+- **No timestamp, deliberately.** A rebuild that changes nothing must produce
+  a byte-identical manifest, or `just build-client && git diff --exit-code`
+  cannot be used to ask whether dist is current — and a hash record that
+  churns on a no-op rebuild is a staleness signal nobody can read.
+- **`tool` is recorded, not enforced.** It says which toolchain produced the
+  artifact, so a reproducibility question has an answer; a version mismatch is
+  not by itself staleness and does not red.
+- **Committed, and shipped.** The dist paths and `dev/build/wrapper-exports.js`
+  are on `watch.DATA_SIBLINGS`, so `just deploy` stages them — without that the
+  deployed instance would lack the files the reading needs and would report red
+  forever, which is how a staleness signal becomes something nobody reads.
+
+**Who reads it.** `client_dist.check(root)` — one implementation, two
+surfaces, because a second copy of the comparison is a second answer:
+`lint.check_client_dist` goes **ERROR** with the drifted file and the fix
+named (`run \`just build-client\``), and `watch.serving_report` carries the
+same reading under `client_dist` on every return path. `watch.py` also prints
+it as a WARNING at startup. Never a refusal to serve: a stale design bundle
+must not dark the dashboard.
+
+**What it cannot promise.** Staleness is *detected*, not prevented — that
+would need a build at serve time, which the no-node requirement refuses. The
+honest statement is **divergence impossible at the markup level** (the build
+consumes `client/*.js` in place and restates no markup) and **staleness
+impossible to miss**.

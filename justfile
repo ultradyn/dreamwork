@@ -18,6 +18,26 @@ pytest:
 lint:
     python3 lint.py
 
+# #653 (P1 of #630) — rebuild client/dist from client/*.js.
+#
+# DEV-TIME ONLY. `client/dist/` is committed, so serving and deploying never
+# need node: `just deploy` ships committed state (below) and watch.py imports
+# nothing outside the stdlib. Only CHANGING what the build emits needs this.
+#
+# Run it after editing anything under `client/`, or `python3 lint.py` goes
+# ERROR and names the file that is unbuilt. A machine without node can still
+# serve, deploy, edit Python and edit the builders — it just cannot clear that
+# red, and the red says so.
+#
+# `npm ci` (not `install`) so the toolchain is the pinned one in
+# dev/build/package-lock.json; node_modules is gitignored, the way every other
+# node dependency in this repo is.
+build-client:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ -x dev/build/node_modules/.bin/esbuild ] || (cd dev/build && npm ci --no-audit --no-fund)
+    python3 dev/build_client.py
+
 # the derived halves of status.json, recomputed from the ledger and from live
 # `ccc @` processes rather than from a coordinator's memory. `lint.py` reports
 # the queue drift; this fixes it, and also catches `current_task_ids` still
