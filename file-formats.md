@@ -1572,6 +1572,30 @@ entry-level half is the paragraph above.
 apart from task-id normalisation, so ownership, agent, and any other field
 the coordinator wrote are preserved.
 
+**Discovery (#716).** The array is advertised under `coverage: derived`,
+but for its whole life the derivation only ever SUBTRACTED (a dead pid or a
+landed task). Nothing added a lane, so a freshly-dispatched fleet read as
+zero while it ran — five `ccc` lanes were live and `status-sync` reported
+`already in sync (… 1 live)`. The missing half is discovery: a `ccc` lane's
+cwd is its worktree (`.worktrees/<lane>`), so `readlink /proc/<pid>/cwd`
+recovers it cheaply and exactly. `status_sync.discover_lanes` walks `/proc`
+for paths under `<target>/.worktrees/` whose process is a `ccc` dispatch
+(argv[0] basename `ccc`, the one form the liveness probe already reasons
+about — a worktree cwd is also held by the zsh wrapper, an editor, or a
+pytest run from the worktree, so the argv check keeps discovery to lanes).
+Discovered lanes not already carried are MERGED into the array, never used
+to replace it: a lane running somewhere the cwd probe cannot reach (another
+machine, a harness-native `spawn_subagent`) is preserved verbatim (#537),
+and a lane the probe sees but cannot classify is simply absent from the
+discovery list — REPORTED, never silently dropped (#702's "cannot compare
+must not read as landed", applied to discovery rather than reap). The
+recorded pid is the `ccc` process (measured: its ppid is the zsh wrapper;
+both share the worktree cwd, so the probe is indifferent to which is
+recorded). A discovered entry carries `{task, lane, pid, brief, dispatch}`,
+its `task` derived from the lane name (`lane-716fleet` → 716) when that id
+is open, else the slug verbatim so the entry is carried but not falsely
+associated with an open task.
+
 `status_sync.py` is the sole reaper; the coordinator is the sole writer at
 dispatch. `lint.py` does not check the array's contents (it is gitignored
 ephemera describing a running process), so the contract is enforced by the

@@ -220,6 +220,83 @@ def _observable(d: dict) -> bool:
     return via is None or via in OBSERVABLE_DISPATCH
 
 
+# #716: lanes the liveness probe (kill -0 / pgrep) cannot see are pruned to 0
+# while they run — the probe sees only the `ccc` dispatch path, and the field
+# it derives (`dreamers`) is advertised as `coverage: derived` but only ever
+# SUBTRACTED. Discovery is the missing ADD: a `ccc` lane's cwd is its worktree
+# (`.worktrees/<lane>`), so `readlink /proc/<pid>/cwd` recovers it. The pid a
+# lane is recorded under is the `ccc` process itself (measured: cmdline begins
+# `ccc -y @glm52 …`, and its ppid is the zsh wrapper — both share the worktree
+# as cwd, so the probe is indifferent to which is recorded; #402a already
+# settled the recorded pid as the survivor). A lane whose cwd the probe can
+# read but cannot classify is REPORTED, never silently dropped and never
+# silently added — the mirror of #702's "cannot compare must not read as
+# landed" applied to discovery rather than reap.
+WORKTREE_DIR = ".worktrees"
+
+
+def _read_proc_cwd(pid: int) -> str | None:
+    """`readlink /proc/<pid>/cwd`, or None if unreadable (gone / no perm)."""
+    try:
+        return os.readlink("/proc/%d/cwd" % pid)
+    except OSError:
+        return None
+
+
+def _is_ccc_proc(pid: int) -> bool:
+    """Whether `pid`'s argv[0] basename is `ccc` (the probe-observable form).
+
+    Avoids over-counting: a worktree cwd is also held by the zsh wrapper, an
+    editor, or a pytest a coordinator ran from a worktree (#716 dir-2). Only a
+    `ccc` process is a dispatched lane, so the argv check keeps discovery to
+    the one form the liveness probe already reasons about (#675). Reads the
+    raw bytes so a NUL-containing cmdline cannot parse as `ccc` by accident.
+    """
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return False
+    if not raw:
+        return False
+    first = raw.split(b"\x00", 1)[0]
+    return os.path.basename(first.decode("utf-8", "replace")) == "ccc"
+
+
+def discover_lanes(target: Path):
+    """Live `ccc` lanes the cwd probe can see, as `(lane_name, pid)` pairs.
+
+    Walks `/proc/*/cwd` for paths under `<target>/.worktrees/` whose process
+    is a `ccc` dispatch (#716). Returns the list of discovered lanes; a lane
+    the probe cannot classify (a worktree cwd held by a non-`ccc` process, or
+    a `readlink` that fails) is NOT in the list and is not an error — it is
+    simply invisible to discovery, the same way it is invisible to
+    `live_lanes`. The caller MERGES the result with coordinator-authored
+    entries rather than replacing them, so a lane running somewhere the cwd
+    probe cannot reach (another machine, a different harness) is preserved.
+
+    `target` is the project root (the dir whose `.worktrees/` holds lanes).
+    """
+    wt_root = str(target) + "/" + WORKTREE_DIR
+    found = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        cwd = _read_proc_cwd(pid)
+        if cwd is None or not cwd.startswith(wt_root + "/"):
+            continue
+        lane = os.path.basename(cwd.rstrip("/"))
+        if not lane or lane == target.name:
+            continue
+        if not _is_ccc_proc(pid):
+            continue
+        found.append((lane, pid))
+    # Stable order by lane name so the merge and the stderr report are
+    # deterministic across runs reading the same process table.
+    return sorted(found, key=lambda lp: lp[0])
+
+
 def read_open_ids(dw, lpath):
     """Open ids under `## Open`, dispatching on source_of_truth (#294 inc 7).
 
@@ -301,6 +378,25 @@ def _base_id(task) -> int | None:
     """
     m = re.match(r"\d+", str(task))
     return int(m.group()) if m else None
+
+
+def _lane_task(lane: str, ids) -> int | str:
+    """The task id a lane-named worktree is working, from its name (#716).
+
+    A lane worktree is `lane-<id><slug>` (`lane-716fleet` → 716). The id is
+    the leading digits after `lane-`. When that id is under `## Open` it is
+    returned as an int (the canonical plain form, #402b); otherwise the slug
+    is returned verbatim so the entry is carried but `_base_id`-comparable,
+    matching the tolerate-on-read contract for a task the ledger comparison
+    cannot reach. The slug is NOT guessed as the open id — discovery must not
+    invent a task association the ledger does not confirm (#702: a claim the
+    comparison cannot reach must not read as landed).
+    """
+    m = re.match(r"lane-(\d+)", str(lane))
+    if not m:
+        return lane
+    base = int(m.group(1))
+    return base if base in set(ids) else re.sub(r"^lane-", "", str(lane))
 
 
 def _normalise_live(live: set) -> list:
@@ -498,6 +594,32 @@ def main(argv: list[str] | None = None) -> int:
               % (len(malformed), [_entry_tag(d) for d in malformed]),
               file=sys.stderr)
 
+    # #716: DISCOVERY — the other half of `dreamers`. The prune above can only
+    # SHRINK the field (dead pid / landed task); nothing added a lane, so a
+    # freshly-dispatched fleet read as zero while it ran. A `ccc` lane's cwd
+    # is its worktree, so `readlink /proc/<pid>/cwd` recovers it cheaply and
+    # exactly. This MERGES with the survivors above rather than replacing
+    # them: a lane running somewhere the cwd probe cannot see (another
+    # machine, a harness-native spawn_subagent) is carried verbatim (#537), and
+    # a lane the probe sees but cannot classify is simply absent from the
+    # discovery list — REPORTED, never silently dropped (#702's "cannot
+    # compare must not read as landed", applied to discovery rather than reap).
+    discovered = discover_lanes(Path(args.target))
+    existing_lanes = {d.get("lane") for d in pruned if isinstance(d, dict)}
+    added = []
+    for lane, pid in discovered:
+        if lane in existing_lanes:
+            continue
+        brief = str(Path(args.target) / WORKTREE_DIR / lane / "BRIEF.md")
+        added.append({"task": _lane_task(lane, ids), "lane": lane,
+                      "pid": pid, "brief": brief, "dispatch": "ccc"})
+        pruned.append(added[-1])
+    if added:
+        print("status_sync: discovered %d live ccc lane(s) the field did not "
+              "carry (cwd under .worktrees/; merged, not replaced): %s"
+              % (len(added), [(a["lane"], a["pid"]) for a in added]),
+              file=sys.stderr)
+
     # Normalise task ids on write (#402b): plain → int, sub-id → str. This
     # happens BEFORE the live set is derived so current_task_ids and the
     # surviving dreamers agree on the canonical form.
@@ -529,9 +651,17 @@ def main(argv: list[str] | None = None) -> int:
                            % (status.get("current_task_ids"), live))
     dreamers_in = status.get("dreamers", [])
     if dreamers_in != pruned:
-        changes.append("dreamers prune %d stale lane(s) (%d -> %d)"
-                       % (len(dreamers_in) - len(pruned),
-                          len(dreamers_in), len(pruned)))
+        delta = len(pruned) - len(dreamers_in)
+        if delta < 0:
+            verb = "prune %d stale lane(s)" % (-delta)
+        elif delta > 0:
+            verb = "discover %d live lane(s)" % delta
+        else:
+            # Same count, different content: a lane swapped (one dead, one
+            # discovered) or a task id changed. Name both without a net delta.
+            verb = "change %d lane(s) (count unchanged)" % len(pruned)
+        changes.append("dreamers %s (%d -> %d)"
+                       % (verb, len(dreamers_in), len(pruned)))
 
     print(coverage(status))
 
