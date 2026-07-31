@@ -13450,3 +13450,22 @@ class TestDataJsonDelta(unittest.TestCase):
             self.assertEqual(
                 resp["check"], watch.derived_check(curr_doc),
                 "the delta's check must match a derived_check of the target")
+
+
+class TestNativePageAssembly(unittest.TestCase):
+    """#751: the generated runtime reaches builders before routing starts."""
+
+    def test_native_bundle_is_the_second_inline_classic_script(self):
+        scripts = re.findall(r"<script>(.*?)</script>", watch.PAGE, re.S)
+        self.assertEqual(
+            len(scripts), 3,
+            "dashboard must carry builder, native, and router classic scripts")
+        self.assertIn("function artifactRow", scripts[0],
+                      "builder declarations must run before native.js")
+        self.assertEqual(
+            scripts[1], watch.NATIVE_JS,
+            "the second script must be the committed native.js bytes")
+        self.assertIn("function buildCurrent", scripts[2],
+                      "the router must run only after dwNative exists")
+        self.assertNotIn("<script src", watch.PAGE,
+                         "native.js must stay inline in the one-response page")

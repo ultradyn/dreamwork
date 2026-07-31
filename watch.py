@@ -553,9 +553,16 @@ COMMAND_JS = _CLIENT_SRC["command.js"]
 SHADER_JS = _CLIENT_SRC["shader.js"]
 
 
-def page_shell(title, body, js):
+def page_shell(title, body, *scripts):
     """Shared page shell. Contract: `body` opens `<div class="wrap">`
-    (the shell closes it) so every watch page shares chrome and tokens."""
+    (the shell closes it) so every watch page shares chrome and tokens.
+
+    Each script is a separate inline classic script. The dashboard needs that
+    seam for the generated native runtime: builders load first, native.js can
+    resolve their bare names from the shared global lexical environment, and
+    only then does the router choose the initial route. The response remains
+    self-contained; no script URL is fetched.
+    """
     # The icon is empty until the page knows what to say (#153): claiming a
     # state before data arrives is worse here than showing nothing, and an
     # inline link also stops the browser asking us for /favicon.ico.
@@ -563,8 +570,8 @@ def page_shell(title, body, js):
             f'<title>{title}</title>'
             '<link rel="icon" id="favicon" href="data:,">' + STYLE
             + '</head><body>'
-            + body + '<script>' + js
-            + '</script></div></body></html>')
+            + body + ''.join('<script>' + js + '</script>' for js in scripts)
+            + '</div></body></html>')
 
 
 # #598 — what a mistyped link, a stale bookmark or a rebuilt-away artifact
@@ -640,17 +647,16 @@ NOT_FOUND_PAGE = page_shell(
 # discover them on its own. deploy_state parses THIS literal (AST, never an
 # import of this module) and ships every path on it; keep it to plain string
 # literals or the parse finds nothing. First entry is the vendored reconciler.
-# #653: the last four are not read to BUILD the page — nothing under
-# client/dist/ reaches PAGE at P1 — but `client_dist.check` reads all of them
-# relative to __file__ to answer "is the committed build current", and that
-# question must be answerable on the DEPLOYED instance too. Left off this
-# tuple they would simply be absent there, and the reading would go red for
-# the rest of time on every deployment: a permanent false red is how a
-# staleness signal becomes something nobody reads. `wrapper-exports.js` is a
-# build INPUT and rides along for exactly that reason — it is one of the files
-# the manifest records.
-# #630 P2 adds `dev/build/src/*.js` (the native runtime's sources) and
-# `client/dist/native.js` on the same argument. This tuple is the SECOND
+# #653: `client_dist.check` reads the build inputs and outputs relative to
+# __file__ to answer "is the committed build current", and that question must
+# be answerable on the DEPLOYED instance too. Left off this tuple they would
+# simply be absent there, and the reading would go red for the rest of time on
+# every deployment: a permanent false red is how a staleness signal becomes
+# something nobody reads. `wrapper-exports.js` is a build INPUT and rides
+# along for exactly that reason — it is one of the files the manifest records.
+# #630 P2 added `dev/build/src/*.js` and `client/dist/native.js` on the same
+# argument; #751 P3 also reads native.js into PAGE as an inline classic script.
+# The design-tool outputs remain deployment siblings only. This tuple is the SECOND
 # statement of "which files the build reads" — the first is
 # `client_dist.expected_inputs`, which globs the tree — and it is a second
 # statement only because deploy AST-parses this and an ast.literal_eval cannot
@@ -688,6 +694,19 @@ def _load_morphdom_js():
 
 MORPHDOM_JS = _load_morphdom_js()
 
+
+def _load_native_js():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        client_dist.NATIVE_REL)
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
+    if not src:
+        raise OSError("client/dist/native.js is empty")
+    return src
+
+
+NATIVE_JS = _load_native_js()
+
 # Template only — posture closed sets are injected by `_get_page()` on first
 # access so `import lint` (which does `import watch` at its top) never meets a
 # half-initialised lint. External code reads `watch.PAGE` via `__getattr__`.
@@ -703,8 +722,9 @@ _PAGE_TEMPLATE = page_shell('dreamwork watch', APP_BODY,
                   + "const DEPLOY_WAIT_MS = " + json.dumps(DEPLOY_WAIT_MS) + ";\n"
                   + "/*__POSTURE_VOCAB__*/"
                   + MORPHDOM_JS
-                  + COMPONENTS_JS + VIEWS_JS + FAVICON_JS + SHADER_JS
-                  + ROUTER_JS + COMMAND_JS)
+                  + COMPONENTS_JS + VIEWS_JS + FAVICON_JS + SHADER_JS,
+                  NATIVE_JS,
+                  ROUTER_JS + COMMAND_JS)
 
 _PAGE_CACHE = None
 
