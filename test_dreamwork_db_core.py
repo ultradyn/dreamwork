@@ -208,3 +208,38 @@ def test_legacy_open_store_delegates_with_exact_connection_policy(
     finally:
         store.close()
 
+
+def test_connect_closes_connection_when_initializer_raises_baseexception(
+    tmp_path, monkeypatch
+):
+    real_connect = db_core.sqlite3.connect
+    observed = {}
+
+    class RecordingConnection:
+        def __init__(self, connection):
+            self._connection = connection
+            self.closed = False
+
+        def execute(self, *args, **kwargs):
+            return self._connection.execute(*args, **kwargs)
+
+        def close(self):
+            self.closed = True
+            self._connection.close()
+
+    def recording_connect(*args, **kwargs):
+        wrapper = RecordingConnection(real_connect(*args, **kwargs))
+        observed["connection"] = wrapper
+        return wrapper
+
+    def interrupt(_connection):
+        raise KeyboardInterrupt("initializer interrupted")
+
+    monkeypatch.setattr(db_core.sqlite3, "connect", recording_connect)
+    spec = StoreSpec(tmp_path / "store.sqlite3", initializer=interrupt)
+    with pytest.raises(KeyboardInterrupt, match="initializer interrupted"):
+        db_core._connect(spec, Access.WRITE)
+    assert observed["connection"].closed, (
+        "_connect must close its connection when an initializer raises a "
+        "BaseException"
+    )
