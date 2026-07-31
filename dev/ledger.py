@@ -41,6 +41,12 @@ USAGE
   python3 dev/ledger.py count [--state open|landed] [--json] [--ledger PATH]
   python3 dev/ledger.py reviews list|get <artifact> [--ledger PATH]
 
+FROM A LANE WORKTREE, `--ledger` IS NOT OPTIONAL (#667). The store is
+gitignored (#294), so it never travels; the default `.dreamwork/tasks.md`
+there is the #458 shim and every verb would answer out of an empty ledger.
+Name the MAIN checkout's path — `--ledger <main-checkout>/.dreamwork/tasks.md`
+— and the verbs refuse rather than answer if you forget.
+
 `counts` prints the open and landed id counts from `watch.parse_ledger`
 with the expression that produced them — the same anchored read every
 consumer (the dashboard, lint, the burndown) uses, so the count that was
@@ -862,6 +868,25 @@ def _verb_get(args, dw_dir):
     recs = _read_records(dw_dir)
     match = next((r for r in recs if r["id"] == args.id), None)
     if match is None:
+        # #667 — a not-found against a ledger holding NOTHING is not an answer
+        # about the id, and it is the sentence that sends a lane to
+        # `tasks.md.deprecated`. The `_dispatch` gate catches the lane-worktree
+        # case and names the fix; this catches every OTHER way of pointing at
+        # an empty ledger (a mistyped `--ledger`, a target that has none),
+        # where there is no shared store to point at but "not found" would
+        # still read as "that task does not exist". It stays one stderr line
+        # and exit 1 — the #497 output contract is unchanged, only honest.
+        #
+        # Refusing here instead of answering was considered and rejected: the
+        # same emptiness is a brand-new project's legitimate state, and a
+        # refusal on it would have to extend to `file`, which is how the first
+        # task gets in. Naming the emptiness costs nothing and breaks nothing.
+        if not recs:
+            sys.stderr.write(
+                f"ledger: #{args.id} not found — and this ledger holds NO "
+                f"entries at all, so that is a fact about "
+                f"{Path(dw_dir) / 'tasks.md'}, not about #{args.id}\n")
+            return 1
         sys.stderr.write(f"ledger: #{args.id} not found\n")
         return 1
     sys.stdout.write(_record_text(match))
@@ -1087,8 +1112,107 @@ def main(argv=None):
     return emit_warnings(str(Path(args.ledger).parent), rc)
 
 
+# ---------------------------------------------------------------------------
+# #667 — the store did not resolve HERE: refuse rather than answer from nothing.
+#
+# `ledger.sqlite3` is gitignored (#294 — it is machine-local), so it can never
+# travel into a lane worktree, and the `tasks.md` left behind there is the #458
+# migration shim. Every read verb therefore answered out of an EMPTY ledger:
+# `get` said `#NNN not found`, `list` said `(no tasks)`, `count` said 0. Those
+# are not wrong numbers, they are wrong ANSWERS — a lane reads `#632 not found`
+# as "that task is not in the ledger", not as "you invoked the tool wrong", and
+# every brief here then supplies the next step: `tasks.md.deprecated` exists and
+# "not in the ledger does not mean not real". So the lane cites a stale entry
+# with confidence. THE TOOL MANUFACTURES THE FAILURE THE CITE-AND-QUOTE RULE
+# EXISTS TO PREVENT. Measured by lane-659attractor: four reads, four false
+# not-founds (#632, #643, #654, #509).
+#
+# This is #611's house rule — *a check that examined nothing must not read as
+# passing* — applied to a READER instead of a check, and it takes #611's shape
+# ruling too: ONE gate at the single dispatch point, never a near-identical
+# refusal pasted into each verb. Six copies of "the ledger did not travel" is
+# #612's volume failure arriving by another door, and the cause is one cause;
+# putting it at the dispatch also means a verb added tomorrow is covered by the
+# code that already exists rather than by someone remembering.
+#
+# The resolver is #592's `lint.shared_store_for_worktree`, REUSED not rebuilt
+# (a second worktree resolver is the defect #352 exists to prevent), and its
+# docstring's contract is honoured: it hands back a PATH and "the caller
+# requires it to exist", so a ledger that is genuinely gone is never excused as
+# "you are standing in the wrong place".
+# ---------------------------------------------------------------------------
+
+def _unresolved_store(dw_dir):
+    """The shared checkout's store when every answer HERE would be built from
+    nothing, else ``None``.
+
+    Both conditions are required, and the pair is deliberately as narrow as
+    #592's — a blanket "am I in a worktree?" would silence the honest cases:
+
+      1. the store is absent here AND this is a linked worktree AND the shared
+         checkout genuinely carries the store (`lint.shared_store_for_worktree`
+         resolves the first two and hands back the path; its EXISTENCE is the
+         obligation that docstring leaves to the caller, discharged here);
+      2. the ledger here yields ZERO records.
+
+    (2) is #611's predicate verbatim — *the ledger text held no entries at
+    all*. A worktree carrying a real Markdown ledger (a project that never cut
+    over, or one whose `tasks.md` really did travel) answers truthfully from it
+    and must not be refused; only the case where there is nothing to answer
+    from is. It rides `_read_records`, the verbs' own reader, so the predicate
+    cannot drift from what they would have read.
+    """
+    shared = lint.shared_store_for_worktree(Path(dw_dir))
+    if shared is None or not shared.exists():
+        return None
+    if _read_records(dw_dir):
+        return None  # a real ledger is here — it genuinely answered
+    return shared
+
+
+def _unresolved_store_message(cmd, shared):
+    """The refusal: the cause, the store it FOUND, and the working invocation.
+
+    The fix has to be IN the message. A lane handed only a cause ("no ledger
+    store") still has to guess an invocation, and the one it guesses is the one
+    it just ran — which is how a diagnosis becomes another not-found. ``shared``
+    is the path this call verified exists, never an assertion about where a
+    store ought to be (#592's `test_the_warn_names_the_shared_store_it_verified`
+    is the same requirement on the lint row).
+    """
+    return (
+        f"ledger: refusing to run `{cmd}` — the ledger store did not resolve "
+        f"here (#667).\n"
+        f"  `{shared.name}` is gitignored (#294) so it cannot travel into a lane\n"
+        f"  worktree, and the ledger here holds no entries. An empty ledger\n"
+        f"  answers exactly like a real one — `#NNN not found` reads as `that\n"
+        f"  task does not exist` — so this refuses instead of answering.\n"
+        f"  The shared checkout carries it: {shared}\n"
+        f"  Re-run against that one:\n"
+        f"      python3 dev/ledger.py {cmd} … --ledger {shared.parent / 'tasks.md'}\n")
+
+
 def _dispatch(args):
     """Run one verb and return its exit code. The footer is tacked on by main."""
+    # #667 — before any verb runs: if the store did not resolve here, every
+    # answer below is built from nothing. One gate, every verb.
+    shared = _unresolved_store(str(Path(args.ledger).parent))
+    if shared is not None:
+        message = _unresolved_store_message(args.cmd, shared)
+        if args.cmd == "sweep":
+            # #404 ruled sweep ADVISORY: "every failure mode is a printed line
+            # and exit 0 — 'cannot check' must never read as 'nothing to fix'".
+            # Its other cannot-check lines go to stdout, so this one does too.
+            sys.stdout.write(message)
+            return 0
+        # 2, not 1: `get`'s exit 1 already MEANS "no such id" in the #497 output
+        # contract ("Unknown id -> one-line stderr + exit 1"), so reusing it
+        # would hide the refusal inside the answer it is refusing to give. 2 is
+        # this file's existing code for "the ledger itself is not usable"
+        # (`ledger not found: …`), which is exactly the situation.
+        sys.stderr.write(message)
+        return 2
+
     if args.cmd == "sweep":
         # Advisory by design (#404): every failure mode is a printed line and
         # exit 0 — "cannot check" must never read as "nothing to fix".
