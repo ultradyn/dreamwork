@@ -300,3 +300,57 @@ def test_fold_is_silent_when_there_are_no_branches(tmp_path):
     assert "reach:" not in out, (
         f"a repo with no extra branches must not emit a reach trailer — "
         f"silence where there is nothing to check is the design: {out!r}")
+
+
+# ---------------------------------------------------------------------------
+# #715 — Direction 2: the false-green that suppression introduces.
+# ---------------------------------------------------------------------------
+
+def test_reach_suppression_is_correct_then_wrong_a_lane_dies_between_runs(tmp_path):
+    """DIRECTION 2, the hardest case the brief names: a branch suppressed as
+    live at T0 whose lane finishes and is never merged, so the suppression
+    that was right at 00:05 is wrong at 00:30 and nothing revisits it.
+
+    reach is a POINT-IN-TIME snapshot. At T0 the lane is live and its + commits
+    are correctly suppressed. At T1 the lane has died (crashed, finished, been
+    killed) but its branch still carries unmerged + commits — the check's own
+   raison d'être (#590, the folded-but-unmerged case). reach cannot close this
+    gap: it has no memory of what it suppressed, and re-running it at T1 IS the
+    fix, because the dead lane is now absent from the live set and is REPORTED.
+
+    This test exists to NAME the window, not to close it. The window's width is
+    the gap between fold runs (the hook), and the mitigation is that the fold
+    hook re-runs reach on every fold — so a lane that dies between folds is
+    caught on the next one. Between folds the suppression is stale, and that is
+    stated rather than hidden.
+
+    PRODUCTION LINE: the ``live_set`` passed to ``reach``. At T1 the dead lane
+    is not in it, so the guard ``{branch, *aliases} & live_set`` is False and
+    the branch appears in ``rows``. No injection makes this fail — the case is
+    the point-in-time design, and the test proves the check recovers on re-run.
+    """
+    root = _repo(tmp_path)
+    sha = _branch_with_commit(
+        root, "lane-700dead", "work.txt", "genuinely lost work\n",
+        "fix(#700): work that will be unmerged")
+
+    # T0: the lane is live — its + commits are correctly suppressed.
+    marks_t0 = [("lane-700dead", [("+", sha, "fix(#700): work that will be unmerged")])]
+    text_t0 = ledger.reach_text(marks_t0, "master", live={"lane-700dead"})
+    assert "lane-700dead" not in text_t0, (
+        f"at T0 the lane is live and correctly suppressed: {text_t0!r}")
+    assert "suppressed as live lanes" in text_t0, (
+        f"and the count names how many were suppressed: {text_t0!r}")
+
+    # T1: the lane has died. Re-running reach WITHOUT it in the live set
+    # REPORTS it — the suppression was point-in-time, and the check recovers.
+    marks_t1 = [("lane-700dead", [("+", sha, "fix(#700): work that will be unmerged")])]
+    text_t1 = ledger.reach_text(marks_t1, "master", live=set())
+    assert "lane-700dead" in text_t1, (
+        f"at T1 the lane is dead and its unmerged work must be REPORTED — "
+        f"the check recovers on re-run: {text_t1!r}")
+
+    # THE GAP, named: between T0 and T1, the suppression was stale. If nobody
+    # re-runs reach, the branch stays hidden. The fold hook is the mitigation,
+    # and this test proves that a re-run after the lane dies catches it. The
+    # gap cannot be closed by reach alone — it is the same shape as #590.
