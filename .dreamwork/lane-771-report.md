@@ -15,8 +15,8 @@ to `briefs/boilerplate.md`: after a mutating command or controlling inventory, r
 authoritative resulting state immediately and bind follow-on reporting/writes to the producer's
 status rather than a later pipeline element or pre-existing state.
 
-The change is commit `5644146b` (`docs(#771): require resulting-state verification`). A targeted
-test exposed a healthy live-corpus false red; commit `1080d830` removes the test's stale
+The change is commit `ce8faefa` (`docs(#771): require resulting-state verification`). A targeted
+test exposed a healthy live-corpus false red; commit `99a52aff` removes the test's stale
 `HISTORICAL ONLY` precondition while retaining its actual assertion that all four checks carry
 the same reach qualifier.
 
@@ -156,9 +156,13 @@ spelling-versus-behaviour limit.
 - After narrowing that stale test precondition, exact rerun:
   `just pytest test_lint.py::TestBriefCorpusReach::test_all_four_live_checks_carry_the_same_reach_qualifier test_dispatch_lane.py`
   -> 17 passed.
-- Full requested targeted pair is rerun after report creation; final result is recorded below.
-- No sabotage was injected. `dev/redproof.py check` final output is recorded below.
-- Rebase outcome is recorded after the final rebase below.
+- Full requested targeted pair: `just pytest test_lint.py test_dispatch_lane.py` -> 562 passed.
+- Final lint: lane 5 warnings, main target 1 warning; both equal baseline and contain no errors.
+- No sabotage was injected. `python3 dev/redproof.py check` ->
+  `check: calm — no injections registered (opt-in discipline; nothing to evaluate).`
+- Rebased cleanly from `7270566e` onto local master `3d082c0d`; no manual resolution was needed.
+  The required four-form conflict scan found no markers. `git diff --check` is clean after the
+  report's trailing blank line was removed.
 
 ## DOGFOOD REPORT
 
@@ -174,4 +178,3 @@ standing contract says a lane writes its report and nothing else and requires an
 the rule it replaces. The head is emphatic but does not explicitly name an override of the
 single-writer rule. I followed the common authorised reading: this report is written; no inbox or
 handoffs line is appended.
-
