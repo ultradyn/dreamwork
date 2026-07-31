@@ -46,6 +46,23 @@ refuses the hand-off if any registered file still matches its recorded
 injection, naming the path and the injected content so the refusal has a
 referent.
 
+A CLEAN TREE IS NOT A CLEAN BRANCH (#710)
+-----------------------------------------
+``check`` originally read only the working tree, and the loop mandates COMMIT
+INCREMENTALLY — so the encouraged sequence *inject → commit while sabotaged →
+restore → commit again* hands back a clean tree over a poisoned history, and
+the merge puts the defect in master permanently, where ``bisect``, ``blame``
+and ``cherry-pick`` all resurrect it. So ``check`` also scans every commit this
+branch adds to its base for the recorded injected bytes. The remedy it names is
+a **squash of that one branch**, not a rule against committing: the commit is
+the crash-safety the loop exists to keep, and squashing every lane branch would
+cost the coordinator the increments it reads deliberately.
+
+The scan prints what it examined — commits, paths, blobs read — whatever the
+verdict, because a scan of the wrong range finds nothing and is otherwise
+indistinguishable from a clean branch (#590: a zero is a question about whether
+you looked). An unresolvable base is a FAULT, not a zero.
+
 THREE ZERO-STATES, NOT ONE (#136)
 ---------------------------------
 - No registry file at all → **calm zero**: "no injections registered". A lane
@@ -69,6 +86,20 @@ about, and requiring ≥1 registration would refuse a genuinely clean hand-off
 that simply had no red-proof step. The byte-sha check also passes if a lane
 restores and then re-applies a *different* sabotage than the one recorded —
 see the report's direction-2 section. Both are named, not hidden.
+
+The history scan inherits all of that, and adds two of its own, both with a
+test that asserts the miss so closing one fails loudly:
+
+- **A fork point moved past the injection.** The range is
+  ``merge-base(base, HEAD)..HEAD``, so if the branch is merged and then kept
+  working on, the poisoned commit is behind the new merge-base and the scan
+  cannot see it — while master already holds it. ``--base`` widens the range by
+  hand; nothing widens it automatically.
+- **An injection committed together with later edits to the same file.** The
+  comparison is whole-file byte-identity, so if the lane edits the file between
+  the sabotaged commit and ``restore``, the recorded bytes are not the
+  committed bytes and the commit passes. (Rare, because ``restore`` copies the
+  original over the file and would destroy such edits anyway.)
 """
 from __future__ import annotations
 
@@ -78,6 +109,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -212,6 +244,139 @@ def _first_changed_line(original: bytes, injected: bytes) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# history scan (#710)                                                          #
+# --------------------------------------------------------------------------- #
+
+# Tried in order when --base is not given. A lane branches from the repo's
+# default branch. If none resolves the scan FAULTS rather than picking a range:
+# a wrong range finds nothing and is indistinguishable from a clean branch.
+DEFAULT_BASES = ("master", "main")
+
+
+def _git(root: Path, *args: str) -> str:
+    """git in ``root``; any failure is a FAULT, never a quiet empty answer."""
+    try:
+        proc = subprocess.run(["git", "-C", str(root), *args],
+                              capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RedproofError(f"`git {' '.join(args)}` could not run: {exc}") from exc
+    if proc.returncode != 0:
+        raise RedproofError(
+            f"`git {' '.join(args)}` failed ({proc.returncode}): "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}")
+    return proc.stdout.decode("utf-8", "replace").strip()
+
+
+def _resolve_base(root: Path, base: str | None) -> tuple[str, str]:
+    """(merge-base oid, ref label) for the branch's own commits."""
+    tried = [base] if base else list(DEFAULT_BASES)
+    for ref in tried:
+        try:
+            _git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+        except RedproofError:
+            continue
+        return _git(root, "merge-base", ref, "HEAD"), ref
+    raise RedproofError(
+        f"no base ref resolves (tried: {', '.join(tried)}), so the history scan "
+        f"has no range — and a scan with no range finds nothing and reads as a "
+        f"clean branch (#671). Pass `--base <ref>`.")
+
+
+def _batch_blobs(root: Path, commits: list[str],
+                 paths: list[str]) -> dict[tuple[str, str], str]:
+    """{(commit, path): sha1 of the bytes that commit holds for that path}.
+
+    One ``git cat-file --batch`` pass rather than a subprocess per pair: the
+    scan has to read actual bytes, and a per-commit cost is how a gate ends up
+    switched off on a long branch.
+    """
+    specs = [(c, p) for c in commits for p in paths]
+    if not specs:
+        return {}
+    stdin = "".join(f"{c}:{p}\n" for c, p in specs).encode()
+    try:
+        proc = subprocess.run(["git", "-C", str(root), "cat-file", "--batch"],
+                              input=stdin, capture_output=True, timeout=300)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RedproofError(f"`git cat-file --batch` could not run: {exc}") from exc
+    if proc.returncode != 0:
+        raise RedproofError(
+            f"`git cat-file --batch` failed ({proc.returncode}): "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}")
+
+    out, i, found = proc.stdout, 0, {}
+    for spec in specs:
+        nl = out.find(b"\n", i)
+        if nl < 0:
+            raise RedproofError(
+                f"`git cat-file --batch` returned {len(found)} of {len(specs)} "
+                f"records — the scan is incomplete and must not read as clean.")
+        header = out[i:nl].decode("utf-8", "replace").split()
+        i = nl + 1
+        if header[-1] in ("missing", "ambiguous"):
+            continue  # the path does not exist in that commit
+        typ, size = header[1], int(header[2])
+        payload = out[i:i + size]
+        i += size + 1  # skip the record's trailing newline
+        if typ == "blob":
+            found[(spec[0], spec[1])] = _sha(payload)
+    return found
+
+
+def scan_history(cwd: Path | None, entries: list[dict],
+                 base: str | None = None) -> dict:
+    """Which of THIS BRANCH's own commits still hold a recorded injection.
+
+    `check` reads the working tree, so the sequence the loop actively
+    encourages — inject, COMMIT INCREMENTALLY while sabotaged, restore, commit
+    again — hands back a clean tree over a poisoned history, and the merge puts
+    the defect in master where bisect, blame and cherry-pick all resurrect it
+    (#710).
+
+    The comparison is byte-identity with a state the tool itself observed:
+    ``restore`` records the working tree at restore time and copies the
+    original back over it, so in that sequence the committed blob *is* the
+    recorded injected blob. Not a heuristic and nothing to tune.
+
+    Returns a report the caller prints IN FULL, zeroes included: a scan of the
+    wrong range finds nothing and otherwise looks exactly like a clean branch,
+    so the count of what was examined is part of the answer (#590).
+    """
+    root = _ls.worktree_root(cwd)
+    live = [e for e in entries
+            if e.get("state") == RESTORED and e.get("injected_sha")]
+    base_oid, base_ref = _resolve_base(root, base)
+    commits = [c for c in _git(root, "rev-list", f"{base_oid}..HEAD").split() if c]
+    paths = sorted({e["path"] for e in live})
+    blobs = _batch_blobs(root, commits, paths)
+
+    order = {c: n for n, c in enumerate(commits)}
+    hits = []
+    for (commit, path), sha in blobs.items():
+        for e in live:
+            if e["path"] == path and sha == e["injected_sha"]:
+                hits.append({"commit": commit, "path": path,
+                             "hint": e.get("injected_hint"),
+                             "subject": _git(root, "log", "-1", "--format=%s", commit)})
+    hits.sort(key=lambda h: (order[h["commit"]], h["path"]))
+    return {"base_oid": base_oid, "base_ref": base_ref, "commits": len(commits),
+            "paths": len(paths), "blobs_read": len(blobs), "hits": hits}
+
+
+def history_line(rep: dict) -> str:
+    """What the scan examined — printed whatever the verdict, including zero."""
+    if not rep["commits"]:
+        return (f"history: EXAMINED NO COMMIT — 0 between {rep['base_oid'][:12]} "
+                f"({rep['base_ref']}) and HEAD. Nothing of this branch is in "
+                f"history yet, which is not the same as a history examined and "
+                f"found clean.")
+    return (f"history: examined {rep['commits']} commit(s) since "
+            f"{rep['base_oid'][:12]} ({rep['base_ref']}) against {rep['paths']} "
+            f"injected path(s); read {rep['blobs_read']} blob(s), "
+            f"{len(rep['hits'])} holding a recorded injection.")
+
+
+# --------------------------------------------------------------------------- #
 # verbs                                                                        #
 # --------------------------------------------------------------------------- #
 
@@ -334,17 +499,21 @@ def forget(cwd: Path | None, path: str) -> int:
     return 0
 
 
-def check(cwd: Path | None, *, require: int = 0) -> int:
-    """Hand-off gate: refuse if any registered injection is still present.
+def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int:
+    """Hand-off gate: refuse if a registered injection survives in tree OR history.
 
     Exit 0 = clean hand-off (or calm zero: no injections registered).
-    Exit 1 = REFUSAL: a registered injection is still live in the working tree.
+    Exit 1 = REFUSAL: a registered injection is live in the tree, or committed
+             on this branch (#710).
     Exit 2 = FAULT: could not evaluate (#671/#136).
 
     The discriminating test: for every restored entry, the working tree must
     NOT equal the recorded injected bytes. A restored-then-further-edited file
     differs from the injection and passes (#683 point 1). An armed (begun but
     unrestored) entry is a refusal: the red-proof is incomplete.
+
+    Then the same comparison against every commit this branch adds to its base,
+    because a clean tree says nothing about what the branch will merge (#710).
     """
     root = _ls.worktree_root(cwd)
     try:
@@ -394,6 +563,14 @@ def check(cwd: Path | None, *, require: int = 0) -> int:
             f"(begin without restore). Run `restore` on each or `forget` a "
             f"spurious begin.\n")
         return 1
+
+    try:
+        rep = scan_history(cwd, entries, base)
+    except RedproofError as exc:
+        sys.stderr.write(f"check: FAULT — {exc}\n")
+        return 2
+    print(history_line(rep))
+
     if live:
         lines = []
         for e in live:
@@ -407,9 +584,23 @@ def check(cwd: Path | None, *, require: int = 0) -> int:
             "still present in the working tree:\n" + "\n".join(lines) +
             "\nRestore it (cp from the lane-private snapshot) before committing.\n")
         return 1
+    if rep["hits"]:
+        lines = [f"  {h['commit'][:12]} {h['path']} — {h['subject']!r} "
+                 f"(hint: {h['hint']!r})" for h in rep["hits"]]
+        sys.stderr.write(
+            f"check: REFUSED — the working tree is clean, but {len(rep['hits'])} "
+            f"commit(s) on this branch still hold a recorded injection:\n"
+            + "\n".join(lines) +
+            "\nCommitting mid-injection is correct — COMMIT INCREMENTALLY exists "
+            "because lanes get killed without warning — but the branch cannot "
+            "merge as it stands: a merge makes the defect reachable from master "
+            "forever, where bisect, blame and cherry-pick all resurrect it. "
+            "Tell the coordinator to SQUASH this branch at merge (the fix for "
+            "this branch only), or rebase the injection out yourself. #710\n")
+        return 1
 
     print(f"check: clean — {len(entries)} injection(s) registered, all restored "
-          f"and absent from the working tree.")
+          f"and absent from the working tree and from this branch's commits.")
     return 0
 
 
@@ -430,13 +621,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("path", nargs="?", help="repo-relative path (for begin/restore/forget)")
     ap.add_argument("--require", type=int, default=0,
                     help="check: refuse if fewer than N injections are registered")
+    ap.add_argument("--base", default=None,
+                    help=f"check: base ref for the history scan (default: first "
+                         f"of {', '.join(DEFAULT_BASES)} that resolves)")
     ap.add_argument("--cwd", default=None, help="derive for this directory")
     args = ap.parse_args(argv)
     cwd = Path(args.cwd) if args.cwd else None
 
     try:
         if args.verb == "check":
-            return check(cwd, require=args.require)
+            return check(cwd, require=args.require, base=args.base)
         if args.path is None:
             ap.error(f"{args.verb} requires a path argument")
         if args.verb == "begin":
