@@ -4732,6 +4732,17 @@ class TestBriefCorpusReach:
         assert "task history reaches #107 (7-id gap" in reach
         assert "1 unnumbered brief(s) cannot be ordered" in reach
 
+    def test_matching_max_ids_is_the_open_completeness_false_green(
+            self, tmp_path):
+        root = self._repo(
+            tmp_path,
+            ["100-first.md", "102-last.md"],
+            ["docs(#100): first", "fix(#101): no brief", "fix(#102): last"],
+        )
+        # The reach signal orders the maxima; it cannot prove one brief per
+        # dispatch or notice the deliberately absent #101 artifact.
+        assert lint.brief_corpus_reach(root).startswith("current through task #102")
+
     def test_unorderable_population_is_unknown_not_current(self, tmp_path):
         root = self._repo(
             tmp_path, ["descriptive-only.md"], ["fix(#107): later work"])
@@ -4739,8 +4750,20 @@ class TestBriefCorpusReach:
         assert reach.startswith("coverage reach UNKNOWN")
         assert "1 unnumbered brief(s) cannot be ordered" in reach
 
-    def test_all_four_live_checks_carry_the_same_reach_qualifier(self):
-        root = lint.SKILL_DIR
+    def test_a_brief_ahead_of_landed_history_is_in_flight_not_unknown(
+            self, tmp_path):
+        root = self._repo(
+            tmp_path, ["108-in-flight.md"], ["fix(#107): landed work"])
+        reach = lint.brief_corpus_reach(root)
+        assert reach.startswith("IN FLIGHT")
+        assert "brief #108 is 1 id(s) ahead of landed task history #107" in reach
+        assert "UNKNOWN" not in reach
+
+    def test_all_four_checks_carry_the_same_reach_qualifier(self, frozen_tree):
+        # HEAD is immutable for this assertion. The real dispatch route still
+        # writes the main corpus; freezing the reader does not replace or fake
+        # that route (#770), it only stops a unit test sampling two populations.
+        root = frozen_tree
         expected = lint.brief_corpus_reach(root)
         checks = (
             lint.check_brief_handoff_obligation,
@@ -4755,6 +4778,46 @@ class TestBriefCorpusReach:
                    if level == lint.OK and what == "briefs"]
             assert len(oks) == 1, rep.render()
             assert oks[0].endswith(expected), oks[0]
+
+    def test_a_mid_run_persistent_write_is_named_as_interference(
+            self, tmp_path, monkeypatch):
+        root = target(tmp_path)
+        probe = root / ".dreamwork" / "docs" / "briefs" / "773-race.md"
+        original = lint.check_brief_worktree_abs_inbox
+
+        def mutate_between_brief_checks(dw, rep):
+            probe.parent.mkdir(parents=True, exist_ok=True)
+            probe.write_text("# persisted by a concurrent dispatch\n", encoding="utf-8")
+            original(dw, rep)
+
+        monkeypatch.setattr(lint, "check_brief_worktree_abs_inbox",
+                            mutate_between_brief_checks)
+        rep = run(root)
+        findings = [detail for level, what, detail in rep.rows
+                    if level == lint.ERROR and what == "brief corpus"]
+        assert len(findings) == 1, (
+            "missing CHANGED DURING LINT interference verdict\n" + rep.render())
+        assert "CHANGED DURING LINT" in findings[0]
+        assert "five brief-corpus checks" in findings[0]
+        assert "not a merge verdict" in findings[0]
+
+    def test_add_then_remove_between_samples_is_the_open_false_green(
+            self, tmp_path, monkeypatch):
+        root = target(tmp_path)
+        probe = root / ".dreamwork" / "docs" / "briefs" / "773-transient.md"
+        original = lint.check_brief_worktree_abs_inbox
+
+        def mutate_and_restore_between_samples(dw, rep):
+            probe.parent.mkdir(parents=True, exist_ok=True)
+            probe.write_text("# transient\n", encoding="utf-8")
+            probe.unlink()
+            original(dw, rep)
+
+        monkeypatch.setattr(lint, "check_brief_worktree_abs_inbox",
+                            mutate_and_restore_between_samples)
+        rep = run(root)
+        assert not [detail for level, what, detail in rep.rows
+                    if level == lint.ERROR and what == "brief corpus"], rep.render()
 
 
 class TestBriefHandoffObligation:

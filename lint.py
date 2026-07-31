@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import importlib.util
 import json
 import re
@@ -3922,10 +3923,28 @@ def brief_corpus_reach(root: Path) -> str:
     if gap == 0:
         return f"current through task #{newest_task} (0-id gap; {unknown})"
     return (
-        "coverage reach UNKNOWN — newest numbered brief "
-        f"#{newest_brief} is {-gap} id(s) ahead of task history #{newest_task}; "
-        f"{unknown}"
+        "IN FLIGHT — newest numbered brief "
+        f"#{newest_brief} is {-gap} id(s) ahead of landed task history "
+        f"#{newest_task}; {unknown}"
     )
+
+
+def brief_corpus_fingerprint(root: Path) -> str:
+    """Content identity for the five checks' shared mutable brief input (#773)."""
+    digest = hashlib.sha256(b"brief-corpus-v1\0")
+    briefs_dir = root / ".dreamwork" / "docs" / "briefs"
+    for path in sorted(briefs_dir.glob("*.md")):
+        digest.update(path.name.encode("utf-8", errors="surrogateescape"))
+        digest.update(b"\0")
+        try:
+            digest.update(path.read_bytes())
+        except OSError:
+            # A file disappearing while the snapshot is read is itself a
+            # distinct state. The second snapshot will either read it or omit
+            # it, so the enclosing check reports the interference.
+            digest.update(b"<unreadable>")
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def resolve_handoff_obligation_cutoff(root: Path) -> str | None:
@@ -5977,11 +5996,27 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_cited_shas(dw, rep)
     check_placeholder_citations(dw, rep)
     check_handoffs(dw, watch, rep)
+    # These five checks all read the dispatcher's corpus. Since #770 the
+    # correct dispatch route writes that corpus in the main checkout while a
+    # gate may be reading it. Bind their block to one content identity: a
+    # changed identity is concurrent input, not evidence that the merge is bad.
+    brief_corpus_before = brief_corpus_fingerprint(dw.parent)
     check_brief_handoff_obligation(dw, rep)
     check_brief_worktree_abs_inbox(dw, rep)
     check_brief_lane_scratch(dw, rep)
     check_brief_lane_owns(dw, rep)
     check_lane_containment_backstop(dw, rep)
+    brief_corpus_after = brief_corpus_fingerprint(dw.parent)
+    if brief_corpus_before != brief_corpus_after:
+        rep.add(
+            ERROR, "brief corpus",
+            "CHANGED DURING LINT — the five brief-corpus checks did not "
+            "examine one "
+            "fixed corpus "
+            f"({brief_corpus_before[:12]} -> {brief_corpus_after[:12]}); "
+            "this is concurrent dispatch input, not a merge verdict; rerun "
+            "after the write settles (#773)",
+        )
     check_related_markers(dw, watch, rep)
     check_lesson_near_duplicates(dw, rep)
     check_review_decision_integrity(dw, rep)
