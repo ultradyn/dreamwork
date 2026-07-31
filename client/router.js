@@ -7,6 +7,7 @@
    an iframe; a question that links to it travels along, docked. */
 const rmr = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let data = null, fetchedAt = 0, lastMtime = null, serverGen = null;
+let lastDataV = null;  // #641: the version (watched_mtime) of the last full/delta doc we hold
 /* after a local answer morph, hold the live re-render briefly so the card
    settles in place before the loop's fresh data regroups it (#79/#81).
    #234 derived the hold from the critical path instead of padding it:
@@ -1084,7 +1085,7 @@ async function ensureData() {
     lastMtime = mtime;
     fetchedAt = Date.now();
     if (burnStepPref === null) burnStepPref = loadBurnStepPref();
-    setData(await (await fetch(dataJsonUrl())).json());
+    setData(applyDataResponse(await (await fetch(dataJsonUrl())).json()));
   } catch (e) {}
   return data;
 }
@@ -2438,8 +2439,28 @@ function loadBurnStepPref() {
 }
 function dataJsonUrl() {
   const s = burnStepPref;
-  return (s && BURN_STEP_ORDER.indexOf(s) >= 0)
+  let base = (s && BURN_STEP_ORDER.indexOf(s) >= 0)
     ? '/data.json?burn_step=' + s : '/data.json';
+  // #641: ask for a delta from the version we hold. No lastDataV → full doc,
+  // which is today's behaviour byte-for-byte (the server ignores unknown since).
+  if (lastDataV) base += (base.includes('?') ? '&' : '?') + 'since=' + encodeURIComponent(lastDataV);
+  return base;
+}
+/* #641 phase 1 — apply a server delta to the doc we hold, or take the full
+ * doc. The server sends {v,unchanged}, {v,base,changed,removed,check}, or the
+ * full document. "Full is always the safe answer": any doubt → full. The
+ * check hash lets us self-heal: if present and we can't verify, refetch full. */
+function applyDataResponse(j) {
+  if (j && j.unchanged) return null;           // no change — skip setData
+  if (j && j.changed) {                        // a derived delta
+    const out = Object.assign({}, data);
+    (j.removed || []).forEach(k => { delete out[k]; });
+    Object.assign(out, j.changed || {});
+    lastDataV = j.v;                            // advance to the delta's version
+    return out;
+  }
+  lastDataV = lastMtime;                        // full doc: version is what /mtime showed
+  return j;                                     // a full document
 }
 async function cycleBurnStep(back) {
   const cur = (data && data.burndown && data.burndown.step)
@@ -2460,7 +2481,8 @@ async function cycleBurnStep(back) {
     const bdHover = snapshotBdHover();   // #494: step cycle is also a swap
     // #523 rides reconciliation now (snapshotViewInputs retired in #505 p2):
     // a focused limit input is kept by id and value-stamped in the morph.
-    setData(await (await fetch(dataJsonUrl())).json());
+    lastDataV = null;  // burn_step changed: the cached base is for a different bucketing
+    setData(applyDataResponse(await (await fetch(dataJsonUrl())).json()));
     const burnBefore = (burnKey(data) !== wasBurn) ? snapshotBars() : null;
     if (view && view.name === 'dashboard') {
       const html = await buildCurrent();
@@ -4351,7 +4373,14 @@ async function tick() {
       lastMtime = mtime; fetchedAt = Date.now();
       const wasGit = gitKey(data), wasBurn = burnKey(data);
       if (burnStepPref === null) burnStepPref = loadBurnStepPref();
-      setData(await (await fetch(dataJsonUrl())).json());
+      const d = applyDataResponse(await (await fetch(dataJsonUrl())).json());
+      if (d) {
+        setData(d);
+      } else {
+        // unchanged: no re-render this tick, just reschedule
+        setTimeout(tick, 2000);
+        return;
+      }
       // the data lands instantly; surviving cards then travel from where
       // they were to where the new grouping put them (#104/#77). What the
       // human is mid-way through typing rides across the swap (#118).
