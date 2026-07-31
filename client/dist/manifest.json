@@ -17,11 +17,11 @@
     "client/router.js": "b720c8674e27635b1dbf8266e642783dd584c23bb0ebc98918b0415401ca4d37",
     "client/shader.js": "af5144a5e77597e4a9071c67f3223a0e7aaefbc4812397d19a6798c35e2092d6",
     "client/style.css": "6280e7630004c56d7e073495a9377e626a634a3e269ccb8464e3369d5f51dd1b",
-    "client/views.js": "f4ed68c08698c9206ec8c193bf69b4a7381f8aaef4ca98065bf9c582bccb34e5",
+    "client/views.js": "68dda8fe8527af2323fd126efbeda47998eaa7d7f3e5140a2b59ad6bd5380e17",
     "dev/build/wrapper-exports.js": "33c49697a82b7f2a37ff2d6a97eb0b3a9af78a9f681c0fda5e7908cef16f883a"
   },
   "outputs": {
-    "client/dist/ds/index.js": "576439c3caba95ee2980410f4b25d30a23109209a3236988c80a2fc5229715d9",
+    "client/dist/ds/index.js": "9e1f6f04fadfba1c50f33698a7ab7c733729000e705c2bcd7407746c5d8c3c77",
     "client/dist/ds/styles.css": "6280e7630004c56d7e073495a9377e626a634a3e269ccb8464e3369d5f51dd1b"
   },
   "schema": 1,

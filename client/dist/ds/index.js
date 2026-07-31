@@ -644,6 +644,7 @@ var DreamworkDesign = (() => {
     "goal",
     "agents",
     "queue",
+    "pending_events",
     "last_tick",
     "last_commit"
   ];
@@ -671,6 +672,10 @@ var DreamworkDesign = (() => {
       h += agents.map((a) => `<div class="stagent"><span class="stname">${esc(String(a.name || "?"))}</span><span class="stdoing">${mdInline(String(a.in_flight || "—"))}</span></div>`).join("");
     const facts = [];
     if (s.queue) facts.push(esc(`${s.queue.in_progress || 0} in flight · ${s.queue.pending || 0} pending`));
+    if (typeof s.pending_events === "number" && s.pending_events)
+      facts.push(esc(`${s.pending_events} to drain`));
+    else if ("pending_events" in s && s.pending_events == null)
+      facts.push("drain depth unreadable");
     if (hands.length)
       facts.push(esc(`${hands.length} hand-off${hands.length > 1 ? "s" : ""} to fold: ` + hands.map((h2) => "#" + h2.id).join(", ")));
     const t = s.last_tick ? Date.parse(s.last_tick) : NaN;
