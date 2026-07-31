@@ -443,8 +443,14 @@ def test_sweep_resolves_citations_in_the_repo_it_was_given(
     assert "nothing to review" in out, out
 
 
-def test_sweep_reports_degraded_substring_fallback_when_git_times_out(
-        monkeypatch):
+@pytest.mark.parametrize(
+    "failure",
+    [ledger.subprocess.TimeoutExpired(["git", "cat-file"], timeout=20),
+     OSError("git executable unavailable")],
+    ids=["timeout", "oserror"],
+)
+def test_sweep_reports_degraded_substring_fallback_when_git_is_unavailable(
+        monkeypatch, failure):
     """An unavailable resolver falls back visibly; advisory sweep never dies."""
     commit_sha = "58e3040d"
     citation = commit_sha[:7]
@@ -453,10 +459,10 @@ def test_sweep_reports_degraded_substring_fallback_when_git_times_out(
         "- **#465** — width-rotted citation · origin: **loop**\n"
         f"  · landed in `{citation}`\n\n## Recently landed\n")
 
-    def timeout(*args, **kwargs):
-        raise ledger.subprocess.TimeoutExpired(args[0], timeout=20)
+    def unavailable(*args, **kwargs):
+        raise failure
 
-    monkeypatch.setattr(ledger.subprocess, "run", timeout)
+    monkeypatch.setattr(ledger.subprocess, "run", unavailable)
     out = ledger.sweep_text(
         ledger_text, [(commit_sha, "fix(#465): landing")], None, "markdown")
 

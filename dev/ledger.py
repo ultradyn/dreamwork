@@ -715,17 +715,19 @@ def _default_since(repo):
 _CITED_SHA = re.compile(r"\b[0-9a-f]{7,40}\b")
 
 
-def _resolved_cites(commits, bodies):
+def _resolved_cites(commits, bodies, repo):
     """A `cites(sha, body)` predicate that resolves shas git cannot abbreviate.
 
     Substring first (the common case — a citation and a commit sha at the same
     width still match textually), then resolution for the residue: the commit
     sha and every 7+ hex citation in the body are resolved to full 40-char
     object ids through one ``git cat-file --batch-check`` call, and the pair
-    counts as cited when their resolved ids match. Returns the plain substring
-    check when git cannot answer (no repo, no failures to resolve), so the
-    four #404 pins on `sweep` keep binding in every environment.
+    counts as cited when their resolved ids match. Returns the predicate plus
+    whether git failed and the plain substring fallback was used, so the four
+    #404 pins on `sweep` keep binding without hiding degraded operation.
     """
+    def substring(sha, body):
+        return sha in body
     # collect (commit_sha, body) pairs that fail substring — the only ones
     # whose resolution could change the answer
     residue = []
@@ -739,17 +741,20 @@ def _resolved_cites(commits, bodies):
             if body and sha not in body:
                 residue.append((sha, body))
     if not residue:
-        return lambda sha, body: sha in body
+        return substring, False
     # one batched resolve: the residue commit shas + every cited sha in the
     # bodies that produced a residue (the small set #724 measured at ~160).
     to_resolve = {sha for sha, _ in residue}
     for _, body in residue:
         to_resolve.update(_CITED_SHA.findall(body))
-    out = subprocess.run(
-        ["git", "cat-file", "--batch-check"],
-        input="\n".join(sorted(to_resolve)) + "\n",
-        capture_output=True, text=True, timeout=20,
-    )
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "cat-file", "--batch-check"],
+            input="\n".join(sorted(to_resolve)) + "\n",
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return substring, True
     full = {}  # input sha (verbatim) -> 40-char object id it resolved to
     if out.returncode == 0:
         resolved = [ln.split() for ln in out.stdout.splitlines() if ln.strip()]
@@ -770,10 +775,10 @@ def _resolved_cites(commits, bodies):
             return False  # the commit itself does not resolve here
         return cited in {
             full[s] for s in _CITED_SHA.findall(body) if s in full}
-    return _cites
+    return _cites, False
 
 
-def sweep_text(text, commits, since, source):
+def sweep_text(text, commits, since, source, repo="."):
     """The advisory report — BOTH halves of the correlation are accounted for.
 
     #404 ruled that a sweep which found nothing must be distinguishable from
@@ -814,7 +819,7 @@ def sweep_text(text, commits, since, source):
     for ids, body in ledger_entries(open_section_text(text) or ""):
         for tid in ids:
             bodies[tid] = body
-    cites = _resolved_cites(commits, bodies)
+    cites, degraded = _resolved_cites(commits, bodies, repo)
     n, findings = sweep(text, commits, cites=cites)
     open_ids, landed_ids = watch.parse_ledger(text)
     where = f"since {since[:12]}" if since else "across the whole history"
@@ -832,6 +837,10 @@ def sweep_text(text, commits, since, source):
     lines = [f"sweep: examined {n} commits {where} against "
              f"{len(open_ids)} open ids ({source}) "
              f"({idbearing} id-bearing, {skipped} skipped, mostly {dom})"]
+    if degraded:
+        lines.append(
+            "sweep: DEGRADED — git citation resolution was unavailable; "
+            "used substring matching only")
     if not open_ids and not landed_ids:
         # The wording deliberately does NOT contain the clean verdict's phrase,
         # even to deny it: the #667 test asserts that phrase's ABSENCE by plain
@@ -1953,7 +1962,7 @@ def _dispatch(args):
         if commits is None:
             sys.stdout.write("sweep: git could not answer (not a repo?) — did not run\n")
             return 0
-        sys.stdout.write(sweep_text(text, commits, since, source))
+        sys.stdout.write(sweep_text(text, commits, since, source, args.repo))
         return 0
 
     ledger_path = Path(args.ledger)
