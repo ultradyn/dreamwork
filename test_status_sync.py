@@ -1792,3 +1792,35 @@ class TestAgentToolLaneDiscovery:
         finally:
             proc.kill()
             proc.wait()
+
+
+# ── #728: the discover_lanes arity contract, pinned by ONE accessor ────
+#
+# discover_lanes returns a 3-tuple (found, phantoms, agent_tool) since #675.
+# #728: guard_preflight unpacked it as 2 and a bare 'except Exception' hid
+# the resulting ValueError as a silent '?'. The accessor live_lane_count is
+# now the one supported way to read the count (#440); this test pins the
+# arity contract so the NEXT change to discover_lanes fails a test rather
+# than a gate at 2am.
+
+def test_live_lane_count_returns_an_int(tmp_path):
+    # Production line whose reversion reds this: live_lane_count's
+    # `found, _phantoms, _agent_tool = discover_lanes(target)` unpack, or
+    # discover_lanes changing its return arity.
+    n = status_sync.live_lane_count(tmp_path)
+    assert isinstance(n, int), \
+        "live_lane_count must return an int; got %r" % type(n)
+    assert n == 0, \
+        "an empty target must report zero lanes, not None or a raise (%r)" % n
+
+
+def test_discover_lanes_arity_is_three(tmp_path):
+    # THE DISCRIMINATING ASSERTION for the arity contract: discover_lanes
+    # returns EXACTLY three elements. If a future change adds a fourth
+    # field, live_lane_count's unpack silently keeps working (Python drops
+    # nothing into the gaps), so this guard catches what the accessor
+    # cannot. Revert discover_lanes to its pre-#675 2-tuple and this reds.
+    result = status_sync.discover_lanes(tmp_path)
+    assert isinstance(result, tuple) and len(result) == 3, \
+        "discover_lanes arity changed; live_lane_count and the test suite " \
+        "need updating together (was %d-tuple)" % len(result)

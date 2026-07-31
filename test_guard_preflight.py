@@ -90,9 +90,13 @@ class TestNoneReadings:
 
     def test_missing_lanes_renders_question_not_zero(self):
         # #675: discover_lanes sees only ccc. A None must NOT read as "0 lanes".
+        # #728: '?' alone reads as one unknown beside a confident verdict; the
+        # render must NAME the count unavailable so a reader knows the verdict
+        # rests on load alone (the count half of #606's two legs is gone).
         msg = gp.render(gp.OK, 20.0, 16, None)
         assert "0 ccc lane" not in msg
         assert "?" in msg and "#675" in msg
+        assert "unavailable" in msg
 
     def test_missing_load_renders_question_not_zero(self):
         msg = gp.render(gp.CAUTION, None, 16, 2)
@@ -145,3 +149,74 @@ class TestMainExitsZero:
         out = capsys.readouterr().out
         assert rc == 0
         assert "guard preflight:" in out
+
+
+# ── #728: the except is narrowed; a contract break is loud (#136) ──────
+
+class TestCountLanesExceptNarrowing:
+    """#728: a contract break (TypeError/ValueError from the accessor's shape
+    changing) must NOT be caught by the same handler as an OSError from /proc.
+    #136: those are different facts — the first is a bug that must be loud, the
+    second a legitimate unknown that returns None. The bare 'except Exception'
+    that used to live here turned #675's arity change into a silent '?'."""
+
+    def test_proc_unreadable_returns_none_not_raises(self, monkeypatch):
+        # /proc unreadable => OSError => None (a legitimate unknown). The
+        # production line whose reversion reds this: the 'except OSError:
+        # return None' arm in count_lanes. Widen it back to 'except
+        # Exception' and the contract-break test below still passes — THIS
+        # one is the one that pins the OSError-only narrowing.
+        import status_sync
+
+        def boom_oserror(*a, **k):
+            raise OSError("permission denied")
+
+        monkeypatch.setattr(status_sync, "live_lane_count", boom_oserror)
+        assert gp.count_lanes(Path("/tmp")) is None
+
+    def test_contract_break_propagates_not_swallowed(self, monkeypatch):
+        # THE DISCRIMINATING ASSERTION for #728 item 2: a ValueError (the
+        # accessor's shape changed underneath the caller) MUST propagate,
+        # not degrade to None. Reintroduce 'except Exception: return None'
+        # in count_lanes and this reds (returns None instead of raising) —
+        # which is exactly the defect that hid #675's arity change.
+        import status_sync
+
+        def boom_value(*a, **k):
+            raise ValueError("not enough values to unpack (expected 3)")
+
+        monkeypatch.setattr(status_sync, "live_lane_count", boom_value)
+        import pytest
+        with pytest.raises(ValueError):
+            gp.count_lanes(Path("/tmp"))
+
+
+class TestCountBrokenRender:
+    """#728: when the accessor's contract breaks, main() renders a
+    COUNT-BROKEN line that names the error and marks the verdict as resting
+    on load alone — distinct from render()'s '?' (an unreadable /proc)."""
+
+    def test_count_broken_names_the_error_type(self):
+        msg = gp.render_count_broken(ValueError("arity changed"), 38.0, 16)
+        assert msg.startswith("guard preflight: COUNT-BROKEN ")
+        assert "ValueError" in msg
+        assert "arity changed" in msg
+
+    def test_count_broken_says_verdict_rests_on_load_alone(self):
+        msg = gp.render_count_broken(TypeError("bad shape"), 38.0, 16)
+        assert "LOAD ALONE" in msg
+        # Still carries the load verdict token so the justfile RISK grep holds.
+        assert "WRONG-ANSWER-RISK" in msg
+
+    def test_main_prints_count_broken_on_contract_break(self, capsys,
+                                                        monkeypatch):
+        def boom(*a, **k):
+            raise ValueError("discover_lanes arity changed")
+
+        monkeypatch.setattr(gp, "count_lanes", boom)
+        rc = gp.main([])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "COUNT-BROKEN" in out
+        assert "ValueError" in out
+        assert "LOAD ALONE" in out
