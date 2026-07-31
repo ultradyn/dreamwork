@@ -1428,7 +1428,11 @@ def main(argv=None):
     # #357 — the warning footer tacks onto stderr on every verb's success
     # path. WARN-only, stateless, never touches stdout, never changes rc
     # (emit_warnings returns the rc it was handed).
-    return emit_warnings(str(Path(args.ledger).parent), rc)
+    # #688 — reach needs no ledger, so it carries no --ledger; the footer is
+    # a ledger-state warning and there is no ledger to warn about.
+    if hasattr(args, "ledger"):
+        return emit_warnings(str(Path(args.ledger).parent), rc)
+    return rc
 
 
 # ---------------------------------------------------------------------------
