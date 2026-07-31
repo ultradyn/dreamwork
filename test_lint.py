@@ -363,6 +363,11 @@ class TestAnsweredResolutionDates:
             ("Answered?", "  - **Answer (via watch, 2026-07-31 19:16):** rec\n"),
             ("Commented?", "  - **Comment (via watch, 2026-07-31 19:12) — ruling:**\n"),
         ])
+        import watch
+        items = watch.parse_answered((t / ".dreamwork/questions.md").read_text())
+        assert len(items) == 2
+        assert any(it["follows"] for it in items)
+        assert any("Comment (via watch" in it["body"] for it in items)
         assert self.rows(t) == []
 
     def test_folded_alone_is_reported_not_accepted_as_a_resolution(self, tmp_path):
