@@ -647,8 +647,18 @@ NOT_FOUND_PAGE = page_shell(
 # tuple they would simply be absent there, and the reading would go red for
 # the rest of time on every deployment: a permanent false red is how a
 # staleness signal becomes something nobody reads. `wrapper-exports.js` is a
-# build INPUT and rides along for exactly that reason — it is one of the nine
-# files the manifest records.
+# build INPUT and rides along for exactly that reason — it is one of the files
+# the manifest records.
+# #630 P2 adds `dev/build/src/*.js` (the native runtime's sources) and
+# `client/dist/native.js` on the same argument. This tuple is the SECOND
+# statement of "which files the build reads" — the first is
+# `client_dist.expected_inputs`, which globs the tree — and it is a second
+# statement only because deploy AST-parses this and an ast.literal_eval cannot
+# run a glob. It is therefore CHECKED rather than trusted:
+# `test_client_dist.test_deploy_declares_and_tracks_every_file_the_dist_check_reads`
+# derives its want-set from `expected_inputs`, so a fifth source file added
+# without a line here is a named red rather than a deployment that reads stale
+# forever.
 DATA_SIBLINGS = ("vendor/morphdom.min.js", "vendor/LICENSE.morphdom",
                  "client/style.css",
                  "client/app_body.html",
@@ -659,9 +669,14 @@ DATA_SIBLINGS = ("vendor/morphdom.min.js", "vendor/LICENSE.morphdom",
                  "client/command.js",
                  "client/shader.js",
                  "dev/build/wrapper-exports.js",
+                 "dev/build/src/delegate.js",
+                 "dev/build/src/native-entry.js",
+                 "dev/build/src/probe.js",
+                 "dev/build/src/registry.js",
                  "client/dist/manifest.json",
                  "client/dist/ds/index.js",
-                 "client/dist/ds/styles.css")
+                 "client/dist/ds/styles.css",
+                 "client/dist/native.js")
 
 
 def _load_morphdom_js():
@@ -5810,7 +5825,22 @@ def _autoreload_sources():
     # abspath for the same reason CLIENT_DIR uses it: a relative __file__
     # after any chdir would silently stop watching watch.py itself, and
     # _sources_mtime's OSError handling would hide that it had.
-    dist = (client_dist.MANIFEST_REL,) + client_dist.OUTPUT_RELS
+    dist = [client_dist.MANIFEST_REL] + list(client_dist.OUTPUT_RELS)
+    # #630 P2: the native runtime's SOURCES, on the mirror argument to the one
+    # above. The outputs being watched is what lets a rebuild CLEAR a red
+    # without a restart; the sources being watched is what lets an edit RAISE
+    # one. The client assets already had this (they are in _CLIENT_ASSETS);
+    # `dev/build/src/*.js` did not, so editing the registry and reloading gave
+    # a page that read "dist is current" while it no longer was.
+    #
+    # Derived, never listed: `native_sources` globs the directory, so the file
+    # a later phase adds is watched without an edit here. None means the
+    # directory could not be read at all, which `client_dist.check` reports as
+    # UNREADABLE on its own — watching a guessed set would be worse than
+    # watching none.
+    native = client_dist.native_sources(SELF_DIR)
+    if native is not None:
+        dist += native
     return ([os.path.abspath(__file__)]
             + [os.path.join(CLIENT_DIR, name) for name in _CLIENT_ASSETS]
             + [os.path.join(SELF_DIR, rel) for rel in dist])
