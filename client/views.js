@@ -1042,6 +1042,7 @@ function buildDashboard(d) {
   // the /run-mode route and .dreamwork/run-mode file stay — other readers.
   h += posturePicker(d);   // #445 three-axis override of run-mode's posture
   h += tintPicker(d);      // last, and dim: a preference, not status
+  h += drawModePicker();   // #733: shader draw frequency, sibling of tint
   return h + `</div>`;
 }
 function buildQuestions(d) {

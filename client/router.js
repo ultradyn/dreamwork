@@ -160,6 +160,28 @@ function pageTitle(v, d) {
 let projTint = null;
 const tintHue = name => TINTS[name] != null ? TINTS[name] : TINTS[TINT_DEFAULT];
 const favHue = () => tintHue(projTint || TINT_DEFAULT);
+/* #733 — shader draw frequency. Three modes (his words): 'animated' draws
+   every frame (today, the default), 'light' renders once or twice a second
+   and crossfades between cached frames, 'paused' freezes the last frame.
+
+   PERSISTENCE: tint persists server-side (.dreamwork/watch-tint + POST /tint
+   in watch.py), but watch.py is off-limits this wave, so this rides
+   localStorage — the burnStepPref/burnLimitPref idiom, not a new path (#440).
+   It is per-browser, not per-project-across-machines; see questions.md. */
+const DRAW_MODES = ['animated', 'light', 'paused'];
+const DRAW_MODE_DEFAULT = 'animated';
+let drawMode = null;   // lazy-loaded on first ensureData, like burnStepPref
+function drawModeStorageKey() { return 'dw:draw-mode'; }
+function loadDrawModePref() {
+  try {
+    const v = localStorage.getItem(drawModeStorageKey());
+    if (DRAW_MODES.indexOf(v) >= 0) return v;
+  } catch (e) {}
+  return DRAW_MODE_DEFAULT;
+}
+function applyDrawMode() {
+  if (window.dreambg) window.dreambg.setDrawMode(drawMode);
+}
 function applyTint() {
   if (!data) return;
   const name = TINTS[data.tint] != null ? data.tint : TINT_DEFAULT;
@@ -221,6 +243,37 @@ async function pickTint(name) {
   } else if (msg) {
     msg.textContent = 'could not save the tint — the file was refused';
   }
+}
+/* #733 — the draw-frequency picker is a SIBLING of the tint picker: the
+   same sliding radiogroup (#103/#121), three exclusive options. Copies the
+   tint markup/ARIA idiom rather than composing a new one (#440). Pure
+   client-side: no POST (watch.py is off-limits this wave), so the pick
+   applies immediately and persists to localStorage for reload. */
+function drawModePicker() {
+  const cur = drawMode || DRAW_MODE_DEFAULT;
+  return label('animation') +
+    `<div class="sgroup drawpick" role="radiogroup" aria-label="background animation">` +
+    `<div class="sgind"></div>` +
+    DRAW_MODES.map(n =>
+      `<button type="button" role="radio" class="sgbtn dmbtn` +
+      `${n === cur ? ' on' : ''}" data-drawmode="${esc(n)}"` +
+      ` aria-checked="${n === cur ? 'true' : 'false'}"` +
+      ` onclick="pickDrawMode('${esc(n)}')">${esc(n)}</button>`).join('') +
+    `</div>`;
+}
+function pickDrawMode(name) {
+  if (DRAW_MODES.indexOf(name) < 0) return;
+  drawMode = name;
+  try { localStorage.setItem(drawModeStorageKey(), name); } catch (e) {}
+  applyDrawMode();
+  document.querySelectorAll('.sgroup.drawpick').forEach(g => {
+    g.querySelectorAll('.sgbtn').forEach(b => {
+      const on = b.dataset.drawmode === name;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    slideIndicator(g, false);
+  });
 }
 /* ── #445 three-axis posture controls ───────────────────────────────────
    Sibling of run-mode. Authority is `.dreamwork/posture` when present;
@@ -1085,6 +1138,7 @@ async function ensureData() {
     lastMtime = mtime;
     fetchedAt = Date.now();
     if (burnStepPref === null) burnStepPref = loadBurnStepPref();
+    if (drawMode === null) { drawMode = loadDrawModePref(); applyDrawMode(); }
     setData(applyDataResponse(await (await fetch(dataJsonUrl())).json()));
   } catch (e) {}
   return data;

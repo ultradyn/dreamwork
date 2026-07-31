@@ -162,6 +162,17 @@ function mountDreambg(win, cv, opts) {
       col+=(hash(gl_FragCoord.xy+t)-0.5)/255.0;
       gl_FragColor=vec4(col,1.0);
     }`;
+  // #733 — crossfade between two cached composite frames. The light-mode
+  // loop renders the full pipeline into a snapshot ~1.4x/sec; every RAF
+  // frame this blends the previous snapshot and the newest one so the
+  // dissolve is smooth (the page stays alive) while real GPU work stays
+  // ~1-2Hz. A plain mix(); the two snapshots already carry tint/hue/dither.
+  const XFADE_FS = `precision highp float;
+    uniform sampler2D a; uniform sampler2D b; uniform vec2 r; uniform float k;
+    void main(){
+      vec2 uv=gl_FragCoord.xy/r;
+      gl_FragColor=mix(texture2D(a,uv),texture2D(b,uv),clamp(k,0.0,1.0));
+    }`;
 
   function compile(type, src) {
     const s = gl.createShader(type);
@@ -178,8 +189,13 @@ function mountDreambg(win, cv, opts) {
   }
   // GL objects live in these; initGL() (re)creates them so the whole
   // pipeline can be rebuilt if the browser loses/restores the context.
-  let progF, progB, progC, uF, uB, uC, buf;
+  let progF, progB, progC, progX, uF, uB, uC, uX, buf;
   let A = null, B = null, C = null, fboOK = false;
+  // #733 light-animation: two screen-res snapshots that the crossfade
+  // program blends. snap* holds a full-resolution composite frame; the
+  // light-mode loop renders the expensive four-pass pipeline into one of
+  // them ~1.4x/sec and every RAF frame cross-dissolves between the pair.
+  let snapA = null, snapB = null;
   let canW = 2, canH = 2, fboW = 2, fboH = 2;
   function bindQuad(pr) {
     const loc = gl.getAttribLocation(pr, 'p');
@@ -217,14 +233,24 @@ function mountDreambg(win, cv, opts) {
     A = makeTarget(fboW, fboH);
     B = makeTarget(fboW, fboH);
     C = makeTarget(fboW, fboH);
-    fboOK = !!(A && B && C);
+    // #733 light-animation snapshots: same dimensions as the composite's
+    // screen target (canW x canH), so the crossfade upscale is 1:1 and a
+    // cached frame holds the full-resolution image the draw pass produced.
+    for (const tgt of [snapA, snapB]) if (tgt) {
+      gl.deleteTexture(tgt.tex); gl.deleteFramebuffer(tgt.fbo);
+    }
+    snapA = makeTarget(canW, canH);
+    snapB = makeTarget(canW, canH);
+    fboOK = !!(A && B && C && snapA && snapB);
     if (!fboOK) cv.style.display = 'none';
   }
   function initGL() {
     A = B = C = null;                 // context loss invalidated them
+    snapA = snapB = null;             // #733: snapshots die with the context too
     progF = program(FRACTAL_FS);
     progB = program(BLUR_FS);
     progC = program(COMPOSITE_FS);
+    progX = program(XFADE_FS);        // #733 crossfade pass
     uF = { t: gl.getUniformLocation(progF, 't'),
            r: gl.getUniformLocation(progF, 'r'),
            warp: gl.getUniformLocation(progF, 'warp'),
@@ -240,6 +266,10 @@ function mountDreambg(win, cv, opts) {
            mode: gl.getUniformLocation(progC, 'mode'),
            pageTint: gl.getUniformLocation(progC, 'pageTint'),
            projHue: gl.getUniformLocation(progC, 'projHue') };
+    uX = { a: gl.getUniformLocation(progX, 'a'),
+           b: gl.getUniformLocation(progX, 'b'),
+           r: gl.getUniformLocation(progX, 'r'),
+           k: gl.getUniformLocation(progX, 'k') };
     buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER,
@@ -249,6 +279,15 @@ function mountDreambg(win, cv, opts) {
   initGL();
 
   let mode = 0, lastMs = 0;
+  // #733 draw frequency: 'animated' (default, every RAF frame), 'light'
+  // (render the full pipeline ~1.4Hz into cached snapshots, crossfade
+  // between them every RAF frame), 'paused' (stop the RAF loop; the canvas
+  // keeps its last composited frame — a freeze, not a blank).
+  let drawMode = 'animated';
+  // light-mode snapshot/crossfade state. snapFrom/snapTo index into
+  // [snapA,snapB]; xfadeMs/xfadeDur drive the per-frame blend fraction.
+  let snapFrom = 0, snapTo = 1, lastSnapMs = -1e9, xfadeMs = 0;
+  const LIGHT_INTERVAL_MS = 700, XFADE_MS = 600;
   // per-page atmosphere lerped in JS then handed to the composite shader;
   // frameCount is a monotonic draw tally (never resets) so a view swap's
   // continuity can be checked from outside.
@@ -274,7 +313,7 @@ function mountDreambg(win, cv, opts) {
     gl.uniform2f(uB.r, fboW, fboH); gl.uniform1f(uB.t, secs);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
-  function draw(ms) {
+  function draw(ms, dst) {
     lastMs = ms;
     // Shader phase comes from the wall clock (shared by every window), not
     // page-local time — so windows animate in lockstep. UTC-day-wrapped to
@@ -323,8 +362,9 @@ function mountDreambg(win, cv, opts) {
     // passes 2 & 3: tilt-shift blur A -> B -> C
     blurPass(A, B, secs);
     blurPass(B, C, secs);
-    // pass 4: upscale + composite C (blurred) with A (raw) -> screen
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    // pass 4: upscale + composite C (blurred) with A (raw). dst=null is the
+    // screen; a snapshot FBO is the light-mode cache target (#733).
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fbo : null);
     gl.viewport(0, 0, canW, canH);
     gl.useProgram(progC); bindQuad(progC);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, A.tex);
@@ -338,8 +378,24 @@ function mountDreambg(win, cv, opts) {
     gl.uniform1f(uC.projHue, hueCur);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
+  // #733 — blend the two cached snapshots to the screen. k is the dissolve
+  // fraction toward snapTo (0 = frozen on snapFrom, 1 = settled on snapTo).
+  function presentXfade(k) {
+    const from = [snapA, snapB][snapFrom], to = [snapA, snapB][snapTo];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canW, canH);
+    gl.useProgram(progX); bindQuad(progX);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, from.tex);
+    gl.uniform1i(uX.a, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, to.tex);
+    gl.uniform1i(uX.b, 1);
+    gl.uniform2f(uX.r, canW, canH);
+    gl.uniform1f(uX.k, k);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    unbindTextures();
+  }
 
-  win.addEventListener('resize', () => { size(); if (rm) draw(lastMs); });
+  win.addEventListener('resize', () => { size(); if (rm) draw(lastMs, null); });
 
   const MODES = ['dream (composite)', 'raw fractal', 'warp field',
                  'focus mask', 'blurred fractal'];
@@ -357,7 +413,7 @@ function mountDreambg(win, cv, opts) {
     hint.style.opacity = '1';
     win.clearTimeout(hintT);
     hintT = win.setTimeout(() => { hint.style.opacity = '0'; }, 2200);
-    if (rm) draw(lastMs);
+    if (rm) draw(lastMs, null);
   }
   // Debug switcher on the main page only: a popout carries no #layerhint
   // styles, and a stray 'l' there should stay a keystroke.
@@ -423,9 +479,31 @@ function mountDreambg(win, cv, opts) {
     c.fillRect(0, 22 - (16.7 / worst) * 22, 120, 1);
   }
   const avgOf = a => a.reduce((x, y) => x + y, 0) / (a.length || 1);
+  // #733 — one render closure per mode. 'animated' composites to screen
+  // every frame (today's behaviour). 'light' runs the full pipeline into a
+  // snapshot ~1.4Hz and cross-dissolves between snapshots every frame.
+  // 'paused' is handled in frame() by NOT scheduling another RAF, so the
+  // canvas keeps its last image (a freeze, never a blank — #136).
+  function renderAnimated(ms) { draw(ms, null); }
+  function renderLight(ms) {
+    // advance the cache on the interval; the dissolve runs every frame
+    // regardless, so the page stays alive between renders.
+    if (ms - lastSnapMs >= LIGHT_INTERVAL_MS) {
+      // ping-pong: the newest snapshot becomes 'from', render into 'to'.
+      snapFrom = snapTo; snapTo = 1 - snapTo;
+      draw(ms, [snapA, snapB][snapTo]);
+      lastSnapMs = ms; xfadeMs = 0;
+    } else {
+      xfadeMs += ms - (lastDrawFrameMs || ms);
+    }
+    lastDrawFrameMs = ms;
+    const k = Math.min(1, xfadeMs / XFADE_MS);
+    presentXfade(k);
+  }
+  let lastDrawFrameMs = 0;
   // draw() wrapped with a CPU stopwatch (JS + GL submission) and, when the
   // GPU timer is live, a TIME_ELAPSED query straddling the same draw.
-  function timedDraw(ms) {
+  function timedRender(ms, render) {
     if (gpuExt && gpuPending) {                    // reap the prior query
       const ready = gl.getQueryParameter(gpuQuery, gl.QUERY_RESULT_AVAILABLE);
       const disjoint = gl.getParameter(gpuExt.GPU_DISJOINT_EXT);
@@ -442,7 +520,7 @@ function mountDreambg(win, cv, opts) {
       gl.beginQuery(gpuExt.TIME_ELAPSED_EXT, gpuQuery); gpuOpen = true;
     }
     const t0 = performance.now();
-    draw(ms);
+    render(ms);
     const cpuMs = performance.now() - t0;
     if (gpuOpen) {
       gl.endQuery(gpuExt.TIME_ELAPSED_EXT); gpuOpen = false; gpuPending = true;
@@ -450,7 +528,10 @@ function mountDreambg(win, cv, opts) {
     return cpuMs;
   }
   function frame(ms) {
-    const cpuMs = fpsEl ? timedDraw(ms) : (draw(ms), 0);
+    // #733: the per-mode render closure. 'paused' never reaches frame()
+    // (the RAF loop is stopped), so every closure here is a live draw.
+    const render = drawMode === 'light' ? renderLight : renderAnimated;
+    const cpuMs = fpsEl ? timedRender(ms, render) : (render(ms), 0);
     if (fpsEl) {
       fpsN++;
       if (prevMs) {
@@ -481,10 +562,14 @@ function mountDreambg(win, cv, opts) {
         fpsN = 0; fpsT = ms;
       }
     }
-    if (running && !rm) rafId = win.requestAnimationFrame(step);
+    // #733: 'paused' stops the loop — the canvas keeps its last frame (a
+    // freeze). 'animated'/'light' keep scheduling as before.
+    if (running && !rm && drawMode !== 'paused')
+      rafId = win.requestAnimationFrame(step);
   }
   function step(ms) {
     if (!running) return;
+    if (drawMode === 'paused') return;       // #733: frozen, do not advance
     if (!doc.hidden) frame(ms);
     else win.setTimeout(() => {
       if (running) rafId = win.requestAnimationFrame(step);
@@ -501,24 +586,47 @@ function mountDreambg(win, cv, opts) {
     initGL();
     if (opts.dev) acquireGpuTimer();       // ext + query died with the context
     running = true;
-    if (rm) draw(lastMs);
-    else rafId = win.requestAnimationFrame(step);
+    lastSnapMs = -1e9;                     // #733: re-seed the cache
+    if (rm) draw(lastMs, null);
+    else if (drawMode !== 'paused')
+      rafId = win.requestAnimationFrame(step);
   });
   // The router talks to the shader through this handle: setTint nudges
   // the per-page atmosphere target (lerped inside draw); pulseWarp fires
   // the transition stir; frames exposes the monotonic draw tally so a view
   // swap's continuity is observable. reduced-motion never stirs.
+  // #733 setDrawMode switches draw frequency: 'animated' (default, resume
+  // the RAF loop), 'light' (cached-snapshot crossfade, resume the loop),
+  // 'paused' (stop the loop; the canvas freezes on its last frame).
   const handle = {
-    setTint(v) { tintTarget = v; if (rm) { tintCur = v; draw(lastMs); } },
+    setTint(v) { tintTarget = v; if (rm) { tintCur = v; draw(lastMs, null); } },
     setProjHue(rad) { hueTarget = rad;
-                      if (rm) { hueCur = rad; draw(lastMs); } },
+                      if (rm) { hueCur = rad; draw(lastMs, null); } },
+    setDrawMode(m) {
+      if (m !== 'animated' && m !== 'light' && m !== 'paused') return;
+      const wasPaused = drawMode === 'paused';
+      drawMode = m;
+      // entering light: seed the cache so the first frame is real, not a
+      // dissolve from nothing. entering paused from a live mode: stop the
+      // loop now; the canvas retains its last composited frame.
+      if (m === 'light') {
+        lastSnapMs = -1e9;
+        if (rm) { draw(lastMs, [snapA, snapB][snapTo]); }
+      } else if (m === 'paused') {
+        if (rafId) win.cancelAnimationFrame(rafId);
+      } else if (wasPaused) {
+        // leaving paused: resume the RAF loop from where it froze
+        rafId = win.requestAnimationFrame(step);
+      }
+    },
+    get drawMode() { return drawMode; },
     pulseWarp() { if (!rm) warpStart = lastMs; },
     get frames() { return frameCount; },
     get tint() { return tintCur; },
     get warp() { return lastWarp; },
     stop() { running = false; if (rafId) win.cancelAnimationFrame(rafId); }
   };
-  if (rm) draw(0);
+  if (rm) draw(0, null);
   else rafId = win.requestAnimationFrame(step);
   return handle;
 }

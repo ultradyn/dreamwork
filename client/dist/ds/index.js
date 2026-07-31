@@ -995,6 +995,7 @@ var DreamworkDesign = (() => {
     h += statusBlock(d.status, d.pending_handoffs);
     h += posturePicker(d);
     h += tintPicker(d);
+    h += drawModePicker();
     return h + `</div>`;
   }
   function buildQuestions(d) {
@@ -1631,6 +1632,23 @@ var DreamworkDesign = (() => {
   var projTint = null;
   var tintHue = (name) => TINTS[name] != null ? TINTS[name] : TINTS[TINT_DEFAULT];
   var favHue = () => tintHue(projTint || TINT_DEFAULT);
+  var DRAW_MODES = ["animated", "light", "paused"];
+  var DRAW_MODE_DEFAULT = "animated";
+  var drawMode = null;
+  function drawModeStorageKey() {
+    return "dw:draw-mode";
+  }
+  function loadDrawModePref() {
+    try {
+      const v = localStorage.getItem(drawModeStorageKey());
+      if (DRAW_MODES.indexOf(v) >= 0) return v;
+    } catch (e) {
+    }
+    return DRAW_MODE_DEFAULT;
+  }
+  function applyDrawMode() {
+    if (window.dreambg) window.dreambg.setDrawMode(drawMode);
+  }
   function applyTint() {
     if (!data) return;
     const name = TINTS[data.tint] != null ? data.tint : TINT_DEFAULT;
@@ -1646,6 +1664,10 @@ var DreamworkDesign = (() => {
   function tintPicker(d) {
     const cur = TINTS[d.tint] != null ? d.tint : TINT_DEFAULT;
     return label("tint") + `<div class="sgroup tintpick" role="radiogroup" aria-label="project tint"><div class="sgind"></div>` + Object.keys(TINTS).map((n) => `<button type="button" role="radio" class="sgbtn tintbtn${n === cur ? " on" : ""}" data-tint="${esc(n)}" style="--tintswatch:hsl(${TINTS[n]}, 62%, 66%)" aria-checked="${n === cur ? "true" : "false"}" onclick="pickTint('${esc(n)}')">${esc(n)}</button>`).join("") + `</div><div class="tintmsg" id="tintmsg" aria-live="polite"></div>`;
+  }
+  function drawModePicker() {
+    const cur = drawMode || DRAW_MODE_DEFAULT;
+    return label("animation") + `<div class="sgroup drawpick" role="radiogroup" aria-label="background animation"><div class="sgind"></div>` + DRAW_MODES.map((n) => `<button type="button" role="radio" class="sgbtn dmbtn${n === cur ? " on" : ""}" data-drawmode="${esc(n)}" aria-checked="${n === cur ? "true" : "false"}" onclick="pickDrawMode('${esc(n)}')">${esc(n)}</button>`).join("") + `</div>`;
   }
   var postArmGen = 0;
   var postArmTimer = null;
@@ -2264,6 +2286,10 @@ var DreamworkDesign = (() => {
       lastMtime = mtime;
       fetchedAt = Date.now();
       if (burnStepPref === null) burnStepPref = loadBurnStepPref();
+      if (drawMode === null) {
+        drawMode = loadDrawModePref();
+        applyDrawMode();
+      }
       setData(applyDataResponse(await (await fetch(dataJsonUrl())).json()));
     } catch (e) {
     }
@@ -5376,6 +5402,12 @@ var DreamworkDesign = (() => {
       col+=(hash(gl_FragCoord.xy+t)-0.5)/255.0;
       gl_FragColor=vec4(col,1.0);
     }`;
+    const XFADE_FS = `precision highp float;
+    uniform sampler2D a; uniform sampler2D b; uniform vec2 r; uniform float k;
+    void main(){
+      vec2 uv=gl_FragCoord.xy/r;
+      gl_FragColor=mix(texture2D(a,uv),texture2D(b,uv),clamp(k,0.0,1.0));
+    }`;
     function compile(type, src) {
       const s = gl.createShader(type);
       gl.shaderSource(s, src);
@@ -5391,8 +5423,9 @@ var DreamworkDesign = (() => {
       gl.linkProgram(pr);
       return pr;
     }
-    let progF, progB, progC, uF, uB, uC, buf;
+    let progF, progB, progC, progX, uF, uB, uC, uX, buf;
     let A = null, B = null, C = null, fboOK = false;
+    let snapA = null, snapB = null;
     let canW = 2, canH = 2, fboW = 2, fboH = 2;
     function bindQuad(pr) {
       const loc = gl.getAttribLocation(pr, "p");
@@ -5445,14 +5478,22 @@ var DreamworkDesign = (() => {
       A = makeTarget(fboW, fboH);
       B = makeTarget(fboW, fboH);
       C = makeTarget(fboW, fboH);
-      fboOK = !!(A && B && C);
+      for (const tgt of [snapA, snapB]) if (tgt) {
+        gl.deleteTexture(tgt.tex);
+        gl.deleteFramebuffer(tgt.fbo);
+      }
+      snapA = makeTarget(canW, canH);
+      snapB = makeTarget(canW, canH);
+      fboOK = !!(A && B && C && snapA && snapB);
       if (!fboOK) cv.style.display = "none";
     }
     function initGL() {
       A = B = C = null;
+      snapA = snapB = null;
       progF = program(FRACTAL_FS);
       progB = program(BLUR_FS);
       progC = program(COMPOSITE_FS);
+      progX = program(XFADE_FS);
       uF = {
         t: gl.getUniformLocation(progF, "t"),
         r: gl.getUniformLocation(progF, "r"),
@@ -5474,6 +5515,12 @@ var DreamworkDesign = (() => {
         pageTint: gl.getUniformLocation(progC, "pageTint"),
         projHue: gl.getUniformLocation(progC, "projHue")
       };
+      uX = {
+        a: gl.getUniformLocation(progX, "a"),
+        b: gl.getUniformLocation(progX, "b"),
+        r: gl.getUniformLocation(progX, "r"),
+        k: gl.getUniformLocation(progX, "k")
+      };
       buf = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.bufferData(
@@ -5485,6 +5532,9 @@ var DreamworkDesign = (() => {
     }
     initGL();
     let mode = 0, lastMs = 0;
+    let drawMode2 = "animated";
+    let snapFrom = 0, snapTo = 1, lastSnapMs = -1e9, xfadeMs = 0;
+    const LIGHT_INTERVAL_MS = 700, XFADE_MS = 600;
     let tintCur = 0, tintTarget = 0, lastDrawMs = 0, frameCount = 0;
     let hueCur = 0, hueTarget = 0;
     let warpStart = -1e9, lastWarp = 0;
@@ -5506,7 +5556,7 @@ var DreamworkDesign = (() => {
       gl.uniform1f(uB.t, secs);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
-    function draw(ms) {
+    function draw(ms, dst) {
       lastMs = ms;
       const secs = Date.now() * 1e-3 % 86400;
       if (!fboOK || gl.isContextLost()) return;
@@ -5541,7 +5591,7 @@ var DreamworkDesign = (() => {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       blurPass(A, B, secs);
       blurPass(B, C, secs);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fbo : null);
       gl.viewport(0, 0, canW, canH);
       gl.useProgram(progC);
       bindQuad(progC);
@@ -5558,9 +5608,26 @@ var DreamworkDesign = (() => {
       gl.uniform1f(uC.projHue, hueCur);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
+    function presentXfade(k) {
+      const from = [snapA, snapB][snapFrom], to = [snapA, snapB][snapTo];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, canW, canH);
+      gl.useProgram(progX);
+      bindQuad(progX);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, from.tex);
+      gl.uniform1i(uX.a, 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, to.tex);
+      gl.uniform1i(uX.b, 1);
+      gl.uniform2f(uX.r, canW, canH);
+      gl.uniform1f(uX.k, k);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      unbindTextures();
+    }
     win.addEventListener("resize", () => {
       size();
-      if (rm) draw(lastMs);
+      if (rm) draw(lastMs, null);
     });
     const MODES = [
       "dream (composite)",
@@ -5583,7 +5650,7 @@ var DreamworkDesign = (() => {
       hintT = win.setTimeout(() => {
         hint.style.opacity = "0";
       }, 2200);
-      if (rm) draw(lastMs);
+      if (rm) draw(lastMs, null);
     }
     if (opts.switcher) {
       win.addEventListener("keydown", (e) => {
@@ -5645,7 +5712,25 @@ var DreamworkDesign = (() => {
       c.fillRect(0, 22 - 16.7 / worst * 22, 120, 1);
     }
     const avgOf = (a) => a.reduce((x, y) => x + y, 0) / (a.length || 1);
-    function timedDraw(ms) {
+    function renderAnimated(ms) {
+      draw(ms, null);
+    }
+    function renderLight(ms) {
+      if (ms - lastSnapMs >= LIGHT_INTERVAL_MS) {
+        snapFrom = snapTo;
+        snapTo = 1 - snapTo;
+        draw(ms, [snapA, snapB][snapTo]);
+        lastSnapMs = ms;
+        xfadeMs = 0;
+      } else {
+        xfadeMs += ms - (lastDrawFrameMs || ms);
+      }
+      lastDrawFrameMs = ms;
+      const k = Math.min(1, xfadeMs / XFADE_MS);
+      presentXfade(k);
+    }
+    let lastDrawFrameMs = 0;
+    function timedRender(ms, render) {
       if (gpuExt && gpuPending) {
         const ready = gl.getQueryParameter(gpuQuery, gl.QUERY_RESULT_AVAILABLE);
         const disjoint = gl.getParameter(gpuExt.GPU_DISJOINT_EXT);
@@ -5664,7 +5749,7 @@ var DreamworkDesign = (() => {
         gpuOpen = true;
       }
       const t0 = performance.now();
-      draw(ms);
+      render(ms);
       const cpuMs = performance.now() - t0;
       if (gpuOpen) {
         gl.endQuery(gpuExt.TIME_ELAPSED_EXT);
@@ -5674,7 +5759,8 @@ var DreamworkDesign = (() => {
       return cpuMs;
     }
     function frame(ms) {
-      const cpuMs = fpsEl ? timedDraw(ms) : (draw(ms), 0);
+      const render = drawMode2 === "light" ? renderLight : renderAnimated;
+      const cpuMs = fpsEl ? timedRender(ms, render) : (render(ms), 0);
       if (fpsEl) {
         fpsN++;
         if (prevMs) {
@@ -5696,10 +5782,12 @@ var DreamworkDesign = (() => {
           fpsT = ms;
         }
       }
-      if (running && !rm) rafId = win.requestAnimationFrame(step);
+      if (running && !rm && drawMode2 !== "paused")
+        rafId = win.requestAnimationFrame(step);
     }
     function step(ms) {
       if (!running) return;
+      if (drawMode2 === "paused") return;
       if (!doc.hidden) frame(ms);
       else win.setTimeout(() => {
         if (running) rafId = win.requestAnimationFrame(step);
@@ -5714,23 +5802,43 @@ var DreamworkDesign = (() => {
       initGL();
       if (opts.dev) acquireGpuTimer();
       running = true;
-      if (rm) draw(lastMs);
-      else rafId = win.requestAnimationFrame(step);
+      lastSnapMs = -1e9;
+      if (rm) draw(lastMs, null);
+      else if (drawMode2 !== "paused")
+        rafId = win.requestAnimationFrame(step);
     });
     const handle = {
       setTint(v) {
         tintTarget = v;
         if (rm) {
           tintCur = v;
-          draw(lastMs);
+          draw(lastMs, null);
         }
       },
       setProjHue(rad) {
         hueTarget = rad;
         if (rm) {
           hueCur = rad;
-          draw(lastMs);
+          draw(lastMs, null);
         }
+      },
+      setDrawMode(m) {
+        if (m !== "animated" && m !== "light" && m !== "paused") return;
+        const wasPaused = drawMode2 === "paused";
+        drawMode2 = m;
+        if (m === "light") {
+          lastSnapMs = -1e9;
+          if (rm) {
+            draw(lastMs, [snapA, snapB][snapTo]);
+          }
+        } else if (m === "paused") {
+          if (rafId) win.cancelAnimationFrame(rafId);
+        } else if (wasPaused) {
+          rafId = win.requestAnimationFrame(step);
+        }
+      },
+      get drawMode() {
+        return drawMode2;
       },
       pulseWarp() {
         if (!rm) warpStart = lastMs;
@@ -5749,7 +5857,7 @@ var DreamworkDesign = (() => {
         if (rafId) win.cancelAnimationFrame(rafId);
       }
     };
-    if (rm) draw(0);
+    if (rm) draw(0, null);
     else rafId = win.requestAnimationFrame(step);
     return handle;
   }

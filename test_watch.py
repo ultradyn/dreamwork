@@ -6364,6 +6364,35 @@ class TestAppShell(unittest.TestCase):
                       '#dreambg { position:fixed; inset:0; z-index:-1;'):
             self.assertIn(token, watch.PAGE)
 
+    def test_shader_has_draw_frequency_modes(self):
+        # #733 — static guard on DRAW BEHAVIOUR, not on the radio button's
+        # checked state (a control wired to nothing would pass that). Each
+        # token names a production line whose removal breaks a mode:
+        #   - DRAW_MODES: the three mode names the handle accepts.
+        #   - setDrawMode: the handle method the router calls to switch mode.
+        #   - the crossfade program + snapshot ping-pong: 'light' mode's
+        #     cached-frame dissolve (the thing setInterval(draw,500) is NOT).
+        #   - the paused loop-stop: drawMode !== 'paused' gates the RAF
+        #     reschedule, so paused freezes rather than blanks (#136).
+        for token in (
+            "const DRAW_MODES = ['animated', 'light', 'paused'];",
+            'setDrawMode(m)',
+            'presentXfade',                 # the crossfade present pass
+            'LIGHT_INTERVAL_MS',            # the ~1.4Hz render interval
+            # the loop-stop gate: paused must stop the RAF reschedule, not
+            # just early-return step(). Asserted as the FULL two-line
+            # statement so removing the gate (the real defect) is caught —
+            # a bare 'drawMode' token would survive in setDrawMode's body
+            # and pass green against a control wired to nothing (#699).
+            "if (running && !rm && drawMode !== 'paused')\n"
+            "      rafId = win.requestAnimationFrame(step);",
+            # the router-side control + wiring (behaviour, not checked state)
+            'function drawModePicker()',
+            'applyDrawMode()',
+            "localStorage.setItem(drawModeStorageKey()",
+        ):
+            self.assertIn(token, watch.PAGE)
+
     def test_page_has_answered_awaiting_fold_state(self):
         # Static guard: the questions view renders three states — an answered
         # (awaiting fold) entry is visually distinct with no input box (#81).

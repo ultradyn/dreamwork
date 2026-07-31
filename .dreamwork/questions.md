@@ -2,6 +2,18 @@
 
 ## Open
 
+- **P1 · 2026-08-01 — #733: should the draw-frequency setting persist server-side like tint?**
+  His ask put the control "near tint setting", and tint persists via `.dreamwork/watch-tint` +
+  `POST /tint` in `watch.py` (shared across windows, committable). That route is **off-limits to this
+  lane** (`watch.py` is owned by `#729` this wave), so I cannot mirror tint's server mechanism without
+  touching it. I persisted via `localStorage` (`dw:draw-mode`, the `burnStepPref`/`burnLimitPref` idiom)
+  — a preference path this page already uses, not a new one. **Two consequences to rule on:** (1) the
+  setting is per-browser/per-machine, not per-project across machines like tint; (2) two windows on the
+  same project keep independent draw modes. If you want tint-parity (server-side, shared, committable),
+  that is a small `watch.py` follow-up (`POST /draw-mode` + `.dreamwork/draw-mode` + a `collect()` read)
+  that this lane left for a wave that owns `watch.py`. Default is **animated** (today's behaviour; no
+  change for anyone who does not touch the control).
+
 - **P1 · 2026-07-31 21:45 — #691: cheap-model recap of the main agent — three design calls.**
   Your steer (receipt 323d2ef1): *"Use cheap model to generate recap of current main agent actions …
   Present the design for me to review first (gates implementation). Ask questions if unsure."* Design at
