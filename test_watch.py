@@ -7532,13 +7532,29 @@ class TestFileHeadingLockup(unittest.TestCase):
         # about its own segments is worse than one that takes two lines. So
         # the metadata line may wrap anywhere and may NOT ellipsise, clamp,
         # or refuse to break.
+        #
+        # #595 moved the three wrap properties out of `.fdir` and into the
+        # shared `.wrapany` class, because `.fdir` was never the only unbounded
+        # value on this page — the head's `target` and `version` crumbs are two
+        # more, and calling `.fdir` "the ONE exception" is what let them be
+        # written past it. So the check is stated in two halves: the element
+        # CARRIES the wrap idiom, and the idiom SAYS wrap-anywhere. Asserting
+        # only the second would pass a `.fdir` that had stopped using it, and
+        # asserting only the first would pass a `.wrapany` that had stopped
+        # meaning anything.
         rule = re.search(r"\n  \.fdir \{(.*?)\}", watch.PAGE, re.S)
         self.assertIsNotNone(rule, "the .fdir rule is gone")
         body = rule.group(1)
-        self.assertIn("overflow-wrap:anywhere", body)
+        self.assertIn('class="fdir wrapany"', watch.PAGE,
+                      "the path element must carry the shared wrap idiom")
+        wrapany = re.search(r"\n  \.wrapany \{(.*?)\}", watch.PAGE, re.S)
+        self.assertIsNotNone(wrapany, "the .wrapany rule is gone")
+        self.assertIn("overflow-wrap:anywhere", wrapany.group(1))
         for forbidden in ("text-overflow", "nowrap", "line-clamp", "direction:"):
             self.assertNotIn(forbidden, body,
                              f".fdir must not declare {forbidden}")
+            self.assertNotIn(forbidden, wrapany.group(1),
+                             f".wrapany must not declare {forbidden}")
         self.assertIn("user-select:text", body)   # the clipboard fallback
 
     def test_the_copy_button_opens_no_new_attribute_injection_site(self):

@@ -317,6 +317,87 @@ them** — see The review pane) and the file view (`body.file` widens it to
 focus view's dual column). Dividers are
 hairlines (`--line`), not boxes.
 
+### The page never moves sideways (#312, #595, #597)
+
+Two invariants, one sentence each, and they are stated together because for
+three months the page held neither while this file claimed both.
+
+**IT NEVER SCROLLS SIDEWAYS — at any width, on any route, at any VALUE
+LENGTH.** The third clause is the one #595 added, and it is the whole finding.
+Half a dozen places on this page render a string whose length is chosen by
+data rather than by design: the head's `target` crumb (this checkout's absolute
+path), its `version` crumb (an arbitrary-length migration filename), the file
+heading's `.fdir`, and every `.mdfile` path in rendered prose. A `.crumb` is
+`white-space:nowrap` (#284) and so was the whole `.mdfile` unit (#506), so
+those values could not break, and at 390px the dashboard scrolled 28px sideways
+and `/file?p=DREAMWORK.md` scrolled 32px. `/questions` and `/` escaped by luck —
+their long paths sat inside CLOSED `<details>` and had no geometry.
+
+The exception is one named idiom, `.wrapany`, and it always goes on an INNER
+element, never on the box:
+
+```css
+.wrapany { white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
+```
+
+`.fdir` was the first user and #284's comment called it "the ONE exception",
+which is what let three more unbounded values be written past it. It is now the
+rule's name rather than one site's property triple. The inner-element part is
+not style: a line break is allowed wherever the INNERMOST inline box ending at
+that position permits one, so relaxing a box directly puts a break opportunity
+at its own closing boundary — right beside whatever that box was holding on to
+(a crumb's separator, `.mdfile`'s pip). Where the box has something to hold, the
+wrapping is bought at the emit site instead: `mdFileUnit` splits a path so the
+head rides `.wrapany` and a short TAIL stays bare in the unit's `nowrap`, which
+makes the boundary before the pip unbreakable by construction. That was measured,
+not reasoned: the CSS-only version orphaned the pip at six of 91 path lengths,
+as did four other CSS-only shapes (word joiner, nowrap `::after`, inline pip,
+inline-block unit).
+
+**IT NEVER JUMPS SIDEWAYS WHEN A SCROLLBAR COMES OR GOES.**
+
+```css
+html { scrollbar-gutter:stable; }
+```
+
+Some routes are tall (`/`, `/questions`, `/file`) and some are not (`/answers`,
+`/reviews`, `/research`, `/chat/<id>`), so with a classic scrollbar the tall
+ones took ~10px out of `clientWidth` and the short ones did not: the centred
+column SNAPPED 5px on every navigation between the two kinds. `#htitle` visited
+exactly two x values across a `/` → `/answers` transition, 436.2 and 441.2, in
+one frame with no easing. That is transitions.md's "the elements jump around" —
+the complaint that hoisting the chrome out of `#view` exists to answer —
+reintroduced underneath the fix for it, on a page that spends real effort making
+a column-WIDTH change glide (`body.wsliding`). A snap among drifts.
+
+Three consequences, all measured rather than assumed:
+
+- **No effect under overlay scrollbars** (macOS, touch). With Chromium's
+  `OverlayScrollbar` on, the computed value is still `stable` and the reading
+  column is the full 358px at 390px, against 348px with classic scrollbars.
+  Nothing is reserved where nothing was ever taken, so there is no permanent
+  10px tax on a phone. The bug was invisible there and so is the fix.
+- **10px of reading column, on classic scrollbars, on the routes that did not
+  scroll.** That is the price, and it is the right way round: the column is
+  narrower by a constant rather than jumping by one.
+- **It does NOT fix `#dreambg`'s `100vw` overhang**, which the 2026-07-31 visual
+  audit expected it to get for free. `vw` counts the classic scrollbar whatever
+  the gutter says, so the field still runs 10px past `clientWidth` exactly where
+  a scrollbar exists — identical before and after. It still covers, and
+  `overflow:clip` still means it creates no scroll of its own, so that stays an
+  opportunity rather than a defect.
+
+**Both are gated, and how they are gated is the more useful half.** `hfit`
+(#312, #595) asserts `scrollWidth <= clientWidth` AND a real
+`scrollTo(9999,0)` reaching nothing, on `/`, `/questions`, `/answers` and
+`/file`, palette closed and menu open, plus a stress section that injects 160
+characters into every unbounded slot — because the contract is a claim about
+ANY value and a fixture tuned to today's data goes quiet the day the data
+changes. `gutter` (#597) samples `#htitle`'s x every frame across the
+transition at 1440px and 390px. See `dev/capture/README.md` for why `gutter` is
+the only guard in that directory launched with `ignoreDefaultArgs:
+['--hide-scrollbars']`, and why that mattered more than the fix did.
+
 ### The file view's source pane (#351)
 
 His ask, typed from `/file?p=lint.py`: *"syntax highlighting for source
@@ -364,6 +445,16 @@ code as code.
   `<pre>` on the page keeps `pre-wrap`. The markdown Source pane takes the
   same nowrap — its bytes are the file — and that is the change #252's
   note predicted.
+
+  **#595 — that parenthesis was true and the sentence around it was not.**
+  `filehl.mjs` asserted it for the SOURCE pane, exactly as written. Nothing
+  asserted it for the RENDERED pane, and that is where it failed: a long
+  `.mdfile` path in `/file?p=DREAMWORK.md` took the whole page 32px sideways at
+  390px. The promise is a page-level one, so it is now stated and gated at page
+  level — see The page never moves sideways — and `hfit` carries `/file` in its
+  route list on a planted rendered-markdown fixture. Read the two together: a
+  contract asserted about one pane and written about the page is the shape that
+  hid this for three months.
 - **The palette is the artifact's, value for value**, spent only inside
   the pane, with one rename: numerals and types take `--amber`, never
   `--warn` — on this page `--warn` means broken (#136) and a numeral is
@@ -1269,7 +1360,10 @@ two lines*. No ellipsis, no middle-truncation, no clamp, no reordering.
 `overflow-wrap:anywhere` is what lets a directory segment longer than the
 column break **inside** the segment — Chrome offers a soft-wrap opportunity
 after `/`, so slashes alone are not enough. It is selectable text on purpose:
-selecting it is the fallback when the clipboard is refused.
+selecting it is the fallback when the clipboard is refused. Since #595 the three
+wrap properties live on the shared `.wrapany` class and `.fdir` carries only its
+colour and selectability: this was never the ONE exception, it was the first —
+see The page never moves sideways.
 
 **Copy hands back the whole path.** `.fcopy` is a real `<button>` (so Enter and
 Space activate it natively, and Tab reaches it in three stops) and it reads
@@ -1567,6 +1661,15 @@ link decides the pip — there is no second allow-list. External links and
 unknown code spans get none. The pip is outside the backticks so `<code>`
 wraps only the path (the link is content; the pip is chrome). Guard:
 `dev/capture/qlinkpip.mjs`.
+
+**The unit is still `nowrap`, and the path still wraps (#595).** Those stopped
+being in conflict when the split moved to the emit site: `mdFileUnit` puts
+everything but the last few characters of the path inside a `.wrapany` span and
+leaves the TAIL bare, so the head breaks anywhere and the boundary before the
+pip is unbreakable by construction rather than by a rule about ancestors. Both
+halves are gated by length SWEEP in `hfit.mjs`, not by one example — the pip
+orphans at roughly one path length in fourteen, so a single-length check passes
+the wrong fix, and did.
 
 The parser feeds this: a sub-bullet may itself be hard-wrapped, and its
 continuation lines belong to *it*. Capturing only the first line truncated
@@ -4015,6 +4118,18 @@ viewport. `dev/capture/hfit.mjs` is the red light: at 390px it asserts
 `scrollWidth <= clientWidth` on each route, palette closed and (on the
 dashboard) with the menu open, and it asserts the menu is present and
 populated first so the check can never pass over an absent subject.
+
+**#595 — that last clause was the right instinct applied to one subject.** The
+menu had a non-vacuity precondition because the menu is what the guard was
+written for. The two subjects the guard ACQUIRED later — the head's `target` and
+`version` crumbs, whose lengths come from data — had none, the fixture's
+skill-version happened to be 18 characters against the live target's 42, and
+`hfit` reported PASS for months while the live dashboard scrolled 28px sideways.
+The lesson generalises past this guard: **a precondition belongs to each
+SUBJECT, not to the guard**, and a check whose subject is a length needs that
+length asserted. `hfit` now fails if the fixture's version value drops under 40
+characters, and stresses every unbounded slot at 160. See The page never moves
+sideways.
 
 ### Motion language
 

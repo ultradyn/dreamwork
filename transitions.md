@@ -233,6 +233,18 @@ to change layout, the elements that survive travel to their new positions
 instead of teleporting. FLIP is the mechanism; reduced-motion is the
 exception; an element leaving fades rather than vanishing.
 
+**The layout the page did NOT decide to change must not move at all (#597).**
+Between 2026-05 and 2026-07-31 every navigation between a tall route and a short
+one moved the whole column 5px sideways, because a classic scrollbar appeared or
+disappeared and took 10px of `clientWidth` with it. Nothing had decided to move;
+the browser did, in one frame, with no easing — a snap on the page whose chrome
+was hoisted out of `#view` precisely to answer "the elements jump around". It
+was fixed by reserving the gutter (`html { scrollbar-gutter:stable }`) rather
+than by animating it, which is the rule this section implies and had never had
+to say: a change the page did not author is not a transition to be made
+graceful, it is a change to be prevented. Contract, measurements and the
+`gutter` guard: watch-design.md, *The page never moves sideways*.
+
 - **When transitions apply.** Route changes (client nav) dissolve. The live
   mtime tick commits its new DOM **immediately** — liveness never waits on an
   animation — but where that re-render *moves* something that survived, the

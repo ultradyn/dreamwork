@@ -125,6 +125,50 @@ const pipBtn = (url, label) =>
   `<button class="pipbtn" type="button" title="pop out — floats while you` +
   ` navigate" aria-label="pop out ${escA(label)}" data-pipurl="${escA(url)}"` +
   ` data-piplabel="${escA(label)}">${PIP_SVG}</button>`;
+/* #506 + #595 — the ONE emit for a known-internal path and its pip.
+   Two guarantees at once, and until #595 the codebase could only hold one:
+
+     #506  the pip never orphans onto a line of its own (it is chrome that
+           must travel with the path it belongs to).
+     #595  an arbitrarily long path never makes the PAGE scroll sideways.
+
+   `.mdfile { white-space:nowrap }` bought the first by giving up the second —
+   a 41-character path in `/file?p=DREAMWORK.md` scrolled the whole document
+   32px sideways at 390px. Re-enabling wrapping on the `<code>` instead loses
+   the first, and MEASURABLY so: swept over path lengths 30..120 at 390px, the
+   pip orphaned at six of them. Chromium allows the line break wherever the
+   INNERMOST inline box ending at that position permits one, so as long as the
+   last thing before the button is wrappable text, `nowrap` on the enclosing
+   `.mdfile` does not save it. (Verified against four other shapes — a word
+   joiner, a nowrap `::after`, an inline pip, an inline-block unit — all six
+   orphans, all of them.)
+
+   So the path is emitted in two pieces. Everything but the last few characters
+   rides `.wrapany` and breaks anywhere; the TAIL stays bare text in the unit's
+   inherited `nowrap`, which makes the boundary before the button unbreakable
+   BY CONSTRUCTION rather than by a rule about ancestors. The tail is a handful
+   of characters plus a 14px glyph, so it fits on any line this page can
+   produce — that is what makes the guarantee hold at ANY length rather than at
+   the lengths someone tried. Swept 30..160: no orphan, no page overflow.
+
+   TAIL_CH is small on purpose: it is dead weight in the wrap budget, and its
+   only job is to be shorter than a line. The cut never lands inside an HTML
+   entity — `lab` may carry `&amp;` from esc() — so a straddling entity moves
+   the cut left to its `&`. */
+const TAIL_CH = 6;
+const tailCut = (s) => {
+  let cut = Math.max(0, s.length - TAIL_CH);
+  const amp = s.lastIndexOf('&', cut);
+  if (amp >= 0 && s.indexOf(';', amp) >= cut) cut = amp;
+  return cut;
+};
+const mdFileUnit = (url, label, pipLabel) => {
+  const cut = tailCut(label);
+  const head = label.slice(0, cut), tail = label.slice(cut);
+  return '<span class="mdfile">`<a href="' + url + '">' +
+         (head ? '<span class="wrapany">' + head + '</span>' : '') + tail +
+         '</a>`' + pipBtn(url, pipLabel) + '</span>';
+};
 /* expand(): plain read peeks — dreams, .md files, status overflow.
 
    `keep` is a content-stable id for snapshotFolds / restoreFolds. It is NOT
@@ -158,8 +202,7 @@ const linkify = h => h.replace(
     if (data && Array.isArray(data.linkable_paths) &&
         data.linkable_paths.includes(p)) {
       const url = '/file?p=' + encodeURIComponent(p);
-      return '<span class="mdfile">`<a href="' + url + '">' + p + '</a>`' +
-             pipBtn(url, p) + '</span>';
+      return mdFileUnit(url, p, p);
     }
     return m;
   });
@@ -207,9 +250,8 @@ const linkifyMd = (h, baseDir) => h.replace(
     const lab = label.replace(/^`|`$/g, '');
     if (r.kind === 'internal') {
       const url = '/file?p=' + encodeURIComponent(r.path);
-      // same .mdfile idiom as a backticked known path (#506)
-      return '<span class="mdfile">`<a href="' + url + '">' + lab + '</a>`' +
-             pipBtn(url, r.path) + '</span>';
+      // same .mdfile idiom as a backticked known path (#506, #595)
+      return mdFileUnit(url, lab, r.path);
     }
     if (r.kind === 'external')
       // no pip — a pip floats a local view (#506)
