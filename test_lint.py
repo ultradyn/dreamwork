@@ -8069,3 +8069,79 @@ class TestBriefLaneScratch:
         lint.check_brief_lane_scratch(t / ".dreamwork", rep)
         assert [d for lvl, w, d in rep.rows if lvl == lint.OK and w == "briefs"] == [], \
             rep.render()
+
+
+class TestCommitCleanup:
+    """#693 — commit.cleanup must preserve '#' lines, because commit
+    subjects start with '#NNN' and `git rebase --continue` takes the editor
+    path where unset/strip/default delete every '#' line.
+
+    These build a REAL git repo (the check shells out to `git config`), and
+    call the production check directly — `lint.check_commit_cleanup` is the
+    line that would have to change for any of these to fail.
+    """
+
+    def _repo(self, tmp_path):
+        root = fresh(tmp_path)
+        subprocess.run(["git", "-C", str(root), "init", "-q"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email", "t@t"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "t"],
+                       check=True, capture_output=True)
+        return root
+
+    def _check(self, root):
+        rep = lint.Report()
+        lint.check_commit_cleanup(root / ".dreamwork", rep)
+        rows = [(lvl, d) for lvl, w, d in rep.rows if w == "commit.cleanup"]
+        return rows
+
+    # ── green: each safe value passes ───────────────────────────────────
+
+    @pytest.mark.parametrize("value", sorted(lint.COMMIT_CLEANUP_SAFE))
+    def test_a_safe_value_is_clean(self, tmp_path, value):
+        root = self._repo(tmp_path)
+        subprocess.run(
+            ["git", "-C", str(root), "config", "commit.cleanup", value],
+            check=True, capture_output=True)
+        rows = self._check(root)
+        assert rows == [(lint.OK, f"'{value}' preserves '#' lines")], rows
+
+    # ── direction 1: each dangerous value reds on the discriminating msg ─
+
+    def test_unset_is_an_error(self, tmp_path):
+        """The dangerous default: unset resolves to strip on the editor path."""
+        root = self._repo(tmp_path)
+        # precondition: genuinely unset (git config --get exits 1)
+        got = subprocess.run(["git", "-C", str(root), "config", "--get",
+                              "commit.cleanup"], capture_output=True, text=True)
+        assert got.returncode == 1 and got.stdout == "", \
+            "precondition: commit.cleanup must be genuinely unset here"
+        rows = self._check(root)
+        assert lint.ERROR in [lvl for lvl, _ in rows], rows
+        d = next(dd for lvl, dd in rows if lvl == lint.ERROR)
+        assert "unset" in d and "strip" in d, \
+            "must name the unset→strip default as the cause"
+
+    @pytest.mark.parametrize("value", ["strip", "default"])
+    def test_a_sharp_eating_value_is_an_error_even_though_set(self, tmp_path, value):
+        """Direction 2's discriminating case: 'strip' and 'default' ARE set
+        and non-empty, so a presence-only check would pass on them — the
+        exact false-green this check must refuse."""
+        root = self._repo(tmp_path)
+        subprocess.run(
+            ["git", "-C", str(root), "config", "commit.cleanup", value],
+            check=True, capture_output=True)
+        # precondition: the value is genuinely set and equal (presence would pass)
+        got = subprocess.run(["git", "-C", str(root), "config", "--get",
+                              "commit.cleanup"], capture_output=True, text=True)
+        assert got.stdout.strip() == value, \
+            f"precondition: commit.cleanup genuinely set to {value!r}"
+        rows = self._check(root)
+        assert lint.ERROR in [lvl for lvl, _ in rows], \
+            f"{value!r} eats '#' lines and must ERROR despite being set"
+        d = next(dd for lvl, dd in rows if lvl == lint.ERROR)
+        assert value in d and "scissors" in d, \
+            "must name the value and the fix"
+

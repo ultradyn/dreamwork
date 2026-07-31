@@ -383,6 +383,14 @@ commits, and a bare untracked pathspec errors. Run `git add -N <paths>`
 first — intent-to-add, not `git add`, so nothing is staged into the index
 the `--only` rule exists to protect (#684).
 
+**`git config commit.cleanup scissors` once after a fresh clone** (#693):
+commit subjects begin with `#NNN`, which is a `#` line, and an *unset*
+`commit.cleanup` defaults to `strip` on the editor path — so
+`git rebase --continue` silently deletes the id and the landing becomes
+undiscoverable (#404). `scissors` keeps `#` lines and truncates only git's
+own instruction comments; `lint.py` fails unless the value is one that
+preserves them.
+
 **Worktree is the default for any dreamer that writes files** (#405).
 Dispatch into a git worktree under `.worktrees/` (gitignored) or the
 harness's worktree isolation — not only when disjointness fails, and not
