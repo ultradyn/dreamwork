@@ -49,6 +49,22 @@ function core(value) {
   return out;
 }
 
+function deferredFetch() {
+  const requests = [];
+  function fetch(url) {
+    let resolve;
+    const promise = new Promise(r => { resolve = r; });
+    requests.push({url, respond: body => resolve({json: async () => structuredClone(body)})});
+    return promise;
+  }
+  return {fetch, requests};
+}
+
+function fetchData(context, forceFull = false) {
+  context.forceFull = forceFull;
+  return vm.runInContext('fetchDataResponse(forceFull)', context);
+}
+
 test('Python-derived production deltas reconstruct through the production browser applier', () => {
   for (const item of cases) {
     const context = productionContext({data: item.base, version: item.baseVersion});
@@ -80,6 +96,63 @@ test('burn-step interleaving rejects an old response after a new-bucketing docum
     'burn-step stale base: the old response committed over the new bucketing');
   assert.deepEqual(plain(context.data), newBucketing);
   assert.equal(context.lastDataV, 'new-bucketing-version');
+});
+
+test('burn-step full fetch sequences out the older in-flight tick response', async () => {
+  const item = cases[0];
+  const pending = deferredFetch();
+  const context = productionContext({
+    data: item.base,
+    version: item.baseVersion,
+    mtime: 'new-bucketing-version',
+    fetch: pending.fetch,
+    dataJsonUrl: since => since ? `/data.json?since=${since}` : '/data.json',
+  });
+  const oldTick = fetchData(context);
+  assert.equal(pending.requests[0].url, `/data.json?since=${item.baseVersion}`);
+
+  context.lastDataV = null;
+  const burnFetch = fetchData(context, true);
+  assert.equal(pending.requests[1].url, '/data.json');
+  const newBucketing = {target: '/new-bucketing', tint: 'green'};
+  pending.requests[1].respond(newBucketing);
+  const burnResult = plain(await burnFetch);
+  context.data = structuredClone(burnResult);
+  assert.deepEqual(burnResult, newBucketing);
+  assert.equal(context.lastDataV, 'new-bucketing-version');
+
+  pending.requests[0].respond(item.response);
+  assert.equal(await oldTick, null,
+    'late tick response was not discarded after the burn-step request started');
+  assert.deepEqual(plain(context.data), newBucketing,
+    'late tick response replaced the new-bucketing document');
+  assert.equal(context.lastDataV, 'new-bucketing-version',
+    'late tick response regressed the held version');
+});
+
+test('latest base mismatch clears since and refetches the full document once', async () => {
+  const item = cases[0];
+  const pending = deferredFetch();
+  const context = productionContext({
+    data: {target: '/held'},
+    version: 'other-version',
+    mtime: 'full-version',
+    fetch: pending.fetch,
+    dataJsonUrl: since => since ? `/data.json?since=${since}` : '/data.json',
+  });
+  const request = fetchData(context);
+  assert.equal(pending.requests[0].url, '/data.json?since=other-version');
+  pending.requests[0].respond(item.response);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(context.lastDataV, null,
+    'base mismatch did not clear the cached version before recovery');
+  assert.equal(pending.requests[1].url, '/data.json',
+    'base mismatch recovery retained since instead of fetching in full');
+
+  const full = {target: '/recovered', tint: 'gold'};
+  pending.requests[1].respond(full);
+  assert.deepEqual(plain(await request), full);
+  assert.equal(context.lastDataV, 'full-version');
 });
 
 test('base-only guard exposes the open same-version corruption false-green', () => {
