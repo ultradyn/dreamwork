@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Red-first integration tests for the checked lane-worktree reaper (#686)."""
 
+import importlib.machinery
+import importlib.util
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +12,15 @@ import pytest
 
 REPO = Path(__file__).resolve().parent
 CLI = REPO / "dev" / "reap.py"
+
+
+def _load_reap():
+    loader = importlib.machinery.SourceFileLoader("lane_reap", str(CLI))
+    spec = importlib.util.spec_from_loader("lane_reap", loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    loader.exec_module(module)
+    return module
 
 
 def _run(*args: object) -> subprocess.CompletedProcess[str]:
@@ -97,6 +109,23 @@ def test_non_worktree_is_unknown_not_clean(tmp_path):
     assert "not a registered linked worktree" in result.stderr
 
 
+def test_git_status_failure_is_unknown_not_clean(tmp_path, monkeypatch, capsys):
+    target = tmp_path / "lane"
+    target.mkdir()
+    reap = _load_reap()
+    monkeypatch.setattr(reap, "_registered_worktrees",
+                        lambda path: [tmp_path.resolve(), path])
+    monkeypatch.setattr(reap, "_status_paths", lambda path: None)
+
+    rc = reap.reap(str(target), check_only=True)
+
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "tracked-dirty=unknown" in err
+    assert "untracked-ignored=unknown" in err
+    assert "git status failed" in err
+
+
 def test_clean_branch_with_unmerged_commit_refuses(lane):
     _, worktree = lane
     (worktree / "landed.txt").write_text("committed lane output\n", encoding="utf-8")
@@ -144,3 +173,15 @@ def test_clean_worktree_is_removed_after_reported_check(lane):
     assert "removed" in result.stdout
     assert not worktree.exists()
     assert str(worktree.resolve()) not in _git(root, "worktree", "list", "--porcelain")
+
+
+def test_just_recipe_routes_lane_reap_through_the_checked_tool():
+    result = subprocess.run(
+        ["just", "--dry-run", "reap-lane", "--check", "/tmp/lane"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "python3 dev/reap.py --check /tmp/lane" in result.stderr
