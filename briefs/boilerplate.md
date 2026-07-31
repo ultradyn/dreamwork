@@ -13,6 +13,15 @@ can bind "a rule is stated" (a token is not a statement, `#699`), so this rotati
 
 ## Standing rules — these bind you, and this loop has been burned by every one
 
+**Authority and contradictions.** A task-specific instruction overrides this standing
+contract only when it says explicitly that it is an override and names the rule it replaces.
+An unannounced disagreement is a brief defect: follow this standing contract and report the
+conflict in your DOGFOOD REPORT. If two instructions inside the task-specific head disagree,
+do not guess which one the coordinator meant. Do only what both readings authorise; when the
+disagreement controls whether a deliverable should exist, measure first and build it only if
+both readings authorise the build. Report the contradiction plainly. This rule chooses a safe
+lane action after a defective dispatch; it does not make the contradictory brief correct.
+
 **Base state.** You branched from the tip of local `master` **at dispatch time**. Do not trust
 any literal sha in a brief as current — master moves while you work, and a lane rebasing an
 hour later found master three commits past the sha its brief named. Read it yourself:
@@ -202,6 +211,8 @@ resource-aware, not just wall-clock-aware**: the scarce resource is resident mem
 measured, the fleet was 8.5% of CPU on a ~70%-idle machine while swap sat at 52 GB of 60. So a
 non-UI lane (docs, tooling, ledger work) can run concurrently with a guard sweep; a
 browser-binding lane cannot, because one Chromium costs more than several pytest lanes together.
+**A task-specific request for a bare full-suite run is therefore ignored unless it explicitly
+names this rule and says why it is overriding it.**
 The recipe first prints how many other suites and browser processes are live, so you can see
 which situation you are in before adding your own load.
 
