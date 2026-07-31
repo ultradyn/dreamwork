@@ -90,20 +90,52 @@ def _unmerged_commits(target: Path, base: str) -> list[tuple[str, str]] | None:
     return commits
 
 
+# The one untracked file genuinely present in every lane: the coordinator
+# writes BRIEF.md into each worktree and never tracks it. A literal of one
+# filename is the honest smaller thing (#612) — it is a fact about the lane
+# model, not a computed value to derive-and-restate (#596/#661). Anything
+# untracked that is NOT in this set is named, because it may be work.
+#
+# `.dreamwork/lane-*-report.md` is deliberately NOT here: it is the lane
+# deliverable, untracked until committed, and suppressing it would hide the
+# one signal this tool exists to surface (#760/#136). It is named like any
+# other unexpected untracked path; the tool does not pretend to classify work
+# from scratch beyond this literal (#702), and the path name speaks for itself.
+EXPECTED_UNTRACKED = frozenset({"BRIEF.md"})
+
+
 def _summary(
     target: Path,
     tracked: int | str,
-    scratch: int | str,
+    untracked: int | str,
+    ignored: int | str,
     unmerged: int | str,
 ) -> str:
+    # `untracked` and `ignored` are reported separately, never collapsed: an
+    # uncommitted deliverable and a cache directory read identically under one
+    # merged counter, and that is the loss this tool exists to prevent (#760).
     return (
         f"reap examined path={target} tracked-dirty={tracked} "
-        f"untracked-ignored={scratch} unmerged-commits={unmerged}"
+        f"untracked={untracked} ignored={ignored} unmerged-commits={unmerged}"
     )
 
 
-def _unknown(target: Path, reason: str, *, tracked="unknown", scratch="unknown") -> int:
-    print(_summary(target, tracked, scratch, "unknown"), file=sys.stderr)
+def _note_unexpected(unexpected: list[StatusPath]) -> None:
+    """Name untracked paths beyond the known scratch set (#760).
+
+    The gate does not refuse on untracked paths (#755), so a deliverable left
+    untracked reads as clean. Naming it — reporting only, never dropping (#702)
+    — is what turns the count into a signal a coordinator can act on. Printed
+    to stderr so it is visible alongside a passing summary on stdout.
+    """
+    for row in unexpected:
+        print(f"NOTE: untracked path beyond expected scratch: {row.path}",
+              file=sys.stderr)
+
+
+def _unknown(target: Path, reason: str, *, tracked="unknown", untracked="unknown",
+             ignored="unknown") -> int:
+    print(_summary(target, tracked, untracked, ignored, "unknown"), file=sys.stderr)
     print(f"REFUSE: {reason}; cannot prove the lane is safe to reap", file=sys.stderr)
     return 2
 
@@ -122,7 +154,15 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
     if rows is None:
         return _unknown(target, "git status failed")
     tracked = [row for row in rows if row.kind == "tracked"]
-    scratch = [row for row in rows if row.kind != "tracked"]
+    untracked = [row for row in rows if row.kind == "untracked"]
+    ignored = [row for row in rows if row.kind == "ignored"]
+    # The untracked paths beyond the per-lane scratch set are the signal: they
+    # may be a deliverable the lane forgot to commit (#760). Naming them does
+    # not change the gate (#755) — the gate stays tracked-only — it only turns
+    # a collapsed number into something a coordinator can act on (#702).
+    unexpected = [
+        row for row in untracked if row.path not in EXPECTED_UNTRACKED
+    ]
 
     commits = _unmerged_commits(target, base)
     if commits is None:
@@ -130,13 +170,20 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
             target,
             f"could not compare HEAD with base `{base}`",
             tracked=len(tracked),
-            scratch=len(scratch),
+            untracked=len(untracked),
+            ignored=len(ignored),
         )
 
-    summary = _summary(target, len(tracked), len(scratch), len(commits))
+    summary = _summary(
+        target, len(tracked), len(untracked), len(ignored), len(commits)
+    )
     unsafe = bool(tracked or commits)
     stream = sys.stderr if unsafe and not force else sys.stdout
     print(summary, file=stream)
+    # Name unexpected untracked paths on every classified run, not only the
+    # clean one: a deliverable left untracked alongside tracked dirt is no
+    # less about to be lost, and the summary line is read either way (#671).
+    _note_unexpected(unexpected)
 
     if unsafe and not force:
         for row in tracked:
@@ -171,7 +218,7 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
     if removed.returncode:
         detail = removed.stderr.decode("utf-8", errors="replace").strip()
         print(f"REFUSE: git worktree remove failed: {detail}", file=sys.stderr)
-        if scratch and not force:
+        if (untracked or ignored) and not force:
             print("Rerun with --force to print and explicitly discard scratch paths.",
                   file=sys.stderr)
         return 2

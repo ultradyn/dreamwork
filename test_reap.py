@@ -64,7 +64,8 @@ def test_tracked_dirty_path_refuses_and_names_what_would_be_lost(lane):
     assert result.returncode == 1
     assert f"path={worktree.resolve()}" in result.stderr
     assert "tracked-dirty=1" in result.stderr
-    assert "untracked-ignored=0" in result.stderr
+    assert "untracked=0" in result.stderr
+    assert "ignored=0" in result.stderr
     assert "tracked.txt" in result.stderr
 
 
@@ -92,8 +93,59 @@ def test_brief_and_ignored_cache_do_not_fire_the_gate(lane):
     assert result.returncode == 0, result.stderr
     assert f"path={worktree.resolve()}" in result.stdout
     assert "tracked-dirty=0" in result.stdout
-    assert "untracked-ignored=2" in result.stdout
+    # #760: untracked and ignored are split, not collapsed. BRIEF.md is the one
+    # expected untracked scratch, so it is not named; the cache is ignored.
+    assert "untracked=1" in result.stdout
+    assert "ignored=1" in result.stdout
     assert "unmerged-commits=0" in result.stdout
+    assert "NOTE:" not in result.stderr
+
+
+def test_untracked_deliverable_is_named_and_distinguishable_from_cache_only(lane):
+    """#760 direction 1: the discriminating case the collapsed counter hid.
+
+    A lane holding an untracked deliverable plus expected scratch must NOT read
+    identically to one holding only scratch + cache. The split counters differ
+    and — critically — the deliverable path is NAMED, which the count alone
+    never was.
+    """
+    _, worktree = lane
+    (worktree / "BRIEF.md").write_text("lane-local brief\n", encoding="utf-8")
+    deliverable = worktree / ".dreamwork" / "lane-999-report.md"
+    deliverable.parent.mkdir()
+    deliverable.write_text("# deliverable about to be lost\n", encoding="utf-8")
+
+    result = _run("--check", worktree)
+
+    assert result.returncode == 0, result.stderr  # still passes (#755)
+    assert "untracked=2" in result.stdout
+    assert "ignored=0" in result.stdout
+    # The deliverable path is named: a count alone cannot say WHICH file, and
+    # that is the signal that turns a number into something actionable.
+    assert ".dreamwork/lane-999-report.md" in result.stderr
+    # BRIEF.md is expected scratch; it must NOT be named as unexpected.
+    assert "BRIEF.md" not in result.stderr
+
+
+def test_expected_scratch_and_ignored_read_identically_under_split(lane):
+    """#760 direction 1 complement: the SAFE lane is still clean and unnamed.
+
+    The scratch+cache lane must read with the SAME counters as before the fix
+    (untracked=1 ignored=1), and no NOTE lines, so a coordinator's healthy
+    baseline is preserved (#755).
+    """
+    _, worktree = lane
+    (worktree / "BRIEF.md").write_text("lane-local brief\n", encoding="utf-8")
+    cache = worktree / "__pycache__"
+    cache.mkdir()
+    (cache / "tool.pyc").write_bytes(b"cache")
+
+    result = _run("--check", worktree)
+
+    assert result.returncode == 0, result.stderr
+    assert "untracked=1" in result.stdout
+    assert "ignored=1" in result.stdout
+    assert "NOTE:" not in result.stderr
 
 
 def test_non_worktree_is_unknown_not_clean(tmp_path):
@@ -105,7 +157,8 @@ def test_non_worktree_is_unknown_not_clean(tmp_path):
     assert result.returncode == 2
     assert f"path={ordinary.resolve()}" in result.stderr
     assert "tracked-dirty=unknown" in result.stderr
-    assert "untracked-ignored=unknown" in result.stderr
+    assert "untracked=unknown" in result.stderr
+    assert "ignored=unknown" in result.stderr
     assert "not a registered linked worktree" in result.stderr
 
 
@@ -122,7 +175,8 @@ def test_git_status_failure_is_unknown_not_clean(tmp_path, monkeypatch, capsys):
     err = capsys.readouterr().err
     assert rc == 2
     assert "tracked-dirty=unknown" in err
-    assert "untracked-ignored=unknown" in err
+    assert "untracked=unknown" in err
+    assert "ignored=unknown" in err
     assert "git status failed" in err
 
 
@@ -137,7 +191,8 @@ def test_clean_branch_with_unmerged_commit_refuses(lane):
 
     assert result.returncode == 1
     assert "tracked-dirty=0" in result.stderr
-    assert "untracked-ignored=0" in result.stderr
+    assert "untracked=0" in result.stderr
+    assert "ignored=0" in result.stderr
     assert "unmerged-commits=1" in result.stderr
     assert sha in result.stderr
     assert "feat(#686): lane output" in result.stderr
@@ -168,7 +223,8 @@ def test_clean_worktree_is_removed_after_reported_check(lane):
 
     assert result.returncode == 0, result.stderr
     assert "tracked-dirty=0" in result.stdout
-    assert "untracked-ignored=0" in result.stdout
+    assert "untracked=0" in result.stdout
+    assert "ignored=0" in result.stdout
     assert "unmerged-commits=0" in result.stdout
     assert "removed" in result.stdout
     assert not worktree.exists()
