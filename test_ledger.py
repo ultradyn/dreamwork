@@ -464,7 +464,7 @@ def _reach_marks():
 
 
 def test_reach_reports_only_branches_with_a_plus_commit():
-    n, sup, rows = ledger.reach(_reach_marks())
+    n, ndup, nlive, rows = ledger.reach(_reach_marks())
     names = {b for b, _, _ in rows}
     assert "live-work" in names, "a + commit must surface the branch"
     assert "scratch-only" in names
@@ -474,21 +474,21 @@ def test_reach_reports_only_branches_with_a_plus_commit():
 
 
 def test_reach_collapses_duplicate_sha_sets_into_one_row():
-    n, sup, rows = ledger.reach(_reach_marks())
+    n, ndup, nlive, rows = ledger.reach(_reach_marks())
     by_name = {b: (aliases, plus) for b, aliases, plus in rows}
     # pi-agent-aaa shares live-work's sha set → alias, not a separate row
     assert "pi-agent-aaa" not in by_name, (
         "a duplicate sha set must collapse (#676 finding 3), not get its own row")
     assert "pi-agent-aaa" in by_name["live-work"][0], (
         "and it must be named as an alias of the surviving row")
-    assert sup == 1, (
-        f"one duplicate was suppressed; got {sup} — the count lets the report "
+    assert ndup == 1, (
+        f"one duplicate was suppressed; got {ndup} — the count lets the report "
         f"say how many were hidden, not just that some were (#671)")
 
 
 def test_reach_counts_every_branch_examined_so_did_not_run_is_distinguishable():
     marks = _reach_marks()
-    n, sup, rows = ledger.reach(marks)
+    n, ndup, nlive, rows = ledger.reach(marks)
     assert n == len(marks), (
         "n_examined must count EVERY branch, so 'found nothing' differs from "
         "'did not run' (#404, #671 — the same contract sweep carries)")
@@ -515,6 +515,109 @@ def test_reach_text_clean_result_differs_from_could_not_check():
     assert "nothing to review (this ran" in text, (
         f"a clean result must name itself as having run: {text!r}")
     assert "examined 1 branches" in text
+
+
+# ---------------------------------------------------------------------------
+# #715 — reach() suppresses LIVE lane branches (not lane-* by name). A live
+# lane ALWAYS carries + commits, so it is the one class reach can never learn
+# anything from — and after #711 it is 100% of the output. The discriminator
+# is LIVENESS, never the name: an abandoned lane-* branch is the thing this
+# check exists to find. The count line is the PRIMARY output after the fix.
+# ---------------------------------------------------------------------------
+
+def _reach_lanes():
+    """A synthetic branch set exercising the three lanes + an abandoned one.
+
+    - ``lane-710history``: + commits, LIVE  → suppressed as a live lane
+    - ``lane-716fleet``:   + commits, LIVE  → suppressed as a live lane
+    - ``lane-700dead``:    + commits, DEAD  → reported (the finding #715 exists for)
+    - ``non-lane-spike``:  + commits        → reported (not a lane at all)
+    """
+    return [
+        ("lane-710history", [("+", "aaa111", "fix(#710): active work")]),
+        ("lane-716fleet", [("+", "bbb222", "fix(#716): active work")]),
+        ("lane-700dead", [("+", "ccc333", "fix(#700): abandoned work")]),
+        ("non-lane-spike", [("+", "ddd444", "wip: experiment")]),
+    ]
+
+
+def test_reach_suppresses_live_lanes_but_not_abandoned_ones():
+    """#715: a LIVE lane's + branch is suppressed; an ABANDONED lane-* branch
+    is NOT. PRODUCTION LINE: the ``{branch, *aliases} & live_set`` guard in
+    ``reach``. RED: make ``live`` include every branch name and
+    ``lane-700dead`` disappears — the bug the brief says matters most."""
+    marks = _reach_lanes()
+    live = {"lane-710history", "lane-716fleet"}
+    n, ndup, nlive, rows = ledger.reach(marks, live=live)
+    names = {b for b, _, _ in rows}
+    assert "lane-710history" not in names, (
+        "a LIVE lane must be suppressed — its + commits are work in progress")
+    assert "lane-716fleet" not in names, (
+        "a LIVE lane must be suppressed — its + commits are work in progress")
+    assert "lane-700dead" in names, (
+        "an ABANDONED lane-* branch must be REPORTED — that is the one thing "
+        "this check exists to find (#590, #706). Name-based suppression would "
+        "delete this purpose while making the output look clean.")
+    assert "non-lane-spike" in names, (
+        "a non-lane branch with + commits must be reported regardless")
+    assert nlive == 2, (
+        f"two live lanes were suppressed; got {nlive} — the count is the "
+        f"PRIMARY output after #711 made live lanes 100% of reach's output")
+
+
+def test_reach_does_not_suppress_by_lane_name():
+    """The discriminator is LIVENESS, never the ``lane-*`` prefix. A lane-*
+    branch that is NOT in the live set must be reported, even if other lane-*
+    branches ARE live."""
+    marks = _reach_lanes()
+    # Only lane-710history is live; lane-700dead and lane-716fleet are NOT.
+    live = {"lane-710history"}
+    n, ndup, nlive, rows = ledger.reach(marks, live=live)
+    names = {b for b, _, _ in rows}
+    assert "lane-716fleet" in names, (
+        "a lane-* branch NOT in the live set must be reported — "
+        "suppression by name would hide an abandoned lane")
+    assert "lane-700dead" in names
+    assert "lane-710history" not in names
+
+
+def test_reach_text_names_suppressed_live_lanes_in_the_header():
+    """#136/#671: '3 suppressed as live lanes, 0 to triage' must not render
+    identically to '0 branches'. The count line is the PRIMARY output after
+    the fix, not a footer."""
+    marks = _reach_lanes()
+    live = {"lane-710history", "lane-716fleet", "lane-700dead", "non-lane-spike"}
+    text = ledger.reach_text(marks, "master", live=live)
+    assert "suppressed as live lanes" in text, (
+        f"the header must name how many live lanes were suppressed: {text!r}")
+    assert "nothing to triage" in text, (
+        f"when everything is suppressed the closing line must say so: {text!r}")
+
+
+def test_reach_text_all_live_differs_from_all_empty():
+    """#136: 'examined 4 branches (0 carry + commits, 4 suppressed as live
+    lanes)' must not render the same as 'examined 0 branches'."""
+    marks = _reach_lanes()
+    live = {"lane-710history", "lane-716fleet", "lane-700dead", "non-lane-spike"}
+    all_live = ledger.reach_text(marks, "master", live=live)
+    truly_empty = ledger.reach_text([], "master")
+    assert all_live != truly_empty, (
+        f"all-suppressed-as-live must differ from nothing-to-check (#136):\n"
+        f"{all_live!r}\n{truly_empty!r}")
+
+
+def test_reach_text_unavailable_liveness_fails_to_flood():
+    """When the liveness signal is unavailable (live=None), every + branch is
+    REPORTED with a [liveness unavailable] header. Flood is safe; silence is
+    not (#671). The check must never print nothing when it suppressed nothing."""
+    marks = _reach_lanes()
+    text = ledger.reach_text(marks, "master", live=None)
+    assert "[liveness unavailable" in text, (
+        f"the header must say it could not check liveness: {text!r}")
+    # Every + branch is reported — fail to flood, not to silence.
+    assert "lane-710history" in text
+    assert "lane-700dead" in text
+    assert "non-lane-spike" in text
 
 
 # ---------------------------------------------------------------------------
