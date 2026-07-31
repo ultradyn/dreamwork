@@ -59,6 +59,7 @@ TASK_CAUSES = (
     "hold_set",
     "hold_cleared",
     "reprioritised",
+    "unblocked",
     "superseded",
     "dropped",
     "feasibility_noted",

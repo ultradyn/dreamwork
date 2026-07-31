@@ -2,9 +2,12 @@
 import sys
 from pathlib import Path
 
+import pytest  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))          # repo root → import watch
 sys.path.insert(0, str(Path(__file__).resolve().parent / "dev"))   # dev/       → import ledger
 import ledger  # noqa: E402
+import ledger_write  # noqa: E402  — for filing a blocked task in #627 CLI tests
 import watch   # noqa: E402
 
 
@@ -768,4 +771,165 @@ def test_default_since_returns_none_when_no_fold_exists(tmp_path):
     assert ledger._default_since(root) is None, (
         "no fold commit means no bound — None opens full-history scanning, "
         "which is the safe direction for an advisory tool")
+
+
+# ---------------------------------------------------------------------------
+# #627 — reprioritise / unblock CLI verbs. These exercise the full _dispatch
+# path against a store-mode fixture (cutover watermark set), which is the real
+# integration surface. They DIRECTION-1 the brief: a band change and an unblock
+# that CANNOT be expressed today, then the verb doing it, asserting --why
+# landed in the task's own history (not just that the field changed).
+#
+# The bare `dev/ledger.py get <id>` form REFUSES from a worktree (#667), and
+# these run `ledger.main([... --ledger <fixture>])` so they pass --ledger on
+# every call. The store does not resolve from a worktree (#667), so each test
+# sets the cutover watermark so source_of_truth == 'store'.
+# ---------------------------------------------------------------------------
+
+def _cut_over_store(tmp_path):
+    """A .dreamwork/ dir with a cut-over ledger store (source_of_truth='store').
+
+    Seeds the store so the write verbs can open it and adds the cutover
+    watermark so `source_of_truth` flips to 'store'. Returns the path to pass
+    as `--ledger` (the tasks.md path — its parent is the .dreamwork/ dir).
+    """
+    dw = tmp_path / "dw"
+    dw.mkdir()
+    sp = ledger.store_path(str(dw))
+    ledger.ledger_store.open_store(sp, seed_next_id=1).close()
+    # Set the one-way cutover watermark (source_of_truth flips to 'store').
+    import sqlite3
+    conn = sqlite3.connect(str(sp))
+    conn.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES ('ledger_cut_over', '1')")
+    conn.commit()
+    conn.close()
+    return dw / "tasks.md"
+
+
+def test_reprioritise_cli_changes_band_and_records_why_in_history(tmp_path, capsys):
+    """#627 DIRECTION-1: a band change that CANNOT be expressed today, then the
+    verb doing it — and the --why lands in the task's OWN HISTORY, not just the
+    field. A test asserting only the new value passes against a verb that
+    silently drops the reason (the brief's explicit trap).
+
+    PRODUCTION LINE: the body append in reprioritise_task (surfaced via the
+    CLI dispatch _reprioritise_store). Break by dropping the body append —
+    the field still changes but 'focus shift' vanishes from the body.
+    """
+    ledger_path = _cut_over_store(tmp_path)
+    # File a task at P2 via the store path so the fixture is realistic.
+    ledger.main(["file", "a task", "--priority", "P2", "--ledger", str(ledger_path)])
+    capsys.readouterr()  # drain file output
+
+    # DIRECTION-1 precondition: before the verb, --priority existed ONLY on
+    # `file`. There was NO way to change it. Demonstrate by confirming the
+    # task is at its filed band and the body has no reprioritise note yet.
+    recs = ledger._read_records(str(ledger_path.parent))
+    tid = recs[0]["id"]
+    assert recs[0]["priority"] == "P2", "precondition: filed at P2"
+    assert "reprioritised" not in recs[0]["body"]
+
+    rc = ledger.main(["reprioritise", str(tid), "P1", "--why", "focus shift",
+                      "--ledger", str(ledger_path)])
+    assert rc == 0, f"reprioritise must exit 0, got {rc}"
+    out = capsys.readouterr().out
+    assert "reprioritised" in out and "P1" in out
+
+    # THE THING THAT MAKES THE VERB SAFE: the why lands in the body.
+    recs = ledger._read_records(str(ledger_path.parent))
+    match = [r for r in recs if r["id"] == tid][0]
+    assert match["priority"] == "P1", f"band must change to P1, got {match['priority']}"
+    assert "focus shift" in match["body"], (
+        "the --why must land in the body — an unexplained priority change is "
+        "how a backlog stops being trustworthy (#627)")
+
+
+def test_unblock_cli_clears_blocked_on_and_records_why_in_history(tmp_path, capsys):
+    """#627 DIRECTION-1: an unblock that CANNOT be expressed today (there was NO
+    verb to clear blocked_on), then the verb doing it, with --why in history.
+
+    PRODUCTION LINE: the body append in unblock_task. Break by dropping it —
+    blocked_on clears but the reason vanishes.
+    """
+    ledger_path = _cut_over_store(tmp_path)
+    # File a blocked task. file_task accepts blocked_on as a kwarg, but the CLI
+    # `file` verb does not expose it — set it directly via the store writer.
+    sp = ledger.store_path(str(ledger_path.parent))
+    store = ledger.ledger_store.open_store(sp)
+    tid = ledger_write.file_task(
+        store, "blocked task", "body", blocked_on="blocked on #999")
+    store.close()
+    capsys.readouterr()
+
+    # DIRECTION-1 precondition: there was NO verb to clear blocked_on.
+    recs = ledger._read_records(str(ledger_path.parent))
+    match = [r for r in recs if r["id"] == tid][0]
+    assert match["blocked_on"] == "blocked on #999", "precondition: blocked"
+
+    rc = ledger.main(["unblock", str(tid), "--why", "#999 landed",
+                      "--ledger", str(ledger_path)])
+    assert rc == 0, f"unblock must exit 0, got {rc}"
+
+    recs = ledger._read_records(str(ledger_path.parent))
+    match = [r for r in recs if r["id"] == tid][0]
+    assert match["blocked_on"] is None, f"blocked_on must clear, got {match['blocked_on']!r}"
+    assert "#999 landed" in match["body"], (
+        "the --why must land in the body — the reason an unblock happened is "
+        "the thing that keeps a backlog trustworthy (#627)")
+
+
+def test_reprioritise_cli_bad_band_is_exit2_no_traceback(tmp_path, capsys):
+    """#627 DIRECTION-2: an invalid band (P9) must refuse, not write garbage.
+    Exit 2 + one-line stderr naming the live bands, not a sqlite traceback.
+    """
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "a task", "--priority", "P2", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    tid = ledger._read_records(str(ledger_path.parent))[0]["id"]
+
+    rc = ledger.main(["reprioritise", str(tid), "P9", "--why", "x",
+                      "--ledger", str(ledger_path)])
+    assert rc == 2, f"a bad band must exit 2, got {rc}"
+    err = capsys.readouterr().err
+    assert "priority: got 'P9'" in err and "expected one of" in err, err
+    assert "Traceback" not in err
+    # The band was NOT changed.
+    recs = ledger._read_records(str(ledger_path.parent))
+    assert [r for r in recs if r["id"] == tid][0]["priority"] == "P2"
+
+
+def test_unblock_cli_never_blocked_refuses_not_success(tmp_path, capsys):
+    """#671: an unblock that unblocked nothing must NOT read as success. A task
+    that was never blocked refuses (exit 1, named message), not exit 0.
+    """
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "never blocked", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    tid = ledger._read_records(str(ledger_path.parent))[0]["id"]
+    assert ledger._read_records(str(ledger_path.parent))[0]["blocked_on"] is None
+
+    rc = ledger.main(["unblock", str(tid), "--why", "x", "--ledger", str(ledger_path)])
+    assert rc == 1, f"unblocking an un-blocked task must refuse (exit 1), got {rc}"
+    err = capsys.readouterr().err
+    assert "not blocked" in err, (
+        f"the refusal must name that it was not blocked (#671): {err!r}")
+
+
+def test_reprioritise_cli_nonexistent_id_is_exit1(tmp_path, capsys):
+    """DIRECTION-2: a nonexistent id refuses (exit 1), matching the #497 contract."""
+    ledger_path = _cut_over_store(tmp_path)
+    rc = ledger.main(["reprioritise", "99999", "P1", "--why", "x",
+                      "--ledger", str(ledger_path)])
+    assert rc == 1
+    assert "no such task" in capsys.readouterr().err
+
+
+def test_reprioritise_cli_missing_why_is_argparse_error(tmp_path, capsys):
+    """--why is mandatory: omitting it is an argparse error (exit 2), not a
+    silent acceptance that drops the reason."""
+    ledger_path = _cut_over_store(tmp_path)
+    with pytest.raises(SystemExit) as ei:
+        ledger.main(["reprioritise", "1", "P1", "--ledger", str(ledger_path)])
+    assert ei.value.code == 2  # argparse uses 2 for a missing required arg
 

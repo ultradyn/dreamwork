@@ -248,6 +248,155 @@ def note_task(store, task_id, note, *, actor="loop") -> None:
 
 
 # ---------------------------------------------------------------------------
+# reprioritise / unblock (#627) — change priority or clear a stale blocked_on.
+#
+# The loop's selection reads `priority` as its main ordering key, and a task
+# whose `blocked_on` names an already-landed blocker is INVISIBLE to selection
+# (#590). `--priority` existed only on `file`, so a band was fixed at birth;
+# there was no verb at all for clearing a stale `blocked_on`. These two writers
+# close that gap through the SAME supported path fold/note use — one transaction,
+# body note + chained event (the reason lands in the task's own history "the way
+# fold does"; an unexplained priority change is how a backlog stops being
+# trustworthy — #627).
+#
+# `--why` is mandatory and not decoration: it is recorded in the body (human-
+# readable) AND the event detail (machine-readable), matching land_task. A verb
+# that made it optional "for convenience" would remove the thing that makes the
+# change safe.
+#
+# Named production lines whose change must red each test:
+#
+# - reprioritise_task's `if priority not in bands: raise WriteError`
+#       → test_reprioritise_rejects_a_bad_band_naming_the_live_bands
+# - reprioritise_task's UPDATE task SET priority + body append + event
+#       → test_reprioritise_changes_band_and_records_why_in_history
+# - unblock_task's `if not old_blocked: raise NotBlocked`  (#671)
+#       → test_unblock_refuses_a_task_that_was_never_blocked
+# - unblock_task's UPDATE task SET blocked_on=NULL + body append + event
+#       → test_unblock_clears_blocked_on_and_records_why_in_history
+# ---------------------------------------------------------------------------
+
+_CAUSE_REPRIORITISED = "reprioritised"
+_CAUSE_UNBLOCKED = "unblocked"
+
+
+class NotBlocked(WriteError):
+    """The task is not blocked, so there is nothing to unblock (#671).
+
+    An unblock that unblocked nothing must not read as success: a tool that
+    silently no-ops on an already-unblocked task cannot tell the operator it
+    did nothing, which is the exact failure #671 names."""
+
+
+def reprioritise_task(store, task_id, priority, *, why, actor="loop", at=None):
+    """Change a task's priority band, recording why in body + event chain (#627).
+
+    Validates ``priority`` against ``priority_band`` LIVE (the same #681 guard
+    ``file_task`` uses, so a band added to the table is accepted without a code
+    change). Appends ``  · reprioritised <old>→<new>: <why>`` to the body and a
+    chained ``reprioritised`` event (the task's state is unchanged, so
+    from_state == to_state == the current state — the cause carries the
+    transition type). One transaction (G4): a crash mid-change leaves no
+    partial state.
+
+    Raises ``TaskNotFound`` if the id does not exist; ``WriteError`` on an
+    empty ``why`` or a band outside ``priority_band``.
+    """
+    if not isinstance(why, str) or not why.strip():
+        raise WriteError(
+            "why must be a non-empty string (the reason for the change)")
+    if at is None:
+        at = _now_iso()
+
+    conn = store.conn
+    # #681 — validate the band BEFORE the INSERT, reading the allowed set LIVE
+    # from the store so the message cannot rot. Same guard as file_task.
+    bands = [r[0] for r in conn.execute(
+        "SELECT band FROM priority_band ORDER BY band")]
+    if priority not in bands:
+        raise WriteError(
+            "priority: got {!r}, expected one of {}".format(
+                priority, ", ".join(bands)))
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT priority FROM task WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            conn.execute("ROLLBACK")
+            raise TaskNotFound(f"cannot reprioritise #{task_id}: no such task")
+        old = row[0]
+        conn.execute(
+            "UPDATE task SET priority = ? WHERE id = ?",
+            (priority, task_id))
+        note = "reprioritised {}→{}: {}".format(old or "—", priority, why)
+        conn.execute(
+            "UPDATE task SET body = body || ? WHERE id = ?",
+            ("\n" + _NOTE_PREFIX + note, task_id))
+        state = conn.execute(
+            "SELECT state FROM task WHERE id = ?", (task_id,)).fetchone()[0]
+        _append_chained_event(
+            conn, task_id=task_id, at=at, cause=_CAUSE_REPRIORITISED,
+            from_state=state, to_state=state, actor=actor, detail=why)
+        conn.execute("COMMIT")
+    except TaskNotFound:
+        raise
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def unblock_task(store, task_id, *, why, actor="loop", at=None):
+    """Clear a task's ``blocked_on``, recording why in body + event chain (#627).
+
+    Refuses (#671) when the task is not blocked (``blocked_on`` is NULL or
+    empty): an unblock that unblocked nothing must not read as success. On
+    success, appends ``  · unblocked (was: <old>): <why>`` to the body and a
+    chained ``unblocked`` event. One transaction (G4).
+
+    Raises ``TaskNotFound`` if the id does not exist; ``NotBlocked`` when the
+    task was never blocked; ``WriteError`` on an empty ``why``.
+    """
+    if not isinstance(why, str) or not why.strip():
+        raise WriteError(
+            "why must be a non-empty string (the reason for the change)")
+    if at is None:
+        at = _now_iso()
+
+    conn = store.conn
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT blocked_on, state FROM task WHERE id = ?",
+            (task_id,)).fetchone()
+        if row is None:
+            conn.execute("ROLLBACK")
+            raise TaskNotFound(f"cannot unblock #{task_id}: no such task")
+        old_blocked, state = row
+        if not old_blocked or not old_blocked.strip():
+            conn.execute("ROLLBACK")
+            raise NotBlocked(
+                f"cannot unblock #{task_id}: it is not blocked "
+                "(blocked_on is empty) — an unblock that unblocked nothing "
+                "must not read as success (#671)")
+        conn.execute(
+            "UPDATE task SET blocked_on = NULL WHERE id = ?", (task_id,))
+        note = "unblocked (was: {}): {}".format(old_blocked, why)
+        conn.execute(
+            "UPDATE task SET body = body || ? WHERE id = ?",
+            ("\n" + _NOTE_PREFIX + note, task_id))
+        _append_chained_event(
+            conn, task_id=task_id, at=at, cause=_CAUSE_UNBLOCKED,
+            from_state=state, to_state=state, actor=actor, detail=why)
+        conn.execute("COMMIT")
+    except (TaskNotFound, NotBlocked):
+        raise
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+# ---------------------------------------------------------------------------
 # review decision — record an artifact's answer (NOT a task, no event chain)
 # ---------------------------------------------------------------------------
 

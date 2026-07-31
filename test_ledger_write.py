@@ -582,3 +582,214 @@ def test_file_accepts_a_valid_priority_and_origin(store):
     row = store.conn.execute(
         "SELECT priority, origin FROM task WHERE id = ?", (new_id,)).fetchone()
     assert row == ("P1", "human")
+
+
+# ---------------------------------------------------------------------------
+# #627 — reprioritise_task / unblock_task: the writers for priority and
+# blocked_on. A task's band was fixed at birth (--priority only on file); a
+# stale blocked_on had no clearer at all. These two close the gap through the
+# same supported path fold/note use.
+#
+# Named production lines whose change must red each test:
+#
+# - reprioritise_task's `if priority not in bands: raise WriteError`
+#       → test_reprioritise_rejects_a_bad_band_naming_the_live_bands
+# - reprioritise_task's UPDATE priority + body append + chained event
+#       → test_reprioritise_changes_band_and_records_why_in_history
+# - reprioritise_task raises TaskNotFound
+#       → test_reprioritise_raises_task_not_found
+# - unblock_task's `if not old_blocked: raise NotBlocked`  (#671)
+#       → test_unblock_refuses_a_task_that_was_never_blocked
+# - unblock_task's UPDATE blocked_on=NULL + body append + chained event
+#       → test_unblock_clears_blocked_on_and_records_why_in_history
+# - unblock_task raises TaskNotFound
+#       → test_unblock_raises_task_not_found
+# - both verbs refuse an empty why
+#       → test_reprioritise_refuses_an_empty_why / test_unblock_refuses_an_empty_why
+# ---------------------------------------------------------------------------
+
+def test_reprioritise_changes_band_and_records_why_in_history(store, migrate):
+    """PRODUCTION LINE: reprioritise_task's UPDATE priority + body append + event.
+
+    The band changes AND the --why lands in the task's OWN HISTORY (body +
+    event detail), not just the field. Derive distinct old/new bands at
+    runtime so the test is not tuned to today's seed. Break by dropping the
+    body append or the event — the why would vanish from history while the
+    field still changed, which is exactly the silent #627 failure the brief
+    warns against.
+    """
+    tid = ledger_write.file_task(store, "to reprioritise", "body",
+                                  priority="P2", at="2026-07-29T10:00:00Z")
+    before = store.conn.execute(
+        "SELECT priority FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    new_band = "P1"
+    assert new_band != before, "precondition: the band must actually change"
+
+    ledger_write.reprioritise_task(store, tid, new_band, why="focus shift",
+                                    at="2026-07-29T11:00:00Z")
+
+    after = store.conn.execute(
+        "SELECT priority FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    assert after == new_band, f"band must change {before}→{new_band}, got {after}"
+
+    # THE THING THAT MAKES THE VERB SAFE: the why lands in the body (human-
+    # readable history) and the event detail (machine-readable history).
+    body = store.conn.execute(
+        "SELECT body FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    assert "focus shift" in body, (
+        "the --why must land in the body — an unexplained priority change is "
+        "how a backlog stops being trustworthy (#627)")
+    assert "reprioritised" in body, "the body note must name the transition"
+
+    events = store.conn.execute(
+        "SELECT cause, detail FROM task_event WHERE task_id = ?", (tid,)).fetchall()
+    causes = [e[0] for e in events]
+    assert "reprioritised" in causes, (
+        f"a reprioritised event must be chained; got causes {causes}")
+    rep_event = [e for e in events if e[0] == "reprioritised"][0]
+    assert rep_event[1] == "focus shift", (
+        f"the event detail must carry the why; got {rep_event[1]!r}")
+
+    # The chain still verifies (the event was chained correctly).
+    assert migrate.verify_task_event_chain(str(store.path)) == [], (
+        "the reprioritised event must chain correctly")
+
+
+def test_reprioritise_rejects_a_bad_band_naming_the_live_bands(store):
+    """PRODUCTION LINE: reprioritise_task's `if priority not in bands` guard (#681).
+
+    A bad band names the column AND the live allowed set, not a bare sqlite
+    IntegrityError. Derive a value NOT in the set at runtime. Break by
+    deleting the guard — sqlite raises IntegrityError (FK) naming neither.
+    """
+    bands = [r[0] for r in store.conn.execute(
+        "SELECT band FROM priority_band ORDER BY band")]
+    bad = "P9"
+    assert bad not in bands, "precondition: 'P9' must not be a real band"
+
+    tid = ledger_write.file_task(store, "t", "b", priority="P2")
+    with pytest.raises(ledger_write.WriteError) as ei:
+        ledger_write.reprioritise_task(store, tid, bad, why="x")
+    msg = str(ei.value)
+    assert msg.startswith("priority: got 'P9', expected one of "), msg
+    for b in bands:
+        assert b in msg, f"live band {b!r} missing from message: {msg!r}"
+    # The band was NOT changed.
+    after = store.conn.execute(
+        "SELECT priority FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    assert after == "P2"
+
+
+def test_reprioritise_raises_task_not_found(store):
+    """PRODUCTION LINE: reprioritise_task's `row is None → TaskNotFound`."""
+    assert store.conn.execute(
+        "SELECT 1 FROM task WHERE id = 99999").fetchone() is None
+    with pytest.raises(ledger_write.TaskNotFound, match="no such task"):
+        ledger_write.reprioritise_task(store, 99999, "P1", why="x")
+    assert store.conn.execute(
+        "SELECT COUNT(*) FROM task_event WHERE task_id = 99999").fetchone()[0] == 0
+
+
+def test_reprioritise_refuses_an_empty_why(store):
+    """--why is mandatory and not decoration: an empty why is refused."""
+    tid = ledger_write.file_task(store, "t", "b", priority="P2")
+    with pytest.raises(ledger_write.WriteError, match="why must be a non-empty"):
+        ledger_write.reprioritise_task(store, tid, "P1", why="   ")
+    # Nothing changed.
+    assert store.conn.execute(
+        "SELECT priority FROM task WHERE id = ?", (tid,)).fetchone()[0] == "P2"
+
+
+def test_unblock_clears_blocked_on_and_records_why_in_history(store, migrate):
+    """PRODUCTION LINE: unblock_task's UPDATE blocked_on=NULL + body + event.
+
+    The blocked_on clears AND the --why lands in the task's own history. Derive
+    a non-empty blocked_on at runtime so the test is not vacuous. Break by
+    dropping the body append or event — the why vanishes while the field cleared.
+    """
+    tid = ledger_write.file_task(store, "blocked task", "body",
+                                  blocked_on="blocked on #999",
+                                  at="2026-07-29T10:00:00Z")
+    before = store.conn.execute(
+        "SELECT blocked_on FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    assert before and before.strip(), "precondition: task must be blocked"
+
+    ledger_write.unblock_task(store, tid, why="#999 landed",
+                               at="2026-07-29T11:00:00Z")
+
+    after = store.conn.execute(
+        "SELECT blocked_on FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    assert after is None, f"blocked_on must be NULL, got {after!r}"
+
+    body = store.conn.execute(
+        "SELECT body FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    assert "#999 landed" in body, (
+        "the --why must land in the body — the reason an unblock happened is "
+        "the thing that keeps a backlog trustworthy (#627)")
+    assert "unblocked" in body, "the body note must name the transition"
+    assert before in body, "the old blocked_on must survive in the note (audit)"
+
+    events = store.conn.execute(
+        "SELECT cause, detail FROM task_event WHERE task_id = ?", (tid,)).fetchall()
+    causes = [e[0] for e in events]
+    assert "unblocked" in causes, (
+        f"an unblocked event must be chained; got causes {causes}")
+    unb_event = [e for e in events if e[0] == "unblocked"][0]
+    assert unb_event[1] == "#999 landed", (
+        f"the event detail must carry the why; got {unb_event[1]!r}")
+
+    assert migrate.verify_task_event_chain(str(store.path)) == [], (
+        "the unblocked event must chain correctly")
+
+
+def test_unblock_refuses_a_task_that_was_never_blocked(store):
+    """PRODUCTION LINE: unblock_task's `if not old_blocked: raise NotBlocked` (#671).
+
+    An unblock that unblocked nothing must not read as success. Derive the
+    precondition (blocked_on is empty) at runtime. Break by treating empty as
+    success — the verb would silently no-op and the operator cannot tell it
+    did nothing.
+    """
+    tid = ledger_write.file_task(store, "never blocked", "body")
+    before = store.conn.execute(
+        "SELECT blocked_on FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    assert not before or not before.strip(), (
+        "precondition: task must not be blocked")
+
+    with pytest.raises(ledger_write.NotBlocked, match="not blocked"):
+        ledger_write.unblock_task(store, tid, why="x")
+    # No event for a refused unblock.
+    assert store.conn.execute(
+        "SELECT COUNT(*) FROM task_event WHERE task_id = ?", (tid,)).fetchone()[0] == 1
+
+
+def test_unblock_raises_task_not_found(store):
+    """PRODUCTION LINE: unblock_task's `row is None → TaskNotFound`."""
+    with pytest.raises(ledger_write.TaskNotFound, match="no such task"):
+        ledger_write.unblock_task(store, 99999, why="x")
+
+
+def test_unblock_refuses_an_empty_why(store):
+    """--why is mandatory: an empty why is refused before any write."""
+    tid = ledger_write.file_task(store, "t", "b", blocked_on="blocked on #1")
+    with pytest.raises(ledger_write.WriteError, match="why must be a non-empty"):
+        ledger_write.unblock_task(store, tid, why="")
+    # Still blocked — nothing changed.
+    assert store.conn.execute(
+        "SELECT blocked_on FROM task WHERE id = ?", (tid,)).fetchone()[0] == "blocked on #1"
+
+
+def test_reprioritise_works_on_a_landed_task(store):
+    """Direction-2 case: reprioritising a LANDED task. The brief lists it as a
+    candidate for 'the write succeeds and the ledger is now wrong.' A landed
+    task's priority is moot (it is done), but changing it is not DATA CORRUPTION
+    — it is a no-op-in-spirit that harms nothing. This test documents that the
+    verb ALLOWS it (does not over-refuse), which is the chosen behavior. If the
+    coordinator wants landed-task reprioritise refused, that is a separate call.
+    """
+    tid = ledger_write.file_task(store, "landed", "body", priority="P2")
+    ledger_write.land_task(store, tid, at="2026-07-29T11:00:00Z")
+    ledger_write.reprioritise_task(store, tid, "P1", why="retroactive")
+    after = store.conn.execute(
+        "SELECT priority FROM task WHERE id = ?", (tid,)).fetchone()[0]
+    assert after == "P1"
