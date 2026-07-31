@@ -26,8 +26,12 @@ lint:
 # validates the exact prompt string, then appends it as one argv item; direct
 # shell command substitution can silently deliver a literal `$(cat ...)`.
 # Usage: just dispatch-lane prompt.txt @cx-coder -y
+# The '@' suppresses just's recipe echo so a healthy dispatch is silent on the
+# ROUTE, not only in the wrapper — the audit record is the persisted brief
+# (#766), not the command line, which fires before validation and cannot
+# distinguish a launch from a refused attempt (#769).
 dispatch-lane prompt agent *CCC_ARGS:
-    python3 dev/dispatch_lane.py --prompt "{{prompt}}" -- ccc {{CCC_ARGS}} "{{agent}}"
+    @python3 dev/dispatch_lane.py --prompt "{{prompt}}" -- ccc {{CCC_ARGS}} "{{agent}}"
 
 # #653 (P1 of #630) — rebuild client/dist from client/*.js.
 #
