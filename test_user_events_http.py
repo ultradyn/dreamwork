@@ -676,6 +676,34 @@ class E5Reject(HttpHarness):
             row = j.get_receipt(rid)
         self.assertNotEqual(row["state"], "rejected", row["state"])
 
+    def test_chat_archive_refuses_bogus_id_and_leaves_no_marker(self):
+        # #709 + #586 — the refusal path a status-only assertion cannot see.
+        # /chat-archive refuses an id that does not exist (its _chat_exists
+        # guard runs before the write), and a refusal still commits a receipt
+        # and answers 202 — so a test that only asserted the 202 would pass
+        # against a route that wrote a phantom marker for the bogus id. The
+        # behavioural post-condition is the ABSENCE of the marker, not the
+        # status: assert the receipt IS rejected AND no marker file was left.
+        # This closes the direction-2 false-green (run_all_routes only seeds
+        # a real chat, so it cannot exercise this path).
+        self.assertIn("domain_invalid", REJECTION_REASONS, REJECTION_REASONS)
+        bogus = "no-such-chat-709"
+        self.assertFalse(watch._chat_exists(self.target, bogus))
+        status, _, body = self.post("/chat-archive", {"id": bogus,
+                                                      "archive": True})
+        self.assertEqual(status, 202, status)
+        rid = json.loads(body)["receipt"]["receipt_id"]
+        with open_journal(self._journal_path()) as j:
+            row = j.get_receipt(rid)
+        self.assertEqual(row["state"], "rejected", row["state"])
+        self.assertEqual(self._latest_reason_code(rid), "domain_invalid")
+        # the behavioural post-condition: no phantom marker for the bogus id
+        self.assertFalse(watch.is_chat_archived(self.target, bogus),
+            "a refused archive must leave no marker")
+        self.assertFalse(os.path.exists(os.path.join(
+            self.target, ".dreamwork", watch.CHAT_DIR, bogus,
+            watch.CHAT_ARCHIVED_NAME)))
+
     # --- helpers ---
 
     def raw_post_json(self, path, body_bytes):
