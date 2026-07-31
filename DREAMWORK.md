@@ -510,6 +510,43 @@ dreamwork-version: 5853e1789929
     (vision → grok; long reasoning/prose → glm), and each lane's report should note
     which model ran it so the experiment accumulates honestly. The `ccc`-runner bullets
     above are the previous harness's form of the same two-model policy.
+    · **CURRENT, set 2026-07-31 ~20:07 — `ccc -y @glm52` is the default and native
+    Opus is the exception.** His words: *"you should strongly prefer `ccc -y @glm52`
+    subagents over native ones for anything pretty standard. Opus5 subagents are better
+    at design and complex tasks, but are more expensive to run. glm52 are fast and cheap
+    and highly capable."* **The cut is task shape, and he named both sides**: anything
+    *pretty standard* → `ccc -y @glm52`; *design and complex* → native Opus 5. He gives
+    the reason too, so it is a cost/quality trade rather than a ban — Opus is not
+    forbidden, it is expensive, and spending it on standard work spends it where it buys
+    nothing.
+    · **THE DRIFT IS THE PART WORTH RECORDING, because this is at least the third
+    occurrence and the second one was already recorded above.** In the hour before he
+    said this the coordinator dispatched **five native Opus lanes and one glm52**, and on
+    honest re-reading **three of the five were plainly standard work** — `#665` (record
+    an env var in `status.json` plus a checklist item), `#673` (make one tick line carry
+    two values), `#671` (give one verb the store dispatch every other verb already has).
+    Only `#630` (the component-registry architecture) and arguably `#664` (a new module
+    with two unresolved design tensions) sit on the *design and complex* side. The
+    2026-07-28 02:33 entry above diagnosed this exactly — *"a routing rule that lives
+    only in prose is re-checked exactly as often as someone happens to re-read the
+    prose"* — and it happened again with that very sentence sitting in this file.
+    **So this bullet is not the fix; `#673` is.** He asked at 19:46 for the tick line to
+    carry *"posture + subagent policy"*, and the subagent-policy half is precisely the
+    rule that keeps being forgotten. The lanes already running were left to finish —
+    rework costs more than the tokens saved — and the rule binds from the next dispatch.
+    · **The review half survives and gets cheaper, not weaker.** glm52 work still takes a
+    mandatory Opus review before merge; that pass has caught real defects on both trials
+    (`#596`, `#655` — three defects the second time, in classes the brief did not name).
+    glm52-implements-plus-Opus-reviews is cheaper than Opus-implements *and* catches more,
+    because a reviewer that did not write the code constructs false-greens the author
+    cannot see.
+    · **The cost this shifts onto briefs, stated because it is now paid on most lanes:**
+    a `ccc` lane is a CLI process and **cannot be reached mid-flight** — `SendMessage`
+    addresses native subagents only. When the rebase rule landed while `#674` was running,
+    all five native lanes got it in one round and the glm52 lane could not. So a glm52
+    `BRIEF.md` has to be right *at launch* in a way a native brief does not, and anything
+    learned mid-flight waits for the review lane, which can be told. `#672`'s brief-quality
+    clauses are load-bearing under this policy rather than merely good practice.
 - Subagent lifecycle (2026-07-25): **prefer fresh subagents; reuse an
   existing one only if it stopped less than ~4 minutes ago.** Retire
   idle dreamers rather than leaving them parked.
