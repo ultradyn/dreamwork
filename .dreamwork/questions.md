@@ -290,7 +290,9 @@
     You are right and the plan overreached.** "Never a spinner" is written in exactly two places
     and **both are scoped; neither is a house rule**, so nothing stops an interesting loading
     animation.
-    1. `client/style.css:884` and `transitions.md:596` — inside the **awaiting-fold wisp**, which
+    1. **the awaiting-fold wisp comment** in `client/style.css` (`:884` when this was written,
+       `:887` since `#662`'s own fix inserted three lines above it — the citation rotted within the
+       hour, which is why this now names the anchor) and `transitions.md:596` — inside the wisp, which
        both files call *"the ONE deliberate exception to the opt-in motion rule (#113)"*. The
        sentence is *"intensity fading in and OUT rather than sweeping on a loop. Never a spinner."*
        It is defining **that one element's** character by contrast — a breath, not a sweep — for the
@@ -301,9 +303,14 @@
        user in an indeterminate state; `watch-design.md:3605` calls it *"a copy decision as much as
        a timing one."*
     So `session-log-view.md:325` promoted a scoped contrast into a standing "house motion language"
-    — **and cited it at `client/style.css:824`, which is the wrong line** (it is 884). Filed as its
-    own defect so the plan and the mockup's recommendation both get corrected rather than quietly
-    reinterpreted.
+    — **and cited a line the sentence was not on**. Filed as its own defect so the plan and the
+    mockup's recommendation both get corrected rather than quietly reinterpreted.
+    **DONE (2026-07-31 19:26, `#662`/`#663` merged):** the scoping is now stated *at all three source
+    sites*, not only in the plan, so it travels with the lines a future reader will actually find; the
+    plan's wrong citation and its "house motion language" promotion are gone, as are the mockup's two
+    repeats. And the lane's own fix moved the wisp sentence down three lines — **a cited line number
+    rotted inside the hour it was written**, which is the argument for naming anchors over lines in
+    these entries and is why the citation above now does.
     **Consequence: the indicator call is reopened as lane work, not an ask.** Your steer — *interesting
     and thematic, braille-stepping is better than most but still boring* — plus the forum reference is
     enough of a brief. Having read `.cg-ledger__peek`: the transferable idea is not the `+`/`−` shape
