@@ -6922,3 +6922,198 @@ class TestWorktreeLedgerAbsent:
             "precondition: no store, so the resolver actually gets past its first guard"
         assert lint.shared_store_for_worktree(dw) is None, \
             "a separate-git-dir MAIN checkout must not be excused as a worktree"
+
+
+# ---------------------------------------------------------------------------
+# #611: a ledger check that examined NOTHING must say so.
+#
+# #592 made the `tasks.md` row WARN honestly inside a lane worktree; its
+# neighbours went on printing nothing at all, and silent absence reads as a
+# pass. Measured on the live repo before writing a line of this: `lint
+# --target <worktree>` silently lost `origin recorded on all 390 entries`
+# (check_task_origins), `section split agrees with watch.py`
+# (check_ledger_sections) and all 7 of #323's stale-open WARNs
+# (check_landed_still_open), plus three checks that examine entries but only
+# ever speak on a defect (check_self_completed_open, check_human_blocker,
+# check_landed_asks).
+#
+# Production line for this class: the `note_ledger_skip(...)` calls at each
+# check's existing silent-return, and `lint.check_ledger_skips` rendering
+# them. Delete any one call and the "names every skipped check" test goes
+# red; make `check_ledger_skips` emit unconditionally and the "must NOT
+# appear when the checks ran" test goes red — that second direction is what
+# stops this becoming a row that is always present and therefore ignored.
+#
+# Fixtures are REAL git worktrees of REAL post-cutover repos with a REAL
+# absent store, reusing the #592 class's builders rather than a second copy
+# (lessons.md:336 — a fixture that quietly kept a ledger would make every
+# assertion here pass for the wrong reason).
+# ---------------------------------------------------------------------------
+class TestLedgerSkipsAreReported:
+    # The #592 class's builders, reused rather than duplicated. A pytest test
+    # class has no __init__, so instantiating it is just a namespace grab —
+    # and a second copy of "build a real post-cutover repo + worktree" is the
+    # thing most likely to drift into a fixture that keeps a ledger.
+    _fx = TestWorktreeLedgerAbsent()
+
+    def _repo_with_a_landing(self, tmp_path):
+        """A post-cutover main checkout whose git history names a close.
+
+        `check_landed_still_open` returns before it ever looks at the ledger
+        when git names NO close/merge commit, so without this commit that
+        check could not reach its skip site and the test would silently
+        assert over five checks while claiming six. `check_landed_asks`
+        needs a `questions.md` for the same reason — found by this test
+        going red at five, which is what a discriminating fixture is for.
+        """
+        root, dw = self._fx._main_checkout(tmp_path)
+        (dw / "questions.md").write_text(GOOD)
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "--allow-empty",
+                        "-m", "close(#10): the landing this fixture needs"],
+                       capture_output=True, text=True, check=True)
+        subprocess.run(["git", "-C", str(root), "add", ".dreamwork/questions.md"],
+                       capture_output=True, text=True, check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-qm", "questions"],
+                       capture_output=True, text=True, check=True)
+        return root, dw
+
+    def _skips(self, root):
+        rep = lint.Report()
+        lint.run_checks(root / ".dreamwork", lint.load_watch(), rep)
+        return rep, list(rep.ledger_skips)
+
+    def _skip_rows(self, rep):
+        return [d for lvl, w, d in rep.rows if w == "ledger checks"]
+
+    EXPECTED = ["check_task_origins", "check_ledger_sections",
+                "check_landed_still_open", "check_self_completed_open",
+                "check_human_blocker", "check_landed_asks"]
+
+    def test_a_worktree_names_every_ledger_check_that_examined_nothing(self, tmp_path):
+        """The defect: six checks went silent and the report said nothing."""
+        root, _ = self._repo_with_a_landing(tmp_path)
+        wt, wtdw = self._fx._worktree(root, "lane-skips")
+        self._fx._preconditions(wtdw)
+        rep, skips = self._skips(wt)
+        assert sorted(skips) == sorted(self.EXPECTED), \
+            f"every check that examined nothing must be named: {skips}"
+        rows = self._skip_rows(rep)
+        assert len(rows) == 1, f"one row, not one per skipped check: {rows}"
+        for name in self.EXPECTED:
+            assert name in rows[0], f"{name} unnamed in the row: {rows[0]}"
+        assert not rep.failed, "a skip is missing coverage, not a target defect"
+
+    def test_the_row_is_a_warn_never_an_error(self, tmp_path):
+        root, _ = self._repo_with_a_landing(tmp_path)
+        wt, wtdw = self._fx._worktree(root, "lane-skiplevel")
+        self._fx._preconditions(wtdw)
+        rep, _ = self._skips(wt)
+        assert [lvl for lvl, w, _ in rep.rows if w == "ledger checks"] == [lint.WARN]
+
+    def test_every_named_check_is_a_real_function(self, tmp_path):
+        """The names are strings, so they can drift from the code that skipped.
+
+        A row naming a check that no longer exists is worse than no row: the
+        reader goes looking for coverage that was renamed away.
+        """
+        root, _ = self._repo_with_a_landing(tmp_path)
+        wt, wtdw = self._fx._worktree(root, "lane-skipnames")
+        self._fx._preconditions(wtdw)
+        _, skips = self._skips(wt)
+        assert skips, "precondition: something must have skipped"
+        for name in skips:
+            assert callable(getattr(lint, name, None)), \
+                f"{name} is named as skipped but is not a lint check"
+
+    def test_the_row_is_absent_when_the_ledger_checks_really_ran(self, tmp_path):
+        """The direction that stops this becoming an always-on, ignored row.
+
+        Same repo, same commit, same checks — linted in the MAIN checkout,
+        where the store is present and every check has entries to examine.
+        """
+        import ledger_parse
+        root, dw = self._repo_with_a_landing(tmp_path)
+        assert ledger_parse.store_path(dw).exists(), \
+            "precondition: the main checkout really does carry the store"
+        assert ledger_parse.source_of_truth(dw) == "store", \
+            "precondition: the ledger checks really do get real entries"
+        rep, skips = self._skips(root)
+        assert skips == [], f"nothing skipped here, so nothing may be named: {skips}"
+        assert self._skip_rows(rep) == [], \
+            "a row that is always present is a row nobody reads"
+
+    def test_the_live_repo_reports_no_skips(self, frozen_tree):
+        """The dogfood: this repo's own main checkout must show no skip row.
+
+        `frozen_tree` IS a linked worktree, so its store is absent by design —
+        materialize one the way the #592 dogfood does, then the ledger checks
+        have real entries and the row must not appear.
+        """
+        dw = frozen_tree / ".dreamwork"
+        led = Path(__file__).resolve().parent / ".dreamwork" / "tasks.md.deprecated"
+        _materialize_store(dw, led.read_text(), frozen_tree)
+        assert lint.source_of_truth(dw) == "store", \
+            "precondition: store mode, or this passes on the #592 excuse"
+        rep = lint.Report()
+        lint.run_checks(dw, lint.load_watch(), rep)
+        assert rep.ledger_skips == [], \
+            f"the live ledger gives every check something to examine: {rep.ledger_skips}"
+
+    def test_a_pre_cutoff_only_ledger_is_not_reported_as_skipped(self):
+        """`check_task_origins` EXAMINED those entries; none were in scope.
+
+        Every fresh project starts at #1, so counting "no post-cutoff entries"
+        as a skip would put this row on every young project forever — the
+        ignored-row failure the check exists to prevent.
+        """
+        text = ("## Open\n\n- **#3** — an old entry · P1 · task\n\n"
+                "## Recently landed\n\n- **#4** — another old one · P2 · task\n")
+        rep = lint.Report()
+        lint.check_task_origins(text, rep)
+        assert rep.ledger_skips == [], \
+            "entries were examined; none were in scope — that is a run, not a skip"
+
+    def test_an_empty_ledger_is_reported_as_skipped(self):
+        """The other half of the same discrimination: nothing examined."""
+        rep = lint.Report()
+        lint.check_task_origins("## Open\n\n## Recently landed\n", rep)
+        assert rep.ledger_skips == ["check_task_origins"]
+
+    def test_nothing_landed_yet_is_not_reported_as_skipped(self, tmp_path):
+        """`check_landed_asks` over a ledger with opens but no landings ran."""
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(
+            "# Tasks\n\nNext id: **6**\n\n## Open\n\n- **#5** — open work\n\n"
+            "## Recently landed\n")
+        (dw / "questions.md").write_text(GOOD)
+        watch = lint.load_watch()
+        open_ids, landed = watch.parse_ledger((dw / "tasks.md").read_text())
+        assert open_ids and not landed, \
+            "precondition: opens exist, nothing has landed"
+        rep = lint.Report()
+        lint.check_landed_asks(dw, watch, rep)
+        assert rep.ledger_skips == [], \
+            "a real correlation over a ledger with no landings is not a skip"
+
+    def test_the_renderer_is_silent_with_nothing_recorded(self):
+        rep = lint.Report()
+        lint.check_ledger_skips(rep)
+        assert rep.rows == []
+
+    def test_a_skip_recorded_twice_is_named_once(self):
+        """`check_human_blocker` has two skip sites; a repeat is one skip."""
+        rep = lint.Report()
+        lint.note_ledger_skip(rep, "check_human_blocker")
+        lint.note_ledger_skip(rep, "check_human_blocker")
+        assert rep.ledger_skips == ["check_human_blocker"]
+
+    def test_the_renderer_runs_last_in_run_checks(self):
+        """It can only speak once every skipping check has had its turn."""
+        import inspect
+        body = [ln.strip() for ln in
+                inspect.getsource(lint.run_checks).splitlines()
+                if ln.strip().startswith("check_")]
+        assert body[-1] == "check_ledger_skips(rep)", \
+            f"check_ledger_skips must be the last check called: {body[-3:]}"

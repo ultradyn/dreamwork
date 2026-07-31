@@ -176,6 +176,13 @@ def load_watch():
 class Report:
     def __init__(self) -> None:
         self.rows: list[tuple[str, str, str]] = []
+        # #611: names of ledger checks that were CALLED and examined nothing,
+        # because the ledger text they were handed held no entries. Kept apart
+        # from `rows` so `check_ledger_skips` can render them as ONE row at the
+        # end of the run — six near-identical rows saying "the ledger did not
+        # travel" is the volume failure #612 is about, and one row that names
+        # all six carries the same information.
+        self.ledger_skips: list[str] = []
 
     def add(self, level: str, what: str, detail: str) -> None:
         self.rows.append((level, what, detail))
@@ -1125,6 +1132,61 @@ def shared_store_for_worktree(dw: Path) -> Path | None:
     return store_path(gitdir.parent.parent.parent / ".dreamwork")
 
 
+def note_ledger_skip(rep: Report, check: str) -> None:
+    """Record that ``check`` was called and examined NO ledger entries.
+
+    #611, and the same house rule #592's WARN was written to obey: *a check
+    that did not run must say so, because silent absence reads as a pass.*
+    After #592 the `tasks.md` row honestly WARNs in a lane worktree, but its
+    neighbours went on printing nothing at all — measured on the live repo,
+    `lint --target <worktree>` lost `origin recorded on all 390 entries`,
+    `section split agrees with watch.py`, and all 7 of #323's stale-open WARNs
+    without a word about any of them. A reader scanning that report sees no
+    complaint from those checks and concludes they had none.
+
+    The skip is RECORDED rather than reported here so `check_ledger_skips`
+    can render one row naming every skipped check. Six rows each saying "the
+    ledger did not travel" is the volume failure #612 closes, and it buys
+    nothing: the cause is one cause. Each call site sits at the check's own
+    existing silent-return, so the list is derived from the code that actually
+    skipped and cannot drift from it the way a hand-written list of "checks
+    that skip in a worktree" would (`lessons.md:405` in reverse — the fix is
+    the row, not a second description of it).
+
+    The predicate is uniform and deliberately narrow: **the ledger text held
+    no entries at all.** A check that examined every entry and found none in
+    scope (all ids predate #216 for `check_task_origins`; nothing landed yet
+    for `check_landed_asks`) really did run, and must not be reported as
+    skipped — otherwise a fresh project, whose ledger legitimately starts at
+    #1, would carry this row forever and it would become the ignored row this
+    exists to prevent.
+    """
+    if check not in rep.ledger_skips:
+        rep.ledger_skips.append(check)
+
+
+def check_ledger_skips(rep: Report) -> None:
+    """#611: ONE row naming every ledger check that examined nothing.
+
+    Runs last, because the skipping checks are spread across `run_checks` and
+    each can only speak for itself. Silent when nothing skipped — a row that
+    is always present is a row nobody reads, which is the failure this is
+    supposed to prevent rather than cause. WARN, never ERROR: not having run
+    is not a defect in the target, it is missing coverage in the report, and
+    #592's precedent is that the honest answer to "did not run" is a warning
+    that says so.
+    """
+    if not rep.ledger_skips:
+        return
+    names = ", ".join(rep.ledger_skips)
+    rep.add(WARN, "ledger checks", (
+        f"{len(rep.ledger_skips)} check(s) examined NOTHING and must not be "
+        f"read as passing: {names} — the ledger text they were handed holds "
+        f"no entries (in a lane worktree the gitignored store cannot travel; "
+        f"see the `tasks.md` row). Lint the main checkout for their "
+        f"findings (#611)"))
+
+
 def check_tasks(dw: Path, rep: Report) -> None:
     """The ledger. Its ids are permanent, so a collision is unrecoverable."""
     text, source = ledger_view(dw)
@@ -1281,6 +1343,11 @@ def check_landed_still_open(dw: Path, text: str, rep: Report) -> None:
     # to widen it.
     open_text = open_section_text(text)
     if open_text is None:
+        # #611. git named close/merge commits (we got past `not closed`), so
+        # there was real work to compare against and no ledger to compare it
+        # to. On the live repo this is where all 7 stale-open WARNs vanish
+        # inside a worktree.
+        note_ledger_skip(rep, "check_landed_still_open")
         return
 
     stale: list[str] = []
@@ -1351,6 +1418,7 @@ def check_self_completed_open(dw: Path, text: str, rep: Report) -> None:
                 end = n
                 break
     if start is None:
+        note_ledger_skip(rep, "check_self_completed_open")  # #611
         return
     open_text = "\n".join(lines[start:end])
 
@@ -1417,12 +1485,21 @@ def check_landed_asks(dw: Path, watch, rep: Report) -> None:
         return
     text, _source = ledger_view(dw)
     if text is None:
+        note_ledger_skip(rep, "check_landed_asks")  # #611
         return
     try:
-        _open_ids, landed = watch.parse_ledger(text)
+        open_ids, landed = watch.parse_ledger(text)
         asks = watch.parse_open_questions(qpath.read_text())
     except Exception:
         return  # the shape checks above own reporting an unreadable file
+    if not open_ids and not landed:
+        # #611: no ids in EITHER section — the ledger held nothing, so no ask
+        # was correlated against anything. Distinct from the `not landed`
+        # return below, which is a real correlation over a ledger whose work
+        # has simply not landed yet (every fresh project); reporting that as
+        # a skip would make this row permanent and therefore ignored.
+        note_ledger_skip(rep, "check_landed_asks")
+        return
     if not landed:
         return
 
@@ -1553,7 +1630,11 @@ def check_ledger_sections(dw: Path, text: str, source: str, rep: Report) -> None
             if m:
                 mine += len(ENTRY_ID.findall(m.group(1)))
     if section is None:
-        return  # a ledger with no headings at all is another check's problem
+        # A ledger with no headings at all is another check's problem — but
+        # the CROSS-CHECK still did not happen, and #611 is that saying
+        # nothing about that reads as the two readers having agreed.
+        note_ledger_skip(rep, "check_ledger_sections")
+        return
 
     try:
         import watch
@@ -1591,8 +1672,9 @@ def check_task_origins(text: str, rep: Report) -> None:
     origin of every post-cutoff task filed before this contract existed.
     """
     vocab = "origin: **human**, origin: **loop** or origin: **unknown**"
-    checked = errors = 0
+    checked = errors = seen = 0
     for ids, body in ledger_entries(text):
+        seen += 1
         if not ids or max(ids) < ORIGIN_CUTOFF:
             continue
         checked += 1
@@ -1622,6 +1704,11 @@ def check_task_origins(text: str, rep: Report) -> None:
                 f"{name} origin is **{marks[0]}** — the vocabulary is "
                 f"human/loop/unknown, lowercase: exactly one of {vocab}",
             )
+    if not seen:
+        # #611: no entries AT ALL — this check looked at nothing, which is
+        # not the same as finding nothing wrong. `seen` rather than `checked`:
+        # a ledger whose ids all predate the cutoff WAS examined in full.
+        note_ledger_skip(rep, "check_task_origins")
     if checked and not errors:
         rep.add(OK, "tasks.md", f"origin recorded on all {checked} entries from #{ORIGIN_CUTOFF} onward")
 
@@ -1703,12 +1790,14 @@ def check_human_blocker(dw: Path, watch, rep: Report) -> None:
     """
     text, _source = ledger_view(dw)
     if text is None:
+        note_ledger_skip(rep, "check_human_blocker")  # #611
         return
     # Slice the Open section once, the shared ledger_parse idiom (#352) that
     # check_landed_still_open also uses, so only OPEN entries are governed —
     # a landed entry is not "blocked on him".
     open_text = open_section_text(text)
     if open_text is None:
+        note_ledger_skip(rep, "check_human_blocker")  # #611
         return
 
     open_ids, answered_ids = _question_id_sets(watch, dw / "questions.md")
@@ -4808,6 +4897,11 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     # the tool's own, so this only says anything when linting this repo.
     check_guards_registered(dw.parent, rep)
     check_guards_execution_accounting(dw.parent, rep)
+    # LAST, and it must stay last: the ledger checks that can skip are spread
+    # through the list above and each records its own skip as it returns, so
+    # the single #611 row can only be rendered once they have all had their
+    # turn.
+    check_ledger_skips(rep)
 
 
 def _guard_execution_main(argv: list[str]) -> int:
