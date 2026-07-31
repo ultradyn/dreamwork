@@ -597,6 +597,14 @@ graceful, it is a change to be prevented. Contract, measurements and the
   ambient in the way the shader is. One envelope duration and easing for both
   halves, so they read as one organism rather than two effects.
 
+  **Scope of "not a spinner" (#662):** that phrase describes *this element* —
+  a wait with no progress to count, where a sweep would fake information a
+  breath does not claim. It is not a house rule against loading animation;
+  a surface with genuine progress to show may move (his call, 2026-07-31).
+  The session-log plan once promoted it into a standing "never a spinner"
+  motion language, mis-cited, and used it to reject an indicator he wanted —
+  this note exists so the next reader cannot repeat that.
+
   **The cost is bounded by construction, not by a measurement that can
   drift**: the keyframes touch only `opacity` and `background-position`, and
   the animated boxes are a 2px rail and one short inline-block label (the

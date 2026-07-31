@@ -1,31 +1,31 @@
 <!--dreamwork-review-source
 title: "#613 · the live session-log view · mockups before anything locks"
 identity: session-log view
-context: task #613 · mockup review
+context: task #613 · mockup review · rev 2 (#662, #663)
 status: awaiting review
-headline: A thin tree that breathes at its frontier. Three visual calls want your eye before the component design locks.
-tag: mockups only — nothing is built, and the design doc authorises no code
-sub: task #613 · 31 July 2026 · tree content is your own ASCII mock, re-drawn; grammar measured against the real 82 MB session file
+headline: Guides and marker are settled — yours, dated. What's new: a live indicator that ratchets like your forum icon, and tool rows gone native.
+tag: mockups only — nothing is built; #631 still waits on Q1–Q3
+sub: task #613 · rev 2 · 31 July 2026 · your 18:53 answers folded; tool mix and record shapes measured against the real 82 MB session
 skip: Skip to the ask
 skip_href: "#ask"
 -->
 <!--#nav-->
-<a class="full" href="#rest">at rest</a><a href="#stream">mid-stream</a><a href="#alts">alternatives</a><a href="#ask">the ask</a>
+<a class="full" href="#rest">at rest</a><a href="#stream">mid-stream</a><a href="#tally">the tally</a><a href="#rows">tool rows</a><a href="#ask">the ask</a>
 <!--#lead-->
-<p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> the rec set (A + G1 + M1) is what the implementation plan will assume — and nothing is built either way until #613's implementation is planned and approved.</p>
+<p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> the rec set (T1 + R1) is what the implementation plan will assume — G1 and M1 are already yours, dated, and nothing is built either way until #631's calls (Q1–Q3) are answered.</p>
 <div id="ask" class="ask-block">
-  <div class="label">Ask — three visual calls, each shown live below</div>
-  <p class="ask-q"><strong>Ind</strong> — the live indicator: <strong>A</strong> a static <code>⠏</code> that <em>breathes</em> (the wisp's envelope — your glyph, the house motion) or <strong>B</strong> a stepping braille cycle (authentic TUI, but a loop that sweeps — the exact shape the wisp rule refused). <span class="reck">rec A</span></p>
-  <p class="ask-q"><strong>Guides</strong> — <strong>G1</strong> faint indent-guide lines on open ancestors (my completion of your cut-off &ldquo;maybe we add faint&rdquo; — an <em>inferred</em> detail) or <strong>G2</strong> indent only, no guides. <span class="reck">rec G1</span></p>
-  <p class="ask-q"><strong>Marker</strong> — <strong>M1</strong> quiet chevrons <code>▸/▾</code> (the page's details idiom) or <strong>M2</strong> bracket markers <code>[+]/[-]</code> as drawn in your mock (more explicitly TUI; 3ch of chrome per row, brighter than the labels beside it). <span class="reck">rec M1</span></p>
+  <div class="label">Ask — two calls, both shown live below</div>
+  <p class="ask-q"><strong>Settled 2026-07-31 18:53, off your plate:</strong> <code>guides: G1</code> · <code>marker: M1</code> · tool-row redesign authorised. Every frame below bakes G1 + M1 in rather than re-asking.</p>
+  <p class="ask-q"><strong>Ind</strong> — the live indicator, reopened by #662 (the &ldquo;never a spinner&rdquo; rule was scoped to the wisp, and mis-cited — it never applied here): <strong>T1</strong> <em>the tally</em>, a step odometer on an always-clockwise ratchet — each record landing in the live turn advances one dot round the cell, a full cell empties the same way round, the wheel never turns back; between records it breathes. <strong>T2</strong> a clockwise 5-dot snake on wall-clock. <strong>B</strong> the stock stepping cycle. <span class="reck">rec T1</span></p>
+  <p class="ask-q"><strong>Rows</strong> — tool steps: <strong>R1</strong> native leaves — one thin row per call (<code>$ command</code>, <code>edit file (+a −d)</code>, <code>read file · n lines</code>), expanding to <em>one</em> body with args (only when non-empty) above the result. <strong>R0</strong> the old generic <code>[args, response]</code> child pair. <span class="reck">rec R1</span></p>
   <p class="ask-answers"><span class="key">accepted answers</span>
-  <code>rec</code> &nbsp;&middot;&nbsp; per-call (<code>Ind: B</code> &middot; <code>Guides: G2</code> &middot; <code>Marker: M2</code>) &nbsp;&middot;&nbsp; free text &nbsp;&middot;&nbsp; <em>&ldquo;none of these&rdquo;</em> is a real answer</p>
+  <code>rec</code> &nbsp;&middot;&nbsp; per-call (<code>Ind: T2</code> &middot; <code>Rows: R0</code>) &nbsp;&middot;&nbsp; free text &nbsp;&middot;&nbsp; <em>&ldquo;none of these&rdquo;</em> is a real answer</p>
 </div>
 <!--#call-->
-<div class="call"><strong>Recommendation.</strong> <strong>A + G1 + M1.</strong> The glyph is the TUI half of &ldquo;TUI inspired but pretty&rdquo;; the breath is the pretty half, and it keeps the standing &ldquo;never a spinner&rdquo; motion language intact. Faint guides earn their pixels the moment two levels are open at once — without them the eye re-counts indents on every glance. Chevrons stay quieter than the labels they precede, which is what lets the labels carry the luminance ramp; your <code>[+]</code> notation reads as structure-sketch rather than a visual spec, but M2 is shown in full in case you meant it literally.</div>
+<div class="call"><strong>Recommendation.</strong> <strong>T1 + R1.</strong> The tally steals what your forum peek icon actually has — monotonic accumulation, not the <code>+</code>/<code>−</code> shape: its angle remembers every toggle, and the tally's cell remembers the turn's records the same way, because the transcript itself is append-only and never rewinds. Motion happens exactly when work lands; a wall-clock spinner animates hardest when the agent is most wedged, and the tally cannot tell that lie. R1 deletes ~12,900 chrome rows from the measured session (two pseudo-children on each of 6,439 tool steps) and replaces the fourth tree level with one lazily-fetched body; empty args then have nowhere to appear at all, which is your floor met by construction.</div>
 <!--#aside-->
-<span class="big">1.0 s</span>
-<small>full rescan of the largest real session<br>(81.9&nbsp;MB &middot; 31,784 lines &middot; 28 compactions)<br>measured, stdlib json &middot; bookmarks: 433</small>
+<span class="big">87.3%</span>
+<small>of the measured session&rsquo;s 6,439 tool calls are Bash<br>the four native-rendered kinds cover 97.8%<br>full rescan of the 81.9&nbsp;MB file: still 1.0&nbsp;s</small>
 <!--#body-->
 <style>
 /* Page-local. Tokens only — no hex (template contract). */
@@ -36,24 +36,56 @@ skip_href: "#ask"
   overflow:hidden;text-overflow:ellipsis;border-radius:2px;padding:0 .5ch}
 .slog .row:hover{background:var(--panel)}
 .slog .tw{color:var(--dimmer);flex:none;width:1.2ch;text-align:center}
-.slog .tw.br{width:3.5ch;letter-spacing:0}
 .slog .gl{color:var(--accent);flex:none;width:1.2ch}
 .slog .lab{color:var(--muted)}
+.slog .ord{color:var(--dimmer)}
 .slog .row.on .lab{color:var(--text)}
 .slog .row.userturn .lab{color:var(--lit)}
 .slog .ct{color:var(--dim);font-size:.68rem}
+.slog .ct.bad{color:var(--bad)}
 .slog .age{color:var(--dimmer);font-size:.68rem;margin-left:auto;padding-left:1ch}
 .slog .kids{margin-left:1.1ch;padding-left:1.7ch;border-left:1px solid var(--line)}
-.slog.noguides .kids{border-left:none;padding-left:1.9ch;margin-left:.9ch}
 .slog .peekbody{color:var(--dim);white-space:pre;overflow-x:auto;
   font-size:.7rem;line-height:1.55;padding:.15rem 0 .25rem .5ch}
 .slog .peekbody .add{color:var(--ok)}
 .slog .peekbody .del{color:var(--bad)}
+.slog .peekbody .argl{color:var(--dimmer)}
 .slog .dim{color:var(--dim)}
-/* the live breath — option A: the wisp's envelope on a static glyph */
+/* the idle breath — the wisp's envelope on the live glyph */
 @keyframes slogbreathe{0%,100%{opacity:.28}50%{opacity:.95}}
 .slog .live>.gl,.slog .live.row .gl{animation:slogbreathe 5.5s ease-in-out infinite}
-/* option B demo: a clipped column of the ten braille frames, stepped */
+/* T1 · the tally — 17-line clipped column, stepped at UNEVEN times to mimic
+   records landing in clumps; opacity carries the breath plus arrival pulses.
+   Order round the cell is clockwise (dots 1 2 3 7 8 6 5 4): fill 8, then the
+   hole sweeps the same way round. The wheel never turns back. */
+.tallydemo{display:inline-block;height:1.5em;overflow:hidden;vertical-align:bottom;
+  color:var(--accent);width:1.2ch;letter-spacing:0}
+.tallydemo b{display:block;font-weight:normal;line-height:1.5em;
+  animation:tallyseq 22s step-end infinite, tallyglow 22s ease-in-out infinite}
+@keyframes tallyseq{
+  0%{transform:translateY(0)}
+  2%{transform:translateY(-1.5em)}   4%{transform:translateY(-3em)}
+  6%{transform:translateY(-4.5em)}   20%{transform:translateY(-6em)}
+  23%{transform:translateY(-7.5em)}  36%{transform:translateY(-9em)}
+  38%{transform:translateY(-10.5em)} 40%{transform:translateY(-12em)}
+  55%{transform:translateY(-13.5em)} 57%{transform:translateY(-15em)}
+  59%{transform:translateY(-16.5em)} 70%{transform:translateY(-18em)}
+  73%{transform:translateY(-19.5em)} 86%{transform:translateY(-21em)}
+  88%{transform:translateY(-22.5em)} 100%{transform:translateY(-24em)}}
+@keyframes tallyglow{
+  0%{opacity:.45}2%{opacity:1}6%{opacity:1}12%{opacity:.35}16%{opacity:.55}
+  20%{opacity:1}23%{opacity:1}29%{opacity:.35}33%{opacity:.55}
+  36%{opacity:1}40%{opacity:1}47%{opacity:.35}51%{opacity:.55}
+  55%{opacity:1}59%{opacity:1}65%{opacity:.35}
+  70%{opacity:1}73%{opacity:1}79%{opacity:.35}
+  86%{opacity:1}88%{opacity:1}94%{opacity:.35}100%{opacity:.45}}
+/* T2 · the snake — 5-dot arc advancing clockwise, wall-clock, uniform */
+.snakedemo{display:inline-block;height:1.5em;overflow:hidden;vertical-align:bottom;
+  color:var(--accent);width:1.2ch;letter-spacing:0}
+.snakedemo b{display:block;font-weight:normal;line-height:1.5em;
+  animation:snakestep 1.2s steps(8,end) infinite}
+@keyframes snakestep{to{transform:translateY(-12em)}}
+/* B · stock stepping cycle */
 .stepdemo{display:inline-block;height:1.5em;overflow:hidden;vertical-align:bottom;
   color:var(--accent);width:1.2ch}
 .stepdemo b{display:block;font-weight:normal;line-height:1.5em;
@@ -61,6 +93,11 @@ skip_href: "#ask"
 @keyframes slogstep{to{transform:translateY(-15em)}}
 @media (prefers-reduced-motion: reduce){
   .slog .live>.gl,.slog .live.row .gl{animation:none;opacity:.95}
+  /* the tally's reduced-motion answer is NOT stillness: the wheel still
+     repaints per landed record (a discrete state change, no transition —
+     the forum icon's own answer). The demo freezes on a mid-fill state. */
+  .tallydemo b{animation:none;transform:translateY(-7.5em);opacity:.95}
+  .snakedemo b{animation:none;transform:translateY(-7.5em)}
   .stepdemo b{animation:none}
 }
 /* the follow pill — his hand vs the frontier */
@@ -84,13 +121,15 @@ skip_href: "#ask"
 <p>One line, ~1.5em, full-row hit target, mono. Emphasis is luminance, never a
 second font — the ramp the whole dashboard already uses. Collapsed rows carry a
 <em>summary</em> (step counts, diff stats, token figures); bodies are fetched only
-when a row expands, so the stream stays thin. The hierarchy below is your own
-ASCII mock re-drawn; the record grammar behind every label was measured against
-the real 82&nbsp;MB session file (see the design doc, §2).</p>
+when a row expands, so the stream stays thin. Per your answer: guides are G1,
+markers are M1, and the whole layer is <em>evocative</em>-of-TUI, not
+faithful-to-TUI — braille cells survive as material, not as fidelity. The
+hierarchy below is your own ASCII mock re-drawn; every label was measured
+against the real 82&nbsp;MB session file (design doc §2, §7c).</p>
 <div class="anat">
-  <span><b>▸/▾</b> disclosure (M1)</span>
-  <span><b>⠏</b> live indicator (A/B)</span>
-  <span><b>label</b> the summary line</span>
+  <span><b>▸/▾</b> disclosure (M1, yours)</span>
+  <span><b>⣇</b> the tally — live turn&rsquo;s step odometer (T1)</span>
+  <span><b>label</b> the summary line, native per tool</span>
   <span><b>(29 steps)</b> counts from bookmarks</span>
   <span><b>right edge</b> age, dimmest</span>
 </div>
@@ -106,145 +145,164 @@ the real 82&nbsp;MB session file (see the design doc, §2).</p>
         <div class="row"><span class="tw">▸</span><span class="lab dim">compaction msg</span><span class="ct">summary · 19k tokens</span><span class="age">02h 58m</span></div>
         <div class="row"><span class="tw">▸</span><span class="lab">agent turn 7</span><span class="ct">(29 steps)</span><span class="age">44m 10s</span></div>
         <div class="row userturn"><span class="tw">▸</span><span class="lab">user turn</span><span class="ct">[ Goal Reminder ]</span><span class="age">41m 02s</span></div>
-        <div class="row on"><span class="tw">▾</span><span class="lab">agent turn 8</span><span class="ct">(3 steps)</span><span class="age">38m 51s</span></div>
+        <div class="row on"><span class="tw">▾</span><span class="lab">agent turn 8</span><span class="ct">(4 steps)</span><span class="age">38m 51s</span></div>
         <div class="kids">
-          <div class="row"><span class="tw">▾</span><span class="lab">tool 8.1 · Read watch.py</span><span class="ct">220 lines</span><span class="age">38m 49s</span></div>
-          <div class="kids">
-            <div class="row"><span class="tw">▸</span><span class="lab dim">args</span></div>
-            <div class="row"><span class="tw">▸</span><span class="lab dim">response</span><span class="ct">14.2 kB</span></div>
-          </div>
-          <div class="row"><span class="tw">▸</span><span class="lab">tool 8.2 · Bash just lint</span><span class="ct">exit 0</span><span class="age">38m 12s</span></div>
-          <div class="row"><span class="tw">▾</span><span class="lab">edit asdf.txt</span><span class="ct">(+123 −48)</span><span class="age">37m 40s</span></div>
-          <div class="kids">
-            <div class="peekbody"><span class="del">- the old paragraph, shown whole when expanded</span>
+          <div class="row"><span class="tw">▸</span><span class="lab"><span class="ord">8.1 ·</span> read watch.py</span><span class="ct">220 lines @3970</span><span class="age">38m 49s</span></div>
+          <div class="row"><span class="tw">▸</span><span class="lab"><span class="ord">8.2 ·</span> $ just lint</span><span class="ct">12 lines</span><span class="age">38m 12s</span></div>
+          <div class="row"><span class="tw">▸</span><span class="lab"><span class="ord">8.3 ·</span> $ python3 -m pytest -q</span><span class="ct bad">stderr 3 lines</span><span class="age">37m 58s</span></div>
+          <div class="row on"><span class="tw">▾</span><span class="lab"><span class="ord">8.4 ·</span> edit asdf.txt</span><span class="ct">(+123 −48)</span><span class="age">37m 40s</span></div>
+          <div class="peekbody"><span class="del">- the old paragraph, shown whole when expanded</span>
 <span class="add">+ the new paragraph — the full diff, lazily</span>
 <span class="add">+ fetched from the source file by byte range</span></div>
-          </div>
         </div>
         <div class="row userturn"><span class="tw">▸</span><span class="lab">user turn</span><span class="ct">Have you considered …</span><span class="age">31m 06s</span></div>
       </div>
       <p class="note">His hand wins: turn 8 stays open because he opened it, and the
-      follow pill says so. Auto-expansion never re-folds a row he touched —
-      the same open-state-is-his rule the dashboard's disclosures already obey.</p>
+      follow pill says so. Tool steps are now <em>leaves</em> — expanding 8.4 opens
+      its one body (the diff, from <code>structuredPatch</code> — measured present on
+      every Edit/Write), not an <code>[args, response]</code> pair. 8.3 shows the
+      honest failure signal: <code>is_error</code> / stderr presence — the transcript
+      records <em>no exit code</em> (measured; rev 1 invented <code>exit 0</code>).</p>
     </div>
   </div>
 
   <div class="frame" id="stream">
-    <div class="framebar"><b>2 · mid-stream</b><span>the frontier — most recent child open at every level, breathing</span></div>
+    <div class="framebar"><b>2 · mid-stream</b><span>the frontier — most recent child open at every level, the tally breathing</span></div>
     <div class="framebody">
       <div class="slog">
         <p class="sess">session c196985f · claude-code · page 4 · live</p>
         <div class="followpill"><span class="dot"></span>following the frontier</div>
         <div class="row"><span class="tw">▸</span><span class="lab">agent turn 7</span><span class="ct">(29 steps)</span><span class="age">09m 44s</span></div>
         <div class="row userturn"><span class="tw">▸</span><span class="lab">user turn</span><span class="ct">[ Goal Reminder ]</span><span class="age">06m 21s</span></div>
-        <div class="row"><span class="tw">▸</span><span class="lab">agent turn 8</span><span class="ct">(3 steps)</span><span class="age">04m 02s</span></div>
+        <div class="row"><span class="tw">▸</span><span class="lab">agent turn 8</span><span class="ct">(4 steps)</span><span class="age">04m 02s</span></div>
         <div class="row userturn"><span class="tw">▸</span><span class="lab">user turn</span><span class="ct">Have you considered …</span><span class="age">02m 17s</span></div>
-        <div class="row on live"><span class="tw">▾</span><span class="gl">⠏</span><span class="lab">agent turn 9</span><span class="ct">(2 steps · running)</span><span class="age">00m 41s</span></div>
+        <div class="row on live"><span class="tw">▾</span><span class="gl">⡇</span><span class="lab">agent turn 9</span><span class="ct">(4 records · running)</span><span class="age">00m 41s</span></div>
         <div class="kids">
-          <div class="row"><span class="tw">▸</span><span class="lab">thinking</span><span class="ct">1.1 kB</span><span class="age">00m 38s</span></div>
-          <div class="row on live"><span class="tw">▾</span><span class="gl">⠏</span><span class="lab">tool 9.1 · Bash just test</span><span class="ct">running</span><span class="age">00m 12s</span></div>
-          <div class="kids">
-            <div class="row"><span class="tw">▸</span><span class="lab dim">args</span></div>
-          </div>
+          <div class="row"><span class="tw">▸</span><span class="lab"><span class="ord">9.1 ·</span> thinking</span><span class="ct">1.1 kB</span><span class="age">00m 38s</span></div>
+          <div class="row"><span class="tw">▸</span><span class="lab"><span class="ord">9.2 ·</span> read lint.py</span><span class="ct">80 lines</span><span class="age">00m 29s</span></div>
+          <div class="row on live"><span class="tw">▾</span><span class="gl">⡇</span><span class="lab"><span class="ord">9.3 ·</span> $ just test</span><span class="ct">running</span><span class="age">00m 12s</span></div>
+          <div class="peekbody"><span class="argl">$ just test</span>
+<span class="dim">…awaiting result — no tool_result record yet</span></div>
         </div>
       </div>
-      <p class="note">When turn 10 arrives, turn 9 folds and 10 opens — a height
-      travel plus a reveal, the section-fold family, never a teleport; the tick
-      that lands mid-travel resumes it. Reduced motion: instant, function
-      intact. A tool step goes live when its <code>tool_use</code> has no
-      <code>tool_result</code> yet — derivable straight from the file.</p>
+      <p class="note">The live spine (turn 9 and its running step) carries <em>one</em>
+      turn-wheel — here at ⡇, four records in — advancing together on a shared
+      breath, the wisp&rsquo;s one-organism rule. When a record lands, the wheel steps
+      one dot clockwise with a brief pulse; when turn 10 arrives, turn 9 folds, 10
+      opens with a fresh wheel — a height travel plus a reveal, never a teleport.
+      Reduced motion: travels are instant, the wheel still repaints per record.</p>
     </div>
   </div>
 </div>
 
-<div class="label" id="alts" style="margin-top:1.4rem">The alternatives, live</div>
+<div class="label" id="tally" style="margin-top:1.4rem">Ind · the indicator, live — reopened by #662</div>
 <div class="frames" style="margin-top:.5rem">
   <div class="frame">
-    <div class="framebar"><b>Ind · A vs B</b><span>the same live row, two motions</span></div>
+    <div class="framebar"><b>T1 · the tally</b><span>rec — records ratchet the wheel; waiting breathes</span></div>
     <div class="framebody">
       <div class="slog">
-        <div class="row on live"><span class="tw">▾</span><span class="gl">⠏</span><span class="lab">A · static glyph, breathing</span><span class="ct">the wisp's envelope, ~5.5s</span></div>
-        <div class="row on"><span class="tw">▾</span><span class="stepdemo"><b>⠋<br>⠙<br>⠹<br>⠸<br>⠼<br>⠴<br>⠦<br>⠧<br>⠇<br>⠏</b></span><span class="lab">B · stepping braille cycle</span><span class="ct">~90ms/frame, sweeping</span></div>
+        <div class="row on live"><span class="tallydemo"><b>⠀<br>⠁<br>⠃<br>⠇<br>⡇<br>⣇<br>⣧<br>⣷<br>⣿<br>⣾<br>⣼<br>⣸<br>⢸<br>⠸<br>⠘<br>⠈<br>⠀</b></span><span class="lab">T1 · the tally — a step odometer</span><span class="ct">clockwise fill, then the hole sweeps clockwise — never unwinds</span></div>
       </div>
-      <p class="note"><strong>A costs</strong> a little TUI authenticity — the glyph
-      never spins. <strong>B costs</strong> the motion language: the stylesheet's own
-      words are &ldquo;never a spinner&rdquo;, and B is one; it also ticks the
-      compositor ~11×/s per live row, against A's one slow opacity envelope.
-      Under reduced motion both hold still at brightest.</p>
+      <p class="note">Each record landing in the live turn advances one dot round the
+      cell&rsquo;s perimeter, clockwise; a full cell empties the same way round and fills
+      again — sixteen states, phase&nbsp;=&nbsp;records&nbsp;mod&nbsp;16, direction never
+      reverses. The demo steps at <em>uneven</em> times because that is the point:
+      motion is a record landing (watch the clumps), stillness plus breath is a tool
+      call running. Your forum icon&rsquo;s quality — the angle that remembers every
+      toggle — transferred to the thing this log actually is: an append-only file.
+      <strong>Costs:</strong> a long silent Bash call shows only the breath (honest,
+      but quieter than a spinner); ~10 lines of client state a pure-CSS loop
+      doesn&rsquo;t need. Reduced motion: the wheel still repaints per record; breath
+      and pulse go.</p>
     </div>
   </div>
 
   <div class="frame">
-    <div class="framebar"><b>Guides · G1 vs G2</b><span>the same subtree, with and without</span></div>
+    <div class="framebar"><b>T2 vs B</b><span>the wall-clock alternatives</span></div>
     <div class="framebody">
       <div class="slog">
-        <div class="row on"><span class="tw">▾</span><span class="lab">G1 · faint guides</span></div>
-        <div class="kids">
-          <div class="row"><span class="tw">▸</span><span class="lab">tool 8.1</span></div>
-          <div class="row on"><span class="tw">▾</span><span class="lab">tool 8.2</span></div>
-          <div class="kids">
-            <div class="row"><span class="tw">▸</span><span class="lab dim">args</span></div>
-            <div class="row"><span class="tw">▸</span><span class="lab dim">response</span></div>
-          </div>
-        </div>
+        <div class="row on"><span class="snakedemo"><b>⣇<br>⣦<br>⣴<br>⣸<br>⢹<br>⠻<br>⠟<br>⡏</b></span><span class="lab">T2 · the snake — 5-dot arc, always clockwise</span><span class="ct">wall-clock, ~150ms/frame</span></div>
+        <div class="row on" style="margin-top:.4rem"><span class="stepdemo"><b>⠋<br>⠙<br>⠹<br>⠸<br>⠼<br>⠴<br>⠦<br>⠧<br>⠇<br>⠏</b></span><span class="lab">B · stock stepping cycle</span><span class="ct">~90ms/frame</span></div>
       </div>
-      <div class="slog noguides" style="margin-top:.7rem">
-        <div class="row on"><span class="tw">▾</span><span class="lab">G2 · indent only</span></div>
-        <div class="kids">
-          <div class="row"><span class="tw">▸</span><span class="lab">tool 8.1</span></div>
-          <div class="row on"><span class="tw">▾</span><span class="lab">tool 8.2</span></div>
-          <div class="kids">
-            <div class="row"><span class="tw">▸</span><span class="lab dim">args</span></div>
-            <div class="row"><span class="tw">▸</span><span class="lab dim">response</span></div>
-          </div>
-        </div>
+      <p class="note"><strong>T2 costs</strong> honesty: it animates identically
+      whether the agent is working or wedged, and it sits one reshuffle from the
+      stock cycle. <strong>B costs</strong> exactly your verdict — <em>&ldquo;better
+      than many but still kinda boring&rdquo;</em>. Option A from rev 1 (a static
+      <code>⠏</code> breathing) is <strong>withdrawn</strong>, not outranked: its whole
+      justification was the mis-promoted &ldquo;never a spinner&rdquo; rule #662
+      corrects, and without that rule it is a progress indicator that never
+      registers progress.</p>
+    </div>
+  </div>
+</div>
+
+<div class="label" id="rows" style="margin-top:1.4rem">Rows · tool steps, native vs generic</div>
+<div class="frames" style="margin-top:.5rem">
+  <div class="frame">
+    <div class="framebar"><b>R1 · native leaves</b><span>rec — one row per call, one body on expand</span></div>
+    <div class="framebody">
+      <div class="slog">
+        <div class="row"><span class="tw">▸</span><span class="lab"><span class="ord">8.1 ·</span> read watch.py</span><span class="ct">220 lines @3970</span></div>
+        <div class="row on"><span class="tw">▾</span><span class="lab"><span class="ord">8.2 ·</span> $ just lint</span><span class="ct">12 lines</span></div>
+        <div class="peekbody"><span class="argl">$ just lint · run lint checks</span>
+<span class="dim">lint: 0 errors, 2 warnings (worktree ledger)</span>
+<span class="dim">…stdout tail, stderr first when present</span></div>
+        <div class="row"><span class="tw">▸</span><span class="lab"><span class="ord">8.3 ·</span> edit asdf.txt</span><span class="ct">(+123 −48)</span></div>
+        <div class="row"><span class="tw">▸</span><span class="lab"><span class="ord">8.4 ·</span> agent → lane-663indicator</span><span class="ct">opus</span></div>
+        <div class="row"><span class="tw">▸</span><span class="lab"><span class="ord">8.5 ·</span> tasklist</span></div>
       </div>
-      <p class="note"><strong>G1 costs</strong> a 1px hairline per open level —
-      at the depth cap (page &gt; turn &gt; step &gt; detail) that is three lines.
-      <strong>G2 costs</strong> the re-count: with two levels open the eye has only
-      whitespace to say which level a row sits at. G1 is the inferred completion
-      of the cut-off sentence — refusing it is one word.</p>
+      <p class="note">The four natives — <code>$</code> Bash, edit, write, read —
+      cover <strong>97.8%</strong> of the measured session&rsquo;s 6,439 calls; Bash
+      alone is 87.3%. The agent row is #615&rsquo;s mount point: the subagent&rsquo;s
+      own tree hangs under the dispatching step once per-client tasks land.
+      8.5 is the measured empty-args case (TaskList, 5 of 5 calls empty): as a
+      leaf there is simply nowhere for an empty <code>args</code> row to appear —
+      your floor, met by construction. Everything else gets the generic leaf:
+      name, args size, result size, one body.</p>
     </div>
   </div>
 
   <div class="frame">
-    <div class="framebar"><b>Marker · M1 vs M2</b><span>chevrons, or your mock's brackets</span></div>
+    <div class="framebar"><b>R0 · the generic pair</b><span>rev 1&rsquo;s shape, for contrast</span></div>
     <div class="framebody">
       <div class="slog">
-        <div class="row on"><span class="tw">▾</span><span class="lab">M1 · agent turn 8</span><span class="ct">(3 steps)</span></div>
+        <div class="row on"><span class="tw">▾</span><span class="lab">tool 8.2 · Bash just lint</span><span class="ct">exit 0</span></div>
         <div class="kids">
-          <div class="row"><span class="tw">▸</span><span class="lab">tool 8.1 · Read watch.py</span></div>
+          <div class="row"><span class="tw">▸</span><span class="lab dim">args</span></div>
+          <div class="row"><span class="tw">▸</span><span class="lab dim">response</span><span class="ct">1.2 kB</span></div>
         </div>
-        <div class="row on" style="margin-top:.7rem"><span class="tw br">[-]</span><span class="lab">M2 · agent turn 8</span><span class="ct">(3 steps)</span></div>
+        <div class="row on"><span class="tw">▾</span><span class="lab">tool 8.5 · TaskList</span></div>
         <div class="kids">
-          <div class="row"><span class="tw br">[+]</span><span class="lab">tool 8.1 · Read watch.py</span></div>
+          <div class="row"><span class="tw">▸</span><span class="lab dim">args</span><span class="ct">(empty)</span></div>
+          <div class="row"><span class="tw">▸</span><span class="lab dim">response</span><span class="ct">16 B</span></div>
         </div>
       </div>
-      <p class="note"><strong>M1 costs</strong> a little of the TUI accent — it is
-      the dashboard's quiet details marker. <strong>M2 costs</strong> 3ch of chrome
-      on every row and brackets brighter than half the labels; at the 32ch floor
-      that is a tenth of the column spent on markers.</p>
+      <p class="note"><strong>R0 costs</strong> two chrome rows per tool step —
+      ~12,900 across the measured session — a whole indent level at the 32ch
+      floor, an <code>args</code> child that renders empty on the calls that take
+      none, and it shipped an invented <code>exit 0</code>: the transcript records
+      <code>stdout</code>/<code>stderr</code>/<code>interrupted</code> but no exit code
+      (measured, §7c). Kept here only so the comparison is cheap to make.</p>
     </div>
   </div>
 
   <div class="frame">
-    <div class="framebar"><b>narrow · the 32ch floor</b><span>depth-4 worst case, guides on</span></div>
+    <div class="framebar"><b>narrow · the 32ch floor</b><span>worst case, guides on — one level shallower than rev 1</span></div>
     <div class="framebody">
       <div class="slog" style="max-width:32ch">
         <div class="row on"><span class="tw">▾</span><span class="lab">page 4</span><span class="ct">live</span></div>
         <div class="kids">
-          <div class="row on live"><span class="tw">▾</span><span class="gl">⠏</span><span class="lab">agent turn 9</span></div>
+          <div class="row on live"><span class="tw">▾</span><span class="gl">⡇</span><span class="lab">agent turn 9</span></div>
           <div class="kids">
-            <div class="row on live"><span class="tw">▾</span><span class="gl">⠏</span><span class="lab">tool 9.1 · Bash</span></div>
-            <div class="kids">
-              <div class="row"><span class="tw">▸</span><span class="lab dim">args</span></div>
-            </div>
+            <div class="row on live"><span class="tw">▾</span><span class="gl">⡇</span><span class="lab">9.3 · $ just test</span></div>
+            <div class="peekbody"><span class="argl">$ just test</span></div>
           </div>
         </div>
       </div>
-      <p class="note">Labels truncate with an ellipsis rather than wrapping — a
-      thin row that wraps is no longer thin. The full text is the expanded
-      body's job.</p>
+      <p class="note">Labels truncate with an ellipsis rather than wrapping — a thin
+      row that wraps is no longer thin. Retiring the <code>[args, response]</code>
+      level means depth 3 (page &gt; turn &gt; step) plus a body is now the worst
+      case, so the indent budget loosens exactly where it was tightest.</p>
     </div>
   </div>
 </div>
@@ -256,6 +314,8 @@ entirely in v1: &ldquo;concise&rdquo; rules it out, and an adapter can add an
 opt-in later without a schema change. <code>system_prompt</code> is a slot in
 your hierarchy that Claude Code <em>never writes to the transcript</em> — the
 tree simply has no such child for this client, rather than inventing one.
-Both calls are flagged as inferred in the design doc, §3 and §2.</p>
+Binary or base64 result bodies (playwright screenshots run to 220&nbsp;kB,
+measured) are summarised by size, never inlined. All flagged in the design
+doc, §2, §3 and §7c.</p>
 <!--#footer-->
-Design: <code>.dreamwork/docs/plans/session-log-view.md</code> &middot; draft questions: <code>.dreamwork/docs/plans/session-log-questions-draft.md</code> &middot; his words: receipt <code>a71d1105</code> (journal_consume.py show) &middot; grammar measured against the real 82&nbsp;MB session
+Design: <code>.dreamwork/docs/plans/session-log-view.md</code> (rev 2 — §7b the tally, §7c native rows) &middot; his words: <code>questions.md</code> #613 entry, 2026-07-31 18:53 &middot; corrections: #662 &middot; fold: #663 (lane-663indicator) &middot; tool mix measured against the real 82&nbsp;MB session
