@@ -22,8 +22,8 @@ It listed both `client/views.js` injections, with shas `4fa675692932` and `58180
 
 ## Verification
 
-- After rebase, `python3 -m pytest test_watch.py -k 'questions_parts or Collector'`: `169 passed, 314 deselected in 5.41s`.
-- After rebase, full `python3 -m pytest test_watch.py`: `483 passed in 67.37s`.
+- After final rebase, `python3 -m pytest test_watch.py -k 'questions_parts or Collector'`: `169 passed, 314 deselected in 6.96s`.
+- After final rebase, full `python3 -m pytest test_watch.py`: `483 passed in 68.05s`.
 - No browser guards were run, per the lane brief.
 - Rebase: local `master` moved twice during the lane (five commits, then four more); both `git rebase master` runs completed without conflicts. Final fix commit sha is `30405b6b`.
 
