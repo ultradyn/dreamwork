@@ -299,10 +299,10 @@ read, an unbounded consume silently claims events the read never listed.
       superpowers:brainstorming skill. Constraints for it: ideas must be
       consistent with the project's goals and philosophy (per DREAMWORK.md
       and CLAUDE.md — pass the relevant parts into the subagent prompt);
-      experiments are fine but must be feature-gated; big feature swings
-      and pivots are rejected (big changes genuinely necessary to solve a
-      problem are exempt — those are a fact of life). Record when the
-      brainstorm ran (metadata on a marker task) so it stays occasional.
+      experiments are fine but must be feature-gated (see Guardrails); big
+      feature swings and pivots are rejected (big changes genuinely necessary
+      to solve a problem are exempt — those are a fact of life). Record when
+      the brainstorm ran (metadata on a marker task) so it stays occasional.
    2. **Backlog.** Otherwise pick the highest-priority unblocked pending
       task. When torn between backlog and maintenance (or which
       maintenance item), you may roll `roll.py` in this skill's directory
@@ -935,7 +935,12 @@ if Max is away).
   automate rather than the one the human uses, or comparing nothing at
   all because the comparison errored and the error was swallowed. When a
   check and the code disagree, suspect the check.
-- Experiments are feature-gated.
+- **Experiments are feature-gated, and the gate is a file.** An experiment
+  ships **off by default** behind its own tracked `.dreamwork/<name>` file —
+  the `watch-tint`/`run-mode` family, where **absent means off** — with a
+  `file-formats.md` row and a `lint.py` check like every other member. One
+  file per experiment, no registry, and turning it off is deleting a line:
+  the human does it without waiting for the loop.
 - **Judgement between rivals uses IGC.** Choosing between rival options —
   candidate tasks, designs, libraries, approaches, the options laid out in
   a review — is an IGC evaluation, not a score or a gut pick: ideas down
