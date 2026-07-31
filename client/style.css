@@ -1664,6 +1664,8 @@
      actionable"; a settled preference is neither, and spending the accent
      here would be the fourth thing on the page wearing it. */
   .tintpick { margin:.2rem 0 .1rem; }
+  .drawpick { margin:.2rem 0 .1rem; }   /* #733: sibling of .tintpick */
+  .dmbtn { padding:.24rem .5rem; font-size:.7rem; }
   .tintbtn { padding:.24rem .5rem; font-size:.7rem;
              color:color-mix(in oklab, var(--tintswatch) 55%, var(--dim)); }
   .tintbtn:hover { color:var(--tintswatch); }
