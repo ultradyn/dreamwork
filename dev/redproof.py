@@ -202,8 +202,28 @@ def _write_registry(cwd: Path | None, entries: list[dict]) -> None:
 
 
 def _find(entries: list[dict], posix_path: str) -> dict | None:
+    """The ARMED entry for a path, if any (#717: one armed injection per path).
+
+    Restored entries with the same path are NOT returned here — restore appends
+    a new entry per distinct injection, so a path can carry several restored
+    records. Only an entry still in the ARMED state is a candidate for the
+    next restore to consume."""
     for e in entries:
-        if e.get("path") == posix_path:
+        if e.get("path") == posix_path and e.get("state") != RESTORED:
+            return e
+    return None
+
+
+def _find_restored(entries: list[dict], posix_path: str,
+                   injected_sha: str) -> dict | None:
+    """A restored entry matching (path, injected_sha), for dedup (#717).
+
+    The same sabotage bytes restored twice is the same observed state — one
+    injection — so restore collapses it rather than double-counting. A
+    different sha is a different injection and gets its own entry."""
+    for e in entries:
+        if (e.get("path") == posix_path and e.get("state") == RESTORED
+                and e.get("injected_sha") == injected_sha):
             return e
     return None
 
@@ -428,21 +448,29 @@ def restore(cwd: Path | None, path: str) -> int:
     bytes — the one moment both states exist — records their sha + a one-line
     hint, then copies the original back from the lane-private snapshot and
     verifies with a byte compare. Never ``git checkout`` (#349).
+
+    A second DISTINCT injection to the same path is a separate record, not an
+    overwrite of the first (#717): the count is the auditable part, and only
+    the last injection per file surviving weakens the record's strongest use
+    (reconstructing what was injected when a red-proof is disputed) — and now
+    also blinds the #710 history scan, which matches commits against each
+    recorded sha. So restore keys on (path, injected_sha): two different
+    sabotages land as two entries, and the scan sees both shas. The SAME bytes
+    restored twice collapse to one entry — an injection is a state the tool
+    observed, and observing it twice is the same state, not two.
     """
     root = _ls.worktree_root(cwd)
     posix = _to_posix(path)
     try:
         entries, _ = _read_registry(cwd)
-        entry = _find(entries, posix)
-        if entry is None:
+        armed = _find(entries, posix)
+        if armed is None:
             sys.stderr.write(
-                f"restore: {posix!r} was never `begin`-ed — nothing to restore. "
-                f"(No injection is registered for it.)\n")
+                f"restore: {posix!r} has no armed injection — it was never "
+                f"`begin`-ed, or its begin was already restored. Run "
+                f"`begin {posix}` first.\n")
             return 2
-        if entry.get("state") == RESTORED:
-            sys.stderr.write(f"restore: {posix!r} is already restored.\n")
-            return 1
-        snap = Path(entry["snapshot"])
+        snap = Path(armed["snapshot"])
         if not snap.exists():
             raise RedproofError(
                 f"original snapshot for {posix!r} is missing ({snap}) — cannot "
@@ -456,17 +484,33 @@ def restore(cwd: Path | None, path: str) -> int:
 
         if _sha(injected) == _sha(original):
             # begin was called but the file was never changed: no injection to
-            # record. Drop the entry so check's byte-test never fires on a no-op.
-            entries = [e for e in entries if e.get("path") != posix]
+            # record. Drop the armed entry so check's byte-test never fires on
+            # a no-op.
+            entries = [e for e in entries if e is not armed]
             _write_registry(cwd, entries)
             print(f"restore: {posix!r} unchanged since begin — no injection recorded; "
                   f"entry dropped.")
             return 0
 
-        entry["injected_sha"] = _sha(injected)
-        entry["injected_hint"] = _first_changed_line(original, injected)
-        entry["state"] = RESTORED
-        entry["restored_at"] = _now()
+        injected_sha = _sha(injected)
+        # #717: dedup the SAME observed state, append a DIFFERENT one. A path
+        # may carry several restored records (one per distinct injection), so
+        # the count is honest and the history scan has every injected sha.
+        entry = _find_restored(entries, posix, injected_sha)
+        if entry is None:
+            entry = {"path": posix}
+            entries.append(entry)
+        entry.update({
+            "injected_sha": injected_sha,
+            "injected_hint": _first_changed_line(original, injected),
+            "state": RESTORED,
+            "restored_at": _now(),
+        })
+        # The armed entry is consumed: its snapshot served this restore. Drop
+        # it so check does not see a begun-but-unrestored entry for a path that
+        # was in fact restored (#717: append-only across injections, not within
+        # one).
+        entries = [e for e in entries if e is not armed]
 
         # Restore the original by cp, then verify byte-identity. Never git checkout.
         out = root / posix
@@ -599,8 +643,14 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int
             "this branch only), or rebase the injection out yourself. #710\n")
         return 1
 
-    print(f"check: clean — {len(entries)} injection(s) registered, all restored "
-          f"and absent from the working tree and from this branch's commits.")
+    restored = [e for e in entries if e.get("state") == RESTORED]
+    listed = "\n".join(
+        f"  {e['path']} (sha {e.get('injected_sha', '?')[:12]}, "
+        f"hint: {e.get('injected_hint', '?')!r})" for e in restored)
+    print(f"check: clean — {len(restored)} injection(s) registered, all restored "
+          f"and absent from the working tree and from this branch's commits:")
+    if listed:
+        print(listed)
     return 0
 
 

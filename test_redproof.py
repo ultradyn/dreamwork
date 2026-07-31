@@ -203,8 +203,11 @@ class TestRestoreRecordsInjected:
         (repo / "router.js").write_text(sabotage)
         _restore(repo, "router.js")
         entries, _ = rp._read_registry(repo)
-        e = rp._find(entries, "router.js")
-        assert e["state"] == rp.RESTORED
+        # _find returns only ARMED entries now (#717); a restored record is
+        # looked up by its (path, sha). Exactly one restored entry expected.
+        restored = [e for e in entries if e.get("state") == rp.RESTORED]
+        assert len(restored) == 1, entries
+        e = restored[0]
         assert e["injected_sha"] is not None
         assert "BUG" in e["injected_hint"]
 
