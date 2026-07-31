@@ -2,7 +2,10 @@
 
 ## Open
 
-- **P1 · 2026-08-01 — #733: should the draw-frequency setting persist server-side like tint?**
+- **P1 · 2026-08-01 — #738: should the draw-frequency setting persist server-side like tint?**
+  (Asked by `#733`'s lane; `#733` LANDED as `ecde64ca` and the parity follow-up it left is now
+  `#738`, which is what this ask gates — `#306`: only the title is read, so it must name the OPEN
+  task, not the landed one.)
   His ask put the control "near tint setting", and tint persists via `.dreamwork/watch-tint` +
   `POST /tint` in `watch.py` (shared across windows, committable). That route is **off-limits to this
   lane** (`watch.py` is owned by `#729` this wave), so I cannot mirror tint's server mechanism without
