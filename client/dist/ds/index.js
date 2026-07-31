@@ -1581,6 +1581,7 @@ var DreamworkDesign = (() => {
   var fetchedAt = 0;
   var lastMtime = null;
   var serverGen = null;
+  var lastDataV = null;
   var MORPH_HOLD_MS = 1250;
   var holdRerenderUntil = 0;
   var parseMtime = (raw) => {
@@ -2263,7 +2264,7 @@ var DreamworkDesign = (() => {
       lastMtime = mtime;
       fetchedAt = Date.now();
       if (burnStepPref === null) burnStepPref = loadBurnStepPref();
-      setData(await (await fetch(dataJsonUrl())).json());
+      setData(applyDataResponse(await (await fetch(dataJsonUrl())).json()));
     } catch (e) {
     }
     return data;
@@ -3136,7 +3137,23 @@ var DreamworkDesign = (() => {
   }
   function dataJsonUrl() {
     const s = burnStepPref;
-    return s && BURN_STEP_ORDER.indexOf(s) >= 0 ? "/data.json?burn_step=" + s : "/data.json";
+    let base = s && BURN_STEP_ORDER.indexOf(s) >= 0 ? "/data.json?burn_step=" + s : "/data.json";
+    if (lastDataV) base += (base.includes("?") ? "&" : "?") + "since=" + encodeURIComponent(lastDataV);
+    return base;
+  }
+  function applyDataResponse(j) {
+    if (j && j.unchanged) return null;
+    if (j && j.changed) {
+      const out = Object.assign({}, data);
+      (j.removed || []).forEach((k) => {
+        delete out[k];
+      });
+      Object.assign(out, j.changed || {});
+      lastDataV = j.v;
+      return out;
+    }
+    lastDataV = lastMtime;
+    return j;
   }
   async function cycleBurnStep(back) {
     const cur = data && data.burndown && data.burndown.step || BURN_STEP_ORDER[0];
@@ -3152,7 +3169,8 @@ var DreamworkDesign = (() => {
     try {
       const wasBurn = burnKey(data);
       const bdHover = snapshotBdHover();
-      setData(await (await fetch(dataJsonUrl())).json());
+      lastDataV = null;
+      setData(applyDataResponse(await (await fetch(dataJsonUrl())).json()));
       const burnBefore = burnKey(data) !== wasBurn ? snapshotBars() : null;
       if (view && view.name === "dashboard") {
         const html = await buildCurrent();
@@ -4569,7 +4587,13 @@ var DreamworkDesign = (() => {
         fetchedAt = Date.now();
         const wasGit = gitKey(data), wasBurn = burnKey(data);
         if (burnStepPref === null) burnStepPref = loadBurnStepPref();
-        setData(await (await fetch(dataJsonUrl())).json());
+        const d = applyDataResponse(await (await fetch(dataJsonUrl())).json());
+        if (d) {
+          setData(d);
+        } else {
+          setTimeout(tick, 2e3);
+          return;
+        }
         const tickView = view;
         const kept = snapshotCardState();
         const askKept = snapshotAskState();
