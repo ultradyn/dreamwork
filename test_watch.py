@@ -5316,6 +5316,48 @@ class TestAppShell(unittest.TestCase):
             "dashboard's empty route word and never says where it is): %s"
             % sorted(missing_title))
 
+        # #596: TITLES is the fourth per-route table — the on-page HEADING,
+        # via `const nextTitle = (TITLES[v.name] || TITLES.dashboard)(v, d)`.
+        # A route missing from it silently heads the page with the dashboard's
+        # "dreamwork watch": the same silent per-route fallback #302 (TINT/
+        # SEED) and #318 (TITLE_ROUTE) guard above, on its third outing —
+        # /research had no entry, so the heading read as the dashboard.
+        # TITLES cannot share `table_keys` above: its `review` entry holds a
+        # `}` inside a template interpolation (`${esc(...)}`) and its `chat`
+        # entry is a brace-balanced arrow body, so the helper's `[^}]*` stops
+        # at the first inner `}` and reads the table short, dropping every
+        # key after `review` (the naive reuse reports chat/question/reviews/
+        # research missing even when they are present — a false red, not a
+        # check). A brace depth-walk finds the real close; block comments are
+        # stripped first so a `word:` inside a comment cannot pose as, or
+        # mask, a property key. The same `(\w+)\s*:` regex then sees every
+        # entry, and the diff against `routes` stays honest.
+        ts = router.find("const TITLES = {")
+        self.assertNotEqual(ts, -1, "TITLES table not found in ROUTER_JS")
+        ob = router.find("{", ts)
+        depth, j = 0, ob
+        while j < len(router):
+            if router[j] == "{":
+                depth += 1
+            elif router[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        self.assertGreater(j, ob, "TITLES table has no closing brace")
+        titles_body = re.sub(r"/\*.*?\*/", "", router[ob + 1:j], flags=re.S)
+        titles_keys = set(re.findall(r"(\w+)\s*:", titles_body))
+        self.assertGreaterEqual(
+            len(titles_keys), 2,
+            "TITLES parsed fewer than 2 keys — the depth walk or the key "
+            "regex broke on the table?")
+        missing_titles = routes - titles_keys
+        self.assertFalse(
+            missing_titles,
+            "routes with no TITLES entry (the page heading falls back to the "
+            "dashboard's \"dreamwork watch\" and never names the surface): %s"
+            % sorted(missing_titles))
+
     def test_qa_compose_has_accessible_name_and_send_floor(self):
         # #273: placeholder is not a name; dock/cards need aria-label that
         # tracks mode, and the send control must meet the 44px target floor.
