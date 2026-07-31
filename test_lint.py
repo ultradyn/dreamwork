@@ -7389,10 +7389,13 @@ class TestBriefLaneScratch:
         assert "999-generic.md" in scope["in_scope"], scope
         assert "999-generic.md" in scope["missing"], scope
 
+        # Both findings are true of this brief and both are reported: it names
+        # no private directory AND points at the shared scratchpad. One fix must
+        # not hide the other.
+        assert "999-generic.md" in scope["shared"], scope
         errors, rep = self._errors(t)
-        assert len(errors) == 1, rep.render()
-        assert "999-generic.md" in errors[0], errors[0]
-        assert "#652" in errors[0], errors[0]
+        assert len(errors) == 2, rep.render()
+        assert all("999-generic.md" in e and "#652" in e for e in errors), errors
 
     def test_naming_the_helper_satisfies_the_rule(self, tmp_path):
         """Production line: the LANE_SCRATCH_TOKEN_RE branch of
@@ -7515,3 +7518,42 @@ class TestBriefLaneScratch:
         assert lint.LANE_SCRATCH_PHRASE in text, (
             f"{lint.LANE_SCRATCH_PHRASE!r} does not appear contiguously in "
             "SKILL.md — rewrap the paragraph or the cutoff cannot resolve")
+
+    def test_the_helper_in_prose_does_not_excuse_a_shared_path_in_the_example(
+            self, tmp_path):
+        """Production line: the SHARED_SCRATCHPAD_RE finding. The realistic
+        failure — helper mentioned, older worked example pasted underneath. The
+        lane copies the example, so naming the helper must not buy a pass."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "991-mixed.md",
+                    "# Brief\n\nWorktree: `.worktrees/lane-991m`\n\n"
+                    "Use `dev/lane_scratch.py` for scratch.\n"
+                    f"Snapshot: `cp client/router.js $SCRATCH/router.js.orig`, {self.TEACH}\n")
+        scope = lint.classify_brief_lane_scratch(t)
+        assert "991-mixed.md" not in scope["missing"], "helper is named, so not 'missing'"
+        assert "991-mixed.md" in scope["shared"], scope
+        errors, rep = self._errors(t)
+        assert len(errors) == 1, rep.render()
+        assert "SHARED" in errors[0], errors[0]
+
+    def test_the_derived_idiom_is_not_flagged_as_shared(self, tmp_path):
+        """`$S/` after `S="$(dev/lane_scratch.py …)"` is the CORRECT idiom and
+        must not be swept up by the shared-scratchpad matcher."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "990-good.md",
+                    "# Brief\n\nWorktree: `.worktrees/lane-990g`\n\n"
+                    '`S="$(dev/lane_scratch.py snap)"`; `cp f "$S/f"`; '
+                    f"{self.TEACH}\n")
+        errors, rep = self._errors(t)
+        assert errors == [], rep.render()
+
+    def test_a_shared_path_suppresses_the_ok_row(self, tmp_path):
+        """A finding must not sit next to a clean coverage row."""
+        t, git = self._landed(tmp_path)
+        self._brief(t, git, "989-sh.md",
+                    "# Brief\n\nWorktree: `.worktrees/lane-989s`\n\n"
+                    f"`dev/lane_scratch.py`; snapshot to `/tmp/claude-1000/x/scratchpad/bak`, {self.TEACH}\n")
+        rep = lint.Report()
+        lint.check_brief_lane_scratch(t / ".dreamwork", rep)
+        assert [d for lvl, w, d in rep.rows if lvl == lint.OK and w == "briefs"] == [], \
+            rep.render()

@@ -3735,6 +3735,13 @@ RESTORE_CLAUSE_RE = re.compile(r"never\s+`?git\s+checkout", re.I)
 LANE_SCRATCH_TOKEN_RE = re.compile(r"lane[_-]scratch", re.I)
 # Lane name as it appears in a worktree path, e.g. `.worktrees/lane-652scratch`.
 WORKTREE_LANE_RE = re.compile(r"\.worktrees/([A-Za-z0-9._-]+)")
+# An unambiguous pointer at the SHARED harness scratchpad. Flagged even when the
+# brief also names the helper, because the realistic failure is a brief that
+# mentions the helper in prose and then pastes an older worked example — the
+# lane copies the example. Measured over 218 briefs: `/tmp/claude-` appears in 1
+# (pre-cutoff), `$SCRATCH` in 0, so this is near-zero noise. Deliberately does
+# NOT match `$S/`, which is the correct idiom once S is bound by the helper.
+SHARED_SCRATCHPAD_RE = re.compile(r"/tmp/claude-|\$SCRATCH\b")
 
 
 def resolve_lane_scratch_cutoff(root: Path) -> str | None:
@@ -3786,7 +3793,7 @@ def classify_brief_lane_scratch(root: Path) -> dict:
     """
     empty: dict = {
         "cutoff": None, "teaching": [], "in_scope": [],
-        "grandfathered": [], "skipped": [], "missing": [],
+        "grandfathered": [], "skipped": [], "missing": [], "shared": [],
     }
     briefs_dir = root / ".dreamwork" / "docs" / "briefs"
     if not briefs_dir.is_dir():
@@ -3799,7 +3806,7 @@ def classify_brief_lane_scratch(root: Path) -> dict:
         return empty
     out = {
         "cutoff": cutoff, "teaching": [], "in_scope": [],
-        "grandfathered": [], "skipped": [], "missing": [],
+        "grandfathered": [], "skipped": [], "missing": [], "shared": [],
     }
     for path in sorted(briefs_dir.glob("*.md")):
         try:
@@ -3824,6 +3831,8 @@ def classify_brief_lane_scratch(root: Path) -> dict:
         out["in_scope"].append(path.name)
         if not brief_names_lane_private_snapshot(text):
             out["missing"].append(path.name)
+        if SHARED_SCRATCHPAD_RE.search(text):
+            out["shared"].append(path.name)
     return out
 
 
@@ -3900,10 +3909,19 @@ def check_brief_lane_scratch(dw: Path, rep: Report) -> None:
             "generic snapshot names silently restore each other's bytes with "
             "both `cmp` checks green; route it to `dev/lane_scratch.py` (#652)",
         )
+    for name in scope["shared"]:
+        rep.add(
+            ERROR, "briefs",
+            f"{name} teaches the `cp` restore protocol and points at the SHARED "
+            "harness scratchpad — every concurrent lane resolves to that one "
+            "directory, so naming the helper in prose does not help if the "
+            "worked example still snapshots there; the lane copies the example "
+            "(#652)",
+        )
     n_t = len(scope["teaching"])
     n_in = len(scope["in_scope"])
     n_gf = len(scope["grandfathered"])
-    if n_t and not scope["missing"]:
+    if n_t and not scope["missing"] and not scope["shared"]:
         rep.add(
             OK, "briefs",
             f"{n_t} restore-teaching brief(s), {n_in} in scope after "
