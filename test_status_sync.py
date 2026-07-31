@@ -1009,3 +1009,161 @@ def test_status_write_failure_leaves_existing_file_intact(tmp_path, monkeypatch)
         "status.json was torn by a failed write — a crash mid-write must "
         "leave the pre-existing file byte-identical (#541); got %r"
         % after[:40])
+
+
+# ── 13. #716: discovery ADDS lanes the prune-only field missed ──────────
+#
+# The defect: `dreamers` is printed under `coverage: derived` but the
+# derivation only ever SUBTRACTED (dead pid, landed task). Nothing added a
+# lane, so a freshly-dispatched fleet read as zero while it ran. Discovery
+# is the missing ADD: a `ccc` lane's cwd is its worktree, so a real process
+# whose cwd is under `.worktrees/<lane>` and whose argv[0] is `ccc` is a
+# live lane the field must carry.
+#
+# These tests spawn REAL processes in real `.worktrees/` dirs under the
+# target (no fakes): the discovery function reads the real `/proc/*/cwd` and
+# `/proc/*/cmdline`. The discriminating Direction-1 assertion names WHICH
+# lane is missing, not a count — `len(dreamers) > 0` passes against the bug.
+
+class TestDiscoveryAddsMissingLanes:
+    """#716: a live ccc lane whose cwd is under .worktrees/ is discovered.
+
+    Production line whose reversion reds each arm: the `discover_lanes` call
+    and merge block in ``main`` (or ``discover_lanes`` returning ``[]``).
+    Revert the merge (skip appending ``added`` to ``pruned``) and a
+    dispatched-and-running lane stays absent from ``dreamers`` while the tool
+    reports "already in sync" — the bug in production tonight.
+    """
+
+    def _make_worktree(self, target: Path, lane: str) -> Path:
+        wt = target / ".worktrees" / lane
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "BRIEF.md").write_text("lane brief")
+        return wt
+
+    def _spawn_cwd_ccc(self, cwd: Path, hold: float = 30.0):
+        """A live process whose cwd is `cwd` and whose argv[0] is `ccc`.
+
+        Discovery keys on cwd (under .worktrees/) AND argv[0] basename
+        (== `ccc`). `executable` sets argv independently of the binary, so
+        argv[0] is `ccc` while perl sleeps. `cwd=` sets the child's real
+        cwd — the thing `readlink /proc/<pid>/cwd` returns.
+        """
+        return subprocess.Popen(
+            ["ccc", "-e", f"sleep {hold}", "--", "--yolo", "@glm52", "brief"],
+            executable=_which_perl(), cwd=str(cwd),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+
+    def test_discovers_a_running_lane_the_field_did_not_carry(
+            self, tmp_path, monkeypatch):
+        # Confine discovery to the test target: point os.listdir('/proc') at
+        # a fake proc whose only entries are the spawned lane + a noise pid.
+        # discover_lanes reads /proc directly, so a monkeypatch of
+        # os.listdir is the one seam that reaches it — and it is exercised
+        # alongside the real /proc/<pid>/cwd and /proc/<pid>/cmdline reads,
+        # which no fake can satisfy. (See TestRealProcessDetector for the
+        # same real-reads principle against pgrep.)
+        wt = self._make_worktree(tmp_path, "lane-707sweep")
+        proc = self._spawn_cwd_ccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid), \
+                "precondition: spawned ccc lane must be alive"
+            real_cwd = status_sync._read_proc_cwd(proc.pid)
+            assert real_cwd == str(wt), \
+                "precondition: spawned lane cwd must be the worktree: %r" % real_cwd
+            assert status_sync._is_ccc_proc(proc.pid), \
+                "precondition: spawned argv[0] must read as ccc"
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            found = status_sync.discover_lanes(tmp_path)
+            assert ("lane-707sweep", proc.pid) in found, found
+            # Task id is derived from the lane name (707 IS open here).
+            assert status_sync._lane_task("lane-707sweep", [707]) == 707
+
+            status = {"dreamers": [], "current_task_ids": [], "queue": {},
+                      "task": "t"}
+            rc, out, err = _run(status, _ledger(707), tmp_path)
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            tasks = {d["task"] for d in result["dreamers"]}
+            # THE DISCRIMINATING ASSERTION (Direction 1): the lane is present
+            # by its task id. A count-only check passes against the bug; this
+            # names exactly which lane was missing.
+            assert 707 in tasks, \
+                "discovery must add the running lane by its task id; got %s" \
+                % result["dreamers"]
+            assert any(d.get("lane") == "lane-707sweep"
+                       for d in result["dreamers"]), result["dreamers"]
+            assert "discovered" in err, \
+                "the discovery report must fire on stderr: %s" % err
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_does_not_clobber_coordinator_authored_entry(self, tmp_path,
+                                                         monkeypatch):
+        # A lane the field ALREADY carries (coordinator-authored) must not be
+        # duplicated or overwritten by discovery. The merge keys on lane name;
+        # an existing entry is kept verbatim.
+        wt = self._make_worktree(tmp_path, "lane-707sweep")
+        proc = self._spawn_cwd_ccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            authored = {"task": 707, "lane": "lane-707sweep",
+                        "pid": proc.pid,
+                        "brief": str(wt / "BRIEF.md"),
+                        "dispatch": "ccc", "model": "ccc @glm52",
+                        "note": "coordinator-authored, must survive"}
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            status = {"dreamers": [authored], "current_task_ids": [707],
+                      "queue": {"in_progress": 1, "pending": 0}, "task": "t"}
+            rc, out, err = _run(status, _ledger(707), tmp_path)
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            assert len(result["dreamers"]) == 1, result["dreamers"]
+            # Verbatim survival: coordinator fields are not lost to discovery.
+            assert result["dreamers"][0].get("note") == \
+                "coordinator-authored, must survive", result["dreamers"]
+            assert "discovered" not in err, \
+                "an already-carried lane must not be reported as discovered"
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_check_exits_one_when_a_lane_is_discovered(self, tmp_path,
+                                                       monkeypatch):
+        # --check must exit 1 (stale) without writing when discovery finds a
+        # lane the field lacks — the safe-on-a-bad-tick contract (#716
+        # verification gate). A write here would be the bug.
+        wt = self._make_worktree(tmp_path, "lane-707sweep")
+        proc = self._spawn_cwd_ccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            status = {"dreamers": [], "current_task_ids": [], "queue": {},
+                      "task": "t"}
+            target = _write_target(tmp_path, status, _ledger(707))
+            before = (tmp_path / ".dreamwork" / "status.json").read_bytes()
+            out_s, err_s = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out_s), \
+                    contextlib.redirect_stderr(err_s):
+                rc = status_sync.main(
+                    ["--target", str(target), "--check"])
+            assert rc == 1, "discovery must register as stale under --check"
+            assert (tmp_path / ".dreamwork" / "status.json").read_bytes() \
+                == before, "--check must not write"
+            assert "discovered" in err_s.getvalue(), err_s.getvalue()
+        finally:
+            proc.kill()
+            proc.wait()
