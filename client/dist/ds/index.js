@@ -636,7 +636,11 @@ var DreamworkDesign = (() => {
       return Object.entries(v).map(([k, x]) => `${k.replace(/_/g, " ")}: ${stLines(x).join(", ")}`);
     return [String(v)];
   }
-  var stField = (k, v) => `<div class="stfield"><span class="stk">${esc(k.replace(/_/g, " "))}</span><span class="stvals">` + stLines(v).map((l) => `<div class="stval">${mdInline(l)}</div>`).join("") + `</span></div>`;
+  function queuedDispatchLines(v) {
+    if (!Array.isArray(v)) return stLines(v);
+    return v.flatMap((entry) => entry && typeof entry === "object" && typeof entry.note === "string" ? [entry.note] : stLines(entry));
+  }
+  var stField = (k, v) => `<div class="stfield"><span class="stk">${esc(k.replace(/_/g, " "))}</span><span class="stvals">` + (k === "queued_dispatches" ? queuedDispatchLines(v) : stLines(v)).map((l) => `<div class="stval">${mdInline(l)}</div>`).join("") + `</span></div>`;
   var ST_GLANCE = [
     "awaiting_human",
     "push",
