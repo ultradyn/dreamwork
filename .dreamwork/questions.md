@@ -2,6 +2,54 @@
 
 ## Open
 
+- **P1 · 2026-07-31 21:45 — #691: cheap-model recap of the main agent — three design calls.**
+  Your steer (receipt 323d2ef1): *"Use cheap model to generate recap of current main agent actions …
+  Present the design for me to review first (gates implementation). Ask questions if unsure."* Design at
+  `.dreamwork/docs/plans/main-agent-recap.md` (design only; authorises no code). It is proven end to end:
+  a real `ccc -y @glm52` run over your live session tonight produced an accurate recap in 19 s from a
+  6.2 KB digest. Settled without asking: the input is the JSONL transcript (a 17 MB scan costs 0.36 s);
+  compaction cannot fool it, because the transcript is never truncated and the `isCompactSummary` blob is
+  dropped by exact field test while the boundary is marked; the cap is 24 KiB of prompt, head 1/3 + tail
+  2/3, middle elided with a marker naming count, span and volume; the store is `ledger.sqlite3` (the
+  journal is receipt-authority-only by its own design, and gitignoring does not discriminate — both are);
+  and the schedule is a `tee` leg on the existing heartbeat pipeline, because an independent timer can
+  hold an *offset* but not a *phase*. **One defect found that blocks the feature as specified:**
+  `status.json` has no `agent_session` key, so nothing says which transcript is yours — and deriving it
+  from the target directory points at a file two days stale, because your live session sits under a
+  *worktree* slug. The design refuses and says so rather than guessing; the missing key is a #665
+  regression worth its own task.
+
+  **`Q1` — where does the feature gate live?** **`rec: a tracked `.dreamwork/recap` file`** carrying
+  `enabled: no` / `runner: ccc -y @glm52` / `every: 1` in the existing knob grammar — gate and your
+  "configurable" runner in one place, closed key set so a misspelled key is a lint ERROR rather than a
+  silently-on feature, default off so a target that upgrades does not quietly gain a model call every
+  4.75 min. Turning it off is one word and takes effect on the next beat. **You should know the
+  convention you are being asked about does not exist:** `SKILL.md:913` says *"Experiments are
+  feature-gated"* and that is the entire text — no mechanism, no example, nothing in the codebase
+  implements it. The alternative is making the recap a real `ud-dreamwork-recap` plugin to borrow the one
+  proven consent gate (`- Load:` in DREAMWORK.md), which travels in git and is re-checked at runtime, but
+  is plugin machinery for one script. Honest limit either way: the ~11 MB consumer still reads the pipe
+  when off; the *runner* never starts.
+
+  **`Q2` — every beat, or every nth?** **`rec: every beat, with `every` as the knob`** — 303 runs/day at
+  ~8% duty cycle, ~20 MB time-averaged, ~0.5M cheap tokens/day. Memory is what is scarce here (swap 55 of
+  62 GB), and the thing that keeps it affordable is the 120 s timeout killing the process *group*: a
+  `ccc` run is 7 processes and ~240 MB, and without the timeout a hung one makes that permanent. `every:
+  2` lets you halve it without a code change; the wider window is absorbed by the cap.
+
+  **`Q3` — does it really animate?** **`rec: yes, reusing #559's cross-dissolve`** (`bdContentSwap`,
+  `.42s`, reduced motion snaps) gated on the recap's id and never on the tick — ungated the gesture would
+  replay ~142× per recap, which is exactly the motion-with-nothing-behind-it rule. Asking anyway because
+  the counter-evidence is strong: `transitions.md` is opt-in and its closed list ends *"Nothing else
+  animates"*, and the repo's precedent for a tick-re-rendered dashboard text block is **explicitly no
+  motion**, said in five code sites. Your *"transition when updated"* could mean the value changes rather
+  than that it moves.
+
+  **If you say nothing:** nothing is built — the design authorises no code, and the recs stand as
+  defaults when #691's implementation is planned. Build order if it proceeds: the digest builder alone
+  first (all the subtlety, no model, and useful by itself), then the table, then the gated runner.
+  Accepted answers: `rec` (takes all three) · per-question (`Q1: …`) · free text.
+
 - **P2 · 2026-07-31 07:30 — #584 (from #571): persistent user settings — four design calls.**
   Your steer (receipt 09a8897b): *"Add persistent user settings in the database, probably just store it as jsonb
   if you can. indexed by userid … check `~/src/refs/amr-ui/` for a good example."* Design at
