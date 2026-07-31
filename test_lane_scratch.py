@@ -224,6 +224,18 @@ class TestThisRepoIsSeparated:
         paths = [Path(line.split(" ", 1)[1]) for line in out.splitlines()
                  if line.startswith("worktree ")]
         live = [p for p in paths if p.is_dir()]
-        assert len(live) >= 2, "need at least two live worktrees for this to mean anything"
+        # The precondition is correct but the test cannot control it: an empty
+        # fleet (only the main checkout) is the STEADY STATE between dispatches,
+        # so `assert len(live) >= 2` read a "could not run" as "found a defect"
+        # and the suite was only ever green while lanes happened to be running.
+        # Skip — do NOT lower to `>= 1`: a one-worktree run genuinely cannot
+        # detect a collision, and asserting over it would be the vacuous pass
+        # #671 forbids (#471: a check that gated nothing must not read as a
+        # verdict; #136: "did not run" and "found a defect" must not render
+        # identically).
+        if len(live) < 2:
+            pytest.skip("need at least two live worktrees to detect a "
+                        "collision; only the main checkout is live between "
+                        "dispatches (the fleet's steady state)")
         keys = [str(ls.lane_scratch_dir(p, create=False)) for p in live]
         assert len(set(keys)) == len(keys), f"colliding lane dirs: {keys}"

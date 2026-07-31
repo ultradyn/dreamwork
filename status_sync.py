@@ -463,10 +463,26 @@ def main(argv: list[str] | None = None) -> int:
     # A sub-id (`392a`) is in flight on its base task (392); compare by base.
     # Reaping (not a hard stop) is the load-bearing change: the old code
     # returned 2 here, which stopped the whole sync for one stale entry.
+    #
+    # #702: an entry whose task has no derivable base id (`_base_id` returns
+    # None — observed: `"#696"` where `696` was meant, because the regex
+    # matches leading digits and a `#` prefix yields none) used to land here
+    # too, and `None in ids` is False, so it was reaped with the SAME message
+    # as a genuinely dead lane. A format error must not read as a correct reap
+    # (#136: "nothing needs you" and "the channel is broken" must not render
+    # identically), and a task the comparison cannot reach must not be dropped
+    # by a judgment it never reached (#537). So such an entry is KEPT and the
+    # format error is reported loudly; only a task whose base id IS derivable
+    # and is NOT open counts as genuinely landed.
     pruned = []
     reaped = []
+    malformed = []
     for d in pid_live:
-        if _base_id(d.get("task")) in ids:
+        base = _base_id(d.get("task"))
+        if base is None:
+            malformed.append(d)
+            pruned.append(d)          # kept — cannot compare, so cannot reap
+        elif base in ids:
             pruned.append(d)
         else:
             reaped.append(d)
@@ -474,6 +490,13 @@ def main(argv: list[str] | None = None) -> int:
         print("status_sync: reaped %d dreamer(s) whose task is not under "
               "`## Open`: %s"
               % (len(reaped), [_entry_tag(d) for d in reaped]), file=sys.stderr)
+    if malformed:
+        print("status_sync: KEPT %d dreamer(s) with a task id the ledger "
+              "comparison cannot reach (no leading digits — expected a plain "
+              "id like 696, saw a form like '#696'); not reaped because "
+              "'cannot compare' must not read as 'landed' (#136, #702): %s"
+              % (len(malformed), [_entry_tag(d) for d in malformed]),
+              file=sys.stderr)
 
     # Normalise task ids on write (#402b): plain → int, sub-id → str. This
     # happens BEFORE the live set is derived so current_task_ids and the
