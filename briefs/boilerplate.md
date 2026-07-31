@@ -115,6 +115,11 @@ worth keeping, a working change, even a partial one — commit it.** A commit th
 measured X, Y still open" is a result. An uncommitted worktree is a coin flip. Amend or add
 commits freely afterwards; the coordinator squashes nothing and reads your history.
 
+**Commit the deliverable, not just the code.** The inbox is not lossless (`#404`/`#392a`
+landed work whose report never arrived), so whatever must survive — an audit, an analysis, a
+design doc — goes into the commit, and the inbox report carries the richer context. A lane
+cannot land work without committing; that is the one channel that cannot be skipped.
+
 **Do NOT touch `:35110` (the live dashboard) or `:35113` (dev).** Bind ephemeral ports only.
 Limit builds and tests to **2 threads**.
 
