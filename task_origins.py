@@ -56,6 +56,7 @@ Rendering this on the dashboard is #217 and is deliberately NOT here.
 
 import argparse
 import json
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -64,6 +65,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import ledger_parse  # the #213 entry/marker grammar — imported, never re-copied  # noqa: E402
 from ledger_parse import source_of_truth  # noqa: E402 — #294 inc 7 dispatch
+from dreamwork_db import Access, open_database  # noqa: E402
+from dreamwork_db.tasks import task_store_spec  # noqa: E402
 
 DEFAULT_PATH = ".dreamwork/tasks.md"
 GIT_TIMEOUT = 15
@@ -127,46 +130,14 @@ def _store_origins(dreamwork_dir):
     revisited — same first-sight semantics). The first-sight epoch and sha
     come from the earliest ``task_event`` row per task.
     """
-    import sqlite3
-    from datetime import datetime
     db = ledger_parse.store_path(dreamwork_dir)
     if not db.exists():
         return None
     try:
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        with open_database(task_store_spec(db), access=Access.READ) as database:
+            return database.tasks.origins()
     except sqlite3.Error:
         return None
-    try:
-        task_rows = conn.execute(
-            "SELECT id, origin FROM task ORDER BY id").fetchall()
-        event_rows = conn.execute(
-            "SELECT task_id, MIN(at), detail FROM task_event "
-            "WHERE from_state IS NULL GROUP BY task_id").fetchall()
-    except sqlite3.Error:
-        return None
-    finally:
-        conn.close()
-    # First-sight sha + epoch from the earliest event per task.
-    import re
-    first = {}
-    for tid, at, detail in event_rows:
-        sha = ""
-        m = re.search(r"\(([0-9a-f]{7,40})\)", detail or "")
-        if m:
-            sha = m.group(1)
-        try:
-            epoch = int(datetime.fromisoformat(at).timestamp())
-        except (ValueError, TypeError, OSError):
-            epoch = 0
-        first[int(tid)] = (sha, epoch)
-    tasks = []
-    for tid, origin in task_rows:
-        sha, epoch = first.get(int(tid), ("", 0))
-        tasks.append({"id": int(tid),
-                      "origin": origin if origin in ("human", "loop") else "unknown",
-                      "first_commit": sha, "first_seen": epoch,
-                      "title": ""})
-    return tasks
 
 
 def task_origins(repo, path: str = DEFAULT_PATH) -> dict:
