@@ -206,6 +206,7 @@ append — never a deletion — so a folded hand-off is not flagged twice.
 - **#679** → folded (2026-07-31 21:10) — merged `8156d983`. cited-sha resolution ERROR; TRUE POSITIVE on first run — bd0f0d1 (#456) resolved to nothing, real landing 428f7572, repaired
 - **#678** → folded (2026-07-31 21:18) — merged; claude-code exposes no subagent discriminator, `is_subagent` now records `null`. Direction-2 closed by a test proving a discriminating client still reports a confident boolean. Unblocks the orient write.
 - **#687** → folded (2026-07-31 21:22) — merged `dc3ac7c3`. SKILL.md reconciled to `lessons.md:2704`: lanes report to the inbox, the coordinator writes the hand-off at merge. Rebase rule preserved, object changed. Also fixed a pre-existing `#392a` mis-citation.
+- **#674** → folded (2026-07-31 21:26) — merged `9125e443` (author `ac4fb4f2` glm52, Opus review fixes `ce63dca6`). Dock narrowed 45%→3.0%, hairline gone, five axes. Review closed two proven false-greens.
 
 ## Pending
 
