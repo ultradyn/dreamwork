@@ -285,6 +285,9 @@ def _fleet_fact(target: str) -> str:
                     this includes both ccc and Agent-tool lanes; each survivor
                     retains its `dispatch`, so the two counts are available
                     here and render separately rather than under a stale label.
+                    The denominator is live PROCESSES, matching delegation's
+                    average-concurrency target; paired agents on one task each
+                    count because each consumes one unit of that concurrency.
 
     Each is labelled by HOW IT WAS OBTAINED, so neither can be read as "the
     fleet". Where they disagree the reader learns something real.
@@ -320,17 +323,11 @@ def _fleet_fact(target: str) -> str:
     ]
     if unknown:
         raise status_sync.LivenessUnknown("live lane has unknown dispatch")
-    ccc_live = {
-        d["task"] for d in pruned if d.get("dispatch") in (None, "ccc")
-    }
-    agent_live = {
-        d["task"] for d in pruned if d.get("dispatch") == "agent_tool"
-    }
-    if ccc_live & agent_live:
-        raise status_sync.LivenessUnknown("live task has multiple dispatch paths")
+    ccc_live = sum(d.get("dispatch") in (None, "ccc") for d in pruned)
+    agent_live = sum(d.get("dispatch") == "agent_tool" for d in pruned)
 
     return "lanes %s%s%d ccc + %d agent-tool live" % (
-        recorded, SEP, len(ccc_live), len(agent_live))
+        recorded, SEP, ccc_live, agent_live)
 
 
 def _unresolved(label: str, exc: BaseException) -> str:
