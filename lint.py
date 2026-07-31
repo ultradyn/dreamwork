@@ -451,6 +451,7 @@ def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
         r"(?m)^\s*-\s+\*\*([^*\n]+?) \((?:via [^,\n]+, )?"
         r"\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\)(?::|\s+—)")
     missing = []
+    processed_only = []
     unclassifiable = []
     for item in items:
         body = item["body"]
@@ -462,10 +463,12 @@ def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
             continue
         candidate = dated_head.search(body)
         if candidate:
-            unclassifiable.append((item["title"], candidate.group(1)))
+            row = (item["title"], candidate.group(1))
+            (processed_only if candidate.group(1) == "Folded"
+             else unclassifiable).append(row)
         else:
             missing.append(item["title"])
-    if not missing and not unclassifiable:
+    if not missing and not processed_only and not unclassifiable:
         # Silent when every answered entry carries a date. `check_questions`
         # already owns the OK row for this file, and emitting a second one
         # fragments the summary; the coverage this check exists to provide is
@@ -481,18 +484,28 @@ def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
             f"human response — a withdrawn ask carries none by design, but a "
             f"dropped resolution marker is a regression that otherwise hides: "
             f"{sample}{more} (#411)")
-    if unclassifiable:
+    def render_sample(rows):
         sample = "; ".join(
-            f"{title[:40]} [`{label}`]"
-            for title, label in unclassifiable[:3])
-        more = ("" if len(unclassifiable) <= 3
-                else f"; +{len(unclassifiable) - 3} more")
+            f"{title[:40]} [`{label}`]" for title, label in rows[:3])
+        more = "" if len(rows) <= 3 else f"; +{len(rows) - 3} more"
+        return sample + more
+
+    if processed_only:
+        rep.add(
+            WARN,
+            "questions.md",
+            f"{len(processed_only)} of {len(items)} answered entries carry "
+            f"`Folded` but no recorded human response — `Folded` records "
+            f"processing, not a resolution: {render_sample(processed_only)} "
+            f"(#767)")
+    if unclassifiable:
         rep.add(
             WARN,
             "questions.md",
             f"{len(unclassifiable)} of {len(items)} answered entries have a "
-            f"dated but unclassifiable resolution record — `Folded` records "
-            f"processing, not a human response: {sample}{more} (#767)")
+            f"dated but unclassifiable resolution record — report the unknown "
+            f"marker instead of guessing: {render_sample(unclassifiable)} "
+            f"(#767)")
 
 
 def check_resolution_marker_outside_title(dw: Path, watch, rep: Report) -> None:

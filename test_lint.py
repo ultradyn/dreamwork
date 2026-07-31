@@ -377,7 +377,7 @@ class TestAnsweredResolutionDates:
         ])
         rows = self.rows(t)
         assert len(rows) == 1
-        assert "dated but unclassifiable resolution record" in rows[0]
+        assert "carry `Folded` but no recorded human response" in rows[0]
         assert "Processed without his answer" in rows[0]
         assert "[`Folded`]" in rows[0]
 
