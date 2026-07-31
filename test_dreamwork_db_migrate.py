@@ -208,7 +208,16 @@ def test_already_v3_fixture_cannot_false_green_the_v2_migration_proof(tmp_path):
     _frozen_v2_store(path)
     conn = sqlite3.connect(str(path))
     try:
-        conn.execute("CREATE TABLE question (id INTEGER PRIMARY KEY)")
+        # Construct the exact tautology: manufacture the "before" fixture
+        # from the v3 DDL under test but leave meta claiming v2.  A no-op
+        # migration followed only by post-shape assertions would pass.
+        from dreamwork_db.migrations import v003_questions
+        for statement in v003_questions.SCHEMA_STATEMENTS:
+            conn.execute(statement)
+        assert {"question", "question_message", "review_file", "issue",
+                "review_link"} <= _tables(conn), (
+            "direction-2 precondition: fixture must already have full v3 shape"
+        )
         with pytest.raises(AssertionError, match="already contains v3 tables"):
             _assert_frozen_v2_subject(conn)
     finally:
