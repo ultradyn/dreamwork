@@ -37,9 +37,10 @@ The grammar rows this classifier covers (§2 table, measured against a real
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, replace
 
-from .model import NODE_KINDS, SourceRef
+from .model import NODE_KINDS, SessionEvent, SessionNode, SourceRef
 
 # --- outcome discriminators -------------------------------------------------
 #
@@ -267,3 +268,312 @@ def _describe_content(content):
             return f"list[{len(content)}] first block type={first.get('type')!r}"
         return f"list[{len(content)}] first={type(first).__name__}"
     return type(content).__name__
+
+
+# === increment 3: full hierarchy scan =======================================
+
+@dataclass(frozen=True)
+class Bookmark:
+    """A major-event bookmark: page boundary or user-turn start (§4).
+
+    Only page boundaries and user-turn starts are bookmarked (§4: ~433 rows
+    for the measured 4-day session = 405 user turns + 28 boundaries).  Agent
+    turns, steps and notes are not major events — counting a tool result as
+    one is injection 2 in the proof.
+    """
+
+    seq: int
+    kind: str          # 'page' | 'turn.user'
+    line: int
+    byte: int
+    ts: str | None
+    label: str
+    node_id: str
+
+
+@dataclass(frozen=True)
+class Diagnostic:
+    """An unclassifiable record, reported not dropped (#702).
+
+    Distinct from a suppressed record (chrome, silent by design #755):
+    unclassifiable looks like content but matches no grammar row, so the
+    scan must carry it forward for a human to see.
+    """
+
+    line: int
+    byte: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class ScanResult:
+    """Complete from-zero scan output (#631 increment 3).
+
+    ``examined`` counts every non-empty line parsed (#671): zero for an
+    empty transcript, N for an all-chrome transcript with no events, and N
+    for a real one — so an empty scan never reads as a confident pass.
+    """
+
+    events: tuple      # tuple[SessionEvent, ...]
+    bookmarks: tuple   # tuple[Bookmark, ...]
+    diagnostics: tuple # tuple[Diagnostic, ...]
+    examined: int
+
+
+def scan_complete(text):
+    """Scan a complete Claude Code JSONL transcript from zero.
+
+    Composes classified records into one session/page/turn/step tree, pairs
+    ``tool_use`` with ``tool_result`` by ``tool_use_id``, emits
+    ``open``/``update``/``close`` events, and produces bookmarks for page
+    boundaries and user-turn starts only.  No append cursor — this is a
+    full from-zero scan (#631 increment 3).
+
+    Parameters
+    ----------
+    text : str
+        The complete JSONL file content (one JSON object per line).
+
+    Returns
+    -------
+    ScanResult
+        ``examined`` is set to the number of non-empty lines parsed, so an
+        empty transcript (``examined == 0``) is never confused with a
+        successful scan of real content (#671).
+    """
+    examined = sum(1 for raw in text.split("\n") if raw.strip())
+    records = list(_iter_records(text))
+    if not records:
+        return ScanResult((), (), (), examined=examined)
+
+    st = _ScanState()
+
+    for record, line, byte, length in records:
+        cls = classify_record(record, line=line, byte=byte, length=length)
+
+        if cls.outcome == SUPPRESSED:
+            continue                       # #755: silent on healthy input
+        if cls.outcome == UNCLASSIFIABLE:
+            st.diagnostics.append(         # #702: reported, not dropped
+                Diagnostic(line=line, byte=byte, reason=cls.reason))
+            continue
+
+        # --- lazy session + page 0 on first content record ---
+        if st.sid is None:
+            session_id = record.get("sessionId") or "sess"
+            st.sid = f"sess:{session_id}"
+            st.emit("open", SessionNode(
+                id=st.sid, parent=None, kind="session",
+                seq=st.next_seq(), ts=cls.ts,
+                label=f"session {session_id}", state="live",
+            ))
+            st.page_n = 0
+            st.page_id = f"{st.sid}/pg:0"
+            st.emit("open", SessionNode(
+                id=st.page_id, parent=st.sid, kind="page",
+                seq=st.next_seq(), ts=cls.ts, label="page 0",
+                state="live", ref=cls.ref,
+            ))
+            st.add_bookmark("page", line, byte, cls.ts, "page 0", st.page_id)
+
+        kind = cls.kind
+
+        if kind == "page":
+            # compact_boundary → close agent turn, open new page
+            st.close_agent(cls.ts)
+            st.page_n += 1
+            st.page_id = f"{st.sid}/pg:{st.page_n}"
+            st.emit("open", SessionNode(
+                id=st.page_id, parent=st.sid, kind="page",
+                seq=st.next_seq(), ts=cls.ts,
+                label=f"page {st.page_n}", state="live", ref=cls.ref,
+            ))
+            st.add_bookmark("page", line, byte, cls.ts,
+                            f"page {st.page_n}", st.page_id)
+
+        elif kind == "turn.user":
+            st.close_agent(cls.ts)
+            uid = cls.uuid or f"s{st.seq + 1}"
+            turn_id = f"{st.page_id}/u:{uid}"
+            st.emit("open", SessionNode(
+                id=turn_id, parent=st.page_id, kind="turn.user",
+                seq=st.next_seq(), ts=cls.ts, label="user turn",
+                state="done", ref=cls.ref,
+            ))
+            st.add_bookmark("turn.user", line, byte, cls.ts,
+                            "user turn", turn_id)
+
+        elif kind in ("step.text", "step.thinking"):
+            st.ensure_agent(record, cls)
+            step_id = f"{st.agent_id}/{cls.uuid or st.seq + 1}"
+            st.emit("open", SessionNode(
+                id=step_id, parent=st.agent_id, kind=kind,
+                seq=st.next_seq(), ts=cls.ts,
+                label=kind.split(".")[1], state="done", ref=cls.ref,
+            ))
+
+        elif kind == "step.tool":
+            if cls.tool and cls.tool.is_result:
+                st.handle_tool_result(cls)
+            else:
+                st.ensure_agent(record, cls)
+                label = (cls.tool.name if cls.tool and cls.tool.name
+                         else "tool")
+                step_uuid = cls.uuid or f"s{st.seq + 1}"
+                step_id = f"{st.agent_id}/{step_uuid}"
+                node = SessionNode(
+                    id=step_id, parent=st.agent_id, kind="step.tool",
+                    seq=st.next_seq(), ts=cls.ts, label=label,
+                    state="live", ref=cls.ref,
+                )
+                st.emit("open", node)
+                if cls.tool and cls.tool.tool_use_id:
+                    st.open_tools[cls.tool.tool_use_id] = node
+
+        elif kind in ("sys.compact", "sys.note"):
+            short = "c" if kind == "sys.compact" else "n"
+            suuid = cls.uuid or f"s{st.seq + 1}"
+            node_id = f"{st.page_id}/{short}:{suuid}"
+            label = ("compaction summary" if kind == "sys.compact"
+                     else "system note")
+            st.emit("open", SessionNode(
+                id=node_id, parent=st.page_id, kind=kind,
+                seq=st.next_seq(), ts=cls.ts, label=label,
+                state="done", ref=cls.ref,
+            ))
+
+    return ScanResult(
+        events=tuple(st.events),
+        bookmarks=tuple(st.bookmarks),
+        diagnostics=tuple(st.diagnostics),
+        examined=examined,
+    )
+
+
+# --- internal helpers -------------------------------------------------------
+
+class _ScanState:
+    """Mutable tree-builder state for one from-zero scan.
+
+    Encapsulates the session/page/turn/tool-pairing state so the scan loop
+    reads as a flat dispatch on classification outcome.  All node identity
+    and event emission flows through here, which is what makes the wire
+    stream deterministic and testable against a hand-authored oracle.
+    """
+
+    def __init__(self):
+        self.events: list[SessionEvent] = []
+        self.bookmarks: list[Bookmark] = []
+        self.diagnostics: list[Diagnostic] = []
+        self.seq = 0        # monotonic node sequence
+        self.bm = 0         # monotonic bookmark sequence
+
+        self.sid: str | None = None         # "sess:<session_id>"
+        self.page_id: str | None = None     # current page node id
+        self.page_n = -1
+
+        self.agent_id: str | None = None    # current agent-turn node id
+        self.agent_seq = 0                  # seq of the agent-turn node
+        self.agent_rid: str | None = None   # requestId grouping this turn
+
+        self.open_tools: dict[str, SessionNode] = {}  # tool_use_id → step
+
+    def next_seq(self):
+        self.seq += 1
+        return self.seq
+
+    def emit(self, ev, node):
+        self.events.append(SessionEvent(ev, node))
+
+    def add_bookmark(self, kind, line, byte, ts, label, node_id):
+        self.bm += 1
+        self.bookmarks.append(Bookmark(
+            seq=self.bm, kind=kind, line=line, byte=byte,
+            ts=ts, label=label, node_id=node_id,
+        ))
+
+    def close_agent(self, ts):
+        """Close the current agent turn (state → done), if one is open."""
+        if self.agent_id is not None:
+            self.emit("close", SessionNode(
+                id=self.agent_id, parent=self.page_id,
+                kind="turn.agent", seq=self.agent_seq, ts=ts,
+                label="agent turn", state="done",
+            ))
+            self.agent_id = None
+            self.agent_rid = None
+
+    def ensure_agent(self, record, cls):
+        """Open a new agent turn when requestId changes or none is open (§2).
+
+        One API call = 1–5 consecutive assistant lines sharing
+        ``requestId``/``message.id``; they form one agent turn.  Dropping
+        this grouping is injection 1 in the proof: two records with the
+        same ``requestId`` would wrongly open two turns.
+        """
+        rid = _request_id(record)
+        if (self.agent_id is None or rid is None
+                or rid != self.agent_rid):
+            self.close_agent(cls.ts)
+            self.agent_rid = rid
+            self.agent_seq = self.next_seq()
+            self.agent_id = f"{self.page_id}/a:{rid or self.agent_seq}"
+            self.emit("open", SessionNode(
+                id=self.agent_id, parent=self.page_id,
+                kind="turn.agent", seq=self.agent_seq, ts=cls.ts,
+                label="agent turn", state="live", ref=cls.ref,
+            ))
+
+    def handle_tool_result(self, cls):
+        """Pair a ``tool_result`` with its open ``tool_use``, or emit orphan.
+
+        Three distinct outcomes that must not render identically (#136):
+        paired (open + update), still-open (open, no update), and orphaned
+        (open with state already done/error, no preceding use).
+        """
+        tid = cls.tool.tool_use_id if cls.tool else None
+        if tid and tid in self.open_tools:
+            original = self.open_tools.pop(tid)
+            state = "error" if (cls.tool and cls.tool.is_error) else "done"
+            self.emit("update", replace(original, state=state, ts=cls.ts))
+        else:
+            parent = self.agent_id or self.page_id
+            oid = cls.uuid or f"s{self.seq + 1}"
+            orphan_id = f"{parent}/orphan:{oid}"
+            state = "error" if (cls.tool and cls.tool.is_error) else "done"
+            self.emit("open", SessionNode(
+                id=orphan_id, parent=parent, kind="step.tool",
+                seq=self.next_seq(), ts=cls.ts,
+                label="orphaned tool result", state=state, ref=cls.ref,
+            ))
+
+
+def _iter_records(text):
+    """Yield ``(record, line, byte, length)`` for each JSONL line in *text*.
+
+    Non-dict JSON and unparseable lines are silently skipped (the scanner
+    counts them in ``examined`` but cannot classify what it cannot parse).
+    """
+    byte = 0
+    for line_no, raw in enumerate(text.split("\n"), start=1):
+        rec_len = len(raw)
+        if raw.strip():
+            try:
+                record = json.loads(raw)
+            except json.JSONDecodeError:
+                byte += rec_len + 1
+                continue
+            if isinstance(record, dict):
+                yield record, line_no, byte, rec_len
+        byte += rec_len + 1
+
+
+def _request_id(record):
+    """Extract the API-call grouping key from an assistant record (§2)."""
+    rid = record.get("requestId")
+    if rid:
+        return rid
+    message = record.get("message")
+    if isinstance(message, dict):
+        return message.get("id")
+    return None
