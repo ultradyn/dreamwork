@@ -6997,12 +6997,16 @@ class TestStoreModeLint:
         assert str(new_id) in view_open, "the id must be visible to parse_ledger"
 
     def test_a_headless_body_quoting_an_origin_marker_stays_single(self, tmp_path):
-        """#557 edge (#4): a headless body that quotes `origin: **x**` in
-        prose would risk a double-origin ERROR. The live tree has none
-        (coordinator-verified 0), but the shape is handled generally: the
-        synthesized head's marker is the column's value (the authority), and
-        the body's prose marker sits on a column-0 line that ends the entry,
-        so exactly one marker is read. No body mutation."""
+        """#557 edge (#4) / #696: a headless body that quotes `origin: **x**`
+        in prose would risk a double-origin ERROR. The live tree has none
+        (coordinator-verified 0), but the shape is handled generally. The
+        synthesized head's marker is the column's value (the authority); a
+        body prose quote is not a claim. Before #696 the body quote sat on a
+        column-0 line that ended the entry (truncation hid it); now the
+        projection indents continuation lines so they survive `ledger_entries`
+        (#696), so the head must be read AUTHORITATIVELY — `origin_marks`
+        reads the head line first and ignores the body quote, and
+        `check_task_origins` does not ERROR on the two raw markers."""
         import ledger_parse
         td = self._cut_over(tmp_path)
         new_id = self._file_headless(
@@ -7013,15 +7017,23 @@ class TestStoreModeLint:
         assert ledger_parse.ORIGIN_MARK.search(rec["body"]), \
             "precondition: the body genuinely quotes an origin marker"
         text, _ = lint.ledger_view(td)
-        for ids, body in ledger_parse.ledger_entries(text):
-            if new_id in ids:
-                marks = ledger_parse.ORIGIN_MARK.findall(body)
-                assert marks == ["loop"], (
-                    "synthesized head must be the single origin authority; the "
-                    f"col-0 body marker must not double it: {marks}")
-                break
-        else:
-            assert False, "the headless entry must head an entry in the projection"
+        # #696 precondition: the body continuation is now VISIBLE (indented),
+        # so the raw marker count is two — the old truncation hid the body.
+        body = next(b for ids, b in ledger_parse.ledger_entries(text)
+                    if new_id in ids)
+        assert ledger_parse.ORIGIN_MARK.findall(body) == ["loop", "human"], (
+            "precondition: #696 made the body quote visible; truncation hid it")
+        # THE binding: the head is authoritative, so origin_marks ignores the
+        # body quote and classify_origin / check_task_origins are unchanged.
+        assert ledger_parse.origin_marks(body) == ["loop"], (
+            "head must be the origin authority; body prose must not count: "
+            f"{ledger_parse.origin_marks(body)}")
+        assert ledger_parse.classify_origin(body) == "loop"
+        rep = lint.Report()
+        lint.check_task_origins(text, rep)
+        assert not [r for r in rep.rows if r[0] == lint.ERROR], (
+            "two raw markers must not ERROR once the head is authoritative")
+
 
 
     def test_check_related_markers_reads_the_store_through_ledger_view(self, tmp_path):
@@ -7067,6 +7079,56 @@ class TestStoreModeLint:
         assert any(f"examined {n_store} entries against 2 markers (store)" in o
                    for o in oks), oks
         assert not any("examined 0 entries" in o for o in oks), oks
+
+    # ------------------------------------------------------------------
+    # #696 — a filed body whose prose sits at column 0 truncated at the
+    # first such line, so ledger_entries saw only the head and every
+    # text-consuming check (sweep's `sha in body`, check_landed_still_open)
+    # read a fraction of the entry. The projection must indent continuation
+    # lines so the body reparses. Filed through the REAL writer; the gap is
+    # derived at runtime.
+    # ------------------------------------------------------------------
+    def test_a_column_zero_body_paragraph_survives_the_projection(self, tmp_path):
+        """#696 born-red: ledger_entries ends an entry at the first column-0
+        line, and a filed body's multi-paragraph prose reaches the store
+        UNINDENTED, so the entry truncated to its head alone. sweep and
+        check_landed_still_open read `sha in body` over that truncated text
+        and produced false complaints (the confirmed #124 case). The
+        projection must indent continuation lines. RED: drop the indenting
+        in ledger_view and the sha the second paragraph cites is absent."""
+        import ledger_parse
+        td = self._cut_over(tmp_path)
+        sha = "abc1234deadbeef"
+        marker = "SECOND-PARAGRAPH-MARKER"
+        body = ("the first paragraph of the note\n"
+                f"{marker}: a second paragraph at column zero citing {sha}, "
+                "which sweep and check_landed_still_open read as `sha in body`")
+        new_id = self._file_headless(
+            td, "a multi-paragraph filed entry", body,
+            priority="P2", type="task", origin="loop")
+        # Runtime precondition — the test is discriminating, not vacuous: the
+        # UNINDENTED store body truncates, so ledger_entries loses the second
+        # paragraph. This is the production line the fix sits in front of.
+        store = {ids[0]: b for ids, b in ledger_parse.store_entries(td)}
+        assert new_id in store, "precondition: the entry was filed"
+        raw = ledger_parse.ledger_entries(store[new_id])
+        raw_body = raw[0][1] if raw else ""
+        assert marker not in raw_body, (
+            "precondition: the unindented body must truncate before the "
+            f"second paragraph; got {raw_body!r}")
+        lost_raw = len(store[new_id]) - len(raw_body)
+        assert lost_raw > len(sha), (
+            f"precondition: real text lost to truncation ({lost_raw} chars)")
+        # THE binding: after the projection, the column-0 paragraph survives.
+        text, source = lint.ledger_view(td)
+        assert source == "store"
+        parsed = {ids[0]: b for ids, b in ledger_parse.ledger_entries(text)}
+        assert new_id in parsed, "the entry must head an entry in the projection"
+        assert sha in parsed[new_id], (
+            f"#{new_id}: the column-0 paragraph citing {sha} truncated — "
+            f"parsed {len(parsed[new_id])} chars, lost the second paragraph")
+        assert marker in parsed[new_id], (
+            f"#{new_id}: the second paragraph is invisible to ledger_entries")
 
 class TestReviewDecisionIntegrity:
     """#289 — the coordinator-owned WARN half of the review_decision store:

@@ -42,6 +42,24 @@ ORIGIN_MARK = re.compile(r"origin:\s*\*\*\s*([^*]+?)\s*\*\*")
 KNOWN_ORIGINS = ("human", "loop")
 
 
+def origin_marks(entry_text: str) -> list[str]:
+    """The origin markers that count — head-authoritative (#696).
+
+    The head line carries the origin claim (synthesized for filed entries by
+    `store_entries`, in the ` · `-chain for imported ones). Body prose that
+    QUOTES `origin: **x**` is not a claim, so it must not count once the
+    `ledger_view` projection makes body continuation lines visible (#696):
+    the head line is read first, and only when it holds no COMPLETE marker —
+    the #288/#252 hard-wrap, where `origin:` ends the head and `**value**`
+    opens the indented continuation — does the full entry text supply them.
+    """
+    head = entry_text.split("\n", 1)[0]
+    marks = [v.strip() for v in ORIGIN_MARK.findall(head)]
+    if marks:
+        return marks
+    return [v.strip() for v in ORIGIN_MARK.findall(entry_text)]
+
+
 def ledger_entries(text: str) -> list[tuple[list[int], str]]:
     """Each ledger entry as (its ids, its full text).
 
@@ -77,7 +95,7 @@ def classify_origin(entry_text: str) -> str:
     task_origins wraps it in a try/except because a malformed snapshot must
     fail closed there too.
     """
-    marks = [v.strip() for v in ORIGIN_MARK.findall(entry_text)]
+    marks = origin_marks(entry_text)
     if len(marks) == 1 and marks[0] in KNOWN_ORIGINS:
         return marks[0]
     return "unknown"

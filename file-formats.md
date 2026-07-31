@@ -2348,6 +2348,21 @@ a **projection-only** act: the stored `body` and `body_digest` are never
 touched, so every consumer reading the body column directly (the replay
 checks, the digest verifiers) sees exactly what was written.
 
+**`ledger_view` also indents column-0 body continuation lines as it
+synthesizes** (#696). `ledger_entries` ends an entry at the first column-0
+line that is not a head — load-bearing, because the prose summaries under
+`## Recently landed` are not entries. A filed body's multi-paragraph prose
+and pasted output reach the store at column 0, so without this step the
+entry truncated to its head alone and the text after it was invisible to
+every text-consuming check (sweep's `sha in body`, `check_landed_still_open`).
+Each non-blank continuation line after the head gets ONE leading space, so
+`ledger_entries` keeps it; the head is `^-`-anchored so an indented
+`- **#N**` is never mistaken for one. The stored body is untouched (the
+indent is read-side, like the head synthesis). Origin reading is
+**head-authoritative** for the same reason: a body that QUOTES
+`origin: **x**` in prose is not a claim, so `origin_marks` reads the head
+line first and falls back to the full entry only on a #288/#252 hard-wrap.
+
 **Write verbs** (`ledger_write.py`, #294 inc 9 + follow-up). Post-cutover the
 loop's three real ledger acts go through the store, not through direct
 Markdown mutation: **file** a new task, **land** (fold) a finished one, and
