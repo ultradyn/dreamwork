@@ -11,13 +11,13 @@ or `dev/ledger.py`.
 
 ## What feeds each counter
 
-`_fleet_fact` (`tick_line.py:301-319`) reads ONE `status.json` and derives all three:
+`_fleet_fact` (`tick_line.py`) reads ONE `status.json` and derives all three:
 
 | counter | source field | writer | automatic pruner |
 |---|---|---|---|
 | `lanes N recorded` | `status.json["lanes"]` | coordinator, by hand | **none** |
 | `runners ccc N` | `status.json["lanes"]` (same list) | coordinator, by hand | **none** |
-| `N ccc-live` | `status.json["dreamers"]` → `status_sync.live_lanes` | coordinator, by hand | **`status_sync` every tick** |
+| `N ccc-live` | `status.json["dreamers"]` via `status_sync.live_lanes` | coordinator, by hand | **`status_sync` every tick** |
 
 `status_sync.DERIVED = ("queue", "current_task_ids", "dreamers")` — `dreamers` is owned and
 pruned by the sync tool (dead processes removed, landed tasks reaped, on every run). `lanes`
@@ -33,20 +33,16 @@ edit left it.
 ## There are two sources, not three
 
 The brief asked "why are there three?" The answer: **there aren't.** `recorded` and `runners`
-both call `len(lanes)` / iterate `lanes` — they are one source presented as two `·`-separated
+both call `len(lanes)` / iterate `lanes` — they are one source presented as two dot-separated
 fleet counts. A coordinator reading `lanes 3 recorded · runners ccc 3 · 5 ccc-live` sees three
 numbers and must adjudicate; in reality the first two are locked together by construction (same
 list), and the disagreement is purely recorded-vs-observed.
 
 ## The upper-bound claim is falsified
 
-The `_fleet_fact` docstring (`tick_line.py:283-288`) claims:
-
-> `recorded` — `status.json["lanes"]` ... Sees every dispatch form, so it cannot be deflated
-> by the probe's blindness; **it goes stale upward** when a landed lane is not removed. **An
-> upper bound.**
-
-The measurement falsifies every clause:
+The pre-#718 `_fleet_fact` docstring claimed `recorded` "sees every dispatch form, so it
+cannot be deflated by the probe's blindness; it goes stale upward ... an upper bound." The
+measurement falsifies every clause:
 - "Sees every dispatch form" — it saw none of the five dispatches tonight (stuck at 3).
 - "Goes stale upward" — it went stale **downward** (3 against 5 running).
 - "An upper bound" — a hand-maintained field with no automatic writer is not bounded in either
@@ -64,9 +60,9 @@ brief's second option, argued not picked). Three changes, all in `_fleet_fact` +
 1. **Stop presenting one source as two counts.** Fold the runner breakdown into the `recorded`
    fragment as a parenthetical, so the line reads as TWO fleet figures (one per source) not
    three. `lanes 3 recorded · runners ccc 3 · 5 ccc-live` becomes
-   `lanes 3 recorded (ccc 3) · 5 ccc-live`. A parenthetical is a qualification of what precedes
-   it, not an independent assertion — so a stale `3` in both positions reads as one claim, not
-   as corroboration.
+   `lanes 3 recorded (ccc 3) · 5 ccc-live`. A parenthetical is a qualification of what
+   precedes it, not an independent assertion — so a stale `3` in both positions reads as one
+   claim, not as corroboration.
 
 2. **Retract the upper-bound claim** in the docstring. State what `recorded` actually is: a
    hand-maintained record with no automatic correction, which drifts in whichever direction the
@@ -76,47 +72,63 @@ brief's second option, argued not picked). Three changes, all in `_fleet_fact` +
    for native by habit"), and it is compaction-safe (the dashboard is not). Dropping it would
    remove a working signal to fix a labelling problem.
 
-`runners` as a standalone fleet count goes; its information (which models, in what ratio) stays
-as a parenthetical of `recorded`.
+`runners` as a standalone fleet count goes; its information (which models, in what ratio)
+stays as a parenthetical of `recorded`.
 
 ## Red-proof
 
-### Direction 1 — the frozen counter
+### Direction 1 — the parenthetical format (injected, went RED, restored, check clean)
 
-The injection that matters is a **frozen** counter, not a wrong one: pin the source so the
-count cannot change, and show a test failing on "the fleet changed and the counter did not."
-A test asserting `count == 2` against a fixed fixture passes against every frozen-counter bug.
+**Injection:** reverted `_fleet_fact` to present the runner breakdown as a dot-separated
+clause (`recorded += SEP + "runners " + breakdown`) instead of the parenthetical.
 
-The red test writes `lanes` with 2 entries, reads the line, **rewrites `lanes` with 5 entries
-under the same target**, reads again, and asserts the recorded count MOVED from 2 to 5. (This
-mirrors `test_posture_is_reread_within_one_target_not_cached` — the constructed-false-green
-test that already exists for posture.) The injection pins `lanes` to the first value (hardcode
-the count, or read from a stale snapshot); the second read still says 2; the test fails on
-`AssertionError: 'lanes 2 recorded' found in line that should read 'lanes 5 recorded'`.
+**Discriminating failure message:**
 
-**Discriminating message:** the test fails on the count not moving, not on the count being
-wrong — a fixed-fixture test cannot catch this.
+```
+AssertionError: assert 'lanes 3 recorded (ccc 3)' in 'lanes 3 recorded · runners ccc 3 · 5 ccc-live · ...'
+```
 
-### Direction 2 — all three agree and the line still misleads
+The test asserts the parenthetical form; the injected code produces the old
+`· runners ccc 3` form. A fixed-fixture test asserting the old format would PASS against this
+injection — it can only be caught by a test asserting the NEW format.
+
+**Frozen-counter differential** (`test_recorded_count_is_reread_each_call_not_frozen`):
+rewrites `lanes` from 2 entries to 5 under an already-read target and requires the count to
+move. This passes against current code (no cache in `tick_line.py`). The injection that would
+freeze it — a per-target `lru_cache` on `_read_status` — would make the second read still say
+`lanes 2 recorded`, failing on `assert "lanes 5 recorded" in after`. Mirrors the existing
+posture-half guard (`test_posture_is_reread_within_one_target_not_cached`).
+
+**`dev/redproof.py check` (post-rebase):**
+
+```
+history: examined 4 commit(s) since 255d6427e564 (master) against 1 injected path(s); read 4 blob(s), 0 holding a recorded injection.
+check: clean — 1 injection(s) registered, all restored and absent from the working tree and from this branch's commits:
+  tick_line.py (sha 563424fc2c4a, hint: 'recorded += SEP + "runners " + breakdown')
+```
+
+### Direction 2 — all three agree and the line still misleads (OPEN, not closeable)
 
 Constructed: `lanes` holds 3, `dreamers` has 3 live pids, reality is 3. The line reads
-`lanes 3 recorded · runners ccc 3 · 3 ccc-live` — everything agrees. But `lanes` is still
+`lanes 3 recorded (ccc 3) · 3 ccc-live` — everything agrees. But `lanes` is still
 hand-maintained with no correction mechanism. The coordinator, trained by tonight's agreement
 to trust `recorded`, dispatches a 4th lane and forgets to update `lanes`. Next tick:
-`3 recorded · 4 ccc-live`. The coordinator who believes the upper-bound docstring thinks the 4
-is wrong. **Agreement trained the wrong trust**, and the line misleads because the upper-bound
-claim is still false. The parenthetical merge doesn't close this (the count can still stale),
-but the docstring retraction does: without the upper-bound claim, `recorded` is just "what the
-bookkeeping says," and a coordinator who sees it diverge from `ccc-live` knows which to trust.
+`3 recorded (ccc 3) · 4 ccc-live`. The coordinator who internalised the old upper-bound claim
+thinks the 4 is wrong.
+
+**Not closeable by any test:** the line IS correct at the moment of agreement — the defect is
+in the FUTURE staleness, which no point-in-time test can see. The mitigation is the docstring
+retraction (so the coordinator knows `recorded` is hand-maintained, not an upper bound, and
+trusts `ccc-live` when they diverge), not a test guard. A test pinning "the docstring does not
+claim upper bound" would be a string-match on prose, which `#699` measured as unreliable.
 
 **The sampling case is acceptable; the `recorded` case is not.** `ccc-live` taken microseconds
 before a dispatch is correct-but-stale. What makes it acceptable: its error is **bounded** (the
 next tick, 4.5 minutes later, self-corrects it) and **honest** (it is labelled observation, and
 observation is inherently point-in-time). `recorded`'s staleness is **unbounded** (no automatic
-correction — only a manual edit) and **dishonest** (labelled an upper bound when it isn't). So
-sampling is acceptable for the OS probe because its error is bounded and self-correcting; the
-recorded counter's error is neither, and that is why its label must not claim a bound it does
-not have.
+correction — only a manual edit) and was **dishonest** (labelled an upper bound when it isn't —
+now retracted). So sampling is acceptable for the OS probe because its error is bounded and
+self-correcting; the recorded counter's error is neither.
 
 ## Cited issues, relied-on lines
 
@@ -139,7 +151,7 @@ not have.
   a field nobody maintained — it read 3 confidently across five dispatches. A counter reading a
   stale source must not present as a live upper bound.
 
-- **#612** (volume): three `·`-separated fleet counts where two share a source is volume that
+- **#612** (volume): three dot-separated fleet counts where two share a source is volume that
   actively misleads. Two figures (one per source) is the minimum honest set.
 
 ## Out of scope (named, not fixed)
@@ -153,6 +165,12 @@ not have.
   honest only because `status_sync` prunes it. If `status_sync` stops running, `ccc-live`
   drifts too. Not a defect today, but the asymmetry (dreamers pruned, lanes not) is the whole
   story.
+
+## Rebase
+
+Master moved from `62a9ce22` to `255d6427` (5 commits: #716, #715, #717 merges + #720). None
+touched `tick_line.py`, `test_tick_line.py`, or `SKILL.md`. Rebase was clean — no conflicts.
+Post-rebase: 44 passed in `test_tick_line.py`, redproof check clean.
 
 ## Dogfood report
 
