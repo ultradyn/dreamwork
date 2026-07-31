@@ -31,24 +31,30 @@ Two properties, both load-bearing
    worktrees all report the branch ``HEAD`` (two were live when this was written),
    so those fall back to a hash of the absolute worktree path, which the
    filesystem itself keeps unique.
-2. **On real disk, not tmpfs.** The root lives under ``~/.cache``, measured
-   ``btrfs``, where ``/tmp`` is ``tmpfs``. tmpfs does not update mtime for
-   mmap'd writes, so a lane measuring mtime/mmap/locking behaviour in the
-   scratchpad gets a confident, clean, WRONG answer — that is #634, a different
-   defect in the same directory. Anything measured under this root is measured on
-   a filesystem that can actually exhibit the phenomenon.
+2. **A named measurement location plus a positive control.** ``measure`` lives
+   under the same lane-private ``~/.cache`` root. Its path does not promise a
+   filesystem capability: real disk can still have coarse timestamps, disabled
+   events, or other semantics that make a particular experiment unanswerable.
+   ``require-mtime-change`` runs the experiment's exact positive-control command
+   and refuses a negative unless that command first advances the subject's mtime.
 
 Usage
 -----
     dev/lane_scratch.py              # print this lane's private dir, creating it
     dev/lane_scratch.py --no-create  # print without creating
     dev/lane_scratch.py snap         # print (and create) a named subdir
+    dev/lane_scratch.py measure      # the one filesystem-measurement location
 
     S="$(dev/lane_scratch.py snap)"
     cp client/router.js "$S/router.js"      # snapshot before the injection
     ...                                     # inject, watch it go red
     cp "$S/router.js" client/router.js      # restore -- never `git checkout`
     cmp client/router.js "$S/router.js"     # prove byte-identical
+
+    M="$(dev/lane_scratch.py measure)"
+    # Set up $M/probe, then exercise the SAME mmap/write path as the real probe:
+    dev/lane_scratch.py require-mtime-change "$M/probe" -- <positive-control command>
+    # exit 0 is silent; 1 = UNSUPPORTED; 2 = UNDETERMINED
 
 Residual, stated rather than hidden: this is per-*lane*, not per-*agent*. A lane
 and the subagents it dispatches share one directory, because they share one
@@ -160,7 +166,80 @@ def lane_scratch_dir(cwd: Path | None = None, *, create: bool = True,
     return path
 
 
+def require_mtime_change(path: Path, command: list[str]) -> int:
+    """Run an exact positive control, requiring ``path``'s mtime to advance.
+
+    Exit 0 is deliberately silent. Exit 1 means the command ran but this
+    substrate did not exhibit the property, so a later negative is not
+    evidence. Exit 2 means the control could not be judged at all. Keeping
+    unsupported and undetermined distinct prevents both from rendering as OK.
+    """
+    try:
+        before = path.stat().st_mtime_ns
+    except OSError as exc:
+        print(
+            f"UNDETERMINED: cannot stat {path} before the positive control: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+
+    if not command:
+        print("UNDETERMINED: no positive-control command was supplied", file=sys.stderr)
+        return 2
+
+    try:
+        result = subprocess.run(command, capture_output=True, text=True)
+    except OSError as exc:
+        print(f"UNDETERMINED: positive control could not run: {exc}", file=sys.stderr)
+        return 2
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        suffix = f": {detail}" if detail else ""
+        print(
+            f"UNDETERMINED: positive control command exited {result.returncode}{suffix}",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        after = path.stat().st_mtime_ns
+    except OSError as exc:
+        print(
+            f"UNDETERMINED: cannot stat {path} after the positive control: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+    if after <= before:
+        print(
+            "UNSUPPORTED: positive control ran but mtime did not advance for "
+            f"{path} (before={before}, after={after}); do not believe a negative "
+            "measurement on this substrate",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+def _mtime_control_main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        prog="lane_scratch.py require-mtime-change",
+        description=(
+            "Run an exact positive-control command and require the subject's "
+            "mtime to advance."
+        ),
+    )
+    ap.add_argument("path", type=Path, help="file whose mtime the control must advance")
+    ap.add_argument("command", nargs=argparse.REMAINDER,
+                    help="command after --; it must exercise the real probe's mechanism")
+    args = ap.parse_args(argv)
+    command = args.command[1:] if args.command[:1] == ["--"] else args.command
+    return require_mtime_change(args.path, command)
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["require-mtime-change"]:
+        return _mtime_control_main(argv[1:])
     ap = argparse.ArgumentParser(
         description="Print this lane's private scratch directory (#652).")
     ap.add_argument("sub", nargs="?", default=None,
