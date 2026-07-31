@@ -110,7 +110,7 @@ was not left solely in a presentation layer.
 
 Required final red-proof gate, verbatim:
 
-> `history: examined 3 commit(s) since bfd7b2f604e1 (master) against 1 injected path(s); read 3 blob(s), 0 holding a recorded injection.`
+> `history: examined 4 commit(s) since bfd7b2f604e1 (master) against 1 injected path(s); read 4 blob(s), 0 holding a recorded injection.`
 >
 > `check: clean — 1 injection(s) registered, all restored and absent from the working tree and from this branch's commits:`
 >
