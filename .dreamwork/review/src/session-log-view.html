@@ -1,0 +1,261 @@
+<!--dreamwork-review-source
+title: "#613 · the live session-log view · mockups before anything locks"
+identity: session-log view
+context: task #613 · mockup review
+status: awaiting review
+headline: A thin tree that breathes at its frontier. Three visual calls want your eye before the component design locks.
+tag: mockups only — nothing is built, and the design doc authorises no code
+sub: task #613 · 31 July 2026 · tree content is your own ASCII mock, re-drawn; grammar measured against the real 82 MB session file
+skip: Skip to the ask
+skip_href: "#ask"
+-->
+<!--#nav-->
+<a class="full" href="#rest">at rest</a><a href="#stream">mid-stream</a><a href="#alts">alternatives</a><a href="#ask">the ask</a>
+<!--#lead-->
+<p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> the rec set (A + G1 + M1) is what the implementation plan will assume — and nothing is built either way until #613's implementation is planned and approved.</p>
+<div id="ask" class="ask-block">
+  <div class="label">Ask — three visual calls, each shown live below</div>
+  <p class="ask-q"><strong>Ind</strong> — the live indicator: <strong>A</strong> a static <code>⠏</code> that <em>breathes</em> (the wisp's envelope — your glyph, the house motion) or <strong>B</strong> a stepping braille cycle (authentic TUI, but a loop that sweeps — the exact shape the wisp rule refused). <span class="reck">rec A</span></p>
+  <p class="ask-q"><strong>Guides</strong> — <strong>G1</strong> faint indent-guide lines on open ancestors (my completion of your cut-off &ldquo;maybe we add faint&rdquo; — an <em>inferred</em> detail) or <strong>G2</strong> indent only, no guides. <span class="reck">rec G1</span></p>
+  <p class="ask-q"><strong>Marker</strong> — <strong>M1</strong> quiet chevrons <code>▸/▾</code> (the page's details idiom) or <strong>M2</strong> bracket markers <code>[+]/[-]</code> as drawn in your mock (more explicitly TUI; 3ch of chrome per row, brighter than the labels beside it). <span class="reck">rec M1</span></p>
+  <p class="ask-answers"><span class="key">accepted answers</span>
+  <code>rec</code> &nbsp;&middot;&nbsp; per-call (<code>Ind: B</code> &middot; <code>Guides: G2</code> &middot; <code>Marker: M2</code>) &nbsp;&middot;&nbsp; free text &nbsp;&middot;&nbsp; <em>&ldquo;none of these&rdquo;</em> is a real answer</p>
+</div>
+<!--#call-->
+<div class="call"><strong>Recommendation.</strong> <strong>A + G1 + M1.</strong> The glyph is the TUI half of &ldquo;TUI inspired but pretty&rdquo;; the breath is the pretty half, and it keeps the standing &ldquo;never a spinner&rdquo; motion language intact. Faint guides earn their pixels the moment two levels are open at once — without them the eye re-counts indents on every glance. Chevrons stay quieter than the labels they precede, which is what lets the labels carry the luminance ramp; your <code>[+]</code> notation reads as structure-sketch rather than a visual spec, but M2 is shown in full in case you meant it literally.</div>
+<!--#aside-->
+<span class="big">1.0 s</span>
+<small>full rescan of the largest real session<br>(81.9&nbsp;MB &middot; 31,784 lines &middot; 28 compactions)<br>measured, stdlib json &middot; bookmarks: 433</small>
+<!--#body-->
+<style>
+/* Page-local. Tokens only — no hex (template contract). */
+.slog{font-size:.76rem;line-height:1.5;color:var(--text)}
+.slog .sess{color:var(--dim);font-size:.68rem;letter-spacing:.04em;
+  text-transform:uppercase;margin:0 0 .3rem}
+.slog .row{display:flex;align-items:baseline;gap:.9ch;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;border-radius:2px;padding:0 .5ch}
+.slog .row:hover{background:var(--panel)}
+.slog .tw{color:var(--dimmer);flex:none;width:1.2ch;text-align:center}
+.slog .tw.br{width:3.5ch;letter-spacing:0}
+.slog .gl{color:var(--accent);flex:none;width:1.2ch}
+.slog .lab{color:var(--muted)}
+.slog .row.on .lab{color:var(--text)}
+.slog .row.userturn .lab{color:var(--lit)}
+.slog .ct{color:var(--dim);font-size:.68rem}
+.slog .age{color:var(--dimmer);font-size:.68rem;margin-left:auto;padding-left:1ch}
+.slog .kids{margin-left:1.1ch;padding-left:1.7ch;border-left:1px solid var(--line)}
+.slog.noguides .kids{border-left:none;padding-left:1.9ch;margin-left:.9ch}
+.slog .peekbody{color:var(--dim);white-space:pre;overflow-x:auto;
+  font-size:.7rem;line-height:1.55;padding:.15rem 0 .25rem .5ch}
+.slog .peekbody .add{color:var(--ok)}
+.slog .peekbody .del{color:var(--bad)}
+.slog .dim{color:var(--dim)}
+/* the live breath — option A: the wisp's envelope on a static glyph */
+@keyframes slogbreathe{0%,100%{opacity:.28}50%{opacity:.95}}
+.slog .live>.gl,.slog .live.row .gl{animation:slogbreathe 5.5s ease-in-out infinite}
+/* option B demo: a clipped column of the ten braille frames, stepped */
+.stepdemo{display:inline-block;height:1.5em;overflow:hidden;vertical-align:bottom;
+  color:var(--accent);width:1.2ch}
+.stepdemo b{display:block;font-weight:normal;line-height:1.5em;
+  animation:slogstep .9s steps(10,end) infinite}
+@keyframes slogstep{to{transform:translateY(-15em)}}
+@media (prefers-reduced-motion: reduce){
+  .slog .live>.gl,.slog .live.row .gl{animation:none;opacity:.95}
+  .stepdemo b{animation:none}
+}
+/* the follow pill — his hand vs the frontier */
+.followpill{display:inline-flex;align-items:center;gap:.8ch;font-size:.66rem;
+  color:var(--dim);border:1px solid var(--line);border-radius:999px;
+  padding:.05rem 1ch;margin:0 0 .45rem}
+.followpill .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);
+  animation:slogbreathe 5.5s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.followpill .dot{animation:none}}
+.followpill.off .dot{background:var(--dimmer);animation:none}
+.followpill.off{color:var(--dimmer)}
+/* row-anatomy strip */
+.anat{display:flex;flex-wrap:wrap;gap:.4rem 1.6rem;font-size:.7rem;color:var(--dim);
+  margin:.5rem 0 0}
+.anat b{color:var(--muted);font-weight:normal}
+.reck{color:var(--accent);font-size:.72rem;margin-left:.6ch}
+.frame .note{color:var(--dim);font-size:.7rem;line-height:1.55;margin:.55rem 0 0}
+</style>
+
+<div class="label">What a row is</div>
+<p>One line, ~1.5em, full-row hit target, mono. Emphasis is luminance, never a
+second font — the ramp the whole dashboard already uses. Collapsed rows carry a
+<em>summary</em> (step counts, diff stats, token figures); bodies are fetched only
+when a row expands, so the stream stays thin. The hierarchy below is your own
+ASCII mock re-drawn; the record grammar behind every label was measured against
+the real 82&nbsp;MB session file (see the design doc, §2).</p>
+<div class="anat">
+  <span><b>▸/▾</b> disclosure (M1)</span>
+  <span><b>⠏</b> live indicator (A/B)</span>
+  <span><b>label</b> the summary line</span>
+  <span><b>(29 steps)</b> counts from bookmarks</span>
+  <span><b>right edge</b> age, dimmest</span>
+</div>
+
+<div class="frames" id="rest" style="margin-top:1.1rem">
+  <div class="frame">
+    <div class="framebar"><b>1 · at rest</b><span>settled history — every frontier folded, one turn held open by hand</span></div>
+    <div class="framebody">
+      <div class="slog">
+        <p class="sess">session c196985f · claude-code · page 4 of 4</p>
+        <div class="followpill off"><span class="dot"></span>follow off — your hand holds turn 8 open · <span style="color:var(--accent)">re-follow</span></div>
+        <div class="row"><span class="tw">▸</span><span class="lab">page 3</span><span class="ct">compacted 288k → 20k · 96 turns</span><span class="age">03h 12m</span></div>
+        <div class="row"><span class="tw">▸</span><span class="lab dim">compaction msg</span><span class="ct">summary · 19k tokens</span><span class="age">02h 58m</span></div>
+        <div class="row"><span class="tw">▸</span><span class="lab">agent turn 7</span><span class="ct">(29 steps)</span><span class="age">44m 10s</span></div>
+        <div class="row userturn"><span class="tw">▸</span><span class="lab">user turn</span><span class="ct">[ Goal Reminder ]</span><span class="age">41m 02s</span></div>
+        <div class="row on"><span class="tw">▾</span><span class="lab">agent turn 8</span><span class="ct">(3 steps)</span><span class="age">38m 51s</span></div>
+        <div class="kids">
+          <div class="row"><span class="tw">▾</span><span class="lab">tool 8.1 · Read watch.py</span><span class="ct">220 lines</span><span class="age">38m 49s</span></div>
+          <div class="kids">
+            <div class="row"><span class="tw">▸</span><span class="lab dim">args</span></div>
+            <div class="row"><span class="tw">▸</span><span class="lab dim">response</span><span class="ct">14.2 kB</span></div>
+          </div>
+          <div class="row"><span class="tw">▸</span><span class="lab">tool 8.2 · Bash just lint</span><span class="ct">exit 0</span><span class="age">38m 12s</span></div>
+          <div class="row"><span class="tw">▾</span><span class="lab">edit asdf.txt</span><span class="ct">(+123 −48)</span><span class="age">37m 40s</span></div>
+          <div class="kids">
+            <div class="peekbody"><span class="del">- the old paragraph, shown whole when expanded</span>
+<span class="add">+ the new paragraph — the full diff, lazily</span>
+<span class="add">+ fetched from the source file by byte range</span></div>
+          </div>
+        </div>
+        <div class="row userturn"><span class="tw">▸</span><span class="lab">user turn</span><span class="ct">Have you considered …</span><span class="age">31m 06s</span></div>
+      </div>
+      <p class="note">His hand wins: turn 8 stays open because he opened it, and the
+      follow pill says so. Auto-expansion never re-folds a row he touched —
+      the same open-state-is-his rule the dashboard's disclosures already obey.</p>
+    </div>
+  </div>
+
+  <div class="frame" id="stream">
+    <div class="framebar"><b>2 · mid-stream</b><span>the frontier — most recent child open at every level, breathing</span></div>
+    <div class="framebody">
+      <div class="slog">
+        <p class="sess">session c196985f · claude-code · page 4 · live</p>
+        <div class="followpill"><span class="dot"></span>following the frontier</div>
+        <div class="row"><span class="tw">▸</span><span class="lab">agent turn 7</span><span class="ct">(29 steps)</span><span class="age">09m 44s</span></div>
+        <div class="row userturn"><span class="tw">▸</span><span class="lab">user turn</span><span class="ct">[ Goal Reminder ]</span><span class="age">06m 21s</span></div>
+        <div class="row"><span class="tw">▸</span><span class="lab">agent turn 8</span><span class="ct">(3 steps)</span><span class="age">04m 02s</span></div>
+        <div class="row userturn"><span class="tw">▸</span><span class="lab">user turn</span><span class="ct">Have you considered …</span><span class="age">02m 17s</span></div>
+        <div class="row on live"><span class="tw">▾</span><span class="gl">⠏</span><span class="lab">agent turn 9</span><span class="ct">(2 steps · running)</span><span class="age">00m 41s</span></div>
+        <div class="kids">
+          <div class="row"><span class="tw">▸</span><span class="lab">thinking</span><span class="ct">1.1 kB</span><span class="age">00m 38s</span></div>
+          <div class="row on live"><span class="tw">▾</span><span class="gl">⠏</span><span class="lab">tool 9.1 · Bash just test</span><span class="ct">running</span><span class="age">00m 12s</span></div>
+          <div class="kids">
+            <div class="row"><span class="tw">▸</span><span class="lab dim">args</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="note">When turn 10 arrives, turn 9 folds and 10 opens — a height
+      travel plus a reveal, the section-fold family, never a teleport; the tick
+      that lands mid-travel resumes it. Reduced motion: instant, function
+      intact. A tool step goes live when its <code>tool_use</code> has no
+      <code>tool_result</code> yet — derivable straight from the file.</p>
+    </div>
+  </div>
+</div>
+
+<div class="label" id="alts" style="margin-top:1.4rem">The alternatives, live</div>
+<div class="frames" style="margin-top:.5rem">
+  <div class="frame">
+    <div class="framebar"><b>Ind · A vs B</b><span>the same live row, two motions</span></div>
+    <div class="framebody">
+      <div class="slog">
+        <div class="row on live"><span class="tw">▾</span><span class="gl">⠏</span><span class="lab">A · static glyph, breathing</span><span class="ct">the wisp's envelope, ~5.5s</span></div>
+        <div class="row on"><span class="tw">▾</span><span class="stepdemo"><b>⠋<br>⠙<br>⠹<br>⠸<br>⠼<br>⠴<br>⠦<br>⠧<br>⠇<br>⠏</b></span><span class="lab">B · stepping braille cycle</span><span class="ct">~90ms/frame, sweeping</span></div>
+      </div>
+      <p class="note"><strong>A costs</strong> a little TUI authenticity — the glyph
+      never spins. <strong>B costs</strong> the motion language: the stylesheet's own
+      words are &ldquo;never a spinner&rdquo;, and B is one; it also ticks the
+      compositor ~11×/s per live row, against A's one slow opacity envelope.
+      Under reduced motion both hold still at brightest.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="framebar"><b>Guides · G1 vs G2</b><span>the same subtree, with and without</span></div>
+    <div class="framebody">
+      <div class="slog">
+        <div class="row on"><span class="tw">▾</span><span class="lab">G1 · faint guides</span></div>
+        <div class="kids">
+          <div class="row"><span class="tw">▸</span><span class="lab">tool 8.1</span></div>
+          <div class="row on"><span class="tw">▾</span><span class="lab">tool 8.2</span></div>
+          <div class="kids">
+            <div class="row"><span class="tw">▸</span><span class="lab dim">args</span></div>
+            <div class="row"><span class="tw">▸</span><span class="lab dim">response</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="slog noguides" style="margin-top:.7rem">
+        <div class="row on"><span class="tw">▾</span><span class="lab">G2 · indent only</span></div>
+        <div class="kids">
+          <div class="row"><span class="tw">▸</span><span class="lab">tool 8.1</span></div>
+          <div class="row on"><span class="tw">▾</span><span class="lab">tool 8.2</span></div>
+          <div class="kids">
+            <div class="row"><span class="tw">▸</span><span class="lab dim">args</span></div>
+            <div class="row"><span class="tw">▸</span><span class="lab dim">response</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="note"><strong>G1 costs</strong> a 1px hairline per open level —
+      at the depth cap (page &gt; turn &gt; step &gt; detail) that is three lines.
+      <strong>G2 costs</strong> the re-count: with two levels open the eye has only
+      whitespace to say which level a row sits at. G1 is the inferred completion
+      of the cut-off sentence — refusing it is one word.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="framebar"><b>Marker · M1 vs M2</b><span>chevrons, or your mock's brackets</span></div>
+    <div class="framebody">
+      <div class="slog">
+        <div class="row on"><span class="tw">▾</span><span class="lab">M1 · agent turn 8</span><span class="ct">(3 steps)</span></div>
+        <div class="kids">
+          <div class="row"><span class="tw">▸</span><span class="lab">tool 8.1 · Read watch.py</span></div>
+        </div>
+        <div class="row on" style="margin-top:.7rem"><span class="tw br">[-]</span><span class="lab">M2 · agent turn 8</span><span class="ct">(3 steps)</span></div>
+        <div class="kids">
+          <div class="row"><span class="tw br">[+]</span><span class="lab">tool 8.1 · Read watch.py</span></div>
+        </div>
+      </div>
+      <p class="note"><strong>M1 costs</strong> a little of the TUI accent — it is
+      the dashboard's quiet details marker. <strong>M2 costs</strong> 3ch of chrome
+      on every row and brackets brighter than half the labels; at the 32ch floor
+      that is a tenth of the column spent on markers.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="framebar"><b>narrow · the 32ch floor</b><span>depth-4 worst case, guides on</span></div>
+    <div class="framebody">
+      <div class="slog" style="max-width:32ch">
+        <div class="row on"><span class="tw">▾</span><span class="lab">page 4</span><span class="ct">live</span></div>
+        <div class="kids">
+          <div class="row on live"><span class="tw">▾</span><span class="gl">⠏</span><span class="lab">agent turn 9</span></div>
+          <div class="kids">
+            <div class="row on live"><span class="tw">▾</span><span class="gl">⠏</span><span class="lab">tool 9.1 · Bash</span></div>
+            <div class="kids">
+              <div class="row"><span class="tw">▸</span><span class="lab dim">args</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">Labels truncate with an ellipsis rather than wrapping — a
+      thin row that wraps is no longer thin. The full text is the expanded
+      body's job.</p>
+    </div>
+  </div>
+</div>
+
+<div class="label" style="margin-top:1.4rem">What is deliberately not shown</div>
+<p>Per-prompt harness chrome (<code>mode</code>, <code>last-prompt</code>,
+<code>file-history-*</code> — 9,963 of the 31,784 lines) is suppressed
+entirely in v1: &ldquo;concise&rdquo; rules it out, and an adapter can add an
+opt-in later without a schema change. <code>system_prompt</code> is a slot in
+your hierarchy that Claude Code <em>never writes to the transcript</em> — the
+tree simply has no such child for this client, rather than inventing one.
+Both calls are flagged as inferred in the design doc, §3 and §2.</p>
+<!--#footer-->
+Design: <code>.dreamwork/docs/plans/session-log-view.md</code> &middot; draft questions: <code>.dreamwork/docs/plans/session-log-questions-draft.md</code> &middot; his words: receipt <code>a71d1105</code> (journal_consume.py show) &middot; grammar measured against the real 82&nbsp;MB session
