@@ -469,10 +469,9 @@ def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
         else:
             missing.append(item["title"])
     if not missing and not processed_only and not unclassifiable:
-        # Silent when every answered entry carries a date. `check_questions`
-        # already owns the OK row for this file, and emitting a second one
-        # fragments the summary; the coverage this check exists to provide is
-        # the WARN that names the undated entries, not an OK that duplicates it.
+        # Silent when every answered entry has a classified resolution.
+        # `check_questions` already owns the OK row for this file; this check's
+        # coverage is the WARN that names missing or unknown evidence.
         return
     if missing:
         sample = "; ".join(t[:48] for t in missing[:3])
