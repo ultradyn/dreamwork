@@ -3907,6 +3907,112 @@ def collect(target, burn_step=None):
     }
 
 
+# --- #641 phase 1: derived key-level deltas over the existing /data.json ---
+#
+# The plan's `## The trap, named before the matrix` (line 123): a delta is a
+# second description of state unless it is DERIVED from the one builder. So
+# `compute_delta` compares two `collect()` outputs per top-level key by their
+# SERIALIZED equality (never a second traversal), ships changed keys whole,
+# and excludes `generated` from both comparison and the check hash (it
+# changes every build and would force every response to differ).
+#
+# "Full is always the safe answer": any mismatch, any unexpected `since`, any
+# doubt — the server sends the whole document. A wrong delta is worse than a
+# large correct one. Version = `watched_mtime`, the same number the /mtime
+# poll already gates on, so a delta computed against the right base is one a
+# client can reconstruct.
+
+_DELTA_EXCLUDE = frozenset(("generated",))
+
+
+def data_json_version(target):
+    """The version stamp a /data.json build is cached against: the
+    `watched_mtime` it was built from. The client sends this back as `since`."""
+    return watched_mtime(target)
+
+
+def derived_check(doc):
+    """A stable hash of a `collect()` document with `generated` excluded, so
+    a client can self-check that a delta reconstructed to the same state. The
+    hash is of the sorted-key serialised form, so key order does not matter."""
+    core = {k: doc[k] for k in doc if k not in _DELTA_EXCLUDE}
+    return hashlib.sha256(
+        json.dumps(core, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def compute_delta(prev, nxt):
+    """Derived per-key delta between two `collect()` outputs.
+
+    Returns a dict shaped `{changed: {k: whole-new-value}, removed: [k, ...]}`,
+    with `generated` excluded from comparison. No subsystem states "what
+    changed" by hand — both arguments are the one builder's output, compared
+    by serialized equality of each top-level value. `apply_delta(prev, this)`
+    reconstructs `nxt` byte-for-byte (minus `generated`, which is re-stamped
+    by the receiving builder); that round-trip is the born-red test."""
+    keys = set(prev) | set(nxt)
+    changed, removed = {}, []
+    for k in keys:
+        if k in _DELTA_EXCLUDE:
+            continue
+        if k not in nxt:
+            removed.append(k)
+        elif k not in prev or json.dumps(prev[k], sort_keys=True,
+                                         default=str) != json.dumps(
+                nxt[k], sort_keys=True, default=str):
+            changed[k] = nxt[k]
+    return {"changed": changed, "removed": sorted(removed)}
+
+
+def apply_delta(base, delta):
+    """Apply a `compute_delta` payload to `base`, returning the reconstructed
+    document. Deletes removed keys, overwrites changed keys whole, leaves
+    everything else untouched. `generated` is carried from `base`."""
+    out = dict(base)
+    for k in delta.get("removed", []):
+        out.pop(k, None)
+    out.update(delta.get("changed", {}))
+    return out
+
+
+# Last-built document cache keyed by (target, burn_step): (version, doc,
+# prev_version, prev_doc). One build per real change instead of one per window
+# per tick; the previous build is kept so a client one version behind gets a
+# real delta. BURN_STEPS is a closed set of 5, so the cache is bounded.
+_DATA_JSON_CACHE = {}
+
+
+def _data_json_cached(target, burn_step):
+    """Return ``(version, doc, prev_version, prev_doc)`` for this burn_step,
+    building fresh only when watched_mtime moved. The previous build is kept
+    so `?since=<prev_version>` yields a delta rather than a full doc."""
+    key = (target, burn_step)
+    version = watched_mtime(target)
+    entry = _DATA_JSON_CACHE.get(key)
+    if entry is None or entry[0] != version:
+        doc = collect(target, burn_step=burn_step)
+        prev = (entry[0], entry[1]) if entry else (None, None)
+        entry = (version, doc, prev[0], prev[1])
+        _DATA_JSON_CACHE[key] = entry
+    return entry
+
+
+def _data_json_response(entry, since):
+    """Full document vs delta vs 304-shaped 'no change', per the plan's table:
+    since==current version → unchanged sentinel; since==prev_version → delta;
+    anything else (or no since) → full. Full is always the safe answer."""
+    version, doc, prev_version, prev_doc = entry
+    if since is None or since != repr(version) and (
+            prev_version is None or since != repr(prev_version)):
+        return doc
+    if since == repr(version):
+        # #136: "no change" is a distinct sentinel, never the full document.
+        return {"v": repr(version), "unchanged": True}
+    delta = compute_delta(prev_doc, doc)
+    return {"v": repr(version), "base": since,
+            "changed": delta["changed"], "removed": delta["removed"],
+            "check": derived_check(doc)}
+
+
 # /summary.json — a redacted, whitelist view of collect(), for a consumer
 # that is not the loopback dashboard (Q5; plans/hub-public-auth.md §11.2,
 # plans/hub-ssh-auth.md). collect() feeds /data.json, which serves
@@ -5077,8 +5183,15 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                     burn_step = None
                 if burn_step not in BURN_STEPS:
                     burn_step = None
-                self._send(json.dumps(collect(target, burn_step=burn_step)),
-                           "application/json")
+                # #641 phase 1: GET /data.json?since=<v> returns a derived
+                # delta against the last full build at that version, or the
+                # full document for any mismatch (full is always the safe
+                # answer). A client that never sends `since` sees this route
+                # byte-identical to today.
+                doc_entry = _data_json_cached(target, burn_step)
+                since = (qs.get("since") or [None])[0]
+                payload = _data_json_response(doc_entry, since)
+                self._send(json.dumps(payload), "application/json")
             elif parsed.path == "/summary.json":
                 # Q5: a whitelist view of collect() (summary()), for any
                 # non-loopback consumer. /data.json serves full documents and
