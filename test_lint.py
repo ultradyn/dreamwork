@@ -516,7 +516,12 @@ class TestLedger:
     def test_a_sound_ledger_is_ok(self, tmp_path):
         text = "Next id: **3**\n\n- **#1** — one\n- **#2** — two\n"
         rep = run(target(tmp_path, **{"tasks.md": text}))
-        assert levels(rep, "tasks.md") == [lint.OK]
+        # All tasks.md rows are OK — no ERRORs, no WARNs. #685 made
+        # check_related_markers report `examined N entries against 0 markers`
+        # for a no-marker ledger (it used to be silent), so the row count is
+        # no longer exactly one; the sound property is "every level is OK".
+        assert all(lvl == lint.OK for lvl in levels(rep, "tasks.md")), rep.rows
+        assert levels(rep, "tasks.md"), "a sound ledger must report something"
 
 
 class TestTaskOrigin:
@@ -3853,13 +3858,26 @@ Next id: **9**
         errs = self.rows(t, lint.ERROR)
         assert any("naming no id" in e for e in errs), errs
 
-    def test_a_ledger_with_no_markers_says_nothing_at_all(self, tmp_path):
-        # This is the live ledger's state today, and the reason the check can be
-        # an ERROR rather than a WARN: there is no legacy to grandfather.
+    def test_a_ledger_with_no_markers_reports_what_it_examined(self, tmp_path):
+        # #685: a clean no-marker ledger must REPORT that it examined N entries,
+        # not fall silent. Silence is the failure mode the #294 dispatch fixes —
+        # a check that examined zero entries read as a pass. This was
+        # `..._says_nothing_at_all`; the brief ruled that "says nothing" is the
+        # anti-pattern, so it now binds the examined-count report (#671's shape).
+        # This is the live ledger's state today (zero `related:` markers), which
+        # is why the check can be strict: there is no legacy to grandfather.
         bare = self.LEDGER.replace(" · related: **#2**", "").replace(" · related: **#1**", "")
         assert "related:" not in bare        # precondition: really stripped
         t = self.build(tmp_path, bare)
-        assert self.rows(t) == [], self.rows(t)
+        assert self.rows(t, lint.ERROR) == [], self.rows(t, lint.ERROR)
+        oks = self.rows(t, lint.OK)
+        # Derived at runtime: the fixture genuinely has this many entries and
+        # no markers, so the count is the check's honest answer, not a literal.
+        import watch
+        n = len(watch.ledger_entries(bare))
+        assert n > 0, "precondition: the bare fixture genuinely has entries"
+        assert len(oks) == 1, oks
+        assert f"examined {n} entries against 0 markers" in oks[0], oks
 
     def test_the_check_is_registered_in_run_checks(self, tmp_path):
         import inspect
@@ -6774,7 +6792,7 @@ class TestStoreModeLint:
                "- **#11** — a clean landed entry · P0 · implementation · "
                "origin: **human** (abc1234)\n")
 
-    def _cut_over(self, tmp_path):
+    def _cut_over(self, tmp_path, fixture=None):
         """A REAL post-cutover scratch target: watermark, shim, deprecated,
         populated store — the same artifact the live cutover will produce."""
         import importlib.machinery, importlib.util, io
@@ -6787,7 +6805,8 @@ class TestStoreModeLint:
         loader.exec_module(mod)
         td = tmp_path / "dw"
         td.mkdir()
-        (td / "tasks.md").write_text(self.FIXTURE)
+        (td / "tasks.md").write_text(
+            self.FIXTURE if fixture is None else fixture)
         mod.perform_cutover(str(td), out=io.StringIO())
         assert ledger_parse.source_of_truth(td) == "store", \
             "fixture precondition: the watermark must be present"
@@ -7004,6 +7023,50 @@ class TestStoreModeLint:
         else:
             assert False, "the headless entry must head an entry in the projection"
 
+
+    def test_check_related_markers_reads_the_store_through_ledger_view(self, tmp_path):
+        """#685: the check must read through `ledger_view` (the #294 dispatch),
+        not `tasks.md` directly. In store mode `tasks.md` is the #458 shim (no
+        entries), so a direct read examines 0 — the defect, which read as a
+        pass. The binding: a reciprocal marker pair that exists ONLY in the
+        store projection must be validated, and the examined count must equal
+        the store's entry count, not zero.
+
+        PRODUCTION LINE: `text, source = ledger_view(dw)` in
+        check_related_markers. RED: restore the direct
+        `(dw / 'tasks.md').read_text()` and this fails — the shim yields 0
+        entries, the pair is never seen, and the count is 0. A re-implemented
+        reader that opened the store itself would also have to synthesise the
+        sectioned projection `ledger_view` builds, or `parse_ledger` would
+        return no ids — so the assertion binds the shared dispatch, not a
+        second store reader (#655, #352).
+        """
+        import ledger_parse, watch
+        FIXTURE = (
+            "# Task ledger\n\nNext id: **4**\n\n## Open\n\n"
+            "- **#1** — a task · P2 · origin: **loop** · related: **#2** · going\n"
+            "- **#2** — its other half · P2 · origin: **loop** · "
+            "related: **#1** · too\n"
+            "- **#3** — alone · P2 · origin: **loop**\n")
+        td = self._cut_over(tmp_path, FIXTURE)
+        # Precondition: the shim genuinely yields no entries (the defect shape),
+        # so only the store projection can feed the check.
+        shim = (td / "tasks.md").read_text()
+        assert not watch.ledger_entries(shim), \
+            f"precondition: the shim must yield no entries: {shim!r}"
+        rep = lint.Report()
+        lint.check_related_markers(td, lint.load_watch(), rep)
+        errs = [d for lvl, w, d in rep.rows
+                if lvl == lint.ERROR and w == "tasks.md"]
+        assert errs == [], errs   # the pair is reciprocal through the store
+        oks = [d for lvl, w, d in rep.rows if lvl == lint.OK and w == "tasks.md"]
+        # Derived: the examined count must match the STORE's id set, not 0.
+        store_open, store_landed = ledger_parse.store_ids_by_state(td)
+        n_store = len(set(store_open) | set(store_landed))
+        assert n_store == 3, f"precondition: the store holds 3 ids: {n_store}"
+        assert any(f"examined {n_store} entries against 2 markers (store)" in o
+                   for o in oks), oks
+        assert not any("examined 0 entries" in o for o in oks), oks
 
 class TestReviewDecisionIntegrity:
     """#289 — the coordinator-owned WARN half of the review_decision store:
