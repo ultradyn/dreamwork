@@ -4069,6 +4069,56 @@ CONFLICT_MARKER_RE = re.compile(
     r'|\|{7}(?!\|)')  # |||||||  — diff3 base, may carry the base sha
 
 
+HANDOFF_QUOTE_CAP = 200
+# A sentence terminator only when what follows is whitespace or end-of-string.
+# Measured against all 99 live pending claimers: `lint.py`, `tasks.md` and
+# `#565/#569, #583` are never split, because the character after the dot is a
+# letter or a digit in every one of them.
+HANDOFF_SENTENCE_END = re.compile(r"^(.*?[.!?])(?=\s|$)", re.S)
+
+
+def handoff_quote(field: str) -> str:
+    """A hand-off's prose field, cut to its first sentence for a report row.
+
+    #612. `handoffs.md` writes each hand-off as ONE physical line, and the
+    `· by <claimer>` grammar's claimer group runs to end of line — so the
+    field carries the entire hand-off body. Measured on the live file: 99
+    pending rows, median claimer **1470** characters, longest **4568**. The
+    #381 fold prompt reproduced that verbatim, and the #592 hand-off alone
+    (3809 characters) dominated the main checkout's whole lint report.
+
+    That is the same tune-out failure #592 existed to stop, arriving by
+    volume instead of by false positives: a report nobody can skim is a
+    report nobody reads. The prompt's job is to make the fold impossible to
+    miss, not to reproduce the hand-off — the file is right there.
+
+    **First sentence** is the shortest prefix ending in ``.``, ``!`` or ``?``
+    that is FOLLOWED BY whitespace or end-of-string.
+
+    **When there is no terminator at all** — 30 of the 99 live claimers, so
+    not a hypothetical — the whole field is the candidate and the cap below
+    is what bounds it. There is no guessing at an implied sentence.
+
+    **The cap is a backstop, not the usual path.** Live first-sentence
+    lengths run 71..759, median 160, so 200 leaves most whole (the #592
+    one is 188) and bounds the outlier. The cut lands on the last space at
+    or before the cap so a word is never split, and ``…`` says it was cut.
+
+    **The sha is not in here.** Callers interpolate it as its own field, and
+    the two fold prompts print it BEFORE this quote — so no input to this
+    function can push the actionable part off the row or drop it. That is
+    the property `test_the_sha_survives_every_truncation` pins.
+    """
+    flat = re.sub(r"\s+", " ", field or "").strip()
+    m = HANDOFF_SENTENCE_END.match(flat)
+    quote = m.group(1) if m else flat
+    if len(quote) <= HANDOFF_QUOTE_CAP:
+        return quote
+    cut = quote[:HANDOFF_QUOTE_CAP]
+    space = cut.rfind(" ")
+    return (cut[:space] if space > 0 else cut).rstrip() + "…"
+
+
 def check_handoffs(dw: Path, watch, rep: Report) -> None:
     """The delivery half of the single-writer rule (#381).
 
@@ -4169,12 +4219,19 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
     # record. A Pending-shaped line under `## Folded` is the #406 defect; a
     # fold for the same id must not hide it (that was the silent path).
     for nid, line in truly_malformed:
+        # #612: `line` is the same single physical line the claimer comes
+        # from, so it carries the whole hand-off body too — the identical
+        # unbounded quote, one branch away from the fold prompt. It never
+        # fires on the live file (0 malformed today), which is exactly why
+        # fixing only the branch that is currently loud would leave the
+        # defect to resurface the first time this one fires.
         rep.add(
             WARN, "handoffs.md",
             f"#{nid} has a hand-off entry the grammar does not recognise "
             f"(needs `· landed \\`<sha>\\` · … · by <claimer>` under "
             f"`## Pending`, or `→ folded (ts):` under `## Folded`; id may be "
-            f"`#N`, `#Na`, or `#N/#M`): {line!r} (#381/#401/#406)")
+            f"`#N`, `#Na`, or `#N/#M`): {handoff_quote(line)!r} "
+            f"(#381/#401/#406)")
 
     # Coverage (#395 idiom / #401): how many of each bucket the parser saw.
     # A check that counts what it examined cannot silently stop examining.
@@ -4210,11 +4267,14 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
         if any(p in folded_ids for p in parents):
             continue
         if any(p in open_ids for p in parents):
+            # #612: sha FIRST, then the quote — the sha is the actionable
+            # part, so it must never sit behind a field whose length the
+            # writer of the hand-off controls.
             rep.add(
                 WARN, "handoffs.md",
-                f"#{nid} is named as landed in a hand-off (by {claimer}, sha "
-                f"`{sha}`) but is still under `## Open` — fold it into the "
-                f"ledger and append a `→ folded` line (#381)")
+                f"#{nid} is named as landed in a hand-off (sha `{sha}`, by "
+                f"{handoff_quote(claimer)}) but is still under `## Open` — "
+                f"fold it into the ledger and append a `→ folded` line (#381)")
         elif any(p in landed_ids for p in parents):
             # #576: the task IS landed (the coordinator folded it into the
             # ledger) but the `→ folded` line was never appended to handoffs.md.
@@ -4227,8 +4287,8 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
             rep.add(
                 WARN, "handoffs.md",
                 f"#{nid} is landed in the ledger but has no `→ folded` line "
-                f"in handoffs.md (by {claimer}, sha `{sha}`) — append one "
-                f"under `## Folded` (#576)")
+                f"in handoffs.md (sha `{sha}`, by {handoff_quote(claimer)}) "
+                f"— append one under `## Folded` (#576)")
 
 
 def check_cited_shas(dw: Path, rep: Report) -> None:
