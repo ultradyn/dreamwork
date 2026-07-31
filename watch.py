@@ -331,11 +331,11 @@ def server_class(family):
 # lands. The sticky kinds are chat and add-idea; every STEERING kind decays
 # back to the default (the entry marked `default`, else the far-left kind)
 # at submit, because a steering mode that persists silently raises the
-# authority of his NEXT message (#257's reasoning, generalised). chat and
+# authority of his NEXT message (#337's reasoning). chat and
 # add-idea are sticky for
 # DIFFERENT reasons: add-idea so consecutive parked thoughts do not require
 # re-selection, and chat because it is CONVERSATIONAL, not steering — the
-# #257 authority rationale does not apply to a message channel, and a
+# #337 authority rationale does not apply to a message channel, and a
 # follow-up should never require re-selecting it. Absent means NOT sticky —
 # a plugin kind that says nothing must not linger either — so the decay
 # needs no third place to be remembered.
@@ -2703,7 +2703,7 @@ def append_human_question(text, question, stamp):
 #   <!-- dw-turn role=human|agent at=<iso>[ receipt=<id>] -->
 #   <one-lined text>
 #   <!-- /dw-turn -->
-# Two rules together make his text unforgeable as a turn (the #126 rule, one
+# Two rules together make his text unforgeable as a turn (#504's measured fix, one
 # level into the chat store): the writer `one_line`s the body, so a pasted
 # newline cannot push a forged marker to column 0; and the parser anchors BOTH
 # markers at line start, so a marker typed INTO the body stays inline prose and
