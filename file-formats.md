@@ -2164,6 +2164,30 @@ is the single lane-ownership definition, so the backstop and the pre-merge
 assertion share one reader — two callers, one place the parsing can drift, not
 two.
 
+## `/data.json?since=<v>` — the derived delta payload (#641 phase 1)
+
+`GET /data.json` accepts an optional `since=<v>` query parameter, where `<v>`
+is the `watched_mtime` value the client last built from (the same number
+`/mtime` returns). The response is one of three shapes, and "full is always
+the safe answer" — any mismatch, any unknown `since`, any doubt returns the
+complete document:
+
+| client sends | server returns |
+|---|---|
+| no `since` | the full `collect()` document (byte-identical to today) |
+| `since` == current version | `{"v": "<version>", "unchanged": true}` — a 304-shaped sentinel (#136: distinct from a delta or a full doc) |
+| `since` == the immediately-prior version | `{"v", "base", "changed": {k: whole-value}, "removed": [k…], "check"}` — a derived per-key delta |
+| anything else | the full document |
+
+The delta is **derived** from two `collect()` outputs (the plan's `## The
+trap`), never hand-written: per-key comparison by serialized equality,
+changed keys shipped whole, `generated` excluded from both `changed` and
+`check`. The client applies it (`applyDataResponse`: overwrite `changed`,
+delete `removed`) and the reconstruction is byte-identical to a full build
+at that version — proven by a born-red round-trip test. The `check` field
+is a SHA-256 of the full document (minus `generated`); a client that
+recomputes it and finds a mismatch refetches in full (self-heal).
+
 ## `/summary.json` — a whitelist view, not a projection of everything (#275 Q5)
 
 `watch.py` serves `/summary.json` as a **whitelisted** view of `collect()`,

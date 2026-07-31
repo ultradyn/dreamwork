@@ -2821,8 +2821,12 @@ class TestCollector(unittest.TestCase):
         # re-arms #208's exact failure.
         assignments = re.findall(r"(?m)^\s*data\s*=", watch.PAGE)
         self.assertEqual(assignments, ["  data ="])
-        # ensureData + tick + #487 cycleBurnStep — every fetcher through setData
-        self.assertEqual(watch.PAGE.count("setData(await"), 3)
+        # ensureData + tick + #487 cycleBurnStep — every fetcher through
+        # applyDataResponse → setData (#641: the delta layer sits between
+        # fetch and setData; tick stores in a variable to skip 'unchanged').
+        self.assertEqual(
+            watch.PAGE.count("applyDataResponse(await"), 3,
+            "every data fetcher must route through applyDataResponse")
 
     def test_git_tail_carries_what_an_expanded_row_shows(self):
         # #166: the row expands onto the full sha, the author, the message
@@ -13150,3 +13154,161 @@ class TestDecideHandler(unittest.TestCase):
             self.assertEqual(status, 202, body)
             self.assertTrue(resp.get("rejected"), body)
             self.assertEqual(resp.get("reason"), "schema_invalid", body)
+
+
+class TestDataJsonDelta(unittest.TestCase):
+    """#641 phase 1 — derived key-level deltas for /data.json?since=<v>.
+
+    The discriminating test is RECONSTRUCTION (the plan's `## The trap`):
+    apply the delta to the base and assert byte-identity with the target
+    document, with `generated` excluded. A test that asserts 'the delta has
+    the keys I expected' passes against a delta that OMITS a key that
+    genuinely changed — reconstruct-and-compare or it does not count."""
+
+    def test_reconstruction_round_trip_for_adversarial_pairs(self):
+        """apply(base, delta(base, next)) == next for every adversarial shape:
+        a key added, a key removed, a nested mutation, generated-only, and a
+        real two-key change. Each case is derived at runtime so the assertion
+        cannot pass on a fixture that does not actually exercise the branch."""
+        base = {"generated": "old", "target": "/x", "git": {"sha": "aaa"},
+                "tint": "blue", "open_questions": 3}
+        cases = [
+            ("key added", {**base, "new_key": "v"}),
+            ("key removed",
+             {"generated": "old", "target": "/x", "git": {"sha": "aaa"}}),
+            ("nested mutation",
+             {"generated": "old", "target": "/x", "git": {"sha": "bbb"},
+              "tint": "blue", "open_questions": 3}),
+            ("generated-only", {**base, "generated": "new"}),
+            ("two-key change",
+             {"generated": "old", "target": "/y", "git": {"sha": "ccc"},
+              "tint": "red", "open_questions": 5}),
+        ]
+        for label, nxt in cases:
+            with self.subTest(case=label):
+                # PRECONDITION: the case actually differs beyond generated,
+                # or is the generated-only case (which must produce an empty
+                # delta). A case that accidentally equals base proves nothing.
+                core_changed = any(
+                    k != "generated" and base.get(k) != nxt.get(k)
+                    for k in set(base) | set(nxt))
+                if label != "generated-only":
+                    self.assertTrue(core_changed,
+                                    f"case '{label}' does not change any key "
+                                    "— the reconstruction test is vacuous")
+                delta = watch.compute_delta(base, nxt)
+                rebuilt = watch.apply_delta(base, delta)
+                # generated is carried from base (the receiver stamps its own);
+                # so compare everything EXCEPT generated for byte-identity.
+                rebuilt_core = {k: rebuilt[k] for k in rebuilt
+                                if k != "generated"}
+                next_core = {k: nxt[k] for k in nxt if k != "generated"}
+                self.assertEqual(
+                    rebuilt_core, next_core,
+                    f"case '{label}': reconstruction diverged from target — "
+                    f"delta was {{changed: {sorted(delta['changed'])}, "
+                    f"removed: {delta['removed']}}}")
+
+    def test_generated_is_excluded_from_delta_and_check(self):
+        """generated changes every build; if it were in the delta, every
+        response would differ. It must be absent from changed AND from the
+        derived_check hash (so a generated-only change yields an empty delta
+        and identical check)."""
+        a = {"generated": "AAA", "target": "/x"}
+        b = {"generated": "BBB", "target": "/x"}
+        delta = watch.compute_delta(a, b)
+        self.assertNotIn("generated", delta["changed"],
+                         "generated appeared in changed — every build would "
+                         "ship a delta")
+        self.assertEqual(delta["changed"], {},
+                         "a generated-only change produced a non-empty delta")
+        self.assertEqual(watch.derived_check(a), watch.derived_check(b),
+                         "generated leaked into derived_check — two builds "
+                         "with identical content have different checks")
+
+    def test_no_since_returns_the_full_document_unchanged(self):
+        """Revert story: a client that never sends since sees today's
+        /data.json byte-unchanged (the response IS the collect() doc)."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            # Clear any cached state from other tests in this target.
+            watch._DATA_JSON_CACHE.clear()
+            entry = watch._data_json_cached(d, None)
+            resp = watch._data_json_response(entry, None)
+            # The full document has every collect() key, no delta envelope.
+            self.assertIsInstance(resp, dict)
+            self.assertNotIn("changed", resp,
+                             "no since should return the full doc, not a delta")
+            self.assertNotIn("unchanged", resp,
+                             "no since should return the full doc, not the "
+                             "no-change sentinel")
+            self.assertIn("generated", resp,
+                          "the full document should carry generated")
+
+    def test_since_current_version_is_the_no_change_sentinel(self):
+        """#136: 'no change' is a DISTINCT sentinel, never the full document
+        and never the same shape as 'I could not compute a delta'."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch._DATA_JSON_CACHE.clear()
+            entry = watch._data_json_cached(d, None)
+            version = entry[0]
+            resp = watch._data_json_response(entry, repr(version))
+            self.assertTrue(resp.get("unchanged"),
+                            "since==current must return the no-change sentinel")
+            self.assertEqual(resp["v"], repr(version))
+            # And it is NOT a full document (no generated key).
+            self.assertNotIn("generated", resp)
+
+    def test_since_unknown_version_returns_full_document(self):
+        """Full is always the safe answer: a since we cannot satisfy (too old,
+        from before a restart, or garbage) yields the full document."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch._DATA_JSON_CACHE.clear()
+            entry = watch._data_json_cached(d, None)
+            resp = watch._data_json_response(entry, "9999999999.9999999")
+            self.assertIn("generated", resp,
+                          "an unknown since should fall back to the full doc")
+            self.assertNotIn("changed", resp)
+
+    def test_since_prev_version_returns_delta_that_reconstructs(self):
+        """The live path: a client one version behind gets a real delta, and
+        applying it to the previous document reconstructs the current one
+        (minus generated). This is the born-red reconstruction test against
+        the actual cache + response machinery, not just compute_delta."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch._DATA_JSON_CACHE.clear()
+            # First build — establishes the cache.
+            e1 = watch._data_json_cached(d, None)
+            prev_version, prev_doc = e1[0], e1[1]
+            # Touch a watched file so watched_mtime advances, then rebuild.
+            qfile = os.path.join(d, ".dreamwork", "questions.md")
+            with open(qfile, "a") as f:
+                f.write("\n- **test question** body\n")
+            time.sleep(0.01)
+            os.utime(qfile, None)
+            e2 = watch._data_json_cached(d, None)
+            curr_version, curr_doc = e2[0], e2[1]
+            self.assertGreater(curr_version, prev_version,
+                               "PRECONDITION: the version must have moved for "
+                               "the delta path to be exercised")
+            resp = watch._data_json_response(e2, repr(prev_version))
+            self.assertIn("changed", resp, "one-version-behind should get a delta")
+            self.assertEqual(resp["base"], repr(prev_version))
+            rebuilt = watch.apply_delta(prev_doc, resp)
+            # Byte-identity minus generated (the receiver stamps its own).
+            for k in curr_doc:
+                if k == "generated":
+                    continue
+                self.assertIn(k, rebuilt,
+                              f"key '{k}' missing from reconstruction")
+                self.assertEqual(
+                    rebuilt[k], curr_doc[k],
+                    f"key '{k}' differs after reconstruction: "
+                    f"got {rebuilt[k]!r:.80} expected {curr_doc[k]!r:.80}")
+            # The check hash validates against the current doc (generated-free).
+            self.assertEqual(
+                resp["check"], watch.derived_check(curr_doc),
+                "the delta's check must match a derived_check of the target")
