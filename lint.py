@@ -2370,6 +2370,64 @@ NOT_GUARDS = frozenset({
 })
 
 
+# #693: the commit.cleanup values that PRESERVE '#' lines. This repo puts the
+# task id at the START of every commit subject, so the subject IS a '#' line.
+# On the editor path — which `git rebase --continue` uses — the default
+# 'strip' cleanup deletes every line beginning with '#', silently losing the
+# id and the landing-discovery route it carries (#404). 'default' behaves as
+# 'strip' when a comment character is in use, and an UNSET value resolves to
+# 'default', so unset / empty / strip / default all eat '#' lines. These three
+# are the exhaustive set that do not (git's own closed set of cleanup modes);
+# the check is an allowlist rather than "is it set" because 'strip' and
+# 'default' are SET and non-empty and both eat the subject — the exact
+# false-green a presence-only check would pass on.
+COMMIT_CLEANUP_SAFE = frozenset({"whitespace", "verbatim", "scissors"})
+
+
+def check_commit_cleanup(dw: Path, rep: Report) -> None:
+    """commit.cleanup must preserve '#' lines — subjects start with #NNN (#693).
+
+    `.git/config` is not tracked, so the mitigation does not survive a fresh
+    clone, a new machine, or a re-init: a lesson that does not become a check
+    is a lesson waiting to be re-learned, and the cost of re-learning it is
+    silent data loss of the id that makes a landing discoverable. Takes the
+    repo root (``dw.parent``), not a ``.dreamwork/`` file, because the value
+    lives in git's config. Skips silently when not inside a git work tree:
+    `git config --get` exits 1 both for unset-in-a-repo and for a plain
+    directory (it reads global/system config without needing a repo), so the
+    two are indistinguishable from its exit code — and a synthetic target
+    that is not a git repo must not ERROR on a config it has no place to set.
+    """
+    try:
+        inside = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=dw.parent, capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+    if inside.returncode != 0:
+        return  # not a git repo — nothing to check, nothing to report
+    try:
+        out = subprocess.run(
+            ["git", "config", "--get", "commit.cleanup"],
+            cwd=dw.parent, capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+    raw = out.stdout.strip()
+    if raw in COMMIT_CLEANUP_SAFE:
+        rep.add(OK, "commit.cleanup", f"'{raw}' preserves '#' lines")
+    else:
+        shown = raw if raw else "<unset> (defaults to strip on the editor path)"
+        rep.add(
+            ERROR, "commit.cleanup",
+            f"{shown} — eats '#' lines on the editor path "
+            f"(git rebase --continue), and commit subjects start with '#NNN'; "
+            f"the id is silently deleted and the landing becomes "
+            f"undiscoverable (#693, #404). Run: git config commit.cleanup scissors",
+        )
+
+
 def check_guards_registered(root: Path, rep: Report) -> None:
     """A guard file that is not in `DEFAULT_GUARDS` gates nothing (#377).
 
@@ -5525,6 +5583,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_status_keys(dw, rep)
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are
     # the tool's own, so this only says anything when linting this repo.
+    check_commit_cleanup(dw.parent, rep)
     check_guards_registered(dw.parent, rep)
     check_guards_execution_accounting(dw.parent, rep)
     check_client_dist(dw.parent, rep)

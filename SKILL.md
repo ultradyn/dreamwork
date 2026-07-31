@@ -377,8 +377,19 @@ staged and untouched. Measured, because the plausible version of this
 rule is the wrong one: with a peer's file staged, `git add mine &&
 git commit` produced a two-file commit; `git commit --only mine`
 produced a one-file commit and left the peer's still staged. One edge:
-`--only <directory>` skips untracked files inside it silently, so a NEW
-file needs `git add <file>` before `git commit --only <file>`.
+`--only` does not see a NEW file until git knows the path: a directory
+pathspec silently drops an untracked file inside it while the tracked file
+commits, and a bare untracked pathspec errors. Run `git add -N <paths>`
+first — intent-to-add, not `git add`, so nothing is staged into the index
+the `--only` rule exists to protect (#684).
+
+**`git config commit.cleanup scissors` once after a fresh clone** (#693):
+commit subjects begin with `#NNN`, which is a `#` line, and an *unset*
+`commit.cleanup` defaults to `strip` on the editor path — so
+`git rebase --continue` silently deletes the id and the landing becomes
+undiscoverable (#404). `scissors` keeps `#` lines and truncates only git's
+own instruction comments; `lint.py` fails unless the value is one that
+preserves them.
 
 **Worktree is the default for any dreamer that writes files** (#405).
 Dispatch into a git worktree under `.worktrees/` (gitignored) or the
