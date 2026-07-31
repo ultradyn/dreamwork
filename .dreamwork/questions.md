@@ -50,7 +50,7 @@
   mockup's own A + G1 + M1, stand as the defaults when implementation is planned.
   Accepted answers: `rec` (takes all three plus the mockup's three) · per-question (`Q1: …`) · free text.
 
-- **P1 · 2026-07-31 17:20 — #614 (blocks #620): websockets — everything you asked for lands, but the analysis
+- **P1 · 2026-07-31 17:20 — #614 (blocks #641): websockets — everything you asked for lands, but the analysis
   parts ways with you on the wire protocol.** One decision.
   Plan: `.dreamwork/docs/plans/ws-delta-transport.md`. Your goals — faster, more efficient, partial
   deltas, event-pushed — all survive; since you named websockets explicitly, the divergence is put
