@@ -29,7 +29,7 @@ This shape does not make stage-2 wrapper purity harder. It keeps styling
 outside wrapper source, so a delegating wrapper can remain a call plus a mount
 boundary with no tag literal or copied token value. Stage 2 was not started.
 
-Implementation commit after the required rebase: `62ef4cdc5cdb02655cee4164dbb6550fec4989fa`.
+Implementation commit after the final required rebase: `5caacb0ce49f5b5182ffc184d6e29ddf67678874`.
 
 ## What changed
 
@@ -100,8 +100,9 @@ Final hand-off gate:
   claim that the served page did not change.
 - Rebase: local `master` moved from the stated base
   `bc7aab6b8e6f7e48ec74340af98e9c06a17dd995` to
-  `24b45a3f6cf357f047a91a301dc3ab17039f9e7a`; rebase completed without a
-  content conflict. The persisted brief/receipt blocked checkout as untracked
+  `24b45a3f6cf357f047a91a301dc3ab17039f9e7a`, then advanced again to
+  `4db4a02eafd68f07a94c1c5220246e5234afcbb3`; both rebases completed without
+  a content conflict. The persisted brief/receipt blocked the first checkout as untracked
   files, so I preserved them in lane-private scratch and restored them
   byte-for-byte; their receipt matches
   `dc09136402670fe568c8c6d9ee1fa050668a928c43cd428a0bd832226b2de7e6`.
