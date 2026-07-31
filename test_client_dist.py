@@ -60,6 +60,13 @@ def _clone(tmp_path):
     wrap = dst / client_dist.WRAPPER_EXPORTS_REL
     wrap.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(ROOT / client_dist.WRAPPER_EXPORTS_REL, wrap)
+    # #630 P2: the native runtime's sources are build inputs too, so a clone
+    # without them is not a faithful copy of the build's subject — every hash
+    # comparison below would be run against a tree missing four of thirteen
+    # inputs, and the OK assertion at the end of this function would be the
+    # thing that failed rather than anything a proof injected.
+    shutil.copytree(ROOT / client_dist.NATIVE_SRC_DIR,
+                    dst / client_dist.NATIVE_SRC_DIR)
     # The clone must start CLEAN, or every proof below could be reading a
     # defect the clone introduced rather than the one it injected.
     reading = client_dist.check(str(dst))
@@ -112,6 +119,25 @@ def test_nothing_under_client_dist_reaches_the_assembled_page():
             "%r is not in the built bundle, so its absence from the page "
             "would prove nothing" % probe)
 
+    # #630 P2 — the same claim for the second bundle, and it is this phase's
+    # HEADLINE. P2 adds a React runtime and a component registry and mounts
+    # NOTHING: the served page was byte-identical across the landing (604299
+    # bytes, sha256 db2b848bcd7a4723b7901cdfa96fdef5721f67336b8cdd9c71ad85ef4…
+    # before and after, `cmp` clean). That number cannot be re-checked later,
+    # but the reason it held can be, and this is it — native.js is 143 KB of
+    # React that the page does not load.
+    native = (ROOT / client_dist.NATIVE_REL).read_bytes().decode("utf-8")
+    assert len(native) > 50_000, (
+        "%s is %d chars — too small to be React plus a runtime, and every "
+        "probe below would be looking for nothing"
+        % (client_dist.NATIVE_REL, len(native)))
+    native_probes = ["dwNative", "data-dw-mount", "data-dw-probe"]
+    for probe in native_probes:
+        assert probe in native, (
+            "%r is not in %s, so its absence from the page would prove "
+            "nothing" % (probe, client_dist.NATIVE_REL))
+    probes = probes + native_probes
+
     page = watch._get_page()
     floor = sum((CLIENT / n).stat().st_size for n in watch._CLIENT_ASSETS)
     assert floor > 0, "no client assets to derive a floor from"
@@ -125,6 +151,34 @@ def test_nothing_under_client_dist_reaches_the_assembled_page():
             "%r reached the served page — client/dist is P1's build output "
             "and nothing in it may be served yet; the byte-identity claim of "
             "this phase is false" % probe)
+
+    # FALSE-GREEN VECTOR, constructed and then closed. Every assertion above
+    # looks for bundle CONTENT in the page, so all of them pass on a page that
+    # never inlines the bundle and instead fetches it:
+    #
+    #     <script src="/client/dist/native.js"></script>
+    #
+    # That page loads React, is not byte-identical, and satisfies every probe
+    # test written above — the containment idiom cannot see a reference,
+    # only a copy. The page is a SINGLE RESPONSE today (that is the property,
+    # `component-transition.md` §3), so the closure is to assert exactly that:
+    # it fetches no external script and no external stylesheet.
+    #
+    # Non-vacuous by construction: the page must contain inline <script> and
+    # <style> first, or this would be asserting the absence of external assets
+    # from a document that has no assets at all.
+    assert "<script>" in page and "<style>" in page, (
+        "the assembled page has no inline <script>/<style> — this is not the "
+        "dashboard, and the single-response assertions below would hold "
+        "vacuously")
+    for ref in ("<script src", "<script  src", "<link rel=\"stylesheet\""):
+        assert ref not in page, (
+            "the page references an external asset (%r). The dashboard is one "
+            "HTML response by design, and a <script src> pointing at "
+            "client/dist would load the runtime while every containment check "
+            "above still passed — that reference is the way this phase's "
+            "byte-identity claim can be false with all the probes green"
+            % ref)
 
 
 def test_ds_styles_is_a_byte_copy_of_the_stylesheet_the_page_serves():
@@ -180,16 +234,255 @@ def test_wrapper_exports_states_no_markup_of_its_own():
         "broken detector clears the file below by finding nothing"
         % len(found))
 
-    wrapper = (ROOT / client_dist.WRAPPER_EXPORTS_REL).read_text(
-        encoding="utf-8")
-    # comments are prose about the rule, not markup subject to it
-    code = "\n".join(ln for ln in wrapper.splitlines()
-                     if not ln.lstrip().startswith(("//", "*", "/*")))
-    hits = tag.findall(code)
-    assert not hits, (
-        "%s states markup of its own (%r). A wrapper must CALL the builder — "
-        "a second statement of the same markup is the one thing that can "
-        "diverge from it" % (client_dist.WRAPPER_EXPORTS_REL, sorted(set(hits))))
+    # #630 P2 widens this from one file to every hand-written build input.
+    # The native runtime is where the temptation actually lives: a component
+    # that "just needs a wrapper div" is one JSX tag away from being a second
+    # statement of a builder's markup, and the first one nobody notices is the
+    # one that makes "derived" a story rather than a property.
+    #
+    # This is also why the runtime is written with `React.createElement` and
+    # not JSX (`dev/build/src/delegate.js` says so at its head): createElement
+    # states an element NAME, so a component can still create elements while
+    # this rule forbids markup outright. Under JSX the rule would have to
+    # distinguish `<div>` the markup from `<div>` the call — which a regex
+    # cannot do, and which would therefore fall to a reviewer every time.
+    subjects = [client_dist.WRAPPER_EXPORTS_REL]
+    native = client_dist.native_sources(str(ROOT))
+    assert native, (
+        "%s holds no source — this check would then be asserting the absence "
+        "of markup from no files at all" % client_dist.NATIVE_SRC_DIR)
+    subjects += native
+
+    for rel in subjects:
+        wrapper = (ROOT / rel).read_text(encoding="utf-8")
+        # comments are prose about the rule, not markup subject to it
+        code = "\n".join(ln for ln in wrapper.splitlines()
+                         if not ln.lstrip().startswith(("//", "*", "/*")))
+        hits = tag.findall(code)
+        assert not hits, (
+            "%s states markup of its own (%r). A wrapper must CALL the "
+            "builder — a second statement of the same markup is the one "
+            "thing that can diverge from it" % (rel, sorted(set(hits))))
+
+
+# ── #630 P2: the native runtime ──────────────────────────────────────────
+
+
+def test_native_js_references_the_builders_and_does_not_contain_them():
+    """"Consumed, never copied" as a property of the ARTIFACT.
+
+    This is the check that separates the two bundles, and the separation is
+    not stylistic. `ds/index.js` CONCATENATES `client/*.js` — it must, its
+    consumer is a design tool with no dashboard — and it therefore carries
+    their 40 top-level side effects: `setInterval(ages, 1e3)`,
+    `document.addEventListener`, `window.dreambg = …`. #653 measured that
+    count and flagged it as inert *for P1*. It stops being inert the moment a
+    bundle containing it is loaded on the page, because the page is already
+    running every one of them: a second `setInterval(ages, 1e3)` is a second
+    timer mutating the same nodes forever.
+
+    So `native.js` must reference the builders and never contain them. The
+    detector is two-sided ON THE SAME PROBE, which is what makes it non-
+    vacuous: each probe must be ABSENT from native.js and PRESENT in
+    ds/index.js. A probe string that had gone stale — renamed builder, changed
+    source — would fail the PRESENT half loudly instead of clearing the ABSENT
+    half silently. Hunting for strings that exist nowhere is the exact
+    false-green #653 recorded closing on its own containment check.
+    """
+    native = (ROOT / client_dist.NATIVE_REL).read_bytes().decode("utf-8")
+    index = (ROOT / client_dist.DS_DIR / "index.js").read_bytes().decode(
+        "utf-8")
+
+    # Lifted verbatim from client/*.js: distinctive enough not to appear by
+    # chance, and each one is a top-level SIDE EFFECT or a builder body — the
+    # things that must not run twice.
+    probes = ["setInterval(ages", "window.dreambg", "function buildResearch("]
+    for probe in probes:
+        assert probe in index, (
+            "%r is not in the design bundle, which concatenates client/*.js. "
+            "The probe is stale, so asserting its absence from native.js "
+            "would prove nothing at all" % probe)
+        assert probe not in native, (
+            "%r is IN %s. The native runtime is loaded on a page that already "
+            "runs the builders, so a copy of them there is a second set of "
+            "top-level side effects against the same document — and a second "
+            "statement of markup that can diverge from the served one"
+            % (probe, client_dist.NATIVE_REL))
+
+    # The other half of the claim: it references them. A bundle that neither
+    # contains nor references a builder would pass every assertion above by
+    # having nothing to do with the builders at all.
+    assert "buildResearch" in native, (
+        "%s does not name buildResearch — the delegating wrapper is supposed "
+        "to CALL it, and a bundle that neither contains nor references the "
+        "builders is not derived from anything" % client_dist.NATIVE_REL)
+
+
+def test_native_js_bundles_reacts_production_build():
+    """Which React the dashboard will run, asserted rather than assumed.
+
+    React ships dev and production behind `process.env.NODE_ENV` and picks at
+    bundle time. Getting this wrong is silent: the page works, and it is
+    bigger, slower, and emits warnings to a console nobody has open. It is
+    also not a size question — the dev build carries different code.
+
+    Both directions, because either alone passes on a bundle that is not
+    React at all: a production-only marker must be PRESENT, and the dev
+    build's unmistakable string must be ABSENT.
+    """
+    native = (ROOT / client_dist.NATIVE_REL).read_bytes().decode("utf-8")
+    assert "react-dom" in native.lower() or "ReactDOM" in native, (
+        "%s does not look like it contains ReactDOM at all, so neither "
+        "assertion below would be about React" % client_dist.NATIVE_REL)
+    # esbuild folds `process.env.NODE_ENV !== "production"` to false and drops
+    # the branch, so the dev build's warning text cannot survive.
+    for dev_marker in ("Warning: React.createElement",
+                       "react-dom.development.js",
+                       "react.development.js"):
+        assert dev_marker not in native, (
+            "%r is in %s — the DEVELOPMENT build of React was bundled. It is "
+            "bigger, slower, and warns into a console nobody has open; the "
+            "fix is the --define:process.env.NODE_ENV=\"production\" flag in "
+            "dev/build_client.build_native" % (dev_marker,
+                                               client_dist.NATIVE_REL))
+    manifest = _manifest(ROOT)
+    assert manifest["tool"].get("react"), (
+        "the manifest does not record which React was bundled — with React "
+        "inside a minified artifact, that question is otherwise answered by "
+        "grepping 143 KB of generated code")
+
+
+def test_the_native_runtime_stays_inside_a_chosen_page_weight_budget():
+    """#630 plan §5-P2(ii): React's cost is a number someone chose.
+
+    The plan asks for a bound on PAGE. A bound on PAGE would be the wrong
+    check HERE and would become a liability: the page is 604 KB and grows with
+    every ordinary UI commit, so a PAGE budget fires on work that has nothing
+    to do with this phase — the false red that trains a reader to raise the
+    number without looking. The thing this phase introduced is native.js, and
+    it does NOT grow with ordinary UI work: it grows when someone changes the
+    runtime or bumps React, which is exactly when a human should be asked.
+
+    Measured at P2: 146920 bytes minified (React 18.3.1 + ReactDOM + the
+    registry + one probe), against the plan's INFERRED 140-180 KB — so the
+    estimate held. The page is unchanged, because native.js is not on it; this
+    is the bill that falls due at P3, stated one phase early so it is a
+    decision rather than a discovery.
+    """
+    size = (ROOT / client_dist.NATIVE_REL).stat().st_size
+    assert size > 50_000, (
+        "%s is %d bytes — that is not React plus a runtime, and a budget "
+        "check against a stub passes forever"
+        % (client_dist.NATIVE_REL, size))
+    budget = 160_000
+    assert size <= budget, (
+        "%s is %d bytes, over the %d-byte budget chosen at P2 (measured "
+        "146920 then). This is weight every dashboard load will carry from "
+        "P3 on. Raising the number is a decision, not a fix — say what was "
+        "added and why it is worth it"
+        % (client_dist.NATIVE_REL, size, budget))
+
+
+def test_native_sources_are_all_build_inputs(tmp_path):
+    """Every file in `dev/build/src/` is hashed, by GLOB rather than by list.
+
+    The native runtime grows a file per converted surface from P3 on. A
+    hand-maintained list of its sources would be a second truth that goes
+    stale on the first addition — and stale in the silent direction: the new
+    file simply would not be hashed, so editing it would never read as stale.
+
+    Non-vacuous by construction: a file is CREATED here and the input set must
+    grow to include it. A glob that had stopped matching anything would fail
+    this, where merely listing today's four files would not.
+    """
+    root = _clone(tmp_path)
+    before = client_dist.expected_inputs(str(root))
+    assert before, "the clone's input set is empty"
+
+    added = root / client_dist.NATIVE_SRC_DIR / "zz_p3_surface.js"
+    added.write_text("export const later = 1;\n", encoding="utf-8")
+    after = client_dist.expected_inputs(str(root))
+    new = sorted(set(after) - set(before))
+    assert new == [client_dist.NATIVE_SRC_DIR + "/zz_p3_surface.js"], (
+        "a new file in %s did not become a build input (%r) — the input set "
+        "is not derived from the tree" % (client_dist.NATIVE_SRC_DIR, new))
+
+
+def test_a_new_native_source_that_the_manifest_never_saw_is_stale(tmp_path):
+    """RED PROOF: the P3-shaped mistake, exactly.
+
+    Someone adds a component file to the native runtime and does not rebuild.
+    Every hash the manifest records still matches its file, so a detector
+    keyed on the MANIFEST's own key set is green while native.js was built
+    without the new component in it.
+    """
+    root = _clone(tmp_path)
+    (root / client_dist.NATIVE_SRC_DIR / "research.js").write_text(
+        "export const Research = null;\n", encoding="utf-8")
+
+    manifest = _manifest(root)
+    for rel, digest in manifest["inputs"].items():
+        assert client_dist.sha256_file(os.path.join(str(root), rel)) == digest, (
+            "the injection disturbed a recorded file; the false-green it is "
+            "demonstrating would not be demonstrated")
+
+    reading = client_dist.check(str(root))
+    assert reading["state"] == client_dist.STALE, (
+        "a native source the build never saw read as %r" % (reading["state"],))
+    assert any("research.js" in s for s in reading["stale"]) or \
+        "research.js" in (reading["note"] or ""), (
+        "the reading does not NAME the unbuilt source: %r" % (reading,))
+
+
+def test_an_edited_native_source_reds_the_detector(tmp_path):
+    """RED PROOF, the plain direction, on the new input class."""
+    root = _clone(tmp_path)
+    target = root / client_dist.NATIVE_SRC_DIR / "registry.js"
+    target.write_bytes(target.read_bytes() + b"\n// drift\n")
+    reading = client_dist.check(str(root))
+    assert reading["state"] == client_dist.STALE, (
+        "an edited native source did not read as stale (%r)" % (reading,))
+    assert any("registry.js" in s for s in reading["stale"]), reading
+
+
+def test_an_edited_native_bundle_reds_the_detector(tmp_path):
+    """RED PROOF: the output side. `native.js` is committed and right there —
+    hand-editing a committed artifact is the temptation the manifest is for."""
+    root = _clone(tmp_path)
+    out = root / client_dist.NATIVE_REL
+    out.write_bytes(out.read_bytes() + b"\n/* hand-edited */\n")
+    reading = client_dist.check(str(root))
+    assert reading["state"] == client_dist.STALE, (
+        "a hand-edited native bundle read as %r" % (reading["state"],))
+    assert any("native.js" in s for s in reading["stale"]), reading
+
+
+def test_an_emptied_native_src_dir_is_unreadable_and_never_green(tmp_path):
+    """FALSE-GREEN VECTOR, closed: the input class that vanishes.
+
+    `native_sources` globs, and a glob over an empty directory returns an
+    empty list, not an error. Fold that into the input set and the four native
+    hashes simply stop being compared — the check goes green over a native.js
+    built from files that are no longer here.
+
+    So an empty source directory is UNREADABLE, not "a build with fewer
+    inputs". And the note must name the DIRECTORY: the sibling failure (an
+    unparseable watch.py) reaches the same branch, and a note that named
+    watch.py for a missing build directory sends the reader to the wrong file.
+    """
+    root = _clone(tmp_path)
+    for path in (root / client_dist.NATIVE_SRC_DIR).glob("*.js"):
+        path.unlink()
+    assert client_dist.native_sources(str(root)) is None, (
+        "an emptied source directory still produced an input list")
+
+    reading = client_dist.check(str(root))          # must not raise
+    assert reading["state"] == client_dist.UNREADABLE, (
+        "an emptied %s read as %r — the native inputs would silently stop "
+        "being compared" % (client_dist.NATIVE_SRC_DIR, reading["state"]))
+    assert client_dist.NATIVE_SRC_DIR in (reading["note"] or ""), (
+        "the reading does not name the directory that is empty, and the "
+        "other cause of this state points at watch.py: %r" % (reading,))
 
 
 # ── the staleness detector, and the ways it could pass while wrong ───────
@@ -204,9 +497,20 @@ def test_the_committed_dist_is_built_from_the_committed_tree():
     """
     want = client_dist.expected_inputs(str(ROOT))
     assert want is not None, "watch._CLIENT_ASSETS is not AST-readable"
-    assert len(want) == len(watch._CLIENT_ASSETS) + 1, (
-        "expected %d inputs, derived %d" % (len(watch._CLIENT_ASSETS) + 1,
-                                            len(want)))
+    native = client_dist.native_sources(str(ROOT))
+    assert native, (
+        "%s holds no source — the native runtime's inputs would be an empty "
+        "set, and an empty set is what every vacuous check looks like"
+        % client_dist.NATIVE_SRC_DIR)
+    # Derived on both sides rather than a literal count: #630 P2 took this
+    # from 9 to 13 and P3 will take it further, and a hard-coded total makes
+    # every later phase edit a number here to make an unrelated test pass —
+    # which is how a check stops being read and starts being satisfied.
+    assert len(want) == len(watch._CLIENT_ASSETS) + 1 + len(native), (
+        "expected %d inputs (%d assets + wrapper-exports + %d native "
+        "sources), derived %d"
+        % (len(watch._CLIENT_ASSETS) + 1 + len(native),
+           len(watch._CLIENT_ASSETS), len(native), len(want)))
     reading = client_dist.check(str(ROOT))
     assert reading["state"] == client_dist.OK, (
         "client/dist is %s: %s — run `just build-client`"
@@ -425,8 +729,23 @@ def test_deploy_declares_and_tracks_every_file_the_dist_check_reads(tmp_path):
     fail quietly.
     """
     declared = set(watch.DATA_SIBLINGS)
-    want = ([client_dist.MANIFEST_REL, client_dist.WRAPPER_EXPORTS_REL]
+    # DERIVED from the check's own input set, not listed again here. #630 P2
+    # made DATA_SIBLINGS a second statement of "which files the build reads"
+    # — unavoidably, because `just deploy` AST-parses that tuple and an
+    # `ast.literal_eval` cannot run a glob. This is the assertion that keeps
+    # the two in step: add `dev/build/src/foo.js` without adding a line to
+    # DATA_SIBLINGS and this goes red HERE, at commit time, instead of on the
+    # deployed instance as a staleness reading that never clears.
+    inputs = client_dist.expected_inputs(str(ROOT))
+    assert inputs, "the build's input set could not be derived"
+    # Only the non-`client/` inputs: the client assets ship by their own
+    # DATA_SIBLINGS lines already and are asserted by test_client_assets.
+    want = ([client_dist.MANIFEST_REL]
+            + [p for p in inputs if not p.startswith("client/")]
             + list(client_dist.OUTPUT_RELS))
+    assert client_dist.NATIVE_ENTRY_REL in want, (
+        "the native entry is not among the derived inputs — this check would "
+        "pass while the runtime's own source went unshipped")
     missing = sorted(p for p in want if p not in declared)
     assert not missing, (
         "DATA_SIBLINGS does not declare %r — deploy would ship a snapshot "
@@ -507,6 +826,17 @@ def test_autoreload_sees_a_rebuild(tmp_path):
     for rel in (client_dist.MANIFEST_REL,) + client_dist.OUTPUT_RELS:
         assert os.path.join(watch.SELF_DIR, rel) in watched, (
             "%s is not in the autoreload watch set" % rel)
+    # #630 P2 — and the INPUT side, which is the mirror case: watching the
+    # outputs is what lets a rebuild CLEAR a red without a restart; watching
+    # the sources is what lets an edit RAISE one. Editing the registry and
+    # reloading otherwise gives a page reporting "dist is current" when it is
+    # not, which is worse than no reading at all.
+    native = client_dist.native_sources(str(ROOT))
+    assert native, "no native sources to assert the watch set against"
+    for rel in native:
+        assert os.path.join(watch.SELF_DIR, rel) in watched, (
+            "%s is a build input but is not watched — a dev editing the "
+            "native runtime would see a stale dist reported as current" % rel)
     assert all(os.path.isabs(p) for p in watched), (
         "relative paths in the watch set survive until someone chdirs, and "
         "_sources_mtime's OSError handling would then hide that a file had "

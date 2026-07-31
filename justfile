@@ -167,6 +167,16 @@ status-sync *args:
 #                fades rather than being covered by a painted band, and the
 #                middle of its three claims cannot be written against the DOM
 #                at all. Also unregistered from the day it was written.
+#   coexist      #630 P2, and the only guard here whose subject is NOT on the
+#                served page: it injects the committed client/dist/native.js
+#                as a second classic script, which is the position P3 will
+#                serve it from. P2 mounts nothing, so the page is byte-
+#                identical to master's and this is the only way to reach the
+#                runtime at all. It measures TWO different claims and must not
+#                be read as one: with #view's ownership respected a real tick
+#                reaches a mounted component and its React state survives; with
+#                it violated, morphdom deletes the root and registry.verify()
+#                REPORTS that. Coexistence is a partition, not a truce.
 #   dreamfade    ordinary (OUT, PORT) on the shared server, and it is a PER-FRAME
 #                guard because the claim is an ORDER, not an end state (#277):
 #                the ghost must dissolve in place BEFORE it travels, and both
@@ -247,7 +257,7 @@ status-sync *args:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel headcrumb reflow qacard docktarget noteprop oneinput regroup regroupdraft popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade markrail devoverlay autogrow dissolve burndownmock bdhover reviewask reviews5 staleremedy rejectwrite posture summaryjson qsignal qfocus qroll research restcollapse qlinkpip mdquote bdinput mdtable selectkeep corpse remindbtn note82 pip83 indtrace escattr chatsurface qgroup resize posturerecuse qdual gutter"
+    DEFAULT_GUARDS="headertravel headcrumb reflow qacard docktarget noteprop oneinput regroup regroupdraft popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade markrail devoverlay autogrow dissolve burndownmock bdhover reviewask reviews5 staleremedy rejectwrite posture summaryjson qsignal qfocus qroll research restcollapse qlinkpip mdquote bdinput mdtable selectkeep corpse remindbtn note82 pip83 indtrace escattr chatsurface qgroup resize posturerecuse qdual gutter coexist"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}

@@ -127,6 +127,36 @@ carries a `+` command opener (steer the loop without a chat turn).
     `dev/styleguide_audit.py` classifies on that prefix, and still classifies
     pre-#397 revisions by the old constant ranges because it walks history
     across the extraction.
+- **`client/dist/` is BUILT and committed, and none of it is served yet**
+  (`#630` P1 `#653`, P2). `just build-client` emits two bundles that differ in
+  kind, not just in contents, and confusing them is how the dashboard would
+  get a second copy of its own builders:
+  - `ds/index.js` — the design-tool package. It **concatenates** `client/*.js`
+    (in `watch.py`'s own AST-read `_CLIENT_ASSETS` order), so it carries their
+    ~40 top-level side effects. Harmless in a tool that has no dashboard.
+  - `native.js` — the on-page runtime: React 18.3.1 + the component registry.
+    It **references** the builders by bare name and must never contain them,
+    because its consumer is the page that is already running them. Resolution
+    is genuine global-lexical scope, measured rather than assumed:
+    `dev/capture/coexist.mjs` asserts a later classic script can name both a
+    `function` builder and a `const` one.
+  - **The registry's ownership rule.** `#view` has exactly one owner at a
+    time — the builders through `setContent`/morphdom, or one component root.
+    Never both. Violating it is not prevented (the router drives morphdom, not
+    the registry) but it is **detected**: `registry.verify()` reports a root
+    that something removed. Measured at P2: a builder render over a live root
+    deletes it, and `verify()` says so.
+  - **Component identity is `data-*`, never a class**, on Max's own spike
+    finding (`spike/components` `9b54b4f0`): the page addresses behavioural
+    heroes by class inside a card, and a shared class destroys the uniqueness
+    those addresses depend on. `dev/build/src/delegate.js` carries the
+    reasoning; the guard checks it against the live DOM.
+  - Staleness is the one divergence channel a committed build has, and it is
+    made impossible to MISS rather than impossible: `client/dist/manifest.json`
+    records sha256 of every input and output, `lint.py` ERRORs, and
+    `serving_report` carries the same reading. The authority map (route → which
+    registry) belongs to P3, the phase where a route first resolves to a
+    component; at P2 every route is still builder-owned.
 - **Loopback by default; trusted LAN only by explicit contract.** The default
   remains `127.0.0.1`. A singular numeric `--bind`, repeatable exact
   `--allow-host`, and navigable allowed `--url-host` may opt into an explicitly

@@ -23,6 +23,7 @@ to the wrong subsystem (lessons.md:580, lessons.md:622).
 """
 
 import ast
+import glob
 import hashlib
 import json
 import os
@@ -32,16 +33,33 @@ import os
 DIST_DIR = "client/dist"
 MANIFEST_REL = DIST_DIR + "/manifest.json"
 
-# The one hand-written build input. Named here rather than in the manifest's
-# own key set, because "the manifest agrees with itself" is not the question:
-# the question is whether it agrees with the TREE.
+# The design bundle's one hand-written build input. Named here rather than in
+# the manifest's own key set, because "the manifest agrees with itself" is not
+# the question: the question is whether it agrees with the TREE.
 WRAPPER_EXPORTS_REL = "dev/build/wrapper-exports.js"
 
-# What the build emits. `styles.css` is a byte copy of `client/style.css` (the
-# design package ships the same stylesheet the dashboard serves); `index.js`
-# is the bundled IIFE.
+# #630 P2: the native runtime's sources. A DIRECTORY rather than a tuple of
+# names, deliberately — the native runtime will grow a file per converted
+# surface from P3 on, and a hand-maintained list beside it is a second truth
+# that goes stale on the first addition. `native_sources` globs it, so adding
+# a file makes it a build input with no edit here and no edit to the manifest
+# schema.
+NATIVE_SRC_DIR = "dev/build/src"
+NATIVE_ENTRY_REL = NATIVE_SRC_DIR + "/native-entry.js"
+
+# What the build emits.
+#   ds/index.js    the design-tool package: `client/*.js` CONCATENATED, so it
+#                  carries their top-level side effects (harmless in a tool
+#                  that has no dashboard running).
+#   ds/styles.css  a byte copy of `client/style.css` — the design package
+#                  ships the stylesheet the dashboard serves, not a fork.
+#   native.js      the on-page runtime: React + the component registry, with
+#                  the builders REFERENCED and never concatenated. The
+#                  difference from ds/ is not a detail — see the header of
+#                  `dev/build/src/native-entry.js`.
 DS_DIR = DIST_DIR + "/ds"
-OUTPUT_RELS = (DS_DIR + "/index.js", DS_DIR + "/styles.css")
+NATIVE_REL = DIST_DIR + "/native.js"
+OUTPUT_RELS = (DS_DIR + "/index.js", DS_DIR + "/styles.css", NATIVE_REL)
 
 SCHEMA = 1
 
@@ -103,18 +121,52 @@ def asset_order(root):
     return None
 
 
+def native_sources(root):
+    """`dev/build/src/*.js`, sorted, or None when there are none.
+
+    None rather than `[]`, and that is the vacuity trap closed at the source:
+    an empty list would drop the native runtime out of the input set entirely,
+    and every hash comparison over the remaining keys would pass while
+    `native.js` was built from files that are no longer here — or from nothing
+    at all. A directory that has lost its contents is not a build with fewer
+    inputs; it is a build whose inputs cannot be read, which is what
+    UNREADABLE says.
+
+    Sorted rather than in glob order: `glob` is filesystem-ordered, so the
+    manifest's key set would depend on directory layout and a rebuild after an
+    unrelated file operation could reorder it. The keys are compared as a SET
+    by `check`, but the manifest is a committed artifact and a set that
+    serialises differently on two machines is diff churn nobody can read.
+    """
+    found = sorted(glob.glob(os.path.join(root, NATIVE_SRC_DIR, "*.js")))
+    if not found:
+        return None
+    return [os.path.relpath(p, root).replace(os.sep, "/") for p in found]
+
+
 def expected_inputs(root):
-    """Every file the bundle is built FROM, in build order, or None.
+    """Every file the build reads, or None.
 
     Derived from the tree, not from the manifest — so a manifest that simply
     forgot an asset is caught. That is the false-green this ordering closes:
     hashing only the paths the manifest names would pass happily on a dist
     built before a ninth asset joined the page.
+
+    The `client/*` assets are inputs to BOTH bundles even though only `ds/`
+    concatenates them: `native.js` delegates to those builders by name, so a
+    renamed or deleted builder makes the committed `native.js` wrong in the
+    way that matters most — it would throw at mount, on the surface it was
+    built to render. Hashing them for both is what makes that a commit-time
+    red instead of a runtime one.
     """
     order = asset_order(root)
     if order is None:
         return None
-    return ["client/" + name for name in order] + [WRAPPER_EXPORTS_REL]
+    native = native_sources(root)
+    if native is None:
+        return None
+    return (["client/" + name for name in order]
+            + [WRAPPER_EXPORTS_REL] + native)
 
 
 def read_manifest(root):
@@ -149,9 +201,20 @@ def check(root):
 
     want = expected_inputs(root)
     if want is None:
+        # WHICH half could not be read, because they fail for unrelated
+        # reasons and send the reader to different files. A single note naming
+        # only the AST half would point at watch.py for a missing build
+        # directory — the wrong-subsystem diagnosis this module's header
+        # refuses to make.
         out["state"] = UNREADABLE
-        out["note"] = ("cannot read watch._CLIENT_ASSETS as a module-level "
-                       "literal, so the build inputs cannot be derived")
+        if asset_order(root) is None:
+            out["note"] = ("cannot read watch._CLIENT_ASSETS as a "
+                           "module-level literal, so the build inputs cannot "
+                           "be derived")
+        else:
+            out["note"] = ("%s holds no .js file — the native runtime has no "
+                           "source, so `client/dist/native.js` cannot be "
+                           "checked against anything" % NATIVE_SRC_DIR)
         return out
 
     manifest, note = read_manifest(root)
