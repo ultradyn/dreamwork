@@ -392,6 +392,81 @@ def test_sweep_resolution_backed_cites_reconciles_a_width_mismatch():
         "not vacuous — if #466 disappears the cites predicate is over-broad")
 
 
+def test_sweep_resolves_citations_in_the_repo_it_was_given(
+        tmp_path, monkeypatch, capsys):
+    """The resolver's subject is ``--repo``, not the process CWD (#743).
+
+    Two independent repositories make the distinction observable: the SAME
+    sha resolves in the target repo and does not resolve in the deliberately
+    different CWD repo.  Merely asserting that sweep subtracts a citation is
+    hollow when the test happens to run inside the target repo — the shape
+    that let the bare ``git cat-file`` call through.
+    """
+    target = _bare_repo(tmp_path, "target")
+    cwd_repo = _bare_repo(tmp_path, "cwd")
+    _commit(cwd_repo, "docs: unrelated cwd history")
+    target_sha = _commit(target, "fix(#465): target-repo landing")
+    citation = target_sha[:7]
+
+    target_resolves = subprocess.run(
+        ["git", "-C", str(target), "cat-file", "-e",
+         f"{target_sha}^{{commit}}"], capture_output=True).returncode == 0
+    cwd_resolves = subprocess.run(
+        ["git", "-C", str(cwd_repo), "cat-file", "-e",
+         f"{target_sha}^{{commit}}"], capture_output=True).returncode == 0
+    assert target_resolves is True, "precondition: the sha must resolve under --repo"
+    assert cwd_resolves is False, (
+        "precondition: the same sha must NOT resolve in the process CWD repo")
+
+    ledger_path = tmp_path / "ledger" / "tasks.md"
+    ledger_path.parent.mkdir()
+    ledger_path.write_text(
+        "# Task ledger\n\nNext id: **466**\n\n## Open\n"
+        "- **#465** — target citation · origin: **loop**\n"
+        f"  · landed in `{citation}`\n\n## Recently landed\n")
+    # Force a width mismatch while retaining a real object for cat-file. Git's
+    # normal %h is often seven chars in tiny test repos, which would take the
+    # substring fast path and make this regression test vacuous.
+    monkeypatch.setattr(
+        ledger, "_git_subjects",
+        lambda repo, since: [(target_sha, "fix(#465): target-repo landing")])
+    monkeypatch.chdir(cwd_repo)
+
+    rc = ledger.main([
+        "sweep", "--repo", str(target), "--ledger", str(ledger_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0, "sweep remains advisory (#404)"
+    assert "#465 —" not in out, (
+        f"#465 cites {citation}, which resolves to {target_sha} under --repo; "
+        f"the resolver must not substitute the unrelated CWD repo: {out!r}")
+    assert "nothing to review" in out, out
+
+
+def test_sweep_reports_degraded_substring_fallback_when_git_times_out(
+        monkeypatch):
+    """An unavailable resolver falls back visibly; advisory sweep never dies."""
+    commit_sha = "58e3040d"
+    citation = commit_sha[:7]
+    ledger_text = (
+        "# Task ledger\n\nNext id: **466**\n\n## Open\n"
+        "- **#465** — width-rotted citation · origin: **loop**\n"
+        f"  · landed in `{citation}`\n\n## Recently landed\n")
+
+    def timeout(*args, **kwargs):
+        raise ledger.subprocess.TimeoutExpired(args[0], timeout=20)
+
+    monkeypatch.setattr(ledger.subprocess, "run", timeout)
+    out = ledger.sweep_text(
+        ledger_text, [(commit_sha, "fix(#465): landing")], None, "markdown")
+
+    assert "DEGRADED" in out and "substring" in out, (
+        f"the fallback must say it fired, not merely avoid an exception: {out!r}")
+    assert "#465 —" in out, (
+        "the documented substring fallback cannot reconcile different widths; "
+        "the finding proves that fallback, rather than resolution, answered")
+
+
 def test_sweep_ignores_landed_ids_and_reports_multi_id_subjects():
     _, findings = ledger.sweep(SWEEP_LEDGER, SWEEP_COMMITS)
     by_id = {tid for tid, _ in findings}
