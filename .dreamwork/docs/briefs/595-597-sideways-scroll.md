@@ -1,6 +1,13 @@
 # Brief — #595 + #597: the page moves sideways when the styleguide says it never does
 
-Lane-owns: `client/style.css`, `dev/capture/`, `watch-design.md`, `.dreamwork/handoffs.md` (append ONE `## Pending` line)
+Lane-owns: `client/style.css`, `client/router.js`, `client/components.js`, `dev/capture/`, `watch-design.md`, `.dreamwork/handoffs.md` (append ONE `## Pending` line)
+
+> **Widened 2026-07-31 16:21** at the lane's own ask: D1's `.fdir`-idiom fix and D2's `#506` tail-unit
+> fix both have their build sites in `client/router.js` (`crumbsFor`) and `client/components.js`
+> (`linkify`), and the original list would have forced a CSS-only fix that may not be the right one.
+> No other live lane holds either file — `lane-592lint` owns `lint.py`/`test_lint.py` only. Take the
+> correct fix at its real site rather than a CSS approximation of it; if a build-site fix and a CSS
+> fix are genuinely equivalent, say which you took and why.
 
 Worktree: `/home/xertrov/.llm-general/skills/ud-dreamwork/.worktrees/lane-595scroll` (branch `lane-595scroll`, from `d44070cc`)
 Your inbox: `/home/xertrov/.cache/agent-comms/ud-dreamwork/lane-595scroll/inbox.md`
