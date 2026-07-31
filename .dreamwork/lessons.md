@@ -3407,5 +3407,14 @@ this shape and convert opportunistically.)
   to ignore it. When no candidate can decide the claimed property at dispatch time without
   that noise, land the safe lane-side precedence rule and report the coordinator-side refusal
   instead of presenting syntax as proof.
-
 - **A number made visible is not a number attended to — visibility is solved by printing it, attention is not** (2026-08-01, `#766`, measured after the loss). `just reap-lane` has printed `untracked=1` on every single reap this session. That counter is not an accident of formatting: `#760` deliberately SPLIT it out of a lump total precisely so a reader could tell an expected leftover from a real one. It worked exactly as designed, fired exactly once per reap, carried exactly the right number — and I read it every time as *"the expected BRIEF.md"* and never once as *"the primary source is about to be deleted."* Measured cost: the briefs for roughly twelve dispatches (`#645` increments 1-4, `#651`, `#755`, `#757`-`#764`) were destroyed, `git log --all -- '*/BRIEF.md'` returns nothing on any branch, and the brief corpus in `.dreamwork/docs/briefs/` stopped growing at `#595` while four lint checks (`#398`, `#405`, `#465`, `#652`) kept reporting *"191 brief(s) in scope"* as though that described current work. None of it was found by a check. It was found by gating an unrelated refusal, where `#763`'s lane happened to report *"0/218 briefs contain any 40-hex SHA"* and I asked why. **This is a different failure from `#755`.** `#755` is about a check that fires so often the reader learns to skip it; this one fired correctly, sparsely, and with the right content, and was still not read — because it sat in a position the reader had already classified as routine, and a bare fact does not survive that classification. The transferable rule: **a counter states a fact; attention needs a consequence.** `untracked=1` is a fact. `untracked=1 (BRIEF.md — will be DESTROYED, not preserved)` is a consequence, and only the second one can interrupt a reader who has already decided this line is fine. When you add a number so someone will notice something, ask what they must DO about it and put that in the line, or accept that you have built a record rather than a warning.
+
+- **A filesystem path is not evidence of a filesystem capability; require the exact positive
+  control before believing a negative.** The session scratchpad measured `tmpfs` and the lane's
+  cache measured `btrfs`, but that classification alone says nothing about timestamp granularity,
+  inotify, locking, durability, or the particular mmap path under test. The check must first make
+  the claimed mode happen through the same mechanism and observe it; a skipped control is
+  `UNDETERMINED`, an executed control that cannot exhibit it is `UNSUPPORTED`, and only an observed
+  control permits a quiet success. A substitute such as `touch` can pass while the real mmap probe
+  remains unanswerable, so similarity of outcome is not similarity of mechanism. (`#634`, measured
+  2026-08-01.)
