@@ -1078,6 +1078,10 @@ def _indent_body_continuations(entry_text: str) -> str:
 def ledger_view(dw: Path):
     """``(text, source)`` for every ledger-content check — the #294 dispatch.
 
+    ``text, source = ledger_view(dw)`` — ``dw`` is the ``.dreamwork/``
+    directory, not ``tasks.md``; the return is a tuple, so a single-name
+    assign fails late and confusingly (#697).
+
     ``source == 'markdown'`` (today, and every target that never cuts over):
     ``text`` is ``tasks.md`` verbatim and every check runs exactly as it
     always has. ``source == 'store'`` (the cutover watermark is present):
@@ -1098,6 +1102,11 @@ def ledger_view(dw: Path):
     finding about the store, and the section check's history half (against
     ``tasks.md.deprecated``) still runs below.
     """
+    if str(dw).endswith(".md"):  # #697 — dw is .dreamwork/, not tasks.md
+        raise TypeError(
+            "ledger_view(dw) takes the .dreamwork/ directory, not tasks.md — "
+            "pass dw and unpack the tuple: text, source = ledger_view(dw)."
+        )
     try:
         if source_of_truth(dw) == "store":
             entries = store_entries(dw)
@@ -3398,8 +3407,22 @@ def check_doc_map_plans(dw: Path, rep: Report) -> None:
     if not m:
         rep.add(WARN, "doc-map.md", "no `.dreamwork/docs/plans/` row — the plans are unmapped")
         return
+    # `m.group(1)` is everything after the path column — the description
+    # (which holds the enumeration) AND the lifecycle note. A plan named only
+    # in the lifecycle column is not something a reader can *find*, so the
+    # match is scoped to the description column alone: the first pipe-delimited
+    # field after the path. Unioning the whole row let a name in an unrelated
+    # parenthetical pass for an enumeration entry (#699). Fail closed on a row
+    # whose shape does not isolate a description column — a row this cannot
+    # parse is exactly the case where it must not report a match.
+    if "|" not in m.group(1):
+        rep.add(WARN, "doc-map.md",
+                "plans row is not the expected `path | description | lifecycle` "
+                "shape — cannot identify the enumeration column")
+        return
+    desc_col = m.group(1).split("|", 1)[0]
     listed = set()
-    for paren in re.findall(r"\(([^()]*)\)", m.group(1)):
+    for paren in re.findall(r"\(([^()]*)\)", desc_col):
         listed |= {n.strip() for n in paren.split(",") if n.strip()}
     if not listed:
         rep.add(WARN, "doc-map.md", "plans row names no plans — it used to enumerate them")

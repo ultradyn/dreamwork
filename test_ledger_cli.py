@@ -1222,3 +1222,21 @@ def test_sweep_ignores_store_landed_ids_and_ids_the_ledger_does_not_hold(
     assert _named_ids(out) == set(), (
         f"neither the already-landed #{landed} nor the unheld #{unknown} may "
         f"be flagged as an open landing: {out!r}")
+
+
+def test_ledger_view_refuses_the_ledger_file_with_a_named_mistake(tmp_path):
+    """#697: the name reads as 'view of the ledger', so a caller passes the
+    ledger FILE and assigns one name, then hits a late ``AttributeError`` on
+    ``.splitlines`` deep in a check — not a clear error at the call site. The
+    guard turns passing ``tasks.md`` into a ``TypeError`` that names the
+    directory and the tuple unpack.
+
+    PRODUCTION LINE: the ``str(dw).endswith(".md")`` guard in ``ledger_view``.
+    RED: delete it and the call returns ``(None, 'markdown')`` silently.
+    """
+    dw = tmp_path / ".dreamwork"
+    dw.mkdir()
+    tasks_md = dw / "tasks.md"
+    tasks_md.write_text("# ledger\n")  # the file a caller mistakes for dw
+    with pytest.raises(TypeError, match=r"\.dreamwork.*not tasks\.md.*tuple"):
+        lint.ledger_view(tasks_md)
