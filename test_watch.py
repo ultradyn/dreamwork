@@ -1071,8 +1071,8 @@ class TestCollector(unittest.TestCase):
             The only member calls admitted are the current, constrained array
             intrinsics map/join/slice. Template interpolation may contain
             property/arithmetic expressions, but not calls or nested braces.
-            Regex literals, optional/computed/constructor/result calls, and
-            unknown member calls are deliberately unsupported and fail loud.
+            Regex literals, tagged templates, optional/computed/constructor/
+            result calls, and unknown member calls are unsupported and fail.
             """
             first_brace = source.find("{")
             if first_brace < 0 or not source.rstrip().endswith("}"):
@@ -1112,6 +1112,11 @@ class TestCollector(unittest.TestCase):
                     masked[start:i] = " " * (i - start)
                     continue
                 if body[i] == "`":
+                    preceding_name = re.search(
+                        r"([A-Za-z_$][\w$]*)\s*$", body[:i])
+                    if (preceding_name and preceding_name.group(1) not in
+                            {"return", "case", "throw", "yield", "await"}):
+                        self.fail("buildDashboard dependency discovery: unsupported tagged template call")
                     start = i
                     i += 1
                     while i < len(body) and body[i] != "`":
@@ -1138,6 +1143,8 @@ class TestCollector(unittest.TestCase):
                 i += 1
 
             code = "".join(masked)
+            if re.search(r"\bnew\s+[A-Za-z_$]", code):
+                self.fail("buildDashboard dependency discovery: unsupported constructor call")
             dependencies = set()
             member_calls = {"map", "join", "slice"}
             controls = {"if", "for", "while", "switch", "catch", "with"}
@@ -1217,6 +1224,8 @@ class TestCollector(unittest.TestCase):
             discovered_dependencies("function buildDashboard(d) { lable('x'); }")
         with self.assertRaisesRegex(AssertionError, "unsupported member call qSection"):
             discovered_dependencies("function buildDashboard(d) { d.qSection(d); }")
+        with self.assertRaisesRegex(AssertionError, "unsupported tagged template call"):
+            discovered_dependencies("function buildDashboard(d) { tag`value`; }")
         sentinel_callees = dependencies - real_callees - marker_callees
         self.assertTrue(sentinel_callees,
                         "buildDashboard dependency discovery produced no sentinels")
