@@ -2,6 +2,86 @@
 
 ## Open
 
+- **P1 · 2026-07-31 17:20 — #613: the live session-log view — three calls before the design locks.**
+  **Sub-decisions:** `Q1`, `Q2`, `Q3`.
+  Design: `.dreamwork/docs/plans/session-log-view.md` (design only; no code authorised). **Mockups,
+  which you asked to see before the component design locks:** `.dreamwork/review/session-log-view.html`
+  — the tree at rest and mid-stream, plus live alternatives for the three visual calls (indicator
+  motion, indent guides, marker glyphs), each with a `rec` you can take in one word.
+
+  Everything below was **measured against your real 82 MB / 31,784-line session**, not assumed:
+  compaction pages ARE derivable (`compact_boundary` + `isCompactSummary`), so your "if known"
+  resolves to *known*; turn and step boundaries are derivable; the file is genuinely append-only
+  under growth (a live session's first 100 KB kept an identical sha256 across three reads while it
+  grew ~300 KB), so line+byte bookmarks are stable exactly as you assumed; a full rescan costs
+  **1.0 s at 82 MB/s**, so your "if it gets inconsistent we'll just rescan" holds by measurement;
+  and subagent transcripts sit at `<session>/subagents/agent-*.jsonl` in the same grammar, which is
+  the anchor #615 needs. One finding: **`system_prompt` is never written to the transcript** by
+  Claude Code, so that slot in your hierarchy will honestly have no child rather than invent one.
+
+  - **`Q1` — your sentence *"should use new component system and only be available via that"*: may
+    I read it as "never a second hand-rolled rendering path", rather than "wait for #591"?** The
+    component system it presupposes does not exist yet — whether one should is exactly `#591` above,
+    which is explicitly not to be decided by accident. The design keeps the data model, API, scan
+    path and visuals ruling-independent; only the mount binding moves with the ruling.
+    **`rec: build the interim now`** — one `SessionLog` component with a narrow props/events
+    contract under the existing single render authority, which is precisely your *"make 1 simple
+    component now but let us swap it out later"*; when `#591` rules, that same contract is the new
+    system's first citizen. Alt: block the view until `#591` is ruled — serialises a P1 behind an
+    open ruling and buys nothing the declared seam does not already give.
+  - **`Q2` — the file watcher. There is no inotify in the Python stdlib and the stdlib-only server
+    constraint stands. Which mechanism?** **`rec: real inotify via ~70 lines of ctypes against
+    libc, behind one `SessionWatcher` seam, with an automatic bounded stat-poll (0.5–1 s) degrade`**
+    for non-Linux or init failure — your no-polling design where the platform supports it, with the
+    fallback as the same code path at worse latency rather than a quiet substitution. Alt:
+    stat-poll only for v1 — ~15 lines, cannot break, and behaviourally indistinguishable while the
+    browser still ticks at 2 s; the server-side watcher only becomes the latency floor once #614's
+    push transport lands. Cost of the rec: ctypes struct parsing, Linux-only primary, and a real
+    test for the fd lifecycle.
+  - **`Q3` — which session IS the running agent? Nothing records it today** (measured: no session
+    identity in `status.json`, the heartbeat, or any loop file). **`rec: infer for v1`** — newest
+    live-mtime `*.jsonl` in the client's project dir for the target cwd, with a visible "which
+    session" switcher as the correction affordance — **and fold self-reporting into per-client
+    onboarding** (the loop writes `{client, session_id}` into `status.json` at orient), which is the
+    same per-client seam #615's subagent tasks need anyway. Alt: self-report only (blocks the view
+    on a loop-side change landing first); infer only (ambiguous under multiple sessions forever).
+
+  **If you say nothing:** nothing is built — the design authorises no code; the recs, plus the
+  mockup's own A + G1 + M1, stand as the defaults when implementation is planned.
+  Accepted answers: `rec` (takes all three plus the mockup's three) · per-question (`Q1: …`) · free text.
+
+- **P1 · 2026-07-31 17:20 — #614: websockets — everything you asked for lands, but the analysis
+  parts ways with you on the wire protocol.** One decision.
+  Plan: `.dreamwork/docs/plans/ws-delta-transport.md`. Your goals — faster, more efficient, partial
+  deltas, event-pushed — all survive; since you named websockets explicitly, the divergence is put
+  to you rather than assumed.
+
+  **First, a measurement that changes the problem.** The inefficiency is real but **mislocated**.
+  `/data.json` is **917,407 bytes**, uncompressed, ~200 ms; `/mtime` is 36 bytes / 3 ms, so the poll
+  is nearly free. The damage is that the 2 s change-gate **never closes**: a sqlite read moves
+  `ledger.sqlite3-shm`'s mtime, `-shm` is not in `WATCHED_MTIME_IGNORED` (`watch.py:3654`), so
+  **serving `/data.json` marks the state changed** and the next poll refetches it — self-perpetuating,
+  15 of 15 polls "changed" over 30 s, reproduced from a single fetch. Real change in the same window:
+  21 bytes when quiet, 5.4 KB over 60 s including a commit — **0.6% of what was shipped**. Filed as
+  **#620** and already routed to the lane holding `watch.py`; it is a ~3-line fix that stands on its
+  own bug and lands whether or not any transport change happens.
+
+  **`rec`: SSE + derived deltas + the existing journaled POSTs as the RPC direction**, phased
+  0→3 — push and deltas with no hand-rolled wire protocol, no second write path, reversible at each
+  step; websocket stays available behind named triggers at phase 4. The load-bearing unknown was
+  **verified, not inferred**: a probe streamed SSE from stdlib `ThreadingHTTPServer` to real
+  Chromium, held concurrency, and auto-resumed via `Last-Event-ID` with zero client reconnect code.
+  **Alt — `ws`: websocket push-only** — same phases with phase 2 swapped for a hand-rolled RFC 6455
+  codec (~250–400 lines to write and own, hand reconnect/resume, a new Upgrade-path authority story),
+  or a vendored WS module, which would need you to relax the stdlib-only server ruling.
+  RPC stays on POST either way: **WS-RPC beside the journal is refuted independently of protocol
+  taste** — it is a second write path beside the receipt/idempotency/replay/audit spine, which is
+  the two-descriptions rule applied to writes.
+
+  **If you say nothing:** nothing is built — the plan authorises no code. `rec` is the default when
+  implementation is planned, and phase 0 (the `-shm` fix) proceeds regardless, since it is just a bug.
+  Accepted answers: `rec` · `ws` · free text.
+
 - **P1 · 2026-07-31 17:00 — #591: claude-design compatibility does NOT cost the single render
   authority — one ruling makes it official.** **Sub-decisions:** `Q1`, `Q2`, `Q3`.
   Analysis: `.dreamwork/review/505-g2-render-authority.html` (artifact, IGC inside) +
