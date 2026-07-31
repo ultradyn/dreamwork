@@ -64,10 +64,16 @@ that is a legitimate outcome, not a failure.
   from a right one in a `-q` summary.
   **Use `dev/redproof.py`; it owns the snapshot/restore protocol** (`#683`):
 
-      python3 dev/redproof.py begin <path>     # snapshot the original, arm the entry
+      python3 dev/redproof.py begin <path>     # snapshot the file as-is, arm the entry
       …sabotage it, run your check, watch it go red…
       python3 dev/redproof.py restore <path>   # record the injected content, restore, verify
       python3 dev/redproof.py check            # hand-off gate — run before you report, quote it
+
+  **The snapshot is of the file BEFORE sabotage; the real fix is applied AFTER
+  `restore` returns it — so the restore can never undo the fix.** If you snapshot
+  the pre-fix file and the fix is already in it, restore returns the fixed file;
+  if you ever snapshot the pre-fix file and then restore expecting the fix, you
+  have silently undone your own work and `cmp` will certify the wrong file (`#608`).
 
   **Run `check` before reporting and quote its output.** It REFUSES if any injection is left
   unrestored, which is the failure nothing could previously detect: an injection is by
