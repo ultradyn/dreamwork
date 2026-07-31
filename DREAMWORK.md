@@ -553,6 +553,31 @@ dreamwork-version: 5853e1789929
   This raises the stake on every format contract — a `questions.md` that parses
   to nothing is now the **primary** channel failing silently, not a secondary
   one, and this repo has already seen that exact failure.
+- **Dispatch tier is chosen by role, and cheap-plus-review beats expensive**
+  (human-set 2026-07-31, revising his earlier per-role policy the same day):
+  - *easy / trivial / research / scanning* → **Sonnet 5** (low or medium).
+  - *common UI work, low stakes* → **`ccc -y @glm52`** working in a worktree,
+    then an **Opus 5** subagent runs a review-and-fix loop (the `pirfl` skill)
+    over that branch **before merge**. He states this is **preferred over
+    reaching for Opus 5 directly** — glm-5.2 is far cheaper against quota, and a
+    review loop recovers the quality difference on work that is *verifiable*,
+    which common UI work is.
+  - *glm52 failed*, or the work is **high-stakes** — architectural consequences,
+    or it **sets a precedent** — plus common implementation and UI work generally
+    → **Opus 5** (high or xhigh). These are the two cases a review loop cannot
+    make cheap: a failure has already spent the saving in rework, and a wrong
+    precedent propagates past the lane that set it.
+  - *difficult, very complex, or needing insight or judgement* → **Fable** (high).
+
+  Mechanics worth knowing before the first dispatch: `@glm52` runs as a **CLI
+  process, not a Claude subagent**, so it raises no task notification and does
+  not appear in the agent list — give it a worktree and collect its result from
+  the branch and its inbox report. And per `#469`
+  (`.dreamwork/docs/plans/ccc-runner-routing.md`) the harness exports only
+  `CCC_PROVIDER` to the child, so **a glm52 lane cannot know its own model and
+  its self-report is wrong** (it says "grok"); provenance comes from the alias
+  the dispatcher passed, so the coordinator records the model in the fold line
+  rather than quoting the lane. Precedent: `#583` landed this way.
 - **Every lane returns a dogfood report** (human-set 2026-07-31): each subagent
   ends its report with a section on friction it hit *with the loop itself* — an
   unclear brief, missing or wrong tooling, a convention that cost it time. His
