@@ -36,8 +36,9 @@ import hashlib
 import os
 import re
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Iterable, Union
 
 PathLike = Union[str, os.PathLike[str]]
 
@@ -58,13 +59,19 @@ _NOTE_PREFIXES: tuple[tuple[str, str], ...] = (
     ("- **Follow-up (in-session,", "loop"),
 )
 _SUB_STAMP = re.compile(r"(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*\)")
-# A folded entry's body opens with the resolution the loop wrote:
-# ``→ <verdict> (<date>[ <time>]): …``. Anchored to a line start (re.M) so a
-# date deeper in the body is never read; the leading ``→`` is the
-# never-guess rule (a date with no resolution head is prose).
-_RESOLVED_AT = re.compile(
+# One resolution-marker vocabulary, consumed by this parser and lint.py.
+_LEGACY_RESOLUTION = re.compile(
     r"^\s*→[^:]*?\((\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*\)", re.M
 )
+_WATCH_RESOLUTION = re.compile(
+    r"^\s*-\s+\*\*(Answer|Comment) \(via watch, "
+    r"(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\)(?::|\s+—)", re.M
+)
+_DATED_MARKER = re.compile(
+    r"^\s*-\s+\*\*([^*\n]+?) \((?:via [^,\n]+, )?"
+    r"(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\)(?::|\s+—)", re.M
+)
+_DATE_TIME = re.compile(r"\A\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?\Z")
 # ``asked_at`` lives in the title prefix: ``P1 · 2026-08-01 21:45 — title``.
 _ASKED_AT = re.compile(
     r"\A(?:P[123]\s+·\s+)?(\d{4}-\d{2}-\d{2})"
@@ -74,6 +81,58 @@ _RECOGNIZED_SECTIONS = ("Open", "Answered")
 
 
 # --- manifest types --------------------------------------------------------
+
+class ResolutionKind(str, Enum):
+    """Exhaustive outcomes from the shared resolution-marker vocabulary."""
+
+    RESOLVED = "RESOLVED"
+    ABSENT = "ABSENT"
+    FOLDED_ONLY = "FOLDED_ONLY"
+    FUTURE_FORMAT = "FUTURE_FORMAT"
+
+
+@dataclass(frozen=True, slots=True)
+class ResolutionMarker:
+    kind: ResolutionKind
+    date: str | None = None
+    label: str | None = None
+
+
+class UnclassifiedResolutionMarker(ValueError):
+    """A dated marker exists, but the vocabulary cannot classify it."""
+
+
+def classify_resolution_marker(
+    text: str, parsed_human_response_dates: Iterable[str] = ()
+) -> ResolutionMarker:
+    """Classify resolution evidence without guessing from dates in prose.
+
+    Adding a supported marker form happens here. Callers consume the outcome;
+    they do not recognize marker syntax themselves.
+    """
+    legacy = _LEGACY_RESOLUTION.search(text)
+    if legacy:
+        date = legacy.group(1) + (" " + legacy.group(2) if legacy.group(2) else "")
+        return ResolutionMarker(ResolutionKind.RESOLVED, date, "→")
+
+    response = _WATCH_RESOLUTION.search(text)
+    if response:
+        date = response.group(2) + (" " + response.group(3) if response.group(3) else "")
+        return ResolutionMarker(ResolutionKind.RESOLVED, date, response.group(1))
+
+    # watch.py has already consumed Answer bullets into human contribution
+    # records by the time lint sees an item. Interpretation stays here: lint
+    # supplies parsed evidence but owns no resolution decision or regex.
+    for date in parsed_human_response_dates:
+        if date and _DATE_TIME.fullmatch(date):
+            return ResolutionMarker(ResolutionKind.RESOLVED, date, "Answer")
+
+    dated = _DATED_MARKER.search(text)
+    if dated:
+        kind = (ResolutionKind.FOLDED_ONLY if dated.group(1) == "Folded"
+                else ResolutionKind.FUTURE_FORMAT)
+        return ResolutionMarker(kind, label=dated.group(1))
+    return ResolutionMarker(ResolutionKind.ABSENT)
 
 @dataclass(frozen=True, slots=True)
 class Span:
@@ -109,12 +168,20 @@ class QuestionEntry:
     body_markdown: str                 # prose body lines (excluding contribution bullets)
     asked_at: str | None
     asked_precision: str               # 'unknown' | 'day' | 'minute' | 'second'
-    resolution_date: str | None        # parsed from the → head, or None
+    resolution_marker: ResolutionMarker
     contributions: tuple[Contribution, ...]
     raw_text: str                      # exact source bytes of the whole entry
     span: Span
     first_line: int                    # 0-based source line index
     last_line: int                     # 0-based, inclusive
+
+    @property
+    def resolution_date(self) -> str | None:
+        """The classified date; unknown dated formats fail instead of becoming null."""
+        if self.resolution_marker.kind is ResolutionKind.FUTURE_FORMAT:
+            raise UnclassifiedResolutionMarker(
+                f"unclassified dated resolution marker: {self.resolution_marker.label}")
+        return self.resolution_marker.date
 
 
 @dataclass(frozen=True, slots=True)
@@ -419,11 +486,10 @@ def _build_entry(
     title = _join_title(cur["title_parts"])
     body = "\n".join(cur["body_lines"]).strip("\n")
     asked_at, asked_prec = _asked_from_title(title)
-    resolution = None
+    marker = ResolutionMarker(ResolutionKind.ABSENT)
     if cur["section"] == "Answered":
-        m = _RESOLVED_AT.search(body)
-        if m:
-            resolution = m.group(1) + (" " + m.group(2) if m.group(2) else "")
+        marker = classify_resolution_marker(
+            data[span.start:span.end].decode("utf-8"))
     contribs = tuple(_build_contribution(c, data, table) for c in cur["contributions"])
     n_answers = sum(1 for c in contribs if c.kind == "answer")
     if cur["section"] == "Answered":
@@ -435,7 +501,7 @@ def _build_entry(
     return QuestionEntry(
         ordinal=ordinal, section=cur["section"], state=state, title=title,
         body_markdown=body, asked_at=asked_at, asked_precision=asked_prec,
-        resolution_date=resolution, contributions=contribs,
+        resolution_marker=marker, contributions=contribs,
         raw_text=data[span.start:span.end].decode("utf-8"), span=span,
         first_line=first, last_line=last,
     )

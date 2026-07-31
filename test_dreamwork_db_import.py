@@ -23,7 +23,11 @@ from pathlib import Path
 import pytest
 
 from dreamwork_db import Access, open_database
-from dreamwork_db.question_parse import question_manifest
+from dreamwork_db.question_parse import (
+    ResolutionKind,
+    classify_resolution_marker,
+    question_manifest,
+)
 from dreamwork_db.questions import (
     EntryOutcome,
     FieldDelta,
@@ -60,17 +64,17 @@ SIMPLE_FIXTURE = (
 DATELESS_FIXTURE = (
     "# Questions\n\n"
     "## Open\n\n"
-    "- **P1 · 2026-08-01 — #572: open question.**\n"
+    "- **P1 · 2026-08-01 — #90001: open question.**\n"
     "  Body.\n"
     "\n"
     "## Answered\n\n"
-    "- **P1 · 2026-07-31 — #572: answered with no date.**\n"
+    "- **P1 · 2026-07-31 — #90002: unresolved synthetic entry.**\n"
     "  No resolution head here.\n"
     "\n"
-    "- **P2 · 2026-07-31 — #613: also no date.**\n"
+    "- **P2 · 2026-07-31 — #90003: another unresolved synthetic entry.**\n"
     "  Also no resolution head.\n"
     "\n"
-    "- **P3 · 2026-07-30 — #614: third dateless.**\n"
+    "- **P3 · 2026-07-30 — #90004: third unresolved synthetic entry.**\n"
     "  Three dateless answered entries.\n"
 )
 
@@ -322,12 +326,14 @@ class TestConflictDetection:
         assert len(vr.extra_question_ids) == 1
 
 
-# ─── dateless entries (the first real conflict case) ───────────────────────
+# ─── synthetic entries with no recorded resolution ─────────────────────────
 
 class TestDatelessEntries:
-    """The three Answered entries with no resolution date (#572/#613/#614)
-    have null asked_at fields and no → head in their bodies.  The import
-    must preserve nullness, not default it."""
+    """Synthetic Answered entries deliberately carry no recorded resolution.
+
+    Their dated titles still populate ``asked_at``; import must preserve the
+    exact unresolved bodies, idempotently, without inventing a resolution.
+    """
 
     def test_dateless_entries_imported(self, scratch_store):
         m = _manifest(DATELESS_FIXTURE)
@@ -347,15 +353,14 @@ class TestDatelessEntries:
         for entry, sq in zip(m.entries, snap.questions):
             assert entry.body_markdown == sq.body_markdown
 
-    def test_dateless_bodies_have_no_arrow_head(self, scratch_store):
-        """The three dateless answered bodies contain no → resolution head.
-        The import stores the body verbatim; no date is invented."""
+    def test_unresolved_bodies_have_no_resolution_marker(self, scratch_store):
+        """No arrow is not the definition; the shared classifier proves absence."""
         m = _manifest(DATELESS_FIXTURE)
         _import(m, scratch_store)
-        snap = _snapshot(scratch_store)
-        answered = [sq for sq in snap.questions if sq.status == "answered"]
-        for sq in answered:
-            assert "→" not in sq.body_markdown
+        answered = [entry for entry in m.entries if entry.state == "answered"]
+        for entry in answered:
+            marker = classify_resolution_marker(entry.raw_text)
+            assert marker.kind is ResolutionKind.ABSENT
 
     def test_dateless_idempotent(self, scratch_store):
         """Re-importing the dateless fixture is idempotent — null stays null."""

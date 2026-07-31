@@ -22,7 +22,10 @@ from dreamwork_db.question_parse import (
     Contribution,
     QuestionEntry,
     QuestionManifest,
+    ResolutionKind,
     Span,
+    UnclassifiedResolutionMarker,
+    classify_resolution_marker,
     coverage_report,
     dry_run,
     independent_head_count,
@@ -209,8 +212,7 @@ MISSING_DATE_FIXTURE = textwrap.dedent("""\
 
 
 class TestMissingDateFixture:
-    """An Answered entry whose body lacks a ``→`` head has ``resolution_date``
-    None — it is not dropped and not guessed (#572/#613/#614 shape)."""
+    """An Answered entry with no recorded resolution has a null date."""
 
     def test_missing_date_entry_preserved(self):
         m = _parse(MISSING_DATE_FIXTURE)
@@ -230,6 +232,50 @@ class TestMissingDateFixture:
         assert len(with_date) == 1
         assert with_date[0].resolution_date is not None
         assert "2026-07-31" in with_date[0].resolution_date
+
+    @pytest.mark.parametrize("label", ["Answer", "Comment"])
+    def test_post_767_watch_markers_populate_resolution_date(self, label):
+        fixture = textwrap.dedent(f"""\
+            ## Open
+
+            ## Answered
+
+            - **P1 · 2026-07-31 — #303: post-767 resolution.**
+              - **{label} (via watch, 2026-07-31 19:16):** recorded.
+            """)
+        entry = _parse(fixture).entries[0]
+        assert entry.resolution_date == "2026-07-31 19:16", label
+
+    def test_folded_and_prose_dates_do_not_populate_resolution_date(self):
+        fixture = textwrap.dedent("""\
+            ## Open
+
+            ## Answered
+
+            - **P1 · 2026-07-31 — #304: processed without a response.**
+              Prose mentions 2025-01-02 and (2024-03-04 05:06).
+              - **Folded (2026-07-31 19:18) — processed only.**
+            """)
+        entry = _parse(fixture).entries[0]
+        assert entry.resolution_date is None
+        marker = classify_resolution_marker(entry.raw_text)
+        assert marker.kind is ResolutionKind.FOLDED_ONLY
+        assert marker.label == "Folded"
+
+    def test_future_marker_is_refused_and_named(self):
+        fixture = textwrap.dedent("""\
+            ## Open
+
+            ## Answered
+
+            - **P1 · 2026-07-31 — #305: future resolution form.**
+              - **Verdict (via dreambeam, 2027-01-02 03:04):** recorded.
+            """)
+        entry = _parse(fixture).entries[0]
+        assert entry.resolution_marker.kind is ResolutionKind.FUTURE_FORMAT
+        assert entry.resolution_marker.label == "Verdict"
+        with pytest.raises(UnclassifiedResolutionMarker, match="Verdict"):
+            _ = entry.resolution_date
 
     def test_open_entry_with_arrow_is_not_answered_section(self):
         """An Open entry with a ``→`` line is still in the Open section."""
@@ -377,7 +423,8 @@ class TestCoverageFalseGreens:
             ordinal=entry.ordinal, section=entry.section, state=entry.state,
             title=entry.title, body_markdown=entry.body_markdown,
             asked_at=entry.asked_at, asked_precision=entry.asked_precision,
-            resolution_date=entry.resolution_date, contributions=entry.contributions,
+            resolution_marker=entry.resolution_marker,
+            contributions=entry.contributions,
             raw_text=entry.raw_text, span=Span(entry.span.start, entry.span.end - 1),
             first_line=entry.first_line, last_line=entry.last_line,
         )
