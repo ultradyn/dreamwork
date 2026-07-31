@@ -168,9 +168,12 @@ self-correcting; the recorded counter's error is neither.
 
 ## Rebase
 
-Master moved from `62a9ce22` to `255d6427` (5 commits: #716, #715, #717 merges + #720). None
-touched `tick_line.py`, `test_tick_line.py`, or `SKILL.md`. Rebase was clean — no conflicts.
-Post-rebase: 44 passed in `test_tick_line.py`, redproof check clean.
+Master moved twice during this work. First from `62a9ce22` to `255d6427` (5 commits:
+#716, #715, #717 merges + #720) — clean rebase, no file overlap. Then again to
+`b9b668e4` (9 more: #712 and #719 merges) — also clean, no file overlap with
+`tick_line.py`/`test_tick_line.py`/`SKILL.md`. Final branch: HEAD `95d941a7` on master
+`b9b668e4`, 44 passed, redproof check clean. Diff stat is exactly 4 files
+(tick_line.py, test_tick_line.py, SKILL.md, this report).
 
 ## Dogfood report
 
