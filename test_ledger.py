@@ -541,3 +541,128 @@ def test_file_store_bad_priority_is_exit2_stderr_no_traceback(tmp_path, capsys):
     # Nothing was filed.
     assert sp.exists()
 
+
+# ---------------------------------------------------------------------------
+# #714 — _default_since: the window bound for `sweep`. It finds the most
+# recent fold commit. The repo's convention MOVED from lowercase `fold #NNN:`
+# to capital `Fold #NNN` mid-history, and the match was case-sensitive
+# `^fold ` — so every capital `Fold` (the current convention, 47 measured on
+# master) anchored out of the window, leaving it ~555 commits wide instead of
+# ~63. A second defect the measurement surfaced: `git log --grep` searches the
+# BODY too, so a body line starting `fold` would narrow the window past real
+# landings (the dangerous direction for an advisory tool).
+#
+# These build a bare git repo (`_default_since` only shells out to git — no
+# ledger/store needed) and assert on the BOUNDARY sha, not a width count: a
+# base wrong-by-one passes a width test, which is the brief's direction-1 trap.
+# ---------------------------------------------------------------------------
+import subprocess  # noqa: E402
+
+
+def _git(root, *a):
+    return subprocess.run(["git", "-C", str(root), *a],
+                          capture_output=True, text=True, check=True)
+
+
+def _bare_repo(tmp_path, name="r"):
+    """A git repo with identity, no commits yet."""
+    root = tmp_path / name
+    root.mkdir()
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@t")
+    _git(root, "config", "user.name", "t")
+    return root
+
+
+def _commit(root, subject, body=None):
+    """Empty commit; returns the FULL sha (`_default_since` returns %H)."""
+    args = ["commit", "-q", "--allow-empty", "-m", subject]
+    if body is not None:
+        args += ["-m", body]
+    _git(root, *args)
+    return _git(root, "rev-parse", "HEAD").stdout.strip()
+
+
+def test_default_since_reads_the_capital_fold_form_the_convention_now_uses(tmp_path):
+    """DIRECTION-1 red: the measured defect, fixture not live repo.
+
+    `Fold #674 (merged ...)` is the form EVERY recent fold takes (47 measured
+    on master); the case-sensitive `^fold ` anchored all of them out of the
+    window. PRODUCTION LINE: the subject match in `_default_since`. RED on the
+    un-fixed matcher: this returns None (no lowercase `fold ` subject exists),
+    so the window opens at None — full-history scan instead of since the fold.
+    """
+    root = _bare_repo(tmp_path)
+    _commit(root, "fold #1: old-style lowercase fold")
+    capital = _commit(root, "Fold #2 (merged abc1234)")  # the current convention
+    assert ledger._default_since(root) == capital, (
+        "the capital `Fold #N` form — the repo's current convention — must be "
+        "the window bound; #714 measured 47 of these anchored out by a "
+        "case-sensitive `^fold ` that could only read the extinct lowercase form")
+
+
+def test_default_since_still_reads_the_old_lowercase_fold_form(tmp_path):
+    """The convention moved from lowercase to capital mid-history; both are
+    real folds and both must bound the window when they are the most recent.
+    PRODUCTION LINE: the matcher in `_default_since`. A fix that ONLY added
+    capital `Fold` and dropped lowercase `fold` would re-break old history.
+    """
+    root = _bare_repo(tmp_path)
+    _commit(root, "Fold #2 (merged abc1234)")
+    lower = _commit(root, "fold #1: old-style lowercase fold")
+    assert ledger._default_since(root) == lower, (
+        "lowercase `fold #N:` is the extinct-but-real form; a matcher that "
+        "dropped it would open the window too wide on repos whose last fold "
+        "was lowercase")
+
+
+def test_default_since_does_not_match_a_fold_verb_lane_commit(tmp_path):
+    """The space after `fold` is load-bearing: `fold(#260):` is a LANE commit
+    (the `fold` verb writing a Folded line), not a reconciliation fold. Matching
+    it would narrow the window to a lane commit and hide later landings — the
+    dangerous direction. Measured on master: ~10 such commits, all older than
+    the recent real fold today, but the tie goes to breadth.
+    PRODUCTION LINE: the trailing space in the fold matcher.
+    """
+    root = _bare_repo(tmp_path)
+    real = _commit(root, "Fold #2 (merged abc1234)")
+    _commit(root, "fold(#260): Folded line — witness-audit merged")
+    assert ledger._default_since(root) == real, (
+        "`fold(#N):` is a lane verb, not a reconciliation fold; matching it "
+        "narrows the window to a lane commit and hides landings after it")
+
+
+def test_default_since_ignores_a_body_line_starting_fold(tmp_path):
+    """DIRECTION-2 red: the case the naive case-insensitive `--grep` fix gets
+    WRONG. `git log --grep` searches the body, so a commit whose SUBJECT is not
+    a fold but whose BODY starts with `fold` would become the window bound —
+    narrowing past real landings. Measured on master: `feat(#294)`'s body opens
+    `fold dispatches on source_of_truth:`. A subject-anchored match refuses it.
+    PRODUCTION LINE: subject anchoring in `_default_since`. RED on a `--grep`
+    implementation (case-insensitive or not): the body line matches and the
+    bound jumps to the non-fold commit.
+    """
+    root = _bare_repo(tmp_path)
+    fold = _commit(root, "Fold #2 (merged abc1234)")
+    # a lane commit whose BODY (not subject) happens to start with "fold"
+    _commit(root, "feat(#294): re-point writes",
+            body="fold dispatches on source_of_truth: store -> land")
+    assert ledger._default_since(root) == fold, (
+        "a body line starting `fold` must not narrow the window past the real "
+        "fold — `git log --grep` reads the body and would make this non-fold "
+        "commit the bound, hiding every landing between it and the next fold")
+
+
+def test_default_since_returns_none_when_no_fold_exists(tmp_path):
+    """A repo with no fold commit at all. Returning None opens the window to
+    full history (maximal scanning — the safe direction); silently scanning
+    everything without saying so is a separate concern (#671), but the BOUND
+    itself must be None, not a guess. The brief named this case explicitly.
+    """
+    root = _bare_repo(tmp_path)
+    _commit(root, "feat(#1): first commit")
+    _commit(root, "fix(#2): second commit")
+    assert ledger._default_since(root) is None, (
+        "no fold commit means no bound — None opens full-history scanning, "
+        "which is the safe direction for an advisory tool")
+
