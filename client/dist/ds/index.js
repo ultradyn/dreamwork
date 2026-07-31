@@ -876,7 +876,7 @@ var DreamworkDesign = (() => {
     return label("topic chat") + (fetched.entries || []).map(chatTurn).join("") + chatReplyComposer(fetched);
   }
   function chatReplyComposer(fetched) {
-    return `<form id="chatreply" class="askform" data-chat="${esc(fetched.id)}"><label class="label" for="chatreplybox">reply</label><textarea id="chatreplybox" placeholder="A reply to the dreamer"></textarea><div><button type="submit">Reply</button> <span id="chatreplymsg" class="cmdmsg" aria-live="polite"></span></div></form>`;
+    return `<form id="chatreply" data-chat="${esc(fetched.id)}"><label class="label" for="chatreplybox">reply</label><div class="qfield"><textarea id="chatreplybox" placeholder="A reply to the dreamer" data-max-rows="6"></textarea><button type="submit" class="qsend">send</button></div><span id="chatreplymsg" class="cmdmsg" aria-live="polite"></span></form>`;
   }
   var chatReplyFlightGen = 0;
   var chatReplyInFlight = false;
@@ -917,6 +917,7 @@ var DreamworkDesign = (() => {
     if (res && DraftStore.isDurable(res)) {
       if (!attempt.success()) return;
       liveBox.value = "";
+      fitText(liveBox, false);
       DraftStore.clear(lid);
       await tick();
     } else {
@@ -2313,6 +2314,7 @@ var DreamworkDesign = (() => {
     if (box.__dwDraftBound) DraftStore.unbind(box);
     DraftStore.bind(box, lid);
     DraftStore.restore(lid, box);
+    fitText(box, false);
   }
   var DraftStore = /* @__PURE__ */ (() => {
     const tgt = () => typeof data !== "undefined" && data && data.target || "";
@@ -3756,6 +3758,11 @@ var DreamworkDesign = (() => {
       return;
     }
     if (title) dwDraft.save(title, t.value);
+    fitText(t, true);
+  });
+  addEventListener("input", (e) => {
+    const t = e.target;
+    if (!t || t.id !== "chatreplybox") return;
     fitText(t, true);
   });
   var EXPAND_SURFACES = [
