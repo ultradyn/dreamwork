@@ -1061,11 +1061,162 @@ class TestCollector(unittest.TestCase):
 
         real_callees = {"label", "qSummary", "qSection"}
         marker_callees = {"chatList", "burnPanel"}
-        declared_callees = set(re.findall(
-            r"(?m)^\s*function\s+([A-Za-z_$][\w$]*)\s*\(", page))
-        declared_callees.update(re.findall(
-            r"(?m)^\s*const\s+([A-Za-z_$][\w$]*)\s*=\s*"
-            r"(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>", page))
+
+        def top_level_client_callees(sources):
+            """Find top-level declarations after masking JS non-code lexemes."""
+            found = set()
+            patterns = (
+                re.compile(r"(?m)^\s*function\s+([A-Za-z_$][\w$]*)\s*\("),
+                re.compile(r"(?m)^\s*const\s+([A-Za-z_$][\w$]*)\s*=\s*"
+                           r"(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>"),
+            )
+
+            def quoted_end(text, start, quote):
+                pos = start + 1
+                while pos < len(text) and text[pos] != quote:
+                    pos += 2 if text[pos] == "\\" else 1
+                if pos >= len(text):
+                    self.fail("buildDashboard dependency discovery: unterminated client literal")
+                return pos + 1
+
+            def regex_starts(text, start):
+                previous = start - 1
+                while previous >= 0 and text[previous].isspace():
+                    previous -= 1
+                token_end = previous + 1
+                while previous >= 0 and (text[previous].isalnum() or
+                                         text[previous] in "_$"):
+                    previous -= 1
+                word = text[previous + 1:token_end]
+                return (token_end == 0 or
+                        text[token_end - 1] in "([{:;,=!?&|+-*%^~<>" or
+                        word in {"return", "case", "throw", "typeof",
+                                 "instanceof", "in", "of"})
+
+            def regex_end(text, start):
+                pos = start + 1
+                in_class = False
+                while pos < len(text):
+                    if text[pos] == "\\":
+                        pos += 2
+                        continue
+                    if text[pos] == "[":
+                        in_class = True
+                    elif text[pos] == "]":
+                        in_class = False
+                    elif text[pos] == "/" and not in_class:
+                        pos += 1
+                        while pos < len(text) and text[pos].isalpha():
+                            pos += 1
+                        return pos
+                    elif text[pos] == "\n":
+                        self.fail("buildDashboard dependency discovery: unterminated client regex")
+                    pos += 1
+                self.fail("buildDashboard dependency discovery: unterminated client regex")
+
+            def template_expression_end(text, start):
+                depth = 1
+                pos = start
+                while pos < len(text):
+                    if text.startswith("//", pos):
+                        line_end = text.find("\n", pos + 2)
+                        pos = len(text) if line_end < 0 else line_end
+                    elif text.startswith("/*", pos):
+                        close = text.find("*/", pos + 2)
+                        if close < 0:
+                            self.fail("buildDashboard dependency discovery: unterminated client comment")
+                        pos = close + 2
+                    elif text[pos] in "'\"":
+                        pos = quoted_end(text, pos, text[pos])
+                    elif text[pos] == "`":
+                        pos = template_end(text, pos)
+                    elif text[pos] == "/" and regex_starts(text, pos):
+                        pos = regex_end(text, pos)
+                    elif text[pos] == "{":
+                        depth += 1
+                        pos += 1
+                    elif text[pos] == "}":
+                        depth -= 1
+                        pos += 1
+                        if depth == 0:
+                            return pos
+                    else:
+                        pos += 1
+                self.fail("buildDashboard dependency discovery: unterminated client interpolation")
+
+            def template_end(text, start):
+                pos = start + 1
+                while pos < len(text):
+                    if text[pos] == "\\":
+                        pos += 2
+                    elif text[pos] == "`":
+                        return pos + 1
+                    elif text.startswith("${", pos):
+                        pos = template_expression_end(text, pos + 2)
+                    else:
+                        pos += 1
+                self.fail("buildDashboard dependency discovery: unterminated client template")
+
+            js_sources = [source for name, source in sources.items()
+                          if name.endswith(".js")]
+            if not js_sources:
+                self.fail("buildDashboard dependency discovery: no client scripts")
+            for script in js_sources:
+                masked = list(script)
+                i = 0
+                while i < len(script):
+                    if script.startswith("//", i):
+                        end = script.find("\n", i + 2)
+                        end = len(script) if end < 0 else end
+                    elif script.startswith("/*", i):
+                        close = script.find("*/", i + 2)
+                        if close < 0:
+                            self.fail("buildDashboard dependency discovery: unterminated page comment")
+                        end = close + 2
+                    elif script[i] == "/" and regex_starts(script, i):
+                        end = regex_end(script, i)
+                    elif script[i] == "/":
+                        i += 1
+                        continue
+                    elif script[i] in "'\"":
+                        end = quoted_end(script, i, script[i])
+                    elif script[i] == "`":
+                        end = template_end(script, i)
+                    else:
+                        i += 1
+                        continue
+                    masked[i:end] = " " * (end - i)
+                    i = end
+
+                code = "".join(masked)
+                depth = 0
+                depth_at = []
+                for char in code:
+                    depth_at.append(depth)
+                    if char == "{":
+                        depth += 1
+                    elif char == "}":
+                        depth -= 1
+                        if depth < 0:
+                            self.fail("buildDashboard dependency discovery: unbalanced client script")
+                if depth:
+                    self.fail("buildDashboard dependency discovery: unbalanced client script")
+                for pattern in patterns:
+                    for declaration in pattern.finditer(code):
+                        if depth_at[declaration.start()] == 0:
+                            found.add(declaration.group(1))
+            if not found:
+                self.fail("buildDashboard dependency discovery: no client callees declared")
+            return found
+
+        declared_callees = top_level_client_callees(watch._CLIENT_SRC)
+        declaration_probe = top_level_client_callees({
+            "probe.js": "function visible() {}\n"
+                        "// function commentOnly() {}\n"
+                        "const text = `function templateOnly() {}`;\n"
+        })
+        self.assertEqual({"visible"}, declaration_probe,
+                         "comment/template text must not declare harness callees")
 
         def discovered_dependencies(source):
             """Return the dependencies this narrow harness can prove it saw.
@@ -1120,7 +1271,8 @@ class TestCollector(unittest.TestCase):
                     preceding_name = re.search(
                         r"([A-Za-z_$][\w$]*)\s*$", body[:i])
                     if (preceding_name and preceding_name.group(1) not in
-                            {"return", "case", "throw", "yield", "await"}):
+                            {"return", "case", "throw", "yield", "await"}) or \
+                            body[:i].rstrip()[-1:] in ")]}":
                         self.fail("buildDashboard dependency discovery: unsupported tagged template call")
                     start = i
                     i += 1
@@ -1151,8 +1303,8 @@ class TestCollector(unittest.TestCase):
             if re.search(r"\bnew\s+[A-Za-z_$]", code):
                 self.fail("buildDashboard dependency discovery: unsupported constructor call")
             dependencies = set()
-            member_calls = {"map", "join", "slice"}
             controls = {"if", "for", "while", "switch", "catch", "with"}
+            accepted_map_closes = set()
 
             def call_end(open_index):
                 depth = 0
@@ -1174,19 +1326,38 @@ class TestCollector(unittest.TestCase):
                     name = identifier.group(1)
                     prefix = before[:identifier.start()].rstrip()
                     if prefix.endswith("."):
-                        if prefix.endswith("?.") or name not in member_calls:
+                        receiver = prefix[:-1].rstrip()
+                        args_end = call_end(open_index)
+                        args = code[open_index + 1:args_end].strip()
+                        raw_args = body[open_index + 1:args_end].strip()
+                        if prefix.endswith("?."):
                             self.fail("buildDashboard dependency discovery: unsupported member call " + name)
-                        args = code[open_index + 1:call_end(open_index)].strip()
                         if name == "map":
-                            callback = re.fullmatch(r"([A-Za-z_$][\w$]*)", args)
-                            arrow = re.match(r"[A-Za-z_$][\w$]*\s*=>", args)
-                            if callback:
-                                dependencies.add(callback.group(1))
-                            elif not arrow:
+                            if re.search(r"d\.git$", receiver) and args == "gitRow":
+                                dependencies.add("gitRow")
+                            elif (re.search(r"d\.(?:dreams|dreams_archive)$", receiver)
+                                  and args == "dreamBlock"):
+                                dependencies.add("dreamBlock")
+                            elif re.search(r"shown$", receiver) and re.fullmatch(
+                                    r"r\s*=>\s*artifactRow\(\s*r\s*,\s*\)", args):
+                                pass
+                            elif re.search(r"\[\s*,\s*,\s*\]$", receiver) and re.fullmatch(
+                                    r"n\s*=>\s*expand\(\s*n\s*,\s*mdB\(\s*d\.files"
+                                    r"\[\s*n\s*\]\s*,\s*n\s*\)\s*,\s*,\s*\)", args):
+                                pass
+                            else:
                                 self.fail("buildDashboard dependency discovery: unsupported map callback")
-                        elif name == "join" and args:
-                            self.fail("buildDashboard dependency discovery: unsupported join argument")
-                        elif name == "slice" and not re.fullmatch(r"[\w$\s,+-]*", args):
+                            accepted_map_closes.add(args_end)
+                        elif name == "join":
+                            if (len(receiver) - 1 not in accepted_map_closes or args or
+                                    raw_args not in {"''", '\"\"'}):
+                                self.fail("buildDashboard dependency discovery: unsupported join call")
+                        elif name == "slice":
+                            if (not re.search(r"d\.reviews$", receiver) or
+                                    not re.fullmatch(r"0\s*,\s*REVIEWS_DASH_CAP", args)):
+                                self.fail("buildDashboard dependency discovery: unsupported slice call")
+                        else:
+                            self.fail("buildDashboard dependency discovery: unsupported member call " + name)
                             self.fail("buildDashboard dependency discovery: unsupported slice argument")
                     elif name not in controls:
                         if re.search(r"\bnew\s*$", prefix):
@@ -1236,6 +1407,17 @@ class TestCollector(unittest.TestCase):
             discovered_dependencies("function buildDashboard(d) { d.qSection(d); }")
         with self.assertRaisesRegex(AssertionError, "unsupported tagged template call"):
             discovered_dependencies("function buildDashboard(d) { tag`value`; }")
+        with self.assertRaisesRegex(AssertionError, "unsupported tagged template call"):
+            discovered_dependencies("function buildDashboard(d) { (tag)`value`; }")
+        with self.assertRaisesRegex(AssertionError, "unsupported tagged template call"):
+            discovered_dependencies("function buildDashboard(d) { obj['tag']`value`; }")
+        with self.assertRaisesRegex(AssertionError, "unsupported map callback"):
+            discovered_dependencies("function buildDashboard(d) { d.unrelated.map(qSection); }")
+        with self.assertRaisesRegex(AssertionError, "unsupported map callback"):
+            discovered_dependencies("function buildDashboard(d) { d.git.map(x => { qSection(x); }); }")
+        with self.assertRaisesRegex(AssertionError, "unsupported join call"):
+            discovered_dependencies(
+                "function buildDashboard(d) { d.git.map(gitRow).join(','); }")
         sentinel_callees = dependencies - real_callees - marker_callees
         self.assertTrue(sentinel_callees,
                         "buildDashboard dependency discovery produced no sentinels")
