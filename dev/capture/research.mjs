@@ -6,10 +6,12 @@
    archive-on-answered lifecycle — research outlives the decisions it
    informed (.dreamwork/docs/research/README.md).
 
-   Production lines the red-proofs name (watch.py):
+   Production lines the red-proofs name:
      · the "research" key in collect() — removing it empties the listing;
-     · buildResearch's doc branch (the iframe src to /researchraw) —
+     · Research's doc branch (the iframe src to /researchraw) —
        removing it reds the view-half checks;
+     · client/router.js's registry branch — bypassing it reds the native
+       ownership, tick-state, and navigate-away checks;
      · the no-slash basename rule in /researchraw — removing it serves a
        src/ source as a finished artifact and reds the confinement check;
      · the crossfade path itself — the route-arrival evidence asks the
@@ -20,7 +22,7 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
-import { readdirSync, mkdirSync } from 'node:fs';
+import { readdirSync, mkdirSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { outdir } from './outdir.mjs';
 const OUT = outdir(process.argv), PORT = process.argv[3] || '39886';
@@ -71,6 +73,23 @@ ok('the src/ source is NOT listed (non-recursive, the one builder trick)',
 await p.goto(`${BASE}/research`, { waitUntil: 'networkidle' });
 // #536 render readiness — wait for the #view [data-research] rows the guard reads first, not a fixed sleep (#428 class)
 await waitFor(p, '#view [data-research]');
+const nativeBoot = await p.evaluate(() => ({
+  routes: window.dwNative && window.dwNative.registry.routes(),
+  mounted: window.dwNative && window.dwNative.registry.mounted(),
+  owned: document.querySelectorAll('#view [data-dw-mount="research"]').length,
+  oldBuilder: typeof buildResearch,
+  delegates: document.querySelectorAll(
+    '#view [data-dw-delegate="artifactRow"]').length,
+}));
+notes.push('native boot: ' + JSON.stringify(nativeBoot));
+ok('/research resolves through the native registry and owns exactly one root',
+   nativeBoot.routes.includes('research') &&
+   nativeBoot.mounted.length === 1 && nativeBoot.mounted[0] === 'research' &&
+   nativeBoot.owned === 1);
+ok('zero-commit overlap: buildResearch is absent from the served page',
+   nativeBoot.oldBuilder === 'undefined');
+ok('every native-shell row consumes artifactRow through the delegating wrapper',
+   nativeBoot.delegates === listed.length);
 const rows = await p.evaluate(() =>
   [...document.querySelectorAll('#view [data-research]')].map(row => {
     const a = row.querySelector('a[href^="/research?p="]');
@@ -83,6 +102,46 @@ ok('one row per served artifact, keyed by filename',
    rows.every(r => r.key && listed.includes(r.key)));
 ok('every row links its own /research?p= view (a real <a>: keyboard-operable, deep-linkable)',
    rows.every(r => r.href === '/research?p=' + encodeURIComponent(r.key)));
+const rowDetails = await p.evaluate(() => ({
+  ages: [...document.querySelectorAll('#view [data-research] .age')]
+    .map(el => el.textContent.trim()),
+  docks: document.querySelectorAll('#view [data-research] .pipbtn').length,
+}));
+ok('the ordinary ages sweep fills the delegated rows',
+   rowDetails.ages.length >= listed.length &&
+   rowDetails.ages.some(text => text.length > 0));
+ok('delegated rows retain one dock link per artifact',
+   rowDetails.docks === listed.length);
+
+/* ── a real tick updates in place; instance + seen discriminate remount ─── */
+let beforeTick = null;
+for (let i = 0; i < 40; i++) {
+  beforeTick = await p.evaluate(() => {
+    const el = document.querySelector('[data-dw-research-instance]');
+    return el && { instance: el.dataset.dwResearchInstance,
+                   seen: Number(el.dataset.dwResearchSeen) };
+  });
+  if (beforeTick && beforeTick.seen >= 1) break;
+  await sleep(50);
+}
+ok('precondition: the mount effect settled before forcing the tick',
+   beforeTick && beforeTick.instance && beforeTick.seen >= 1);
+utimesSync(join(target, 'DREAMWORK.md'), new Date(), new Date());
+let afterTick = null;
+for (let i = 0; i < 100; i++) {
+  afterTick = await p.evaluate(() => {
+    const el = document.querySelector('[data-dw-research-instance]');
+    return el && { instance: el.dataset.dwResearchInstance,
+                   seen: Number(el.dataset.dwResearchSeen) };
+  });
+  if (afterTick && afterTick.seen > beforeTick.seen) break;
+  await sleep(100);
+}
+notes.push('tick: ' + JSON.stringify({ beforeTick, afterTick }));
+ok('the tick reached the native component (seen increments exactly once)',
+   afterTick && afterTick.seen === beforeTick.seen + 1);
+ok('the tick preserved component state (instance id is unchanged)',
+   afterTick && afterTick.instance === beforeTick.instance);
 
 /* ── the real gesture: click a row, arrive on the artifact view ─────────── */
 await p.evaluate(() => {
@@ -145,6 +204,51 @@ notes.push('back: ' + JSON.stringify(back));
 ok('the crumb returns to the bare listing (normal column, all rows)',
    back.path === '/research' && back.search === '' &&
    back.rows === listed.length && !back.wide);
+
+/* ── crossing to a builder route unmounts; returning mounts a fresh root ─ */
+const beforeAway = await p.evaluate(() =>
+  document.querySelector('[data-dw-research-instance]').dataset.dwResearchInstance);
+await p.evaluate(() => navigate('reviews', null, {
+  push: true, transition: false,
+}));
+const away = await p.evaluate(() => ({
+  mounted: window.dwNative.registry.mounted(),
+  owned: document.querySelectorAll('[data-dw-mount]').length,
+  reviews: document.querySelectorAll('[data-review]').length,
+}));
+ok('navigating to a builder route unmounts the native owner before rendering',
+   away.mounted.length === 0 && away.owned === 0 && away.reviews >= 0);
+await p.evaluate(() => navigate('research', null, {
+  push: true, transition: false,
+}));
+await waitFor(p, '#view [data-research]');
+const afterBack = await p.evaluate(() => ({
+  instance: document.querySelector('[data-dw-research-instance]')
+    .dataset.dwResearchInstance,
+  mounted: window.dwNative.registry.mounted(),
+}));
+ok('returning to /research mounts a fresh native instance',
+   afterBack.instance !== beforeAway &&
+   afterBack.mounted.length === 1 && afterBack.mounted[0] === 'research');
+
+/* ── an empty collection renders the named empty state, never a blank box ─ */
+const empty = await b.newPage({ viewport: { width: 1100, height: 950 } });
+await empty.route('**/data.json*', async route => {
+  const body = JSON.stringify({ ...d, research: [] });
+  await route.fulfill({ status: 200, contentType: 'application/json', body });
+});
+await empty.goto(`${BASE}/research`, { waitUntil: 'networkidle' });
+await waitFor(empty, '[data-dw-mount="research"]');
+const emptyState = await empty.evaluate(() => ({
+  text: document.querySelector('#view').textContent,
+  owned: document.querySelectorAll('[data-dw-mount="research"]').length,
+  rows: document.querySelectorAll('[data-research]').length,
+}));
+notes.push('empty: ' + JSON.stringify(emptyState));
+ok('EMPTY research renders the named empty state through the native shell',
+   emptyState.owned === 1 && emptyState.rows === 0 &&
+   emptyState.text.includes('no built research artifacts yet'));
+await empty.close();
 
 /* ── confinement: no escape, no src/ source served as an artifact ───────── */
 for (const bad of ['../questions.md', 'src/' + srcName, 'missing.html']) {

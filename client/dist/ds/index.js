@@ -1146,14 +1146,6 @@ var DreamworkDesign = (() => {
     }
     return `<div data-${kind}="${esc(r.name)}" data-decision="${dec || "unlinked"}"><a href="/${kind}?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` + pipBtn("/" + kind + "raw?p=" + encodeURIComponent(r.name), r.name) + age + status + `</div>`;
   }
-  function buildResearch(name, d) {
-    if (name)
-      return `<div id="reviewwrap" class="nodock"><div id="reviewdoc"><iframe id="reviewframe" src="/researchraw?p=` + encodeURIComponent(name) + `" title="research artifact" loading="lazy"></iframe></div></div>`;
-    if (!d) return '<div class="dim">loading…</div>';
-    if (!d.research.length)
-      return label("research") + `<div class="dim">no built research artifacts yet — sources live in <code>.dreamwork/docs/research/src/</code> and build through <code>review_artifact.py</code>, the one template pipeline.</div>`;
-    return label("research") + d.research.map((r) => artifactRow(r, "research")).join("");
-  }
   function buildReviews(d) {
     if (!d) return '<div class="dim">loading…</div>';
     if (!d.reviews.length)
@@ -2277,6 +2269,8 @@ var DreamworkDesign = (() => {
   function setData(next) {
     data = next;
     if (window.dwPluginCommands) window.dwPluginCommands(data.plugin_commands);
+    const registry = nativeRegistry();
+    if (registry) registry.update(data);
     return data;
   }
   async function ensureData() {
@@ -2328,9 +2322,9 @@ var DreamworkDesign = (() => {
       return buildChat(await fetchChat(view.param));
     }
     const d = await ensureData();
+    if (isNativeRoute(view.name)) return null;
     if (view.name === "review") return buildReview(view.param, view.q, d);
     if (view.name === "question") return buildQuestion(view.param, d);
-    if (view.name === "research") return buildResearch(view.param, d);
     if (view.name === "reviews") return buildReviews(d);
     if (!d) return '<div class="dim">loading…</div>';
     if (view.name === "questions") return buildQuestions(d);
@@ -2631,6 +2625,7 @@ var DreamworkDesign = (() => {
     }
   }
   function setLiveContent(html) {
+    if (isNativeRoute(view.name)) return;
     if (view.name === "review") {
       const parsed = document.createElement("template");
       parsed.innerHTML = html;
@@ -2761,6 +2756,9 @@ var DreamworkDesign = (() => {
       getNodeKey: viewNodeKey,
       onBeforeElUpdated: reconcileGuard
     });
+    finishViewCommit();
+  }
+  function finishViewCommit() {
     fitReview();
     positionQuestionColumn();
     paintIndicators(true);
@@ -2778,6 +2776,37 @@ var DreamworkDesign = (() => {
     restoreAnswerDrafts();
     bindAskDraft();
     bindChatReplyDraft();
+  }
+  function nativeRegistry() {
+    return window.dwNative && window.dwNative.registry ? window.dwNative.registry : null;
+  }
+  function isNativeRoute(name) {
+    const registry = nativeRegistry();
+    return !!(registry && registry.has(name));
+  }
+  function unmountNativeRoots() {
+    const registry = nativeRegistry();
+    if (!registry) return;
+    const state = registry.verify();
+    if (state.detached.length) {
+      throw new Error("native registry lost ownership of: " + state.detached.join(", "));
+    }
+    registry.unmountAll();
+  }
+  function commitCurrent(html) {
+    const registry = nativeRegistry();
+    if (!isNativeRoute(view.name)) {
+      unmountNativeRoots();
+      setContent(html);
+      return;
+    }
+    unmountNativeRoots();
+    const viewEl = document.getElementById("view");
+    viewEl.replaceChildren();
+    lastViewHtml = null;
+    window.__dwViewRenderGen = (window.__dwViewRenderGen || 0) + 1;
+    registry.mount(view.name, viewEl, data, view.param);
+    finishViewCommit();
   }
   function snapshotCardState() {
     const act = document.activeElement;
@@ -4440,7 +4469,7 @@ var DreamworkDesign = (() => {
       document.body.classList.toggle("review", !!xopts.review);
       document.body.classList.toggle("file", !!xopts.file);
       document.body.classList.toggle("question", !!xopts.question);
-      setContent(html);
+      commitCurrent(html);
       renderChrome(view, data, null);
       return;
     }
@@ -4460,7 +4489,7 @@ var DreamworkDesign = (() => {
     document.body.classList.toggle("review", !!xopts.review);
     document.body.classList.toggle("file", !!xopts.file);
     document.body.classList.toggle("question", !!xopts.question);
-    setContent(html);
+    commitCurrent(html);
     renderChrome(view, data, snap);
     const dock = document.getElementById("qdock");
     const dockRect = dock ? dock.getBoundingClientRect() : null;
@@ -4588,7 +4617,7 @@ var DreamworkDesign = (() => {
       document.body.classList.toggle("review", artifactDoc);
       document.body.classList.toggle("file", name === "file");
       document.body.classList.toggle("question", name === "question");
-      setContent(html);
+      commitCurrent(html);
       renderChrome(view, data, null);
     } else {
       crossfade(html, {

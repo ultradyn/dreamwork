@@ -1,15 +1,10 @@
-/* probe — the only registry entry #630 P2 ships, and it mounts nothing.
+/* probe — the synthetic registry entry #630 P2 shipped, and it mounts nothing.
  *
  * P2's job is to retire the transition's top-ranked risk: "React and morphdom
  * fight over DOM" (`component-transition.md` §6-R1, which names the cheapest
  * signal as "a scratch page with one component root inside `#view` under
- * forced ticks"). This is that component. It is not a surface, it converts
- * nothing, and no route reaches it — `client/dist/native.js` is not in PAGE.
- *
- * It delegates to `buildResearch` on purpose rather than to something
- * invented: `/research` is the surface P3 converts (`views.js:1318`), so the
- * delegation path P3 needs is the delegation path this proves. A probe that
- * exercised a made-up builder would prove the machinery and not the case.
+ * forced ticks"). This remains the state-survival probe; P3's actual research
+ * route now exercises the same component without synthetic navigation.
  *
  * WHAT IT MAKES OBSERVABLE, and why each attribute is on the DOM rather than
  * inferred by the guard: a Playwright guard can only read what is rendered,
@@ -32,19 +27,7 @@
  * a red has to have to mean anything.
  */
 import React from 'react';
-import { fromBuilder } from './delegate.js';
-
-/* `/research`'s listing, rendered by CALLING the builder the page serves.
- *
- * `buildResearch` is resolved at render time from the page's script scope —
- * it is a top-level `function` in `client/views.js`, which the page
- * concatenates into PAGE (`watch.py:691`). This bundle does not contain it
- * and must not: containing it would be the copy that `delegate.js` exists to
- * avoid, and `test_client_dist` asserts the builders' source is ABSENT from
- * native.js for exactly that reason. */
-export const ResearchListing = fromBuilder('buildResearch', function (props) {
-  return buildResearch(null, props.data || null);
-});
+import { Research } from './research.js';
 
 export function Probe(props) {
   /* Minted once per instance, by a lazy initialiser React runs only on the
@@ -70,7 +53,7 @@ export function Probe(props) {
       'data-dw-probe-instance': instance,
       'data-dw-probe-seen': String(seen),
     }),
-    React.createElement(ResearchListing, { data: props.data }));
+    React.createElement(Research, { data: props.data, param: null }));
 }
 
 /* The route name. Two underscores and a word that is not a path: `routeOf`
@@ -81,6 +64,6 @@ export const PROBE_ROUTE = '__probe';
 export function registerProbe(registry) {
   return registry.register(PROBE_ROUTE, {
     component: Probe,
-    doc: 'P2 coexistence probe — delegates to buildResearch. Not a surface.',
+    doc: 'P2 coexistence probe — renders the native research surface.',
   });
 }

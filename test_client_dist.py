@@ -1,12 +1,12 @@
 """#653 — P1 of the #630 component transition: the build step, and the two
 things that make a committed build artifact safe.
 
-The claim of this phase is small and checkable: **`just build-client` exists,
+P1's claim was small and checkable: **`just build-client` exists,
 `client/dist/` is committed, and the served page does not change by one byte.**
-Measured at the landing — before 601928 bytes / sha256 ceecce6853f2689d3…, after
-the same — but a recorded hash is no use afterwards, because every legitimate
-UI edit changes it. So what this file pins instead is the property that made
-the number true and must stay true: **nothing under client/dist reaches PAGE**.
+P3 deliberately ends that phase by embedding native.js. The lasting property
+this file pins is the distinction between the two outputs: the native runtime
+reaches PAGE once, while the design bundle that concatenates client assets
+never does.
 
 The other half is staleness. dist is committed (deploy ships committed state,
 `justfile:418-423`, and the dashboard must come up with no node), so it can be
@@ -92,13 +92,12 @@ def _write_manifest(root, obj):
 # ── the phase's own claim ────────────────────────────────────────────────
 
 
-def test_nothing_under_client_dist_reaches_the_assembled_page():
-    """P1's whole promise, as a property rather than a recorded hash.
+def test_dist_delivery_matches_phase_authority():
+    """The tool bundle stays contained; the native runtime reaches the page.
 
-    The page was byte-identical across this landing. That measurement cannot
-    be re-run tomorrow (any UI edit moves it), but the REASON it held can be:
-    the build emits into client/dist and the page is assembled from
-    client/*.js, and the two sets do not meet.
+    P3 deliberately ends P1/P2's byte-identity phase by serving native.js.
+    The design-tool bundle remains off-page because it concatenates the
+    client assets and would run their top-level side effects a second time.
 
     Non-vacuous by construction: each probe string is asserted PRESENT in the
     built bundle first. A check that looks in the page for something that does
@@ -119,13 +118,8 @@ def test_nothing_under_client_dist_reaches_the_assembled_page():
             "%r is not in the built bundle, so its absence from the page "
             "would prove nothing" % probe)
 
-    # #630 P2 — the same claim for the second bundle, and it is this phase's
-    # HEADLINE. P2 adds a React runtime and a component registry and mounts
-    # NOTHING: the served page was byte-identical across the landing (604299
-    # bytes, sha256 db2b848bcd7a4723b7901cdfa96fdef5721f67336b8cdd9c71ad85ef4…
-    # before and after, `cmp` clean). That number cannot be re-checked later,
-    # but the reason it held can be, and this is it — native.js is 143 KB of
-    # React that the page does not load.
+    # #630 P2 emitted this bundle but loaded nothing. P3 serves the same
+    # committed bytes inline, rather than copying or fetching them.
     native = (ROOT / client_dist.NATIVE_REL).read_bytes().decode("utf-8")
     assert len(native) > 50_000, (
         "%s is %d chars — too small to be React plus a runtime, and every "
@@ -136,8 +130,6 @@ def test_nothing_under_client_dist_reaches_the_assembled_page():
         assert probe in native, (
             "%r is not in %s, so its absence from the page would prove "
             "nothing" % (probe, client_dist.NATIVE_REL))
-    probes = probes + native_probes
-
     page = watch._get_page()
     floor = sum((CLIENT / n).stat().st_size for n in watch._CLIENT_ASSETS)
     assert floor > 0, "no client assets to derive a floor from"
@@ -146,23 +138,27 @@ def test_nothing_under_client_dist_reaches_the_assembled_page():
         "an asset is missing from the page, so this is not the dashboard and "
         "the containment checks below are meaningless" % (len(page), floor))
 
-    for probe in probes:
+    # The generated banner is deliberately shared by both outputs, so it is a
+    # build precondition but cannot distinguish the forbidden design bundle
+    # from the required native one.
+    for probe in ("// entry.mjs", "DreamworkDesign"):
         assert probe not in page, (
-            "%r reached the served page — client/dist is P1's build output "
-            "and nothing in it may be served yet; the byte-identity claim of "
-            "this phase is false" % probe)
+            "%r reached the served page — ds/index.js concatenates the "
+            "client assets and would execute their top-level effects a "
+            "second time on the dashboard" % probe)
 
-    # FALSE-GREEN VECTOR, constructed and then closed. Every assertion above
-    # looks for bundle CONTENT in the page, so all of them pass on a page that
-    # never inlines the bundle and instead fetches it:
+    assert native in page, (
+        "%s is not embedded byte-for-byte in the page — P3's registry is "
+        "unreachable, so no route can flip to native authority"
+        % client_dist.NATIVE_REL)
+
+    # FALSE-GREEN VECTOR, constructed and then closed in P2. Content probes
+    # alone pass on a page that fetches the runtime instead of inlining it:
     #
     #     <script src="/client/dist/native.js"></script>
     #
-    # That page loads React, is not byte-identical, and satisfies every probe
-    # test written above — the containment idiom cannot see a reference,
-    # only a copy. The page is a SINGLE RESPONSE today (that is the property,
-    # `component-transition.md` §3), so the closure is to assert exactly that:
-    # it fetches no external script and no external stylesheet.
+    # P3 preserves the closure: the page is still one response and fetches no
+    # external script or stylesheet.
     #
     # Non-vacuous by construction: the page must contain inline <script> and
     # <style> first, or this would be asserting the absence of external assets
@@ -174,10 +170,8 @@ def test_nothing_under_client_dist_reaches_the_assembled_page():
     for ref in ("<script src", "<script  src", "<link rel=\"stylesheet\""):
         assert ref not in page, (
             "the page references an external asset (%r). The dashboard is one "
-            "HTML response by design, and a <script src> pointing at "
-            "client/dist would load the runtime while every containment check "
-            "above still passed — that reference is the way this phase's "
-            "byte-identity claim can be false with all the probes green"
+            "HTML response by design; native.js must be inline, not a fetch "
+            "that content containment cannot distinguish"
             % ref)
 
 
@@ -296,7 +290,7 @@ def test_native_js_references_the_builders_and_does_not_contain_them():
     # Lifted verbatim from client/*.js: distinctive enough not to appear by
     # chance, and each one is a top-level SIDE EFFECT or a builder body — the
     # things that must not run twice.
-    probes = ["setInterval(ages", "window.dreambg", "function buildResearch("]
+    probes = ["setInterval(ages", "window.dreambg", "function artifactRow("]
     for probe in probes:
         assert probe in index, (
             "%r is not in the design bundle, which concatenates client/*.js. "
@@ -312,8 +306,8 @@ def test_native_js_references_the_builders_and_does_not_contain_them():
     # The other half of the claim: it references them. A bundle that neither
     # contains nor references a builder would pass every assertion above by
     # having nothing to do with the builders at all.
-    assert "buildResearch" in native, (
-        "%s does not name buildResearch — the delegating wrapper is supposed "
+    assert "artifactRow" in native, (
+        "%s does not name artifactRow — the delegating wrapper is supposed "
         "to CALL it, and a bundle that neither contains nor references the "
         "builders is not derived from anything" % client_dist.NATIVE_REL)
 
@@ -365,9 +359,8 @@ def test_the_native_runtime_stays_inside_a_chosen_page_weight_budget():
 
     Measured at P2: 146920 bytes minified (React 18.3.1 + ReactDOM + the
     registry + one probe), against the plan's INFERRED 140-180 KB — so the
-    estimate held. The page is unchanged, because native.js is not on it; this
-    is the bill that falls due at P3, stated one phase early so it is a
-    decision rather than a discovery.
+    estimate held. P3 now pays that page-weight bill and keeps the same bound
+    on the runtime itself, where an ordinary builder edit cannot false-red it.
     """
     size = (ROOT / client_dist.NATIVE_REL).stat().st_size
     assert size > 50_000, (
@@ -417,7 +410,7 @@ def test_a_new_native_source_that_the_manifest_never_saw_is_stale(tmp_path):
     without the new component in it.
     """
     root = _clone(tmp_path)
-    (root / client_dist.NATIVE_SRC_DIR / "research.js").write_text(
+    (root / client_dist.NATIVE_SRC_DIR / "future-surface.js").write_text(
         "export const Research = null;\n", encoding="utf-8")
 
     manifest = _manifest(root)
@@ -429,8 +422,8 @@ def test_a_new_native_source_that_the_manifest_never_saw_is_stale(tmp_path):
     reading = client_dist.check(str(root))
     assert reading["state"] == client_dist.STALE, (
         "a native source the build never saw read as %r" % (reading["state"],))
-    assert any("research.js" in s for s in reading["stale"]) or \
-        "research.js" in (reading["note"] or ""), (
+    assert any("future-surface.js" in s for s in reading["stale"]) or \
+        "future-surface.js" in (reading["note"] or ""), (
         "the reading does not NAME the unbuilt source: %r" % (reading,))
 
 

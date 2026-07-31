@@ -1129,6 +1129,8 @@ function setData(next) {
   // (#86). It compares whole and returns immediately on the ticks — nearly
   // all of them — where the declared set has not moved.
   if (window.dwPluginCommands) window.dwPluginCommands(data.plugin_commands);
+  const registry = nativeRegistry();
+  if (registry) registry.update(data);
   return data;
 }
 async function ensureData() {
@@ -1185,9 +1187,9 @@ async function buildCurrent() {
     return buildChat(await fetchChat(view.param));
   }
   const d = await ensureData();
+  if (isNativeRoute(view.name)) return null;
   if (view.name === 'review') return buildReview(view.param, view.q, d);
   if (view.name === 'question') return buildQuestion(view.param, d);
-  if (view.name === 'research') return buildResearch(view.param, d);
   if (view.name === 'reviews') return buildReviews(d);
   if (!d) return '<div class="dim">loading…</div>';
   if (view.name === 'questions') return buildQuestions(d);
@@ -1535,6 +1537,7 @@ function restoreReviewFrame(saved) {
   }
 }
 function setLiveContent(html) {
+  if (isNativeRoute(view.name)) return;
   if (view.name === 'review') {
     const parsed = document.createElement('template');
     parsed.innerHTML = html;
@@ -1749,6 +1752,9 @@ function setContent(html) {
     getNodeKey: viewNodeKey,
     onBeforeElUpdated: reconcileGuard,
   });
+  finishViewCommit();
+}
+function finishViewCommit() {
   // before anything measures: the review pane's height is a measurement, and
   // crossfade reads the dock's rect on the very next line after setContent.
   fitReview();
@@ -1797,6 +1803,40 @@ function setContent(html) {
   bindAskDraft();
   // #577: same discipline for the /chat/<id> reply box (chat:<id> key).
   bindChatReplyDraft();
+}
+
+function nativeRegistry() {
+  return window.dwNative && window.dwNative.registry
+    ? window.dwNative.registry : null;
+}
+function isNativeRoute(name) {
+  const registry = nativeRegistry();
+  return !!(registry && registry.has(name));
+}
+function unmountNativeRoots() {
+  const registry = nativeRegistry();
+  if (!registry) return;
+  const state = registry.verify();
+  if (state.detached.length) {
+    throw new Error('native registry lost ownership of: ' +
+                    state.detached.join(', '));
+  }
+  registry.unmountAll();
+}
+function commitCurrent(html) {
+  const registry = nativeRegistry();
+  if (!isNativeRoute(view.name)) {
+    unmountNativeRoots();
+    setContent(html);
+    return;
+  }
+  unmountNativeRoots();
+  const viewEl = document.getElementById('view');
+  viewEl.replaceChildren();
+  lastViewHtml = null;
+  window.__dwViewRenderGen = (window.__dwViewRenderGen || 0) + 1;
+  registry.mount(view.name, viewEl, data, view.param);
+  finishViewCommit();
 }
 /* ── what the human did to a card survives a tick (#118, #111) ────────────
    The tick re-renders the question list through `innerHTML`, so every card
@@ -4164,7 +4204,7 @@ function crossfade(html, xopts) {
     document.body.classList.toggle('review', !!xopts.review);
     document.body.classList.toggle('file', !!xopts.file);
     document.body.classList.toggle('question', !!xopts.question);
-    setContent(html);
+    commitCurrent(html);
     renderChrome(view, data, null);
     return;
   }
@@ -4197,7 +4237,7 @@ function crossfade(html, xopts) {
   document.body.classList.toggle('review', !!xopts.review);
   document.body.classList.toggle('file', !!xopts.file);
   document.body.classList.toggle('question', !!xopts.question);
-  setContent(html);
+  commitCurrent(html);
   renderChrome(view, data, snap);   // the heading travels; it does not reload
   // measure the docked question's resting rect BEFORE the enter transform,
   // so a shared-element FLIP from the clicked question lands true.
@@ -4401,7 +4441,7 @@ async function navigate(name, param, opts) {
     document.body.classList.toggle('review', artifactDoc);
     document.body.classList.toggle('file', name === 'file');
     document.body.classList.toggle('question', name === 'question');
-    setContent(html);
+    commitCurrent(html);
     renderChrome(view, data, null);   // first paint: arrive, don't animate
   } else {
     crossfade(html, { fromRect: opts.fromRect, review: artifactDoc,
