@@ -4961,10 +4961,18 @@ var DreamworkDesign = (() => {
       }
     );
   }
-  (function() {
-    const pal = document.getElementById("cmdpalette");
-    if (!pal) return;
-    const confirmation = confirmationFor(document, "cmdmsg", "cmdmsg", rmr);
+  function mountComposer(target) {
+    if (!target || !target.document || !target.window || !target.surface)
+      throw new Error("composer mount requires document, window and surface");
+    const document2 = target.document;
+    const window2 = target.window;
+    const pal = document2.getElementById("cmdpalette");
+    if (!pal)
+      throw new Error("composer mount " + target.surface + " missing #cmdpalette");
+    if (pal.dataset.composerMount)
+      throw new Error("composer already mounted by " + pal.dataset.composerMount);
+    pal.dataset.composerMount = target.surface;
+    const confirmation = confirmationFor(document2, "cmdmsg", "cmdmsg", rmr);
     const setCmdMsg = (text, ok) => confirmation.claim(text, ok);
     const clearCmdMsg = confirmation.clear;
     let open = false;
@@ -4982,7 +4990,7 @@ var DreamworkDesign = (() => {
     const composerLid = () => DraftStore.id("composer", "main");
     function saveDraft() {
       if (!draftKey()) return;
-      const t = document.getElementById("cmdtext");
+      const t = document2.getElementById("cmdtext");
       if (!t) return;
       DraftStore.save(
         composerLid(),
@@ -4995,7 +5003,7 @@ var DreamworkDesign = (() => {
       DraftStore.clear(composerLid());
     }
     function restoreDraft() {
-      const t = document.getElementById("cmdtext");
+      const t = document2.getElementById("cmdtext");
       if (!draftKey() || !t || t.value) return;
       const rec = DraftStore.get(composerLid());
       if (!rec || !rec.text) return;
@@ -5005,27 +5013,27 @@ var DreamworkDesign = (() => {
       if (k && COMMANDS.some((c) => c.kind === k)) setKind(k);
     }
     function fixedOrigin() {
-      const cb = document.querySelector(".wrap");
+      const cb = document2.querySelector(".wrap");
       if (!cb) return { x: 0, y: 0 };
       const b = cb.getBoundingClientRect();
       return { x: b.left, y: b.top };
     }
     function place() {
-      const plus = document.getElementById("cmdplus");
+      const plus = document2.getElementById("cmdplus");
       if (!plus) return;
       const r = plus.getBoundingClientRect();
-      const w = pal.offsetWidth || Math.min(innerWidth * 0.92, 340);
+      const w = pal.offsetWidth || Math.min(window2.innerWidth * 0.92, 340);
       const o = fixedOrigin();
       const bw = plus.offsetWidth || r.width;
       const bh = plus.offsetHeight || r.height;
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
       const left = cx - bw / 2;
       const bottom = cy + (bw + bh) * Math.SQRT2 / 4;
-      pal.style.left = Math.max(8, Math.min(left, innerWidth - w - 8)) - o.x + "px";
+      pal.style.left = Math.max(8, Math.min(left, window2.innerWidth - w - 8)) - o.x + "px";
       pal.style.top = bottom + CMD_GAP - o.y + "px";
     }
-    const kindsEl = document.getElementById("cmdkinds");
-    const menuEl = document.getElementById("cmdmenu");
+    const kindsEl = document2.getElementById("cmdkinds");
+    const menuEl = document2.getElementById("cmdmenu");
     const defaultKind = (from) => {
       const list = from || COMMANDS;
       const marked = list.find((c) => c.default);
@@ -5050,7 +5058,7 @@ var DreamworkDesign = (() => {
       return true;
     }
     function menuItem(c) {
-      const b = document.createElement("button");
+      const b = document2.createElement("button");
       b.type = "button";
       b.className = "cmdmenuitem";
       b.setAttribute("role", "menuitem");
@@ -5063,7 +5071,7 @@ var DreamworkDesign = (() => {
       const have = new Map(
         [...menuEl.children].map((n) => [n.dataset.kind, n])
       );
-      const arrived = [], frag = document.createDocumentFragment();
+      const arrived = [], frag = document2.createDocumentFragment();
       for (const c of COMMANDS) {
         let n = have.get(c.kind);
         if (n) have.delete(c.kind);
@@ -5089,7 +5097,7 @@ var DreamworkDesign = (() => {
         setKind(defaultKind(CORE_COMMANDS));
       else
         setKind(activeKind);
-      if (!rmr && menuEl && getComputedStyle(menuEl).visibility === "visible")
+      if (!rmr && menuEl && window2.getComputedStyle(menuEl).visibility === "visible")
         arrived.forEach((n) => {
           n.classList.add("qreveal", "dreamin");
           requestAnimationFrame(() => n.classList.remove("dreamin"));
@@ -5097,7 +5105,7 @@ var DreamworkDesign = (() => {
         });
       return arrived;
     }
-    window.dwPluginCommands = syncPluginCommands;
+    window2.dwPluginCommands = syncPluginCommands;
     const moveIndicator = (snap) => slideIndicator(kindsEl, snap);
     function setKind(kind) {
       activeKind = kind;
@@ -5133,8 +5141,8 @@ var DreamworkDesign = (() => {
       return '<div class="cmdhrow' + (bad ? " bad" : "") + (r.outcome === "pending" ? " pending" : "") + '"><span class="cmdhkind">' + esc(r.kind || r.path || "?") + '</span><span class="cmdhtext" title="' + esc(r.text || "") + '">' + esc(r.text || "") + "</span>" + (why ? '<span class="cmdhwhy">' + esc(why) + "</span>" : "") + '<span class="cmdhage age" data-at="' + r.at / 1e3 + '"></span></div>';
     };
     async function renderHist() {
-      const body = document.getElementById("cmdhistbody");
-      const sum = document.getElementById("cmdhistsum");
+      const body = document2.getElementById("cmdhistbody");
+      const sum = document2.getElementById("cmdhistsum");
       if (!body) return;
       const recs = await subsAll() || [];
       const rows = recs.slice().sort((a, b) => b.id - a.id).slice(0, HIST_MAX);
@@ -5147,11 +5155,11 @@ var DreamworkDesign = (() => {
         setTimeout(() => body.classList.remove("qreveal"), CARD_MS + 150);
       }
     }
-    const histEl = document.getElementById("cmdhist");
+    const histEl = document2.getElementById("cmdhist");
     if (histEl) histEl.addEventListener("toggle", () => {
       if (histEl.open) renderHist();
     });
-    const moreEl = document.getElementById("cmdmore");
+    const moreEl = document2.getElementById("cmdmore");
     if (moreEl) {
       const btn = moreEl.querySelector(".cmdmorebtn");
       const expose = (v) => btn && btn.setAttribute("aria-expanded", v);
@@ -5163,7 +5171,7 @@ var DreamworkDesign = (() => {
     renderMenu();
     setKind(activeKind);
     (function() {
-      const ta = document.getElementById("cmdtext");
+      const ta = document2.getElementById("cmdtext");
       if (!ta) return;
       let pressH = null;
       ta.addEventListener("pointerdown", () => {
@@ -5187,7 +5195,7 @@ var DreamworkDesign = (() => {
         composing = true;
         if (ev === "input") {
           saveDraft();
-          fitText(document.getElementById("cmdtext"), true);
+          fitText(document2.getElementById("cmdtext"), true);
         }
         if (dismissT) cancelDismiss();
       });
@@ -5199,20 +5207,20 @@ var DreamworkDesign = (() => {
       open = true;
       restoreDraft();
       moveIndicator(true);
-      const plus = document.getElementById("cmdplus");
+      const plus = document2.getElementById("cmdplus");
       if (plus) plus.classList.add("on");
-      const t = document.getElementById("cmdtext");
+      const t = document2.getElementById("cmdtext");
       if (t) setTimeout(() => t.focus(), rmr ? 0 : 140);
     }
     function closeCmd() {
       cancelDismiss();
       pal.classList.remove("open");
       open = false;
-      document.querySelectorAll("#cmdplus.on").forEach((p) => p.classList.remove("on"));
+      document2.querySelectorAll("#cmdplus.on").forEach((p) => p.classList.remove("on"));
       clearCmdMsg();
     }
-    window.__closeCmd = closeCmd;
-    document.addEventListener("submit", (e) => {
+    window2.__closeCmd = closeCmd;
+    document2.addEventListener("submit", (e) => {
       if (e.target && e.target.id === "askform") {
         e.preventDefault();
         sendAsk(e.target);
@@ -5222,7 +5230,7 @@ var DreamworkDesign = (() => {
         sendChatReply(e.target);
       }
     });
-    document.addEventListener("click", (e) => {
+    document2.addEventListener("click", (e) => {
       const pip = e.target.closest && e.target.closest(".pipbtn");
       if (pip) {
         e.preventDefault();
@@ -5243,10 +5251,10 @@ var DreamworkDesign = (() => {
       }
       if (open && e.target.closest && !e.target.closest("#cmdpalette")) closeCmd();
     });
-    document.addEventListener("keydown", (e) => {
+    document2.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && open) closeCmd();
     });
-    document.addEventListener("keydown", (e) => {
+    document2.addEventListener("keydown", (e) => {
       if (!((e.ctrlKey || e.metaKey) && e.key === "Enter")) return;
       const t = e.target;
       if (t && t.tagName === "TEXTAREA" && /^qi[oa]\d+$/.test(t.id)) {
@@ -5254,26 +5262,26 @@ var DreamworkDesign = (() => {
         submitCard(t.id.slice(2));
       } else if (t && t.id === "cmdtext") {
         e.preventDefault();
-        document.getElementById("cmdform").requestSubmit();
+        document2.getElementById("cmdform").requestSubmit();
       } else if (t && t.id === "askbox") {
         e.preventDefault();
-        const form = document.getElementById("askform");
+        const form = document2.getElementById("askform");
         if (form) form.requestSubmit();
       } else if (t && t.id === "chatreplybox") {
         e.preventDefault();
-        const form = document.getElementById("chatreply");
+        const form = document2.getElementById("chatreply");
         if (form) form.requestSubmit();
       }
     });
-    addEventListener("resize", () => {
+    window2.addEventListener("resize", () => {
       if (!open) return;
       place();
       moveIndicator(true);
     });
-    document.getElementById("cmdform").addEventListener("submit", async (e) => {
+    document2.getElementById("cmdform").addEventListener("submit", async (e) => {
       e.preventDefault();
       const kind = activeKind;
-      const text = document.getElementById("cmdtext").value.trim();
+      const text = document2.getElementById("cmdtext").value.trim();
       if (kind !== "do-next" && !text) {
         setCmdMsg("a thought is needed", false);
         return;
@@ -5289,19 +5297,19 @@ var DreamworkDesign = (() => {
         const cv = r && r._dwv;
         if (r && cv && cv.landed) {
           if (!attempt.success()) return;
-          const plus = document.getElementById("cmdplus");
+          const plus = document2.getElementById("cmdplus");
           if (plus) {
             const b = plus.getBoundingClientRect();
             ripple(b.left + b.width / 2, b.top + b.height / 2);
           }
-          document.getElementById("cmdtext").value = "";
+          document2.getElementById("cmdtext").value = "";
           clearDraft();
-          const cmdTa = document.getElementById("cmdtext");
+          const cmdTa = document2.getElementById("cmdtext");
           cmdTa._manual = false;
           cmdTa._fitH = null;
           const sent = COMMANDS.find((c) => c.kind === kind);
           if (sent && !sent.sticky) setKind(defaultKind());
-          fitText(document.getElementById("cmdtext"), true);
+          fitText(document2.getElementById("cmdtext"), true);
           cancelDismiss();
           if (!composing) dismissT = setTimeout(closeCmd, CMD_DISMISS_MS);
         } else if (r) {
@@ -5311,8 +5319,11 @@ var DreamworkDesign = (() => {
         if (histEl && histEl.open) renderHist();
       }
     });
-    document.getElementById("cmdpop").addEventListener("click", requestPopout);
-  })();
+    document2.getElementById("cmdpop").addEventListener("click", requestPopout);
+    return Object.freeze({ close: closeCmd, open: openCmd, surface: target.surface });
+  }
+  window.mountComposer = mountComposer;
+  mountComposer({ document, window, surface: "main" });
   var WORLD_SCALE = 2.3 / 900;
   function mountDreambg(win, cv, opts) {
     opts = opts || {};

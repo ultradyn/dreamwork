@@ -253,9 +253,21 @@ function popoutDoc(url, label) {
         `<iframe src="${escA(url)}" title="${escA(label)}"></iframe>`;
     });
 }
-(function () {
+/* The rich composer has one mount route. A target supplies the document and
+   window that own its DOM; the implementation stays inside this function, so
+   a surface that bypasses the contract gets neither bindings nor a mounted
+   marker — there is no fallback renderer to drift into a stale twin. */
+function mountComposer(target) {
+  if (!target || !target.document || !target.window || !target.surface)
+    throw new Error('composer mount requires document, window and surface');
+  const document = target.document;
+  const window = target.window;
   const pal = document.getElementById('cmdpalette');
-  if (!pal) return;
+  if (!pal)
+    throw new Error('composer mount ' + target.surface + ' missing #cmdpalette');
+  if (pal.dataset.composerMount)
+    throw new Error('composer already mounted by ' + pal.dataset.composerMount);
+  pal.dataset.composerMount = target.surface;
   const confirmation=confirmationFor(document,'cmdmsg','cmdmsg',rmr);
   /* ── the status line ARRIVES, it does not appear (#159) ──────────────────
      It used to be four bare `textContent` assignments: the text landed,
@@ -388,7 +400,7 @@ function popoutDoc(url, label) {
     const plus = document.getElementById('cmdplus');
     if (!plus) return;
     const r = plus.getBoundingClientRect();
-    const w = pal.offsetWidth || Math.min(innerWidth * 0.92, 340);
+    const w = pal.offsetWidth || Math.min(window.innerWidth * 0.92, 340);
     const o = fixedOrigin();
     // The opener rotates 45deg into an × when open, which swells its painted
     // box by its half-diagonal. Anchor off the centre (invariant under that
@@ -400,7 +412,7 @@ function popoutDoc(url, label) {
     const left = cx - bw / 2;
     const bottom = cy + (bw + bh) * Math.SQRT2 / 4;   // rotated half-height
     pal.style.left =
-      (Math.max(8, Math.min(left, innerWidth - w - 8)) - o.x) + 'px';
+      (Math.max(8, Math.min(left, window.innerWidth - w - 8)) - o.x) + 'px';
     pal.style.top = (bottom + CMD_GAP - o.y) + 'px';
   }
   // Command selection: a radiogroup of buttons with one background indicator
@@ -522,7 +534,7 @@ function popoutDoc(url, label) {
        brings these in, and that gesture already obeys the page. What needs a
        gesture of its own is the case where the set changes UNDER HIS EYE —
        the menu open in front of him — and that is the one animated here. */
-    if (!rmr && menuEl && getComputedStyle(menuEl).visibility === 'visible')
+    if (!rmr && menuEl && window.getComputedStyle(menuEl).visibility === 'visible')
       arrived.forEach(n => {
         n.classList.add('qreveal', 'dreamin');
         requestAnimationFrame(() => n.classList.remove('dreamin'));
@@ -762,7 +774,7 @@ function popoutDoc(url, label) {
       if (form) form.requestSubmit();
     }
   });
-  addEventListener('resize', () => {
+  window.addEventListener('resize', () => {
     if (!open) return;
     place(); moveIndicator(true);         // the group may have re-wrapped
   });
@@ -840,4 +852,7 @@ function popoutDoc(url, label) {
     }
   });
   document.getElementById('cmdpop').addEventListener('click', requestPopout);
-})();
+  return Object.freeze({ close: closeCmd, open: openCmd, surface: target.surface });
+}
+window.mountComposer = mountComposer;
+mountComposer({ document, window, surface: 'main' });
