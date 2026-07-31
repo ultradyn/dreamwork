@@ -420,16 +420,13 @@ def check_questions_truncation(dw: Path, rep: Report) -> None:
 
 
 def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
-    """How many answered entries the page renders with NO resolved date (#411).
+    """Report answered entries without a classifiable recorded resolution.
 
-    `answered_at(body)` returns when a folded entry was resolved, for the
-    collapsed-row view. It is deliberately never-guessing — a wrong date is
-    worse than no date — so an answered entry that returns None is one of two
-    honest things: it was withdrawn (no answer, so no timestamp), or it predates
-    the resolution-marker convention. Both are legitimate *today*. What this
-    check exists to catch is the regression: a future fold that drops or
-    mis-places the `→ answered (…)` marker on an entry that should carry one
-    makes the date silently disappear, and nothing today would notice.
+    A recorded resolution is either a legacy arrow resolution head or a dated
+    human response captured by the questions parser. A dated ``Comment`` record
+    also counts: unlike ``Folded``, it asserts that a human response exists.
+    ``Folded`` alone only says the coordinator processed the entry, so accepting
+    it would hide the missing-answer regression this check exists to catch.
 
     So the number is DERIVED — never a literal — and it names the entries so a
     reader can tell a withdrawn entry from a dropped marker. WARN, not ERROR:
@@ -447,23 +444,55 @@ def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
         items = watch.parse_answered(path.read_text())
     except Exception:
         return                          # check_questions owns unparseable
-    undated = [it["title"] for it in items if watch.answered_at(it["body"]) is None]
-    if not undated:
+    response_head = re.compile(
+        r"(?m)^\s*-\s+\*\*(Answer|Comment) \(via watch, "
+        r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}\)(?::|\s+—)")
+    dated_head = re.compile(
+        r"(?m)^\s*-\s+\*\*([^*\n]+?) \((?:via [^,\n]+, )?"
+        r"\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\)(?::|\s+—)")
+    missing = []
+    unclassifiable = []
+    for item in items:
+        body = item["body"]
+        human_follow = any(
+            follow.get("author") == "human" and follow.get("when")
+            for follow in item.get("follows", []))
+        if (watch.answered_at(body) is not None or human_follow
+                or response_head.search(body)):
+            continue
+        candidate = dated_head.search(body)
+        if candidate:
+            unclassifiable.append((item["title"], candidate.group(1)))
+        else:
+            missing.append(item["title"])
+    if not missing and not unclassifiable:
         # Silent when every answered entry carries a date. `check_questions`
         # already owns the OK row for this file, and emitting a second one
         # fragments the summary; the coverage this check exists to provide is
         # the WARN that names the undated entries, not an OK that duplicates it.
         return
-    # Name at most three so the line stays readable; the count is the signal.
-    sample = "; ".join(t[:48] for t in undated[:3])
-    more = "" if len(undated) <= 3 else f"; +{len(undated) - 3} more"
-    rep.add(
-        WARN,
-        "questions.md",
-        f"{len(undated)} of {len(items)} answered entries have no resolution "
-        f"date — a withdrawn ask carries none by design, but a dropped "
-        f"`→ answered (…)` marker is a regression that otherwise hides: "
-        f"{sample}{more} (#411)")
+    if missing:
+        sample = "; ".join(t[:48] for t in missing[:3])
+        more = "" if len(missing) <= 3 else f"; +{len(missing) - 3} more"
+        rep.add(
+            WARN,
+            "questions.md",
+            f"{len(missing)} of {len(items)} answered entries have no recorded "
+            f"human response — a withdrawn ask carries none by design, but a "
+            f"dropped resolution marker is a regression that otherwise hides: "
+            f"{sample}{more} (#411)")
+    if unclassifiable:
+        sample = "; ".join(
+            f"{title[:40]} [`{label}`]"
+            for title, label in unclassifiable[:3])
+        more = ("" if len(unclassifiable) <= 3
+                else f"; +{len(unclassifiable) - 3} more")
+        rep.add(
+            WARN,
+            "questions.md",
+            f"{len(unclassifiable)} of {len(items)} answered entries have a "
+            f"dated but unclassifiable resolution record — `Folded` records "
+            f"processing, not a human response: {sample}{more} (#767)")
 
 
 def check_resolution_marker_outside_title(dw: Path, watch, rep: Report) -> None:
