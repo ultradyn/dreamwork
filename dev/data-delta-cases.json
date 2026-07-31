@@ -1,0 +1,32 @@
+[
+  {
+    "label": "key added",
+    "base": {"generated": "old", "target": "/x", "git": {"sha": "aaa"}, "tint": "blue", "open_questions": 3},
+    "next": {"generated": "old", "target": "/x", "git": {"sha": "aaa"}, "tint": "blue", "open_questions": 3, "new_key": "v"}
+  },
+  {
+    "label": "key removed",
+    "base": {"generated": "old", "target": "/x", "git": {"sha": "aaa"}, "tint": "blue", "open_questions": 3},
+    "next": {"generated": "old", "target": "/x", "git": {"sha": "aaa"}}
+  },
+  {
+    "label": "nested mutation",
+    "base": {"generated": "old", "target": "/x", "git": {"sha": "aaa"}, "tint": "blue", "open_questions": 3},
+    "next": {"generated": "old", "target": "/x", "git": {"sha": "bbb", "subject": "caf\u00e9 \u2615"}, "tint": "blue", "open_questions": 3}
+  },
+  {
+    "label": "generated-only",
+    "base": {"generated": "old", "target": "/x", "git": {"sha": "aaa"}, "tint": "blue", "open_questions": 3},
+    "next": {"generated": "new", "target": "/x", "git": {"sha": "aaa"}, "tint": "blue", "open_questions": 3}
+  },
+  {
+    "label": "two-key change",
+    "base": {"generated": "old", "target": "/x", "git": {"sha": "aaa"}, "tint": "blue", "open_questions": 3},
+    "next": {"generated": "old", "target": "/y", "git": {"sha": "ccc"}, "tint": "red", "open_questions": 5}
+  },
+  {
+    "label": "empty changed with removal",
+    "base": {"generated": "old", "target": "/x", "retired": true},
+    "next": {"generated": "new", "target": "/x"}
+  }
+]

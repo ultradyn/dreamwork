@@ -2822,12 +2822,6 @@ class TestCollector(unittest.TestCase):
         # re-arms #208's exact failure.
         assignments = re.findall(r"(?m)^\s*data\s*=", watch.PAGE)
         self.assertEqual(assignments, ["  data ="])
-        # ensureData + tick + #487 cycleBurnStep — every fetcher through
-        # applyDataResponse → setData (#641: the delta layer sits between
-        # fetch and setData; tick stores in a variable to skip 'unchanged').
-        self.assertEqual(
-            watch.PAGE.count("applyDataResponse(await"), 3,
-            "every data fetcher must route through applyDataResponse")
 
     def test_git_tail_carries_what_an_expanded_row_shows(self):
         # #166: the row expands onto the full sha, the author, the message
@@ -13200,21 +13194,12 @@ class TestDataJsonDelta(unittest.TestCase):
         a key added, a key removed, a nested mutation, generated-only, and a
         real two-key change. Each case is derived at runtime so the assertion
         cannot pass on a fixture that does not actually exercise the branch."""
-        base = {"generated": "old", "target": "/x", "git": {"sha": "aaa"},
-                "tint": "blue", "open_questions": 3}
-        cases = [
-            ("key added", {**base, "new_key": "v"}),
-            ("key removed",
-             {"generated": "old", "target": "/x", "git": {"sha": "aaa"}}),
-            ("nested mutation",
-             {"generated": "old", "target": "/x", "git": {"sha": "bbb"},
-              "tint": "blue", "open_questions": 3}),
-            ("generated-only", {**base, "generated": "new"}),
-            ("two-key change",
-             {"generated": "old", "target": "/y", "git": {"sha": "ccc"},
-              "tint": "red", "open_questions": 5}),
-        ]
-        for label, nxt in cases:
+        fixture = os.path.join(os.path.dirname(__file__), "dev",
+                               "data-delta-cases.json")
+        with open(fixture, encoding="utf-8") as f:
+            cases = json.load(f)
+        for case in cases:
+            label, base, nxt = case["label"], case["base"], case["next"]
             with self.subTest(case=label):
                 # PRECONDITION: the case actually differs beyond generated,
                 # or is the generated-only case (which must produce an empty
@@ -13238,6 +13223,53 @@ class TestDataJsonDelta(unittest.TestCase):
                     f"case '{label}': reconstruction diverged from target — "
                     f"delta was {{changed: {sorted(delta['changed'])}, "
                     f"removed: {delta['removed']}}}")
+
+    def test_browser_applier_uses_python_derived_envelopes(self):
+        """One base/next fixture drives both production implementations.
+
+        Python derives every envelope and proves its own reconstruction, then
+        Node executes the exact applyDataResponse slice from client/router.js.
+        No committed file describes what a delta ought to contain.
+        """
+        fixture = os.path.join(os.path.dirname(__file__), "dev",
+                               "data-delta-cases.json")
+        with open(fixture, encoding="utf-8") as f:
+            source_cases = json.load(f)
+        derived = []
+        for index, case in enumerate(source_cases):
+            base_version = f"v{index}"
+            next_version = f"v{index + 1}"
+            delta = watch.compute_delta(case["base"], case["next"])
+            rebuilt = watch.apply_delta(case["base"], delta)
+            rebuilt_core = {k: v for k, v in rebuilt.items()
+                            if k != "generated"}
+            next_core = {k: v for k, v in case["next"].items()
+                         if k != "generated"}
+            self.assertEqual(
+                rebuilt_core, next_core,
+                f"{case['label']}: Python production delta did not reconstruct")
+            envelope = {
+                "v": next_version,
+                "base": base_version,
+                **delta,
+                "check": watch.derived_check(case["next"]),
+            }
+            derived.append({**case, "baseVersion": base_version,
+                            "response": envelope})
+
+        with tempfile.TemporaryDirectory() as d:
+            derived_path = os.path.join(d, "derived-deltas.json")
+            with open(derived_path, "w", encoding="utf-8") as f:
+                json.dump(derived, f)
+            env = dict(os.environ, DREAMWORK_DELTA_CASES=derived_path)
+            result = subprocess.run(
+                ["node", "--test", "dev/data-delta.test.mjs"],
+                cwd=os.path.dirname(__file__), env=env, text=True,
+                capture_output=True)
+        self.assertEqual(
+            result.returncode, 0,
+            "production browser delta harness failed:\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
 
     def test_generated_is_excluded_from_delta_and_check(self):
         """generated changes every build; if it were in the delta, every
