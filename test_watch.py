@@ -6149,6 +6149,34 @@ class TestAppShell(unittest.TestCase):
         self.assertIn("class=\"stpush\"", watch.PAGE)
         self.assertIn("'push'", watch.PAGE)  # in ST_GLANCE
 
+    def test_status_panel_renders_structural_queued_dispatch_notes(self):
+        page = watch.PAGE
+        script = textwrap.dedent("""\
+            %s
+            %s
+            const migrated = queuedDispatchLines([
+              {ids: [645], note: '#645 implementation queued; lesson #666'},
+              {ids: [736, 628], note: '#736 and #628 phase 2'},
+            ]);
+            const legacy = queuedDispatchLines(['#631 legacy queue entry']);
+            if (JSON.stringify(migrated) !== JSON.stringify([
+              '#645 implementation queued; lesson #666',
+              '#736 and #628 phase 2'
+            ])) process.exit(11);
+            if (JSON.stringify(legacy) !== JSON.stringify([
+              '#631 legacy queue entry'
+            ])) process.exit(12);
+            if (migrated.join('').includes('[object Object]')) process.exit(13);
+            if (migrated.some(line => line.startsWith('ids:'))) process.exit(14);
+            process.stdout.write('ok');
+        """) % (_extract_js_fn(page, "function stLines("),
+                 _extract_js_fn(page, "function queuedDispatchLines("))
+        self.assertIn(
+            "k === 'queued_dispatches' ? queuedDispatchLines(v) : stLines(v)",
+            page)
+        out = subprocess.check_output(["node", "-e", script], text=True)
+        self.assertEqual(out, "ok")
+
     def test_page_has_dream_transition_wiring(self):
         # Static guard: the dissolve mist (SVG turbulence/displacement) and
         # the shader stir (warp uniform + pulseWarp handle) must stay wired

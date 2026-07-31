@@ -328,18 +328,18 @@ class TestCheckContract:
 # ── 6a. queued_dispatches ids are advisory ledger claims (#755) ───────
 
 class TestQueuedDispatchIds:
-    """Every named id is checked; findings never become sync staleness."""
+    """Only structural ids are checked; findings never become sync staleness."""
 
     @staticmethod
-    def _status(*lines: str) -> dict:
+    def _status(*entries) -> dict:
         return {"queue": {"in_progress": 0, "pending": 1},
                 "current_task_ids": [], "dreamers": [],
-                "queued_dispatches": list(lines)}
+                "queued_dispatches": list(entries)}
 
     def test_landed_id_warns_names_id_quotes_line_and_check_stays_clean(
             self, tmp_path):
-        line = "#2 implementation still queued"
-        status = self._status(line)
+        entry = {"ids": [2], "note": "implementation still queued"}
+        status = self._status(entry)
         ledger = (_ledger(1)
                   + "## Recently landed\n- **#2** landed subject\n")
         target = _write_target(tmp_path, status, ledger)
@@ -351,55 +351,110 @@ class TestQueuedDispatchIds:
         assert rc == 0, (out, err)  # warning is a question, not stale sync
         assert spath.read_bytes() == before
         assert "WARN queued_dispatches: #2 is landed" in err
-        assert json.dumps(line) in err
+        assert json.dumps(entry) in err
         assert "checked 1 entr" in out and "1 id reference" in out
 
     def test_only_open_ids_are_quiet_but_denominator_is_reported(
             self, tmp_path):
-        rc, out, err = _run(self._status("#1 implementation queued"),
+        rc, out, err = _run(self._status(
+                                {"ids": [1], "note": "implementation queued"}),
                             _ledger(1), tmp_path)
         assert rc == 0, err
         assert "WARN queued_dispatches" not in err
         assert "checked 1 entr" in out and "1 id reference" in out
         assert "0 state question" in out and "0 unclassifiable" in out
 
-    def test_idless_entry_is_reported_unclassifiable_not_counted_clean(
+    def test_legacy_text_entry_is_reported_unmigrated_not_scanned(
             self, tmp_path):
-        line = "the SSE transport"
+        line = "#999 legacy queued prose"
         rc, out, err = _run(self._status(line), _ledger(1), tmp_path)
         assert rc == 0, err
-        assert "WARN queued_dispatches: no #NNN id; unclassifiable" in err
+        assert "WARN queued_dispatches: legacy text entry; unmigrated" in err
         assert json.dumps(line) in err
         assert "checked 1 entr" in out and "0 id references" in out
         assert "1 unclassifiable" in out
+        assert "#999 is not present" not in err
 
-    def test_every_id_is_checked_including_parenthetical(self, tmp_path):
-        line = "#641 subject (held behind #630 P2)"
+    def test_missing_ids_is_reported_unclassifiable_not_counted_clean(
+            self, tmp_path):
+        entry = {"note": "the SSE transport"}
+        rc, out, err = _run(self._status(entry), _ledger(1), tmp_path)
+        assert rc == 0, err
+        assert "WARN queued_dispatches: no ids key; unclassifiable" in err
+        assert json.dumps(entry) in err
+        assert "0 id references" in out and "1 unclassifiable" in out
+
+    @pytest.mark.parametrize("ids", [None, [], [1, "2"], [True], [0], [-1]])
+    def test_invalid_ids_shape_is_reported_unclassifiable(self, tmp_path, ids):
+        entry = {"ids": ids, "note": "queued"}
+        rc, out, err = _run(self._status(entry), _ledger(1), tmp_path)
+        assert rc == 0, err
+        assert "ids must be a non-empty list of positive integers" in err
+        assert "0 id references" in out and "1 unclassifiable" in out
+
+    def test_every_structural_id_is_checked(self, tmp_path):
+        entry = {"ids": [641, 630],
+                 "note": "subject (held behind another task)"}
         ledger = (_ledger(630)
                   + "## Recently landed\n- **#641** landed subject\n")
-        rc, out, err = _run(self._status(line), ledger, tmp_path)
+        rc, out, err = _run(self._status(entry), ledger, tmp_path)
         assert rc == 0, err
         assert "#641 is landed" in err
         assert "#630 is landed" not in err
         assert "2 id references" in out
 
     def test_absent_id_is_a_retired_or_nonexistent_question(self, tmp_path):
-        line = "#999 follow-up queued"
-        rc, out, err = _run(self._status(line), _ledger(1), tmp_path)
+        entry = {"ids": [999], "note": "follow-up queued"}
+        rc, out, err = _run(self._status(entry), _ledger(1), tmp_path)
         assert rc == 0, err
         assert "#999 is not present in the ledger" in err
         assert "retired or non-existent" in err
-        assert json.dumps(line) in err
+        assert json.dumps(entry) in err
 
     def test_open_id_with_already_done_prose_is_an_honest_false_green(
             self, tmp_path):
         # Direction 2: ledger state cannot judge prose truth. The denominator
         # proves the id was examined while the deliberately stale prose passes.
-        line = "#1 implementation already landed but still queued"
-        rc, out, err = _run(self._status(line), _ledger(1), tmp_path)
+        entry = {"ids": [1],
+                 "note": "implementation already landed but still queued"}
+        rc, out, err = _run(self._status(entry), _ledger(1), tmp_path)
         assert rc == 0, err
         assert "WARN queued_dispatches" not in err
         assert "1 id reference" in out and "0 state question" in out
+
+    def test_note_citation_is_not_cross_checked_against_structural_ids(
+            self, tmp_path):
+        # Direction 2: even an open #NNN omitted from ids may be a citation.
+        # Scanning it would rebuild the false-attribution defect one level up.
+        entry = {"ids": [1], "note": "queued; compare open lesson #2"}
+        rc, out, err = _run(self._status(entry), _ledger(1, 2), tmp_path)
+        assert rc == 0, err
+        assert "WARN queued_dispatches" not in err
+        assert "1 id reference" in out and "0 state question" in out
+
+    def test_current_live_queue_is_quiet_after_structural_migration(
+            self, tmp_path):
+        # Captured byte-for-byte from the live field on 2026-08-01. The old
+        # audit attributed the lesson citation #666 to queued work and warned.
+        legacy = [
+            "#645 increments 2-14 - queued behind cx-645i1.",
+            "#631 (P4) - the session view. NOT parallel with component-registry work.",
+            "#736 and #628 phase 2 - HELD on load (browser guards return a WRONG answer under load, #666).",
+            "#758 (P3) - justfile pytest *ARGS, so one supported command also runs the concurrency advisory.",
+        ]
+        assert "#666" in legacy[2]  # discriminating precondition
+        migrated = [
+            {"ids": [645], "note": legacy[0]},
+            {"ids": [631], "note": legacy[1]},
+            {"ids": [736, 628], "note": legacy[2]},
+            {"ids": [758], "note": legacy[3]},
+        ]
+        rc, out, err = _run(self._status(*migrated),
+                            _ledger(645, 631, 736, 628, 758), tmp_path)
+        assert rc == 0, err
+        assert "#666" not in err
+        assert "WARN queued_dispatches" not in err
+        assert "checked 4 entries" in out and "5 id references" in out
 
 
 # ── docstring/contract invariant already pinned by test_watch ────────────
@@ -961,15 +1016,15 @@ def _cut_over_target(tmp_path: Path) -> Path:
 def test_queued_dispatch_landed_warning_reads_cut_over_store(tmp_path):
     target = _cut_over_target(tmp_path)
     dw = target / ".dreamwork"
-    line = "#11 follow-up still queued"
+    entry = {"ids": [11], "note": "follow-up still queued"}
     (dw / "status.json").write_text(json.dumps(
-        {"dreamers": [], "queued_dispatches": [line]}, indent=2) + "\n")
+        {"dreamers": [], "queued_dispatches": [entry]}, indent=2) + "\n")
     out_s, err_s = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out_s), contextlib.redirect_stderr(err_s):
         rc = status_sync.main(["--target", str(target), "--check"])
     assert rc == 0, (out_s.getvalue(), err_s.getvalue())
     assert "WARN queued_dispatches: #11 is landed" in err_s.getvalue()
-    assert json.dumps(line) in err_s.getvalue()
+    assert json.dumps(entry) in err_s.getvalue()
     assert "1 id reference" in out_s.getvalue()
 
 

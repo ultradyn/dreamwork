@@ -82,10 +82,18 @@ function stLines(v) {
       `${k.replace(/_/g, ' ')}: ${stLines(x).join(', ')}`);
   return [String(v)];
 }
+function queuedDispatchLines(v) {
+  if (!Array.isArray(v)) return stLines(v);
+  return v.flatMap(entry =>
+    entry && typeof entry === 'object' && typeof entry.note === 'string'
+      ? [entry.note]
+      : stLines(entry));
+}
 const stField = (k, v) =>
   `<div class="stfield"><span class="stk">${esc(k.replace(/_/g, ' '))}</span>` +
   `<span class="stvals">` +
-  stLines(v).map(l => `<div class="stval">${mdInline(l)}</div>`).join('') +
+  (k === 'queued_dispatches' ? queuedDispatchLines(v) : stLines(v))
+    .map(l => `<div class="stval">${mdInline(l)}</div>`).join('') +
   `</span></div>`;
 const ST_GLANCE = ['awaiting_human', 'push', 'task', 'goal', 'agents', 'queue',
                    'pending_events', 'last_tick', 'last_commit'];
