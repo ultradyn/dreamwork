@@ -522,3 +522,63 @@ def test_record_allows_a_pending_to_decided_transition(store):
         "WHERE artifact = 'art-p'").fetchone()
     assert row == ("Q-decided", "accepted"), (
         f"pending→decided must overwrite; got {row}")
+
+
+# ---------------------------------------------------------------------------
+# #681 — file_task rejects bad enum columns naming the column + the LIVE
+# allowed set, not a sqlite IntegrityError that names neither. The allowed
+# set is read live from priority_band, so the named production line is the
+# `if priority not in bands: raise WriteError` guard in file_task.
+# ---------------------------------------------------------------------------
+
+def test_file_rejects_bad_priority_naming_the_live_bands(store):
+    """#681 — a bad priority names the column AND the live allowed set.
+
+    PRODUCTION LINE: file_task's `if priority not in bands: raise WriteError`
+    guard. Break by deleting it: file_task falls through to the INSERT and
+    sqlite raises IntegrityError (FK) naming neither the column nor the set.
+    The bands are derived LIVE from priority_band so a band added to the
+    table is named without a test edit (direction 2 — that is right by
+    design: the live read is the non-rotting property, not a gap).
+    """
+    bands = [r[0] for r in store.conn.execute(
+        "SELECT band FROM priority_band ORDER BY band")]
+    assert bands, "precondition: priority_band is seeded non-empty"
+    bad = "3"
+    assert bad not in bands, "precondition: '3' must not be a real band"
+
+    with pytest.raises(ledger_write.WriteError) as ei:
+        ledger_write.file_task(store, "t", "b", priority=bad)
+    msg = str(ei.value)
+    assert msg.startswith("priority: got '3', expected one of "), msg
+    for b in bands:
+        assert b in msg, f"live band {b!r} missing from message: {msg!r}"
+    # A refused file writes nothing (the guard is before BEGIN IMMEDIATE).
+    assert store.conn.execute("SELECT COUNT(*) FROM task").fetchone()[0] == 0
+
+
+def test_file_rejects_bad_origin_naming_the_vocabulary(store):
+    """#681 — origin outside the CHECK names the allowed set, not a bare
+    sqlite IntegrityError from the CHECK constraint.
+
+    PRODUCTION LINE: file_task's `if origin not in ORIGINS: raise WriteError`.
+    """
+    bad = "agent"
+    assert bad not in ledger_store.ORIGINS, (
+        "precondition: 'agent' must be outside the origin vocabulary")
+
+    with pytest.raises(ledger_write.WriteError) as ei:
+        ledger_write.file_task(store, "t", "b", origin=bad)
+    msg = str(ei.value)
+    assert msg == "origin: got 'agent', expected one of human, loop, unknown", msg
+
+
+def test_file_accepts_a_valid_priority_and_origin(store):
+    """#681 — a VALID priority/origin still files (the guard must not over-fire
+    on the happy path). PRODUCTION LINE: the guard is `if priority not in bands`.
+    """
+    new_id = ledger_write.file_task(
+        store, "ok title", "ok body", priority="P1", origin="human")
+    row = store.conn.execute(
+        "SELECT priority, origin FROM task WHERE id = ?", (new_id,)).fetchone()
+    assert row == ("P1", "human")

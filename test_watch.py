@@ -4462,6 +4462,42 @@ class TestCollector(unittest.TestCase):
                 self.assertLess(names.index("known.html"),
                                 names.index("unknown.html"))
 
+    def test_statx_libc_resolver_reports_a_named_resolution(self):
+        # #680 — the statx libc loader REPORTS which libc it resolved, so a
+        # silent CDLL(None) (main program, no real libc — the musl attractor)
+        # is distinguishable from a real resolution. file_notify._libc set this
+        # form; _resolve_statx_libc matches it rather than inventing a third.
+        # PRODUCTION LINE: _resolve_statx_libc returns (lib, label) with a
+        # non-empty label naming the resolution. Break by reverting to the old
+        # find_library-only form that returned a lib (or None) with nothing named.
+        lib, label = watch._resolve_statx_libc()
+        self.assertIsNotNone(
+            lib, f"precondition: libc resolves on this host; label={label!r}")
+        self.assertFalse(
+            label.startswith("unresolved"),
+            f"a real resolution must not read as unresolved: {label!r}")
+        self.assertTrue(label, f"the label must NAME the resolution: {label!r}")
+
+    def test_statx_libc_resolver_names_the_unresolved_libc_when_forced_to_none(self):
+        # #680 direction-1 evidence — forcing the musl condition (find_library
+        # returns None AND CDLL(None) has no statx) makes the resolver REPORT
+        # 'unresolved: …', naming the cause. The old find_library-only form
+        # returned a bare None here with nothing named — the silence #680 binds.
+        import ctypes
+        import ctypes.util
+
+        def boom(*a, **k):
+            raise OSError("forced: image has no statx")
+
+        with unittest.mock.patch("ctypes.CDLL", boom), \
+                unittest.mock.patch(
+                    "ctypes.util.find_library", return_value=None):
+            lib, label = watch._resolve_statx_libc()
+        self.assertIsNone(lib, f"forced-None must not yield a lib: {label!r}")
+        self.assertTrue(label.startswith("unresolved"), label)
+        # It NAMES the cause — find_library returned None — not a bare None.
+        self.assertIn("None", label)
+
     def test_page_emits_created_age_and_modified_secondary(self):
         # Static guard on the production render path for #463 parts 2+3.
         # PRODUCTION LINES: buildDashboard's review age HTML, and ages()'

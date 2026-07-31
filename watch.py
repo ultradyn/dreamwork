@@ -3221,25 +3221,63 @@ def plugin_commands(target):
 # a named state — never silently degraded to mtime (that was the bug).
 
 
+def _resolve_statx_libc():
+    """Resolve libc for statx — CDLL(None) first, reporting WHICH won (#680).
+
+    Mirrors ``file_notify._libc``'s ladder so this repo has ONE ctypes form,
+    not two: ``CDLL(None)`` dlopens the already-loaded process image and is the
+    form that works on musl, where ``find_library('c')`` returns None (and the
+    old find_library-only form here then returned None, or — worse — a later
+    author copying this site reached for ``CDLL(None)`` and loaded the main
+    program *silently*). The symbol is probed, not assumed.
+
+    Returns ``(libc, label)`` where ``label`` names the resolution that won, so
+    a silent ``CDLL(None)`` (an image with no real libc) is distinguishable from
+    a real one — that reporting is the entire point of #680. On failure returns
+    ``(None, 'unresolved: …')``: never a silent None.
+    """
+    try:
+        import ctypes
+        import ctypes.util
+    except ImportError as exc:
+        return None, f"unresolved: no ctypes ({exc})"
+    # CDLL(None) first — the robust form. Probe statx so a load WITHOUT it is
+    # not reported as a resolution.
+    try:
+        lib = ctypes.CDLL(None, use_errno=True)
+        lib.statx  # probe
+        return lib, "CDLL(None)"
+    except (OSError, AttributeError):
+        pass
+    name = ctypes.util.find_library("c")
+    if not name:
+        return None, "unresolved: find_library('c') returned None"
+    try:
+        lib = ctypes.CDLL(name, use_errno=True)
+        lib.statx
+        return lib, f"find_library: {name}"
+    except (OSError, AttributeError) as exc:
+        return None, f"unresolved: {name} has no statx ({exc})"
+
+
 def _statx_birth_ns(path):
     """Return birth time in nanoseconds, or None when unavailable.
 
     Stdlib-only: ctypes against libc.statx. Missing symbol, non-Linux,
     errno, or a mask without btime all return None — never a lie.
+
+    libc is resolved via ``_resolve_statx_libc`` — the robust CDLL(None)-first
+    form that matches ``file_notify._libc`` (#680). The old find_library-only
+    form returned None on musl and was the attractor for a silent CDLL(None).
     """
     try:
         import ctypes
-        import ctypes.util
     except ImportError:
         return None
-    libname = ctypes.util.find_library("c")
-    if not libname:
+    libc, _resolved_as = _resolve_statx_libc()
+    if libc is None:
         return None
-    try:
-        libc = ctypes.CDLL(libname, use_errno=True)
-        statx = libc.statx
-    except (AttributeError, OSError):
-        return None
+    statx = libc.statx
 
     class _Ts(ctypes.Structure):
         _fields_ = [("tv_sec", ctypes.c_int64),

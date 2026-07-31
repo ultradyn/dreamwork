@@ -28,6 +28,7 @@ import hashlib
 from datetime import datetime, timezone
 
 from ledger_store import (
+    ORIGINS,
     REVIEW_DECISIONS,
     append_chained_event,
 )
@@ -110,6 +111,27 @@ def file_task(store, title, body, *, priority=None, priority_uncertain=0,
         at = _now_iso()
 
     conn = store.conn
+    # #681 — validate enum columns BEFORE the INSERT, reading the allowed set
+    # LIVE from the store so the message cannot rot out of sync with the
+    # schema. A sqlite IntegrityError names NEITHER the column at fault NOR the
+    # allowed set (an FK failure on a multi-column INSERT does not even say
+    # which value was wrong); this names both. `priority` reads priority_band
+    # (the closed FK lookup, seeded at open); `origin` reuses ORIGINS — the
+    # CHECK-constraint vocabulary, co-located with the constraint in
+    # ledger_store. `type` is deliberately NOT validated: task_type is an OPEN
+    # lookup this verb seeds itself (INSERT OR IGNORE below), so any value is
+    # valid by design.
+    if priority is not None:
+        bands = [r[0] for r in conn.execute(
+            "SELECT band FROM priority_band ORDER BY band")]
+        if priority not in bands:
+            raise WriteError(
+                "priority: got {!r}, expected one of {}".format(
+                    priority, ", ".join(bands)))
+    if origin is not None and origin not in ORIGINS:
+        raise WriteError(
+            "origin: got {!r}, expected one of {}".format(
+                origin, ", ".join(ORIGINS)))
     conn.execute("BEGIN IMMEDIATE")
     try:
         # task.type REFERENCES task_type (an unseeded lookup the import owns);
