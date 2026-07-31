@@ -762,20 +762,17 @@ dreamwork-version: 5853e1789929
   the work already done *and* the context needed to redo it, where a relay costs
   one message. So steer in flight, and fold the same change into the next
   dispatch prompt.
-- **A substantial feature gets a design he reviews BEFORE any implementation**
-  (human-set 2026-07-31, `#691`): *"Present the design for me to review first
-  (gates implementation). Ask questions if unsure."* Two separable
-  instructions, and both are standing. The gate means no feature code lands
-  until he has read a design — so the deliverable of the first increment is a
-  document, and a lane sent at such a task must be told this explicitly or it
-  will helpfully build the thing. The second is permission to leave genuine
-  uncertainty **open**: a design that resolves a real unknown by quiet
-  assumption is worse than one that asks, and questions belong in
-  `questions.md` where he will see them, not buried in the doc's prose. He
-  asked in the same breath for the feature to be **feature-gated so it can be
-  turned off later** — a standing shape for anything experimental
-  (`SKILL.md:913`), and "off" must mean the machinery never runs, not that it
-  runs and hides its output.
+- **A design gate is per-task, not standing — posture decides by default**
+  (human-set 2026-07-31): he asked for a design review on `#691` (*"Present the
+  design for me to review first (gates implementation)"*), and I recorded that
+  as a standing rule for substantial features. He corrected it: *"not everything
+  is design gated like that … Just the task those instructions were attached to.
+  You should follow posture by default."* So a design gate binds **only the task
+  it was attached to**; absent one, the **asking** axis governs (at `near-auto`,
+  journal the choice and proceed — do not manufacture a review gate). When a
+  task does carry one, the lane must be told explicitly or it will helpfully
+  build the thing. The generalisation error is the lesson: an instruction
+  attached to one task is scoped to that task until he says otherwise.
 
 ## Plugins
 
