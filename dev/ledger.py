@@ -823,6 +823,8 @@ def sweep_text(text, commits, since, source, repo="."):
     cites, degraded = _resolved_cites(commits, bodies, repo)
     n, findings = sweep(text, commits, cites=cites)
     open_ids, landed_ids = watch.parse_ledger(text)
+    expected_body_ids = {int(tid) for tid in open_ids}
+    parsed_body_ids = set(bodies)
     where = f"since {since[:12]}" if since else "across the whole history"
     # #682: examined≠understood (#671 one layer deeper). The header carries the
     # id-bearing count (matched) beside the examined count, plus the dominant
@@ -837,6 +839,7 @@ def sweep_text(text, commits, since, source, repo="."):
     dom = shapes.most_common(1)[0][0] if shapes else "n/a"
     lines = [f"sweep: examined {n} commits {where} against "
              f"{len(open_ids)} open ids ({source}) "
+             f"/ {len(parsed_body_ids)} parsed body ids "
              f"({idbearing} id-bearing, {skipped} skipped, mostly {dom})"]
     if degraded:
         lines.append(
@@ -853,6 +856,18 @@ def sweep_text(text, commits, since, source, repo="."):
             f"sweep: DID NOT REVIEW — the ledger yielded no entries at all "
             f"(source: {source}), so no landing could be correlated. Nothing "
             f"was checked; this is not a clean result (#404, #671).")
+        return "\n".join(lines) + "\n"
+    missing_bodies = sorted(expected_body_ids - parsed_body_ids)
+    unexpected_bodies = sorted(parsed_body_ids - expected_body_ids)
+    if missing_bodies or unexpected_bodies:
+        missing = ", ".join(f"#{tid}" for tid in missing_bodies) or "none"
+        unexpected = (", ".join(f"#{tid}" for tid in unexpected_bodies)
+                      or "none")
+        lines.append(
+            "sweep: DID NOT REVIEW — open-id and body projections disagree: "
+            f"{len(missing_bodies)} open id(s) missing parsed bodies: {missing}; "
+            f"{len(unexpected_bodies)} unexpected parsed body id(s): "
+            f"{unexpected}. No landing verdict is reliable (#753).")
         return "\n".join(lines) + "\n"
     # #707: split findings by confidence class. verb(#N) is high confidence
     # (the verb carries landing intent); Merge/Fold and bare-#N are the

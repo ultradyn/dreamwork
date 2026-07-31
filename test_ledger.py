@@ -363,6 +363,37 @@ def test_sweep_subtracts_entries_that_cite_the_sha():
     assert 11 not in {tid for tid, _ in findings}
 
 
+def test_sweep_refuses_when_the_open_and_body_projections_disagree():
+    """#753: a second parser failure must not render as an all-clear."""
+    starved = """\
+# Task ledger
+
+## Open
+- **#1** — canonical entry · origin: **loop**
+column-zero prose starves #1's body here
+- **stage #2** — malformed head only ledger_entries accepts
+
+## Recently landed
+"""
+    open_ids, _ = watch.parse_ledger(starved)
+    body_ids = {
+        tid for ids, _body in ledger_entries(open_section_text(starved) or "")
+        for tid in ids
+    }
+    assert open_ids == {"1"} and body_ids == {1, 2}, (
+        "precondition: the independent readers must disagree for a non-heading "
+        "parser reason")
+
+    out = ledger.sweep_text(starved, [], "", "markdown")
+
+    assert "DID NOT REVIEW" in out, (
+        f"sweep reported a verdict despite disagreeing projections: {out!r}")
+    assert "1 unexpected parsed body id(s): #2" in out, (
+        f"the refusal must name the entry it cannot classify: {out!r}")
+    assert "nothing to review" not in out, (
+        f"projection blindness must not render like a clean sweep: {out!r}")
+
+
 # ---------------------------------------------------------------------------
 # #724 — a citation and a commit sha name the SAME object at different widths.
 # git's `%h` abbreviates at a length that GROWS with the repo, so a 7-char
