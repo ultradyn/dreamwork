@@ -94,8 +94,8 @@ ORIGIN_VALUES = ("human", "loop", "unknown")
 # callers that already read them here. `open_section_text` is the Open
 # slice two checks below once wrote out by hand.
 from ledger_parse import (ENTRY_HEAD, ENTRY_ID, ORIGIN_MARK, ledger_entries,
-                          open_section_text, source_of_truth, store_entries,
-                          store_ids_by_state, store_path)
+                          open_section_text, origin_marks, source_of_truth,
+                          store_entries, store_ids_by_state, store_path)
 # #592: the #458 shim is a `dreamwork-migration-notice`, and recognising one is
 # migration_notice.py's job — the worktree excuse below must not be spendable on
 # a tasks.md that merely happens to lack a header.
@@ -1050,6 +1050,31 @@ def check_priorities(watch, text: str) -> list[str]:
     return bad
 
 
+def _indent_body_continuations(entry_text: str) -> str:
+    """Indent non-blank column-0 lines after the head so the entry reparses.
+
+    `ledger_entries` ends an entry at the first column-0 line that is not a
+    head, and that rule is load-bearing (the prose under `## Recently landed`
+    is not entries and must never join one) — it is NOT widened here. But a
+    store body holds multi-paragraph prose and pasted output at column 0, and
+    fed to `ledger_entries` verbatim every such line ends the entry, so the
+    text after it is invisible to every text-consuming check (#696). This
+    projection step — applied only when `ledger_view` synthesises ledger text
+    from store rows — indents each non-blank continuation line (every line
+    after the head) with ONE leading space, so `ledger_entries` keeps it.
+
+    ONE space: `ledger_entries` admits any line whose first char is space/tab,
+    and one space cannot be read as a note (`  · `), a head (`ENTRY_HEAD` is
+    `^-`, anchored at column 0, so ` - **#N**` does not match), or a marker.
+    The stored body and its digest are untouched — this is a read-side act.
+    """
+    lines = entry_text.split("\n")
+    for i in range(1, len(lines)):
+        if lines[i] and lines[i][0] not in " \t":
+            lines[i] = " " + lines[i]
+    return "\n".join(lines)
+
+
 def ledger_view(dw: Path):
     """``(text, source)`` for every ledger-content check — the #294 dispatch.
 
@@ -1078,8 +1103,13 @@ def ledger_view(dw: Path):
             entries = store_entries(dw)
             open_ids, landed_ids = store_ids_by_state(dw)
             oset, lset = set(open_ids), set(landed_ids)
-            open_bodies = [b for ids, b in entries if str(ids[0]) in oset]
-            landed_bodies = [b for ids, b in entries if str(ids[0]) in lset]
+            # #696: indent column-0 body continuation lines so ledger_entries
+            # keeps multi-paragraph prose and pasted output instead of ending
+            # the entry at the first column-0 line (silently losing the text).
+            open_bodies = [_indent_body_continuations(b)
+                           for ids, b in entries if str(ids[0]) in oset]
+            landed_bodies = [_indent_body_continuations(b)
+                             for ids, b in entries if str(ids[0]) in lset]
             text = ("## Open\n\n" + "\n\n".join(open_bodies)
                     + "\n\n## Recently landed\n\n"
                     + "\n\n".join(landed_bodies) + "\n")
@@ -1685,7 +1715,11 @@ def check_task_origins(text: str, rep: Report) -> None:
             continue
         checked += 1
         name = "/".join(f"#{i}" for i in ids)
-        marks = [v.strip() for v in ORIGIN_MARK.findall(body)]
+        # Head-authoritative (#696): body prose that quotes `origin: **x**`
+        # must not double the head's claim now that the projection makes
+        # body continuation lines visible. ORIGIN_MARK is still imported for
+        # the callers that read it from lint's namespace.
+        marks = origin_marks(body)
         if not marks:
             errors += 1
             rep.add(
