@@ -35,6 +35,8 @@ USAGE
   python3 dev/ledger.py fold <id> --note <text> [--ledger PATH] [--dry-run]
   python3 dev/ledger.py file <title> [--note <text>] [--priority P] [--type T] [--origin O] [--ledger PATH] [--dry-run]
   python3 dev/ledger.py note <id> --note <text> [--ledger PATH] [--dry-run]
+  python3 dev/ledger.py reprioritise <id> <band> --why <text> [--ledger PATH]
+  python3 dev/ledger.py unblock <id> --why <text> [--ledger PATH]
   python3 dev/ledger.py sweep [--since REF] [--ledger PATH] [--repo PATH]
   python3 dev/ledger.py list [--state open|landed] [--sort id|id-desc] [--json] [--ledger PATH]
   python3 dev/ledger.py get <id> [--ledger PATH]
@@ -452,6 +454,52 @@ def _note_store(dw_dir, task_id, note):
     finally:
         store.close()
     sys.stdout.write(f"noted #{task_id} (store)\n")
+
+
+def _reprioritise_store(dw_dir, task_id, band, why):
+    """Store-mode reprioritise: reprioritise_task (band change, note + event).
+
+    #627 — a task's band was fixed at birth (--priority only on file); this is
+    the one supported way to change it. Surfaces WriteError as one-line stderr +
+    exit 2 (bad band, #681 convention) and TaskNotFound as exit 1 (the #497
+    "no such id" contract), matching the existing error shapes.
+    """
+    store = ledger_store.open_store(store_path(dw_dir))
+    try:
+        ledger_write.reprioritise_task(store, task_id, band, why=why)
+    except ledger_write.TaskNotFound as exc:
+        sys.stderr.write(f"ledger: {exc}\n")
+        return 1
+    except ledger_write.WriteError as exc:
+        sys.stderr.write(f"ledger: {exc}\n")
+        return 2
+    finally:
+        store.close()
+    sys.stdout.write(f"reprioritised #{task_id} to {band} (store)\n")
+    return 0
+
+
+def _unblock_store(dw_dir, task_id, why):
+    """Store-mode unblock: unblock_task (clear blocked_on, note + event).
+
+    #627 — there was no verb to clear a stale blocked_on; a task blocked on
+    nothing is invisible to selection (#590). Surfaces NotBlocked and
+    TaskNotFound as exit 1 (operation does not apply) and WriteError (empty
+    why) as exit 2.
+    """
+    store = ledger_store.open_store(store_path(dw_dir))
+    try:
+        ledger_write.unblock_task(store, task_id, why=why)
+    except (ledger_write.TaskNotFound, ledger_write.NotBlocked) as exc:
+        sys.stderr.write(f"ledger: {exc}\n")
+        return 1
+    except ledger_write.WriteError as exc:
+        sys.stderr.write(f"ledger: {exc}\n")
+        return 2
+    finally:
+        store.close()
+    sys.stdout.write(f"unblocked #{task_id} (store)\n")
+    return 0
 
 
 def file_text(text, title, note, priority, type, origin):
@@ -1541,6 +1589,29 @@ def main(argv=None):
     pn.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
     pn.add_argument("--dry-run", action="store_true", help="print the result; do not write")
 
+    # #627 — reprioritise / unblock: the writers for priority and blocked_on.
+    # --why is REQUIRED (not optional, not decoration): the reason lands in the
+    # task's own history the way fold's note does. Making it optional "for
+    # convenience" removes the thing that makes the verb safe.
+    prep = sub.add_parser(
+        "reprioritise",
+        help="change a task's priority band, recording why (store-mode only) [#627]")
+    prep.add_argument("id", type=int, help="the task id to reprioritise")
+    prep.add_argument("band", help="the new priority band (P0-P3, validated live)")
+    prep.add_argument("--why", required=True,
+                      help="the reason — recorded in the task's history (NOT optional)")
+    prep.add_argument("--ledger", default=LEDGER_DEFAULT,
+                      help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
+    punb = sub.add_parser(
+        "unblock",
+        help="clear a task's stale blocked_on, recording why (store-mode only) [#627]")
+    punb.add_argument("id", type=int, help="the task id to unblock")
+    punb.add_argument("--why", required=True,
+                      help="the reason — recorded in the task's history (NOT optional)")
+    punb.add_argument("--ledger", default=LEDGER_DEFAULT,
+                      help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
     ps = sub.add_parser(
         "sweep",
         help="open ids git names a landing for that the entry does not cite "
@@ -1779,10 +1850,21 @@ def _dispatch(args):
     if args.cmd == "groom":
         return _verb_groom(dw_dir)
 
+    # #627 — reprioritise / unblock are store-mode only (priority/blocked_on
+    # are store columns, not markdown text — the same reasoning groom uses).
+    # Refuse markdown with a named reason rather than inventing a text rewrite
+    # that would be a new #440-class parser risk.
+    if args.cmd in ("reprioritise", "unblock") and source_of_truth(dw_dir) != "store":
+        sys.stderr.write(
+            f"ledger: {args.cmd} is store-mode only — priority/blocked_on are "
+            f"store columns, not markdown text; the store is the source of "
+            f"truth after the #294 cutover\n")
+        return 1
+
     # #294 inc 9: write verbs (fold, file, note) dispatch on source_of_truth.
     # Store mode → the store write verbs; markdown mode → today's text path.
     # `counts` (inc 7) is a read consumer and dispatches below.
-    if args.cmd in ("fold", "file", "note") and source_of_truth(dw_dir) == "store":
+    if args.cmd in ("fold", "file", "note", "reprioritise", "unblock") and source_of_truth(dw_dir) == "store":
         if args.cmd == "fold":
             _fold_store(dw_dir, args.id, args.note)
             sys.stdout.write(_reach_trailer(args.repo, dw_dir))
@@ -1790,6 +1872,10 @@ def _dispatch(args):
         if args.cmd == "note":
             _note_store(dw_dir, args.id, args.note)
             return 0
+        if args.cmd == "reprioritise":
+            return _reprioritise_store(dw_dir, args.id, args.band, args.why)
+        if args.cmd == "unblock":
+            return _unblock_store(dw_dir, args.id, args.why)
         # #681 — _file_store returns the exit code: 0 on success, 2 on a bad
         # enum (priority/origin), surfaced as stderr not a sqlite traceback.
         return _file_store(dw_dir, args.title, args.note or args.title,
