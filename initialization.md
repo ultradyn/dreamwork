@@ -105,18 +105,38 @@ read, initialization has already happened; return to the loop.
    micro-protocol, and — because monitor text survives compaction while
    conversation context may not — a self-recovery clause:
 
-   `Monitor command="heartbeat 4.75m 'dream tick (ud-dreamwork): run the tick flow; keep the task list truthful; reflect — reload the ud-dreamwork skill if this means nothing to you'" triggerTurn=true persistent=true`
+   `Monitor command="heartbeat 4.75m 'dream tick (ud-dreamwork): run the tick flow; keep the task list truthful; reflect — reload the ud-dreamwork skill if this means nothing to you' | python3 <skill-dir>/tick_line.py --target <target>" triggerTurn=true persistent=true`
 
    No regex filter. (Same mechanism as the heartbeat-monitor skill.)
 
+   **The pipe is #673 and it is not optional.** `heartbeat` takes its
+   message as a positional string ONCE, at monitor setup, and reprints
+   those bytes forever — so on its own the tick says what to do and
+   nothing about the state the loop is in. `tick_line.py` reads each
+   pulse and appends the resolved posture, the subagent-policy pointer,
+   the open count and the fleet counts, so the reminder arrives whether
+   or not a compaction has left the coordinator holding the habit. It
+   appends and never rewrites, so the pulse above still reaches you
+   verbatim if anything downstream of it is wrong.
+
+   `heartbeat` itself is untouched by this — it is a shared CLI used by
+   other projects and must not learn this loop's posture files. The
+   scheduler stays there; the text is generated here.
+
    If the `heartbeat` CLI is absent, use the vendored port —
    `python3 <skill-dir>/heartbeat.py 4.75m '<same message>'` — which
-   takes the same arguments and needs nothing but Python. Only if that
-   is somehow unavailable, fall back to
+   takes the same arguments and needs nothing but Python; keep the same
+   `| python3 <skill-dir>/tick_line.py --target <target>` on the end.
+   Only if that is somehow unavailable, fall back to
    `while true; do echo '<same message>'; sleep 285; done`, and know
    what you are giving up: the shell loop cannot align to the wall
    clock, so an `@`-style interval silently becomes "every N from
    whenever this started". That degradation is why the port exists.
+
+   Dropping the `tick_line.py` stage is a silent downgrade, not a
+   simplification: the tick keeps firing and looks entirely normal while
+   the posture reminder is gone. If you must diagnose without it, say so
+   out loud rather than leaving a bare heartbeat armed.
 
    Arm exactly one. Already armed = tick notifications are arriving in
    this session (or you armed one and haven't stopped it) — never arm a

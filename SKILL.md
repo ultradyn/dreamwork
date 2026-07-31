@@ -196,6 +196,24 @@ exactly: *"agents drifting back into implementing themselves or not using
 subagents where they could otherwise."* A manual refresh button was
 considered and rejected — the reminder belongs to the tick, not to him.
 
+**And since #673 the tick line carries it, so the restatement no longer
+depends on remembering to make it.** `tick_line.py` sits downstream of
+`heartbeat` in the monitor command (`initialization.md` step 5) and appends
+the resolved axes, the open count and the fleet counts to every pulse. Read
+it as a *measurement*, not as a reminder to comply: it prints what the fleet
+IS (`lanes N recorded · runners opus 5, ccc 1 · M ccc-live`) beside what the
+posture SAYS, because a rule you believe you are already following is not
+checkable and a count is. Still do the restatement — the line feeds it, it
+does not replace it.
+
+Two things it deliberately does NOT do. It never renders an unqualified
+fleet size: `live_lanes` probes `pgrep -af ccc`, so Agent-tool lanes are
+structurally invisible to it, and every count therefore names how it was
+obtained (`recorded` = your `status.json` bookkeeping, `ccc-live` = the OS).
+Where they disagree, that gap is the finding — see `#675`. And it never
+issues a verdict: zero lanes minutes after a merge is normal, so a flag that
+fired most of the time would just train you to skip the line.
+
 **The journal drains on EVERY tick, whatever the delivery mode** (#342,
 #501, #528). The E3 cutover journals a receipt for every write route in
 BOTH modes — instant mode only adds the wake line on top, it never
