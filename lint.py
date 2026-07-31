@@ -4965,10 +4965,10 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
     # hand-off is pending AND its task is still open (i.e. awaiting merge),
     # the branch it names should not be behind master: `git rev-list --count
     # <sha>..master` non-zero → WARN naming the sha and the count. A count is a
-    # question, not a verdict (#590): behind-ness is expected for a lane still
-    # working, which is why the pending-and-open anchor is the right scope and a
-    # not-yet-merged row is the only one this fires on (hazard 1/4 — measured 0
-    # such rows on today's file, so no wall).
+    # question, not a verdict (lessons.md:3302; applied by #676): behind-ness
+    # is expected for a lane still working, which is why the pending-and-open
+    # anchor is the right scope and a not-yet-merged row is the only one this
+    # fires on (hazard 1/4 — measured 0 such rows on today's file, so no wall).
     #
     # WARN not ERROR (hazard 2): a lane that deliberately did not rebase
     # because the rebase was genuinely hard, and handed back the analysis

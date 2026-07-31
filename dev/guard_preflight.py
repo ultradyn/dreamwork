@@ -132,7 +132,7 @@ def count_lanes(target: Path | None = None) -> int | None:
     if t is None:
         return None
     try:
-        return status_sync.live_lane_count(t)  # #440: accessor, not a unpack
+        return status_sync.live_lane_count(t)  # #728: accessor, not an unpack
     except OSError:
         # /proc unreadable on this host — a legitimate unknown (#136).
         return None

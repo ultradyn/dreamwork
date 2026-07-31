@@ -251,8 +251,9 @@ def _prepend_at_top_of_landed(landed_lines, moved):
 # 252   but the pattern could not parse it — 1697 commits naming an id in a
 # form sweep could not attribute (#671). The pattern is widened below to
 # match the forms the repo actually writes; the report carries the verb and
-# splits the widened matches into a lower-confidence class (#590: a naming
-# is a question, not a verdict; #136: "named" must not read as "landed").
+# splits the widened matches into a lower-confidence class (#707: the widened
+# form names but does not prove a landing; #136: "named" must not read as
+# "landed").
 #
 # This is the discovery twin of `lint.check_landed_still_open` (#323), not a
 # second implementation: the correlation rule (git names a commit the entry
@@ -274,7 +275,7 @@ def _prepend_at_top_of_landed(landed_lines, moved):
 # this loop records) and the bare lane `#N:` — both measured MISSED by #671
 # (1697 unattributable commits). Each alternative has its own capture group
 # so `_subject_class` can tell the high-confidence verb form from the
-# lower-confidence widened forms and the report can split them (#590).
+# lower-confidence widened forms and the report can split them (#707).
 SWEEP_SUBJECT = re.compile(
     r"^(?:(?:merge|fix|feat|close|perf|refactor|guard|docs|test|design)"
     r"\((#\d+(?:,#\d+)*)\)"          # g1: verb(#N) — high confidence
@@ -855,8 +856,8 @@ def sweep_text(text, commits, since, source, repo="."):
         return "\n".join(lines) + "\n"
     # #707: split findings by confidence class. verb(#N) is high confidence
     # (the verb carries landing intent); Merge/Fold and bare-#N are the
-    # widened forms — "named" but not "landed" (#590: a naming is a question,
-    # never a verdict). The summary says "names", not "names a landing for",
+    # widened forms — "named" but not "landed" (#707: the report says "names",
+    # never "lands"). The summary says "names", not "names a landing for",
     # because sweep can only know an id was NAMED — whether the naming is a
     # landing is the reader's judgement (#136: "named" must not read as
     # "landed"; a `docs(#691)` names #691 but lands nothing). A reader who
@@ -886,7 +887,7 @@ def sweep_text(text, commits, since, source, repo="."):
             lines.append(
                 f"sweep: {len(widened_rows)} more named in widened form "
                 f"(Merge/#N/wip — lower confidence, likely folded, "
-                f"ambiguous, or kill-recovery; #590)")
+                f"ambiguous, or kill-recovery; #707)")
     return "\n".join(lines) + "\n"
 
 
@@ -897,14 +898,15 @@ def sweep_text(text, commits, since, source, repo="."):
 # landed with an id in the subject line — which is most work, because the
 # commit convention puts it there by construction. A branch that was folded
 # but never merged has no such commit on master to examine: it is invisible
-# to sweep BY CONSTRUCTION, not by oversight (#590 is the measured instance).
+# to sweep BY CONSTRUCTION, not by oversight (lessons.md:3302 is the measured
+# instance).
 # `reach` is the sibling: for every local branch, `git cherry <base> <branch>`
 # separates patch-id-equivalent commits (`-`, already on base) from
 # genuinely-absent ones (`+`), which is the distinction a raw
-# `rev-list --count` cannot make (#576). These two checks are NOT redundant
-# and neither can replace the other.
+# `rev-list --count` cannot make (lessons.md:3302; applied by #676). These two
+# checks are NOT redundant and neither can replace the other.
 #
-# #590's rule, carried verbatim: a non-zero count is a QUESTION, never a
+# lessons.md:3302, carried verbatim: a non-zero count is a QUESTION, never a
 # verdict. Live work, cherry-picked content, and a real gap all produce
 # non-zero; conflating them is how an audit becomes noise that gets turned
 # off. So a `+` is a question and a `-` is strong evidence — and the output
@@ -967,7 +969,7 @@ def reach(branch_marks, live=None):
             continue
         # A collapsed group is live if the survivor OR any alias is live.
         # Suppressing by the lane-* name would miss an alias whose survivor
-        # died; the discriminator is liveness, never the name (#715, #590).
+        # died; the discriminator is liveness, never the name (#715).
         if {branch, *aliases} & live_set:
             n_live_suppressed += 1
             continue
@@ -1013,7 +1015,7 @@ def reach_text(branch_marks, base, live=None):
     if rows:
         lines.append(
             f"reach: {len(rows)} branch(es) may carry work not on {base} — "
-            f"a + is a question, not a verdict (#590, #676)")
+            f"a + is a question, not a verdict (lessons.md:3302; #676)")
     elif n_live:
         lines.append(
             f"reach: nothing to triage — {n_live} live lane(s) suppressed")
