@@ -54,6 +54,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -271,6 +272,234 @@ def resolve_target(target, *, now=None, projects_root=None,
     return resolve(session_id_from_status(target), projects_root,
                    now=now, expected_session_id=expected_session_id,
                    stale_after=stale_after)
+
+
+# ────────────────────────────────────────────────────────────────────────
+# #631 increment 5 — the switcher catalogue (server-derived, still dark)
+# ────────────────────────────────────────────────────────────────────────
+#
+# `resolve`/`resolve_target` answer "which transcript IS the agent?" for one
+# RECORDED id. The catalogue answers the switcher's question: "which sessions
+# EXIST here, so a human can pick one?" It is server-derived end to end — the
+# browser never supplies a path; it names an opaque id the server resolves back
+# through `resolve`. The catalogue carries NO absolute path for exactly that
+# reason: a path the wire exposes is a directory-traversal primitive against
+# real conversation content.
+#
+# Identity stays with the recorded `agent_session` (#613 §6 ruling): the
+# catalogue only MARKS which entry matches the recorded id. Newest-mtime is
+# never promoted to identity — it is right almost all the time, which is what
+# makes it dangerous, and the recorded id is the one self-reported truth.
+
+# The slug is the projects-subdir name for a working directory. Measured against
+# the real `~/.claude-p/projects/`: BOTH '/' and '.' map to '-' (§2 says only
+# '/', but `.llm-general` slugs to `--llm-general`, so the '.' is in the rule).
+_UUID_RE = re.compile(
+    r"\A[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z")
+
+# The one measured client for this projects root. The design's closed set is
+# seeded; a second client's root would arrive as a different projects_root.
+CATALOGUE_CLIENT = "claude-code"
+
+
+def _slug_for(cwd) -> str:
+    """The projects-subdir name for a working directory (`/` and `.` → `-`).
+
+    Measured against the real root: `/home/x/.llm-general/r` slugs to
+    `-home-x--llm-general-r`. The slug is computed server-side from the target
+    the caller already trusts, never from a value the browser sends.
+    """
+    return str(Path(cwd)).replace("/", "-").replace(".", "-")
+
+
+def _session_uuid(name: str) -> str | None:
+    """The uuid stem iff `name` is EXACTLY `<uuid>.jsonl`, else None.
+
+    Strict full-string match: a uuid prefix followed by anything, a uuid with
+    an embedded separator, an upper-case extension, or any non-hex char reds
+    to None. A loose `endswith('.jsonl')` check admits traversal-shaped names a
+    strict check rejects, and the wire id is the file-selecting handle — so the
+    name gate is load-bearing.
+    """
+    p = Path(name)
+    if p.suffix != ".jsonl":
+        return None
+    return p.stem if _UUID_RE.match(p.stem) else None
+
+
+def _confined_to_root(path: Path, real_root: Path) -> bool:
+    """True iff `path`'s resolved real location is at or under `real_root`.
+
+    Links are RESOLVED FIRST, then confined — the order is the bug. A symlink
+    whose NAME is a clean uuid but whose TARGET leaves the root (e.g. it points
+    at `/etc/passwd`) resolves outside root and is rejected here; confining the
+    name first and resolving after would admit it. `real_root` is itself
+    resolved, so a symlinked projects root (§2: `projects` → `~/.claude-shared/
+    projects`) is handled consistently in real-path space.
+    """
+    try:
+        path.resolve(strict=False).relative_to(real_root)
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def _target_slug_dirs(target, projects_root) -> list[tuple[str, Path]]:
+    """The (slug, path) directories to search for `target`.
+
+    The target's own slug plus every worktree slug under `<target>/.worktrees/*`
+    — a session relocates to a worktree slug (#698), so the switcher must list
+    those too. Only existing dirs are returned by the caller; a missing dir
+    contributes nothing.
+    """
+    base = Path(projects_root)
+    dirs = []
+    main_slug = _slug_for(target)
+    dirs.append((main_slug, base / main_slug))
+    wt_root = Path(target) / ".worktrees"
+    if wt_root.is_dir():
+        for wt in sorted(wt_root.iterdir()):
+            if wt.is_dir() and not wt.is_symlink():
+                ws = _slug_for(wt)
+                dirs.append((ws, base / ws))
+    return dirs
+
+
+@dataclass
+class CatalogEntry:
+    """One discovered session in the switcher catalogue.
+
+    CARRIES NO PATH (#631 i5 confinement): `session_id` is the only handle a
+    consumer may use to select this source; the server resolves it back through
+    `resolve()`, never trusting a path the browser could choose. Adding a path
+    field here is the injection the confinement assertion reds on.
+
+    `live` is a claim at scan time (`now`): `last_record_at` was within
+    `stale_after` of `now` when the catalogue was built. It goes stale as `now`
+    advances — carrying `last_record_at` and `age_seconds` lets a consumer
+    re-judge without rescanning, but the file may have grown since (#765 shape:
+    a recorded hold keeps reading current after its condition expires).
+
+    `active` is True ONLY where `session_id` equals the recorded
+    `agent_session` id. Newest-mtime is never promoted to active.
+    """
+
+    session_id: str
+    slug: str
+    client: str
+    size: int
+    mtime: float
+    last_record_at: datetime | None
+    age_seconds: float | None
+    live: bool
+    active: bool
+    detail: str
+
+    @property
+    def ok(self) -> bool:
+        """True for an entry a consumer may open (always, once resolved)."""
+        return True
+
+
+@dataclass
+class CatalogResult:
+    """The switcher catalogue for one target.
+
+    `status` distinguishes a MEASURED root (possibly empty) from one the
+    resolver could NOT measure: an empty catalogue over an empty root and an
+    empty catalogue over a missing/unreadable root are different facts that
+    must not render identically (#136, #671).
+    """
+
+    status: str  # "ok" | "unmeasured"
+    detail: str
+    entries: list  # list[CatalogEntry]
+    active_id: str | None  # the recorded agent_session id, if any
+
+    @property
+    def ok(self) -> bool:
+        """True for a measured root — entries may still be empty."""
+        return self.status == "ok"
+
+
+def catalogue(target, *, projects_root=None, now=None, active_id=None,
+              stale_after=DEFAULT_STALE_AFTER) -> CatalogResult:
+    """Discover every session transcript for `target` and return the catalogue.
+
+    Strict-UUID JSONL discovery under the measured client root, classified to
+    the target's cwd slug(s), with mtime/size/liveness metadata. No entry
+    carries a path; `active_id` (the recorded `agent_session` id) marks the one
+    active entry — newest-mtime is never promoted.
+
+    `active_id` is taken explicitly (the recorded id) rather than re-read here,
+    so the identity decision stays with `session_id_from_status` and this
+    function stays about discovery. A None `active_id` means no recorded
+    session, so no entry is marked active.
+    """
+    now = now if now is not None else datetime.now(timezone.utc)
+    if projects_root is None:
+        projects_root = _default_projects_root()
+    if projects_root is None or not Path(projects_root).is_dir():
+        return CatalogResult(
+            status="unmeasured",
+            detail=("no client projects root to catalogue for %s "
+                    "(CLAUDE_CONFIG_DIR unset or not a directory); an empty "
+                    "catalogue over a root that could not be measured is a "
+                    "different finding from one over an empty measured root"
+                    % target),
+            entries=[], active_id=active_id)
+
+    real_root = Path(projects_root).resolve(strict=False)
+    entries: list[CatalogEntry] = []
+    dropped = 0
+    searched = 0
+    for slug_name, slug_path in _target_slug_dirs(target, projects_root):
+        if not slug_path.is_dir():
+            continue
+        for cand in sorted(slug_path.iterdir()):
+            uid = _session_uuid(cand.name)
+            if uid is None:
+                continue  # non-uuid name, a subdir, chrome — not a session
+            if not cand.is_file():
+                continue  # a directory named like a uuid (subagent container)
+            searched += 1
+            if not _confined_to_root(cand, real_root):
+                dropped += 1  # symlink escape; silently filtered, counted below
+                continue
+            st = cand.stat()
+            last = _last_timestamp(cand)
+            age = (now - last).total_seconds() if last is not None else None
+            live = last is not None and age <= stale_after
+            entries.append(CatalogEntry(
+                session_id=uid,
+                slug=slug_name,
+                client=CATALOGUE_CLIENT,
+                size=st.st_size,
+                mtime=st.st_mtime,
+                last_record_at=last,
+                age_seconds=age,
+                live=live,
+                active=(active_id is not None and uid == active_id),
+                detail=("%s · %s · last record %s%s" % (
+                    uid, slug_name,
+                    last.isoformat() if last else "none",
+                    (" (%.0f min ago, live)" % (age / 60)) if live else (
+                        (" (%.0f min ago, stale)" % (age / 60))
+                        if age is not None else " (no timestamp)"))),
+            ))
+
+    entries.sort(key=lambda e: (e.slug, e.session_id))
+    detail = ("catalogued %d session(s) under %d slug(s) for %s%s%s"
+              % (len(entries),
+                 len({e.slug for e in entries}) if entries else 0,
+                 target,
+                 ("; active=%s" % active_id) if active_id else
+                 "; no recorded active session",
+                 ("; dropped %d name-matched file(s) that escaped the root "
+                  "via symlink" % dropped) if dropped else ""))
+    return CatalogResult(status="ok", detail=detail, entries=entries,
+                         active_id=active_id)
 
 
 def main(argv: list[str] | None = None) -> int:

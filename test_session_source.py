@@ -300,3 +300,303 @@ class TestResolveTarget:
             json.dumps({"agent_session": {"session_id": LIVE_ID}}) + "\n")
         r = session_source.resolve_target(tmp_path, now=NOW, projects_root=root)
         assert r.status == "live"
+
+
+# ── #631 increment 5: the server-derived session catalogue ──────────────
+
+# A second measured id, distinct from LIVE_ID/STALE_ID, so the active-vs-newest
+# injection has two genuine candidates to confuse.
+OTHER_ID = "11111111-2222-3333-4444-555555555555"
+UUID_A = "aaaaaaaa-0000-0000-0000-000000000001"
+UUID_B = "bbbbbbbb-0000-0000-0000-000000000002"
+
+
+def _slug(target) -> str:
+    """The production slug for a target, so fixtures name dirs the way the
+    catalogue searches them (self-consistent, never a hand-guessed literal)."""
+    return session_source._slug_for(target)
+
+
+def _cat_target(tmp_path: Path, *, worktrees=()):
+    """A target dir under tmp_path, optionally with `.worktrees/<name>` dirs.
+
+    Returns (target, projects_root). Caller populates slug dirs under root.
+    """
+    target = tmp_path / "target"
+    target.mkdir()
+    for wt in worktrees:
+        (target / ".worktrees" / wt).mkdir(parents=True)
+    root = tmp_path / "projects"
+    root.mkdir()
+    return target, root
+
+
+class TestCatalogueDiscovery:
+    """`catalogue` discovers strictly-named uuid jsonl under the target's cwd
+    slug(s) and nothing else. Production line: `_target_slug_dirs` +
+    `_session_uuid` inside `catalogue`."""
+
+    def test_the_slug_rule_matches_the_measured_root_independently(self):
+        # Direction-2 guard: every discovery test names its fixture dir via
+        # `_slug(target)`, so a WRONG slug rule is self-consistent between test
+        # and impl and the tests pass anyway. This pins the measured rule
+        # (`/` and `.` → `-`, verified against ~/.claude-p/projects) by a
+        # literal the production function must reproduce — independent of the
+        # function it checks.
+        assert session_source._slug_for(
+            "/home/x/.llm-general/skills/ud-dreamwork") == (
+            "-home-x--llm-general-skills-ud-dreamwork")
+
+    def test_finds_sessions_under_the_target_slug(self, tmp_path):
+        target, root = _cat_target(tmp_path)
+        slug = _slug(target)
+        _write_transcript(root / slug / f"{LIVE_ID}.jsonl",
+                          [{"type": "user", "timestamp": _ts(2)}])
+        _write_transcript(root / slug / f"{OTHER_ID}.jsonl",
+                          [{"type": "user", "timestamp": _ts(3)}])
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        assert res.status == "ok"
+        # Precondition derived at runtime: discovery found what the fixture put
+        # there, so assertions on entries are not vacuous (#136/#671).
+        assert res.entries, "precondition: fixture populated but empty catalogue"
+        ids = {e.session_id for e in res.entries}
+        assert ids == {LIVE_ID, OTHER_ID}
+
+    def test_finds_sessions_across_two_cwd_slugs_target_and_worktree(
+            self, tmp_path):
+        # production line: `_target_slug_dirs` adding the worktree slug.
+        target, root = _cat_target(tmp_path, worktrees=["lane-x"])
+        main_slug = _slug(target)
+        wt_slug = _slug(target / ".worktrees" / "lane-x")
+        _write_transcript(root / main_slug / f"{UUID_A}.jsonl",
+                          [{"type": "user", "timestamp": _ts(2)}])
+        _write_transcript(root / wt_slug / f"{UUID_B}.jsonl",
+                          [{"type": "user", "timestamp": _ts(2)}])
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        assert res.entries  # precondition
+        by_slug = {e.slug: e.session_id for e in res.entries}
+        assert by_slug == {main_slug: UUID_A, wt_slug: UUID_B}
+
+    def test_a_target_with_no_sessions_is_ok_but_empty(self, tmp_path):
+        target, root = _cat_target(tmp_path)
+        (root / _slug(target)).mkdir()  # slug dir exists, holds no sessions
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        assert res.status == "ok"
+        assert res.entries == []
+
+    def test_an_unrelated_targets_sessions_are_not_listed(self, tmp_path):
+        # A different target's slug dir must not bleed into this target's list.
+        target, root = _cat_target(tmp_path)
+        other = tmp_path / "other-target"
+        other.mkdir()
+        _write_transcript(root / _slug(other) / f"{UUID_A}.jsonl",
+                          [{"type": "user", "timestamp": _ts(2)}])
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        assert res.status == "ok"
+        assert res.entries == []  # the other target's session is not ours
+
+
+class TestCatalogueStrictUuidRejection:
+    """Direction 2: names a loose `endswith('.jsonl')` check admits but a strict
+    full-string uuid check rejects. The wire id selects the file, so a name the
+    filter passes is a name the server may open. Production line:
+    `_session_uuid`."""
+
+    @pytest.mark.parametrize("bad_name", [
+        "550e8400-e29b-41d4-a716-446655440000-evil.jsonl",  # uuid prefix + tail
+        "evil-550e8400-e29b-41d4-a716-446655440000.jsonl",  # head + uuid
+        "550e8400-e29b-41d4-a716-446655440000.JSONL",        # wrong case ext
+        "not-a-uuid.jsonl",                                   # non-uuid stem
+        "memory",                                             # a chrome dir name
+        "..jsonl",                                            # traversal-shaped
+    ])
+    def test_a_loose_name_is_not_listed(self, tmp_path, bad_name):
+        target, root = _cat_target(tmp_path)
+        slug = _slug(target)
+        (root / slug).mkdir(exist_ok=True)
+        p = root / slug / bad_name
+        if "." not in bad_name or bad_name.endswith(".jsonl"):
+            p.write_text('{"type": "user"}\n')
+        else:
+            p.mkdir()
+        # one clean session so the precondition (non-empty catalogue) holds and
+        # we are asserting the BAD name is absent, not that everything is.
+        _write_transcript(root / slug / f"{UUID_A}.jsonl",
+                          [{"type": "user", "timestamp": _ts(2)}])
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        assert res.entries  # precondition
+        ids = {e.session_id for e in res.entries}
+        assert UUID_A in ids
+        # No entry's id is derived from the adversarial name — the loose name
+        # produced no entry at all.
+        assert all(e.session_id == UUID_A for e in res.entries)
+
+
+class TestCatalogueSymlinkConfinement:
+    """Confinement: links resolved FIRST, then confined. A symlink whose NAME is
+    a clean uuid but whose TARGET leaves the root must be dropped; confining the
+    name first and resolving after admits it. Production line:
+    `_confined_to_root` (resolve-before-confine order)."""
+
+    def test_a_symlinked_projects_root_is_catalogued(self, tmp_path):
+        # #698: the real projects root is itself a symlink. Discovery must
+        # follow it (the find-without-L trap), and confinement must still hold.
+        real = tmp_path / "real-projects"
+        target = tmp_path / "target"
+        target.mkdir()
+        slug = _slug(target)
+        _write_transcript(real / slug / f"{LIVE_ID}.jsonl",
+                          [{"type": "user", "timestamp": _ts(2)}])
+        link = tmp_path / "link-projects"
+        os.symlink(real, link)
+        res = session_source.catalogue(target, projects_root=link, now=NOW)
+        assert res.entries  # precondition
+        assert res.entries[0].session_id == LIVE_ID
+
+    def test_a_clean_named_symlink_pointing_outside_root_is_dropped(
+            self, tmp_path):
+        # The NAME is a valid uuid; the target is a file OUTSIDE the root. This
+        # is the directory-traversal primitive the confinement gate exists for.
+        target, root = _cat_target(tmp_path)
+        slug = _slug(target)
+        (root / slug).mkdir(parents=True, exist_ok=True)
+        secret = tmp_path / "secret-outside-root"
+        secret.write_text("SENSITIVE")
+        os.symlink(secret, root / slug / f"{OTHER_ID}.jsonl")
+        _write_transcript(root / slug / f"{UUID_A}.jsonl",
+                          [{"type": "user", "timestamp": _ts(2)}])
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        assert res.entries  # precondition
+        ids = {e.session_id for e in res.entries}
+        assert UUID_A in ids
+        assert OTHER_ID not in ids  # the escape was dropped, not opened
+        assert "dropped" in res.detail  # the filter is reported, not silent
+
+
+class TestCatalogueEmptyVsUnmeasured:
+    """#136/#671: an empty catalogue over an EMPTY root and one over a root the
+    resolver FAILED to measure are different facts that must not render
+    identically. Production line: the `projects_root is None / not is_dir`
+    branch returning `unmeasured`."""
+
+    def test_an_empty_measured_root_is_ok(self, tmp_path):
+        target, root = _cat_target(tmp_path)
+        (root / _slug(target)).mkdir()
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        assert res.status == "ok"
+        assert res.entries == []
+
+    def test_a_missing_root_is_unmeasured(self, tmp_path):
+        target = tmp_path / "target"
+        target.mkdir()
+        res = session_source.catalogue(
+            target, projects_root=tmp_path / "does-not-exist", now=NOW)
+        assert res.status == "unmeasured"
+        assert res.entries == []
+
+    def test_the_two_findings_render_differently(self, tmp_path):
+        # The load-bearing #136 assertion: distinct nothings stay distinct.
+        target = tmp_path / "target"
+        target.mkdir()
+        empty_root = tmp_path / "projects"
+        (empty_root / _slug(target)).mkdir(parents=True)
+        ok = session_source.catalogue(target, projects_root=empty_root, now=NOW)
+        unmeasured = session_source.catalogue(
+            target, projects_root=tmp_path / "nope", now=NOW)
+        assert ok.status != unmeasured.status
+        assert "could not be measured" in unmeasured.detail
+        assert "could not be measured" not in ok.detail
+
+
+class TestCatalogueActiveIdentity:
+    """The recorded `agent_session` is the ONLY active identity; newest-mtime is
+    never promoted. Production line: the `active=(uid == active_id)` assignment
+    in `catalogue`."""
+
+    def test_the_recorded_id_is_marked_active_even_when_older(self, tmp_path):
+        # Two live sessions. The RECORDED id is the OLDER one (earlier mtime).
+        # Active must follow the id, not the mtime.
+        target, root = _cat_target(tmp_path)
+        slug = _slug(target)
+        older = root / slug / f"{UUID_A}.jsonl"
+        newer = root / slug / f"{UUID_B}.jsonl"
+        _write_transcript(older, [{"type": "user", "timestamp": _ts(5)}])
+        _write_transcript(newer, [{"type": "user", "timestamp": _ts(2)}])
+        # Pin mtimes so 'newest mtime' is unambiguous and genuinely UUID_B.
+        old_mt = NOW.timestamp() - 600
+        new_mt = NOW.timestamp() - 60
+        os.utime(older, (old_mt, old_mt))
+        os.utime(newer, (new_mt, new_mt))
+        res = session_source.catalogue(
+            target, projects_root=root, now=NOW, active_id=UUID_A)
+        assert len(res.entries) == 2  # precondition: both candidates present
+        by_id = {e.session_id: e for e in res.entries}
+        assert by_id[UUID_A].active is True   # recorded id wins
+        assert by_id[UUID_B].active is False  # newer mtime does NOT win
+        assert by_id[UUID_B].mtime > by_id[UUID_A].mtime  # mtime is genuinely newer
+
+    def test_with_no_recorded_id_nothing_is_active(self, tmp_path):
+        target, root = _cat_target(tmp_path)
+        slug = _slug(target)
+        _write_transcript(root / slug / f"{UUID_A}.jsonl",
+                          [{"type": "user", "timestamp": _ts(2)}])
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        assert res.entries  # precondition
+        assert all(not e.active for e in res.entries)
+        assert res.active_id is None
+
+
+class TestCatalogueNoWirePath:
+    """Confinement assertion: the wire catalogue carries NO absolute path. A
+    path the browser can read is a directory-traversal primitive against real
+    session content; the wire shape carries an opaque id the server resolves.
+    Production line: `CatalogEntry` having no path field."""
+
+    def test_no_entry_exposes_a_path_field(self, tmp_path):
+        from dataclasses import fields, astuple
+        target, root = _cat_target(tmp_path)
+        slug = _slug(target)
+        _write_transcript(root / slug / f"{LIVE_ID}.jsonl",
+                          [{"type": "user", "timestamp": _ts(2)}])
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        assert res.entries  # precondition
+        for e in res.entries:
+            names = {f.name for f in fields(e)}
+            assert "path" not in names, "CatalogEntry must not carry a path"
+            for val in astuple(e):
+                assert not isinstance(val, Path), \
+                    "no field may hold a Path"
+                if isinstance(val, str):
+                    assert not val.startswith("/"), \
+                        "no field may hold an absolute path string"
+
+
+class TestCatalogueLiveness:
+    """`live` is a claim at scan time over the stale_after window; the age is
+    carried so a consumer can re-judge. Production line: the
+    `last is not None and age <= stale_after` branch."""
+
+    def test_a_fresh_session_is_live_and_carries_its_age(self, tmp_path):
+        target, root = _cat_target(tmp_path)
+        slug = _slug(target)
+        _write_transcript(root / slug / f"{LIVE_ID}.jsonl",
+                          [{"type": "user", "timestamp": _ts(3)}])
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        assert res.entries  # precondition
+        e = res.entries[0]
+        assert e.live is True
+        assert e.age_seconds is not None
+        assert e.last_record_at is not None
+
+    def test_a_stale_session_is_not_live_and_names_the_age(self, tmp_path):
+        target, root = _cat_target(tmp_path)
+        slug = _slug(target)
+        _write_transcript(root / slug / f"{STALE_ID}.jsonl",
+                          [{"type": "user", "timestamp": _ts(120)}])
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        assert res.entries  # precondition
+        e = res.entries[0]
+        assert e.live is False
+        assert "stale" in e.detail
+        # age carried so a consumer can re-judge as `now` advances (#765 shape)
+        assert e.age_seconds is not None and e.age_seconds > 0
