@@ -6,6 +6,26 @@ His words and the constraint are in
 [`.dreamwork/docs/briefs/505-render-architecture.md`](../../docs/briefs/505-render-architecture.md);
 [`transitions.md`](../../../../transitions.md) governs every gesture.
 
+> **Status (2026-07-31, #591).** Two things changed after this design was
+> written. **(1) G4 is retired.** He ruled on 2026-07-30 (Q2 below, via watch
+> 07:44, commit `0f97df03`): *"we don't have a no-build single-file
+> constraint. We had a python stdlib constraint, but otherwise building the
+> webui bundle and breaking up watch.py into modules are good and reasonable
+> things."* The python-stdlib **server** constraint stands; the no-build goal
+> does not. Every `✘ G4` in the matrix below is a historical record, not a
+> live refutation — in particular **I3's refutation now rests on G2 alone**
+> (see the annotated bullet under "Why the ✘s"). **(2) I5 landed.** The
+> survivor was implemented: morphdom v2.7.4 is vendored
+> (`vendor/morphdom.min.js`), `setContent` reconciles `#view` with the
+> content-hash skip (`client/router.js:1550`–`1683`), and the review dock
+> reconciles through the same seam (Q3 phase 2, `client/router.js:1459`).
+> Whether the claude-design goal (his 2026-07-31 focus) re-opens G2 is
+> **#591's question**, decided in
+> `.dreamwork/review/505-g2-render-authority.html` — not here. His 2026-07-31
+> ~16:38 submission (receipt `a71d1105…`) added two further inputs the artifact
+> weighs as goals: a component-native live session view ("only be available
+> via that") and a WS/RPC state-delta direction for the webui.
+
 > re the reset when data.json is recieved … selecting text from any of the
 > questions deselects on update. selecting quesitons at the top or the
 > project name works fine … could we use ids on html elements to avoid this?
@@ -130,6 +150,11 @@ wholesale swap (it snapshots rects before, then animates survivors after).
   the deployed unit, served verbatim, no bundler/compiler/`npm install`. A
   build step is a real cost; this goal prices it as decisive unless he rules
   otherwise (open call Q2).
+  **RETIRED 2026-07-30** — he ruled otherwise (#505 Q2, commit `0f97df03`):
+  no no-build/single-file constraint exists; the stdlib constraint is the
+  *server's* (Python), and building the webui bundle is blessed. The G4
+  column below stays as the record of the judgement as it was made; a ✘
+  there no longer refutes anything.
 - **G5 — reduced-motion parity.** Whatever the path, `prefers-reduced-motion`
   keeps function and legibility and drops only timing (transitions.md hard
   contract).
@@ -197,6 +222,11 @@ wholesale swap (it snapshots rects before, then animates survivors after).
   transitions.md is hand-tuned against the current swap-then-animate seam; a
   vdom would have to re-implement that integration, and whether it carries
   the gestures atmospherically is unproven — hence `?`, not ✘.)
+  *(2026-07-31, #591: the G4 half of this refutation is void — G4 retired,
+  see the Status note. The G2 half stands unchanged for the layered shape —
+  a vdom **beside** the builders. Whether a component tree could be the ONE
+  authority, and whether the claude-design goal forces one, is a different
+  and larger decision, re-run in `.dreamwork/review/505-g2-render-authority.html`.)*
 - **I4 ✔ (the survivor).** Keyed reconciliation over the existing identity
   attributes: a survivor node matched by key is *kept* (so R1's selection,
   R2's caret, R7's hover — any state on the node — survive because the node
