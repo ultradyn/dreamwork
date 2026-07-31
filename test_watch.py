@@ -1226,7 +1226,7 @@ class TestCollector(unittest.TestCase):
             JavaScript parser and makes no claim about a callee's behaviour.
             The only member calls admitted are the current, constrained array
             intrinsics map/join/slice. Template interpolation may contain
-            property/arithmetic expressions, but not calls or nested braces.
+            simple property chains, but not calls or other expression syntax.
             Regex literals, tagged templates, optional/computed/constructor/
             result calls, and unknown member calls are unsupported and fail.
             """
@@ -1285,7 +1285,9 @@ class TestCollector(unittest.TestCase):
                             if end < 0:
                                 self.fail("buildDashboard dependency discovery: unterminated template interpolation")
                             expression = body[i + 2:end]
-                            if "(" in expression or "{" in expression or "`" in expression:
+                            if not re.fullmatch(
+                                    r"\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*",
+                                    expression):
                                 self.fail("buildDashboard dependency discovery: unsupported template interpolation")
                             i = end + 1
                             continue
@@ -1333,12 +1335,14 @@ class TestCollector(unittest.TestCase):
                         if prefix.endswith("?."):
                             self.fail("buildDashboard dependency discovery: unsupported member call " + name)
                         if name == "map":
-                            if re.search(r"d\.git$", receiver) and args == "gitRow":
+                            if (re.search(r"(?<![\w$.\]])d\.git$", receiver) and
+                                    args == "gitRow"):
                                 dependencies.add("gitRow")
-                            elif (re.search(r"d\.(?:dreams|dreams_archive)$", receiver)
+                            elif (re.search(r"(?<![\w$.\]])d\.(?:dreams|dreams_archive)$",
+                                            receiver)
                                   and args == "dreamBlock"):
                                 dependencies.add("dreamBlock")
-                            elif re.search(r"shown$", receiver) and re.fullmatch(
+                            elif re.search(r"(?<![\w$.])shown$", receiver) and re.fullmatch(
                                     r"r\s*=>\s*artifactRow\(\s*r\s*,\s*\)", args):
                                 pass
                             elif re.search(r"\[\s*,\s*,\s*\]$", receiver) and re.fullmatch(
@@ -1353,7 +1357,7 @@ class TestCollector(unittest.TestCase):
                                     raw_args not in {"''", '\"\"'}):
                                 self.fail("buildDashboard dependency discovery: unsupported join call")
                         elif name == "slice":
-                            if (not re.search(r"d\.reviews$", receiver) or
+                            if (not re.search(r"(?<![\w$.\]])d\.reviews$", receiver) or
                                     not re.fullmatch(r"0\s*,\s*REVIEWS_DASH_CAP", args)):
                                 self.fail("buildDashboard dependency discovery: unsupported slice call")
                         else:
@@ -1414,10 +1418,16 @@ class TestCollector(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "unsupported map callback"):
             discovered_dependencies("function buildDashboard(d) { d.unrelated.map(qSection); }")
         with self.assertRaisesRegex(AssertionError, "unsupported map callback"):
+            discovered_dependencies(
+                "function buildDashboard(d) { d.unrelated.d.git.map(gitRow); }")
+        with self.assertRaisesRegex(AssertionError, "unsupported map callback"):
             discovered_dependencies("function buildDashboard(d) { d.git.map(x => { qSection(x); }); }")
         with self.assertRaisesRegex(AssertionError, "unsupported join call"):
             discovered_dependencies(
                 "function buildDashboard(d) { d.git.map(gitRow).join(','); }")
+        with self.assertRaisesRegex(AssertionError, "unsupported template interpolation"):
+            discovered_dependencies(
+                'function buildDashboard(d) { label(\'x\'); const t = `${"}", d.qSection(d)}`; }')
         sentinel_callees = dependencies - real_callees - marker_callees
         self.assertTrue(sentinel_callees,
                         "buildDashboard dependency discovery produced no sentinels")
