@@ -2210,3 +2210,268 @@ def test_discover_lanes_arity_is_three(tmp_path):
     assert isinstance(result, tuple) and len(result) == 3, \
         "discover_lanes arity changed; live_lane_count and the test suite " \
         "need updating together (was %d-tuple)" % len(result)
+
+
+# ── 18. #775: a lane whose cwd is NOT its worktree is found via argv ────
+#
+# THE BUG: status_sync.py's discover_lanes walked /proc/*/cwd for paths
+# under .worktrees/. But dispatch_lane.py does `os.execvp(runner[0],
+# [*runner, prompt])` from the MAIN checkout, so a live ccc lane's cwd is
+# the main checkout, NOT its worktree — and the cwd-only walk read 0 live
+# while lanes ran. The brief's "Worktree: <abs>/.worktrees/<lane>" line is
+# appended as the last argv element and survives the exec chain (ccc execs
+# away to codex-code-mode-host / the grok harness), so the worktree path in
+# argv is the one invariant the dispatch route controls. The fix recovers
+# the lane from argv when cwd is elsewhere.
+#
+# THE TRAP (stated so no lane walks into it): do NOT match the runner binary
+# name (ccc/codex/grok) — that is the identical mistake one level down. A
+# new runner is added, nothing matches, and the fleet silently reads zero
+# again. The worktree PATH in argv is controlled by dispatch and is what we
+# match. These tests hold that line: they name the path-invariant, not the
+# binary.
+#
+# Direction 1: inject the cwd-only matcher and watch the test red on a
+# DISCRIMINATING message that says "the lane was live in argv but the
+# detector could not see it" — not a bare count.
+# Direction 2: construct a process table where the detector's match token
+# appears coincidentally (a container hex id containing "ccc", an unrelated
+# path under .worktrees/ that is not a lane runner) and show it is not
+# counted — the false-positive arm of #136 at this seam.
+
+class TestArgvDiscoveryFindsLaneWithMainCwd:
+    """#775: a live ccc lane whose cwd is the main checkout (not its
+    worktree) is discovered via its argv-carried worktree path.
+
+    Production line whose reversion reds the survive arm: the
+    ``argv_lane = None if cwd_lane else _argv_lane(pid, wt_root)`` line and
+    ``lane = cwd_lane or argv_lane`` in ``discover_lanes``. Revert to
+    cwd-only (``if cwd is None or not cwd.startswith(...): continue``) and
+    a lane whose cwd is the main checkout is invisible — the bug in
+    production tonight.
+    """
+
+    def _make_worktree(self, target: Path, lane: str) -> Path:
+        wt = target / ".worktrees" / lane
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "BRIEF.md").write_text("lane brief")
+        return wt
+
+    def _spawn_maincwd_ccc(self, main_cwd: Path, wt_path: str,
+                           hold: float = 30.0):
+        """A live process whose cwd is the main checkout AND whose argv
+        carries the worktree path — the exact shape of today's dispatch.
+
+        ``ccc`` runs from the main checkout (cwd=main); the appended brief
+        embeds ``Worktree: <wt_path>``. ``executable`` sets argv[0]=ccc
+        independently of the binary; the trailing arg is a synthetic brief
+        whose Worktree line names the worktree path.
+        """
+        brief = "Worktree: %s\nLane: test" % wt_path
+        return subprocess.Popen(
+            ["ccc", "-e", f"sleep {hold}", "--", "--yolo", "@glm52", brief],
+            executable=_which_perl(), cwd=str(main_cwd),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+
+    def test_lane_with_main_cwd_is_discovered_via_argv(self, tmp_path,
+                                                       monkeypatch):
+        # THE BUG SHAPE: a ccc lane whose cwd is the main checkout (tmp_path,
+        # standing in for the repo root) but whose argv carries the worktree
+        # path. A cwd-only walk finds nothing; the argv recovery finds it.
+        wt = self._make_worktree(tmp_path, "lane-775argv")
+        proc = self._spawn_maincwd_ccc(tmp_path, str(wt))
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid), \
+                "precondition: spawned ccc lane must be alive"
+            real_cwd = status_sync._read_proc_cwd(proc.pid)
+            # Precondition (the bug state, built not assumed): cwd is NOT the
+            # worktree, and the worktree path IS in argv.
+            assert real_cwd == str(tmp_path), \
+                "precondition: cwd must be main checkout, not the worktree: %r" \
+                % real_cwd
+            assert str(wt) != real_cwd, \
+                "precondition: cwd must differ from the worktree path"
+            lane = status_sync._argv_lane(proc.pid, str(tmp_path / ".worktrees"))
+            assert lane == "lane-775argv", \
+                "precondition: argv must carry the worktree path: %r" % lane
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+
+            found, _ph, _at = status_sync.discover_lanes(tmp_path)
+            # DISCRIMINATING (Direction 1): the lane is present by name. A
+            # count-only check passes against the bug; this names exactly
+            # which lane was invisible.
+            assert any(f[0] == "lane-775argv" for f in found), \
+                "a ccc lane with main-cwd must be discovered via argv; " \
+                "got found=%s" % found
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_lane_with_main_cwd_repopulates_empty_dreamers(self, tmp_path,
+                                                            monkeypatch):
+        # End-to-end: starting from dreamers=[], a main-cwd lane repopulates
+        # the field — the fleet no longer reads 0 live while the lane runs.
+        wt = self._make_worktree(tmp_path, "lane-775argv")
+        proc = self._spawn_maincwd_ccc(tmp_path, str(wt))
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            assert status_sync._read_proc_cwd(proc.pid) == str(tmp_path), \
+                "precondition: cwd is the main checkout"
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            status = {"dreamers": [], "current_task_ids": [], "queue": {},
+                      "task": "t"}
+            rc, out, err = _run(status, _ledger(775), tmp_path)
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            # DISCRIMINATING: the field repopulated from [] and the lane is
+            # named. The bug left dreamers=[] ("already in sync, 0 live").
+            assert len(result["dreamers"]) == 1, \
+                "a main-cwd lane must repopulate dreamers from []; got %s" \
+                % result["dreamers"]
+            assert result["dreamers"][0]["lane"] == "lane-775argv", \
+                result["dreamers"]
+            assert 775 in result["current_task_ids"], \
+                result["current_task_ids"]
+        finally:
+            proc.kill()
+            proc.wait()
+
+
+class TestArgvDiscoveryInjectedTable:
+    """#775 Direction 2: provable without a live fleet via an injected
+    process table. These tests fake the /proc reads but exercise the real
+    ``_argv_lane`` parser and the real ``discover_lanes`` classification
+    logic against controlled cmdline bytes — so the behaviour is provable
+    independent of which lanes happen to be running.
+
+    Each test names the production line that must change for it to fail.
+    """
+
+    def _setup_proc(self, monkeypatch, pid, cwd, cmdline_raw):
+        """Inject one process: /proc/<pid>/cwd -> cwd, /proc/<pid>/cmdline
+        -> cmdline_raw, and /proc listing -> [str(pid)]. The real
+        _read_proc_cwd, _argv_lane, _is_ccc_proc, and _ccc_model run
+        against these — no logic is faked."""
+        import builtins
+        real_open = builtins.open
+
+        class _FakeFile(io.BytesIO):
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                self.close()
+
+        def fake_open(path, *a, **kw):
+            sp = str(path)
+            if sp == "/proc/%d/cmdline" % pid:
+                return _FakeFile(cmdline_raw)
+            return real_open(path, *a, **kw)
+        monkeypatch.setattr(builtins, "open", fake_open)
+        monkeypatch.setattr(status_sync.os, "readlink",
+                            lambda p: cwd if p == "/proc/%d/cwd" % pid
+                            else (_ for _ in ()).throw(OSError()))
+        monkeypatch.setattr(status_sync.os, "listdir",
+                            lambda d: [str(pid)] if d == "/proc" else [])
+
+    def test_lane_execed_away_is_still_found(self, tmp_path, monkeypatch):
+        # THE BUG: the matcher looked for `ccc` in argv. After exec, argv[0]
+        # is `codex-code-mode-host` — no `ccc` anywhere — but the worktree
+        # path survives in the appended brief. A matcher keyed on the
+        # runner name reads zero; a matcher keyed on the worktree path
+        # (the invariant the dispatch route controls) finds the lane.
+        wt = tmp_path / ".worktrees" / "lane-775execed"
+        wt.mkdir(parents=True)
+        (wt / "BRIEF.md").write_text("x")
+        # argv: codex-code-mode-host (NOT ccc) + a brief carrying Worktree:
+        brief = "Worktree: %s" % wt
+        raw = ("codex-code-mode-host\x00--yolo\x00"
+               + brief + "\x00").encode()
+        self._setup_proc(monkeypatch, 888111, str(tmp_path), raw)
+        # _is_ccc_proc reads argv[0] basename == codex-code-mode-host -> False.
+        # So this lane is NOT ccc; it falls to agent_tool (the #675 channel).
+        # The POINT: discovery SEES it (it is not zero); a runner-name
+        # matcher would not.
+        found, _ph, agent_tool = status_sync.discover_lanes(tmp_path)
+        assert found == [], found   # not ccc, so not in `found`
+        # DISCRIMINATING (Direction 2a): the execed-away lane IS discovered
+        # via argv — it appears in agent_tool, not nowhere. A matcher keyed
+        # on argv[0]==ccc returns agent_tool=[] here (the bug: 0 live).
+        assert any(a[0] == "lane-775execed" for a in agent_tool), \
+            "an execed-away lane must be discoverable via its argv worktree " \
+            "path, not invisible to a runner-name matcher; agent_tool=%s" \
+            % agent_tool
+
+    def test_ccc_lane_with_main_cwd_found_in_found(self, tmp_path,
+                                                    monkeypatch):
+        # A ccc lane (argv[0]==ccc) with main cwd: found via argv, classified
+        # ccc. This is the exact production shape (ccc -y @glm52 <brief>).
+        wt = tmp_path / ".worktrees" / "lane-775ccc"
+        wt.mkdir(parents=True)
+        (wt / "BRIEF.md").write_text("x")
+        brief = "Worktree: %s" % wt
+        raw = ("ccc\x00-y\x00@glm52\x00" + brief + "\x00").encode()
+        self._setup_proc(monkeypatch, 888222, str(tmp_path), raw)
+        found, _ph, _at = status_sync.discover_lanes(tmp_path)
+        # DISCRIMINATING: the ccc lane with main cwd is in `found` (ccc,
+        # not agent_tool), recovered via argv. Revert to cwd-only and
+        # found=[] — the bug.
+        assert any(f[0] == "lane-775ccc" for f in found), \
+            "a ccc lane with main cwd must be found via argv; got %s" % found
+
+    def test_container_hex_with_ccc_is_not_a_lane(self, tmp_path, monkeypatch):
+        # THE FALSE POSITIVE (latent, from the brief): the old matcher
+        # looked for the SUBSTRING `ccc` in argv. A containerd-shim line
+        # carries `ccc` inside a container hex id
+        # (...3a1c5ccc6d22e34...). It is NOT a lane. The worktree-path
+        # invariant does not match it (no .worktrees/ path in argv), so it
+        # is correctly NOT counted.
+        raw = (b"containerd-shim-runc-v2\x00-namespace\x00moby\x00-id\x00"
+               b"1640fa687243e9110badb503c6fa3ff1e1efe9805d4bd8d534a1c5ccc"
+               b"6d22e34\x00-address\x00/run/containerd/containerd.sock\x00")
+        self._setup_proc(monkeypatch, 888333, "/run/containerd", raw)
+        found, phantoms, agent_tool = status_sync.discover_lanes(tmp_path)
+        # DISCRIMINATING (Direction 2b): no lane is counted. A substring
+        # matcher on `ccc` would count this container; the worktree-path
+        # invariant does not.
+        assert found == [], \
+            "a container hex id containing 'ccc' must not be a lane: %s" \
+            % found
+        assert agent_tool == [], agent_tool
+        # cwd is /run/containerd — not under .worktrees, so not even a phantom.
+        assert phantoms == [], phantoms
+
+    def test_unrelated_worktree_path_in_prose_is_not_false_counted(
+            self, tmp_path, monkeypatch):
+        # Direction 2 refinement: a process whose argv merely MENTIONS a
+        # .worktrees/ path in passing prose (a coordinator's grep of the
+        # tasks file) is not a lane. The matcher finds the path, recovers
+        # a lane name — but the lane dir does not exist, so it is a phantom
+        # (reported, not silently counted). This proves discovery does not
+        # over-count on a coincidental path mention.
+        fake_lane = "lane-doesnotexist"
+        wt_path = str(tmp_path / ".worktrees" / fake_lane)
+        raw = ("grep\x00-n\x00worktree\x00some note about %s here\x00"
+               % wt_path).encode()
+        self._setup_proc(monkeypatch, 888444, str(tmp_path), raw)
+        found, phantoms, agent_tool = status_sync.discover_lanes(tmp_path)
+        # The lane dir does not exist -> phantom (reported, not in found).
+        # DISCRIMINATING: found is empty (not a false lane); the process is
+        # reported as a phantom, not silently counted.
+        assert found == [], \
+            "a prose mention of a worktree path must not be a lane: %s" \
+            % found
+        # The grep process is non-ccc; its cwd is tmp_path (not a worktree);
+        # its argv names a worktree whose dir does not exist. It lands in
+        # phantoms (reported not dropped — #702).
+        assert any(p[0] == fake_lane for p in phantoms), \
+            "a process naming a non-existent worktree must be a phantom, " \
+            "not silently dropped: phantoms=%s" % phantoms
+

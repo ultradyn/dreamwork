@@ -326,6 +326,59 @@ def _read_proc_cwd(pid: int) -> str | None:
         return None
 
 
+def _argv_lane(pid: int, wt_root: str) -> str | None:
+    """The lane name a process's argv carries under ``wt_root``, or None.
+
+    #775: a live ``ccc`` lane's cwd is the MAIN checkout (``os.execvp`` runs
+    the runner there), not its worktree — so the cwd-walk in
+    :func:`discover_lanes` cannot see it, and the fleet read ``0 live`` while
+    lanes ran. But the dispatch route APPENDS the lane's brief as the last
+    argv element (``dispatch_lane.py:322``:
+    ``os.execvp(runner[0], [*runner, prompt])``), and that brief embeds
+    ``Worktree: <abs>/.worktrees/<lane>`` — a path under ``wt_root`` that the
+    process carries for its whole life regardless of which runner binary
+    later ``exec``s in (#775: the matcher must NOT key on the runner name,
+    because ``ccc`` execs away to ``codex-code-mode-host`` / the grok harness;
+    the worktree path in argv is the one invariant the dispatch route controls).
+
+    Reads the raw cmdline bytes and scans the WHOLE buffer (a path can span
+    an argv boundary only as a contiguous string; NULs never fall inside a
+    path, so a whole-buffer substring search is safe and faster than
+    splitting). The first ``<wt_root>/<lane>`` prefix wins; the lane is the
+    path component immediately after ``wt_root``. ``wt_root`` ends in
+    ``/.worktrees`` so the path component after it is the lane dir name.
+    Returns ``None`` when no worktree path appears — the process is not a
+    lane-by-argv, and the caller leaves it to its cwd classification.
+    """
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return None
+    if not raw:
+        return None
+    marker = (wt_root + "/").encode()
+    idx = raw.find(marker)
+    if idx < 0:
+        return None
+    rest = raw[idx + len(marker):]
+    # The lane dir name: chars up to the next path sep, NUL, or whitespace.
+    # A NUL ends an argv element; a '/' descends into the lane dir; a space
+    # or quote ends the path in prose (the brief's "Worktree:" line is one
+    # argv element, so a space terminates the path inside it).
+    end = len(rest)
+    for i, b in enumerate(rest):
+        # '/' descends into the lane dir; NUL ends an argv element; space,
+        # tab, newline end the path in prose (the brief's "Worktree:" line
+        # is one argv element, so whitespace terminates the path inside it);
+        # quote chars delimit the path in markdown/prose.
+        if b in (0x2f, 0x00, 0x20, 0x09, 0x0a, 0x22, 0x27):
+            end = i
+            break
+    lane = rest[:end].decode("utf-8", "replace")
+    return lane or None
+
+
 def _is_ccc_proc(pid: int) -> bool:
     """Whether `pid`'s argv[0] basename is `ccc` (the probe-observable form).
 
@@ -454,17 +507,28 @@ def _ancestor_pids() -> set[int]:
 def discover_lanes(target: Path):
     """Live lanes the cwd probe can see, as ``(found, phantoms, agent_tool)``.
 
-    Walks ``/proc/*/cwd`` for paths under ``<target>/.worktrees/`` (#716).
+    Walks ``/proc/*/cwd`` for paths under ``<target>/.worktrees/`` (#716),
+    and ALSO scans each process's argv for the same prefix (#775). The cwd
+    walk is the primary channel; the argv walk is the recovery channel for
+    the case that bit: a live ``ccc`` lane's cwd is the MAIN checkout
+    (``os.execvp`` runs the runner there, not in the worktree), so a
+    cwd-only walk read ``0 live`` while lanes ran. The dispatch route
+    appends the brief as the last argv element, and the brief embeds
+    ``Worktree: <abs>/.worktrees/<lane>`` — a path the process carries for
+    its whole life regardless of which runner binary later ``exec``s in.
+    Matching that path (not the runner name) is the fix; the worktree path
+    in argv is the one invariant the dispatch route controls.
     ``found`` is the list of live ``ccc`` lanes (as ``(lane, pid, model)``
     triples — #720 derives the model from the same ``/proc`` read) a caller
     MERGES with coordinator-authored entries. ``phantoms`` (#719) is a
-    ``ccc`` or non-ccc process whose cwd passed the worktree prefix filter
-    but whose worktree has been REMOVED. ``agent_tool`` (#675) is a
-    non-``ccc`` process with a lane cwd — an Agent-tool lane's shape, merged
-    into ``dreamers`` so ``current_task_ids`` does not degrade to 0 while
-    Agent-tool lanes run. A lane running somewhere the cwd probe cannot see
-    (another machine, a different harness) is carried verbatim rather than
-    erased by a narrower automatic view (#537).
+    ``ccc`` or non-ccc process whose worktree has been REMOVED (cwd-discovered:
+    readlink carries " (deleted)"; argv-discovered: the reconstructed
+    worktree path is gone). ``agent_tool`` (#675) is a
+    non-``ccc`` process with a lane cwd/argv — an Agent-tool lane's shape,
+    merged into ``dreamers`` so ``current_task_ids`` does not degrade to 0
+    while Agent-tool lanes run. A lane running somewhere neither channel can
+    see (another machine, a harness that strips argv) is carried verbatim
+    rather than erased by a narrower automatic view (#537).
 
     ``target`` is the project root (the dir whose ``.worktrees/`` holds
     lanes). It is RESOLVED before building ``wt_root`` (#720): the default
@@ -495,18 +559,39 @@ def discover_lanes(target: Path):
             continue
         pid = int(entry)
         cwd = _read_proc_cwd(pid)
-        if cwd is None or not cwd.startswith(wt_root + "/"):
-            continue
-        lane = os.path.basename(cwd.rstrip("/"))
+        cwd_lane = (cwd is not None
+                    and cwd.startswith(wt_root + "/")
+                    and os.path.basename(cwd.rstrip("/")))
+        # #775: a live ccc lane's cwd is the MAIN checkout (os.execvp runs
+        # the runner there), so the cwd-walk above misses it. The dispatch
+        # route APPENDS the brief as the last argv element, and that brief
+        # embeds ``Worktree: <abs>/.worktrees/<lane>`` — a path the process
+        # carries for its whole life. Recover the lane from argv when cwd is
+        # elsewhere. This is the ONE invariant the dispatch route controls:
+        # matching the runner binary name (ccc/codex/grok) would repeat the
+        # bug one level down (a new runner is added, nothing matches, the
+        # fleet silently reads zero again). The worktree path in argv is
+        # controlled by dispatch_lane.py and survives the exec chain.
+        argv_lane = None if cwd_lane else _argv_lane(pid, wt_root)
+        lane = cwd_lane or argv_lane
         if not lane or lane == target.name:
             continue
+        # The worktree path to existence-check. A cwd-discovered lane's
+        # worktree IS its cwd (readlink, possibly " (deleted)"); an
+        # argv-discovered lane's worktree is reconstructed from wt_root +
+        # the lane name (its cwd is elsewhere, so cwd existence says
+        # nothing about whether the worktree still exists).
+        wt_path = cwd if cwd_lane else wt_root + "/" + lane
         # #719: a lane whose worktree has been removed is a phantom.
         # readlink still resolves (Linux appends " (deleted)"), the prefix
         # filter still passes, but the cwd is no longer a directory — the
         # process is exiting, not working. Excluded and REPORTED, not
         # silently dropped (#702, inherited by #716's discovery). Applies to
         # both ccc and non-ccc: a deleted-cwd process is exiting regardless.
-        if not os.path.isdir(cwd):
+        # For an argv-discovered lane the worktree dir is checked directly
+        # (wt_path is the reconstructed path, not a readlink result, so the
+        # " (deleted)" suffix never appears — isdir is the plain truth).
+        if not os.path.isdir(wt_path):
             phantoms.append((lane, pid))
             continue
         if _is_ccc_proc(pid):
