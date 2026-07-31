@@ -202,6 +202,8 @@ append — never a deletion — so a folded hand-off is not flagged twice.
 - **#676** → folded (2026-07-31 20:55) — merged `846daa72`. branch audit — 13 classified, 0 live work, 0 new citations needed
 - **#680** → folded (2026-07-31 21:04) — merged `8f45a85f`. statx libc loader matches file_notify robust form + symbol probe; reporting half unmet, filed
 - **#681** → folded (2026-07-31 21:04) — merged `8f45a85f`. ledger.py enum validation names column + live allowed set; verified 4 ways
+- **#677** → folded (2026-07-31 21:10) — merged `8156d983`. behind-master WARN on pending hand-offs; its direction-2 sabotage came back GREEN and was reported as a finding (hollow phrase-assertion, re-asserted on the count)
+- **#679** → folded (2026-07-31 21:10) — merged `8156d983`. cited-sha resolution ERROR; TRUE POSITIVE on first run — bd0f0d1 (#456) resolved to nothing, real landing 428f7572, repaired
 
 ## Pending
 
