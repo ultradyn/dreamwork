@@ -75,7 +75,6 @@ from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
 # tuple from the file's actual keys — so a field added next month shows up in
 # the untouched list without anyone remembering to extend a literal.
 DERIVED = ("queue", "current_task_ids", "dreamers")
-QUEUED_ID = re.compile(r"#(\d+)\b")
 
 
 def open_ids(ledger: str) -> list[int]:
@@ -113,7 +112,7 @@ def task_states(open_task_ids: list[int],
 
 
 def audit_queued_dispatches(status: dict, states: dict[int, str]) -> None:
-    """Report ledger contradictions in author-owned queue prose; never edit."""
+    """Report ledger contradictions in structural queue ids; never edit."""
     entries = status.get("queued_dispatches", [])
     if not isinstance(entries, list):
         print("WARN queued_dispatches: expected a list; unclassifiable value=%s"
@@ -124,22 +123,35 @@ def audit_queued_dispatches(status: dict, states: dict[int, str]) -> None:
 
     references = questions = unclassifiable = 0
     for entry in entries:
-        if not isinstance(entry, str):
-            unclassifiable += 1
-            print("WARN queued_dispatches: non-text entry; unclassifiable "
-                  "line=%s" % json.dumps(entry, ensure_ascii=False),
-                  file=sys.stderr)
-            continue
-        ids = [int(i) for i in QUEUED_ID.findall(entry)]
-        references += len(ids)
         quoted = json.dumps(entry, ensure_ascii=False)
-        if not ids:
+        if isinstance(entry, str):
             unclassifiable += 1
-            print("WARN queued_dispatches: no #NNN id; unclassifiable line=%s"
+            print("WARN queued_dispatches: legacy text entry; unmigrated "
+                  "entry=%s" % quoted, file=sys.stderr)
+            continue
+        if not isinstance(entry, dict):
+            unclassifiable += 1
+            print("WARN queued_dispatches: expected an object; unclassifiable "
+                  "entry=%s" % quoted, file=sys.stderr)
+            continue
+        if "ids" not in entry:
+            unclassifiable += 1
+            print("WARN queued_dispatches: no ids key; unclassifiable entry=%s"
                   % quoted, file=sys.stderr)
             continue
-        # Check every reference. In particular, do not guess that the first
-        # id is the subject and a parenthetical id is merely context (#707).
+        ids = entry["ids"]
+        if (not isinstance(ids, list)
+                or not ids
+                or any(type(task_id) is not int or task_id <= 0
+                       for task_id in ids)):
+            unclassifiable += 1
+            print("WARN queued_dispatches: ids must be a non-empty list of "
+                  "positive integers; unclassifiable entry=%s" % quoted,
+                  file=sys.stderr)
+            continue
+        references += len(ids)
+        # The prose is deliberately opaque. It may cite any #NNN without
+        # making that task a queued subject; only this structural list claims.
         for task_id in ids:
             state = states.get(task_id)
             if state == "open":
@@ -149,7 +161,7 @@ def audit_queued_dispatches(status: dict, states: dict[int, str]) -> None:
                 fact = "is landed"
             else:
                 fact = "is not present in the ledger (retired or non-existent)"
-            print("WARN queued_dispatches: #%d %s; line=%s; entry left "
+            print("WARN queued_dispatches: #%d %s; entry=%s; entry left "
                   "unchanged — ledger state is a question, not a verdict"
                   % (task_id, fact, quoted), file=sys.stderr)
 
