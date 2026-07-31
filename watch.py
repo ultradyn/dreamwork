@@ -560,6 +560,59 @@ def page_shell(title, body, js):
             + '</script></div></body></html>')
 
 
+# #598 — what a mistyped link, a stale bookmark or a rebuilt-away artifact
+# lands on. Until now that was BaseHTTPRequestHandler's stock error body
+# (white, Times, `<h1>Error response</h1>`, `color-scheme: light dark`, no way
+# back) — the one surface on the whole instance outside the design system, and
+# the first one a new reader could see (visual audit 2026-07-31, D3).
+#
+# A STANDALONE PAGE RATHER THAN THE APP SHELL, and the audit's suggestion was
+# the other way, so the reason matters. Serving `page` under a 404 status only
+# works if the client router has a not-found destination; `routeOf` falls
+# through to `{name:'dashboard'}` for anything it does not claim, so /tasks
+# would render THE DASHBOARD under a 404 status line — a body contradicting
+# both its own URL and its own status code, which is worse than the stock page
+# because it is confidently wrong. Giving the router that destination is a new
+# route name plus an entry in every per-route table it feeds (TINT,
+# TITLE_ROUTE, TITLES) — the machinery #302/#318's table diff exists to police
+# — and it boots ~600KB of JS to say one sentence, on the path a scanner hits
+# hardest. That is the cost the rejected option carries; it is not paid here.
+#
+# DREAMWORK.md's "two renderers only agree on the day they are written" does
+# not bite, because this is not a second renderer of the visual language: it is
+# `page_shell` — the one shell — around class names `client/style.css` already
+# defines (`.qmissing`'s dim rail idiom, #452). It declares no colour, no font
+# and no spacing of its own, so a restyle carries it along with everything
+# else. What it deliberately does NOT share with `buildChat(null)` is the
+# COPY, because the copy has to differ: a wrong address is not a removed chat,
+# which is the audit's own O2 about reusing that sentence for a second cause.
+#
+# NOTHING FROM THE REQUEST IS REFLECTED. Naming the missing path would read
+# better and would put a client-controlled string into an HTML body on every
+# unmatched request, on a server that already treats reflection as the way a
+# file in the tree becomes stored XSS against this origin (/filebytes' fixed
+# Content-Type). The address bar already shows the path. Keeping it out leaves
+# a constant, built once at import, with no escaping to get right.
+#
+# `target="_top"` because /reviewraw and /researchraw 404 INSIDE the review and
+# research <iframe>s (views.js) — without it the way back would load the
+# dashboard into the frame it was meant to leave.
+NOT_FOUND_PAGE = page_shell(
+    'dreamwork watch · not found',
+    '<div class="wrap">'
+    '<header class="htitlebar"><h1 class="htitle">not found</h1></header>'
+    '<div class="qmissing">'
+    '<div class="qmisshead">404</div>'
+    '<div class="qmissbody">this address does not name anything this '
+    'dashboard serves &mdash; most likely a mistyped link, or one that '
+    'outlived what it pointed at. Nothing has been substituted for it.'
+    '</div>'
+    '<div class="qmissback"><a href="/" target="_top">&larr; back to '
+    'dashboard</a></div>'
+    '</div>',
+    '')
+
+
 # One shell serves every same-document view. The router (last, so
 # window.dreambg from the shader exists before it runs) picks the initial
 # view from the URL; SHADER_JS mounts the persistent background.
@@ -4268,6 +4321,47 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 if not _expected_disconnect(exc):
                     raise
                 self.close_connection = True
+
+        def send_error(self, code, message=None, explain=None):
+            """404 wears the design system; every other code keeps the stock
+            body (#598).
+
+            AT THIS SEAM, NOT AT A ROUTE, because a 404 leaves this server from
+            seven places — the unmatched-path fall-through in `do_GET`, the
+            unknown-path one in `do_POST`, /filedata, /chatdata, /reviewraw,
+            /researchraw, and `_send_bytes` for /filebytes — and every one of
+            them was serving the stock page. Fixing the fall-through alone
+            leaves the audit's finding true on six routes, and an allowlist of
+            "the ones a human can see" is a list that rots the next time an
+            endpoint is added. One seam has no list.
+
+            404 IS THE ONE CODE SCOPED IN, because it is the only error a
+            READER arrives at: a typo, a stale bookmark, an artifact rebuilt
+            out from under an open tab. The rest are deliberately left alone.
+            421/403 are `_preflight` refusing a caller who is not the reader at
+            all (a rebinding probe, a foreign origin) — dressing a refusal in
+            the reader's ~118KB stylesheet spends the design system on someone
+            it is not for and turns every rejected probe into a ~260x
+            amplification of the stock 455 bytes. Every 5xx here is raised
+            inside a `do_POST` handler, so none is reachable by typing a URL.
+
+            THE STATUS LINE IS UNTOUCHED: this replaces the BODY of a 404, not
+            the code. A styled page served 200 would lie to every tool that
+            reads status codes, this server's own guards included. Everything
+            else follows the stdlib's `send_error` exactly — `Connection:
+            close` (which is also what sets `close_connection`), an explicit
+            Content-Length, and no body on a HEAD."""
+            if code != 404:
+                super().send_error(code, message, explain)
+                return
+            body = NOT_FOUND_PAGE.encode("utf-8")
+            self.send_response(code, message)
+            self.send_header("Connection", "close")
+            self.send_header("Content-Type", self.error_content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
 
         def _authority(self):
             if authority is not None:
