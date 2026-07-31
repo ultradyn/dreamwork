@@ -107,6 +107,21 @@ IF_SILENT_TOKENS = (
 )
 TEMPLATE_ONLY |= set(IF_SILENT_TOKENS)
 
+# #600 — the verdict chip's state modifiers. New CSS beyond the hand-rolled
+# reference: tasks-page.html has ONE `.status` rule and paints its `approved
+# with amendments` verdict `--warn` amber with it, which is the defect. The
+# base `.status` is deliberately left byte-identical to the reference (so the
+# rule-for-rule fidelity check still binds it) and these three modifiers ride
+# on top; `unreadable` restates the amber rather than inheriting it, so the
+# fallback's colour is a declared decision and not the residue of a base rule
+# someone may later change.
+STATUS_STATE_TOKENS = (
+    ".status.pending", ".status.pending::before",
+    ".status.settled", ".status.settled::before",
+    ".status.unreadable", ".status.unreadable::before",
+)
+TEMPLATE_ONLY |= set(STATUS_STATE_TOKENS)
+
 # A body may use these without inventing anything, so the template must carry
 # them. Without this, a fidelity failure could be "fixed" by deleting the rule.
 CORE_SELECTORS = (
@@ -303,6 +318,182 @@ def test_reduced_motion_and_print_survive_into_the_build(template):
     style = style_of(built)
     assert "@media(prefers-reduced-motion:reduce)" in style.replace(" ", "")
     assert "@media print" in style
+
+
+# ── the verdict chip's enumerated state (#600) ────────────────────────────
+#
+# Every verdict rendered `--warn` amber with a glowing dot, so `DECIDED · … ·
+# ack good to go` read as broken — the colour watch-design.md reserves for a
+# channel that failed (#136), on the one verdict that is furthest from it. The
+# ROOT cause was the format, not the colour: `status:` was unvalidated free
+# text, so the stylesheet had nothing to key on and painting everything alike
+# was the only thing it could do (lessons.md:405).
+#
+# So these bind three things, not one: the enumeration, BOTH directions of the
+# colour rule (a settled verdict must not be amber AND an unreadable one still
+# must be — the second alone is satisfied by deleting the colour), and the
+# built corpus on disk, because a check that only reaches the builder's
+# internals while the rendered page is still amber is the gap lessons.md:336
+# names.
+
+REVIEW_DIR = os.path.join(HERE, ".dreamwork", "review")
+STATUS_SPAN_RE = re.compile(r'<span class="status ([a-z]+)">(.*?)</span>', re.S)
+
+
+def status_chip(document):
+    """`(state-class, text)` of the artifact's verdict chip, or `None`."""
+    match = STATUS_SPAN_RE.search(document)
+    return (match.group(1), match.group(2)) if match else None
+
+
+def source_with_status(value):
+    # A presence check, not a difference check: `value` is legitimately the
+    # fixture's own status in the pending case, so "the text changed" would be
+    # the wrong guard.
+    assert "status: awaiting review" in SOURCE, \
+        "the fixture no longer carries the status line this substitutes"
+    return SOURCE.replace("status: awaiting review", "status: " + value, 1)
+
+
+def declarations_for(document, selector):
+    """Normalised declaration set for one top-level selector of a built page."""
+    rules = css_rules(style_of(document))
+    assert ("", selector) in rules, \
+        "%r is not a top-level rule in the built stylesheet" % selector
+    return {"".join(part.split()) for part in rules[("", selector)]}
+
+
+@pytest.mark.parametrize("value,state", [
+    # Every shape the real corpus already writes, verbatim.
+    ("awaiting review", "pending"),
+    ("awaiting two calls", "pending"),
+    ("open", "pending"),
+    ("DECIDED &middot; 2026-07-29 01:37 &middot; ack good to go", "settled"),
+    ("DECIDED 06:23 &middot; c3+c4+hover", "settled"),
+    ("approved with amendments &middot; re-verified 27 Jul", "settled"),
+    # A status is an HTML fragment, so the class must not depend on markup.
+    ("<code>rejected</code> &middot; superseded by #601", "settled"),
+    # And the fallback, which is a state and not an absence.
+    ("mostly fine, I think", "unreadable"),
+    ("2026-07-29 01:37", "unreadable"),
+    ("", "unreadable"),
+])
+def test_status_state_reads_the_first_word(value, state):
+    assert ra.status_state(value) == state
+
+
+def test_a_settled_verdict_is_not_painted_broken(template):
+    """The defect, stated as a check: `ack good to go` must not wear `--warn`."""
+    built = ra.render(ra.parse_source(source_with_status(
+        "DECIDED &middot; 2026-07-29 01:37 &middot; ack good to go")),
+        template=template)
+    chip = status_chip(built)
+    assert chip is not None, "the built page carries no verdict chip at all"
+    assert chip[0] == "settled", \
+        "a decided verdict rendered as %r" % (chip,)
+    # The precondition: the base rule IS the amber one, so "settled is not
+    # amber" is a real difference and not two rules that were never amber.
+    assert "color:var(--warn)" in declarations_for(built, ".status"), \
+        "the base .status rule is no longer the amber one — this check has " \
+        "nothing left to distinguish"
+    settled = declarations_for(built, ".status.settled")
+    assert "color:var(--warn)" not in settled, \
+        "a settled verdict is still painted the colour that means BROKEN (#136)"
+    assert "color:var(--dim)" in settled, \
+        "settled must step DOWN the ramp (#289's darkening idiom), not merely " \
+        "stop being amber: %r" % sorted(settled)
+    assert "display:none" in declarations_for(built, ".status.settled::before"), \
+        "the glowing dot survived on a settled verdict"
+
+
+def test_a_pending_verdict_is_live_rather_than_broken(template):
+    built = ra.render(ra.parse_source(source_with_status("awaiting review")),
+                      template=template)
+    assert status_chip(built) == ("pending", "awaiting review")
+    pending = declarations_for(built, ".status.pending")
+    assert "color:var(--accent)" in pending, \
+        "a verdict waiting on him is live, which is what the accent is for: %r" \
+        % sorted(pending)
+    assert "color:var(--warn)" not in pending, \
+        "an awaiting verdict is still painted the colour that means BROKEN"
+    dot = declarations_for(built, ".status.pending::before")
+    assert "background:var(--accent)" in dot and "display:none" not in dot, \
+        "pending keeps its dot — it is the live half of the pair: %r" % sorted(dot)
+
+
+def test_an_unreadable_verdict_stays_amber_and_says_so(template):
+    """The other direction. Removing the colour outright would pass the first
+    two checks and lose the one fact amber exists to carry.
+    """
+    said = []
+    built = ra.render(ra.parse_source(source_with_status("mostly fine, I think")),
+                      template=template, warn=said.append)
+    assert status_chip(built) == ("unreadable", "mostly fine, I think"), \
+        "an unclassifiable verdict must be a POSITIVE marker in the page, not " \
+        "the absence of one: %r" % (status_chip(built),)
+    unreadable = declarations_for(built, ".status.unreadable")
+    assert "color:var(--warn)" in unreadable, \
+        "the fallback went quiet — a verdict the build cannot read is a defect " \
+        "in the artifact that wrote it and has to stay findable: %r" \
+        % sorted(unreadable)
+    assert "background:var(--warn)" in declarations_for(
+        built, ".status.unreadable::before"), "the fallback lost its dot"
+    assert any("mostly fine, I think" in message for message in said), \
+        "the build did not name the value it could not read: %r" % said
+    assert any("#136" in message for message in said), \
+        "the advisory does not say WHY amber is wrong here: %r" % said
+
+
+def test_a_verdict_the_enumeration_reads_draws_no_advisory(template):
+    """Without this the check above is satisfied by warning on every build."""
+    said = []
+    ra.render(ra.parse_source(source_with_status("awaiting review")),
+              template=template, warn=said.append)
+    assert not [m for m in said if "status" in m], \
+        "a verdict inside the enumeration still drew a status advisory: %r" % said
+
+
+def test_the_built_corpus_carries_no_verdict_painted_broken():
+    """The rendered bytes on disk, not the builder's idea of them.
+
+    Restricted to `current` artifacts: the twelve pre-#325 hand-rolled pages are
+    deliberately unmigrated (`untemplated`), so holding them to a template
+    contract would be asserting something #325 chose not to do.
+    """
+    seen = {}
+    for name in sorted(os.listdir(REVIEW_DIR)):
+        if not name.endswith(".html"):
+            continue
+        with open(os.path.join(REVIEW_DIR, name), encoding="utf-8") as handle:
+            document = handle.read()
+        if ra.classify(document) != "current":
+            continue
+        chip = status_chip(document)
+        if chip is None:
+            continue
+        seen[name] = chip
+        assert chip[0] == ra.status_state(chip[1]), (
+            "%s renders its verdict %r under class %r, which is not the state "
+            "the enumeration reads (%r) — the built file is stale against the "
+            "builder; rebuild it"
+            % (name, chip[1], chip[0], ra.status_state(chip[1])))
+    # Preconditions: a corpus this walked but never classified, or one with no
+    # settled verdict in it, would pass the loop above having exercised nothing.
+    assert len(seen) >= 15, \
+        "only %d built artifact(s) carry a verdict chip — the sweep is not " \
+        "seeing the corpus: %r" % (len(seen), sorted(seen))
+    states = {state for state, _ in seen.values()}
+    assert "settled" in states and "pending" in states, \
+        "the corpus holds no example of both states, so this sweep cannot tell " \
+        "the colours apart: %r" % sorted(states)
+    unreadable = {name: chip for name, chip in seen.items()
+                  if chip[0] == "unreadable"}
+    assert not unreadable, (
+        "built artifact(s) carry a verdict the enumeration cannot read, so they "
+        "render the amber that means BROKEN (#136): %r. Either reword the "
+        "`status:` in the source, or add the word to "
+        "review_artifact.STATUS_SETTLED / STATUS_PENDING with a reason — amber's "
+        "uses are enumerable and must stay that way." % unreadable)
 
 
 # ── offline-clean ─────────────────────────────────────────────────────────
@@ -646,7 +837,11 @@ def test_an_omitted_region_leaves_no_empty_furniture(template, how):
     """
     fields = ra.parse_source(SOURCE)
     full = ra.render(dict(fields), template=template)
-    assert 'class="status"' in full and 'class="version-mark"' in full and \
+    # #600 — the chip always carries its state class, so the old literal
+    # `class="status"` no longer occurs and both halves below would have gone
+    # vacuous had they kept it: present would never match, and absent would
+    # match a chip that DID survive under `class="status pending"`.
+    assert 'class="status pending"' in full and 'class="version-mark"' in full and \
         'class="skip"' in full, "fixture lost an optional slot"
     for slot in OPTIONAL_IN_FIXTURE:
         assert slot in fields, "fixture never set %r" % slot
@@ -657,7 +852,7 @@ def test_an_omitted_region_leaves_no_empty_furniture(template, how):
     bare = ra.render(fields, template=template)
     # An empty `.status` span renders its glowing dot with nothing beside it,
     # and an empty `.version-mark` holds a 240px column open.
-    for gone in ('class="status"', 'class="version-mark"', 'class="skip"',
+    for gone in ('class="status ', 'class="version-mark"', 'class="skip"',
                  'class="proposal"', 'class="sub"'):
         assert gone not in bare, "%s survived with nothing in it" % gone
     assert "<!--?" not in bare and "<!--/?" not in bare
@@ -1260,8 +1455,20 @@ def test_a_no_marks_artifact_renders_no_rail_tab_or_controls(template):
         old_fields = old.parse_source(SOURCE)
         old_fields.pop("no_ask", None)
         old_fields.pop("no_if_silent", None)
+        # Same accommodation, one slot further on: the pre-change builder also
+        # predates #600's derived `status_state`, and an unknown slot in the
+        # template is a refusal, not a blank. The slot lives in the TOPRAIL,
+        # which `_body_region` excludes, so neutralising it for the old side
+        # cannot move the bytes this test compares — and the substitution is
+        # asserted rather than assumed, so a template that renames the slot
+        # reddens here instead of silently comparing an unaccommodated build.
+        old_template = template.replace(
+            '<span class="status {{status_state}}">', '<span class="status">', 1)
+        assert old_template != template, (
+            "the toprail no longer carries the {{status_state}} slot this "
+            "strips — re-derive the accommodation before trusting this check")
         pre = _body_region(
-            old.render(old_fields, template=template))
+            old.render(old_fields, template=old_template))
         assert pre == _body_region(new), (
             "a no-marks body no longer matches the pre-change builder at %s — "
             "the marks machinery altered body bytes it must leave untouched"
