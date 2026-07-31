@@ -132,6 +132,16 @@ vertical), `dismiss.mjs`, `dissolve.mjs`, `dreamfade.mjs`, `draft.mjs`,
 `selectkeep.mjs`, `serving.mjs`, `staleremedy.mjs`, `states.mjs`, `status.mjs`,
 `submitlog.mjs`, `subslog.mjs`, `summaryjson.mjs`, `thread.mjs`, `wisp.mjs`
 (2px rail + keyframes), `worldspace.mjs` (canvas creation, not measurement).
+**Active guards added on completeness re-check (DOM identity / text content /
+colour / image intrinsic dimensions, no viewport-coupled geometry):**
+`burndownmock.mjs` (`naturalWidth` is image-intrinsic, not layout),
+`docktarget.mjs` (request targets docked question — text identity),
+`note82.mjs` (DOM structure + POST correctness + mode switching),
+`pip83.mjs` (pip button existence + popout attributes),
+`pushhealth.mjs` (`getComputedStyle().color`/`.borderLeftColor` — colour).
+**Non-gating measurement tools (no `ok()`/`finish()`, not in the `guards`
+recipe — classified for completeness):** `above_fold.mjs`, `beautycap.mjs`,
+`dissolveperf.mjs`.
 
 ---
 
