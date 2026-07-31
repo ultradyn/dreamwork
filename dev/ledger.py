@@ -516,11 +516,56 @@ def _default_since(repo):
     return out.stdout.strip() or None
 
 
-def sweep_text(text, commits, since):
-    """The advisory report. Always says how many commits were examined."""
+def sweep_text(text, commits, since, source):
+    """The advisory report — BOTH halves of the correlation are accounted for.
+
+    #404 ruled that a sweep which found nothing must be distinguishable from
+    one that did not run, and printed the examined COMMIT count for exactly
+    that reason. #671 is what that rule looks like when it is applied to only
+    one side: after the #294 cutover the ledger half returned ZERO entries and
+    the commit count stayed real, so `examined 442 commits … nothing to
+    review` read as a confident all-clear while nothing had been correlated.
+    The count of open ids is therefore printed beside the commit count, with
+    the SOURCE it came from — the same discriminability, on the half that went
+    silent.
+
+    ``source`` is `ledger_view`'s own answer (``'store'`` / ``'markdown'``),
+    never an assumption about where the ledger ought to live: `ledger_view`
+    fails closed toward Markdown on any store error, so the word here is what
+    was actually read, which is the only version of it worth printing.
+
+    ZERO ENTRIES IS A CANNOT-CHECK, NOT A CLEAN BILL — #404's ruled contract
+    ("'cannot check' must never read as 'nothing to fix'") and the reason
+    #671 was a P1. The predicate is #611's verbatim (*the ledger held no
+    entries AT ALL*) and deliberately not "no OPEN ids": a ledger whose work
+    is all landed genuinely has nothing to correlate and must keep saying so,
+    or every finished project grows a permanent scold row (#612's ignored-row
+    failure arriving by the front door).
+
+    ``sweep``'s own (n, findings) contract is untouched — the open-id count is
+    re-derived here through the same production reader rather than widening
+    that signature, so #404's four pins on the pure function keep binding the
+    behaviour they were written for. One extra `parse_ledger` per invocation:
+    measured at 15 ms against the live 1.2 MB store projection, for a command
+    the tick runs once.
+    """
     n, findings = sweep(text, commits)
+    open_ids, landed_ids = watch.parse_ledger(text)
     where = f"since {since[:12]}" if since else "across the whole history"
-    lines = [f"sweep: examined {n} commits {where}"]
+    lines = [f"sweep: examined {n} commits {where} against "
+             f"{len(open_ids)} open ids ({source})"]
+    if not open_ids and not landed_ids:
+        # The wording deliberately does NOT contain the clean verdict's phrase,
+        # even to deny it: the #667 test asserts that phrase's ABSENCE by plain
+        # substring, and a cannot-check line that quotes what it is refusing to
+        # say makes the obvious assertion unwritable. This repo has paid for
+        # that shape before — #667's merge note, where a precondition grep for
+        # conflict markers tripped on prose ABOUT conflict markers.
+        lines.append(
+            f"sweep: DID NOT REVIEW — the ledger yielded no entries at all "
+            f"(source: {source}), so no landing could be correlated. Nothing "
+            f"was checked; this is not a clean result (#404, #671).")
+        return "\n".join(lines) + "\n"
     for tid, landings in findings:
         ev = ", ".join(f"`{sha}` {subject}" for sha, subject in landings)
         lines.append(f"  #{tid} — {ev}")
@@ -1217,7 +1262,17 @@ def _dispatch(args):
         # Advisory by design (#404): every failure mode is a printed line and
         # exit 0 — "cannot check" must never read as "nothing to fix".
         ledger_path = Path(args.ledger)
-        if not ledger_path.exists():
+        # #671 — the #294 store dispatch sweep never got. `lint.ledger_view` IS
+        # that dispatch ("(text, source) for every ledger-content check — the
+        # #294 dispatch"), and sweep is a ledger-content reader of exactly the
+        # shape it serves: it consumes Markdown text through `parse_ledger` +
+        # `ledger_entries`, which is why its own header calls it "the discovery
+        # twin of lint.check_landed_still_open (#323)" — and that twin already
+        # reads through `ledger_view`. Reusing it rather than opening the store
+        # here is the same call #667 made for the worktree resolver: a second
+        # store reader is the defect #352 exists to prevent.
+        text, source = lint.ledger_view(ledger_path.parent)
+        if text is None:
             sys.stdout.write(f"sweep: ledger not found: {ledger_path} (examined 0 commits)\n")
             return 0
         since = args.since if args.since is not None else _default_since(args.repo)
@@ -1225,7 +1280,7 @@ def _dispatch(args):
         if commits is None:
             sys.stdout.write("sweep: git could not answer (not a repo?) — did not run\n")
             return 0
-        sys.stdout.write(sweep_text(ledger_path.read_text(), commits, since))
+        sys.stdout.write(sweep_text(text, commits, since, source))
         return 0
 
     ledger_path = Path(args.ledger)
