@@ -6922,3 +6922,395 @@ class TestWorktreeLedgerAbsent:
             "precondition: no store, so the resolver actually gets past its first guard"
         assert lint.shared_store_for_worktree(dw) is None, \
             "a separate-git-dir MAIN checkout must not be excused as a worktree"
+
+
+# ---------------------------------------------------------------------------
+# #611: a ledger check that examined NOTHING must say so.
+#
+# #592 made the `tasks.md` row WARN honestly inside a lane worktree; its
+# neighbours went on printing nothing at all, and silent absence reads as a
+# pass. Measured on the live repo before writing a line of this: `lint
+# --target <worktree>` silently lost `origin recorded on all 390 entries`
+# (check_task_origins), `section split agrees with watch.py`
+# (check_ledger_sections) and all 7 of #323's stale-open WARNs
+# (check_landed_still_open), plus three checks that examine entries but only
+# ever speak on a defect (check_self_completed_open, check_human_blocker,
+# check_landed_asks).
+#
+# Production line for this class: the `note_ledger_skip(...)` calls at each
+# check's existing silent-return, and `lint.check_ledger_skips` rendering
+# them. Delete any one call and the "names every skipped check" test goes
+# red; make `check_ledger_skips` emit unconditionally and the "must NOT
+# appear when the checks ran" test goes red — that second direction is what
+# stops this becoming a row that is always present and therefore ignored.
+#
+# Fixtures are REAL git worktrees of REAL post-cutover repos with a REAL
+# absent store, reusing the #592 class's builders rather than a second copy
+# (lessons.md:336 — a fixture that quietly kept a ledger would make every
+# assertion here pass for the wrong reason).
+# ---------------------------------------------------------------------------
+class TestLedgerSkipsAreReported:
+    # The #592 class's builders, reused rather than duplicated. A pytest test
+    # class has no __init__, so instantiating it is just a namespace grab —
+    # and a second copy of "build a real post-cutover repo + worktree" is the
+    # thing most likely to drift into a fixture that keeps a ledger.
+    _fx = TestWorktreeLedgerAbsent()
+
+    def _repo_with_a_landing(self, tmp_path):
+        """A post-cutover main checkout whose git history names a close.
+
+        `check_landed_still_open` returns before it ever looks at the ledger
+        when git names NO close/merge commit, so without this commit that
+        check could not reach its skip site and the test would silently
+        assert over five checks while claiming six. `check_landed_asks`
+        needs a `questions.md` for the same reason — found by this test
+        going red at five, which is what a discriminating fixture is for.
+        """
+        root, dw = self._fx._main_checkout(tmp_path)
+        (dw / "questions.md").write_text(GOOD)
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "--allow-empty",
+                        "-m", "close(#10): the landing this fixture needs"],
+                       capture_output=True, text=True, check=True)
+        subprocess.run(["git", "-C", str(root), "add", ".dreamwork/questions.md"],
+                       capture_output=True, text=True, check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-qm", "questions"],
+                       capture_output=True, text=True, check=True)
+        return root, dw
+
+    def _skips(self, root):
+        rep = lint.Report()
+        lint.run_checks(root / ".dreamwork", lint.load_watch(), rep)
+        return rep, list(rep.ledger_skips)
+
+    def _skip_rows(self, rep):
+        return [d for lvl, w, d in rep.rows if w == "ledger checks"]
+
+    EXPECTED = ["check_task_origins", "check_ledger_sections",
+                "check_landed_still_open", "check_self_completed_open",
+                "check_human_blocker", "check_landed_asks"]
+
+    def test_a_worktree_names_every_ledger_check_that_examined_nothing(self, tmp_path):
+        """The defect: six checks went silent and the report said nothing."""
+        root, _ = self._repo_with_a_landing(tmp_path)
+        wt, wtdw = self._fx._worktree(root, "lane-skips")
+        self._fx._preconditions(wtdw)
+        rep, skips = self._skips(wt)
+        assert sorted(skips) == sorted(self.EXPECTED), \
+            f"every check that examined nothing must be named: {skips}"
+        rows = self._skip_rows(rep)
+        assert len(rows) == 1, f"one row, not one per skipped check: {rows}"
+        for name in self.EXPECTED:
+            assert name in rows[0], f"{name} unnamed in the row: {rows[0]}"
+        assert not rep.failed, "a skip is missing coverage, not a target defect"
+
+    def test_the_row_is_a_warn_never_an_error(self, tmp_path):
+        root, _ = self._repo_with_a_landing(tmp_path)
+        wt, wtdw = self._fx._worktree(root, "lane-skiplevel")
+        self._fx._preconditions(wtdw)
+        rep, _ = self._skips(wt)
+        assert [lvl for lvl, w, _ in rep.rows if w == "ledger checks"] == [lint.WARN]
+
+    def test_every_named_check_is_a_real_function(self, tmp_path):
+        """The names are strings, so they can drift from the code that skipped.
+
+        A row naming a check that no longer exists is worse than no row: the
+        reader goes looking for coverage that was renamed away.
+        """
+        root, _ = self._repo_with_a_landing(tmp_path)
+        wt, wtdw = self._fx._worktree(root, "lane-skipnames")
+        self._fx._preconditions(wtdw)
+        _, skips = self._skips(wt)
+        assert skips, "precondition: something must have skipped"
+        for name in skips:
+            assert callable(getattr(lint, name, None)), \
+                f"{name} is named as skipped but is not a lint check"
+
+    def test_the_row_is_absent_when_the_ledger_checks_really_ran(self, tmp_path):
+        """The direction that stops this becoming an always-on, ignored row.
+
+        Same repo, same commit, same checks — linted in the MAIN checkout,
+        where the store is present and every check has entries to examine.
+        """
+        import ledger_parse
+        root, dw = self._repo_with_a_landing(tmp_path)
+        assert ledger_parse.store_path(dw).exists(), \
+            "precondition: the main checkout really does carry the store"
+        assert ledger_parse.source_of_truth(dw) == "store", \
+            "precondition: the ledger checks really do get real entries"
+        rep, skips = self._skips(root)
+        assert skips == [], f"nothing skipped here, so nothing may be named: {skips}"
+        assert self._skip_rows(rep) == [], \
+            "a row that is always present is a row nobody reads"
+
+    def test_the_live_repo_reports_no_skips(self, frozen_tree):
+        """The dogfood: this repo's own main checkout must show no skip row.
+
+        `frozen_tree` IS a linked worktree, so its store is absent by design —
+        materialize one the way the #592 dogfood does, then the ledger checks
+        have real entries and the row must not appear.
+        """
+        dw = frozen_tree / ".dreamwork"
+        led = Path(__file__).resolve().parent / ".dreamwork" / "tasks.md.deprecated"
+        _materialize_store(dw, led.read_text(), frozen_tree)
+        assert lint.source_of_truth(dw) == "store", \
+            "precondition: store mode, or this passes on the #592 excuse"
+        rep = lint.Report()
+        lint.run_checks(dw, lint.load_watch(), rep)
+        assert rep.ledger_skips == [], \
+            f"the live ledger gives every check something to examine: {rep.ledger_skips}"
+
+    def test_a_pre_cutoff_only_ledger_is_not_reported_as_skipped(self):
+        """`check_task_origins` EXAMINED those entries; none were in scope.
+
+        Every fresh project starts at #1, so counting "no post-cutoff entries"
+        as a skip would put this row on every young project forever — the
+        ignored-row failure the check exists to prevent.
+        """
+        text = ("## Open\n\n- **#3** — an old entry · P1 · task\n\n"
+                "## Recently landed\n\n- **#4** — another old one · P2 · task\n")
+        rep = lint.Report()
+        lint.check_task_origins(text, rep)
+        assert rep.ledger_skips == [], \
+            "entries were examined; none were in scope — that is a run, not a skip"
+
+    def test_an_empty_ledger_is_reported_as_skipped(self):
+        """The other half of the same discrimination: nothing examined."""
+        rep = lint.Report()
+        lint.check_task_origins("## Open\n\n## Recently landed\n", rep)
+        assert rep.ledger_skips == ["check_task_origins"]
+
+    def test_nothing_landed_yet_is_not_reported_as_skipped(self, tmp_path):
+        """`check_landed_asks` over a ledger with opens but no landings ran."""
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(
+            "# Tasks\n\nNext id: **6**\n\n## Open\n\n- **#5** — open work\n\n"
+            "## Recently landed\n")
+        (dw / "questions.md").write_text(GOOD)
+        watch = lint.load_watch()
+        open_ids, landed = watch.parse_ledger((dw / "tasks.md").read_text())
+        assert open_ids and not landed, \
+            "precondition: opens exist, nothing has landed"
+        rep = lint.Report()
+        lint.check_landed_asks(dw, watch, rep)
+        assert rep.ledger_skips == [], \
+            "a real correlation over a ledger with no landings is not a skip"
+
+    def test_the_renderer_is_silent_with_nothing_recorded(self):
+        rep = lint.Report()
+        lint.check_ledger_skips(rep)
+        assert rep.rows == []
+
+    def test_a_skip_recorded_twice_is_named_once(self):
+        """`check_human_blocker` has two skip sites; a repeat is one skip."""
+        rep = lint.Report()
+        lint.note_ledger_skip(rep, "check_human_blocker")
+        lint.note_ledger_skip(rep, "check_human_blocker")
+        assert rep.ledger_skips == ["check_human_blocker"]
+
+    def test_the_renderer_runs_last_in_run_checks(self):
+        """It can only speak once every skipping check has had its turn."""
+        import inspect
+        body = [ln.strip() for ln in
+                inspect.getsource(lint.run_checks).splitlines()
+                if ln.strip().startswith("check_")]
+        assert body[-1] == "check_ledger_skips(rep)", \
+            f"check_ledger_skips must be the last check called: {body[-3:]}"
+
+
+# ---------------------------------------------------------------------------
+# #612: the fold prompt must not reproduce the hand-off body.
+#
+# `handoffs.md` writes each hand-off as ONE physical line and the `· by
+# <claimer>` grammar runs to end of line, so the claimer field carries the
+# whole body. Measured on the live file before writing this: 99 pending rows,
+# median claimer 1470 characters, longest 4568; the #592 hand-off is 3809 and
+# dominated the main checkout's entire lint report. A report nobody can skim
+# is a report nobody reads — the same tune-out failure #592 existed to stop,
+# arriving by volume instead of by false positives.
+#
+# Production line for this class: `lint.handoff_quote` and its three call
+# sites in check_handoffs. Return the field unchanged and the truncation tests
+# go red; drop the cap and the no-terminator test goes red; move the sha back
+# behind the quote and nothing goes red — which is why the sha test asserts
+# PRESENCE under every input rather than position.
+# ---------------------------------------------------------------------------
+class TestHandoffQuoteTruncation:
+    # The live shape, abridged: a lane id, an em-dash, then prose. The first
+    # sentence ends at `mine".` — every earlier dot is inside `lint.py` or
+    # `tasks.md`, followed by a letter, which is the case measured on all 99
+    # live claimers and the reason the terminator rule needs its lookahead.
+    BODY = ("lane-592lint — `lint.py` no longer reports a FALSE `ERROR "
+            "tasks.md — no 'Next id'` inside a lane worktree, the red that "
+            "#565/#569 each passed on as \"pre-existing, not mine\". "
+            + "Then a great deal more prose. " * 60 + "MARKER-AT-THE-END.")
+    FIRST = ("lane-592lint — `lint.py` no longer reports a FALSE `ERROR "
+             "tasks.md — no 'Next id'` inside a lane worktree, the red that "
+             "#565/#569 each passed on as \"pre-existing, not mine\".")
+
+    def _pending(self, claimer, nid="5", sha="abc1234"):
+        return ("# Hand-offs\n\n## Pending\n\n"
+                f"- **#{nid}** · landed `{sha}` · 2026-07-28 14:30 · by "
+                f"{claimer}\n\n## Folded\n")
+
+    def _warn(self, tmp_path, handoffs, ledger=None):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(ledger or TestHandoffs.LEDGER)
+        (dw / "handoffs.md").write_text(handoffs)
+        rep = lint.Report()
+        lint.check_handoffs(dw, lint.load_watch(), rep)
+        warns = [d for lvl, w, d in rep.rows
+                 if w == "handoffs.md" and lvl == lint.WARN]
+        assert len(warns) == 1, warns
+        return warns[0]
+
+    def test_the_fold_prompt_does_not_reproduce_the_body(self, tmp_path):
+        """THE defect: the whole hand-off, verbatim, in one report row."""
+        assert len(self.BODY) > 1500, "precondition: a realistically long body"
+        warn = self._warn(tmp_path, self._pending(self.BODY))
+        assert "MARKER-AT-THE-END" not in warn, \
+            "the tail of the body is in the row — it was reproduced whole"
+        assert len(warn) < 500, f"row is {len(warn)} chars, not skimmable: {warn}"
+
+    def test_the_first_sentence_survives_whole(self, tmp_path):
+        """Truncating to the first sentence means the WHOLE first sentence."""
+        assert len(self.FIRST) < lint.HANDOFF_QUOTE_CAP, \
+            "precondition: this sentence is inside the cap, so the cap is not what keeps it"
+        warn = self._warn(tmp_path, self._pending(self.BODY))
+        assert self.FIRST in warn, f"first sentence cut short: {warn}"
+
+    def test_a_dotted_filename_is_not_a_sentence_end(self):
+        """The measured trap: `lint.py` and `tasks.md` in the first sentence.
+
+        A terminator rule without the whitespace lookahead cuts at `lint.`,
+        which would make every row in this repo's own report useless.
+        """
+        assert lint.handoff_quote("lane-x — `lint.py` and tasks.md both work.") \
+            == "lane-x — `lint.py` and tasks.md both work."
+
+    def test_no_sentence_terminator_falls_back_to_the_cap(self):
+        """30 of the 99 live claimers have no terminator at all.
+
+        The decision: no guessing at an implied sentence — the whole field is
+        the candidate and the cap bounds it, marked with an ellipsis.
+        """
+        field = "lane-y — " + "an unterminated run of words " * 40
+        assert "." not in field, "precondition: genuinely no terminator"
+        out = lint.handoff_quote(field)
+        assert out.endswith("…"), out
+        assert len(out) <= lint.HANDOFF_QUOTE_CAP + 1, len(out)
+
+    def test_a_first_sentence_longer_than_the_cap_is_still_capped(self):
+        """Live first sentences run to 759 characters; the cap is a backstop
+        over the sentence rule, not only over the no-terminator fallback."""
+        field = "lane-z — " + "word " * 300 + "end."
+        assert lint.HANDOFF_SENTENCE_END.match(field), \
+            "precondition: this DOES have a terminator, so the sentence rule fires first"
+        out = lint.handoff_quote(field)
+        assert len(out) <= lint.HANDOFF_QUOTE_CAP + 1, len(out)
+        assert out.endswith("…"), out
+
+    def test_the_rule_is_the_first_sentence_not_the_first_n_characters(self):
+        """A GREEN red-run, found and reported rather than swallowed.
+
+        Deleting the first-sentence extraction (`quote = m.group(1) if m else
+        flat` -> `quote = flat`) left all 16 tests in this class GREEN,
+        because `BODY`'s first sentence is 188 characters and the cap is 200
+        — the cap alone kept it, and nothing here could tell a sentence rule
+        from a character budget. This is the case that can: a first sentence
+        well inside the cap, followed by prose the cap alone would keep.
+        """
+        field = "lane-s — a short first sentence. " + "trailing prose " * 40
+        first = "lane-s — a short first sentence."
+        assert len(first) < lint.HANDOFF_QUOTE_CAP, \
+            "precondition: the sentence is well inside the cap"
+        assert len(field) > lint.HANDOFF_QUOTE_CAP, \
+            "precondition: the cap alone would keep more than the sentence"
+        out = lint.handoff_quote(field)
+        assert out == first, out
+        assert "trailing" not in out, \
+            "prose past the first sentence survived — this is a cap, not a sentence rule"
+
+    def test_the_cut_lands_on_a_word_boundary(self):
+        """A second GREEN red-run, same class, same lesson (lessons.md:336).
+
+        This test used to assert `does not end with a space` and `is a prefix
+        of the field` — BOTH true of a naive `field[:CAP]`, so removing the
+        boundary logic changed nothing it could see. The real property is
+        that the character AFTER the kept prefix is whitespace: no word split.
+        """
+        field = "lane-w — " + "alpha bravo charlie delta " * 40
+        assert not field[:lint.HANDOFF_QUOTE_CAP].endswith(" ") \
+            and not field[lint.HANDOFF_QUOTE_CAP].isspace(), \
+            "precondition: a naive cut at the cap really would split a word here"
+        out = lint.handoff_quote(field)
+        kept = out.rstrip("…")
+        assert field.startswith(kept), "the kept prefix must be verbatim, not reflowed"
+        assert field[len(kept)].isspace(), \
+            f"the cut split a word: ...{kept[-20:]!r} | {field[len(kept):len(kept) + 10]!r}"
+        assert not kept.endswith(" "), kept
+
+    def test_a_short_claimer_is_unchanged(self, tmp_path):
+        """The ordinary hand-off must render exactly as it always has."""
+        assert lint.handoff_quote("dreamer-5 — the fix") == "dreamer-5 — the fix"
+        warn = self._warn(tmp_path, self._pending("dreamer-5 — the fix"))
+        assert "dreamer-5 — the fix" in warn and "…" not in warn, warn
+
+    def test_the_quote_is_one_line(self):
+        """A wrapped field inside a one-line report row is unreadable
+        whatever its length, so whitespace is collapsed before anything else."""
+        out = lint.handoff_quote("lane-q —\n  wrapped\n  over lines.")
+        assert out == "lane-q — wrapped over lines."
+
+    @pytest.mark.parametrize("claimer", [
+        "lane-a — " + "x" * 4000,                       # no terminator, huge
+        "lane-b — " + "sentence. " * 400,               # terminator, huge
+        "lane-c.",                                      # terminator immediately
+        "lane-d — a body naming abc1234 late " * 200,   # sha-like text in the body
+        "z",                                            # the shortest legal field
+    ])
+    def test_the_sha_survives_every_truncation(self, tmp_path, claimer):
+        """The sha is the actionable part; a truncation that can drop it is a
+        regression. It survives by CONSTRUCTION — it is its own interpolated
+        field, printed BEFORE the quote — so no input can push it off the row.
+        """
+        warn = self._warn(tmp_path, self._pending(claimer, sha="abc1234"))
+        assert "sha `abc1234`" in warn, warn
+        assert warn.index("abc1234") < warn.index("by "), \
+            "the sha must precede the writer-controlled quote"
+
+    def test_the_landed_but_unfolded_prompt_is_truncated_too(self, tmp_path):
+        """#576's branch carries the same claimer and had the same defect."""
+        warn = self._warn(tmp_path, self._pending(self.BODY, nid="6"))
+        assert "no `→ folded` line" in warn, warn
+        assert "MARKER-AT-THE-END" not in warn, warn
+        assert "sha `abc1234`" in warn, warn
+
+    def test_the_malformed_entry_quote_is_truncated_too(self, tmp_path):
+        """The third site: `malformed` holds the SAME physical line, so it
+        carries the same whole body. It fires on no live entry today, which
+        is exactly why fixing only the loud branch would leave it to
+        resurface the first time this one fires.
+        """
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    f"- **#5** this line does not follow the grammar. "
+                    + "padding words " * 300 + "MARKER-AT-THE-END\n\n## Folded\n")
+        warn = self._warn(tmp_path, handoffs)
+        assert "grammar" in warn, warn
+        assert "MARKER-AT-THE-END" not in warn, \
+            "the malformed line was reproduced whole"
+
+    def test_every_prose_field_in_check_handoffs_goes_through_the_quote(self):
+        """Wiring, the #554 idiom: a fourth row interpolating a raw claimer
+        or line would reintroduce this defect silently."""
+        import inspect
+        src = inspect.getsource(lint.check_handoffs)
+        assert "{claimer}" not in src, \
+            "a raw claimer is interpolated somewhere — use handoff_quote()"
+        assert "{line!r}" not in src, \
+            "a raw hand-off line is interpolated somewhere — use handoff_quote()"
+        assert src.count("handoff_quote(") == 3, \
+            f"expected 3 quoted fields, found {src.count('handoff_quote(')}"
