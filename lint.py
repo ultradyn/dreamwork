@@ -43,6 +43,7 @@ from pathlib import Path
 # `check_ledger_sections` already did `import watch` at function scope; this
 # makes the module-level `LEDGER_ID` consume the same single core.
 import watch
+from dreamwork_db.question_parse import ResolutionKind, classify_resolution_marker
 
 # #653: the same reading `watch.serving_report` carries. One implementation of
 # "is client/dist built from this tree", two surfaces — a second copy of the
@@ -445,28 +446,21 @@ def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
         items = watch.parse_answered(path.read_text())
     except Exception:
         return                          # check_questions owns unparseable
-    response_head = re.compile(
-        r"(?m)^\s*-\s+\*\*(Answer|Comment) \(via watch, "
-        r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}\)(?::|\s+—)")
-    dated_head = re.compile(
-        r"(?m)^\s*-\s+\*\*([^*\n]+?) \((?:via [^,\n]+, )?"
-        r"\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\)(?::|\s+—)")
     missing = []
     processed_only = []
     unclassifiable = []
     for item in items:
-        body = item["body"]
-        human_follow = any(
-            follow.get("author") == "human" and follow.get("when")
-            for follow in item.get("follows", []))
-        if (watch.answered_at(body) is not None or human_follow
-                or response_head.search(body)):
+        marker = classify_resolution_marker(
+            item["body"],
+            (follow.get("when") for follow in item.get("follows", [])
+             if follow.get("author") == "human"),
+        )
+        if marker.kind is ResolutionKind.RESOLVED:
             continue
-        candidate = dated_head.search(body)
-        if candidate:
-            row = (item["title"], candidate.group(1))
-            (processed_only if candidate.group(1) == "Folded"
-             else unclassifiable).append(row)
+        if marker.kind is ResolutionKind.FOLDED_ONLY:
+            processed_only.append((item["title"], marker.label))
+        elif marker.kind is ResolutionKind.FUTURE_FORMAT:
+            unclassifiable.append((item["title"], marker.label))
         else:
             missing.append(item["title"])
     if not missing and not processed_only and not unclassifiable:
