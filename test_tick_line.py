@@ -164,12 +164,15 @@ class TestRunnerTallyMirrorsTheDrift:
     so the line shows what the fleet IS running, not what it should."""
 
     def test_native_heavy_fleet_is_visible_as_such(self, tmp_path):
-        """The live shape at the moment this landed: five opus to one ccc."""
+        """The live shape at the moment this landed: five opus to one ccc.
+
+        The ratio lives in the parenthetical of `recorded` — it is the
+        composition of the recorded fleet, not a separate fleet count (#718)."""
         lanes = [{"lane": "l%d" % i, "model": "opus"} for i in range(5)]
         lanes.append({"lane": "l5",
                       "model": "ccc @glm52 (Opus review MANDATORY)"})
         out = tick_line.facts(make_target(tmp_path, posture=HOT, lanes=lanes))
-        assert "runners opus 5, ccc 1" in out
+        assert "lanes 6 recorded (opus 5, ccc 1)" in out
 
     def test_tally_follows_the_recorded_models(self, tmp_path):
         a = tick_line.facts(make_target(
@@ -178,8 +181,8 @@ class TestRunnerTallyMirrorsTheDrift:
         b = tick_line.facts(make_target(
             tmp_path / "b", posture=HOT,
             lanes=[{"lane": "x", "model": "ccc @glm52"}]))
-        assert "runners opus 1" in a
-        assert "runners ccc 1" in b
+        assert "(opus 1)" in a
+        assert "(ccc 1)" in b
 
     def test_long_model_notes_cannot_grow_the_line(self, tmp_path):
         """Only the first token is tallied, so a lane note of any length costs
@@ -187,14 +190,14 @@ class TestRunnerTallyMirrorsTheDrift:
         out = tick_line.facts(make_target(
             tmp_path, posture=HOT,
             lanes=[{"lane": "x", "model": "ccc " + "very long note " * 40}]))
-        assert "runners ccc 1" in out
+        assert "(ccc 1)" in out
         assert "very long note" not in out
 
     def test_unrecorded_model_is_a_question_mark_not_a_runner_name(self,
                                                                   tmp_path):
         out = tick_line.facts(make_target(
             tmp_path, posture=HOT, lanes=[{"lane": "x"}]))
-        assert "runners ? 1" in out
+        assert "(? 1)" in out
         assert "None" not in out
 
     @pytest.mark.parametrize("banned", ["lanes live", "lanes out", "fleet "])
@@ -222,6 +225,53 @@ class TestTheContradictionIsAdjacent:
     def test_counts_immediately_precede_the_delegation_target(self, tmp_path):
         out = tick_line.facts(make_target(tmp_path, posture=HOT))
         assert "lanes 0 recorded · 0 ccc-live · delegation 5" in out
+
+
+class TestOneSourcePerCount:
+    """#718: `recorded` and the runner tally both read `status.json["lanes"]`.
+    Presenting them as two ·-separated fleet counts made one stale source look
+    like two corroborating measurements. The runner breakdown is now a
+    parenthetical OF the recorded count, so the line has one figure per source.
+    """
+
+    def test_runner_breakdown_is_a_parenthetical_not_a_separate_clause(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: True)
+        out = tick_line.facts(make_target(
+            tmp_path, posture=HOT,
+            lanes=[{"lane": "l%d" % i, "model": "ccc"} for i in range(3)],
+            dreamers=[{"task": i, "pid": 100 + i} for i in range(5)]))
+        assert "lanes 3 recorded (ccc 3)" in out
+        # The phrasing that presented the same source as a second count.
+        assert "runners " not in out
+
+    def test_zero_lanes_has_no_parenthetical(self, tmp_path):
+        """No lanes → no composition to show. The recorded half is just the
+        count, matching the pre-#718 form so the fail-closed tests still pin."""
+        out = tick_line.facts(make_target(tmp_path, posture=HOT))
+        assert "lanes 0 recorded · " in out
+        assert "recorded (" not in out
+
+    def test_recorded_count_is_reread_each_call_not_frozen(self, tmp_path):
+        """#718 Direction 1: the frozen-counter injection. A per-target cache
+        on the lanes read would freeze the count exactly as observed live
+        (stuck at 3 across five dispatches). This test rewrites `lanes` under
+        an already-read target and requires the count to move — the same
+        constructed-false-green guard `test_posture_is_reread_within_one_target`
+        uses for the posture half.
+
+        A test asserting `count == 2` against a fixed fixture passes against
+        every frozen-counter bug; only a two-read differential can catch one.
+        """
+        target = make_target(tmp_path, posture=HOT,
+                             lanes=[{"lane": "l%d" % i} for i in range(2)])
+        assert "lanes 2 recorded" in tick_line.facts(target)
+        (Path(target) / ".dreamwork" / "status.json").write_text(json.dumps(
+            {"dreamers": [],
+             "lanes": [{"lane": "l%d" % i} for i in range(5)]}))
+        after = tick_line.facts(target)
+        assert "lanes 5 recorded" in after
+        assert "lanes 2 recorded" not in after
 
 
 class TestUnprobeableLanesDoNotBreakTheProbe:
