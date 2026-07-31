@@ -249,6 +249,9 @@ class E2Shadow(HttpHarness):
     # /run-mode's first POST to a fresh target always changes the mode (the
     # default is lackadaisical), so it returns changed=True.
     # /deploy's runner is faked in HttpHarness.setUp — never `just deploy`.
+    # /chat-reply needs an EXISTING chat, so run_all seeds one through the ONE
+    # production writer before it posts (see step 11 for why a bogus id would
+    # slip past every assertion in this class).
     def run_all_routes(self):
         """POST every write route once; return (statuses, submissions_rows).
 
@@ -314,6 +317,31 @@ class E2Shadow(HttpHarness):
         #     (#551); relay redirected to a temp dir in setUp. Empty {} body
         #     is the normal press.
         statuses.append(self.post("/remind", {})[0])
+        # 11. /chat-reply — continue an EXISTING chat (#577). Its existence
+        #     guard runs BEFORE apply, so an unknown id is a domain_invalid
+        #     refusal — and a refusal still commits a receipt and answers
+        #     202 on / 200 off, exactly like the write path. So a bogus id
+        #     here would sail past this class's status AND receipt-count
+        #     assertions while never once exercising the write path — the
+        #     same trap the /decide and /posture assertIns above guard
+        #     against. Measured, not assumed (#586): with the id bogus and
+        #     the post-condition below deleted, all 15 tests in this module
+        #     pass. Hence: seed a real chat through the
+        #     ONE production writer — apply_chat_turn, the same call the
+        #     handler makes — assert the precondition the write path needs,
+        #     and assert afterwards that the reply actually landed as a
+        #     turn. The seed is a direct writer call, not a POST, so it adds
+        #     no receipt and no submissions row to either run.
+        cid = f"e2-chat-{marker}"
+        self.assertTrue(
+            watch.apply_chat_turn(self.target, cid, "human", f"seed {marker}"))
+        self.assertTrue(watch._chat_exists(self.target, cid))
+        reply = f"reply {marker}"
+        statuses.append(self.post("/chat-reply", {"id": cid,
+                                                  "text": reply})[0])
+        self.assertIn(reply, watch.read_text(os.path.join(
+            self.target, ".dreamwork", watch.CHAT_DIR, cid,
+            "transcript.md")))
         return statuses, self.submissions_rows()
 
     def test_every_write_route_commits_a_receipt_and_changes_nothing_else(self):
@@ -333,7 +361,11 @@ class E2Shadow(HttpHarness):
         # 2026-07-30 #496: 8→9 — /decide (#289) joined /deploy (#462) in the
         # dispatch; both needed payloads in run_all_routes.
         # 2026-07-30 #551: 9→10 — /remind joined the dispatch; empty-body press.
-        self.assertEqual(len(WRITE_ROUTES), 10, WRITE_ROUTES)
+        # 2026-07-31 #586: 10→11 — /chat-reply (#577) joined the dispatch;
+        # payload is {"id", "text"} against a chat run_all seeds first via
+        # apply_chat_turn, because the route refuses an id that does not
+        # already exist.
+        self.assertEqual(len(WRITE_ROUTES), 11, WRITE_ROUTES)
         # Every route returned 202 with the journal ON (E3 cutover moved the
         # write-route status) and 200 with the journal OFF (the pre-cutover
         # baseline, which still uses _send). The shadow must change only the
@@ -360,8 +392,8 @@ class E2Shadow(HttpHarness):
         # count assertion above (len(WRITE_ROUTES)) would still pass while a
         # route went unshadowed — UNLESS this guard fails first. This is the
         # plan's "derive the route list" discipline made executable.
-        exercised = 10  # ask, comment, answer, command, tint, run-mode,
-        #              posture, decide, deploy, remind
+        exercised = 11  # ask, comment, answer, command, tint, run-mode,
+        #              posture, decide, deploy, remind, chat-reply
         self.assertEqual(len(WRITE_ROUTES), exercised, WRITE_ROUTES)
 
     @contextlib.contextmanager
