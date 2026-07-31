@@ -62,9 +62,10 @@ Initializer = Callable[[sqlite3.Connection], None]
 class StoreSpec:
     """Connection-independent description of one SQLite store.
 
-    ``initializer`` is the temporary seam for existing stores whose schema
-    bootstrap has not yet moved into ``dreamwork_db.migrate``. It runs only
-    for WRITE opens, after connection pragmas and before a handle is exposed.
+    ``initializer`` is the package-internal schema entry point for a store.
+    It runs only for WRITE opens, after connection pragmas and before a handle
+    is exposed; the legacy task store supplies ``dreamwork_db.migrate``'s
+    ordered ladder here.
     Repository factories are trusted package internals: each receives a
     private session, while API consumers receive only the resulting object.
     """
@@ -315,4 +316,3 @@ def open_database(
         state.transaction_active = False
         state.closed = True
         connection.close()
-
