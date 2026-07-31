@@ -1080,6 +1080,7 @@ class TestCollector(unittest.TestCase):
             "const statusBlock = (s,h) => '';\n"
             "const posturePicker = d => '';\n"
             "const tintPicker = d => '';\n"
+            "const drawModePicker = () => '';\n"
             + qsummary + "\n"
             + qsection + "\n"
             + dashboard + "\n"
