@@ -78,6 +78,8 @@ from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
 from ledger_parse import store_path  # noqa: E402
 from ledger_parse import classify_origin, store_records  # noqa: E402  — #497 read verbs
 from ledger_parse import store_review_decisions  # noqa: E402  — #497 reviews verbs
+from dreamwork_db import Access, open_database  # noqa: E402
+from dreamwork_db.tasks import task_store_spec  # noqa: E402
 import lint  # noqa: E402 — NEXT_ID, the one header reader
 import ledger_store  # noqa: E402 — open the store for write verbs (#294 inc 9)
 import ledger_write  # noqa: E402 — file_task / land_task (#294 inc 9)
@@ -1279,19 +1281,10 @@ def _store_incomplete_counts(dw):
     if not db.exists():
         return 0, 0
     try:
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        with open_database(task_store_spec(db), access=Access.READ) as database:
+            return database.tasks.incomplete_counts()
     except sqlite3.Error:
         return 0, 0
-    try:
-        untyped = conn.execute(
-            "SELECT COUNT(*) FROM task WHERE type IS NULL").fetchone()[0]
-        missing = conn.execute(
-            "SELECT COUNT(*) FROM task WHERE origin IS NULL").fetchone()[0]
-    except sqlite3.Error:
-        return 0, 0
-    finally:
-        conn.close()
-    return int(untyped), int(missing)
 
 
 def _warning_counts(dw_dir):

@@ -28,6 +28,9 @@ import re
 import sqlite3
 from pathlib import Path
 
+from dreamwork_db import Access, open_database
+from dreamwork_db.tasks import task_store_spec
+
 # An entry opens with a leading bold token (`- **#…**`); only that token
 # numbers it. A `#N` deeper in the body is a cross-reference, never the
 # entry's number.
@@ -155,23 +158,20 @@ def store_path(dreamwork_dir) -> Path:
     return Path(dreamwork_dir) / STORE_FILENAME
 
 
+def _task_read(db: Path, method: str, default, *args):
+    """Call one repository read while preserving the facade's soft failure."""
+    if not db.exists():
+        return default
+    try:
+        with open_database(task_store_spec(db), access=Access.READ) as database:
+            return getattr(database.tasks, method)(*args)
+    except sqlite3.Error:
+        return default
+
+
 def _read_meta_value(db: Path, key: str) -> str | None:
     """One meta value from the store, or None when absent / unreadable."""
-    if not db.exists():
-        return None
-    try:
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    except sqlite3.Error:
-        return None
-    try:
-        row = conn.execute(
-            "SELECT value FROM meta WHERE key = ?", (key,)
-        ).fetchone()
-        return row[0] if row else None
-    except sqlite3.Error:
-        return None
-    finally:
-        conn.close()
+    return _task_read(db, "meta_value", None, key)
 
 
 def cutover_watermark(dreamwork_dir) -> str | None:
@@ -224,38 +224,7 @@ def store_entries(dreamwork_dir) -> list[tuple[list[int], str]]:
     every consumer that reads the body column directly (the replay checks,
     the digest verifiers) is unaffected.
     """
-    db = store_path(dreamwork_dir)
-    if not db.exists():
-        return []
-    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    try:
-        rows = conn.execute(
-            "SELECT id, body, title, priority, type, origin"
-            " FROM task ORDER BY id"
-        ).fetchall()
-    except sqlite3.Error:
-        return []
-    finally:
-        conn.close()
-    out: list[tuple[list[int], str]] = []
-    for id_, body, title, priority, type_, origin in rows:
-        # A body that already heads itself (the import's verbatim shape) is
-        # returned untouched; only a headless body (the `file` verb's shape)
-        # gets a synthesized head prepended (#557).
-        if body.split("\n", 1)[0].startswith("- **#"):
-            out.append(([int(id_)], body))
-            continue
-        origin_val = origin if origin in ("human", "loop", "unknown") else "unknown"
-        fields = []
-        if priority:
-            fields.append(priority)
-        if type_:
-            fields.append(type_)
-        fields.append(f"origin: **{origin_val}**")
-        head = (f"- **#{int(id_)}** — {title} · "
-                + " · ".join(fields) + " ·")
-        out.append(([int(id_)], head + "\n" + body))
-    return out
+    return _task_read(store_path(dreamwork_dir), "entries", [])
 
 
 def store_records(dreamwork_dir) -> list[dict]:
@@ -275,24 +244,7 @@ def store_records(dreamwork_dir) -> list[dict]:
     (str|None), ``type`` (str|None), ``origin`` (str|None), ``blocked_on``
     (str|None).
     """
-    db = store_path(dreamwork_dir)
-    if not db.exists():
-        return []
-    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    try:
-        rows = conn.execute(
-            "SELECT id, state, title, body, priority, type, origin, blocked_on"
-            " FROM task ORDER BY id"
-        ).fetchall()
-    except sqlite3.Error:
-        return []
-    finally:
-        conn.close()
-    return [
-        {"id": int(r[0]), "state": r[1], "title": r[2], "body": r[3],
-         "priority": r[4], "type": r[5], "origin": r[6], "blocked_on": r[7]}
-        for r in rows
-    ]
+    return _task_read(store_path(dreamwork_dir), "records", [])
 
 
 def store_ids_by_state(dreamwork_dir) -> tuple[list[str], list[str]]:
@@ -302,20 +254,7 @@ def store_ids_by_state(dreamwork_dir) -> tuple[list[str], list[str]]:
     Returns strings to match ``parse_ledger``'s contract (callers normalise
     to int at the seam, as the existing consumers do).
     """
-    db = store_path(dreamwork_dir)
-    if not db.exists():
-        return [], []
-    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    try:
-        open_ids = [str(r[0]) for r in conn.execute(
-            "SELECT id FROM task WHERE state = 'open' ORDER BY id")]
-        landed_ids = [str(r[0]) for r in conn.execute(
-            "SELECT id FROM task WHERE state = 'landed' ORDER BY id")]
-    except sqlite3.Error:
-        return [], []
-    finally:
-        conn.close()
-    return open_ids, landed_ids
+    return _task_read(store_path(dreamwork_dir), "ids_by_state", ([], []))
 
 
 def store_review_decisions(dreamwork_dir) -> list[dict]:
@@ -334,24 +273,7 @@ def store_review_decisions(dreamwork_dir) -> list[dict]:
     The dict KEYS are the read verbs' stable output contract: ``artifact``,
     ``question_title``, ``decision``, ``decided_at``, ``actor``.
     """
-    db = store_path(dreamwork_dir)
-    if not db.exists():
-        return []
-    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    try:
-        rows = conn.execute(
-            "SELECT artifact, question_title, decision, decided_at, actor"
-            " FROM review_decision ORDER BY decided_at, artifact"
-        ).fetchall()
-    except sqlite3.Error:
-        return []  # table absent (pre-v2 store) == no review data
-    finally:
-        conn.close()
-    return [
-        {"artifact": r[0], "question_title": r[1], "decision": r[2],
-         "decided_at": r[3], "actor": r[4]}
-        for r in rows
-    ]
+    return _task_read(store_path(dreamwork_dir), "review_decisions", [])
 
 
 def store_series_raw(dreamwork_dir) -> dict | None:
@@ -375,58 +297,4 @@ def store_series_raw(dreamwork_dir) -> dict | None:
     store never breaks a reader (fail-closed toward markdown, same as
     :func:`source_of_truth`).
     """
-    db = store_path(dreamwork_dir)
-    if not db.exists():
-        return None
-    try:
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    except sqlite3.Error:
-        return None
-    try:
-        arrived_rows = conn.execute(
-            "SELECT task_id, MIN(at) FROM task_event "
-            "WHERE from_state IS NULL AND to_state = 'open' "
-            "GROUP BY task_id").fetchall()
-        landed_rows = conn.execute(
-            "SELECT task_id, MIN(at) FROM task_event "
-            "WHERE to_state = 'landed' "
-            "GROUP BY task_id").fetchall()
-        task_rows = conn.execute(
-            "SELECT id, state, origin FROM task").fetchall()
-        time_rows = conn.execute(
-            "SELECT DISTINCT at FROM task_event ORDER BY at").fetchall()
-    except sqlite3.Error:
-        return None
-    finally:
-        conn.close()
-
-    def _epoch(iso_at):
-        """Parse an event ``at`` ISO-8601 string to an int epoch."""
-        try:
-            from datetime import datetime
-            return int(datetime.fromisoformat(iso_at).timestamp())
-        except (ValueError, TypeError, OSError):
-            return None
-
-    arrived = {}
-    for tid, at in arrived_rows:
-        e = _epoch(at)
-        if e is not None:
-            arrived[str(tid)] = e
-    landed = {}
-    for tid, at in landed_rows:
-        e = _epoch(at)
-        if e is not None:
-            landed[str(tid)] = e
-    first_sight = {}
-    latest_open = set()
-    for tid, state, origin in task_rows:
-        s = str(tid)
-        first_sight[s] = origin if origin in KNOWN_ORIGINS else "unknown"
-        if state == "open":
-            latest_open.add(s)
-    commit_times = sorted(
-        e for e in (_epoch(r[0]) for r in time_rows) if e is not None)
-    return {"arrived": arrived, "landed": landed,
-            "first_sight": first_sight, "latest_open": latest_open,
-            "commit_times": commit_times}
+    return _task_read(store_path(dreamwork_dir), "series_raw", None)
