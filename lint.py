@@ -4666,6 +4666,169 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
                 f"in handoffs.md (sha `{sha}`, by {handoff_quote(claimer)}) "
                 f"— append one under `## Folded` (#576)")
 
+    # #677 — the rebase-before-handoff rule as a check. At the moment a
+    # hand-off is pending AND its task is still open (i.e. awaiting merge),
+    # the branch it names should not be behind master: `git rev-list --count
+    # <sha>..master` non-zero → WARN naming the sha and the count. A count is a
+    # question, not a verdict (#590): behind-ness is expected for a lane still
+    # working, which is why the pending-and-open anchor is the right scope and a
+    # not-yet-merged row is the only one this fires on (hazard 1/4 — measured 0
+    # such rows on today's file, so no wall).
+    #
+    # WARN not ERROR (hazard 2): a lane that deliberately did not rebase
+    # because the rebase was genuinely hard, and handed back the analysis
+    # instead, is behaving correctly per the rule — an ERROR would punish the
+    # honest path.
+    #
+    # THE CASE THE RULE'S ORDERING CLAUSE EXISTS TO PREVENT (hazard 3, the
+    # primary one): a lane that appended its hand-off and THEN rebased has a
+    # sha that no longer exists on its branch at all, so `rev-list` fails. A
+    # check that silently skips what it cannot resolve is #671 repeating — so
+    # whatever this pass cannot evaluate it must SAY SO (#671): "examined N,
+    # behind M, could not evaluate K" is the minimum honest shape, printed as a
+    # row whenever the pass ran at all. #679 owns "names nothing" as an ERROR
+    # for the whole file; this pass's could-not-evaluate is the per-row report
+    # of the same fact at the moment it blocks the behind check, never a silent
+    # skip.
+    in_repo = (dw.parent / ".git").exists()
+    examined = behind = could_not = 0
+    for nid, sha, claimer in pending:
+        if nid in folded_ids:
+            continue
+        parents = watch.handoff_parent_ids(nid)
+        if any(p in folded_ids for p in parents):
+            continue
+        if not any(p in open_ids for p in parents):
+            continue  # not awaiting merge — the delivery loop handles it
+        row_sha = next((s for s in
+                        [r for r in pending if r[0] == nid][0].shas
+                        if re.fullmatch(r"[0-9a-f]{7,40}", s)
+                        and re.search(r"[a-f]", s)), None)
+        if row_sha is None:
+            could_not += 1
+            continue
+        examined += 1
+        try:
+            rev = subprocess.run(
+                ["git", "-C", str(dw.parent), "rev-list", "--count",
+                 f"{row_sha}..master"],
+                capture_output=True, text=True, timeout=20)
+        except (OSError, subprocess.SubprocessError):
+            could_not += 1
+            examined -= 1
+            continue
+        if rev.returncode != 0 or not rev.stdout.strip().isdigit():
+            # sha resolves to nothing (a rebased-away landing) — #679 ERRORs
+            # it file-wide; here it is a could-not-evaluate for this pass.
+            could_not += 1
+            examined -= 1
+            continue
+        n = int(rev.stdout.strip())
+        if n > 0:
+            behind += 1
+            rep.add(
+                WARN, "handoffs.md",
+                f"#{nid} (sha `{row_sha}`) is {n} commit(s) behind master — "
+                f"rebase onto master before the merge lands a stale result "
+                f"(a clean merge that leaves a build output stale is invisible "
+                f"to git, #655/#677)")
+    if examined or behind or could_not:
+        rep.add(
+            OK, "handoffs.md",
+            f"behind-master: examined {examined} awaiting-merge hand-off(s), "
+            f"{behind} behind, {could_not} could not be evaluated")
+
+    # #679 — a sha cited as a landing/merge in handoffs.md must RESOLVE. A sha
+    # that names nothing is indistinguishable from a real one to every reader
+    # who does not resolve it, and the loop's own coordinator invented four in
+    # ten minutes (three fold-line merge shas, then a ledger note sha). ERROR,
+    # not WARN: a dead landing sha is the loop's false evidence — the
+    # surrounding prose is true, the sha is not, and "names nothing" is an
+    # ERROR (#679 hazard 2).
+    #
+    # SCOPE — the established citation contexts, not a bare scan (hazard 1).
+    # `CITED_SHA` is the proven keyword-led discriminator from
+    # `check_cited_shas` (the `fade326` alias analysis there settled "the
+    # keyword immediately introduces the token"), reused here against the SAME
+    # `text` this check already reads — extending the reader, not opening a
+    # second one. Deliberately NOT scanned, each because CITED_SHA excludes it:
+    #   - bare/prose backticked tokens with no landing keyword (a reference is
+    #     not a claim about a landing; widening reintroduces the alias false
+    #     positive `check_cited_shas` already paid to learn);
+    #   - sha256 page digests and `client/dist/manifest.json` content hashes
+    #     (the 40-char cap plus backtick delimitation rejects the 64-char form);
+    #   - pure-digit PIDs/counts (`re.search(r"[a-f]")`, the same filter);
+    #   - lane/session identifiers in `(lane \`019fb4e0\`, …)` fold notes
+    #     ("lane" is not a landing keyword). Measured on today's file: 225
+    #     candidates, 1 dead, 0 alias/digest false positives.
+    # Each dead sha is attributed to its row's task id via the parser's own
+    # `pending`/`folded_ids` structure — the binding that means a copy-pasted
+    # parser giving a different id fails this check's tests (#655's guard).
+    handoff_shas = []
+    for _m in CITED_SHA.finditer(text):
+        _token = _m.group(1)
+        if re.search(r"[a-f]", _token) and _token not in handoff_shas:
+            handoff_shas.append(_token)
+    if handoff_shas:
+        sha_to_ids = {}
+        for _row in pending:
+            for _s in _row.shas:
+                if re.search(r"[a-f]", _s):
+                    sha_to_ids.setdefault(_s, set()).add(_row.id)
+        for _nid, _fshas in folded_ids.shas_by_id.items():
+            for _s in _fshas:
+                if re.search(r"[a-f]", _s):
+                    sha_to_ids.setdefault(_s, set()).add(_nid)
+        in_repo = (dw.parent / ".git").exists()
+        _unchecked = "%d cited landing/merge sha(s) went unchecked" % len(handoff_shas)
+        try:
+            _proc = subprocess.run(
+                ["git", "-C", str(dw.parent), "cat-file", "--batch-check"],
+                input="".join("%s^{commit}\n" % s for s in handoff_shas),
+                capture_output=True, text=True, timeout=20,
+            )
+        except (OSError, subprocess.SubprocessError) as _exc:
+            rep.add(WARN if in_repo else OK, "handoffs.md",
+                    f"could not ask git about the hand-off citations "
+                    f"({type(_exc).__name__}), so {_unchecked}")
+        else:
+            if _proc.returncode != 0 and not _proc.stdout:
+                rep.add(WARN if in_repo else OK, "handoffs.md",
+                        f"git could not read this tree, so {_unchecked}"
+                        + ("" if in_repo else " (no `.git` here, which is not a fault)"))
+                return
+            _out = _proc.stdout.splitlines()
+            if len(_out) != len(handoff_shas):
+                rep.add(WARN, "handoffs.md",
+                        f"git answered for {len(_out)} of {len(handoff_shas)} "
+                        f"cited sha(s) — one line per input is expected, so "
+                        f"the rest were never examined")
+                return
+            dead = [s for s, line in zip(handoff_shas, _out)
+                    if "missing" in line or "ambiguous" in line]
+            if dead and len(dead) == len(handoff_shas):
+                # Almost certainly the wrong tree (a fresh clone, a different
+                # target), not a file full of lies. Suppressing the ERRORs is
+                # right; suppressing the fact is not (#380).
+                rep.add(OK, "handoffs.md",
+                        f"all {len(handoff_shas)} cited sha(s) are missing "
+                        f"here, read as the wrong tree rather than a wrong "
+                        f"file — so nothing was checked")
+                return
+            for s in dead:
+                ids = sorted(sha_to_ids.get(s, set()))
+                whom = (" (#" + ", #".join(ids) + ")") if ids else ""
+                rep.add(
+                    ERROR, "handoffs.md",
+                    f"`{s}` is cited as a landing or merge in handoffs.md"
+                    f"{whom} but git has no such commit — a worktree sha is "
+                    f"unreachable once the branch is merged or rebased, so "
+                    f"cite the sha on the branch you merged INTO (#679)")
+            if not dead:
+                rep.add(OK, "handoffs.md",
+                        f"{len(handoff_shas)} cited landing/merge sha(s) all "
+                        f"resolve")
+
 
 def check_cited_shas(dw: Path, rep: Report) -> None:
     """A ledger entry that cites a commit which does not exist (#350).
