@@ -596,6 +596,30 @@ dreamwork-version: 5853e1789929
   its self-report is wrong** (it says "grok"); provenance comes from the alias
   the dispatcher passed, so the coordinator records the model in the fold line
   rather than quoting the lane. Precedent: `#583` landed this way.
+
+  **Measured on the first trial (`#596`, 2026-07-31), and it changes what the
+  review loop is for.** glm-5.2's diff looked strong and *was* strong in parts —
+  it found empirically that the existing `table_keys` helper could not parse
+  `TITLES` (a `}` inside a template interpolation makes `[^}]*` read the table
+  short), which the reviewer said outright it would not have got for free. But
+  the Opus pass found four real defects, including three **false-green vectors**
+  in the new check, a parser that was **fail-unsafe where the one it replaced was
+  fail-safe**, an assertion that cannot fail in the mode its own message names,
+  and a **confidently wrong citation** (`#284` for a rule `#284` does not make;
+  the real one was nine lines above in the same file). The reviewer's conclusion
+  is the load-bearing part: *every good behaviour in the diff mapped onto a line
+  in its brief, and every defect fell in a class the brief did not name.* **The
+  binding constraint is brief coverage, not model tier.** So two lines now belong
+  in every implementation brief, because they are cheap and do not depend on the
+  author being strong:
+  - **Red-proof both directions.** Show the check red for the real defect, *and*
+    construct an input where the thing being checked is genuinely broken but the
+    check could still pass. If no such input can be constructed, say why not.
+    (One-directional red-proofing is what let all three false-greens through.)
+  - **Every issue number cited must be opened and read**, with the line being
+    relied on quoted into the report. Note `#284` lives in
+    `tasks.md.deprecated` — a live citation can point into a deprecated file, so
+    "not in the ledger" does not mean "not real".
 - **Every lane returns a dogfood report** (human-set 2026-07-31): each subagent
   ends its report with a section on friction it hit *with the loop itself* — an
   unclear brief, missing or wrong tooling, a convention that cost it time. His
