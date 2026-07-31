@@ -539,6 +539,7 @@ _VERB_ARGV = {
     # id the fixture holds (#10), matching fold/note's shorthand.
     "reprioritise": ["reprioritise", "10", "P3", "--why", "x"],
     "unblock": ["unblock", "10", "--why", "x"],
+    "retitle": ["retitle", "10", "new title", "--why", "x"],
 }
 
 

@@ -278,6 +278,7 @@ def note_task(store, task_id, note, *, actor="loop") -> None:
 
 _CAUSE_REPRIORITISED = "reprioritised"
 _CAUSE_UNBLOCKED = "unblocked"
+_CAUSE_RETITLED = "reconciled"
 
 
 class NotBlocked(WriteError):
@@ -286,6 +287,10 @@ class NotBlocked(WriteError):
     An unblock that unblocked nothing must not read as success: a tool that
     silently no-ops on an already-unblocked task cannot tell the operator it
     did nothing, which is the exact failure #671 names."""
+
+
+class SameTitle(WriteError):
+    """The requested title is already current, so retitle changed nothing."""
 
 
 def reprioritise_task(store, task_id, priority, *, why, actor="loop", at=None):
@@ -390,6 +395,56 @@ def unblock_task(store, task_id, *, why, actor="loop", at=None):
             from_state=state, to_state=state, actor=actor, detail=why)
         conn.execute("COMMIT")
     except (TaskNotFound, NotBlocked):
+        raise
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def retitle_task(store, task_id, title, *, why, actor="loop", at=None):
+    """Change a task's title, recording why in body + event chain (#731).
+
+    Refuses a same-title request: a retitle that changed nothing must not read
+    as success (#671). The existing ``reconciled`` event cause is deliberate:
+    retitling reconciles the scanned summary with the task's current reality,
+    while the body note preserves the explicit old/new title transition.
+
+    Raises ``TaskNotFound`` if the id does not exist; ``SameTitle`` when the
+    title is unchanged; ``WriteError`` on an empty title or ``why``.
+    """
+    if not isinstance(title, str) or not title.strip():
+        raise WriteError("title must be a non-empty string (task.title NOT NULL)")
+    if not isinstance(why, str) or not why.strip():
+        raise WriteError(
+            "why must be a non-empty string (the reason for the change)")
+    if at is None:
+        at = _now_iso()
+
+    conn = store.conn
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT title, state FROM task WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            conn.execute("ROLLBACK")
+            raise TaskNotFound(f"cannot retitle #{task_id}: no such task")
+        old_title, state = row
+        if title == old_title:
+            conn.execute("ROLLBACK")
+            raise SameTitle(
+                f"cannot retitle #{task_id}: title is unchanged — a retitle "
+                "that changed nothing must not read as success (#671)")
+        conn.execute(
+            "UPDATE task SET title = ? WHERE id = ?", (title, task_id))
+        note = "retitled {!r}→{!r}: {}".format(old_title, title, why)
+        conn.execute(
+            "UPDATE task SET body = body || ? WHERE id = ?",
+            ("\n" + _NOTE_PREFIX + note, task_id))
+        _append_chained_event(
+            conn, task_id=task_id, at=at, cause=_CAUSE_RETITLED,
+            from_state=state, to_state=state, actor=actor, detail=why)
+        conn.execute("COMMIT")
+    except (TaskNotFound, SameTitle):
         raise
     except Exception:
         conn.execute("ROLLBACK")
