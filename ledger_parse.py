@@ -109,7 +109,7 @@ def entry_origins(text: str) -> list[tuple[list[int], str]]:
 def open_section_text(text: str) -> str | None:
     """The `## Open` section's body, or None when the ledger has none.
 
-    The slice runs from the `## Open` heading line to the next `## `
+    The slice runs from the `## Open` heading line to the next column-0 `## `
     heading (or end of file). This is the linter's idiom (#323) for checks
     that govern open entries only — NOT watch's `parse_ledger` split, which
     divides at `## Recently landed` specifically and reads landed ids too.
@@ -119,8 +119,8 @@ def open_section_text(text: str) -> str | None:
     lines = text.splitlines()
     start = end = None
     for n, ln in enumerate(lines):
-        if ln.strip().startswith("## "):
-            if ln.strip() == "## Open":
+        if ln.startswith("## "):
+            if ln == "## Open":
                 start = n + 1
             elif start is not None:
                 end = n
