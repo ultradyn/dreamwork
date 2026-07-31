@@ -1078,6 +1078,10 @@ def _indent_body_continuations(entry_text: str) -> str:
 def ledger_view(dw: Path):
     """``(text, source)`` for every ledger-content check — the #294 dispatch.
 
+    ``text, source = ledger_view(dw)`` — ``dw`` is the ``.dreamwork/``
+    directory, not ``tasks.md``; the return is a tuple, so a single-name
+    assign fails late and confusingly (#697).
+
     ``source == 'markdown'`` (today, and every target that never cuts over):
     ``text`` is ``tasks.md`` verbatim and every check runs exactly as it
     always has. ``source == 'store'`` (the cutover watermark is present):
@@ -1098,6 +1102,11 @@ def ledger_view(dw: Path):
     finding about the store, and the section check's history half (against
     ``tasks.md.deprecated``) still runs below.
     """
+    if str(dw).endswith(".md"):  # #697 — dw is .dreamwork/, not tasks.md
+        raise TypeError(
+            "ledger_view(dw) takes the .dreamwork/ directory, not tasks.md — "
+            "pass dw and unpack the tuple: text, source = ledger_view(dw)."
+        )
     try:
         if source_of_truth(dw) == "store":
             entries = store_entries(dw)
