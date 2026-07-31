@@ -20,6 +20,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -1078,7 +1079,7 @@ class TestDiscoveryAddsMissingLanes:
             monkeypatch.setattr(
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
-            found = status_sync.discover_lanes(tmp_path)
+            found, _ph = status_sync.discover_lanes(tmp_path)
             assert ("lane-707sweep", proc.pid) in found, found
             # Task id is derived from the lane name (707 IS open here).
             assert status_sync._lane_task("lane-707sweep", [707]) == 707
@@ -1167,3 +1168,173 @@ class TestDiscoveryAddsMissingLanes:
         finally:
             proc.kill()
             proc.wait()
+
+
+# ── 14. #719: a removed worktree's lingering ccc process is a phantom ────
+#
+# Residue of #716, found at its gate. readlink on /proc/<pid>/cwd for a
+# removed directory returns the path with " (deleted)" APPENDED. The prefix
+# filter (cwd.startswith(wt_root + "/")) still passes, _lane_task's
+# r"lane-(\d+)" still matches, and _is_ccc_proc still confirms the dispatch
+# — so without a guard the phantom takes a fleet slot under a corpse's name.
+# The fix: os.path.isdir(cwd) is False for the deleted-suffixed path, so the
+# phantom is excluded from `found` and REPORTED via `phantoms` (never silently
+# dropped — #702's rule, inherited by #716's discovery).
+#
+# These tests build the REAL state (a live process whose cwd is a worktree,
+# then the worktree is removed) and read the REAL /proc — no fakes. The
+# Direction-1 assertion names WHICH lane is excluded, not a count.
+
+class TestPhantomWorktreeExcludedAndReported:
+    """#719: a ccc process whose worktree is gone is excluded and reported.
+
+    Production line whose reversion reds the survive arm: the
+    ``if not os.path.isdir(cwd): phantoms.append(...)`` guard in
+    ``discover_lanes``. Revert it (append to ``found`` regardless) and the
+    phantom enters ``dreamers`` under a name carrying ``" (deleted)"`` while
+    no ``phantoms`` report fires — the bug in production tonight.
+    """
+
+    def _make_worktree(self, target: Path, lane: str) -> Path:
+        wt = target / ".worktrees" / lane
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "BRIEF.md").write_text("lane brief")
+        return wt
+
+    def _spawn_cwd_ccc(self, cwd: Path, hold: float = 30.0):
+        return subprocess.Popen(
+            ["ccc", "-e", f"sleep {hold}", "--", "--yolo", "@glm52", "brief"],
+            executable=_which_perl(), cwd=str(cwd),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+
+    def test_phantom_excluded_from_found_reported_in_phantoms(self, tmp_path,
+                                                              monkeypatch):
+        # Build the state: a live ccc process whose cwd is a worktree, then
+        # remove the worktree out from under it. The process keeps running
+        # (it is sleeping, indifferent to its cwd); readlink now carries
+        # " (deleted)" and isdir is False.
+        wt = self._make_worktree(tmp_path, "lane-719test")
+        proc = self._spawn_cwd_ccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid), \
+                "precondition: spawned ccc lane must be alive"
+            real_cwd = status_sync._read_proc_cwd(proc.pid)
+            assert real_cwd == str(wt), \
+                "precondition: cwd must be the worktree before removal: %r" \
+                % real_cwd
+            # Remove the worktree — the phantom-making event.
+            shutil.rmtree(wt)
+            cwd_now = status_sync._read_proc_cwd(proc.pid)
+            # Precondition (the state is built, not assumed): readlink carries
+            # the deleted suffix and isdir is False. A test that did not build
+            # this state could pass vacuously.
+            assert " (deleted)" in cwd_now, \
+                "precondition: readlink must mark the removed cwd: %r" % cwd_now
+            assert not os.path.isdir(cwd_now), \
+                "precondition: the deleted-suffixed cwd must not be a dir"
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+
+            found, phantoms = status_sync.discover_lanes(tmp_path)
+            # THE GUARD: the phantom is NOT in found (would take a fleet slot
+            # under "lane-719test (deleted)" without the guard).
+            assert found == [], \
+                "phantom must be excluded from found; got %s" % found
+            # THE REPORT: the phantom IS in phantoms, named by its lane.
+            assert len(phantoms) == 1, phantoms
+            ph_lane, ph_pid = phantoms[0]
+            assert ph_pid == proc.pid, phantoms
+            assert "719" in ph_lane and " (deleted)" in ph_lane, \
+                "phantom report must name the deleted lane; got %r" % ph_lane
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_phantom_not_in_dreamers_report_names_it(self, tmp_path,
+                                                     monkeypatch):
+        # End-to-end through main: the phantom is neither added to dreamers
+        # nor counted as live, and the stderr report names the excluded lane.
+        wt = self._make_worktree(tmp_path, "lane-719test")
+        proc = self._spawn_cwd_ccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            shutil.rmtree(wt)
+            cwd_now = status_sync._read_proc_cwd(proc.pid)
+            assert not os.path.isdir(cwd_now), \
+                "precondition: removed worktree cwd must not be a dir"
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+
+            status = {"dreamers": [], "current_task_ids": [], "queue": {},
+                      "task": "t"}
+            rc, out, err = _run(status, _ledger(719), tmp_path)
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            # DISCRIMINATING (Direction 1): the phantom is absent by its task
+            # id. A count-only check passes against the bug; this names the
+            # lane that must not be there.
+            assert result["dreamers"] == [], \
+                "phantom must not enter dreamers; got %s" % result["dreamers"]
+            assert 719 not in result["current_task_ids"], \
+                "phantom must not count as live: %s" \
+                % result["current_task_ids"]
+            # The report fires and names the excluded lane (not a silent drop).
+            assert "phantom" in err.lower(), \
+                "the phantom report must fire on stderr: %s" % err
+            assert "719" in err, \
+                "the report must name the excluded lane's id: %s" % err
+            assert " (deleted)" in err, \
+                "the report must carry the deleted marker: %s" % err
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_recreated_worktree_is_still_caught_not_a_false_green(
+            self, tmp_path, monkeypatch):
+        # Direction 2 candidate the brief named: a worktree removed and
+        # RECREATED under the same name while the old process lingers. The
+        # brief predicted isdir would read True and the pid (belonging to the
+        # dead lane) would pass — a false green. MEASURED on this kernel it
+        # does NOT: readlink keeps the " (deleted)" suffix because the process
+        # holds the OLD orphaned inode; the kernel does not re-resolve the
+        # cwd to the newly-created directory. So isdir(readlink) stays False
+        # and the guard still catches it. This test PROVES that (it would red
+        # if a future kernel re-resolved, or if the guard checked isdir on the
+        # plain worktree path rather than the readlink result) — constructive
+        # evidence the predicted false green does not materialise here.
+        wt = self._make_worktree(tmp_path, "lane-719recreate")
+        proc = self._spawn_cwd_ccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            shutil.rmtree(wt)
+            wt.mkdir(parents=True, exist_ok=True)  # recreate at the same path
+            cwd_now = status_sync._read_proc_cwd(proc.pid)
+            # The load-bearing measurement: readlink keeps the deleted suffix
+            # even after recreation, so isdir(readlink) is False.
+            assert " (deleted)" in cwd_now, \
+                "precondition: readlink must keep the deleted suffix after " \
+                "recreate on this kernel: %r" % cwd_now
+            assert not os.path.isdir(cwd_now), \
+                "precondition: the deleted-suffixed readlink is not a dir " \
+                "even after recreate"
+            assert os.path.isdir(str(wt)), \
+                "precondition: the plain worktree path IS a dir again"
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            found, phantoms = status_sync.discover_lanes(tmp_path)
+            # Still caught: the recreate did not produce a false green.
+            assert found == [], \
+                "recreate must not let the phantom through; got %s" % found
+            assert len(phantoms) == 1, phantoms
+        finally:
+            proc.kill()
+            proc.wait()
+

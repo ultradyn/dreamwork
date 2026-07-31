@@ -264,21 +264,35 @@ def _is_ccc_proc(pid: int) -> bool:
 
 
 def discover_lanes(target: Path):
-    """Live `ccc` lanes the cwd probe can see, as `(lane_name, pid)` pairs.
+    """Live `ccc` lanes the cwd probe can see, as ``(found, phantoms)``.
 
-    Walks `/proc/*/cwd` for paths under `<target>/.worktrees/` whose process
-    is a `ccc` dispatch (#716). Returns the list of discovered lanes; a lane
-    the probe cannot classify (a worktree cwd held by a non-`ccc` process, or
-    a `readlink` that fails) is NOT in the list and is not an error — it is
-    simply invisible to discovery, the same way it is invisible to
-    `live_lanes`. The caller MERGES the result with coordinator-authored
-    entries rather than replacing them, so a lane running somewhere the cwd
-    probe cannot reach (another machine, a different harness) is preserved.
+    Walks ``/proc/*/cwd`` for paths under ``<target>/.worktrees/`` whose
+    process is a ``ccc`` dispatch (#716). ``found`` is the list of live lanes
+    a caller MERGES with coordinator-authored entries (a lane running where
+    the cwd probe cannot reach — another machine, a different harness — is
+    carried verbatim rather than erased by a narrower automatic view).
 
-    `target` is the project root (the dir whose `.worktrees/` holds lanes).
+    ``phantoms`` (#719) is a ``ccc`` process whose cwd passed the worktree
+    prefix filter but whose worktree has been REMOVED — Linux appends
+    ``" (deleted)"`` to the readlink, the prefix still matches, and the
+    regex still yields a task id, so without a guard the phantom takes a
+    fleet slot under a corpse's name. A ccc process whose cwd is no longer a
+    directory is EXITING, not working. It is excluded from ``found`` and
+    REPORTED via ``phantoms`` — never silently dropped. The #702 rule
+    (inherited by #716's discovery: "an entry the probe cannot classify must
+    be reported, never silently dropped") reaches this case because the probe
+    *can* see the process and *can* tell the worktree is gone; silently
+    skipping would make "lane finished and was reaped" and "lane's worktree
+    vanished mid-run" render identically (#136). The signal is actionable
+    for the reap loop: it distinguishes a clean exit drain from a process
+    that hung after its worktree was removed.
+
+    ``target`` is the project root (the dir whose ``.worktrees/`` holds
+    lanes).
     """
     wt_root = str(target) + "/" + WORKTREE_DIR
     found = []
+    phantoms = []
     for entry in os.listdir("/proc"):
         if not entry.isdigit():
             continue
@@ -291,10 +305,19 @@ def discover_lanes(target: Path):
             continue
         if not _is_ccc_proc(pid):
             continue
+        # #719: a ccc lane whose worktree has been removed is a phantom.
+        # readlink still resolves (Linux appends " (deleted)"), the prefix
+        # filter still passes, but the cwd is no longer a directory — the
+        # process is exiting, not working. Excluded and REPORTED, not
+        # silently dropped (#702, inherited by #716's discovery).
+        if not os.path.isdir(cwd):
+            phantoms.append((lane, pid))
+            continue
         found.append((lane, pid))
     # Stable order by lane name so the merge and the stderr report are
     # deterministic across runs reading the same process table.
-    return sorted(found, key=lambda lp: lp[0])
+    return (sorted(found, key=lambda lp: lp[0]),
+            sorted(phantoms, key=lambda lp: lp[0]))
 
 
 def read_open_ids(dw, lpath):
@@ -604,7 +627,7 @@ def main(argv: list[str] | None = None) -> int:
     # a lane the probe sees but cannot classify is simply absent from the
     # discovery list — REPORTED, never silently dropped (#702's "cannot
     # compare must not read as landed", applied to discovery rather than reap).
-    discovered = discover_lanes(Path(args.target))
+    discovered, phantoms = discover_lanes(Path(args.target))
     existing_lanes = {d.get("lane") for d in pruned if isinstance(d, dict)}
     added = []
     for lane, pid in discovered:
@@ -619,6 +642,18 @@ def main(argv: list[str] | None = None) -> int:
               "carry (cwd under .worktrees/; merged, not replaced): %s"
               % (len(added), [(a["lane"], a["pid"]) for a in added]),
               file=sys.stderr)
+    if phantoms:
+        # #719: a ccc lane whose worktree is gone is a phantom — the process
+        # is exiting, not working. Reported (not silently dropped) so the reap
+        # loop can tell a clean exit drain from a hung-after-removal process:
+        # silently skipping would make "finished" and "worktree vanished
+        # mid-run" render identically (#136). #702's rule, inherited by #716's
+        # discovery, is that an entry the probe cannot classify must be
+        # reported. The lane name carries " (deleted)" as readlink appended it.
+        print("status_sync: excluded %d phantom lane(s) whose worktree is gone "
+              "(ccc process mid-exit, cwd no longer a directory; reported not "
+              "dropped — #719/#702): %s"
+              % (len(phantoms), phantoms), file=sys.stderr)
 
     # Normalise task ids on write (#402b): plain → int, sub-id → str. This
     # happens BEFORE the live set is derived so current_task_ids and the
