@@ -2943,6 +2943,122 @@ class TestCollector(unittest.TestCase):
             self.assertGreater(watch.watched_mtime(d), after,
                                "questions.md is no longer watched")
 
+    def test_sqlite_shm_mtime_is_not_a_change_signal_but_wal_and_db_are(self):
+        """#620 — the sqlite shared-memory index must not open the change gate,
+        and `-wal` must still close it.
+
+        Live, read-only, 15 samples at 2s with no writes by the measuring
+        process: `watched_mtime` changed 15/15 and `ledger.sqlite3-shm` held
+        the maximum mtime in 14 of them; with this exclusion, 1/15, on a real
+        `handoffs.md` edit. Each changed value costs an open window a 917KB
+        `/data.json` refetch, and serving that refetch touches `-shm` again.
+
+        The SECOND half is the one that must never be "widened to be safe".
+        Excluding `-wal` as well was measured to stop a real write from
+        advancing `watched_mtime` at all — a dashboard that silently stops
+        noticing change, with nothing going red. `-wal` is the write signal.
+
+        Production line: `WATCHED_MTIME_IGNORED_SUFFIXES` and the `endswith`
+        arm of `watched_mtime`'s `kept` filter."""
+        import ledger_store
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            db = os.path.join(dw, "ledger.sqlite3")
+            # PRECONDITION, derived from a REAL store rather than from a
+            # belief about sqlite's naming: the production opener really does
+            # produce these two sidecars, so neither half below is exercising
+            # a filename nothing writes.
+            #
+            # It deliberately says NOTHING about which of them is excluded.
+            # An earlier version phrased it as "exactly one sidecar matches
+            # WATCHED_MTIME_IGNORED_SUFFIXES", which looked stronger and was
+            # weaker: red-proofing the over-broad `("-shm", "-wal")` shape
+            # then failed HERE, so the write-signal assertion this test exists
+            # for was never reached and had never been shown to discriminate.
+            store = ledger_store.open_store(db, seed_next_id=1)
+            try:
+                sidecars = sorted(f for f in os.listdir(dw)
+                                  if f.startswith("ledger.sqlite3-"))
+                for needed in ("ledger.sqlite3-shm", "ledger.sqlite3-wal"):
+                    self.assertIn(needed, sidecars,
+                                  f"the real store's sidecars are {sidecars} "
+                                  f"— without {needed} this test proves "
+                                  "nothing about it")
+            finally:
+                store.close()
+            # Re-create the three by hand: sqlite deletes the sidecars on the
+            # last close, and what is under test is the WALK, not sqlite.
+            for name in ("ledger.sqlite3-shm", "ledger.sqlite3-wal"):
+                with open(os.path.join(dw, name), "wb") as f:
+                    f.write(b"")
+            base = watch.watched_mtime(d)
+            future = time.time() + 10
+            # Half 1: the shared-memory index moves and NOTHING happens.
+            os.utime(os.path.join(dw, "ledger.sqlite3-shm"), (future, future))
+            self.assertEqual(
+                watch.watched_mtime(d), base,
+                "a -shm touch still opens the change gate — every /data.json "
+                "read re-arms the next refetch")
+            # Half 2: -wal is the write signal and MUST still fire.
+            os.utime(os.path.join(dw, "ledger.sqlite3-wal"),
+                     (future + 10, future + 10))
+            after_wal = watch.watched_mtime(d)
+            self.assertGreater(
+                after_wal, base,
+                "-wal no longer moves watched_mtime — the dashboard has gone "
+                "blind to real store writes, which is worse than the churn")
+            # Half 3: and so is the db file itself (checkpoints land there).
+            os.utime(db, (future + 20, future + 20))
+            self.assertGreater(watch.watched_mtime(d), after_wal,
+                               "the store's own file is no longer watched")
+
+    def test_an_shm_sidecar_appearing_or_vanishing_moves_nothing(self):
+        """#620 — the second arm: the LISTING fingerprint, not the mtime max.
+
+        sqlite creates and deletes `-shm`/`-wal` around the open and close of
+        a single read, and #481 hashes the per-directory name set into
+        `watched_mtime` so deletions are visible. That made the mere presence
+        of a shared-memory index a change signal in its own right (measured:
+        1 of 8 read-only polls before this, 0 of 8 after).
+
+        The store named here is `session-index.sqlite3` ON PURPOSE. It does
+        not exist yet — it is the store the session-log plan proposes — and it
+        is the reason the rule is a SUFFIX rather than the two filenames the
+        #614 plan listed: a name list would let the next store reintroduce
+        this defect silently on the day it lands.
+
+        Production line: the same `endswith` arm, via `kept` feeding
+        `listing`."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            base = watch.watched_mtime(d)
+            old = time.time() - 3600      # old, so the MAX cannot move —
+            shm = os.path.join(dw, "session-index.sqlite3-shm")
+            for _ in range(2):            # appear, then vanish
+                with open(shm, "wb") as f:
+                    f.write(b"")
+                os.utime(shm, (old, old))
+                self.assertEqual(
+                    watch.watched_mtime(d), base,
+                    "an -shm sidecar appearing changed the listing "
+                    "fingerprint, so opening the store is still a 'change'")
+                os.remove(shm)
+                self.assertEqual(
+                    watch.watched_mtime(d), base,
+                    "an -shm sidecar vanishing changed the listing "
+                    "fingerprint")
+            # CONTROL: the fingerprint still sees a real file arriving at the
+            # same old mtime — otherwise the two assertions above would pass
+            # on a walk that had stopped noticing anything at all.
+            real = os.path.join(dw, "session-index.sqlite3")
+            with open(real, "wb") as f:
+                f.write(b"")
+            os.utime(real, (old, old))
+            self.assertNotEqual(watch.watched_mtime(d), base,
+                                "the listing fingerprint sees nothing at all")
+
     def test_long_entry_digest_is_rewrap_invariant(self):
         # #509 — the loop re-wraps a long entry's body lines when it rewrites
         # questions.md; a line-break-only change (same words, different wrap

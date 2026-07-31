@@ -3706,6 +3706,46 @@ def summary(target):
 # .tmp twin is excluded too: the replace is two directory events, not one.
 WATCHED_MTIME_IGNORED = frozenset((QUESTION_SIGS, QUESTION_SIGS + ".tmp"))
 
+# #620 — sqlite's shared-memory index is not content, and it was the noisiest
+# file in the watched tree by a wide margin.
+#
+# MEASURED ON THE LIVE TREE (read-only stat walk, 15 samples at 2 s, no writes
+# by the measuring process): `watched_mtime` changed on 15 of 15 samples, and
+# `.dreamwork/ledger.sqlite3-shm` HELD THE MAXIMUM MTIME in 14 of them. With
+# this exclusion in place the same 15 samples changed once — on `handoffs.md`,
+# a real edit. Over a separate 40 s live window `-shm` moved on 20 of 20 two-
+# second samples while `-wal` moved 4 times and the db file 4 times, so `-shm`
+# was moving roughly five times more often than the store was changing.
+#
+# WHY THAT MATTERS RATHER THAN BEING COSMETIC: the client polls `/mtime` every
+# 2 s and refetches `/data.json` — 917 KB, uncompressed, ~200 ms of `collect()`
+# — whenever the number moves. Serving that read touches `-shm`, which moves
+# the number, which schedules the next refetch. The gate that exists to make
+# the poll cheap was holding itself open, per window, forever.
+#
+# `-wal` IS DELIBERATELY NOT HERE, and this is the half that must not be
+# "widened to be safe". Measured both directions on a real store: a write
+# moves `-wal` every time, and with `-shm` alone excluded a write still
+# advances `watched_mtime`; with `-wal` ALSO excluded a write no longer
+# advances it at all. That failure is silent and in the dangerous direction —
+# the dashboard would simply stop noticing real changes with nothing going
+# red. `-wal` is the write signal; `-shm` is the read's bookkeeping.
+#
+# A SUFFIX, NOT THE TWO NAMES the #614 plan proposed (`ledger.sqlite3-shm`,
+# `user-events.sqlite3-shm`). The rule being expressed is "a sqlite shared-
+# memory index is not content", which is true of every store, and
+# `.dreamwork/` is already scheduled to gain a third (`session-index.sqlite3`,
+# the session-log plan). A two-name list reintroduces this exact defect
+# silently the day that lands. `-shm` is a name sqlite reserves; nothing that
+# is really content ends in it.
+#
+# It filters `kept`, so it leaves the LISTING FINGERPRINT as well as the mtime
+# max — that is a second arm of the same defect, not a bonus: sqlite creates
+# and deletes the sidecars around the open/close of a single read, and with
+# no other process holding the store that churn moved the fingerprint on its
+# own (measured: 1 of 8 read-only polls before, 0 of 8 after).
+WATCHED_MTIME_IGNORED_SUFFIXES = ("-shm",)
+
 
 def watched_mtime(target):
     """The newest thing under the target, as one number the client polls.
@@ -3736,7 +3776,9 @@ def watched_mtime(target):
     dw = os.path.join(target, ".dreamwork")
     listing = []
     for root, dirs, files in os.walk(dw):
-        kept = sorted(f for f in files if f not in WATCHED_MTIME_IGNORED)
+        kept = sorted(f for f in files
+                      if f not in WATCHED_MTIME_IGNORED
+                      and not f.endswith(WATCHED_MTIME_IGNORED_SUFFIXES))
         listing.append((root, tuple(sorted(dirs)), tuple(kept)))
         paths.extend(os.path.join(root, f) for f in kept)
     for p in paths:
