@@ -3118,6 +3118,143 @@ class TestHandoffs:
                 if w == "handoffs.md" and "unchecked" in d]
         assert skip, "expected an 'unchecked' skip row in a non-git tree"
         assert self._herrs(rep) == []
+
+    # ---- #677: warn when a pending hand-off's branch is behind master ------
+    #
+    # Scoped to pending-and-open (not folded) rows — the "awaiting merge"
+    # set. #590's rule: behind-ness is expected for a live lane, so the
+    # pending hand-off is the "done" anchor, and a not-yet-merged row is the
+    # only one this fires on. The examined-N coverage row is the #671 shape:
+    # whatever this pass cannot evaluate it must SAY SO, never a silent skip.
+
+    def _behind(self, tmp_path, handoffs, *, master_tip=None):
+        """A real git repo; master at MASTER_TIP, one lane commit on a branch.
+
+        Returns (rep, lane_sha) where lane_sha is the commit on the lane
+        branch — behind master when MASTER_TIP is given."""
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+
+        def git(*a):
+            return subprocess.run(["git", "-C", str(t), *a],
+                                  capture_output=True, text=True, check=True)
+        git("init", "-q", "-b", "master")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        (t / "f").write_text("1"); git("add", "f"); git("commit", "-qm", "base")
+        lane = None
+        if master_tip:
+            # advance master past the lane's base, so a lane commit off the
+            # old base is behind master.
+            (t / "f").write_text(master_tip); git("add", "f")
+            git("commit", "-qm", "master advanced")
+        # lane commit off the FIRST commit (the pre-advance base) so it is behind
+        git("checkout", "-q", "HEAD~1" if master_tip else "master")
+        (t / "g").write_text("lane"); git("add", "g"); git("commit", "-qm", "lane work")
+        n = 0
+        while True:
+            n += 1
+            (t / "g").write_text(f"lane{n}"); git("add", "g")
+            git("commit", "-qm", "lane work")
+            lane = git("rev-parse", "HEAD").stdout.strip()[:7]
+            if re.search(r"[a-f]", lane):
+                break
+        git("checkout", "-q", "master")
+        (dw / "tasks.md").write_text(self.LEDGER)
+        (dw / "handoffs.md").write_text(handoffs.replace("LANE", lane))
+        rep = lint.Report()
+        lint.check_handoffs(dw, lint.load_watch(), rep)
+        return rep, lane
+
+    def _677rows(self, rep):
+        out = {}
+        for lvl, w, d in rep.rows:
+            if w == "handoffs.md":
+                out.setdefault(lvl, []).append(d)
+        return out
+
+    def test_a_pending_open_handoff_behind_master_warns(self, tmp_path):
+        # Direction 1. #5 is open and pending (not folded); its sha is one
+        # commit behind master (master advanced after the lane branched).
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed `LANE` · 2026-07-28 · by x — fix\n\n"
+                    "## Folded\n")
+        rep, lane = self._behind(tmp_path, handoffs, master_tip="adv")
+        warns = [d for d in self._677rows(rep).get(lint.WARN, []) if "#677" in d]
+        assert len(warns) == 1, (warns, lane)
+        assert "#5" in warns[0] and lane in warns[0] and "1 commit" in warns[0]
+
+    def test_a_pending_open_handoff_at_master_is_silent(self, tmp_path):
+        # The non-behind case: lane branched from master HEAD, no advance.
+        # rev-list <sha>..master is 0; no WARN, no ERROR.
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed `LANE` · 2026-07-28 · by x — fix\n\n"
+                    "## Folded\n")
+        rep, lane = self._behind(tmp_path, handoffs)
+        behind_warns = [d for d in self._677rows(rep).get(lint.WARN, [])
+                        if "#677" in d]
+        assert behind_warns == [], (behind_warns, lane)
+
+    def test_a_folded_handoff_behind_master_is_silent(self, tmp_path):
+        # Scope guard (hazard 4). A folded hand-off is consumed — the delivery
+        # check skips it, and so must the behind check, even if its branch is
+        # behind. Folding is the "I have seen this" marker; nagging after
+        # compliance gets a check muted.
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed `LANE` · 2026-07-28 · by x — fix\n\n"
+                    "## Folded\n\n"
+                    "- **#5** → folded (2026-07-28): merged `LANE`\n")
+        rep, lane = self._behind(tmp_path, handoffs, master_tip="adv")
+        behind_warns = [d for d in self._677rows(rep).get(lint.WARN, [])
+                        if "#677" in d]
+        assert behind_warns == [], ("folded-but-behind warned: %r" % behind_warns)
+
+    def test_the_pass_reports_what_it_examined(self, tmp_path):
+        # #671 shape. Whenever the behind pass runs at all, it must emit an
+        # "examined N, behind M, could-not K" coverage row — never a silent
+        # skip. A behind-WARN is present, so the row must be too.
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed `LANE` · 2026-07-28 · by x — fix\n\n"
+                    "## Folded\n")
+        rep, lane = self._behind(tmp_path, handoffs, master_tip="adv")
+        cov = [d for d in self._677rows(rep).get(lint.OK, [])
+               if "behind-master" in d and "examined" in d]
+        assert len(cov) == 1, (cov, lane)
+        # "examined 1 … 1 behind, 0 could not" — the counts travel with words.
+        assert "examined 1" in cov[0], cov[0]
+        assert "1 behind" in cov[0] or "behind 1" in cov[0], cov[0]
+
+    def test_an_unresolvable_lane_sha_is_reported_not_silently_skipped(self, tmp_path):
+        # Direction 1, hazard 3 — the primary case. A lane that appended its
+        # hand-off and THEN rebased has a sha that resolves to nothing. A
+        # check that silently skips what it cannot resolve is #671 repeating.
+        # Here: cite a genuinely-nonexistent sha. The behind pass must count
+        # it in could-not-evaluate (the #679 block ERRORs it file-wide too).
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed `deadbeef` · 2026-07-28 · by x — fix\n\n"
+                    "## Folded\n\n"
+                    "- **#6** → folded (2026-07-28): merged `LANE`\n")
+        rep, lane = self._behind(tmp_path, handoffs, master_tip="adv")
+        cov = [d for d in self._677rows(rep).get(lint.OK, [])
+               if "behind-master" in d]
+        assert cov, ("no behind-master coverage row at all", lane)
+        # The COUNT must be non-zero — not just the phrase, which the row
+        # template always carries ("0 could not be evaluated"). A silent-skip
+        # sabotage leaves could_not at 0 while printing the same words, so
+        # asserting the phrase alone is hollow (caught: the first direction-2
+        # run came back green; this count-assertion is the fix).
+        import re as _re
+        m = _re.search(r"(\d+) could not be evaluated", cov[0])
+        assert m and int(m.group(1)) >= 1, \
+            ("unresolvable sha was silently skipped (could_not=0): %r" % cov[0])
+        # And it must not WARN as behind (it could not be evaluated).
+        behind = [d for d in self._677rows(rep).get(lint.WARN, [])
+                  if "#677" in d]
+        assert behind == [], behind
+
+
+class TestConflictMarkerSweep555:
     """#555 — the #554 marker rejection extended to the other tool-parsed
     ledger docs.
 

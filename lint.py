@@ -4666,6 +4666,78 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
                 f"in handoffs.md (sha `{sha}`, by {handoff_quote(claimer)}) "
                 f"— append one under `## Folded` (#576)")
 
+    # #677 — the rebase-before-handoff rule as a check. At the moment a
+    # hand-off is pending AND its task is still open (i.e. awaiting merge),
+    # the branch it names should not be behind master: `git rev-list --count
+    # <sha>..master` non-zero → WARN naming the sha and the count. A count is a
+    # question, not a verdict (#590): behind-ness is expected for a lane still
+    # working, which is why the pending-and-open anchor is the right scope and a
+    # not-yet-merged row is the only one this fires on (hazard 1/4 — measured 0
+    # such rows on today's file, so no wall).
+    #
+    # WARN not ERROR (hazard 2): a lane that deliberately did not rebase
+    # because the rebase was genuinely hard, and handed back the analysis
+    # instead, is behaving correctly per the rule — an ERROR would punish the
+    # honest path.
+    #
+    # THE CASE THE RULE'S ORDERING CLAUSE EXISTS TO PREVENT (hazard 3, the
+    # primary one): a lane that appended its hand-off and THEN rebased has a
+    # sha that no longer exists on its branch at all, so `rev-list` fails. A
+    # check that silently skips what it cannot resolve is #671 repeating — so
+    # whatever this pass cannot evaluate it must SAY SO (#671): "examined N,
+    # behind M, could not evaluate K" is the minimum honest shape, printed as a
+    # row whenever the pass ran at all. #679 owns "names nothing" as an ERROR
+    # for the whole file; this pass's could-not-evaluate is the per-row report
+    # of the same fact at the moment it blocks the behind check, never a silent
+    # skip.
+    in_repo = (dw.parent / ".git").exists()
+    examined = behind = could_not = 0
+    for nid, sha, claimer in pending:
+        if nid in folded_ids:
+            continue
+        parents = watch.handoff_parent_ids(nid)
+        if any(p in folded_ids for p in parents):
+            continue
+        if not any(p in open_ids for p in parents):
+            continue  # not awaiting merge — the delivery loop handles it
+        row_sha = next((s for s in
+                        [r for r in pending if r[0] == nid][0].shas
+                        if re.fullmatch(r"[0-9a-f]{7,40}", s)
+                        and re.search(r"[a-f]", s)), None)
+        if row_sha is None:
+            could_not += 1
+            continue
+        examined += 1
+        try:
+            rev = subprocess.run(
+                ["git", "-C", str(dw.parent), "rev-list", "--count",
+                 f"{row_sha}..master"],
+                capture_output=True, text=True, timeout=20)
+        except (OSError, subprocess.SubprocessError):
+            could_not += 1
+            examined -= 1
+            continue
+        if rev.returncode != 0 or not rev.stdout.strip().isdigit():
+            # sha resolves to nothing (a rebased-away landing) — #679 ERRORs
+            # it file-wide; here it is a could-not-evaluate for this pass.
+            could_not += 1
+            examined -= 1
+            continue
+        n = int(rev.stdout.strip())
+        if n > 0:
+            behind += 1
+            rep.add(
+                WARN, "handoffs.md",
+                f"#{nid} (sha `{row_sha}`) is {n} commit(s) behind master — "
+                f"rebase onto master before the merge lands a stale result "
+                f"(a clean merge that leaves a build output stale is invisible "
+                f"to git, #655/#677)")
+    if examined or behind or could_not:
+        rep.add(
+            OK, "handoffs.md",
+            f"behind-master: examined {examined} awaiting-merge hand-off(s), "
+            f"{behind} behind, {could_not} could not be evaluated")
+
     # #679 — a sha cited as a landing/merge in handoffs.md must RESOLVE. A sha
     # that names nothing is indistinguishable from a real one to every reader
     # who does not resolve it, and the loop's own coordinator invented four in
