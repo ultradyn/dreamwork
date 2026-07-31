@@ -57,7 +57,7 @@
     provide the alias as a backup. 4. rec. no need for a sig at all
     probably, but the option is there for us if we want. 5. rec
 
-- **P2 · 2026-07-31 ~07:20 — (your ask via /answers) the hand-off fold backlog: not unmerged, and now caught.**
+- **P2 · 2026-07-31 07:20 — (your ask via /answers) the hand-off fold backlog: not unmerged, and now caught.**
   Your ask: *"Pending hand-offs to fold: are these things that need to be folded into master but haven't
   yet been? If we have a backlog this large for these, we need to address that in our dreamwork loop."*
 
