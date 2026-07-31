@@ -1080,7 +1080,8 @@ class TestDiscoveryAddsMissingLanes:
                 status_sync.os, "listdir",
                 lambda d: [str(proc.pid)] if d == "/proc" else [])
             found, _ph = status_sync.discover_lanes(tmp_path)
-            assert ("lane-707sweep", proc.pid) in found, found
+            found_pairs = [(f[0], f[1]) for f in found]
+            assert ("lane-707sweep", proc.pid) in found_pairs, found
             # Task id is derived from the lane name (707 IS open here).
             assert status_sync._lane_task("lane-707sweep", [707]) == 707
 
@@ -1338,3 +1339,286 @@ class TestPhantomWorktreeExcludedAndReported:
             proc.kill()
             proc.wait()
 
+
+# ── 15. #720: discovery must REPOPULATE from empty under the default target ─
+#
+# #716's discovery was INERT under the invocation the loop actually uses:
+# --target="." (the default) built wt_root="./.worktrees", tested with
+# startswith against the ABSOLUTE path readlink returns — it never matched.
+# The bug MERGED because the only check ran from a populated dreamers field,
+# so it passed against the inert implementation. The discriminating test for
+# "does X populate Y" is to EMPTY Y first. A test against a pre-populated
+# fixture is not discriminating and would have shipped this bug again.
+#
+# Production line whose reversion reds each arm: the `target.resolve()` in
+# `discover_lanes` (was `str(target)`). Revert it and a relative target
+# produces wt_root="./.worktrees" which never prefix-matches the absolute
+# path readlink returns — so discovery finds nothing and dreamers stays [].
+
+class TestDiscoveryRepopulatesFromEmpty:
+    """#720: the discriminating test. Starts from dreamers: [] under the
+    production invocation (``--target .``) and asserts the field REPOPULATES.
+
+    This is the assertion that distinguishes the bug from its fix, and its
+    ABSENCE is why the bug merged: every prior discovery test started from a
+    populated or empty field with an ABSOLUTE target, so it could not
+    distinguish the resolve() fix from the inert version.
+    """
+
+    def _make_worktree(self, target: Path, lane: str) -> Path:
+        wt = target / ".worktrees" / lane
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "BRIEF.md").write_text("lane brief")
+        return wt
+
+    def _spawn_cwd_ccc(self, cwd: Path, hold: float = 30.0):
+        return subprocess.Popen(
+            ["ccc", "-e", f"sleep {hold}", "--", "--yolo", "@glm52", "brief"],
+            executable=_which_perl(), cwd=str(cwd),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+
+    def test_repopulates_from_empty_under_default_relative_target(
+            self, tmp_path, monkeypatch):
+        # THE PRECONDITION: dreamers starts EMPTY. A test against a populated
+        # fixture passes against the inert implementation — the exact failure
+        # that shipped this bug. This test starts from [] and asserts the
+        # field repopulates, so the inert version returns [] and reds.
+        wt = self._make_worktree(tmp_path, "lane-720target")
+        proc = self._spawn_cwd_ccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid), \
+                "precondition: spawned ccc lane must be alive"
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            # Write status.json + tasks.md under tmp_path/.dreamwork, then
+            # chdir there and invoke main with the DEFAULT --target "." —
+            # exactly the production shape (just status-sync, no --target).
+            dw = tmp_path / ".dreamwork"
+            dw.mkdir(exist_ok=True)
+            (dw / "status.json").write_text(json.dumps(
+                {"dreamers": [], "current_task_ids": [], "queue": {},
+                 "task": "t"}))
+            (dw / "tasks.md").write_text(_ledger(720))
+            monkeypatch.chdir(tmp_path)
+            out_s, err_s = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out_s), \
+                    contextlib.redirect_stderr(err_s):
+                rc = status_sync.main(["--target", "."])
+            assert rc == 0, err_s.getvalue()
+            result = json.loads((dw / "status.json").read_text())
+            # DISCRIMINATING: the field REPOPULATED from []. Without the
+            # resolve() fix, wt_root="./.worktrees" never matched the
+            # absolute lane cwd, discovery returned [], and dreamers stayed
+            # []. This assertion names the lane that was discovered, quoting
+            # the message — a count-only check passes against the bug.
+            assert len(result["dreamers"]) == 1, \
+                "dreamers must repopulate from [] under the default " \
+                "relative target; got %s" % result["dreamers"]
+            assert result["dreamers"][0]["lane"] == "lane-720target", \
+                result["dreamers"]
+            assert 720 in result["current_task_ids"], \
+                result["current_task_ids"]
+            assert "discovered" in err_s.getvalue(), \
+                "the discovery report must fire: %s" % err_s.getvalue()
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_check_exits_one_when_repopulatable_from_empty(
+            self, tmp_path, monkeypatch):
+        # --check must exit 1 (stale) without writing when a lane is
+        # discoverable but dreamers is empty — the safe-on-a-bad-tick
+        # contract. Without the resolve() fix, discovery finds nothing and
+        # --check exits 0 ("already in sync") over a field that SHOULD carry
+        # a live lane — the bug reading that shipped #716.
+        wt = self._make_worktree(tmp_path, "lane-720target")
+        proc = self._spawn_cwd_ccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            dw = tmp_path / ".dreamwork"
+            dw.mkdir(exist_ok=True)
+            (dw / "status.json").write_text(json.dumps(
+                {"dreamers": [], "current_task_ids": [], "queue": {},
+                 "task": "t"}))
+            (dw / "tasks.md").write_text(_ledger(720))
+            before = (dw / "status.json").read_bytes()
+            monkeypatch.chdir(tmp_path)
+            out_s, err_s = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out_s), \
+                    contextlib.redirect_stderr(err_s):
+                rc = status_sync.main(["--target", ".", "--check"])
+            assert rc == 1, \
+                "a discoverable lane over an empty field is stale: %d" % rc
+            assert (dw / "status.json").read_bytes() == before, \
+                "--check must not write"
+            assert "discovered" in err_s.getvalue(), err_s.getvalue()
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_resolve_not_abspath_through_symlink(self, tmp_path, monkeypatch):
+        # Direction 2: the brief named the case where a target is reached via
+        # a DIFFERENT symlink/path than the one the lanes' cwd reports. This
+        # repo IS reached through ~/.claude-p/skills/ud-dreamwork (a symlink
+        # to ~/.llm-general/skills/ud-dreamwork), while lane cwds carry the
+        # real path. abspath keeps the symlink; resolve() normalises to the
+        # real path the cwds share. Without resolve(), a loop invoked through
+        # the symlink would build wt_root under the symlink path and discovery
+        # would find nothing — the same bug wearing a different hat.
+        #
+        # Build the state: a symlink to tmp_path, a lane whose cwd is the
+        # REAL path (tmp_path/.worktrees/...), and discover through the link.
+        wt = self._make_worktree(tmp_path, "lane-720target")
+        proc = self._spawn_cwd_ccc(wt)
+        link = tmp_path.parent / ("link-720-%d" % os.getpid())
+        try:
+            link.symlink_to(tmp_path)
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            # Precondition: the lane's cwd is the REAL path, not the link.
+            real_cwd = status_sync._read_proc_cwd(proc.pid)
+            assert real_cwd == str(wt), \
+                "precondition: cwd is the real path: %r" % real_cwd
+            assert str(link / ".worktrees" / "lane-720target") != real_cwd, \
+                "precondition: the link path must differ from the real cwd"
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            # Discover through the symlink: resolve() normalises link → real.
+            found, _ph = status_sync.discover_lanes(link)
+            assert any(f[0] == "lane-720target" for f in found), \
+                ("resolve() must normalise the symlink to the real path so "
+                 "wt_root matches the lane cwd; got %s" % found)
+        finally:
+            proc.kill()
+            proc.wait()
+            if link.is_symlink():
+                link.unlink()
+
+
+# ── 16. #720: discovered lanes carry a derived model (#716's second gap) ──
+#
+# A discovered lane has no recorded model while a hand-written one does —
+# the same kind of lane rendering as two kinds on the dashboard. The model
+# IS recoverable from argv[1:3]: "cc" for the Opus form (ccc cc -y +high)
+# versus "@<alias>" for the cheap form (ccc -y @glm52). The trap: /proc
+# cmdline is NUL-separated, so a substring test never matches and every lane
+# silently reads as the default model. argv ELEMENTS must be compared.
+
+class TestDiscoveryDerivesModel:
+    """#720: a discovered lane's model is derived from its /proc argv.
+
+    The NUL-split parsing is tested directly against known cmdline bytes
+    (a perl proxy cannot place the alias in argv[1:3]: perl needs ``-e``
+    first, so argv[1] is always ``-e``). The production line whose reversion
+    reds each parsing test: ``raw.split(b"\\x00")`` and the ``args[1:3]``
+    logic in ``_ccc_model`` — reverting to a substring test
+    (``b" cc " in raw``) never matches NUL-separated args, so every lane
+    silently reads as the default model, the exact trap #716 recorded.
+    """
+
+    def _make_worktree(self, target: Path, lane: str) -> Path:
+        wt = target / ".worktrees" / lane
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "BRIEF.md").write_text("lane brief")
+        return wt
+
+    def _spawn_cwd_ccc(self, cwd: Path, hold: float = 30.0):
+        return subprocess.Popen(
+            ["ccc", "-e", f"sleep {hold}", "--", "--yolo", "@glm52", "brief"],
+            executable=_which_perl(), cwd=str(cwd),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+
+    def _mock_cmdline(self, monkeypatch, pid: int, raw: bytes):
+        """Patch builtins.open so /proc/<pid>/cmdline yields `raw` bytes."""
+        import builtins
+        real_open = builtins.open
+
+        class _FakeFile(io.BytesIO):
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                self.close()
+
+        def fake_open(path, *a, **kw):
+            if str(path) == "/proc/%d/cmdline" % pid:
+                return _FakeFile(raw)
+            return real_open(path, *a, **kw)
+        monkeypatch.setattr(builtins, "open", fake_open)
+
+    def test_glm52_alias_derived_from_nul_separated_argv(self, monkeypatch):
+        # The cheap form: ccc -y @glm52. NUL-split argv = ['ccc', '-y',
+        # '@glm52', ...]. argv[1:3] = ['-y', '@glm52'].
+        raw = b"ccc\x00-y\x00@glm52\x00You are a dreamwork lane\x00"
+        self._mock_cmdline(monkeypatch, 7777, raw)
+        model = status_sync._ccc_model(7777)
+        assert model == "ccc @glm52", \
+            "model must be derived from argv[1:3] NUL-split: %r" % model
+
+    def test_opus_form_derived_from_nul_separated_argv(self, monkeypatch):
+        # The Opus form: ccc cc -y +high. argv[1:3] = ['cc', '-y'].
+        raw = b"ccc\x00cc\x00-y\x00+high\x00You are a dreamwork lane\x00"
+        self._mock_cmdline(monkeypatch, 8888, raw)
+        model = status_sync._ccc_model(8888)
+        assert model == "ccc cc +high (opus)", \
+            "opus form must read as 'ccc cc +high (opus)': %r" % model
+
+    def test_substring_of_raw_cmdline_never_matches(self, monkeypatch):
+        # THE TRAP: /proc cmdline is NUL-separated, so b" cc " never appears
+        # as a substring even when 'cc' IS an argv element. A substring test
+        # would return None here (wrong), proving the parser must split on
+        # NUL and compare elements. This is the exact failure #716 recorded.
+        raw = b"ccc\x00cc\x00-y\x00+high\x00brief\x00"
+        assert b" cc " not in raw, \
+            "precondition: NUL-separation means the substring is absent"
+        self._mock_cmdline(monkeypatch, 9999, raw)
+        model = status_sync._ccc_model(9999)
+        assert model == "ccc cc +high (opus)", \
+            "element comparison must succeed where substring fails: %r" \
+            % model
+
+    def test_unknown_alias_yields_none_not_a_default(self, monkeypatch):
+        # argv[1:3] matches no known alias: None (not a silent default).
+        raw = b"ccc\x00-y\x00--unknownflag\x00brief\x00"
+        self._mock_cmdline(monkeypatch, 6666, raw)
+        model = status_sync._ccc_model(6666)
+        assert model is None, \
+            "unknown alias must yield None, not a silent default: %r" % model
+
+    def test_model_flows_into_discovered_entry(self, tmp_path, monkeypatch):
+        # Integration: a discovered lane carries its derived model into the
+        # dreamer entry. The real perl proxy cannot place the alias in
+        # argv[1:3] (perl needs -e first), so _ccc_model is patched to a
+        # known value — the production line this binds is the
+        # ``if model is not None: entry["model"] = model`` gate in main's
+        # merge loop. Revert it (never set model) and the entry has no model.
+        wt = self._make_worktree(tmp_path, "lane-720model")
+        proc = self._spawn_cwd_ccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda d: [str(proc.pid)] if d == "/proc" else [])
+            monkeypatch.setattr(status_sync, "_ccc_model",
+                                lambda pid: "ccc @glm52")
+            status = {"dreamers": [], "current_task_ids": [], "queue": {},
+                      "task": "t"}
+            rc, out, err = _run(status, _ledger(720), tmp_path)
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            assert len(result["dreamers"]) == 1, result["dreamers"]
+            assert result["dreamers"][0].get("model") == "ccc @glm52", \
+                result["dreamers"]
+        finally:
+            proc.kill()
+            proc.wait()

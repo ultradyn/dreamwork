@@ -263,14 +263,53 @@ def _is_ccc_proc(pid: int) -> bool:
     return os.path.basename(first.decode("utf-8", "replace")) == "ccc"
 
 
+def _ccc_model(pid: int) -> str | None:
+    """The model alias a `ccc` lane is running, from argv ELEMENTS (#720).
+
+    A discovered lane's pid has no recorded model, so the dashboard showed
+    a blank for lanes the tool found and a value for lanes a coordinator
+    typed — the same kind of lane rendered as two kinds. The model IS in the
+    same `/proc` read discovery already does: argv[1:3] carries ``cc`` for
+    the Opus form (``ccc cc -y +high``) versus ``@<alias>`` for the cheap
+    form (``ccc -y @glm52``).
+
+    Reads argv ELEMENTS — never a substring of the raw cmdline. ``/proc``'s
+    cmdline is NUL-separated, so a substring test for ``" cc "`` never matches
+    and every lane silently reads as the default model (#716 recorded this
+    exact trap). The check spans argv[1:3] so a flag sitting between the
+    binary and the alias (``-y`` in both forms today) does not hide it.
+    Returns ``None`` when the alias is unrecognised — the lane IS classified
+    (it is a live ``ccc`` lane under ``.worktrees/``); the model is an
+    attribute, not a classification, so #702's "must report" (inherited by
+    #719's phantom: a lane the tool CANNOT classify) does not reach it.
+    """
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return None
+    if not raw:
+        return None
+    args = [a.decode("utf-8", "replace") for a in raw.split(b"\x00") if a]
+    early = args[1:3]                           # argv[1] and argv[2]
+    if "cc" in early:                           # ccc cc -y +high (opus)
+        return "ccc cc +high (opus)"
+    aliases = [a for a in early if a.startswith("@")]
+    if aliases:                                 # ccc -y @glm52
+        return "ccc " + aliases[0]
+    return None
+
+
 def discover_lanes(target: Path):
     """Live `ccc` lanes the cwd probe can see, as ``(found, phantoms)``.
 
     Walks ``/proc/*/cwd`` for paths under ``<target>/.worktrees/`` whose
     process is a ``ccc`` dispatch (#716). ``found`` is the list of live lanes
-    a caller MERGES with coordinator-authored entries (a lane running where
-    the cwd probe cannot reach — another machine, a different harness — is
-    carried verbatim rather than erased by a narrower automatic view).
+    (as ``(lane, pid, model)`` triples — #720 derives the model from the same
+    ``/proc`` read) a caller MERGES with coordinator-authored entries (a lane
+    running where the cwd probe cannot reach — another machine, a different
+    harness — is carried verbatim rather than erased by a narrower automatic
+    view).
 
     ``phantoms`` (#719) is a ``ccc`` process whose cwd passed the worktree
     prefix filter but whose worktree has been REMOVED — Linux appends
@@ -288,9 +327,16 @@ def discover_lanes(target: Path):
     that hung after its worktree was removed.
 
     ``target`` is the project root (the dir whose ``.worktrees/`` holds
-    lanes).
+    lanes). It is RESOLVED before building ``wt_root`` (#720): the default
+    ``--target="."`` produced ``"./.worktrees"``, tested with ``startswith``
+    against the ABSOLUTE path ``readlink`` returns — it never matched, so
+    discovery was INERT under the invocation the loop actually uses.
+    ``resolve()`` (not ``realpath``: #425's symlink contract; not
+    ``abspath``: this repo is reached through ``~/.claude-p/skills/…`` while
+    lane cwds carry ``~/.llm-general/skills/…``, and ``abspath`` keeps the
+    symlink while ``resolve()`` normalises to the real path the cwds share).
     """
-    wt_root = str(target) + "/" + WORKTREE_DIR
+    wt_root = str(target.resolve()) + "/" + WORKTREE_DIR
     found = []
     phantoms = []
     for entry in os.listdir("/proc"):
@@ -313,10 +359,10 @@ def discover_lanes(target: Path):
         if not os.path.isdir(cwd):
             phantoms.append((lane, pid))
             continue
-        found.append((lane, pid))
+        found.append((lane, pid, _ccc_model(pid)))
     # Stable order by lane name so the merge and the stderr report are
     # deterministic across runs reading the same process table.
-    return (sorted(found, key=lambda lp: lp[0]),
+    return (sorted(found, key=lambda lpm: lpm[0]),
             sorted(phantoms, key=lambda lp: lp[0]))
 
 
@@ -630,12 +676,17 @@ def main(argv: list[str] | None = None) -> int:
     discovered, phantoms = discover_lanes(Path(args.target))
     existing_lanes = {d.get("lane") for d in pruned if isinstance(d, dict)}
     added = []
-    for lane, pid in discovered:
+    resolved = Path(args.target).resolve()
+    for lane, pid, model in discovered:
         if lane in existing_lanes:
             continue
-        brief = str(Path(args.target) / WORKTREE_DIR / lane / "BRIEF.md")
-        added.append({"task": _lane_task(lane, ids), "lane": lane,
-                      "pid": pid, "brief": brief, "dispatch": "ccc"})
+        entry = {"task": _lane_task(lane, ids), "lane": lane,
+                 "pid": pid,
+                 "brief": str(resolved / WORKTREE_DIR / lane / "BRIEF.md"),
+                 "dispatch": "ccc"}
+        if model is not None:                 # #720: derived from /proc argv
+            entry["model"] = model
+        added.append(entry)
         pruned.append(added[-1])
     if added:
         print("status_sync: discovered %d live ccc lane(s) the field did not "
