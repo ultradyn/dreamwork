@@ -23,7 +23,9 @@ against a drifting process table.
 """
 
 import os
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -212,11 +214,22 @@ def test_all_dead_with_yes_reaps_dead_lane(monkeypatch, capsys):
     fake = _dead_record(424243)
     assert fake["classification"] == "dead-lane"
     monkeypatch.setattr(reaper, "gather", lambda hours: [fake])
-    killed = []
-    monkeypatch.setattr("os.kill", lambda pid, sig: killed.append((pid, sig)))
+    # The fake process must DIE on SIGTERM. After os.kill(pid, 15) returns,
+    # do_kill polls os.kill(pid, 0); that probe must raise ProcessLookupError
+    # for the record to be confirmed gone (REAPED). A fake that returns None
+    # for the probe would read as still-alive and yield SIGNALLED — which is
+    # exactly the bug this test exists to keep red against.
+    sent = []
+    def fake_kill(pid, sig):
+        sent.append((pid, sig))
+        if sig == 0:
+            raise ProcessLookupError  # process confirmed gone
+    monkeypatch.setattr("os.kill", fake_kill)
+    monkeypatch.setattr(reaper, "_VERIFY_TIMEOUT", 0.1)
     rc = reaper.main(["--kill", "--all-dead", "--yes"])
     assert rc == 0
-    assert killed == [(424243, 15)], "SIGTERM (15) the dead-lane pid once"
+    assert sent == [(424243, 15), (424243, 0)], \
+        "SIGTERM (15) then a probe (0); the probe is the verification step"
     assert "REAPED pid=424243" in capsys.readouterr().out
 
 
@@ -292,3 +305,139 @@ def test_a_deployed_dashboard_is_never_reaped_even_when_dead_lane(monkeypatch, c
     killed.clear()
     reaper.main(["--kill", "--pid", "424244"])
     assert killed == [], "--pid must not reach the deployed instance either"
+
+
+# ---------------------------------------------------------------------------
+# exit verification (#730): REAPED vs SIGNALLED must not collapse
+#
+# The old code appended to `killed` the instant os.kill RETURNED, so a process
+# that ignored SIGTERM, was still shutting down, or was wedged in D state all
+# rendered as REAPED. That is #136 ("gone" and "I did not look" must not render
+# identically) and #671 (a completed action that verified nothing must not read
+# as done). These tests exercise the branch against REAL processes — a fake
+# os.kill that returns None for the probe passes against the broken code too.
+# ---------------------------------------------------------------------------
+
+def test_wait_for_exit_returns_true_when_pid_is_gone(monkeypatch):
+    # The probe raises ProcessLookupError immediately => gone.
+    calls = []
+    def probe(pid, sig):
+        calls.append((pid, sig))
+        raise ProcessLookupError
+    monkeypatch.setattr("os.kill", probe)
+    assert reaper._wait_for_exit(999, timeout=1.0, poll=0.01) is True
+    assert calls == [(999, 0)], "a single sig-0 probe that raised ends the wait"
+
+
+def test_wait_for_exit_returns_false_when_pid_still_alive(monkeypatch):
+    # The probe succeeds every time => still alive at timeout.
+    monkeypatch.setattr("os.kill", lambda pid, sig: None)  # no exception
+    slept = []
+    monkeypatch.setattr(reaper.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setattr(reaper.time, "monotonic", iter([0.0, 0.0, 10.0]).__next__)
+    assert reaper._wait_for_exit(999, timeout=1.0, poll=0.01) is False
+
+
+def test_reaped_confirms_exit_against_a_real_victim():
+    """A cooperative process that dies on SIGTERM must report REAPED, and the
+    real os.kill path must be exercised (no monkeypatch on os.kill)."""
+    import subprocess
+    # `sleep` has no SIGTERM handler; default disposition terminates it.
+    victim = subprocess.Popen(["sleep", "300"])
+    assert victim.poll() is None, "precondition: victim is alive before reap"
+    rec = _dead_record(victim.pid)
+    assert rec["classification"] == "dead-lane"
+    killed, signalled, refused, skipped = reaper.do_kill(
+        [rec], [victim.pid], False, set(), verify_timeout=5.0)
+    try:
+        assert killed == [rec], "a process that exits after SIGTERM is REAPED"
+        assert signalled == [], "must not be SIGNALLED when it actually died"
+        assert victim.poll() is not None, "ground truth: the victim is dead"
+    finally:
+        if victim.poll() is None:
+            victim.kill()
+            victim.wait()
+
+
+def test_signalled_when_sigterm_is_ignored_real_victim():
+    """THE discriminating test (#730, #136): a process that IGNORES SIGTERM
+    must report SIGNALLED and NOT REAPED. Uses a real child with SIG_IGN —
+    no os.kill monkeypatch, so the SIGNALLED branch is genuinely taken.
+
+    A happy-path-only test passes against today's broken code, because today's
+    code gets the happy path right; this is the one that does not.
+    """
+    import tempfile
+    ready = tempfile.NamedTemporaryFile(delete=False)
+    ready.close()
+    os.unlink(ready.name)  # child will create it; absence = not ready
+    victim = subprocess.Popen(
+        ["python3", "-c",
+         "import os,signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+         "open(%r,'w').close(); time.sleep(300)" % ready.name],
+        env={**os.environ})
+    # Wait until the handler is actually installed, else SIGTERM wins the race
+    # and the test exercises the REAPED path instead of the SIGNALLED one.
+    for _ in range(200):
+        if os.path.exists(ready.name):
+            break
+        time.sleep(0.01)
+    assert os.path.exists(ready.name), "precondition: victim installed SIG_IGN"
+    assert victim.poll() is None, "precondition: victim alive before reap"
+    rec = _dead_record(victim.pid)
+    assert rec["classification"] == "dead-lane"
+    killed, signalled, refused, skipped = reaper.do_kill(
+        [rec], [victim.pid], False, set(), verify_timeout=0.4)
+    try:
+        # precondition held: SIGTERM was delivered and ignored
+        assert victim.poll() is None, \
+            "precondition: the victim must still be alive (it ignores SIGTERM)"
+        assert signalled == [rec], \
+            "a SIGTERM-ignoring process is SIGNALLED, not REAPED"
+        assert killed == [], \
+            "must NOT be REAPED — the process is verified still alive (#136)"
+    finally:
+        victim.kill()  # SIGKILL is the human's call, not the reaper's
+        victim.wait()
+
+
+def test_signalled_renders_distinctly_and_names_the_pid(monkeypatch, capsys):
+    """The operator reads SIGNALLED, sees the pid, and the message says it is
+    NOT confirmed gone and offers the kill command as a human decision."""
+    import tempfile
+    ready = tempfile.NamedTemporaryFile(delete=False)
+    ready.close()
+    os.unlink(ready.name)
+    victim = subprocess.Popen(
+        ["python3", "-c",
+         "import os,signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+         "open(%r,'w').close(); time.sleep(300)" % ready.name],
+        env={**os.environ})
+    for _ in range(200):
+        if os.path.exists(ready.name):
+            break
+        time.sleep(0.01)
+    assert os.path.exists(ready.name), "victim must be ready before reaping"
+    try:
+        rec = _dead_record(victim.pid)
+        monkeypatch.setattr(reaper, "gather", lambda hours: [rec])
+        monkeypatch.setattr(reaper, "_VERIFY_TIMEOUT", 0.3)
+        rc = reaper.main(["--kill", "--pid", str(victim.pid)])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert f"SIGNALLED pid={victim.pid}" in out
+        assert "REAPED" not in out, "REAPED must not appear for a survivor"
+        assert "NOT confirmed gone" in out
+        assert f"kill -9 {victim.pid}" in out, \
+            "the human's one-command decision must be named"
+        assert victim.poll() is None, "the tool did not kill it"
+    finally:
+        victim.kill()
+        victim.wait()
+
+
+def test_do_kill_returns_four_lists():
+    """do_kill now returns (killed, signalled, refused, skipped). A caller that
+    unpacks three would silently drop the signalled pids — pin the arity."""
+    result = reaper.do_kill([], [], False, set())
+    assert len(result) == 4
