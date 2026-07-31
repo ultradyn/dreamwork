@@ -91,12 +91,11 @@ that is a legitimate outcome, not a failure.
 
   Using the tool also discharges two rules you would otherwise have to remember. It places
   snapshots **lane-privately** (`#652`: the session scratchpad is shared by every live lane, and
-  a `#691` lane's first snapshot landed in a directory already holding another lane's backups of
+  `#703` records a lane's first snapshot landing in a directory already holding another lane's backups of
   `watch.py`, `router.js` and `test_watch.py` — two lanes clobbering each other's restore point
   is the exact failure snapshots exist to prevent), on `~/.cache` (btrfs) rather than `/tmp`
-  (tmpfs, the substrate half of `#634`). And because `begin` snapshots at the moment you arm the
-  injection, it cannot make the `#704` sequencing mistake — that lane snapshotted two files at
-  one moment, edited the second afterwards, restored, and silently lost the later edits.
+  (tmpfs, the substrate half of `#634`). And because `begin` snapshots at the moment you arm each
+  injection, it cannot snapshot a file before later edits and then silently lose them on restore.
   **Never `git checkout` to restore an injection** (`#349`, a repeat offence here); `restore`
   copies from the snapshot and verifies.
 - *Direction 2*: construct an input where the thing you are checking is **genuinely broken
@@ -128,7 +127,7 @@ one legitimate use of the skill-dir path is the pre-fix BASELINE — running the
 deliberately to capture the before state (`#592`, `#607`). That is a technique, not a
 mistake; a rule that bans the skill-dir path would forbid it.
 
-**Volume** (`#612`): land your change as the fewest lines that carry the meaning. A correct
+**Volume**: land your change as the fewest lines that carry the meaning. A correct
 change that triples a doc's length gets reverted by the next reader.
 
 **Shipping an experiment?** Its gate is a file: its own tracked `.dreamwork/<name>`, absent
