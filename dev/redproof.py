@@ -148,6 +148,22 @@ def _to_posix(path: str) -> str:
     return path.replace("\\", "/").removeprefix("./")
 
 
+def _worktree_path(root: Path, path: str) -> tuple[str, Path]:
+    """Return a canonical repo-relative key and its resolved, confined path."""
+    posix = _to_posix(path)
+    try:
+        resolved_root = root.resolve(strict=True)
+        resolved = (resolved_root / posix).resolve(strict=False)
+        relative = resolved.relative_to(resolved_root)
+    except ValueError as exc:
+        raise RedproofError(
+            f"path {posix!r} resolves outside the worktree ({resolved})"
+        ) from exc
+    except (OSError, RuntimeError) as exc:
+        raise RedproofError(f"cannot resolve path {posix!r}: {exc}") from exc
+    return relative.as_posix(), resolved
+
+
 def _snap_dir(cwd: Path | None) -> Path:
     return _ls.lane_scratch_dir(cwd, sub=SUB)
 
@@ -233,7 +249,7 @@ def _find_restored(entries: list[dict], posix_path: str,
 
 def _read_wt(root: Path, posix_path: str) -> bytes:
     """Working-tree bytes of posix_path under root. Faults if unreadable."""
-    p = root / posix_path
+    _, p = _worktree_path(root, posix_path)
     try:
         return p.read_bytes()
     except FileNotFoundError as exc:
@@ -410,9 +426,12 @@ def begin(cwd: Path | None, path: str) -> int:
     so the lane cannot take the snapshot at the wrong moment (#704).
     """
     root = _ls.worktree_root(cwd)
-    posix = _to_posix(path)
     try:
-        original = (root / posix).read_bytes()
+        posix, target = _worktree_path(root, path)
+        original = target.read_bytes()
+    except RedproofError as exc:
+        sys.stderr.write(f"begin: REFUSED — {exc}\n")
+        return 2
     except FileNotFoundError:
         sys.stderr.write(f"begin: {posix!r} does not exist in the working tree\n")
         return 2
@@ -463,8 +482,8 @@ def restore(cwd: Path | None, path: str) -> int:
     observed, and observing it twice is the same state, not two.
     """
     root = _ls.worktree_root(cwd)
-    posix = _to_posix(path)
     try:
+        posix, _ = _worktree_path(root, path)
         entries, _ = _read_registry(cwd)
         armed = _find(entries, posix)
         if armed is None:
@@ -516,7 +535,7 @@ def restore(cwd: Path | None, path: str) -> int:
         entries = [e for e in entries if e is not armed]
 
         # Restore the original by cp, then verify byte-identity. Never git checkout.
-        out = root / posix
+        _, out = _worktree_path(root, posix)
         shutil.copyfile(str(snap), str(out))
         restored = out.read_bytes()
         if restored != original:
@@ -534,7 +553,12 @@ def restore(cwd: Path | None, path: str) -> int:
 
 def forget(cwd: Path | None, path: str) -> int:
     """Drop a registered entry (e.g. a spurious begin). Does not touch the WT."""
-    posix = _to_posix(path)
+    root = _ls.worktree_root(cwd)
+    try:
+        posix, _ = _worktree_path(root, path)
+    except RedproofError as exc:
+        sys.stderr.write(f"forget: REFUSED — {exc}\n")
+        return 2
     entries, _ = _read_registry(cwd)
     before = len(entries)
     entries = [e for e in entries if e.get("path") != posix]
@@ -671,7 +695,8 @@ def main(argv: list[str] | None = None) -> int:
                          "restore PATH = record injected + restore original; "
                          "forget PATH = drop an entry; "
                          "check = hand-off gate")
-    ap.add_argument("path", nargs="?", help="repo-relative path (for begin/restore/forget)")
+    ap.add_argument("path", nargs="?", help="repo-relative path confined to the resolved "
+                    "worktree (for begin/restore/forget)")
     ap.add_argument("--require", type=int, default=0,
                     help="check: refuse if fewer than N injections are registered")
     ap.add_argument("--base", default=None,
