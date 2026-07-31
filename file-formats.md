@@ -2204,8 +2204,12 @@ delete `removed`) only when `base` matches both the version captured for that
 request and the document still held when the response arrives. Responses are
 sequenced so an older request cannot commit after a newer one. A base mismatch
 clears the cached version and refetches without `since`; reconstruction against
-a valid base is byte-identical to a full build at that version, proven from one
-shared set of Python-derived envelopes by the Python and browser appliers.
+a valid base is semantically equal to the full JSON document at that version,
+excluding `generated` and ignoring JSON object-member order. `generated` is not
+re-stamped by either delta applier: because it is excluded from the delta, the
+base document's value is carried until a full document replaces it. The
+semantic reconstruction is proven from one shared set of Python-derived
+envelopes by the Python and browser appliers.
 
 The server also emits `check`, a SHA-256 of Python's sorted-key JSON bytes for
 the full document minus `generated`. It is **not yet a browser-verified safety
