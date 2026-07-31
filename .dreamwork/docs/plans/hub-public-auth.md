@@ -203,12 +203,14 @@ receipt `dc9200a0-4ebf-5d3b-afab-71257155bef9`; `rec` on all three), the UI
 was ruled to be **transitioning to a component-based React web UI** — **G2
 reads per-surface** (a **derived** surface is not a second authority), the
 claude-design breakpoint is **component-level and staged**, and the
-framework is **React**. Neither change touches the constraint this section
-is actually about: `DREAMWORK.md`'s second-truth rule stays in force (the
-React surface is derived, compiled from the same `client/*.js` `watch.py`
-already serves, restating no markup — not a hand-maintained twin), and
-**what did not expire, and is this section's whole point, is the Python
-half.** Both `dreamhub.py` and `watch.py` are pure-stdlib Python
+framework is **React**; and on 2026-07-31 19:09 (`#614`) he relaxed the
+*"one renderer, and it is the Python one"* sentence outright and scoped
+`DREAMWORK.md`'s second-truth rule to **on-disk master state** (canonical:
+**One fact, one home on disk**, `DREAMWORK.md` Philosophy). None of those
+touches the constraint this section is actually about — indeed the scoping
+sharpens it, since a hub's session/identity state *is* on-disk master state
+and stays single-homed — because **what did not expire, and is this
+section's whole point, is the Python half.** Both `dreamhub.py` and `watch.py` are pure-stdlib Python
 (`watch-design.md`: *"the server imports nothing outside the stdlib and no
 `pip install` stands between a checkout and a running dashboard"*). This is
 a product constraint, not a preference. It collides head-on with shoo's

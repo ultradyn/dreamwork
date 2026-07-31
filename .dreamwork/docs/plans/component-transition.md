@@ -17,6 +17,18 @@ The three settled constraints (his, not this plan's to reopen):
   authority.** Two *maintained* renderers of the same rows stay refused. A
   hand-maintained component twin of an existing surface is refused, however
   incremental.
+  **RELAXED 2026-07-31 19:09 (`#614`) — read this before starting, because it
+  loosens the constraint this plan was shaped around.** He relaxed *"one
+  renderer, and it is the Python one"* outright (*"we should relax this now
+  since we're changing over to react based webui"*) and scoped the
+  second-truth rule to **on-disk master state** (canonical: **One fact, one
+  home on disk**, `DREAMWORK.md` Philosophy). So a hand-maintained twin is no
+  longer *refused* — it is merely expensive. **This plan's shape does not
+  change**, and that is a deliberate call rather than an oversight: derived
+  wrappers plus deletion-on-flip were chosen because they cost the least, not
+  because a rule required them, so the cheapest path is still the cheapest
+  path. What changes is that a lane hitting an awkward surface may now *argue*
+  for a hand-written component instead of being blocked by doctrine.
 - **Q2 — claude-design compatibility at component level, staged**: tokens+CSS
   first, delegating wrappers second.
 - **Q3 — React.**
