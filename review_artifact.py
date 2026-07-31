@@ -75,7 +75,57 @@ OPTIONAL = ("context", "status", "tag", "sub", "call", "aside", "nav",
             "skip", "skip_href", "aside_label", "no_ask", "no_if_silent")
 # Filled by the builder from the others; an author who sets one is corrected
 # rather than quietly overridden.
-DERIVED = ("TEMPLATE_STAMP", "hero_solo")
+DERIVED = ("TEMPLATE_STAMP", "hero_solo", "status_state")
+
+# ── the verdict's enumerated states (#600) ────────────────────────────────
+#
+# `status:` was free text and `.status` painted EVERY value `--warn` amber with
+# a glowing dot, so `DECIDED · … · ack good to go` rendered in the colour that
+# means BROKEN. watch-design.md's token rule is that amber's uses are
+# ENUMERABLE and must stay that way (#136) — and a verdict cannot be held to an
+# enumerated rule while the vocabulary it is drawn from is unbounded. So the
+# vocabulary is the fix and the colour follows it: the styling could not
+# classify what the format never constrained (lessons.md:405 — when a format
+# fails silently, the fix is a writer, not a second description of it).
+#
+# Keyed on the FIRST WORD, because that is the shape every value in the corpus
+# already has: a verdict word, then `·`-separated detail. Both tuples are drawn
+# from what the corpus measurably says (`awaiting`, `decided`, `approved`,
+# `open`) plus the peers a decision record can end in; a word nobody has ever
+# written is not enumerated on the chance someone might.
+STATUS_SETTLED = ("decided", "approved", "accepted", "rejected", "declined",
+                  "superseded", "withdrawn")
+STATUS_PENDING = ("awaiting", "open", "pending", "proposed")
+# Anything else is `unreadable`, and that is deliberately NOT a silent neutral.
+# A verdict the build cannot classify is a defect in the artifact that wrote it,
+# so it (a) keeps the amber and the dot — that IS #136's fact, the page cannot
+# say what state it is in, (b) carries `class="status unreadable"` so the built
+# corpus is greppable for it, and (c) warns at build time naming the value.
+# Refusing was considered and rejected: it would make an existing source
+# unbuildable over one word, which is the line `render`'s advisory contract
+# already draws.
+STATUS_UNREADABLE = "unreadable"
+_STATUS_TAG_RE = re.compile(r"<[^>]*>")
+_STATUS_WORD_RE = re.compile(r"[A-Za-z]+")
+
+
+def status_state(status):
+    """Which enumerated state a `status:` value names.
+
+    `"settled"`, `"pending"`, or `STATUS_UNREADABLE`. A status is a single-line
+    HTML fragment, so tags and entities are stripped before the first word is
+    taken — `<code>decided</code> &middot; …` is a decision, not an unreadable
+    one, and the class must not depend on how the author marked it up.
+    """
+    text = html.unescape(_STATUS_TAG_RE.sub(" ", status or ""))
+    match = _STATUS_WORD_RE.search(text)
+    word = match.group(0).lower() if match else ""
+    if word in STATUS_SETTLED:
+        return "settled"
+    if word in STATUS_PENDING:
+        return "pending"
+    return STATUS_UNREADABLE
+
 
 HEADER_OPEN = "<!--dreamwork-review-source"
 BLOCK_RE = re.compile(r"^<!--#([a-z_]+)-->[ \t]*$", re.M)
@@ -1498,6 +1548,11 @@ def render(fields, template=None, warn=None):
     fields = dict(validate(dict(fields)))
     fields["TEMPLATE_STAMP"] = template_stamp(template)
     fields["hero_solo"] = "" if fields.get("aside", "").strip() else " solo"
+    # #600 — the chip's state class. Always a real word (never blank), so the
+    # unreadable case is a positive marker in the built page rather than the
+    # absence of one; a state you can only detect by what is missing is a state
+    # nobody greps for.
+    fields["status_state"] = status_state(fields.get("status", ""))
     if not fields.get("aside_label", "").strip():
         fields["aside_label"] = "At a glance"
 
@@ -1563,6 +1618,18 @@ def render(fields, template=None, warn=None):
     if warn is not None:
         for message in grid_warnings(out, template):
             warn(message)
+        # #600 — a verdict the enumeration cannot read. Advisory for the same
+        # reason the grid row is: it renders, and refusing over a word would
+        # make this module the arbiter of vocabulary. Not silent, for the same
+        # reason too — silence is how every verdict came to be painted broken.
+        if (fields.get("status", "").strip()
+                and fields["status_state"] == STATUS_UNREADABLE):
+            warn(
+                "status %r names no enumerated state, so the chip renders the "
+                "amber that means BROKEN (#136) rather than settled or "
+                "pending — start the value with one of: %s"
+                % (fields["status"],
+                   ", ".join(sorted(STATUS_SETTLED + STATUS_PENDING))))
         if len(labels) >= MARKS_WARN_AT:
             warn(
                 "essential marks: %d declared (warn at %d or more, refuse at "

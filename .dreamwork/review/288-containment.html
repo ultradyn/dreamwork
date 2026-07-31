@@ -1,11 +1,11 @@
 <!doctype html>
-<!--Built from the dreamwork review template v1+00e8ce0d (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<!--Built from the dreamwork review template v1+5c98fb09 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
-<meta name="dreamwork-review-template" content="v1+00e8ce0d">
+<meta name="dreamwork-review-template" content="v1+5c98fb09">
 <meta name="dreamwork-review-ask" content="ask">
 <meta name="dreamwork-review-if-silent" content="if-silent">
 <title>"#288 · Contain subagent tools, or detect the outcome · design + prototype"</title>
@@ -65,6 +65,25 @@ h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit);margin-top:1.4rem}
 .identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
+/* #600 — the chip is keyed on the verdict's enumerated state (review_artifact
+   .status_state), never on every value alike. `--warn` means BROKEN (#136) and
+   an approved review is the furthest thing from broken. Pending is live and
+   waiting on him, which is what the accent is for; settled steps DOWN the ramp
+   and drops the dot, matching #289's darkening idiom for a decided row on the
+   dashboard, so the two surfaces agree about what a decision looks like. The
+   base rule above is left alone on purpose: it is what `unreadable` restates
+   below, and the hand-rolled tasks-page.html still depends on it.
+   Scope, so nobody widens this by accident: watch-design.md states the #136
+   enumeration under `### Tokens`, about client/style.css, and elsewhere treats
+   THIS file's `--warn` on numerals and types as legitimate (the dashboard
+   renames it to `--amber` when it borrows the palette, precisely because the
+   rule is the dashboard's). So the verdict chip is fixed on its own merits —
+   a settled verdict that renders identically to a broken one carries no
+   information, and #289 already dims a decided row on the dashboard — and
+   `.tok-num` / `.tok-typ` are deliberately left alone. */
+.status.pending{color:var(--accent)}.status.pending::before{background:var(--accent);box-shadow:0 0 12px rgba(165,180,252,.55)}
+.status.settled{color:var(--dim)}.status.settled::before{display:none}
+.status.unreadable{color:var(--warn)}.status.unreadable::before{background:var(--warn)}
 main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
 .label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
 .quiet{color:var(--muted)}.dim{color:var(--dim)}.dimmer{color:var(--dimmer)}
@@ -285,7 +304,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 <nav class="toprail" aria-label="Artifact navigation">
   <div class="toprail-in">
     <div class="identity"><b>subagent containment</b><span>task #288 · decision</span></div>
-    <div class="topactions"><span class="status">awaiting review</span><a class="full" href="#ask">the ask</a><a href="#evidence">prototype evidence</a></div>
+    <div class="topactions"><span class="status pending">awaiting review</span><a class="full" href="#ask">the ask</a><a href="#evidence">prototype evidence</a></div>
   </div>
 </nav>
 
@@ -472,7 +491,7 @@ the ruling to make, not just the context for it.</p>
   absent&rdquo;</em>) is the shape of the bug, not the fix.</p>
 </section>
 
-<footer>Design: <code>.dreamwork/docs/plans/subagent-containment.md</code> &middot; prototype: <code>dev/containment_falsify.py</code> &middot; design + prototype only, no deployment authorised <span class="dimmer">· built from review template v1+00e8ce0d</span></footer>
+<footer>Design: <code>.dreamwork/docs/plans/subagent-containment.md</code> &middot; prototype: <code>dev/containment_falsify.py</code> &middot; design + prototype only, no deployment authorised <span class="dimmer">· built from review template v1+5c98fb09</span></footer>
 
 </main>
 </body>

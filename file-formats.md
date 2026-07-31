@@ -1715,6 +1715,26 @@ Prepared for task #325 · 27 July 2026 · offline-clean, no external requests.
 - **Optional means gone, not empty.** An unset slot deletes its whole
   region, `status:` with nothing after it counts as unset, and an aside-less
   hero drops to `hero-grid solo` rather than holding a 240px column open.
+- **`status:` draws its verdict from an ENUMERATED vocabulary (#600).** The
+  chip used to be free text painted `--warn` amber for every value, so
+  `DECIDED · … · ack good to go` wore the colour that means broken. The colour
+  could not be keyed on the state because nothing had ever named the states.
+  Now the builder reads the value's FIRST WORD — `review_artifact.STATUS_SETTLED`
+  (`decided approved accepted rejected declined superseded withdrawn`) or
+  `STATUS_PENDING` (`awaiting open pending proposed`) — and derives
+  `status_state`, which the template renders as `class="status settled|pending|
+  unreadable"`. Settled steps down the ramp and drops the dot; pending takes the
+  accent and keeps it. Everything after the first word is free prose, so
+  `DECIDED · 2026-07-29 01:37 · ack good to go` needs no rewriting, and the
+  value is an HTML fragment, so `<code>decided</code> · …` classifies the same.
+- **A verdict outside the vocabulary renders `unreadable`, loudly, and WARNs.**
+  It keeps the amber and the dot — a page that cannot say what state it is in is
+  the fact amber exists for — carries `class="status unreadable"` so the built
+  corpus is greppable, and the build prints an advisory naming the value. It is
+  advisory rather than fatal for the same reason the short grid row is: refusing
+  a build over one word would make the builder the arbiter of vocabulary. Adding
+  a word to either tuple is a deliberate edit with a reason, because the point of
+  an enumeration is that it stays one.
 - `TEMPLATE_STAMP` and `hero_solo` are **derived**; a source that sets one
   is an error rather than being quietly overridden.
 

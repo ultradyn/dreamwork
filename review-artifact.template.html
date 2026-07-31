@@ -26,6 +26,14 @@ HOW IT IS FILLED — review_artifact.py, from a source under .dreamwork/review/s
   {{TEMPLATE_STAMP}}  derived: v<series>+<8 hex of this file>, so an artifact
                       says which template it was built from and a later
                       edit here makes every older artifact detectably stale
+  {{status_state}}    derived (#600): settled / pending / unreadable, from the
+                      FIRST WORD of `status:`. The chip is coloured off this,
+                      never off every value alike — `--warn` amber means BROKEN
+                      (#136), so a decided verdict must not wear it. A value
+                      the enumeration cannot read renders `unreadable` (amber,
+                      loudly) and WARNs at build time naming the value; the
+                      vocabulary lives in review_artifact.STATUS_SETTLED /
+                      STATUS_PENDING.
 
 Slots: title identity headline lead body footer are required; context status
 tag sub call aside nav skip skip_href aside_label no_ask no_if_silent are
@@ -148,6 +156,25 @@ h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit);margin-top:1.4rem}
 .identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
+/* #600 — the chip is keyed on the verdict's enumerated state (review_artifact
+   .status_state), never on every value alike. `--warn` means BROKEN (#136) and
+   an approved review is the furthest thing from broken. Pending is live and
+   waiting on him, which is what the accent is for; settled steps DOWN the ramp
+   and drops the dot, matching #289's darkening idiom for a decided row on the
+   dashboard, so the two surfaces agree about what a decision looks like. The
+   base rule above is left alone on purpose: it is what `unreadable` restates
+   below, and the hand-rolled tasks-page.html still depends on it.
+   Scope, so nobody widens this by accident: watch-design.md states the #136
+   enumeration under `### Tokens`, about client/style.css, and elsewhere treats
+   THIS file's `--warn` on numerals and types as legitimate (the dashboard
+   renames it to `--amber` when it borrows the palette, precisely because the
+   rule is the dashboard's). So the verdict chip is fixed on its own merits —
+   a settled verdict that renders identically to a broken one carries no
+   information, and #289 already dims a decided row on the dashboard — and
+   `.tok-num` / `.tok-typ` are deliberately left alone. */
+.status.pending{color:var(--accent)}.status.pending::before{background:var(--accent);box-shadow:0 0 12px rgba(165,180,252,.55)}
+.status.settled{color:var(--dim)}.status.settled::before{display:none}
+.status.unreadable{color:var(--warn)}.status.unreadable::before{background:var(--warn)}
 main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
 .label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
 .quiet{color:var(--muted)}.dim{color:var(--dim)}.dimmer{color:var(--dimmer)}
@@ -368,7 +395,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 <nav class="toprail" aria-label="Artifact navigation">
   <div class="toprail-in">
     <div class="identity"><b>{{identity}}</b><!--?context--><span>{{context}}</span><!--/?context--></div>
-    <div class="topactions"><!--?status--><span class="status">{{status}}</span><!--/?status--><!--?nav-->{{nav}}<!--/?nav--></div>
+    <div class="topactions"><!--?status--><span class="status {{status_state}}">{{status}}</span><!--/?status--><!--?nav-->{{nav}}<!--/?nav--></div>
   </div>
 </nav>
 
