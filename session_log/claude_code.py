@@ -306,28 +306,79 @@ class Diagnostic:
 
 
 @dataclass(frozen=True)
-class ScanResult:
-    """Complete from-zero scan output (#631 increment 3).
+class Frontier:
+    """Resumable scan state — enough to continue a tree without duplicating a
+    node (#631 increment 4).
 
-    ``examined`` counts every non-empty line parsed (#671): zero for an
-    empty transcript, N for an all-chrome transcript with no events, and N
-    for a real one — so an empty scan never reads as a confident pass.
+    Carries the byte/line cursor plus the session/page/turn/tool-pairing
+    frontier and the monotonic counters, so a resumed scan emits nodes that
+    CONTINUE the tree (continuing ``seq`` numbering, reusing the open
+    session and page, keeping an unpaired ``tool_use`` live) rather than
+    restart it.  Produced by every scan; consumed only by
+    :func:`scan_incremental` — the one supported way to resume (#440: a
+    second unanchored form is the corruption vector).
+
+    The empty frontier (``empty_frontier``) is the scan that examined
+    nothing (#671): its counters are zero and its ids are ``None``, which is
+    distinct from a real frontier whose counters are positive (#136).
+    """
+
+    byte: int
+    line: int
+    examined: int
+    seq: int
+    bm: int
+    sid: str | None
+    page_id: str | None
+    page_n: int
+    agent_id: str | None
+    agent_seq: int
+    agent_rid: str | None
+    open_tools: tuple    # tuple of (tool_use_id, SessionNode) pairs
+
+
+def empty_frontier():
+    """The from-zero frontier: no records examined, no tree open (#671).
+
+    A scan started here is equivalent to :func:`scan_complete` over the same
+    text — the test exercises both through the same parser.
+    """
+    return Frontier(byte=0, line=1, examined=0, seq=0, bm=0,
+                    sid=None, page_id=None, page_n=-1,
+                    agent_id=None, agent_seq=0, agent_rid=None,
+                    open_tools=())
+
+
+@dataclass(frozen=True)
+class ScanResult:
+    """Scan output (#631 increments 3–4).
+
+    ``examined`` counts every non-empty newline-terminated line parsed
+    (#671): zero for an empty transcript, N for an all-chrome transcript
+    with no events, and N for a real one — so an empty scan never reads as
+    a confident pass.  ``frontier`` is the resumable state to feed
+    :func:`scan_incremental`.
     """
 
     events: tuple      # tuple[SessionEvent, ...]
     bookmarks: tuple   # tuple[Bookmark, ...]
     diagnostics: tuple # tuple[Diagnostic, ...]
     examined: int
+    frontier: Frontier
 
 
 def scan_complete(text):
-    """Scan a complete Claude Code JSONL transcript from zero.
+    """Scan a Claude Code JSONL transcript from zero (#631 increment 3).
 
     Composes classified records into one session/page/turn/step tree, pairs
     ``tool_use`` with ``tool_result`` by ``tool_use_id``, emits
     ``open``/``update``/``close`` events, and produces bookmarks for page
-    boundaries and user-turn starts only.  No append cursor — this is a
-    full from-zero scan (#631 increment 3).
+    boundaries and user-turn starts only.
+
+    Only newline-terminated records are consumed; an unterminated trailing
+    line (a writer mid-append) is left before the cursor (#631 increment 4).
+    The returned ``frontier`` carries enough state to resume without
+    duplicating a node.
 
     Parameters
     ----------
@@ -337,146 +388,247 @@ def scan_complete(text):
     Returns
     -------
     ScanResult
-        ``examined`` is set to the number of non-empty lines parsed, so an
-        empty transcript (``examined == 0``) is never confused with a
-        successful scan of real content (#671).
+        ``examined`` is the count of non-empty newline-terminated lines
+        parsed, so an empty transcript (``examined == 0``) is never confused
+        with a successful scan of real content (#671).
     """
-    examined = sum(1 for raw in text.split("\n") if raw.strip())
-    records = list(_iter_records(text))
-    if not records:
-        return ScanResult((), (), (), examined=examined)
-
     st = _ScanState()
-
-    for record, line, byte, length in records:
-        cls = classify_record(record, line=line, byte=byte, length=length)
-
-        if cls.outcome == SUPPRESSED:
-            continue                       # #755: silent on healthy input
-        if cls.outcome == UNCLASSIFIABLE:
-            st.diagnostics.append(         # #702: reported, not dropped
-                Diagnostic(line=line, byte=byte, reason=cls.reason))
-            continue
-
-        # --- lazy session + page 0 on first content record ---
-        if st.sid is None:
-            session_id = record.get("sessionId") or "sess"
-            st.sid = f"sess:{session_id}"
-            st.emit("open", SessionNode(
-                id=st.sid, parent=None, kind="session",
-                seq=st.next_seq(), ts=cls.ts,
-                label=f"session {session_id}", state="live",
-            ))
-            st.page_n = 0
-            st.page_id = f"{st.sid}/pg:0"
-            st.emit("open", SessionNode(
-                id=st.page_id, parent=st.sid, kind="page",
-                seq=st.next_seq(), ts=cls.ts, label="page 0",
-                state="live", ref=cls.ref,
-            ))
-            st.add_bookmark("page", line, byte, cls.ts, "page 0", st.page_id)
-
-        kind = cls.kind
-
-        if kind == "page":
-            # compact_boundary → close agent turn, open new page
-            st.close_agent(cls.ts)
-            st.page_n += 1
-            st.page_id = f"{st.sid}/pg:{st.page_n}"
-            st.emit("open", SessionNode(
-                id=st.page_id, parent=st.sid, kind="page",
-                seq=st.next_seq(), ts=cls.ts,
-                label=f"page {st.page_n}", state="live", ref=cls.ref,
-            ))
-            st.add_bookmark("page", line, byte, cls.ts,
-                            f"page {st.page_n}", st.page_id)
-
-        elif kind == "turn.user":
-            st.close_agent(cls.ts)
-            uid = cls.uuid or f"s{st.seq + 1}"
-            turn_id = f"{st.page_id}/u:{uid}"
-            st.emit("open", SessionNode(
-                id=turn_id, parent=st.page_id, kind="turn.user",
-                seq=st.next_seq(), ts=cls.ts, label="user turn",
-                state="done", ref=cls.ref,
-            ))
-            st.add_bookmark("turn.user", line, byte, cls.ts,
-                            "user turn", turn_id)
-
-        elif kind in ("step.text", "step.thinking"):
-            st.ensure_agent(record, cls)
-            step_id = f"{st.agent_id}/{cls.uuid or st.seq + 1}"
-            st.emit("open", SessionNode(
-                id=step_id, parent=st.agent_id, kind=kind,
-                seq=st.next_seq(), ts=cls.ts,
-                label=kind.split(".")[1], state="done", ref=cls.ref,
-            ))
-
-        elif kind == "step.tool":
-            if cls.tool and cls.tool.is_result:
-                st.handle_tool_result(cls)
-            else:
-                st.ensure_agent(record, cls)
-                label = (cls.tool.name if cls.tool and cls.tool.name
-                         else "tool")
-                step_uuid = cls.uuid or f"s{st.seq + 1}"
-                step_id = f"{st.agent_id}/{step_uuid}"
-                node = SessionNode(
-                    id=step_id, parent=st.agent_id, kind="step.tool",
-                    seq=st.next_seq(), ts=cls.ts, label=label,
-                    state="live", ref=cls.ref,
-                )
-                st.emit("open", node)
-                if cls.tool and cls.tool.tool_use_id:
-                    st.open_tools[cls.tool.tool_use_id] = node
-
-        elif kind in ("sys.compact", "sys.note"):
-            short = "c" if kind == "sys.compact" else "n"
-            suuid = cls.uuid or f"s{st.seq + 1}"
-            node_id = f"{st.page_id}/{short}:{suuid}"
-            label = ("compaction summary" if kind == "sys.compact"
-                     else "system note")
-            st.emit("open", SessionNode(
-                id=node_id, parent=st.page_id, kind=kind,
-                seq=st.next_seq(), ts=cls.ts, label=label,
-                state="done", ref=cls.ref,
-            ))
-
+    new_byte, new_line, examined = _scan_records(text, 0, 1, st)
     return ScanResult(
         events=tuple(st.events),
         bookmarks=tuple(st.bookmarks),
         diagnostics=tuple(st.diagnostics),
         examined=examined,
+        frontier=st.to_frontier(new_byte, new_line, examined),
+    )
+
+
+def scan_incremental(text, frontier):
+    """Resume a scan from ``frontier.byte``, carrying frontier state.
+
+    The single supported way to resume (#440): consumes only
+    newline-terminated records starting at ``frontier.byte`` and leaves the
+    cursor before any unterminated tail.  Carried frontier — the open
+    session/page, the current agent turn, unpaired ``tool_use`` steps and
+    the monotonic counters — lets the resume CONTINUE the tree rather than
+    restart it, so a concatenated scan equals the one-shot scan over the
+    whole text and never duplicates a node.
+
+    Bytes before ``frontier.byte`` are never read: a resume is not a
+    re-scan.  The carried counters continue (``seq``/``bm`` do not reset),
+    and an already-open session/page is not re-opened.
+
+    Parameters
+    ----------
+    text : str
+        The full JSONL file content (the prefix before ``frontier.byte`` is
+        never examined).
+    frontier : Frontier
+        Resumable state from a prior :func:`scan_complete` /
+        :func:`scan_incremental`.
+
+    Returns
+    -------
+    ScanResult
+        Events/bookmarks/diagnostics for the NEW records only, with
+        ``examined`` continued from ``frontier.examined`` and a new
+        ``frontier`` for the next resume.
+    """
+    st = _ScanState(frontier)
+    new_byte, new_line, delta = _scan_records(
+        text, frontier.byte, frontier.line, st)
+    examined = frontier.examined + delta
+    return ScanResult(
+        events=tuple(st.events),
+        bookmarks=tuple(st.bookmarks),
+        diagnostics=tuple(st.diagnostics),
+        examined=examined,
+        frontier=st.to_frontier(new_byte, new_line, examined),
     )
 
 
 # --- internal helpers -------------------------------------------------------
 
+def _scan_records(text, start_byte, start_line, st):
+    """Consume newline-terminated records from ``start_byte`` into ``st``.
+
+    Stops before an unterminated trailing line (a partial write): the cursor
+    advances to just past the last consumed ``\\n`` and never into the
+    partial tail.  Returns ``(new_byte, new_line, examined)`` where
+    ``examined`` is the count of non-empty lines parsed this call (#671).
+
+    Line/byte/length positions are pure string arithmetic over the raw text,
+    independent of the classifier — the same discipline as the test's
+    ``_byte_offsets`` oracle.
+    """
+    pos = start_byte
+    line_no = start_line
+    examined = 0
+    while True:
+        nl = text.find("\n", pos)
+        if nl == -1:
+            break                      # unterminated tail: cursor stays before it
+        raw = text[pos:nl]
+        rec_len = len(raw)
+        if raw.strip():
+            examined += 1              # counted before parse: unparseable still examined
+            try:
+                record = json.loads(raw)
+            except json.JSONDecodeError:
+                pos = nl + 1
+                line_no += 1
+                continue
+            if isinstance(record, dict):
+                _process_record(st, record, line_no, pos, rec_len)
+        pos = nl + 1
+        line_no += 1
+    return pos, line_no, examined
+
+
+def _process_record(st, record, line, byte, length):
+    """Classify one complete record and fold it into the tree state ``st``.
+
+    The body of the scan loop, shared by :func:`scan_complete` and
+    :func:`scan_incremental` so both exercise the same parser.  Carried
+    frontier (seeded into ``st``) is what makes a resume continue rather
+    than restart: the ``st.sid is None`` guard re-opens session/page 0 only
+    on the first content record of a from-zero scan.
+    """
+    cls = classify_record(record, line=line, byte=byte, length=length)
+
+    if cls.outcome == SUPPRESSED:
+        return                          # #755: silent on healthy input
+    if cls.outcome == UNCLASSIFIABLE:
+        st.diagnostics.append(          # #702: reported, not dropped
+            Diagnostic(line=line, byte=byte, reason=cls.reason))
+        return
+
+    # --- lazy session + page 0 on first content record ---
+    if st.sid is None:
+        session_id = record.get("sessionId") or "sess"
+        st.sid = f"sess:{session_id}"
+        st.emit("open", SessionNode(
+            id=st.sid, parent=None, kind="session",
+            seq=st.next_seq(), ts=cls.ts,
+            label=f"session {session_id}", state="live",
+        ))
+        st.page_n = 0
+        st.page_id = f"{st.sid}/pg:0"
+        st.emit("open", SessionNode(
+            id=st.page_id, parent=st.sid, kind="page",
+            seq=st.next_seq(), ts=cls.ts, label="page 0",
+            state="live", ref=cls.ref,
+        ))
+        st.add_bookmark("page", line, byte, cls.ts, "page 0", st.page_id)
+
+    kind = cls.kind
+
+    if kind == "page":
+        # compact_boundary → close agent turn, open new page
+        st.close_agent(cls.ts)
+        st.page_n += 1
+        st.page_id = f"{st.sid}/pg:{st.page_n}"
+        st.emit("open", SessionNode(
+            id=st.page_id, parent=st.sid, kind="page",
+            seq=st.next_seq(), ts=cls.ts,
+            label=f"page {st.page_n}", state="live", ref=cls.ref,
+        ))
+        st.add_bookmark("page", line, byte, cls.ts,
+                        f"page {st.page_n}", st.page_id)
+
+    elif kind == "turn.user":
+        st.close_agent(cls.ts)
+        uid = cls.uuid or f"s{st.seq + 1}"
+        turn_id = f"{st.page_id}/u:{uid}"
+        st.emit("open", SessionNode(
+            id=turn_id, parent=st.page_id, kind="turn.user",
+            seq=st.next_seq(), ts=cls.ts, label="user turn",
+            state="done", ref=cls.ref,
+        ))
+        st.add_bookmark("turn.user", line, byte, cls.ts,
+                        "user turn", turn_id)
+
+    elif kind in ("step.text", "step.thinking"):
+        st.ensure_agent(record, cls)
+        step_id = f"{st.agent_id}/{cls.uuid or st.seq + 1}"
+        st.emit("open", SessionNode(
+            id=step_id, parent=st.agent_id, kind=kind,
+            seq=st.next_seq(), ts=cls.ts,
+            label=kind.split(".")[1], state="done", ref=cls.ref,
+        ))
+
+    elif kind == "step.tool":
+        if cls.tool and cls.tool.is_result:
+            st.handle_tool_result(cls)
+        else:
+            st.ensure_agent(record, cls)
+            label = (cls.tool.name if cls.tool and cls.tool.name
+                     else "tool")
+            step_uuid = cls.uuid or f"s{st.seq + 1}"
+            step_id = f"{st.agent_id}/{step_uuid}"
+            node = SessionNode(
+                id=step_id, parent=st.agent_id, kind="step.tool",
+                seq=st.next_seq(), ts=cls.ts, label=label,
+                state="live", ref=cls.ref,
+            )
+            st.emit("open", node)
+            if cls.tool and cls.tool.tool_use_id:
+                st.open_tools[cls.tool.tool_use_id] = node
+
+    elif kind in ("sys.compact", "sys.note"):
+        short = "c" if kind == "sys.compact" else "n"
+        suuid = cls.uuid or f"s{st.seq + 1}"
+        node_id = f"{st.page_id}/{short}:{suuid}"
+        label = ("compaction summary" if kind == "sys.compact"
+                 else "system note")
+        st.emit("open", SessionNode(
+            id=node_id, parent=st.page_id, kind=kind,
+            seq=st.next_seq(), ts=cls.ts, label=label,
+            state="done", ref=cls.ref,
+        ))
+
 class _ScanState:
-    """Mutable tree-builder state for one from-zero scan.
+    """Mutable tree-builder state for one scan (#631 increments 3–4).
 
     Encapsulates the session/page/turn/tool-pairing state so the scan loop
     reads as a flat dispatch on classification outcome.  All node identity
     and event emission flows through here, which is what makes the wire
     stream deterministic and testable against a hand-authored oracle.
+
+    For an incremental resume, ``__init__`` seeds the carried frontier so the
+    scan continues the tree (open session/page reused, counters continued,
+    unpaired ``tool_use`` kept live) instead of restarting it.
     """
 
-    def __init__(self):
+    def __init__(self, frontier=None):
         self.events: list[SessionEvent] = []
         self.bookmarks: list[Bookmark] = []
         self.diagnostics: list[Diagnostic] = []
-        self.seq = 0        # monotonic node sequence
-        self.bm = 0         # monotonic bookmark sequence
+        f = frontier
+        self.seq = f.seq if f else 0        # monotonic node sequence
+        self.bm = f.bm if f else 0          # monotonic bookmark sequence
 
-        self.sid: str | None = None         # "sess:<session_id>"
-        self.page_id: str | None = None     # current page node id
-        self.page_n = -1
+        self.sid: str | None = f.sid if f else None         # "sess:<id>"
+        self.page_id: str | None = f.page_id if f else None
+        self.page_n = f.page_n if f else -1
 
-        self.agent_id: str | None = None    # current agent-turn node id
-        self.agent_seq = 0                  # seq of the agent-turn node
-        self.agent_rid: str | None = None   # requestId grouping this turn
+        self.agent_id: str | None = f.agent_id if f else None
+        self.agent_seq = f.agent_seq if f else 0
+        self.agent_rid: str | None = f.agent_rid if f else None
 
-        self.open_tools: dict[str, SessionNode] = {}  # tool_use_id → step
+        self.open_tools: dict[str, SessionNode] = (
+            dict(f.open_tools) if f else {})  # tool_use_id → step
+
+    def to_frontier(self, byte, line, examined):
+        """Snapshot the resumable state at the cursor ``(byte, line)``."""
+        return Frontier(
+            byte=byte, line=line, examined=examined,
+            seq=self.seq, bm=self.bm,
+            sid=self.sid, page_id=self.page_id, page_n=self.page_n,
+            agent_id=self.agent_id, agent_seq=self.agent_seq,
+            agent_rid=self.agent_rid,
+            open_tools=tuple(self.open_tools.items()),
+        )
 
     def next_seq(self):
         self.seq += 1
@@ -546,26 +698,6 @@ class _ScanState:
                 seq=self.next_seq(), ts=cls.ts,
                 label="orphaned tool result", state=state, ref=cls.ref,
             ))
-
-
-def _iter_records(text):
-    """Yield ``(record, line, byte, length)`` for each JSONL line in *text*.
-
-    Non-dict JSON and unparseable lines are silently skipped (the scanner
-    counts them in ``examined`` but cannot classify what it cannot parse).
-    """
-    byte = 0
-    for line_no, raw in enumerate(text.split("\n"), start=1):
-        rec_len = len(raw)
-        if raw.strip():
-            try:
-                record = json.loads(raw)
-            except json.JSONDecodeError:
-                byte += rec_len + 1
-                continue
-            if isinstance(record, dict):
-                yield record, line_no, byte, rec_len
-        byte += rec_len + 1
 
 
 def _request_id(record):

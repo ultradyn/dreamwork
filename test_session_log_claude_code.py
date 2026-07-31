@@ -9,6 +9,7 @@ with their discriminating assertions called out in the assertion messages.
 import json
 
 import pytest
+from dataclasses import replace
 
 from session_log.claude_code import (
     NODE,
@@ -17,10 +18,13 @@ from session_log.claude_code import (
     Bookmark,
     Classification,
     Diagnostic,
+    Frontier,
     ScanResult,
     ToolFacts,
     classify_record,
+    empty_frontier,
     scan_complete,
+    scan_incremental,
 )
 from session_log.model import SessionEvent, SessionNode, SourceRef
 
@@ -804,3 +808,327 @@ def test_scan_result_events_serialise_to_wire():
             assert "len" in node["ref"], (
                 "wire ref must spell its length field 'len' (inc 1 contract)")
             assert "length" not in node["ref"]
+
+
+# === increment 4: incremental cursor and partial-tail equivalence ==========
+#
+# The same parser, now carrying frontier state.  The load-bearing claims:
+#   - concatenating scans equals one full scan (byte-for-byte);
+#   - a resume does NOT re-read the prefix — the discriminating check
+#     against a scan_complete(...)[cursor:] implementation;
+#   - an unterminated tail is left before the cursor, not consumed;
+#   - the empty frontier is distinct from a real frontier (#136/#671).
+
+def _wire_tuples(result):
+    """[(ev, node.to_wire()), ...] — the comparable wire stream.
+
+    ``SessionEvent`` and ``SessionNode`` are frozen dataclasses with full
+    ``__eq__``, so the events tuple compares directly; this helper exists
+    only to make a failure message read as the wire shape.
+    """
+    return [(ev.ev, ev.node.to_wire()) for ev in result.events]
+
+
+def _scan_concat(text, cursor):
+    """scan_complete then scan_incremental at *cursor*, return the merged
+    events tuple — the concatenation the spec says must equal one shot."""
+    first = scan_complete(text[:cursor])
+    rest = scan_incremental(text, first.frontier)
+    return first.events + rest.events
+
+
+def test_scan_complete_returns_a_frontier_at_eof():
+    """scan_complete returns a non-empty frontier whose cursor sits at EOF."""
+    result = scan_complete(_FROZEN_TEXT)
+    f = result.frontier
+    assert isinstance(f, Frontier)
+    assert f.byte == len(_FROZEN_TEXT), (
+        f"frontier cursor must sit at EOF ({len(_FROZEN_TEXT)}), "
+        f"got {f.byte}")
+    assert f.seq == result.events[-1].node.seq, (
+        "frontier.seq must continue from the last emitted node")
+    assert f.sid == "sess:s1", "frontier must carry the open session"
+
+
+def test_empty_frontier_is_the_zero_state():
+    """empty_frontier() is the 'examined nothing' state (#671): zero
+    counters, no ids — distinct from a real frontier whose counters are
+    positive and whose session/page are open (#136)."""
+    f = empty_frontier()
+    assert f.byte == 0 and f.line == 1 and f.examined == 0
+    assert f.seq == 0 and f.bm == 0
+    assert f.sid is None and f.page_id is None and f.page_n == -1
+    assert f.agent_id is None and f.open_tools == ()
+
+
+def test_incremental_from_empty_frontier_equals_scan_complete():
+    """Resuming from empty_frontier over the whole text must equal scan_complete
+    exactly — both go through the same parser from zero."""
+    one = scan_complete(_FROZEN_TEXT)
+    res = scan_incremental(_FROZEN_TEXT, empty_frontier())
+    assert res.events == one.events, (
+        "scan from empty_frontier must equal scan_complete")
+    assert res.bookmarks == one.bookmarks
+    assert res.examined == one.examined
+    assert res.frontier == one.frontier
+
+
+def test_resume_after_unterminated_tail_emits_no_events():
+    """Scanning a text that is ONLY an unterminated tail must emit no events
+    and advance no counters — the partial write is not a record yet."""
+    f = empty_frontier()
+    res = scan_incremental('{"type":"user" missing-closing-brace', f)
+    assert res.events == (), (
+        "an unterminated tail is not a complete record — no events")
+    assert res.examined == 0
+    assert res.frontier.seq == 0, "no node was emitted — seq must not advance"
+    # Three distinct zero-states must not render identically (#136/#671):
+    # empty, all-unterminated, and a real scan.  An empty text is
+    # examined==0/events==(); an all-unterminated text is the same shape
+    # but for a different reason; a real scan has events.  This asserts the
+    # all-unterminated case looks like empty at the FRONTIER (cursor stayed
+    # at byte 0), which is what distinguishes it from a scan that ran.
+    assert res.frontier.byte == 0, (
+        "the cursor must stay at byte 0 when nothing terminated")
+
+
+def test_split_mid_record_then_append_remainder_equals_one_shot():
+    """THE spec proof: split a record mid-byte, scan twice, append the
+    remainder, and require byte-for-byte equality with the one-shot scan.
+
+    Includes the runtime-derived floor (#671): the one-shot scan MUST have
+    produced nodes, so the equality is not vacuously true of two empty
+    results."""
+    full = _FROZEN_TEXT
+    one = scan_complete(full)
+    # Floor: the one-shot scan genuinely produced a tree, so the equality
+    # below is not vacuously true of two empty results.
+    assert len(one.events) > 0, (
+        "precondition: the one-shot scan produced nodes — equality over "
+        "two empty results would be vacuous (#671)")
+    # Split in the middle of record 3 (the tool_use line): a partial write
+    # boundary that cuts a record in two.
+    cursor = len(_FROZEN_LINES[0]) + 1 + len(_FROZEN_LINES[1]) + 1 + 7
+    assert full[cursor - 1] != "\n", (
+        "precondition: the cursor lands mid-record, not on a newline")
+    merged = _scan_concat(full, cursor)
+    assert merged == one.events, (
+        "concatenated scan must equal the one-shot scan byte-for-byte")
+
+
+def test_scan_incremental_does_not_reread_bytes_before_cursor():
+    """Direction-2 closer — the discriminator that makes the equality test
+    worth anything.  A `scan_incremental` implemented as
+    `scan_complete(text)[cursor:]` re-scans the WHOLE text from zero and
+    slices; it passes every equality test and delivers none of the value.
+
+    This check is FALSE under that implementation: the bytes before the
+    cursor are poisoned (a corrupt/garbage prefix that no classifier could
+    survive), so a re-scan-from-zero produces DIFFERENT events than a true
+    resume.  A genuine resume never reads the poisoned prefix and is
+    unaffected by it.
+
+    What this check decides for `scan_incremental == scan_complete(...)[cursor:]`:
+    it REDS — the poisoned prefix makes the re-scan diverge, while the
+    genuine resume (run against the same poisoned text) stays equal to the
+    clean-prefix one-shot.  That divergence is what proves the resume read
+    from the cursor, not from zero."""
+    # Establish the real one-shot result over a clean prefix (first 2 lines).
+    clean = "".join(l + "\n" for l in _FROZEN_LINES[:2])
+    full_clean = _FROZEN_TEXT
+    frontier = scan_complete(clean).frontier
+
+    # Now build a text whose first `frontier.byte` bytes are GARBAGE —
+    # valid-ish JSON-ish noise a classifier cannot survive unchanged — but
+    # whose bytes from the cursor onward are the real remainder.
+    poison = ("X" * (frontier.byte - 1)) + "\n"
+    assert len(poison) == frontier.byte
+    poisoned = poison + full_clean[frontier.byte:]
+
+    # The genuine resume reads only from the cursor: it is unaffected by
+    # the poison and equals the clean-prefix concatenation.
+    genuine = scan_incremental(poisoned, frontier).events
+    clean_resume = scan_incremental(full_clean, frontier).events
+    assert genuine == clean_resume, (
+        "a genuine resume never reads bytes before the cursor — poisoning "
+        "the prefix must not change the resumed events")
+    # And the resumed half joins the prefix scan to equal the one-shot:
+    assert (scan_complete(clean).events + genuine) == scan_complete(full_clean).events
+
+
+def test_scan_incremental_cost_does_not_grow_with_prefix():
+    """Second independent discriminator: a resume's event count is bounded
+    by the NEW records, not the whole file.  scan_complete(...)[cursor:]
+    re-classifies every record from zero, so its event count grows with
+    the prefix; a genuine resume emits only new-record events.
+
+    The fixture's first 2 lines yield a known event count; resuming over
+    the same 2-line remainder must emit that many events whether the prefix
+    is 2 lines or 9.  A re-scan-from-zero would emit the full-file count
+    (~15) on the 9-line prefix."""
+    rem = "".join(l + "\n" for l in _FROZEN_LINES[:2])
+    # Two prefixes of very different length, same remainder.
+    f2 = scan_complete("".join(l + "\n" for l in _FROZEN_LINES[:2])).frontier
+    f8 = scan_complete("".join(l + "\n" for l in _FROZEN_LINES[:8])).frontier
+    n2 = len(scan_incremental(rem, f2).events)
+    n8 = len(scan_incremental(rem, f8).events)
+    assert n2 == n8, (
+        f"a resume emits only new-record events ({n2} vs {n8}); if they "
+        f"differ the resume re-scanned the prefix")
+
+
+def test_resume_carries_open_tool_and_pairs_result_across_split():
+    """A tool_use opened in the first scan, with no result yet, must be
+    carried in the frontier; a tool_result in the second scan must pair
+    with it (emit an update, not an orphan).  This is the tool-pairing
+    boundary decision: resume across a tool_use→tool_result boundary
+    continues the pairing, because the open tool is frontier state."""
+    pair_text = "\n".join([
+        _line({"type": "user", "uuid": "u1", "sessionId": "s",
+               "timestamp": "T1", "message": {"role": "user", "content": "go"}}),
+        _line({"type": "assistant", "uuid": "a1", "sessionId": "s",
+               "timestamp": "T2", "requestId": "r1",
+               "message": {"role": "assistant", "id": "m1",
+                           "content": [{"type": "tool_use", "id": "tuX",
+                                        "name": "Bash",
+                                        "input": {"command": "ls"}}]}}),
+        _line({"type": "user", "uuid": "u2", "sessionId": "s",
+               "timestamp": "T3",
+               "message": {"role": "user",
+                           "content": [{"type": "tool_result",
+                                        "tool_use_id": "tuX",
+                                        "content": "ok", "is_error": False}]}}),
+    ]) + "\n"
+    # Split after the tool_use (before its result): the open tool is the
+    # frontier state the second scan must carry.
+    split = pair_text.index('"tool_result"')
+    # back up to the start of the tool_result line
+    split = pair_text.rfind("\n", 0, split) + 1
+    first = scan_complete(pair_text[:split])
+    # The frontier must carry the open tool_use (proves state was captured).
+    open_ids = [tid for tid, _ in first.frontier.open_tools]
+    assert "tuX" in open_ids, (
+        "the frontier must carry the unpaired tool_use so a resume can "
+        "pair its result — open_tools is empty, so the tool was dropped")
+    # Resume over the result: it must pair (update), not orphan (open).
+    second = scan_incremental(pair_text, first.frontier)
+    orphans = [ev for ev in second.events
+               if ev.node.kind == "step.tool" and ev.ev == "open"
+               and "orphan" in ev.node.id]
+    assert orphans == [], (
+        "a tool_result resuming over a carried tool_use must PAIR (update), "
+        "not emit an orphan — the frontier was not carried")
+    updates = [ev for ev in second.events if ev.ev == "update"]
+    assert len(updates) == 1, "exactly one update (the pairing)"
+    assert updates[0].node.state == "done"
+    # And the concatenation equals one-shot.
+    merged = first.events + second.events
+    assert merged == scan_complete(pair_text).events, (
+        "the split-and-resume tool pairing must equal the one-shot pairing")
+
+
+def test_resume_continues_seq_numbering_no_duplicates():
+    """A resume continues seq from the frontier; node ids built from seq
+    do not collide with the prefix's.  This is the duplicate-id hazard
+    injection 2 targets, asserted here on a clean (non-sabotaged) resume.
+
+    Close/update events legitimately re-reference prefix node ids (a close
+    names the node the prefix opened); the hazard is duplicate OPEN ids."""
+    split = len(_FROZEN_LINES[0]) + 1 + len(_FROZEN_LINES[1]) + 1
+    first = scan_complete(_FROZEN_TEXT[:split])
+    rest = scan_incremental(_FROZEN_TEXT, first.frontier)
+    # seq continues: the first new event's seq is one past the prefix's max.
+    assert rest.events[0].node.seq == first.frontier.seq + 1, (
+        "the resume must continue seq numbering from the frontier")
+    # No OPEN id collision between the two halves (close/update re-refs are
+    # legitimate — a close names the node the prefix opened).
+    first_open_ids = {ev.node.id for ev in first.events if ev.ev == "open"}
+    rest_open_ids = {ev.node.id for ev in rest.events if ev.ev == "open"}
+    assert not (first_open_ids & rest_open_ids), (
+        "a resume must not duplicate an open node id from the prefix scan")
+
+
+def test_resume_after_compact_boundary_continues_page_number():
+    """A page boundary in the second scan continues the page counter from
+    the frontier, so the new page id is pg:N+1, not pg:1 (which would
+    collide with the prefix's first page)."""
+    # Prefix through the end of page 0's content (8 lines, before boundary).
+    split = len("".join(l + "\n" for l in _FROZEN_LINES[:8]))
+    first = scan_complete(_FROZEN_TEXT[:split])
+    assert first.frontier.page_n == 0, (
+        "precondition: prefix is entirely in page 0")
+    rest = scan_incremental(_FROZEN_TEXT, first.frontier)
+    pages = [ev for ev in rest.events if ev.node.kind == "page"]
+    assert any(ev.node.id == "sess:s1/pg:1" for ev in pages), (
+        "the boundary in the resumed scan must continue the page counter "
+        "(pg:1), not restart it (pg:1 colliding with page 0's restart)")
+
+
+# --- injection 1: advancing past the unterminated tail ---------------------
+
+def test_advancing_cursor_past_unterminated_tail_loses_completed_record():
+    """INJECTION 1.  The bug: a resume cursor advanced PAST an unterminated
+    tail (treating the partial bytes as if they ended at a newline) drops a
+    record that later completes.  The discriminating assertion reds on
+    'completed tail record was lost'.
+
+    Sabotage: set the frontier's byte cursor to the END of the partial text
+    (past the unterminated tail) rather than before it.  When the tail later
+    completes (a newline is appended), a correct resume consumes it; the
+    sabotaged resume has already skipped past it and emits nothing."""
+    # A prefix whose last line is unterminated (a partial write).
+    partial = _FROZEN_LINES[0] + "\n" + _FROZEN_LINES[1][:-3]  # chopped mid-record
+    complete = _FROZEN_LINES[0] + "\n" + _FROZEN_LINES[1] + "\n"
+    correct_frontier = scan_complete(partial).frontier
+    # SABOTAGE: nudge the cursor past the partial tail as if it terminated.
+    sabotaged = replace(correct_frontier, byte=len(partial))
+    # When the tail completes, the correct resume yields the record; the
+    # sabotaged one has skipped it.
+    correct = scan_incremental(complete, correct_frontier)
+    skipped = scan_incremental(complete, sabotaged)
+    # Floor: the correct resume DID recover the completed record.
+    assert len(correct.events) >= 1, (
+        "precondition: the completed tail record was recovered")
+    # The discriminating assertion: skipping the tail loses a real record.
+    assert len(skipped.events) < len(correct.events), (
+        "completed tail record was lost")
+
+
+# --- injection 2: replaying the complete line duplicates node ids ----------
+
+def test_replaying_complete_line_in_resume_duplicates_node_ids():
+    """INJECTION 2.  The bug: a resume that re-reads the last complete line
+    of the prefix (replaying it) emits its nodes a second time, producing
+    duplicate node ids.  The discriminating assertion reds on duplicate ids.
+
+    Sabotage: set the resume cursor to the START of the prefix's last
+    complete line rather than just past it.  The resumed scan re-reads that
+    line and re-emits its nodes."""
+    # Prefix: first line only.  Frontier sits just past line 1.
+    prefix = _FROZEN_LINES[0] + "\n"
+    correct_frontier = scan_complete(prefix).frontier
+    assert correct_frontier.byte == len(prefix)
+    # SABOTAGE: rewind the cursor to the start of line 1, so the resume
+    # replays it.
+    line1_start = 0
+    sabotaged = replace(correct_frontier, byte=line1_start)
+    # But also rewind the carried state so the replay isn't blocked by an
+    # already-open session — simulating a resume that re-reads the line
+    # without deduplicating.  (A real bug would forget to advance past the
+    # last consumed line; this reproduces that.)
+    sabotaged = replace(sabotaged, sid=None, page_id=None, page_n=-1,
+                        seq=0, bm=0)
+    rest = scan_incremental(_FROZEN_TEXT, sabotaged)
+    # The correct resume emits no event for line 1 (already consumed).
+    correct_rest = scan_incremental(_FROZEN_TEXT, correct_frontier)
+    # Collect open-node ids from the sabotaged resume's replay of line 1.
+    ids = [ev.node.id for ev in rest.events if ev.ev == "open"]
+    dupes = [i for i in ids if ids.count(i) > 1]
+    # The discriminating assertion: replaying the line duplicated an id
+    # that the prefix already emitted (sess:s1, pg:0, u:u1).
+    prefix_ids = {ev.node.id for ev in scan_complete(prefix).events
+                  if ev.ev == "open"}
+    replayed_collision = prefix_ids & set(ids)
+    assert replayed_collision or dupes, (
+        "duplicate node ids — replaying the prior complete line re-emitted "
+        "a node the prefix scan already produced")
