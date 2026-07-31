@@ -3947,8 +3947,9 @@ def compute_delta(prev, nxt):
     with `generated` excluded from comparison. No subsystem states "what
     changed" by hand — both arguments are the one builder's output, compared
     by serialized equality of each top-level value. `apply_delta(prev, this)`
-    reconstructs `nxt` byte-for-byte (minus `generated`, which is re-stamped
-    by the receiving builder); that round-trip is the born-red test."""
+    reconstructs the same JSON value as `nxt`, ignoring object-member order
+    and excluding `generated`; that field remains the value carried by the
+    base document. That semantic round-trip is the born-red test."""
     keys = set(prev) | set(nxt)
     changed, removed = {}, []
     for k in keys:

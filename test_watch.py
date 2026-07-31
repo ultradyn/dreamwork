@@ -13184,8 +13184,9 @@ class TestDataJsonDelta(unittest.TestCase):
     """#641 phase 1 — derived key-level deltas for /data.json?since=<v>.
 
     The discriminating test is RECONSTRUCTION (the plan's `## The trap`):
-    apply the delta to the base and assert byte-identity with the target
-    document, with `generated` excluded. A test that asserts 'the delta has
+    apply the delta to the base and assert semantic JSON-value equality with
+    the target document, with `generated` excluded and object-member order
+    ignored. A test that asserts 'the delta has
     the keys I expected' passes against a delta that OMITS a key that
     genuinely changed — reconstruct-and-compare or it does not count."""
 
@@ -13213,8 +13214,8 @@ class TestDataJsonDelta(unittest.TestCase):
                                     "— the reconstruction test is vacuous")
                 delta = watch.compute_delta(base, nxt)
                 rebuilt = watch.apply_delta(base, delta)
-                # generated is carried from base (the receiver stamps its own);
-                # so compare everything EXCEPT generated for byte-identity.
+                # generated is excluded from the delta and carried from base;
+                # compare the complete JSON value EXCEPT that field.
                 rebuilt_core = {k: rebuilt[k] for k in rebuilt
                                 if k != "generated"}
                 next_core = {k: nxt[k] for k in nxt if k != "generated"}
@@ -13434,16 +13435,17 @@ class TestDataJsonDelta(unittest.TestCase):
             self.assertIn("changed", resp, "one-version-behind should get a delta")
             self.assertEqual(resp["base"], repr(prev_version))
             rebuilt = watch.apply_delta(prev_doc, resp)
-            # Byte-identity minus generated (the receiver stamps its own).
-            for k in curr_doc:
-                if k == "generated":
-                    continue
-                self.assertIn(k, rebuilt,
-                              f"key '{k}' missing from reconstruction")
-                self.assertEqual(
-                    rebuilt[k], curr_doc[k],
-                    f"key '{k}' differs after reconstruction: "
-                    f"got {rebuilt[k]!r:.80} expected {curr_doc[k]!r:.80}")
+            # generated is excluded and therefore remains the base value.
+            # Compare the whole remaining value so an extra stale key cannot
+            # hide outside a loop over only the target's keys.
+            rebuilt_core = {k: v for k, v in rebuilt.items()
+                            if k != "generated"}
+            current_core = {k: v for k, v in curr_doc.items()
+                            if k != "generated"}
+            self.assertEqual(
+                rebuilt_core, current_core,
+                "live delta reconstruction differs semantically from the "
+                "current document")
             # The check hash validates against the current doc (generated-free).
             self.assertEqual(
                 resp["check"], watch.derived_check(curr_doc),
