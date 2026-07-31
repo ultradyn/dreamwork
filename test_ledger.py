@@ -288,6 +288,19 @@ def test_open_section_keeps_the_last_entry_after_an_indented_body_heading():
         "indented `## What to build` body heading")
 
 
+def test_open_section_tolerates_trailing_whitespace_on_its_heading():
+    """#753: column-0 anchoring must not make the heading byte-exact."""
+    trailing_space = OPEN_SECTION_EMBEDDED_HEADING.replace(
+        "## Open\n", "## Open \n", 1)
+
+    expected = open_section_text(OPEN_SECTION_EMBEDDED_HEADING)
+    actual = open_section_text(trailing_space)
+
+    assert actual == expected, (
+        "a trailing space on the column-0 `## Open` heading hid the entire "
+        "Open section")
+
+
 SWEEP_LEDGER = """\
 # Task ledger
 

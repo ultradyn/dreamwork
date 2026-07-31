@@ -120,7 +120,7 @@ def open_section_text(text: str) -> str | None:
     start = end = None
     for n, ln in enumerate(lines):
         if ln.startswith("## "):
-            if ln == "## Open":
+            if ln.rstrip() == "## Open":
                 start = n + 1
             elif start is not None:
                 end = n
