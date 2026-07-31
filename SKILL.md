@@ -519,6 +519,14 @@ the instruction to rebase and resolve in the lane, **before** appending the
 hand-off, since a rebase rewrites the sha the hand-off would have named. Full
 statement and reasoning: the lane-rebase rule earlier in this section.
 
+**A brief that names a guard as evidence names the assertion that guard
+would fail on** (`#672`) — a guard whose fixture cannot express the feature
+PASSes before the work starts, true and uninformative.
+
+**A "reuse X, do not reimplement it" demand names the check that binds the
+reuse** (`#672`) — a correct reuse with no binding check is a hand-rolled
+query away from drifting unnoticed.
+
 **A brief that teaches the `cp`/`cmp` restore protocol
 names a lane-private snapshot directory** (#652). Keep that clause on one
 line — `lint.py` content-resolves its cutoff with `git log -S`, a literal
