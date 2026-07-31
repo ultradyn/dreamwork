@@ -109,9 +109,10 @@ The slice is a page; the file is not.
   ledger commit. Avoiding `git add -A` does not help — the sweep is
   invisible in your own command. `--only` is the fix and it is verified:
   it commits just those paths and leaves the rest of the index staged. One
-  edge: `--only <directory>` does **not** pick up untracked files inside it
-  and does not say so, so a **new** file needs `git add <file>` before
-  `git commit --only <file>`.
+  edge: `--only` does not pick up an untracked file — a directory pathspec
+  silently drops one inside it, a bare pathspec errors — so a **new** file
+  needs `git add -N <paths>` first (intent-to-add, not `git add`, so nothing
+  is staged into the index `--only` protects) (#684).
 - A commit that changes what an existing install must do says so in a git
   trailer: `Migration:`, `Feature:`, `Needs: config|consent`.
 - Files the loop writes and a tool parses have their shape stated in
