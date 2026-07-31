@@ -417,8 +417,10 @@ the path does not even exist at branch point). The same trap hits
 both as absolute paths into the main checkout — repo-relative paths are
 silently wrong in a worktree.
 
-**A brief that teaches the `cp`/`cmp` restore protocol names a lane-private
-snapshot directory** (#652). The harness tells every agent its scratchpad is
+**A brief that teaches the `cp`/`cmp` restore protocol
+names a lane-private snapshot directory** (#652). Keep that clause on one
+line — `lint.py` content-resolves its cutoff with `git log -S`, a literal
+search that a line break defeats. The harness tells every agent its scratchpad is
 "session-specific, isolated"; measured 2026-07-31, that is true of a *CLI
 session* and false of a *lane*. Lanes are subagents of one CLI process and
 inherit one `CLAUDE_CODE_SESSION_ID`, so **every concurrent lane resolves to the

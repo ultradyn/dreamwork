@@ -7506,3 +7506,12 @@ class TestBriefLaneScratch:
         assert len(teaching) >= 10, (
             f"only {len(teaching)} restore-teaching briefs — the scope marker "
             "has stopped matching, and a check that matches nothing passes forever")
+
+    def test_the_cutoff_phrase_is_on_one_line_in_this_skill_md(self):
+        """The fragility that actually bit: `git log -S` is a literal search, so
+        a line break inside LANE_SCRATCH_PHRASE makes the cutoff unresolvable and
+        the check ERRORs instead of examining anything. Cheaper to catch here."""
+        text = (lint.SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        assert lint.LANE_SCRATCH_PHRASE in text, (
+            f"{lint.LANE_SCRATCH_PHRASE!r} does not appear contiguously in "
+            "SKILL.md — rewrap the paragraph or the cutoff cannot resolve")

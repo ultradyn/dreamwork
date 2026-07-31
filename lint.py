@@ -3721,10 +3721,11 @@ def check_brief_worktree_abs_inbox(dw: Path, rep: Report) -> None:
 # directory lane-private. Content-resolved via `git log -S`, same idiom as
 # WORKTREE_ABS_INBOX_PHRASE (#405): a reword that removes this phrase must
 # ERROR loudly rather than grandfather every brief in silence.
-LANE_SCRATCH_PHRASE = (
-    "A brief that teaches the `cp`/`cmp` restore protocol names a "
-    "lane-private snapshot directory"
-)
+# Must sit on ONE line in SKILL.md: `git log -S` is a literal substring
+# search, so a line break inside the phrase makes the cutoff unresolvable.
+# That happened while writing this check; the loud-ERROR branch below is what
+# caught it, which is the argument for keeping that branch loud.
+LANE_SCRATCH_PHRASE = "names a lane-private snapshot directory"
 # A brief teaches the #349 restore protocol when it carries the prohibition
 # that protocol exists for. Measured across 218 briefs: 67 carry some form of
 # "never `git checkout`", the wording varying only in trailing punctuation.
