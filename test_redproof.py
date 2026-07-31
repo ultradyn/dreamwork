@@ -402,3 +402,30 @@ class TestKnownHole:
         assert _git(lane, "merge-base", "--is-ancestor", poisoned, "master") == ""
 
         assert _check(lane) == 0                 # <- the false green, on purpose
+
+    def test_edits_between_the_sabotaged_commit_and_the_restore_hide_it(self, lane):
+        """The comparison is whole-file byte-identity with what `restore` saw.
+
+        A lane that keeps working on the file after the sabotaged commit makes
+        `restore` record bytes that are not the bytes any commit holds — the
+        defect is in history and the scan cannot recognise it."""
+        _begin(lane, "router.js")
+        (lane / "router.js").write_text("export function route() { return false; }\n")
+        poisoned = _commit(lane, "router.js", msg="wip(#710): mid red-proof")
+        (lane / "router.js").write_text(          # more work, still sabotaged
+            "export function route() { return false; }\n// unrelated note\n")
+        _restore(lane, "router.js")
+        _commit(lane, "router.js", msg="fix(#710): the real fix")
+
+        entries, _ = rp._read_registry(lane)
+        rep = rp.scan_history(lane, entries)
+        assert rep["commits"] == 2 and rep["blobs_read"] == 2, rep
+
+        # the defect IS in that commit ...
+        assert "return false" in subprocess.check_output(
+            ["git", "-C", str(lane), "cat-file", "blob", f"{poisoned}:router.js"],
+            text=True)
+        # ... but its bytes are not the recorded ones, so the scan misses it
+        assert _blob_sha_at(lane, poisoned, "router.js") != entries[0]["injected_sha"]
+        assert rep["hits"] == []
+        assert _check(lane) == 0                 # <- the false green, on purpose
