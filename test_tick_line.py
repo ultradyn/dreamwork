@@ -119,46 +119,16 @@ class TestTracksTheFile:
 
     def test_live_counts_follow_the_process_table(self, tmp_path,
                                                   monkeypatch):
-        target = make_target(
-            tmp_path, posture=HOT,
-            dreamers=[{"task": 1, "pid": 111}, {"task": 2, "pid": 222}])
-        monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: True)
-        assert "2 ccc + 0 agent-tool live" in tick_line.facts(target)
-        monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: False)
-        assert "0 ccc + 0 agent-tool live" in tick_line.facts(target)
+        target = make_target(tmp_path, posture=HOT)
 
-    def test_live_counts_distinguish_dispatch_paths(self, tmp_path,
-                                                    monkeypatch):
-        target = make_target(tmp_path, posture=HOT, dreamers=[
-            {"task": 1, "pid": 111},
-            {"task": 2, "pid": 222, "dispatch": "ccc"},
-            {"task": 3, "pid": 333, "dispatch": "agent_tool"},
-        ])
-        monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: True)
+        def two_live(_target, *, stats=None):
+            stats["process_candidates"] = 37
+            return ([('cx-one', 111, 'ccc'), ('cx-two', 222, 'ccc')], [], [])
+
+        monkeypatch.setattr(status_sync, "discover_lanes", two_live)
         out = tick_line.facts(target)
-        assert "2 ccc + 1 agent-tool live" in out
-        assert "ccc-live" not in out
-
-    def test_paired_processes_each_count_toward_delegation(self, tmp_path,
-                                                           monkeypatch):
-        target = make_target(tmp_path, posture=HOT, dreamers=[
-            {"task": 1, "pid": 111, "dispatch": "ccc"},
-            {"task": 1, "pid": 222, "dispatch": "ccc"},
-        ])
-        monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: True)
-        assert "2 ccc + 0 agent-tool live" in tick_line.facts(target)
-
-    def test_pairing_across_dispatch_paths_renders_as_live_processes(
-            self, tmp_path, monkeypatch):
-        target = make_target(tmp_path, posture=HOT, dreamers=[
-            {"task": 1, "pid": 111},  # absent dispatch is the ccc default
-            {"task": 1, "pid": 222, "dispatch": "agent_tool"},
-        ])
-        monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: True)
-        assert (
-            "lanes 0 recorded · 1 ccc + 1 agent-tool live · delegation 5"
-            in tick_line.facts(target)
-        )
+        assert "lanes 2 live [cx-one, cx-two]" in out
+        assert "probe examined 37 processes" in out
 
     def test_dead_processes_do_not_inherit_the_recorded_lane_count(
             self, tmp_path, monkeypatch):
@@ -169,20 +139,23 @@ class TestTracksTheFile:
             dreamers=[{"task": 1, "pid": 111},
                       {"task": 1, "pid": 222,
                        "dispatch": "agent_tool"}])
-        monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: False)
-        assert (
-            "lanes 2 recorded (agent-tool 1, ccc 1) · "
-            "0 ccc + 0 agent-tool live · delegation 5"
-            in tick_line.facts(target)
-        )
+        def none_live(_target, *, stats=None):
+            stats["process_candidates"] = 41
+            return [], [], []
+
+        monkeypatch.setattr(status_sync, "discover_lanes", none_live)
+        out = tick_line.facts(target)
+        assert "lanes 0 live []" in out
+        assert "recorded" not in out, \
+            "stale status.json lanes were still reported as live posture"
 
     def test_recorded_count_follows_the_authored_lanes_field(self, tmp_path):
-        none = tick_line.facts(make_target(tmp_path / "a", posture=HOT))
-        six = tick_line.facts(make_target(
-            tmp_path / "b", posture=HOT,
-            lanes=[{"lane": "lane-%d" % i} for i in range(6)]))
-        assert "lanes 0 recorded" in none
-        assert "lanes 6 recorded" in six
+        target = make_target(
+            tmp_path, posture=HOT,
+            lanes=[{"lane": "stale-%d" % i} for i in range(6)])
+        out = tick_line.facts(target)
+        assert "recorded" not in out
+        assert "stale-" not in out
 
 
 class TestNoUnqualifiedFleetSize:
@@ -199,70 +172,41 @@ class TestNoUnqualifiedFleetSize:
             tmp_path, posture=HOT,
             lanes=[{"lane": "lane-%d" % i, "model": "opus"}
                    for i in range(6)]))
-        assert "lanes 6 recorded" in out
-        assert "0 ccc + 0 agent-tool live" in out
-        # The phrasing that would have inverted his signal.
-        assert "0 lanes live" not in out
+        assert "lanes 0 live []" in out
+        assert "lanes 6" not in out
+        assert "recorded" not in out
 
 
-class TestRunnerTallyMirrorsTheDrift:
-    """The subagent-policy half. The measured failure is "reached for native by
-    habit", three times over, with the rule sitting in prose the whole time —
-    so the line shows what the fleet IS running, not what it should."""
+class TestLiveFleetDetector:
+    """The tick names live worktree lanes, never cached bookkeeping."""
 
-    def test_native_heavy_fleet_is_visible_as_such(self, tmp_path):
-        """The live shape at the moment this landed: five opus to one ccc.
-
-        The ratio lives in the parenthetical of `recorded` — it is the
-        composition of the recorded fleet, not a separate fleet count (#718)."""
-        lanes = [{"lane": "l%d" % i, "model": "opus"} for i in range(5)]
-        lanes.append({"lane": "l5",
-                      "model": "ccc @glm52 (Opus review MANDATORY)"})
-        out = tick_line.facts(make_target(tmp_path, posture=HOT, lanes=lanes))
-        assert "lanes 6 recorded (opus 5, ccc 1)" in out
-
-    def test_tally_follows_the_recorded_models(self, tmp_path):
-        a = tick_line.facts(make_target(
-            tmp_path / "a", posture=HOT,
-            lanes=[{"lane": "x", "model": "opus"}]))
-        b = tick_line.facts(make_target(
-            tmp_path / "b", posture=HOT,
-            lanes=[{"lane": "x", "model": "ccc @glm52"}]))
-        assert "(opus 1)" in a
-        assert "(ccc 1)" in b
-
-    def test_long_model_notes_cannot_grow_the_line(self, tmp_path):
-        """Only the first token is tallied, so a lane note of any length costs
-        the tick nothing (#612)."""
-        out = tick_line.facts(make_target(
-            tmp_path, posture=HOT,
-            lanes=[{"lane": "x", "model": "ccc " + "very long note " * 40}]))
-        assert "(ccc 1)" in out
-        assert "very long note" not in out
-
-    def test_unrecorded_model_is_a_question_mark_not_a_runner_name(self,
-                                                                  tmp_path):
-        out = tick_line.facts(make_target(
-            tmp_path, posture=HOT, lanes=[{"lane": "x"}]))
-        assert "(? 1)" in out
-        assert "None" not in out
-
-    @pytest.mark.parametrize("banned", ["lanes live", "lanes out", "fleet "])
-    def test_no_unlabelled_fleet_phrasing_ever_appears(self, tmp_path, banned):
-        for lanes in ([], [{"lane": "a"}], [{"lane": "a"}, {"lane": "b"}]):
-            out = tick_line.facts(
-                make_target(tmp_path / str(len(lanes)), posture=HOT,
-                            lanes=lanes))
-            assert banned not in out
-
-    def test_missing_lanes_field_is_loud_not_zero(self, tmp_path):
-        """Absent bookkeeping and empty bookkeeping are different claims."""
+    def test_agent_tool_and_ccc_names_share_one_live_fleet(
+            self, tmp_path, monkeypatch):
         target = make_target(tmp_path, posture=HOT)
-        p = Path(target) / ".dreamwork" / "status.json"
-        p.write_text(json.dumps({"dreamers": []}))
+
+        def mixed(_target, *, stats=None):
+            stats["process_candidates"] = 52
+            return ([('cx-ccc', 1, 'glm52')], [], [('cx-agent', 2)])
+
+        monkeypatch.setattr(status_sync, "discover_lanes", mixed)
         out = tick_line.facts(target)
-        assert "LANES UNRECORDED" in out
-        assert "0 recorded" not in out
+        assert "lanes 2 live [cx-agent, cx-ccc]" in out
+        assert "runners ?" not in out
+
+    def test_zero_candidates_is_instrument_failure_not_empty_fleet(
+            self, tmp_path, monkeypatch):
+        target = make_target(tmp_path, posture=HOT)
+
+        def inert(_target, *, stats=None):
+            stats["process_candidates"] = 0
+            return [], [], []
+
+        monkeypatch.setattr(status_sync, "discover_lanes", inert)
+        out = tick_line.facts(target)
+        assert "FLEET UNRESOLVED" in out
+        assert "examined 0 process candidates" in out
+        assert "lanes 0 live" not in out, \
+            "broken detector was indistinguishable from no live lanes"
 
 
 class TestTheContradictionIsAdjacent:
@@ -271,57 +215,8 @@ class TestTheContradictionIsAdjacent:
 
     def test_counts_immediately_precede_the_delegation_target(self, tmp_path):
         out = tick_line.facts(make_target(tmp_path, posture=HOT))
-        assert (
-            "lanes 0 recorded · 0 ccc + 0 agent-tool live · delegation 5"
-            in out
-        )
-
-
-class TestOneSourcePerCount:
-    """#718: `recorded` and the runner tally both read `status.json["lanes"]`.
-    Presenting them as two ·-separated fleet counts made one stale source look
-    like two corroborating measurements. The runner breakdown is now a
-    parenthetical OF the recorded count, so the line has one figure per source.
-    """
-
-    def test_runner_breakdown_is_a_parenthetical_not_a_separate_clause(
-            self, tmp_path, monkeypatch):
-        monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: True)
-        out = tick_line.facts(make_target(
-            tmp_path, posture=HOT,
-            lanes=[{"lane": "l%d" % i, "model": "ccc"} for i in range(3)],
-            dreamers=[{"task": i, "pid": 100 + i} for i in range(5)]))
-        assert "lanes 3 recorded (ccc 3)" in out
-        # The phrasing that presented the same source as a second count.
-        assert "runners " not in out
-
-    def test_zero_lanes_has_no_parenthetical(self, tmp_path):
-        """No lanes → no composition to show. The recorded half is just the
-        count, matching the pre-#718 form so the fail-closed tests still pin."""
-        out = tick_line.facts(make_target(tmp_path, posture=HOT))
-        assert "lanes 0 recorded · " in out
-        assert "recorded (" not in out
-
-    def test_recorded_count_is_reread_each_call_not_frozen(self, tmp_path):
-        """#718 Direction 1: the frozen-counter injection. A per-target cache
-        on the lanes read would freeze the count exactly as observed live
-        (stuck at 3 across five dispatches). This test rewrites `lanes` under
-        an already-read target and requires the count to move — the same
-        constructed-false-green guard `test_posture_is_reread_within_one_target`
-        uses for the posture half.
-
-        A test asserting `count == 2` against a fixed fixture passes against
-        every frozen-counter bug; only a two-read differential can catch one.
-        """
-        target = make_target(tmp_path, posture=HOT,
-                             lanes=[{"lane": "l%d" % i} for i in range(2)])
-        assert "lanes 2 recorded" in tick_line.facts(target)
-        (Path(target) / ".dreamwork" / "status.json").write_text(json.dumps(
-            {"dreamers": [],
-             "lanes": [{"lane": "l%d" % i} for i in range(5)]}))
-        after = tick_line.facts(target)
-        assert "lanes 5 recorded" in after
-        assert "lanes 2 recorded" not in after
+        assert "live [] (probe examined " in out
+        assert " processes) · delegation 5" in out
 
 
 class TestUnprobeableLanesDoNotBreakTheProbe:
@@ -333,7 +228,7 @@ class TestUnprobeableLanesDoNotBreakTheProbe:
         out = tick_line.facts(make_target(
             tmp_path, posture=HOT,
             dreamers=[{"task": 1, "pid": 111, "dispatch": "spawn_subagent"}]))
-        assert "0 ccc + 0 agent-tool live" in out
+        assert "lanes 0 live []" in out
 
 
 class TestFailsClosed:
@@ -379,7 +274,7 @@ class TestFailsClosed:
         target = make_target(tmp_path, posture=HOT, open_ids=(1, 2, 3))
         (Path(target) / ".dreamwork" / "posture").write_bytes(b"\xff\xfe\x00")
         out = tick_line.facts(target)
-        assert "lanes 0 recorded · 0 ccc + 0 agent-tool live" in out
+        assert "lanes 0 live []" in out
         assert "3 open" in out
 
     def test_liveness_unknown_is_not_rendered_as_zero(self, tmp_path,
@@ -389,10 +284,10 @@ class TestFailsClosed:
         target = make_target(tmp_path, posture=HOT,
                              dreamers=[{"task": 1, "pid": 111}])
 
-        def boom(pid):
+        def boom(_target, *, stats=None):
             raise status_sync.LivenessUnknown("probe broken")
 
-        monkeypatch.setattr(status_sync, "_pid_alive", boom)
+        monkeypatch.setattr(status_sync, "discover_lanes", boom)
         out = tick_line.facts(target)
         assert "FLEET UNRESOLVED" in out
         assert "lanes live" not in out

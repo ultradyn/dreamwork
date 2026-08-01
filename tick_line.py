@@ -34,15 +34,13 @@ that reaches the coordinator on every beat regardless of what its context still
 holds, which is the compaction-survival property he named.
 
 WHY IT STATES A MEASUREMENT AND NOT A RULE. "delegation 5" alone is a rule the
-reader may believe they are already following. "lanes 0 recorded · delegation
+reader may believe they are already following. "lanes 0 live [] · delegation
 5" is a measurement that contradicts them. The second clause of his sentence —
 *"no agents running but plenty of work waiting"* — is the load-bearing half, so
 the counts are not decoration here, they are the point.
 
-AND THE COUNTS NAME THEIR OWN PROVENANCE, because no single honest fleet number
-exists in this system today — see `_fleet_fact`, which is the most important
-docstring in this file. A confident count would have inverted the very signal
-he asked for.
+The live count names its OS-probe coverage because an empty result from a
+detector that examined nothing is not an empty fleet.
 
 IT DOES NOT EDITORIALISE. There is no DRIFT verdict, deliberately: lanes are
 legitimately at zero for minutes after a merge, so a flag that fired most of
@@ -64,7 +62,6 @@ no failure in this file can cost the loop its wake.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -114,14 +111,6 @@ def _policy_fact(p: dict) -> str:
     exists, how big it is, and whether it is HIS file or the standing default —
     that last bit being the only one that distinguishes "he set this" from
     "nobody has".
-
-    THIS IS THE SECONDARY HALF OF THE POLICY SIGNAL, and on its own it would
-    not be enough: a pointer to where a rule lives reproduces the failure it is
-    meant to fix, because re-reading the prose is exactly the step that does
-    not happen (`DREAMWORK.md`, after the second recurrence). The half that
-    does the work is `_runner_tally`, which shows what the fleet is actually
-    running. This one supplies the provenance that tally cannot: whether the
-    policy being drifted from is his or the default.
 
     Size is in LINES, matching `lint.check_subagent_policy`, which is the
     established way to size this file without reading it. Counting `- ` bullets
@@ -199,135 +188,27 @@ def _open_fact(target: str) -> str:
     return "%d open" % len(ids)
 
 
-def _runner_tally(lanes: list) -> str:
-    """Which runners the recorded fleet is actually using — the policy half.
-
-    HIS ASK WAS "posture + subagent policy", and the policy half turns out to
-    be the half with the measured recurrence. In the hour before he sharpened
-    the rule, five native Opus lanes went out against one `ccc @glm52`, three
-    of the five plainly standard work — at least the THIRD occurrence, and it
-    recurred with `DREAMWORK.md`'s own diagnosis sitting in the file: *"a
-    routing rule that lives only in prose is re-checked exactly as often as
-    someone happens to re-read the prose."*
-
-    WHICH IS WHY THIS IS A TALLY AND NOT A RESTATEMENT OF THE RULE. A pointer
-    ("see DREAMWORK.md") reproduces the failure exactly, because re-reading the
-    prose is the step that does not happen. And a hardcoded "prefer glm52"
-    would be a rule with no source: `.dreamwork/subagent-policy` is free text
-    by contract — `file-formats.md` says "the whole file is the value", and
-    lint "deliberately never inspects the CONTENT" — so no honest parse of it
-    exists, and a literal copied into this file goes stale the next time he
-    changes his mind, which he did twice this week.
-
-    So the same move the rest of this line makes: state the live fact, not the
-    rule. `lanes 6 recorded (opus 5, ccc 1)` on every beat is a mirror, and the
-    drift it reflects has never been "chose the wrong exotic tier" — it has
-    always been "reached for native by habit". A habit is broken by seeing it,
-    not by being told about it.
-
-    The runner is the FIRST TOKEN of the recorded `model`; the rest is
-    qualification ("ccc @glm52 (Opus review MANDATORY before merge)" tallies as
-    `ccc`). That is a display normalisation, not a semantic parse — it imposes
-    no grammar on the field and cannot disagree with it, and it keeps the line
-    bounded no matter how long a lane's note grows (#612).
-
-    Provenance is the same as `recorded`: `status.json["lanes"]` is written by
-    the coordinator's judgement, so this mirrors the bookkeeping, not the OS.
-
-    RETURNS THE BREAKDOWN WITHOUT A `runners` PREFIX — it is always rendered as
-    a parenthetical of the recorded count by the caller, so the prefix would be
-    redundant and the word "runners" would re-enter the line as what looks like
-    a second fleet count (#718: two of the three counters read the same `lanes`
-    list; presenting that list's count and its composition as two `·`-separated
-    figures made one stale source read as corroboration).
-    """
-    counts: dict[str, int] = {}
-    for lane in lanes:
-        model = lane.get("model") if isinstance(lane, dict) else None
-        # A lane recorded without a model is `?`, never the string "None" —
-        # an unrecorded runner must not read as a runner someone chose.
-        text = "" if model is None else str(model).strip()
-        token = text.split()[0] if text else "?"
-        counts[token] = counts.get(token, 0) + 1
-    if not counts:
-        return ""
-    ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-    return ", ".join("%s %d" % (k, v) for k, v in ordered)
-
-
-def _read_status(target: str) -> dict:
-    dw = Path(target) / ".dreamwork"
-    try:
-        status = json.loads((dw / "status.json").read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
-        raise status_sync.LivenessUnknown(
-            "status.json unreadable: %s" % exc.__class__.__name__)
-    if not isinstance(status, dict):
-        raise status_sync.LivenessUnknown("status.json is not an object")
-    return status
-
-
 def _fleet_fact(target: str) -> str:
-    """The fleet, as TWO labelled numbers — never one unqualified "fleet size".
+    """Live lane names from status_sync's supported OS detector (#821).
 
-    The two sources fail in different directions, which makes reporting both
-    useful rather than merely verbose:
-
-      `recorded`  — `status.json["lanes"]`, written by the coordinator's own
-                    judgement. Sees every dispatch form *when it is kept up*,
-                    but it is HAND-MAINTAINED with no automatic writer and no
-                    automatic pruner — unlike `dreamers`, which `status_sync`
-                    corrects every tick. MEASURED (#718): it froze at 3 across
-                    five dispatches and six merges because nobody updated it.
-                    It is NOT an upper bound; it is a snapshot that drifts in
-                    whichever direction the last edit left it, indefinitely.
-      `live`      — the OS measurement over observable `dreamers`. Since #675
-                    this includes both ccc and Agent-tool lanes; each survivor
-                    retains its `dispatch`, so the two counts are available
-                    here and render separately rather than under a stale label.
-                    The denominator is live PROCESSES, matching delegation's
-                    average-concurrency target; paired agents on one task each
-                    count because each consumes one unit of that concurrency.
-
-    Each is labelled by HOW IT WAS OBTAINED, so neither can be read as "the
-    fleet". Where they disagree the reader learns something real.
-
-    #718: `recorded` and the runner breakdown both read the SAME `lanes` list.
-    The breakdown is now a PARENTHETICAL of the count, not a `·`-separated
-    second figure — so the line has one fleet number per source, and a stale
-    `recorded` cannot masquerade as two corroborating counts.
-
-    `LivenessUnknown` propagates rather than being caught: "I could not tell"
-    and "nothing is running" must not render as one string when one of them is
-    the alarm (`status_sync`'s own reasoning, applied here).
+    The old line repeated ``status.json['lanes']`` and then probed only the
+    recorded ``dreamers``.  Both can be stale.  Discovery is the supported
+    worktree-bound measurement, and its examined population is part of the
+    result: zero candidates is an instrument failure, never an empty fleet.
     """
-    status = _read_status(target)
-
-    lanes = status.get("lanes")
-    if not isinstance(lanes, list):
-        recorded = "LANES UNRECORDED (status.json has no `lanes` list)"
-    else:
-        recorded = "%d recorded" % len(lanes)
-        breakdown = _runner_tally(lanes)
-        if breakdown:
-            recorded += " (%s)" % breakdown
-
-    raw = status.get("dreamers", [])
-    if not isinstance(raw, list):
-        raise status_sync.LivenessUnknown("dreamers is not a list")
-    clean = [d for d in raw if status_sync._evaluable(d)]
-    observable = [d for d in clean if status_sync._observable(d)]
-    _live, pruned = status_sync.live_lanes(observable)
-    unknown = [
-        d for d in pruned if d.get("dispatch") not in (None, "ccc", "agent_tool")
-    ]
-    if unknown:
-        raise status_sync.LivenessUnknown("live lane has unknown dispatch")
-    ccc_live = sum(d.get("dispatch") in (None, "ccc") for d in pruned)
-    agent_live = sum(d.get("dispatch") == "agent_tool" for d in pruned)
-
-    return "lanes %s%s%d ccc + %d agent-tool live" % (
-        recorded, SEP, ccc_live, agent_live)
+    if not (Path(target) / ".dreamwork").is_dir():
+        raise status_sync.LivenessUnknown("target has no .dreamwork directory")
+    stats = {}
+    ccc, _phantoms, agent = status_sync.discover_lanes(
+        Path(target), stats=stats)
+    examined = stats.get("process_candidates", 0)
+    if examined <= 0:
+        raise status_sync.LivenessUnknown(
+            "lane detector examined 0 process candidates")
+    names = sorted([lane for lane, _pid, _model in ccc]
+                   + [lane for lane, _pid in agent])
+    return "lanes %d live [%s] (probe examined %d processes)" % (
+        len(names), ", ".join(names), examined)
 
 
 def _unresolved(label: str, exc: BaseException) -> str:
