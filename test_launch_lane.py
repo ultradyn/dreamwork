@@ -81,11 +81,14 @@ def _head(root: Path, text: str = (
     return path
 
 
-def _run(root: Path, head: Path, *extra: str, env: dict[str, str] | None = None):
+def _run(
+    root: Path, head: Path, *extra: str,
+    env: dict[str, str] | None = None, agent: str = "@agent",
+):
     actual_env = (env or os.environ.copy()).copy()
     actual_env["DREAMWORK_ALLOW_PIPED_STDOUT"] = "1"
     return subprocess.run(
-        [sys.executable, str(root / "dev" / "launch_lane.py"), "832", "lane-832", "@agent", str(head), *extra],
+        [sys.executable, str(root / "dev" / "launch_lane.py"), "832", "lane-832", agent, str(head), *extra],
         cwd=root, capture_output=True, text=True, env=actual_env,
     )
 
@@ -285,6 +288,54 @@ def test_launcher_resolves_lane_under_the_sibling_worktree_root(launch_repo: Pat
     assert not (launch_repo / ".worktrees").exists(), (
         "the governed launcher recreated the draining in-repo root"
     )
+
+
+def test_native_agent_refuses_sibling_worktree_with_remedy_before_creation(launch_repo: Path):
+    before = _worktree_rows(launch_repo)
+    result = _run(launch_repo, _head(launch_repo), agent="@opus5")
+    expected = launch_repo.parent / ".worktrees" / "lane-832"
+
+    assert result.returncode == 1
+    assert "REFUSE phase=agent-worktree-reach" in result.stderr
+    assert f"worktree {expected}" in result.stderr
+    assert "use @glm52 or @cx-coder" in result.stderr
+    assert "interpreter availability was not checked" in result.stderr
+    assert "verified launch completion" not in result.stdout
+    assert _worktree_rows(launch_repo) == before
+    assert not (launch_repo / ".dreamwork" / "launch-attempts").exists()
+
+
+@pytest.mark.parametrize("agent", ["@glm52", "@cx-coder"])
+def test_ccc_sandbox_agents_are_not_refused_for_sibling_worktree(
+    launch_repo: Path, agent: str,
+):
+    result = _run(launch_repo, _head(launch_repo), agent=agent)
+
+    assert result.returncode == 0, result.stderr
+    assert "REFUSE phase=agent-worktree-reach" not in result.stderr
+    assert "worktree reach was not checked" in result.stdout
+
+
+def test_runner_zero_names_only_the_checks_it_actually_completed(launch_repo: Path):
+    result = _run(launch_repo, _head(launch_repo))
+
+    assert result.returncode == 0, result.stderr
+    assert "exit=0; verified check=runner-exit-code" in result.stdout
+    assert "unchecked=worktree reach, interpreter availability, lane work" in result.stdout
+    assert "verified launch completion" not in result.stdout
+
+
+def test_native_reach_uses_abspath_not_realpath(tmp_path: Path):
+    spec = importlib.util.spec_from_file_location("launch_lane_reach", TOOL)
+    module = importlib.util.module_from_spec(spec); assert spec.loader; spec.loader.exec_module(module)
+    root = tmp_path / "root"
+    outside = tmp_path / "outside"
+    root.mkdir(); outside.mkdir()
+    (root / "linked").symlink_to(outside, target_is_directory=True)
+
+    assert module._native_reach_fault("@opus5", root, root / "nested" / ".." / "lane") is None
+    assert module._native_reach_fault("@opus5", root, root / "linked" / "lane") is None
+    assert module._native_reach_fault("@opus5", root, outside / "lane") is not None
 
 
 def test_changed_bytes_cannot_resume_the_same_attempt(launch_repo: Path):

@@ -36,6 +36,7 @@ INBOX_PREFIX = (
     "Coordinator inbox — ABSOLUTE path, append your completion summary here "
     "when you finish: "
 )
+NATIVE_INHERITED_SANDBOX_AGENTS = frozenset({"@opus5"})
 
 
 class LaunchFault(Exception):
@@ -116,6 +117,24 @@ def _stdout_fault() -> str | None:
             "DREAMWORK_ALLOW_PIPED_STDOUT=1"
         )
     return None
+
+
+def _native_reach_fault(agent: str, coordinator_root: Path, worktree: Path) -> str | None:
+    """Refuse known native aliases whose inherited sandbox excludes the lane."""
+    if agent not in NATIVE_INHERITED_SANDBOX_AGENTS:
+        return None
+    # The sandbox contract is expressed in caller-visible path names.  abspath
+    # normalizes ``..`` and trailing slashes without changing symlink identity.
+    root = Path(os.path.abspath(coordinator_root))
+    target = Path(os.path.abspath(worktree))
+    if target.is_relative_to(root):
+        return None
+    return (
+        f"native agent {agent} inherits the coordinator sandbox rooted at {root}, but "
+        f"worktree {target} is outside that root; use @glm52 or @cx-coder, which receive "
+        f"their own lane sandbox, or extend the native sandbox to include {target.parent}; "
+        "interpreter availability was not checked"
+    )
 
 
 def _refuse(phase: str, reasons: Sequence[str], examined: str, retained: str) -> int:
@@ -330,6 +349,25 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
     if foreground is None:
         print("background-check: no controlling tty was observable; launch-lane cannot prove shell job placement")
 
+    reach_fault = _native_reach_fault(agent, repo, lane_path)
+    if reach_fault:
+        return _refuse(
+            "agent-worktree-reach", [reach_fault],
+            f"agent={agent}; check=abspath containment; coordinator root={os.path.abspath(repo)}; "
+            f"worktree={os.path.abspath(lane_path)}; interpreter availability not checked",
+            retained,
+        )
+    if agent in NATIVE_INHERITED_SANDBOX_AGENTS:
+        print(
+            f"agent-worktree reach: verified check=abspath containment; agent={agent}; "
+            "unchecked=interpreter availability, actual lane work"
+        )
+    else:
+        print(
+            f"agent-worktree reach: agent={agent} is not in the measured native-inherited registry; "
+            "worktree reach was not checked; unchecked=interpreter availability, actual lane work"
+        )
+
     try:
         core, owns = _core_and_owns(head, task)
         prompt = build_brief(
@@ -508,7 +546,10 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
                 file=sys.stderr,
             )
             return 2
-        print(f"runner result: attempt={attempt_id}; exit=0; verified launch completion")
+        print(
+            f"runner result: attempt={attempt_id}; exit=0; verified check=runner-exit-code; "
+            "unchecked=worktree reach, interpreter availability, lane work"
+        )
         return 0
     record["state"] = f"runner result verified: exit {result.returncode}; worktree and exact brief retained"
     try:
