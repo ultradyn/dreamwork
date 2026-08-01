@@ -16,6 +16,7 @@ import importlib.machinery
 import importlib.util
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -1557,3 +1558,363 @@ class TestBeginStatesTheRedproofRootDistinctFromLaneScratch:
             "protocol needs no manual cmp, which is how the wrong-root cmp is "
             "avoided entirely (#934)")
 
+
+
+# ── #942: a re-arm must not move the boundary past its own injection ──
+
+
+def _rearm_after_rebase(lane: Path, sabotage: str) -> str:
+    """The documented lane lifecycle, every step of it correct advice.
+
+    inject -> COMMIT INCREMENTALLY while sabotaged -> restore -> commit the fix
+    -> rebase (mandatory before reporting) -> the pinned expectation goes stale.
+    Returns the rewritten sha of the commit that still holds the injection.
+    """
+    _begin(lane, "router.js")
+    (lane / "router.js").write_text(sabotage)
+    _commit(lane, "router.js", msg="wip(#942): mid red-proof")
+    _restore(lane, "router.js")
+    (lane / "router.js").write_text(
+        "export function route() { return Boolean(guard); }\n")
+    _commit(lane, "router.js", msg="fix(#942): the real fix")
+    _git(lane, "rebase", "--force-rebase", "master")
+    # What #910's fourth data point measured: "the rebase rewrote the
+    # expectation's sha ... so the pinned expectation went stale post-rebase
+    # even though the injection was restored and absent."
+    (lane / "expectation.txt").write_text("route expectation, post-rebase\n")
+    poisoned = _git(lane, "log", "--format=%H",
+                    "--grep=^wip(#942): mid red-proof$")
+    assert poisoned, "fixture did not produce a rewritten injection commit"
+    return poisoned
+
+
+class TestARearmCannotHideTheInjectionThatRequiredIt:
+    """THE #942 red run, and every step of it is documented advice.
+
+    `check` correctly refuses a post-rebase expectation drift and prints the
+    remedy: forget, begin, re-sabotage, restore (#910). Following that remedy
+    verbatim used to ERASE the only record bounded before the poisoned commit,
+    and the re-armed record's `begun_head` sat AFTER it — so the registration
+    boundary reclassified the real injection as preexisting and the scan
+    printed `0 holding a recorded injection` over a genuinely broken branch.
+    The tool's own advice defeated the tool's own check.
+    """
+
+    def _follow_the_printed_remedy(self, lane: Path, sabotage: str) -> None:
+        assert rp.forget(lane, "router.js") == 0
+        _begin(lane, "router.js")
+        (lane / "router.js").write_text(sabotage)
+        _restore(lane, "router.js")
+
+    def test_the_rearmed_boundary_does_not_hide_the_committed_injection(
+            self, lane, capsys):
+        sabotage = "export function route() { return false; /* BUG #942 */ }\n"
+        poisoned = _rearm_after_rebase(lane, sabotage)
+
+        # The tool refuses the stale pin and PRINTS the remedy followed below —
+        # so this test exercises the documented path, not an invented one.
+        assert _check(lane) == 1
+        _, drift_err = capsys.readouterr()
+        assert "expectation source" in drift_err, drift_err
+        assert "forget" in drift_err and "begin" in drift_err, drift_err
+
+        self._follow_the_printed_remedy(lane, sabotage)
+        capsys.readouterr()
+        entries, _ = rp._read_registry(lane)
+        rearmed = [e for e in entries if e.get("state") == rp.RESTORED]
+        assert len(rearmed) == 1, entries
+
+        # PRECONDITIONS, derived at runtime, all three about the WORLD rather
+        # than about the fix — so a broken fix reds on the outcome below and
+        # not on its own scaffolding.
+        # (i) the branch GENUINELY still holds the recorded injection ...
+        assert _blob_sha_at(lane, poisoned, "router.js") == rearmed[0]["injected_sha"]
+        # (ii) ... while the tree is clean, so history is the only cause ...
+        assert rp._sha((lane / "router.js").read_bytes()) != rearmed[0]["injected_sha"]
+        # (iii) ... and the RE-ARMED boundary is a descendant of that commit,
+        #       so the re-armed record on its own would exclude it. Without
+        #       this the branch is not in the defective state and a pass here
+        #       would prove nothing.
+        assert subprocess.run(
+            ["git", "-C", str(lane), "merge-base", "--is-ancestor",
+             poisoned, rearmed[0]["begun_head"]], check=False).returncode == 0, (
+            "the re-armed boundary does not sit after the poisoned commit; "
+            "this fixture is not in the #942 state")
+
+        rep = rp.scan_history(lane, entries)
+        assert rep["commits"] == 2 and rep["blobs_read"] == 2, rep
+        assert len(rep["hits"]) == 1, (
+            "the re-arm hid the committed injection: the scan reported "
+            f"{len(rep['hits'])} holding a recorded injection over a branch "
+            f"whose commit {poisoned[:12]} still holds it — {rep}")
+        assert rep["hits"][0]["commit"] == poisoned, rep["hits"]
+
+        exit = _check(lane)
+        out, err = capsys.readouterr()
+        assert exit == 1, out + err
+        assert "1 holding a recorded injection" in out, out
+        assert poisoned[:12] in err, err
+        assert "BUG #942" in err, err
+        assert "squash" in err.lower(), err
+
+    def test_the_retired_record_is_what_keeps_the_boundary_back(
+            self, lane, capsys):
+        """The mechanism, asserted separately from the outcome: `forget`
+        retires rather than erases, and the retired record keeps the ORIGINAL
+        registration boundary — which is the only reason the scan above can
+        still reach the poisoned commit."""
+        sabotage = "export function route() { return false; /* BUG #942 */ }\n"
+        poisoned = _rearm_after_rebase(lane, sabotage)
+        before, _ = rp._read_registry(lane)
+        original_boundary = [e for e in before
+                             if e.get("state") == rp.RESTORED][0]["begun_head"]
+
+        self._follow_the_printed_remedy(lane, sabotage)
+        capsys.readouterr()
+
+        entries, _ = rp._read_registry(lane)
+        retired = [e for e in entries if e.get("state") == rp.RETIRED]
+        assert len(retired) == 1, (
+            f"forget erased the prior registration instead of retiring it: "
+            f"{entries}")
+        assert retired[0]["begun_head"] == original_boundary, (
+            "the retired record's boundary moved; carrying it unchanged is "
+            "the whole fix")
+        # ... and that boundary genuinely predates the poisoned commit, which
+        # is what gives the scan authority over it.
+        assert subprocess.run(
+            ["git", "-C", str(lane), "merge-base", "--is-ancestor",
+             poisoned, retired[0]["begun_head"]], check=False).returncode == 1
+        # A retired record is history evidence and nothing else: no stale
+        # expectation pin (that is what the re-arm cleared) and no snapshot.
+        assert "expectation_sources" not in retired[0], retired[0]
+        assert "snapshot" not in retired[0], retired[0]
+
+    def test_a_retired_record_still_blocks_a_lane_that_never_rearms(
+            self, lane, capsys):
+        """`forget` alone is not an amnesty. A lane that commits an injection,
+        restores, and then simply drops the record must still be refused —
+        otherwise `forget` is a one-word hand-bypass of the #710 scan."""
+        poisoned, _clean = _poison(lane)
+        recorded = [e for e in rp._read_registry(lane)[0]
+                    if e.get("state") == rp.RESTORED][0]["injected_sha"]
+        assert _blob_sha_at(lane, poisoned, "router.js") == recorded
+
+        assert rp.forget(lane, "router.js") == 0
+        capsys.readouterr()
+        entries, _ = rp._read_registry(lane)
+        assert [e for e in entries if e.get("state") == rp.RESTORED] == []
+
+        exit = _check(lane)
+        out, err = capsys.readouterr()
+        assert exit == 1, out + err
+        assert poisoned[:12] in err, err
+
+    def test_forgetting_a_retired_record_is_refused_and_says_why(
+            self, lane, capsys):
+        _inject(lane, "router.js",
+                "export function route() { return false; /* BUG */ }\n")
+        assert rp.forget(lane, "router.js") == 0
+        capsys.readouterr()
+        assert rp.forget(lane, "router.js") == 1
+        _, err = capsys.readouterr()
+        assert "retired" in err, err
+        assert "cannot be dropped" in err, err
+
+    def test_forgetting_an_armed_entry_still_drops_it_and_frees_the_name(
+            self, lane, capsys):
+        """The re-arm remedy depends on this: `begin` refuses a path that
+        already has an armed snapshot, so a `forget` that left anything
+        armed-shaped behind would make #910's printed remedy unusable."""
+        _begin(lane, "router.js")
+        assert rp.forget(lane, "router.js") == 0
+        entries, _ = rp._read_registry(lane)
+        assert entries == [], entries
+        assert _begin(lane, "router.js") == 0, "re-arm after forget was refused"
+
+
+class TestTheThreeHistoryZeroesAreDistinct:
+    """#868/#915/#942: three facts that used to share one sentence.
+
+    (1) scanned, found nothing; (2) nothing was recorded to look for; (3) the
+    boundary matched and excluded. #942 is what (3) wearing (1)'s clothes
+    costs — a real injection, in a real commit, reported as a clean count.
+    """
+
+    LOOKED = "holding a recorded injection"
+    NOTHING = "NOTHING TO LOOK FOR"
+    EXCLUDED = "boundary EXCLUDED"
+
+    def test_looked_and_found_nothing(self, lane):
+        _begin(lane, "router.js")
+        (lane / "router.js").write_text("SABOTAGE\n")
+        _restore(lane, "router.js")
+        (lane / "router.js").write_text(
+            "export function route() { return Boolean(guard); }\n")
+        _commit(lane, "router.js", msg="fix(#942): only clean commits")
+        entries, _ = rp._read_registry(lane)
+        rep = rp.scan_history(lane, entries)
+        # PRECONDITION: it really did have something to look for, in a range.
+        assert rep["paths"] == 1 and rep["commits"] == 1, rep
+        assert rep["hits"] == [] and rep["excluded"] == [], rep
+
+        line = rp.history_line(rep)
+        assert self.LOOKED in line, line
+        assert self.NOTHING not in line, line
+        assert self.EXCLUDED not in line, line
+
+    def test_nothing_was_recorded_to_look_for(self, lane):
+        (lane / "router.js").write_text(
+            "export function route() { return Boolean(guard); }\n")
+        _commit(lane, "router.js", msg="fix(#942): a commit and no registry")
+        rep = rp.scan_history(lane, [])
+        # PRECONDITION: a real range with real commits — the emptiness is the
+        # RECORD, not the range, which is the distinction being made.
+        assert rep["commits"] == 1 and rep["paths"] == 0, rep
+
+        line = rp.history_line(rep)
+        assert self.NOTHING in line, line
+        assert self.LOOKED not in line, line
+        assert self.EXCLUDED not in line, line
+
+    def test_the_boundary_excluding_everything_is_loud(self, lane, capsys):
+        """The legitimate exclusion — the canonical direction-1 sabotage IS
+        the pre-fix bytes, which existed on this branch before the tool saw
+        them. It must still pass, and it must no longer be silent."""
+        (lane / "router.js").write_text(
+            "export function route() { return false; }\n")
+        predecessor = _commit(lane, "router.js", msg="feat(#942): predecessor")
+        (lane / "router.js").write_text(
+            "export function route() { return Boolean(guard); }\n")
+        _commit(lane, "router.js", msg="fix(#942): actual repair")
+        _inject(lane, "router.js", "export function route() { return false; }\n")
+
+        entries, _ = rp._read_registry(lane)
+        rep = rp.scan_history(lane, entries)
+        # PRECONDITION: a blob really did MATCH; without a match there is
+        # nothing for the boundary to exclude and this proves nothing.
+        recorded = [e for e in entries if e.get("state") == rp.RESTORED][0]
+        assert _blob_sha_at(lane, predecessor, "router.js") == recorded["injected_sha"]
+        assert rep["hits"] == [] and len(rep["excluded"]) == 1, rep
+        assert rep["excluded"][0]["commit"] == predecessor, rep["excluded"]
+
+        line = rp.history_line(rep)
+        assert self.EXCLUDED in line, line
+        assert predecessor[:12] in line, line
+        # both facts, so a reader cannot take the zero for the whole answer
+        assert self.LOOKED in line, line
+        assert self.NOTHING not in line, line
+
+        # and the verdict is unchanged: a pre-registration commit is not blamed
+        assert _check(lane) == 0
+        out, err = capsys.readouterr()
+        assert "restoration clean" in out, out
+        assert "REFUSED" not in err, err
+
+
+class TestTheAuditNamesItsTwoPopulationsSeparately:
+    """#942 second defect. `audit_sources` is the legacy registry PLUS every
+    launch-identity dir — two DISJOINT populations — so `N registry/ies across
+    M launch-identity dir(s)` asserted a containment that does not hold. The
+    true reading `1 across 0` read as a self-contradiction; a sibling lane
+    wrote a test asserting `1 across 1` because that is what the sentence
+    says, and the gate refused it at named-tests.
+    """
+
+    AUDIT = re.compile(
+        r"audited (\d+) registry/ies across (\d+) launch-identity dir\(s\)")
+
+    def _label(self, repo: Path, capsys) -> str:
+        """The audit denominators as the MERGE GATE meets them: #935 runs
+        `check --cwd <lane> --require 1` with DREAMWORK_LANE_ID popped, and
+        this sentence is what its refusal prints."""
+        exit = _check(repo, require=1)
+        out, err = capsys.readouterr()
+        assert exit == 1, out + err
+        return err
+
+    @pytest.mark.parametrize("under_identity", [False, True])
+    def test_the_across_containment_holds_and_legacy_is_named_apart(
+            self, repo, monkeypatch, capsys, under_identity):
+        if not under_identity:
+            monkeypatch.delenv(rp._ls.IDENTITY_ENV, raising=False)
+        _inject(repo, "router.js", "SABOTAGE\n")
+        assert rp.forget(repo, "router.js") == 0     # -> no live entries
+        capsys.readouterr()
+
+        monkeypatch.delenv(rp._ls.IDENTITY_ENV, raising=False)   # coordinator
+        dirs = rp._ls.lane_identity_dirs(repo)
+        legacy = rp._redproof_dir(repo, "", rp._role(repo)) / "registry.json"
+        # PRECONDITIONS derived from disk, so the case cannot silently become
+        # the other one: exactly one of the two populations holds the registry.
+        assert legacy.exists() is (not under_identity), (legacy, dirs)
+        assert len(dirs) == (1 if under_identity else 0), dirs
+
+        line = self._label(repo, capsys)
+        found = self.AUDIT.search(line)
+        assert found, line
+        registries, identity_dirs = int(found.group(1)), int(found.group(2))
+        # the containment the word `across` asserts must actually hold ...
+        assert registries <= identity_dirs, (
+            f"'{found.group(0)}' claims a containment that does not hold", line)
+        assert identity_dirs == len(dirs), (found.group(0), dirs)
+        # ... and the OTHER population is reported, not folded into that count
+        assert f"legacy registry {'absent' if under_identity else 'present'}" \
+            in line, line
+
+
+class TestRelaunchedLaneIsTheRemainingHole:
+    """DIRECTION 2 for #942, executable and OPEN in one of the two modes.
+
+    The carried-forward record lives in ONE registry, and a registry is keyed
+    by launch identity (#870). A lane relaunched in the same worktree — a new
+    `DREAMWORK_LANE_ID`, same branch — begins a registry the earlier identity's
+    record is not in. Its own `check` (MODE A, its token in env) therefore
+    searches only for its own bytes and prints a true `0 holding a recorded
+    injection` over a commit that holds the FIRST identity's injection.
+
+    The coordinator's audit (MODE B, no token: #895's enumeration, and what
+    #935's merge gate runs) reads every identity dir under this lane's key and
+    DOES catch it. So the hole is real and precisely bounded: it is open to a
+    lane auditing itself and closed at the gate. Kept as a passing test
+    asserting BOTH answers, so closing it fails here loudly rather than
+    silently (the `TestKnownHole` idiom).
+    """
+
+    def test_mode_a_misses_it_and_the_coordinator_mode_b_catches_it(
+            self, lane, monkeypatch, capsys):
+        # Identity A: inject, COMMIT while sabotaged, restore.
+        poisoned, _clean = _poison(lane)
+        a_registry = rp._registry_path(lane)
+        a_recorded = [e for e in rp._read_registry(lane)[0]
+                      if e.get("state") == rp.RESTORED][0]["injected_sha"]
+
+        # The lane is relaunched in the same worktree under a NEW identity.
+        monkeypatch.setenv(rp._ls.IDENTITY_ENV, "fixture-lane-relaunched-b942")
+        b_registry = rp._registry_path(lane)
+        assert b_registry != a_registry, "fixture did not change identity"
+        _inject(lane, "router.js", "export function route() { return 0; }\n")
+        capsys.readouterr()
+
+        # PRECONDITIONS: the branch really does hold identity A's injection,
+        # and identity B's registry really does not know that sha — without
+        # both, neither half below means anything.
+        assert _blob_sha_at(lane, poisoned, "router.js") == a_recorded
+        b_entries, _ = rp._read_registry(lane)
+        assert a_recorded not in {e.get("injected_sha") for e in b_entries}
+
+        # MODE A — the relaunched lane auditing itself: a TRUE zero, taken by
+        # a reader as a clean branch. The false green, on purpose.
+        assert _check(lane) == 0
+        out, _ = capsys.readouterr()
+        assert "0 holding a recorded injection" in out, out
+        assert "restoration clean" in out, out
+
+        # MODE B — the coordinator / #935 merge gate: enumeration reaches
+        # identity A's registry and the commit is named.
+        monkeypatch.delenv(rp._ls.IDENTITY_ENV, raising=False)
+        assert len(rp._ls.lane_identity_dirs(lane)) == 2
+        exit = _check(lane)
+        out, err = capsys.readouterr()
+        assert exit == 1, out + err
+        assert poisoned[:12] in err, err
