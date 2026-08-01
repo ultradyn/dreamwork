@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Iterator, Mapping, Optional, Union
+from typing import Any, Callable, Iterator, Mapping, NoReturn, Optional, Union
 from urllib.parse import quote
 
 
@@ -52,6 +52,26 @@ class Busy(DatabaseError):
 
 class SchemaMismatch(DatabaseError):
     """The store schema is not the exact version this process supports."""
+
+
+class Corrupt(DatabaseError):
+    """The store file is not a readable SQLite database (code 26)."""
+
+
+class ConstraintViolation(DatabaseError):
+    """Caller data violated a store constraint (FK, unique, CHECK, NOT NULL).
+
+    Unlike ``Busy``, ``Corrupt`` and ``SchemaMismatch`` — which are *store*
+    conditions, the store unable to serve the request — this is the store
+    working correctly and rejecting caller data.  sqlite raises it as
+    ``IntegrityError`` (a ``DatabaseError`` child); the ladder names what it
+    can prove (#651) rather than declaring a precisely-classified error
+    unclassifiable (#702).  The original sqlite error is carried as
+    ``__cause__``.
+
+    Callers should validate before the write (#681 built that validation
+    into ``ledger_write``) rather than catch this as control flow.
+    """
 
 
 RepositoryFactory = Callable[["_RepositorySession"], object]
@@ -151,7 +171,7 @@ class DatabaseHandle:
         begin = "BEGIN IMMEDIATE" if immediate else "BEGIN"
         try:
             state.connection.execute(begin)
-        except sqlite3.OperationalError as exc:
+        except sqlite3.DatabaseError as exc:
             _raise_classified(exc, operation=begin)
         state.transaction_active = True
         try:
@@ -162,7 +182,7 @@ class DatabaseHandle:
         else:
             try:
                 state.connection.commit()
-            except sqlite3.OperationalError as exc:
+            except sqlite3.DatabaseError as exc:
                 state.connection.rollback()
                 _raise_classified(exc, operation="COMMIT")
         finally:
@@ -183,7 +203,7 @@ class _RepositorySession:
             raise ValidationError("WRITE repository calls require transaction()")
         try:
             return state.connection.execute(sql, parameters)
-        except sqlite3.OperationalError as exc:
+        except sqlite3.DatabaseError as exc:
             _raise_classified(exc, operation="SQL")
 
     def executemany(
@@ -194,7 +214,7 @@ class _RepositorySession:
             raise ValidationError("WRITE repository calls require transaction()")
         try:
             return state.connection.executemany(sql, parameters)
-        except sqlite3.OperationalError as exc:
+        except sqlite3.DatabaseError as exc:
             _raise_classified(exc, operation="SQL")
 
 
@@ -244,24 +264,44 @@ def _ensure_parent_durable(path: Path) -> None:
 
 
 def _raise_classified(
-    exc: sqlite3.OperationalError, *, operation: str
-) -> None:
-    """Translate one ``OperationalError`` into a named ladder outcome.
+    exc: sqlite3.DatabaseError, *, operation: str
+) -> NoReturn:
+    """Translate one ``sqlite3.DatabaseError`` into a named ladder outcome.
 
     The ladder is total: a caller that reaches here never sees a raw
     sqlite error escape unnamed (#702). Busy locks, schema-shaped errors,
-    and every remaining case each become a distinct, honest name (#651):
-    the unclassified case is a plain ``DatabaseError`` that carries the
-    original, never relabelled as something it was not proven to be.
+    corruption, constraint violations, and every remaining case each
+    become a distinct, honest name (#651): the unclassified case is a
+    plain ``DatabaseError`` that carries the original, never relabelled
+    as something it was not proven to be.
+
+    The catch surface widened from ``OperationalError`` to
+    ``DatabaseError`` so the ladder is total over the full error tree,
+    not just one subclass (#782): ``DatabaseError`` is the *parent* of
+    ``OperationalError``, so a corrupt-store ``file is not a database``
+    (code 26) escaped the old ``OperationalError``-only handlers unnamed.
     """
     text = str(exc).lower()
     busy_codes = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
     code = getattr(exc, "sqlite_errorcode", None)
     if code in busy_codes or "locked" in text or "busy" in text:
         raise Busy(f"database busy during {operation}: {exc}") from exc
+    if code == getattr(sqlite3, "SQLITE_NOTADB", 26) or (
+        "file is not a database" in text
+    ):
+        raise Corrupt(
+            f"store file is corrupt or not a database during {operation}: {exc}"
+        ) from exc
     if "no such column" in text or "no such table" in text:
         raise SchemaMismatch(
             f"store schema mismatch during {operation}: {exc}"
+        ) from exc
+    if isinstance(exc, sqlite3.IntegrityError):
+        # A constraint violation is caller data the store rejected, not a
+        # store condition: sqlite classified it precisely (IntegrityError),
+        # so the ladder names it rather than calling it unclassified (#702).
+        raise ConstraintViolation(
+            f"caller data violated a store constraint during {operation}: {exc}"
         ) from exc
     raise DatabaseError(
         f"unclassified store error during {operation}: {exc}"
@@ -297,6 +337,9 @@ def _connect(spec: StoreSpec, access: Access) -> sqlite3.Connection:
             connection.execute("PRAGMA query_only=ON")
         elif spec.initializer is not None:
             spec.initializer(connection)
+    except sqlite3.DatabaseError as exc:
+        connection.close()
+        _raise_classified(exc, operation="connect")
     except BaseException:
         connection.close()
         raise
@@ -320,7 +363,10 @@ def open_database(
     _SESSION_STATES[session] = state
     try:
         if access is Access.READ:
-            connection.execute("BEGIN")
+            try:
+                connection.execute("BEGIN")
+            except sqlite3.DatabaseError as exc:
+                _raise_classified(exc, operation="BEGIN")
         for name, factory in spec.repositories.items():
             state.repositories[name] = factory(session)
         yield handle
