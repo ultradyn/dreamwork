@@ -175,10 +175,11 @@ def test_each_reviewed_anchor_line_contains_the_named_evidence():
         ("watch.py", 5574, "_handle_comment"),
         ("client/router.js", 1638, "reconciliation"),
         ("client/router.js", 1750, "morphdom"),
+        ("dreamwork_db/migrate.py", 28, "MIGRATIONS"),
     ]
-    # Precondition: the anchor list grew by exactly 45 across increments 2+3.
+    # Precondition: the anchor list grew by exactly 46 across increments 2+3.
     # A literal count would rot; this asserts the size the check depends on.
-    assert len(anchors) == 73, f"expected 73 anchors (28 i2 + 45 i3), got {len(anchors)}"
+    assert len(anchors) == 74, f"expected 74 anchors (28 i2 + 46 i3), got {len(anchors)}"
     missing = [
         f"{path}:{line} lacks {symbol}"
         for path, line, symbol in anchors

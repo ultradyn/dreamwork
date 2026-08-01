@@ -86,7 +86,7 @@ boundary as the journal)"*; confirmed by #264's finding that every
 load-bearing store is machine-local per clone). It is WAL + `synchronous=FULL`
 (`ledger_store.py:344`–`352`), with a `meta` table holding
 `schema_version` and a forward-only migration ladder
-(`_MIGRATIONS`, `ledger_store.py:449`). **SQLite has no native jsonb type**
+(`MIGRATIONS`, `dreamwork_db/migrate.py:28`). **SQLite has no native jsonb type**
 — "jsonb" in his sketch means **TEXT + JSON validation in code** (Python's
 `json.loads` on read, and `CHECK` or app-level validation on write). A
 second sqlite store — `.dreamwork/user-events.sqlite3` — already lives
@@ -459,12 +459,12 @@ which line could be red.
 - **Factual claims checked:** amr-ui registry/store
   (`src/lib/settings.ts:62`–`90`, `:648`–`770`, `:828`; `SettingsPage.tsx`);
   ledger store SQLite+machine-local+gitignored C1+`_MIGRATIONS`
-  (`ledger_store.py:31`, `:344`–`352`, `:449`; `.gitignore` C1); co-resident
+  (`ledger_store.py:31`, `:344`–`352`; `dreamwork_db/migrate.py:28`; `.gitignore` C1); co-resident
   `user-events.sqlite3` (`user_events/sqlite.py:1`); the `/mtime`/`collect()`
   seam (`watch.py:6077`, `watched_mtime` `:4207`);
   write-route table + E2Shadow (`watch.py:6077`, `WRITE_ROUTE_HANDLERS`
-  `:15460`); tint/posture read-write precedent (`:13903`, `:14011`,
-  `:15246`); #228 server-side-persistence ruling
+  `:6077`); tint/posture read-write precedent (`:4264`, `:4394`,
+  `:5863`); #228 server-side-persistence ruling
   (`tasks.md.deprecated:2404`, `:2413`); #295 gfx-section→#228 routing
   (`questions.md:2092`, `:2107`); #570 un-persisted manual size
   (`handoffs.md`).
