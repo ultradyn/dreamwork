@@ -53,6 +53,16 @@ const choose = async (page, mode) => {
   await page.click(`.drawpick [data-drawmode="${mode}"]`);
   await waitFor(page, `.drawpick [data-drawmode="${mode}"][aria-checked="true"]`);
 };
+const adopted = async (page, mode) => {
+  for (let i = 0; i < 20; i++) {
+    const yes = await page.evaluate(want =>
+      document.querySelector('.drawpick [aria-checked="true"]')?.dataset.drawmode
+        === want, mode);
+    if (yes) return true;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return false;
+};
 const observed = page => page.evaluate(() => ({
   mode: window.dreambg.drawMode,
   checked: document.querySelector('.drawpick [aria-checked="true"]')?.dataset.drawmode,
@@ -61,22 +71,22 @@ const observed = page => page.evaluate(() => ({
 }));
 
 await choose(writer, 'paused');
-await waitFor(sibling, '.drawpick [data-drawmode="paused"][aria-checked="true"]');
+const siblingAdoptedPaused = await adopted(sibling, 'paused');
 const w1 = await observed(writer), s1 = await observed(sibling);
 notes.push('writer -> paused: ' + JSON.stringify({ writer: w1, sibling: s1 }));
 ok('the writing tab applied its own change exactly once (storage does not fire there)',
    w1.mode === 'paused' && w1.checked === 'paused' &&
    JSON.stringify(w1.calls) === JSON.stringify(['paused']));
 ok('the sibling tab adopted the writer change exactly once without a reload',
-   s1.mode === 'paused' && s1.checked === 'paused' &&
+   siblingAdoptedPaused && s1.mode === 'paused' && s1.checked === 'paused' &&
    JSON.stringify(s1.calls) === JSON.stringify(['paused']));
 
 await choose(sibling, 'light');
-await waitFor(writer, '.drawpick [data-drawmode="light"][aria-checked="true"]');
+const writerAdoptedLight = await adopted(writer, 'light');
 const w2 = await observed(writer), s2 = await observed(sibling);
 notes.push('sibling -> light: ' + JSON.stringify({ writer: w2, sibling: s2 }));
 ok('sync is bidirectional: the first tab adopted the sibling change once',
-   w2.mode === 'light' && w2.checked === 'light' &&
+   writerAdoptedLight && w2.mode === 'light' && w2.checked === 'light' &&
    JSON.stringify(w2.calls) === JSON.stringify(['paused', 'light']));
 ok('the second writing tab also applied locally exactly once',
    s2.mode === 'light' && s2.checked === 'light' &&
