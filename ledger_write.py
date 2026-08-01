@@ -12,6 +12,7 @@ from dreamwork_db.tasks import (
     BadState,
     DecisionConflict,
     NotBlocked,
+    NotNextUp,
     SameTitle,
     TaskNotFound,
     WriteError,
@@ -52,6 +53,18 @@ def unblock_task(store, task_id, *, why, actor="loop", at=None):
     """Clear a blocker and record the mandatory reason atomically."""
     with store.transaction():
         store.tasks.unblock(task_id, why=why, actor=actor, at=at)
+
+
+def set_next_up(store, task_id, *, why, actor="loop", at=None) -> None:
+    """Mark a task next-up and record the mandatory reason atomically."""
+    with store.transaction():
+        store.tasks.set_next_up(task_id, why=why, actor=actor, at=at)
+
+
+def clear_next_up(store, task_id, *, why, actor="loop", at=None) -> None:
+    """Clear a next-up mark and record the mandatory reason atomically."""
+    with store.transaction():
+        store.tasks.clear_next_up(task_id, why=why, actor=actor, at=at)
 
 
 def retitle_task(store, task_id, title, *, why, actor="loop", at=None):

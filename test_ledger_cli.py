@@ -541,6 +541,10 @@ _VERB_ARGV = {
     "reprioritise": ["reprioritise", "10", "P3", "--why", "x"],
     "unblock": ["unblock", "10", "--why", "x"],
     "retitle": ["retitle", "10", "new title", "--why", "x"],
+    # #884 — the next-up mark. Same store-mode write shape as the #627 verbs,
+    # so the same gate applies and the argv needs a valid --why plus a
+    # fixture id.
+    "next-up": ["next-up", "10", "--why", "x"],
     # #645 increment 9 — the questions/reviews verbs. They ride the #667
     # gate like every other verb (it sits at the TOP of `_dispatch`, before
     # the question/review dispatch block, so each refuses, exits 2, keeps the

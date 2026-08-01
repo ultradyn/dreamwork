@@ -242,7 +242,8 @@ def store_records(dreamwork_dir) -> list[dict]:
     binary rewrite of the CLI must reproduce them: ``id`` (int), ``state``
     (``"open"|"landed"``), ``title`` (str), ``body`` (str), ``priority``
     (str|None), ``type`` (str|None), ``origin`` (str|None), ``blocked_on``
-    (str|None).
+    (str|None), ``next_up`` (int|None -- the #884 mark's event ordinal when
+    the task is currently marked next-up, else None; open rows only).
     """
     return _task_read(store_path(dreamwork_dir), "records", [])
 

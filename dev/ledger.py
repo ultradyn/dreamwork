@@ -37,6 +37,7 @@ USAGE
   python3 dev/ledger.py note <id> --note <text> [--ledger PATH] [--dry-run]
   python3 dev/ledger.py reprioritise <id> <band> --why <text> [--ledger PATH]
   python3 dev/ledger.py unblock <id> --why <text> [--ledger PATH]
+  python3 dev/ledger.py next-up <id> [--clear] --why <text> [--ledger PATH]
   python3 dev/ledger.py sweep [--since REF] [--ledger PATH] [--repo PATH]
   python3 dev/ledger.py list [--state open|landed] [--sort id|id-desc] [--json] [--ledger PATH]
   python3 dev/ledger.py get <id> [--ledger PATH]
@@ -499,6 +500,36 @@ def _reprioritise_store(dw_dir, task_id, band, why):
         sys.stderr.write(f"ledger: {exc}\n")
         return 2
     sys.stdout.write(f"reprioritised #{task_id} to {band} (store)\n")
+    return 0
+
+
+def _next_up_store(dw_dir, task_id, clear, why):
+    """Store-mode next-up: set or clear the mark selection ranks on (#884).
+
+    SKILL.md step 0 promised "an explicit human steer outranks the agent's own
+    ideas" and nothing implemented it: no column, no verb, and the
+    ``next_up_set``/``next_up_cleared`` causes seeded by v001 had been emitted
+    zero times in 1372 events. This is the writer. Error shapes match the
+    #627 siblings: TaskNotFound / NotNextUp exit 1 (the operation does not
+    apply), WriteError exit 2 (a bad argument).
+    """
+    try:
+        with open_database(
+                task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
+            if clear:
+                ledger_write.clear_next_up(store, task_id, why=why)
+            else:
+                ledger_write.set_next_up(store, task_id, why=why)
+    except (ledger_write.TaskNotFound, ledger_write.NotNextUp,
+            ledger_write.BadState) as exc:
+        sys.stderr.write(f"ledger: {exc}\n")
+        return 1
+    except ledger_write.WriteError as exc:
+        sys.stderr.write(f"ledger: {exc}\n")
+        return 2
+    verb = "cleared #{}'s next-up mark".format(task_id) if clear \
+        else "marked #{} next-up".format(task_id)
+    sys.stdout.write(f"{verb} (store)\n")
     return 0
 
 
@@ -1457,6 +1488,10 @@ def _markdown_records(text):
                 "id": int(tid), "state": state, "title": _head_title(head),
                 "body": body, "priority": None, "type": None,
                 "origin": classify_origin(body), "blocked_on": None,
+                # #884 — the mark is derived from the event log, which
+                # markdown mode does not have. None keeps the record SHAPE
+                # identical so the presenters need no mode branch.
+                "next_up": None,
             })
     return recs
 
@@ -1485,19 +1520,32 @@ def _head_title(head_line):
 
 
 def _records_for(args, dw_dir):
-    """Records filtered by ``--state`` and ordered by ``--sort``."""
+    """Records filtered by ``--state``, next-up first, then by ``--sort``.
+
+    #884 — the next-up mark is a RANK, not a field, so it orders this list
+    rather than merely decorating it.  SKILL.md's selection step 0 reads this
+    projection ("check the task list first"), so a mark that did not hoist its
+    task would exist and change nothing — the same defect one layer up.
+    Marked tasks come first, newest mark first (descending event ordinal,
+    which is "the human's latest steer wins"); everything else follows in the
+    requested ``--sort``.  ``--json`` rides the same ordering deliberately: a
+    machine reader and a human reader disagreeing about which task is next is
+    its own bug.
+    """
     recs = _read_records(dw_dir)
     if getattr(args, "state", None):
         recs = [r for r in recs if r["state"] == args.state]
     sort = getattr(args, "sort", "id") or "id"
     recs.sort(key=lambda r: r["id"], reverse=(sort == "id-desc"))
+    recs.sort(key=lambda r: -(r.get("next_up") or 0))
     return recs
 
 
 def _record_json(r, body):
     """The JSON object for one record -- EXACTLY the contract keys."""
     d = {"id": r["id"], "state": r["state"], "title": r["title"],
-         "priority": r["priority"], "type": r["type"], "origin": r["origin"]}
+         "priority": r["priority"], "type": r["type"], "origin": r["origin"],
+         "next_up": r.get("next_up")}
     if body:
         d["body"] = r["body"]
         d["blocked_on"] = r["blocked_on"]
@@ -1510,12 +1558,18 @@ def _list_line(r):
     for key in ("priority", "type", "origin"):
         if r[key]:
             parts.append(r[key])
+    if r.get("next_up"):
+        # #884 — the hoist alone is ambiguous (a marked task at the top looks
+        # like the lowest id), so the rank says its own name.
+        parts.append("NEXT-UP")
     return f"{'  '.join(parts)}  — {r['title']}"
 
 
 def _record_text(r):
     """The stable human full-record shape for `get`."""
     lines = [f"#{r['id']}  {r['state']}", f"title: {r['title']}"]
+    if r.get("next_up"):
+        lines.append("next-up: yes (an explicit human steer)")
     for key in ("priority", "type", "origin", "blocked_on"):
         if r.get(key):
             lines.append(f"{key}: {r[key]}")
@@ -2242,6 +2296,19 @@ def main(argv=None):
     pret.add_argument("--ledger", default=LEDGER_DEFAULT,
                       help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
 
+    pnu = sub.add_parser(
+        "next-up",
+        help="mark a task next-up, or --clear it on start (store-mode only) [#884]")
+    pnu.add_argument("id", type=int, help="the task id to mark or clear")
+    pnu.add_argument("--clear", action="store_true",
+                     help="clear the mark instead of setting it "
+                          "(SKILL.md: 'clearing the mark on start')")
+    pnu.add_argument("--why", required=True,
+                     help="what he asked for, verbatim where you have it — "
+                          "recorded in the task's history (NOT optional)")
+    pnu.add_argument("--ledger", default=LEDGER_DEFAULT,
+                     help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
     ps = sub.add_parser(
         "sweep",
         help="open ids git names a landing for that the entry does not cite "
@@ -2697,17 +2764,20 @@ def _dispatch(args):
     # are store columns, not markdown text — the same reasoning groom uses).
     # Refuse markdown with a named reason rather than inventing a text rewrite
     # that would be a new #440-class parser risk.
-    if args.cmd in ("reprioritise", "unblock", "retitle") and source_of_truth(dw_dir) != "store":
+    if args.cmd in ("reprioritise", "unblock", "retitle",
+                    "next-up") and source_of_truth(dw_dir) != "store":
         sys.stderr.write(
-            f"ledger: {args.cmd} is store-mode only — its field is a store "
-            f"column, not markdown text; the store is the source of "
-            f"truth after the #294 cutover\n")
+            f"ledger: {args.cmd} is store-mode only — what it writes lives in "
+            f"the store (a column, or #884's event log), not in markdown "
+            f"text; the store is the source of truth after the #294 "
+            f"cutover\n")
         return 1
 
     # #294 inc 9: write verbs (fold, file, note) dispatch on source_of_truth.
     # Store mode → the store write verbs; markdown mode → today's text path.
     # `counts` (inc 7) is a read consumer and dispatches below.
-    if args.cmd in ("fold", "file", "note", "reprioritise", "unblock", "retitle") and source_of_truth(dw_dir) == "store":
+    if args.cmd in ("fold", "file", "note", "reprioritise", "unblock",
+                    "retitle", "next-up") and source_of_truth(dw_dir) == "store":
         if args.cmd == "fold":
             _fold_store(dw_dir, args.id, args.note)
             sys.stdout.write(_reach_trailer(args.repo, dw_dir))
@@ -2721,6 +2791,8 @@ def _dispatch(args):
             return _unblock_store(dw_dir, args.id, args.why)
         if args.cmd == "retitle":
             return _retitle_store(dw_dir, args.id, args.title, args.why)
+        if args.cmd == "next-up":
+            return _next_up_store(dw_dir, args.id, args.clear, args.why)
         # #681 — _file_store returns the exit code: 0 on success, 2 on a bad
         # enum (priority/origin), surfaced as stderr not a sqlite traceback.
         return _file_store(dw_dir, args.title, args.note or args.title,

@@ -40,6 +40,10 @@ class NotBlocked(WriteError):
     """The requested task has no blocker to clear."""
 
 
+class NotNextUp(WriteError):
+    """The requested task carries no next-up mark to clear."""
+
+
 class SameTitle(WriteError):
     """The requested title is already current."""
 
@@ -84,6 +88,39 @@ class TaskRepository:
             out.append(([int(id_)], head + "\n" + body))
         return out
 
+    def next_up_ordinals(self) -> dict[int, int]:
+        """Open tasks marked next-up → the ordinal of the mark (#884).
+
+        The mark is DERIVED from the append-only event log rather than stored
+        in a column: a task is next-up when the newest of its
+        ``next_up_set``/``next_up_cleared`` events is a set.  The two causes
+        were seeded by v001 and emitted zero times until #884 wired them, so
+        the storage needed no migration — which also kept this off #584's
+        ladder.
+
+        The ordinal is the ``newest first`` key SKILL.md's selection step 0
+        asks for.  It is the chain position, not a timestamp, so it cannot be
+        reordered by clock skew.
+
+        Scoped to ``state='open'`` deliberately: a landed task is not next-up
+        whatever its history says.  There is no start event to clear the mark
+        against (``task_state`` holds no rows), so the loop clears it by hand
+        on start — and this scoping makes a forgotten clear self-heal at land
+        instead of hoisting finished work forever.
+        """
+        rows = self._session.execute(
+            "SELECT e.task_id, e.ordinal, e.cause FROM task_event AS e"
+            " JOIN task AS t ON t.id = e.task_id"
+            " WHERE t.state = 'open'"
+            "   AND e.cause IN ('next_up_set', 'next_up_cleared')"
+            "   AND e.ordinal = (SELECT MAX(x.ordinal) FROM task_event AS x"
+            "                    WHERE x.task_id = e.task_id"
+            "                      AND x.cause IN ('next_up_set',"
+            "                                      'next_up_cleared'))"
+        ).fetchall()
+        return {int(tid): int(ordinal)
+                for tid, ordinal, cause in rows if cause == "next_up_set"}
+
     def records(self) -> list[dict]:
         rows = self._session.execute(
             "SELECT t.id, t.state, t.title, t.body, t.priority, t.type,"
@@ -91,10 +128,12 @@ class TaskRepository:
             " FROM task AS t LEFT JOIN task_event AS e ON e.task_id = t.id"
             " GROUP BY t.id ORDER BY t.id"
         ).fetchall()
+        marks = self.next_up_ordinals()
         return [
             {"id": int(r[0]), "state": r[1], "title": r[2], "body": r[3],
              "priority": r[4], "type": r[5], "origin": r[6],
-             "blocked_on": r[7], "date": r[8]}
+             "blocked_on": r[7], "date": r[8],
+             "next_up": marks.get(int(r[0]))}
             for r in rows
         ]
 
@@ -323,6 +362,57 @@ class TaskRepository:
             ("\n" + _NOTE_PREFIX + note, task_id))
         self._append_chained_event(
             task_id=task_id, at=at, cause="reconciled", from_state=state,
+            to_state=state, actor=actor, detail=why)
+
+    def set_next_up(self, task_id, *, why, actor="loop", at=None) -> None:
+        """Mark a task next-up — the human's steer, ahead of priority (#884).
+
+        Re-setting an already-marked task is NOT a no-op and is allowed: it
+        mints a newer mark, which is how "several next-ups: newest first"
+        lets his latest steer win.
+        """
+        if not isinstance(why, str) or not why.strip():
+            raise WriteError(
+                "why must be a non-empty string (what he asked for)")
+        at = at or _now_iso()
+        row = self._session.execute(
+            "SELECT state FROM task WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise TaskNotFound(f"cannot mark #{task_id} next-up: no such task")
+        state = row[0]
+        if state != "open":
+            raise BadState(
+                f"cannot mark #{task_id} next-up: state is {state!r}, not "
+                "'open' — a task that is not open cannot be picked next")
+        self._session.execute(
+            "UPDATE task SET body = body || ? WHERE id = ?",
+            ("\n" + _NOTE_PREFIX + f"marked next-up: {why}", task_id))
+        self._append_chained_event(
+            task_id=task_id, at=at, cause="next_up_set", from_state=state,
+            to_state=state, actor=actor, detail=why)
+
+    def clear_next_up(self, task_id, *, why, actor="loop", at=None) -> None:
+        """Clear the next-up mark — SKILL.md's "clearing the mark on start"."""
+        if not isinstance(why, str) or not why.strip():
+            raise WriteError(
+                "why must be a non-empty string (the reason for the change)")
+        at = at or _now_iso()
+        row = self._session.execute(
+            "SELECT state FROM task WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise TaskNotFound(
+                f"cannot clear #{task_id}'s next-up mark: no such task")
+        if task_id not in self.next_up_ordinals():
+            raise NotNextUp(
+                f"cannot clear #{task_id}'s next-up mark: it is not marked "
+                "next-up — a clear that cleared nothing must not read as "
+                "success (#671)")
+        state = row[0]
+        self._session.execute(
+            "UPDATE task SET body = body || ? WHERE id = ?",
+            ("\n" + _NOTE_PREFIX + f"next-up mark cleared: {why}", task_id))
+        self._append_chained_event(
+            task_id=task_id, at=at, cause="next_up_cleared", from_state=state,
             to_state=state, actor=actor, detail=why)
 
     def record_review_decision(self, artifact, question_title, decision, *,
