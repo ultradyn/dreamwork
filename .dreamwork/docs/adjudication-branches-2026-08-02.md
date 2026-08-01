@@ -63,19 +63,19 @@ canonical plan on `master`:
 
 | Branch decision family | Canonical `master` evidence |
 |---|---|
-| pulse-driven 40%-offset serial sidecar | `main-agent-recap.md`, scheduling seam: the survivor is **"a `tee` leg on the existing pipeline"**, with `40% of 285 s = 114 s` |
-| absent-by-default `model`/`every` gate and fixed ccc argv | feature-gate section: **"Tracked `.dreamwork/recap`"**, `model: glm52`, `every: 1`, and **"There is deliberately no arbitrary `runner:` shell string"** |
-| recorded session identity, resolver, no fallback | source section: **"pass it to the existing `session_source.resolve` seam. Accept only its `live` result ... There is no fallback."** |
+| pulse-driven 40%-offset serial sidecar | `main-agent-recap.md:346`, scheduling seam: the survivor is **"a `tee` leg on the existing pipeline"**, with `40% of 285 s = 114 s` |
+| absent-by-default `model`/`every` gate and fixed ccc argv | `main-agent-recap.md:438`, feature-gate section: **"Tracked `.dreamwork/recap`"**, `model: glm52`, `every: 1`, and **"There is deliberately no arbitrary `runner:` shell string"** |
+| recorded session identity, resolver, no fallback | `main-agent-recap.md:108`, source section: **"pass it to the existing `session_source.resolve` seam. Accept only its `live` result ... There is no fallback."** |
 | existing session-log projection, including compaction markers | digest/compaction sections: **"The projector consumes the existing `session_log` service/scanner"** and drops compact-summary records |
-| 24 KiB assembled-prompt cap, head 1/3 + tail 2/3 | cap section: **"Cap: 24 KiB of assembled prompt"** and **"Split 1/3 head, 2/3 tail"** |
-| v4 `RecapRepository` in the canonical store composer | DB section: **"Add a `dreamwork_db.recaps.RecapRepository`"** to `dreamwork_store_spec` and **"do not create a rival `recap_store_spec`"** |
+| 24 KiB assembled-prompt cap, head 1/3 + tail 2/3 | `main-agent-recap.md:190`, cap section: **"Cap: 24 KiB of assembled prompt"** and **"Split 1/3 head, 2/3 tail"** |
+| v4 `RecapRepository` in the canonical store composer | `main-agent-recap.md:261`, DB section: **"Add a `dreamwork_db.recaps.RecapRepository`"** to `dreamwork_store_spec` and **"do not create a rival `recap_store_spec`"** |
 | attempt log and honest dashboard failure/freshness states | DB/failure sections specify the same `recap_attempt` shape, committed `running` row, stale/failure states, and repository DTO |
-| recap-id-gated cross-dissolve | transition section: **"Gate on `recap.id`, never on the tick"** and reuse the existing content cross-dissolve |
+| recap-id-gated cross-dissolve | `main-agent-recap.md:496`, transition section: **"Gate on `recap.id`, never on the tick"** and reuse the existing content cross-dissolve |
 
 Thus the semantic denominator is **8 decision families examined, 8 present, 0
 missing**. The canonical file is also not an accidental look-alike:
 
-- Its opening reconciliation note explicitly says **"This remains the one
+- Its opening reconciliation note at `main-agent-recap.md:10-13` explicitly says **"This remains the one
   design of record"** and **"The unmerged `cx-691recap` branch is provenance
   for corrections folded below"**.
 - `.dreamwork/docs/doc-map.md` names `main-agent-recap` in both the plans
@@ -128,12 +128,12 @@ paths** on `master`: `watch.py` had 37 matching lines, `client/router.js` 41,
 is deliberate and loud: later client extraction moved the control's markup out
 of `views.js`, while the live implementation remains visible at these sites:
 
-> `client/router.js`, `subagentPolicyPicker`: `<textarea ...
+> `client/router.js:903`, `subagentPolicyPicker`: `<textarea ...
 > id="spolicy-field" ...>` plus explicit `save` and `reset` buttons.
 >
-> `client/router.js`, `commitSubagentPolicy`: `fetch('/subagent-policy', ...`
+> `client/router.js:948`, `commitSubagentPolicy`: `fetch('/subagent-policy', ...`
 >
-> `watch.py`, `delete_subagent_policy`: `os.unlink(path)` with distinct absent
+> `watch.py:4598`, `delete_subagent_policy`: `os.unlink(path)` with distinct absent
 > and failure outcomes.
 
 I also checked the generated surface rather than assuming source implies a
@@ -188,14 +188,14 @@ non-generated paths**, then compared each exact full line with the corresponding
 The three production causes are independently visible at **4/4 checked sites**
 (three fixes plus the guard's positive control), one match at each:
 
-> `client/router.js`: `el.style.overflow = 'clip';`
+> `client/router.js:2314`: `el.style.overflow = 'clip';`
 >
-> `client/style.css`: `.qa { margin:.6rem 0 1rem -.9rem;
+> `client/style.css:821`: `.qa { margin:.6rem 0 1rem -.9rem;
 > padding-left:.9rem;`
 >
-> `client/views.js`: `function travelQuestionColumn() {`
+> `client/views.js:1833`: `function travelQuestionColumn() {`
 >
-> `dev/capture/qjank.mjs`: `control: travelCard actually armed its inline
+> `dev/capture/qjank.mjs:417`: `control: travelCard actually armed its inline
 > overflow ...`
 
 The generated warning is also measurable. I compared the WIP manifest with
@@ -245,11 +245,30 @@ to remove; this lane deliberately did not make or apply that choice.
 
 ## Rebase and verification
 
-This section will be finalized after rebasing the report commit onto the final
-local `master` snapshot. All three verdicts will be rechecked because any of
-the refs could land while this report is being written.
+The first report commit was six commits behind local `master`. `git rebase
+master` completed without a conflict. `master` then advanced twice while I
+recorded the recheck, and by another five commits during lint; the second and
+third rebases also completed without conflicts. At the handoff gate I verified
+`git merge-base master HEAD` equals `git rev-parse master`; the exact matching
+sha is recorded in the coordinator inbox report, after the last rebase rather
+than before one that could rewrite it.
 
-- **Named tests:** none. This lane changes one Markdown report and no code.
+I rechecked **all three verdicts after every rebase**; none was exempted. Their
+post-rebase denominators and results are the figures reported above:
+`cx-691recap` 3 commits/1 path/8 decisions, `glm-646policy` 4 commits/8 paths,
+and `opus-863jank2` 2 commits/6 paths/68 exact added lines. Nothing changed the
+verdicts.
+
+- **Named tests:** none. This lane changes one Markdown report and no code; the
+  omission is deliberate, not an unconsidered blank.
+- **Lint:** `python3 lint.py` ended `clean (5 warning(s))`. The complete WARN
+  row set is identical to the pre-edit baseline: worktree ledger absent,
+  `status.json` absent, tasks examined 0 entries/0 markers, the pre-existing
+  lessons near-duplicate, and seven ledger checks examined nothing. No WARN was
+  added, removed, or reworded.
+- **Always-run repo-wide guards:**
+  `just pytest $(python3 dev/repo_wide_guards.py list)` ran the three listed
+  guards and reported `3 passed`. This lane started no browser.
 - **Deliberately not done:** no merge, cherry-pick, branch deletion/prune,
   force-update, push, build, browser guard, live-ledger mutation, status write,
   or `attn` call.
