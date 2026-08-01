@@ -354,6 +354,44 @@ def test_landed_members_do_not_derive_goal_complete(store_path):
             )
 
 
+def test_claim_all_open_refusal_uses_the_whole_goal_subtree(store_path):
+    """Direct membership would answer the wrong question for nested goals."""
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        root = _goal(db, "Root")
+        child = _goal(db, "Child", parent_id=root)
+        with db.transaction() as tx:
+            direct_open = tx.tasks.file("direct open", "body", actor="test", at="now")
+            descendant_landed = tx.tasks.file(
+                "descendant landed", "body", actor="test", at="now"
+            )
+            tx.tasks.land(descendant_landed, note="landed", actor="test")
+            tx.groups.add_task(root, direct_open, actor="test", at="now")
+            tx.groups.add_task(child, descendant_landed, actor="test", at="now")
+            claim = tx.goals.append_claim(
+                root, claimed_by="loop", claimed_at="now", summary="panel",
+                base_sha=None, details_sha="details", round=1,
+            )
+            assert claim.group_id == root
+
+        root2 = _goal(db, "Root 2")
+        child2 = _goal(db, "Child 2", parent_id=root2)
+        with db.transaction() as tx:
+            direct_open = tx.tasks.file("direct open", "body", actor="test", at="now")
+            descendant_open = tx.tasks.file(
+                "descendant open", "body", actor="test", at="now"
+            )
+            tx.groups.add_task(root2, direct_open, actor="test", at="now")
+            tx.groups.add_task(child2, descendant_open, actor="test", at="now")
+            with pytest.raises(
+                ValidationError,
+                match=rf"cannot claim goal #{root2}: every member task is still open",
+            ):
+                tx.goals.append_claim(
+                    root2, claimed_by="loop", claimed_at="now", summary="panel",
+                    base_sha=None, details_sha="details", round=1,
+                )
+
+
 def test_rank_collisions_and_all_null_still_have_total_preorder(store_path):
     """Direction 2(5): red on GoalRepository.ranked_children's ORDER BY."""
     with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:

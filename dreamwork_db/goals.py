@@ -263,6 +263,11 @@ class GoalRepository:
             )
         if isinstance(round, bool) or not isinstance(round, int) or round < 1:
             raise ValidationError(f"claim round must be a positive integer, got {round!r}")
+        member_states = self._member_states(group_id)
+        if member_states and all(state == "open" for state in member_states):
+            raise ValidationError(
+                f"cannot claim goal #{group_id}: every member task is still open"
+            )
         cur = self._session.execute(
             "INSERT INTO goal_claim"
             " (group_id,claimed_by,claimed_at,summary,base_sha,details_sha,"
@@ -275,6 +280,24 @@ class GoalRepository:
             base_sha, details_sha, outcome, round,
             bypassed_by,
         )
+
+    def _member_states(self, group_id: int) -> tuple[str, ...]:
+        """Read distinct task states across the goal's whole subtree."""
+        rows = self._session.execute(
+            "WITH RECURSIVE subtree(id) AS ("
+            " SELECT id FROM task_group WHERE id = ?"
+            " UNION ALL"
+            " SELECT child.id FROM task_group child"
+            " JOIN subtree parent ON child.parent_id = parent.id"
+            ")"
+            " SELECT DISTINCT task.id, task.state"
+            " FROM task_group_member member"
+            " JOIN subtree ON subtree.id = member.group_id"
+            " JOIN task ON task.id = member.task_id"
+            " ORDER BY task.id",
+            (group_id,),
+        ).fetchall()
+        return tuple(str(state) for _, state in rows)
 
     def _claim(self, claim_id: int) -> GoalClaim:
         row = self._session.execute(
