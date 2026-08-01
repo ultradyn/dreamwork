@@ -227,7 +227,7 @@ else, which is only true while that reader stays the sole parser."* It is not
 the sole parser now. Measured:
 
 - **Two implementations.** `lint.ledger_entries` and `watch.ledger_entries`
-  (`watch.py:6599`), whose docstring says *"lint.py's ledger_entries, VERBATIM
+  (`ledger_parse.py:66`), whose docstring says *"lint.py's ledger_entries, VERBATIM
   (a test pins the two identical)"*. The logic is identical; the source is not —
   watch's copy drops the type annotations and rewrites the docstring, so a
   source-equality check would fail on a pair that behaves the same.

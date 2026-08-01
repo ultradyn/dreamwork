@@ -14,7 +14,7 @@ The reference implementations already in this repo, and the design copies their
 *shape* rather than their bytes:
 
 - **`.dreamwork/run-mode`** — re-read on every tick by `collect()` →
-  `read_run_mode()` (`watch.py:9185`), so an on-disk change reaches a running
+  `read_run_mode()` (`watch.py:4280`), so an on-disk change reaches a running
   loop. It is the *only* file in the system with that property today, and it is
   the shape to copy for "what reads it, and when".
 - **`dev/deploy_state.py`** — answers "is the file right" and "is the process
@@ -22,7 +22,7 @@ The reference implementations already in this repo, and the design copies their
   import, re-set on every `os.exec`) because a pid and a start time both survive
   `exec` and cannot tell those apart. It is the shape to copy for "the defined
   action on mismatch" — two answers, never one collapsed into reassurance.
-- **`watch.serving_report` / `serving_cached`** (`watch.py:7571`) — answers
+- **`watch.serving_report` / `serving_cached`** (`watch.py:1360`) — answers
   "which revision is this *server* running" by byte-comparing the running bytes
   against the target's git history. It is the shape to copy for "the signal is
   cheap and per-surface".
@@ -84,7 +84,7 @@ Three cadences, one per surface class. `run-mode` is the prior art for the first
 | Surface | Read site (this repo) | When |
 |---|---|---|
 | the loop / a lane | `watch.skill_identity()` (new, called directly) | **at start** (record into `status.json` or the lane report) and **at increment boundaries** (compare to the recorded value before committing) |
-| the dashboard server | `collect()` → `skill_identity()`, rides `/data.json` and the existing `/mtime` poll (`watch.py:9055`, `watch.py:9123`) | **per request** (every `/data.json` is a fresh read; `collect` does not cache identity, because the point is to notice it move) |
+| the dashboard server | `collect()` → `skill_identity()`, rides `/data.json` and the existing `/mtime` poll (`watch.py:3553`, `watch.py:3797`) | **per request** (every `/data.json` is a fresh read; `collect` does not cache identity, because the point is to notice it move) |
 | the human / a coordinator | the dashboard (future render) or `status.json` | **on demand** |
 
 **Per-tick is `run-mode`'s cadence, not identity's.** Identity is read *at

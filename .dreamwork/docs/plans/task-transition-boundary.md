@@ -139,7 +139,7 @@ Two separate claims, both measured.
 write routes — `/answer`, `/ask`, `/comment`, `/command`, `/tint`, `/run-mode`
 (`grep -n 'self.path == ' watch.py` around `do_POST`, lines 8398-8411). Only
 `/command` carries `do now:` / `do next:` / `add idea:`. And
-`_handle_command` (`watch.py:8505`) validates the kind and then does exactly
+`_handle_command` (`watch.py:5672`) validates the kind and then does exactly
 one thing: `log_event(target, command_line(kind, text, req.get("from")))`.
 **Zero task state is mutated at HTTP time today.** A `do now:` becomes a task
 because an LLM reads `watch-events.log` on a later tick and decides to make
@@ -173,7 +173,7 @@ single existing code path where a `do now:` creates a task inside the request.
 
 ### F4 — burndown is already a projection of an append-only log; the log is just git, and git lags
 
-`ledger_series` (`watch.py:6948`) walks every commit touching
+`ledger_series` (`watch.py:2042`) walks every commit touching
 `.dreamwork/tasks.md`, `git show`s each revision, parses it, and takes
 first-sightings: *"An id ARRIVES at the first commit that mentions it anywhere,
 and is COMPLETE at the first commit that names it under `## Recently
@@ -533,7 +533,7 @@ gitignored, so a worktree's copy of the repo cannot fork it. One consequence to
 verify at implementation: `git worktree` checkouts have their own working
 directory, so any path resolution must go through the target, exactly as
 `ledger_series` already resolves the ledger pathspec against the repository
-**top level** rather than the target (`watch.py:6970-6979`, #217).
+**top level** rather than the target (`watch.py:2042`, #217).
 
 ---
 

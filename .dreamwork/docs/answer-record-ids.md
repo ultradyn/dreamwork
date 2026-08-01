@@ -51,7 +51,7 @@ happen, because the open-restore already prefers to miss.
 
 A scenario I specifically looked for and ruled out: a human re-asks the
 same question on the same day, and the loop treats the two as intentionally
-distinct threads. `append_human_question` (watch.py:6524) builds the title
+distinct threads. `append_human_question` (watch.py:2667) builds the title
 as `{stamp} — {first-sentence}` with `stamp = %Y-%m-%d`, so a same-day,
 same-text re-ask is the one realistic producer of an Open exact-content
 twin. Even in that case, the two entries render identical titles and

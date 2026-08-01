@@ -181,7 +181,7 @@ ledger_index(target)    → {tasks, health, note, history_complete}
   at **288** ledger commits today and growing, and **no extra `git show`** —
   the walk already reads every snapshot's text.
   The memo tuple is `(open_ids, landed_ids, entry_origins)` today
-  (`watch.py:6558`); §Task 2 extends it, and `_LEDGER_SNAPS` is keyed on an
+  (`watch.py:1619`); §Task 2 extends it, and `_LEDGER_SNAPS` is keyed on an
   immutable commit so an extended tuple invalidates nothing.
 - `ledger_index` is the merge, cached on HEAD exactly as `ledger_stats` is,
   and it is **the swap point** (§8).
@@ -191,14 +191,14 @@ changed since this was written, which matters because the old reason is now
 false and an implementer who checks it will conclude the rule is optional.
 
 `#301` and `#315` widened the narrow readers. `LEDGER_ENTRY` is now
-`^- \*\*(#\d+(?:/#\d+)*)\*\*` (`watch.py:6317`) — an **ids-only** bold span,
+`^- \*\*(#\d+(?:/#\d+)*)\*\*` (`watch.py:1540`) — an **ids-only** bold span,
 so it matches `- **#250/#251**` and `- **#292/#293**` and no longer drops
 combined heads. So *"`LEDGER_ENTRY` cannot see a combined entry"* is **no
 longer true** and is not the argument.
 
 The argument that is still true is a different one, and it is the one §9.1
 case 9 is about: `ledger_entries` walks `ENTRY_HEAD`
-(`^- \*\*([^*]+?)\*\*`, `watch.py:6367`), which is **wider** than
+(`^- \*\*([^*]+?)\*\*`, `ledger_parse.py:37`), which is **wider** than
 `LEDGER_ENTRY`. An entry whose leading bold token is *not* a bare id span —
 `- **#7 stage 1** — …`, or a head with no digits at all — is still an entry
 under `ledger_entries` (it yields `ids: []`), and would **vanish entirely**
@@ -440,7 +440,7 @@ wrong:
   and this is exactly the shape of a typo nobody would otherwise notice.
 - **"not in this ledger" needs a third state beside it, because the landed
   reader has a measured blind spot.** `_landed_ids` reads
-  `LEDGER_COMBINED_MENTION` (`watch.py:6450`), an ids-only bold span joined by
+  `LEDGER_COMBINED_MENTION` (`watch.py:1570`), an ids-only bold span joined by
   `/` **and only by `/`**. The landed section's compacted roll-up also writes
   **space-joined** spans — `**#121 #123**`, `**#104 #77**`, `**#109 #116**`,
   `**#107 #108 #110**`, `**#102 #106**`, `**#141 #149**`,
@@ -1010,9 +1010,9 @@ next reader no way to tell fixed from forgotten:
 
 - ~~`parse_ledger` cannot see combined entries.~~ **Fixed by `#301` (landed
   mentions) and `#315` (open heads).** `LEDGER_ENTRY` is now
-  `^- \*\*(#\d+(?:/#\d+)*)\*\*` (`watch.py:6317`) and `parse_ledger` reads both
+  `^- \*\*(#\d+(?:/#\d+)*)\*\*` (`watch.py:1540`) and `parse_ledger` reads both
   sections combined-aware through `_open_ids`/`_landed_ids`
-  (`watch.py:6448-6473`). `lint.py`'s `LEDGER_ID` and `check_ledger_sections`
+  (`watch.py:1648`). `lint.py`'s `LEDGER_ID` and `check_ledger_sections`
   widened in the same lockstep (`lint.py:43`, `:285`, `:382-392`). Verified:
   `- **#138/#156**`, `- **#250/#251**` and `- **#292/#293**` all parse today.
   §2.1 states the argument that replaced this one.
@@ -1030,7 +1030,7 @@ next reader no way to tell fixed from forgotten:
 both now filed:**
 
 - **The landed reader sees only `/`-joined id spans — filed as `#331`.**
-  `LEDGER_COMBINED_MENTION` (`watch.py:6450`) is `\*\*(#\d+(?:/#\d+)*)\*\*`.
+  `LEDGER_COMBINED_MENTION` (`watch.py:1570`) is `\*\*(#\d+(?:/#\d+)*)\*\*`.
   Grooming's compacted roll-up under `## Recently landed` also writes
   **space-joined** spans — `**#121 #123**`, `**#104 #77**`, `**#109 #116**`,
   `**#107 #108 #110**`, `**#102 #106**`, `**#141 #149**`, `**#132 #151 #154**`
@@ -1109,7 +1109,7 @@ Nothing was added, merged or dropped. Only the checklists below changed.
 **Interfaces:** Produces `ledger_history(target)` →
 `{id: {origin, first_commit, first_seen, landed_at, snapshot_title,
 in_progress_since}}`. Consumes the existing `_LEDGER_SNAPS` memo
-(`watch.py:6558`, currently `(open_ids, landed_ids, entry_origins)`), extended
+(`watch.py:1619`, currently `(open_ids, landed_ids, entry_origins)`), extended
 to carry titles and the in-progress marker.
 
 - [ ] Write failing tests: per-id arrival/landing/first-sight, a pruned id
