@@ -8661,12 +8661,108 @@ class TestAppShell(unittest.TestCase):
         i = watch.PAGE.index('clearDraft();')
         self.assertIn("getElementById('cmdtext').value = ''",
                       watch.PAGE[i - 200:i])
-        # saving hangs off HIS acts, never off setKind — which also runs at
-        # init and from restoreDraft, where it would erase the stored draft
-        # before it was ever read
-        self.assertNotIn('setKind(kind); saveDraft', watch.PAGE)
-        self.assertEqual(watch.PAGE.count('saveDraft();'), 3,
-                         "one input save, two explicit kind choices")
+        self.assertEqual(watch.PAGE.count('saveDraft();'), 4,
+                         "one input save, three explicit kind choices")
+
+    def test_draft_save_is_unreachable_from_composer_init_and_restore(self):
+        """#163/#259 — mounting and restoring are not draft-writing acts.
+
+        This executes the real mountComposer rather than pinning a spelling:
+        a reformatted call, or a helper that makes saveDraft reachable from
+        setKind, must still be observed through DraftStore.save.
+        """
+        import shutil
+        import subprocess
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node unavailable — draft reachability gate DID NOT run")
+        mount = _extract_js_fn(watch.PAGE, "function mountComposer(")
+        script = r'''
+const CORE_COMMANDS = [
+  {kind:'do-now', label:'now', desc:'now', common:true, default:true},
+  {kind:'chat', label:'chat', desc:'chat', common:true},
+];
+let COMMANDS = CORE_COMMANDS.slice();
+let data = {target:'/fixture/project', plugin_commands:[]};
+const rmr = true, CARD_MS = 0, REJECT_WHY = {}, QSEND_WHY = {};
+const esc = String;
+const slideIndicator = () => {};
+const fitText = () => {};
+const ages = () => {};
+const subsAll = async () => [];
+const requestPopout = () => {};
+const confirmationFor = () => ({claim(){}, clear(){}, begin(){
+  return {success(){return true;}, claim(){}};
+}});
+let saves = 0, reads = 0;
+const DraftStore = {
+  id: (kind, lid) => kind + ':' + lid,
+  save(){ saves++; },
+  clear(){},
+  get(){ reads++; return {text:'kept words', meta:{kindHint:'chat'}}; },
+  attemptId(){ return 'attempt'; },
+};
+class Elem {
+  constructor(id='') {
+    this.id=id; this.dataset={}; this.style={}; this.children=[];
+    this.classList={add(){},remove(){},toggle(){}};
+    this.value=''; this.offsetWidth=300; this.offsetHeight=30;
+  }
+  addEventListener(type, fn) { (this.listeners ||= {})[type] = fn; }
+  setAttribute() {}
+  focus() {}
+  remove() {}
+  closest(sel) { return sel === '#cmdplus' && this.id === 'cmdplus' ? this : null; }
+  getBoundingClientRect() { return {left:10,top:10,width:30,height:30}; }
+  querySelector() { return null; }
+  querySelectorAll(sel) {
+    if (this.id === 'cmdkinds' && sel === '.cmdkind')
+      return COMMANDS.map(c => Object.assign(new Elem(), {dataset:{kind:c.kind}}));
+    if (this.id === 'cmdmenu' && sel === '.cmdmenuitem') return this.children;
+    return [];
+  }
+  appendChild(child) {
+    if (child.isFragment) this.children.push(...child.children);
+    else this.children.push(child);
+    return child;
+  }
+}
+const els = Object.fromEntries(['cmdpalette','cmdkinds','cmdmenu','cmdtext',
+  'cmdform','cmdpop','cmdplus'].map(id => [id, new Elem(id)]));
+const listeners = {};
+const document = {
+  getElementById: id => els[id] || null,
+  querySelector: () => null,
+  querySelectorAll: () => [],
+  createElement: () => new Elem(),
+  createDocumentFragment: () => Object.assign(new Elem(), {isFragment:true}),
+  addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+};
+const window = {innerWidth:1000, innerHeight:800,
+  addEventListener(){}, getComputedStyle(){return {visibility:'hidden'};}};
+const target = {document, window, surface:'fixture'};
+mountComposer(target);
+const afterInit = saves;
+for (const fn of listeners.click)
+  fn({target:els.cmdplus, preventDefault(){}});
+process.stdout.write(JSON.stringify({afterInit, afterRestore:saves, reads,
+  restored:els.cmdtext.value}));
+'''
+        proc = subprocess.run(
+            [node, "-e", script + "\n" + mount], capture_output=True,
+            text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0,
+                         "composer draft reachability eval failed: " + proc.stderr)
+        got = json.loads(proc.stdout)
+        self.assertEqual(got["reads"], 1,
+                         "the restore path was not reached — this would prove nothing")
+        self.assertEqual(got["restored"], "kept words",
+                         "the stored draft was not restored — this would prove nothing")
+        self.assertEqual(got["afterInit"], 0,
+                         "saveDraft became reachable from composer init")
+        self.assertEqual(got["afterRestore"], 0,
+                         "saveDraft became reachable from restoreDraft")
 
     def test_draft_is_partitioned_by_target_path_not_name(self):
         # two checkouts can share a basename, and a draft surfacing under the
