@@ -3842,3 +3842,30 @@ refused to fabricate the missing surface and instead built the part whose precon
 (the shared `postCommand` transport), then guarded it. **The brief was wrong and the increment was
 still good, because the lane treated the premise as falsifiable rather than as an instruction.**
 That is the behaviour to keep asking for.
+
+## A bounded read that cannot report truncation is a latent data-loss bug wherever it feeds a write (2026-08-02, #654, lane-654bounded)
+
+`read_text(path, limit=200_000)` returned an ordinary string, so a caller could not distinguish the
+whole file from a prefix. The warning arrived three times. #509 recorded a rewrite truncation and
+received a symptom-level repair. Later, two `/file` callers raised their own ceiling to
+`2_000_000`, proving the default was known to be too small without generalising the failure. Then
+#632 replayed one real `POST /answer`: 13 answered entries disappeared, the file ended mid-word,
+and the route returned HTTP 202. **A default that makes silence the failure mode is unsafe anywhere
+a read can feed a whole-file write. Prefer an unbounded read or fail loudly; when a bound is real,
+return the fact of truncation with the data.** The repaired shape still exists as
+`read_text_bounded(path, limit) -> (text, truncated)` and reads one character past the boundary so
+an exactly-at-limit file is not falsely called truncated.
+
+The checkability boundary matters too. A grep can reject the old literal default and still pass a
+bounded read hidden behind one helper, an alias, or a default assigned elsewhere — including the
+class of path that caused the loss. General Python value flow into a whole-file replacement is not
+a truthful grep-shaped check. A narrow guard that cannot see that counterexample would turn this
+lesson into reassurance, so this occurrence deliberately adds no such guard; the existing
+behavioural tests bind the repaired reader and rewrite door instead.
+
+**Derive test expectations from behaviour, not from reachable implementation details.** The two
+file-view proofs computed their fixture size from `watch.read_text.__defaults__[0]`: computing it
+was the right instinct because a copied cap would rot, but `__defaults__` coupled the tests to the
+default's existence. Removing the unsafe default therefore produced a `TypeError`, not an assertion
+that named the lost behaviour. Exercise the boundary and observe the outcome; do not derive the
+oracle from `__defaults__`, `__code__`, signature inspection, or the same authority under test.
