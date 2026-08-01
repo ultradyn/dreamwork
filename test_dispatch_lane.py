@@ -135,11 +135,16 @@ def _healthy_prompt(
 
 
 def _start_live_dispatch(cli: Path, prompt: Path, worktree: Path) -> tuple[subprocess.Popen, int]:
+    runner = shutil.which("perl")
+    if not runner:
+        pytest.skip("perl is required to distinguish the runner executable from dispatch")
+    dispatcher_exe = Path(sys.executable).resolve()
+    assert Path(runner).resolve() != dispatcher_exe
     env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
     process = subprocess.Popen(
         [
             sys.executable, str(cli), "--prompt", str(prompt), "--",
-            sys.executable, "-c", "import time; time.sleep(60)", str(worktree),
+            runner, "-e", "sleep 60",
         ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -160,11 +165,72 @@ def _start_live_dispatch(cli: Path, prompt: Path, worktree: Path) -> tuple[subpr
     record = json.loads(lock.read_text(encoding="utf-8"))
     child_pid = record["pid"]
     os.kill(child_pid, 0)
-    raw = Path(f"/proc/{child_pid}/cmdline").read_bytes()
-    assert str(worktree).encode() in raw, (
-        f"precondition: live child pid {child_pid} argv does not carry worktree {worktree}"
-    )
+    _wait_for_execed_worktree_argv(child_pid, worktree, dispatcher_exe)
     return process, child_pid
+
+
+def _wait_for_execed_worktree_argv(
+        child_pid: int, worktree: Path, before_exec_exe: Path,
+        attempts: int = 250) -> None:
+    proc = Path(f"/proc/{child_pid}")
+    for _ in range(attempts):
+        try:
+            current_exe = Path(os.readlink(proc / "exe")).resolve()
+        except FileNotFoundError:
+            raise AssertionError(
+                f"precondition: child pid {child_pid} vanished before exec was observed"
+            ) from None
+        if current_exe != before_exec_exe:
+            argv = (proc / "cmdline").read_bytes().split(b"\0")
+            marker = f"Worktree: {worktree}".encode()
+            assert any(marker in arg.splitlines() for arg in argv), (
+                f"precondition: live child pid {child_pid} exec'd without exact "
+                f"worktree line {marker.decode()!r} in argv"
+            )
+            return
+        time.sleep(0.02)
+    raise AssertionError(
+        f"precondition: live child pid {child_pid} timed out waiting for exec; "
+        f"/proc/{child_pid}/exe remained {before_exec_exe}"
+    )
+
+
+def test_exec_without_worktree_is_not_misreported_as_slow_exec(tmp_path):
+    runner = shutil.which("perl")
+    if not runner:
+        pytest.skip("perl is required to construct an independently exec'd child")
+    process = subprocess.Popen([runner, "-e", "sleep 60", "unrelated-argv"])
+    try:
+        with pytest.raises(AssertionError, match="exec'd without exact worktree line") as error:
+            _wait_for_execed_worktree_argv(
+                process.pid, tmp_path / "missing-worktree", Path(sys.executable).resolve()
+            )
+        assert "timed out waiting for exec" not in str(error.value)
+    finally:
+        process.kill()
+        process.wait()
+
+
+def test_worktree_text_in_pre_exec_parent_argv_does_not_fake_exec(tmp_path):
+    worktree = tmp_path / "parent-only-worktree"
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)", str(worktree)]
+    )
+    try:
+        for _ in range(100):
+            raw = Path(f"/proc/{process.pid}/cmdline").read_bytes()
+            if raw:
+                break
+            time.sleep(0.01)
+        assert str(worktree).encode() in raw, "fixture must fool the old substring check"
+        with pytest.raises(AssertionError, match="timed out waiting for exec") as error:
+            _wait_for_execed_worktree_argv(
+                process.pid, worktree, Path(sys.executable).resolve(), attempts=5
+            )
+        assert "exec'd without exact worktree line" not in str(error.value)
+    finally:
+        process.kill()
+        process.wait()
 
 
 def test_second_dispatch_refuses_independently_proven_live_worktree(tmp_path):
