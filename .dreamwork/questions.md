@@ -2,21 +2,6 @@
 
 ## Open
 
-- **P1 · 2026-08-01 — #738: should the draw-frequency setting persist server-side like tint?**
-  (Asked by `#733`'s lane; `#733` LANDED as `ecde64ca` and the parity follow-up it left is now
-  `#738`, which is what this ask gates — `#306`: only the title is read, so it must name the OPEN
-  task, not the landed one.)
-  His ask put the control "near tint setting", and tint persists via `.dreamwork/watch-tint` +
-  `POST /tint` in `watch.py` (shared across windows, committable). That route is **off-limits to this
-  lane** (`watch.py` is owned by `#729` this wave), so I cannot mirror tint's server mechanism without
-  touching it. I persisted via `localStorage` (`dw:draw-mode`, the `burnStepPref`/`burnLimitPref` idiom)
-  — a preference path this page already uses, not a new one. **Two consequences to rule on:** (1) the
-  setting is per-browser/per-machine, not per-project across machines like tint; (2) two windows on the
-  same project keep independent draw modes. If you want tint-parity (server-side, shared, committable),
-  that is a small `watch.py` follow-up (`POST /draw-mode` + `.dreamwork/draw-mode` + a `collect()` read)
-  that this lane left for a wave that owns `watch.py`. Default is **animated** (today's behaviour; no
-  change for anyone who does not touch the control).
-
 - **P1 · 2026-07-31 21:45 — #691: cheap-model recap of the main agent — three design calls.**
   Your steer (receipt 323d2ef1): *"Use cheap model to generate recap of current main agent actions …
   Present the design for me to review first (gates implementation). Ask questions if unsure."* Design at
@@ -151,6 +136,33 @@
     primary way we access dreamworkers
 
 ## Answered
+
+- **P1 · 2026-08-01 — #738: should the draw-frequency setting persist server-side like tint?**
+  (Asked by `#733`'s lane; `#733` LANDED as `ecde64ca` and the parity follow-up it left is now
+  `#738`, which is what this ask gates — `#306`: only the title is read, so it must name the OPEN
+  task, not the landed one.)
+  His ask put the control "near tint setting", and tint persists via `.dreamwork/watch-tint` +
+  `POST /tint` in `watch.py` (shared across windows, committable). That route is **off-limits to this
+  lane** (`watch.py` is owned by `#729` this wave), so I cannot mirror tint's server mechanism without
+  touching it. I persisted via `localStorage` (`dw:draw-mode`, the `burnStepPref`/`burnLimitPref` idiom)
+  — a preference path this page already uses, not a new one. **Two consequences to rule on:** (1) the
+  setting is per-browser/per-machine, not per-project across machines like tint; (2) two windows on the
+  same project keep independent draw modes. If you want tint-parity (server-side, shared, committable),
+  that is a small `watch.py` follow-up (`POST /draw-mode` + `.dreamwork/draw-mode` + a `collect()` read)
+  that this lane left for a wave that owns `watch.py`. Default is **animated** (today's behaviour; no
+  change for anyone who does not touch the control).
+  - **Answer (via watch, 2026-08-01 14:53):** should persist per browser
+    and sync across tabs of same browser.
+
+  → **answered (2026-08-01 14:53, via the dashboard composer, receipt `757598ba`):**
+  **"should persist per browser and sync across tabs of same browser."**
+
+  That settles both consequences and it splits them. **Per-browser is correct** — he did NOT want
+  tint parity, so `localStorage` stays and the proposed `POST /draw-mode` + `.dreamwork/draw-mode`
+  follow-up is **refused**, not deferred. **Independent-per-tab is a defect** — the lane's second
+  stated consequence ("two windows keep independent draw modes") is exactly what he ruled against.
+  Dispatched as `cx-738draw`: adopt sibling changes via the `storage` event, whose sharp edge is
+  that it does not fire in the writing tab, so that tab must apply its own change directly.
 
 - **P2 · 2026-07-31 01:50 — #572: GitHub etiquette — one fork left: may an Internal Reference name several posts?**
   You answered the other four on 2026-07-31 03:57 (`rec` on Q1, Q3, Q4, Q5, with the `gh` extension
