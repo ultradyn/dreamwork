@@ -552,7 +552,9 @@ class TestHistoryScanRegistrationBoundary:
         assert _blob_sha_at(lane, predecessor, "router.js") == entries[0]["injected_sha"]
         rep = rp.scan_history(lane, entries)
         assert rep["commits"] == 2 and rep["blobs_read"] == 2, rep
-        assert rep["hits"] == [], rep
+        assert rep["hits"] == [], (
+            "pre-begin predecessor was misclassified as an armed injection: "
+            f"{rep['hits']}")
 
         assert _check(lane) == 0
         out, err = capsys.readouterr()
@@ -589,7 +591,9 @@ class TestHistoryScanRegistrationBoundary:
 
         entries, _ = rp._read_registry(lane)
         rep = rp.scan_history(lane, entries)
-        assert len(rep["hits"]) == 1, rep
+        assert len(rep["hits"]) == 1, (
+            "rebased post-begin injection escaped the history scan: "
+            f"{rep['hits']}")
         assert rep["hits"][0]["commit"] == rewritten_poisoned, rep
         assert _check(lane) == 1
         _, err = capsys.readouterr()
