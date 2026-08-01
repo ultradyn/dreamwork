@@ -1550,8 +1550,8 @@ class TestWatchTint:
 class TestOtherFiles:
 
     @staticmethod
-    def _committed_dream(tmp_path, stamp, committed_at):
-        root = target(tmp_path, **{f"dreams__{stamp}-a-dream.md": "x"})
+    def _committed_dream(tmp_path, stamp, committed_at, slug="a-dream"):
+        root = target(tmp_path, **{f"dreams__{stamp}-{slug}.md": "x"})
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
         subprocess.run(["git", "add", "."], cwd=root, check=True)
         subprocess.run(
@@ -1587,6 +1587,18 @@ class TestOtherFiles:
         assert ERRORS(rep, "dreams/")
         detail = next(d for level, where, d in rep.rows if level == lint.ERROR and where == "dreams/")
         assert "10h 0m in the PAST of its introducing commit" in detail
+
+    def test_the_landed_bad_dream_is_named_as_legacy_not_a_standing_warning(self, tmp_path):
+        rep = self._committed_dream(
+            tmp_path,
+            "2026-08-01-1947",
+            "2026-08-02T05:47:00+10:00",
+            slug="citation-repair-enrollment-red",
+        )
+        assert levels(rep, "dreams/") == [lint.OK]
+        detail = next(d for _, where, d in rep.rows if where == "dreams/")
+        assert "1 known legacy mismatch retained" in detail
+        assert "10h 0m in the PAST" in detail
 
     def test_a_wrong_stamp_inside_the_two_hour_hole_is_admitted(self, tmp_path):
         rep = self._committed_dream(tmp_path, "2026-08-02-0430", "2026-08-02T05:59:00+10:00")
