@@ -280,10 +280,13 @@ cursor drains it on the next tick), and `autonomy` never relaxes the chain.
 `off | maintenance | full`, absent → `off` → today. It reuses `POST /posture`
 (`watch.py:6087`), the shared 10s arm, and the one-`posture via watch`-line
 ceremony — *not* a second route, *not* a sibling file. The sibling-vs-widen
-choice was already ruled for the other axes (#445: widen `posture`, reject a
-sibling), and the same arguments carry: a widening keeps one control surface
-and lets the closed-set discipline already guarding `pace`/`asking` guard this
-for free; a sibling touches no closed set but splits one dial across two files.
+choice was already ruled for the other closed-set axes (#445: widen `posture`,
+reject a sibling), and the same arguments carry here: a widening keeps one
+control surface and lets the closed-set discipline already guarding
+`pace`/`asking` guard this for free; a sibling touches no closed set but splits
+one dial across two files.
+`#650` found the boundary: a free-text field inherits no closed-set guard, so
+this ruling does not decide its storage shape.
 
 **What lands in the implementation commit (named, not authorised here):**
 the same four touches `delivery` will take, in the same shape —
