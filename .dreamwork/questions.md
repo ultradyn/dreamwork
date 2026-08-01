@@ -1676,7 +1676,7 @@
 
   - **Q2 — one amendment to the design.** Amend §"Receive and idempotency" law 2 so
     the server keeps a **partial witness, marked incomplete**, for an interrupted
-    body. **Rec: yes.** Today it witnesses interrupted bodies *badly*: `watch.py:8387`
+    body. **Rec: yes.** Today it witnesses interrupted bodies *badly*: `watch.py:5380`
     reads `min(nbytes, MAX_BODY)` and never compares the result to `nbytes`, so a
     short read is recorded as a complete line (that is #371, filed). Tightening
     receipts without this amendment would make a partial answer **less** recoverable
@@ -2291,7 +2291,7 @@
   - **Follow-up (loop, 2026-07-28 01:08):** all three folded. (c) is filed as
     **#352** and treated as the prerequisite you called it — the duplication is
     already measured, so it is not a research task: `ledger_entries` has two
-    implementations (`lint.py` and `watch.py:6599`, whose docstring claims it is
+    implementations (`lint.py` and `ledger_parse.py:66`, whose docstring claims it is
     lint's *"VERBATIM"* while the source differs), three callers (`lint.py`,
     `watch.py`, `task_origins.py`), and one behavioural fixture pinning them
     (`test_watch.py:863`, a single hostile input). Rec is one module all three
