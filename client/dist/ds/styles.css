@@ -808,7 +808,17 @@
   a:hover { text-decoration:underline; }
   /* a card travels to its new place in the list rather than teleporting
      there (#104/#77); the transform is set and cleared by regroupCards */
-  .qa { margin:.6rem 0 1rem;
+  /* The rail's gutter is reserved in EVERY state rather than added when the
+     card becomes awaiting (#863). The pair is chosen so the card's TEXT does
+     not move when the rail arrives — and it does not — but it moves the
+     BORDER BOX by exactly .9rem, and regroupCards measures the border box. So
+     the FLIP inverted a displacement nobody saw: on the submit frame it
+     translated the card +14.4px and slid every word in it sideways back to
+     zero over the 850ms travel, each time he answered. Reserving the gutter
+     always costs nothing visible (measured: the body's and the compose's left
+     edges are identical in both states, on the list and on the focus page)
+     and leaves the FLIP nothing phantom to invert. */
+  .qa { margin:.6rem 0 1rem -.9rem; padding-left:.9rem;
         transition:transform .85s cubic-bezier(.32,.1,.2,1),
                    opacity .55s ease, filter .55s ease; }
   /* THE QUESTION'S BODY, wrapped so the review dock has an edge that belongs
@@ -902,9 +912,10 @@
      background drift across ~25 characters of .65rem label. */
   /* the rail sits INSIDE the padding box, not on a border hanging outside
      it, so that clipping the card while its height travels (travelCard)
-     cannot shave the rail off */
-  .qa.awaiting { position:relative;
-    padding-left:.9rem; margin-left:-.9rem; opacity:.82; }
+     cannot shave the rail off. The gutter it paints into is reserved by `.qa`
+     in every state (#863) — arriving here it would move the card's border box
+     and the regroup's FLIP would invert that phantom. */
+  .qa.awaiting { position:relative; opacity:.82; }
   .qa.awaiting::before { content:""; position:absolute; left:0;
     top:0; bottom:0; width:2px; pointer-events:none;
     background:linear-gradient(180deg, transparent, var(--accent) 16%,
@@ -1262,6 +1273,13 @@
       margin:0; max-width:none; }
     /* taller than normal: the focus view is for answering, so the field opens */
     #qfocus.qdual .qcompose textarea { min-height:9rem; }
+    /* the column MOVING STATION, which only the submit morph does (#863):
+       answering changes the midpoint it is centred on, so it travels there on
+       the card's own curve. Armed by travelQuestionColumn for that gesture
+       alone — a standing transition on the sticky offset would make the whole
+       column lag his scroll. */
+    #qfocus.qdual .qcompose.qcoltravel {
+      transition:top .85s cubic-bezier(.32,.1,.2,1); }
   }
 
   #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
@@ -1426,11 +1444,12 @@
      already reads as space is the whole hit area, a hairline arrives on
      hover/focus/drag rather than blinking on, and it is focusable with arrow
      keys because a drag-only affordance is unreachable from a keyboard. */
-  /* z-index because an ANSWERED-AWAITING card hangs its accent rail .9rem
-     into this gutter (`.qa.awaiting`'s negative margin), and a positioned
-     sibling later in the DOM wins the hit test: without this the bar is dead
-     to the pointer for exactly the state he is in one second after
-     answering — a control that works until it matters. */
+  /* z-index because a question card hangs .9rem into this gutter (`.qa`'s
+     negative margin, reserved in every state since #863 so the rail's arrival
+     moves no border box), and a positioned sibling later in the DOM wins the
+     hit test: without this the bar is dead to the pointer for exactly the
+     state he is in one second after answering — `.qa.awaiting` is the
+     positioned one — a control that works until it matters. */
   .rsplit { position:relative; z-index:2; align-self:stretch;
     cursor:col-resize; touch-action:none; }
   .rsplit::after { content:''; position:absolute; top:0; bottom:0; left:50%;

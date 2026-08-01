@@ -3269,6 +3269,17 @@ var DreamworkDesign = (() => {
   };
   addEventListener("scroll", scheduleQCol, true);
   addEventListener("resize", scheduleQCol);
+  function travelQuestionColumn() {
+    const comp = document.querySelector("#qfocus.qdual .qcompose");
+    if (!comp) return;
+    if (rmr) {
+      positionQuestionColumn();
+      return;
+    }
+    comp.classList.add("qcoltravel");
+    positionQuestionColumn();
+    setTimeout(() => comp.classList.remove("qcoltravel"), CARD_MS + 150);
+  }
   function ages() {
     document.querySelectorAll(".age[data-mt]").forEach((el) => {
       const s = ageStr(parseFloat(el.dataset.mt));
@@ -3461,6 +3472,7 @@ var DreamworkDesign = (() => {
     const anstext = card.querySelector(".anstext");
     const toRect = anstext && anstext.getBoundingClientRect();
     regroupCards(before, null, null, card);
+    travelQuestionColumn();
     if (typeof ripple === "function")
       ripple(fromRect.left + fromRect.width / 2, fromRect.top + 22);
     if (!rmr && anstext && typeof flipDock === "function")
@@ -3508,6 +3520,7 @@ var DreamworkDesign = (() => {
     host.appendChild(f);
     const toRect = f.getBoundingClientRect();
     regroupCards(before, null, null, card);
+    travelQuestionColumn();
     if (typeof ripple === "function") ripple(fromRect.left + 24, fromRect.top + 14);
     if (!rmr && typeof flipDock === "function") flipDock(f, fromRect, toRect);
   }
