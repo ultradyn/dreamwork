@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "rulings": [
+    {
+      "ruling": "#505 Q2",
+      "retired_phrasings": [
+        "no-build single-file constraint",
+        "single-file, no-build",
+        "single deployed file with no build step"
+      ]
+    }
+  ]
+}
