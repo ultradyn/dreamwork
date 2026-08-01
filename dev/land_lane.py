@@ -72,6 +72,14 @@ def _gate_coverage_line(passed: Sequence[str]) -> str:
 # there is the loop's record OF ITSELF — analyses, plans, archived briefs, lane
 # reports, review evidence — plus a handful of files the loop's own tools
 # PARSE, which are named out below because a red-proof genuinely can bind them.
+#
+# ACCEPTED COST, stated rather than hidden: `.dreamwork/docs/*.md` holds
+# re-runnable census blocks that a lane is told to extract and run, so editing
+# one changes what a future lane executes while owing no injection here. That
+# is deliberate — there is no check to turn red, so demanding a red-proof would
+# force exactly the false-green #932 forbids. The other gates still run on the
+# merged tree; what the exemption removes is the demand for a LANE-AUTHORED
+# red-proof, not the gating itself.
 INERT_DOC_ROOT = ".dreamwork/"
 
 EXECUTABLE_DOCS = frozenset({
@@ -646,9 +654,16 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
     passed: list[str] = []
 
     # #948: the named selection is the coordinator's guess, made when they are
-    # most eager to land. Derived tests are RUN rather than merely reported —
-    # reporting an omission the coordinator can read past is how eleven
-    # test_lint.py failures sat on master for two hours after #936 landed.
+    # most eager to land. Three ways to use the derivation were weighed (IGC):
+    # REPORT the omission, REFUSE on it, or RUN it. REPORT is refuted — this
+    # gate already printed a true line saying the full suite had not run, and
+    # that line was read past while eleven test_lint.py failures sat on master
+    # for two hours after #936. REFUSE is refuted by cost: it spends a whole
+    # landing cycle to arrive at the test run it could simply have performed.
+    # So the derived tests are RUN, and the omission is reported alongside.
+    # Accepted cost: a branch touching `foo.py` is now blocked when
+    # `test_foo.py` is red for a reason the branch did not cause — which is
+    # #936's complaint, not a regression against it.
     existing = tuple(t for t in diff.tests if (repo / t).is_file())
     unnamed = tuple(t for t in existing if t not in _named_files(tests))
     print(_derived_tests_line(diff, existing, unnamed))
