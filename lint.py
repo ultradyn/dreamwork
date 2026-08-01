@@ -5694,14 +5694,14 @@ def _redproof_example_refusal(text: str) -> str | None:
             token
             for token in argv[3:]
         ]
-        command = [sys.executable, str(SKILL_DIR / "dev" / "redproof.py"),
+        command = [argv[0], str(SKILL_DIR / "dev" / "redproof.py"),
                    "begin", *materialised, "--cwd", str(fixture)]
         result = subprocess.run(command, cwd=fixture, capture_output=True, text=True)
         if result.returncode != 0:
             refusal = (result.stderr or result.stdout).strip()
             return refusal or f"redproof.py begin exited {result.returncode}"
         cleanup = subprocess.run(
-            [sys.executable, str(SKILL_DIR / "dev" / "redproof.py"),
+            [argv[0], str(SKILL_DIR / "dev" / "redproof.py"),
              "forget", "subject.txt", "--cwd", str(fixture)],
             cwd=fixture, capture_output=True, text=True,
         )
