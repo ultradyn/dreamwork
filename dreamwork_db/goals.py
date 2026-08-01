@@ -36,6 +36,7 @@ class GoalClaim:
     details_sha: str
     outcome: str | None
     round: int
+    bypassed_by: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,7 +232,7 @@ class GoalRepository:
     def append_claim(
         self, group_id: int, *, claimed_by: str, claimed_at: str,
         summary: str, base_sha: str | None, details_sha: str, round: int,
-        outcome: str | None = None,
+        outcome: str | None = None, bypassed_by: str | None = None,
     ) -> GoalClaim:
         self._goal(group_id)
         claimed_by = _text(claimed_by, "claimed_by")
@@ -240,6 +241,12 @@ class GoalRepository:
         details_sha = _text(details_sha, "details_sha")
         if base_sha is not None:
             base_sha = _text(base_sha, "base_sha")
+        if bypassed_by is not None:
+            bypassed_by = _text(bypassed_by, "bypassed_by")
+            if outcome != "complete":
+                raise ValidationError(
+                    "bypassed_by requires a complete claim outcome"
+                )
         if outcome is not None and outcome not in CLAIM_OUTCOMES:
             raise ValidationError(
                 f"unknown claim outcome {outcome!r}; expected {tuple(CLAIM_OUTCOMES)}"
@@ -249,19 +256,20 @@ class GoalRepository:
         cur = self._session.execute(
             "INSERT INTO goal_claim"
             " (group_id,claimed_by,claimed_at,summary,base_sha,details_sha,"
-            " outcome,round) VALUES (?,?,?,?,?,?,?,?)",
+            " outcome,round,bypassed_by) VALUES (?,?,?,?,?,?,?,?,?)",
             (group_id, claimed_by, claimed_at, summary, base_sha, details_sha,
-             outcome, round),
+             outcome, round, bypassed_by),
         )
         return GoalClaim(
             int(cur.lastrowid), group_id, claimed_by, claimed_at, summary,
             base_sha, details_sha, outcome, round,
+            bypassed_by,
         )
 
     def _claim(self, claim_id: int) -> GoalClaim:
         row = self._session.execute(
             "SELECT id,group_id,claimed_by,claimed_at,summary,base_sha,"
-            " details_sha,outcome,round FROM goal_claim WHERE id = ?",
+            " details_sha,outcome,round,bypassed_by FROM goal_claim WHERE id = ?",
             (claim_id,),
         ).fetchone()
         if row is None:
@@ -297,7 +305,7 @@ class GoalRepository:
         self._goal(group_id)
         rows = self._session.execute(
             "SELECT id,group_id,claimed_by,claimed_at,summary,base_sha,"
-            " details_sha,outcome,round FROM goal_claim"
+            " details_sha,outcome,round,bypassed_by FROM goal_claim"
             " WHERE group_id = ? ORDER BY round, id", (group_id,),
         ).fetchall()
         return tuple(GoalClaim(*row) for row in rows)
