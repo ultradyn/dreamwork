@@ -563,9 +563,14 @@ class TestHistoryScanRegistrationBoundary:
 
     def test_rebase_cannot_move_an_armed_commit_before_registration(
             self, lane, monkeypatch, capsys):
+        (lane / "router.js").write_text(
+            "export function route() { return true; /* FIXED #901 */ }\n")
+        registration_commit = _commit(
+            lane, "router.js", msg="fix(#901): state before registration")
         _begin(lane, "router.js")
         entries, _ = rp._read_registry(lane)
         begun_head = entries[0]["begun_head"]
+        assert begun_head == registration_commit
 
         # Authored after begin, but with dates that claim it came decades
         # earlier.  Then rebase the lane so the offending commit has a new
@@ -587,7 +592,7 @@ class TestHistoryScanRegistrationBoundary:
         assert _git(lane, "rev-parse", "HEAD") != clean
         assert subprocess.run(
             ["git", "-C", str(lane), "merge-base", "--is-ancestor",
-             begun_head, "HEAD"], check=False).returncode == 0
+             begun_head, "HEAD"], check=False).returncode == 1
 
         entries, _ = rp._read_registry(lane)
         rep = rp.scan_history(lane, entries)
