@@ -472,11 +472,21 @@ def scan_history(cwd: Path | None, entries: list[dict],
     paths = sorted({e["path"] for e in live})
     blobs = _batch_blobs(root, commits, paths)
 
+    # A matching blob is armed only when its commit did not already exist at
+    # begin.  Use immutable reachability, never dates: author and committer
+    # timestamps are freely rewritten, while a rebase gives rewritten commits
+    # new object ids that cannot become ancestors of the recorded old HEAD.
+    preexisting = {
+        id(e): set(_git(root, "rev-list", e["begun_head"]).split())
+        if e.get("begun_head") else set()
+        for e in live
+    }
     order = {c: n for n, c in enumerate(commits)}
     hits = []
     for (commit, path), sha in blobs.items():
         for e in live:
-            if e["path"] == path and sha == e["injected_sha"]:
+            if (e["path"] == path and sha == e["injected_sha"]
+                    and commit not in preexisting[id(e)]):
                 hits.append({"commit": commit, "path": path,
                              "hint": e.get("injected_hint"),
                              "subject": _git(root, "log", "-1", "--format=%s", commit)})
@@ -590,6 +600,7 @@ def begin(cwd: Path | None, path: str) -> int:
     try:
         posix, target = _worktree_path(root, path)
         original = target.read_bytes()
+        begun_head = _git(root, "rev-parse", "HEAD")
     except RedproofError as exc:
         sys.stderr.write(f"begin: REFUSED — {exc}\n")
         return 2
@@ -623,6 +634,9 @@ def begin(cwd: Path | None, path: str) -> int:
         "snapshot": str(snap),
         "state": ARMED,
         "begun_at": _now(),
+        # Commit reachability is the registration boundary.  Unlike begun_at,
+        # it cannot be forged by commit-date rewriting (#901).
+        "begun_head": begun_head,
         # cleared until restore records them:
         "injected_sha": None,
         "injected_hint": None,
@@ -692,7 +706,7 @@ def restore(cwd: Path | None, path: str) -> int:
         # the count is honest and the history scan has every injected sha.
         entry = _find_restored(entries, posix, injected_sha)
         if entry is None:
-            entry = {"path": posix}
+            entry = {"path": posix, "begun_head": armed.get("begun_head")}
             entries.append(entry)
         entry.update({
             "injected_sha": injected_sha,
