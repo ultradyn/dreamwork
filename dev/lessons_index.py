@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Act-gated retrieval over `.dreamwork/lessons.md` (#349).
 
-lessons.md is 299 entries / ~3200 lines, and a lesson in it failed to
-prevent its own repeat (the `git checkout` RED-undo lesson, written
-2026-07-25, repeated 2026-07-28) because nothing re-reads 3000 lines before
-acting and the file's only retrieval path was scrolling. The failure was
-the READING, not the writing.
+lessons.md is hundreds of entries across thousands of lines, and a lesson in
+it failed to prevent its own repeat (the `git checkout` RED-undo lesson,
+written 2026-07-25, repeated 2026-07-28) because nothing re-reads thousands
+of lines before acting and the file's only retrieval path was scrolling. The
+failure was the READING, not the writing.
 
 This tool is the read path. It derives an act -> lessons index FROM THE
 ENTRIES' OWN TEXT at read time — nothing is stored, nothing is
@@ -73,29 +73,50 @@ ACTS: list[tuple[str, str, str]] = [
 ]
 
 ENTRY_START = re.compile(r"^- ")
+SECTION_START = re.compile(r"^## ")  # newer lessons use `## ` heads, not `- ` bullets
 BOLD_CLAIM = re.compile(r"^- \*\*(.+?)\*\*", re.S)
 FIRST_SENTENCE = re.compile(r"^- (.+?\.)(?:\s|$)", re.S)
+# A `## ` head is `## <claim> (<meta with a year>)`. The meta paren is always
+# last and carries the date + issue tags; the claim is what precedes it.
+SECTION_CLAIM = re.compile(r"(.+?)\s*\([^)]*20\d\d[^)]*\)\s*$", re.S)
 
 
 def parse_entries(text: str) -> list[tuple[int, str]]:
-    """Split lessons.md into (start_line, entry_text) at each `- ` bullet.
+    """Split lessons.md into (start_line, entry_text) at each lesson head.
 
-    An entry's continuation lines are indented (or blank); anything else
-    ends it. The header block before the first bullet is not an entry.
+    Two head shapes coexist in the file: the older ``- **<claim>**`` bullet
+    (continuation lines indented) and the newer ``## <claim> (<meta>)``
+    section head (body is flush-left prose). Both are lessons; treating only
+    the bullet as an entry silently dropped every section-headed lesson —
+    including the false-refusal and true-statement clusters — so both head
+    shapes start an entry here.
+
+    A bullet entry ends at the first flush-left line (document narration in
+    the bullet region is not part of the lesson). A section entry runs until
+    the next head of either shape: its body is flush-left prose, so a
+    flush-left line cannot end it. The header block before the first head is
+    not an entry.
     """
     entries: list[tuple[int, list[str]]] = []
     cur: list[str] | None = None
     start = 0
+    section = False  # continuation rule depends on the head shape
     for i, line in enumerate(text.split("\n"), 1):
-        if ENTRY_START.match(line):
+        if ENTRY_START.match(line) or SECTION_START.match(line):
             if cur is not None:
                 entries.append((start, cur))
             cur, start = [line], i
-        elif cur is not None and (line.startswith(" ") or not line.strip()):
-            cur.append(line)
+            section = bool(SECTION_START.match(line))
         elif cur is not None:
-            entries.append((start, cur))
-            cur = None
+            if section:
+                # Flush-left prose is the body, not the end of the lesson.
+                cur.append(line)
+            elif line.startswith(" ") or not line.strip():
+                cur.append(line)
+            else:
+                entries.append((start, cur))
+                cur = None
+                section = False
     if cur is not None:
         entries.append((start, cur))
     return [(ln, "\n".join(body).strip()) for ln, body in entries]
@@ -103,7 +124,15 @@ def parse_entries(text: str) -> list[tuple[int, str]]:
 
 def claim_of(entry: str) -> str:
     """The first sentence — the bolded claim when present, else text to the
-    first full stop. Shared shape with lint's near-duplicate check."""
+    first full stop. Shared shape with lint's near-duplicate check. A `## `
+    head carries its claim in its first line before a trailing
+    `(date, #tags, …)` meta paren, which is dropped so the claim matches its
+    bullet-headed siblings' shape; the body below it is flush-left prose."""
+    first_line = entry.split("\n", 1)[0]
+    if first_line.startswith("## "):
+        head = first_line[3:].strip()
+        m = SECTION_CLAIM.match(head)
+        return m.group(1).strip() if m else head[:160]
     flat = re.sub(r"\s+", " ", entry).strip()
     m = BOLD_CLAIM.match(flat)
     if m:

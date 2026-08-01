@@ -109,3 +109,86 @@ def test_unclassifiable_entries_are_surfaced_not_silent():
         "an unclassifiable entry was counted but not surfaced — #702 "
         "requires the tool name what it cannot classify"
     )
+
+
+def test_section_heads_are_parsed_not_silent():
+    """Newer lessons use ``## <claim> (<meta>)`` heads, not ``- **<claim>**``
+    bullets. parse_entries must recognise both head shapes, or every
+    section-headed lesson is invisible to every act — the same silent-miss the
+    tool exists to prevent one level up, and the worst instance of "a lesson
+    nobody's vocabulary reaches is invisible here" because it is the *parser*,
+    not the anchors, that misses them. Found while building the gate act
+    (#956): the brief's own load-bearing cite and the whole false-refusal
+    cluster were unparsed, hence unretrievable.
+    """
+    full_text = LESSONS.read_text(encoding="utf-8")
+    # Precondition: section heads actually exist in the file. A literal count
+    # has an expiry date; derive the population from the file itself.
+    section_head_lines = [
+        i for i, line in enumerate(full_text.split("\n"), 1)
+        if line.startswith("## ")
+    ]
+    assert section_head_lines, (
+        "precondition failed: no `## ` heads in lessons.md — the test "
+        "literal has expired and the two-head-shape assumption no longer holds"
+    )
+    entries = _entries()
+    starts = {ln for ln, _ in entries}
+    parsed_sections = [ln for ln in section_head_lines if ln in starts]
+    assert len(parsed_sections) == len(section_head_lines), (
+        f"{len(section_head_lines) - len(parsed_sections)} section-headed "
+        f"lesson(s) at {set(section_head_lines) - set(parsed_sections)} are "
+        "not parsed as entries — they are invisible to every act (#349/#868)"
+    )
+    # And the claim must drop the trailing ``(date, #tags, …)`` meta paren so
+    # a section lesson's claim matches its bullet-headed siblings' shape (the
+    # near-duplicate check and the index share claim_of — #852/#905).
+    e = dict(entries)
+    for ln in section_head_lines:
+        claim = li.claim_of(e[ln])
+        assert "## " not in claim, (
+            f"lessons.md:{ln} claim still carries the `## ` marker — "
+            "claim_of does not strip the section head"
+        )
+        assert not re.search(r"\(20\d\d[^)]*\)\s*$", claim), (
+            f"lessons.md:{ln} claim {claim[:60]!r} still carries its trailing "
+            "meta paren — the near-duplicate check will never match its "
+            "bullet-headed siblings (#852/#905)"
+        )
+
+
+def test_section_entry_body_is_flush_left_prose():
+    """A section head's body is flush-left prose that runs until the next
+    head of either shape; it must not be truncated at the first blank line
+    the way a bullet entry is. Pins the continuation rule's section branch."""
+    full_text = LESSONS.read_text(encoding="utf-8")
+    section_head_lines = [
+        i for i, line in enumerate(full_text.split("\n"), 1)
+        if line.startswith("## ")
+    ]
+    assert len(section_head_lines) >= 2, (
+        "precondition failed: need >=2 section heads to bound a body — "
+        "the test literal has expired"
+    )
+    entries = dict(_entries())
+    # The first section's body must run to (just before) the second section:
+    # flush-left prose between two heads is the body, not the end.
+    first, second = section_head_lines[0], section_head_lines[1]
+    body_lines = entries[first].split("\n")
+    assert len(body_lines) > 1, (
+        f"lessons.md:{first} section body was truncated to its head line — "
+        "the continuation rule ended the entry immediately"
+    )
+    # And the body must reach into the region between the two heads, i.e. it
+    # must contain a line whose original number is strictly between them.
+    covered = set()
+    ln = first
+    for line in full_text.split("\n"):
+        if first < ln < second:
+            if line in body_lines:
+                covered.add(ln)
+        ln += 1
+    assert covered, (
+        f"lessons.md:{first} body does not span toward lessons.md:{second} "
+        "— flush-left prose between two section heads was treated as an end"
+    )
