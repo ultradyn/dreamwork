@@ -431,12 +431,24 @@ ok('control: the response column\'s station genuinely moved when the answer ' +
    `landed — ${qcolMove.toFixed(0)}px against the ${JUMP_PX}px floor, so an ` +
    'unarmed re-station would land as a discontinuity and this guard is not ' +
    'vacuous for that cause', qcolMove >= JUMP_PX);
-/* and the trace has to be dense enough to SEE a one-frame teleport at all. */
-const frameFloor = cadence > 0 ? Math.round((WINDOW_MS / cadence) * 0.5) : 0;
+/* and the trace has to be dense enough to SEE a one-frame teleport at all.
+   A QUARTER of the idle cadence, not half: the traced window is a genuinely
+   busy page — an 850ms travel, a full innerHTML morph and two ticks — so its
+   frame rate is legitimately below the one measured on a quiet one, and half
+   was a coin flip (109 frames against a floor of 110, on a run whose real
+   verdict was two 730.8px teleports). What has to be true is that this is a
+   per-FRAME trace rather than a poll: at a quarter cadence the sample gap is
+   still far under the ~1000ms the defect this file was written for holds the
+   box off-screen for. The gaps themselves are printed, so drift toward the
+   floor is visible rather than sudden. */
+const gaps = trace.slice(1).map((f, i) => f.t - trace[i].t).sort((a, b) => a - b);
+const median = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
+const frameFloor = cadence > 0 ? Math.round((WINDOW_MS / cadence) * 0.25) : 0;
 ok(`control: the trace really sampled per frame — ${trace.length} frames ` +
-   `over ${WINDOW_MS}ms against a floor of ${frameFloor}, half of what this ` +
-   `browser managed on a quiet page (${cadence.toFixed(1)}ms/frame). A ` +
-   'before/after pair cannot see a one-frame teleport and all three causes ' +
+   `over ${WINDOW_MS}ms against a floor of ${frameFloor} (a quarter of this ` +
+   `browser's ${cadence.toFixed(1)}ms/frame on a quiet page); median gap ` +
+   `${median.toFixed(1)}ms, worst ${(gaps[gaps.length - 1] || 0).toFixed(1)}ms. ` +
+   'A before/after pair cannot see a one-frame teleport and all three causes ' +
    'land in one frame', cadence > 0 && trace.length >= frameFloor);
 
 /* ── the sequence ───────────────────────────────────────────────────────── */
