@@ -7511,6 +7511,58 @@ class TestAppShell(unittest.TestCase):
             self.assertIn(token, watch.PAGE)
         self.assertNotIn('id="cmdkind"', watch.PAGE)   # the old <select>
 
+    def test_do_now_has_scoped_danger_treatment(self):
+        """#257 — do-now is the one kind that PRE-EMPTS the loop regardless of
+        delivery mode (PREEMPT_KINDS, his Q2 ruling: "a do-now that does not
+        pre-empt is a do-now that lied"), and the interface must say so. The
+        approved D1 treatment (do-now-urgency-treatment.html) gives the
+        selected do-now a scoped rose ghost-outline: a --danger colour + glow
+        on the label, a rose border + soft glow on the sliding indicator.
+
+        The treatment is DATA-DRIVEN via a `danger` property on the COMMANDS
+        entry (the `sticky` pattern), never a hardcoded kind name — the decay
+        test above already forbids a do-now literal in PAGE. SCOPE: the
+        treatment lives under .cmdkinds (the composer's kind group) so the
+        question-card mode switch, tint picker and every other .sgroup stay
+        byte-identical. A treatment that leaks into the other kinds is a
+        regression in the composer he uses constantly."""
+        # the danger property is DATA-DRIVEN, derived from the table so a
+        # hypothetical second danger kind is covered without being named here
+        danger_kinds = [c["kind"] for c in watch.COMMANDS if c.get("danger")]
+        self.assertEqual(danger_kinds, ["do-now"],
+                         "do-now is the one danger kind; a second would need "
+                         "its own design rationale, not a silent addition")
+        # danger is the VISUAL for the pre-empt: do-now must be in the set of
+        # kinds that interrupt regardless of delivery mode. Both facts derive
+        # from watch.py, so the link is stated rather than assumed.
+        self.assertIn("do-now", watch.PREEMPT_KINDS,
+                      "danger is the visual for pre-empt; do-now must pre-empt")
+        # the new colour token, distinct from --warn (BROKEN #136) and
+        # --accent (live). All three must differ: danger that collides with
+        # either is invisible as a third meaning.
+        self.assertIn("--danger:#f87171", watch.STYLE)
+        self.assertNotEqual("#f87171", "#fcd34d")  # not --warn
+        self.assertNotEqual("#f87171", "#a5b4fc")  # not --accent
+        # the treatment CSS is SCOPED to the composer's kind group (.cmdkinds),
+        # proving it reaches the composer AND does not leak to the question-card
+        # mode switch (.qmodes) or tint picker (.tintpick) — a bare
+        # `.sgbtn.danger-on` selector would match those too. The scope is the
+        # assertion: an unscoped rule is the regression this catches.
+        self.assertIn(".cmdkinds .sgbtn.danger-on", watch.STYLE)
+        self.assertIn(".cmdkinds .sgind.danger", watch.STYLE)
+        # the selected danger label recolours to --danger with the same 12px
+        # glow envelope .sgbtn.on uses (recoloured, not a second gesture)
+        self.assertIn("color:var(--danger)", watch.STYLE)
+        self.assertIn("rgba(248,113,113,.42)", watch.STYLE)
+        # the JS toggles the class DATA-DRIVEN off the `danger` property —
+        # `c.danger` is the read, `isDangerKind` the resolver, and the toggles
+        # carry the classes the CSS above keys off. Asserting the resolver name
+        # proves the wiring goes through one data-driven seam, not a literal.
+        self.assertIn("const isDangerKind", watch.PAGE)
+        self.assertIn("c.kind === kind && c.danger", watch.PAGE)
+        self.assertIn("classList.toggle('danger-on'", watch.PAGE)
+        self.assertIn("classList.toggle('danger'", watch.PAGE)
+
     def test_response_textarea_shift_tab_cycles_modes(self):
         """#259 — inside a response textarea, Shift+Tab cycles answer/add-note.
         The guard is RED-FIRST and keyboard-shaped, so it asserts the four

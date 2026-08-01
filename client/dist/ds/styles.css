@@ -12,6 +12,20 @@
        must not. Same lightness family as the accent, warm against a cool
        page, so it is unmistakably not it. */
     --warn:#fcd34d;
+    /* #257 — the page's THIRD colour, and its rule is that it means
+       URGENT rather than broken or live. do-now is the one kind that
+       PRE-EMPTS the loop regardless of delivery mode (PREEMPT_KINDS, his
+       Q2 ruling: "a do-now that does not pre-empt is a do-now that lied"),
+       and the interface must say so. `--danger` is deliberately NOT
+       `--warn`: on this page `--warn` means BROKEN (#136 — the channel to
+       you has failed), and do-now is urgent, not broken. It is also not
+       `--accent` (live / needs him, hue ~230°): a pre-empt is not
+       activity, it is an interrupt. Rose (~0°) is unmistakably neither —
+       warm where the page is cool, and outside the amber band (~35–70°)
+       the project tints already exclude. The approved D1 treatment
+       (do-now-urgency-treatment.html) scopes it to the selected do-now
+       control only; it never paints the whole composer. */
+    --danger:#f87171;
     /* The code-token palette (#351), spent ONLY inside /file's source pane.
        Value-for-value the review-artifact frame's (#339), because he moves
        between /file and /review constantly and the same token kind must be
@@ -1770,6 +1784,32 @@
      changed layout would resize the button the indicator is chasing */
   .sgbtn.on { color:var(--accent);
     text-shadow:0 0 12px rgba(165,180,252,.45); }
+  /* #257 — do-now as interrupt, not decoration. The approved D1 treatment
+     (do-now-urgency-treatment.html): a scoped rose ghost-outline on the
+     selected do-now ONLY, so it looks like the one kind that pre-empts.
+     SCOPED to .cmdkinds (the composer's kind group) so the question-card
+     mode switch, the tint picker and every other .sgroup stay byte-identical
+     — a treatment that leaks into the other kinds is a regression in the
+     composer he uses constantly. The class is DATA-DRIVEN (setKind toggles
+     it from the `danger` property on the COMMANDS entry, the `sticky`
+     pattern), so this never hardcodes a kind name and a second danger kind
+     is covered by the same mechanism.
+
+     The label takes danger colour + the same 12px glow envelope `.sgbtn.on`
+     uses, recoloured — a pre-empt glows rather than re-metricking, exactly
+     as the accent selection does one hue over. The sliding indicator wears
+     a rose border and a soft outer glow, transparent fill so the dreaming
+     field stays visible through it (the ghost rule #121). Ordinary kinds
+     never carry these classes, so their neutral/selected/focus/disabled
+     states are untouched. Reduced-motion parity is free: the colour is the
+     signal, and it is static. */
+  .cmdkinds .sgbtn.danger-on { color:var(--danger);
+    text-shadow:0 0 12px rgba(248,113,113,.42); }
+  .cmdkinds .sgbtn.danger-on:focus-visible {
+    box-shadow:0 0 0 1px color-mix(in oklab,var(--danger) 65%,transparent); }
+  .cmdkinds .sgind.danger {
+    border-color:color-mix(in oklab,var(--danger) 72%,var(--border));
+    box-shadow:0 0 0 1px rgba(248,113,113,.12),0 0 18px rgba(248,113,113,.1); }
   /* The tint picker (#143). It is the standing sliding group, so geometry
      and motion come for free and the ghost rule holds — an outline that
      travels, no fill anywhere, the dreaming field visible through every

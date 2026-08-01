@@ -364,7 +364,7 @@ COMMANDS = (
      "desc": "park a thought; the loop picks it up when it chooses next"},
     {"kind": "do-next", "label": "do next", "common": True, "sticky": False,
      "desc": "jump this to the front of the queue (text optional)"},
-    {"kind": "do-now", "label": "do now", "common": True, "sticky": False,
+    {"kind": "do-now", "label": "do now", "common": True, "sticky": False, "danger": True,
      "desc": "interrupt the current increment and start this instead"},
     {"kind": "maintenance", "label": "maintenance", "common": False,
      "sticky": False,
