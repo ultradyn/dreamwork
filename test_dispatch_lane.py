@@ -3,6 +3,7 @@
 
 import hashlib
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -15,6 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent
 CLI = ROOT / "dev" / "dispatch_lane.py"
 CONTRACT = (ROOT / "briefs" / "boilerplate.md").read_text(encoding="utf-8")
+_BASE_SHA_LINE_FOR_TEST = re.compile(r"^Base sha: [0-9a-f]{7,40}$", re.MULTILINE)
 
 
 def _ledger_fixture(root: Path) -> None:
@@ -41,7 +43,13 @@ def _sandbox_cli(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copytree(ROOT / "dreamwork_db", root / "dreamwork_db")
     shutil.copy2(ROOT / "ledger_store.py", root / "ledger_store.py")
     (root / "briefs" / "boilerplate.md").write_text(CONTRACT, encoding="utf-8")
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "init", "-q", "-b", "master", str(root)], check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+         "commit", "--allow-empty", "-qm", "base"],
+        cwd=root,
+        check=True,
+    )
     _ledger_fixture(root)
     return cli, root
 
@@ -85,11 +93,27 @@ def _run(cli: Path, prompt: Path | None = None, *runner: str) -> subprocess.Comp
 def _healthy_prompt(
         tmp_path: Path, coordinator_root: Path, task: int = 900,
         lane: str = "cx-test") -> Path:
+    branch = subprocess.run(
+        ["git", "rev-parse", "--verify", f"refs/heads/{lane}"],
+        cwd=coordinator_root,
+        capture_output=True,
+        text=True,
+    )
+    if branch.returncode != 0:
+        subprocess.run(["git", "branch", lane, "master"], cwd=coordinator_root, check=True)
+    base_sha = subprocess.run(
+        ["git", "merge-base", "master", lane],
+        cwd=coordinator_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     prompt = tmp_path / f"prompt-{lane}.txt"
     prompt.write_text(
         f"# Brief — #{task}: task-specific lane head\n\n"
         f"Worktree: {coordinator_root}/.worktrees/{lane}\n"
         f"Branch: {lane}\n"
+        f"Base sha: {base_sha}\n"
         "Coordinator inbox — ABSOLUTE path, append your completion summary "
         f"here when you finish: {coordinator_root}/.dreamwork/inbox.md\n\n"
         + CONTRACT,
@@ -236,6 +260,63 @@ def test_dispatch_refuses_a_well_formed_but_fake_inbox(tmp_path):
     assert result.returncode == 2
     assert str(root / ".dreamwork" / "inbox.md") in result.stderr
     assert not (root / ".dreamwork" / "docs" / "briefs").exists()
+
+
+def test_dispatch_refuses_missing_base_sha_with_discriminating_message(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    prompt.write_text(
+        "\n".join(
+            line for line in prompt.read_text(encoding="utf-8").splitlines()
+            if not line.startswith("Base sha:")
+        ) + "\n",
+        encoding="utf-8",
+    )
+
+    result = _run(cli, prompt, "true")
+
+    assert "missing required 'Base sha: <git revision>' line" in result.stderr
+    assert result.returncode == 2
+    assert not (root / ".dreamwork" / "docs" / "briefs").exists()
+
+
+def test_40_hex_shape_that_does_not_resolve_is_refused(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    prompt.write_text(
+        _BASE_SHA_LINE_FOR_TEST.sub("Base sha: " + "f" * 40, prompt.read_text(encoding="utf-8")),
+        encoding="utf-8",
+    )
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 2
+    assert "does not resolve to a commit" in result.stderr
+
+
+def test_real_commit_that_is_not_branch_point_is_refused(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+         "commit", "--allow-empty", "-qm", "later master"],
+        cwd=root,
+        check=True,
+    )
+    wrong_real_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    prompt.write_text(
+        _BASE_SHA_LINE_FOR_TEST.sub(
+            f"Base sha: {wrong_real_sha}", prompt.read_text(encoding="utf-8")
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 2
+    assert f"resolves to {wrong_real_sha}, but does not match branch point" in result.stderr
 
 
 def test_linked_worktree_dispatch_persists_only_to_main_corpus(tmp_path):
