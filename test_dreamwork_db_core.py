@@ -10,6 +10,7 @@ import ledger_store
 from dreamwork_db import (
     Access,
     Busy,
+    Corrupt,
     DatabaseError,
     DatabaseHandle,
     SchemaMismatch,
@@ -344,4 +345,54 @@ def test_an_unclassified_operational_error_is_named_not_mislabelled(tmp_path):
     )
     assert not isinstance(caught.value, sqlite3.OperationalError), (
         "the unclassified error escaped as raw sqlite3"
+    )
+
+
+# --- the catch surface covers the full DatabaseError tree (#782) -------------
+# A corrupt store file raises sqlite3.DatabaseError with code 26 ('file is not
+# a database').  DatabaseError is the PARENT of OperationalError, so it escaped
+# the old OperationalError-only handlers at every seam: the execute() query, the
+# BEGIN IMMEDIATE, the _connect PRAGMA setup, and the READ BEGIN.  The ladder is
+# now total over the full DatabaseError tree, not just one subclass.
+
+
+def test_a_corrupt_store_is_named_corrupt_not_raw_sqlite(tmp_path):
+    path = tmp_path / "store.sqlite3"
+    _create_sample(path, "one")
+    # Corrupt the file AFTER it was initialised: overwrite its bytes with junk
+    # so SQLite raises code 26 ('file is not a database') on the next open.
+    path.write_bytes(b"not a database file\x00" * 64)
+
+    with open_database(_spec(path), access=Access.READ) as db:
+        with pytest.raises(Corrupt, match="corrupt") as caught:
+            db.values.all()
+
+    # The discriminating failure is the class: a raw sqlite escape or a
+    # mislabelled unclassified error both fail here, not merely "no exception".
+    assert not isinstance(caught.value, sqlite3.DatabaseError), (
+        "corruption escaped as a raw sqlite3.DatabaseError"
+    )
+    assert not isinstance(caught.value, Busy), (
+        "corruption was mislabelled Busy"
+    )
+    assert not isinstance(caught.value, SchemaMismatch), (
+        "corruption was mislabelled SchemaMismatch"
+    )
+
+
+def test_a_corrupt_store_write_open_is_named_at_the_connect_seam(tmp_path):
+    path = tmp_path / "store.sqlite3"
+    _create_sample(path, "one")
+    path.write_bytes(b"not a database file\x00" * 64)
+
+    # WRITE opens fail inside _connect (PRAGMA journal_mode=WAL reads the
+    # header), a seam the old handlers did not cover at all.
+    with pytest.raises(Corrupt, match="corrupt") as caught:
+        with open_database(
+            _spec(path, initialize=True), access=Access.WRITE
+        ) as db:
+            pass
+
+    assert isinstance(caught.value, DatabaseError), (
+        "Corrupt stopped being a DatabaseError; the degraded path would miss it"
     )
