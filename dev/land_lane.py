@@ -183,6 +183,23 @@ def _import_targets(source: str) -> frozenset[str]:
     return frozenset(targets)
 
 
+def _targets_import_module(targets: Sequence[str], module: str) -> bool:
+    """The import-graph relation shared by derivation and relevance."""
+    return module in targets or any(t.startswith(module + ".") for t in targets)
+
+
+def _test_imports_modules(test_path: Path, modules: Sequence[str]) -> bool:
+    """Whether ``test_path`` statically imports any requested module."""
+    wanted = {module for module in modules if module}
+    if not wanted:
+        return False
+    try:
+        targets = _import_targets(test_path.read_text(encoding="utf-8"))
+    except OSError:
+        return False
+    return any(_targets_import_module(targets, module) for module in wanted)
+
+
 def _import_derived(repo: Path, modules: Sequence[str]) -> tuple[str, ...]:
     """Test files at the repo root whose AST imports any of ``modules``.
 
@@ -192,17 +209,11 @@ def _import_derived(repo: Path, modules: Sequence[str]) -> tuple[str, ...]:
     produces ``dev.land_lane.X``). Root-level ``test_*.py`` only — matching the
     name convention's reach, so the two rules share one documented limit.
     """
-    wanted = {m for m in modules if m}
-    if not wanted:
+    if not any(modules):
         return ()
     found: set[str] = set()
     for test_path in sorted(repo.glob("test_*.py")):
-        try:
-            source = test_path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        targets = _import_targets(source)
-        if any(w in targets or any(t.startswith(w + ".") for t in targets) for w in wanted):
+        if _test_imports_modules(test_path, modules):
             found.add(test_path.name)
     return tuple(sorted(found))
 
@@ -224,6 +235,11 @@ DIR_TESTSET_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+def _path_in_mapped_directory(path: str, directory: str) -> bool:
+    """The directory-map relation shared by derivation and relevance."""
+    return path == directory.rstrip("/") or path.startswith(directory)
+
+
 def _map_derived(changed: Sequence[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Apply ``DIR_TESTSET_MAP``: return (test targets, matched directories).
 
@@ -235,10 +251,69 @@ def _map_derived(changed: Sequence[str]) -> tuple[tuple[str, ...], tuple[str, ..
     matched_dirs: list[str] = []
     targets: set[str] = set()
     for directory, tests in DIR_TESTSET_MAP:
-        if any(p == directory.rstrip("/") or p.startswith(directory) for p in changed):
+        if any(_path_in_mapped_directory(path, directory) for path in changed):
             matched_dirs.append(directory)
             targets.update(tests)
     return tuple(sorted(targets)), tuple(matched_dirs)
+
+
+def _selected_test_file(selector: str) -> str:
+    """The root test filename selected by a pytest path or node id."""
+    return PurePosixPath(selector.split("::", 1)[0]).name
+
+
+def _test_relation_rules(repo: Path, selector: str, changed: Sequence[str]) -> tuple[str, ...]:
+    """Which of #953's three rules relate one selected test to the diff."""
+    test_file = _selected_test_file(selector)
+    rules: list[str] = []
+    if any(_derived_test(path) == test_file for path in changed):
+        rules.append("name")
+    modules = tuple(
+        module for module in (_dotted_module(path) for path in changed) if module
+    )
+    if _test_imports_modules(repo / test_file, modules):
+        rules.append("import")
+    if any(
+        test_file in tests and _path_in_mapped_directory(path, directory)
+        for path in changed
+        for directory, tests in DIR_TESTSET_MAP
+    ):
+        rules.append("map")
+    return tuple(rules)
+
+
+def _test_relevance_line(repo: Path, selection: Sequence[str], changed: Sequence[str]) -> str:
+    """Advisory relevance report over the final named-union-derived selection.
+
+    The three rules are incomplete, so an unrelated result cannot safely
+    refuse a correct landing. This is a gate-output advisory, not a lint WARN
+    row, and therefore cannot enter the lint row-set comparison.
+    """
+    tests = tuple(dict.fromkeys(selection))
+    prefix = (
+        f"examined {len(tests)} selected test(s) against {len(changed)} changed path(s)"
+    )
+    if not tests or not changed:
+        return (
+            f"test-relevance: DID NOT CHECK — {prefix}; no relevance result is "
+            "available when either population is empty"
+        )
+    unrelated = tuple(
+        selector for selector in tests if not _test_relation_rules(repo, selector, changed)
+    )
+    if not unrelated:
+        return (
+            f"test-relevance: OK — {prefix}; all {len(tests)} related by at least "
+            "one of the 3 rules"
+        )
+    return (
+        f"test-relevance: WARN — {prefix}; {len(unrelated)} "
+        "unrelated-as-far-as-the-3-rules-can-tell: "
+        + " ".join(unrelated)
+        + "; remedy: name or add a test related by the `test_<stem>.py` convention "
+        "or a static import, or update DIR_TESTSET_MAP when a declared directory "
+        "testset owns the changed path"
+    )
 
 
 def _named_files(tests: Sequence[str]) -> frozenset[str]:
@@ -863,7 +938,8 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
         unnamed=unnamed,
         absent=absent,
     ))
-    selection = (*tests, *unnamed)
+    selection = tuple(dict.fromkeys((*tests, *unnamed)))
+    print(_test_relevance_line(repo, selection, diff.changed))
 
     named = _run(["just", "pytest", *selection], repo)
     _relay(named)
