@@ -650,6 +650,35 @@ def test_verify_pending_accepts_receipted_briefs_on_both_sides_of_cutoff(tmp_pat
     assert "brief integrity verified: 2 governed brief(s) matched receipts" in result.stdout
 
 
+def test_commit_corpus_stages_receipted_pairs_on_both_sides_of_cutoff(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    shutil.copy2(ROOT / "justfile", root / "justfile")
+    briefs = root / ".dreamwork" / "docs" / "briefs"
+    briefs.mkdir(parents=True)
+    (briefs / "100-historical.md").write_text("predates receipts\n", encoding="utf-8")
+    legacy = _healthy_prompt(tmp_path, root, task=173, lane="cx-legacy")
+    governed = _healthy_prompt(tmp_path, root, task=900, lane="cx-governed")
+    assert _run(cli, legacy, "true").returncode == 0
+    assert _run(cli, governed, "true").returncode == 0
+
+    result = subprocess.run(
+        ["just", "commit-corpus"], cwd=root, capture_output=True, text=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "staged 2 brief/receipt pair(s)" in result.stdout
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=root, check=True, capture_output=True, text=True,
+    ).stdout.splitlines()
+    assert staged == [
+        ".dreamwork/docs/briefs/173-cx-legacy.md",
+        ".dreamwork/docs/briefs/173-cx-legacy.sha256",
+        ".dreamwork/docs/briefs/900-cx-governed.md",
+        ".dreamwork/docs/briefs/900-cx-governed.sha256",
+    ]
+
+
 def test_verify_pending_that_examined_nothing_does_not_pass(tmp_path):
     cli, _ = _sandbox_cli(tmp_path)
 
