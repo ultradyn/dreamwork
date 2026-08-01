@@ -461,10 +461,18 @@ for (let i = 1; i < trace.length; i++) {
     steps.push({ i, t: trace[i].t, dy: +dy.toFixed(1), dx: +dx.toFixed(1),
                  from: trace[i - 1], to: trace[i] });
 }
+/* BOTH AXES. This was `Math.abs(top - top)` and it is the one place the two
+   grades disagreed: the border-box cause moves the box 14.4px SIDEWAYS and
+   not a pixel down, so the largest-step grade read 7.0px and passed while the
+   discontinuity grade caught it. A grade that says "no single frame moves it
+   more than the travel does" and means "vertically" is a grade a purely
+   lateral defect of any size walks past. Found by this file's own red-proof
+   of the `.qa` gutter. */
 const maxStep = trace.slice(1).reduce((m, f, i) => {
   const prev = trace[i];
   if (!f.ta || !prev.ta) return m;
-  return Math.max(m, Math.abs(f.ta.top - prev.ta.top));
+  return Math.max(m, Math.abs(f.ta.top - prev.ta.top),
+                     Math.abs(f.ta.left - prev.ta.left));
 }, 0);
 
 if (process.env.DW_QJANK_TRACE) {
@@ -501,10 +509,17 @@ for (const s of steps)
 ok('the answer box never jumps: no single frame moves it more than the ' +
    `travel does — largest ${maxStep.toFixed(1)}px, floor ${JUMP_PX}px`,
    maxStep < JUMP_PX);
+/* naming the AXIS in the summary, because a lateral jump printed as its dy
+   reads `1 at t=1627.9ms (0px)` — a discontinuity of zero pixels, which is
+   the summary telling a reader the opposite of what it just found. */
+const px = (v, ax) => `${v > 0 ? '+' : ''}${v}px ${ax}`;
 ok('the answer box never jumps: the whole submit sequence contains no ' +
    'discontinuity' + (steps.length
      ? ` — ${steps.length} at ` +
-       steps.map(s => `t=${s.t}ms (${s.dy > 0 ? '+' : ''}${s.dy}px)`).join(', ')
+       steps.map(s => `t=${s.t}ms (` +
+         [Math.abs(s.dy) >= JUMP_PX ? px(s.dy, 'down') : null,
+          Math.abs(s.dx) >= JUMP_PX ? px(s.dx, 'across') : null]
+           .filter(Boolean).join(', ') + ')').join(', ')
      : ''),
    steps.length === 0);
 
