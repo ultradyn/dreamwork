@@ -73,6 +73,9 @@ from review_artifact import highlight as _hl_document
 # review_artifact, so `just deploy`'s --ship-siblings stages it beside the
 # snapshot the same way (derived transitively, never a hardcoded list).
 import status_derive
+from dreamwork_db import Access, DatabaseError, open_database
+from dreamwork_db.groups import EmptyGroup
+from dreamwork_db.tasks import task_store_spec
 
 # #653: "is client/dist built from this tree?" — one implementation, shared
 # with lint.py, so the commit-time ERROR and the serving-time reading cannot
@@ -3806,6 +3809,47 @@ def _write_question_sigs(path, store):
         pass
 
 
+def group_progress(target):
+    """Task groups with progress derived from their exact durable members.
+
+    READ access never migrates or writes the store.  Empty groups remain in
+    the payload, but carry no ratio: without a denominator the view has not
+    judged progress and must not draw a reassuring 0% or 100% bar.
+    """
+    path = store_path(os.path.join(target, ".dreamwork"))
+    if not path.exists():
+        return []
+    try:
+        with open_database(task_store_spec(path), access=Access.READ) as store:
+            records = []
+            for group in store.groups.list():
+                record = {
+                    "id": group.id,
+                    "kind": group.kind,
+                    "title": group.title,
+                    "description": group.description,
+                }
+                try:
+                    progress = store.groups.progress(group.id)
+                except EmptyGroup as exc:
+                    record["progress_error"] = str(exc)
+                else:
+                    record.update({
+                        "completed": progress.completed,
+                        "completed_count": progress.completed_count,
+                        "total_count": progress.total_count,
+                        "member_task_ids": list(progress.member_task_ids),
+                        "landed_task_ids": list(progress.landed_task_ids),
+                    })
+                records.append(record)
+            return records
+    except DatabaseError:
+        # The dashboard's collector is a read surface, not a migration route.
+        # A pre-v004 or unreadable store therefore supplies no group claim;
+        # another writer may migrate it through the canonical open path.
+        return []
+
+
 def collect(target, burn_step=None):
     now = time.time()
     dw = os.path.join(target, ".dreamwork")
@@ -3906,6 +3950,9 @@ def collect(target, burn_step=None):
         # permanent. burn_step (#487) is the cycle control's forced
         # granularity; None keeps the auto ladder.
         "burndown": ledger_stats(target, step=burn_step),
+        # #836: exact task-group membership and durable landed membership,
+        # read through #824's GroupRepository rather than recomputed here.
+        "groups": group_progress(target),
         # his colour for this project (#143). It rides /data.json rather than
         # the shell so the EXISTING mtime poll carries it: he picks a tint in
         # one window and every other window on this project follows within a

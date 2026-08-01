@@ -722,7 +722,13 @@
      text rides the aria-label/title. */
   .bdprov { margin:.45rem 0 0; }
   .provbar { display:flex; height:3px; gap:1px; margin-bottom:.35rem; }
-  .provseg { height:100%; flex:var(--share) 1 0; }
+  .provseg { height:100%; flex-basis:0; flex-shrink:1; }
+  .provbar.panimate .provseg {
+    transition:flex-grow .42s cubic-bezier(.32,.1,.2,1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .provbar.panimate .provseg { transition:none; }
+  }
   .provseg.phuman { background:var(--lit); }
   .provseg.ploop { background:var(--muted); }
   .provseg.punknown { background:repeating-linear-gradient(45deg,

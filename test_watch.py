@@ -15,6 +15,7 @@ import re
 import shutil
 import signal
 import socket
+import sqlite3
 import struct
 import subprocess
 import sys
@@ -29,6 +30,7 @@ import urllib.parse
 import urllib.request
 
 import watch
+from dreamwork_db import Access
 
 
 QUESTIONS = """# Questions for the human
@@ -62,6 +64,77 @@ def make_target(root):
     with open(os.path.join(dw, "skill-version"), "w") as f:
         f.write("2026-07-25-x.md\n")
     return root
+
+
+class TestGroupProgressRead(unittest.TestCase):
+    """#836: /data.json renders #824's exact durable group progress."""
+
+    def _store(self, root):
+        make_target(root)
+        path = os.path.join(root, ".dreamwork", "ledger.sqlite3")
+        with watch.open_database(
+                watch.task_store_spec(path), access=Access.WRITE) as store:
+            with store.transaction():
+                pass
+        conn = sqlite3.connect(path)
+        try:
+            conn.executemany(
+                "INSERT INTO task"
+                " (id,state,title,body,priority,type,origin,blocked_on)"
+                " VALUES (?,?,?,?,?,?,?,NULL)",
+                [(101, "landed", "one", "one", "P2", "task", "loop"),
+                 (102, "open", "two", "two", "P2", "task", "loop"),
+                 (103, "landed", "three", "three", "P2", "task", "loop")],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return path
+
+    def test_collect_names_exact_group_and_landed_membership(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = self._store(root)
+            with watch.open_database(
+                    watch.task_store_spec(path), access=Access.WRITE) as store:
+                with store.transaction() as tx:
+                    group_id = tx.groups.create(
+                        kind="epic", title="Rendered epic", actor="test",
+                        at="2026-08-01T00:00:00Z")
+                    for task_id in (101, 102, 103):
+                        tx.groups.add_task(
+                            group_id, task_id, actor="test",
+                            at="2026-08-01T00:00:01Z")
+
+            group = watch.collect(root)["groups"][0]
+            self.assertEqual(
+                group["member_task_ids"], [101, 102, 103],
+                "epic #1 'Rendered epic' should contain tasks [101, 102, 103], "
+                f"got {group.get('member_task_ids')}")
+            self.assertEqual(
+                group["landed_task_ids"], [101, 103],
+                "epic #1 'Rendered epic' should show landed tasks [101, 103], "
+                f"got {group.get('landed_task_ids')}")
+            self.assertEqual(
+                (group["completed_count"], group["total_count"]), (2, 3),
+                "epic #1 'Rendered epic' should be 2 of 3 tasks landed")
+
+    def test_empty_group_is_named_but_has_no_ratio(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = self._store(root)
+            with watch.open_database(
+                    watch.task_store_spec(path), access=Access.WRITE) as store:
+                with store.transaction() as tx:
+                    tx.groups.create(
+                        kind="lane", title="No tasks yet", actor="test",
+                        at="2026-08-01T00:00:00Z")
+
+            group = watch.group_progress(root)[0]
+            self.assertNotIn(
+                "total_count", group,
+                "empty lane #1 'No tasks yet' must not expose a ratio")
+            self.assertRegex(
+                group["progress_error"],
+                r"lane #1 'No tasks yet'.*0 member tasks")
 
 
 def _extract_js_fn(page, sig):

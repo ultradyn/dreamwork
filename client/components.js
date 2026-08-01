@@ -15,6 +15,24 @@ const esc = t => { const d = document.createElement('div');
 const escA = t => { const d = document.createElement('div');
                     d.textContent = t ?? '';
                     return d.innerHTML.replace(/"/g, '&quot;'); };
+/* #836 — one split-bar component. The provenance breakdown and task-group
+   progress both pass their named segments through this markup; callers own
+   the words and the data, while this owns the geometry and stable segment
+   identities. A zero total is not renderable: it has no denominator. */
+function splitBar(rows, aria, key, animated) {
+  const total = Array.isArray(rows)
+    ? rows.reduce((n, row) => n + Number(row[1] || 0), 0) : 0;
+  if (!(total > 0)) return '';
+  return `<div class="provbar${animated ? ' panimate' : ''}" role="img" ` +
+    `aria-label="${escA(aria)}">` +
+    rows.map(([name, count, cls]) => {
+      const value = Number(count || 0);
+      return `<div id="${escA(`split-${key}-${cls}`)}" ` +
+        `class="provseg ${escA(cls)}" ` +
+        `style="flex-grow:${value};min-width:${value ? 2 : 0}px" ` +
+        `title="${escA(`${name} ${value}`)}" aria-hidden="true"></div>`;
+    }).join('') + `</div>`;
+}
 const ageStr = mt => {
   let s = Math.max(0, Date.now()/1000 - mt);
   for (const [u, div] of [["d",86400],["h",3600],["m",60]])
