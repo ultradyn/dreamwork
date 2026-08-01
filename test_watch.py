@@ -14175,9 +14175,24 @@ class TestUserSettings(unittest.TestCase):
                 "unregistered.dump": "unknown setting key 'unregistered.dump'",
             })
 
-    def test_batch_http_set_is_atomic_and_reports_invalid_second_key(self):
+    def test_empty_http_batches_are_refused_not_vacuously_successful(self):
         with tempfile.TemporaryDirectory() as d:
             _store_target(d)
+            base = self._serve(d)
+            status, refused = self._get_json(base + "/settingsdata")
+            self.assertEqual(status, 400)
+            self.assertEqual(refused["errors"], {
+                "$batch": "at least one setting key is required",
+            })
+            status, refused = self._post_json(
+                base + "/settings", {"values": {}})
+            self.assertEqual(status, 202)
+            self.assertTrue(refused["rejected"], refused)
+            self.assertEqual(refused["reason"], "schema_invalid")
+
+    def test_batch_http_set_is_atomic_and_reports_invalid_second_key(self):
+        with tempfile.TemporaryDirectory() as d:
+            dw = _store_target(d)
             base = self._serve(d)
             values = {"composer.rememberManualResize": True,
                       "gfx.dither": "invalid"}
@@ -14198,11 +14213,20 @@ class TestUserSettings(unittest.TestCase):
             status, refused = self._post_json(
                 base + "/settings", {"values": unknowns})
             self.assertEqual(status, 202)
+            self.assertTrue(refused["rejected"], refused)
             self.assertEqual(refused["errors"], {
                 "unregistered.dump": "unknown setting key 'unregistered.dump'",
             })
             self.assertFalse(
                 watch.read_settings(d)["values"]["composer.rememberManualResize"])
+            import sqlite3
+            conn = sqlite3.connect(str(watch.store_path(dw)))
+            try:
+                self.assertEqual(conn.execute(
+                    "SELECT COUNT(*) FROM user_setting WHERE key = ?",
+                    ("unregistered.dump",)).fetchone()[0], 0)
+            finally:
+                conn.close()
 
     def test_batch_http_set_returns_changed_values_and_default_deletes(self):
         with tempfile.TemporaryDirectory() as d:
