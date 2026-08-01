@@ -34,7 +34,9 @@ def test_a_call_site_or_comment_is_not_a_definition(tmp_path: Path, monkeypatch)
     (tmp_path / "router.js").write_text("// tick handles refresh\ntick();\n")
     monkeypatch.setattr("dev.reanchor_citations.source_files", lambda _root: ["router.js"])
     item = resolve(tmp_path, citation("`tick()` (`watch.py:9000`) snapshots state"))
-    assert item.reason == "cannot resolve named symbol"
+    assert item.reason == "cannot resolve named symbol", (
+        "router.js call/comment text was misclassified as the definition of tick"
+    )
     assert "CANNOT RESOLVE" in format_resolution(item)
 
 
