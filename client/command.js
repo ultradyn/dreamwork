@@ -209,6 +209,21 @@ async function requestPopout() {
         if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
           ev.preventDefault(); doc.getElementById('pform').requestSubmit();
         }
+        // #259 — Shift+Tab inside the popout textarea cycles the kinds the
+        // same way the main composer does, through THIS window's one keydown
+        // handler. The popout is a <select>, so its options are already in
+        // visible order and a change announces itself to AT. No second
+        // composer mount — #241's contract is the main surface, and the
+        // popout inherits the gesture here rather than re-mounting it.
+        else if (ev.key === 'Tab' && ev.shiftKey
+             && ev.target && ev.target.id === 'ptext') {
+          const sel = doc.getElementById('pkind');
+          if (sel && sel.options.length > 1) {
+            ev.preventDefault();
+            sel.selectedIndex =
+              (sel.selectedIndex + 1) % sel.options.length;
+          }
+        }
       });
       // #459: popout #ptext binds to DraftStore as popout:main — same rules
       // as the main composer (save every input, restore into empty, clear
@@ -773,6 +788,33 @@ function mountComposer(target) {
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && open) closeCmd();
+  });
+  /* #259 — inside the composer textarea, Shift+Tab cycles the command kinds
+     in VISIBLE order: the menu lists every eligible kind (core + plugin) in
+     COMMANDS order, and renderMenu iterates COMMANDS, so the menu's DOM order
+     IS the visible order. The row carries only common + active, so cycling
+     reads the menu (the one place an uncommon/plugin kind is shown) and
+     setKind brings the chosen kind into the row. Draft and focus are
+     preserved: setKind moves only the indicator and the selection, and
+     saveDraft records the new kind so it travels with the text (the click
+     path's rule). Reduced motion snaps through slideIndicator. Plain Tab and
+     Shift+Tab elsewhere stay browser focus — the guard is cmdtext-scoped. */
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Tab' || !e.shiftKey) return;
+    const t = e.target;
+    if (!t || t.id !== 'cmdtext') return;
+    const order = Array.from(
+      document.querySelectorAll('#cmdmenu .cmdmenuitem'))
+      .map(n => n.dataset.kind).filter(Boolean);
+    if (order.length < 2) return;
+    e.preventDefault();
+    let i = order.indexOf(activeKind); if (i < 0) i = 0;
+    const kind = order[(i + 1) % order.length];
+    setKind(kind);
+    saveDraft();
+    const c = COMMANDS.find(c => c.kind === kind);
+    announceMode(c ? (c.plugin ? c.label + ' · from ' + c.plugin : c.label)
+                   : kind);
   });
   // Ctrl/Cmd+Enter submits from a text field: an answer box (anywhere —
   // questions view, review dock), the command palette, or the /answers

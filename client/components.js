@@ -851,6 +851,16 @@ function slideIndicator(group, snap) {
    render, and on resize, since a wrapped row moves its buttons */
 const paintIndicators = snap =>
   document.querySelectorAll('.sgroup').forEach(g => slideIndicator(g, snap));
+/* #259 — a Shift+Tab mode cycle announces itself through ONE visually-hidden
+   live region (#modestatus in the shell), because the sliding indicator is
+   sight-only and the textarea's accessible name is read only on focus. The
+   region is static (no transition): nothing appears or vanishes, so the page's
+   transition contract is not in play. Each caller passes the label in its own
+   voice ('answer' / 'add note' for a card, the kind label for the composer). */
+function announceMode(text) {
+  const m = document.getElementById('modestatus');
+  if (m) m.textContent = text || '';
+}
 /* ── the card's one input (#103) ──────────────────────────────────────────
    The human's words: "use same text input for answer and note. below text
    input, have a button group choose between [ Answer | Add Note ]. on the

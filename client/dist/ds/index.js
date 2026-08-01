@@ -2534,6 +2534,10 @@ var DreamworkDesign = (() => {
     }
   }
   var paintIndicators = (snap) => document.querySelectorAll(".sgroup").forEach((g) => slideIndicator(g, snap));
+  function announceMode(text) {
+    const m = document.getElementById("modestatus");
+    if (m) m.textContent = text || "";
+  }
   var QMODES = { answer: "answer", note: "add note" };
   var qaModesFor = (st) => st === "folded" ? ["note"] : ["answer", "note"];
   var qaDefaultMode = (st) => st === "open" ? "answer" : "note";
@@ -6241,6 +6245,23 @@ var DreamworkDesign = (() => {
     e.preventDefault();
     setCardMode(btn.closest(".qcompose"), btn.dataset.mode, false);
   });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab" || !e.shiftKey) return;
+    const t = e.target;
+    if (!t || t.tagName !== "TEXTAREA") return;
+    const comp = t.closest(".qcompose");
+    const group = comp && comp.querySelector(".sgroup.qmodes");
+    if (!group) return;
+    const btns = Array.from(group.querySelectorAll(".qmode"));
+    if (btns.length < 2) return;
+    e.preventDefault();
+    const cur = group.querySelector(".qmode.on") || btns[0];
+    let i = btns.indexOf(cur);
+    if (i < 0) i = 0;
+    const next = btns[(i + 1) % btns.length];
+    setCardMode(comp, next.dataset.mode, false);
+    announceMode(next.textContent.trim());
+  });
   function lineHeightOf(ta, cs) {
     cs = cs || getComputedStyle(ta);
     const lh = parseFloat(cs.lineHeight);
@@ -7334,6 +7355,12 @@ var DreamworkDesign = (() => {
           if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") {
             ev.preventDefault();
             doc.getElementById("pform").requestSubmit();
+          } else if (ev.key === "Tab" && ev.shiftKey && ev.target && ev.target.id === "ptext") {
+            const sel = doc.getElementById("pkind");
+            if (sel && sel.options.length > 1) {
+              ev.preventDefault();
+              sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length;
+            }
           }
         });
         const pta = doc.getElementById("ptext");
@@ -7681,6 +7708,23 @@ var DreamworkDesign = (() => {
     });
     document2.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && open) closeCmd();
+    });
+    document2.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab" || !e.shiftKey) return;
+      const t = e.target;
+      if (!t || t.id !== "cmdtext") return;
+      const order = Array.from(
+        document2.querySelectorAll("#cmdmenu .cmdmenuitem")
+      ).map((n) => n.dataset.kind).filter(Boolean);
+      if (order.length < 2) return;
+      e.preventDefault();
+      let i = order.indexOf(activeKind);
+      if (i < 0) i = 0;
+      const kind = order[(i + 1) % order.length];
+      setKind(kind);
+      saveDraft();
+      const c = COMMANDS.find((c2) => c2.kind === kind);
+      announceMode(c ? c.plugin ? c.label + " · from " + c.plugin : c.label : kind);
     });
     document2.addEventListener("keydown", (e) => {
       if (!((e.ctrlKey || e.metaKey) && e.key === "Enter")) return;
