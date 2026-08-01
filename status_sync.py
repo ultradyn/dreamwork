@@ -68,6 +68,7 @@ LEDGER_HEAD = re.compile(rf"^- \*\*({watch.IDS_ONLY_SPAN})\*\*", re.M)
 # one home is ledger_parse now.
 from ledger_parse import ENTRY_ID  # noqa: E402
 from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
+from worktree_paths import worktree_roots as _canonical_worktree_roots  # noqa: E402
 
 
 # The three top-level keys this tool owns. Everything else in status.json is
@@ -350,13 +351,9 @@ def _observable(d: dict) -> bool:
 # read but cannot classify is REPORTED, never silently dropped and never
 # silently added — the mirror of #702's "cannot compare must not read as
 # landed" applied to discovery rather than reap.
-WORKTREE_DIR = ".worktrees"
-
-
 def worktree_roots(target: Path) -> tuple[str, str]:
     """New-worktree root first, then the draining in-repo root (#846)."""
-    root = target.resolve()
-    return (str(root.parent / WORKTREE_DIR), str(root / WORKTREE_DIR))
+    return tuple(str(path) for path in _canonical_worktree_roots(target))
 
 
 def _lane_worktree_path(target: Path, lane: str, pid: int) -> Path:

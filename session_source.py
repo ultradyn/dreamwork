@@ -65,6 +65,7 @@ from pathlib import Path
 # (#655: a hand-rolled reader passed every test its author wrote) and refuses
 # rather than crashes on a file that cannot be parsed (#402).
 from status_sync import _read_status
+from worktree_paths import worktree_roots
 
 # The loop's heartbeat (`initialization.md` step 5): 4.75 min. A transcript is
 # treated as stale once its last record is older than three beats — the one
@@ -358,9 +359,7 @@ def _target_slug_dirs(target, projects_root) -> list[tuple[str, Path]]:
     dirs = []
     main_slug = _slug_for(target)
     dirs.append((main_slug, base / main_slug))
-    target_path = Path(target).resolve()
-    for wt_root in (target_path.parent / ".worktrees",
-                    target_path / ".worktrees"):
+    for wt_root in worktree_roots(Path(target)):
         if wt_root.is_dir():
             for wt in sorted(wt_root.iterdir()):
                 if wt.is_dir() and not wt.is_symlink():

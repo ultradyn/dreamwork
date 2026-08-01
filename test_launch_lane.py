@@ -34,6 +34,7 @@ def launch_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _git(root, "config", "user.name", "Test")
     _write(root / "briefs" / "boilerplate.md", "# Standing rules\nDo the checked work.\n")
     _write(root / "dev" / "launch_lane.py", TOOL.read_text(encoding="utf-8"))
+    _write(root / "worktree_paths.py", (REPO / "worktree_paths.py").read_text(encoding="utf-8"))
     _write(root / "dev" / "dispatch_lane.py", """
 import argparse, os, subprocess, sys
 p = argparse.ArgumentParser(); p.add_argument('--prompt'); p.add_argument('--prepare', action='store_true'); p.add_argument('rest', nargs=argparse.REMAINDER)
@@ -205,6 +206,20 @@ def test_runner_exit_is_not_reported_as_success_and_attempt_is_durable(launch_re
     assert observed.read_text(encoding="utf-8").startswith("unverified attempt:")
     assert path.with_suffix(".prompt.md").is_file()
     assert "lane-832" in _worktree_rows(launch_repo)
+
+
+def test_launcher_resolves_lane_under_the_sibling_worktree_root(launch_repo: Path):
+    env = os.environ.copy(); env["CCC_EXIT"] = "7"
+    result = _run(launch_repo, _head(launch_repo), env=env)
+    _, record = _attempt(launch_repo)
+    expected = (launch_repo.parent / ".worktrees" / "lane-832").resolve()
+
+    assert result.returncode == 7
+    assert Path(str(record["worktree"])) == expected
+    assert f"worktree {expected}" in _worktree_rows(launch_repo)
+    assert not (launch_repo / ".worktrees").exists(), (
+        "the governed launcher recreated the draining in-repo root"
+    )
 
 
 def test_changed_bytes_cannot_resume_the_same_attempt(launch_repo: Path):

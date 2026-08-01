@@ -14,6 +14,13 @@ import subprocess
 import sys
 from typing import Sequence
 
+# Direct script execution puts dev/ rather than the repo root on sys.path.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from worktree_paths import lane_worktree_path  # noqa: E402
+
 
 LANE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 ATTEMPT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
@@ -264,7 +271,7 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
         return _refuse("selection", [str(exc)], f"repo={repo}", "worktree=none; branch=none")
     base_sha = _git_text(main, "rev-parse", "--verify", "master^{commit}")
     current = _git_text(main, "branch", "--show-current")
-    lane_path = main / ".worktrees" / lane
+    lane_path = lane_worktree_path(main, lane)
     inbox = main / ".dreamwork" / "inbox.md"
     retained = "worktree=none; branch=none"
 
