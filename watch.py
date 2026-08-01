@@ -3918,8 +3918,7 @@ def collect(target, burn_step=None):
         # instrumentation, because tasks.md is versioned and its ids are
         # permanent. burn_step (#487) forces granularity; None keeps auto.
         "burndown": ledger_stats(target, step=burn_step),
-        "groups": group_progress(target),  # #836: #824's durable membership
-        "goals": goal_tree_payload(target),  # #890: denominator-bearing tree
+        "groups": group_progress(target), "goals": goal_tree_payload(target),
         # his colour for this project (#143). It rides /data.json rather than
         # the shell so the EXISTING mtime poll carries it: he picks a tint in
         # one window and every other window on this project follows within a
