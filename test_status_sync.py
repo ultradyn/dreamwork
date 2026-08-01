@@ -912,6 +912,29 @@ class TestMalformedTaskNotReapedAsDead:
             live_proc.kill()
             live_proc.wait()
 
+    def test_dead_process_reaps_even_when_task_cannot_be_compared(self,
+                                                                  tmp_path):
+        """Process death and ledger landing are independent predicates.
+
+        A malformed task id is kept only when its process is still the lane;
+        the ``cannot compare`` refusal must not preserve a dead process entry.
+        """
+        dead_pid = _dead_pid()
+        assert not status_sync._pid_alive(dead_pid), \
+            "precondition: lane process must be dead"
+        entry = {"task": "#696", "pid": dead_pid,
+                 "brief": "/tmp/dead-821/BRIEF.md"}
+        status = {"dreamers": [entry], "current_task_ids": ["#696"],
+                  "queue": {}, "task": "t"}
+        rc, out, err = _run(status, _ledger(696), tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        assert result["dreamers"] == [], \
+            "dead lane was preserved by the cannot-compare ledger refusal"
+        assert "KEPT" not in err, \
+            "dead lane incorrectly reached the landed-task comparison: %s" % err
+
 
 # ── 10. status.json is ephemera: read it defensively (#402) ────────────
 #
