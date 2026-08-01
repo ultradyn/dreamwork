@@ -179,6 +179,8 @@ try {
     const rows = [...document.querySelectorAll('[data-chat]')].map(a => ({
       tag: a.tagName, href: a.getAttribute('href') || '',
       id: a.getAttribute('data-chat') || '',
+      top: Math.round(a.getBoundingClientRect().top),
+      turnText: ((a.querySelector('.age') || {}).textContent || '').trim(),
     }));
     return { label: lab ? lab.textContent : null, rows };
   });
@@ -200,6 +202,14 @@ try {
      dash.rows.length > 0 && dash.rows.every(r => r.tag === 'A'));
   ok('every row links to its /chat/<id> page',
      dash.rows.length > 0 && dash.rows.every(r => r.href === '/chat/' + r.id));
+  ok('adjacent chat rows occupy distinct lines (never "2 turnsreplied")',
+     new Set(dash.rows.map(r => r.top)).size === dash.rows.length);
+  ok('every settled row count matches its authoritative transcript count',
+     dash.rows.length > 0 && dash.rows.every(r => {
+       const rec = byId.get(r.id);
+       const want = rec && (rec.turns === 1 ? '1 turn' : `${rec.turns} turns`);
+       return r.turnText === want;
+     }));
   const followupRow = dash.rows.find(r => r.id === 'chat-followup');
   ok('the followup chat has a row linking to its page',
      !!followupRow && followupRow.href === '/chat/chat-followup');
