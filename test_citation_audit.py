@@ -9,16 +9,20 @@ import sys
 import textwrap
 from pathlib import Path
 
+import subprocess
+
 import pytest
 
 # Make dev/ importable when running from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dev.citation_audit import (  # noqa: E402
+    CorpusCoverage,
     Citation,
     _content_words,
     audit_briefs,
     classify,
+    corpus_coverage,
     extract_citations,
     format_report,
 )
@@ -191,3 +195,88 @@ def test_content_words_keeps_short_meaningful_words():
     words = _content_words("queued dispatches rot")
     assert "queued" in words
     assert "rot" in words
+
+
+# -- corpus coverage (#671/#651/#788): a truncated audit must say so ---------
+# The precondition these tests depend on is a corpus where tracked and
+# on-disk counts DIFFER — a corpus where they are equal makes a broken
+# split-reporter indistinguishable from a working one, which is precisely
+# the shape that let #786 through (Direction 2 of the red-proof).
+
+
+def _git_corpus(tmp_path: Path, tracked: int, untracked: int) -> Path:
+    """Build a brief corpus under a fresh git repo with a measured split.
+
+    Asserts the gap (tracked != on_disk) rather than trusting the caller's
+    counts, so a fixture that accidentally lands equal is caught here
+    rather than passing the real test vacuously.
+    """
+    briefs = tmp_path / "briefs"
+    briefs.mkdir()
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "user.email", "t@t"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "user.name", "test"],
+        check=True,
+    )
+    for i in range(tracked):
+        (briefs / f"tracked-{i}.md").write_text(f"#100 — brief {i}\n")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "briefs"], check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-qm", "seed"], check=True,
+    )
+    for i in range(untracked):
+        (briefs / f"untracked-{i}.md").write_text(f"#100 — stray {i}\n")
+    # Precondition: the fixture must actually have the split we test for.
+    cov = corpus_coverage(briefs)
+    assert cov.on_disk == tracked + untracked, cov
+    assert cov.untracked == untracked, cov
+    return briefs
+
+
+def test_corpus_coverage_names_tracked_vs_on_disk_split(tmp_path):
+    """A corpus with untracked briefs reports the divergence (#788)."""
+    briefs = _git_corpus(tmp_path, tracked=3, untracked=2)
+    cov = corpus_coverage(briefs)
+    # The discriminating assertion: untracked is named, not zero.
+    assert cov.tracked == 3
+    assert cov.on_disk == 5
+    assert cov.untracked == 2
+
+
+def test_corpus_coverage_equal_when_no_git(tmp_path):
+    """Outside git, coverage reads as complete (no false alarm)."""
+    briefs = tmp_path / "briefs"
+    briefs.mkdir()
+    (briefs / "a.md").write_text("x\n")
+    (briefs / "b.md").write_text("x\n")
+    cov = corpus_coverage(briefs)
+    assert cov.tracked == cov.on_disk == 2
+    assert cov.untracked == 0
+
+
+def test_report_names_split_when_corpus_truncated(tmp_path):
+    """format_report flags INCOMPLETE when untracked briefs exist (#671).
+
+    This is the half that survives even if the corpus gets committed: a
+    tool that names its own input boundary stays honest permanently.
+    """
+    briefs = _git_corpus(tmp_path, tracked=3, untracked=1)
+    report = audit_briefs(briefs, _fixture_entries())
+    text = format_report(report)
+    assert "3 tracked / 4 on disk" in text
+    assert "INCOMPLETE" in text
+
+
+def test_report_quiet_when_corpus_complete(tmp_path):
+    """format_report does not alarm when tracked == on_disk."""
+    briefs = _git_corpus(tmp_path, tracked=2, untracked=0)
+    report = audit_briefs(briefs, _fixture_entries())
+    text = format_report(report)
+    assert "2 tracked / 2 on disk" in text
+    assert "INCOMPLETE" not in text
