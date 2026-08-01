@@ -36,6 +36,7 @@ _TASK_HEAD = re.compile(r"^# [^\n]*?#(\d+)\b", re.MULTILINE)
 _BRANCH_LINE = re.compile(
     r"^Branch:\s+`?([A-Za-z0-9][A-Za-z0-9._-]*)`?\s*$", re.MULTILINE
 )
+_BASE_SHA_LINE = re.compile(r"^Base sha: ([0-9a-f]{7,40})$", re.MULTILINE)
 _RECEIPT = re.compile(r"([0-9a-f]{64})  ([^/\n]+\.md)\n?\Z")
 _LEDGER_GET = re.compile(r"\bledger\.py\s+get\s+(\d+)\b")
 _BARE_TASK_CITE = re.compile(r"(?<![\w])#(\d+)\b")
@@ -153,6 +154,58 @@ def validate_prompt(prompt: str, contract: str, coordinator_inbox: Path) -> None
         raise DispatchFault(
             "task-specific head must contain exactly this unambiguous coordinator "
             f"inbox instruction: {expected}"
+        )
+
+
+def _resolve_commit(revision: str, label: str) -> str:
+    result = subprocess.run(
+        [
+            "git", "-C", str(ROOT), "rev-parse", "--verify", "--end-of-options",
+            f"{revision}^{{commit}}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    resolved = result.stdout.strip()
+    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", resolved):
+        detail = result.stderr.strip() or f"git exited {result.returncode}"
+        raise DispatchFault(f"{label} {revision!r} does not resolve to a commit: {detail}")
+    return resolved
+
+
+def validate_base_sha(prompt_head: str, branch: str) -> None:
+    """Require the named base to resolve to this lane branch's actual branch point."""
+    base_lines = [line for line in prompt_head.splitlines() if line.startswith("Base sha:")]
+    matches = _BASE_SHA_LINE.findall(prompt_head)
+    if not base_lines:
+        raise DispatchFault(
+            "task-specific head is missing required 'Base sha: <git revision>' line"
+        )
+    if len(base_lines) != 1 or len(matches) != 1:
+        raise DispatchFault(
+            "task-specific head must contain exactly one 'Base sha: <git revision>' line; "
+            "the revision must be 7-40 lowercase hexadecimal characters"
+        )
+
+    stated = _resolve_commit(matches[0], "Base sha")
+    branch_commit = _resolve_commit(branch, "Branch")
+    result = subprocess.run(
+        ["git", "-C", str(ROOT), "merge-base", "master", branch_commit],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch_point = result.stdout.strip()
+    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", branch_point):
+        detail = result.stderr.strip() or f"git exited {result.returncode}"
+        raise DispatchFault(
+            f"could not determine branch point of master and {branch!r}: {detail}"
+        )
+    if stated != branch_point:
+        raise DispatchFault(
+            f"Base sha {matches[0]!r} resolves to {stated}, but does not match "
+            f"branch point {branch_point} of master and {branch!r}"
         )
 
 
@@ -379,6 +432,8 @@ def main(argv: list[str] | None = None) -> int:
         coordinator_inbox = briefs_dir.parent.parent / "inbox.md"
         validate_prompt(prompt, contract, coordinator_inbox)
         prompt_head = prompt[:prompt.find(contract)]
+        _, branch = _identity(prompt)
+        validate_base_sha(prompt_head, branch)
         for report in ledger_reference_reports(prompt_head, briefs_dir.parent.parent):
             print(report, file=sys.stderr)
         try:
