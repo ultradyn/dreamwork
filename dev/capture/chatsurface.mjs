@@ -323,7 +323,7 @@ try {
     const body = document.querySelector('.chaturn[data-role="agent"] .chatbody');
     const first = body && body.querySelector(':scope > p');
     const quote = body && body.querySelector('blockquote.mdquote');
-    const lineHeight = first ? parseFloat(getComputedStyle(first).lineHeight) : 0;
+    const fontSize = first ? parseFloat(getComputedStyle(first).fontSize) : 0;
     const range = document.createRange();
     if (first) range.selectNodeContents(first);
     const renderedLines = first
@@ -347,7 +347,7 @@ try {
       paragraphLines: first ? first.innerText.split('\n').length : 0,
       renderedLines,
       paragraphHeight: first ? first.getBoundingClientRect().height : 0,
-      lineHeight,
+      fontSize,
       quoteBreaks: quote ? quote.querySelectorAll(':scope > br').length : 0,
       quoteLines: quote ? quote.innerText.split('\n').length : 0,
       fenceBreaks: body ? body.querySelectorAll('pre.mdcode br').length : 0,
@@ -361,10 +361,10 @@ try {
   notes.push('markdown chat DOM: ' + JSON.stringify(markdown));
   ok('#857 rendered first paragraph has 2 lines / 1 <br> and measured height ' +
      `(${markdown.renderedLines} painted lines, ${markdown.paragraphBreaks} br, ` +
-     `${markdown.paragraphHeight.toFixed(1)}px / ${markdown.lineHeight.toFixed(1)}px line)`,
+     `${markdown.paragraphHeight.toFixed(1)}px high / ${markdown.fontSize.toFixed(1)}px font)`,
      markdown.paragraphLines === 2 && markdown.renderedLines === 2 &&
      markdown.paragraphBreaks === 1 &&
-     markdown.paragraphHeight >= markdown.lineHeight * 1.8);
+     markdown.paragraphHeight >= markdown.fontSize * 1.8);
   ok('#857 consecutive quote source lines render as 2 lines / 1 <br>',
      markdown.quoteLines === 2 && markdown.quoteBreaks === 1);
   ok('#857 the opt-in chat rendering differs from the flowed document control',
