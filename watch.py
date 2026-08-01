@@ -2740,8 +2740,7 @@ def _chat_turn_block(role, text, at, receipt_id=None):
 _CHAT_TURN_RE = re.compile(
     r"^<!--\s*dw-turn\s+role=(?P<role>\w+)\s+at=(?P<at>\S+)"
     r"(?:\s+receipt=(?P<rid>\S+))?\s*-->[ \t]*\r?$\n"
-    r"(?P<body>.*?)\r?\n^<!--\s*/dw-turn\s*-->[ \t]*\r?$",
-    re.DOTALL | re.MULTILINE)
+    r"(?P<body>.*?)\r?\n^<!--\s*/dw-turn\s*-->[ \t]*\r?$", re.DOTALL | re.MULTILINE)
 
 
 def _parse_chat_turns(text):
