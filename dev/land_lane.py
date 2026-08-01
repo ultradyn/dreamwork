@@ -23,6 +23,7 @@ reads ``git log`` — so they run where HEAD *is* the merge commit, and
 from __future__ import annotations
 
 import argparse
+import ast
 from dataclasses import dataclass
 import os
 from pathlib import Path, PurePosixPath
@@ -132,6 +133,114 @@ def _derived_test(path: str) -> str | None:
     return f"test_{name.stem}.py"
 
 
+# The name convention (above) finds tests NAMED FOR a module. It cannot find a
+# test that merely IMPORTS the changed module under a different name — and that
+# was #949's own blind spot: dev/land_lane.py changed, the convention derived
+# test_land_lane.py, but the break was in test_suite_baseline.py, which does
+# `from dev import land_lane` (#953). Two mechanisms close the two cases the
+# convention cannot reach, because one rule cannot cover both:
+
+# (1) IMPORT-GRAPH derivation — for each changed Python module, find every
+# test file whose AST imports it. Strictly wider than the name convention for
+# any test that imports what it tests, and it does NOT widen to prose mentions
+# (a grep over the module name would drag in test_brief.py for nothing, which
+# is the full-suite run under another name). Accepted cost: a test that
+# exercises the module through importlib (test_land_lane.py's loader) or a
+# subprocess is NOT reached here — the name convention covers the first, and
+# the second has no static signal at all.
+def _dotted_module(path: str) -> str | None:
+    """``dev/land_lane.py`` → ``dev.land_lane``; non-``.py`` → ``None``."""
+    name = PurePosixPath(path)
+    if name.suffix != ".py" or name.name == "__init__.py":
+        return None
+    return ".".join(name.with_suffix("").parts)
+
+
+def _import_targets(source: str) -> frozenset[str]:
+    """Every dotted module a test source references via a static import.
+
+    Records ``import a.b`` → ``a.b`` and ``from a import b`` → ``a`` plus
+    ``a.b``, so ``from dev import land_lane`` yields ``dev.land_lane`` and
+    matches a changed ``dev/land_lane.py``. Relative imports (``level > 0``)
+    and ``*`` are excluded: the first is ambiguous without package context and
+    the second carries no module name. A SyntaxError returns an empty set so an
+    unparseable test file is skipped rather than crashing the gate.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return frozenset()
+    targets: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                targets.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            targets.add(node.module)
+            for alias in node.names:
+                if alias.name != "*":
+                    targets.add(f"{node.module}.{alias.name}")
+    return frozenset(targets)
+
+
+def _import_derived(repo: Path, modules: Sequence[str]) -> tuple[str, ...]:
+    """Test files at the repo root whose AST imports any of ``modules``.
+
+    ``modules`` are dotted module names (from ``_dotted_module``). A test
+    covers a changed module when the module's dotted name is among the test's
+    import targets, or a target extends it (``from dev.land_lane import X``
+    produces ``dev.land_lane.X``). Root-level ``test_*.py`` only — matching the
+    name convention's reach, so the two rules share one documented limit.
+    """
+    wanted = {m for m in modules if m}
+    if not wanted:
+        return ()
+    found: set[str] = set()
+    for test_path in sorted(repo.glob("test_*.py")):
+        try:
+            source = test_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        targets = _import_targets(source)
+        if any(w in targets or any(t.startswith(w + ".") for t in targets) for w in wanted):
+            found.add(test_path.name)
+    return tuple(sorted(found))
+
+
+# (2) DIRECTORY→TESTSET MAP — for the case no file-name or import rule can
+# express: a changed file whose coverage lives in GENERIC tests that SCAN a
+# directory rather than name or import any one file. dev/capture/gitrow.mjs is
+# covered by test_guard_evidence.py and test_guard_argv.py, which enumerate
+# dev/capture/*.mjs as a set; the relationship is directory-to-testset, not
+# name-to-name. A map is honest about being hand-maintained, and the gate
+# REFUSES when an entry's target is absent from the merged tree (below) — a
+# declared contract pointing at nothing is the map going stale, and landing
+# through it would be the "named a file that exists but is irrelevant → GREEN"
+# hole one level meta. test_guard_preflight.py is NOT here: it tests
+# dev/guard_preflight.py (single file → the name convention reaches it), not
+# the directory.
+DIR_TESTSET_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("dev/capture/", ("test_guard_evidence.py", "test_guard_argv.py")),
+)
+
+
+def _map_derived(changed: Sequence[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Apply ``DIR_TESTSET_MAP``: return (test targets, matched directories).
+
+    A changed path matches a mapped directory when it sits at or beneath it.
+    Only directories that actually matched a changed path contribute targets,
+    so a landing that touches no file under a mapped dir is never blocked by
+    that dir's entry.
+    """
+    matched_dirs: list[str] = []
+    targets: set[str] = set()
+    for directory, tests in DIR_TESTSET_MAP:
+        if any(p == directory.rstrip("/") or p.startswith(directory) for p in changed):
+            matched_dirs.append(directory)
+            targets.update(tests)
+    return tuple(sorted(targets)), tuple(matched_dirs)
+
+
 def _named_files(tests: Sequence[str]) -> frozenset[str]:
     """The files the named selection runs IN FULL.
 
@@ -208,34 +317,65 @@ def _requirement_line(diff: Diff) -> str:
     )
 
 
-def _derived_tests_line(diff: Diff, existing: Sequence[str], unnamed: Sequence[str]) -> str:
-    """What the convention derived, and — the #948 failure mode — what it did not.
+def _derived_tests_line(
+    diff: Diff,
+    *,
+    name: Sequence[str],
+    imported: Sequence[str],
+    mapped: Sequence[str],
+    mapped_dirs: Sequence[str],
+    existing: Sequence[str],
+    unnamed: Sequence[str],
+    absent: Sequence[str],
+) -> str:
+    """What derivation reached, per mechanism, and — the #948 failure mode — what it did not.
 
     "derived 0 required tests" is exactly how #936 hid: eleven failures sat on
     master for two hours because ``lint.py`` changed and ``test_lint.py`` was
     never named. So a zero here says WHY it is zero and what the branch's
     coverage then rests on, rather than reading like a satisfied requirement.
+
+    Three rules now contribute (#953): the name convention, the import graph,
+    and a directory→testset map. The line names what EACH reached, because a
+    single total would hide that one of them contributed nothing — and the
+    branch whose coverage rests on an empty mechanism is the one this report
+    exists to flag. ``absent`` names derived tests the merged tree does not
+    hold (a stale map target or a deleted name-derived file): the map case is a
+    refusal at the call site, but the name/import cases can only be reported,
+    so they appear here rather than reading as satisfied.
     """
     reach = (
-        "this convention reaches root-level `test_<stem>.py` only: a changed "
-        "`client/*.js`, or a file whose tests live in a differently-named "
-        "module, derives NOTHING and is not covered by this line"
+        "name reaches root-level `test_<stem>.py` only; import reaches root "
+        "`test_*.py` that statically import the module (not importlib loaders or "
+        "subprocess calls); map reaches the declared directories in "
+        "DIR_TESTSET_MAP only — anything else derives NOTHING and is not covered "
+        "by this line"
+    )
+    by_rule = (
+        f"name={len(name)} import={len(imported)} map={len(mapped)}"
+        + (f" (matched dirs: {' '.join(mapped_dirs)})" if mapped_dirs else "")
     )
     if not existing:
         return (
             f"derived-tests: 0 required tests from {len(diff.changed)} changed "
-            f"path(s) — {len(diff.tests)} name(s) derived, 0 present in the merged "
-            f"tree. This is NOT coverage: the branch rests entirely on the named "
-            f"selection. {reach}"
+            f"path(s) — {by_rule}; 0 present in the merged tree. This is NOT "
+            f"coverage: the branch rests entirely on the named selection. {reach}"
         )
     added = (
         "all were already named"
         if not unnamed
         else f"{len(unnamed)} were NOT named and have been ADDED: " + " ".join(unnamed)
     )
+    missing = (
+        ""
+        if not absent
+        else f"; {len(absent)} DERIVED BUT ABSENT (stale derivation): "
+        + " ".join(absent)
+    )
     return (
         f"derived-tests: {len(existing)} required test(s) from "
-        f"{len(diff.changed)} changed path(s): {' '.join(existing)}; {added}. {reach}"
+        f"{len(diff.changed)} changed path(s) by 3 rules [{by_rule}]: "
+        f"{' '.join(existing)}; {added}{missing}. {reach}"
     )
 
 
@@ -681,9 +821,48 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
     # Accepted cost: a branch touching `foo.py` is now blocked when
     # `test_foo.py` is red for a reason the branch did not cause — which is
     # #936's complaint, not a regression against it.
-    existing = tuple(t for t in diff.tests if (repo / t).is_file())
+    #
+    # #953 widened derivation beyond the name convention. The name rule is
+    # path-based and was computed pre-merge in ``_classify_diff`` (``diff.tests``);
+    # the import-graph and directory-map rules are computed HERE because they
+    # read test-file CONTENTS, and a branch may have ADDED the test that imports
+    # the changed module — which only the merged tree (HEAD, below) holds. Each
+    # rule is RUN, never just reported (#949's IGC ruling: REPORT was refuted by
+    # #936, where a true "not run" line was read past for two hours).
+    name_tests = diff.tests
+    import_tests = _import_derived(
+        repo, [_dotted_module(p) for p in diff.binding if p.endswith(".py")]
+    )
+    mapped_tests, mapped_dirs = _map_derived(diff.changed)
+    derived = tuple(sorted(set(name_tests) | set(import_tests) | set(mapped_tests)))
+    existing = tuple(t for t in derived if (repo / t).is_file())
     unnamed = tuple(t for t in existing if t not in _named_files(tests))
-    print(_derived_tests_line(diff, existing, unnamed))
+    absent = tuple(sorted(set(derived) - set(existing)))
+    # The directory map is a declared contract: an entry whose target is absent
+    # from the merged tree is the map going STALE, and landing through it would
+    # be the "named a file that exists but is irrelevant → GREEN" hole one level
+    # meta. Refuse only when a changed path actually matched the mapped dir, so
+    # a landing that touches nothing under it is never blocked by its entry.
+    map_absent = tuple(t for t in mapped_tests if t not in existing) if mapped_dirs else ()
+    if map_absent:
+        return refuse_gated(
+            "named-tests",
+            "directory→testset map targets a test ABSENT from the merged tree; "
+            "the map is stale and the branch rests on coverage it does not have",
+            f"merge={merged_sha}; matched-dirs={list(mapped_dirs)!r}; "
+            f"absent-targets={list(map_absent)!r}; "
+            "remedy: update DIR_TESTSET_MAP in dev/land_lane.py or restore the test",
+        )
+    print(_derived_tests_line(
+        diff,
+        name=name_tests,
+        imported=import_tests,
+        mapped=mapped_tests,
+        mapped_dirs=mapped_dirs,
+        existing=existing,
+        unnamed=unnamed,
+        absent=absent,
+    ))
     selection = (*tests, *unnamed)
 
     named = _run(["just", "pytest", *selection], repo)
