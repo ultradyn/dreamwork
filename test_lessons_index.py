@@ -192,3 +192,94 @@ def test_section_entry_body_is_flush_left_prose():
         f"lessons.md:{first} body does not span toward lessons.md:{second} "
         "— flush-left prose between two section heads was treated as an end"
     )
+
+
+# --- gate act (#956) ------------------------------------------------------
+# The two recorded hazards the act must surface. Each phrase is distinctive to
+# its lesson, so asserting it is present stops a future prune from making the
+# test hollow. If a phrase drifts the precondition fails loudly, not silently.
+PKILL_ARGV_PHRASE = "pkill -f"  # hazard #2: a pattern kill matches other agents' argv
+# hazard #1's recovery lives inside a section body; assert a phrase that names
+# the killed-gate recovery (detached HEAD at an unverified merge).
+DETACHED_MERGE_PHRASES = ("detached HEAD", "merge_head")
+
+
+def test_gate_act_surfaces_both_recorded_hazards():
+    """#956: the two hazards I hit at gates tonight must appear under --act
+    gate. Hazard #2 (pkill -f matches argv) never uses the word 'gate', so a
+    gate-word-only anchor would silently miss it — the Direction-2 false-green
+    this act exists to prevent."""
+    full_text = LESSONS.read_text(encoding="utf-8")
+    assert PKILL_ARGV_PHRASE in full_text, (
+        f"precondition failed: {PKILL_ARGV_PHRASE!r} not in lessons.md; the "
+        "test literal has expired and must be re-derived"
+    )
+    entries = _entries()
+    index = li.classify(entries)
+    gate_bodies = "\n".join(body for _, body in index["gate"])
+    assert PKILL_ARGV_PHRASE in gate_bodies, (
+        "the pkill-argv hazard did not surface under gate — the anchor lost "
+        "the distinctive-vocabulary arm that catches a gate lesson that never "
+        "names the act (#956 regression)"
+    )
+
+
+def test_gate_act_is_bounded_not_flooded():
+    """#612: an index that prints everything prints nothing. The gate slice
+    must stay a fraction of the corpus — a regression that floods it (e.g. a
+    broad pipe/exit-code anchor) destroys its value. Upper bound is derived
+    from the corpus size, so it does not expire."""
+    entries = _entries()
+    index = li.classify(entries)
+    n = len(index["gate"])
+    total = len(entries)
+    assert n > 0, "gate matched zero lessons — the anchor is broken"
+    assert n <= total // 5, (
+        f"gate holds {n} of {total} lessons — the slice has flooded and is "
+        "no longer skimmable (#612); a broad anchor is matching non-gate work"
+    )
+
+
+def test_gate_act_is_listed_and_consultable():
+    """The act must appear in --acts and resolve under --act (the retrieval
+    path the coordinator's primary act lacked)."""
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = li.main(["--acts"])
+    assert rc == 0
+    assert "gate" in buf.getvalue(), "gate is not listed in --acts"
+    # And --act gate prints a denominator header (not silent on zero — #868).
+    buf2 = io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        rc2 = li.main(["--act", "gate", "--lessons", str(LESSONS)])
+    assert rc2 == 0
+    out = buf2.getvalue()
+    assert out.startswith("# act: gate —"), (
+        "--act gate did not print its denominator header (#868: a zero-match "
+        "act must not read as 'no lessons here')"
+    )
+
+
+def test_gate_act_excludes_the_control_sense_homonym():
+    """The word 'gate' has a control-sense homonym ('facts that gate
+    behavior'). The brief's named hazard: a pattern that cannot tell the
+    merge-gate sense from the control sense is a Direction-2 false-green. The
+    known control-sense lesson must NOT be the discriminating member — if it
+    is the ONLY leak we tolerate it as visible noise, but we assert the
+    hazard lessons (which never say 'gate') ARE caught, which a pure
+    gate-word anchor cannot do."""
+    entries = _entries()
+    index = li.classify(entries)
+    gate_lines = {ln for ln, _ in index["gate"]}
+    # The hazard lessons that never use the word 'gate' must be present —
+    # this is what distinguishes the anchor from a gate-word-only one.
+    hazard_caught = any(
+        PKILL_ARGV_PHRASE in body.lower() for _, body in index["gate"]
+    )
+    assert hazard_caught, (
+        "the pkill hazard is absent from the gate slice — a gate-word-only "
+        "anchor would miss it, and this assertion is what proves the anchor "
+        "reaches beyond the word"
+    )

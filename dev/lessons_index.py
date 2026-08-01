@@ -63,6 +63,22 @@ ACTS: list[tuple[str, str, str]] = [
      r"transition|animat|\bFLIP\b|dissolve|\bframe|\bmotion|\bsnap\b|\bglide"),
     ("fold-handoff", "before folding / writing a handoff / declaring a landing",
      r"\bfold|handoff|\blanded\b|\blanding\b|\bmerge"),
+    ("gate", "before you run a merge gate (also covers diagnosing / repairing one)",
+     # The merge-gate sense of 'gate' is the core anchor. The word has a control-
+     # sense homonym ("facts that gate behavior", "gate the verdict on the
+     # findings") that leaks two non-gate lessons — visible, named, acceptable,
+     # because the alternative (a proximity window around merge/run/land) SILENTLY
+     # drops core gate lessons whose 'gate' sits far from those words ("the shape
+     # to check for at gates", "At the gate, run the whole file") — the Direction-2
+     # hazard this act exists to surface, not hide (#956).
+     # The two recorded #956 hazards never name 'gate': a `pkill -f` whose pattern
+     # matches other agents' argv, and a killed gate leaving the checkout DETACHED
+     # at an unverified merge (recovery: `git checkout master`, discard the merge).
+     # They are caught by their own distinctive vocabulary, not by broad pipe or
+     # process terms (which flood the slice — #612: an index that prints
+     # everything prints nothing).
+     r"\bgate\b|pkill -f|detached.{0,15}(head|at a merge)|\bmerge_head\b"
+     r"|\bland[_ ]lane\b|\bgating\b"),
     ("ui-craft", "before touching the dashboard / hub / any CSS or DOM",
      r"\bcss\b|\bdom\b|viewport|selector|position:|luminance|\bpx\b|\bhover"
      r"|\brender|\bnode\b|\belement\b|\binnerhtml\b"),
