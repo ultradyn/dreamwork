@@ -516,12 +516,13 @@ def test_success_runs_real_reap_and_retains_branch_only(landing_repo):
 
     assert result.returncode == 0, result.stderr
     assert (
-        "gate-coverage: 4 of 4 declared gates passed: "
-        "named-tests guard-selection repo-wide-guards lint-comparison"
+        "gate-coverage: 5 of 5 declared gates passed: "
+        "red-proof-history named-tests guard-selection repo-wide-guards "
+        "lint-comparison"
     ) in result.stdout
     merged = _git(root, "rev-parse", "--verify", "refs/heads/master")
     assert merged != before
-    assert f"advance: master {before} -> {merged} after 4 gate(s)" in result.stdout
+    assert f"advance: master {before} -> {merged} after 5 gate(s)" in result.stdout
     assert _git(root, "branch", "--show-current") == "master"
     assert (
         f"reap examined path={lane.resolve()} tracked-dirty=0 untracked=0 ignored=0 "
@@ -630,8 +631,11 @@ def test_a_restore_that_cannot_land_is_loud_and_master_is_still_correct(landing_
 @pytest.mark.parametrize(
     ("roster", "reason"),
     [
-        ((), "only 4 of 0 declared gates ran"),
-        (land_lane.GATES + ("phantom-gate",), "only 4 of 5 declared gates ran"),
+        # Both counts are len(passed)=5 over len(roster): red-proof-history now
+        # appends too (#951), so the empty-roster case reads "5 of 0" and the
+        # phantom case (GATES is 5 real + 1 phantom = 6) reads "5 of 6".
+        ((), "only 5 of 0 declared gates ran"),
+        (land_lane.GATES + ("phantom-gate",), "only 5 of 6 declared gates ran"),
     ],
 )
 def test_a_gate_roster_that_does_not_match_what_ran_refuses(
@@ -656,6 +660,38 @@ def test_a_gate_roster_that_does_not_match_what_ran_refuses(
     assert f"REFUSE phase=gate-coverage: {reason}" in err
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
+
+
+def test_every_phase_appended_to_passed_is_declared_in_gates():
+    """#951: red-proof-history ran and blocked but was absent from GATES.
+
+    Deleting its block from the running code printed ``N of N declared gates
+    passed`` UNCHANGED, because a phase absent from GATES is invisible to the
+    denominator — and this was the phase that enforces every red-proof. The
+    GATES tuple exists (see its comment in land_lane.py) so a deleted phase is
+    a REFUSAL rather than a shorter, quieter green run; that protection
+    reaches ONLY phases that are declared. So any phase that appends itself to
+    ``passed`` MUST appear in GATES, or its deletion is undetectable.
+
+    Read from the tool's own source rather than naming red-proof-history by
+    hand, so this catches the NEXT undeclared phase too, not just tonight's.
+    The production line it binds: ``GATES = (...)`` in dev/land_lane.py — drop
+    a phase from that tuple while its ``passed.append`` remains and this fails.
+    """
+    source = TOOL.read_text(encoding="utf-8")
+    appended = set(re.findall(r'passed\.append\("([^"]+)"\)', source))
+    # Precondition the check depends on (#685): a regex that matched nothing
+    # would pass vacuously. Assert the parse found the phases we know append.
+    assert appended, (
+        "no passed.append(\"...\") calls found in dev/land_lane.py; the source "
+        "parse is stale and this check is examining nothing"
+    )
+    undeclared = {phase for phase in appended if phase not in land_lane.GATES}
+    assert not undeclared, (
+        f"phases append to `passed` but are not declared in GATES: "
+        f"{sorted(undeclared)}; a phase not in GATES can be deleted without "
+        "changing the gate-coverage denominator, which is #951's defect"
+    )
 
 
 def _empty_registry(lane: Path, path: str) -> None:

@@ -42,7 +42,19 @@ LINT_TRAILER = re.compile(r"^clean \((\d+) warning\(s\)\)$", re.MULTILINE)
 # move. Declared apart from the code that runs them so that a gate deleted
 # from the sequence is a REFUSAL rather than a shorter, quieter, green run:
 # an empty phase list otherwise reports "all passed" and "none ran" alike.
-GATES = ("named-tests", "guard-selection", "repo-wide-guards", "lint-comparison")
+# red-proof-history runs BEFORE the merge (it gates whether the merge may be
+# built at all); the four below run on the merged tree. It is declared first
+# because it is first to run, and it MUST be here — #951: the phase genuinely
+# ran and blocked, but its absence from this tuple meant deleting its block
+# left `gate-coverage: 4 of 4` UNCHANGED. The one phase with no protection
+# against silent removal was the one phase that enforces every red-proof.
+GATES = (
+    "red-proof-history",
+    "named-tests",
+    "guard-selection",
+    "repo-wide-guards",
+    "lint-comparison",
+)
 
 
 def _gate_coverage_line(passed: Sequence[str]) -> str:
@@ -496,6 +508,12 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
             base_state=_base_state(repo, base, base_sha),
         )
 
+    # Spans the pre-merge phase (red-proof-history, below) and the post-merge
+    # phases. Declared here — before the first gate appends to it — so the
+    # phase that runs before the merge is counted in the same denominator as
+    # the four that run after it (#951).
+    passed: list[str] = []
+
     branch_commits = _git(repo, "rev-list", "--count", f"{base_sha}..{branch_sha}")
     try:
         commits_examined = int(branch_commits.stdout.strip())
@@ -595,6 +613,7 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
             base_state=_base_state(repo, base, base_sha),
         )
     print(f"red-proof-history: PASS; {population}")
+    passed.append("red-proof-history")
 
     detach = _git(repo, "checkout", "--detach", base_sha)
     if detach.returncode:
@@ -650,8 +669,6 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
             f"merge={merged_sha}; parents={parents!r}; expected=[{base_sha!r}, {branch_sha!r}]",
         )
     print(f"merge-identity: {merged_sha} has parents {base}@{base_sha} and {branch}@{branch_sha}")
-
-    passed: list[str] = []
 
     # #948: the named selection is the coordinator's guess, made when they are
     # most eager to land. Three ways to use the derivation were weighed (IGC):

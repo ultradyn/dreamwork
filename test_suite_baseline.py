@@ -75,11 +75,11 @@ def test_gate_coverage_names_the_full_suite_complement():
     # #953 owns closing it.
     passed = list(land_lane.GATES)
     assert land_lane._gate_coverage_line(passed) == (
-        "gate-coverage: 4 of 4 declared gates passed: named-tests "
-        "guard-selection repo-wide-guards lint-comparison; full repo suite "
-        "NOT RUN (test coverage was limited to lane-named tests, the tests "
-        "derived from the changed files by `foo.py`->`test_foo.py`, and the "
-        "repo-wide guards)"
+        "gate-coverage: 5 of 5 declared gates passed: red-proof-history "
+        "named-tests guard-selection repo-wide-guards lint-comparison; full "
+        "repo suite NOT RUN (test coverage was limited to lane-named tests, "
+        "the tests derived from the changed files by `foo.py`->`test_foo.py`, "
+        "and the repo-wide guards)"
     )
 
 
