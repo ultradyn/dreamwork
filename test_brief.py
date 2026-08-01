@@ -57,16 +57,38 @@ def _indent(text: str) -> str:
     return "\n".join(f"  {line}" if line.strip() else "" for line in text.splitlines())
 
 
-def _this_branch() -> str:
-    return subprocess.run(
-        ["git", "-C", str(ROOT), "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True, text=True, check=True).stdout.strip()
+@pytest.fixture(scope="module")
+def lane_checkout(tmp_path_factory) -> tuple[str, Path]:
+    """A real, fixture-owned lane, independent of the ambient checkout state."""
+    name = f"brief-fixture-{os.getpid()}-{time.time_ns()}"
+    path = tmp_path_factory.mktemp("brief-lane") / "worktree"
+    subprocess.run(
+        ["git", "-C", str(ROOT), "worktree", "add", "-q", "-b", name, str(path), "HEAD"],
+        check=True,
+    )
+    try:
+        actual = brief.worktree_for(name)
+        assert actual == path.resolve(), (
+            "ambient checkout branch coupling: the brief-test lane must be the "
+            f"fixture-created worktree {path.resolve()}, got {actual}"
+        )
+        yield name, path.resolve()
+    finally:
+        subprocess.run(
+            ["git", "-C", str(ROOT), "worktree", "remove", "--force", str(path)],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(ROOT), "branch", "-D", name],
+            check=True, capture_output=True, text=True,
+        )
+        assert not path.exists(), f"fixture lane worktree survived teardown: {path}"
 
 
 @pytest.fixture(scope="module")
-def lane() -> str:
-    """The branch this test tree is on — a real worktree, so no fixture git."""
-    return _this_branch()
+def lane(lane_checkout: tuple[str, Path]) -> str:
+    """The real branch name created for this test module."""
+    return lane_checkout[0]
 
 
 @pytest.fixture(scope="module")
@@ -117,9 +139,12 @@ def test_lane_owns_is_emitted_and_parses_as_lint_reads_it(generated):
     assert lint._parse_lane_owns(generated) == ["dev/brief.py", "test_brief.py"]
 
 
-def test_worktree_is_asked_of_git_not_guessed(lane):
+def test_worktree_is_asked_of_git_not_guessed(lane, lane_checkout):
     """A guessed convention would be wrong for 14 of the 40 most recent briefs (#846 moved it)."""
-    assert brief.worktree_for(lane) == ROOT.resolve()
+    assert lane == lane_checkout[0], (
+        "ambient checkout branch coupling: lane must come from the fixture-owned checkout"
+    )
+    assert brief.worktree_for(lane) == lane_checkout[1]
     with pytest.raises(brief.BriefFault) as excinfo:
         brief.worktree_for("no-such-branch-in-any-worktree")
     assert "no worktree is checked out on branch" in str(excinfo.value)
@@ -167,7 +192,7 @@ def test_a_sentence_that_merely_mentions_todo_is_not_a_placeholder(lane):
     core = GOOD_CORE + (
         "\nA generator that emits a frame-with-`TODO`-core is a generator that "
         "will be used that way at 3am.\n")
-    assert "TODO" in brief.build(881, _this_branch(), ["dev/brief.py"], core)
+    assert "TODO" in brief.build(881, lane, ["dev/brief.py"], core)
 
 
 def test_a_core_with_no_direction_2_section_is_refused(lane):
