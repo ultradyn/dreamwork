@@ -257,6 +257,56 @@ def test_stale_lane_refuses_before_baseline_or_merge(landing_repo):
     _assert_retained(root, lane)
 
 
+@pytest.mark.parametrize(
+    ("which", "dirty_file"),
+    [("main", "lint-rows.txt"), ("lane", "feature.txt")],
+)
+def test_preflight_names_the_one_dirty_tree_and_calls_the_other_clean(
+    landing_repo, which, dirty_file
+):
+    """#898: two trees collapse into one refusal, so it must name which.
+
+    Direction-2 guard: a fixture that dirties BOTH trees would pass a "names
+    the dirty tree" assertion vacuously. This dirties exactly one (each way
+    round), asserts that precondition at runtime, then requires the message to
+    name the dirty tree with its porcelain AND call the other clean.
+    """
+    root, lane = landing_repo
+    if which == "main":
+        _write(root / "lint-rows.txt", "old warning\nDIRTY\n")
+        dirty_label, dirty_root = "main", root
+        clean_label, clean_root = "lane", lane
+    else:
+        _write(lane / "feature.txt", "lane dirt\n")
+        dirty_label, dirty_root = "lane", lane
+        clean_label, clean_root = "main", root
+
+    # Precondition the assertions below depend on: exactly one tree is dirty.
+    main_porcelain = _git(root, "status", "--porcelain=v1", "--untracked-files=no")
+    lane_porcelain = _git(lane, "status", "--porcelain=v1", "--untracked-files=no")
+    if which == "main":
+        assert main_porcelain and not lane_porcelain, "fixture must dirty only main"
+    else:
+        assert lane_porcelain and not main_porcelain, "fixture must dirty only lane"
+
+    before = _git(root, "rev-parse", "HEAD")
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "REFUSE phase=preflight: tracked worktree state is not clean" in result.stderr
+    # The dirty tree is named by label and path, with its porcelain echoed.
+    assert f"{dirty_label}={dirty_root.resolve()}" in result.stderr
+    assert dirty_file in result.stderr
+    # The clean tree is named and called clean — the line a both-dirty fixture hides.
+    assert f"{clean_label}={clean_root.resolve()}: clean" in result.stderr
+    # Preflight refuses before any detach, so the ref/HEAD/branch are untouched;
+    # the tree is intentionally dirty here, so the clean-tree check is out of scope.
+    assert _git(root, "rev-parse", "--verify", "refs/heads/master") == before, "master moved"
+    assert _git(root, "rev-parse", "HEAD") == before, "HEAD was not restored"
+    assert _git(root, "branch", "--show-current") == "master", "checkout left detached"
+    _assert_retained(root, lane)
+
+
 def test_success_runs_real_reap_and_retains_branch_only(landing_repo):
     root, lane = landing_repo
     before = _git(root, "rev-parse", "HEAD")

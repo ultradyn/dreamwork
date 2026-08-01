@@ -143,6 +143,23 @@ def _restore(repo: Path, base: str, base_sha: str) -> str | None:
     return "; ".join(faults) or None
 
 
+def _dirty_tree_line(label: str, path: Path, result: subprocess.CompletedProcess[str]) -> str:
+    """One greppable line naming a tree and whether its tracked state is clean.
+
+    Preflight inspects both the main checkout and the lane worktree, but its
+    refusal used to print one sentence naming neither, so a reader who
+    associated the refusal with the named branch inspected the clean lane while
+    the main checkout was the dirty one (#898). The requirement that both trees
+    be clean is unchanged; this only says which input failed.
+    """
+    if result.returncode:
+        return f"{label}={path}: git status exited {result.returncode}"
+    porcelain = result.stdout.splitlines()
+    if porcelain:
+        return f"{label}={path}: " + "; ".join(porcelain)
+    return f"{label}={path}: clean"
+
+
 def _refuse(
     phase: str,
     reason: str,
@@ -225,7 +242,10 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
     if main_dirty.returncode or lane_dirty.returncode or main_dirty.stdout or lane_dirty.stdout:
         return _refuse(
             "preflight",
-            "tracked worktree state is not clean",
+            "tracked worktree state is not clean\n"
+            + _dirty_tree_line("main", repo, main_dirty)
+            + "\n"
+            + _dirty_tree_line("lane", lane, lane_dirty),
             f"base={base_sha}; branch={branch_sha}; main-status={len(main_dirty.stdout.splitlines())}; lane-status={len(lane_dirty.stdout.splitlines())}",
             retained,
             base_state=_base_state(repo, base, base_sha),
