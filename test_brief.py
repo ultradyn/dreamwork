@@ -251,6 +251,89 @@ def test_a_direction_2_heading_with_no_body_is_refused(lane):
     assert "has no body" in str(excinfo.value)
 
 
+# --- #947: the heading definition and the refusal message -------------------
+#
+# The house style opens a sentence with a task id (`#847 is the campaign`).
+# A bare leading `#` was read as an ATX heading, so the section the line
+# belonged to was left apparently empty and the refusal blamed the author for
+# omitting text that was present. A heading requires `# ` (space) per CommonMark
+# §4.2, and a fenced code block is never a heading — a brief whose job is to
+# describe document structure must be able to quote Markdown.
+
+
+def test_a_body_line_starting_with_hash_NNN_is_not_treated_as_a_heading(lane):
+    """Direction 1, false-positive. core-847b measured: the body's first line
+    `#847 is the whole campaign ...` read as a section opener, so the heading
+    above it was refused for 'has no body'. `#NNN` is not a CommonMark ATX
+    heading (no space after the opening `#`), so it is prose and must build."""
+    core = GOOD_CORE + (
+        "\n## Read the ledger entry for #847 first\n\n"
+        "#847 is the whole campaign and it is long. #937 is the increment.\n")
+    out = brief.build(881, lane, ["dev/brief.py"], core)
+    assert "#847 is the whole campaign" in out
+
+
+def test_a_real_ATX_heading_inside_a_code_fence_is_not_a_section(lane):
+    """Direction 1, false-positive, the third measured instance. A fenced
+    quotation of Markdown (``## Read ...``) was counted as a section of the
+    brief and refused. The fence was ignored and the real heading inside it
+    was honoured; fenced blocks are content, never section openers.
+
+    The fixture is shaped to discriminate fence handling from the heading-space
+    rule: the fence holds TWO consecutive ATX headings with no prose between.
+    Heading-space alone cannot save this — only fence tracking does, because a
+    heading followed immediately by a heading is exactly the empty-section shape
+    the refusal keys on. A fence-disabled build flags `## Inside` as empty."""
+    core = GOOD_CORE + (
+        "\n## What happens, measured\n\n"
+        "Two instances tonight. The verbatim failing example:\n\n"
+        "```markdown\n"
+        "## Inside a fence\n\n"
+        "## After, still fenced\n\n"
+        "Both are quotation, never sections of the brief.\n"
+        "```\n\n"
+        "The first was a genuine defect; the second was this misparse.\n")
+    out = brief.build(881, lane, ["dev/brief.py"], core)
+    assert "## Inside a fence" in out
+
+
+def test_a_genuinely_empty_section_is_still_refused_and_names_what_it_saw(lane):
+    """Direction 1, the keep-case. The real empty-section refusal caught a
+    genuine defect in a core tonight and must survive the fix. A heading
+    followed by another heading with no prose between is still refused, and
+    the message names BOTH the empty heading and the line that revealed it
+    (#940: a refusal names what it observed, not only the condition)."""
+    core = GOOD_CORE + "\n## The fix shape\n\n## Verification\n\nRun the suite.\n"
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief.build(881, lane, ["dev/brief.py"], core)
+    message = str(excinfo.value)
+    assert "'## The fix shape' has no body" in message, message
+    assert "## Verification" in message, message
+
+
+def test_all_empty_sections_are_reported_not_just_the_first(lane):
+    """Direction 1, enumerate. core-847b cost two launch cycles because the
+    refusal named one empty section; the author fixed it, relaunched, and hit
+    another. Report EVERY offender, and print the denominator so a run that
+    examined zero sections cannot read as a clean pass (#868)."""
+    core = (
+        "## The defect, measured\n\n"
+        "Real prose here so the core carries substance.\n\n"
+        "## Empty one\n\n"
+        "## Direction 2 — construct these\n\n"
+        "1. A case that is real.\n\n"
+        "## Empty two\n\n"
+        "## Closer\n\n"
+        "Also real prose, for substance.\n")
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief.build(881, lane, ["dev/brief.py"], core)
+    message = str(excinfo.value)
+    assert "'## Empty one'" in message, message
+    assert "'## Empty two'" in message, message
+    # denominator visible — "N of M sections" — so zero-examined is detectable
+    assert re.search(r"\d+\s+of\s+\d+\s+sections", message), message
+
+
 # --- direction 2, construction 3: accepted by dispatch, carrying no rules ---
 
 def test_a_frame_that_yields_no_sections_is_refused(lane, tmp_path):
