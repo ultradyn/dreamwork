@@ -147,17 +147,38 @@ Relied-on ledger lines:
 - #847: *"Any pass ... has to look at what the prose CLAIMS ... one at a time."*
 - #921: *"It stops asserting the coordinate is correct at the pinned revision."*
 
-## Red-proof limits to carry into a repair campaign
+## Red-proof results and limits
 
-- Direction 1 is available: after a supported replacement, restore its old
-  `@ dc739001` text and the census changes that row from `correct` to `false`.
-- Direction 2 remains open by construction: leave the expected citation text
-  unchanged but alter the prose claim (for example, change `BURN_LIMIT_CAP` to
-  another symbol). This census still reports `correct`, because its claim
-  needles are a reviewed manifest, not a semantic parser. Likewise, a manifest
-  reviewer could bless `watch.py` while the claimed content actually belongs in
-  `client/style.css`. The census proves the reviewed decisions stay applied; it
-  cannot replace the per-citation judgement that creates those decisions.
+- **Direction 1, executed on the census's production manifest:** I replaced
+  the independently recovered `6edcf95b` target for `runModePicker(d)` with
+  the bad `dc739001` target. The expected target derives from the brief's prose
+  claim plus the pre-certification authoring tree, not from the subject pin.
+  The census exited 2 with the discriminating message
+  `UNRESOLVED ... watch.py:4100 @ dc739001` and
+  `false=18 correct=0 unresolved=1 examined=19`. `redproof.py restore` restored
+  the report byte-for-byte; `cmp` used the exact `.orig` path printed by
+  `redproof.py`, then the restored census again printed
+  `false=19 correct=0 unresolved=0 examined=19`.
+- **Direction 2, constructed and observed:** I changed the prose claim from
+  `posturePicker` to the wrong `tintPicker` while applying the reviewed
+  `watch.py:4101 @ 6edcf95b` citation. The census falsely reported
+  `false=18 correct=1 unresolved=0 examined=19`. The file was restored with
+  `cp` from the exact path printed by `lane_scratch.py` and verified by `cmp`.
+  This is the honest limit: claim needles are a reviewed manifest, not a
+  semantic parser. The same class includes blessing `watch.py` when the claim
+  actually lives in `client/style.css`. The census proves reviewed decisions
+  stay applied; it cannot replace the judgement that creates them.
 
 No guard change, production change, or cited-document repair was assessed as
 part of this close-on-non-reproduction outcome.
+
+## Dogfood report
+
+The filed `12 of 19` combined two denominators: 19 pinned occurrences but a
+12-member symbol-selected subset, with duplicate citation tokens counted in
+the former and effectively collapsed in the latter. The design's supporting
+measurement was true about that subset (`0 of 12` nearby), but the task title
+promoted it into an all-occurrence defect count. The re-measure-first/close-on-
+non-reproduction rule caught this exactly. No additional tooling friction was
+found; the snapshot paths printed by `redproof.py` and `lane_scratch.py` were
+different as warned, and using each printed path made both `cmp` checks clean.
