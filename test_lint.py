@@ -140,6 +140,20 @@ class TestInRepoWorktreeDrain:
         assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
         assert "root reappeared after reaching zero" in rep.rows[-1][2]
 
+    def test_committed_zero_cannot_be_rebaselined_to_original_name(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        lane = t / ".worktrees" / "cx-846wtmove"
+        lane.mkdir(parents=True)
+        monkeypatch.setattr(lint, "_prior_drain_state", lambda target, current: {
+            "high_water_count": 0, "allowed_worktrees": []})
+        _drain_state(t / ".dreamwork")
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "ratchet state increased from prior committed count 0 to 1" \
+            in rep.rows[-1][2]
+
     def test_wrong_root_cannot_impersonate_absent_end_state(self, tmp_path):
         t = target(tmp_path)
         _drain_state(t / ".dreamwork", root=".worktreez")

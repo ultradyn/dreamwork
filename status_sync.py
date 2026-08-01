@@ -359,6 +359,24 @@ def worktree_roots(target: Path) -> tuple[str, str]:
     return (str(root.parent / WORKTREE_DIR), str(root / WORKTREE_DIR))
 
 
+def _lane_worktree_path(target: Path, lane: str, pid: int) -> Path:
+    """The actual root/path carrying a discovered lane (#846)."""
+    roots = worktree_roots(target)
+    cwd = _read_proc_cwd(pid)
+    for root in roots:
+        path = Path(root) / lane
+        if cwd == str(path) or (cwd and cwd.startswith(str(path) + os.sep)):
+            return path
+    for root in roots:
+        if _argv_lane(pid, root) == lane:
+            return Path(root) / lane
+    for root in roots:
+        path = Path(root) / lane
+        if path.is_dir():
+            return path
+    return Path(roots[0]) / lane
+
+
 def _read_proc_cwd(pid: int) -> str | None:
     """`readlink /proc/<pid>/cwd`, or None if unreadable (gone / no perm)."""
     try:
@@ -596,6 +614,7 @@ def discover_lanes(target: Path, *, stats: dict | None = None):
     # the probe cannot classify is carried, never silently dropped (#702).
     agent_tool = []
     seen_lanes = set()
+    seen_rank = {}
     process_candidates = 0
     for entry in os.listdir("/proc"):
         if not entry.isdigit():
@@ -646,9 +665,21 @@ def discover_lanes(target: Path, *, stats: dict | None = None):
         if not os.path.isdir(wt_path):
             phantoms.append((lane, pid))
             continue
+        # The drain is a SET union by lane identity. Two processes (or even
+        # two roots carrying the same basename) must not double-count a lane.
+        candidate = Path(wt_path)
+        rank = next((i for i, root in enumerate(wt_roots)
+                     if candidate == Path(root) / lane), len(wt_roots))
+        if lane in seen_lanes:
+            if rank >= seen_rank[lane]:
+                continue
+            found = [row for row in found if row[0] != lane]
+            agent_tool = [row for row in agent_tool if row[0] != lane]
+            seen_lanes.remove(lane)
         if _is_ccc_proc(pid):
             found.append((lane, pid, _ccc_model(pid)))
             seen_lanes.add(lane)
+            seen_rank[lane] = rank
         else:
             # #675: a non-ccc process in a lane worktree. An editor, a shell,
             # or this tool's own grep could share the cwd — so this is a
@@ -664,6 +695,7 @@ def discover_lanes(target: Path, *, stats: dict | None = None):
             if lane not in seen_lanes:
                 agent_tool.append((lane, pid))
                 seen_lanes.add(lane)
+                seen_rank[lane] = rank
     # Stable order by lane name so the merge and the stderr report are
     # deterministic across runs reading the same process table.
     if stats is not None:
@@ -1012,7 +1044,8 @@ def main(argv: list[str] | None = None) -> int:
             continue
         entry = {"task": _lane_task(lane, ids), "lane": lane,
                  "pid": pid,
-                 "brief": str(resolved / WORKTREE_DIR / lane / "BRIEF.md"),
+                 "brief": str(_lane_worktree_path(resolved, lane, pid)
+                              / "BRIEF.md"),
                  "dispatch": "ccc"}
         if model is not None:                 # #720: derived from /proc argv
             entry["model"] = model
@@ -1036,7 +1069,8 @@ def main(argv: list[str] | None = None) -> int:
             continue
         entry = {"task": _lane_task(lane, ids), "lane": lane,
                  "pid": pid,
-                 "brief": str(resolved / WORKTREE_DIR / lane / "BRIEF.md"),
+                 "brief": str(_lane_worktree_path(resolved, lane, pid)
+                              / "BRIEF.md"),
                  "dispatch": "agent_tool"}
         agent_added.append(entry)
         pruned.append(entry)

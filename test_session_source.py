@@ -377,6 +377,22 @@ class TestCatalogueDiscovery:
         by_slug = {e.slug: e.session_id for e in res.entries}
         assert by_slug == {main_slug: UUID_A, wt_slug: UUID_B}
 
+    def test_finds_sessions_across_new_and_draining_worktree_roots(
+            self, tmp_path):
+        target, root = _cat_target(tmp_path, worktrees=["lane-old"])
+        new_lane = tmp_path / ".worktrees" / "lane-new"
+        new_lane.mkdir(parents=True)
+        old_lane = target / ".worktrees" / "lane-old"
+        new_slug, old_slug = _slug(new_lane), _slug(old_lane)
+        _write_transcript(root / new_slug / f"{UUID_A}.jsonl",
+                          [{"type": "user", "timestamp": _ts(2)}])
+        _write_transcript(root / old_slug / f"{UUID_B}.jsonl",
+                          [{"type": "user", "timestamp": _ts(2)}])
+        res = session_source.catalogue(target, projects_root=root, now=NOW)
+        by_slug = {e.slug: e.session_id for e in res.entries}
+        assert by_slug == {new_slug: UUID_A, old_slug: UUID_B}, \
+            "session catalogue dropped one worktree root"
+
     def test_a_target_with_no_sessions_is_ok_but_empty(self, tmp_path):
         target, root = _cat_target(tmp_path)
         (root / _slug(target)).mkdir()  # slug dir exists, holds no sessions

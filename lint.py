@@ -3960,6 +3960,32 @@ def _tree_size(path: Path) -> int:
     return total
 
 
+def _drain_state_from_git(target: Path, ref: str) -> dict | None:
+    """Tracked drain state at ref, or None when the file/ref predates it."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(target), "show",
+             f"{ref}:.dreamwork/{WORKTREE_DRAIN_STATE}"],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        value = json.loads(out.stdout)
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _prior_drain_state(target: Path, current: dict) -> dict | None:
+    """Previous committed checkpoint, including an uncommitted transition."""
+    head = _drain_state_from_git(target, "HEAD")
+    if head is not None and head != current:
+        return head
+    return _drain_state_from_git(target, "HEAD^")
+
+
 def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
     """Old-root membership/count may only drain; size is reported evidence (#846)."""
     state_path = dw / WORKTREE_DRAIN_STATE
@@ -3993,6 +4019,23 @@ def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
         return
 
     target = dw.parent.resolve()
+    prior = _prior_drain_state(target, state)
+    if prior is not None:
+        prior_allowed = prior.get("allowed_worktrees")
+        prior_count = prior.get("high_water_count")
+        if (not isinstance(prior_allowed, list)
+                or not isinstance(prior_count, int)):
+            rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                    "prior committed drain state is unreadable; refusing to "
+                    "accept a transition without a baseline")
+            return
+        if (not set(state["allowed_worktrees"]).issubset(prior_allowed)
+                or state["high_water_count"] > prior_count):
+            rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                    f"ratchet state increased from prior committed count "
+                    f"{prior_count} to {state['high_water_count']}; names/count "
+                    "may only be removed/lowered, and zero is absorbing")
+            return
     main_root = _main_checkout_for(target)
     if main_root is None:
         rep.add(ERROR, WORKTREE_DRAIN_STATE,

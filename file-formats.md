@@ -1622,7 +1622,9 @@ even when lint runs from a linked worktree:
 registered worktree must be a member of that set, so replacing a reaped lane
 without increasing the count still fails. As lanes are reaped, a deliberate
 commit may only remove names and lower the count; lint never rewrites or
-re-baselines this file. `last_observed_size_bytes` is a committed evidence
+re-baselines this file. Each transition is checked against the prior committed
+checkpoint, so an original name cannot be added back after removal and zero is
+absorbing. `last_observed_size_bytes` is a committed evidence
 checkpoint, while every lint run reports the current apparent byte size. Size
 is not the hard gate: a build may grow a live lane without creating a worktree.
 When the root is absent, lint reports its exact resolved path and passes as the
