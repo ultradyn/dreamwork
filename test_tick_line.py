@@ -26,6 +26,7 @@ import pytest
 
 import status_sync
 import tick_line
+import lane_liveness
 
 PULSE = "[10:15] dream tick (ud-dreamwork): run the tick flow"
 
@@ -33,6 +34,7 @@ PULSE = "[10:15] dream tick (ud-dreamwork): run the tick flow"
 def make_target(tmp_path, *, posture, open_ids=(1, 2, 3), dreamers=None,
                 policy=None, run_mode="hot", lanes=()):
     """A minimal target dir: run-mode, posture, status.json, tasks.md."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     dw = tmp_path / ".dreamwork"
     dw.mkdir(parents=True, exist_ok=True)
     (dw / "run-mode").write_text(run_mode + "\n")
@@ -122,11 +124,11 @@ class TestTracksTheFile:
                                                   monkeypatch):
         target = make_target(tmp_path, posture=HOT)
 
-        def two_live(_target, *, stats=None):
-            stats["process_candidates"] = 37
-            return ([('cx-one', 111, 'ccc'), ('cx-two', 222, 'ccc')], [], [])
+        def two_live(_target):
+            return lane_liveness.LaneInspection(
+                ('cx-one', 'cx-two'), (), (), 37)
 
-        monkeypatch.setattr(status_sync, "discover_lanes", two_live)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", two_live)
         out = tick_line.facts(target)
         assert "lanes 2 live [cx-one, cx-two]" in out, \
             "live lanes cx-one/cx-two were omitted from the tick line: %s" % out
@@ -141,11 +143,10 @@ class TestTracksTheFile:
             dreamers=[{"task": 1, "pid": 111},
                       {"task": 1, "pid": 222,
                        "dispatch": "agent_tool"}])
-        def none_live(_target, *, stats=None):
-            stats["process_candidates"] = 41
-            return [], [], []
+        def none_live(_target):
+            return lane_liveness.LaneInspection((), (), (), 41)
 
-        monkeypatch.setattr(status_sync, "discover_lanes", none_live)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", none_live)
         out = tick_line.facts(target)
         assert "lanes 0 live []" in out
         assert "recorded" not in out, \
@@ -186,11 +187,11 @@ class TestLiveFleetDetector:
             self, tmp_path, monkeypatch):
         target = make_target(tmp_path, posture=HOT)
 
-        def mixed(_target, *, stats=None):
-            stats["process_candidates"] = 52
-            return ([('cx-ccc', 1, 'glm52')], [], [('cx-agent', 2)])
+        def mixed(_target):
+            return lane_liveness.LaneInspection(
+                ('cx-agent', 'cx-ccc'), (), (), 52)
 
-        monkeypatch.setattr(status_sync, "discover_lanes", mixed)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", mixed)
         out = tick_line.facts(target)
         assert "lanes 2 live [cx-agent, cx-ccc]" in out
         assert "runners ?" not in out
@@ -216,14 +217,11 @@ class TestLiveFleetDetector:
         """
         target = make_target(tmp_path, posture=HOT)
 
-        def overlap(_target, *, stats=None):
-            stats["process_candidates"] = 9
-            # cx-dup appears in BOTH buckets — the normal live case.
-            return ([('cx-dup', 111, 'ccc'), ('cx-only-ccc', 222, 'ccc')],
-                    [],
-                    [('cx-dup', 333), ('cx-only-agent', 444)])
+        def overlap(_target):
+            return lane_liveness.LaneInspection(
+                ('cx-dup', 'cx-only-agent', 'cx-only-ccc'), (), (), 9)
 
-        monkeypatch.setattr(status_sync, "discover_lanes", overlap)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", overlap)
         out = tick_line.facts(target)
         assert "lanes 3 live [cx-dup, cx-only-agent, cx-only-ccc]" in out, \
             "a lane present in both the ccc and agent buckets was not " \
@@ -233,11 +231,11 @@ class TestLiveFleetDetector:
             self, tmp_path, monkeypatch):
         target = make_target(tmp_path, posture=HOT)
 
-        def inert(_target, *, stats=None):
-            stats["process_candidates"] = 0
-            return [], [], []
+        def inert(_target):
+            raise lane_liveness.LivenessUnknown(
+                "lane detector examined 0 process candidates")
 
-        monkeypatch.setattr(status_sync, "discover_lanes", inert)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", inert)
         out = tick_line.facts(target)
         assert "FLEET UNRESOLVED" in out, \
             "detector examined zero candidates but tick reported an empty " \
@@ -246,60 +244,56 @@ class TestLiveFleetDetector:
         assert "lanes 0 live" not in out, \
             "broken detector was indistinguishable from no live lanes"
 
-    def test_tick_and_status_sync_agree_on_sibling_root_process_table(
+    def test_right_count_over_wrong_set_is_rejected(self, tmp_path, monkeypatch):
+        """#886: six-vs-six is hollow; bind every expected lane name."""
+        target = make_target(tmp_path, posture=HOT)
+        expected = ('cx-584settings', 'cx-862reconcile', 'cx-867briefgit',
+                    'cx-876survive', 'cx-883lintzero', 'cx-884nextup')
+        wrong = expected[:-1] + ('review',)
+        assert len(wrong) == len(expected) == 6, \
+            "precondition: count-only comparison must pass the incident shape"
+        monkeypatch.setattr(
+            lane_liveness, "inspect_lanes",
+            lambda _target: lane_liveness.LaneInspection(expected, (), (), 1188))
+        tick = tick_line.facts(target)
+        exact = "lanes 6 live [%s]" % ", ".join(expected)
+        assert exact in tick, \
+            "right count concealed a wrong lane set: expected %r, tick=%s" \
+            % (expected, tick)
+        assert "review" not in tick
+
+    def test_inspection_names_worktree_only_and_process_only(
             self, tmp_path, monkeypatch):
-        """#868: bind both probes to an independently proven live fixture."""
-        perl = shutil.which("perl")
-        if not perl:
-            pytest.skip("perl is required to shape a ccc-style argv")
+        """Both set-difference directions are visible, never silently chosen."""
+        target = Path(make_target(tmp_path / "project", posture=HOT))
+        registered = tmp_path / ".worktrees" / "cx-finished"
+        registered.mkdir(parents=True)
+        removed = tmp_path / ".worktrees" / "cx-removed"
+        raw = ("ccc\x00# Task #999 -- fixture\nWorktree: %s\n" % removed).encode()
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["999"],
+            registered_worktrees=(registered,), read_cmdline=lambda _pid: raw)
+        assert inspection.live == ()
+        assert inspection.worktree_only == ('cx-finished',), \
+            "registered worktree without a process was not named"
+        assert inspection.process_only == ('cx-removed',), \
+            "process whose worktree was removed was not named"
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", lambda _target: inspection)
+        out = tick_line.facts(str(target))
+        assert "worktree-only 1 [cx-finished]" in out
+        assert "process-only 1 [cx-removed]" in out
 
-        target_path = tmp_path / "project"
-        target = make_target(target_path, posture=HOT)
-        lane = "cx-868-fixture"
-        worktree = tmp_path / ".worktrees" / lane
-        worktree.mkdir(parents=True)
-        brief = "Worktree: %s\nLane: test" % worktree
-        proc = subprocess.Popen(
-            ["ccc", "-e", "sleep 30", "--", brief], executable=perl,
-            cwd=target, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL)
-        try:
-            # Independent positive control: prove the fixture process is live
-            # and carries the sibling-root lane path before either probe runs.
-            assert status_sync._pid_alive(proc.pid), \
-                "precondition: fixture lane process is not live"
-            raw = Path("/proc/%d/cmdline" % proc.pid).read_bytes()
-            assert str(worktree).encode() in raw, \
-                "precondition: fixture argv does not carry the lane path"
-            expected = {lane}
-
-            # Freeze the examined population to this one independently proven
-            # process. This denominator distinguishes an empty fleet from a
-            # detector that examined nothing.
-            monkeypatch.setattr(
-                status_sync.os, "listdir",
-                lambda path: [str(proc.pid)] if path == "/proc" else [])
-            stats = {}
-            ccc, _phantoms, agent = status_sync.discover_lanes(
-                Path(target), stats=stats)
-            status_names = {row[0] for row in ccc} | {row[0] for row in agent}
-            status_probe = (
-                "status_sync examined %d process(es) and found %d live lane(s) %s"
-                % (stats.get("process_candidates", 0), len(status_names),
-                   sorted(status_names)))
-            assert stats.get("process_candidates") == 1 and \
-                status_names == expected, \
-                "fixture independently proved 1 live lane; " + status_probe
-
-            tick = tick_line.facts(target)
-            expected_tick = "lanes 1 live [%s] (probe examined 1 processes)" % lane
-            assert expected_tick in tick, \
-                ("fixture independently proved 1 live lane; %s; tick found "
-                 "a different live count or denominator: %s" %
-                 (status_probe, tick))
-        finally:
-            proc.kill()
-            proc.wait()
+    def test_incidental_review_path_cannot_become_lane_identity(self, tmp_path):
+        root = (tmp_path / ".worktrees").resolve()
+        actual = root / "cx-884nextup"
+        raw = (
+            "ccc\x00# Task #884\n"
+            f"Compare {root / 'review'} before finishing.\n"
+            f"Worktree: {actual}\n"
+        ).encode()
+        found = lane_liveness._prompt_worktree(raw, (root,))
+        assert found == actual, \
+            "incidental path invented lane 'review' and omitted cx-884nextup: %r" % found
 
 
 class TestTheContradictionIsAdjacent:
@@ -380,7 +374,7 @@ class TestFailsClosed:
         def boom(_target, *, stats=None):
             raise status_sync.LivenessUnknown("probe broken")
 
-        monkeypatch.setattr(status_sync, "discover_lanes", boom)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", boom)
         out = tick_line.facts(target)
         assert "FLEET UNRESOLVED" in out
         assert "lanes live" not in out

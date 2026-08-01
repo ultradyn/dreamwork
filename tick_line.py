@@ -69,6 +69,7 @@ import sys
 from pathlib import Path
 
 import status_sync
+import lane_liveness
 import watch
 
 # The separator between the pulse and the facts, and between facts. Matches the
@@ -240,30 +241,26 @@ def _open_fact(target: str) -> str:
 
 
 def _fleet_fact(target: str) -> str:
-    """Live lane names from status_sync's supported OS detector (#821).
+    """Live lane names from the canonical lock/process identity detector.
 
     The old line repeated ``status.json['lanes']`` and then probed only the
-    recorded ``dreamers``.  Both can be stale.  Discovery is the supported
-    worktree-bound measurement, and its examined population is part of the
-    result: zero candidates is an instrument failure, never an empty fleet.
+    recorded ``dreamers``. Both can be stale. A lane lock binds a registered
+    worktree to the runner pid through :mod:`lane_liveness`; both set-difference
+    directions are reported, and zero candidates is an instrument failure.
     """
     if not (Path(target) / ".dreamwork").is_dir():
         raise status_sync.LivenessUnknown("target has no .dreamwork directory")
-    stats = {}
-    ccc, _phantoms, agent = status_sync.discover_lanes(
-        Path(target), stats=stats)
-    examined = stats.get("process_candidates", 0)
-    if examined <= 0:
-        raise status_sync.LivenessUnknown(
-            "lane detector examined 0 process candidates")
-    # Dedupe by lane name across both buckets: a ccc lane runs a wrapper AND
-    # an inner agent process, both with the worktree cwd, so discover_lanes
-    # legitimately lists the SAME lane in `ccc` and `agent` (#837). A plain
-    # concatenation counted it twice and inflated the fleet number.
-    names = sorted(set([lane for lane, _pid, _model in ccc]
-                       + [lane for lane, _pid in agent]))
-    return "lanes %d live [%s] (probe examined %d processes)" % (
-        len(names), ", ".join(names), examined)
+    inspection = lane_liveness.inspect_lanes(Path(target))
+    fact = "lanes %d live [%s] (probe examined %d processes)" % (
+        len(inspection.live), ", ".join(inspection.live),
+        inspection.examined_processes)
+    if inspection.worktree_only:
+        fact += " · worktree-only %d [%s]" % (
+            len(inspection.worktree_only), ", ".join(inspection.worktree_only))
+    if inspection.process_only:
+        fact += " · process-only %d [%s]" % (
+            len(inspection.process_only), ", ".join(inspection.process_only))
+    return fact
 
 
 def _unresolved(label: str, exc: BaseException) -> str:

@@ -2579,25 +2579,21 @@ class TestArgvDiscoveryInjectedTable:
             self, tmp_path, monkeypatch):
         # Direction 2 refinement: a process whose argv merely MENTIONS a
         # .worktrees/ path in passing prose (a coordinator's grep of the
-        # tasks file) is not a lane. The matcher finds the path, recovers
-        # a lane name — but the lane dir does not exist, so it is a phantom
-        # (reported, not silently counted). This proves discovery does not
-        # over-count on a coincidental path mention.
+        # tasks file) is not a lane. Only an exact governed ``Worktree:`` line
+        # is identity, so this mention is ignored rather than promoted to a
+        # phantom lane name. This is #886's literal ``review`` failure shape.
         fake_lane = "lane-doesnotexist"
         wt_path = str(tmp_path / ".worktrees" / fake_lane)
         raw = ("grep\x00-n\x00worktree\x00some note about %s here\x00"
                % wt_path).encode()
         self._setup_proc(monkeypatch, 888444, str(tmp_path), raw)
         found, phantoms, agent_tool = status_sync.discover_lanes(tmp_path)
-        # The lane dir does not exist -> phantom (reported, not in found).
-        # DISCRIMINATING: found is empty (not a false lane); the process is
-        # reported as a phantom, not silently counted.
+        # DISCRIMINATING: all lane buckets are empty. Reporting a phantom here
+        # would still invent a lane name from prose, just under another label.
         assert found == [], \
             "a prose mention of a worktree path must not be a lane: %s" \
             % found
-        # The grep process is non-ccc; its cwd is tmp_path (not a worktree);
-        # its argv names a worktree whose dir does not exist. It lands in
-        # phantoms (reported not dropped — #702).
-        assert any(p[0] == fake_lane for p in phantoms), \
-            "a process naming a non-existent worktree must be a phantom, " \
-            "not silently dropped: phantoms=%s" % phantoms
+        assert phantoms == [], \
+            "prose invented a phantom lane name: phantoms=%s" % phantoms
+        assert agent_tool == [], \
+            "prose invented an agent-tool lane name: %s" % agent_tool
