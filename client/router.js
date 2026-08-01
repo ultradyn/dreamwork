@@ -2555,15 +2555,17 @@ function setRolled(card, rolling) {
 /* re-apply the truth after ANY render. Landing inside setContent means
    landing before the tick's regroups MEASURE: a card re-rendered unrolled
    and re-rolled here has the small rect it had at snapshot, so no travel
-   is invented for a state nothing changed. The dock's card is the reading
-   surface — it is never rolled, and its button is not offered. */
+   is invented for a state nothing changed. Focus and the dock declare
+   themselves reading surfaces through qaCard; the SAME predicate that omits
+   their button suppresses the persisted roll here. This is presentational:
+   visiting either surface never mutates rolledQids. */
 function restoreRolls() {
   if (!rolledQids.size && !document.querySelector('.qa.rolled')) return;
   document.querySelectorAll('.qa[data-qid]').forEach(card => {
-    if (card.closest('.qdock')) return;
     let title = null;
     try { title = decodeURIComponent(card.dataset.qid); } catch (e) { return; }
-    const want = rolledQids.has(title);
+    const want = !isQuestionReadingSurface(card.dataset.qsurface) &&
+                 rolledQids.has(title);
     if (want !== card.classList.contains('rolled')) setRolled(card, want);
   });
 }
@@ -2601,7 +2603,7 @@ addEventListener('click', e => {
   const btn = e.target.closest('button.qroll');
   if (!btn) return;
   const card = btn.closest('.qa[data-qid]');
-  if (!card || card.closest('.qdock')) return;
+  if (!card || isQuestionReadingSurface(card.dataset.qsurface)) return;
   e.preventDefault();
   toggleRoll(card);
 });
@@ -2617,7 +2619,7 @@ window.addEventListener('storage', e => {
   if (m.rolled) rolledQids.add(m.qid); else rolledQids.delete(m.qid);
   const card = document.querySelector(
     '.qa[data-qid="' + encodeURIComponent(m.qid) + '"]');
-  if (card && !card.closest('.qdock') &&
+  if (card && !isQuestionReadingSurface(card.dataset.qsurface) &&
       !!m.rolled !== card.classList.contains('rolled'))
     applyRoll(card, !!m.rolled);
 });

@@ -7094,10 +7094,11 @@ class TestAppShell(unittest.TestCase):
                       'const qaEntry =',
                       # every call site goes through the one component
                       "qaCard(q, 'o' + i)", "qaCard(e, 'a' + j)",
-                      "qaCard(d.questions_open[i], 'o' + i)",
+                      "qaCard(d.questions_open[i], 'o' + i, 'dock')",
+                      "qaCard(d.questions_open[oi], 'o' + oi, 'focus')",
                       # ...including the submit morph, which restates the card
                       "card.className = 'qa ' + qaState(next, key)",
-                      'card.innerHTML = qaInner(next, key)'):
+                      "qaInner(next, key, card.dataset.qsurface || 'list')"):
             self.assertIn(token, watch.PAGE)
         # the folded Answered section no longer has look-alike markup
         self.assertNotIn('answeredEntry', watch.PAGE)

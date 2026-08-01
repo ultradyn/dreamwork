@@ -117,6 +117,7 @@ ok('awaiting and folded cards carry NO roll affordance ' +
 /* ── the floor, derived at runtime: open vs rolled, in measured LINES ───── */
 const geo0 = await p.evaluate(qid => {
   const card = document.querySelector(`.qa[data-qid="${qid}"]`);
+  const body = card.querySelector('.qbody');
   const probe = card.querySelector('.qbody .md p') || card.querySelector('.qt');
   const cs = getComputedStyle(probe);
   let lh = parseFloat(cs.lineHeight);
@@ -132,7 +133,9 @@ const geo0 = await p.evaluate(qid => {
     lh = pr.getBoundingClientRect().height / 2;
     pr.remove();
   }
-  return { open: card.getBoundingClientRect().height, lh };
+  return { open: card.getBoundingClientRect().height,
+           bodyOpen: body.getBoundingClientRect().height,
+           bodyScroll: body.scrollHeight, lh };
 }, enc);
 ok('precondition: the fixture card has a measurable line height',
    geo0.lh > 0 && Number.isFinite(geo0.lh));
@@ -152,14 +155,18 @@ const rollTrace = await p.evaluate(qid => new Promise(res => {
 }), enc);
 const rolledH = rollTrace.hs.at(-1);
 const rollSpan = Math.abs(rollTrace.hs[0] - rolledH);
+const rolledBodyH = await p.evaluate(qid =>
+  document.querySelector(`.qa[data-qid="${qid}"] .qbody`)
+    .getBoundingClientRect().height, enc);
 notes.push(`roll: open=${rollTrace.hs[0]} rolled=${rolledH} ` +
+           `body=${geo0.bodyOpen}->${rolledBodyH} ` +
            `lh=${geo0.lh} lines=${(rolledH / geo0.lh).toFixed(2)}`);
 ok('the card rolled to a 5-6 line scroll-top (floor derived from the ' +
    'measured line height, never a pinned pixel constant)',
    rolledH / geo0.lh >= 4.5 && rolledH / geo0.lh <= 6.5);
-ok('precondition: the fixture card really collapses (open strictly taller ' +
-   'than rolled — the gap is derived, not assumed)',
-   geo0.open > rolledH && rollTrace.hs[0] > rolledH);
+ok('precondition: the fixture BODY itself really clips (not merely a short ' +
+   'body whose compose box disappears — the gap is derived, not assumed)',
+   geo0.bodyOpen > rolledBodyH + 1 && geo0.bodyScroll > rolledBodyH + 1);
 ok('the roll TRAVELS (a part-way frame exists; a snap has none)',
    rollSpan > 40 && between(rollTrace.hs, rollTrace.hs[0], rolledH) >= 1);
 ok('no frame goes PAST the rolled height, and the last frame is at it',
