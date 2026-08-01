@@ -29,6 +29,7 @@ Levels:
 from __future__ import annotations
 
 import argparse
+import ast
 import difflib
 import hashlib
 import importlib.util
@@ -2743,6 +2744,171 @@ def check_guards_registered(root: Path, rep: Report) -> None:
     if not orphans and not missing:
         rep.add(OK, "justfile",
                 f"{len(registered)} guard(s) registered, each with a file")
+
+
+def _local_production_module(root: Path, module_name: str) -> bool:
+    parts = module_name.split(".")
+    if any(part.startswith("test_") or part == "tests" for part in parts):
+        return False
+    module = root.joinpath(*parts)
+    return (module.with_suffix(".py").is_file() or
+            (module / "__init__.py").is_file())
+
+
+def _production_imports(root: Path, tree: ast.Module
+                        ) -> tuple[dict[str, set[str]], set[str]]:
+    """Direct constant imports and aliases for local production modules."""
+    imported = {}
+    modules = set()
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            if not _local_production_module(root, node.module):
+                continue
+            for alias in node.names:
+                if re.fullmatch(r"[A-Z][A-Z0-9_]*", alias.name):
+                    imported[alias.asname or alias.name] = {alias.name}
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if _local_production_module(root, alias.name):
+                    modules.add(alias.asname or alias.name.split(".")[0])
+    return imported, modules
+
+
+def _production_origins(value: ast.AST, taints: dict[str, set[str]],
+                        modules: set[str]) -> set[str]:
+    origins = set().union(
+        *(taints.get(part.id, set()) for part in ast.walk(value)
+          if isinstance(part, ast.Name) and isinstance(part.ctx, ast.Load)),
+    )
+    origins.update(
+        part.attr for part in ast.walk(value)
+        if isinstance(part, ast.Attribute) and
+        isinstance(part.value, ast.Name) and part.value.id in modules and
+        re.fullmatch(r"[A-Z][A-Z0-9_]*", part.attr)
+    )
+    return origins
+
+
+def _production_taints(tree: ast.Module,
+                       imported: dict[str, set[str]],
+                       modules: set[str]) -> dict[str, set[str]]:
+    """Propagate imported authority through module assignments and helpers."""
+    taints = {name: set(origins) for name, origins in imported.items()}
+    bindings = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            bindings.extend((target.id, node.value) for target in node.targets
+                            if isinstance(target, ast.Name))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.value is not None:
+                bindings.append((node.target.id, node.value))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            returns = [part.value for statement in node.body
+                       for part in ast.walk(statement)
+                       if isinstance(part, ast.Return) and part.value is not None]
+            bindings.extend((node.name, value) for value in returns)
+
+    changed = True
+    while changed:
+        changed = False
+        for name, value in bindings:
+            origins = _production_origins(value, taints, modules)
+            if origins - taints.get(name, set()):
+                taints.setdefault(name, set()).update(origins)
+                changed = True
+    return taints
+
+
+def check_expected_production_constants(root: Path, rep: Report) -> None:
+    """Refuse EXPECTED_* values built from imported production constants.
+
+    IGC for #905 chose AST identity analysis over textual matching: aliases,
+    comprehensions and multiline expressions remain connected to the imported
+    symbol, while an independently built helper remains outside the finding.
+    The name boundary is deliberately strict: only module-level EXPECTED_*
+    assignments express the convention this rule promises to police. A broad
+    "derived expectation" rule was rejected because test_chain_golden.py's
+    independent framing helper is the canonical correct pattern.
+    """
+    if not (root / "lint.py").is_file():
+        return
+    tests = sorted(root.rglob("test_*.py"))
+    if not tests:
+        rep.add(ERROR, "test expectations",
+                "examined 0 test modules — no EXPECTED_* construction could "
+                "be checked; this is not a clean result")
+        return
+
+    findings = []
+    parse_errors = []
+    for path in tests:
+        try:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+        except (OSError, SyntaxError) as exc:
+            parse_errors.append(f"{path.relative_to(root)} ({exc})")
+            continue
+        imported, modules = _production_imports(root, tree)
+        if not imported and not modules:
+            continue
+        taints = _production_taints(tree, imported, modules)
+        expected_names = {
+            target.id for node in tree.body
+            if isinstance(node, (ast.Assign, ast.AnnAssign))
+            for target in (node.targets if isinstance(node, ast.Assign)
+                           else [node.target])
+            if isinstance(target, ast.Name) and target.id.startswith("EXPECTED_")
+        }
+        for node in tree.body:
+            value = None
+            targets = []
+            if isinstance(node, ast.Assign):
+                value, targets = node.value, node.targets
+            elif isinstance(node, ast.AnnAssign):
+                value, targets = node.value, [node.target]
+            if value is None:
+                continue
+            expected = [target.id for target in targets
+                        if isinstance(target, ast.Name) and
+                        target.id.startswith("EXPECTED_")]
+            if not expected:
+                continue
+            used = sorted(_production_origins(value, taints, modules))
+            for expected_name in expected:
+                for production_name in used:
+                    findings.append(
+                        f"{path.relative_to(root)}:{node.lineno} "
+                        f"{expected_name} uses imported production constant "
+                        f"{production_name}"
+                    )
+        for node in tree.body:
+            if not isinstance(node, (ast.Expr, ast.AugAssign)):
+                continue
+            mutated = sorted({part.id for part in ast.walk(node)
+                              if isinstance(part, ast.Name) and
+                              isinstance(part.ctx, ast.Load) and
+                              part.id in expected_names})
+            used = sorted(_production_origins(node, taints, modules))
+            for expected_name in mutated:
+                for production_name in used:
+                    findings.append(
+                        f"{path.relative_to(root)}:{node.lineno} "
+                        f"{expected_name} uses imported production constant "
+                        f"{production_name}"
+                    )
+
+    if parse_errors:
+        rep.add(ERROR, "test expectations",
+                f"could not parse {len(parse_errors)} of {len(tests)} test "
+                f"module(s): {'; '.join(parse_errors)}")
+    if findings:
+        rep.add(WARN, "test expectations",
+                f"{len(findings)} shared-authority expectation(s) among "
+                f"{len(tests)} test module(s): {'; '.join(findings)}")
+    elif not parse_errors:
+        rep.add(OK, "test expectations",
+                f"examined {len(tests)} test module(s); no EXPECTED_* value "
+                "uses an imported production constant")
 
 
 # #471 — registration is not execution. A guard in DEFAULT_GUARDS gates
@@ -6584,6 +6750,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are
     # the tool's own, so this only says anything when linting this repo.
     check_commit_cleanup(dw.parent, rep)
+    check_expected_production_constants(dw.parent, rep)
     check_guards_registered(dw.parent, rep)
     check_guards_execution_accounting(dw.parent, rep)
     check_client_dist(dw.parent, rep)
