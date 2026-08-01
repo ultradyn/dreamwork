@@ -22,58 +22,39 @@ This module is the ONE home for the per-client environment surface — which
 variable names a client uses, and how to read them. The record it produces
 lives under `status.json`'s `agent_session` key (`file-formats.md`).
 
-WHY THIS IS AUTHORED, NOT DERIVED — the deliberate call, because
-`status_sync.py` owns the derived fields and the obvious reading is that a
-value read out of the environment is "derivable" and belongs there.
+THE WRITER IS `status_sync`, NOT THIS MODULE (#858). `agent_session` is a
+DERIVED field: the ordinary `just status-sync` writes it through
+`status_sync._agent_session_record`, which calls this module's `record()`
+to read the invoking process's measured client environment, then asks
+`session_source` to resolve the candidate UUID as `live` before accepting
+it. `stale`, `missing`, `mismatch` and `absent` all become an explicit
+absent record (`session_id` null + a `note`) rather than a false-green
+identity -- the safety property a hand-written key bypasses. It refuses to
+write when the sync target is not the invoking process's cwd, so a lane
+syncing another checkout cannot overwrite the main agent's identity. That
+cwd restriction plus live-only acceptance is the answer to the three
+wrong-answers an unguarded derived writer would have produced (a lane
+overwriting the main agent, a long-lived server reporting a dead session,
+a cron job blanking a correct record): each is either refused outright or
+records absent honestly.
 
-The derived side is not defined by "computed rather than typed". It is
-defined by a stronger property that every one of its fields has: **the source
-is SHARED, so any process that runs the tool computes the same answer.**
-`queue` comes from the ledger store, `current_task_ids` and `dreamers` from
-the OS process table, `#655`'s pending count from the journal — all on-disk or
-kernel state, identical to every reader. That property is what makes
-recompute-and-overwrite safe.
+The env-reading still lives in ONE place (this module) for a reason that
+survives the reclassification: the per-client variable names are a
+MEASUREMENT, not state shared with every reader, and a second reader would
+be a second thing able to disagree with the registry. `status_sync`
+imports `record()` rather than restating it for the same reason every
+shared-rule check in this repo imports its rule -- two copies drift.
+`coverage()` lists `agent_session` under the derived set because it is in
+`DERIVED`; the author-owned list is the file's keys minus `DERIVED`, never a
+hand-maintained literal.
 
-**The environment does not have it.** It is process-local and differs per
-reader, and it differs precisely in the bit that says whether the reader is
-the main agent. Three concrete wrong answers a derived implementation would
-produce, none hypothetical:
-
-  1. `status_sync.py` run FROM A LANE would write that lane's environment over
-     the main agent's record. Every lane inherits the SAME
-     `CLAUDE_CODE_SESSION_ID` (`#652`, measured — one CLI process, lanes are
-     Agent-tool subagents of it), so the id would still look right and only
-     `is_subagent` would flip. Right-looking and wrong is the worst shape.
-  2. `status_derive.status_from_store` runs inside the **watch.py server
-     process**, which is launched once and outlives sessions. Its environment
-     is a snapshot of whichever session started it, so it would report a dead
-     session's id as the live one.
-  3. A `just` recipe, a hook or a cron invocation carries no session vars at
-     all, so a derived field would have to blank a correct record.
-
-And the refusal contract makes derived actively worse here rather than safer.
-`status_sync` on "I could not tell" LEAVES THE FIELD ALONE (`LivenessUnknown`)
-— correct for liveness, where the previous value was a hand-written truth a
-blind probe must not clobber. For session identity "leave alone" means **keep
-the previous CLI session's id**, which is exactly the wrong answer and is
-indistinguishable from a fresh one. The refusal contract would preserve the
-defect instead of surfacing it.
-
-So the record is written by the main agent, at orient (`initialization.md`
-step 7), through this module — mechanically read so it is never hand-typed,
-but read by the ONE process entitled to read it. `status_sync` leaves it
-alone by construction: `DERIVED` is a three-tuple and `coverage()` subtracts
-it, so this key appears in the author-owned list without anyone editing a
-literal.
-
-STALENESS, and why orient is the right trigger rather than a recompute: a
-session id can only change when the CLI session changes, and a fresh or
-resumed session re-runs init — so the record is refreshed exactly when the
-thing it names can move. `recorded_at` is written so a human can see the claim
-age rather than trust it. NOT MEASURED, and stated rather than assumed:
-whether resuming a session mints a new `CLAUDE_CODE_SESSION_ID`. Re-recording
-at orient is idempotent and costs nothing, so the procedure is correct either
-way; the record is a timestamped claim, not a guarantee.
+REFRESH, not a one-time orient write. A session id can only change when the
+CLI session changes, and `status-sync` re-derives the record on every run,
+so it is refreshed exactly when the thing it names can move and on every
+sync in between. `recorded_at` dates the identity claim, not each mechanical
+sync: `_agent_session_record` preserves a prior `recorded_at` when the
+substantive record is unchanged, so `--check` stays idempotent. The record
+is a timestamped claim, not a guarantee.
 
 HONEST ABSENCE. A client that exposes no session-id variable records `null`,
 never an inferred guess — the same discipline `#613` used for `system_prompt`,
@@ -123,7 +104,8 @@ unmeasured client is deliberately absent from `CLIENTS` rather than guessed —
 *"do not invent a capability matrix"*.
 
 Usage:  python3 client_env.py                     # print the record as JSON
-        python3 client_env.py --write --target .  # merge it into status.json
+        python3 client_env.py --write --target .  # direct write (no liveness check;
+                                               # status_sync is the production writer)
 """
 from __future__ import annotations
 

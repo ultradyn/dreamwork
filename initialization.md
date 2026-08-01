@@ -218,25 +218,21 @@ read, initialization has already happened; return to the loop.
    the recent git log (~10 commits) to absorb current direction and
    granularity.
 
-   **Record which session you are** (#665) — one command, and the only
-   place it is run:
+   **Which session you are is recorded automatically** (#665).
+   `agent_session` is a DERIVED field: the ordinary `just status-sync`
+   writes it from your CLI client's session-id environment variable (read
+   by `client_env.py`, the one home for the per-client variable names), and
+   `status_sync` accepts it **only** when the candidate UUID resolves to a
+   live transcript — `stale`, `missing`, `mismatch` and `absent` all become
+   an explicit absent record rather than a false-green identity. It writes
+   **only** when the sync target is your own cwd, so a lane syncing another
+   checkout cannot overwrite your identity. You do not write `agent_session`
+   by hand (#858).
 
-   `python3 <skill-dir>/client_env.py --write --target .`
-
-   It reads your CLI client's session-id environment variable and writes
-   `{client, session_id, is_subagent}` into `.dreamwork/status.json`
-   under `agent_session` (shape: `file-formats.md`). Nothing else in the
-   loop knows which session is the running agent, and it cannot be
-   derived later: the environment is process-local, so a tool run by a
-   lane, by the dashboard server, or by a cron job reads a different
-   answer than yours — which is why this is written by *you*, at orient,
-   and left alone by `status_sync.py`. Run it in the **main agent's own
-   shell**; a subagent that runs it records `is_subagent: true` and
-   overwrites your record.
-
-   Re-running is idempotent and free, so a resumed session simply runs
-   it again — that is what keeps the record fresh, since a session id
-   can only move when the session does. If your client is not in
+   `status-sync` needs `tasks.md` (reconciled next, step 8), so the first
+   record lands on the first sync after reconcile — not at orient itself.
+   An absent record until then is honest, not a gap, and a resumed session
+   is refreshed by the same sync. If your client is not in
    `client_env.CLIENTS` the record is written **absent** rather than
    guessed, and adding your client is a measurement, not a guess:
    the checklist is in `.dreamwork/docs/plans/session-log-view.md` §10.
