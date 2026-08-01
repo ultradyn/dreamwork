@@ -4,28 +4,26 @@ tree that does not belong to the acting lane, and a lane-private alternative.
 
 THE DEFECT
 ----------
-The @playwright/mcp server (v0.0.78) derives its output directory from
-process.cwd() — the coordinator's cwd, not the acting lane's. A default-named
-screenshot lands in <coordinator-cwd>/.playwright-mcp/, which is inside a git
-working tree. The harm is mitigated by .gitignore today, but the root is still
-derived from session identity, not lane identity.
+The @playwright/mcp server derives its output directory from its own cwd, but
+the helper used the acting lane's cwd. In a worktree those differ, so it named a
+directory where the server would not write.
 
 WHAT THIS CHECKS
 ----------------
-- default_output_root() mirrors the server's own outputDir() logic
+- server_cwd() resolves the live server for this harness session and refuses
+  absent, ambiguous, or unreadable answers
+- default_output_root() mirrors the server's own outputDir() fallback logic
 - is_inside_worktree() correctly detects the bug condition (screenshot root
   IS inside a git tree)
 - safe_staging_root() gives a lane-private dir that two lanes cannot share
-- The MCP server config is NOT per-lane addressable (the finding): the default
-  root is the same for every lane in a session, derived from cwd not identity
+- The resolver check uses deliberately different lane and server cwd values
 
-RED-PROOF DIRECTION 1: break is_inside_worktree to always return False; the
-test naming the default root as INSIDE a worktree goes red.
+RED-PROOF DIRECTION 1: break server_cwd() to return Path.cwd(); the resolver
+test goes red saying the reported root is not the server PID's output root.
 
-RED-PROOF DIRECTION 2 (open, honestly): a lane that does nothing still gets
-the session cwd as its output root — the fix IS (a), not (b). The MCP server
-config cannot express per-lane roots. We verify and state this rather than
-claiming the default is safe.
+RED-PROOF DIRECTION 2: if the fixture made lane cwd equal server cwd, that same
+broken resolver would pass. The fixture makes them differ, closing that
+false-green.
 """
 import subprocess
 import sys
@@ -41,25 +39,118 @@ if str(DEV) not in sys.path:
 import mcp_screenshot_root as msr  # noqa: E402
 
 
+def _fake_server(proc: Path, pid: int, cwd: Path, session: str = "session-a"):
+    process = proc / str(pid)
+    process.mkdir(parents=True)
+    (process / "cmdline").write_bytes(b"node\0/opt/bin/playwright-mcp\0")
+    (process / "environ").write_bytes(
+        f"CLAUDE_CODE_SESSION_ID={session}\0".encode()
+    )
+    (process / "cwd").symlink_to(cwd, target_is_directory=True)
+
+
 # ─── the default output root mirrors the server's own logic ───────────────
 
-def test_default_output_root_is_dot_playwright_mcp_under_cwd():
+def test_default_output_root_is_dot_playwright_mcp_under_cwd(tmp_path):
     """The server's outputDir() (coreBundle.js:64190) joins cwd with
     '.playwright-mcp' when no --output-dir is set. This test pins that
     derivation so a future MCP version change is caught."""
-    root = msr.default_output_root(Path("/some/workspace"))
-    assert root == Path("/some/workspace/.playwright-mcp"), (
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    root = msr.default_output_root(workspace)
+    assert root == workspace / ".playwright-mcp", (
         f"default_output_root should be cwd/.playwright-mcp, got {root}"
     )
 
 
-def test_default_output_root_does_not_escape_cwd():
+def test_default_output_root_does_not_escape_cwd(tmp_path):
     """The default root must be UNDER the cwd, not a sibling or parent.
     A root that escapes cwd would mean the derivation is wrong."""
-    root = msr.default_output_root(Path("/a/b"))
-    assert str(root).startswith("/a/b/"), (
-        f"default root {root} should be under /a/b/"
+    workspace = tmp_path / "a" / "b"
+    workspace.mkdir(parents=True)
+    root = msr.default_output_root(workspace)
+    assert root.parent == workspace, (
+        f"default root {root} should be under {workspace}"
     )
+
+
+def test_default_output_root_falls_back_for_system_or_unwritable_cwd(
+    tmp_path, monkeypatch
+):
+    fallback = tmp_path / "system-tmp"
+    monkeypatch.setattr(msr.tempfile, "gettempdir", lambda: str(fallback))
+    assert msr.default_output_root(Path("/")) == fallback / ".playwright-mcp"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setattr(msr.os, "access", lambda *_: False)
+    assert msr.default_output_root(workspace) == fallback / ".playwright-mcp"
+
+
+def test_server_cwd_uses_matching_process_not_callers_cwd(tmp_path, monkeypatch):
+    """The fixture is deliberately discriminating: lane and server cwd differ.
+
+    If they coincided, a broken caller-cwd resolver would look correct and this
+    regression test would pass vacuously (the original #670 test shape).
+    """
+    proc = tmp_path / "proc"
+    lane = tmp_path / "lane"
+    server = tmp_path / "coordinator"
+    proc.mkdir()
+    lane.mkdir()
+    server.mkdir()
+    _fake_server(proc, 1234, server)
+    monkeypatch.chdir(lane)
+
+    pid, resolved = msr.server_cwd(
+        proc, {"CLAUDE_CODE_SESSION_ID": "session-a"}
+    )
+    root = msr.default_output_root(resolved)
+
+    assert pid == 1234
+    assert root == server / ".playwright-mcp", (
+        f"reported root {root} is not server PID 1234's output root "
+        f"{server / '.playwright-mcp'}; the resolver used lane cwd {lane}"
+    )
+
+
+def test_server_cwd_disambiguates_other_sessions(tmp_path):
+    proc = tmp_path / "proc"
+    ours = tmp_path / "ours"
+    other = tmp_path / "other"
+    proc.mkdir()
+    ours.mkdir()
+    other.mkdir()
+    _fake_server(proc, 1234, ours, "session-a")
+    _fake_server(proc, 5678, other, "session-b")
+    assert msr.server_cwd(proc, {"CLAUDE_CODE_SESSION_ID": "session-a"}) == (
+        1234, ours
+    )
+
+
+def test_server_cwd_refuses_absent_or_ambiguous_answers(tmp_path):
+    proc = tmp_path / "proc"
+    proc.mkdir()
+    with pytest.raises(msr.ServerResolutionError, match="no live"):
+        msr.server_cwd(proc, {"CLAUDE_CODE_SESSION_ID": "session-a"})
+
+    one = tmp_path / "one"
+    two = tmp_path / "two"
+    one.mkdir()
+    two.mkdir()
+    _fake_server(proc, 1234, one)
+    _fake_server(proc, 5678, two)
+    with pytest.raises(msr.ServerResolutionError, match="several.*1234, 5678"):
+        msr.server_cwd(proc, {"CLAUDE_CODE_SESSION_ID": "session-a"})
+
+
+def test_server_cwd_refuses_unreadable_candidate_state(tmp_path):
+    proc = tmp_path / "proc"
+    proc.mkdir()
+    process = proc / "1234"
+    process.mkdir()
+    (process / "cmdline").write_bytes(b"node\0/opt/bin/playwright-mcp\0")
+    with pytest.raises(msr.ServerResolutionError, match="PID\(s\) 1234.*unreadable"):
+        msr.server_cwd(proc, {"CLAUDE_CODE_SESSION_ID": "session-a"})
 
 
 # ─── the default IS inside a git tree (the bug condition) ─────────────────
