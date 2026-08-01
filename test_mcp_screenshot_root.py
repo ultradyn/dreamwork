@@ -149,7 +149,7 @@ def test_server_cwd_refuses_unreadable_candidate_state(tmp_path):
     process = proc / "1234"
     process.mkdir()
     (process / "cmdline").write_bytes(b"node\0/opt/bin/playwright-mcp\0")
-    with pytest.raises(msr.ServerResolutionError, match="PID\(s\) 1234.*unreadable"):
+    with pytest.raises(msr.ServerResolutionError, match=r"PID\(s\) 1234.*unreadable"):
         msr.server_cwd(proc, {"CLAUDE_CODE_SESSION_ID": "session-a"})
 
 
