@@ -485,6 +485,81 @@ class TestExpectationSourcesArePinned:
         assert "not stable across the injection" in err
 
 
+class TestExpectationDriftNamesTheRearm:
+    """#910: an expectation-drift refusal must say the lane did nothing wrong
+    and name the forget-and-re-arm remedy. Editing the expectation file
+    mid-injection is the natural rhythm (inject -> red -> add a test ->
+    restore), and the refusal is correct — but a refusal that does not say
+    what to do next reads as "I made a mistake" and pushes a lane to weaken
+    its test or skip the re-arm.
+
+    Direction-2 guard (the false-green this repo has landed four tools
+    against): a check on a refusal MESSAGE that passes when the refusal no
+    longer fires at all. Each test proves the refusal FIRED (the exit code)
+    over a REAL drift (the pinned bytes genuinely differ from current), then
+    checks the remedy text — so a check that stops detecting drift fails on
+    the exit-code assertion before the message is ever read."""
+
+    def test_restore_drift_refusal_names_rearm_and_the_commands(
+            self, repo, capsys):
+        expectation = repo / "independent-expectation.txt"
+        original = "route must remain true\n"
+        expectation.write_text(original)
+        assert _begin(repo, "router.js", ("independent-expectation.txt",)) == 0
+        (repo / "router.js").write_text("SABOTAGE\n")
+        # the natural mid-injection edit: add to the expectation file
+        expectation.write_text(original + "# a newly added test\n")
+
+        # PRECONDITION: the drift is REAL — pinned bytes differ from current.
+        # A refusal over a non-drift proves nothing (#906): the population the
+        # check evaluates must be non-empty and the assertion must reach it.
+        entries, _ = rp._read_registry(repo)
+        pinned = entries[0]["expectation_sources"][0]["sha"]
+        assert pinned != rp._sha(expectation.read_bytes()), (
+            "no real drift: the refusal would fire over nothing")
+
+        exit = _restore(repo, "router.js")
+        _, err = capsys.readouterr()
+        # the refusal FIRED (direction-2 guard): exit 2, not a quiet pass
+        assert exit == 2, err
+        # the drift was evaluated and names the expectation file
+        assert "independent-expectation.txt" in err, err
+        # the remedy is present — HARDCODED LITERALS, not the production
+        # symbol (an expectation drawn from the thing it checks is silent to
+        # every tool, #906)
+        assert "re-arm" in err.lower(), err
+        assert "forget" in err, err
+        assert "begin" in err, err
+
+        # drop the armed entry so it does not leak into sibling tests
+        assert rp.forget(repo, "router.js") == 0
+
+    def test_check_drift_refusal_names_rearm_and_the_commands(
+            self, repo, capsys):
+        expectation = repo / "independent-expectation.txt"
+        original = "route must remain true\n"
+        expectation.write_text(original)
+        assert _begin(repo, "router.js", ("independent-expectation.txt",)) == 0
+        (repo / "router.js").write_text("SABOTAGE\n")
+        assert _restore(repo, "router.js") == 0
+        # drift introduced AFTER restore, caught at hand-off
+        expectation.write_text(original + "# a newly added test\n")
+
+        # PRECONDITION: real drift at hand-off time
+        entries, _ = rp._read_registry(repo)
+        restored = [e for e in entries if e.get("state") == rp.RESTORED][0]
+        pinned = restored["expectation_sources"][0]["sha"]
+        assert pinned != rp._sha(expectation.read_bytes()), "no real drift"
+
+        exit = _check(repo)
+        _, err = capsys.readouterr()
+        assert exit == 1, err          # the refusal FIRED (direction-2 guard)
+        assert "independent-expectation.txt" in err, err
+        assert "re-arm" in err.lower(), err
+        assert "forget" in err, err
+        assert "begin" in err, err
+
+
 # ── CLI smoke ──────────────────────────────────────────────────────────
 
 class TestCli:

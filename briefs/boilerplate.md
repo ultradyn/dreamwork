@@ -103,6 +103,12 @@ that is a legitimate outcome, not a failure.
       python3 dev/redproof.py restore <path>   # record the injected content, restore, verify
       python3 dev/redproof.py check --require 1 # mandated hand-off gate — run before you report, quote it
 
+  **Editing your `--expectation` file mid-injection is legitimate** (inject →
+  red → add a test → restore is the natural rhythm) and `restore`/`check` will
+  refuse on the changed bytes — that refusal is correct, not a mistake (#852):
+  re-arm with `forget <path>`, then `begin <path> --expectation <source>`
+  against the new bytes, re-sabotage, `restore` (#910). Do not silently re-pin.
+
   **Snapshot the FIXED file immediately before sabotage.** `restore` then returns
   that fixed state byte-for-byte. A baseline reproduction done before building is a
   separate round; finish its restore, apply the fix, then `begin` again for the final
