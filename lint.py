@@ -4718,6 +4718,24 @@ def brief_has_blanket_markdown_prohibition(text: str) -> bool:
 def check_brief_dream_contradictions(dw: Path, rep: Report) -> None:
     """A cancelled dream instruction leaves no artifact, so inspect the cause."""
     briefs_dir = dw / "docs" / "briefs"
+    if not briefs_dir.is_dir():
+        # #838/#867: the brief corpus is OPERATOR-LOCAL, so its ABSENCE is an
+        # expected state (a --target scratch tree, a fresh checkout), not a
+        # broken detector. Erroring here made `lint --target <empty>` exit 1
+        # and left six test_lint.py fixtures red on master from 36284c38.
+        #
+        # An absent directory and a PRESENT-but-empty one are different facts
+        # and must not print alike: the second still ERRORs below, because a
+        # briefs/ that exists and yields nothing IS a broken detector. Saying
+        # "examined nothing, and that is not an all-clear" is #867's standing
+        # requirement for every consumer of this corpus (#868/#915).
+        rep.add(
+            WARN, "brief dream rules",
+            "brief corpus directory absent — operator-local (#838), so this "
+            "check examined 0 brief(s) and reached NO verdict; this is not an "
+            "all-clear",
+        )
+        return
     paths = sorted(path for path in briefs_dir.glob("*.md") if path.is_file())
     dream = 0
     both: list[Path] = []

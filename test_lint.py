@@ -5499,7 +5499,16 @@ class TestBriefCorpusReach:
         assert len(findings) == 1, (
             "missing CHANGED DURING LINT interference verdict\n" + rep.render())
         assert "CHANGED DURING LINT" in findings[0]
-        assert "five brief-corpus checks" in findings[0]
+        # The numeral is load-bearing: it asserts the interference verdict
+        # covers EVERY brief-corpus check, so a check that silently escapes the
+        # fixed-corpus guarantee fails here. It is also a spelled-out English
+        # literal that must be bumped by hand whenever a check is added —
+        # #936 added the sixth and did not bump it, which left this red on
+        # master from 36284c38 (its gate named test_brief.py, not the test
+        # named for the file it changed — #938). Same bump-cost shape #940
+        # retired two literals over; keeping it here because dropping it
+        # retires real coverage, not redundant coverage.
+        assert "six brief-corpus checks" in findings[0]
         assert "not a merge verdict" in findings[0]
 
     def test_add_then_remove_between_samples_is_the_open_false_green(
