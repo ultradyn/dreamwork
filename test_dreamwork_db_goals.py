@@ -392,6 +392,18 @@ def test_claim_all_open_refusal_uses_the_whole_goal_subtree(store_path):
                 )
 
 
+def test_empty_goal_claim_is_not_rejected_by_all_open_clause(store_path):
+    """EmptyGroup remains the progress() boundary, not append_claim()."""
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        goal_id = _goal(db, "No members")
+        with db.transaction() as tx:
+            claim = tx.goals.append_claim(
+                goal_id, claimed_by="loop", claimed_at="now", summary="panel",
+                base_sha=None, details_sha="details", round=1,
+            )
+            assert claim.group_id == goal_id
+
+
 def test_rank_collisions_and_all_null_still_have_total_preorder(store_path):
     """Direction 2(5): red on GoalRepository.ranked_children's ORDER BY."""
     with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
