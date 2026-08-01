@@ -4514,6 +4514,32 @@ def write_subagent_policy(target, text):
         return False
 
 
+def delete_subagent_policy(target):
+    """Remove the subagent-policy override, returning to the standing default.
+
+    Reset (#646): 'no policy' is expressed by deleting the file, NOT by clearing
+    it to empty — the read side (read_subagent_policy) treats a present-but-blank
+    file as unset AND lint (check_subagent_policy) warns that such a file is
+    inert, so clear-to-empty would leave a file that looks set and is not. This
+    is the one supported reset (#440): match the read side's decision rather
+    than invent a second.
+
+    Returns True when the override was present and removed; False when it was
+    already absent (nothing to reset — the standing default is already in
+    effect). Neither outcome is an error: reset to an already-default state is
+    idempotent, the same way an identical posture chip press is 202 + no event.
+    """
+    lint = _posture_vocab()
+    path = os.path.join(target, ".dreamwork", lint.SUBAGENT_POLICY_FILE)
+    try:
+        os.unlink(path)
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
+
+
 def posture_line(pace, asking, delegation, orchestration, source=""):
     """Source-tagged watch-events.log line for a committed posture change.
 
@@ -4562,6 +4588,19 @@ def delivery_line(mode, source=""):
     posture/run-mode already use (dual-write + one line on real change), not a
     second one."""
     return f"delivery via watch{from_hint(source)}: {one_line(str(mode))}"
+
+
+def subagent_policy_line(action, source=""):
+    """Source-tagged watch-events.log line for a committed policy change (#646).
+
+    Pure. `action` is 'set' or 'reset' — the TRANSITION, never the policy text.
+    The policy is free text and the SUMMARY_DENIED class (his authored prose),
+    so it has no business in a line-oriented log an agent reads; and the log is
+    one event per line, so emitting free text would need one_line, which would
+    normalise it. The file IS the value; the line only says it changed. The
+    ceremony posture/run-mode/delivery already use (dual-write + one line on
+    real change), not a second one (#440)."""
+    return f"subagent policy via watch{from_hint(source)}: {one_line(str(action))}"
 
 
 # #342 — per-kind wake routing. The receipt commits UNCONDITIONALLY in do_POST
@@ -5980,6 +6019,81 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 "delegation_label": lint.delegation_posture(delegation),
             }), "application/json")
 
+        def _handle_subagent_policy(self):
+            """Free-text subagent policy override (#646 + #580, UNION of both).
+
+            SIBLING route to /posture, NOT a field on it: every posture axis
+            arms on one shared 10s pending, and this control is EXPLICITLY off
+            that timer (his ruling — the inconsistency is the request), so it
+            gets its own handler and its own ceremony rather than a branch in
+            _handle_posture. That is the #440 call: one supported way is
+            matched, not invented, because the policy is a different file, a
+            different value shape (free text, no domain), and a different
+            commit gesture (explicit Save/Reset buttons, not a debounced chip).
+
+            Dual-write, the same ceremony posture/run-mode/delivery use:
+            authoritative gitignored `.dreamwork/subagent-policy` plus one
+            watch-events.log line only on a real change. The line carries the
+            TRANSITION ('set'/'reset'), never the text — the policy is his
+            authored prose (SUMMARY_DENIED) and a newline in it would forge a
+            second event (#126). Identical-final is 202 + no event.
+
+            Reset = delete the file (delete_subagent_policy), returning to the
+            standing default — NOT clear-to-empty, which would leave an inert
+            file lint then has to complain about (read_subagent_policy's
+            docstring settled this).
+            """
+            req = self._read_json()
+            if req is None:
+                self._reject("malformed_json"); return
+            from_path = (req or {}).get("from")
+            # Reset: delete the override file. Idempotent — absent is already
+            # the standing default, so reset-to-default returns changed=False.
+            if (req or {}).get("reset"):
+                removed = delete_subagent_policy(target)
+                if removed is None:
+                    self.send_error(500); return
+                after = resolve_posture(target)
+                if removed:
+                    log_event(target,
+                              subagent_policy_line("reset", from_path))
+                self._send_receipt(json.dumps({
+                    "ok": True, "changed": removed,
+                    "subagent_policy": after.get("subagent_policy", ""),
+                    "subagent_policy_source": after.get(
+                        "subagent_policy_source", "default"),
+                }), "application/json")
+                return
+            text = (req or {}).get("policy", "")
+            if not isinstance(text, str):
+                self._reject("domain_invalid"); return
+            # Identical-final: the on-disk file already holds exactly this text.
+            # 202 + no event, the same idempotence posture/run-mode use.
+            current = read_subagent_policy(target)
+            if current is not None and current == text:
+                self._send_receipt(json.dumps({
+                    "ok": True, "changed": False,
+                    "subagent_policy": current,
+                    "subagent_policy_source": "file",
+                }), "application/json")
+                return
+            if not write_subagent_policy(target, text):
+                self._reject("domain_invalid",
+                             "blank policy — clear via reset, not an empty save")
+                return
+            # Read back through the SAME reader the dashboard uses, not the
+            # value we were handed: this is the round-trip proof (#632/#659).
+            # A writer that tidied the text would be caught here, because the
+            # read uses read_text_full (the whole-file reader) and the
+            # comparison is byte-for-byte.
+            persisted = read_subagent_policy(target)
+            log_event(target, subagent_policy_line("set", from_path))
+            self._send_receipt(json.dumps({
+                "ok": True, "changed": True,
+                "subagent_policy": persisted,
+                "subagent_policy_source": "file",
+            }), "application/json")
+
         def _handle_remind(self):
             """POST /remind — send the resolved posture to the coordinator (#551).
 
@@ -6097,6 +6211,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             "/tint": _handle_tint,
             "/run-mode": _handle_run_mode,
             "/posture": _handle_posture,
+            "/subagent-policy": _handle_subagent_policy,
             "/remind": _handle_remind,
             "/deploy": _handle_deploy,
         }
