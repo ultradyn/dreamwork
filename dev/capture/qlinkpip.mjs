@@ -288,10 +288,14 @@ const linebox = await p.evaluate(({ knownUrl }) => {
   // the pip's own box height — the inline-level box the line box sees
   const pipH = pipClone.offsetHeight;
   const pipRect = pipClone.getBoundingClientRect();
-  // the hit overlay (absolute ::after) must not be 0 — touch target kept
-  const after = (() => { try { return pipClone.getBoundingClientRect(); } catch { return null; } })();
+  // derive ONE line's height from pA (plain text): its offsetHeight / line
+  // count. Comparing pipH to pAH (a multi-line paragraph) passes on a 28px
+  // pip in a 51px paragraph — the false-green that red-proved this check.
+  const aRange = document.createRange(); aRange.selectNodeContents(pA);
+  const aLines = [...aRange.getClientRects()].filter(r => r.width > 1).length || 1;
+  const oneLineH = pA.offsetHeight / aLines;
   const r = {
-    pipH, pAH: pA.offsetHeight, pBH: pB.offsetHeight,
+    pipH, pAH: pA.offsetHeight, pBH: pB.offsetHeight, oneLineH, aLines,
     delta: pB.offsetHeight - pA.offsetHeight,
     pipHasGeometry: pipRect.width > 0 && pipRect.height > 0,
   };
@@ -307,8 +311,9 @@ ok('the body pip does not grow the line box ' +
    !linebox.err && linebox.pipHasGeometry === true &&
    Math.abs(linebox.delta) <= 0);
 ok('the body pip keeps a sub-line box (pip ' + (linebox.pipH ?? '?') +
-   'px <= the line) — it sits inside the text, not over it',
-   !linebox.err && linebox.pipH > 0 && linebox.pipH <= (linebox.pAH || 0));
+   'px <= one line ' + (linebox.oneLineH ?? '?') + 'px) — it sits inside the text, not over it',
+   !linebox.err && linebox.pipH > 0 && linebox.oneLineH > 0 &&
+   linebox.pipH <= linebox.oneLineH);
 
 /* ── screenshots for coordinator inspection (rest state; always-on) ──── */
 await p.evaluate(({ knownPath }) => {
