@@ -77,11 +77,11 @@ def upgrade(conn: sqlite3.Connection) -> None:
         "INSERT INTO meta (key, value) VALUES ('current_goal_id', '')"
     )
     conn.execute("ALTER TABLE task_group ADD COLUMN goal_rank INTEGER")
-    # Existing stores have already run v005; fresh stores see the widened v005
-    # seeds.  One statement serves both histories without creating two truths.
-    conn.execute(
-        "INSERT OR IGNORE INTO task_group_kind (kind) VALUES ('goal')"
-    )
+    # v005 seeds v005's kinds and this seeds v008's, so one version's shape is
+    # one version's statement and ``downgrade`` removes exactly what it added.
+    # Widening ``KIND_SEEDS`` instead would give version 5 two meanings and make
+    # this INSERT unfalsifiable: every path reaches v008 through v005.
+    conn.execute("INSERT INTO task_group_kind (kind) VALUES ('goal')")
 
 
 def downgrade(conn: sqlite3.Connection) -> None:

@@ -43,7 +43,7 @@ from ..core import SchemaMismatch
 #: named that v004's CHECK rejected; ``batch`` is a delivery-sized collection,
 #: which an open vocabulary plus arbitrary depth makes a *seed row* rather than
 #: a table of its own.
-KIND_SEEDS = ("lane", "epic", "milestone", "feature", "batch", "goal")
+KIND_SEEDS = ("lane", "epic", "milestone", "feature", "batch")
 
 #: The kinds v004's CHECK could express.  A downgrade cannot represent any
 #: other kind, so it refuses rather than rewrite or drop those rows.

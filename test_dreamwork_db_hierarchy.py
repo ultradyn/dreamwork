@@ -401,6 +401,20 @@ def test_a_duplicate_edge_is_idempotent_not_a_second_row(store_path):
 
 # --- migration --------------------------------------------------------------
 
+def _roll_back_the_ladder_above_v005(conn):
+    """Undo every step above v005 so a v005 rollback sees a genuine v5 store.
+
+    Each version removes what it added, so this is not optional bookkeeping:
+    v008 owns ``kind='goal'``, and until v008's downgrade has removed it,
+    v005's downgrade correctly refuses it as a kind v004 cannot express.
+    v007 has no production downgrade because #584's settings are shared user
+    data; these fixtures never write one, so only that empty shape is dropped.
+    """
+    v008_goals.downgrade(conn)
+    conn.execute("DROP TABLE user_setting")
+    conn.execute("UPDATE meta SET value='6' WHERE key='schema_version'")
+
+
 def _v004_store(path):
     """A genuine v4 store: built through the ladder, then rolled BACK to v4.
 
@@ -415,14 +429,7 @@ def _v004_store(path):
     try:
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("BEGIN")
-        v008_goals.downgrade(conn)
-        # v007 has no production downgrade because #584's settings are shared
-        # user data. This test fixture is empty, so remove only that empty shape
-        # to construct the genuine older target its v005 proof promises.
-        conn.execute("DROP TABLE user_setting")
-        conn.execute(
-            "UPDATE meta SET value='6' WHERE key='schema_version'"
-        )
+        _roll_back_the_ladder_above_v005(conn)
         v005_hierarchy.downgrade(conn)
         conn.execute("COMMIT")
         assert conn.execute(
@@ -528,6 +535,7 @@ def test_downgrade_restores_the_v004_shape_when_nothing_would_be_lost(tmp_path):
         " VALUES (2,21,'t','t')")
     conn.commit()
     conn.execute("BEGIN")
+    _roll_back_the_ladder_above_v005(conn)
     v005_hierarchy.downgrade(conn)
     conn.execute("COMMIT")
     try:
