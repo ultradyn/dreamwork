@@ -144,6 +144,23 @@ class TaskRepository:
             "SELECT id FROM task WHERE state = 'landed' ORDER BY id")]
         return open_ids, landed_ids
 
+    def landed_shas(self, task_ids: tuple[int, ...]) -> tuple[str, ...]:
+        """Return landing commits for *task_ids* from the append-only store."""
+        if not task_ids:
+            return ()
+        placeholders = ",".join("?" for _ in task_ids)
+        rows = self._session.execute(
+            "SELECT detail FROM task_event WHERE task_id IN (" + placeholders + ")"
+            " AND to_state = 'landed' ORDER BY ordinal",
+            task_ids,
+        ).fetchall()
+        shas: list[str] = []
+        for (detail,) in rows:
+            match = _COMMIT_SHA.search(detail or "")
+            if match and match.group(1) not in shas:
+                shas.append(match.group(1))
+        return tuple(shas)
+
     def review_decisions(self) -> list[dict]:
         rows = self._session.execute(
             "SELECT artifact, question_title, decision, decided_at, actor"

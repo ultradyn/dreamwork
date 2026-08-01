@@ -70,7 +70,7 @@ def _json_array(value: object, label: str) -> tuple[tuple[Any, ...], str]:
     return items, encoded
 
 
-def _examined(value: object) -> tuple[dict[str, int], str]:
+def _examined(value: object, *, allow_zero: bool = False) -> tuple[dict[str, int], str]:
     if not isinstance(value, dict) or set(value) != {"criteria", "members"}:
         raise ValidationError(
             "examined must be exactly {'criteria': n, 'members': n}"
@@ -81,7 +81,7 @@ def _examined(value: object) -> tuple[dict[str, int], str]:
         raise ValidationError(
             f"examined counts must be non-negative integers, got {counts!r}"
         )
-    if counts["criteria"] == 0 or counts["members"] == 0:
+    if not allow_zero and (counts["criteria"] == 0 or counts["members"] == 0):
         raise ValidationError(
             "DID NOT JUDGE: verdict examined "
             f"criteria={counts['criteria']} members={counts['members']}"
@@ -323,7 +323,7 @@ class GoalRepository:
     def append_verdict(
         self, claim_id: int, *, lens: str, refuted: bool,
         findings: object, corroborated: object, examined: object,
-        blocking: str = "none",
+        blocking: str = "none", synthetic: bool = False,
     ) -> GoalVerdict:
         claim = self._session.execute(
             "SELECT group_id FROM goal_claim WHERE id = ?", (claim_id,)
@@ -347,7 +347,7 @@ class GoalRepository:
         corroborated_items, corroborated_json = _json_array(
             corroborated, "corroborated"
         )
-        examined_counts, examined_json = _examined(examined)
+        examined_counts, examined_json = _examined(examined, allow_zero=synthetic)
         if refuted and not finding_items:
             raise ValidationError("malformed refutation: findings array is empty")
         if not refuted and not corroborated_items:
@@ -398,7 +398,10 @@ class GoalRepository:
             corroborated_items, _ = _json_array(
                 corroborated, "stored corroborated"
             )
-            examined_counts, _ = _examined(examined)
+            synthetic = bool(row[3]) and any(
+                isinstance(item, dict) and item.get("synthetic") for item in finding_items
+            )
+            examined_counts, _ = _examined(examined, allow_zero=synthetic)
             if bool(row[3]) and not finding_items:
                 raise SchemaMismatch(
                     f"goal verdict #{row[0]} is a refutation with no findings"
