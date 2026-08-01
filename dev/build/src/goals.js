@@ -34,6 +34,17 @@ function GoalWrites(props) {
   const [message, setMessage] = React.useState('');
   const [busy, setBusy] = React.useState(false);
 
+  React.useEffect(function () {
+    const valid = id => nodes.some(node => String(node.id) === id);
+    const next = String(props.currentId || (nodes[0] && nodes[0].id) || '');
+    if (!valid(detailsGoal) && next) {
+      const node = nodes.find(item => String(item.id) === next);
+      setDetailsGoal(next); setDetails(node ? node.details : '');
+    }
+    if (!valid(conditionGoal) && next) setConditionGoal(next);
+    if (parent !== '' && !valid(parent)) setParent(next);
+  }, [nodes, props.currentId]);
+
   async function write(payload, clear) {
     setBusy(true); setMessage('saving…');
     try {
