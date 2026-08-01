@@ -53,6 +53,10 @@ def repo(tmp_path: Path, monkeypatch) -> Path:
     root.mkdir()
     _git(root, "init", "-q", "-b", "master", ".")
     (root / "router.js").write_text("export function route() { return true; }\n")
+    # Every fixture injection declares a separate expectation source. The
+    # feature tests below use other files explicitly; this is the default for
+    # the older protocol coverage.
+    (root / "expectation.txt").write_text("route expectation fixture\n")
     _git(root, "add", "router.js")
     _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
     # Redirect the lane-private scratch root so tests own their registry.
@@ -63,8 +67,9 @@ def repo(tmp_path: Path, monkeypatch) -> Path:
     return root
 
 
-def _begin(repo: Path, path: str) -> int:
-    return rp.begin(repo, path)
+def _begin(repo: Path, path: str,
+           expectations: tuple[str, ...] = ("expectation.txt",)) -> int:
+    return rp.begin(repo, path, expectations)
 
 
 def _restore(repo: Path, path: str) -> int:
@@ -133,6 +138,10 @@ def test_crossed_registry_would_restore_lane_b_bytes_into_lane_a(
             "snapshot": str(snap),
             "state": rp.ARMED,
             "begun_at": rp._now(),
+            "expectation_sources": [{
+                "path": "expectation.txt",
+                "sha": rp._sha((repo / "expectation.txt").read_bytes()),
+            }],
             "injected_sha": None,
             "injected_hint": None,
             "restored_at": None,
@@ -406,6 +415,76 @@ class TestRestoreRecordsInjected:
         assert entries == []
 
 
+class TestExpectationSourcesArePinned:
+    """The subject and its expectation must have separate, stable bytes."""
+
+    def test_begin_refuses_an_unpinned_expectation(self, repo, capsys):
+        exit = rp.begin(repo, "router.js")
+        _, err = capsys.readouterr()
+        assert exit == 2
+        assert "must declare at least one expectation source" in err
+
+    def test_begin_records_an_independent_expectation_source(self, repo):
+        expectation = repo / "independent-expectation.txt"
+        expectation.write_text("route must remain true\n")
+
+        assert _begin(repo, "router.js", ("independent-expectation.txt",)) == 0
+        entries, _ = rp._read_registry(repo)
+        assert entries[0]["expectation_sources"] == [{
+            "path": "independent-expectation.txt",
+            "sha": rp._sha(expectation.read_bytes()),
+        }]
+
+        # Self-referential red-proof precondition: the source we pin is a
+        # distinct file whose bytes do not derive from the injected subject.
+        (repo / "router.js").write_text("export function route() { return false; }\n")
+        _restore(repo, "router.js")
+        assert _check(repo) == 0
+
+    def test_begin_refuses_the_injected_file_as_its_expectation(
+            self, repo, capsys):
+        exit = _begin(repo, "router.js", ("./router.js",))
+        _, err = capsys.readouterr()
+        assert exit == 2
+        assert "expectation source" in err
+        assert "injected file" in err
+        assert "distinct canonical paths" in err
+
+    def test_restore_refuses_when_expectation_changes_during_injection(
+            self, repo, capsys):
+        expectation = repo / "independent-expectation.txt"
+        original_expectation = "route must remain true\n"
+        expectation.write_text(original_expectation)
+        assert _begin(repo, "router.js", ("independent-expectation.txt",)) == 0
+        (repo / "router.js").write_text("SABOTAGE\n")
+        expectation.write_text("route must remain false\n")
+
+        exit = _restore(repo, "router.js")
+        _, err = capsys.readouterr()
+        assert exit == 2, "changed expectation must refuse during restore"
+        assert "expectation source changed during the injection" in err
+        assert "independent-expectation.txt" in err
+
+        # Restore the declared expectation, then complete the protocol so the
+        # failed proof does not leak an armed entry into sibling tests.
+        expectation.write_text(original_expectation)
+        assert _restore(repo, "router.js") == 0
+
+    def test_check_refuses_expectation_drift_after_restore(self, repo, capsys):
+        expectation = repo / "independent-expectation.txt"
+        expectation.write_text("route must remain true\n")
+        assert _begin(repo, "router.js", ("independent-expectation.txt",)) == 0
+        (repo / "router.js").write_text("SABOTAGE\n")
+        assert _restore(repo, "router.js") == 0
+        expectation.write_text("route must remain false\n")
+
+        exit = _check(repo)
+        _, err = capsys.readouterr()
+        assert exit == 1, "check must refuse expectation drift at hand-off"
+        assert "expectation source" in err
+        assert "not stable across the injection" in err
+
+
 # ── CLI smoke ──────────────────────────────────────────────────────────
 
 class TestCli:
@@ -421,6 +500,7 @@ class TestCli:
         env = self._env(tmp_path)
         # begin
         r = subprocess.run(["python3", str(CLI_PATH), "begin", proto,
+                            "--expectation", "expectation.txt",
                             "--cwd", str(repo)], capture_output=True, text=True, env=env)
         assert r.returncode == 0, r.stderr
         (repo / proto).write_text("CLI SABOTAGE\n")
@@ -882,7 +962,7 @@ class TestPathsStayInWorktree:
         outside.write_text("outside\n")
         (repo / "link.txt").symlink_to(outside)
 
-        exit_code = rp.begin(repo, "link.txt")
+        exit_code = rp.begin(repo, "link.txt", ["expectation.txt"])
         _, err = capsys.readouterr()
 
         assert exit_code == 2, err
@@ -893,7 +973,7 @@ class TestPathsStayInWorktree:
             self, repo, capsys):
         outside = repo.parent / "outside.txt"
         outside.write_text("outside bytes\n")
-        assert rp.begin(repo, "router.js") == 0
+        assert rp.begin(repo, "router.js", ["expectation.txt"]) == 0
         (repo / "router.js").unlink()
         (repo / "router.js").symlink_to(outside)
 
@@ -926,7 +1006,7 @@ class TestPathsStayInWorktree:
 
     def test_a_missing_contained_path_is_absent_not_outside(
             self, repo, capsys):
-        exit_code = rp.begin(repo, "missing/child.txt")
+        exit_code = rp.begin(repo, "missing/child.txt", ["expectation.txt"])
         _, err = capsys.readouterr()
 
         assert exit_code == 2, err
@@ -1151,6 +1231,7 @@ def bundle_repo(tmp_path: Path, monkeypatch) -> Path:
     root = tmp_path / "bundle"
     root.mkdir()
     _git(root, "init", "-q", "-b", "master", ".")
+    (root / "expectation.txt").write_text("bundle expectation fixture\n")
     (root / "watch.py").write_text('_CLIENT_ASSETS = ("router.js",)\n')
     (root / "client").mkdir()
     (root / "client" / "router.js").write_text(

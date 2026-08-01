@@ -32,19 +32,22 @@ THE PROTOCOL
 ------------
 Replace the manual ``cp`` snapshot / ``cp`` restore with the tool's verbs::
 
-    python3 dev/redproof.py begin router.js      # snapshot ORIGINAL (one act)
+    python3 dev/redproof.py begin router.js --expectation test_router.py
+                                               # pin an independent expectation
     # ...sabotage router.js; run the red test; watch it fail...
     python3 dev/redproof.py restore router.js    # record INJECTED, restore, cmp
     # ...apply the real fix (may edit router.js further)...
     python3 dev/redproof.py check                # hand-off gate
 
 ``begin`` snapshots the original to the lane-private scratch dir (#652, never
-``/tmp``). ``restore`` reads the *current* (injected) bytes, records their sha
-and the first line that differs from the original, then copies the original
-back and verifies byte-identity — never ``git checkout`` (#349). ``check``
-refuses the hand-off if any registered file still matches its recorded
-injection, naming the path and the injected content so the refusal has a
-referent.
+``/tmp``), and pins one or more independent expectation files by their bytes.
+The expectation source must not be the injected file itself. ``restore`` reads
+the *current* (injected) bytes, verifies every pinned expectation is unchanged,
+records the injected sha and the first line that differs from the original,
+then copies the original back and verifies byte-identity — never ``git
+checkout`` (#349). ``check`` repeats the expectation-byte comparison at the
+hand-off and refuses if an expectation was omitted or drifted, as well as if
+any registered file still matches its recorded injection.
 
 A CLEAN TREE IS NOT A CLEAN BRANCH (#710)
 -----------------------------------------
@@ -173,6 +176,73 @@ def _worktree_path(root: Path, path: str) -> tuple[str, Path]:
     except (OSError, RuntimeError) as exc:
         raise RedproofError(f"cannot resolve path {posix!r}: {exc}") from exc
     return relative.as_posix(), resolved
+
+
+def _pin_expectations(root: Path, target_posix: str,
+                      declarations: list[str]) -> list[dict]:
+    """Resolve and pin the independent expectation files for one injection."""
+    if not declarations:
+        raise RedproofError(
+            f"injection of {target_posix!r} must declare at least one "
+            "expectation source with --expectation; an unpinned expectation "
+            "cannot be red-proof evidence")
+
+    sources: list[dict] = []
+    seen: set[str] = set()
+    for declaration in declarations:
+        posix, source = _worktree_path(root, declaration)
+        if posix == target_posix:
+            raise RedproofError(
+                f"expectation source {posix!r} is the injected file; the "
+                "subject and expectation must have distinct canonical paths")
+        if posix in seen:
+            continue
+        try:
+            data = source.read_bytes()
+        except FileNotFoundError as exc:
+            raise RedproofError(
+                f"expectation source {posix!r} does not exist in the working "
+                "tree") from exc
+        except OSError as exc:
+            raise RedproofError(
+                f"cannot read expectation source {posix!r}: {exc}") from exc
+        sources.append({"path": posix, "sha": _sha(data)})
+        seen.add(posix)
+    return sources
+
+
+def _expectation_drift(root: Path, entry: dict) -> list[str]:
+    """Return expectation drift descriptions, faulting on unevaluable state."""
+    sources = entry.get("expectation_sources")
+    if not isinstance(sources, list) or not sources:
+        raise RedproofError(
+            f"injection {entry.get('path', '?')!r} has no pinned expectation "
+            "source; the registry cannot establish an independent expectation")
+    drift: list[str] = []
+    for source in sources:
+        if not isinstance(source, dict):
+            raise RedproofError(
+                f"injection {entry.get('path', '?')!r} has a malformed "
+                "expectation-source record")
+        path = source.get("path")
+        pinned_sha = source.get("sha")
+        if not isinstance(path, str) or not isinstance(pinned_sha, str):
+            raise RedproofError(
+                f"injection {entry.get('path', '?')!r} has an incomplete "
+                "expectation-source record")
+        posix, _ = _worktree_path(root, path)
+        if posix == entry.get("path"):
+            drift.append(
+                f"{entry.get('path', '?')!r}: expectation source {posix!r} "
+                "is the injected file")
+            continue
+        actual = _read_wt(root, posix)
+        actual_sha = _sha(actual)
+        if actual_sha != pinned_sha:
+            drift.append(
+                f"{entry.get('path', '?')!r}: expectation source {posix!r} "
+                f"changed (pinned {pinned_sha[:12]}, current {actual_sha[:12]})")
+    return drift
 
 
 def _target_kind(posix_path: str) -> str:
@@ -590,16 +660,19 @@ def bundle_stale_findings(root: Path, entries: list[dict]) -> list[dict]:
 # verbs                                                                        #
 # --------------------------------------------------------------------------- #
 
-def begin(cwd: Path | None, path: str) -> int:
+def begin(cwd: Path | None, path: str,
+          expectations: list[str] | tuple[str, ...] = ()) -> int:
     """Snapshot the ORIGINAL bytes of ``path`` and register an armed entry.
 
     Called BEFORE the sabotage. The snapshot and the registration are one act,
-    so the lane cannot take the snapshot at the wrong moment (#704).
+    so the lane cannot take the snapshot at the wrong moment (#704). At least
+    one independent expectation source is required and pinned in the entry.
     """
     root = _ls.worktree_root(cwd)
     try:
         posix, target = _worktree_path(root, path)
         original = target.read_bytes()
+        expectation_sources = _pin_expectations(root, posix, list(expectations))
         begun_head = _git(root, "rev-parse", "HEAD")
     except RedproofError as exc:
         sys.stderr.write(f"begin: REFUSED — {exc}\n")
@@ -637,6 +710,7 @@ def begin(cwd: Path | None, path: str) -> int:
         # Commit reachability is the registration boundary.  Unlike begun_at,
         # it cannot be forged by commit-date rewriting (#901).
         "begun_head": begun_head,
+        "expectation_sources": expectation_sources,
         # cleared until restore records them:
         "injected_sha": None,
         "injected_hint": None,
@@ -644,6 +718,8 @@ def begin(cwd: Path | None, path: str) -> int:
     })
     _write_registry(cwd, entries)
     print(f"begin: snapshotted original of {posix} ({len(original)} bytes) -> {snap}")
+    print(f"       pinned {len(expectation_sources)} independent expectation "
+          "source(s).")
     print(f"       state=armed; sabotage it, then `restore {posix}`.")
     return 0
 
@@ -687,6 +763,12 @@ def restore(cwd: Path | None, path: str) -> int:
         except OSError as exc:
             raise RedproofError(f"snapshot {snap} unreadable: {exc}") from exc
 
+        drift = _expectation_drift(root, armed)
+        if drift:
+            raise RedproofError(
+                "declared expectation source changed during the injection; "
+                "refusing to record a red-proof:\n  " + "\n  ".join(drift))
+
         injected = _read_wt(root, posix)
 
         if _sha(injected) == _sha(original):
@@ -706,7 +788,11 @@ def restore(cwd: Path | None, path: str) -> int:
         # the count is honest and the history scan has every injected sha.
         entry = _find_restored(entries, posix, injected_sha)
         if entry is None:
-            entry = {"path": posix, "begun_head": armed.get("begun_head")}
+            entry = {
+                "path": posix,
+                "begun_head": armed.get("begun_head"),
+                "expectation_sources": armed.get("expectation_sources"),
+            }
             entries.append(entry)
         entry.update({
             "injected_sha": injected_sha,
@@ -770,7 +856,9 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
     The discriminating test: for every restored entry, the working tree must
     NOT equal the recorded injected bytes. A restored-then-further-edited file
     differs from the injection and passes (#683 point 1). An armed (begun but
-    unrestored) entry is a refusal: the red-proof is incomplete.
+    unrestored) entry is a refusal: the red-proof is incomplete. Every restored
+    entry must also carry expectation sources whose bytes still match the
+    begin-time pins; otherwise the expectation may have moved with the subject.
 
     Then the same comparison against every commit this branch adds to its base,
     because a clean tree says nothing about what the branch will merge (#710).
@@ -879,12 +967,14 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
 
     armed: list[dict] = []
     live: list[dict] = []
+    expectation_drift: list[str] = []
     for e in entries:
         if e.get("state") != RESTORED:
             armed.append(e)
             continue
         try:
             wt = _read_wt(root, e["path"])
+            expectation_drift.extend(_expectation_drift(root, e))
         except RedproofError as exc:
             sys.stderr.write(f"check: FAULT — {exc}\n")
             return 2
@@ -905,6 +995,15 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             f"{names}. An armed entry means the red-proof never completed "
             f"(begin without restore). Run `restore` on each or `forget` a "
             f"spurious begin.\n")
+        return 1
+
+    if expectation_drift:
+        sys.stderr.write(
+            "check: REFUSED — a registered injection has an expectation "
+            "source that was not stable across the injection:\n  "
+            + "\n  ".join(expectation_drift) +
+            "\nThe expectation must remain byte-identical and distinct from "
+            "the injected subject.\n")
         return 1
 
     try:
@@ -1000,6 +1099,9 @@ def main(argv: list[str] | None = None) -> int:
                          "check = hand-off gate")
     ap.add_argument("path", nargs="?", help="repo-relative path confined to the resolved "
                     "worktree (for begin/restore/forget)")
+    ap.add_argument("--expectation", action="append", default=[], metavar="PATH",
+                    help="begin: independent repo-relative file holding the "
+                    "expectation; repeat for multiple files")
     ap.add_argument("--require", type=int, default=0,
                     help="check: refuse if fewer than N injections are registered")
     ap.add_argument("--base", default=None,
@@ -1021,7 +1123,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.path is None:
             ap.error(f"{args.verb} requires a path argument")
         if args.verb == "begin":
-            return begin(cwd, args.path)
+            return begin(cwd, args.path, args.expectation)
         if args.verb == "restore":
             return restore(cwd, args.path)
         if args.verb == "forget":
