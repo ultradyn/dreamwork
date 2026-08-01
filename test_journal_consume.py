@@ -170,6 +170,35 @@ def _unapplied_ids(text: str) -> list[str]:
     return ids
 
 
+def _still_unapplied_ids(text: str) -> list[str]:
+    """The receipt id (2nd tab-field) of each ``STILL-UNAPPLIED`` line (#619).
+
+    A carried-over line is ``STILL-UNAPPLIED\\t<id>\\t<route>\\tord=<n>``; the
+    id is the second tab-field.  Derived from the line shape, never assumed, and
+    DISTINCT from the fresh ``UNAPPLIED`` lines so a test can tell a re-reported
+    (carried-over) idea from a fresh-this-tick one.
+    """
+    ids = []
+    for line in text.splitlines():
+        if line.startswith("STILL-UNAPPLIED\t"):
+            ids.append(line.split("\t")[1])
+    return ids
+
+
+def _sidecar_ids(cli, path: Path) -> list[str]:
+    """The uncleared ids in the durable sidecar, read via the PRODUCTION helper
+    that consume uses (#619 — direction-2 strong).
+
+    Observing the durable state through ``cli._load_unapplied`` (not by trusting
+    a consume exit code or output count) is what closes the false-green where a
+    receipt 'reports recorded' but wrote to the wrong path: this reads the REAL
+    ``<journal>.unapplied`` bound to THIS journal, so a record that landed
+    elsewhere is absent here and the test fails.
+    """
+    with open_journal(path) as j:
+        return sorted(e["receipt_id"] for e in cli._load_unapplied(path, j.journal_id))
+
+
 def _append_transition(path: Path, receipt_id: str) -> int:
     """Append ONE ``receipt.transition`` event via the production transition() path.
 
@@ -2368,3 +2397,237 @@ def test_show_unknown_ordinal_exits_usage(tmp_path: Path):
     assert out == "", f"unknown ordinal must write nothing to stdout; got {out!r}"
     assert str(probe) in err, (
         f"the stderr message must name the missing ordinal; got {err!r}")
+
+
+# ---------------------------------------------------------------------------
+# #619 — the cursor must not SILENTLY advance past an unapplied receipt.
+#
+# The loss: consume advanced the cursor past an UNAPPLIED add-idea whose idea
+# never entered the task ledger, and the only record was a transient UNAPPLIED
+# line — gone on compaction — while the #526 proof's marker meant a replay
+# proved APPLIED and never re-reported.  These tests prove the durable uncleared
+# sidecar + the carried-over alarm close it: a drained unapplied receipt is
+# recorded durably, re-reported every tick until cleared, and the alarm fires
+# only on CARRIED-OVER (not fresh) unapplied so it cannot rubber-stamp.
+# ---------------------------------------------------------------------------
+
+def test_unapplied_receipt_recorded_durably_and_rereported_until_cleared(tmp_path: Path):
+    """#619 core: a receipt drained unapplied is recorded to the durable
+    sidecar, re-reported STILL-UNAPPLIED on the next (idle) tick, and STOPS
+    re-reporting once the coordinator confirms filing (``consume --cleared``).
+
+    The durable state is OBSERVED via the production helper that consume uses
+    (``_sidecar_ids`` reads ``<journal>.unapplied``), not by trusting a return
+    value — so a record that landed in the wrong place is absent and fails here
+    (direction-2 strong).  The cursor is asserted MOVED (derived from j.cursor)
+    so 'drained' does not rot into 'never drained'.
+
+    RED LINE (run): break the recording seam — make the success-path
+      ``_store_unapplied`` call a no-op (e.g. ``if fresh: pass``).  The sidecar
+      stays empty → the second consume reads nothing → no STILL-UNAPPLIED, exit
+      0 → the ``STILL-UNAPPLIED`` / ``code == EX_UNAPPLIED`` assertions fail.
+      Production line injected: the ``_store_unapplied(...)`` call in the
+      success block of cmd_consume (and the ``_load_unapplied`` read that feeds
+      _emit_uncleared).
+    """
+    cli = _load_cli()
+    path = tmp_path / "p619.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"kind":"add-idea","text":"an idea worth keeping"}'],
+                   route="/command")
+    rid = seeded[0].receipt_id
+
+    # First drain: fresh unapplied → ORDINARY tick → exit 0, UNAPPLIED line, and
+    # the receipt is now durably recorded.
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, (
+        f"a fresh-unapplied drain is the ordinary tick (exit 0, not the "
+        f"alarm); got {code} (out={out!r})")
+    assert rid in _unapplied_ids(out), (
+        f"the fresh receipt must be listed UNAPPLIED; got {out!r}")
+    assert _still_unapplied_ids(out) == [], (
+        "a fresh drain must NOT emit STILL-UNAPPLIED — that is the carried-over "
+        f"alarm, not the first drain; got {out!r}")
+    # Direction-2 strong: OBSERVE the durable sidecar via the production helper.
+    assert _sidecar_ids(cli, path) == [rid], (
+        "the unapplied receipt must be recorded in the durable sidecar — "
+        "without it the next tick cannot re-report it and the idea is lost "
+        "the way it was before #619")
+    # Precondition (derived): the cursor genuinely advanced past the receipt.
+    with open_journal(path) as j:
+        assert j.cursor(CONSUMER).scanned_through_event_ordinal >= 1, (
+            "precondition: consume must have advanced the cursor — else "
+            "'drained' is meaningless")
+
+    # Second (idle) tick: cursor already past the receipt → consumed 0, BUT the
+    # carried-over receipt re-reports and the alarm fires.
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == cli.EX_UNAPPLIED, (
+        f"a tick with carried-over uncleared unapplied must exit "
+        f"EX_UNAPPLIED({cli.EX_UNAPPLIED}) — the missed-idea alarm; got {code}")
+    assert rid in _still_unapplied_ids(out), (
+        f"the uncleared receipt must re-report STILL-UNAPPLIED; got {out!r}")
+    assert "consumed 0 event(s)" in out, (
+        f"the idle tick still drains nothing (cursor advanced); got {out!r}")
+
+    # Coordinator confirms filing → the receipt stops re-reporting.
+    code, out, err = _run(cli, ["consume", "--cleared", rid,
+                                "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, (
+        f"after clearing the last uncleared receipt, exit returns to 0; "
+        f"got {code} (out={out!r})")
+    assert rid not in _sidecar_ids(cli, path), (
+        "clearing must remove the receipt from the durable sidecar")
+    assert any(ln.startswith("CLEARED\t" + rid) for ln in out.splitlines()), (
+        f"the clear must name the cleared id; got {out!r}")
+
+    # Third tick: nothing carried, nothing pending → quiet.
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0
+    assert _still_unapplied_ids(out) == [], (
+        f"after clearing, the receipt must NOT re-report; got {out!r}")
+    assert out.strip() == "consumed 0 event(s)", (
+        f"a fully-cleared idle tick prints only the consumed-0 line; got {out!r}")
+
+
+def test_fresh_unapplied_is_the_ordinary_tick_no_alarm(tmp_path: Path):
+    """#619 no-rubber-stamp: a FRESH unapplied drain (the common case — every
+    non-expedited receipt is unapplied on first drain) exits 0 and emits NO
+    STILL-UNAPPLIED.  This encodes the measurement that decided the design:
+    alarming on fresh unapplied would fire every ordinary tick and become noise.
+
+    RED LINE (run): make _emit_uncleared ignore whether the entries are fresh
+      vs carried (e.g. feed the just-recorded fresh list into it).  A fresh
+      drain would then emit STILL-UNAPPLIED and exit EX_UNAPPLIED → the
+      ``code == 0`` and ``_still_unapplied_ids == []`` assertions fail.
+      Production line: the separation between the fresh ``UNAPPLIED`` lines and
+      the ``_emit_uncleared(uncleared)`` carried-over block in cmd_consume.
+    """
+    cli = _load_cli()
+    path = tmp_path / "fresh.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"kind":"add-idea","text":"x"}', b'{"kind":"chat","text":"y"}'],
+                   route="/command")
+    rids = sorted(r.receipt_id for r in seeded)
+
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, (
+        f"a fresh-unapplied drain is the ordinary tick → exit 0; got {code}")
+    assert sorted(_unapplied_ids(out)) == rids, (
+        f"both fresh receipts are listed UNAPPLIED; got {out!r}")
+    assert _still_unapplied_ids(out) == [], (
+        f"NO STILL-UNAPPLIED on a fresh drain (no rubber stamp); got {out!r}")
+
+
+def test_force_unapplied_records_nothing_so_no_rereport(tmp_path: Path):
+    """#619 escape hatch: ``--force-unapplied`` drains normally (cursor advances,
+    UNAPPLIED lines print, proof still marks) but records NOTHING to the sidecar
+    — so a later idle tick does NOT re-report.  This is the bootstrap/handled-
+    by-inspection escape; the safe default records everything.
+
+    RED LINE (run): make --force-unapplied still record (e.g. delete the
+      ``if not args.force_unapplied:`` guard around _store_unapplied).  The
+      sidecar gains the id → the second consume re-reports it → the
+      ``_sidecar_ids == []`` and ``no STILL-UNAPPLIED`` assertions fail.
+      Production line: the ``if not args.force_unapplied:`` guard in cmd_consume.
+    """
+    cli = _load_cli()
+    path = tmp_path / "force.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"kind":"add-idea","text":"forced"}'], route="/command")
+    rid = seeded[0].receipt_id
+
+    code, out, err = _run(cli, ["consume", "--force-unapplied",
+                                "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, f"forced consume must exit 0; got {code} (err={err!r})"
+    assert rid in _unapplied_ids(out), (
+        f"force does not suppress the UNAPPLIED report (only the recording); "
+        f"got {out!r}")
+    # Direction-2 strong: observe the durable sidecar is EMPTY.
+    assert _sidecar_ids(cli, path) == [], (
+        "--force-unapplied must record nothing — a record here would make a "
+        "later tick re-report a receipt the coordinator chose not to track")
+    # The marker still landed (proof ran) and the cursor advanced.
+    assert applied.exists(), "precondition: the proof still ran under --force"
+    with open_journal(path) as j:
+        assert j.cursor(CONSUMER).scanned_through_event_ordinal >= 1
+
+    # Later idle tick: nothing carried → quiet.
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0
+    assert _still_unapplied_ids(out) == [], (
+        f"a force-drained receipt must NOT re-report; got {out!r}")
+
+
+def test_consumed_zero_with_carried_over_is_not_quiet(tmp_path: Path):
+    """#619 / #868 degrade-to-zero edge: an idle tick (``consumed 0``) that has
+    CARRIED-OVER uncleared receipts is NOT quiet — it re-reports them and exits
+    EX_UNAPPLIED.  'Nothing needs you' holds only when nothing is carried over;
+    silencing an idle tick with at-risk ideas is the original loss.
+
+    RED LINE (run): make the consumed-0 early return bypass _emit_uncleared
+      (restore the pre-#619 ``return EX_OK``).  The carried-over receipt is
+      silently dropped on the idle tick → the ``STILL-UNAPPLIED`` / ``code ==
+      EX_UNAPPLIED`` assertions fail.  Production line: the
+      ``_emit_uncleared(out, uncleared)`` call on the consumed-0 path.
+    """
+    cli = _load_cli()
+    path = tmp_path / "idle.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"kind":"add-idea","text":"idle-but-at-risk"}'],
+                   route="/command")
+    rid = seeded[0].receipt_id
+    _run(cli, ["consume", "--journal", str(path), "--applied", str(applied)])
+    assert _sidecar_ids(cli, path) == [rid], "precondition: rid is carried over"
+
+    # Idle tick: nothing to drain, but rid is carried over → NOT quiet.
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == cli.EX_UNAPPLIED, (
+        f"an idle tick with carried-over unapplied must alarm; got {code}")
+    assert rid in _still_unapplied_ids(out), (
+        f"the carried-over receipt must re-report on the idle tick; got {out!r}")
+    assert "consumed 0 event(s)" in out
+
+
+def test_sidecar_is_bound_to_its_journal(tmp_path: Path):
+    """#619 / #658 binding: the uncleared sidecar is bound to its journal by
+    journal_id, so a sidecar left by a DIFFERENT journal (a stale checkout's
+    file) cannot satisfy this one — its uncleared ids do not bleed across.
+
+    RED LINE (run): make _load_unapplied ignore the journal_id check (return
+      entries regardless of mismatch).  Journal B's consume would then load A's
+      carried-over ids → the ``B's second consume sees nothing`` assertion fails.
+      Production line: the ``if data.get('journal_id') != journal_id: return []``
+      guard in _load_unapplied.
+    """
+    cli = _load_cli()
+    path_a = tmp_path / "a.sqlite3"
+    path_b = tmp_path / "b.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded_a = _seed(path_a, [b'{"kind":"add-idea","text":"a"}'], route="/command")
+    rid_a = seeded_a[0].receipt_id
+    _seed(path_b, [b'{"kind":"add-idea","text":"b"}'], route="/command")
+    # Distinct journal_ids (minted at creation) — derived, never assumed.
+    with open_journal(path_a) as ja, open_journal(path_b) as jb:
+        assert ja.journal_id != jb.journal_id, (
+            "precondition: the two journals must have distinct ids for the "
+            "binding to mean anything")
+
+    # Drain A (records rid_a to A's sidecar), then drain B.
+    _run(cli, ["consume", "--journal", str(path_a), "--applied", str(applied)])
+    _run(cli, ["consume", "--journal", str(path_b), "--applied", str(applied)])
+    assert _sidecar_ids(cli, path_a) == [rid_a]
+    # B's idle tick must NOT see A's carried-over receipt.
+    code, out, err = _run(cli, ["consume", "--journal", str(path_b),
+                                "--applied", str(applied)])
+    assert rid_a not in _still_unapplied_ids(out), (
+        f"A's uncleared receipt must not bleed into B's consume (sidecar is "
+        f"journal-bound); got {out!r}")
