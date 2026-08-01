@@ -176,6 +176,17 @@ def _gib(kib: int) -> str:
     return f"{kib / (1024 * 1024):.0f}G"
 
 
+# Available memory below which a browser-binding lane is at real risk of a
+# fixed-timeout guard stalling on swap-in (the wrong-answer failure the third
+# note measured). The trigger keys on THIS — what a new process can actually get
+# — never on swap-used, which on a long-lived desktop is high whenever uptime is
+# high and so fired "memory-bound" on a healthy 28G-available machine (#785).
+# Absolute, not relative: headroom for a process is an absolute quantity. The
+# healthy states measured on this box (27-30 GiB available) sit ~3-4x above it,
+# so the token does not fire on the input that produced #785.
+_LOW_AVAIL_KIB = 8 * 1024 * 1024  # 8 GiB
+
+
 # ── scan + render ───────────────────────────────────────────────────────
 
 
@@ -218,15 +229,20 @@ def render(result: dict, mem: dict[str, int] | None) -> str:
                     else "no other pytest suites")
         b_clause = f"{b} browser/guard process{'es' if b != 1 else ''}"
         clauses = [f"concurrent tests: {p_clause}", b_clause]
-    # Memory token: shown only when swap is heavily used (the scarce resource the
-    # third note measured). Absent on a calm machine (#612); present under the
-    # exact condition a pytest count alone cannot see.
-    if mem and mem.get("SwapTotal", 0) > 0:
-        used = mem["SwapTotal"] - mem.get("SwapFree", 0)
-        if used * 2 > mem["SwapTotal"]:  # >50% swap used
+    # Memory token: surfaces low AVAILABLE memory — what a new process can
+    # actually get (#785). NOT swap-used: that reads high on any long-lived
+    # desktop (idle desktop pages correctly evicted by uptime, not pressure), so
+    # keying on it printed "memory-bound" beside 28G available and sent the
+    # reader chasing a leak that was not there. The wording reports the reading
+    # ("low available memory"); it does not diagnose a cause it did not prove.
+    # Absent on a calm machine (#612); missing MemAvailable stays silent rather
+    # than fabricate a verdict.
+    if mem and mem.get("MemTotal", 0) > 0:
+        avail = mem.get("MemAvailable")
+        if avail is not None and avail < _LOW_AVAIL_KIB:
             clauses.append(
-                f"mem: swap {_gib(used)}/{_gib(mem['SwapTotal'])} used "
-                "(memory-bound, not CPU — a browser lane adds the cost a pytest lane does not)"
+                f"mem: {_gib(avail)} available of {_gib(mem['MemTotal'])} "
+                "(low available memory — a browser lane costs RAM a pytest lane does not)"
             )
     return "; ".join(clauses) + " (advisory)"
 
