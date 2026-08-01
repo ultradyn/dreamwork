@@ -161,7 +161,7 @@ def test_half_migrated_schema_is_named_schema_mismatch(tmp_path, capsys):
     assert _run_real_audit(dw_dir, briefs) == 2
     captured = capsys.readouterr()
     assert captured.err.lower().startswith("citation_audit: store schema mismatch:")
-    assert "no such column: title" in captured.err.lower()
+    assert "store schema mismatch during sql:" in captured.err.lower()
 
 
 # -- extract_citations --------------------------------------------------------

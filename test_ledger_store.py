@@ -645,8 +645,15 @@ def test_v1_to_v2_migration_reshapes_review_decision_when_empty(tmp_path):
             f"v2 migration must drop question_id; cols={sorted(cols)}")
         version = store.conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        assert int(version) == SCHEMA_VERSION == 6, (
-            "the ordered ladder must continue through v6 after proving the "
+        # Resolved at the merge gate (#849 over #848). The literal was `== 3`,
+        # and #848 re-pinned it to `== 6` when it added v006 — the same
+        # staleness one version later, which is what #849 exists to stop. What
+        # this test proves is that the ladder RUNS PAST v3, not that the top of
+        # the ladder is any particular number, so bind it to SCHEMA_VERSION and
+        # keep only the floor the v1->v2 reshape actually needs.
+        assert int(version) == SCHEMA_VERSION and int(version) >= 3, (
+            "the ordered ladder must continue through v3 and every later migration "
+            "after proving the "
             f"v1→v2 reshape; got schema_version {version!r}"
         )
     finally:

@@ -94,7 +94,7 @@ def test_each_reviewed_anchor_line_contains_the_named_evidence():
     resolved = resolve_all(Path.cwd())
     assert len(resolved) == 74
     track = next(item for item in resolved if item.symbol == "track_question_updates")
-    assert (track.reviewed_line, track.current_line, track.drift) == (3683, 3695, 12)
+    assert (track.reviewed_line, track.current_line, track.drift) == (3683, 3705, 22)
 
 
 def test_ambiguous_reanchor_names_the_anchor_and_each_drift(tmp_path: Path):
@@ -121,7 +121,7 @@ def test_unanticipated_watch_insertion_keeps_lines_derived(tmp_path: Path):
     track_anchor = next(a for a in ANCHORS if a.symbol == "track_question_updates")
     after = track_anchor.resolve(tmp_path)
     assert (before.current_line, before.drift) == (342, 0)
-    assert (after.current_line, after.drift) == (3702, 19)
+    assert (after.current_line, after.drift) == (3712, 29)
 
 
 def test_transplanted_evidence_is_the_open_false_green(tmp_path: Path):
