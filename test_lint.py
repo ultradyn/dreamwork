@@ -9579,3 +9579,145 @@ class TestBoilerplateExpectationDerivation:
                    for l, _, d in rep.rows), rep.rows
         assert any("no redproof begin example was found" in d and l == lint.ERROR
                    for l, _, d in rep.rows), rep.rows
+
+
+class TestRetiredPhrasings:
+    REGISTRY = {
+        "version": 1,
+        "rulings": [{
+            "ruling": "#505 Q2",
+            "retired_phrasings": ["no-build single-file constraint"],
+        }],
+    }
+
+    def _repo(self, tmp_path, docs=None, registry=None):
+        root = tmp_path / "repo"
+        dw = root / ".dreamwork"
+        (dw / "docs").mkdir(parents=True)
+        payload = self.REGISTRY if registry is None else registry
+        (dw / "docs" / lint.RETIRED_PHRASINGS_REGISTRY).write_text(
+            json.dumps(payload), encoding="utf-8")
+        for name, content in (docs or {}).items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+        return dw
+
+    def _rows(self, dw):
+        rep = lint.Report()
+        lint.check_retired_phrasings(dw, rep)
+        return rep.rows
+
+    def test_live_retired_claim_warns_with_file_and_line(self, tmp_path):
+        dw = self._repo(tmp_path, {
+            "docs/live.md": "# Design\n\nThe no-build single-file constraint still binds.\n",
+        })
+        rows = self._rows(dw)
+        warnings = [d for level, _, d in rows if level == lint.WARN]
+        assert warnings == [
+            "docs/live.md:3 repeats retired phrasing "
+            "'no-build single-file constraint' from #505 Q2 without a nearby "
+            "superseding marker"
+        ]
+
+    def test_struck_through_claim_is_recorded_history(self, tmp_path):
+        dw = self._repo(tmp_path, {
+            "docs/history.md": "~~the no-build single-file constraint~~\n",
+        })
+        assert self._rows(dw) == [(lint.OK, lint.RETIRED_PHRASINGS_REGISTRY,
+                                  "registered 1 retired phrasing(s); scanned "
+                                  "1 tracked Markdown document(s)")]
+
+    def test_text_after_a_closed_strike_is_live(self, tmp_path):
+        dw = self._repo(tmp_path, {
+            "docs/live.md": (
+                "~~an older, unrelated claim~~\n\n"
+                "The no-build single-file constraint still binds.\n"
+                "\n~~another unrelated historical claim~~\n"),
+        })
+        warnings = [d for level, _, d in self._rows(dw) if level == lint.WARN]
+        assert len(warnings) == 1
+        assert warnings[0].startswith("docs/live.md:3 repeats retired phrasing")
+
+    def test_affirmative_ruling_quote_is_not_a_false_positive(self, tmp_path):
+        dw = self._repo(tmp_path, {
+            "watch-design.md": (
+                "Python stdlib only. A built web UI is permitted (ruled "
+                "2026-07-30, answering `#505` Q2): \"we don't have a "
+                "no-build single-file constraint.\"\n"),
+        })
+        assert [level for level, _, _ in self._rows(dw)] == [lint.OK]
+
+    def test_dated_supersession_in_the_window_marks_history(self, tmp_path):
+        dw = self._repo(tmp_path, {
+            "docs/history.md": (
+                "The no-build single-file constraint was assumed.\n"
+                "\nA note.\n\n**SUPERSEDED 2026-07-30** by the ruling.\n"),
+        })
+        assert [level for level, _, _ in self._rows(dw)] == [lint.OK]
+
+    def test_leading_status_notice_scopes_a_historical_appendix(self, tmp_path):
+        dw = self._repo(tmp_path, {
+            "docs/history.md": (
+                "# #505 design\n\n> **Status.** Q2 is retired.\n" +
+                "\n".join(f"history {n}" for n in range(40)) +
+                "\nOriginal question: hold the no-build single-file constraint?\n"),
+        })
+        assert [level for level, _, _ in self._rows(dw)] == [lint.OK]
+
+    def test_multiline_phrase_names_its_start_line(self, tmp_path):
+        dw = self._repo(tmp_path, {
+            "docs/live.md": "# Design\n\nThe no-build single-file\nconstraint still binds.\n",
+        })
+        warnings = [d for level, _, d in self._rows(dw) if level == lint.WARN]
+        assert len(warnings) == 1
+        assert warnings[0].startswith("docs/live.md:3 repeats retired phrasing")
+
+    def test_empty_registry_is_loud_and_prints_both_denominators(self, tmp_path):
+        dw = self._repo(tmp_path, {"docs/one.md": "# one\n"},
+                        registry={"version": 1, "rulings": []})
+        rows = self._rows(dw)
+        assert rows == [(lint.WARN, lint.RETIRED_PHRASINGS_REGISTRY,
+                         "registered 0 retired phrasing(s); scanned 1 tracked "
+                         "Markdown document(s) — registry is empty; this is "
+                         "not an all-clear")]
+
+    def test_absent_registry_is_a_loud_warning_not_an_error(self, tmp_path):
+        dw = self._repo(tmp_path, {"docs/one.md": "# one\n"})
+        (dw / "docs" / lint.RETIRED_PHRASINGS_REGISTRY).unlink()
+        rows = self._rows(dw)
+        assert rows == [(lint.WARN, lint.RETIRED_PHRASINGS_REGISTRY,
+                         "registered 0 retired phrasing(s); scanned 1 tracked "
+                         "Markdown document(s) — registry is empty; this is "
+                         "not an all-clear")]
+
+    def test_empty_tracked_doc_set_is_loud(self, tmp_path):
+        dw = self._repo(tmp_path)
+        rows = self._rows(dw)
+        assert rows == [(lint.WARN, lint.RETIRED_PHRASINGS_REGISTRY,
+                         "registered 1 retired phrasing(s); scanned 0 tracked "
+                         "Markdown document(s) — document set is empty; this "
+                         "is not an all-clear")]
+
+    def test_only_git_tracked_markdown_is_scanned(self, tmp_path):
+        dw = self._repo(tmp_path, {"docs/tracked.md": "# tracked\n"})
+        untracked = dw.parent / "docs" / "untracked.md"
+        untracked.write_text("the no-build single-file constraint binds\n",
+                             encoding="utf-8")
+        rows = self._rows(dw)
+        assert rows == [(lint.OK, lint.RETIRED_PHRASINGS_REGISTRY,
+                         "registered 1 retired phrasing(s); scanned 1 tracked "
+                         "Markdown document(s)")]
+
+    def test_malformed_registry_fails_loudly_and_keeps_denominators(self,
+                                                                    tmp_path):
+        dw = self._repo(tmp_path, {"docs/one.md": "# one\n"})
+        registry = dw / "docs" / lint.RETIRED_PHRASINGS_REGISTRY
+        registry.write_text("{", encoding="utf-8")
+        rows = self._rows(dw)
+        assert [level for level, _, _ in rows] == [lint.ERROR, lint.WARN]
+        assert "cannot parse" in rows[0][2]
+        assert rows[1][2].startswith(
+            "registered 0 retired phrasing(s); scanned 1 tracked Markdown")

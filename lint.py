@@ -6752,6 +6752,157 @@ def check_chats_v1(dw: Path, watch, rep: Report) -> None:
                 f"well-formed")
 
 
+RETIRED_PHRASINGS_REGISTRY = "retired-phrasings.json"
+RETIREMENT_WINDOW_LINES = 40
+RETIREMENT_DATE_MARK = re.compile(
+    r"\b(?:SUPERSEDED|RETIRED)\s+\d{4}-\d{2}-\d{2}\b", re.IGNORECASE)
+
+
+def _tracked_markdown(root: Path) -> list[Path]:
+    """Return the Markdown population git says is tracked, never a guessed glob."""
+    try:
+        found = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z", "--", "*.md"],
+            capture_output=True, check=False, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if found.returncode != 0:
+        return []
+    return [root / name for name in found.stdout.split("\0") if name]
+
+
+def _ruling_citation_pattern(ruling: str) -> re.Pattern[str] | None:
+    match = re.fullmatch(r"#(\d+)\s+(Q\d+)", ruling, re.IGNORECASE)
+    if not match:
+        return None
+    issue, decision = map(re.escape, match.groups())
+    return re.compile(
+        rf"(?:#{issue}\b[\s\S]{{0,500}}?\b{decision}\b|"
+        rf"\b{decision}\b[\s\S]{{0,500}}?#{issue}\b)", re.IGNORECASE)
+
+
+def _inside_strikethrough(text: str, start: int, end: int) -> bool:
+    # Each balanced pair toggles the state. Treating the nearest preceding
+    # delimiter as an opener misreads text *after* ``~~closed history~~`` as
+    # struck until the next unrelated strike later in the document.
+    return text.count("~~", 0, start) % 2 == 1 and text.find("~~", end) >= 0
+
+
+def _retirement_marker_near(
+        lines: list[str], first: int, last: int, ruling: str) -> bool:
+    """Recognise the corpus's existing history vocabulary, within 40 lines.
+
+    The unit is physical source lines around the matched phrase. Forty is the
+    smallest round bound that reaches #505's original question and its recorded
+    answer (37 lines apart); it is far short of the 240-line stale/reasserted
+    gap that motivated this check. A leading Status notice explicitly scopes
+    the whole document.
+    """
+    lo = max(0, first - RETIREMENT_WINDOW_LINES)
+    hi = min(len(lines), last + RETIREMENT_WINDOW_LINES + 1)
+    nearby = "\n".join(lines[lo:hi]).replace("`", "")
+    citation = _ruling_citation_pattern(ruling)
+    if RETIREMENT_DATE_MARK.search(nearby):
+        return True
+    if citation and citation.search(nearby):
+        return True
+
+    leading = "\n".join(lines[:30]).replace("`", "")
+    return bool(
+        citation
+        and re.search(r"\bStatus\b", leading, re.IGNORECASE)
+        and re.search(r"\b(?:retired|superseded)\b", leading, re.IGNORECASE)
+        and citation.search(leading)
+    )
+
+
+def _load_retired_phrasings(path: Path) -> tuple[list[tuple[str, str]], str | None]:
+    if not path.is_file():
+        # A fresh/foreign target predates the registry. The zero denominator
+        # below is the loud advisory; absence is not malformed data and must
+        # not turn every otherwise-valid target into an ERROR.
+        return [], None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [], f"cannot parse {path.name}: {exc}"
+    if not isinstance(data, dict) or data.get("version") != 1:
+        return [], f"{path.name} must be an object with version 1"
+    rulings = data.get("rulings")
+    if not isinstance(rulings, list):
+        return [], f"{path.name}.rulings must be a list"
+
+    registered: list[tuple[str, str]] = []
+    for number, item in enumerate(rulings, 1):
+        if not isinstance(item, dict):
+            return [], f"{path.name} ruling {number} must be an object"
+        ruling, phrases = item.get("ruling"), item.get("retired_phrasings")
+        if not isinstance(ruling, str) or _ruling_citation_pattern(ruling) is None:
+            return [], f"{path.name} ruling {number} must name '#N QN'"
+        if not isinstance(phrases, list) or any(
+                not isinstance(phrase, str) or not phrase.strip()
+                for phrase in phrases):
+            return [], f"{path.name} ruling {number} retired_phrasings must be non-empty strings"
+        registered.extend((ruling, phrase.strip()) for phrase in phrases)
+    return registered, None
+
+
+def check_retired_phrasings(dw: Path, rep: Report) -> None:
+    """WARN when a tracked Markdown claim repeats a ruling's retired wording."""
+    root = dw.parent
+    docs = _tracked_markdown(root)
+    registered, registry_error = _load_retired_phrasings(
+        dw / "docs" / RETIRED_PHRASINGS_REGISTRY)
+
+    if registry_error:
+        rep.add(ERROR, RETIRED_PHRASINGS_REGISTRY, registry_error)
+
+    findings = 0
+    for path in docs:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            rep.add(ERROR, RETIRED_PHRASINGS_REGISTRY,
+                    f"cannot read tracked Markdown {path.relative_to(root)}: {exc}")
+            continue
+        lines = text.splitlines()
+        for ruling, phrase in registered:
+            pattern = re.compile(
+                r"\s+".join(re.escape(part) for part in phrase.split()),
+                re.IGNORECASE,
+            )
+            for match in pattern.finditer(text):
+                first = text.count("\n", 0, match.start())
+                last = text.count("\n", 0, match.end())
+                if _inside_strikethrough(text, match.start(), match.end()):
+                    continue
+                if _retirement_marker_near(lines, first, last, ruling):
+                    continue
+                findings += 1
+                rel = path.relative_to(root)
+                rep.add(
+                    WARN, RETIRED_PHRASINGS_REGISTRY,
+                    f"{rel}:{first + 1} repeats retired phrasing {phrase!r} "
+                    f"from {ruling} without a nearby superseding marker",
+                )
+
+    count_detail = (
+        f"registered {len(registered)} retired phrasing(s); scanned "
+        f"{len(docs)} tracked Markdown document(s)"
+    )
+    if not registered or not docs:
+        zeros = []
+        if not registered:
+            zeros.append("registry is empty")
+        if not docs:
+            zeros.append("document set is empty")
+        rep.add(WARN, RETIRED_PHRASINGS_REGISTRY,
+                f"{count_detail} — {' and '.join(zeros)}; this is not an all-clear")
+    else:
+        rep.add(OK, RETIRED_PHRASINGS_REGISTRY, count_detail)
+
+
 def run_checks(dw: Path, watch, rep: Report) -> None:
     """Every check, in one place, because a SECOND copy of this list drifted.
 
@@ -6827,6 +6978,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_review_decision_integrity(dw, rep)
     check_chats_v1(dw, watch, rep)
     check_status_keys(dw, rep)
+    check_retired_phrasings(dw, rep)
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are
     # the tool's own, so this only says anything when linting this repo.
     check_commit_cleanup(dw.parent, rep)
