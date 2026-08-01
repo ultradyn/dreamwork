@@ -18,6 +18,7 @@ import argparse
 import hashlib
 import os
 import re
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -45,10 +46,25 @@ COORDINATOR_INBOX_PREFIX = (
     "Coordinator inbox — ABSOLUTE path, append your completion summary here "
     "when you finish: "
 )
+ALLOW_PIPED_STDOUT_ENV = "DREAMWORK_ALLOW_PIPED_STDOUT"
 
 
 class DispatchFault(Exception):
     """An input could not be evaluated or did not carry the contract."""
+
+
+def validate_stdout() -> None:
+    """Refuse a pipe whose reader could silently kill the exec'd runner."""
+    try:
+        mode = os.fstat(sys.stdout.fileno()).st_mode
+    except (OSError, ValueError) as exc:
+        raise DispatchFault(f"could not classify stdout: {exc}") from exc
+    if stat.S_ISFIFO(mode) and os.environ.get(ALLOW_PIPED_STDOUT_ENV) != "1":
+        raise DispatchFault(
+            "stdout is a pipe whose reader can close early and kill the runner with SIGPIPE; "
+            "redirect to a regular file, or explicitly allow the pipe with "
+            f"{ALLOW_PIPED_STDOUT_ENV}=1"
+        )
 
 
 def _briefs_dir() -> Path:
@@ -426,6 +442,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
+        validate_stdout()
         prompt = _read(args.prompt, "prompt")
         contract = _read(CONTRACT_PATH, "standing contract")
         briefs_dir = _briefs_dir()
