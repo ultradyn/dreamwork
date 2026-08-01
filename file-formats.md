@@ -2218,6 +2218,34 @@ which does not exist at lint time, while a brief check would inspect the brief
 is the writer (``#400``: a lane reads what is physically in front of it), so
 that is where the obligation lives.
 
+### `briefs/frame.md` — the closing sections `dev/brief.py` emits (#881)
+
+`## ` headings, in emission order; everything before the first one is prose for
+whoever edits the file. `dev/brief.py::frame_sections` is the only parser and
+it takes each heading with the lines under it as one block.
+
+Measured on the 40 most recent briefs
+(`.dreamwork/docs/measurements/881-brief-frame.md`, reproduce with
+`dev/brief_corpus_stats.py`): `## Standing rules` was retyped **33 times and
+produced 32 distinct bodies**, `## Live-state prohibitions` 31 and 30. The
+rules recur; the block never does. So this file exists to make a lane's rule
+set independent of what the coordinator remembered at 20:40, and it carries the
+**union** of every rule that appeared in a majority of blocks — the drift is
+omission, not deliberate scoping.
+
+**A frame yielding zero sections is a refusal, never an empty emission**
+(`brief.py`: *"yielded ZERO sections"*). A generated brief carrying no standing
+rules is accepted by `dispatch_lane` and looks exactly like a healthy one; that
+failure has happened here for real, when a shell-quoting bug delivered a
+24-character prompt and every instrument read normal. `test_brief.py`'s
+`test_the_no_rules_brief_would_otherwise_have_passed_dispatch` builds that
+brief and shows the validator accepting it, so the refusal is proven
+load-bearing rather than assumed to be.
+
+Corrections belong in this file, same duty as `briefs/boilerplate.md`: when a
+lane reports a rule wrong, missing, or unreachable, fix it here in the same
+increment that acts on the report.
+
 ## `/tasksdata` — task-list data (#281)
 
 `GET /tasksdata` reads the canonical SQLite ledger through

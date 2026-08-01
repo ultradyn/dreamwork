@@ -206,6 +206,16 @@ def _substantive(line: str) -> bool:
     return not _PLACEHOLDER_BODY.fullmatch(inner)
 
 
+def substantive_lines(text: str) -> list[str]:
+    """The lines carrying authored content — not blank, not a heading, not fill-in.
+
+    Public because `dev/launch_lane.py` shares it.  Both are brief EMITTERS, so
+    a shared notion of "the author wrote something" is correct there; the
+    independent witness is `dev/dispatch_lane.py`, which neither imports.
+    """
+    return [line for line in text.splitlines() if _substantive(line)]
+
+
 def validate_core(core: str) -> None:
     """Refuse an authored core that is absent, placeholder, or has no direction 2.
 

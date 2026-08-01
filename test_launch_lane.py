@@ -35,6 +35,9 @@ def launch_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _write(root / "briefs" / "boilerplate.md", "# Standing rules\nDo the checked work.\n")
     _write(root / "dev" / "launch_lane.py", TOOL.read_text(encoding="utf-8"))
     _write(root / "worktree_paths.py", (REPO / "worktree_paths.py").read_text(encoding="utf-8"))
+    # launch_lane shares brief.py's placeholder predicate (#881); the real
+    # module, not a stub, so a change to it is exercised here too.
+    _write(root / "dev" / "brief.py", (REPO / "dev" / "brief.py").read_text(encoding="utf-8"))
     _write(root / "dev" / "dispatch_lane.py", """
 import argparse, os, subprocess, sys
 p = argparse.ArgumentParser(); p.add_argument('--prompt'); p.add_argument('--prepare', action='store_true'); p.add_argument('rest', nargs=argparse.REMAINDER)
@@ -102,6 +105,42 @@ def test_brief_validation_reports_every_violation_before_worktree_creation(launc
     assert "exactly this coordinator inbox line" in result.stderr
     assert "no substantive task content" in result.stderr
     assert _worktree_rows(launch_repo) == before
+
+
+@pytest.mark.parametrize("core, label", [
+    ("TODO: describe the defect\n", "a four-word fill-in"),
+    ("<describe the defect here>\n", "an angle-bracket fill-in"),
+    ("## The defect\n\n## The fix shape\n\n## Direction 2\n", "copied headings, no bodies"),
+])
+def test_a_placeholder_head_is_refused_not_dispatched(launch_repo: Path, core, label):
+    """#881: the word-count bar passes on a placeholder — `TODO: describe the
+    defect` is four words, and this route dispatched it as a briefed lane.
+
+    Measured against this function before the fix: empty REFUSED, but all three
+    cases below ACCEPTED. A lane briefed with a fill-in looks exactly like a
+    briefed lane, which is the failure mode the loop cannot see from outside.
+    """
+    head = _head(launch_repo, f"# Task #832 — launch it\n\n{core}")
+    before = _worktree_rows(launch_repo)
+    result = _run(launch_repo, head)
+
+    assert result.returncode == 1, f"{label} was dispatched: {result.stderr!r}"
+    assert "entirely placeholder after its heading" in result.stderr
+    assert _worktree_rows(launch_repo) == before
+
+
+def test_a_one_line_real_head_is_still_accepted(launch_repo: Path):
+    """The positive control for the refusal above: it must not refuse real prose.
+
+    Without this, tightening the bar to "refuse everything" would pass the three
+    cases above and nothing would say so.
+    """
+    head = _head(
+        launch_repo,
+        "# Task #832 — launch it\n\nThe block was retyped 33 times, 32 distinct bodies.\n")
+    result = _run(launch_repo, head)
+    assert "entirely placeholder" not in result.stderr
+    assert "no substantive task content" not in result.stderr
 
 
 def test_selection_failure_leaves_git_worktree_inventory_unchanged(launch_repo: Path):
