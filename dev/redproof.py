@@ -1101,27 +1101,67 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
     identity_dirs = len(_ls.lane_identity_dirs(cwd)) if coordinator_mode else None
 
     if coordinator_mode and not entries and registries_found == 0:
-        # THE BLIND CASE (#895): the coordinator could locate NO registry for
-        # this lane. This must not read as an all-clear: "no evidence" and "I
-        # could not read this lane's registry" are opposite facts, and a lane
-        # that ran under a launch identity this audit could not enumerate would
-        # be invisible. Fail closed (#671) rather than print calm zero.
-        if identity_dirs == 0:
+        # The blind case (#895): the coordinator located NO registry for this
+        # worktree. Three facts, three different lines (#955) — do not collapse
+        # any two, in either direction:
+        #
+        # (1) NO REGISTRY BECAUSE NONE WAS WARRANTED. Nothing was required
+        #     (--require 0) AND no launch identity ever ran here (0 identity
+        #     dirs) AND nothing was registered. A doc-only lane owes no
+        #     red-proof, so an absent registry is the EXPECTED state, not a
+        #     fault. It must still not read as an all-clear (#895/#932): it is
+        #     NOT a verification of restoration (nothing was registered to
+        #     restore) and NOT a clean sweep of a population — it audited
+        #     nothing, and that is stated (#868).
+        # (2) NO REGISTRY THAT COULD NOT BE FOUND. Either an injection WAS
+        #     required and no registry could be located (the proof cannot be
+        #     verified — #895's invisible-injection case), OR a launch identity
+        #     ran here but left no readable registry (one this audit cannot
+        #     reach might exist). Still FAULT (#671): the moment an injection
+        #     was required, or a lane provably ran, an absent registry is a
+        #     question, not an answer.
+        # (3) Registry found and clean is the ordinary green reached below.
+        #
+        # --require governs the MINIMUM count, never the VALIDITY of what is
+        # there: this whole block only runs when NO registry exists, so an
+        # armed or unknown-state entry (which lives IN a registry) can never
+        # reach the pass below — it is refused on the normal path regardless of
+        # --require. Relaxing (1) does not relax that (#955).
+        if require == 0 and identity_dirs == 0:
+            print(
+                "check: no injection required and none registered — 0 required, "
+                f"audited 0 registry/ies across 0 launch-identity dir(s) "
+                f"(role: {role}). A lane that owes no red-proof registers "
+                f"nothing, so an absent registry is the expected state here, "
+                f"NOT a verification of restoration (nothing was registered to "
+                f"restore) and NOT an all-clear over a population this audit "
+                f"did not sweep. If this lane ran a red-proof under a launch "
+                f"identity, pass `--lane <DREAMWORK_LANE_ID>` or inspect its "
+                f"scratch by hand.")
+            return 0
+        if require > 0:
             sys.stderr.write(
-                "check: FAULT — could not locate ANY lane scratch for this "
-                f"worktree (0 launch-identity dirs, no legacy registry; "
-                f"role: {role}). This is NOT an all-clear: a lane that ran "
-                f"under a launch identity would be invisible to this audit, "
-                f"and an armed injection it left on disk would not be seen. "
-                f"If the lane ran, pass `--lane <DREAMWORK_LANE_ID>` or inspect "
-                f"its scratch by hand.\n")
+                f"check: FAULT — {require} injection(s) were required "
+                f"(--require) but no redproof registry could be located for "
+                f"this worktree (audited 0 registry/ies across "
+                f"{identity_dirs} launch-identity dir(s); role: {role}). A "
+                f"required red-proof must leave a registry this audit can "
+                f"read; its absence means the proof cannot be verified, not "
+                f"that it passed. If the lane ran, pass "
+                f"`--lane <DREAMWORK_LANE_ID>` or inspect its scratch by "
+                f"hand.\n")
         else:
+            # require == 0 but a launch identity ran and left no registry:
+            # the lane provably ran, so an absent registry is "could not
+            # find", not "none was warranted". Stay fail-closed (#895/#671).
             sys.stderr.write(
                 f"check: FAULT — found {identity_dirs} launch-identity dir(s) "
-                f"but no redproof registry in any of them (role: {role}). This "
-                f"is NOT an all-clear: the lane(s) ran but this audit could "
-                f"read no injection registry. If one was expected, pass "
-                f"`--lane <DREAMWORK_LANE_ID>`.\n")
+                f"but no redproof registry in any of them (role: {role}); 0 "
+                f"injections were required, yet a lane provably ran here and "
+                f"this audit could read no injection registry. This is NOT an "
+                f"all-clear: a registry this audit cannot reach might exist, "
+                f"and an armed injection it held would not be seen. If one was "
+                f"expected, pass `--lane <DREAMWORK_LANE_ID>`.\n")
         return 2
 
     # RETIRED records are history-scan evidence and nothing else (#942), so
