@@ -869,8 +869,6 @@ def test_ship_siblings_and_assert_importable_cli_against_real_head(tmp_path):
                 "vendor/morphdom.min.js", "vendor/LICENSE.morphdom")
     missing = sorted(set(required) - shipped)
     assert shipped, "examined 0 shipped files; refusing an empty deploy proof"
-    assert not missing, (
-        f"examined {len(shipped)} shipped files; missing {missing}")
     for rel in shipped:
         assert (dest / rel).exists(), f"sibling {rel} was not shipped"
     # `import watch` (from lint.py) must resolve to the SAME bytes deployed.
@@ -918,7 +916,7 @@ def test_ship_siblings_and_assert_importable_cli_against_real_head(tmp_path):
             f"staged snapshot did not serve a 200 (got {code}, "
             f"poll={server.poll()}) — the deploy would leave his dashboard "
             f"dark; this is the check that caught the lazy `import lint`; "
-            f"stderr={server_stderr!r}")
+            f"examined {len(shipped)} shipped files; stderr={server_stderr!r}")
         with urllib.request.urlopen(
                 f"http://127.0.0.1:{port}/mtime", timeout=2) as resp:
             assert float(resp.read().decode().split()[0]) > 0
@@ -929,6 +927,8 @@ def test_ship_siblings_and_assert_importable_cli_against_real_head(tmp_path):
             pass
         server.wait(timeout=3)
     assert ds.listening_pid(port) is None
+    assert not missing, (
+        f"examined {len(shipped)} shipped files; missing {missing}")
 
 
 def test_justfile_deploy_ships_siblings_and_guards_imports_before_stopping():
