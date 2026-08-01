@@ -344,6 +344,45 @@ def test_an_epic_requiring_a_milestone_blocks_every_task_inside_it(store_path):
             assert set(tx.groups.ready_tasks(blocked_epic)) == {802, 803}
 
 
+def test_an_empty_subgoal_inherits_ancestor_prerequisites_via_group_id(store_path):
+    """A subgoal with ZERO member tasks still inherits its ancestors'
+    prerequisites through blockers(group_id=...).
+
+    This is the discriminating case for group-level inheritance: the task_id
+    path cannot reach it at all, because there is no member task whose
+    governing-group walk would carry the ancestor blocker. A green here is
+    only meaningful while the subtree is genuinely empty, so that
+    precondition is asserted in the same body (#900, #655's 'assert the
+    precondition the check depends on' rule)."""
+    _insert_tasks(store_path, [(801, "open")])
+    with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
+        prerequisite = _make(store, "milestone", "Unmet foundation")
+        _add(store, prerequisite, 801)  # 801 open -> prerequisite is unmet
+        # `parent` carries the edge and is an ANCESTOR of the empty subgoal.
+        parent = _make(store, "epic", "Carries the edge")
+        with store.transaction() as tx:
+            tx.groups.add_dependency(
+                dependent_group_id=parent, needs_group_id=prerequisite,
+                actor="t", at="2026-08-01T00:00:00Z")
+        # The subgoal under `parent` has no member tasks ANYWHERE in its
+        # subtree — exactly the hole #890's renderer workaround could not
+        # cover, because it inherits through member tasks.
+        empty_subgoal = _make(store, "goal", "No tasks", parent=parent)
+
+        with store.transaction() as tx:
+            # Precondition: nothing in the subtree can carry the task_id path.
+            with pytest.raises(EmptyGroup):
+                tx.groups.progress(empty_subgoal)
+            blockers = tx.groups.blockers(group_id=empty_subgoal)
+            # The ancestor blocker is reported with the ANCESTOR as the
+            # dependent (symmetric with the task path, which records the
+            # governing group — not the task — as the dependent).
+            assert [(b.dependent_id, b.needs_id) for b in blockers] == [
+                (parent, prerequisite)
+            ], blockers
+            assert "not landed" in blockers[0].reason, blockers[0].reason
+
+
 def test_a_required_group_with_no_tasks_is_unmet_never_satisfied(store_path):
     _insert_tasks(store_path, [(901, "open")])
     with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
