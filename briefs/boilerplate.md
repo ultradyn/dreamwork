@@ -80,7 +80,14 @@ that is a legitimate outcome, not a failure.
 **Red-proof both directions. This is the one that catches real defects.**
 - *Direction 1*: inject the real defect and watch your check go red **on the discriminating
   failure message** — not on a red count. A red for the wrong reason is indistinguishable
-  from a right one in a `-q` summary.
+  from a right one in a `-q` summary. **Name the production seam you broke (path plus
+  symbol or branch), and inject there.** Editing a test's assertion or expected value proves
+  only that the test rejects its own sabotage, so it is not a direction-1 proof. A test file
+  is a valid target only when test/guard tooling is itself the production subject; name that
+  executable seam and why. The observed failure must also distinguish the broken seam from
+  an environmental precondition — if either condition produces the same message, it proves
+  neither. `redproof.py check` certifies snapshot restoration and branch absence, **not** that
+  the test reached the named seam; a production edit in an unvisited branch still passes it.
   **Use `dev/redproof.py`; it owns the snapshot/restore protocol** (`#683`):
 
       python3 dev/redproof.py begin <path>     # snapshot the file as-is, arm the entry
@@ -88,11 +95,11 @@ that is a legitimate outcome, not a failure.
       python3 dev/redproof.py restore <path>   # record the injected content, restore, verify
       python3 dev/redproof.py check            # hand-off gate — run before you report, quote it
 
-  **The snapshot is of the file BEFORE sabotage; the real fix is applied AFTER
-  `restore` returns it — so the restore can never undo the fix.** If you snapshot
-  the pre-fix file and the fix is already in it, restore returns the fixed file;
-  if you ever snapshot the pre-fix file and then restore expecting the fix, you
-  have silently undone your own work and `cmp` will certify the wrong file (`#608`).
+  **Snapshot the FIXED file immediately before sabotage.** `restore` then returns
+  that fixed state byte-for-byte. A baseline reproduction done before building is a
+  separate round; finish its restore, apply the fix, then `begin` again for the final
+  proof. Otherwise a pre-fix snapshot can silently undo the work while `cmp` certifies
+  the wrong file (`#608`).
 
   **Run `check` before reporting and quote its output.** It REFUSES if any injection is left
   unrestored, which is the failure nothing could previously detect: an injection is by
