@@ -3261,17 +3261,32 @@ class TestCollector(unittest.TestCase):
         # goes through esc(), the denominator names its source, and the
         # incomplete state is named, not implied.
         page = watch.PAGE
-        self.assertIn('role="img" aria-label="${esc(aria)}"', page)
+        # #836 moved the bar itself into the shared splitBar() so group
+        # progress and provenance are ONE renderer rather than two that agree
+        # only on the day they were written. So these assertions follow the
+        # markup to splitBar and are written against escA, its escaper.
+        #
+        # The previous `role="img" aria-label="${esc(aria)}"` probe is NOT
+        # restated here: after the move it still passed, but on bdmed and
+        # bdcommit-copy (client/views.js:598,619) — unrelated burndown
+        # components that happen to share the idiom. It had stopped saying
+        # anything about provenance while still reading green, which is #764's
+        # coordinate-rot. escA(aria) is unique to splitBar, so this one cannot
+        # drift onto a neighbour without failing.
+        self.assertIn('aria-label="${escA(aria)}"', page)
         self.assertIn("first sightings in recorded git history", page)
         self.assertIn("historical unknown", page)
         self.assertIn("coverage is incomplete", page)
-        self.assertIn("title=\"${esc(n)} ${c}\"", page)
+        self.assertIn('title="${escA(`${name} ${value}`)}"', page)
         self.assertIn('class="provline" title="${esc(', page)
         # Exact flex weights fill the track without independently-rounded
         # percentage slivers; nonzero tiny cohorts remain visible, while
-        # zero remains truly absent.
-        self.assertIn("flex:var(--share) 1 0", page)
-        self.assertIn("min-width:${c ? 2 : 0}px", page)
+        # zero remains truly absent. The weight moved from a CSS custom
+        # property to an inline flex-grow (so it can be transitioned), but
+        # the property asserted is the same one: basis 0 + integer grow.
+        self.assertIn("flex-grow:${value}", page)
+        self.assertIn("min-width:${value ? 2 : 0}px", page)
+        self.assertRegex(page, r"\.provseg\s*\{[^}]*flex-basis:0")
         # the panel's height is the premise the bars' motion rests on, so
         # the count-carrying lines may never wrap
         self.assertRegex(page, r"\.provline\s*\{[^}]*white-space:nowrap")
@@ -3287,8 +3302,31 @@ class TestCollector(unittest.TestCase):
         self.assertIn("repeating-linear-gradient", prov_css)
         # and there is deliberately NO motion on this datum: a live tick
         # commits its DOM instantly (transitions.md), so no transition may
-        # be declared on any of its parts
-        self.assertNotIn("transition", prov_css)
+        # be declared on any of its parts.
+        #
+        # #836 shares this bar with group progress, which DOES animate, so
+        # the property is now carried by a gate rather than by absence: the
+        # transition is scoped to `.provbar.panimate`, and provenance never
+        # sets that class. A flat `assertNotIn("transition", prov_css)` can no
+        # longer express that — it scans a fixed 1200-char window and trips on
+        # the sibling rule regardless of whether provenance can ever reach it.
+        # So assert the gate itself, in three parts.
+        base = re.search(r"\.provseg\s*\{([^}]*)\}", prov_css)
+        self.assertIsNotNone(base, "no bare .provseg rule in the page's STYLE")
+        self.assertNotIn("transition", base.group(1))
+        # Every transition declared anywhere in this window must be gated by
+        # `panimate`. Checked by proximity rather than by matching a selector
+        # block, because one of them is nested inside a
+        # `@media (prefers-reduced-motion: reduce)` wrapper — a selector-block
+        # regex reads the media query as the selector and misses the real one.
+        for hit in re.finditer(r"transition", prov_css):
+            window = prov_css[max(0, hit.start() - 200):hit.start()]
+            self.assertIn("panimate", window,
+                          "a transition in the provenance CSS is not gated "
+                          "behind panimate (at offset %d)" % hit.start())
+        # the gate is only worth anything if provenance actually declines it,
+        # so bind it: provBlock must ask splitBar for the unanimated form.
+        self.assertIn("splitBar(rows, aria, 'provenance', false)", page)
 
     def test_live_data_assignments_go_through_one_seam(self):
         # `ensureData` consumes mtime as it fetches, so reactive hooks wired

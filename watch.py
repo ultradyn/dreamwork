@@ -4098,6 +4098,16 @@ SUMMARY_DENIED = frozenset({
                          #   project-status summary, and reveals the plugin set
     "chats",             # #504 topic-chat transcripts — his words + the
                          #   dreamer's replies, the same class as dreams
+    "groups",            # #836/#824 task groups: titles and descriptions are
+                         #   authored prose about the work, the same class as
+                         #   reviews and pending_handoffs, and member_task_ids
+                         #   exposes the ledger's internal structure. The
+                         #   progress COUNTS alone would be defensible, but
+                         #   burndown already carries the project-level
+                         #   open/arrived/landed scalars an external consumer
+                         #   routes on — so this is denied rather than
+                         #   projected, and letting group progress out later
+                         #   should be a deliberate ALLOW with a projection.
 })
 
 
