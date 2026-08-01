@@ -1374,26 +1374,78 @@ class TestCoordinatorAuditSeesTheLane:
             "the coordinator printed 'no evidence' over a lane that restored — "
             "the exact #888/#895 misread")
 
-    def test_the_blind_case_does_not_read_as_an_all_clear(
+    def test_no_require_absent_registry_is_expected_not_a_fault(
             self, repo, monkeypatch, capsys):
-        """A coordinator auditing a worktree with NO lane scratch at all must
-        NOT print calm zero. "no evidence" and "could not read this lane's
-        registry" are opposite facts (#895, #671)."""
+        """#955: a coordinator auditing a worktree that owes no red-proof and
+        registered nothing must PASS, not fault — the doc-only lane case the
+        gate was refusing (#949's unfixed second half). The SAME fixture under
+        --require 1 must still FAULT. That discriminating pair (one fixture,
+        two flags, two verdicts) is the fix's whole claim: absent-with-0-
+        required is expected; absent-with-1-required is unverifiable.
+
+        #895's invariant still holds: the blind pass must read DIFFERENTLY
+        from a registry-found-clean verdict, so a reader cannot take a sweep
+        that audited nothing for a sweep that audited something."""
         self._as_coordinator(monkeypatch)
         # PRECONDITION: no identity dirs, no legacy registry — nothing to find.
         assert rp._ls.lane_identity_dirs(repo) == []
         assert not rp._redproof_dir(repo, "", rp._role(repo)).exists()
 
-        exit = _check(repo)
+        # Flag 0: PASS. An absent registry is the expected state for a lane
+        # that owes nothing.
+        exit0 = _check(repo, require=0)
+        out0, _ = capsys.readouterr()
+        assert exit0 == 0, (
+            "a coordinator that owes no red-proof and registered nothing must "
+            "PASS, not fault (#955/#932): " + out0)
+        # The pass must SAY WHY (0 required, none registered) and carry the
+        # denominator, so it cannot read as a clean sweep of a population.
+        assert "0 required" in out0, out0
+        assert "none registered" in out0, out0
+        assert "audited 0 registry/ies across 0 launch-identity dir(s)" in out0, out0
+        # #895/#932: it must NOT read as an all-clear or a restoration verdict.
+        assert "no evidence" not in out0, (
+            "the pass printed the calm-zero 'no evidence' sentence over a "
+            "population it did not sweep")
+        assert "restoration clean" not in out0, out0
+
+        # Flag 1, SAME fixture: FAULT. A required injection cannot be verified
+        # when no registry can be located (#895's invisible-injection case).
+        exit1 = _check(repo, require=1)
+        _, err1 = capsys.readouterr()
+        assert exit1 == 2, (
+            "a coordinator that required an injection but located no registry "
+            "must FAULT, not pass (#671)")
+        assert "1 injection(s) were required" in err1, err1
+        assert "cannot be verified" in err1, err1
+        # THE discrimination: one fixture, two flags, two different verdicts.
+        assert exit0 != exit1, (
+            "the two flags produced the same verdict — the fix does not "
+            "discriminate require==0 from require>=1 on an absent registry")
+
+    def test_an_identity_that_ran_but_left_no_registry_still_faults(
+            self, repo, monkeypatch, capsys):
+        """#955 fact 2: a launch identity provably ran here (its dir exists)
+        but left no redproof registry. Even at --require 0 this stays a FAULT:
+        a registry this audit cannot reach might exist, and an armed injection
+        it held would be invisible (#895). The relaxation is ONLY for the case
+        where NO identity ever ran — the 'none was warranted' state."""
+        # A lane ran under an identity and used lane scratch (creating its dir)
+        # but never called redproof begin, so no registry exists.
+        monkeypatch.setenv(rp._ls.IDENTITY_ENV, "ran-but-no-registry-955")
+        rp._ls.lane_scratch_dir(repo, sub="snap")  # creates the identity dir
+        monkeypatch.delenv(rp._ls.IDENTITY_ENV, raising=False)  # coordinator
+        # PRECONDITION: an identity dir exists, but no redproof registry does.
+        assert len(rp._ls.lane_identity_dirs(repo)) == 1
+        assert not rp._redproof_dir(repo, "", rp._role(repo)).exists()
+
+        exit = _check(repo, require=0)
         _, err = capsys.readouterr()
         assert exit == 2, (
-            "a coordinator that located no registry must FAULT, not pass (#671)")
-        # discriminating: it must say it could NOT locate the lane, and that this
-        # is NOT an all-clear — never the calm-zero "no evidence" sentence.
-        assert "no evidence" not in err, (
-            "the blind case printed the all-clear sentence over nothing found")
+            "an identity that ran but left no registry must FAULT even at "
+            "--require 0 — its registry might be one this audit cannot reach")
+        assert "launch-identity dir(s)" in err, err
         assert "NOT an all-clear" in err, err
-        assert "could not locate" in err, err
 
     def test_lane_flag_audits_a_named_identity_exactly(
             self, repo, monkeypatch, capsys):
@@ -1409,6 +1461,103 @@ class TestCoordinatorAuditSeesTheLane:
         out, _ = capsys.readouterr()
         assert exit == 0, out
         assert "restoration clean" in out, out
+
+
+# ── #955: --require 0 governs the minimum count, never the validity ──
+
+class TestRequireZeroDoesNotExcuseInvalidEntries:
+    """#955 direction 2: the relaxation lets an ABSENT registry pass at
+    --require 0, but it must NOT let a registry that EXISTS with armed or
+    unknown-state entries pass. --require governs the minimum COUNT, never the
+    VALIDITY of what is on disk: a doc-only lane that left an injection armed
+    is still wrong. The pass lives entirely inside the blind case (NO registry
+    exists), so an entry — which lives IN a registry — can never reach it; an
+    armed or unknown entry is refused on the normal path regardless of require.
+    These tests pin that invariant and would fail if the relaxation were keyed
+    on require==0 alone rather than on no-registry-exists."""
+
+    def test_an_armed_entry_is_refused_even_at_require_zero(
+            self, repo, monkeypatch, capsys):
+        """A lane left an injection ARMED on disk. Even at --require 0 it must
+        REFUSE — the audit found the registry and it holds an incomplete proof.
+        This is #863's exact state, and it is the case the relaxation must
+        never reach: a registry EXISTS, so the blind-case pass cannot fire."""
+        _begin(repo, "router.js")          # armed, never restored
+        # PRECONDITION: a registry exists and holds an armed entry — so the
+        # blind case (no registry) cannot be the path taken.
+        armed_before = [e for e in rp._read_registry(repo)[0]
+                        if e.get("state") == rp.ARMED]
+        assert armed_before, "no armed entry — the refusal would prove nothing"
+
+        self._drop_identity(monkeypatch)
+        exit = _check(repo, require=0)
+        _, err = capsys.readouterr()
+        assert exit == 1, (
+            "an armed entry must REFUSE at --require 0 — the relaxation is for "
+            "an absent registry, not for one holding an armed injection")
+        assert "router.js" in err, err
+        assert "unrestored" in err or "armed" in err, err
+
+    def test_an_unknown_state_entry_is_refused_even_at_require_zero(
+            self, repo, monkeypatch, capsys):
+        """A registry holds an entry whose state this build cannot read (#950).
+        At --require 0 it must still REFUSE — fail-closed is unchanged, and an
+        unknown state is never excused as 'nothing required'."""
+        rp._write_registry(repo, [{
+            "path": "router.js", "state": "quarantined",
+            "injected_sha": "0" * 40, "injected_hint": "future-format",
+            "begun_head": _git(repo, "rev-parse", "HEAD"),
+        }])
+        assert "quarantined" not in rp.KNOWN_STATES  # precondition: unknown
+
+        self._drop_identity(monkeypatch)
+        exit = _check(repo, require=0)
+        _, err = capsys.readouterr()
+        assert exit == 1, (
+            "an unknown-state entry must REFUSE at --require 0 — fail-closed "
+            "is not relaxed by the require==0 path (#950)")
+        assert "quarantined" in err, err
+
+    @staticmethod
+    def _drop_identity(monkeypatch):
+        monkeypatch.delenv(rp._ls.IDENTITY_ENV, raising=False)
+
+
+class TestCoordinatorModeBlindCaseViaCli:
+    """#955: the merge gate (dev/land_lane.py) invokes check as a CLI
+    subprocess with DREAMWORK_LANE_ID popped and DREAMWORK_LANE_ROLE=author,
+    against the lane worktree, passing --require <derived>. The CLI path must
+    reach the same blind-case verdicts the in-process tests assert, so a
+    doc-only lane (require 0, no registry) lands and a lane that owed a proof
+    (require 1) does not."""
+
+    def test_require_zero_on_a_no_registry_worktree_passes_via_cli(
+            self, repo, tmp_path):
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "cli-scratch")
+        env.pop(rp._ls.IDENTITY_ENV, None)
+        env[rp._ls.ROLE_ENV] = rp._ls.ROLE_AUTHOR
+        r = subprocess.run(
+            ["python3", str(CLI_PATH), "check", "--cwd", str(repo),
+             "--require", "0"],
+            capture_output=True, text=True, env=env)
+        assert r.returncode == 0, r.stderr
+        assert "0 required" in r.stdout, r.stdout
+        assert "none registered" in r.stdout, r.stdout
+        assert "NOT a verification of restoration" in r.stdout, r.stdout
+
+    def test_require_one_on_a_no_registry_worktree_faults_via_cli(
+            self, repo, tmp_path):
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "cli-scratch")
+        env.pop(rp._ls.IDENTITY_ENV, None)
+        env[rp._ls.ROLE_ENV] = rp._ls.ROLE_AUTHOR
+        r = subprocess.run(
+            ["python3", str(CLI_PATH), "check", "--cwd", str(repo),
+             "--require", "1"],
+            capture_output=True, text=True, env=env)
+        assert r.returncode == 2, r.stdout + r.stderr
+        assert "1 injection(s) were required" in r.stderr, r.stderr
 
 
 # ── #877: a restored source whose downstream bundle is stale ──────────
