@@ -471,6 +471,15 @@ function mountComposer(target) {
     const marked = list.find(c => c.default);
     return ((marked || list[0]) || {}).kind;
   };
+  // #257 — danger is DATA-DRIVEN off the COMMANDS table (the `sticky`
+  // pattern), never a hardcoded kind name: the existing decay test forbids
+  // a do-now literal in PAGE, so a second danger kind is covered by the
+  // same mechanism without a third place to remember. do-now is the one
+  // kind that PRE-EMPTS the loop regardless of delivery mode, and the
+  // interface must say so — the D1 treatment (do-now-urgency-treatment.html)
+  // gives the selected do-now a scoped rose ghost-outline.
+  const isDangerKind = (kind) =>
+    COMMANDS.some(c => c.kind === kind && c.danger);
   let activeKind = defaultKind();
   // The row carries the common kinds PLUS the active one when it is uncommon,
   // so whatever is selected always has a button for the indicator to sit on.
@@ -589,13 +598,19 @@ function mountComposer(target) {
     // a rebuilt row has a brand-new 0-width indicator, so land it rather than
     // slide it up from nothing (the enter-snap rule)
     const rebuilt = renderKinds();
+    // #257 — the danger treatment rides the same selection pass as `.on`,
+    // DATA-DRIVEN off the `danger` property so no kind name is hardcoded.
+    const danger = isDangerKind(kind);
     kindsEl.querySelectorAll('.cmdkind').forEach(b => {
       const on = b.dataset.kind === kind;
       b.classList.toggle('on', on);
+      b.classList.toggle('danger-on', on && danger);
       b.setAttribute('aria-checked', on ? 'true' : 'false');
     });
     if (menuEl) menuEl.querySelectorAll('.cmdmenuitem').forEach(b =>
       b.classList.toggle('on', b.dataset.kind === kind));
+    const ind = kindsEl.querySelector(':scope > .sgind');
+    if (ind) ind.classList.toggle('danger', danger);
     moveIndicator(rebuilt);
   }
   /* The saves hang off HIS choice, never off `setKind` itself. `setKind` also

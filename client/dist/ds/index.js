@@ -7605,6 +7605,7 @@ var DreamworkDesign = (() => {
       const marked = list.find((c) => c.default);
       return (marked || list[0] || {}).kind;
     };
+    const isDangerKind = (kind) => COMMANDS.some((c) => c.kind === kind && c.danger);
     let activeKind = defaultKind();
     let rowKinds = [];
     const rowWant = () => COMMANDS.filter((c) => c.common || c.kind === activeKind).map((c) => c.kind);
@@ -7676,12 +7677,16 @@ var DreamworkDesign = (() => {
     function setKind(kind) {
       activeKind = kind;
       const rebuilt = renderKinds();
+      const danger = isDangerKind(kind);
       kindsEl.querySelectorAll(".cmdkind").forEach((b) => {
         const on = b.dataset.kind === kind;
         b.classList.toggle("on", on);
+        b.classList.toggle("danger-on", on && danger);
         b.setAttribute("aria-checked", on ? "true" : "false");
       });
       if (menuEl) menuEl.querySelectorAll(".cmdmenuitem").forEach((b) => b.classList.toggle("on", b.dataset.kind === kind));
+      const ind = kindsEl.querySelector(":scope > .sgind");
+      if (ind) ind.classList.toggle("danger", danger);
       moveIndicator(rebuilt);
     }
     if (kindsEl) kindsEl.addEventListener("click", (e) => {
