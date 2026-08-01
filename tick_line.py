@@ -205,8 +205,12 @@ def _fleet_fact(target: str) -> str:
     if examined <= 0:
         raise status_sync.LivenessUnknown(
             "lane detector examined 0 process candidates")
-    names = sorted([lane for lane, _pid, _model in ccc]
-                   + [lane for lane, _pid in agent])
+    # Dedupe by lane name across both buckets: a ccc lane runs a wrapper AND
+    # an inner agent process, both with the worktree cwd, so discover_lanes
+    # legitimately lists the SAME lane in `ccc` and `agent` (#837). A plain
+    # concatenation counted it twice and inflated the fleet number.
+    names = sorted(set([lane for lane, _pid, _model in ccc]
+                       + [lane for lane, _pid in agent]))
     return "lanes %d live [%s] (probe examined %d processes)" % (
         len(names), ", ".join(names), examined)
 

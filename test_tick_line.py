@@ -194,6 +194,40 @@ class TestLiveFleetDetector:
         assert "lanes 2 live [cx-agent, cx-ccc]" in out
         assert "runners ?" not in out
 
+    def test_one_lane_in_both_buckets_is_counted_once_not_twice(
+            self, tmp_path, monkeypatch):
+        """#837: a ccc lane runs a wrapper process AND an inner agent process,
+        both with the worktree cwd, so discover_lanes legitimately lists the
+        SAME lane name in the `ccc` and `agent` buckets. That is the normal
+        live case. _fleet_fact must dedupe across the two buckets: a lane is
+        one lane however many processes carry its cwd.
+
+        This is the case NO earlier test constructed. Every other live-fleet
+        test puts a DISTINCT name in each bucket, where a plain concatenation
+        and a dedupe agree and the double-count bug is invisible. With a lane
+        in both, the broken concatenation renders the name twice and inflates
+        the count.
+
+        The assertion binds the NAME SET and the count in ONE substring: a
+        count comparison alone passes when membership changed but length did
+        not, and a membership check alone cannot name the doubled lane. The
+        doubled rendering (`cx-dup, cx-dup`) is what makes this discriminating.
+        """
+        target = make_target(tmp_path, posture=HOT)
+
+        def overlap(_target, *, stats=None):
+            stats["process_candidates"] = 9
+            # cx-dup appears in BOTH buckets — the normal live case.
+            return ([('cx-dup', 111, 'ccc'), ('cx-only-ccc', 222, 'ccc')],
+                    [],
+                    [('cx-dup', 333), ('cx-only-agent', 444)])
+
+        monkeypatch.setattr(status_sync, "discover_lanes", overlap)
+        out = tick_line.facts(target)
+        assert "lanes 3 live [cx-dup, cx-only-agent, cx-only-ccc]" in out, \
+            "a lane present in both the ccc and agent buckets was not " \
+            "deduped (double-counted): %s" % out
+
     def test_zero_candidates_is_instrument_failure_not_empty_fleet(
             self, tmp_path, monkeypatch):
         target = make_target(tmp_path, posture=HOT)
