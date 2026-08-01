@@ -51,6 +51,16 @@ Usage
     cp "$S/router.js" client/router.js      # restore -- never `git checkout`
     cmp client/router.js "$S/router.js"     # prove byte-identical
 
+For RED-PROOF injections specifically, prefer ``dev/redproof.py`` (#683): it owns
+the snapshot/restore protocol, snapshots under a distinct ``redproof/`` root
+(content-addressed by the target path, so concurrent injections cannot clobber
+each other), pins independent expectations, and verifies the restore internally.
+``snap`` above is GENERAL scratch with lane-chosen names, and its ``snap/`` root
+is a DIFFERENT directory from redproof's ``redproof/`` root for the same lane.
+A manual ``cmp`` that mixes the two roots fails falsely (#934): each tool prints
+its own path — ``cmp`` against the exact path the tool PRINTED, never an assumed
+one. ``measure`` is the one filesystem-measurement location, not a snapshot root.
+
     M="$(dev/lane_scratch.py measure)"
     # Set up $M/probe, then exercise the SAME mmap/write path as the real probe:
     dev/lane_scratch.py require-mtime-change "$M/probe" -- <positive-control command>

@@ -736,6 +736,15 @@ def begin(cwd: Path | None, path: str,
     })
     _write_registry(cwd, entries)
     print(f"begin: snapshotted original of {posix} ({len(original)} bytes) -> {snap}")
+    # State the root distinction (#934): lane_scratch.py snap and redproof print
+    # DIFFERENT roots for one lane (snap/ vs redproof/), and four lanes tripped
+    # on a `cmp` against the wrong one. Naming the sibling here makes the
+    # discrepancy STATED at the moment the path is in hand, not discovered via a
+    # false `cmp`. `restore` verifies the copy internally, so a manual `cmp` is
+    # redundant for users of this protocol — but anyone who runs one must aim it
+    # at THIS printed path, not at a lane_scratch.py snap path.
+    print(f"       red-proof root under redproof/ — NOT lane_scratch.py's snap/ "
+          f"root; `restore` verifies internally, and a manual `cmp` uses THIS path")
     print(f"       pinned {len(expectation_sources)} independent expectation "
           "source(s).")
     print(f"       state=armed; sabotage it, then `restore {posix}`.")
