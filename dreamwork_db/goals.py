@@ -411,5 +411,11 @@ class GoalRepository:
                 f"PANEL INCOMPLETE for goal claim #{claim_id}: missing lenses "
                 f"{missing}; FAIL CLOSED AND ASK HUMAN"
             )
+        if len(verdicts) != len(PANEL_LENSES) or present != VERDICT_LENSES:
+            raise ValidationError(
+                f"PANEL MALFORMED for goal claim #{claim_id}: expected exactly "
+                f"{PANEL_LENSES}, got {tuple(v.lens for v in verdicts)}; "
+                "FAIL CLOSED AND ASK HUMAN"
+            )
         outcome = "refuted" if any(v.refuted for v in verdicts) else "complete"
         return self.resolve_claim(claim_id, outcome)

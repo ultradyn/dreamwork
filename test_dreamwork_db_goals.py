@@ -590,7 +590,9 @@ def test_panel_requires_all_three_lenses_and_unanimity(store_path):
                 findings=("proof never reached the seam", "red run was green"),
             )
             _append_panel_verdict(tx, refuted.id, "use")
-            assert tx.goals.finalize_panel(refuted.id).outcome == "refuted"
+            assert tx.goals.finalize_panel(refuted.id).outcome == "refuted", (
+                "one evidence refutation must sink the unanimous panel"
+            )
             evidence = tx.goals.verdicts(refuted.id)[1]
             assert evidence.findings == (
                 "proof never reached the seam", "red run was green"
