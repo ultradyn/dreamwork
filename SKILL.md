@@ -252,7 +252,12 @@ delivery for the ambiguous class (ideas, notes, anything not addressed to
    Fewer lines in hand than that count is a truncated read (#712).
 2. Process each event — act on it, file it as a task, or fold it into a
    question. The preview is a triage aid, not the content; when it is not
-   enough, read the receipt's full payload from the journal before acting.
+   enough, read the receipt's full payload with
+   `python3 <skill-dir>/dev/journal_consume.py show <ord|receipt-id>...`
+   (read-only, opens `mode=ro`, never moves the cursor) before acting —
+   never hand-write SQL against the journal (#855: the documented path used
+   to end at a truncated line and hand you to a heredoc one typo away from a
+   writing open).
 3. Only then `python3 <skill-dir>/dev/journal_consume.py consume
    --through <head-ordinal-from-step-1>` — the verifying
    read-then-advance that moves the cursor past what you read, bounded
