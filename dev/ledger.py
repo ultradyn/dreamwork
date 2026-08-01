@@ -43,6 +43,7 @@ USAGE
   python3 dev/ledger.py count [--state open|landed] [--json] [--ledger PATH]
   python3 dev/ledger.py reviews list|get <artifact> [--ledger PATH]
   python3 dev/ledger.py groups create|add-task|get|list|add-trigger ... [--ledger PATH]
+  python3 dev/ledger.py groups kinds|define-kind|set-parent|tree|require|blockers|ready ...
 
 FROM A LANE WORKTREE, `--ledger` IS NOT OPTIONAL (#667). The store is
 gitignored (#294), so it never travels; the default `.dreamwork/tasks.md`
@@ -1871,6 +1872,7 @@ def _group_record(group):
         "description": group.description,
         "created_by": group.created_by,
         "created_at": group.created_at,
+        "parent_id": group.parent_id,
     }
 
 
@@ -1881,7 +1883,32 @@ def _group_progress_record(progress):
         "total_count": progress.total_count,
         "member_task_ids": list(progress.member_task_ids),
         "landed_task_ids": list(progress.landed_task_ids),
+        "empty_group_ids": list(progress.empty_group_ids),
     }
+
+
+def _group_tree_lines(groups, root_id=None):
+    """Render the hierarchy by walking parent links, never by indent guessing."""
+    children = {}
+    for group in groups:
+        children.setdefault(group.parent_id, []).append(group)
+    lines = []
+
+    def walk(parent_id, depth):
+        for group in children.get(parent_id, []):
+            lines.append(
+                f"{'  ' * depth}#{group.id} {group.kind} {group.title}"
+            )
+            walk(group.id, depth + 1)
+
+    if root_id is None:
+        walk(None, 0)
+    else:
+        root = next((g for g in groups if g.id == root_id), None)
+        if root is not None:
+            lines.append(f"#{root.id} {root.kind} {root.title}")
+            walk(root.id, 1)
+    return lines
 
 
 def _verb_groups(args, dw_dir):
@@ -1911,6 +1938,65 @@ def _verb_groups(args, dw_dir):
             else:
                 sys.stdout.write("(no task groups)\n")
             return 0
+
+        if args.groups_cmd == "kinds":
+            with open_database(question_store_spec(db_path),
+                               access=Access.READ) as store:
+                kinds = store.groups.kinds()
+            if args.json:
+                sys.stdout.write(json.dumps(list(kinds)) + "\n")
+            else:
+                sys.stdout.write(" ".join(kinds) + "\n")
+            return 0
+
+        if args.groups_cmd == "tree":
+            with open_database(question_store_spec(db_path),
+                               access=Access.READ) as store:
+                groups = store.groups.list()
+            lines = _group_tree_lines(groups, args.root)
+            sys.stdout.write(("\n".join(lines) or "(no task groups)") + "\n")
+            return 0
+
+        if args.groups_cmd == "ready":
+            with open_database(question_store_spec(db_path),
+                               access=Access.READ) as store:
+                ready = store.groups.ready_tasks(args.group_id)
+            if args.json:
+                sys.stdout.write(json.dumps(list(ready)) + "\n")
+            else:
+                # The candidate POOL, not a batch. Which of these form a batch
+                # is selection policy and deliberately not decided here (#841).
+                sys.stdout.write(
+                    f"ready task ids: {list(ready)}\n"
+                    f"({len(ready)} candidate(s); batching is selection"
+                    " policy, not a store decision)\n"
+                )
+            return 0
+
+        if args.groups_cmd == "blockers":
+            with open_database(question_store_spec(db_path),
+                               access=Access.READ) as store:
+                blockers = store.groups.blockers(
+                    group_id=args.group_id, task_id=args.task_id,
+                )
+            if args.json:
+                sys.stdout.write(json.dumps([
+                    {
+                        "dependent_kind": b.dependent_kind,
+                        "dependent_id": b.dependent_id,
+                        "needs_kind": b.needs_kind,
+                        "needs_id": b.needs_id,
+                        "reason": b.reason,
+                    } for b in blockers
+                ], sort_keys=True) + "\n")
+            elif blockers:
+                for blocker in blockers:
+                    sys.stdout.write(f"{blocker}\n")
+            else:
+                sys.stdout.write("no unmet prerequisites\n")
+            # Nonzero when blocked, so a caller cannot mistake "blocked" for
+            # "ready" by exit code alone.
+            return 2 if blockers else 0
 
         if args.groups_cmd == "get":
             with open_database(question_store_spec(db_path),
@@ -1971,9 +2057,29 @@ def _verb_groups(args, dw_dir):
                     group_id = tx.groups.create(
                         kind=args.kind, title=args.title,
                         description=args.description or "",
-                        actor=actor, at=at,
+                        actor=actor, at=at, parent_id=args.parent,
                     )
                     disposition = f"created {args.kind} #{group_id}"
+                    if args.parent is not None:
+                        disposition += f" under #{args.parent}"
+                elif args.groups_cmd == "define-kind":
+                    status = tx.groups.define_kind(args.kind)
+                    disposition = f"kind {args.kind!r} {status}"
+                elif args.groups_cmd == "set-parent":
+                    status = tx.groups.set_parent(args.group_id, args.parent)
+                    disposition = (
+                        f"group #{args.group_id} {status}"
+                        + ("" if args.parent is None else f" under #{args.parent}")
+                    )
+                elif args.groups_cmd == "require":
+                    dep_id, status = tx.groups.add_dependency(
+                        dependent_group_id=args.group_id,
+                        dependent_task_id=args.task_id,
+                        needs_group_id=args.needs_group,
+                        needs_task_id=args.needs_task,
+                        actor=actor, at=at,
+                    )
+                    disposition = f"dependency #{dep_id} {status}"
                 elif args.groups_cmd == "add-task":
                     status = tx.groups.add_task(
                         args.group_id, args.task_id, actor=actor, at=at,
@@ -2288,9 +2394,14 @@ def main(argv=None):
     groups_get.add_argument("--json", action="store_true")
     groups_get.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_create = groups_sub.add_parser("create", help="create a group record")
-    groups_create.add_argument("kind", choices=("lane", "epic", "milestone"))
+    # No `choices` here: #841 moved the vocabulary into `task_group_kind`, so
+    # argparse must not re-pin what the store deliberately made extensible.
+    # `groups.create` validates against the DEFINED kinds and names them.
+    groups_create.add_argument("kind", help="a kind from `groups kinds`")
     groups_create.add_argument("title")
     groups_create.add_argument("--description", default=None)
+    groups_create.add_argument("--parent", type=int, default=None,
+                               help="nest under this group id")
     groups_create.add_argument("--actor", default=None)
     groups_create.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_add = groups_sub.add_parser(
@@ -2308,6 +2419,53 @@ def main(argv=None):
     groups_trigger.add_argument("--type", default="task")
     groups_trigger.add_argument("--actor", default=None)
     groups_trigger.add_argument("--ledger", default=LEDGER_DEFAULT)
+
+    # --- #841: hierarchy, dependencies, and the batching read ---
+    groups_kinds = groups_sub.add_parser(
+        "kinds", help="the defined group vocabulary (extensible, not a CHECK)")
+    groups_kinds.add_argument("--json", action="store_true")
+    groups_kinds.add_argument("--ledger", default=LEDGER_DEFAULT)
+    groups_defkind = groups_sub.add_parser(
+        "define-kind", help="widen the vocabulary without a schema change")
+    groups_defkind.add_argument("kind")
+    groups_defkind.add_argument("--actor", default=None)
+    groups_defkind.add_argument("--ledger", default=LEDGER_DEFAULT)
+    groups_parent = groups_sub.add_parser(
+        "set-parent", help="nest or detach a group; cycles are refused")
+    groups_parent.add_argument("group_id", type=int)
+    groups_parent.add_argument("--parent", type=int, default=None,
+                               help="omit to detach to a root")
+    groups_parent.add_argument("--actor", default=None)
+    groups_parent.add_argument("--ledger", default=LEDGER_DEFAULT)
+    groups_tree = groups_sub.add_parser(
+        "tree", help="render the hierarchy by parent links")
+    groups_tree.add_argument("--root", type=int, default=None)
+    groups_tree.add_argument("--ledger", default=LEDGER_DEFAULT)
+    groups_require = groups_sub.add_parser(
+        "require", help="record a prerequisite edge with a group endpoint")
+    groups_require.add_argument("--group", dest="group_id", type=int,
+                                default=None, help="the blocked group")
+    groups_require.add_argument("--task", dest="task_id", type=int,
+                                default=None, help="the blocked task")
+    groups_require.add_argument("--needs-group", dest="needs_group", type=int,
+                                default=None)
+    groups_require.add_argument("--needs-task", dest="needs_task", type=int,
+                                default=None)
+    groups_require.add_argument("--actor", default=None)
+    groups_require.add_argument("--ledger", default=LEDGER_DEFAULT)
+    groups_blockers = groups_sub.add_parser(
+        "blockers", help="unmet prerequisites of one group or task")
+    groups_blockers.add_argument("--group", dest="group_id", type=int,
+                                 default=None)
+    groups_blockers.add_argument("--task", dest="task_id", type=int,
+                                 default=None)
+    groups_blockers.add_argument("--json", action="store_true")
+    groups_blockers.add_argument("--ledger", default=LEDGER_DEFAULT)
+    groups_ready = groups_sub.add_parser(
+        "ready", help="open subtree tasks with no unmet prerequisite")
+    groups_ready.add_argument("group_id", type=int)
+    groups_ready.add_argument("--json", action="store_true")
+    groups_ready.add_argument("--ledger", default=LEDGER_DEFAULT)
 
     args = p.parse_args(argv)
     rc = _dispatch(args)
