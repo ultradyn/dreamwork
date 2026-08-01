@@ -201,7 +201,16 @@ def test_frozen_v2_store_migrates_through_current_and_reports_zero_legacy_rows(
         }
         assert _columns(after, "task_group") == {
             "id", "kind", "title", "description", "created_by", "created_at",
-            "parent_id",
+            "parent_id", "goal_state", "goal_rank",
+        }
+        assert _columns(after, "goal_state_kind") == {"state"}
+        assert _columns(after, "goal_claim") == {
+            "id", "group_id", "claimed_by", "claimed_at", "summary",
+            "base_sha", "details_sha", "outcome", "round",
+        }
+        assert _columns(after, "goal_verdict") == {
+            "id", "claim_id", "lens", "refuted", "blocking", "findings",
+            "corroborated", "examined",
         }
         assert _columns(after, "task_group_kind") == {"kind"}
         assert _columns(after, "task_group_dependency") == {
@@ -416,7 +425,9 @@ def test_ladder_declares_the_single_ordered_path_to_current():
     versions = [
         (step.source_version, step.target_version) for step in MIGRATIONS
     ]
-    assert versions == [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)], (
+    assert versions == [
+        (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8)
+    ], (
         "migration ladder must retain exactly one ordered path through current, "
         f"got {versions!r}"
     )

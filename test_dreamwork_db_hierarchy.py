@@ -16,7 +16,7 @@ import pytest
 from dreamwork_db import Access, ValidationError, open_database
 from dreamwork_db.core import SchemaMismatch
 from dreamwork_db.groups import DependencyCycle, EmptyGroup
-from dreamwork_db.migrations import v005_hierarchy
+from dreamwork_db.migrations import v005_hierarchy, v008_goals
 from dreamwork_db.tasks import task_store_spec
 from dev import ledger as ledger_cli
 
@@ -83,8 +83,10 @@ def test_kinds_come_from_the_store_and_can_be_widened(store_path):
     with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
         with store.transaction() as tx:
             seeded = set(tx.groups.kinds())
-        assert seeded == {"lane", "epic", "milestone", "feature", "batch"}, (
-            "v005 seeds v004's three plus the two #841 needs; got "
+        assert seeded == {
+            "lane", "epic", "milestone", "feature", "batch", "goal"
+        }, (
+            "v005 seeds its hierarchy kinds plus v008's goal kind; got "
             f"{sorted(seeded)}"
         )
         with store.transaction() as tx:
@@ -399,6 +401,20 @@ def test_a_duplicate_edge_is_idempotent_not_a_second_row(store_path):
 
 # --- migration --------------------------------------------------------------
 
+def _roll_back_the_ladder_above_v005(conn):
+    """Undo every step above v005 so a v005 rollback sees a genuine v5 store.
+
+    Each version removes what it added, so this is not optional bookkeeping:
+    v008 owns ``kind='goal'``, and until v008's downgrade has removed it,
+    v005's downgrade correctly refuses it as a kind v004 cannot express.
+    v007 has no production downgrade because #584's settings are shared user
+    data; these fixtures never write one, so only that empty shape is dropped.
+    """
+    v008_goals.downgrade(conn)
+    conn.execute("DROP TABLE user_setting")
+    conn.execute("UPDATE meta SET value='6' WHERE key='schema_version'")
+
+
 def _v004_store(path):
     """A genuine v4 store: built through the ladder, then rolled BACK to v4.
 
@@ -413,6 +429,7 @@ def _v004_store(path):
     try:
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("BEGIN")
+        _roll_back_the_ladder_above_v005(conn)
         v005_hierarchy.downgrade(conn)
         conn.execute("COMMIT")
         assert conn.execute(
@@ -450,7 +467,7 @@ def test_v005_preserves_tasks_members_triggers_and_the_id_sequence(tmp_path):
     before_tasks = conn.execute("SELECT * FROM task ORDER BY id").fetchall()
     conn.close()
 
-    # Re-open through the canonical path: the ladder runs 4 -> 5 -> 6.
+    # Re-open through the canonical path: the ladder runs 4 through current.
     with open_database(task_store_spec(path), access=Access.WRITE) as store:
         with store.transaction():
             pass
@@ -459,7 +476,7 @@ def test_v005_preserves_tasks_members_triggers_and_the_id_sequence(tmp_path):
     try:
         assert after.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone()[0] == "6"
+        ).fetchone()[0] == "8"
         assert after.execute("SELECT * FROM task ORDER BY id").fetchall() == \
             before_tasks, "v005 must not rewrite a single task row"
         assert after.execute(
@@ -495,7 +512,7 @@ def test_downgrade_refuses_to_discard_nesting_or_dependencies(tmp_path):
         conn.execute("ROLLBACK")
         assert conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone()[0] == "6", "a refused downgrade must not move the version"
+            ).fetchone()[0] == "8", "a refused downgrade must not move the version"
     finally:
         conn.close()
 
@@ -518,6 +535,7 @@ def test_downgrade_restores_the_v004_shape_when_nothing_would_be_lost(tmp_path):
         " VALUES (2,21,'t','t')")
     conn.commit()
     conn.execute("BEGIN")
+    _roll_back_the_ladder_above_v005(conn)
     v005_hierarchy.downgrade(conn)
     conn.execute("COMMIT")
     try:
