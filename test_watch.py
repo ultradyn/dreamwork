@@ -6420,7 +6420,8 @@ class TestGoalsRoute(unittest.TestCase):
                     actor="test", at="2026-08-01T01:00:08Z")
         self.ids = prerequisite, root, child
 
-    def _serve(self):
+    def _serve(self, target=None):
+        target = target or self.target
         probe = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
         port = probe.server_address[1]
@@ -6429,7 +6430,7 @@ class TestGoalsRoute(unittest.TestCase):
             ["allowed.test", "127.0.0.1"], port)
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", port),
-            watch.make_handler(self.target, authority=authority))
+            watch.make_handler(target, authority=authority))
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
@@ -6584,6 +6585,23 @@ class TestGoalsRoute(unittest.TestCase):
         self.assertTrue(body["rejected"])
         self.assertEqual(body["reason"], "domain_invalid")
         self.assertEqual(watch.goal_tree_payload(self.target), before)
+
+    def test_empty_tree_accepts_a_ranked_root_goal(self):
+        empty = tempfile.TemporaryDirectory()
+        self.addCleanup(empty.cleanup)
+        _store_target(empty.name)
+        status, body = self._post(self._serve(empty.name), {
+            "action": "add-goal", "title": "First human goal",
+            "details": "## Done when\n- It exists\n",
+            "parent_id": None, "rank": 4})
+        self.assertEqual(status, 202)
+        payload = watch.goal_tree_payload(empty.name)
+        self.assertEqual(payload["health"], "ok")
+        self.assertEqual(payload["expected_count"], 1)
+        self.assertEqual(
+            (payload["nodes"][0]["id"], payload["nodes"][0]["parent_id"],
+             payload["nodes"][0]["rank"], payload["nodes"][0]["criteria"]),
+            (body["goal_id"], None, 4, ["It exists"]))
 
     def test_goal_writer_reuses_canonical_transaction_seam(self):
         source = inspect.getsource(watch._handle_goal_write)
