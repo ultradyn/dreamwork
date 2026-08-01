@@ -2,6 +2,84 @@
 
 ## Open
 
+- **P1 · 2026-08-01 20:20 — #862: the goal-tree design is ready for review — 9 calls, each with a rec.**
+  You asked for a design presented as an HTML artifact with your approval gating implementation. It is
+  built and on the dashboard: **`.dreamwork/review/862-goal-tree.html`** (the `/reviews` list, or
+  `/review?a=862-goal-tree`). The nine questions are also at the foot of that page, each with its rec
+  and its argument — this is the short form.
+
+  **The two things worth knowing before you read it.**
+
+  **It found that `#95` already decided this territory** — `.dreamwork/review/goal-hierarchies.html`,
+  *"Decided 2026-07-25, all three recommendations taken, skill side built (d2eeb69)"*. Nothing in the
+  task record or the brief mentioned it; the lane found it by an `ls` of the review directory. This
+  design **reverses two of its three decisions**, and names each rather than contradicting silently:
+  D1 *"session goals don't persist"* (its argument was against an append-only log; there was no store
+  in July, and `#294` landed after), and D2 *"do not enforce branch focus; add preference weights only
+  if drift actually shows up"* — reopened **on its own named trigger**, since your "mark a branch as
+  blocked … transition over to other branches" *is* that drift. D2's character argument survives:
+  only blocked-ness steers, nothing forbids off-branch work, so the pottering is untouched.
+
+  **The storage answer is "almost no migration"** — `v005_hierarchy` already shipped the goal tree
+  while building something else. `task_group` with an open `kind` vocabulary, `parent_id` adjacency
+  with cycles refused at write time, dependencies, members, and `blockers()`/`ready_tasks()`/
+  `progress()` all exist. Goals become `task_group` rows with `kind='goal'`; v005's own docstring
+  rules the case verbatim — *"an open vocabulary plus arbitrary depth makes a seed row rather than a
+  table of its own"*. New: `goal_state`, append-only `goal_claim`/`goal_verdict`, one meta key.
+
+  **`Q1` — does the goal tree REPLACE the session goal?** **`rec: yes`** — it is what the session goal
+  already was, made durable, plural and tree-shaped. `status.json`'s `session_goal` becomes a derived
+  mirror. This flips a line in SKILL.md. `DREAMWORK.md` is unchanged: the tree's roots name its
+  headings, so the chain still terminates in your standing goals.
+
+  **`Q2` — does ANY ONE refuter sink a completion claim, or a majority?** **`rec: any one.`** The three
+  refuters are asked *different questions* (did it meet the stated criteria / is the evidence real /
+  does it actually work for you), so a lone dissent is not noise — it is the only report from the lens
+  that saw the problem. (Grok runs three identical skeptics and takes a majority, which is right when
+  they are interchangeable.)
+
+  **`Q3` — fail CLOSED when the panel cannot run?** **`rec: closed`** — the goal stays `claimed`,
+  loudly, with the reason. This deliberately diverges from grok, which fails open; that is right for an
+  interactive tool with you watching, and wrong for an unattended loop.
+
+  **`Q4` — is a leaf goal 6–24 member tasks?** **`rec: yes.`** Your 2–12 hours and the loop's ~15–20
+  minute cap are different units — the cap is a *commit cadence*, a leaf is a *deliverable*. Converted:
+  2h/20min = 6, 12h/15min = 48. 48 is too many for one node, so **a leaf past 24 is re-parented, not
+  re-estimated** — that is the 40-hour answer. Stated in task count because **nothing stores a size**:
+  SKILL.md claims the ledger carries estimated minutes and it does not, in any migration or the live
+  data.
+
+  **`Q5` — `/dw-goals` or `/goals`?** **`rec: your literal `/dw-goals``** — though every other route
+  here is bare, so say if you'd rather it match.
+
+  **`Q6` — may you force-complete a goal past the panel?** **`rec: yes`**, recorded as bypassed.
+
+  **`Q7` — one current goal, or one per unblocked branch?** **`rec: one.`**
+
+  **`Q8` — add a QUIET delivery class?** **`rec: yes`, and this one is a correction to my own brief.**
+  I told the lane your "an update to the details shouldn't notify the agent" was already the batched
+  class. It checked the code instead of the doc and found batched is **conditional on a posture you
+  have not set** — under today's default a details edit *would* wake the loop. Your requirement was
+  unconditional. So: a `QUIET_KINDS` set consulted *before* the posture, the mirror of `PREEMPT_KINDS`
+  at the other end of the same axis. Ordered against `#864`'s new class: **quiet < batched < expedited
+  < pre-empt.**
+
+  **`Q9` — does blocked-ness reopen `#95`'s D2?** **`rec: yes, narrowly`** — see above.
+
+  **What stops a refuter rubber-stamping a goal it never examined** (you did not ask, but it is the
+  part I would want checked): three layers, the first already built. `progress()` raises `EmptyGroup`
+  naming how much subtree it examined, so a goal with no members cannot even be claimed. A `not
+  refuted` verdict must carry a `corroborated` array citing a sha / path:line / captured run per
+  criterion — **an empty array on a pass is malformed, and malformed degrades to refuted at the
+  refuter, not the aggregator.** And each verdict records `examined:{criteria,members}`; a round with
+  either at zero reports **DID NOT JUDGE**, never a pass.
+
+  **Cost:** ~1 lane per panel, ≤3 per goal completion — roughly 4–15% overhead against a 6–24 task
+  leaf. The ratio only works per *goal*; per task it would cost more than the work it gates.
+
+  **If you say nothing:** nothing is implemented — the design authorises no code, and the recs stand.
+  Accepted answers: `rec` (takes all nine) · per-question (`Q1: …`) · free text.
+
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
