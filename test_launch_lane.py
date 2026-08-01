@@ -36,9 +36,10 @@ def launch_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _write(root / "dev" / "launch_lane.py", TOOL.read_text(encoding="utf-8"))
     _write(root / "dev" / "dispatch_lane.py", """
 import argparse, subprocess, sys
-p = argparse.ArgumentParser(); p.add_argument('--prompt'); p.add_argument('rest', nargs=argparse.REMAINDER)
+p = argparse.ArgumentParser(); p.add_argument('--prompt'); p.add_argument('--prepare', action='store_true'); p.add_argument('rest', nargs=argparse.REMAINDER)
 a = p.parse_args(); cmd = a.rest[1:] if a.rest and a.rest[0] == '--' else a.rest
 prompt = open(a.prompt, encoding='utf-8').read()
+if a.prepare: raise SystemExit(0)
 raise SystemExit(subprocess.run([*cmd, prompt]).returncode)
 """.lstrip())
     # The production launcher deliberately routes cleanup through this sibling.

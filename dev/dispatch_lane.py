@@ -429,6 +429,11 @@ def _parser() -> argparse.ArgumentParser:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--prompt", type=Path)
     mode.add_argument("--verify-pending", action="store_true")
+    parser.add_argument(
+        "--prepare",
+        action="store_true",
+        help="validate and persist --prompt without requiring its not-yet-created branch",
+    )
     parser.add_argument("runner", nargs=argparse.REMAINDER)
     return parser
 
@@ -450,12 +455,13 @@ def main(argv: list[str] | None = None) -> int:
     runner = args.runner
     if runner and runner[0] == "--":
         runner = runner[1:]
-    if not runner:
+    if not runner and not args.prepare:
         print("dispatch refused: runner command is missing", file=sys.stderr)
         return 2
 
     try:
-        validate_stdout()
+        if not args.prepare:
+            validate_stdout()
         prompt = _read(args.prompt, "prompt")
         contract = _read(CONTRACT_PATH, "standing contract")
         briefs_dir = _briefs_dir()
@@ -463,7 +469,8 @@ def main(argv: list[str] | None = None) -> int:
         validate_prompt(prompt, contract, coordinator_inbox)
         prompt_head = prompt[:prompt.find(contract)]
         _, branch = _identity(prompt)
-        validate_base_sha(prompt_head, branch)
+        if not args.prepare:
+            validate_base_sha(prompt_head, branch)
         for report in ledger_reference_reports(prompt_head, briefs_dir.parent.parent):
             print(report, file=sys.stderr)
         try:
@@ -473,6 +480,10 @@ def main(argv: list[str] | None = None) -> int:
     except DispatchFault as exc:
         print(f"dispatch refused: {exc}", file=sys.stderr)
         return 2
+
+    if args.prepare:
+        print("dispatch prepared: exact validated brief and digest persisted; runner not attempted")
+        return 0
 
     try:
         os.execvp(runner[0], [*runner, prompt])

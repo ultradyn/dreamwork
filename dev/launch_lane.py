@@ -137,6 +137,22 @@ def _assemble(head: str, task: int, lane: str, base_sha: str, lane_path: Path,
     return f"{head.rstrip()}\n\n{metadata}\n{contract}"
 
 
+def _fence_at(text: str, offset: int) -> str | None:
+    active: str | None = None
+    for line in text[:offset].splitlines():
+        stripped = line.lstrip()
+        marker = "```" if stripped.startswith("```") else (
+            "~~~" if stripped.startswith("~~~") else None
+        )
+        if marker is None:
+            continue
+        if active is None:
+            active = marker
+        elif active == marker:
+            active = None
+    return active
+
+
 def _brief_faults(prompt: str, head: str, contract: str, task: int, lane: str,
                   base_sha: str, inbox: Path) -> list[str]:
     faults: list[str] = []
@@ -158,6 +174,8 @@ def _brief_faults(prompt: str, head: str, contract: str, task: int, lane: str,
         faults.append("briefs/boilerplate.md is empty; no standing rules were examined")
     elif occurrence < 0 or prompt.find(contract, occurrence + 1) >= 0:
         faults.append("canonical boilerplate must occur exactly once")
+    elif _fence_at(prompt, occurrence) is not None:
+        faults.append("canonical boilerplate is inside a fenced quotation, not lane instructions")
     elif prompt[occurrence + len(contract):].strip():
         faults.append("canonical boilerplate must be the final brief section")
     human_lines = head.splitlines()
@@ -354,6 +372,41 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
 
     created_here = not bool(resume)
 
+    prompt_path = attempt_path.with_suffix(".prompt.md")
+    try:
+        if prompt_path.exists():
+            existing = prompt_path.read_text(encoding="utf-8")
+            if existing != prompt:
+                raise LaunchFault("preserved attempt prompt bytes do not match the final brief")
+        else:
+            with prompt_path.open("x", encoding="utf-8") as handle:
+                handle.write(prompt)
+                handle.flush()
+                os.fsync(handle.fileno())
+    except (OSError, UnicodeError, LaunchFault) as exc:
+        if created_here:
+            return _abort_created(main, lane_path, lane, "attempt-persistence", str(exc),
+                                  f"attempt={attempt_id}; digest={digest}", attempt_id)
+        return _refuse("attempt-persistence", [str(exc)], f"attempt={attempt_id}; digest={digest}", retained)
+
+    prepared = subprocess.run(
+        [sys.executable, str(Path(__file__).with_name("dispatch_lane.py")),
+         "--prompt", str(prompt_path), "--prepare"],
+        cwd=repo,
+    )
+    if prepared.returncode:
+        if created_here:
+            return _abort_created(
+                main, lane_path, lane, "governed-prepare",
+                f"existing dispatcher validation/persistence exited {prepared.returncode}",
+                f"attempt={attempt_id}; digest={digest}; exact final brief={prompt_path}", attempt_id,
+            )
+        return _refuse(
+            "governed-prepare",
+            [f"existing dispatcher validation/persistence exited {prepared.returncode}"],
+            f"attempt={attempt_id}; digest={digest}; exact final brief={prompt_path}", retained,
+        )
+
     policy = main / ".dreamwork" / "subagent-policy"
     if policy.is_file():
         try:
@@ -387,23 +440,6 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
             )
         return _refuse("attempt-persistence", [f"could not mark attempt unverified before launch: {exc}"],
                        f"attempt={attempt_id}; digest={digest}", retained)
-
-    prompt_path = attempt_path.with_suffix(".prompt.md")
-    try:
-        if prompt_path.exists():
-            existing = prompt_path.read_text(encoding="utf-8")
-            if existing != prompt:
-                raise LaunchFault("preserved attempt prompt bytes do not match the final brief")
-        else:
-            with prompt_path.open("x", encoding="utf-8") as handle:
-                handle.write(prompt)
-                handle.flush()
-                os.fsync(handle.fileno())
-    except (OSError, UnicodeError, LaunchFault) as exc:
-        if created_here:
-            return _abort_created(main, lane_path, lane, "attempt-persistence", str(exc),
-                                  f"attempt={attempt_id}; digest={digest}", attempt_id)
-        return _refuse("attempt-persistence", [str(exc)], f"attempt={attempt_id}; digest={digest}", retained)
 
     command = [sys.executable, str(Path(__file__).with_name("dispatch_lane.py")),
                "--prompt", str(prompt_path), "--", "ccc", *runner_args, agent]
