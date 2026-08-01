@@ -39,6 +39,7 @@ USAGE
   python3 dev/ledger.py unblock <id> --why <text> [--ledger PATH]
   python3 dev/ledger.py next-up <id> [--clear] --why <text> [--ledger PATH]
   python3 dev/ledger.py sweep [--since REF] [--ledger PATH] [--repo PATH]
+  python3 dev/ledger.py reach [--base REF] [--ledger PATH] [--repo PATH]
   python3 dev/ledger.py list [--state open|landed] [--sort id|id-desc] [--json] [--ledger PATH]
   python3 dev/ledger.py get <id> [--ledger PATH]
   python3 dev/ledger.py count [--state open|landed] [--json] [--ledger PATH]
@@ -1133,6 +1134,31 @@ def sweep_text(text, commits, since, source, repo="."):
 # lists them every run gets turned off.
 # ---------------------------------------------------------------------------
 
+_BRANCH_ADJUDICATION = re.compile(
+    r"^[ \t]*·[ \t]+BRANCH[ \t]+(CLASSIFIED|ADJUDICATED)[ \t]+—[ \t]+"
+    r"([^\s,;()]+)(?=[\s,;()]|$)", re.MULTILINE)
+
+
+def _branch_adjudications(records):
+    """Exact branch rulings from the ledger's established note vocabulary.
+
+    A ruling is a note line whose first semantic words are exactly
+    ``BRANCH CLASSIFIED — <branch>`` or
+    ``BRANCH ADJUDICATED — <branch>``. Requiring the ledger note marker and
+    matching the captured token for equality keeps a quoted sentence and a
+    near-miss branch name from classifying anything. Returns the mapping plus
+    both scan denominators so zero records and zero matches stay visible.
+    """
+    found = {}
+    matches = 0
+    for record in records:
+        for match in _BRANCH_ADJUDICATION.finditer(record.get("body") or ""):
+            matches += 1
+            verb, branch = match.groups()
+            found[branch] = (verb, record["id"])
+    return found, len(records), matches
+
+
 def reach(branch_marks, live=None):
     """Collapse duplicate sha sets; suppress live lanes; report the rest.
 
@@ -1189,7 +1215,8 @@ def reach(branch_marks, live=None):
     return n_examined, n_dup_suppressed, n_live_suppressed, rows
 
 
-def reach_text(branch_marks, base, live=None):
+def reach_text(branch_marks, base, live=None, adjudications=None,
+               record_count=None, adjudication_matches=None):
     """The advisory report — the count line IS the primary output (#715).
 
     Mirrors ``sweep_text``'s contract: the examined count is ALWAYS printed
@@ -1210,7 +1237,20 @@ def reach_text(branch_marks, base, live=None):
     lane look live would produce silence. Flood is safe; silence is not.
     """
     n_examined, n_dup, n_live, rows = reach(branch_marks, live)
-    parts = [f"{len(rows)} carry + commits"]
+    adjudications = adjudications or {}
+    classified = []
+    unexamined = []
+    for row in rows:
+        branch, aliases, _ = row
+        ruling = next(
+            ((name, adjudications[name]) for name in (branch, *aliases)
+             if name in adjudications), None)
+        if ruling is None:
+            unexamined.append(row)
+        else:
+            classified.append((row, ruling))
+    parts = [f"{len(classified)} CLASSIFIED",
+             f"{len(unexamined)} UNEXAMINED"]
     if n_dup:
         parts.append(f"{n_dup} duplicates suppressed")
     if n_live:
@@ -1220,14 +1260,43 @@ def reach_text(branch_marks, base, live=None):
     if live is None:
         header += " [liveness unavailable — no lanes suppressed]"
     lines = [header]
-    for branch, aliases, plus in rows:
+    if record_count is not None:
+        matched = adjudication_matches or 0
+        if record_count == 0:
+            lines.append(
+                "reach: ALARM — classification scan examined 0 task records; "
+                "no branch can be classified from the ledger")
+        else:
+            lines.append(
+                f"reach: classification scan examined {record_count} task "
+                f"record(s); matched {matched} exact BRANCH CLASSIFIED / "
+                "BRANCH ADJUDICATED note(s)")
+    if classified:
+        lines.append(
+            "CLASSIFIED (recorded human/coordinator ruling; not proof that "
+            "content landed):")
+    for (branch, aliases, plus), (named, (verb, task_id)) in classified:
+        al = f" (= {', '.join(aliases)})" if aliases else ""
+        named_as = f" for alias {named}" if named != branch else ""
+        lines.append(
+            f"  {branch}{al} — CLASSIFIED by BRANCH {verb} note on "
+            f"#{task_id}{named_as}; {len(plus)} + commit(s) remain for eventual "
+            "branch discard")
+    if unexamined:
+        lines.append("UNEXAMINED (+ is a question, not a verdict):")
+    for branch, aliases, plus in unexamined:
         al = f" (= {', '.join(aliases)})" if aliases else ""
         ev = ", ".join(f"`{s[:12]}` {subj}" for s, subj in plus)
         lines.append(f"  {branch}{al} — {len(plus)} + commit(s): {ev}")
-    if rows:
+    if unexamined:
         lines.append(
-            f"reach: {len(rows)} branch(es) may carry work not on {base} — "
+            f"reach: {len(unexamined)} UNEXAMINED branch(es) may carry work "
+            f"not on {base} — "
             f"a + is a question, not a verdict (lessons.md:3302; #676)")
+    elif classified:
+        lines.append(
+            f"reach: 0 UNEXAMINED; {len(classified)} CLASSIFIED branch(es) "
+            "still exist and remain candidates for eventual discard")
     elif n_live:
         lines.append(
             f"reach: nothing to triage — {n_live} live lane(s) suppressed")
@@ -1404,7 +1473,12 @@ def _reach_trailer(repo, dw=None):
     if not findings:
         return ""
     live, available = _resolve_live_branches(dw)
-    return reach_text(findings, "master", live=live if available else None)
+    records = _read_records(dw) if dw is not None else []
+    adjudications, record_count, matched = _branch_adjudications(records)
+    return reach_text(
+        findings, "master", live=live if available else None,
+        adjudications=adjudications, record_count=record_count,
+        adjudication_matches=matched)
 
 
 # ---------------------------------------------------------------------------
@@ -2502,6 +2576,10 @@ def main(argv=None):
     preach.add_argument("--base", default="master",
                         help="the base ref to check against (default %(default)s)")
     preach.add_argument("--repo", default=".", help="the git repo to scan (default %(default)s)")
+    preach.add_argument(
+        "--ledger", default=LEDGER_DEFAULT,
+        help="path to the ledger whose task notes classify branches "
+             "(default %(default)s)")
 
     # #497 — read-only task verbs. list/get/count over the store (or markdown
     # for list/count); reviews over the review_decision table (store-mode only).
@@ -2714,12 +2792,16 @@ def main(argv=None):
     groups_ready.add_argument("--ledger", default=LEDGER_DEFAULT)
 
     args = p.parse_args(argv)
+    # Reach's git and ledger subjects are one project. When callers override
+    # --repo but leave --ledger at its default, resolve that default inside the
+    # target repo rather than against the interpreter's cwd (fixture runners
+    # and cross-project checks otherwise read an unrelated checkout).
+    if args.cmd == "reach" and args.ledger == LEDGER_DEFAULT:
+        args.ledger = str(Path(args.repo) / LEDGER_DEFAULT)
     rc = _dispatch(args)
     # #357 — the warning footer tacks onto stderr on every verb's success
     # path. WARN-only, stateless, never touches stdout, never changes rc
     # (emit_warnings returns the rc it was handed).
-    # #688 — reach needs no ledger, so it carries no --ledger; the footer is
-    # a ledger-state warning and there is no ledger to warn about.
     if hasattr(args, "ledger"):
         return emit_warnings(str(Path(args.ledger).parent), rc)
     return rc
@@ -2807,31 +2889,12 @@ def _unresolved_store_message(cmd, shared):
 
 def _dispatch(args):
     """Run one verb and return its exit code. The footer is tacked on by main."""
-    # #688 — reach is advisory and needs NO ledger: it enumerates local git
-    # branches and cherry-marks them. The store gate (#667) exists to stop a
-    # verb answering from an empty ledger, which reach never reads, so it
-    # dispatches FIRST and is structurally exempt. Same advisory spirit as
-    # sweep (#404), minus the ledger dependency sweep carries.
-    if args.cmd == "reach":
-        findings = _git_branch_reach(args.repo, args.base)
-        if findings is None:
-            sys.stdout.write("reach: git could not answer (not a repo?) — did not run\n")
-            return 0
-        if not findings:
-            sys.stdout.write("reach: no branches to check (did not run)\n")
-            return 0
-        live, available = _resolve_live_branches(
-            Path(args.repo) / ".dreamwork")
-        sys.stdout.write(
-            reach_text(findings, args.base, live=live if available else None))
-        return 0
-
     # #667 — before any verb runs: if the store did not resolve here, every
     # answer below is built from nothing. One gate, every (ledger-reading) verb.
     shared = _unresolved_store(str(Path(args.ledger).parent))
     if shared is not None:
         message = _unresolved_store_message(args.cmd, shared)
-        if args.cmd == "sweep":
+        if args.cmd in ("sweep", "reach"):
             # #404 ruled sweep ADVISORY: "every failure mode is a printed line
             # and exit 0 — 'cannot check' must never read as 'nothing to fix'".
             # Its other cannot-check lines go to stdout, so this one does too.
@@ -2844,6 +2907,26 @@ def _dispatch(args):
         # (`ledger not found: …`), which is exactly the situation.
         sys.stderr.write(message)
         return 2
+
+    if args.cmd == "reach":
+        findings = _git_branch_reach(args.repo, args.base)
+        if findings is None:
+            sys.stdout.write("reach: git could not answer (not a repo?) — did not run\n")
+            return 0
+        if not findings:
+            sys.stdout.write(
+                "reach: ALARM — examined 0 branches; no branches to check "
+                "(did not run)\n")
+            return 0
+        records = _read_records(str(Path(args.ledger).parent))
+        adjudications, record_count, matched = _branch_adjudications(records)
+        live, available = _resolve_live_branches(
+            Path(args.repo) / ".dreamwork")
+        sys.stdout.write(reach_text(
+            findings, args.base, live=live if available else None,
+            adjudications=adjudications, record_count=record_count,
+            adjudication_matches=matched))
+        return 0
 
     if args.cmd == "sweep":
         # Advisory by design (#404): every failure mode is a printed line and

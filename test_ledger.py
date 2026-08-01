@@ -1001,6 +1001,76 @@ def test_reach_text_always_prints_the_examined_count():
         f"the closing line must not promote a + to a verdict: {text!r}")
 
 
+def test_reach_exact_adjudication_note_moves_branch_to_classified_bucket():
+    """The expected branch comes from this hardcoded fixture, not the matcher.
+
+    Both established corpus phrases are planted literally. The production
+    regex is the checked thing; it is not used to manufacture the expectation.
+    """
+    records = [
+        {"id": 691, "body":
+         "task prose\n  · BRANCH CLASSIFIED — cx-691recap (3 commits) is "
+         "a SUPERSEDED DUPLICATE; do NOT merge."},
+        {"id": 863, "body":
+         "task prose\n  · BRANCH ADJUDICATED — opus-863jank2 is "
+         "SUPERSEDED; do NOT merge."},
+    ]
+    adjudications, examined, matched = ledger._branch_adjudications(records)
+    marks = [
+        ("cx-691recap", [("+", "aaa111", "docs(#691): old design")]),
+        ("opus-863jank2", [("+", "bbb222", "wip(#863): old fix")]),
+        ("never-reviewed", [("+", "ccc333", "wip: unknown")]),
+    ]
+
+    text = ledger.reach_text(
+        marks, "master", live=set(), adjudications=adjudications,
+        record_count=examined, adjudication_matches=matched)
+
+    assert "examined 3 branches" in text, text
+    assert "2 CLASSIFIED, 1 UNEXAMINED" in text, text
+    assert "CLASSIFIED by BRANCH CLASSIFIED note on #691" in text, text
+    assert "CLASSIFIED by BRANCH ADJUDICATED note on #863" in text, text
+    assert "not proof that content landed" in text, text
+    assert "UNEXAMINED (+ is a question, not a verdict):\n  never-reviewed" \
+        in text, text
+
+
+def test_reach_near_miss_or_quoted_branch_does_not_false_classify():
+    """Direction 2: a different/quoted branch must leave the target open.
+
+    Expected ``cx-691recap`` is a hardcoded planted branch, independently of
+    the production note parser. A loose ``if branch in body`` fails here.
+    """
+    records = [
+        {"id": 900, "body":
+         "  · BRANCH CLASSIFIED — cx-691recap2 is superseded\n"
+         "  · Someone wrote \"BRANCH ADJUDICATED — cx-691recap\" in a quote"},
+    ]
+    adjudications, examined, matched = ledger._branch_adjudications(records)
+    marks = [("cx-691recap", [
+        ("+", "aaa111", "docs(#691): genuinely unexamined")])]
+
+    text = ledger.reach_text(
+        marks, "master", live=set(), adjudications=adjudications,
+        record_count=examined, adjudication_matches=matched)
+
+    assert "0 CLASSIFIED, 1 UNEXAMINED" in text, text
+    assert "UNEXAMINED (+ is a question, not a verdict):\n  cx-691recap" \
+        in text, text
+    assert "CLASSIFIED by" not in text, text
+
+
+def test_reach_zero_task_record_denominator_is_an_alarm_not_green():
+    text = ledger.reach_text(
+        [("unexamined", [("+", "aaa111", "wip: unknown")])],
+        "master", live=set(), adjudications={}, record_count=0,
+        adjudication_matches=0)
+
+    assert "examined 1 branches" in text, text
+    assert "ALARM — classification scan examined 0 task records" in text, text
+    assert "0 CLASSIFIED, 1 UNEXAMINED" in text, text
+
+
 def test_reach_text_clean_result_differs_from_could_not_check():
     """#404's ruled contract carried one layer in (#671): a clean report and a
     cannot-check must not render identically. The clean path says 'nothing to
