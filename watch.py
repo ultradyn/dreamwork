@@ -691,8 +691,7 @@ DATA_SIBLINGS = ("vendor/morphdom.min.js", "vendor/LICENSE.morphdom",
                  "dev/build/src/delegate.js",
                  "dev/build/src/native-entry.js",
                  "dev/build/src/probe.js",
-                 "dev/build/src/research.js",
-                 "dev/build/src/goals.js",
+                 "dev/build/src/research.js", "dev/build/src/goals.js",
                  "dev/build/src/registry.js",
                  "client/dist/manifest.json",
                  "client/dist/ds/index.js",
@@ -3920,10 +3919,7 @@ def collect(target, burn_step=None):
         # permanent. burn_step (#487) forces granularity; None keeps auto.
         "burndown": ledger_stats(target, step=burn_step),
         "groups": group_progress(target),  # #836: #824's durable membership
-        # #890: one repository-backed projection feeds both the dashboard
-        # handle and the native /goals route. Its independent denominator
-        # makes a dropped subtree loud rather than a reassuring empty page.
-        "goals": goal_tree_payload(target),
+        "goals": goal_tree_payload(target),  # #890: denominator-bearing tree
         # his colour for this project (#143). It rides /data.json rather than
         # the shell so the EXISTING mtime poll carries it: he picks a tint in
         # one window and every other window on this project follows within a
