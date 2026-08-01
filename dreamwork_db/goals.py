@@ -20,7 +20,8 @@ LEGAL_STATE_TRANSITIONS = {
 }
 
 CLAIM_OUTCOMES = frozenset({"complete", "refuted", "unrun"})
-VERDICT_LENSES = frozenset({"criteria", "evidence", "use"})
+PANEL_LENSES = ("criteria", "evidence", "use")
+VERDICT_LENSES = frozenset(PANEL_LENSES)
 BLOCKING_KINDS = frozenset({"none", "contradiction", "unverifiable"})
 
 
@@ -257,6 +258,41 @@ class GoalRepository:
             base_sha, details_sha, outcome, round,
         )
 
+    def _claim(self, claim_id: int) -> GoalClaim:
+        row = self._session.execute(
+            "SELECT id,group_id,claimed_by,claimed_at,summary,base_sha,"
+            " details_sha,outcome,round FROM goal_claim WHERE id = ?",
+            (claim_id,),
+        ).fetchone()
+        if row is None:
+            raise NotFound(f"no goal claim #{claim_id}")
+        self._goal(int(row[1]))
+        return GoalClaim(*row)
+
+    def resolve_claim(self, claim_id: int, outcome: str) -> GoalClaim:
+        """Write one terminal outcome without overwriting the claim's round."""
+        if outcome not in CLAIM_OUTCOMES:
+            raise ValidationError(
+                f"unknown claim outcome {outcome!r}; expected {tuple(CLAIM_OUTCOMES)}"
+            )
+        claim = self._claim(claim_id)
+        if claim.outcome is not None:
+            raise ValidationError(
+                f"goal claim #{claim_id} outcome is already {claim.outcome!r}; "
+                "terminal outcomes are write-once"
+            )
+        changed = self._session.execute(
+            "UPDATE goal_claim SET outcome = ? WHERE id = ? AND outcome IS NULL",
+            (outcome, claim_id),
+        )
+        if changed.rowcount != 1:
+            settled = self._claim(claim_id)
+            raise ValidationError(
+                f"goal claim #{claim_id} outcome is already {settled.outcome!r}; "
+                "terminal outcomes are write-once"
+            )
+        return self._claim(claim_id)
+
     def claims(self, group_id: int) -> tuple[GoalClaim, ...]:
         self._goal(group_id)
         rows = self._session.execute(
@@ -358,3 +394,28 @@ class GoalRepository:
                 finding_items, corroborated_items, examined_counts,
             ))
         return tuple(verdicts)
+
+    def finalize_panel(self, claim_id: int) -> GoalClaim:
+        """Resolve only a complete three-lens panel; one refute sinks it."""
+        claim = self._claim(claim_id)
+        if claim.outcome is not None:
+            raise ValidationError(
+                f"goal claim #{claim_id} outcome is already {claim.outcome!r}; "
+                "terminal outcomes are write-once"
+            )
+        verdicts = self.verdicts(claim_id)
+        present = {verdict.lens for verdict in verdicts}
+        missing = tuple(lens for lens in PANEL_LENSES if lens not in present)
+        if missing:
+            raise ValidationError(
+                f"PANEL INCOMPLETE for goal claim #{claim_id}: missing lenses "
+                f"{missing}; FAIL CLOSED AND ASK HUMAN"
+            )
+        if len(verdicts) != len(PANEL_LENSES) or present != VERDICT_LENSES:
+            raise ValidationError(
+                f"PANEL MALFORMED for goal claim #{claim_id}: expected exactly "
+                f"{PANEL_LENSES}, got {tuple(v.lens for v in verdicts)}; "
+                "FAIL CLOSED AND ASK HUMAN"
+            )
+        outcome = "refuted" if any(v.refuted for v in verdicts) else "complete"
+        return self.resolve_claim(claim_id, outcome)
