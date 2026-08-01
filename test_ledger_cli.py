@@ -555,6 +555,7 @@ _VERB_ARGV = {
     "questions-retitle": ["questions-retitle", "1", "new title", "--why", "x", "--revision", "1"],
     "reviews-register": ["reviews-register", "design.html"],
     "reviews-link": ["reviews-link", "design.html"],
+    "groups": ["groups", "list"],
 }
 
 

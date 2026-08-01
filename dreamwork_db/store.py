@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .core import StoreSpec
+from .groups import GroupRepository
 from .migrate import initialize_legacy_store
 from .questions import QuestionRepository
 from .reviews import ReviewRepository
@@ -33,6 +34,7 @@ def dreamwork_store_spec(path: PathLike) -> StoreSpec:
             "tasks": TaskRepository,
             "questions": QuestionRepository,
             "reviews": ReviewRepository,
+            "groups": GroupRepository,
         },
         initializer=initialize_legacy_store,
     )
