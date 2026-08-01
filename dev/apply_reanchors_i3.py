@@ -135,7 +135,7 @@ ANCHORS = [
     ReviewedAnchor('watch.py', 3797, 'collect', 'def collect(target, burn_step=None):'),
     ReviewedAnchor('watch.py', 3812, 'track_question_updates', '    track_question_updates(target, q_open + q_answered)'),
     ReviewedAnchor('watch.py', 4538, 'DELIVERY_DEFAULT', 'DELIVERY_DEFAULT = "instant"'),
-    ReviewedAnchor('watch.py', 4563, 'PREEMPT_KINDS', 'PREEMPT_KINDS = ("do-now", "do-next")'),
+    ReviewedAnchor('watch.py', 4615, 'PREEMPT_KINDS', 'PREEMPT_KINDS = ("chat", "do-now", "do-next")'),
     ReviewedAnchor('watch.py', 4566, 'delivery_mode', 'def delivery_mode(target):'),
     ReviewedAnchor('watch.py', 4575, 'emits_wake', 'def emits_wake(kind, target):'),
     ReviewedAnchor('watch.py', 4585, 'DELIVERY_DEFAULT', '    return delivery_mode(target) == DELIVERY_DEFAULT'),
