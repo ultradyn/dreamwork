@@ -66,6 +66,28 @@ verdict, because a scan of the wrong range finds nothing and is otherwise
 indistinguishable from a clean branch (#590: a zero is a question about whether
 you looked). An unresolvable base is a FAULT, not a zero.
 
+A RE-ARM MUST NOT MOVE THE REGISTRATION BOUNDARY FORWARD (#942)
+---------------------------------------------------------------
+The history scan bounds each record by ``begun_head``, so it cannot blame a
+commit that predates the lane's registration. That boundary is correct — the
+canonical direction-1 sabotage *is* the pre-fix bytes, which legitimately
+existed on the branch before the tool observed them.
+
+But the remedy this tool prints for post-rebase expectation drift is ``forget``
++ ``begin``, and ``forget`` used to ERASE the record. Re-arming then set a new
+boundary at the rebased tip — after the commit still holding the injection — so
+the scan reclassified it as preexisting and printed ``0 holding a recorded
+injection`` over a branch that genuinely held one. Rebasing is mandatory before
+hand-off, so this sat on the ordinary lane lifecycle, and every step of it was
+documented advice followed correctly.
+
+``forget`` therefore RETIRES a restored registration instead of erasing it: the
+record keeps its ``injected_sha`` and its ORIGINAL ``begun_head`` and stays in
+scope for the history scan alone. A lane may withdraw a claim about its own
+evidence; it cannot un-commit a commit. And the scan now reports what the
+boundary EXCLUDED, so "the boundary ate the range" can never again wear the
+words of "I looked and found nothing".
+
 THREE ZERO-STATES, NOT ONE (#136)
 ---------------------------------
 - No registry file at all → **no evidence**: "no injections registered". A
@@ -145,6 +167,7 @@ SUB = "redproof"
 # Registry entry states.
 ARMED = "armed"        # begun (original snapshotted), not yet restored
 RESTORED = "restored"  # restore ran; injected_sha recorded
+RETIRED = "retired"    # forgotten as live evidence; still in HISTORY scope (#942)
 
 # Re-arm guidance appended to every expectation-drift refusal (#910). The
 # natural lane rhythm — inject, observe red, add a test, restore — edits an
@@ -397,9 +420,14 @@ def _find(entries: list[dict], posix_path: str) -> dict | None:
     Restored entries with the same path are NOT returned here — restore appends
     a new entry per distinct injection, so a path can carry several restored
     records. Only an entry still in the ARMED state is a candidate for the
-    next restore to consume."""
+    next restore to consume. RETIRED records are excluded for the same reason
+    and one more: `begin` refuses a path that already has an armed entry, so a
+    retired record left by `forget` would block the re-arm it exists to survive
+    (#942). The test is still `not in (…)` rather than `== ARMED`, so a
+    malformed entry with no state reads as armed and fails closed."""
     for e in entries:
-        if e.get("path") == posix_path and e.get("state") != RESTORED:
+        if (e.get("path") == posix_path
+                and e.get("state") not in (RESTORED, RETIRED)):
             return e
     return None
 
@@ -550,14 +578,17 @@ def scan_history(cwd: Path | None, entries: list[dict],
 
     Returns a report the caller prints IN FULL, zeroes included: a scan of the
     wrong range finds nothing and otherwise looks exactly like a clean branch,
-    so the count of what was examined is part of the answer (#590).
+    so the count of what was examined is part of the answer (#590). That now
+    includes what the registration boundary EXCLUDED — see ``excluded`` below.
     """
     root = _ls.worktree_root(cwd)
-    live = [e for e in entries
-            if e.get("state") == RESTORED and e.get("injected_sha")]
+    # RETIRED records are in scope here and nowhere else (#942): a lane may
+    # withdraw a claim about its own evidence, but it cannot un-commit a commit.
+    recorded = [e for e in entries
+                if e.get("state") in (RESTORED, RETIRED) and e.get("injected_sha")]
     base_oid, base_ref = _resolve_base(root, base)
     commits = [c for c in _git(root, "rev-list", f"{base_oid}..HEAD").split() if c]
-    paths = sorted({e["path"] for e in live})
+    paths = sorted({e["path"] for e in recorded})
     blobs = _batch_blobs(root, commits, paths)
 
     # A matching blob is armed only when its commit did not already exist at
@@ -567,33 +598,81 @@ def scan_history(cwd: Path | None, entries: list[dict],
     preexisting = {
         id(e): set(_git(root, "rev-list", e["begun_head"]).split())
         if e.get("begun_head") else set()
-        for e in live
+        for e in recorded
     }
     order = {c: n for n, c in enumerate(commits)}
-    hits = []
+    hits, excluded = [], []
     for (commit, path), sha in blobs.items():
-        for e in live:
-            if (e["path"] == path and sha == e["injected_sha"]
-                    and commit not in preexisting[id(e)]):
-                hits.append({"commit": commit, "path": path,
-                             "hint": e.get("injected_hint"),
-                             "subject": _git(root, "log", "-1", "--format=%s", commit)})
+        # Per (commit, path), not per record: two records can carry the same
+        # bytes (a re-arm re-injects them), and one commit holding one
+        # injection is one finding, not one per record that remembers it.
+        matches = [e for e in recorded
+                   if e["path"] == path and sha == e["injected_sha"]]
+        if not matches:
+            continue
+        armed_by = [e for e in matches if commit not in preexisting[id(e)]]
+        subject = _git(root, "log", "-1", "--format=%s", commit)
+        if armed_by:
+            hits.append({"commit": commit, "path": path,
+                         "hint": armed_by[0].get("injected_hint"),
+                         "subject": subject})
+        else:
+            # EVERY record of these bytes was begun at a head that already
+            # contained this commit, so it predates registration. Correct — and
+            # reported, because "excluded" and "not found" were one silent zero
+            # and that is exactly how #942 hid a real injection.
+            excluded.append({"commit": commit, "path": path,
+                             "hint": matches[0].get("injected_hint"),
+                             "subject": subject,
+                             "boundary": matches[0].get("begun_head")})
     hits.sort(key=lambda h: (order[h["commit"]], h["path"]))
+    excluded.sort(key=lambda h: (order[h["commit"]], h["path"]))
     return {"base_oid": base_oid, "base_ref": base_ref, "commits": len(commits),
-            "paths": len(paths), "blobs_read": len(blobs), "hits": hits}
+            "paths": len(paths), "blobs_read": len(blobs), "hits": hits,
+            "excluded": excluded, "records": len(recorded),
+            "retired": sum(1 for e in recorded if e.get("state") == RETIRED)}
 
 
 def history_line(rep: dict) -> str:
-    """What the scan examined — printed whatever the verdict, including zero."""
+    """What the scan examined — printed whatever the verdict, including zero.
+
+    THREE ZEROES, THREE SENTENCES (#868/#915/#942). "I looked and found
+    nothing", "there was nothing to look for", and "I found matches and the
+    boundary ruled them out" are different facts, and #942 is what it costs to
+    print them the same: a re-arm moved the boundary past a real injection, the
+    third case wore the first case's words, and the branch read clean.
+    """
     if not rep["commits"]:
         return (f"history: EXAMINED NO COMMIT — 0 between {rep['base_oid'][:12]} "
                 f"({rep['base_ref']}) and HEAD. Nothing of this branch is in "
                 f"history yet, which is not the same as a history examined and "
                 f"found clean.")
-    return (f"history: examined {rep['commits']} commit(s) since "
+    if not rep["paths"]:
+        return (f"history: NOTHING TO LOOK FOR — {rep['commits']} commit(s) since "
+                f"{rep['base_oid'][:12]} ({rep['base_ref']}) were compared "
+                f"against 0 injected path(s), because no injected bytes are "
+                f"recorded. Nothing was searched for, which is not the same as "
+                f"searching and finding nothing.")
+    line = (f"history: examined {rep['commits']} commit(s) since "
             f"{rep['base_oid'][:12]} ({rep['base_ref']}) against {rep['paths']} "
             f"injected path(s); read {rep['blobs_read']} blob(s), "
             f"{len(rep['hits'])} holding a recorded injection.")
+    if rep.get("retired"):
+        line += (f" {rep['retired']} of the record(s) searched for are RETIRED "
+                 f"(forgotten as live evidence, kept in history scope).")
+    excluded = rep.get("excluded") or []
+    if excluded:
+        line += (f"\nhistory: the registration boundary EXCLUDED {len(excluded)} "
+                 f"commit(s) that DO hold bytes recorded as an injection. Every "
+                 f"record of those bytes was begun at a head that already "
+                 f"contained the commit, so it predates this lane's "
+                 f"registration and is not blamed. That is a scan which looked "
+                 f"and declined to blame — not a scan that found nothing:")
+        for x in excluded:
+            line += (f"\n  {x['commit'][:12]} {x['path']} — {x['subject']!r} "
+                     f"(hint: {x['hint']!r}; boundary "
+                     f"{(x.get('boundary') or '?')[:12]})")
+    return line
 
 
 # --------------------------------------------------------------------------- #
@@ -853,7 +932,32 @@ def restore(cwd: Path | None, path: str) -> int:
 
 
 def forget(cwd: Path | None, path: str) -> int:
-    """Drop a registered entry (e.g. a spurious begin). Does not touch the WT."""
+    """Drop an ARMED entry; RETIRE a RESTORED one. Does not touch the WT.
+
+    ``forget`` is the first half of the re-arm remedy this tool prints on
+    expectation drift (#910), and a rebase makes that remedy routine — so this
+    verb runs on the ordinary lane lifecycle, not only after a mistake.
+
+    ERASING A RESTORED REGISTRATION WAS A HOLE (#942). The history scan bounds
+    each record by the head it was begun at, which is what stops it blaming
+    commits that predate the lane. Deleting the record and beginning again set
+    a NEW boundary at the rebased tip — AFTER the commit still holding the
+    injection — so the scan reclassified the real injection as preexisting and
+    printed ``0 holding a recorded injection`` over a genuinely broken branch.
+    The tool's own printed advice defeated the tool's own check.
+
+    So a restored registration is RETIRED, not erased. It keeps its
+    ``injected_sha`` and its ORIGINAL ``begun_head`` and stays in scope for the
+    history scan — and for nothing else: not the working-tree test, not
+    ``--require``, not the expectation pin, not the target listing. A lane may
+    withdraw a claim about its own evidence; it cannot un-commit a commit.
+
+    Retiring rather than REFUSING the forget is what keeps #910's remedy
+    executable: the stale expectation pin is dropped (that is the point of the
+    re-arm), the snapshot claim is released so ``begin`` can re-arm, and the
+    branch fact survives. There is deliberately no ``--purge``: a hand bypass
+    of a tool built to stop a failure reproduces that exact failure.
+    """
     root = _ls.worktree_root(cwd)
     try:
         posix, _ = _worktree_path(root, path)
@@ -861,14 +965,41 @@ def forget(cwd: Path | None, path: str) -> int:
         sys.stderr.write(f"forget: REFUSED — {exc}\n")
         return 2
     entries, _ = _read_registry(cwd)
-    before = len(entries)
-    entries = [e for e in entries if e.get("path") != posix]
-    if len(entries) == before:
-        sys.stderr.write(f"forget: nothing registered for {posix!r}\n")
+    kept: list[dict] = []
+    dropped = retired_now = already_retired = 0
+    for e in entries:
+        if e.get("path") != posix:
+            kept.append(e)
+        elif e.get("state") == RETIRED:
+            kept.append(e)
+            already_retired += 1
+        elif e.get("state") == RESTORED and e.get("injected_sha"):
+            # Deliberately minimal: no expectation_sources, so a retired record
+            # can never re-enter the drift population the re-arm exists to clear.
+            kept.append({"path": posix, "state": RETIRED,
+                         "injected_sha": e["injected_sha"],
+                         "injected_hint": e.get("injected_hint"),
+                         "begun_head": e.get("begun_head"),
+                         "retired_at": _now()})
+            retired_now += 1
+        else:
+            dropped += 1
+    if not dropped and not retired_now:
+        sys.stderr.write(
+            f"forget: nothing to forget for {posix!r}"
+            + (f" — {already_retired} retired record(s) remain in history scope "
+               f"and cannot be dropped (#942)" if already_retired else
+               " (nothing registered)") + "\n")
         return 1
-    _write_registry(cwd, entries)
+    _write_registry(cwd, kept)
     _release_snapshot(_snapshot_path(cwd, posix))
-    print(f"forget: dropped entry for {posix!r} (working tree untouched)")
+    print(f"forget: {posix!r} — dropped {dropped} armed/unrecorded entry(ies), "
+          f"RETIRED {retired_now} restored registration(s) (working tree untouched)")
+    if retired_now:
+        print("       A retired registration keeps its injected bytes and its "
+              "ORIGINAL registration boundary and stays in scope for the history "
+              "scan only. Forgetting the record cannot un-commit a commit that "
+              "holds those bytes (#942).")
     return 0
 
 
@@ -921,29 +1052,40 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
     if own_token or named_seg:
         seg = named_seg if lane else _ls.identity_segment()
         audit_sources = [(f"--lane {lane}" if lane else "this lane",
-                          _redproof_dir(cwd, seg, role) / "registry.json")]
+                          _redproof_dir(cwd, seg, role) / "registry.json",
+                          False)]
         coordinator_mode = False
     else:
+        # TWO DISJOINT POPULATIONS, and they are reported as two (#942). The
+        # legacy registry is NOT one of the identity dirs, so a count of both
+        # said "N registry/ies ACROSS M launch-identity dir(s)" over a
+        # containment that does not hold — the true reading `1 across 0` read
+        # as a self-contradiction and cost a lane a landing.
         audit_sources = [("legacy (no launch identity)",
-                          _redproof_dir(cwd, "", role) / "registry.json")]
+                          _redproof_dir(cwd, "", role) / "registry.json", True)]
         for d in _ls.lane_identity_dirs(cwd):
             audit_sources.append((d.name, _redproof_dir(cwd, d.name, role)
-                                  / "registry.json"))
+                                  / "registry.json", False))
         coordinator_mode = True
 
     entries: list[dict] = []
-    registries_found = 0
-    for label, rp in audit_sources:
+    legacy_found = False
+    identity_registries = 0
+    for label, rp, is_legacy in audit_sources:
         try:
             sub_entries, source = _read_registry_at(rp)
         except RedproofError as exc:
             sys.stderr.write(f"check: FAULT — {label}: {exc}\n")
             return 2
         if source != "absent":
-            registries_found += 1
+            if is_legacy:
+                legacy_found = True
+            else:
+                identity_registries += 1
         for e in sub_entries:
             e["_source"] = label      # provenance for refusal messages
             entries.append(e)
+    registries_found = identity_registries + (1 if legacy_found else 0)
 
     identity_dirs = len(_ls.lane_identity_dirs(cwd)) if coordinator_mode else None
 
@@ -971,32 +1113,47 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"`--lane <DREAMWORK_LANE_ID>`.\n")
         return 2
 
-    if not entries:
+    # RETIRED records are history-scan evidence and nothing else (#942), so
+    # every live population below is built from `active`, and only
+    # `scan_history` is handed `entries`.
+    retired = [e for e in entries if e.get("state") == RETIRED]
+    active = [e for e in entries if e.get("state") != RETIRED]
+
+    if not active:
         # Honest zero. "absent" (never used) and "empty" (ran, nothing live)
         # both provide no restoration evidence; an unparseable registry already
         # raised before we got here.
         if coordinator_mode:
-            label = (f"audited {registries_found} registry/ies across "
+            label = (f"legacy registry "
+                     f"{'present' if legacy_found else 'absent'}; audited "
+                     f"{identity_registries} registry/ies across "
                      f"{identity_dirs} launch-identity dir(s); "
                      f"no injections registered")
         elif registries_found == 0:
             label = "no injections registered"
         else:
             label = "registry empty"
+        if retired:
+            label += (f" as live evidence — {len(retired)} retired "
+                      f"registration(s) remain in history scope")
         if require > 0:
             sys.stderr.write(
                 f"check: REFUSED — {label} (role: {role}), but --require "
                 f"{require} was set. A hand-off that the brief mandated "
                 f"red-proofing must show at least one registered injection.\n")
             return 1
-        print(f"check: no evidence — {label} (role: {role}); injection "
-              f"restoration was not evaluated; production reach was not evaluated.")
-        return 0
+        if not retired:
+            print(f"check: no evidence — {label} (role: {role}); injection "
+                  f"restoration was not evaluated; production reach was not "
+                  f"evaluated.")
+            return 0
+        # Retired-only: there is no restoration to certify, but there ARE
+        # recorded bytes to look for in history. Fall through to the scan.
 
     armed: list[dict] = []
     live: list[dict] = []
     expectation_drift: list[str] = []
-    for e in entries:
+    for e in active:
         if e.get("state") != RESTORED:
             armed.append(e)
             continue
@@ -1009,10 +1166,12 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
         if _sha(wt) == e.get("injected_sha"):
             live.append(e)
 
-    if require > 0 and len(entries) < require:
+    if require > 0 and len(active) < require:
         sys.stderr.write(
-            f"check: REFUSED — {len(entries)} injection(s) registered, but "
-            f"--require {require} was set.\n")
+            f"check: REFUSED — {len(active)} injection(s) registered, but "
+            f"--require {require} was set."
+            + (f" ({len(retired)} retired registration(s) are in history scope "
+               f"but are not live evidence.)" if retired else "") + "\n")
         return 1
 
     if armed:
@@ -1089,7 +1248,16 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             "this branch only), or rebase the injection out yourself. #710\n")
         return 1
 
-    restored = [e for e in entries if e.get("state") == RESTORED]
+    restored = [e for e in active if e.get("state") == RESTORED]
+    if not restored:
+        # Retired-only, and the scan cleared them. Distinct from "restoration
+        # clean" (nothing was restored here) and from "no evidence" (bytes WERE
+        # searched for, in a range this run printed).
+        print(f"check: no live injection — {len(retired)} retired "
+              f"registration(s) only (role: {role}); their recorded bytes are "
+              f"absent from this branch's commits. Restoration was not "
+              f"evaluated, because no live injection is registered.")
+        return 0
     kinds = [_target_kind(e["path"]) for e in restored]
     test_like = kinds.count("test-like")
     other = kinds.count("other")
@@ -1101,6 +1269,9 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
           f"(role: {role}); registered bytes are restored and absent from the "
           f"working tree and from this branch's commits.")
     print(f"targets: {other} other target(s), {test_like} test-like target(s).")
+    if retired:
+        print(f"retired: {len(retired)} withdrawn registration(s) were also "
+              f"searched for in history and found in no commit (#942).")
     print("tool scope: red-proof semantics and production reach were NOT verified.")
     if test_like:
         print("WARNING: test-like targets are valid when test/guard tooling is "
