@@ -3957,3 +3957,46 @@ in this repo should converge on.
 not become unblocked by dispatching more lanes at it. Three lanes (#867) each built an overlapping
 answer to one unmade human ruling, deleting the same ~56,800 lines three times over. One lane, or
 none until the ruling.
+
+## An ad-hoc check that never ran, reporting zeros, while investigating that exact bug (2026-08-02, #927/#935, mine, measured)
+
+I wanted to know whether any commit on `cx-927deployanchor` still held a red-proof injection — the
+thing #349/#608 exist to prevent. I wrote the obvious loop:
+
+```sh
+n=$(git show "$c:watch.py" 2>/dev/null | grep -c 'SKILL.md')
+```
+
+Every commit reported `occurrences=0`. Clean history, no injection, land it.
+
+**Every one of those commands had failed.** The `"$c:watch.py"` interpolation was mangled by the
+shell, git exited with `fatal: ambiguous argument`, and `2>/dev/null` swallowed it. `grep -c` then
+dutifully counted zero lines of empty input. **Seven failed invocations became seven confident
+readings, and the readings all said what I was hoping to hear.** Re-running with stderr visible
+exposed it in one line. The true answer, via `git grep -c 'SKILL.md' "$c" -- watch.py`, was that
+every commit had 5 occurrences except one, which had 4 — `3e348b88` was the injection, and it was
+real.
+
+**The instrument I built to check for a degrade-to-zero bug WAS a degrade-to-zero bug**, written by
+someone who had spent the entire session closing that family, in the same hour, and who had already
+written two `lessons.md` entries about it. Knowing the pattern does not protect you from it. That
+is the whole reason it stays in this file rather than in someone's head.
+
+**The specific mechanism is worth naming because it is everywhere:** `2>/dev/null` on a command
+whose *failure* is indistinguishable from its *negative result*. `grep -c` on empty input, `wc -l`
+of nothing, a `for` loop over an empty `rev-list`, `find` with a bad path — all return the
+reassuring answer. **Suppress stderr only when you have already established the command succeeds,
+and never in a check whose whole purpose is to find something.**
+
+**The cheap discipline that would have caught it:** run the check once against a case you KNOW is
+positive. I had one available and did not use it — the branch tip demonstrably contained `SKILL.md`,
+and my loop reported 0 for the tip too. **A check that cannot find the thing you can see with your
+own eyes is broken, and that comparison costs one command.** This is the same "print the
+denominator" instinct (#868) applied to a shell one-liner: a scan that examined nothing must not be
+able to look like a scan that found nothing.
+
+**Second, smaller lesson from the same incident.** The lane opened its report with *"coordinator
+must SQUASH this branch when landing"* — it had correctly diagnosed its own dirty history. I read
+past it. A machine-readable signal on the branch would not have been missed, and `redproof.py`
+already knows how to run that scan; **the merge gate simply never asks it** (#935). When a lane can
+see a problem the gate cannot, the gap is in the gate.
