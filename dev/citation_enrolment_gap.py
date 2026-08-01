@@ -74,10 +74,12 @@ STATED BLIND SPOTS (a scanner with silent scope is the defect this task closes):
   3. RUN FROM THE MAIN CHECKOUT.  Gitignored-but-present files do not travel into
      a lane worktree, so a worktree run under-counts detected.  Like
      ``dangling_citations.py``, the honest run is against the main checkout.
-  4. The campaign census DOC is excluded from detected, because it is this
-     instrument's own substrate: its ROWS table and prose legitimately name
-     ``@ dc739001`` as the subject under judgement, and counting them would
-     inflate the gap with instrument-internal mentions.
+  4. The campaign census DOC and ``.dreamwork/dreams/*`` are excluded from
+     detected, because both are meta-discussion: the doc is this instrument's
+     own substrate, and dreams are process narrative that quotes citation forms
+     as examples (``watch.py:42 @ dc739001`` in a dream is an illustration, not
+     a factual claim).  Counting either inflates the gap with
+     instrument-internal mentions.
 
 Exit codes: ``0`` for a completed census (a non-zero unenrolled is the repo's
 normal state today, so unenrolled-is-not-failure is intentional); ``2`` for
@@ -106,10 +108,18 @@ if str(ROOT) not in sys.path:
 # world — it is whatever the guard currently binds (#852/#905/#909).
 from dev import check_watch_citations as guard
 
-# The campaign census document: excluded from the detected scan because it is
-# this instrument's own substrate (its ROWS table and prose name the bad pin as
-# the subject under judgement).  Counting them would inflate the gap.
+# The campaign census document is this instrument's own substrate: its ROWS
+# table and prose name the bad pin as the subject under judgement.
 CAMPAIGN_DOC = ".dreamwork/docs/citation-repair-2026-08-02.md"
+
+# The campaign doc AND dreams are excluded from the detected scan because both
+# are meta-discussion, not citation-bearing prose.  Dreams are process narrative
+# that quotes citation forms as EXAMPLES (``watch.py:42 @ dc739001`` in a dream
+# is an illustration, not a factual claim).  Counting either would inflate the
+# gap with instrument-internal mentions — a dream discussing the pin added 5
+# spurious detections the first time this ran.
+EXCLUDED = {CAMPAIGN_DOC}
+EXCLUDED_PREFIXES = (".dreamwork/dreams/",)
 
 # The bad revision this campaign is about.  Stated as a named constant because
 # blind spot #1 is precisely that a DIFFERENT stale revision is invisible: the
@@ -134,7 +144,7 @@ class Occurrence:
 
 
 def _tracked_docs(root: Path) -> list[str]:
-    """Tracked Markdown documents as repo-relative strings, minus the census doc."""
+    """Tracked Markdown documents as repo-relative strings, minus instrument substrate."""
     proc = subprocess.run(
         ["git", "ls-files", "-z", "*.md", "*.markdown"],
         cwd=root,
@@ -144,7 +154,13 @@ def _tracked_docs(root: Path) -> list[str]:
     )
     if proc.returncode != 0:
         return []
-    return [p for p in proc.stdout.split("\0") if p and p != CAMPAIGN_DOC]
+    return [
+        p
+        for p in proc.stdout.split("\0")
+        if p
+        and p not in EXCLUDED
+        and not p.startswith(EXCLUDED_PREFIXES)
+    ]
 
 
 def scan(root: Path) -> tuple[int, int, list[Occurrence]]:
@@ -199,8 +215,10 @@ BLIND_SPOTS = (
     "mistake them for pins to judge.",
     "  3. RUN FROM THE MAIN CHECKOUT. Gitignored-but-present files do not travel "
     "into a lane worktree, so a worktree run under-counts detected.",
-    f"  4. {CAMPAIGN_DOC} is EXCLUDED from detected — it is this instrument's "
-    "own substrate (its ROWS table and prose name the bad pin as the subject).",
+    f"  4. {CAMPAIGN_DOC} and .dreamwork/dreams/* are EXCLUDED from detected — "
+    "they are meta-discussion (the census instrument's own substrate, and "
+    "process narrative that quotes citation forms as examples), not "
+    "citation-bearing prose.",
 )
 
 
@@ -212,7 +230,7 @@ def report(root: Path) -> int:
 
     print(f"root: {root}")
     print(f"bad revision under census: {BAD_REVISION}")
-    print(f"excluded (instrument substrate): {CAMPAIGN_DOC}")
+    print(f"excluded (instrument substrate): {CAMPAIGN_DOC}, .dreamwork/dreams/*")
     for line in BLIND_SPOTS:
         print(line)
 
