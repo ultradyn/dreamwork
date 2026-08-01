@@ -33,6 +33,13 @@ lint:
 dispatch-lane prompt agent *CCC_ARGS:
     @python3 dev/dispatch_lane.py --prompt "{{prompt}}" -- ccc {{CCC_ARGS}} "{{agent}}"
 
+# One human-authored head -> checked worktree -> governed dispatch.  Run this
+# recipe in the background; the supervisor stays alive to record the runner's
+# real exit status in `.dreamwork/launch-attempts/`.
+# Usage: just launch-lane 832 cx-832launch @cx-coder head-832.md -y >launch.log 2>&1 &
+launch-lane TASK LANE AGENT HEAD *CCC_ARGS:
+    @python3 dev/launch_lane.py "{{TASK}}" "{{LANE}}" "{{AGENT}}" "{{HEAD}}" {{CCC_ARGS}}
+
 # #653 (P1 of #630) — rebuild client/dist from client/*.js.
 #
 # DEV-TIME ONLY. `client/dist/` is committed, so serving and deploying never

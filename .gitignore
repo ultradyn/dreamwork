@@ -49,6 +49,9 @@ __pycache__/
 # lint.SUBAGENT_POLICY_DEFAULT (committed), and this file is only an
 # override, so a fresh checkout still has a policy in effect.
 .dreamwork/subagent-policy
+# Durable, machine-local lane launch attempts. They preserve exact prompt
+# digests and runner outcomes, but describe this host's processes and paths.
+.dreamwork/launch-attempts/
 # The coordinator inbox: every line points at a report under /tmp, so the file
 # is worthless the moment the session ends — all 8 of today's entries name
 # paths that will not exist tomorrow. Same argument that ignores status.json
