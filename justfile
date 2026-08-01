@@ -207,6 +207,17 @@ status-sync *args:
 #                fades rather than being covered by a painted band, and the
 #                middle of its three claims cannot be written against the DOM
 #                at all. Also unregistered from the day it was written.
+#   qjank        #863, own server + own planted target, ephemeral port. The
+#                only SEQUENCE guard on the submit: it samples the answer
+#                box's rect every frame and grades discontinuities, because
+#                every other instrument on this gesture is an end-state one
+#                and a box that leaves and comes back passes all of them —
+#                which is exactly what he was watching. Its greens are only
+#                worth reading with its preconditions: the scroll position is
+#                derived so the sticky offset does real work AND the
+#                question's visible midpoint can move, and both are asserted
+#                with their measured values. Was unregistered on arrival and
+#                took argv[3], the #471 shape that registers without judging.
 #   coexist      #630 P2, and the only guard here whose subject is NOT on the
 #                served page: it injects the committed client/dist/native.js
 #                as a second classic script, which is the position P3 will
@@ -297,7 +308,7 @@ status-sync *args:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel headcrumb reflow qacard wrappereq docktarget noteprop oneinput regroup regroupdraft popbg pipfill typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade markrail devoverlay autogrow dissolve burndownmock bdhover reviewask reviews5 staleremedy rejectwrite posture summaryjson qsignal qfocus qroll drawmode research restcollapse qlinkpip mdquote bdinput mdtable selectkeep corpse remindbtn note82 pip83 indtrace escattr chatsurface qgroup resize posturerecuse qdual gutter coexist cmdmore dblbtn groupprogress"
+    DEFAULT_GUARDS="headertravel headcrumb reflow qacard wrappereq docktarget noteprop oneinput regroup regroupdraft popbg pipfill typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade markrail devoverlay autogrow dissolve burndownmock bdhover reviewask reviews5 staleremedy rejectwrite posture summaryjson qsignal qfocus qroll drawmode research restcollapse qlinkpip mdquote bdinput mdtable selectkeep corpse remindbtn note82 pip83 indtrace escattr chatsurface qgroup resize posturerecuse qdual gutter coexist cmdmore dblbtn groupprogress qjank"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}

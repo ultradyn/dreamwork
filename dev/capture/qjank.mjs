@@ -37,19 +37,39 @@
    motion floor is the one place a literal is right, and it gets its own
    literal per motion rather than a shared one).
 
-   Production lines the red-proofs name (client/router.js, `travelCard`):
-     · `el.style.overflow = 'clip'` — restoring `'hidden'` reds this, because
-       `overflow:hidden` makes the travelling card a SCROLL CONTAINER and the
-       sticky compose inside it stops sticking to the viewport for the length
-       of the travel. Two jumps per travel: one when the style is armed, one
-       when the +1000ms cleanup clears it.
-     · the `hasSticky` guard on that same write — removing it reds the same
-       check for the same reason via a different route.
+   THREE causes were measured, and this one guard has to stay discriminating
+   for all three — so each names its production seam and the control that
+   keeps the proof of it from going hollow:
+     · `client/router.js`, `travelCard`: `el.style.overflow = 'clip'`.
+       Restoring `'hidden'` reds this, because `hidden` makes the travelling
+       card a SCROLL CONTAINER and the sticky compose inside it stops sticking
+       for the length of the travel — two jumps per travel, one when the style
+       is armed and one when the +1000ms cleanup clears it. Exercised only
+       when the sticky offset is doing work; the gap is measured, not assumed.
+     · `client/style.css`, the `.qa` / `.qa.awaiting` pair: the rail's gutter
+       is reserved in EVERY state. Putting `padding-left/margin-left` back on
+       `.awaiting` moves the card's border box .9rem = 14.4px while moving no
+       content, and `regroupCards` measures the border box, so the FLIP
+       inverts a displacement nobody saw.
+     · `client/views.js`, `travelQuestionColumn`, called from `sendAnswer` and
+       `sendComment`: the column's station is recomputed AT the morph and
+       travels there. Disarming it defers the whole correction to the next
+       tick, which lands it in one frame. Exercised only where the question's
+       visible midpoint can move — see the scroll choice below.
 
-   usage: node qjank.mjs <outdir> [port]   — DW_QJANK_TRACE=1 adds the
+   PORT DISCIPLINE: own-server guard — ALWAYS ephemeral, argv[3] deliberately
+   ignored. The recipe passes the port its SHARED server already holds, so
+   adopting it puts this guard's own `watch.py` into EADDRINUSE before the
+   first assertion: it registers and never judges, which reads as a failure
+   while gating nothing (#471, #461). 39880-39899 and :35110 are refused even
+   when the kernel offers one, because that range collects orphans and 35110
+   is his live dashboard.
+
+   usage: node qjank.mjs <outdir> [port, ignored]  — DW_QJANK_TRACE=1 adds the
    frame-by-frame dump, which is the artefact #863 actually asked for.
 */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { createServer } from 'node:http';
 import { waitFor } from './dom.mjs';
 import { makeReporter } from './report.mjs';
 import { outdir } from './outdir.mjs';
@@ -57,7 +77,17 @@ import { serveVerified } from './serve.mjs';
 import { mkdirSync, rmSync, cpSync, readFileSync, writeFileSync } from 'node:fs';
 
 const OUT = outdir(process.argv);
-const PORT = +(process.argv[3] || 39897);
+const LIVE_DASH = 35110, GUARD_LO = 39880, GUARD_HI = 39899;
+const freePort = () => new Promise(res => {
+  const s = createServer();
+  s.listen(0, '127.0.0.1', () => {
+    const p = s.address().port;
+    s.close(() => res(p));
+  });
+});
+let PORT;
+do { PORT = await freePort(); }
+while ((PORT >= GUARD_LO && PORT <= GUARD_HI) || PORT === LIVE_DASH);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 
@@ -125,28 +155,104 @@ ok('precondition: the planted long open question is served', !!openQ);
 if (!openQ) { await b.close(); server.kill(); finish(); }
 const enc = encodeURIComponent(openQ.title);
 
+/* ── WHICH CLIENT IS ON THE WIRE ─────────────────────────────────────────
+   Two ways a green here could be about code that is not the code under test,
+   and both are one fetch away from being closed rather than assumed.
+
+   The first is the one a #863 hand-off actually asserted: that the served
+   page runs `client/dist`, so anything measured before `just build-client`
+   grades an unfixed client. It is false — `watch.py` assembles the page from
+   `client/*.js` and `client/style.css` at import (`_CLIENT_SRC`), inlining
+   each verbatim; the page carries no `<script src>` at all and names no dist
+   asset, so no built byte can reach the browser. Asserted rather than
+   explained, because the explanation is exactly the kind of thing that stops
+   being true without anyone noticing.
+
+   The second is general and matters far more when this file is used as it is
+   meant to be: an injection into `client/router.js` or `client/style.css`
+   that never reaches the browser produces a green red-run, which reads as
+   "the check cannot fail" and gets a correct check deleted. Comparing the
+   wire bytes to the tree's bytes makes "did my edit reach the code under
+   test" a standing assertion instead of a thing to remember. */
+const ROOT = new URL('../../', import.meta.url).pathname;
+const page = await (await fetch(`${BASE}/question?qid=${enc}`)).text();
+const stale = ['client/router.js', 'client/style.css', 'client/views.js']
+  .filter(f => !page.includes(readFileSync(ROOT + f, 'utf8')));
+ok('precondition: the browser is served THIS tree\'s client, byte for byte ' +
+   '— so an edit to it (a fix, or a red-proof injection) is provably on the ' +
+   'wire' + (stale.length ? ` — NOT ${stale.join(', ')}` : ''),
+   stale.length === 0);
+ok('precondition: the page loads no external script, so `client/dist` is ' +
+   'not what is running here and a stale bundle cannot explain a green ' +
+   '(dist freshness is lint\'s check_client_dist, not this one)',
+   !/<script[^>]*\ssrc=/i.test(page));
+
 await p.goto(`${BASE}/question?qid=${enc}`, { waitUntil: 'networkidle' });
 await waitFor(p, '#view .qa .qcompose textarea');
 await sleep(1600);                       // past the route dissolve (~1.15s)
 
-/* the compose must actually be STICKING before we grade its travel: a compose
-   at its static position cannot be dislodged by a change of scroll container,
-   so a green here would say nothing. Scroll down so the card's top is above
-   the viewport and the sticky offset is doing work. */
-await p.evaluate(() => window.scrollTo(0, 400));
+/* WHERE TO SCROLL TO, and it is the load-bearing choice in this file: one
+   position has to make all three of #863's causes visible at once, and two of
+   them have a precondition that a plausible scroll silently fails.
+
+     · the scroll-container cause needs the sticky offset to be doing REAL
+       work. On an unscrolled page the sticky and static tops coincide, so
+       making the card a scroll container moves the box by almost nothing —
+       the instrument is then structurally incapable of seeing the largest
+       defect while reporting a confident count. That is not hypothetical:
+       #863's second lane measured exactly that and reported "2 jumps".
+     · the column-station cause needs the station to actually MOVE when the
+       answer lands, and the station is the midpoint of the question's VISIBLE
+       portion. With the body overflowing BOTH edges of the viewport that
+       midpoint is pinned at the screen centre and growing the body changes
+       nothing — measured here at scroll 400: `--qcol-top` was 364px in every
+       one of 193 frames, so disarming that fix would have changed nothing and
+       this guard was vacuous for the cause.
+
+   So: put the body's BOTTOM inside the viewport, where growing it moves the
+   midpoint, while its TOP stays above it, so the column is genuinely sticking
+   rather than sitting where it would sit anyway. Derived from the served
+   geometry rather than tuned to today's fixture, and every half asserted
+   below — including the sticky-vs-static gap itself, measured rather than
+   argued from the scroll offset. */
+await p.evaluate(() => {
+  const b = document.querySelector('#view .qa .qbody').getBoundingClientRect();
+  window.scrollTo(0,
+    Math.round(b.bottom + window.scrollY - window.innerHeight + 150));
+});
 await sleep(300);
 const pre = await p.evaluate(() => {
   const card = document.querySelector('#view .qa');
   const comp = card && card.querySelector('.qcompose');
   const body = card && card.querySelector('.qbody');
   const r = e => { const b = e.getBoundingClientRect();
-                   return { top: b.top, left: b.left, h: b.height, w: b.width }; };
+                   return { top: b.top, left: b.left, h: b.height, w: b.width,
+                            bottom: b.bottom }; };
+  /* How far the sticky offset is actually displacing the column — ASKED, not
+     inferred: drop the compose to `position:static`, read where it lands, put
+     it back. The scroll offset is not this number and cannot substitute for
+     it; a card whose bottom has come up the screen stops sticking while still
+     being scrolled past. If this is ~0 the two positions coincide and the
+     scroll-container cause cannot move the box however broken it is, so this
+     is the value that decides whether a green below means anything. */
+  let gap = null;
+  if (comp) {
+    const was = comp.style.position;
+    const stuck = comp.getBoundingClientRect().top;
+    comp.style.position = 'static';
+    const staticTop = comp.getBoundingClientRect().top;
+    comp.style.position = was;
+    gap = stuck - staticTop;
+  }
   return {
     dual: !!document.querySelector('#qfocus.qdual'),
     sticky: comp ? getComputedStyle(comp).position : null,
     cardTop: card ? r(card).top : null,
     cardH: card ? r(card).h : null,
     bodyH: body ? r(body).h : null,
+    bodyTop: body ? r(body).top : null,
+    bodyBottom: body ? r(body).bottom : null,
+    gap,
     vh: window.innerHeight,
   };
 });
@@ -168,6 +274,21 @@ ok('precondition: the question is taller than the viewport, so the column ' +
 ok('precondition: the card is off its 100vh floor, so answering it can ' +
    `change its height (card ${Math.round(pre.cardH)}px vs 100vh ${pre.vh}px)`,
    pre.cardH > pre.vh + 1);
+/* THE precondition. Everything below grades the box's position, and the
+   largest defect displaces the box by exactly this many pixels — so a green
+   over a gap of zero is not a weak result, it is no result. Stated in the
+   message so the number travels with the verdict. */
+ok('precondition: the sticky offset is doing real work — the compose sits ' +
+   `${Math.round(pre.gap)}px above where it would sit statically, and that ` +
+   'gap is the whole size of the scroll-container defect (needs > 0)',
+   pre.gap > 0);
+/* and the OTHER half of the scroll choice: the question's visible midpoint
+   must be able to move when the answer lands inside it. */
+ok('precondition: the question body overflows the TOP of the viewport but ' +
+   `ends inside it (top ${Math.round(pre.bodyTop)}px, bottom ` +
+   `${Math.round(pre.bodyBottom)}px, viewport ${pre.vh}px), so its visible ` +
+   'midpoint — the column\'s station — moves when the answer grows it',
+   pre.bodyTop < 0 && pre.bodyBottom < pre.vh);
 
 /* ── the answer, long enough that restating the card CHANGES its height ───
    A one-word answer leaves the card the size it had and there is nothing to
@@ -185,6 +306,23 @@ await p.evaluate(t => {
   ta.dispatchEvent(new Event('input', { bubbles: true }));
 }, ANSWER);
 await sleep(400);                        // the autogrow settles
+
+/* This browser's OWN frame cadence, measured on a quiet page, so the coverage
+   floor below is derived rather than tuned. A literal ("expect ~300 frames")
+   is a threshold with an expiry date on a host whose load sits near 30; what
+   actually has to be true is that the trace sampled at a rate comparable to
+   the one this browser manages when nothing is happening — because every one
+   of #863's causes lands in a SINGLE frame, and a trace that samples coarsely
+   grades 0 discontinuities over a page that teleported. */
+const cadence = await p.evaluate(() => new Promise(res => {
+  const ts = []; const t0 = performance.now();
+  const tick = () => {
+    ts.push(performance.now());
+    if (performance.now() - t0 < 600) requestAnimationFrame(tick);
+    else res(ts.length > 1 ? (ts[ts.length - 1] - ts[0]) / (ts.length - 1) : 0);
+  };
+  requestAnimationFrame(tick);
+}));
 
 /* ── the instrument ──────────────────────────────────────────────────────
    Sample every frame, RE-QUERYING each subject: the submit morph replaces the
@@ -244,16 +382,64 @@ const posted = !!(wrote && (wrote.answer || '').includes('the answer he typed'))
 ok('the answer was actually posted, read back off the SERVER (else every ' +
    'check below is vacuous)', posted);
 
-/* ── the control: the card genuinely reflowed ────────────────────────────── */
+/* ── the controls ────────────────────────────────────────────────────────
+   Each one asserts a precondition some part of the grade below DEPENDS on.
+   They are here because this guard's whole subject is an absence — no jump —
+   and an absence is what a fixture that stopped exercising the gesture also
+   reports. Every one of these has a specific way the grade goes hollow. */
+const JUMP_PX = 12;      // a frame of eased travel never steps this far
 const first = trace[0], last = trace[trace.length - 1];
 const cardGrew = first && last ? Math.abs(last.card.h - first.card.h) : 0;
 ok('control: restating the card genuinely changed its height (else there ' +
    `is nothing to jump) — ${Math.round(first.card.h)}px -> ` +
    `${Math.round(last.card.h)}px, delta ${Math.round(cardGrew)}px`,
    cardGrew >= 24);
+/* A frame with no textarea is skipped by BOTH the step loop and maxStep — the
+   one `continue`s, the other returns its accumulator — so a window in which
+   the box is absent grades "largest 0.0px, 0 discontinuities" and passes. The
+   absence is the blind spot exactly where a teleport would hide. */
+const missing = trace.filter(f => !f.ta).length;
+ok(`control: the box was present in every sampled frame — ${missing} of ` +
+   `${trace.length} missing (both the step loop and maxStep SKIP a missing ` +
+   'frame, so a gap grades 0.0px and passes)', missing === 0);
+/* The morph replaces the card's innerHTML, so the textarea the trace starts
+   on is destroyed mid-window and every comparison after that spans a node
+   swap by construction. If the swap never happened the trace is not of the
+   gesture this file is named for, and "it never moved" is trivially true. */
+const gens = last ? last.taGen : 0;
+ok('control: the submit really replaced the textarea node, so this is a ' +
+   'measurement ACROSS the morph rather than of a page that never changed ' +
+   `— node generation reached ${gens}`, gens >= 2);
+/* `travelCard` sets the inline overflow only when the card resizes. If it
+   never armed, `clip` versus `hidden` is unexercised — restoring `hidden`
+   would change nothing and the proof of that cause would come back green. */
+const sawOverflow = trace.some(f => f.cardOv);
+ok('control: travelCard actually armed its inline overflow during the ' +
+   'window, so clip-vs-hidden is exercised (the scroll-container cause is ' +
+   'invisible when it does not)', sawOverflow);
+/* the rail gutter arrives with `.awaiting`; without that state change the
+   border-box cause cannot be exercised either. */
+const sawAwaiting = trace.some(f => /\bawaiting\b/.test(f.state || ''));
+ok('control: the card entered its `awaiting` state during the window, which ' +
+   'is what paints the rail into the gutter — the border-box cause is ' +
+   'unexercised without it', sawAwaiting);
+/* and the column's station has to MOVE, or the third cause is unexercised in
+   the same silent way — measured here at scroll 400: 364px in all 193 frames. */
+const qcols = trace.map(f => parseFloat(f.qcol)).filter(v => !Number.isNaN(v));
+const qcolMove = qcols.length ? Math.max(...qcols) - Math.min(...qcols) : 0;
+ok('control: the response column\'s station genuinely moved when the answer ' +
+   `landed — ${qcolMove.toFixed(0)}px against the ${JUMP_PX}px floor, so an ` +
+   'unarmed re-station would land as a discontinuity and this guard is not ' +
+   'vacuous for that cause', qcolMove >= JUMP_PX);
+/* and the trace has to be dense enough to SEE a one-frame teleport at all. */
+const frameFloor = cadence > 0 ? Math.round((WINDOW_MS / cadence) * 0.5) : 0;
+ok(`control: the trace really sampled per frame — ${trace.length} frames ` +
+   `over ${WINDOW_MS}ms against a floor of ${frameFloor}, half of what this ` +
+   `browser managed on a quiet page (${cadence.toFixed(1)}ms/frame). A ` +
+   'before/after pair cannot see a one-frame teleport and all three causes ' +
+   'land in one frame', cadence > 0 && trace.length >= frameFloor);
 
 /* ── the sequence ───────────────────────────────────────────────────────── */
-const JUMP_PX = 12;      // a frame of eased travel never steps this far
 const steps = [];
 for (let i = 1; i < trace.length; i++) {
   const a = trace[i - 1].ta, c = trace[i].ta;
