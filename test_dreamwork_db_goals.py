@@ -40,8 +40,8 @@ def test_v008_upgrade_builds_the_decided_goal_shape(store_path):
         version = conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
         ).fetchone()[0]
-        assert version == "8", (
-            "migrate.py must advance the ordered ladder through v008_goals; "
+        assert version == "9", (
+            "migrate.py must advance the ordered ladder through v009_goal_bypass; "
             f"stored schema_version was {version!r}"
         )
         assert conn.execute(
@@ -66,6 +66,9 @@ def test_v008_upgrade_builds_the_decided_goal_shape(store_path):
         ).fetchone() == ("",), (
             "v008_goals.upgrade must create the single current-goal pointer"
         )
+        assert "bypassed_by" in {
+            row[1] for row in conn.execute("PRAGMA table_info(goal_claim)")
+        }
     finally:
         conn.close()
 
@@ -124,7 +127,7 @@ def test_v008_downgrade_names_every_nonempty_fact_before_discarding(store_path):
     try:
         assert conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone() == ("8",), "a refused downgrade must not move the version"
+        ).fetchone() == ("9",), "a refused downgrade must not move the version"
         assert conn.execute("SELECT COUNT(*) FROM goal_claim").fetchone() == (1,)
     finally:
         conn.close()
@@ -190,7 +193,7 @@ def test_a_real_v007_store_upgrades_in_place_to_v008(store_path):
     try:
         assert conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone() == ("8",)
+        ).fetchone() == ("9",)
         assert conn.execute(
             "SELECT kind,title FROM task_group"
         ).fetchall() == [("epic", "existing group")], (
@@ -202,6 +205,60 @@ def test_a_real_v007_store_upgrades_in_place_to_v008(store_path):
             "v007 -> v008 must preserve #584's user-setting rows"
         )
     finally:
+        conn.close()
+
+
+def test_v008_rows_upgrade_with_null_bypass_attribution(store_path):
+    """v008 history remains panel history after the v009 additive migration."""
+    v009 = importlib.import_module("dreamwork_db.migrations.v009_goal_bypass")
+    conn = sqlite3.connect(store_path)
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("BEGIN")
+    v009.downgrade(conn)
+    conn.execute(
+        "INSERT INTO task_group (kind,title,created_by,created_at) "
+        "VALUES ('goal','old','test','now')"
+    )
+    group_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO goal_claim "
+        "(group_id,claimed_by,claimed_at,summary,details_sha,outcome,round) "
+        "VALUES (?,?,?,?,?,'complete',1)",
+        (group_id, "loop", "now", "panel", "details"),
+    )
+    conn.execute("COMMIT")
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        with db.transaction():
+            pass
+    conn = sqlite3.connect(store_path)
+    try:
+        assert conn.execute(
+            "SELECT outcome,bypassed_by FROM goal_claim"
+        ).fetchone() == ("complete", None)
+    finally:
+        conn.close()
+
+
+def test_bypass_attribution_round_trips_and_downgrade_refuses(store_path):
+    """The actor is distinct from the panel outcome and cannot be discarded."""
+    v009 = importlib.import_module("dreamwork_db.migrations.v009_goal_bypass")
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        goal_id = _goal(db, "Bypass")
+        with db.transaction() as tx:
+            claim = tx.goals.append_claim(
+                goal_id, claimed_by="loop", claimed_at="now", summary="waived",
+                base_sha=None, details_sha="details", round=1,
+                outcome="complete", bypassed_by="principal",
+            )
+            assert claim.bypassed_by == "principal"
+            assert tx.goals.claims(goal_id)[0].bypassed_by == "principal"
+    conn = sqlite3.connect(store_path)
+    conn.execute("BEGIN")
+    try:
+        with pytest.raises(SchemaMismatch, match=r"bypassed_by values=1"):
+            v009.downgrade(conn)
+    finally:
+        conn.execute("ROLLBACK")
         conn.close()
 
 
@@ -252,6 +309,12 @@ def test_goal_state_transitions_are_one_closed_graph(store_path):
         goal_id = _goal(db, "Lifecycle")
         for state in ("claimed", "open", "blocked", "open", "complete"):
             with db.transaction() as tx:
+                if state == "complete":
+                    tx.goals.append_claim(
+                        goal_id, claimed_by="loop", claimed_at="now",
+                        summary="panel complete", base_sha=None,
+                        details_sha="details", round=1, outcome="complete",
+                    )
                 assert tx.goals.set_state(goal_id, state) == "changed"
         with db.transaction() as tx:
             assert tx.goals.state(goal_id) == "complete"
@@ -260,6 +323,18 @@ def test_goal_state_transitions_are_one_closed_graph(store_path):
                 ValidationError, match=r"illegal goal state transition complete -> open"
             ):
                 tx.goals.set_state(goal_id, "open")
+
+
+def test_goal_cannot_be_completed_without_a_recorded_claim(store_path):
+    """A bare state write must not erase panel-versus-bypass history."""
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        goal_id = _goal(db, "Claim required")
+        with db.transaction() as tx:
+            with pytest.raises(
+                ValidationError,
+                match=r"cannot complete goal .* without a completed claim",
+            ):
+                tx.goals.set_state(goal_id, "complete")
 
 
 def test_landed_members_do_not_derive_goal_complete(store_path):

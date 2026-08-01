@@ -7,7 +7,8 @@ group kinds an open vocabulary and arbitrary depth already supplies the tree.
 Four additions carry the decided semantics:
 
 1. Goal state is stored, never derived from member tasks.  A goal is complete
-   only when the panel says so (or the principal records a bypass).
+   only when the panel says so (or the principal records a bypass; v009 stores
+   that attribution).
 2. Claims and verdicts retain every round.  ``base_sha`` may be NULL but is
    never evidence of a clean base; verdict JSON records every finding,
    corroboration, and the criteria/member population actually examined.
