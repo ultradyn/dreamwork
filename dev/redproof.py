@@ -323,9 +323,22 @@ def _role(cwd: Path | None = None) -> str:
     return _ls.lane_role()
 
 
-def _snap_dir(cwd: Path | None, role: str | None = None) -> Path:
-    return _ls.lane_scratch_dir(cwd, sub=SUB, role=role if role is not None
-                                else _role(cwd))
+def _identity_segment(lane: str | None = None) -> str:
+    """Resolve one launch identity; an explicit ``--lane`` wins over env."""
+    if lane is not None:
+        lane = lane.strip()
+        if not lane:
+            raise RedproofError(
+                "--lane names an empty launch identity; pass a non-empty "
+                "DREAMWORK_LANE_ID value")
+    return _ls.identity_segment(lane)
+
+
+def _snap_dir(cwd: Path | None, role: str | None = None,
+              lane: str | None = None) -> Path:
+    """Resolve this invocation's red-proof dir without creating it."""
+    return _redproof_dir(cwd, _identity_segment(lane),
+                         role if role is not None else _role(cwd))
 
 
 def _redproof_dir(cwd: Path | None, identity_seg: str, role: str) -> Path:
@@ -345,14 +358,16 @@ def _redproof_dir(cwd: Path | None, identity_seg: str, role: str) -> Path:
     return base / SUB
 
 
-def _registry_path(cwd: Path | None) -> Path:
-    return _snap_dir(cwd) / "registry.json"
+def _registry_path(cwd: Path | None, lane: str | None = None) -> Path:
+    return _snap_dir(cwd, lane=lane) / "registry.json"
 
 
-def _snapshot_path(cwd: Path | None, posix_path: str) -> Path:
+def _snapshot_path(cwd: Path | None, posix_path: str,
+                   lane: str | None = None) -> Path:
     # One safe filename per registered path: collisions would let one entry's
     # restore clobber another's original, the exact failure snapshots prevent.
-    return _snap_dir(cwd) / (hashlib.sha1(posix_path.encode()).hexdigest() + ".orig")
+    return (_snap_dir(cwd, lane=lane)
+            / (hashlib.sha1(posix_path.encode()).hexdigest() + ".orig"))
 
 
 def _claim_path(snapshot: Path) -> Path:
@@ -379,13 +394,14 @@ class RedproofError(Exception):
     """A fault the tool cannot evaluate — callers print and exit 2 (#671)."""
 
 
-def _read_registry(cwd: Path | None) -> tuple[list[dict], str]:
+def _read_registry(cwd: Path | None,
+                   lane: str | None = None) -> tuple[list[dict], str]:
     """Return (entries, source_label) for THIS lane's own registry.
 
-    Delegates to :func:`_read_registry_at` at the env-resolved path, so begin/
-    restore/forget keep using the launch token's dir (#870 keying, unchanged).
+    Delegates to :func:`_read_registry_at` at the resolved path. An explicit
+    lane wins over the environment, matching ``check``'s established rule.
     """
-    return _read_registry_at(_registry_path(cwd))
+    return _read_registry_at(_registry_path(cwd, lane))
 
 
 def _read_registry_at(rp: Path) -> tuple[list[dict], str]:
@@ -417,8 +433,9 @@ def _read_registry_at(rp: Path) -> tuple[list[dict], str]:
     return data, "present"
 
 
-def _write_registry(cwd: Path | None, entries: list[dict]) -> None:
-    rp = _registry_path(cwd)
+def _write_registry(cwd: Path | None, entries: list[dict],
+                    lane: str | None = None) -> None:
+    rp = _registry_path(cwd, lane)
     rp.parent.mkdir(parents=True, exist_ok=True)
     tmp = rp.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -769,7 +786,8 @@ def bundle_stale_findings(root: Path, entries: list[dict]) -> list[dict]:
 # --------------------------------------------------------------------------- #
 
 def begin(cwd: Path | None, path: str,
-          expectations: list[str] | tuple[str, ...] = ()) -> int:
+          expectations: list[str] | tuple[str, ...] = (), *,
+          lane: str | None = None) -> int:
     """Snapshot the ORIGINAL bytes of ``path`` and register an armed entry.
 
     Called BEFORE the sabotage. The snapshot and the registration are one act,
@@ -778,6 +796,8 @@ def begin(cwd: Path | None, path: str,
     """
     root = _ls.worktree_root(cwd)
     try:
+        identity_dir = _snap_dir(cwd, lane=lane)
+        print(f"begin: resolved identity dir {identity_dir} (role: {_role(cwd)})")
         posix, target = _worktree_path(root, path)
         original = target.read_bytes()
         expectation_sources = _pin_expectations(root, posix, list(expectations))
@@ -792,13 +812,13 @@ def begin(cwd: Path | None, path: str,
         sys.stderr.write(f"begin: cannot read {posix}: {exc}\n")
         return 2
 
-    entries, _ = _read_registry(cwd)
+    entries, _ = _read_registry(cwd, lane)
     if _find(entries, posix) is not None:
         sys.stderr.write(
             f"begin: REFUSED — {posix!r} already has an armed snapshot; "
             "restore or forget it before beginning again\n")
         return 2
-    snap = _snapshot_path(cwd, posix)
+    snap = _snapshot_path(cwd, posix, lane)
     snap.parent.mkdir(parents=True, exist_ok=True)
     try:
         _claim_snapshot(snap, posix)
@@ -824,7 +844,7 @@ def begin(cwd: Path | None, path: str,
         "injected_hint": None,
         "restored_at": None,
     })
-    _write_registry(cwd, entries)
+    _write_registry(cwd, entries, lane)
     print(f"begin: snapshotted original of {posix} ({len(original)} bytes) -> {snap}")
     # State the root distinction (#934): lane_scratch.py snap and redproof print
     # DIFFERENT roots for one lane (snap/ vs redproof/), and four lanes tripped
@@ -841,7 +861,7 @@ def begin(cwd: Path | None, path: str,
     return 0
 
 
-def restore(cwd: Path | None, path: str) -> int:
+def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
     """Record the INJECTED state, restore the ORIGINAL, verify byte-identity.
 
     Called AFTER the sabotage (and the red test). Reads the current (injected)
@@ -861,8 +881,10 @@ def restore(cwd: Path | None, path: str) -> int:
     """
     root = _ls.worktree_root(cwd)
     try:
+        identity_dir = _snap_dir(cwd, lane=lane)
+        print(f"restore: resolved identity dir {identity_dir} (role: {_role(cwd)})")
         posix, _ = _worktree_path(root, path)
-        entries, _ = _read_registry(cwd)
+        entries, _ = _read_registry(cwd, lane)
         armed = _find(entries, posix)
         if armed is None:
             sys.stderr.write(
@@ -894,7 +916,7 @@ def restore(cwd: Path | None, path: str) -> int:
             # record. Drop the armed entry so check's byte-test never fires on
             # a no-op.
             entries = [e for e in entries if e is not armed]
-            _write_registry(cwd, entries)
+            _write_registry(cwd, entries, lane)
             _release_snapshot(snap)
             print(f"restore: {posix!r} unchanged since begin — no injection recorded; "
                   f"entry dropped.")
@@ -932,7 +954,7 @@ def restore(cwd: Path | None, path: str) -> int:
             raise RedproofError(
                 f"restore of {posix!r} did not reproduce the snapshot byte-for-byte "
                 f"after cp — investigate before continuing")
-        _write_registry(cwd, entries)
+        _write_registry(cwd, entries, lane)
         _release_snapshot(snap)
     except RedproofError as exc:
         sys.stderr.write(f"restore: FAULT — {exc}\n")
@@ -942,7 +964,7 @@ def restore(cwd: Path | None, path: str) -> int:
     return 0
 
 
-def forget(cwd: Path | None, path: str) -> int:
+def forget(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
     """Drop an ARMED entry; RETIRE a RESTORED one. Does not touch the WT.
 
     ``forget`` is the first half of the re-arm remedy this tool prints on
@@ -971,11 +993,13 @@ def forget(cwd: Path | None, path: str) -> int:
     """
     root = _ls.worktree_root(cwd)
     try:
+        identity_dir = _snap_dir(cwd, lane=lane)
+        print(f"forget: resolved identity dir {identity_dir} (role: {_role(cwd)})")
         posix, _ = _worktree_path(root, path)
     except RedproofError as exc:
         sys.stderr.write(f"forget: REFUSED — {exc}\n")
         return 2
-    entries, _ = _read_registry(cwd)
+    entries, _ = _read_registry(cwd, lane)
     kept: list[dict] = []
     dropped = retired_now = already_retired = 0
     for e in entries:
@@ -1002,8 +1026,8 @@ def forget(cwd: Path | None, path: str) -> int:
                f"and cannot be dropped (#942)" if already_retired else
                " (nothing registered)") + "\n")
         return 1
-    _write_registry(cwd, kept)
-    _release_snapshot(_snapshot_path(cwd, posix))
+    _write_registry(cwd, kept, lane)
+    _release_snapshot(_snapshot_path(cwd, posix, lane))
     print(f"forget: {posix!r} — dropped {dropped} armed/unrecorded entry(ies), "
           f"RETIRED {retired_now} restored registration(s) (working tree untouched)")
     if retired_now:
@@ -1059,9 +1083,9 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
     #           an armed injection a lane left on disk is FOUND rather than
     #           missed — and so "I could not read this lane's registry" never
     #           prints as "no injections registered" (#895, #863).
-    named_seg = _ls.identity_segment(lane) if lane else None
-    if own_token or named_seg:
-        seg = named_seg if lane else _ls.identity_segment()
+    named_seg = _identity_segment(lane) if lane is not None else None
+    if own_token or named_seg is not None:
+        seg = named_seg if lane is not None else _ls.identity_segment()
         audit_sources = [(f"--lane {lane}" if lane else "this lane",
                           _redproof_dir(cwd, seg, role) / "registry.json",
                           False)]
@@ -1078,6 +1102,10 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             audit_sources.append((d.name, _redproof_dir(cwd, d.name, role)
                                   / "registry.json", False))
         coordinator_mode = True
+
+    print("check: resolved identity registry path(s):")
+    for label, rp, _ in audit_sources:
+        print(f"  {label}: {rp}")
 
     entries: list[dict] = []
     legacy_found = False
@@ -1394,11 +1422,11 @@ def main(argv: list[str] | None = None) -> int:
                     help=f"check: base ref for the history scan (default: first "
                          f"of {', '.join(DEFAULT_BASES)} that resolves)")
     ap.add_argument("--lane", default=None,
-                    help="check: audit a NAMED lane's registry by its launch "
-                         "identity (DREAMWORK_LANE_ID). For a coordinator "
-                         "auditing a lane from outside it (#895); without it, "
-                         "check enumerates every identity dir under this lane's "
-                         "key.")
+                    help="resolve a NAMED launch identity for every verb; an "
+                         "explicit value wins over DREAMWORK_LANE_ID. Without "
+                         "one, write verbs use the environment and check "
+                         "enumerates every identity dir when the environment "
+                         "is absent (#895).")
     ap.add_argument("--cwd", default=None, help="derive for this directory")
     args = ap.parse_args(argv)
     cwd = Path(args.cwd) if args.cwd else None
@@ -1409,11 +1437,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.path is None:
             ap.error(f"{args.verb} requires a path argument")
         if args.verb == "begin":
-            return begin(cwd, args.path, args.expectation)
+            return begin(cwd, args.path, args.expectation, lane=args.lane)
         if args.verb == "restore":
-            return restore(cwd, args.path)
+            return restore(cwd, args.path, lane=args.lane)
         if args.verb == "forget":
-            return forget(cwd, args.path)
+            return forget(cwd, args.path, lane=args.lane)
     except RedproofError as exc:
         sys.stderr.write(f"{args.verb}: FAULT — {exc}\n")
         return 2

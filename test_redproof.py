@@ -1560,6 +1560,75 @@ class TestCoordinatorModeBlindCaseViaCli:
         assert "1 injection(s) were required" in r.stderr, r.stderr
 
 
+class TestNamedLaneAcrossEveryCliVerb:
+    """#957: ``--lane`` is one identity selector, not a check-only flag."""
+
+    @staticmethod
+    def _run(repo: Path, env: dict[str, str], *args: str):
+        return subprocess.run(
+            ["python3", str(CLI_PATH), *args, "--cwd", str(repo)],
+            capture_output=True, text=True, env=env)
+
+    def test_explicit_lane_wins_over_a_disagreeing_env_for_all_four_verbs(
+            self, repo, tmp_path):
+        named = "named-lane-957"
+        env_lane = "different-env-lane-957"
+        named_seg = rp._ls.identity_segment(named)
+        env_seg = rp._ls.identity_segment(env_lane)
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "cli-scratch-957")
+        env[rp._ls.IDENTITY_ENV] = env_lane
+        env[rp._ls.ROLE_ENV] = rp._ls.ROLE_AUTHOR
+
+        begin = self._run(
+            repo, env, "begin", "router.js", "--expectation", "expectation.txt",
+            "--lane", named)
+        assert begin.returncode == 0, begin.stdout + begin.stderr
+        assert named_seg in begin.stdout, begin.stdout
+        assert env_seg not in begin.stdout, begin.stdout
+
+        # This is the production pair from #957. Before the fix, begin accepts
+        # the flag but writes under env_lane, so this exact check calmly says
+        # "no injections registered". Now it finds the named armed entry.
+        armed = self._run(repo, env, "check", "--lane", named, "--require", "1")
+        assert armed.returncode == 1, armed.stdout + armed.stderr
+        assert "begun-but-unrestored" in armed.stderr, armed.stderr
+        assert named_seg in armed.stdout, armed.stdout
+
+        (repo / "router.js").write_text("SABOTAGE FROM NAMED LANE 957\n")
+        restore = self._run(repo, env, "restore", "router.js", "--lane", named)
+        assert restore.returncode == 0, restore.stdout + restore.stderr
+        assert "original restored & verified" in restore.stdout, restore.stdout
+        assert named_seg in restore.stdout and env_seg not in restore.stdout
+
+        clean = self._run(repo, env, "check", "--lane", named, "--require", "1")
+        assert clean.returncode == 0, clean.stdout + clean.stderr
+        assert "restoration clean" in clean.stdout, clean.stdout
+        assert named_seg in clean.stdout and env_seg not in clean.stdout
+
+        forget = self._run(repo, env, "forget", "router.js", "--lane", named)
+        assert forget.returncode == 0, forget.stdout + forget.stderr
+        assert "RETIRED 1 restored registration(s)" in forget.stdout, forget.stdout
+        assert named_seg in forget.stdout and env_seg not in forget.stdout
+
+    def test_empty_explicit_lane_is_refused_without_creating_scratch(
+            self, repo, tmp_path):
+        scratch = tmp_path / "empty-lane-scratch-957"
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(scratch)
+        env[rp._ls.IDENTITY_ENV] = "env-must-not-be-fallback-957"
+        env[rp._ls.ROLE_ENV] = rp._ls.ROLE_AUTHOR
+
+        result = self._run(
+            repo, env, "begin", "router.js", "--expectation", "expectation.txt",
+            "--lane", "")
+
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "empty launch identity" in result.stderr, result.stderr
+        assert not scratch.exists(), (
+            "an invalid named lane created a phantom scratch directory")
+
+
 # ── #877: a restored source whose downstream bundle is stale ──────────
 
 def _build_bundle(root: Path) -> None:
