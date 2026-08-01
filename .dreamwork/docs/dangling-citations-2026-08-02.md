@@ -4,8 +4,15 @@
 because gitignored-but-present files (`.dreamwork/status.json`, `.dreamwork/tasks.md`,
 …) do not travel into a lane worktree, so a worktree run over-counts them as dangling.
 Scanner: `dev/dangling_citations.py`. **SHA at classification: `c5e2b302` (== local
-master at dispatch).** Re-run after rebase; see the tail of this doc for whether the
-count moved.
+master at dispatch).**
+
+**Post-rebase re-run at `d9b3afad` (master advanced 1 commit during the lane):** the
+count moved, exactly as the brief predicted — `647` docs, `3985` citations, `232`
+danging occurrences, `138` distinct paths (+1 doc, +4 distinct vs. the figures below).
+The movement is entirely in the never-tracked bucket (sibling lanes editing docs); the
+**STALE class is unchanged at 4 paths / 15 occurrences**, and the classification and
+ruling below are not affected. The figures quoted in the census block and tables are the
+`c5e2b302` snapshot; treat `d9b3afad` as +4 distinct of the same composition.
 
 ```
 documents scanned: 646
