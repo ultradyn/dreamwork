@@ -737,12 +737,6 @@ def test_every_verb_is_gated_not_just_get(migrate, dev_ledger, tmp_path):
     before = (wtdw / "tasks.md").read_bytes()
     unrefused, wrote, wrong_stream, wrong_rc = [], [], [], []
     for verb, argv in sorted(_VERB_ARGV.items()):
-        # #688 — reach needs NO ledger and dispatches BEFORE the gate, so it
-        # neither takes --ledger nor can be gated by it. Excluding it here is
-        # correct, not a gap: the gate protects ledger-reading verbs from
-        # answering from an empty ledger, and reach never reads one.
-        if verb == "reach":
-            continue
         rc, out, err = _run(dev_ledger, argv + ledger_arg)
         blob = out + err
         if "did not resolve here (#667)" not in blob:
@@ -755,15 +749,16 @@ def test_every_verb_is_gated_not_just_get(migrate, dev_ledger, tmp_path):
         if (wtdw / "tasks.md").read_bytes() != before:
             wrote.append(verb)
         # #497's contract keeps stdout machine-clean; only sweep, whose own
-        # cannot-check lines go to stdout, may put the refusal there.
-        if verb != "sweep" and "#667" in out:
+        # cannot-check lines go to stdout, may put the refusal there. Reach is
+        # now the same class: #913 makes it a ledger-reading advisory.
+        if verb not in ("sweep", "reach") and "#667" in out:
             wrong_stream.append(verb)
         # The DISCRIMINATING assertion (#734). A refusal that exits 0 reads
         # as success (#671); one that exits 1 hides inside the "no such id"
         # answer it is refusing to give (#667, #497). The gate returns 2 —
         # non-zero, and not 1. Sweep keeps #404's advisory exit 0 (pinned by
-        # test_sweep_refuses_without_breaking_its_advisory_exit_code).
-        if verb != "sweep" and rc != 2:
+        # sweep/reach keep advisory exit 0 on cannot-check.
+        if verb not in ("sweep", "reach") and rc != 2:
             wrong_rc.append((verb, rc))
     assert not unrefused, f"verbs that answered from an absent store: {unrefused}"
     assert not wrote, f"verbs that refused and wrote anyway: {wrote}"
@@ -1022,6 +1017,53 @@ def _sweep_fixture(migrate, tmp_path, name="main"):
     assert ledger_parse.source_of_truth(str(dw)) == "store", \
         "precondition: the fixture must genuinely be in store mode"
     return root, dw
+
+
+def test_reach_cli_reads_exact_store_adjudications_and_keeps_near_miss_open(
+        migrate, dev_ledger, tmp_path):
+    """Both #913 directions through the real store-backed CLI path.
+
+    Expectations are the hardcoded branch names planted below, not values
+    returned by the production adjudication parser. In particular, a loose
+    substring match would misclassify ``cx-691recap`` from the planted
+    ``cx-691recap2`` note and fail the UNEXAMINED assertion.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path, name="reach-main")
+    trunk = _git(root, "symbolic-ref", "--short", "HEAD").stdout.strip()
+
+    _git(root, "checkout", "-q", "-b", "cx-12classified", trunk)
+    classified_sha = _plant(root, "wip(#12): ruled branch content")
+    _git(root, "checkout", "-q", trunk)
+    _git(root, "checkout", "-q", "-b", "cx-691recap", trunk)
+    unexamined_sha = _plant(root, "wip(#10): genuinely unexamined content")
+    _git(root, "checkout", "-q", trunk)
+
+    rc, _, err = _run(dev_ledger, [
+        "note", "12", "--note",
+        "BRANCH ADJUDICATED — cx-12classified is SUPERSEDED; do NOT merge.",
+        "--ledger", str(dw / "tasks.md")])
+    assert rc == 0, f"fixture adjudication note must be stored: {err!r}"
+    rc, _, err = _run(dev_ledger, [
+        "note", "10", "--note",
+        "BRANCH CLASSIFIED — cx-691recap2 is a near-miss branch; do NOT merge. "
+        "Someone also quoted \"BRANCH ADJUDICATED — cx-691recap\" elsewhere.",
+        "--ledger", str(dw / "tasks.md")])
+    assert rc == 0, f"fixture near-miss note must be stored: {err!r}"
+
+    rc, out, err = _run(dev_ledger, [
+        "reach", "--repo", str(root), "--base", trunk,
+        "--ledger", str(dw / "tasks.md")])
+
+    assert rc == 0, f"reach remains advisory: {err!r}"
+    assert "examined 2 branches" in out, out
+    assert "1 CLASSIFIED, 1 UNEXAMINED" in out, out
+    assert "classification scan examined 5 task record(s)" in out, out
+    assert "CLASSIFIED by BRANCH ADJUDICATED note on #12" in out, out
+    assert classified_sha in out or "cx-12classified" in out, out
+    assert "UNEXAMINED (+ is a question, not a verdict):\n  cx-691recap" \
+        in out, out
+    assert unexamined_sha in out, out
+    assert "not proof that content landed" in out, out
 
 
 def _sweep(dev_ledger, root, dw, since=None, all_history=False):
