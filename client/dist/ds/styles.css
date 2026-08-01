@@ -1153,6 +1153,22 @@
   .goaltree-row { padding:.48rem 0; border-top:1px solid var(--line); }
   .goaltree-title { color:var(--text); }
   .goalverdict.refuted { border-left:2px solid var(--bad); padding-left:1ch; }
+  .goalwrites { margin:2rem 0; padding-top:1rem; border-top:1px solid var(--line); }
+  .goalwrite { display:grid; grid-template-columns:minmax(11rem,.35fr) minmax(0,1fr) auto;
+    gap:.55rem 1ch; align-items:start; padding:.9rem 0; border-top:1px solid var(--line); }
+  .goalwrite h3 { grid-column:1 / -1; margin:0; color:var(--lit); }
+  .goalwrite input,.goalwrite select,.goalwrite textarea { box-sizing:border-box;
+    width:100%; min-width:0; border:1px solid var(--line); border-radius:2px;
+    background:var(--panel); color:var(--text); font:inherit; padding:.55rem .7ch; }
+  .goalwrite textarea { min-height:5.5rem; resize:vertical; }
+  .goalwrite button { border:1px solid var(--accent); background:none;
+    color:var(--accent); font:inherit; padding:.55rem 1ch; cursor:pointer; }
+  .goalwrite button:disabled,.goalwrite :disabled { opacity:.55; cursor:wait; }
+  .goalwrite-status { min-height:1.4em; color:var(--muted); font-size:.75rem; }
+  @media (max-width:700px) {
+    .goalwrite { grid-template-columns:1fr; }
+    .goalwrite h3 { grid-column:auto; }
+  }
   #status .stagent { display:flex; gap:1.5ch; flex-wrap:wrap;
     margin:.2rem 0; }
   #status .stname { color:var(--lit); flex:none; }

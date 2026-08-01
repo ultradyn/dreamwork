@@ -9,6 +9,121 @@ const Details = fromBuilder('mdB', function (props) {
 const stateChip = node => React.createElement(
   'span', { className: 'goalstate ' + node.state }, node.state);
 
+const goalOptions = (nodes, includeRoot) => [
+  ...(includeRoot ? [React.createElement('option', { value: '', key: 'root' },
+    'tree root')] : []),
+  ...nodes.map(node => React.createElement('option', {
+    value: String(node.id), key: node.id,
+  }, node.title)),
+];
+
+function GoalWrites(props) {
+  const nodes = props.nodes;
+  const first = String(props.currentId || (nodes[0] && nodes[0].id) || '');
+  const [detailsGoal, setDetailsGoal] = React.useState(first);
+  const [details, setDetails] = React.useState(function () {
+    const node = nodes.find(item => String(item.id) === first);
+    return node ? node.details : '';
+  });
+  const [conditionGoal, setConditionGoal] = React.useState(first);
+  const [condition, setCondition] = React.useState('');
+  const [title, setTitle] = React.useState('');
+  const [newDetails, setNewDetails] = React.useState('');
+  const [parent, setParent] = React.useState(first);
+  const [rank, setRank] = React.useState('');
+  const [message, setMessage] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(function () {
+    const valid = id => nodes.some(node => String(node.id) === id);
+    const next = String(props.currentId || (nodes[0] && nodes[0].id) || '');
+    if (!valid(detailsGoal) && next) {
+      const node = nodes.find(item => String(item.id) === next);
+      setDetailsGoal(next); setDetails(node ? node.details : '');
+    }
+    if (!valid(conditionGoal) && next) setConditionGoal(next);
+    if (parent !== '' && !valid(parent)) setParent(next);
+  }, [nodes, props.currentId]);
+
+  async function write(payload, clear) {
+    setBusy(true); setMessage('saving…');
+    try {
+      const response = await fetch('/goals', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const verdict = await writeVerdict(response);
+      if (!verdict.landed) {
+        setMessage('write refused — ' + (verdict.detail || verdict.reason ||
+          'the store did not accept it'));
+      } else {
+        clear();
+        setMessage('saved quietly · appears on the next tick');
+      }
+    } catch (error) {
+      setMessage('write failed — the page could not reach the store');
+    }
+    setBusy(false);
+  }
+
+  const selectDetailsGoal = event => {
+    const id = event.target.value;
+    const node = nodes.find(item => String(item.id) === id);
+    setDetailsGoal(id); setDetails(node ? node.details : '');
+  };
+  const selector = (value, change, includeRoot) => React.createElement(
+    'select', { value: value, onChange: change, disabled: busy },
+    goalOptions(nodes, includeRoot));
+  return React.createElement('section', { className: 'goalwrites' },
+    React.createElement('h2', null, 'write the tree'),
+    React.createElement('p', { className: 'goalmeta' },
+      'These writes are quiet: the loop reads their receipts on its next tick.'),
+    nodes.length ? React.createElement('form', { className: 'goalwrite', onSubmit: event => {
+      event.preventDefault();
+      write({ action: 'edit-details', goal_id: Number(detailsGoal), details },
+        function () {});
+    } }, React.createElement('h3', null, 'edit details'),
+    selector(detailsGoal, selectDetailsGoal, false),
+    React.createElement('textarea', { value: details, disabled: busy,
+      onChange: event => setDetails(event.target.value),
+      'aria-label': 'goal details' }),
+    React.createElement('button', { type: 'submit', disabled: busy },
+      'save details')) : null,
+    nodes.length ? React.createElement('form', { className: 'goalwrite', onSubmit: event => {
+      event.preventDefault();
+      write({ action: 'add-condition', goal_id: Number(conditionGoal),
+        condition }, () => setCondition(''));
+    } }, React.createElement('h3', null, 'add a condition'),
+    selector(conditionGoal, event => setConditionGoal(event.target.value), false),
+    React.createElement('input', { value: condition, disabled: busy,
+      onChange: event => setCondition(event.target.value), required: true,
+      placeholder: 'Done when…', 'aria-label': 'new goal condition' }),
+    React.createElement('button', { type: 'submit', disabled: busy },
+      'add condition')) : null,
+    React.createElement('form', { className: 'goalwrite', onSubmit: event => {
+      event.preventDefault();
+      write({ action: 'add-goal', title, details: newDetails,
+        parent_id: parent === '' ? null : Number(parent),
+        rank: rank === '' ? null : Number(rank) }, function () {
+          setTitle(''); setNewDetails(''); setRank('');
+        });
+    } }, React.createElement('h3', null, 'add a goal'),
+    React.createElement('input', { value: title, disabled: busy, required: true,
+      onChange: event => setTitle(event.target.value), placeholder: 'Goal title',
+      'aria-label': 'new goal title' }),
+    selector(parent, event => setParent(event.target.value), true),
+    React.createElement('input', { value: rank, disabled: busy, type: 'number',
+      onChange: event => setRank(event.target.value), placeholder: 'Sibling rank',
+      'aria-label': 'sibling rank' }),
+    React.createElement('textarea', { value: newDetails, disabled: busy,
+      onChange: event => setNewDetails(event.target.value),
+      placeholder: 'Details (Markdown)', 'aria-label': 'new goal details' }),
+    React.createElement('button', { type: 'submit', disabled: busy },
+      'add goal')),
+    React.createElement('div', { className: 'goalwrite-status',
+      'aria-live': 'polite' }, message));
+}
+
 function GoalPage(props) {
   const payload = props.data && props.data.goals;
   if (!payload || payload.health === 'missing') {
@@ -29,7 +144,8 @@ function GoalPage(props) {
       React.createElement('div', { className: 'goalpage-count' },
         'examined 0 of 0 goal nodes'),
       React.createElement('div', { className: 'dim' },
-        'no goals yet — the examined tree is genuinely empty'));
+        'no goals yet — the examined tree is genuinely empty'),
+      React.createElement(GoalWrites, { nodes: [], currentId: null }));
   }
   const nodes = payload.nodes || [];
   const byId = new Map(nodes.map(node => [node.id, node]));
@@ -98,7 +214,9 @@ function GoalPage(props) {
   return React.createElement('div', null,
     React.createElement('div', { className: 'goalpage-count' },
       'examined ' + examined + ' of ' + expected + ' goal nodes'),
-    currentPanel, React.createElement('h2', null, 'goal tree'), tree);
+    currentPanel, React.createElement(GoalWrites, {
+      nodes: nodes, currentId: payload.current_goal_id,
+    }), React.createElement('h2', null, 'goal tree'), tree);
 }
 
 export function registerGoals(registry) {
