@@ -10,6 +10,136 @@ design; the implementation landed as **#342b** (folded 2026-07-30 — the
 What follows is the design as ruled on — the "his to rule" framings are kept as
 the record, with the outcomes marked.
 
+## 2026-08-01 extension — EXPEDITED, the third delivery class (#864)
+
+His do-next, receipt `9f8e8bf5` ord 165, verbatim: *"a stop hook … that calls a
+dreamwork cli command to drain an eligible msg log from the event log feed. what
+makes a task eligible is a new flag … tell the agent about this either when they
+next pause work or the next time they check the incoming batched events. So like
+it is batched (unlike 'do now'), but also it doesn't interrupt the agent, just
+gets delivered early if it's possible to do so. But it can also be drained like
+normal from the event queue. Oh if we have a cap on events drained at once, these
+flagged expedited should be prioritized."*
+
+That is a **third class between the two this doc rules**, and it takes their
+vocabulary rather than a parallel one:
+
+| class | interrupts? | delivery path | if the path never runs |
+|---|---|---|---|
+| PRE-EMPT | yes | the wake line, at POST | — (the receipt is still drained) |
+| **EXPEDITED** | **never** | **the stop hook, at the agent's next pause** | **drained normally on the tick** |
+| BATCHED | never | the tick's `pending → consume` drain | — |
+
+`do-next` MOVES from PRE-EMPT to EXPEDITED. This doc's own row for it was marked
+**PROPOSAL** — *"He did not name it — open if he disagrees"* — and he now has:
+expedited is one rung less urgent than `do-now`, which is exactly the reading
+that row guessed at, now stated by him instead of proposed.
+
+### Where the flag lives, and why it is not on the receipt
+
+**The class is DERIVED from the receipt, never stored on it.** The journal is
+receipt-authority-only by construction: a receipt's `exact_payload_bytes` are the
+bytes the human sent, hash-chained, and nothing may be written back onto them —
+so a mutable `expedited` column would be a second durable truth about a receipt,
+which is the #263 anti-pattern this design already refused once for the cursor.
+A sidecar table keyed by receipt id is the same failure with an extra file.
+
+So expedited-ness is a **predicate over `(route, payload)`**, computed wherever it
+is needed, and it lives in exactly one module — `user_events/delivery.py`
+(`EXPEDITE_KINDS`, `is_expedited`) — imported by both sides that need it:
+`watch.py` (which must not pre-empt an expedited kind) and
+`dev/journal_consume.py` (which prioritises them under a cap). Three consequences
+worth stating:
+
+- It is **retroactive**: a `do next` already sitting in the journal is expedited
+  the moment the class exists. No migration, no backfill.
+- It **cannot drift from the payload**, because it reads the payload. A stored
+  flag can disagree with the bytes it describes; a derived one cannot.
+- The kind is already IN the payload (`{"kind": "do-next", …}`), so this adds no
+  journal surface at all — it is the same string `PREEMPT_KINDS` matches on.
+
+### How the hook and the tick share ONE cursor
+
+This is the load-bearing part, and the answer is a single sentence: **the hook is
+not a consumer. It never touches the cursor.**
+
+`expedite` reads the *same* `(cursor, head]` range `pending` reads, through the
+*same* `events_since_cursor` projection, and then **does not call
+`advance_cursor` and does not write the `.pending-read` marker.** Both omissions
+are load-bearing and each closes one of the two failures:
+
+- **Double-consume is impossible** because only one caller ever advances the
+  cursor. The tick's `consume --through N` finds the cursor exactly where its own
+  `pending` left it, so #531's bound holds unchanged.
+- **Losing an event is impossible** because nothing is advanced past. Every
+  receipt the hook delivers is still inside `(cursor, head]` and is still listed
+  by the next `pending` and drained by the next `consume`. That is precisely his
+  *"it can also be drained like normal from the event queue"* — not a nicety, but
+  the property that keeps the queue the source of truth and the hook a mere
+  accelerator.
+- **Wedging the tick is impossible** because the hook does not write the #658
+  read-coverage marker. If it did, a hook firing between the coordinator's
+  `pending` and its `consume --through N` would rewrite the marker and #712's
+  `through == mark["through"]` guard would refuse the drain — a hook that
+  silently jams the tick. The verb is therefore forbidden from writing it, and
+  the test asserts the marker is byte-identical across an `expedite` run.
+
+**Then what stops the double DELIVERY?** The exactly-once proof #527 already
+wired into the drain. `expedite` routes each receipt it delivers through the same
+`apply.reconcile` against the same applied-ledger, so the marker lands at the
+pause. When the tick later drains that receipt, `_prove_drained` proves
+`APPLIED`, writes nothing, and the receipt is **absent from the `UNAPPLIED` list
+— the list the coordinator acts on.** Delivered at the pause, acted on once.
+Receipt-id recognition is the mechanism, exactly as #519/#527 require, and it is
+the mechanism that was already there.
+
+That leaves one hazard and it is named rather than hidden: if the hook's output
+never reached the agent, the marker would still have landed and the tick would
+report only `applied N` — an instruction swallowed in silence. So `consume`
+prints an explicit `EXPEDITED\t<id>\t<route>\t(delivered at a pause)` line for
+every drained receipt of an expedited kind that proves APPLIED on its first
+drain. #136: *"nothing needs you"* and *"something is hiding"* must not render
+identically. The content is one `show <id>` away.
+
+Two smaller rules fall out of "the hook is a reader":
+
+- A receipt whose proof comes back `UNKNOWN` (a torn applied-ledger) is **not
+  delivered** by the hook — no marker landed, so delivering it would double up on
+  the tick. It degrades to BATCHED, which is the documented fallback, and the
+  count is reported on stderr rather than dropped (#702).
+- The hook is per-checkout machine-local state, so its gate is too (below).
+
+### The cap, and what "prioritised" means concretely
+
+A cursor cannot express a non-contiguous drain: it is a position, so `consume`
+cannot take receipt 7 and leave receipt 5. **`consume` therefore has no cap and
+must not get one.** The capped channel is the expedite delivery, which is a
+projection and not a cursor move, so a cap is expressible there and is real:
+
+`expedite --limit N` orders the WHOLE pending range by `(class, ordinal)` —
+expedited first — takes the first N, and delivers the expedited members of that
+slice. Ordinary receipts are never delivered here (that is what keeps the flag
+meaningful); they are reported as a count and wait for the tick. So "expedited
+are prioritised under a cap" is literal: **when ordinary receipts hold the lower
+ordinals, they still do not take the cap's slots.** Drop the class term from the
+sort key and a cap of 4 over six ordinary + six expedited delivers nothing at
+all — which is the discriminating red.
+
+### Enabling it — one gate file, and it is machine-local
+
+`.dreamwork/expedite`, one line `on`, absent means off (the `watch-tint` /
+`run-mode` family, SKILL.md Guardrails). It is **gitignored**, deliberately
+against that convention's word "tracked": the hook it gates is installed into
+`.claude/settings.json`, which is gitignored and per-checkout, so a travelling
+gate would turn `do next`'s pre-emption off on a machine where nothing delivers
+it. Gate and hook are installed and removed together by one verb
+(`dev/expedite_hook.py install` / `uninstall`), which is what stops them
+diverging.
+
+Until it is enabled **nothing changes**: `emits_wake` reads the gate, and with
+the gate absent `do-next` stays in `PREEMPT_KINDS` and wakes exactly as it does
+today.
+
 ## 2026-08-01 correction — chat is conversational, not ambiguous (#818)
 
 A live `chat` sent at 15:04 did not reach the coordinator until the 15:08 tick.
