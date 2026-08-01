@@ -3869,3 +3869,43 @@ was the right instinct because a copied cap would rot, but `__defaults__` couple
 default's existence. Removing the unsafe default therefore produced a `TypeError`, not an assertion
 that named the lost behaviour. Exercise the boundary and observe the outcome; do not derive the
 oracle from `__defaults__`, `__code__`, signature inspection, or the same authority under test.
+
+## An instrument keyed on presentation reports a change in identity, and the cheap workaround deforms the code (2026-08-02, #917/#916/#914, mine, measured)
+
+Three instances surfaced within one session, two of them as **false merge-gate refusals** in twelve
+minutes. The shared root: **the instrument compares how a thing is RENDERED rather than what it IS.**
+
+- **#917** — `land_lane.py` diffs lint's WARN rows as raw formatted strings (`set(after) -
+  set(baseline)`). `lint.py` pads its label column to the widest label, so #638's new check
+  `retired-phrasings.json` (22 chars) — 3 wider than `tasks.md.deprecated` (19) — re-padded **every
+  row**, and the gate reported `added=1 removed=1` for **one identical row**. Verified rather than
+  eyeballed: `raw equal: False`, `whitespace-normalised: True`, `delta 3`. 616 tests passed;
+  whitespace was the sole blocker on a finished, correct lane.
+- **#914** — citations are LINE-anchored to files that grow constantly, so inserting one line drifts
+  25 certified entries at once.
+- **#916** — a test asserted on `/proc/<pid>/cmdline` immediately after a lock write, so a gate
+  refused a nine-line PROSE change. The test **already polled correctly** for the lock file, then
+  treated "the child has exec'd" as synchronous with it. `os.kill(pid, 0)` proves a process EXISTS,
+  not that it has EXEC'D. **The discipline was applied to one asynchronous fact and dropped for the
+  next one immediately following** — the failure is not ignorance, it is inconsistency.
+
+**The tell that it is this family: the cheap workaround changes the CODE to suit the instrument.**
+`glm-257danger` inlined `"danger": True` onto an existing line — not because that was better code,
+but because adding a line would have drifted 25 citations. #917's equivalent temptation is "name
+your lint check something shorter." **When you notice yourself shaping an increment to keep an
+instrument quiet, the instrument is the defect.** That signal is worth more than the individual
+bugs, because it is visible from inside the lane, before anything is filed.
+
+**A false gate refusal is more expensive than a slow gate**, and not merely in wall-clock (#917 cost
+169s of test time). It teaches the coordinator to re-run gates on refusal — and re-running on
+refusal is exactly how a REAL red eventually gets waved through. Treat gate false-positives as
+severe. **When one appears, the discriminating check is cheap and must be run before blaming the
+lane**: run the same tests on clean master, then re-run the identical tree. Same tree plus same
+tests plus opposite verdicts is a flake by definition, and it took three commands to establish in
+both cases.
+
+**Fixing this family has a characteristic inverted risk: the repair turns a false REFUSAL into a
+false PASS.** Normalising whitespace before diffing rows is right, but a normalisation loose enough
+to collapse two genuinely DIFFERENT rows makes a real swap cancel to `added=0 removed=0` and the
+gate goes green on an actual regression. The gate is the last thing between a lane and master, so
+the direction-2 red-proof here is not optional garnish — it is the whole safety argument.
