@@ -28,6 +28,7 @@ from pathlib import Path
 CRASH_SENTINEL = "FAIL the guard threw before finishing its checks"
 GUARD_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
 ASSERTION = re.compile(r"^\s*(PASS|FAIL) (.+)$", re.MULTILINE)
+RECIPE_HEADER = re.compile(r"^guards(?:\s+[^:]*)?:\s*$")
 
 
 class Verdict(Enum):
@@ -71,6 +72,23 @@ def port_is_free(port: int) -> bool:
     return True
 
 
+def _guards_recipe_body(justfile: str) -> list[str]:
+    """Extract command-bearing lines from the top-level ``guards`` recipe."""
+    lines = justfile.splitlines()
+    for index, line in enumerate(lines):
+        if not RECIPE_HEADER.fullmatch(line):
+            continue
+        body: list[str] = []
+        for candidate in lines[index + 1:]:
+            if candidate and not candidate[0].isspace():
+                break
+            stripped = candidate.lstrip()
+            if stripped and not stripped.startswith("#"):
+                body.append(stripped)
+        return body
+    return []
+
+
 def inspect_revision_tree(tree: Path, sha: str, guard: str) -> str | None:
     """Return why this tree cannot be judged, or None when prerequisites hold."""
     if not (tree / ".git").exists():
@@ -96,14 +114,24 @@ def inspect_revision_tree(tree: Path, sha: str, guard: str) -> str | None:
     if missing:
         return "revision lacks required guard inputs: " + ", ".join(missing)
 
-    # These properties make the historical just recipe a usable judge.  If an
-    # older recipe lacks either one, its exit status cannot distinguish a
-    # stale server or a guard that never asserted from a behavioural failure.
+    # Inspect the recipe body, not arbitrary bytes in the file.  This proves
+    # the historical recipe has the direct checks we know how to audit; it
+    # deliberately makes no claim to interpret arbitrary shell semantics.
     just = (tree / "justfile").read_text(encoding="utf-8", errors="replace")
-    if "guard-execution" not in just:
-        return "historical justfile does not verify that the guard ran and judged"
-    if "is serving" not in just or "already held" not in just:
-        return "historical justfile does not bind server identity and port ownership"
+    body = _guards_recipe_body(just)
+    if not any(re.match(r"python3\s+lint\.py\s+guard-execution\b", line) and
+               re.search(r"\|\|\s*fail=1\s*$", line) for line in body):
+        return "historical guards recipe has no direct judged-guard gate"
+    if not any(re.match(r"node\s+[\"']?dev/capture/\$g\.mjs[\"']?(?:\s|$)", line)
+               for line in body):
+        return "historical guards recipe has no direct selected-guard invocation"
+    port_check = any(line.startswith("_holder_line=$(ss ") for line in body)
+    target_read = any(line.startswith("served=$(curl ") and "/data.json" in line
+                      for line in body)
+    target_check = any("$served" in line and "$OUT/target" in line and
+                       line.startswith("if [ ") for line in body)
+    if not (port_check and target_read and target_check):
+        return "historical guards recipe has no direct server identity/ownership gate"
 
     pin = _run(["git", "show", "HEAD:watch.py"], cwd=tree)
     if pin.returncode != 0:
