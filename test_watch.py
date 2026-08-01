@@ -7473,24 +7473,87 @@ class TestAppShell(unittest.TestCase):
         """#259 — the ONE way this task fails is a global Tab hijack. Both
         Shift+Tab handlers share the identical scoping guard that returns
         early unless the key is Tab AND shift is held; a plain Tab never
-        reaches preventDefault. This asserts that guard is present in BOTH
-        the card handler (router) and the composer handler (command), and
-        that neither preventDefaults before the scope check. The popout's
-        single keydown handler carries the same guard for its textarea too.
-        """
-        # the guard appears for the card cycle, the composer cycle, and the
-        # popout cycle (three surfaces, one shape).
+        reaches preventDefault. Asserts that guard is present for BOTH the
+        card handler (router) and the composer handler (command)."""
         card = watch.PAGE.count(
             "if (e.key !== 'Tab' || !e.shiftKey) return;")
         self.assertGreaterEqual(card, 2,
                                 "both the card and composer Shift+Tab handlers "
                                 "must carry the no-hijack scope guard")
-        # a plain Tab must still move focus: assert NO handler preventDefaults
-        # on `e.key === 'Tab'` without the shift guard. Locate every Tab
-        # preventDefault and require each to sit inside a shift-guarded block.
-        for needle in ("e.preventDefault(); submitCard",):  # Ctrl+Enter path
-            # sanity: the Ctrl+Enter submit path is unrelated to Tab cycling
-            self.assertIn(needle, watch.PAGE)
+
+    def test_card_cycle_advances_and_wraps(self):
+        """#259 — direction-2 closure. A STATIC guard on the handler's tokens
+        passes while the cycle does nothing: if `next` were `btns[i]` (no
+        advance) every token is still present. This guard EXECUTES the real
+        advance expression lifted from the card handler, so a no-advance (or
+        no-wrap) defect reds it on the produced value, not on a token count.
+
+        NODE-EVAL, not a synthetic event: a real keypress and a dispatched
+        KeyboardEvent would both run this same expression, so the
+        wrong-node/shadowing failure mode (#259's red-proof note) cannot
+        hide here — the expression itself is judged."""
+        import subprocess, shutil
+        page = watch._get_page()
+        i = page.index("if (e.key !== 'Tab' || !e.shiftKey) return;\n"
+                       "  const t = e.target;\n  if (!t || t.tagName "
+       )
+        handler = page[i:i + 900]
+        m = re.search(r"const next = (btns\[[^\]]+\]);", handler)
+        self.assertTrue(m, "the card cycle's advance expression is missing")
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — card cycle gate did NOT run")
+        # two distinct modes so a no-advance defect (next === btns[i]) is
+        # caught: at i=0 advance must reach index 1, and at the last index
+        # it must WRAP to 0 (not run off the end).
+        script = ("const btns=['answer','note'];"
+                  "let out=[];"
+                  "for (let i=0;i<btns.length;i++){"
+                  + m.group(1).replace('btns', 'btns') + ";"
+                  "out.push(next);}"
+                  # re-declare per iteration would conflict; rebuild plainly
+                  )
+        # node scopes `next` per-iteration via a function, to avoid redeclare
+        script = ("const btns=['answer','note'];"
+                  "const adv=(i)=>{const next=" + m.group(1) + ";return next;};"
+                  "console.log(adv(0)+'|'+adv(1));")
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0,
+                         "card cycle node eval failed: " + proc.stderr)
+        a, b = proc.stdout.strip().split('|')
+        # precondition: the fixture has two distinct modes.
+        self.assertNotEqual(a, b, "two distinct modes so advance is owed to it")
+        self.assertEqual(a, 'note', "i=0 must advance to the second mode")
+        self.assertEqual(b, 'answer', "the last index must WRAP to the first")
+
+    def test_composer_cycle_advances_and_wraps(self):
+        """#259 — same direction-2 closure for the composer kind cycle. Lifts
+        the real advance expression and executes it, so `order[i]` (no
+        advance) or an off-by-one that fails to wrap reds on the value."""
+        import subprocess, shutil
+        page = watch._get_page()
+        i = page.index("'#cmdmenu .cmdmenuitem'")
+        block = page[i:i + 400]
+        m = re.search(r"const kind = (order\[[^\]]+\]);", block)
+        self.assertTrue(m, "the composer cycle's advance expression is missing")
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — composer cycle gate did NOT run")
+        # three kinds so wrap is provable and distinct from a 2-cycle stall
+        script = ("const order=['do-now','chat','add-idea'];"
+                  "const adv=(i)=>{const kind=" + m.group(1) + ";return kind;};"
+                  "console.log(adv(0)+'|'+adv(1)+'|'+adv(2));")
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0,
+                         "composer cycle node eval failed: " + proc.stderr)
+        vals = proc.stdout.strip().split('|')
+        self.assertEqual(len(vals), 3, "three advance results expected")
+        # precondition: three distinct kinds, so each result is owed to it.
+        self.assertEqual(len(set(vals)), 3, "advance must reach every kind")
+        self.assertEqual(vals[0], 'chat', "i=0 advances to the next kind")
+        self.assertEqual(vals[2], 'do-now', "the last index must WRAP to first")
 
     def test_shader_world_space_wiring(self):
         # Static guard: the shader anchors its domain to the window's screen
