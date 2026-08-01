@@ -6,6 +6,9 @@ for those anchors.  An anchor's reviewed source text and named symbol are
 authoritative; ``reviewed_line`` is only a baseline for reporting drift.  The
 current line is derived by finding the evidence, so inserting lines cannot rot
 the guard.  Missing or ambiguous evidence is a refusal, never a guessed line.
+Despite its historical name, this is a read-only standing resolver: it never
+writes source or documentation, and ``test_reanchor_citations.py`` exercises
+its 74-anchor population.
 
 IGC (#789), in the context of frequently edited ``watch.py``:
 

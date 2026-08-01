@@ -34,6 +34,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 BASE_REV = "dc739001"
 DRIFT = 12
+# Living citations were removed by #801, so the standing resolvable population
+# is the historical subset that remains deliberately line-pinned.
+EXPECTED_CLASSIFIED_CITATIONS = 24
 
 # Re-derived from the exact old-line/current-line comparison.  These are the
 # files outside the reviewed population that contained a positive match at the
@@ -199,9 +202,19 @@ def check(root: Path) -> int:
     if len(AFFECTED_DOCS) != 34:
         print(f"ERROR inventory: expected 34 affected docs, got {len(AFFECTED_DOCS)}")
         return 2
-    stale = stale_citations(root)
-    findings = [item for item in stale if not item.pinned]
-    laundering = [item for item in stale if item.pinned and item.doc not in HISTORICAL_DOCS]
+    classified = [item for item in stale_citations(root) if item.doc in AFFECTED_DOCS]
+    if len(classified) != EXPECTED_CLASSIFIED_CITATIONS:
+        print(
+            "ERROR population: #801's classified inventory resolved "
+            f"{len(classified)} shifted citation(s), expected "
+            f"{EXPECTED_CLASSIFIED_CITATIONS} across {len(AFFECTED_DOCS)} document(s)"
+        )
+        return 2
+    findings = [item for item in classified if not item.pinned]
+    laundering = [
+        item for item in classified
+        if item.pinned and item.doc not in HISTORICAL_DOCS
+    ]
     if findings or laundering:
         for item in findings:
             print(
@@ -218,10 +231,10 @@ def check(root: Path) -> int:
             "misclassified shifted citation(s)"
         )
         return 1
-    pinned = sum(item.pinned for item in stale)
+    pinned = sum(item.pinned for item in classified)
     print(
-        f"PASS: no unqualified +{DRIFT} watch.py citations; "
-        f"{pinned} historical citation(s) explicitly pinned to {BASE_REV}"
+        f"PASS: #801's {len(classified)} classified +{DRIFT} watch.py citation(s) "
+        f"resolved; {pinned} historical citation(s) explicitly pinned to {BASE_REV}"
     )
     return 0
 
