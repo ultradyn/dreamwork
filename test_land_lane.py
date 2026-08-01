@@ -337,7 +337,9 @@ def test_gates_run_on_the_merge_commit_not_on_the_branch(landing_repo):
     result = _run(root, "test_probe.py")
 
     assert result.returncode == 0, result.stderr
-    seen = (root / "probe.txt").read_text().split()
+    probe = root / "probe.txt"
+    assert probe.exists(), "the gate did not run in the main checkout at all"
+    seen = probe.read_text().split()
     assert seen[1:] == [base_before, lane_head], f"gate judged {seen!r}"
     assert (
         f"merge-identity: {seen[0]} has parents master@{base_before} and lane@{lane_head}"
@@ -394,7 +396,10 @@ def test_a_gate_roster_that_does_not_match_what_ran_refuses(
     monkeypatch.setattr(land_lane, "GATES", roster)
     monkeypatch.chdir(root)
 
-    assert land_lane.land("lane", ["test_named.py"]) == 1
+    assert land_lane.land("lane", ["test_named.py"]) == 1, (
+        f"landed master with roster {roster!r}: a roster that does not match the "
+        "gates that actually ran must refuse, not pass vacuously"
+    )
 
     err = capsys.readouterr().err
     assert f"REFUSE phase=gate-coverage: {reason}" in err
