@@ -12,6 +12,13 @@ shift-shaped matches were wholly attributed to the pre-existing reviewed
 population are excluded here; ``test_reanchor_citations.py`` remains their
 existing gate.  The #801 inventory itself is explicit because deciding whether
 a document is living or historical is judgement, not a path heuristic.
+
+IGC, in the context of a frequently edited source file: G1 is survival across
+future line movement; G2 is honest current evidence; G3 is preservation of a
+historical record.  Adding 12 fails G1.  Pinning every citation fails G2 for
+living prose.  Removing decorative numbers fails G3 for records.  The surviving
+classification is therefore symbol/context without a number for living prose,
+and the original number plus an explicit revision for historical evidence.
 """
 
 from __future__ import annotations
@@ -192,16 +199,26 @@ def check(root: Path) -> int:
     if len(AFFECTED_DOCS) != 34:
         print(f"ERROR inventory: expected 34 affected docs, got {len(AFFECTED_DOCS)}")
         return 2
-    findings = [item for item in stale_citations(root) if not item.pinned]
-    if findings:
+    stale = stale_citations(root)
+    findings = [item for item in stale if not item.pinned]
+    laundering = [item for item in stale if item.pinned and item.doc not in HISTORICAL_DOCS]
+    if findings or laundering:
         for item in findings:
             print(
                 f"STALE {item.doc}:{item.doc_line}: {item.token} is {DRIFT} lines behind "
                 f"its byte-identical evidence at watch.py:{item.source_line + DRIFT}"
             )
-        print(f"FAIL: {len(findings)} unqualified shifted citation(s)")
+        for item in laundering:
+            print(
+                f"STALE-LIVING {item.doc}:{item.doc_line}: {item.token} is revision-pinned "
+                "inside a living document; a pin must not launder current prose as historical"
+            )
+        print(
+            f"FAIL: {len(findings)} unqualified and {len(laundering)} "
+            "misclassified shifted citation(s)"
+        )
         return 1
-    pinned = sum(item.pinned for item in stale_citations(root))
+    pinned = sum(item.pinned for item in stale)
     print(
         f"PASS: no unqualified +{DRIFT} watch.py citations; "
         f"{pinned} historical citation(s) explicitly pinned to {BASE_REV}"
