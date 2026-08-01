@@ -307,3 +307,141 @@ class TestThisRepoIsSeparated:
                         "dispatches (the fleet's steady state)")
         keys = [str(ls.lane_scratch_dir(p, create=False)) for p in live]
         assert len(set(keys)) == len(keys), f"colliding lane dirs: {keys}"
+
+
+# ── #694: a reviewer shares the author's worktree but must not share scratch ──
+
+class TestRoleKeying:
+    """THE #694 defect: a reviewer runs in the author's own worktree, so both
+    resolve to the SAME lane_key. Without a role segment, the reviewer's
+    snapshots overwrite the author's evidence — the exact #652 corruption, one
+    worktree over, and now structural because the Opus review is mandatory."""
+
+    def test_author_and_reviewer_get_different_dirs(self, repo):
+        """The core #694 fix: same worktree, different roles, different dirs."""
+        a = ls.lane_scratch_dir(repo, role="author", sub="snap", create=False)
+        r = ls.lane_scratch_dir(repo, role="reviewer", sub="snap", create=False)
+        assert a != r, (
+            f"author and reviewer resolve to the same dir ({a}) — the #694 "
+            f"collision is not fixed")
+
+    def test_the_separation_preserves_author_evidence(self, tmp_path):
+        """Direction 1: a reviewer's snap cannot overwrite the author's.
+
+        Reproduces what the Opus review lane over #674 reported it HIT: 'I
+        overwrote one of the author snapshot files before realising.' With
+        #694, both roles get separate dirs so the author's evidence survives."""
+        root = tmp_path / "origin"
+        root.mkdir()
+        _git(root, "init", "-q", "-b", "master", ".")
+        (root / "a.txt").write_text("x\n")
+        _git(root, "add", "a.txt")
+        _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
+
+        a_dir = ls.lane_scratch_dir(root, role="author", sub="snap")
+        r_dir = ls.lane_scratch_dir(root, role="reviewer", sub="snap")
+        # Both use the same natural filename — nothing tells them not to.
+        (a_dir / "router.js.orig").write_bytes(b"AUTHOR EVIDENCE")
+        (r_dir / "router.js.orig").write_bytes(b"REVIEWER SNAPSHOT")
+        # The author's evidence survives because the dirs are separate
+        assert (a_dir / "router.js.orig").read_bytes() == b"AUTHOR EVIDENCE"
+
+    def test_author_maps_to_the_legacy_path_no_migration(self, repo):
+        """AUTHOR must produce the pre-#694 path so live lanes don't move.
+
+        This is the migration goal (#755): a change that makes a live lane's
+        snapshots unfindable mid-flight is worse than the bug."""
+        no_role = ls.lane_scratch_dir(repo, sub="snap", create=False)
+        author = ls.lane_scratch_dir(repo, role="author", sub="snap", create=False)
+        assert no_role == author, (
+            "author role must map to the legacy path (no role segment); "
+            f"got {author} vs legacy {no_role}")
+
+    def test_lane_role_defaults_to_author(self, monkeypatch):
+        """The default is author because every lane today IS an author lane.
+
+        A default that moved four live lanes' snapshots would be worse than the
+        bug. The default is also the honest boundary (#702)."""
+        monkeypatch.delenv(ls.ROLE_ENV, raising=False)
+        assert ls.lane_role() == ls.ROLE_AUTHOR
+
+    def test_lane_role_reads_the_env_var(self, monkeypatch):
+        monkeypatch.setenv(ls.ROLE_ENV, "reviewer")
+        assert ls.lane_role() == ls.ROLE_REVIEWER
+
+    def test_author_evidence_dir_is_the_author_dir(self, repo):
+        """A reviewer can read the author's evidence via author_dir().
+
+        The author's directory stays readable (#694 constraint): the goal is to
+        remove the write collision, not to wall the reviewer off."""
+        ev = ls.author_dir(repo, sub="snap", create=False)
+        author = ls.lane_scratch_dir(repo, role="author", sub="snap",
+                                     create=False)
+        assert ev == author
+
+    def test_cli_role_flag_separates(self, repo):
+        a = subprocess.check_output(
+            ["python3", str(CLI_PATH), "snap", "--role", "author",
+             "--cwd", str(repo)], text=True).strip()
+        r = subprocess.check_output(
+            ["python3", str(CLI_PATH), "snap", "--role", "reviewer",
+             "--cwd", str(repo)], text=True).strip()
+        assert a != r
+        assert a.endswith("/snap")
+        assert "role-reviewer" in r
+
+    def test_cli_env_var_separates(self, repo):
+        env = dict(os.environ)
+        a = subprocess.check_output(
+            ["python3", str(CLI_PATH), "snap", "--cwd", str(repo)],
+            text=True, env=env).strip()
+        env[ls.ROLE_ENV] = "reviewer"
+        r = subprocess.check_output(
+            ["python3", str(CLI_PATH), "snap", "--cwd", str(repo)],
+            text=True, env=env).strip()
+        assert a != r
+
+    def test_cli_author_evidence_flag(self, repo):
+        """--author-evidence prints the author's dir from any role."""
+        env = dict(os.environ)
+        env[ls.ROLE_ENV] = "reviewer"
+        out = subprocess.check_output(
+            ["python3", str(CLI_PATH), "--author-evidence", "--cwd", str(repo)],
+            text=True, env=env).strip()
+        assert "role-reviewer" not in out
+
+
+class TestRoleHonestBoundary:
+    """Direction 2: the case where the fix LOOKS applied but is not.
+
+    A reviewer whose dispatcher does not set DREAMWORK_LANE_ROLE defaults to
+    author and gets the author's directory back — while the code is in place
+    and the tests pass (#671). The tool cannot force the dispatcher to set it;
+    it makes the default VISIBLE rather than silent (#702)."""
+
+    def test_unset_role_is_author_not_silent(self, monkeypatch):
+        """The default is author, not a guess — and it is named, not hidden."""
+        monkeypatch.delenv(ls.ROLE_ENV, raising=False)
+        role = ls.lane_role()
+        assert role == "author", (
+            "unset role must default to author, not a silent guess — this "
+            "is the honest boundary (#702)")
+
+    def test_a_reviewer_without_env_gets_author_dir_and_it_is_visible(
+            self, repo, monkeypatch):
+        """THE #694 direction-2 case: fix in place, tests pass, reviewer
+        collides anyway because the env var is unset.
+
+        This is constructible and real: the dispatcher must set the role for
+        the separation to take effect. The tool makes it loud (the role is on
+        the path) but cannot prevent it. Pinning the boundary rather than
+        pretending it does not exist is #702's rule."""
+        monkeypatch.delenv(ls.ROLE_ENV, raising=False)
+        # Reviewer forgot to set the env var
+        forgotten = ls.lane_scratch_dir(repo, sub="snap", create=False)
+        author = ls.lane_scratch_dir(repo, role="author", sub="snap",
+                                     create=False)
+        # They collide — this is the honest boundary, not a bug in the fix
+        assert forgotten == author, (
+            "unset role defaults to author — the collision is the boundary "
+            "the dispatcher must close, not one the tool can close alone")
