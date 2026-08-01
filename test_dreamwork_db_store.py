@@ -44,8 +44,14 @@ def test_domain_named_builders_call_the_canonical_composer(monkeypatch, tmp_path
     monkeypatch.setattr(store, "dreamwork_store_spec", canonical)
     path = tmp_path / "ledger.sqlite3"
 
-    assert task_store_spec(path) is sentinel
-    assert question_store_spec(path) is sentinel
+    assert task_store_spec(path) is sentinel, (
+        "task_store_spec rebuilt a second store definition instead of "
+        "delegating to dreamwork_store_spec"
+    )
+    assert question_store_spec(path) is sentinel, (
+        "question_store_spec rebuilt a second store definition instead of "
+        "delegating to dreamwork_store_spec"
+    )
     assert calls == [path, path], (
         "domain builders reproduced an equal-looking StoreSpec instead of "
         "delegating to the canonical store composer"
