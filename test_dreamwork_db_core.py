@@ -9,7 +9,10 @@ import pytest
 import ledger_store
 from dreamwork_db import (
     Access,
+    Busy,
+    DatabaseError,
     DatabaseHandle,
+    SchemaMismatch,
     StoreSpec,
     ValidationError,
     open_database,
@@ -92,7 +95,7 @@ def test_read_handle_query_only_rejects_a_constructed_write(tmp_path):
     _create_sample(path, "before")
 
     with open_database(_spec(path), access=Access.READ) as db:
-        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+        with pytest.raises(DatabaseError, match="readonly"):
             db.values.add("forbidden")
         assert db.values.all() == ["before"]
 
@@ -242,4 +245,103 @@ def test_connect_closes_connection_when_initializer_raises_baseexception(
     assert observed["connection"].closed, (
         "_connect must close its connection when an initializer raises a "
         "BaseException"
+    )
+
+
+# --- the exception ladder names what it cannot classify (#779) ----------------
+# A read whose schema is wrong used to escape as a raw sqlite3.OperationalError;
+# an OperationalError core could not classify used to escape raw too. The ladder
+# is now total: schema-shaped errors become SchemaMismatch, busy stays Busy, and
+# everything else becomes a named-but-honest unclassified DatabaseError.
+
+
+def _spec_zero_timeout(path, *, initialize: bool = False) -> StoreSpec:
+    return StoreSpec(
+        path=path,
+        repositories={"values": _Values},
+        initializer=_initialize_sample if initialize else None,
+        busy_timeout_ms=0,
+    )
+
+
+class _BrokenSyntax:
+    """Repository whose query is malformed: neither busy nor schema-shaped."""
+
+    __slots__ = ("_session",)
+
+    def __init__(self, session):
+        self._session = session
+
+    def run(self):
+        return self._session.execute("SELECT FROM sample").fetchall()
+
+
+def test_a_missing_column_is_named_schema_mismatch_not_raw_sqlite(tmp_path):
+    path = tmp_path / "store.sqlite3"
+    _create_sample(path, "one")
+    # Derive the corruption at runtime, not as a literal: rename the very
+    # column the read needs so the schema genuinely no longer matches.
+    corrupt = sqlite3.connect(path)
+    corrupt.execute("ALTER TABLE sample RENAME COLUMN value TO missing")
+    corrupt.commit()
+    corrupt.close()
+
+    with open_database(_spec(path), access=Access.READ) as db:
+        with pytest.raises(SchemaMismatch, match="no such column") as caught:
+            db.values.all()
+
+    # The discriminating failure is the class: a raw sqlite escape or a
+    # mislabelled unclassified error both fail here, not merely "no exception".
+    assert not isinstance(caught.value, sqlite3.OperationalError), (
+        "schema error escaped as a raw sqlite3.OperationalError"
+    )
+    assert not isinstance(caught.value, Busy), (
+        "schema error was mislabelled Busy"
+    )
+
+
+def test_a_locked_store_is_named_busy_and_remains_a_database_error(tmp_path):
+    path = tmp_path / "store.sqlite3"
+    _create_sample(path, "one")
+
+    lock = sqlite3.connect(path)
+    lock.execute("BEGIN EXCLUSIVE")
+    try:
+        with pytest.raises(Busy, match="database is locked") as caught:
+            with open_database(
+                _spec_zero_timeout(path), access=Access.WRITE
+            ) as db:
+                with db.transaction():
+                    db.values.add("blocked by the lock")
+    finally:
+        lock.rollback()
+        lock.close()
+
+    # The loop's only dispatch route depends on this: Busy is a DatabaseError,
+    # so dispatch_lane's degraded "DID NOT RUN; launch allowed" catcher still
+    # sees it and launches rather than refusing (#755).
+    assert isinstance(caught.value, DatabaseError), (
+        "Busy stopped being a DatabaseError; the degraded path would miss it"
+    )
+
+
+def test_an_unclassified_operational_error_is_named_not_mislabelled(tmp_path):
+    path = tmp_path / "store.sqlite3"
+    _create_sample(path, "one")
+    spec = StoreSpec(path=path, repositories={"broken": _BrokenSyntax})
+
+    with open_database(spec, access=Access.READ) as db:
+        with pytest.raises(DatabaseError, match="unclassified") as caught:
+            db.broken.run()
+
+    # Named, but honestly: not relabelled as a schema mismatch it was not
+    # proven to be, nor as busy (#651), and it does not escape raw (#702).
+    assert not isinstance(caught.value, SchemaMismatch), (
+        "an unclassified error was mislabelled SchemaMismatch"
+    )
+    assert not isinstance(caught.value, Busy), (
+        "an unclassified error was mislabelled Busy"
+    )
+    assert not isinstance(caught.value, sqlite3.OperationalError), (
+        "the unclassified error escaped as raw sqlite3"
     )
