@@ -530,6 +530,73 @@ class TestInjectionInHistoryIsRefused:
         assert "read 1 blob" in out, out
 
 
+class TestHistoryScanRegistrationBoundary:
+    def test_a_pre_begin_pre_fix_commit_is_not_an_armed_injection(
+            self, lane, capsys):
+        # The canonical direction-1 sabotage restores the pre-fix bytes.  That
+        # state legitimately existed in this lane before redproof observed it.
+        (lane / "router.js").write_text(
+            "export function route() { return false; }\n")
+        predecessor = _commit(lane, "router.js", msg="feat(#901): predecessor")
+        (lane / "router.js").write_text(
+            "export function route() { return Boolean(guard); }\n")
+        fixed = _commit(lane, "router.js", msg="fix(#901): actual repair")
+
+        _begin(lane, "router.js")
+        (lane / "router.js").write_text(
+            "export function route() { return false; }\n")
+        _restore(lane, "router.js")
+
+        entries, _ = rp._read_registry(lane)
+        assert entries[0]["begun_head"] == fixed
+        assert _blob_sha_at(lane, predecessor, "router.js") == entries[0]["injected_sha"]
+        rep = rp.scan_history(lane, entries)
+        assert rep["commits"] == 2 and rep["blobs_read"] == 2, rep
+        assert rep["hits"] == [], rep
+
+        assert _check(lane) == 0
+        out, err = capsys.readouterr()
+        assert "restoration clean" in out, out
+        assert "REFUSED" not in err, err
+
+    def test_rebase_cannot_move_an_armed_commit_before_registration(
+            self, lane, monkeypatch, capsys):
+        _begin(lane, "router.js")
+        entries, _ = rp._read_registry(lane)
+        begun_head = entries[0]["begun_head"]
+
+        # Authored after begin, but with dates that claim it came decades
+        # earlier.  Then rebase the lane so the offending commit has a new
+        # object id as well as a deceptive date.
+        monkeypatch.setenv("GIT_AUTHOR_DATE", "2000-01-01T00:00:00+00:00")
+        monkeypatch.setenv("GIT_COMMITTER_DATE", "2000-01-01T00:00:00+00:00")
+        (lane / "router.js").write_text(
+            "export function route() { return false; /* ARMED #901 */ }\n")
+        poisoned = _commit(lane, "router.js", msg="wip(#901): armed injection")
+        _restore(lane, "router.js")
+        clean = _commit(lane, "router.js", msg="fix(#901): restore after injection")
+
+        monkeypatch.delenv("GIT_AUTHOR_DATE")
+        monkeypatch.delenv("GIT_COMMITTER_DATE")
+        _git(lane, "rebase", "--force-rebase", "master")
+        rewritten_poisoned = _git(
+            lane, "log", "--format=%H", "--grep=^wip(#901): armed injection$")
+        assert rewritten_poisoned and rewritten_poisoned != poisoned
+        assert _git(lane, "rev-parse", "HEAD") != clean
+        assert subprocess.run(
+            ["git", "-C", str(lane), "merge-base", "--is-ancestor",
+             begun_head, "HEAD"], check=False).returncode == 0
+
+        entries, _ = rp._read_registry(lane)
+        rep = rp.scan_history(lane, entries)
+        assert len(rep["hits"]) == 1, rep
+        assert rep["hits"][0]["commit"] == rewritten_poisoned, rep
+        assert _check(lane) == 1
+        _, err = capsys.readouterr()
+        assert rewritten_poisoned[:12] in err, err
+        assert "ARMED #901" in err, err
+
+
 class TestTheScanCannotLookAtNothingAndPass:
     """#671: a scan that examined nothing must not render as a clean branch."""
 
