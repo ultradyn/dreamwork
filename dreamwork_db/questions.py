@@ -45,9 +45,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .core import StoreSpec, ValidationError
+from .core import Conflict, NotFound, StoreSpec, ValidationError
 from .migrate import initialize_legacy_store
 from .question_parse import QuestionManifest, QuestionEntry, Contribution
+from .reviews import ReviewRepository
 from .tasks import TaskRepository
 
 
@@ -456,6 +457,165 @@ class QuestionRepository:
             )
         return qid
 
+    # ── mutating command verbs (#645 increment 9) ─────────────────────────
+    #
+    # These implement the state transitions the CLI exposes.  The PRE-WATERMARK
+    # refusal lives in the CLI adapter (it names the cutover command); the
+    # repository itself performs the real transitions so a post-watermark verb
+    # genuinely SUCCEEDS (direction 2 of the red-proof — a guard never observed
+    # letting anything through is not a guard, #755).  Status transitions follow
+    # design §Schema: an answer appends a message and moves ``unanswered`` →
+    # ``answered_pending_fold``; another answer stays in that state; a note
+    # changes no status; fold requires ≥1 answer and moves to ``answered``;
+    # retitle is an id-based compare-and-swap on revision.
+
+    def _priority_bands(self) -> list[str]:
+        return [r[0] for r in self._session.execute(
+            "SELECT band FROM priority_band ORDER BY band")]
+
+    def _require_question(self, question_id: int) -> str:
+        """Return the current status, or raise NotFound for an unknown id."""
+        row = self._session.execute(
+            "SELECT status FROM question WHERE id = ?", (question_id,)
+        ).fetchone()
+        if row is None:
+            raise NotFound(f"no such question #{question_id}")
+        return row[0]
+
+    def post(
+        self, *, title: str, body_markdown: str,
+        priority: str | None = None, actor: str, at: str,
+    ) -> int:
+        """Create a new ``unanswered`` question; return its permanent id.
+
+        ``priority`` is the explicit column value (CLI ``--priority``); it is
+        NOT extracted from the title, unlike the import path — a CLI-created
+        question's priority is what the operator supplied, nothing inferred.
+        """
+        if not isinstance(title, str) or not title.strip():
+            raise ValidationError(
+                "title must be a non-empty string (question.title NOT NULL)")
+        if not isinstance(body_markdown, str) or not body_markdown.strip():
+            raise ValidationError(
+                "body must be a non-empty string (question.body_markdown NOT NULL)")
+        if priority is not None:
+            bands = self._priority_bands()
+            if priority not in bands:
+                raise ValidationError(
+                    "priority: got {!r}, expected one of {}".format(
+                        priority, ", ".join(bands)))
+        cur = self._session.execute(
+            "INSERT INTO question"
+            " (status, title, body_markdown, priority,"
+            "  asked_at, asked_precision, created_by,"
+            "  created_at, updated_at, revision)"
+            " VALUES ('unanswered', ?, ?, ?, ?, 'second', ?, ?, ?, 1)",
+            (title, body_markdown, priority, at, actor, at, at))
+        return int(cur.lastrowid)
+
+    def answer(
+        self, question_id: int, *, body_markdown: str, author: str,
+        at: str, action_id: str | None = None,
+    ) -> None:
+        """Append an answer and advance ``unanswered`` → ``answered_pending_fold``."""
+        if not isinstance(body_markdown, str) or not body_markdown.strip():
+            raise ValidationError(
+                "answer body must be a non-empty string")
+        status = self._require_question(question_id)
+        self._session.execute(
+            "INSERT INTO question_message"
+            " (question_id, kind, author, body_markdown, at, action_id)"
+            " VALUES (?, 'answer', ?, ?, ?, ?)",
+            (question_id, author, body_markdown, at, action_id))
+        # An unanswered question gains its first answer; a question already
+        # answered retains every genuine answer in the same state.
+        new_status = "answered_pending_fold" if status == "unanswered" else status
+        self._session.execute(
+            "UPDATE question SET status = ?, updated_at = ?,"
+            " revision = revision + 1 WHERE id = ?",
+            (new_status, at, question_id))
+
+    def comment(
+        self, question_id: int, *, body_markdown: str, author: str, at: str,
+    ) -> None:
+        """Append a note; no status change (a note annotates, it does not resolve)."""
+        if not isinstance(body_markdown, str) or not body_markdown.strip():
+            raise ValidationError(
+                "comment body must be a non-empty string")
+        self._require_question(question_id)
+        self._session.execute(
+            "INSERT INTO question_message"
+            " (question_id, kind, author, body_markdown, at)"
+            " VALUES (?, 'note', ?, ?, ?)",
+            (question_id, author, body_markdown, at))
+        self._session.execute(
+            "UPDATE question SET updated_at = ?, revision = revision + 1"
+            " WHERE id = ?",
+            (at, question_id))
+
+    def fold(self, question_id: int, *, why: str, actor: str, at: str) -> None:
+        """Move an answered question to ``answered``; requires ≥1 answer.
+
+        The reason is recorded as a note so it survives in the question's own
+        history — ``--why`` is required precisely so the fold is auditable, and
+        a reason with nowhere to land is a reason that vanishes.
+        """
+        if not isinstance(why, str) or not why.strip():
+            raise ValidationError(
+                "why must be a non-empty string (the reason for the fold)")
+        status = self._require_question(question_id)
+        n_answers = int(self._session.execute(
+            "SELECT COUNT(*) FROM question_message"
+            " WHERE question_id = ? AND kind = 'answer'", (question_id,)
+        ).fetchone()[0])
+        if n_answers == 0:
+            raise ValidationError(
+                f"cannot fold #{question_id}: it has no answer to fold")
+        self._session.execute(
+            "UPDATE question SET status = 'answered', updated_at = ?,"
+            " revision = revision + 1 WHERE id = ?",
+            (at, question_id))
+        self._session.execute(
+            "INSERT INTO question_message"
+            " (question_id, kind, author, body_markdown, at)"
+            " VALUES (?, 'note', ?, ?, ?)",
+            (question_id, actor, why, at))
+
+    def retitle(
+        self, question_id: int, *, title: str, why: str,
+        expected_revision: int, actor: str, at: str,
+    ) -> None:
+        """Compare-and-swap a title change on ``(id, expected_revision)``."""
+        if not isinstance(title, str) or not title.strip():
+            raise ValidationError(
+                "title must be a non-empty string (question.title NOT NULL)")
+        if not isinstance(why, str) or not why.strip():
+            raise ValidationError(
+                "why must be a non-empty string (the reason for the retitle)")
+        row = self._session.execute(
+            "SELECT title, revision FROM question WHERE id = ?",
+            (question_id,)).fetchone()
+        if row is None:
+            raise NotFound(f"no such question #{question_id}")
+        cur_title, cur_rev = row[0], int(row[1])
+        if cur_title == title:
+            raise ValidationError(
+                f"title unchanged for #{question_id} (no-op retitle refused)")
+        if cur_rev != expected_revision:
+            raise Conflict(
+                f"retitle #{question_id}: revision mismatch — expected "
+                f"{expected_revision}, current {cur_rev} (the question changed"
+                f" since you last read it)")
+        self._session.execute(
+            "UPDATE question SET title = ?, updated_at = ?,"
+            " revision = revision + 1 WHERE id = ?",
+            (title, at, question_id))
+        self._session.execute(
+            "INSERT INTO question_message"
+            " (question_id, kind, author, body_markdown, at)"
+            " VALUES (?, 'note', ?, ?, ?)",
+            (question_id, actor, why, at))
+
 
 # ─── independent verification ──────────────────────────────────────────────
 
@@ -596,17 +756,42 @@ def _verify_entry(
 
 # ─── store spec ────────────────────────────────────────────────────────────
 
-def question_store_spec(path: PathLike) -> StoreSpec:
-    """Bind both repositories through the core's one factory seam.
+# The questions-cutover watermark (design §"Cutover protocol" step 4).  Present
+# in ``meta`` → the DB is the single source of truth for questions and mutating
+# question verbs are authorised; absent → ``questions.md`` is still the source
+# and mutating question verbs must refuse (design §446: no steady-state dual
+# read or dual write).  Reads from a store with no such key return None.
+QUESTIONS_WATERMARK_KEY = "questions_cut_over"
 
-    The question tables are created by the v003 migration, which runs as
-    part of ``initialize_legacy_store`` on first WRITE open.  The task
-    repository is included so the store is a complete ledger — the
-    question foreign keys reference ``task(id)``, and a scratch store used
+
+def questions_cut_over(db) -> bool:
+    """True when the questions watermark is present in the store's ``meta``.
+
+    Reads through the core's one READ handle, so the check is on the same
+    store the verb is about to write.  A scratch store (no ``meta`` row) is
+    not cut over — which is the correct answer for tests that open a fresh
+    store: the refusal is the default, and a test that sets the watermark
+    opts into the positive case (#671/#755).
+    """
+    row = db.tasks.meta_value(QUESTIONS_WATERMARK_KEY)
+    return row is not None
+
+
+def question_store_spec(path: PathLike) -> StoreSpec:
+    """Bind all three repositories through the core's one factory seam.
+
+    The question/review tables are created by the v003 migration, which runs
+    as part of ``initialize_legacy_store`` on first WRITE open.  The task
+    repository is included so the store is a complete ledger — the question
+    and review foreign keys reference ``task(id)``, and a scratch store used
     for import testing should have the full schema available.
     """
     return StoreSpec(
         path,
-        repositories={"tasks": TaskRepository, "questions": QuestionRepository},
+        repositories={
+            "tasks": TaskRepository,
+            "questions": QuestionRepository,
+            "reviews": ReviewRepository,
+        },
         initializer=initialize_legacy_store,
     )
