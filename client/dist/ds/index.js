@@ -6838,16 +6838,6 @@ var DreamworkDesign = (() => {
     color:#d1d5db; border:1px solid #1f2937; border-radius:4px; font:inherit;
     padding:.4rem; margin:.2rem 0; }
   textarea { min-height:3.2rem; resize:vertical; }
-  /* #860 — the command popout's textarea FILLS the window exactly: the body
-     becomes a viewport-height flex column, the form and textarea absorb
-     every unused pixel, so the document never scrolls — but a textarea one
-     pixel taller would make it (the property is two-sided, and side 2 is
-     the one a one-sided check misses). Scoped to a body class ONLY the
-     command popout wears, so the doc/review popout (no form, an iframe that
-     already sizes itself) and the main dashboard composer are untouched. */
-  body.cmdpop { display:flex; flex-direction:column; height:100vh; }
-  body.cmdpop #pform { flex:1 1 auto; display:flex; flex-direction:column; min-height:0; }
-  body.cmdpop #ptext { flex:1 1 auto; resize:none; }
   button { background:#1e293b; color:__ACCENT__; border:1px solid #334155;
     border-radius:4px; font:inherit; padding:.3rem .9rem; cursor:pointer;
     margin-top:.4rem; }
@@ -6992,7 +6982,21 @@ var DreamworkDesign = (() => {
       (w2, base, path, tint) => {
         const doc = popoutShell(w2, base, path, tint, "+ command");
         doc.body.innerHTML = POPOUT_BODY(base, path);
-        doc.body.classList.add("cmdpop");
+        const fitPopout = () => {
+          const ta = doc.getElementById("ptext");
+          if (!ta) return;
+          const de = doc.documentElement;
+          ta.style.resize = "none";
+          const prevH = ta.style.height, prevMH = ta.style.minHeight;
+          ta.style.minHeight = "0";
+          ta.style.height = "9999px";
+          void ta.offsetWidth;
+          const fillH = 9999 - (de.scrollHeight - de.clientHeight);
+          ta.style.height = fillH + "px";
+          ta.style.minHeight = "0";
+          void ta.offsetWidth;
+        };
+        w2.addEventListener("resize", fitPopout);
         const endpoint = location.origin + "/command";
         const from = fromPath();
         const confirmation = confirmationFor(doc, "pmsg", "pmsg", w2.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -7009,6 +7013,7 @@ var DreamworkDesign = (() => {
           DraftStore.bind(pta, popLid);
           DraftStore.restore(popLid, pta);
         }
+        fitPopout();
         doc.getElementById("pform").addEventListener("submit", async (ev) => {
           ev.preventDefault();
           const kind = doc.getElementById("pkind").value;
