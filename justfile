@@ -33,6 +33,12 @@ lint:
 dispatch-lane prompt agent *CCC_ARGS:
     @python3 dev/dispatch_lane.py --prompt "{{prompt}}" -- ccc {{CCC_ARGS}} "{{agent}}"
 
+# Authored core -> complete brief on stdout (#881).  Generates the frame only;
+# refuses a core that is empty, all placeholder, or has no direction-2 section.
+# Usage: just brief 881 cx-881briefgen dev/brief.py,test_brief.py core.md >brief.md
+brief TASK LANE OWNS CORE:
+    @python3 dev/brief.py --task "{{TASK}}" --lane "{{LANE}}" --owns "{{OWNS}}" --core "{{CORE}}"
+
 # One human-authored head -> checked worktree -> governed dispatch.  Run this
 # recipe in the background; the supervisor stays alive to record the runner's
 # real exit status in `.dreamwork/launch-attempts/`.

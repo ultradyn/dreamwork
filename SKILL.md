@@ -378,6 +378,18 @@ SHA-256 digest. The background spelling is load-bearing: a foreground terminal
 job is refused, and a context without a controlling tty is reported as
 unobservable rather than guessed.
 
+**Generate the frame; author only the core** (#881). `python3 dev/brief.py
+--task <id> --owns <paths> --core <file>` emits a complete brief — identity
+header with the base sha derived from `git merge-base`, the worktree asked of
+`git worktree list`, the `--ledger` read form, `Lane-owns:`, the standing rules
+and live-state prohibitions from `briefs/frame.md`, the report skeleton, and the
+boilerplate. It **refuses** a core that is empty, all placeholder, or carries no
+direction-2 section with a body. Measured over the 40 most recent briefs
+(`.dreamwork/docs/measurements/881-brief-frame.md`): the rules block was retyped
+33 times and produced **32 distinct bodies**, so what this fixes is a lane's
+rule set depending on what was remembered, not typing volume — the frame is only
+7.3% of a brief's bytes. Write the core; never let the tool write it.
+
 The lower-level checked dispatcher remains `just dispatch-lane <prompt-file>
 <@agent> [ccc options]`. The prompt file ends with `briefs/boilerplate.md`
 appended verbatim; `dev/dispatch_lane.py` validates that exact delivered string,
