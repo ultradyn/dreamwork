@@ -6559,14 +6559,14 @@ class TestGoalsRoute(unittest.TestCase):
     def test_goal_writes_never_emit_wake_line(self):
         prerequisite, root, child = self.ids
         status, body = self._post(self._serve(), {
-            "action": "add-condition", "goal_id": root,
-            "condition": "Quiet human contract"})
+            "action": "add-goal", "title": "Quiet child",
+            "parent_id": root, "rank": 11})
         self.assertEqual(status, 202)
         self.assertTrue(body["ok"], body)
         payload = watch.goal_tree_payload(self.target)
         by_id = {node["id"]: node for node in payload["nodes"]}
-        self.assertIn("Quiet human contract", by_id[root]["criteria"],
-                      "quiet-write check never reached a stored mutation")
+        self.assertEqual(by_id[body["goal_id"]]["title"], "Quiet child",
+                         "quiet-write check never reached a stored mutation")
         event_path = os.path.join(
             self.target, ".dreamwork", "watch-events.log")
         wakes = (watch.read_text(event_path) or "").splitlines()
