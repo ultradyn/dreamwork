@@ -40,10 +40,16 @@ running:
 - the tree has no tracked or untracked changes before the guard;
 - the historical guard, fixture, server, lint judgement gate, and just recipe
   all exist;
-- the historical recipe checks both server identity/port ownership and that
-  the guard reached a real assertion;
+- the `guards` recipe body (not comments or unrelated file bytes) directly
+  invokes the selected guard, checks server identity/port ownership, and wires
+  `lint.py guard-execution` into its failure status;
 - the selected port is free; and
 - the current machine-load preflight travels with that revision's verdict.
+
+If temporary-worktree removal fails, the result is `DID NOT JUDGE`, includes
+whether the registry entry survived, and preserves the directory as evidence.
+Unlock/remove it explicitly after diagnosis; deleting only the directory turns
+the surviving registry entry into a phantom that pruning cannot remove.
 
 The three outcomes are intentionally not Boolean:
 
@@ -85,3 +91,14 @@ Classification also depends on guards naming setup checks as `precondition:`
 or using the shared absence-first wording. If a guard gives a hidden setup
 assumption a behavioural-looking name, no output parser can recover the
 distinction; audit that guard's assertion vocabulary before trusting its red.
+
+The recipe check is structural, not a shell interpreter. It rejects the known
+comment-plus-echo false green, but an uncalled function can contain every
+required direct line while another line prints `PASS`, and a historical
+`lint.py` or guard can itself lie. The IGC choice is therefore deliberately
+narrow: raw substring checks fail the judged-verdict goal; replacing the
+historical runner fails revision fidelity; recipe-body inspection preserves
+fidelity and closes the observed defect, provided accepted revisions are
+reported as having an auditable recipe shape rather than being sound against
+arbitrary historical shell. Refuse (`125`) whenever that gate cannot be
+established, and audit unusual indirection before trusting a boundary.

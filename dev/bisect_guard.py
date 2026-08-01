@@ -28,6 +28,7 @@ from pathlib import Path
 CRASH_SENTINEL = "FAIL the guard threw before finishing its checks"
 GUARD_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
 ASSERTION = re.compile(r"^\s*(PASS|FAIL) (.+)$", re.MULTILINE)
+RECIPE_HEADER = re.compile(r"^guards(?:\s+[^:]*)?:\s*$")
 
 
 class Verdict(Enum):
@@ -71,6 +72,23 @@ def port_is_free(port: int) -> bool:
     return True
 
 
+def _guards_recipe_body(justfile: str) -> list[str]:
+    """Extract command-bearing lines from the top-level ``guards`` recipe."""
+    lines = justfile.splitlines()
+    for index, line in enumerate(lines):
+        if not RECIPE_HEADER.fullmatch(line):
+            continue
+        body: list[str] = []
+        for candidate in lines[index + 1:]:
+            if candidate and not candidate[0].isspace():
+                break
+            stripped = candidate.lstrip()
+            if stripped and not stripped.startswith("#"):
+                body.append(stripped)
+        return body
+    return []
+
+
 def inspect_revision_tree(tree: Path, sha: str, guard: str) -> str | None:
     """Return why this tree cannot be judged, or None when prerequisites hold."""
     if not (tree / ".git").exists():
@@ -96,14 +114,24 @@ def inspect_revision_tree(tree: Path, sha: str, guard: str) -> str | None:
     if missing:
         return "revision lacks required guard inputs: " + ", ".join(missing)
 
-    # These properties make the historical just recipe a usable judge.  If an
-    # older recipe lacks either one, its exit status cannot distinguish a
-    # stale server or a guard that never asserted from a behavioural failure.
+    # Inspect the recipe body, not arbitrary bytes in the file.  This proves
+    # the historical recipe has the direct checks we know how to audit; it
+    # deliberately makes no claim to interpret arbitrary shell semantics.
     just = (tree / "justfile").read_text(encoding="utf-8", errors="replace")
-    if "guard-execution" not in just:
-        return "historical justfile does not verify that the guard ran and judged"
-    if "is serving" not in just or "already held" not in just:
-        return "historical justfile does not bind server identity and port ownership"
+    body = _guards_recipe_body(just)
+    if not any(re.match(r"python3\s+lint\.py\s+guard-execution\b", line) and
+               re.search(r"\|\|\s*fail=1\s*$", line) for line in body):
+        return "historical guards recipe has no direct judged-guard gate"
+    if not any(re.match(r"node\s+[\"']?dev/capture/\$g\.mjs[\"']?(?:\s|$)", line)
+               for line in body):
+        return "historical guards recipe has no direct selected-guard invocation"
+    port_check = any(line.startswith("_holder_line=$(ss ") for line in body)
+    target_read = any(line.startswith("served=$(curl ") and "/data.json" in line
+                      for line in body)
+    target_check = any("$served" in line and "$OUT/target" in line and
+                       line.startswith("if [ ") for line in body)
+    if not (port_check and target_read and target_check):
+        return "historical guards recipe has no direct server identity/ownership gate"
 
     pin = _run(["git", "show", "HEAD:watch.py"], cwd=tree)
     if pin.returncode != 0:
@@ -146,6 +174,21 @@ def read_preflight(repo: Path) -> str:
     return lines[-1] if lines else "guard preflight: UNAVAILABLE — did not produce a verdict"
 
 
+def _remove_worktree(repo: Path, tree: Path) -> str | None:
+    """Remove one private worktree, reporting registry evidence on failure."""
+    removal = _run(["git", "worktree", "remove", "--force", str(tree)], cwd=repo)
+    listing = _run(["git", "worktree", "list", "--porcelain"], cwd=repo)
+    if listing.returncode != 0:
+        return ("temporary worktree cleanup could not verify the registry after "
+                f"git worktree remove exited {removal.returncode}: {listing.stdout.strip()}")
+    registered = f"worktree {tree}" in listing.stdout.splitlines()
+    if removal.returncode == 0 and not registered:
+        return None
+    state = "registry entry survived" if registered else "registry survival could not be confirmed"
+    detail = removal.stdout.strip() or f"git worktree remove exited {removal.returncode}"
+    return f"temporary worktree cleanup failed; {state} for {tree}: {detail}"
+
+
 def judge_revision(repo: Path, revision: str, guard: str, port: int,
                    preflight: str, *, timeout: int = 180) -> Result:
     sha = resolve_commit(repo, revision)
@@ -159,6 +202,8 @@ def judge_revision(repo: Path, revision: str, guard: str, port: int,
     parent = Path(tempfile.mkdtemp(prefix="dreamwork-bisect-"))
     tree = parent / "tree"
     added = False
+    result: Result | None = None
+    cleanup_reason: str | None = None
     try:
         add = _run(["git", "worktree", "add", "--detach", str(tree), sha], cwd=repo)
         if add.returncode != 0:
@@ -167,28 +212,35 @@ def judge_revision(repo: Path, revision: str, guard: str, port: int,
         added = True
         reason = inspect_revision_tree(tree, sha, guard)
         if reason:
-            return Result(revision, sha, Verdict.DID_NOT_JUDGE, reason, preflight)
-
-        env = os.environ.copy()
-        env["DREAMWORK_GUARDS"] = guard
-        env["DREAMWORK_HUB_GUARDS"] = ""
-        env["DREAMWORK_GUARD_TIMEOUT"] = str(timeout)
-        try:
-            cp = _run(["just", "guards", str(port)], cwd=tree, env=env,
-                      timeout=timeout + 30)
-        except subprocess.TimeoutExpired as exc:
-            output = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
-            return Result(revision, sha, Verdict.DID_NOT_JUDGE,
-                          "outer runner timed out before a judgement", preflight, output)
-        verdict, why = classify_output(cp.stdout, cp.returncode, guard)
-        return Result(revision, sha, verdict, why, preflight, cp.stdout)
+            result = Result(revision, sha, Verdict.DID_NOT_JUDGE, reason, preflight)
+        else:
+            env = os.environ.copy()
+            env["DREAMWORK_GUARDS"] = guard
+            env["DREAMWORK_HUB_GUARDS"] = ""
+            env["DREAMWORK_GUARD_TIMEOUT"] = str(timeout)
+            try:
+                cp = _run(["just", "guards", str(port)], cwd=tree, env=env,
+                          timeout=timeout + 30)
+            except subprocess.TimeoutExpired as exc:
+                output = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
+                result = Result(revision, sha, Verdict.DID_NOT_JUDGE,
+                                "outer runner timed out before a judgement",
+                                preflight, output)
+            else:
+                verdict, why = classify_output(cp.stdout, cp.returncode, guard)
+                result = Result(revision, sha, verdict, why, preflight, cp.stdout)
     finally:
         if added:
-            # The path is a private mkdtemp made above.  Inspect first; forced
-            # removal is needed for ignored __pycache__ files a historical run
-            # may create, and can touch no caller-owned worktree.
-            _run(["git", "worktree", "remove", "--force", str(tree)], cwd=repo)
-        shutil.rmtree(parent, ignore_errors=True)
+            cleanup_reason = _remove_worktree(repo, tree)
+        if not added or cleanup_reason is None:
+            shutil.rmtree(parent, ignore_errors=True)
+
+    if cleanup_reason:
+        output = result.output if result else ""
+        return Result(revision, sha, Verdict.DID_NOT_JUDGE,
+                      cleanup_reason, preflight, output)
+    assert result is not None
+    return result
 
 
 def _exit_for(results: list[Result], preflight: str) -> int:
