@@ -103,6 +103,15 @@ const planted = await p.evaluate(() => {
     }
   }
   if (!textNode) return { err: 'no text node in open card body' };
+  // Put another card before the selected one BEFORE planting the Range. The
+  // next tick moves that sibling away, changing the selected card's position
+  // without detaching the selected node (which would itself collapse Range).
+  const cards = [...card.parentElement.querySelectorAll(':scope > .qa')];
+  const indexBeforeMove = cards.indexOf(card);
+  const mover = cards.findLast(c => c !== card);
+  if (mover) card.parentElement.insertBefore(mover, card);
+  const indexAfterMove = [...card.parentElement.querySelectorAll(':scope > .qa')]
+    .indexOf(card);
   const range = document.createRange();
   const end = Math.min(idx + needle.length, textNode.textContent.length);
   range.setStart(textNode, idx);
@@ -116,6 +125,8 @@ const planted = await p.evaluate(() => {
     selected: sel.toString(),
     gen: window.__dwViewRenderGen || 0,
     hasMorph: typeof morphdom === 'function',
+    indexBeforeMove,
+    indexAfterMove,
   };
 });
 notes.push(`planted: ${JSON.stringify(planted)}`);
@@ -123,6 +134,9 @@ ok('precondition: open card with plantable body text',
    !!planted && !planted.err && (planted.selected || '').length > 0);
 ok('precondition: planted selection is non-empty',
    !!planted && (planted.selected || '').length > 0);
+ok('precondition: selected card was moved away from its rendered position',
+   !!planted && planted.indexBeforeMove >= 0 &&
+   planted.indexAfterMove > planted.indexBeforeMove);
 
 if (!planted || planted.err || !(planted.selected || '').length) {
   await p.screenshot({ path: join(OUT, 'fail-pre.png'), fullPage: true });
@@ -146,7 +160,15 @@ async function forceTickSample() {
   return p.evaluate(async () => {
     const gen0 = window.__dwViewRenderGen || 0;
     const card0 = document.querySelector('.qa.open[data-qid]');
-    const qid = card0 && card0.dataset.qid;
+    const anchor = window.getSelection() && window.getSelection().anchorNode;
+    const anchorEl = anchor && (anchor.nodeType === 1 ? anchor : anchor.parentElement);
+    const selectedCard = anchorEl && anchorEl.closest('.qa[data-qid]');
+    const qid = selectedCard && selectedCard.dataset.qid;
+    const card1Before = qid
+      ? document.querySelector(`.qa[data-qid="${CSS.escape(qid)}"]`) : card0;
+    const parentBefore = card1Before && card1Before.parentElement;
+    const index0 = parentBefore
+      ? [...parentBefore.querySelectorAll(':scope > .qa')].indexOf(card1Before) : -1;
     const sel0 = (window.getSelection() && window.getSelection().toString()) || '';
     await fetch('/command', {
       method: 'POST',
@@ -168,7 +190,8 @@ async function forceTickSample() {
     // Use the production delta seam. Calling dataJsonUrl() directly can
     // return a {changed, removed} envelope, which is not a data document.
     const next = await fetchDataResponse();
-    if (next) setData(next);
+    if (!next) return { applied: false, qid, index0 };
+    setData(next);
     const html = await buildCurrent();
     setLiveContent(html);
     restoreCardState(kept);
@@ -187,8 +210,13 @@ async function forceTickSample() {
       selected: sel ? sel.toString() : '',
       selectedLen: sel ? sel.toString().length : 0,
       rangeCount: sel ? sel.rangeCount : 0,
-      sameCard: !!(card0 && card1 && card0 === card1),
+      sameCard: !!(card1Before && card1 && card1Before === card1),
       markSurvived: !!(card1 && card1.__selMark === 1),
+      applied: true,
+      index0,
+      index1: card1 && card1.parentElement
+        ? [...card1.parentElement.querySelectorAll(':scope > .qa')].indexOf(card1)
+        : -1,
       qid,
       sel0,
     };
@@ -202,7 +230,12 @@ notes.push(`tick1: ${JSON.stringify(t1)}`);
 // a tick did real work. Under master innerHTML, gen may be absent; card
 // replacement is the fallback vacuity.
 const tickWorked = !!(t1 && (t1.advanced || !t1.sameCard));
+ok('precondition: forced tick applied fresh data', !!t1 && t1.applied === true);
 ok('precondition: forced tick did real setContent work', tickWorked);
+ok('R1 class: the tick MOVES the selected card back by its qid',
+   !!t1 && t1.index0 >= 0 && t1.index1 >= 0 &&
+   t1.index1 !== t1.index0 && t1.sameCard === true &&
+   t1.markSurvived === true);
 ok('R1: prose selection survives a forced data tick (non-empty)',
    !!t1 && t1.selectedLen > 0);
 ok('R1: selection text still matches what was planted (or is a non-empty subset)',
