@@ -5948,6 +5948,90 @@ def check_boilerplate_expectation_derivation(dw: Path, rep: Report) -> None:
         )
 
 
+def check_frame_rebase_rearm(dw: Path, rep: Report) -> None:
+    """The frame's rebase rule must tell lanes to re-arm redproof after rebase (#958).
+
+    redproof.py pins each injection's expectation source by content sha (#852),
+    so a rebase that touched the source stales the pin — through no fault of the
+    lane, after a clean restore. redproof's own refusal names the remedy ("repeat
+    that cycle after the final rebase"); this check moves it upstream to the
+    frame, where the lane reads, so "rebase before you report" never reads as a
+    complete instruction. #958 measured the guaranteed refusal at #847's gate.
+
+    Section-aware (direction 2): the re-arm markers must sit in the SAME ``## ``
+    section as the rebase rule — a bullet stranded in 'What to report back' is
+    invisible at the moment the lane is doing its rebase. Degrade-to-zero (#868):
+    an empty or rule-less frame is an ERROR naming what was examined (how many
+    sections, how many carried the rebase rule), never a silent pass. Scope: only
+    the skill repo carries ``briefs/frame.md`` at its root, so a foreign dreamwork
+    target is silent — the same scoping check_boilerplate_expectation_derivation
+    uses for ``briefs/boilerplate.md``.
+    """
+    root = dw.parent
+    frame = root / "briefs" / "frame.md"
+    if not frame.is_file():
+        return
+    text = frame.read_text(encoding="utf-8", errors="replace")
+    # Split into (heading, body) on `## ` headings, matching dev/brief.py's
+    # frame_sections: content before the first heading is preamble and is NOT
+    # emitted into a brief, so it cannot satisfy the rule.
+    sections: list[tuple[str, str]] = []
+    cur_head: str | None = None
+    cur_body: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if cur_head is not None:
+                sections.append((cur_head, "\n".join(cur_body)))
+            cur_head, cur_body = line.strip(), []
+        elif cur_head is not None:
+            cur_body.append(line)
+    if cur_head is not None:
+        sections.append((cur_head, "\n".join(cur_body)))
+    n_sections = len(sections)
+
+    _REBASE = re.compile(r"Rebase onto local|rebase.*before you report", re.I)
+    rebase_secs = [(h, b) for h, b in sections if _REBASE.search(b)]
+    if not rebase_secs:
+        rep.add(
+            ERROR, "frame rebase re-arm",
+            f"examined {n_sections} section(s); 0 carry the rebase-before-report "
+            "rule — the frame no longer tells lanes to rebase, so the re-arm "
+            "rule has nothing to anchor to (#958)")
+        return
+
+    # Three markers, each load-bearing: the action (re-arm), the reason the pin
+    # moves (stale — redproof's own word), and the gate's refusal text (so a lane
+    # that hits it can grep). All three must be in the rebase section, not just
+    # anywhere in the file: a loose file-wide substring would pass on a bullet
+    # stranded in the wrong section (#958 direction 2).
+    _REARM = re.compile(r"re-?arm", re.I)
+    _STALE = re.compile(r"stale", re.I)
+    _REFUSAL = re.compile(r"expectation source", re.I)
+    all_armed = True
+    for h, b in rebase_secs:
+        gaps = []
+        if not _REARM.search(b):
+            gaps.append("'re-arm' (the action)")
+        if not _STALE.search(b):
+            gaps.append("'stale' (the reason the pin moves)")
+        if not _REFUSAL.search(b):
+            gaps.append("'expectation source' (the gate's refusal text)")
+        if gaps:
+            all_armed = False
+            rep.add(
+                ERROR, "frame rebase re-arm",
+                f"section '{h}' carries the rebase rule but is missing "
+                f"{', '.join(gaps)} — a lane that rebases and never re-arms "
+                f"arrives at the gate refused (#958); examined {n_sections} "
+                f"section(s)")
+    if all_armed:
+        rep.add(
+            OK, "frame rebase re-arm",
+            f"the rebase section carries the re-arm rule (re-arm, stale, "
+            f"'expectation source'); examined {n_sections} section(s), "
+            f"{len(rebase_secs)} carrying the rebase rule (#958)")
+
+
 def check_handoffs(dw: Path, watch, rep: Report) -> None:
     """The delivery half of the single-writer rule (#381).
 
@@ -7148,6 +7232,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     # from the dispatched corpus above: it is edited directly, not written by a
     # dispatch, so it sits outside the corpus-fingerprint guard.
     check_boilerplate_expectation_derivation(dw, rep)
+    check_frame_rebase_rearm(dw, rep)
     check_related_markers(dw, watch, rep)
     check_lesson_near_duplicates(dw, rep)
     check_review_decision_integrity(dw, rep)
