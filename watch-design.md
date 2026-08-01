@@ -2477,6 +2477,31 @@ was absent too, the renderer having never learned either. Defaults mirror
 `resolve_posture`'s absent fallbacks (`instant` / `hands-on`) so the line
 never reads "undefined".
 
+**Subagent policy is an explicit sibling control (#646 + #580).** A short
+three-row textarea sits directly under posture with Save and Reset buttons;
+typing, blur, and the posture arm never write it. Save POSTs the complete text
+to `/subagent-policy` and accepts success only after exact whole-file read-back.
+Reset deletes `.dreamwork/subagent-policy` rather than leaving an inert blank
+file. A dirty in-memory draft survives focus loss and morphdom ticks; a response
+may replace it only if no newer edit was typed while the request was in flight.
+Both buttons are one single-flight action surface, and destructive reset accepts
+only the literal `{reset:true}` shape without a simultaneous policy field.
+
+The empty field's placeholder advances every 10 seconds through six deliberately
+different examples: no subagents, model choice, worktree directories, roles,
+build boxes, and deploy authority. The timer updates the live placeholder even
+when `/mtime` reports no data change. The field is labelled by the visible
+"subagent policy" heading and reports save/reset results through its polite
+message slot.
+
+This remains **builder-owned** with the dashboard for now. The native registry
+owns whole routes, while this is a subtree of the still-builder dashboard;
+making only this control React-native would invent an unratified component-island
+boundary or force the dashboard conversion ahead of its planned family flip.
+`dev/capture/posture.mjs` binds visibility, accessible naming, quiet-page
+placeholder cycling, dirty-draft morph survival, explicit-only persistence,
+byte-exact save read-back, and delete-on-reset in a real browser.
+
 **The posture slot has three states, and only one earns prose (#488,
 #551).** A dim slot sits **beside the Posture heading** (`.posture-head`:
 label + `#posture-src`), not under the axes. **Armed** — a posture change

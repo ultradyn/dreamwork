@@ -10851,9 +10851,10 @@ class TestPosture(unittest.TestCase):
             base = self._serve(d)
             self._post(base + "/subagent-policy",
                        {"policy": "mine\nwith a newline\n"})
-            ev = self._policy_events(d)
-            self.assertTrue(any("subagent policy via watch" in e for e in ev))
-            self.assertTrue(any(e.strip().endswith(": set") for e in ev))
+            ev = [e for e in self._policy_events(d)
+                  if "subagent policy via watch" in e]
+            self.assertEqual(len(ev), 1)
+            self.assertTrue(ev[0].strip().endswith(": set"))
             # the text itself never appears in the log
             self.assertFalse(any("with a newline" in e for e in ev))
 
@@ -10880,8 +10881,10 @@ class TestPosture(unittest.TestCase):
             make_target(d)
             base = self._serve(d)
             watch.write_subagent_policy(d, "an override\n")
-            status = self._post(base + "/subagent-policy", {"reset": True})
+            status, body = self._post_json(
+                base + "/subagent-policy", {"reset": True})
             self.assertEqual(status, 202)
+            self.assertTrue(body["changed"])
             # the file is GONE, not blank
             self.assertFalse(os.path.exists(
                 os.path.join(d, ".dreamwork", "subagent-policy")))
@@ -10896,8 +10899,10 @@ class TestPosture(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
             base = self._serve(d)
-            status = self._post(base + "/subagent-policy", {"reset": True})
+            status, body = self._post_json(
+                base + "/subagent-policy", {"reset": True})
             self.assertEqual(status, 202)
+            self.assertFalse(body["changed"])
             self.assertFalse(os.path.exists(
                 os.path.join(d, ".dreamwork", "subagent-policy")))
 
@@ -10931,8 +10936,13 @@ class TestPosture(unittest.TestCase):
         self.assertEqual(block.count('onclick="commitSubagentPolicy()"'), 1)
         self.assertEqual(block.count('onclick="resetSubagentPolicy()"'), 1)
         textarea = block[block.index("<textarea"):block.index("</textarea>")]
-        for implicit in ("oninput=", "onchange=", "onblur="):
+        for implicit in ("onchange=", "onblur="):
             self.assertNotIn(implicit, textarea)
+        self.assertIn('oninput="rememberSubagentPolicyDraft(this.value)"',
+                      textarea)
+        self.assertIn('aria-labelledby="spolicy-lab"', textarea)
+        self.assertIn('id="spolicy-lab"', block)
+        self.assertIn("scheduleSubagentPolicyPlaceholder();", watch.PAGE)
         script = block + r"""
 function esc(s) { return String(s); }
 function placeholderAt(t) {
@@ -10963,7 +10973,7 @@ process.stdout.write(JSON.stringify({got, all: SUBAGENT_POLICY_PLACEHOLDERS,
         if not node:
             self.skipTest("node unavailable")
         verdict = _extract_js_fn(watch.PAGE, "async function writeVerdict(")
-        start = watch.PAGE.index("async function commitSubagentPolicy(")
+        start = watch.PAGE.index("let subagentPolicyDraft = null;")
         end = watch.PAGE.index("/* Shared description", start)
         handlers = watch.PAGE[start:end]
         script = verdict + handlers + r"""
@@ -11003,7 +11013,30 @@ const cleared = {msg: els["spolicy-msg"].textContent,
   resetDisabled: els["spolicy-reset"].disabled,
   policy: data.posture.subagent_policy,
   source: data.posture.subagent_policy_source};
-process.stdout.write(JSON.stringify({saved, cleared, calls}));
+let deliverSave;
+globalThis.fetch = async () => await new Promise(resolve => { deliverSave = resolve; });
+els["spolicy-field"].value = "first edit\n";
+const pendingSave = commitSubagentPolicy();
+els["spolicy-field"].value = "newer edit\n";
+rememberSubagentPolicyDraft(els["spolicy-field"].value);
+deliverSave(new Response(JSON.stringify({ok: true, changed: true,
+  subagent_policy: "first edit\n", subagent_policy_source: "file"}),
+  {status: 202, headers: {"Content-Type": "application/json"}}));
+await pendingSave;
+const saveRace = {msg: els["spolicy-msg"].textContent,
+  field: els["spolicy-field"].value, source: data.posture.subagent_policy_source};
+let deliverReset;
+globalThis.fetch = async () => await new Promise(resolve => { deliverReset = resolve; });
+const pendingReset = resetSubagentPolicy();
+els["spolicy-field"].value = "after reset click\n";
+rememberSubagentPolicyDraft(els["spolicy-field"].value);
+deliverReset(new Response(JSON.stringify({ok: true, changed: true,
+  subagent_policy: "default policy\n", subagent_policy_source: "default"}),
+  {status: 202, headers: {"Content-Type": "application/json"}}));
+await pendingReset;
+const resetRace = {msg: els["spolicy-msg"].textContent,
+  field: els["spolicy-field"].value, source: data.posture.subagent_policy_source};
+process.stdout.write(JSON.stringify({saved, cleared, calls, saveRace, resetRace}));
 """
         proc = subprocess.run([node, "--input-type=module", "-e", script],
                               capture_output=True, text=True, timeout=5)
@@ -11023,6 +11056,28 @@ process.stdout.write(JSON.stringify({saved, cleared, calls}));
             {"url": "/subagent-policy", "method": "POST",
              "body": {"reset": True, "from": "/"}},
         ])
+        self.assertEqual(got["saveRace"], {
+            "msg": "policy saved — newer edit not saved",
+            "field": "newer edit\n", "source": "file"})
+        self.assertEqual(got["resetRace"], {
+            "msg": "policy reset to default — newer edit not saved",
+            "field": "after reset click\n", "source": "default"})
+
+    def test_reset_requires_the_literal_true_and_no_policy_field(self):
+        """Reset is a destructive closed-shape command, not truthiness."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            self.assertTrue(watch.write_subagent_policy(d, "keep me\n"))
+            for bad in ({"reset": "false"}, {"reset": 1},
+                        {"reset": False},
+                        {"reset": True, "policy": "replacement\n"},
+                        ["reset"]):
+                status, body = self._post_json(
+                    base + "/subagent-policy", bad)
+                self.assertEqual(status, 202)
+                self.assertTrue(body.get("rejected"), bad)
+                self.assertEqual(watch.read_subagent_policy(d), "keep me\n")
 
     def test_blank_save_is_rejected_not_written_as_inert(self):
         """A blank save must be refused, not persisted as an inert file.
@@ -11031,9 +11086,11 @@ process.stdout.write(JSON.stringify({saved, cleared, calls}));
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
             base = self._serve(d)
-            status = self._post(base + "/subagent-policy",
-                                {"policy": "   \n\n"})
+            status, body = self._post_json(
+                base + "/subagent-policy", {"policy": "   \n\n"})
             self.assertEqual(status, 202)  # rejection is a 202 receipt
+            self.assertTrue(body["rejected"])
+            self.assertEqual(body["reason"], "domain_invalid")
             self.assertFalse(os.path.exists(
                 os.path.join(d, ".dreamwork", "subagent-policy")))
 

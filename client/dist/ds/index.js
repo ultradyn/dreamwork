@@ -3905,19 +3905,37 @@ var DreamworkDesign = (() => {
     "e.g. deploy auth — who may ship"
   ];
   var SUBAGENT_POLICY_PLACEHOLDER_MS = 1e4;
+  var subagentPolicyDraft = null;
+  var subagentPolicyPlaceholderTimer = null;
+  function subagentPolicyPlaceholder(now = Date.now()) {
+    return SUBAGENT_POLICY_PLACEHOLDERS[Math.floor(now / SUBAGENT_POLICY_PLACEHOLDER_MS) % SUBAGENT_POLICY_PLACEHOLDERS.length];
+  }
+  function syncSubagentPolicyPlaceholder() {
+    const f = document.getElementById("spolicy-field");
+    if (f && !f.value) f.placeholder = subagentPolicyPlaceholder();
+  }
+  function scheduleSubagentPolicyPlaceholder() {
+    if (subagentPolicyPlaceholderTimer) return;
+    const delay = SUBAGENT_POLICY_PLACEHOLDER_MS - Date.now() % SUBAGENT_POLICY_PLACEHOLDER_MS + 20;
+    subagentPolicyPlaceholderTimer = setTimeout(() => {
+      subagentPolicyPlaceholderTimer = null;
+      syncSubagentPolicyPlaceholder();
+      scheduleSubagentPolicyPlaceholder();
+    }, delay);
+  }
   function subagentPolicyPicker(d) {
     const p = d && d.posture || {};
     const has = p.subagent_policy_source === "file";
-    const ph = SUBAGENT_POLICY_PLACEHOLDERS[Math.floor(Date.now() / SUBAGENT_POLICY_PLACEHOLDER_MS) % SUBAGENT_POLICY_PLACEHOLDERS.length];
-    return `<section class="spolicy" id="spolicy" aria-label="subagent policy"><div class="spolicy-head"><div class="label">subagent policy</div><div class="spolicy-src${has ? " file" : ""}" id="spolicy-src">${has ? "override" : "standing default"}</div></div><div class="spolicy-body"><textarea class="spolicy-field" id="spolicy-field" rows="3" placeholder="${esc(ph)}" aria-describedby="spolicy-msg" spellcheck="false"></textarea><div class="spolicy-actions"><button type="button" class="sgbtn spolicy-save" id="spolicy-save" onclick="commitSubagentPolicy()">save</button><button type="button" class="sgbtn spolicy-reset" id="spolicy-reset"${has ? "" : " disabled"} onclick="resetSubagentPolicy()">reset</button></div></div><div class="spolicy-msg" id="spolicy-msg" aria-live="polite"></div></section>`;
+    const ph = subagentPolicyPlaceholder();
+    return `<section class="spolicy" id="spolicy" aria-label="subagent policy"><div class="spolicy-head"><div class="label" id="spolicy-lab">subagent policy</div><div class="spolicy-src${has ? " file" : ""}" id="spolicy-src">${has ? "override" : "standing default"}</div></div><div class="spolicy-body"><textarea class="spolicy-field" id="spolicy-field" rows="3" placeholder="${esc(ph)}" aria-labelledby="spolicy-lab" aria-describedby="spolicy-msg" spellcheck="false" oninput="rememberSubagentPolicyDraft(this.value)"></textarea><div class="spolicy-actions"><button type="button" class="sgbtn spolicy-save" id="spolicy-save" onclick="commitSubagentPolicy()">save</button><button type="button" class="sgbtn spolicy-reset" id="spolicy-reset"${has ? "" : " disabled"} onclick="resetSubagentPolicy()">reset</button></div></div><div class="spolicy-msg" id="spolicy-msg" aria-live="polite"></div></section>`;
   }
   function syncSubagentPolicyValue(d) {
     const f = document.getElementById("spolicy-field");
     if (!f) return;
     const p = d && d.posture || {};
     const has = p.subagent_policy_source === "file";
-    const want = has ? String(p.subagent_policy || "") : "";
-    if (document.activeElement === f) return;
+    const stored = has ? String(p.subagent_policy || "") : "";
+    const want = subagentPolicyDraft !== null ? subagentPolicyDraft : stored;
     if (f.value !== want) f.value = want;
   }
   var pdescKey = null;
@@ -4709,6 +4727,7 @@ var DreamworkDesign = (() => {
     revealQuestionUpdates();
     syncPostureFromData();
     syncSubagentPolicyValue(data);
+    scheduleSubagentPolicyPlaceholder();
     restoreRolls();
     restoreAnswerDrafts();
     bindAskDraft();

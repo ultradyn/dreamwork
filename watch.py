@@ -6047,10 +6047,16 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             req = self._read_json()
             if req is None:
                 self._reject("malformed_json"); return
-            from_path = (req or {}).get("from")
+            if not isinstance(req, dict):
+                self._reject("domain_invalid"); return
+            from_path = req.get("from")
+            has_reset = "reset" in req
+            if has_reset and (req.get("reset") is not True
+                              or "policy" in req):
+                self._reject("domain_invalid"); return
             # Reset: delete the override file. Idempotent — absent is already
             # the standing default, so reset-to-default returns changed=False.
-            if (req or {}).get("reset"):
+            if has_reset:
                 removed = delete_subagent_policy(target)
                 if removed is None:
                     self.send_error(500); return

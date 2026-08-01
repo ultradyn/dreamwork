@@ -851,22 +851,51 @@ const SUBAGENT_POLICY_PLACEHOLDERS = [
   'e.g. deploy auth — who may ship',
 ];
 const SUBAGENT_POLICY_PLACEHOLDER_MS = 10_000;
+let subagentPolicyDraft = null;
+let subagentPolicyRequestGen = 0;
+let subagentPolicyPlaceholderTimer = null;
+function subagentPolicyPlaceholder(now = Date.now()) {
+  return SUBAGENT_POLICY_PLACEHOLDERS[
+    Math.floor(now / SUBAGENT_POLICY_PLACEHOLDER_MS)
+      % SUBAGENT_POLICY_PLACEHOLDERS.length];
+}
+function rememberSubagentPolicyDraft(text) {
+  subagentPolicyDraft = String(text);
+}
+function syncSubagentPolicyPlaceholder() {
+  const f = document.getElementById('spolicy-field');
+  if (f && !f.value) f.placeholder = subagentPolicyPlaceholder();
+}
+function scheduleSubagentPolicyPlaceholder() {
+  if (subagentPolicyPlaceholderTimer) return;
+  const delay = SUBAGENT_POLICY_PLACEHOLDER_MS
+    - (Date.now() % SUBAGENT_POLICY_PLACEHOLDER_MS) + 20;
+  subagentPolicyPlaceholderTimer = setTimeout(() => {
+    subagentPolicyPlaceholderTimer = null;
+    syncSubagentPolicyPlaceholder();
+    scheduleSubagentPolicyPlaceholder();
+  }, delay);
+}
+function paintSubagentPolicyActions(busy, hasOverride) {
+  const save = document.getElementById('spolicy-save');
+  const reset = document.getElementById('spolicy-reset');
+  if (save) save.disabled = busy;
+  if (reset) reset.disabled = busy || !hasOverride;
+}
 function subagentPolicyPicker(d) {
   const p = (d && d.posture) || {};
   const has = p.subagent_policy_source === 'file';
-  // Advance through every example in order. Time-bucketing keeps ordinary 2s
-  // data ticks hash-identical while still rotating a genuinely empty field.
-  const ph = SUBAGENT_POLICY_PLACEHOLDERS[
-    Math.floor(Date.now() / SUBAGENT_POLICY_PLACEHOLDER_MS)
-      % SUBAGENT_POLICY_PLACEHOLDERS.length];
+  const ph = subagentPolicyPlaceholder();
   return `<section class="spolicy" id="spolicy" aria-label="subagent policy">` +
-    `<div class="spolicy-head"><div class="label">subagent policy</div>` +
+    `<div class="spolicy-head"><div class="label" id="spolicy-lab">` +
+    `subagent policy</div>` +
     `<div class="spolicy-src${has ? ' file' : ''}" id="spolicy-src">` +
     `${has ? 'override' : 'standing default'}</div></div>` +
     `<div class="spolicy-body">` +
     `<textarea class="spolicy-field" id="spolicy-field" rows="3"` +
-    ` placeholder="${esc(ph)}" aria-describedby="spolicy-msg"` +
-    ` spellcheck="false"></textarea>` +
+    ` placeholder="${esc(ph)}" aria-labelledby="spolicy-lab"` +
+    ` aria-describedby="spolicy-msg" spellcheck="false"` +
+    ` oninput="rememberSubagentPolicyDraft(this.value)"></textarea>` +
     `<div class="spolicy-actions">` +
     `<button type="button" class="sgbtn spolicy-save" id="spolicy-save"` +
     ` onclick="commitSubagentPolicy()">save</button>` +
@@ -886,11 +915,8 @@ function syncSubagentPolicyValue(d) {
   if (!f) return;
   const p = (d && d.posture) || {};
   const has = p.subagent_policy_source === 'file';
-  const want = has ? String(p.subagent_policy || '') : '';
-  // Only overwrite when the field is NOT the active edit target and the
-  // server-side value differs — so a user mid-edit is never clobbered by a
-  // 2s tick, and an unchanged tick does not reset the cursor.
-  if (document.activeElement === f) return;
+  const stored = has ? String(p.subagent_policy || '') : '';
+  const want = subagentPolicyDraft !== null ? subagentPolicyDraft : stored;
   if (f.value !== want) f.value = want;
 }
 /* Save: POST the field's current text. The "saved" message fires ONLY after
@@ -899,16 +925,17 @@ function syncSubagentPolicyValue(d) {
    field, not the text we sent (#632/#659 round-trip proof in UI form). */
 async function commitSubagentPolicy() {
   const f = document.getElementById('spolicy-field');
-  const msg = document.getElementById('spolicy-msg');
-  const save = document.getElementById('spolicy-save');
-  if (save) save.disabled = true;
+  const requested = f ? f.value : '';
+  rememberSubagentPolicyDraft(requested);
+  const generation = ++subagentPolicyRequestGen;
+  paintSubagentPolicyActions(true, true);
   let ok = false;
   let body = null;
   try {
     const res = await fetch('/subagent-policy', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        policy: f ? f.value : '',
+        policy: requested,
         from: location.pathname + location.search,
       }),
     });
@@ -919,20 +946,31 @@ async function commitSubagentPolicy() {
       try { body = await readback.json(); } catch (e) { body = null; }
     }
   } catch (e) { ok = false; }
-  if (save) save.disabled = false;
+  if (generation !== subagentPolicyRequestGen) return;
+  const field = document.getElementById('spolicy-field');
+  const msg = document.getElementById('spolicy-msg');
   if (ok && body) {
     if (data && data.posture) {
       data.posture.subagent_policy = body.subagent_policy;
       data.posture.subagent_policy_source = body.subagent_policy_source;
     }
-    if (f && body.subagent_policy != null) f.value = body.subagent_policy;
-    if (msg) msg.textContent = body.changed ? 'policy saved' : 'no change';
+    const unchanged = subagentPolicyDraft === requested;
+    if (unchanged) {
+      subagentPolicyDraft = null;
+      if (field && body.subagent_policy != null)
+        field.value = body.subagent_policy;
+    }
+    if (msg) msg.textContent = unchanged
+      ? (body.changed ? 'policy saved' : 'no change')
+      : 'policy saved — newer edit not saved';
     const src = document.getElementById('spolicy-src');
     if (src) { src.textContent = 'override'; src.className = 'spolicy-src file'; }
-    const reset = document.getElementById('spolicy-reset');
-    if (reset) reset.disabled = false;
+    paintSubagentPolicyActions(false, true);
   } else if (msg) {
     msg.textContent = 'could not save the policy — the write was refused';
+    paintSubagentPolicyActions(false,
+      !!(data && data.posture
+         && data.posture.subagent_policy_source === 'file'));
   }
 }
 /* Reset: POST reset=true, which deletes the file server-side. The field
@@ -940,10 +978,9 @@ async function commitSubagentPolicy() {
    default fills it on the next tick), NOT to the default's text locally —
    so a reset that failed server-side does not look done (#671). */
 async function resetSubagentPolicy() {
-  const f = document.getElementById('spolicy-field');
-  const msg = document.getElementById('spolicy-msg');
-  const reset = document.getElementById('spolicy-reset');
-  if (reset) reset.disabled = true;
+  const draftAtStart = subagentPolicyDraft;
+  const generation = ++subagentPolicyRequestGen;
+  paintSubagentPolicyActions(true, true);
   let ok = false;
   let body = null;
   try {
@@ -961,19 +998,28 @@ async function resetSubagentPolicy() {
       try { body = await readback.json(); } catch (e) { body = null; }
     }
   } catch (e) { ok = false; }
-  if (reset) reset.disabled = false;
+  if (generation !== subagentPolicyRequestGen) return;
+  const field = document.getElementById('spolicy-field');
+  const msg = document.getElementById('spolicy-msg');
   if (ok && body) {
     if (data && data.posture) {
       data.posture.subagent_policy = body.subagent_policy;
       data.posture.subagent_policy_source = body.subagent_policy_source;
     }
-    if (f) f.value = '';
-    if (msg) msg.textContent = body.changed ? 'policy reset to default' : 'already default';
+    const unchanged = subagentPolicyDraft === draftAtStart;
+    if (unchanged) {
+      subagentPolicyDraft = null;
+      if (field) field.value = '';
+    }
+    if (msg) msg.textContent = unchanged
+      ? (body.changed ? 'policy reset to default' : 'already default')
+      : 'policy reset to default — newer edit not saved';
     const src = document.getElementById('spolicy-src');
     if (src) { src.textContent = 'standing default'; src.className = 'spolicy-src'; }
-    if (reset) reset.disabled = true;
+    paintSubagentPolicyActions(false, false);
   } else if (msg) {
     msg.textContent = 'could not reset the policy — the write was refused';
+    paintSubagentPolicyActions(false, true);
   }
 }
 
@@ -1937,6 +1983,7 @@ function finishViewCommit() {
   // #646: inject the stored policy text into the textarea AFTER morphdom,
   // so free text never passes through the HTML string-builder (parser-safe).
   syncSubagentPolicyValue(data);
+  scheduleSubagentPolicyPlaceholder();
   // #454: rolled questions re-roll here, on the same argument as the
   // drafts below — every render commits through this seam, and the tick's
   // regroups measure AFTER it, so a kept roll invents no travel.

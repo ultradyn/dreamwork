@@ -126,6 +126,79 @@ ok('delegation stepper present with value + label',
 ok('ambient slot (no override file) shows the remind button (#551)',
    /remind/i.test(struct.src));
 
+// ── #646 + #580 subagent policy: explicit write/reset + quiet cycling ───
+const policyPath = join(dir, '.dreamwork', 'subagent-policy');
+const policyInitial = await p.evaluate(() => {
+  const sec = document.getElementById('spolicy');
+  const field = document.getElementById('spolicy-field');
+  const save = document.getElementById('spolicy-save');
+  const reset = document.getElementById('spolicy-reset');
+  const r = sec && sec.getBoundingClientRect();
+  return {
+    visible: !!(r && r.width > 20 && r.height > 20),
+    placeholder: field?.placeholder || '',
+    labelledBy: field?.getAttribute('aria-labelledby') || '',
+    label: document.getElementById('spolicy-lab')?.textContent || '',
+    save: !!save, reset: !!reset, resetDisabled: !!reset?.disabled,
+  };
+});
+notes.push('subagent policy initial: ' + JSON.stringify(policyInitial));
+ok('subagent policy control is visible', policyInitial.visible);
+ok('policy field has a visible accessible label',
+   policyInitial.labelledBy === 'spolicy-lab'
+   && /subagent policy/i.test(policyInitial.label));
+ok('explicit save + reset exist; reset starts disabled without an override',
+   policyInitial.save && policyInitial.reset && policyInitial.resetDisabled);
+let placeholderCycled = false;
+try {
+  await p.waitForFunction(before => {
+    const f = document.getElementById('spolicy-field');
+    return !!f && !f.value && f.placeholder !== before;
+  }, policyInitial.placeholder, { timeout: 12_000 });
+  placeholderCycled = true;
+} catch (e) {}
+const placeholderAfter = await p.$eval('#spolicy-field', f => f.placeholder);
+notes.push(`policy placeholder: ${policyInitial.placeholder} -> ${placeholderAfter}`);
+ok('placeholder cycles on a quiet page with no data render',
+   placeholderCycled && placeholderAfter !== policyInitial.placeholder);
+
+const policyText = '  leading α\ntrailing space \n';
+await p.fill('#spolicy-field', policyText);
+await p.locator('#spolicy-field').blur();
+await p.evaluate(() => {
+  lastViewHtml = null;
+  setContent(buildDashboard(data));
+});
+const draftAfterMorph = await p.$eval('#spolicy-field', f => f.value);
+ok('blur + morph preserves the unsaved policy draft',
+   draftAfterMorph === policyText);
+ok('typing and blur do not write the policy file', !existsSync(policyPath));
+await p.click('#spolicy-save');
+await p.waitForFunction(() =>
+  document.getElementById('spolicy-msg')?.textContent === 'policy saved');
+const saveState = await p.evaluate(() => ({
+  value: document.getElementById('spolicy-field')?.value,
+  source: document.getElementById('spolicy-src')?.textContent,
+  resetDisabled: document.getElementById('spolicy-reset')?.disabled,
+}));
+ok('save persists and reads back exact whitespace + non-ASCII bytes',
+   fileText(policyPath) === policyText && saveState.value === policyText);
+ok('save paints override and enables reset',
+   saveState.source === 'override' && saveState.resetDisabled === false);
+await p.click('#spolicy-reset');
+await p.waitForFunction(() =>
+  document.getElementById('spolicy-msg')?.textContent ===
+    'policy reset to default');
+const resetState = await p.evaluate(() => ({
+  value: document.getElementById('spolicy-field')?.value,
+  source: document.getElementById('spolicy-src')?.textContent,
+  resetDisabled: document.getElementById('spolicy-reset')?.disabled,
+}));
+ok('reset deletes the file and returns the field to standing default',
+   !existsSync(policyPath) && resetState.value === ''
+   && resetState.source === 'standing default'
+   && resetState.resetDisabled === true);
+
 // ── #488 source chip beside the Posture heading ─────────────────────────
 // Geometry, not DOM ancestry alone: same-row means |label.top − src.top|
 // is well under one line. Precondition: both boxes have positive size.
@@ -200,8 +273,16 @@ ok('pdesc reserves height when idle (shell > 0, display not none)',
    !!layoutIdle && layoutIdle.shellH > 8
    && layoutIdle.display !== 'none' && !layoutIdle.open);
 
+await p.mouse.move(1, 1);
 await p.hover('.paxis-chips[data-axis="asking"] .pchip[data-stop="near-auto"]');
-await sleep(400);
+try {
+  await p.waitForFunction(() => {
+    const shell = document.getElementById('pdesc');
+    const text = document.getElementById('pdesc-text');
+    return !!(shell && shell.classList.contains('open')
+              && text && text.textContent.length > 8);
+  }, null, { timeout: 2_000 });
+} catch (e) {}
 const desc = await p.evaluate(() => {
   const t = document.getElementById('pdesc-text');
   const shell = document.getElementById('pdesc');
