@@ -751,6 +751,26 @@ dreamwork-version: 5853e1789929
     relied on quoted into the report. Note `#284` lives in
     `tasks.md.deprecated` — a live citation can point into a deprecated file, so
     "not in the ledger" does not mean "not real".
+- **A recurring failure mode gets a tool, not another lesson** (human-set
+  2026-08-01): on the third appearance of *the checker and the checked share a
+  source of truth*, he asked *"we should investigate whether we can adopt some
+  practice or norm to avoid this failure mode entirely. like how do we do things
+  better so that we do not hit it so much?"* The answer that satisfied it was
+  not a lesson — `lessons.md` already carried the lesson, and the defect landed
+  anyway. It was three tools, each failing closed at a different moment, because
+  no single one covers the others' blind spot:
+  - **at the act** — `dev/redproof.py` requires `--expectation` and refuses when
+    the expectation's source *is* the file being injected (`#852`, `d191584b`).
+  - **at the report** — `briefs/boilerplate.md` requires a direction-1 report to
+    state what its expectation is derived from (`#906`, `b9b5d25b`).
+  - **across the corpus** — a `lint.py` rule that finds `EXPECTED_*` values built
+    from an imported production constant (`#905`, `6a672681`); it found a real
+    one on its first run.
+  The generalisation: a norm that lives only in prose depends on the next author
+  remembering it, and the measurement in the entry above is that briefs, not
+  memory, are what reach a lane. So when a class of defect recurs, the increment
+  is the thing that makes it refuse — at the moment of the act, in the artifact
+  it produces, and over the corpus that already exists.
 - **Every lane returns a dogfood report** (human-set 2026-07-31): each subagent
   ends its report with a section on friction it hit *with the loop itself* — an
   unclear brief, missing or wrong tooling, a convention that cost it time. His
