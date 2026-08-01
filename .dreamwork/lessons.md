@@ -3909,3 +3909,51 @@ false PASS.** Normalising whitespace before diffing rows is right, but a normali
 to collapse two genuinely DIFFERENT rows makes a real swap cancel to `added=0 removed=0` and the
 gate goes green on an actual regression. The gate is the last thing between a lane and master, so
 the direction-2 red-proof here is not optional garnish — it is the whole safety argument.
+
+## A true statement, read as a stronger claim than it supports (2026-08-02, #919/#924/#921, mine, measured)
+
+Every merge for most of a night printed:
+
+```
+gate-coverage: 4 of 4 declared gates passed: named-tests guard-selection repo-wide-guards lint-comparison
+```
+
+**That sentence is true.** It is a statement about the *declared* gates, and all four did pass. I
+read it as "the repo is green" and kept landing. The repo was red: **3192 passed / 22 failed / 0
+skipped / 0 errors, 3214 collected** (#919, at `a23dd6a0`). Sixteen to twenty-two tests had been
+failing the whole time, and no instrument lied at any point.
+
+**No gate runs the full suite, and that is a deliberate cost decision, not a defect** — 3214 tests
+per merge is not affordable. The defect is that nothing else ran it either, and the gate's wording
+invited the reader to assume something had. The distinguishing feature of this family is that
+**there is no false statement to find.** Auditing the instruments for lies finds nothing, because
+the gap is between what the sentence *asserts* and what a reader *takes from it*. That is why it
+survived so long: every check of the checker comes back clean.
+
+**The remedy is to make the statement name its own complement.** Not "4 of 4 declared gates passed"
+but a line that also says what was *not* run. This fixes the misreading at the point of misreading,
+which is cheaper and more reliable than any amount of reporting around it (#924 deliverable 3).
+
+**Watch for the quantified version of the same trap while fixing it.** "3214 tests were not run" is
+a hand-maintained literal with an expiry date — the same shape as `assertEqual(len(WRITE_ROUTES),
+13)`, whose own comment records three prior hand-bumps before it failed at 15. **The honest
+unquantified statement beats a fresh literal**: "the full suite was not run" costs nothing and
+cannot fall behind.
+
+**The generalisation, and it is the useful half:** a narrowing that is not stated in the output is
+itself a defect, even when every number in that output is correct. #921 is the worked counterexample
+— it deliberately stopped verifying that a citation's coordinate holds at its pinned revision, and
+said so *in the PASS line itself*:
+
+```
+PASS: 19 of 19 pinned across 34 document(s); 216 citation(s) seen — pinned, not verified against the pinned revision
+```
+
+A reader cannot take that guard for more than it now claims. **Three denominators, none of them
+constants, and the limit stated in the same breath as the result.** That is the shape every check
+in this repo should converge on.
+
+**Corollary for the coordinator, learned the expensive way the same night:** a blocked decision does
+not become unblocked by dispatching more lanes at it. Three lanes (#867) each built an overlapping
+answer to one unmade human ruling, deleting the same ~56,800 lines three times over. One lane, or
+none until the ruling.
