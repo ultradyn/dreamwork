@@ -2780,6 +2780,7 @@ var DreamworkDesign = (() => {
     { question: title, comment: note, section, from: fromPath() },
     attemptId
   );
+  var postCommand = (kind, text, attemptId) => postJSON("/command", { kind, text, from: fromPath() }, attemptId);
   var QSEND_WHY = {
     404: "there is no .dreamwork/questions.md to write to",
     409: "this entry is not in .dreamwork/questions.md any more — it may have been folded, renamed, or the file may have stopped being readable",
@@ -7761,11 +7762,7 @@ var DreamworkDesign = (() => {
       composing = false;
       {
         const attempt = confirmation.begin();
-        const r = await postJSON(
-          "/command",
-          { kind, text, from: fromPath() },
-          DraftStore.attemptId(composerLid())
-        );
+        const r = await postCommand(kind, text, DraftStore.attemptId(composerLid()));
         const cv = r && r._dwv;
         if (r && cv && cv.landed) {
           if (!attempt.success()) return;

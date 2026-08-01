@@ -1353,6 +1353,17 @@ const postComment = (title, note, section, attemptId) =>
   postJSON('/comment',
            { question: title, comment: note, section, from: fromPath() },
            attemptId);
+/* #344 — the one seam a per-row control sends a steering command through. It
+   reuses postJSON — the transport the composer already rides (#175/#191) — so
+   a control aiming the loop at #<id> sends the SAME request typing do-next/
+   #<id> into the composer does: same endpoint, same {kind,text,from} body, same
+   client-side witness. A row calls postCommand('do-next', '#' + id); nothing
+   builds a second /command fetch, because a second way to emit do-next is a
+   second source of truth about what a do-next is. (The /tasks rows this targets
+   are #281's page, which has not landed beyond its data contract; this is the
+   seam those rows will call.) */
+const postCommand = (kind, text, attemptId) =>
+  postJSON('/command', { kind, text, from: fromPath() }, attemptId);
 /* Why a send did not land, in his terms. The status alone ("rejected (409)")
    names the protocol and not the problem. */
 const QSEND_WHY = {

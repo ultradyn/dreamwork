@@ -5406,6 +5406,61 @@ class TestCollector(unittest.TestCase):
         self.assertEqual(watch.command_line("do-next", "", "/"),
                          "command via watch [/]: do-next")
 
+    def test_do_next_row_control_is_indistinguishable_from_typed(self):
+        # #344: a per-row control that aims the loop at a task must send
+        # EXACTLY what typing do-next/#<id> into the composer sends — not
+        # 'equivalent' but identical, through the one wake-line builder
+        # (command_line). The constraint is the whole task: a second way to
+        # emit do-next is a second source of truth about what a do-next is.
+        # The command BODY — kind + text, the part the loop reads and acts on
+        # — is identical; the only honest difference is the [from] hint (where
+        # he was), which #126 deliberately carries as evidence, not instruction.
+        task_id = 344
+        # what he types: kind 'do-next', text '#<id>' (no source — the composer
+        # sends from wherever he is, here modelled as the no-hint baseline).
+        typed = watch.command_line("do-next", "#" + str(task_id))
+        # what a row control on /tasks sends: the same kind and text, with the
+        # honest where-he-was hint.
+        clicked = watch.command_line("do-next", "#" + str(task_id), "/tasks")
+        # the command body is identical — derive it ONCE from the canonical
+        # builder rather than asserting a second literal (a second literal is
+        # the exact silent-when-drift failure this test exists to prevent).
+        body = "do-next: #" + str(task_id)
+        self.assertIn(body, typed)
+        self.assertIn(body, clicked)
+        # the lines differ ONLY by the from-hint: typed has none, clicked
+        # carries /tasks. Asserting the full lines (not a substring) pins the
+        # shape, so a drift in prefix or suffix is caught.
+        self.assertEqual(typed, "command via watch: " + body)
+        self.assertEqual(clicked, "command via watch [/tasks]: " + body)
+        self.assertNotEqual(typed, clicked)  # the hint IS the difference
+        # the do-next text '#<id>' is a valid submission: do-next is the one
+        # kind whose text is optional, so a row sending only '#<id>' lands —
+        # exactly like typing it. (command_line accepts any text; the server's
+        # _handle_command gate is `kind != 'do-next' and not text`.) Asserting
+        # the no-text form is accepted proves the row needs nothing beyond
+        # '#<id>' to send a complete, valid do-next.
+        bare = watch.command_line("do-next", "")
+        self.assertEqual(bare, "command via watch: do-next")
+        # ONE transport server-side: a single write route dispatches to the
+        # command handler. A second route (/command-row, /steer, ...) that
+        # accepts a do-next body would be a second way to emit do-next — the
+        # exact second source of truth this task refuses. command_line being
+        # source-independent is necessary but NOT sufficient: a second route
+        # could carry a different body and this test's command_line checks
+        # would never see it. The dispatch table is the one place a new route
+        # must appear (do_POST derives its handler set from it), so counting
+        # the command-dispatching keys here is the closure.
+        src = inspect.getsource(watch)
+        t0 = src.index("WRITE_ROUTE_HANDLERS = {")
+        table = src[t0:src.index("\n        }", t0)]
+        cmd_keys = [ln for ln in table.splitlines()
+                    if "_handle_command" in ln]
+        self.assertEqual(len(cmd_keys), 1,
+            "exactly one write route may accept a steering command; "
+            "a second would be a second source of truth. found: %r" % cmd_keys)
+        self.assertIn('"/command"', cmd_keys[0])
+
     def test_from_hint_never_emits_a_hint_it_cannot_vouch_for(self):
         # The line is read by an agent that then ACTS, so a path that could
         # forge structure yields no hint at all — a wrong hint is worse than
