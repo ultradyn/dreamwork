@@ -392,6 +392,8 @@ def ship_siblings(rev, dest, repo=ROOT) -> list:
     paths = sibling_closure(rev, repo)
     written = []
     for rel in paths:
+        if rel == "client/style.css":
+            continue
         data = resolve_blob(rev, rel, repo)
         out = os.path.join(dest, rel)
         parent = os.path.dirname(out)
