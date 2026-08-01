@@ -46,10 +46,7 @@ from pathlib import Path
 from typing import Any
 
 from .core import Conflict, NotFound, StoreSpec, ValidationError
-from .migrate import initialize_legacy_store
 from .question_parse import QuestionManifest, QuestionEntry, Contribution
-from .reviews import ReviewRepository
-from .tasks import TaskRepository
 
 
 PathLike = str | Path
@@ -778,20 +775,10 @@ def questions_cut_over(db) -> bool:
 
 
 def question_store_spec(path: PathLike) -> StoreSpec:
-    """Bind all three repositories through the core's one factory seam.
+    """Compatibility facade for the canonical Dreamwork store spec."""
 
-    The question/review tables are created by the v003 migration, which runs
-    as part of ``initialize_legacy_store`` on first WRITE open.  The task
-    repository is included so the store is a complete ledger — the question
-    and review foreign keys reference ``task(id)``, and a scratch store used
-    for import testing should have the full schema available.
-    """
-    return StoreSpec(
-        path,
-        repositories={
-            "tasks": TaskRepository,
-            "questions": QuestionRepository,
-            "reviews": ReviewRepository,
-        },
-        initializer=initialize_legacy_store,
-    )
+    # Local import avoids a module cycle while ``store`` imports this
+    # repository class to compose the complete store.
+    from .store import dreamwork_store_spec
+
+    return dreamwork_store_spec(path)

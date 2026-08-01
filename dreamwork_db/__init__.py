@@ -14,6 +14,7 @@ from .core import (
     ValidationError,
     open_database,
 )
+from .store import dreamwork_store_spec
 
 __all__ = [
     "Access",
@@ -28,4 +29,5 @@ __all__ = [
     "StoreSpec",
     "ValidationError",
     "open_database",
+    "dreamwork_store_spec",
 ]
