@@ -7434,22 +7434,38 @@ class TestAppShell(unittest.TestCase):
         for token in ("t.id !== 'cmdtext'",
                       "#cmdmenu .cmdmenuitem",
                       ".map(n => n.dataset.kind)",
-                      "e.preventDefault()",
-                      # the ACTIVE KIND setter (writes activeKind), not the
-                      # indicator — closes #259's named false-green.
-                      "setKind(kind)",
-                      "saveDraft()",
-                      "announceMode("):
+                      "e.preventDefault()"):
             self.assertIn(token, watch.PAGE, "#259 composer cycle missing " + token)
+        # The ACTIVE KIND setter and the draft save are asserted WITHIN the
+        # handler block, not anywhere in PAGE: `setKind(kind)` is also a
+        # substring of the function DECLARATION (`function setKind(kind) {`),
+        # so a bare PAGE membership test would pass with the call removed —
+        # the indicator driven instead of the active kind (#259's named
+        # false-green). Locating the handler by its unique menu anchor and
+        # asserting inside it closes that: the slice does not contain the
+        # declaration. `moveIndicator` must NOT appear here either — driving
+        # the indicator directly is precisely the defect.
+        h = watch.PAGE.index("'#cmdmenu .cmdmenuitem'")
+        handler = watch.PAGE[h:h + 480]
+        self.assertIn("setKind(kind);", handler,
+                      "the cycle must drive the active kind (setKind), not the "
+                      "indicator — the named false-green")
+        self.assertIn("saveDraft()", handler,
+                      "the new kind must travel with the draft (the click rule)")
+        self.assertNotIn("moveIndicator", handler,
+                         "the cycle drives the active kind; the indicator follows "
+                         "it through setKind, never directly")
         # the cycle order must come from the MENU (visible), not from COMMANDS
         # directly: a future reorder of the menu independent of COMMANDS would
         # otherwise diverge silently. COMMANDS may appear only for the LABEL
         # lookup, never as the order source.
-        i = watch.PAGE.index("'#cmdmenu .cmdmenuitem'")
-        order_block = watch.PAGE[i:i + 260]
+        order_block = watch.PAGE[h:h + 260]
         self.assertNotIn('COMMANDS.map', order_block,
                          "the cycle order must read the menu (visible order), "
                          "not COMMANDS declaration order")
+        # announce is wired (asserted separately on the whole page, since the
+        # label lookup may sit just past the 480-char handler slice).
+        self.assertIn("announceMode(", watch.PAGE)
 
     def test_mode_change_is_announced_accessibly(self):
         """#259 — the sliding indicator is sight-only, so a mode cycle
