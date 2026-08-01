@@ -79,7 +79,7 @@ const MARKDOWN_REPLY = 'First line.\nSecond line.\n\nSecond paragraph.\n\n' +
   '> Quoted first line.\n> Quoted second line.\n\n' +
   '## Rendered reply\n\n- first item\n- second item\n\n' +
   '```python\nprint("<unsafe>")\n```\n\n' +
-  '<script id="chat-inject">window.chatInjected=1</script>';
+  '<img id="chat-inject" src=x onerror="window.chatInjected=1">';
 addTurn('chat-read', 'agent', MARKDOWN_REPLY,
         '2026-01-03T00:01:00');
 ok('#857 precondition: the production-writer fixture contains a single newline',
@@ -355,7 +355,7 @@ try {
       chatControlBreaks: chatProbe.querySelectorAll('br').length,
       injectedNode: !!document.querySelector('#chat-inject'),
       injectedEffect: window.chatInjected === 1,
-      literalScript: body ? body.textContent.includes('<script id="chat-inject">') : false,
+      literalHtml: body ? body.textContent.includes('<img id="chat-inject"') : false,
     };
   });
   notes.push('markdown chat DOM: ' + JSON.stringify(markdown));
@@ -380,7 +380,7 @@ try {
   ok('#827 markdown DOM renders the fenced code node',
      markdown.code === 'print("<unsafe>")');
   ok('#827 raw HTML is escaped before markdown markup is introduced',
-     !markdown.injectedNode && !markdown.injectedEffect && markdown.literalScript);
+     !markdown.injectedNode && !markdown.injectedEffect && markdown.literalHtml);
 
   await sleep(2200); // pass through the normal 2s innerHTML/morph refresh
   const afterMorph = await p.evaluate(() => {
