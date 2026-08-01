@@ -255,6 +255,23 @@ for (let i = 0; i < 10; i++) {
 }
 ok('unrolling in one tab unrolls the other (kept in sync like other ui ' +
    'state)', t2b === false);
+// Direction matters: tab 2 is now already open and unrolled. Roll tab 1
+// again so the storage listener has to apply the true arm to that existing
+// peer; opening tab 2 from persisted rolled state cannot prove this path.
+await p.click(`.qa[data-qid="${enc}"] button.qroll`);
+let t2c = null;
+for (let i = 0; i < 10; i++) {
+  await sleep(300);
+  t2c = await p2.evaluate(qid => {
+    const c = document.querySelector(`.qa[data-qid="${qid}"]`);
+    return c ? c.className.includes('rolled') : null;
+  }, enc);
+  if (t2c === true) break;
+}
+ok('rolling in one tab rolls an already-open unrolled peer', t2c === true);
+// Leave the persisted state unrolled for the reduced-motion click below.
+await p.click(`.qa[data-qid="${enc}"] button.qroll`);
+await sleep(700);
 await p2.close();
 
 /* ── reduced motion: same function, no travel ─────────────────────────────

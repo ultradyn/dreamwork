@@ -263,12 +263,10 @@ if (Number(pre.max) !== CAP_COMMITTED) {
 }
 
 /* ── helpers ──────────────────────────────────────────────────────────── */
-/* Drive the same snapshot → setLiveContent → restore path as tick(), but
-   snapshot FIRST (before any await) so a concurrent poll cannot steal focus
-   between "he is typing" and the capture. Production tick also snapshots
-   after its data fetch — #523 no longer has its own snapshot/restore pair
-   (#505 p2): the focused input is kept by id and value-stamped in the morph,
-   so the load-bearing line is the kept node, not a restore call. */
+/* Invoke production tick() itself. The old guard hand-built its
+   snapshot→build→setLiveContent chain, so sabotaging tick's caller stayed
+   green. Hold ambient polling while the command lands, force mtime unequal,
+   then release the hold only for this awaited tick. */
 const forceTick = async () => {
   const r = await p.evaluate(async () => {
     const before = document.getElementById('bdlimit-in');
@@ -276,42 +274,21 @@ const forceTick = async () => {
     const renderGen0 = window.__dwViewRenderGen || 0;
     // Force morph path even when dashboard markup is byte-identical.
     if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
-    // SNAPSHOT WHILE FOCUS STILL HOLDS — no await above this line.
-    const kept = snapshotCardState();
-    const askKept = snapshotAskState();
-    const reviewFrame = snapshotReviewFrame();
-    const beforeCards = snapshotCards();
-    const bdHover = snapshotBdHover();
     const was = burnKey(data);
     const genBefore = document.getElementById('view')
       && document.getElementById('view').innerHTML.length;
 
+    holdRerenderUntil = Date.now() + 8000;
     await fetch('/command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'add-idea', text: 'bdinput tick ' + Date.now() }),
     });
-    // Mark mtime current + hold the poller so a concurrent auto-tick cannot
-    // re-swap after our restore and steal focus before the guard samples.
-    try {
-      const mt = parseMtime(await (await fetch('/mtime')).text());
-      if (mt && mt.mtime != null) lastMtime = mt.mtime;
-    } catch (e) {}
+    lastMtime = '__bdinput_guard_force__';
+    holdRerenderUntil = 0;
+    await tick();
+    // tick() schedules the standing poller; keep it off the immediate sample.
     holdRerenderUntil = Date.now() + 8000;
-
-    // Use the production delta seam. Calling dataJsonUrl() directly can
-    // return a {changed, removed} envelope, which is not a data document.
-    const next = await fetchDataResponse();
-    if (next) setData(next);
-    const html = await buildCurrent();
-    setLiveContent(html);
-    restoreBdHover(bdHover);
-    restoreReviewFrame(reviewFrame);
-    restoreCardState(kept);
-    // #523: no restoreViewInputs — kept by id + value-stamped in the morph.
-    restoreAskState(askKept);
-    bindAskDraft();
-    regroupCards(beforeCards);
 
     const after = document.getElementById('bdlimit-in');
     const advanced = (window.__dwViewRenderGen || 0) > renderGen0;
