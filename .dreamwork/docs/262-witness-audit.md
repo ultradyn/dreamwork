@@ -7,19 +7,19 @@ Both harms the entry names are closed; #262 should fold.
 
 Commit `38ef4098` (E3 cutover, #263) closed it. On today's tree:
 
-- `make_handler` (watch.py:4870 @ dc739001) defaults `journal_shadow=True`; the only
-  production caller (watch.py:6197 @ dc739001) does not override it. The `journal_shadow=
+- `make_handler` (watch.py:4870 @ e699d4f6) defaults `journal_shadow=True`; the only
+  production caller (watch.py:6197 @ e699d4f6) does not override it. The `journal_shadow=
   False` path is test-only (E2's baseline harness).
-- `do_POST` (watch.py:5456 @ dc739001) commits the receipt BEFORE dispatching the handler:
+- `do_POST` (watch.py:5456 @ e699d4f6) commits the receipt BEFORE dispatching the handler:
   `_journal_receive` → if `journal_result() is None` → 503 (no success). Only
   after a committed receipt does the handler run.
-- All 12 write routes in `WRITE_ROUTE_HANDLERS` (watch.py:6077 @ dc739001) terminate their
-  success path in `_send_receipt` (watch.py:4997 @ dc739001), which sends 503 if the
+- All 12 write routes in `WRITE_ROUTE_HANDLERS` (watch.py:6077 @ e699d4f6) terminate their
+  success path in `_send_receipt` (watch.py:4997 @ e699d4f6), which sends 503 if the
   receipt is absent. No handler calls `_send` or `send_response` for success.
 - `receive()` (sqlite.py:619) only returns a `receipt_id` after a durable
   `COMMIT` under `synchronous=FULL`; any failure → ROLLBACK → raise → None →
   503.
-- `log_submission` (watch.py:4741 @ dc739001) is now a best-effort SHADOW written AFTER
+- `log_submission` (watch.py:4741 @ e699d4f6) is now a best-effort SHADOW written AFTER
   the receipt. Its `OSError` suppression (#199's property) no longer implies an
   unwitnessed acknowledgement — the receipt already committed.
 
@@ -41,7 +41,7 @@ A handler calling `_send` (200) fails the status assertion; one calling
 
 **Also closed.** The brief's premise ("two same-target processes each hold
 their own journal") was true in the submissions.log era but is false
-post-journal. `_journal_path(target)` (watch.py:4655 @ dc739001) resolves to one file
+post-journal. `_journal_path(target)` (watch.py:4655 @ e699d4f6) resolves to one file
 per TARGET (`.dreamwork/user-events.sqlite3`), opened WAL +
 `synchronous=FULL` + `busy_timeout=5s`. Two processes serving the same
 `--target` share the same SQLite database; `get_receipt()` opens a fresh

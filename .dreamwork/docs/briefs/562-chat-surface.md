@@ -25,7 +25,7 @@ needs in your report; do not edit them.
 1. **The count line is total-only.** `chatList` (watch.py:4037-4040 @ 8b3c10cc)
    renders `topic chats · ${d.chats.length}`. His question: "is that
    unread or total?" — it is total, and it doesn't say so.
-2. **A chat cannot be opened.** `chatRow` (watch.py:4026-4036 @ dc739001) emits an
+2. **A chat cannot be opened.** `chatRow` (watch.py:4026-4036 @ 8b3c10cc) emits an
    inert `<div class="dim" data-chat="…" data-status="…">`. **No handler
    anywhere reads `data-chat`** (grep finds the attribute set at :4033 and
    read nowhere), and **no `/chat` route exists** (grep finds none). The

@@ -26,14 +26,14 @@ Most severe first. `file:line` quotes are against the current tree
   - `.dreamwork/tasks.md:29` is `## Open`; `.dreamwork/tasks.md:1178` is
     `## Recently landed`, and the landed entries are full entries (multi-
     line, origin-governed — e.g. `#307` carries `origin: **loop**`).
-  - `watch.parse_ledger` (`watch.py:6006 @ dc739001`) returns `(open ids, landed
+  - `watch.parse_ledger` (`watch.py:6006 @ 6199cf44`) returns `(open ids, landed
     ids)` and reads **both** sections via `LEDGER_SEC_OPEN` /
-    `LEDGER_SEC_LANDED` (`watch.py:5935-5936 @ dc739001`). The docstring states the
+    `LEDGER_SEC_LANDED` (`watch.py:5935-5936 @ 6199cf44`). The docstring states the
     two-shape contract explicitly.
   - #304 (commit `1d089ad`) made the section split load-bearing:
     `check_ledger_sections` (`lint.py:349`) walks the lines itself and
     ERRORs when its open count disagrees with `watch.parse_ledger`.
-  - The burndown series (`ledger_series`, `watch.py:6033 @ dc739001`) derives
+  - The burndown series (`ledger_series`, `watch.py:6033 @ 6199cf44`) derives
     completions from the landed section's git history. A coordinator
     that believed "open tasks only" and stopped writing `## Recently
     landed` would silently break the burndown and the `landed` set that

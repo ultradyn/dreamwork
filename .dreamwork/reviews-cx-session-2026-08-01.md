@@ -46,7 +46,7 @@ Capture the requested base per fetch, reject a delta whose `base` is not that ba
 
 ### MEDIUM — #641's cache can serve a stale full document indefinitely when content changes without `watched_mtime` changing
 
-**Files:** `watch.py:3984-3996 @ dc739001`, `watch.py:3999-4006 @ 4e83d224`; contract at `file-formats.md:2172-2178`
+**Files:** `watch.py:3984-3996 @ 4e83d224`, `watch.py:3999-4006 @ 4e83d224`; contract at `file-formats.md:2172-2178`
 
 `_data_json_cached()` is now authoritative even when the caller sends no `since`; it never calls `collect()` again while `watched_mtime` is equal. This changes the old no-`since` semantics and makes a missed version signal survive page reloads.
 

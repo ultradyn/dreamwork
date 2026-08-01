@@ -167,7 +167,7 @@ Recommend: cite `a75770eb`.
 ### #354 — LANDED (recommend fold)
 
 `0f77a1fa` feat(#354) is an ancestor of master. Content on master:
-`watch.py:903` `FILEBYTES_CHUNK = 65536`; `_send_bytes` at `watch.py:5003 @ dc739001` does
+`watch.py:903` `FILEBYTES_CHUNK = 65536`; `_send_bytes` at `watch.py:5003 @ 2ccc1995` does
 `while True: chunk = body.read(FILEBYTES_CHUNK)` then `self.wfile.write(chunk)`
 — chunked streaming, not whole-file buffering. The task's ask ("/filebytes
 buffers a whole file with no cap") is fixed. `test_watch.py` gains 223 lines of
