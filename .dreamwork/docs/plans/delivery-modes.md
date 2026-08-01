@@ -248,15 +248,17 @@ Two rules run through the whole table and are stated once here:
   dispatch, for every write route). Instant mode only adds the wake line on top;
   it never *replaces* the durable receipt. So nothing delivered instantly is
   invisible to the cursor, and nothing batched is lost if the monitor is off.
-- **The toggle sets the mode; the table sets the per-kind default *under* the
-  mode.** In instant mode, batched kinds are *still batched* (an `add-idea` does
-  not interrupt even in instant mode). In batched mode, instant kinds are
-  *demoted to batched* (a `do-now` rides the queue rather than pre-empting) —
-  **or** the table's instant kinds stay instant regardless of mode. Which of
-  those two readings "batched mode" means is open Q2; this design proposes the
-  latter (the most-urgent kinds pre-empt even in batched mode), because
-  *"forgot to process some things"* is the failure batched mode must never
-  *cause*, and a `do-now` that does not pre-empt is a `do-now` that lied.
+- **The toggle is one switch — `instant` fires every wake, `batched` withholds
+  the non-pre-empt kinds.** In instant mode (the default; absent = today's
+  behaviour, every wake line fires) an `add-idea` *does* interrupt: it rides the
+  wake line on top of its durable receipt, exactly as before the axis existed —
+  only `batched` mode ever holds a kind back. In batched mode, Q2 RULED that the
+  most-urgent kinds keep pre-empting (a `do-now` that does not pre-empt is a
+  `do-now` that lied), so only the pre-empt set wakes and the rest ride the
+  cursor; *"forgot to process some things"* is the failure batched mode must
+  never *cause*. (An earlier draft proposed that instant mode would still hold
+  batched kinds back — "still batched"; the ruling did not adopt it: instant
+  means every wake fires, as `emits_wake` implements and `#872` confirmed.)
 
 ## How the toggle is represented and changed
 
