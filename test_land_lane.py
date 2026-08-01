@@ -25,7 +25,7 @@ land_lane = _load_tool()
 
 def _git(repo: Path, *args: str) -> str:
     result = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
     return result.stdout.strip()
 
 
@@ -169,6 +169,7 @@ def test_new_warn_row_refuses_and_retains_lane(landing_repo):
 
     assert result.returncode == 1
     assert "lint WARN row-set comparison: added=1 removed=0" in result.stdout
+    assert "+   WARN  new warning" in result.stdout
     assert "REFUSE phase=lint-comparison: WARN row set changed" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
@@ -188,6 +189,103 @@ def test_same_warn_count_with_different_rows_refuses(landing_repo):
     assert "+   WARN  new warning" in result.stdout
     assert "-   WARN  old warning" in result.stdout
     assert "REFUSE phase=lint-comparison: WARN row set changed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_wider_lint_label_padding_is_not_a_warn_identity_change(landing_repo):
+    root, lane = landing_repo
+    _write(
+        root / "lint.py",
+        "from pathlib import Path\n"
+        "width = int(Path('lint-width.txt').read_text())\n"
+        "print('  WARN  ' + 'lessons.md'.ljust(width) + '  same warning')\n"
+        "print('clean (1 warning(s))')\n",
+    )
+    _write(root / "lint-width.txt", "19\n")
+    _git(root, "add", "lint.py", "lint-width.txt")
+    _git(root, "commit", "-m", "render a dynamically padded lint label")
+    _git(lane, "rebase", "master")
+    _write(lane / "lint-width.txt", "22\n")
+    _git(lane, "add", "lint-width.txt")
+    _git(lane, "commit", "-m", "widen the lint label column by three")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 0, result.stderr
+    assert "lint WARN row-set comparison: added=0 removed=0" in result.stdout
+    assert "baseline=1 rows; post-merge=1 rows" in result.stdout
+
+
+def test_warn_identity_does_not_collapse_meaningful_detail_whitespace():
+    one_space = "  WARN  lessons.md  merging is his call"
+    two_spaces = "  WARN  lessons.md  merging  is his call"
+
+    assert " ".join(one_space.split()) == " ".join(two_spaces.split()), (
+        "the killer input must collide under the rejected blanket whitespace rule"
+    )
+    assert land_lane._warn_row_identity(one_space) != land_lane._warn_row_identity(two_spaces)
+
+
+def test_meaningful_detail_whitespace_swap_refuses_and_names_both_rows(landing_repo):
+    root, lane = landing_repo
+    _write(
+        root / "lint.py",
+        "print('  WARN  lessons.md  merging is his call')\n"
+        "print('clean (1 warning(s))')\n",
+    )
+    _git(root, "add", "lint.py")
+    _git(root, "commit", "-m", "render one-space warning detail")
+    _git(lane, "rebase", "master")
+    _write(
+        lane / "lint.py",
+        "print('  WARN  lessons.md  merging  is his call')\n"
+        "print('clean (1 warning(s))')\n",
+    )
+    _git(lane, "add", "lint.py")
+    _git(lane, "commit", "-m", "change meaningful warning whitespace")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "lint WARN row-set comparison: added=1 removed=1" in result.stdout
+    assert "+   WARN  lessons.md  merging  is his call" in result.stdout
+    assert "-   WARN  lessons.md  merging is his call" in result.stdout
+    assert "REFUSE phase=lint-comparison: WARN row set changed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_empty_warn_baseline_refuses_as_zero_population(landing_repo):
+    root, lane = landing_repo
+    _write(root / "lint-rows.txt", "")
+    _git(root, "add", "lint-rows.txt")
+    _git(root, "commit", "-m", "empty baseline")
+    _git(lane, "rebase", "master")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "REFUSE phase=lint-baseline: WARN baseline population is empty" in result.stderr
+    assert "baseline=0 rows examined" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_empty_post_merge_warn_population_refuses(landing_repo):
+    root, lane = landing_repo
+    _write(lane / "lint-rows.txt", "")
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", "empty post-merge lint report")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "REFUSE phase=lint-comparison: post-merge WARN population is empty" in result.stderr
+    assert "baseline=1 rows; post-merge=0 rows examined" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
 

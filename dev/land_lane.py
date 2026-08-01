@@ -32,6 +32,9 @@ from typing import Sequence
 
 
 WARN_ROW = re.compile(r"^\s+WARN(?:\s|$)")
+PADDED_WARN_ROW = re.compile(
+    r"^  WARN  (?P<label>\S(?:.*?\S)?)(?P<padding> {2,})(?P<detail>\S.*)$"
+)
 LINT_TRAILER = re.compile(r"^clean \((\d+) warning\(s\)\)$", re.MULTILINE)
 
 # The gates this tool promises to run before the base branch is allowed to
@@ -90,6 +93,31 @@ def _worktrees(repo: Path) -> dict[str, Path] | None:
 
 def _warn_rows(output: str) -> tuple[str, ...]:
     return tuple(sorted(set(line for line in output.splitlines() if WARN_ROW.match(line))))
+
+
+def _warn_row_identity(row: str) -> tuple[str, ...]:
+    """Return WARN identity without ``lint.py``'s renderer-owned label padding.
+
+    Only the spaces between the label and detail are presentation. Label text
+    and the complete detail remain byte-for-byte identity, including meaningful
+    whitespace. Older/simple fixture rows without that structured separator are
+    compared raw rather than guessed.
+    """
+    match = PADDED_WARN_ROW.fullmatch(row)
+    if match is None:
+        return ("raw", row)
+    return ("warn", match.group("label"), match.group("detail"))
+
+
+def _warn_row_index(rows: Sequence[str]) -> dict[tuple[str, ...], str]:
+    indexed: dict[tuple[str, ...], str] = {}
+    for row in rows:
+        identity = _warn_row_identity(row)
+        prior = indexed.get(identity)
+        if prior is not None and prior != row:
+            raise ValueError(f"different WARN rows share one identity: {prior!r} and {row!r}")
+        indexed[identity] = row
+    return indexed
 
 
 def _print_rows(label: str, rows: Sequence[str]) -> None:
@@ -276,6 +304,14 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
             base_state=_base_state(repo, base, base_sha),
         )
     _print_rows("baseline", baseline)
+    if not baseline:
+        return _refuse(
+            "lint-baseline",
+            "WARN baseline population is empty; zero rows examined is not a comparison",
+            f"lint.py in {repo}; base={base_sha}; branch={branch_sha}; baseline=0 rows examined",
+            retained,
+            base_state=_base_state(repo, base, base_sha),
+        )
 
     detach = _git(repo, "checkout", "--detach", base_sha)
     if detach.returncode:
@@ -378,9 +414,27 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
             f"merge={merged_sha}; baseline rows={len(baseline)}",
         )
     _print_rows("post-merge", after)
-    added = tuple(sorted(set(after) - set(baseline)))
-    removed = tuple(sorted(set(baseline) - set(after)))
+    if not after:
+        return refuse_gated(
+            "lint-comparison",
+            "post-merge WARN population is empty; zero rows examined is not a match",
+            f"merge={merged_sha}; baseline={len(baseline)} rows; post-merge=0 rows examined",
+        )
+    try:
+        baseline_index = _warn_row_index(baseline)
+        after_index = _warn_row_index(after)
+    except ValueError as exc:
+        return refuse_gated(
+            "lint-comparison",
+            f"WARN identity normalisation is ambiguous: {exc}",
+            f"merge={merged_sha}; baseline={len(baseline)} rows; post-merge={len(after)} rows",
+        )
+    added_ids = set(after_index) - set(baseline_index)
+    removed_ids = set(baseline_index) - set(after_index)
+    added = tuple(sorted(after_index[identity] for identity in added_ids))
+    removed = tuple(sorted(baseline_index[identity] for identity in removed_ids))
     print(f"lint WARN row-set comparison: added={len(added)} removed={len(removed)}")
+    print(f"lint WARN populations: baseline={len(baseline)} rows; post-merge={len(after)} rows")
     for row in added:
         print(f"+ {row}")
     for row in removed:
