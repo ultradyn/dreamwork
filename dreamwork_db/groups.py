@@ -613,6 +613,17 @@ class GroupRepository:
             sources.extend(
                 ("group", gid) for gid in self._governing_groups(node[1])
             )
+        elif node[0] == "group":
+            # A group inherits the prerequisites of its ancestors: a subgoal
+            # whose parent epic is blocked is itself blocked. This is the
+            # group-side mirror of the task path's governing-group walk, and
+            # it is the only way an EMPTY subgoal — one with no member task
+            # to carry the task_id path — can report an ancestor blocker
+            # (#900). ``_ancestor_ids`` excludes the node itself (already a
+            # source) and terminates on any stored cycle.
+            sources.extend(
+                ("group", gid) for gid in self._ancestor_ids(node[1])
+            )
         found: list[Blocker] = []
         seen: set[tuple[str, int, str, int]] = set()
         for source in sources:
