@@ -8888,10 +8888,29 @@ class TestBriefLaneScratch:
         the cutoff is unresolvable — which would make a broken scope marker and
         a broken cutoff indistinguishable, and both look like a pass.
         """
-        briefs = lint.SKILL_DIR / ".dreamwork" / "docs" / "briefs"
+        from dev.citation_audit import _default_briefs_dir
+
+        briefs = _default_briefs_dir()
         teaching = [p.name for p in briefs.glob("*.md")
                     if lint.RESTORE_CLAUSE_RE.search(
                         p.read_text(encoding="utf-8", errors="replace"))]
+        common = subprocess.run(
+            ["git", "-C", str(lint.SKILL_DIR), "rev-parse",
+             "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, check=True,
+        )
+        main_briefs = (Path(common.stdout.strip()).parent / ".dreamwork" /
+                       "docs" / "briefs")
+        authoritative = {
+            p.name for p in main_briefs.glob("*.md")
+            if lint.RESTORE_CLAUSE_RE.search(
+                p.read_text(encoding="utf-8", errors="replace"))
+        }
+        assert set(teaching) == authoritative, (
+            "restore-teaching corpus truncated or divergent: default saw "
+            f"{len(teaching)} / main checkout {len(authoritative)}; "
+            f"missing {len(authoritative - set(teaching))}, "
+            f"extra {len(set(teaching) - authoritative)}")
         assert len(teaching) >= 10, (
             f"only {len(teaching)} restore-teaching briefs — the scope marker "
             "has stopped matching, and a check that matches nothing passes forever")

@@ -250,13 +250,27 @@ def audit_briefs(
     return report
 
 
-def _default_dw_dir() -> Path:
-    """Find the ``.dreamwork/`` dir, preferring the main checkout in a worktree."""
+def _main_checkout_root() -> Path:
+    """Resolve the primary checkout through git's shared administrative dir."""
     here = Path(__file__).resolve().parent.parent
-    candidate = here / ".dreamwork"
-    if candidate.is_dir():
-        return candidate
-    return candidate
+    result = subprocess.run(
+        ["git", "-C", str(here), "rev-parse", "--path-format=absolute",
+         "--git-common-dir"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode == 0:
+        return Path(result.stdout.strip()).parent
+    return here
+
+
+def _default_dw_dir() -> Path:
+    """Find the main checkout's ``.dreamwork/`` dir from a worktree."""
+    return _main_checkout_root() / ".dreamwork"
+
+
+def _default_briefs_dir() -> Path:
+    """Use the main checkout's live corpus when invoked from a worktree."""
+    return _default_dw_dir() / "docs" / "briefs"
 
 
 def format_report(report: AuditReport, quiet: bool = False) -> str:
@@ -298,9 +312,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--verbose", action="store_true", help="show UNCLASSIFIABLE details")
     args = parser.parse_args(argv)
 
-    briefs_dir = args.briefs or (
-        Path(__file__).resolve().parent.parent / ".dreamwork" / "docs" / "briefs"
-    )
+    briefs_dir = args.briefs or _default_briefs_dir()
     dw_dir = args.dw_dir or _default_dw_dir()
 
     if not briefs_dir.is_dir():
