@@ -1369,11 +1369,12 @@ class TestExitCodes:
             capture_output=True,
         )
 
-        assert proc.returncode == 2
-        assert (
+        expected = (
             f"lint: refusing detached corpus root {detached.resolve()} — "
             "expected SKILL.md beside lint.py"
-        ) in proc.stderr
+        )
+        assert expected in proc.stderr
+        assert proc.returncode == 2
 
     def test_empty_target_with_real_interpreter_is_not_detached(self, tmp_path, capsys):
         anchor = Path(lint.__file__).resolve().with_name("SKILL.md")
