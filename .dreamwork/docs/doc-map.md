@@ -30,7 +30,7 @@ cover it too.
 | `.dreamwork/docs/spikes/` | Timeboxed experiments that answered a question with a number; the branch holds the diff | Keep — a measured answer outlives the code that produced it |
 | `.dreamwork/review/` | Rich decision artifacts paired with a questions.md entry | Banner them decided; archive with the answered question |
 | `.dreamwork/{lessons,questions}.md` | Distilled lessons; asks for the human | Yes — groomed in rotation |
-| `.dreamwork/tasks.md` | The queue's durable half: open tasks, permanent ids, next id | Yes — same commit as any queue change |
+| `.dreamwork/tasks.md` | Five-line migration shim; the live queue, permanent ids, and next id are in the gitignored `.dreamwork/ledger.sqlite3` store | Keep only while the migration shim is supported; do not edit it as the live queue |
 | `.dreamwork/docs/github-processes.md` | The repo's GitHub shape and conventions (ud-dreamwork-github plugin) | Yes — re-survey when CI, labels, or PR flow appear |
 | `README.md` | Public face of the repo: what dreamwork is, install, where to start | Yes — must not drift from SKILL.md |
 | `relay.py` | Appends a coordinator message to a subagent inbox — body from stdin, stamp from the clock | Yes — it encodes two failures, not a convenience |

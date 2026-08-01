@@ -138,6 +138,11 @@ class TestMemoryPressure:
     not there (#785). The wording must report the reading, never name a cause
     the number beside it did not prove."""
 
+    def test_module_contract_names_the_actual_low_available_trigger(self):
+        assert "memory-pressure token when\navailable memory is low" in ct.__doc__, (
+            "concurrent_tests contract must name low MemAvailable as the trigger"
+        )
+
     def test_low_available_fires_clause(self):
         # Direction 1 anchor: genuinely scarce available memory surfaces the
         # clause with HONEST wording. The swap here is calm (0 used), so this

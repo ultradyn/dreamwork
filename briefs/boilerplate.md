@@ -5,6 +5,11 @@ and concatenates this file after it. It lives in the repo rather than in a sessi
 scratchpad because it is corrected by lane dogfood reports several times a night, and
 every one of those corrections used to die with the session that made it (`#703`).
 
+**Ledger reads from a worktree.** The bare `python3 dev/ledger.py get <id>` form
+refuses because the store is gitignored. Use this working invocation for every read:
+
+    python3 dev/ledger.py get <id> --ledger /home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/tasks.md
+
 **Corrections belong here.** When a lane reports that a rule was wrong, missing, or
 unreachable, fix it in this file in the same increment that acts on the report. The duty
 runs both ways: when `SKILL.md` gains a lane-facing rule, reflect it here too — a rule
@@ -135,14 +140,7 @@ in its fixture — its PASS was guaranteed before the work started. If you cite 
 what it would catch.
 
 **Every issue number you cite must be opened and read**, with the relied-on line quoted into
-your report. Confidently-wrong citations are the characteristic failure mode here. **The bare
-`dev/ledger.py get <id>` form REFUSES from a worktree** — the store is gitignored so it cannot
-travel. Use this exact invocation:
-
-    python3 dev/ledger.py get <id> --ledger /home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/tasks.md
-
-(The refusal does name the working form, so this costs one wasted call rather than a wrong
-citation — `#667` built that gate deliberately. This just saves you the call.)
+your report. Confidently-wrong citations are the characteristic failure mode here.
 
 **Cite a lesson by its exact bolded title, not by `lessons.md:<line>`.** Confirm the title
 resolves to exactly one lesson head with `grep`; zero matches means it drifted, and two matches
@@ -241,9 +239,8 @@ whole tree. Run it alongside your subset:
 
     just pytest $(python3 dev/repo_wide_guards.py list)
 
-`python3 dev/repo_wide_guards.py list` is the single source for the set (`#440`); today it holds
-`test_no_raw_connect.py::test_no_raw_sqlite_connect_in_production_sources` and
-`test_ledger_cli.py::test_the_map_covers_every_verb` (37 tests, ~0.4s). This catches cross-cutting
+The command above is the single source for the set and its current population (`#440`).
+This catches cross-cutting
 RULES only — not a lane breaking an unrelated feature's behaviour, which is what the coordinator's
 full merged-tree sweep is for and remains for (`#651`); nothing here makes that sweep optional.
 Adding a member needs the entry criterion argued (see the tool's docstring).

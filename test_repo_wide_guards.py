@@ -27,6 +27,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parent
 TOOL_PATH = REPO / "dev" / "repo_wide_guards.py"
+BOILERPLATE_PATH = REPO / "briefs" / "boilerplate.md"
 
 
 def _load():
@@ -91,6 +92,38 @@ class TestRegistry:
             assert rwg._collect_resolves(nid), (
                 f"registry entry {nid!r} does not resolve to a collected test "
                 f"— a stale entry must not read as 'all guards passed' (#671)")
+
+
+class TestLaneContract:
+    """The standing brief delegates live registry facts to the executable source."""
+
+    def test_worktree_ledger_invocation_precedes_standing_rules(self):
+        text = BOILERPLATE_PATH.read_text(encoding="utf-8")
+        invocation = (
+            "python3 dev/ledger.py get <id> --ledger "
+            "/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/tasks.md"
+        )
+        assert text.count(invocation) == 1, (
+            "boilerplate must give exactly one unambiguous worktree ledger invocation"
+        )
+        assert text.index(invocation) < text.index("## Standing rules"), (
+            "working ledger invocation must appear before a lane reaches standing rules"
+        )
+
+    def test_guard_population_is_not_reasserted_in_prose(self):
+        text = BOILERPLATE_PATH.read_text(encoding="utf-8")
+        before_scope, separator, _after_scope = text.partition(
+            "This catches cross-cutting"
+        )
+        assert separator, "boilerplate lost the cross-cutting scope boundary"
+        source_statement = " ".join(before_scope.rsplit("\n\n", 1)[-1].split())
+        assert source_statement == (
+            "The command above is the single source for the set and its current "
+            "population (`#440`)."
+        ), (
+            "boilerplate must not restate registry members or a hardcoded count; "
+            "the executable list command owns the current population"
+        )
 
 
 # ── the detector signal: narrow enough to stay silent, broad enough to fire ──

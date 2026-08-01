@@ -6,7 +6,7 @@ What this is
 `just pytest` / `just test` prints this advisory before running the suite. It
 reports how many OTHER pytest processes are already live on the machine, plus
 how many browser/guard (Chromium) processes, plus a memory-pressure token when
-swap is heavily used. Advisory only — it gates nothing, queues nothing, and
+available memory is low. Advisory only — it gates nothing, queues nothing, and
 requires no cooperation from any other lane. That is what makes it landable
 today; it was the affected lane's own suggestion (#666 option (a)).
 

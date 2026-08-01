@@ -93,6 +93,21 @@ def test_documented_store_override_is_the_supported_flag(tmp_path, capsys):
     assert "UNCLASSIFIABLE:   1" in capsys.readouterr().out
 
 
+def test_public_output_contract_has_one_detail_switch(capsys):
+    """Default is summary and --verbose is the sole documented detail switch."""
+    assert "--quiet" not in citation_audit.__doc__, (
+        "citation_audit docs must not promise behaviour for the inert --quiet alias"
+    )
+    with pytest.raises(SystemExit) as caught:
+        citation_audit.main(["--help"])
+    assert caught.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--verbose" in help_text
+    assert "--quiet" not in help_text, (
+        "citation_audit help must present one supported detail switch: --verbose"
+    )
+
+
 def test_healthy_store_control_does_not_reach_fault_classifier(
     tmp_path, capsys, monkeypatch,
 ):
