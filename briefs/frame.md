@@ -71,6 +71,11 @@ instrument read normal).
 - **Rebase onto local `master` before you report**, and report the sha *after*
   the rebase — a rebase rewrites shas, so a sha captured first names a commit
   that no longer exists. Local `master`, not `origin/master`, which is behind.
+- **Re-arm the red-proof after the final rebase.** A rebase can stale the
+  expectation pin even after a clean restore, so re-run `forget <path>` →
+  `begin <path> --expectation <source>` → re-sabotage → `restore` → `check`
+  once the rebase lands, or the gate refuses with "expectation source ...
+  changed" — redproof's own remedy, repeated where the lane reads it (#958).
 - **Do not use `attn`.** You report to the coordinator, who decides whether to
   ping the human. This is absolute.
 - **A change that adds a state to a registry the gate inspects is unlandable
