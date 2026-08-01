@@ -6982,6 +6982,21 @@ var DreamworkDesign = (() => {
       (w2, base, path, tint) => {
         const doc = popoutShell(w2, base, path, tint, "+ command");
         doc.body.innerHTML = POPOUT_BODY(base, path);
+        const fitPopout = () => {
+          const ta = doc.getElementById("ptext");
+          if (!ta) return;
+          const de = doc.documentElement;
+          ta.style.resize = "none";
+          const prevH = ta.style.height, prevMH = ta.style.minHeight;
+          ta.style.minHeight = "0";
+          ta.style.height = "9999px";
+          void ta.offsetWidth;
+          const fillH = 9999 - (de.scrollHeight - de.clientHeight);
+          ta.style.height = fillH + "px";
+          ta.style.minHeight = "0";
+          void ta.offsetWidth;
+        };
+        w2.addEventListener("resize", fitPopout);
         const endpoint = location.origin + "/command";
         const from = fromPath();
         const confirmation = confirmationFor(doc, "pmsg", "pmsg", w2.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -6998,6 +7013,7 @@ var DreamworkDesign = (() => {
           DraftStore.bind(pta, popLid);
           DraftStore.restore(popLid, pta);
         }
+        fitPopout();
         doc.getElementById("pform").addEventListener("submit", async (ev) => {
           ev.preventDefault();
           const kind = doc.getElementById("pkind").value;

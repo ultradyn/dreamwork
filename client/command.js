@@ -176,6 +176,27 @@ async function requestPopout() {
     (w, base, path, tint) => {
       const doc = popoutShell(w, base, path, tint, '+ command');
       doc.body.innerHTML = POPOUT_BODY(base, path);
+      // #860 — the textarea FILLS the popout exactly: no scrollbar, but one
+      // pixel taller and there would be. CSS flex left slack (flex-basis auto
+      // absorbs growth), so the fill is JS-computed and self-correcting: set
+      // the textarea tall, read how far the document overflowed, and subtract
+      // that excess from the height. The result makes documentElement scroll
+      // height == client height, and +1px tips it over. Re-run on every resize
+      // so the fill survives the window being dragged. resize:none because the
+      // window itself is the resize unit now, not the textarea handle.
+      const fitPopout = () => {
+        const ta = doc.getElementById('ptext');
+        if (!ta) return;
+        const de = doc.documentElement;
+        ta.style.resize = 'none';
+        const prevH = ta.style.height, prevMH = ta.style.minHeight;
+        ta.style.minHeight = '0'; ta.style.height = '9999px';
+        void ta.offsetWidth;
+        const fillH = 9999 - (de.scrollHeight - de.clientHeight);
+        ta.style.height = fillH + 'px'; ta.style.minHeight = '0';
+        void ta.offsetWidth;
+      };
+      w.addEventListener('resize', fitPopout);
       const endpoint = location.origin + '/command';
       // captured at SPAWN, not read at submit: this window floats free while
       // the main tab navigates on, and its own location is about:blank. Where
@@ -199,6 +220,7 @@ async function requestPopout() {
         DraftStore.bind(pta, popLid);
         DraftStore.restore(popLid, pta);
       }
+      fitPopout();   // #860: size to fill after the draft is restored into the box
       doc.getElementById('pform').addEventListener('submit', async ev => {
         ev.preventDefault();
         const kind = doc.getElementById('pkind').value;
