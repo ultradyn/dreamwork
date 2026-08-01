@@ -1,6 +1,7 @@
 # Brief — #172: the project name is not in the title, anywhere
 
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/172`**, branch **`wt/172`**. Do not push, do not merge.
+Lane-owns: watch.py, watch-design.md, dev/capture/, justfile, test_watch.py
 **Never use `attn`** — report through the inbox path at the bottom.
 
 **This is urgent and he is right to be annoyed.** His words at 15:13, verbatim:
