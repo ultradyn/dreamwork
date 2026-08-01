@@ -215,7 +215,10 @@ def test_launcher_resolves_lane_under_the_sibling_worktree_root(launch_repo: Pat
     expected = (launch_repo.parent / ".worktrees" / "lane-832").resolve()
 
     assert result.returncode == 7
-    assert Path(str(record["worktree"])) == expected
+    resolved = Path(str(record["worktree"]))
+    assert resolved == expected, (
+        f"governed launcher resolved {resolved}, expected sibling lane path {expected}"
+    )
     assert f"worktree {expected}" in _worktree_rows(launch_repo)
     assert not (launch_repo / ".worktrees").exists(), (
         "the governed launcher recreated the draining in-repo root"
