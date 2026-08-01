@@ -93,6 +93,20 @@ def test_documented_store_override_is_the_supported_flag(tmp_path, capsys):
     assert "UNCLASSIFIABLE:   1" in capsys.readouterr().out
 
 
+def test_healthy_store_control_does_not_reach_fault_classifier(
+    tmp_path, capsys, monkeypatch,
+):
+    """The healthy-only fixture is the mandatory vacuous false-green shape."""
+    dw_dir, briefs, _store = _real_store_audit(tmp_path)
+    monkeypatch.setattr(
+        citation_audit, "_store_fault_message", lambda _exc: "wrong store fault",
+    )
+    assert _run_real_audit(dw_dir, briefs) == 0
+    captured = capsys.readouterr()
+    assert "UNRESOLVABLE:     0" in captured.out
+    assert captured.err == ""
+
+
 def test_missing_store_is_named_and_never_reported_unresolvable(tmp_path, capsys):
     """One valid citation stays valid when its store disappears: the store faults."""
     dw_dir, briefs, store = _real_store_audit(tmp_path)
@@ -379,8 +393,12 @@ def test_default_corpus_reaches_main_checkout_from_linked_worktree(tmp_path):
         (source / "dev" / "citation_audit.py").read_text()
     )
     (main / "ledger_parse.py").write_text(
+        "from pathlib import Path\n"
+        "def store_path(dreamwork_dir):\n"
+        "    return Path(dreamwork_dir) / 'ledger.sqlite3'\n"
         "def store_records(_dreamwork_dir):\n    return []\n"
     )
+    (main / ".dreamwork" / "ledger.sqlite3").write_text("fixture store marker\n")
     (briefs / "tracked.md").write_text("tracked brief without citations\n")
     subprocess.run(["git", "init", "-q", str(main)], check=True)
     subprocess.run(["git", "-C", str(main), "config", "user.email", "t@t"], check=True)
