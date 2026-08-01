@@ -796,7 +796,7 @@ results, no ceremony.
   a restart (`bl`) it *is* the backend, and there is no extra file. On a
   session-scoped backend (the native tools) it is
   `.dreamwork/tasks.md`: a literal `## Open` section, one entry each (id,
-  title, priority/type/size, origin, owner or blocked-on, pointer to any
+  title, priority/type, origin, owner or blocked-on, pointer to any
   plan), plus the next id to hand out — **and a literal `## Recently
   landed` section below it**, which is not optional bookkeeping. Both
   headings are matched verbatim: `watch.parse_ledger` returns the open
@@ -935,12 +935,11 @@ results, no ceremony.
   reads — which is why filing from the Commands section alone used to mint
   an entry that failed lint on the next increment.
 - The ledger carries what selection and triage read: `priority` (P1-P3),
-  `type` (idea | task | bug | experiment | chore), `size` (estimated
-  minutes), `feasibility` (note from triage), the next-up mark (set by
-  `do next`, cleared on start), owner or blocked-on, and — once a task
-  is scope-gated — its `goal` and `parent`. Mirror them into the
-  backend's `metadata` where it surfaces them (Guardrails: never depend
-  on a channel you have not read back).
+  `type` (idea | task | bug | experiment | chore), `feasibility` (note
+  from triage), the next-up mark (set by `do next`, cleared on start),
+  owner or blocked-on, and — once a task is scope-gated — its `goal` and
+  `parent`. Mirror them into the backend's `metadata` where it surfaces
+  them (Guardrails: never depend on a channel you have not read back).
 - Work that arrives with a durable id upstream (a forge issue a plugin
   ingested) keeps that id and takes no loop id or ledger line until the
   loop actually starts on it — a poll re-derives the item, never the
