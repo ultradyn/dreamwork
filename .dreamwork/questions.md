@@ -2,6 +2,45 @@
 
 ## Open
 
+- **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
+  **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
+  instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
+  file. `#465` is the guard that refuses such a commit — it reads which paths each lane declared and blocks
+  anyone else touching them.
+
+  **You also asked why it needs the global hook path. It does not — I framed that badly.** Your
+  `core.hooksPath` is global (`~/.config/git/hooks`, holding c2c's `pre-commit`/`pre-push` plus a
+  `commit-msg`), and because that setting exists git ignores `.git/hooks` entirely, which is the only reason
+  the global dir came up at all. Setting `core.hooksPath` **repo-locally** overrides it for this repo alone.
+
+  **`Q1` — which install?** New **`rec`: repo-local**, a tracked `.githooks/` here whose `pre-commit` runs
+  c2c's hook first and then the guard. Blast radius is this repo; c2c keeps working here. The honest cost:
+  a repo-local path also shadows `commit-msg` and `pre-push`, so the dir must forward all three or they
+  silently stop applying — that is the work, and it is why the global install looked simpler.
+  Global-and-chained is still available if you would rather have it everywhere.
+
+  **Since you last read this, `#468` R2 landed** and needs no hook at all: `lane_guard.py pre-merge <branch>`
+  checks the same preconditions before a merge. So some protection now exists either way.
+
+  **If you say nothing:** the guard stays committed and inert, and the stray-edit protection does not exist —
+  the status quo that cost the held merge. `DREAMWORK_LANE_GUARD_BYPASS=1` remains the escape.
+  - **Note (human, via watch, 2026-07-29 05:51):** why can't we enable #465
+    without this? And also, what is 465?
+    → answered above (2026-07-29): the entry was rewritten for exactly these two
+    questions — "What `#465` is" says what it is, and "You also asked why it needs
+    the global hook path. It does not" retracts the framing. Only `Q1` (repo-local
+    vs global install) is still yours. Left unmarked, this note made the whole entry
+    read as awaiting a reply the loop had already written.
+
+- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
+  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
+  then, nothing blocks and nothing is delivered by hand.
+  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
+    as an open question that we'll revisit once dreamhub is stable and the
+    primary way we access dreamworkers
+
+## Answered
+
 - **P2 · 2026-07-31 07:30 — #584 (from #571): persistent user settings — four design calls.**
   Your steer (receipt 09a8897b): *"Add persistent user settings in the database, probably just store it as jsonb
   if you can. indexed by userid … check `~/src/refs/amr-ui/` for a good example."* Design at
@@ -39,44 +78,13 @@
   when #571's implementation is planned. First consumers queued: #573 (ask-me toggle), #570 (autoexpand
   persistence), #295 (dither button-group — the gfx section you named).
   Accepted answers: `rec` (takes all four) · per-question (`Q1: …`) · free text.
-
-- **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
-  **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
-  instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
-  file. `#465` is the guard that refuses such a commit — it reads which paths each lane declared and blocks
-  anyone else touching them.
-
-  **You also asked why it needs the global hook path. It does not — I framed that badly.** Your
-  `core.hooksPath` is global (`~/.config/git/hooks`, holding c2c's `pre-commit`/`pre-push` plus a
-  `commit-msg`), and because that setting exists git ignores `.git/hooks` entirely, which is the only reason
-  the global dir came up at all. Setting `core.hooksPath` **repo-locally** overrides it for this repo alone.
-
-  **`Q1` — which install?** New **`rec`: repo-local**, a tracked `.githooks/` here whose `pre-commit` runs
-  c2c's hook first and then the guard. Blast radius is this repo; c2c keeps working here. The honest cost:
-  a repo-local path also shadows `commit-msg` and `pre-push`, so the dir must forward all three or they
-  silently stop applying — that is the work, and it is why the global install looked simpler.
-  Global-and-chained is still available if you would rather have it everywhere.
-
-  **Since you last read this, `#468` R2 landed** and needs no hook at all: `lane_guard.py pre-merge <branch>`
-  checks the same preconditions before a merge. So some protection now exists either way.
-
-  **If you say nothing:** the guard stays committed and inert, and the stray-edit protection does not exist —
-  the status quo that cost the held merge. `DREAMWORK_LANE_GUARD_BYPASS=1` remains the escape.
-  - **Note (human, via watch, 2026-07-29 05:51):** why can't we enable #465
-    without this? And also, what is 465?
-    → answered above (2026-07-29): the entry was rewritten for exactly these two
-    questions — "What `#465` is" says what it is, and "You also asked why it needs
-    the global hook path. It does not" retracts the framing. Only `Q1` (repo-local
-    vs global install) is still yours. Left unmarked, this note made the whole entry
-    read as awaiting a reply the loop had already written.
-
-
-- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
-  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
-  then, nothing blocks and nothing is delivered by hand.
-  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
-    as an open question that we'll revisit once dreamhub is stable and the
-    primary way we access dreamworkers
+  - **Answer (via watch, 2026-08-01 19:44):** 1. rec 2. rec (note: we
+    should support api access to this json store, like set kv pair(s),
+    get value of key(s), etc. 3. rec 4. rec, and correct that posture
+    axes are not user settings (not in the same way at least). though
+    note: we probably want to migrate posture to the db anyway at some
+    point (and log posture changes in db if we don't already). the
+    posture file can remain and we can keep it updated.
 
 - **P2 · 2026-08-01 16:45 — #838 (from #825): are subagent briefs project history (git), or operator-local runtime data (not git)?**
   You asked whether `.dreamwork/docs/briefs/` should be gitignored and whether briefs belong in the DB,
@@ -104,6 +112,12 @@
   **`Q2` — smaller, schema.** **`rec: logical duty in the brief, resolved alias in the dispatch
   attempt`.** Does `role` mean a logical duty (`reviewer`, `implementer`) or the concrete runner
   alias/model used for that attempt?
+  - **Answer (via watch, 2026-08-01 19:49):** I think we do want to
+    store them, but not in the project git itself. For now, i think just
+    keeping them local is fine. typically the main dreamwork agent will
+    run from the same machine so the briefs are there if needed. and
+    realistically they aren't that important. not important enough to
+    persist forever.
 
 - **P3 · 2026-08-01 16:45 — #839 (from #826): should the tick line carry the subagent policy too, or is the log enough?**
   You said: *"when the subagent policy is set, the whole thing should be printed in the log so that the
@@ -119,8 +133,7 @@
 
   **`Q1` — carry it on the tick line as well?** **`rec: yes`**, for the compaction-survival reason.
   Nothing is blocked either way; the log half is live now.
-
-## Answered
+  - **Answer (via watch, 2026-08-01 19:50):** yes
 
 - **P1 · 2026-07-31 21:45 — #691: cheap-model recap of the main agent — three design calls.**
   Your steer (receipt 323d2ef1): *"Use cheap model to generate recap of current main agent actions …
@@ -759,7 +772,6 @@
     and breaking up watch.py into modules are good and reasonable
     things. 3. rec 4. rec
 
-
 - **P2 · 2026-07-30 03:40 — #357 Q6: on the read verbs (`counts`, `sweep`), full warning line every time, or a terse `⚠ N warnings` hint?**
   → answered (2026-07-30 03:52): **rec — full line every verb (I1).** The read verbs carry the full warning breakdown every call; the terse hint is dropped. With Q5 (every verb) and Q6 both ruled and the throttle refuted by the IGC he ordered, `#357`'s design is fully settled and unblocked for implementation: stateless footer, one function in `dev/ledger.py` called by every verb at exit, his five counts + incomplete-data, WARN never ERROR, quiet rules, and the journal unconsumed-receipt count carrying on every verb. Recorded on `#357` and in the design doc.
   **Ask: `rec` (full line), `terse`, or free text.** One decision; a bare `rec` is a complete reply.
@@ -787,7 +799,6 @@
   **If you say nothing:** the design's rec stands (full line, I1) and the footer ships that way
   when #357 is implemented; nothing is built by this entry.
   - **Answer (via watch, 2026-07-30 03:52):** rec
-
 
 - **P2 · 2026-07-30 01:30 — #357: the CLI warning footer — on every `dev/ledger.py` verb, or only on verbs that change state?**
   → answered (2026-07-30 03:11): **rec — the footer on every verb**, with one amendment worth an IGC rather than a shrug: warnings should surface *early* in the loop so the dreamworker can plan them in, and he sketched a throttle for the read verbs — after every state-change verb always; for other verbs suppress 70–80% of prints, but only while the warning is unchanged AND time since last warning < heartbeat × 0.7 AND skips since last print < 4 (every 5th call prints regardless). His instruction: evaluate the options with `/use-igcs` and surface any issues as a new question. Recorded on `#357`; the design increment carries the ruling.
@@ -936,7 +947,6 @@
     entry have? Cause if it's a message about a task, surely we could like
     add notes to the task and update it more than once? But anyway, if
     you're satisfied then rec: flatten.
-
 
 - **P2 · 2026-07-28 — #417: four ways to put commits-per-period on the burndown, priced. Which, if any?**
   **Ask: `C1`, `C2`, `C3`, `C4`, or `none` — and `rec` takes C4.**
@@ -1454,7 +1464,6 @@
   **Not asking you to change tools.** Two 401s in one day is worth recording rather than reacting to;
   if it recurs a third time I will propose something.
 
-
 - **P2 · 2026-07-28 — #367: what do 5–7 marks become below the cliff?**
   → answered (2026-07-28 15:11): **C, with a collapsible index** — *"can we do C but: add a
   little double chevron on RHS indicating that the bar is collapsible, and when it expands it
@@ -1683,7 +1692,6 @@
     open for that source choice. I will also add the requested self-repo
     exclusion: this development checkout must not treat ordinary new local
     commits as an installed-release upgrade on every tick.
-
 
 - **P3 · 2026-07-25 — dreamhub URL space: one hub URL, or one per project?**
   → resolved (2026-07-25): decided by the loop and withdrawn as an ask — he never answered it and no
@@ -2025,8 +2033,6 @@
     **This question is genuinely open and has never been answered.**
   - **Answer (via watch, 2026-07-28 02:53):** rec go
 
-
-
 - **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
   pre-phase on the existing card ghost?**
   → answered (2026-07-28 02:51): **"okay yep rec" — the D1 prototype is authorised**, and
@@ -2093,7 +2099,6 @@
     set up an agent for you via c2c (load the skill after compaction)
     and you can direct it in a worktree to prototype it and get it to
     launch a live server for me. c2c alias: grok-heart-quint-sjax
-
 
 - **P1 · 2026-07-28 — #361: may I switch on the ledger-lint hook we built in
   #138/#156 and never turned on?**
@@ -2171,7 +2176,6 @@
     · so the condition I attached to your `apply` is gone. **One word — `apply` —
     and it goes on.** Re-asked as its own Open entry so it is not buried in an
     answered one.
-
 
 - **P1 · 2026-07-28 — #264 the task-transition boundary: one append-only log, no
   outbox, and burndown becomes a query.**
@@ -2270,7 +2274,6 @@
     history as an event log that gets processed. good point re git
     lagging. proper tooling will prevent that! T1: rec t2: rec t3: rec
     t4: no, we're good to go
-
 
 - **P1 · 2026-07-28 — #346 task-store schema: approve the entity shape and
   four decisions (S1-S4)?**
@@ -2477,7 +2480,6 @@
     reaching for with *"easier validation … avoid footguns"* — but say so if you
     want `type` left unvalidated, because that is the one place we would differ.
 
-
 - **P0/P1 · 2026-07-26 — #288 protected-service boundary: contain
   subagent tools or isolate the dashboard identity?**
   → answered (2026-07-28 01:26): **"rec" — P1 authorised.** A written design and a
@@ -2530,8 +2532,6 @@
     itself (or escape I suppose). Anyway maybe that kind of architecture
     can help, but it presents a problem with like claude code and the like.
     hmmm.
-
-
 
 - **P0/P1 · 2026-07-26 — #260/#262/#263/#269/#274: accept the
   reviewed durable user-event contract for implementation planning?**
@@ -2620,8 +2620,6 @@
     cost is that the schema may need reshaping once this settles, which is the
     "one migration, not two" trap you have warned me about twice tonight.
   - **Answer (via watch, 2026-07-28 01:27):** rec
-
-
 
 - **P2 · 2026-07-27 — #295 shader dithering: replace the temporal white-noise
   LSB dither with static screen-space IGN?**
@@ -3080,7 +3078,6 @@
   explain what this means sorry"*; re-asked plainly as its own entry, because the
   original asked in the loop's private vocabulary about the very thing it was
   meant to explain. (7) rec — and both have since landed (#301, #302).
-
 
   The self-contained artifact is
   `.dreamwork/review/tasks-page.html` (open it from the dashboard's review
