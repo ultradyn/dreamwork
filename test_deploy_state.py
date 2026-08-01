@@ -864,10 +864,11 @@ def test_ship_siblings_and_assert_importable_cli_against_real_head(tmp_path):
     # nothing). If watch.py's imports change, update this list — the boot
     # proof below is what makes a stale list fail loud, not silently pass.
     # The vendor pair arrives via DATA_SIBLINGS (#505), not the import walk.
-    for rel in ("ledger_parse.py", "lint.py", "watch.py",
+    required = ("SKILL.md", "ledger_parse.py", "lint.py", "watch.py",
                 "user_events/__init__.py", "user_events/sqlite.py",
-                "vendor/morphdom.min.js", "vendor/LICENSE.morphdom"):
-        assert rel in shipped, f"{rel} missing from {sorted(shipped)}"
+                "vendor/morphdom.min.js", "vendor/LICENSE.morphdom")
+    missing = sorted(set(required) - shipped)
+    assert shipped, "examined 0 shipped files; refusing an empty deploy proof"
     for rel in shipped:
         assert (dest / rel).exists(), f"sibling {rel} was not shipped"
     # `import watch` (from lint.py) must resolve to the SAME bytes deployed.
@@ -894,7 +895,7 @@ def test_ship_siblings_and_assert_importable_cli_against_real_head(tmp_path):
     server = subprocess.Popen(
         [sys.executable, str(staged), "--target", str(root),
          "--port", str(port), "--dev"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         start_new_session=True)
     try:
         import urllib.request
@@ -910,10 +911,12 @@ def test_ship_siblings_and_assert_importable_cli_against_real_head(tmp_path):
                 if server.poll() is not None:
                     break
                 _time.sleep(0.25)
+        server_stderr = (server.stderr.read() if server.poll() is not None else "")
         assert code == 200, (
             f"staged snapshot did not serve a 200 (got {code}, "
             f"poll={server.poll()}) — the deploy would leave his dashboard "
-            f"dark; this is the check that caught the lazy `import lint`")
+            f"dark; this is the check that caught the lazy `import lint`; "
+            f"examined {len(shipped)} shipped files; stderr={server_stderr!r}")
         with urllib.request.urlopen(
                 f"http://127.0.0.1:{port}/mtime", timeout=2) as resp:
             assert float(resp.read().decode().split()[0]) > 0
@@ -924,6 +927,8 @@ def test_ship_siblings_and_assert_importable_cli_against_real_head(tmp_path):
             pass
         server.wait(timeout=3)
     assert ds.listening_pid(port) is None
+    assert not missing, (
+        f"examined {len(shipped)} shipped files; missing {missing}")
 
 
 def test_justfile_deploy_ships_siblings_and_guards_imports_before_stopping():
