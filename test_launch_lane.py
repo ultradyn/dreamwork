@@ -33,6 +33,10 @@ def launch_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _git(root, "config", "user.email", "test@example.invalid")
     _git(root, "config", "user.name", "Test")
     _write(root / "briefs" / "boilerplate.md", "# Standing rules\nDo the checked work.\n")
+    _write(root / "briefs" / "frame.md", "## Canonical frame\nGenerated, never retyped.\n")
+    _write(root / ".dreamwork" / "tasks.md",
+           "# Tasks\n\n## Open\n\n- **#832** launch it\n\n"
+           "  Measured launcher composition.\n\n## Recently landed\n")
     _write(root / "dev" / "launch_lane.py", TOOL.read_text(encoding="utf-8"))
     _write(root / "worktree_paths.py", (REPO / "worktree_paths.py").read_text(encoding="utf-8"))
     # launch_lane shares brief.py's placeholder predicate (#881); the real
@@ -57,14 +61,21 @@ import glob, json, os, pathlib
 if target := os.environ.get('CAPTURE_ATTEMPT_STATE'):
     record = glob.glob('.dreamwork/launch-attempts/*.json')[0]
     pathlib.Path(target).write_text(json.load(open(record))['state'], encoding='utf-8')
+if target := os.environ.get('CAPTURE_PROMPT'):
+    pathlib.Path(target).write_text(__import__('sys').argv[-1], encoding='utf-8')
 raise SystemExit(int(os.environ.get('CCC_EXIT', '0')))
 """)
     (bindir / "ccc").chmod(0o755)
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
+    monkeypatch.setenv("PYTHONPATH", f"{REPO / 'dev'}:{REPO}")
     return root
 
 
-def _head(root: Path, text: str = "# Task #832 — launch it\n\nImplement the human requested change.\n") -> Path:
+def _head(root: Path, text: str = (
+    "# Task #832 — launch it\n\nLane-owns: dev/thing.py\n\n"
+    "Implement the human requested change.\n\n## Direction 2\n\n"
+    "A missing persisted prompt would pass a corpus-only check.\n"
+)) -> Path:
     path = root / "head.md"
     _write(path, text)
     return path
@@ -92,18 +103,14 @@ def _attempt(root: Path) -> tuple[Path, dict[str, object]]:
 def test_brief_validation_reports_every_violation_before_worktree_creation(launch_repo: Path):
     head = _head(
         launch_repo,
-        "# Task #999\nBranch: wrong\nCoordinator inbox: wrong\n",
+        "# Task #999\nLane-owns: dev/thing.py\nBranch: wrong\nCoordinator inbox: wrong\n",
     )
     before = _worktree_rows(launch_repo)
     result = _run(launch_repo, head)
 
     assert result.returncode == 1
-    assert "REFUSE phase=brief-validation: 5 violation(s)" in result.stderr
-    assert "must not supply launcher-owned" in result.stderr
+    assert "REFUSE phase=brief-generation: 1 violation(s)" in result.stderr
     assert "one first-level task heading for #832" in result.stderr
-    assert "one bare 'Branch: lane-832' line" in result.stderr
-    assert "exactly this coordinator inbox line" in result.stderr
-    assert "no substantive task content" in result.stderr
     assert _worktree_rows(launch_repo) == before
 
 
@@ -120,16 +127,17 @@ def test_a_placeholder_head_is_refused_not_dispatched(launch_repo: Path, core, l
     cases below ACCEPTED. A lane briefed with a fill-in looks exactly like a
     briefed lane, which is the failure mode the loop cannot see from outside.
     """
-    head = _head(launch_repo, f"# Task #832 — launch it\n\n{core}")
+    head = _head(launch_repo, f"# Task #832 — launch it\n\nLane-owns: dev/thing.py\n\n{core}")
     before = _worktree_rows(launch_repo)
     result = _run(launch_repo, head)
 
     assert result.returncode == 1, f"{label} was dispatched: {result.stderr!r}"
-    assert "entirely placeholder after its heading" in result.stderr
+    assert ("no substantive line" in result.stderr
+            or "has no body" in result.stderr)
     assert _worktree_rows(launch_repo) == before
 
 
-def test_a_one_line_real_head_is_still_accepted(launch_repo: Path):
+def test_a_concise_real_core_is_still_accepted(launch_repo: Path):
     """The positive control for the refusal above: it must not refuse real prose.
 
     Without this, tightening the bar to "refuse everything" would pass the three
@@ -137,7 +145,9 @@ def test_a_one_line_real_head_is_still_accepted(launch_repo: Path):
     """
     head = _head(
         launch_repo,
-        "# Task #832 — launch it\n\nThe block was retyped 33 times, 32 distinct bodies.\n")
+        "# Task #832 — launch it\n\nLane-owns: dev/thing.py\n\n"
+        "The block was retyped 33 times, 32 distinct bodies.\n\n"
+        "## Direction 2\n\nAn unpersisted prompt could evade corpus lint.\n")
     result = _run(launch_repo, head)
     assert "entirely placeholder" not in result.stderr
     assert "no substantive task content" not in result.stderr
@@ -247,6 +257,17 @@ def test_runner_exit_is_not_reported_as_success_and_attempt_is_durable(launch_re
     assert "lane-832" in _worktree_rows(launch_repo)
 
 
+def test_launcher_dispatches_brief_pys_canonical_frame(launch_repo: Path):
+    captured = launch_repo / "captured-prompt.md"
+    env = os.environ.copy(); env["CAPTURE_PROMPT"] = str(captured)
+    result = _run(launch_repo, _head(launch_repo), env=env)
+    prompt = captured.read_text(encoding="utf-8")
+    assert result.returncode == 0, result.stderr
+    assert prompt.count("## Canonical frame") == 1
+    assert prompt.count("Lane-owns: dev/thing.py") == 1
+    assert prompt.endswith("# Standing rules\nDo the checked work.\n")
+
+
 def test_launcher_resolves_lane_under_the_sibling_worktree_root(launch_repo: Path):
     env = os.environ.copy(); env["CCC_EXIT"] = "7"
     result = _run(launch_repo, _head(launch_repo), env=env)
@@ -270,7 +291,12 @@ def test_changed_bytes_cannot_resume_the_same_attempt(launch_repo: Path):
     _, record = _attempt(launch_repo)
     attempt_id = str(record["attempt_id"])
     before = _worktree_rows(launch_repo)
-    changed = _head(launch_repo, "# Task #832 — launch it\n\nImplement different human requested bytes.\n")
+    changed = _head(
+        launch_repo,
+        "# Task #832 — launch it\n\nLane-owns: dev/thing.py\n\n"
+        "Implement different human requested bytes.\n\n## Direction 2\n\n"
+        "A missing persisted prompt would pass a corpus-only check.\n",
+    )
     retry = _run(launch_repo, changed, "--resume", attempt_id, env=env)
 
     assert first.returncode == 9

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn one human-authored brief head into a checked, supervised lane launch."""
+"""Turn one human-authored brief core into a checked, supervised lane launch."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 
 from worktree_paths import lane_worktree_path  # noqa: E402
 
-from brief import substantive_lines  # noqa: E402
+from brief import BriefFault, build as build_brief, substantive_lines  # noqa: E402
 
 
 LANE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
@@ -31,6 +31,7 @@ ATTEMPT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 TASK_HEAD_RE = re.compile(r"^# [^\n]*?#(\d+)\b", re.MULTILINE)
 BRANCH_RE = re.compile(r"^Branch:\s+(\S+)\s*$", re.MULTILINE)
 BASE_RE = re.compile(r"^Base sha:\s+([0-9a-f]{40})\s*$", re.MULTILINE)
+OWNS_RE = re.compile(r"^Lane-owns:\s+(.+?)\s*$", re.MULTILINE)
 INBOX_PREFIX = (
     "Coordinator inbox — ABSOLUTE path, append your completion summary here "
     "when you finish: "
@@ -137,15 +138,30 @@ def _main_checkout(repo: Path) -> Path:
     return path.parent
 
 
-def _assemble(head: str, task: int, lane: str, base_sha: str, lane_path: Path,
-              inbox: Path, contract: str) -> str:
-    metadata = (
-        f"Worktree: {lane_path}\n"
-        f"Branch: {lane}\n"
-        f"Base sha: {base_sha}\n"
-        f"{INBOX_PREFIX}{inbox}\n"
-    )
-    return f"{head.rstrip()}\n\n{metadata}\n{contract}"
+def _core_and_owns(head: str, task: int) -> tuple[str, list[str]]:
+    """Strip the human envelope; ``brief.py`` owns every generated field."""
+    headings = TASK_HEAD_RE.findall(head)
+    if headings != [str(task)]:
+        raise LaunchFault(
+            f"human-authored input must contain one first-level task heading for "
+            f"#{task}; found {headings!r}"
+        )
+    matches = OWNS_RE.findall(head)
+    if len(matches) != 1:
+        raise LaunchFault(
+            "human-authored input must contain exactly one bare `Lane-owns:` line; "
+            f"found {len(matches)}"
+        )
+    owns = [part.strip().strip("`") for part in matches[0].split(",")
+            if part.strip().strip("`")]
+    if not owns:
+        raise LaunchFault("human-authored `Lane-owns:` line names no paths")
+    lines = head.splitlines()
+    core = "\n".join(
+        line for index, line in enumerate(lines)
+        if index != 0 and not OWNS_RE.fullmatch(line)
+    ).strip()
+    return core, owns
 
 
 def _fence_at(text: str, offset: int) -> str | None:
@@ -164,7 +180,7 @@ def _fence_at(text: str, offset: int) -> str | None:
     return active
 
 
-def _brief_faults(prompt: str, head: str, contract: str, task: int, lane: str,
+def _brief_faults(prompt: str, core: str, contract: str, task: int, lane: str,
                   base_sha: str, inbox: Path) -> list[str]:
     faults: list[str] = []
     task_heads = TASK_HEAD_RE.findall(prompt)
@@ -172,15 +188,6 @@ def _brief_faults(prompt: str, head: str, contract: str, task: int, lane: str,
     bases = BASE_RE.findall(prompt)
     inbox_lines = [line for line in prompt.splitlines() if line.startswith("Coordinator inbox")]
     expected_inbox = f"{INBOX_PREFIX}{inbox}"
-    launcher_metadata = [
-        line for line in head.splitlines()
-        if line.startswith(("Worktree:", "Branch:", "Base sha:", "Coordinator inbox"))
-    ]
-    if launcher_metadata:
-        faults.append(
-            "human-authored head must not supply launcher-owned Worktree/Branch/Base sha/"
-            f"Coordinator inbox metadata; found {launcher_metadata!r}"
-        )
     if task_heads != [str(task)]:
         faults.append(f"final brief must contain one first-level task heading for #{task}; found {task_heads!r}")
     if branches != [lane]:
@@ -198,15 +205,10 @@ def _brief_faults(prompt: str, head: str, contract: str, task: int, lane: str,
         faults.append("canonical boilerplate is inside a fenced quotation, not lane instructions")
     elif prompt[occurrence + len(contract):].strip():
         faults.append("canonical boilerplate must be the final brief section")
-    human_lines = head.splitlines()
-    substance_lines = [
-        line for line in (human_lines[1:] if human_lines else [])
-        if not line.startswith(("Branch:", "Base sha:", "Worktree:", "Coordinator inbox"))
-    ]
-    substance = "\n".join(substance_lines).strip()
+    substance = core.strip()
     if len(re.findall(r"[A-Za-z0-9]+", substance)) < 3:
         faults.append(
-            "human-authored head has no substantive task content after its heading "
+            "human-authored core has no substantive task content "
             f"(examined {len(substance.encode('utf-8'))} UTF-8 byte(s))"
         )
     # The word-count bar above passes on a placeholder: `TODO: describe the
@@ -217,7 +219,7 @@ def _brief_faults(prompt: str, head: str, contract: str, task: int, lane: str,
     # sentence, and the only such lines in 40 real brief heads were prose.
     elif not substantive_lines(substance):
         faults.append(
-            "human-authored head is entirely placeholder after its heading — every "
+            "human-authored core is entirely placeholder — every "
             f"line of the {len(substance.encode('utf-8'))} UTF-8 byte(s) examined is "
             "blank, a bare heading, or a fill-in (TODO, <describe …>, [fill in])"
         )
@@ -328,9 +330,24 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
     if foreground is None:
         print("background-check: no controlling tty was observable; launch-lane cannot prove shell job placement")
 
-    prompt = _assemble(head, task, lane, base_sha, lane_path, inbox, contract)
+    try:
+        core, owns = _core_and_owns(head, task)
+        prompt = build_brief(
+            task, lane, owns, core,
+            ledger=main / ".dreamwork" / "tasks.md",
+            frame_path=repo / "briefs" / "frame.md",
+            boilerplate_path=contract_path,
+            prepared_worktree=lane_path,
+            prepared_base_sha=base_sha,
+            prepared_checkout=main,
+        )
+    except (BriefFault, LaunchFault) as exc:
+        return _refuse(
+            "brief-generation", [str(exc)],
+            f"task={task}; lane={lane}; authored input={head_path}", retained,
+        )
     digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-    faults = _brief_faults(prompt, head, contract, task, lane, base_sha, inbox)
+    faults = _brief_faults(prompt, core, contract, task, lane, base_sha, inbox)
     if faults:
         return _refuse("brief-validation", faults,
                        f"exact final brief digest={digest}; head={head_path}; UTF-8 bytes={len(prompt.encode('utf-8'))}", retained)
