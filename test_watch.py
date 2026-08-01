@@ -6833,6 +6833,7 @@ class TestAppShell(unittest.TestCase):
             'function drawModePicker()',
             'applyDrawMode()',
             "localStorage.setItem(drawModeStorageKey()",
+            "window.addEventListener('storage', adoptDrawModePreferenceFromStorage)",
         ):
             self.assertIn(token, watch.PAGE)
 

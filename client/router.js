@@ -168,7 +168,8 @@ const favHue = () => tintHue(projTint || TINT_DEFAULT);
    PERSISTENCE: tint persists server-side (.dreamwork/watch-tint + POST /tint
    in watch.py), but watch.py is off-limits this wave, so this rides
    localStorage — the burnStepPref/burnLimitPref idiom, not a new path (#440).
-   It is per-browser, not per-project-across-machines; see questions.md. */
+   It is per-browser, not per-project-across-machines, and the storage event
+   keeps sibling tabs in that browser aligned without involving the server. */
 const DRAW_MODES = ['animated', 'light', 'paused'];
 const DRAW_MODE_DEFAULT = 'animated';
 let drawMode = null;   // lazy-loaded on first ensureData, like burnStepPref
@@ -183,6 +184,29 @@ function loadDrawModePref() {
 function applyDrawMode() {
   if (window.dreambg) window.dreambg.setDrawMode(drawMode);
 }
+function paintDrawModePreference(name) {
+  document.querySelectorAll('.sgroup.drawpick').forEach(g => {
+    g.querySelectorAll('.sgbtn').forEach(b => {
+      const on = b.dataset.drawmode === name;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    slideIndicator(g, false);
+  });
+}
+function setDrawModePreference(name) {
+  if (DRAW_MODES.indexOf(name) < 0 || drawMode === name) return;
+  drawMode = name;
+  applyDrawMode();
+  paintDrawModePreference(name);
+}
+function adoptDrawModePreferenceFromStorage(e) {
+  if (e.key !== drawModeStorageKey()) return;
+  const name = DRAW_MODES.indexOf(e.newValue) >= 0
+    ? e.newValue : DRAW_MODE_DEFAULT;
+  setDrawModePreference(name);
+}
+window.addEventListener('storage', adoptDrawModePreferenceFromStorage);
 function applyTint() {
   if (!data) return;
   const name = TINTS[data.tint] != null ? data.tint : TINT_DEFAULT;
@@ -264,17 +288,9 @@ function drawModePicker() {
 }
 function pickDrawMode(name) {
   if (DRAW_MODES.indexOf(name) < 0) return;
-  drawMode = name;
   try { localStorage.setItem(drawModeStorageKey(), name); } catch (e) {}
-  applyDrawMode();
-  document.querySelectorAll('.sgroup.drawpick').forEach(g => {
-    g.querySelectorAll('.sgbtn').forEach(b => {
-      const on = b.dataset.drawmode === name;
-      b.classList.toggle('on', on);
-      b.setAttribute('aria-checked', on ? 'true' : 'false');
-    });
-    slideIndicator(g, false);
-  });
+  // storage fires only in sibling tabs; the writing tab applies directly.
+  setDrawModePreference(name);
 }
 /* ── #445 three-axis posture controls ───────────────────────────────────
    Sibling of run-mode. Authority is `.dreamwork/posture` when present;
