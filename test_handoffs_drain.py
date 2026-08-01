@@ -89,10 +89,11 @@ def test_default_key_is_id_and_prints_key_and_both_denominators(tmp_path):
     cli = _load()
     # Six pending landings, every id folded.  Expectation derived from THIS
     # fixture: len(pending) pending entries, len(folded) folded ids, 0 unfolded
-    # under the id key.  Folds cite merge shas; pending lands work shas, so the
-    # two sha populations are disjoint (the sha-join demonstration below).
-    pending = [(f"10{i}", f"work{i}11111", f"lane-{i}", f"what {i}") for i in range(6)]
-    folded = [(f"10{i}", f"merge{i}99999") for i in range(6)]
+    # under the id key.  Folds cite hex MERGE shas; pending lands hex WORK shas,
+    # disjoint by construction (aaaa… vs bbbb…) — the real-world shape that
+    # makes a SHA join report a large false number while an id join reports 0.
+    pending = [(f"10{i}", f"bbbb{i:04x}", f"lane-{i}", f"what {i}") for i in range(6)]
+    folded = [(f"10{i}", f"aaaa{i:04x}") for i in range(6)]
     body = _handoffs(folded=folded, pending=pending)
     path = tmp_path / "handoffs.md"
     path.write_text(body)
@@ -117,21 +118,24 @@ def test_sha_key_reports_large_false_number_on_same_fixture(tmp_path):
     different statements about different joins, not two readings of one.
     """
     cli = _load()
-    pending = [(f"10{i}", f"work{i}11111", f"lane-{i}", f"what {i}") for i in range(6)]
-    folded = [(f"10{i}", f"merge{i}99999") for i in range(6)]
+    pending = [(f"10{i}", f"bbbb{i:04x}", f"lane-{i}", f"what {i}") for i in range(6)]
+    folded = [(f"10{i}", f"aaaa{i:04x}") for i in range(6)]
     path = tmp_path / "handoffs.md"
     path.write_text(_handoffs(folded=folded, pending=pending))
     rc, out, err = _run(cli, ["pending", "--handoffs", str(path), "--key", "sha"])
     assert rc == 0, err
     head = out.splitlines()[0]
     assert "joined on sha" in head, head              # key visible on the wrong key too
+    # Precondition the false alarm depends on: the folds cited VALID HEX shas
+    # that PARSED (so the sha population is real, not accidentally empty), AND
+    # that population is disjoint from the pending work shas.  Without the
+    # non-empty assertion a non-hex fixture would pass this test for the wrong
+    # reason (0 folded shas → everything unfolds regardless of the mismatch).
+    assert f"{len(folded)} folded shas" in head, head  # folds parsed as hex shas
     # The false alarm: ALL len(pending) are unfolded under sha, vs 0 under id.
     assert f"{len(pending)} unfolded" in head, head
-    # Precondition the false alarm depends on: the sha populations are disjoint.
-    # If a fixture revision ever made them overlap, this test would no longer
-    # demonstrate the wrong key, so assert the gap at runtime (#794).
-    folded_shas = {f"merge{i}99999" for i in range(6)}
-    pending_shas = {f"work{i}11111" for i in range(6)}
+    folded_shas = {f"aaaa{i:04x}" for i in range(6)}
+    pending_shas = {f"bbbb{i:04x}" for i in range(6)}
     assert not (folded_shas & pending_shas), "fixture invariant: disjoint sha sets"
 
 
