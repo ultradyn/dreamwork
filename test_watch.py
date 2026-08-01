@@ -11623,6 +11623,35 @@ process.stdout.write(JSON.stringify({got, all: SUBAGENT_POLICY_PLACEHOLDERS,
                         "build boxes", "deploy auth"):
             self.assertIn(example, diversity)
 
+    def test_subagent_policy_control_names_the_standing_default_without_prefill(self):
+        """The blank override box cannot masquerade as missing policy (#815)."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node unavailable")
+        start = watch.PAGE.index("const SUBAGENT_POLICY_PLACEHOLDERS")
+        end = watch.PAGE.index("/* The textarea value", start)
+        block = watch.PAGE[start:end]
+        script = block + r'''
+function esc(s) { return String(s); }
+const defaultHtml = subagentPolicyPicker({posture: {
+  subagent_policy: "default policy\nsecond line",
+  subagent_policy_source: "default"}});
+const overrideHtml = subagentPolicyPicker({posture: {
+  subagent_policy: "mine\n",
+  subagent_policy_source: "file"}});
+process.stdout.write(JSON.stringify({defaultHtml, overrideHtml}));
+'''
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=5)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        got = json.loads(proc.stdout)
+        self.assertIn("in force: standing default: default policy", got["defaultHtml"])
+        self.assertIn("second line", got["defaultHtml"])
+        default_textarea = got["defaultHtml"][
+            got["defaultHtml"].index("<textarea"):]
+        self.assertNotIn(">default policy", default_textarea)
+        self.assertIn("in force: saved override", got["overrideHtml"])
+
     def test_subagent_policy_client_keeps_verdict_and_readback_bodies(self):
         """The verdict may consume JSON without starving the UI read-back."""
         node = shutil.which("node")

@@ -904,11 +904,15 @@ function subagentPolicyPicker(d) {
   const p = (d && d.posture) || {};
   const has = p.subagent_policy_source === 'file';
   const ph = subagentPolicyPlaceholder();
+  const effective = has ? 'saved override' :
+    `standing default: ${esc(String(p.subagent_policy || ''))}`;
   return `<section class="spolicy" id="spolicy" aria-label="subagent policy">` +
     `<div class="spolicy-head"><div class="label" id="spolicy-lab">` +
     `subagent policy</div>` +
     `<div class="spolicy-src${has ? ' file' : ''}" id="spolicy-src">` +
     `${has ? 'override' : 'standing default'}</div></div>` +
+    `<div class="spolicy-effective" id="spolicy-effective">` +
+    `in force: ${effective}</div>` +
     `<div class="spolicy-body">` +
     `<textarea class="spolicy-field" id="spolicy-field" rows="3"` +
     ` placeholder="${esc(ph)}" aria-labelledby="spolicy-lab"` +
