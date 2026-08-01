@@ -703,6 +703,9 @@ def test_the_map_covers_every_verb(dev_ledger):
     Without this, a verb added later would silently escape the gate AND the
     test that is supposed to notice.
     """
+    # repo-wide-guard: derives every parser verb and requires exact agreement
+    # with _VERB_ARGV. Population: all parser verbs (no git ls-files). This is
+    # the parser-coverage family the lexical detector cannot see.
     parser_verbs = _parser_verbs(dev_ledger)
     mapped = set(_VERB_ARGV)
     assert parser_verbs == mapped, (

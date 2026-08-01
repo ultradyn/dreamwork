@@ -44,6 +44,10 @@ rwg = _load()
 # candidate. The self-check below pins this.
 _LS = "ls" + "-" + "files"
 
+# The opt-in marker token, also built from parts so this test file's own
+# source does not declare itself a repo-wide guard and become a false candidate.
+_MK = "repo-wide" + "-guard" + ":"
+
 
 # ── the registry is the authoritative always-run set ───────────────────
 
@@ -137,55 +141,107 @@ class TestDetectorSignal:
         assert rwg.is_whole_repo_enumeration(src) is False
 
 
+# ── the opt-in marker signal (#780) ──────────────────────────────────────
+
+class TestMarkerSignal:
+    """The opt-in marker comment is the escape hatch for guards the
+    lexical detector cannot see (parser-coverage family). It is exact and
+    zero-false-positive because no ordinary test contains it by accident."""
+
+    def test_marker_comment_declares(self):
+        src = f'    # {_MK} scans every parser verb against a hand map\npass'
+        assert rwg.is_declared_repo_wide(src) is True
+
+    def test_marker_at_module_level_declares(self):
+        src = f'# {_MK} every production source for a raw connect\npass'
+        assert rwg.is_declared_repo_wide(src) is True
+
+    def test_no_marker_is_silent(self):
+        # An ordinary test with no marker must not fire (#755).
+        src = 'def test_something():\n    assert 1 + 1 == 2\n'
+        assert rwg.is_declared_repo_wide(src) is False
+
+    def test_prose_mention_of_guard_is_silent(self):
+        # A docstring that says "repo wide guard" (no ``#`` token) must not
+        # fire — only the exact comment form matches.
+        src = '"""a repo wide guard that checks things"""\npass'
+        assert rwg.is_declared_repo_wide(src) is False
+
+
 class TestDetectorOnRealFiles:
     """The concrete healthy/sick inputs the brief demands, against the REAL
     tree (not synthetic strings)."""
 
     def test_the_real_raw_connect_guard_is_a_candidate(self):
         # test_no_raw_connect.py is THE exemplar whole-repo guard and the reason
-        # this exists. Its source must trip the signal.
+        # this exists. Its source must trip the file-enumeration signal.
         src = (REPO / "test_no_raw_connect.py").read_text(encoding="utf-8")
         assert rwg.is_whole_repo_enumeration(src) is True
 
+    def test_the_real_ledger_guard_is_declared(self):
+        # test_ledger_cli.py::test_the_map_covers_every_verb is the
+        # parser-coverage guard — no ls-files, invisible to the lexical
+        # detector. It now carries the marker, so it is detected by the
+        # second signal (#780 closes the blind spot).
+        src = (REPO / "test_ledger_cli.py").read_text(encoding="utf-8")
+        assert rwg.is_declared_repo_wide(src) is True
+
+    def test_the_real_ledger_guard_has_no_ls_files(self):
+        # Precondition: the parser-coverage guard does NOT use git ls-files,
+        # which is why the marker was needed.
+        src = (REPO / "test_ledger_cli.py").read_text(encoding="utf-8")
+        assert rwg.is_whole_repo_enumeration(src) is False, (
+            "test_ledger_cli.py is the parser-coverage family — it must not "
+            "trip the ls-files signal, because it is the blind spot the "
+            "marker exists for")
+
     def test_test_lint_py_is_not_flagged_wholesale(self):
         # THE trap (#707/#755): test_lint.py holds 563 tests and uses
-        # --error-unmatch + directory globs, never a bare whole-repo ls-files.
-        # If the detector flags it, the targeted-subset ruling is reversed by a
-        # helper that was meant to support it.
+        # --error-unmatch + directory globs, never a bare whole-repo ls-files,
+        # and does not carry the marker. If either signal flags it, the
+        # targeted-subset ruling is reversed by a helper meant to support it.
         src = (REPO / "test_lint.py").read_text(encoding="utf-8")
         assert rwg.is_whole_repo_enumeration(src) is False, (
-            "test_lint.py must not trip the detector — flagging it wholesale "
-            "is the trap this tool exists to avoid (#707)")
+            "test_lint.py must not trip the ls-files signal — flagging it "
+            "wholesale is the trap this tool exists to avoid (#707)")
+        assert rwg.is_declared_repo_wide(src) is False, (
+            "test_lint.py must not carry the marker — it is not a repo-wide "
+            "guard (#755)")
         lint = REPO / "test_lint.py"
         assert lint not in rwg.find_candidate_files(), (
             "find_candidate_files must not return test_lint.py")
 
     def test_path_restricted_real_files_are_not_candidates(self):
         # test_guard_evidence.py and test_client_dist.py use git ls-files but
-        # with a path / --error-unmatch — ordinary module tests.
+        # with a path / --error-unmatch — ordinary module tests. They also do
+        # not carry the marker.
         for name in ("test_guard_evidence.py", "test_client_dist.py"):
             src = (REPO / name).read_text(encoding="utf-8")
             assert rwg.is_whole_repo_enumeration(src) is False, (
-                f"{name} must not trip the detector (path/flag-restricted)")
+                f"{name} must not trip the ls-files signal (path/flag-restricted)")
+            assert rwg.is_declared_repo_wide(src) is False, (
+                f"{name} must not carry the marker (#755)")
 
-    def test_today_only_the_registered_file_is_a_candidate(self):
-        # The honest current state: the only whole-repo-enumeration candidate
-        # is test_no_raw_connect.py, and it is registered — so
-        # detect_unregistered() is empty. If a new unregistered candidate
-        # appears, this reds and names it (a finding, not a failure of the
-        # tool).
+    def test_today_only_registered_files_are_candidates(self):
+        # The honest current state: both registered guards are now detected
+        # (test_no_raw_connect by ls-files + marker; test_ledger_cli by marker
+        # alone), and both are registered — so detect_unregistered() is empty.
+        # If a new unregistered candidate appears, this reds and names it.
         unreg = rwg.detect_unregistered()
         assert unreg == [], (
-            f"unregistered whole-repo candidate(s) to classify: "
+            f"unregistered repo-wide candidate(s) to classify: "
             f"{[p.name for p in unreg]} — register or exclude with a reason")
 
 
 class TestSelfGuard:
-    """This suite builds synthetic ls-files strings; if it held the bare token
-    literally it would become its own false candidate. Pinned."""
+    """This suite builds synthetic ls-files AND marker strings; if it held
+    either literally it would become its own false candidate. Pinned."""
 
     def test_this_files_own_source_is_not_a_candidate(self):
         own = Path(__file__).read_text(encoding="utf-8")
         assert rwg.is_whole_repo_enumeration(own) is False, (
-            "this test's own source trips the detector — obfuscate the "
-            "synthetic strings so the suite is not a false candidate")
+            "this test's own source trips the ls-files signal — obfuscate "
+            "the synthetic strings so the suite is not a false candidate")
+        assert rwg.is_declared_repo_wide(own) is False, (
+            "this test's own source trips the marker signal — obfuscate "
+            "the synthetic strings so the suite is not a false candidate")
