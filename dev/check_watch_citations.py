@@ -6,6 +6,13 @@ that every occurrence is followed by a revision which resolves to a commit.
 The coordinates are pinned, not verified against the pinned revision.  In
 particular, the check never reads ``watch.py`` and cannot claim that a pinned
 coordinate identifies the intended source at that revision.
+
+A MISSING or UNPINNED finding often results from a CORRECT pin repair — the
+coordinate moved or was retired to prose.  That requires a matching enrolment
+update in BOTH ``PINNED_CITATIONS`` (this file) and the
+``REVIEWED_PIN_COUNTS`` contract in ``test_check_watch_citations.py``.  This
+is a COORDINATOR act at fold, not something a lane resolves by editing the
+guard or its test to force green.
 """
 
 from __future__ import annotations
@@ -133,6 +140,7 @@ def check(root: Path) -> int:
 
     seen = Counter({key: len(revisions) for key, revisions in pins.items()})
     failed = False
+    enrolment_note = False
     for (doc, token), count in sorted(PINNED_CITATIONS.items()):
         actual = seen[(doc, token)]
         if actual < count:
@@ -141,6 +149,7 @@ def check(root: Path) -> int:
                 f"saw {actual}"
             )
             failed = True
+            enrolment_note = True
         elif actual > count:
             print(
                 f"DUPLICATE {doc}: {token}: expected {count} occurrence(s), "
@@ -159,6 +168,7 @@ def check(root: Path) -> int:
                     f"{expected} is not followed by @ <rev>"
                 )
                 failed = True
+                enrolment_note = True
                 continue
             if revision not in resolved:
                 resolved[revision] = _revision_resolves(root, revision)
@@ -172,6 +182,17 @@ def check(root: Path) -> int:
             pinned += 1
 
     if failed:
+        if enrolment_note:
+            print(
+                "\nNOTE: a MISSING or UNPINNED coordinate often means a pin "
+                "was CORRECTLY repaired (the coordinate moved, or was retired "
+                "to prose).  A repaired pin requires a matching enrolment "
+                "update in BOTH dev/check_watch_citations.py "
+                "(PINNED_CITATIONS) and test_check_watch_citations.py "
+                "(REVIEWED_PIN_COUNTS).  This is a COORDINATOR act at fold — "
+                "a lane must not resolve it by editing the guard or its test "
+                "to force green."
+            )
         return 1
 
     expected = PINNED_CITATIONS.total()
