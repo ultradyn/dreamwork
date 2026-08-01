@@ -124,6 +124,25 @@ def test_unanticipated_watch_insertion_keeps_lines_derived(tmp_path: Path):
     assert (after.current_line, after.drift) == (3702, 19)
 
 
+def test_transplanted_evidence_is_the_open_false_green(tmp_path: Path):
+    """Direction 2 limit: exact evidence cannot prove its surrounding meaning."""
+    (tmp_path / "watch.py").write_text(
+        "def unrelated_handler():\n"
+        "    data = read_bytes(full)  # exact line moved under the wrong owner\n"
+    )
+    anchor = ReviewedAnchor(
+        "watch.py",
+        90,
+        "read_bytes",
+        "    data = read_bytes(full)  # exact line moved under the wrong owner",
+    )
+    resolved = anchor.resolve(tmp_path)
+    assert (resolved.current_line, resolved.drift) == (2, -88), (
+        "open false-green: byte-identical reviewed evidence was transplanted "
+        "into a different semantic owner; movement alone cannot distinguish it"
+    )
+
+
 def test_a_wrong_referent_passes_the_token_check(tmp_path: Path):
     """Direction 2 false-green: cited_line_contains_symbol verifies the token
     is on the line, NOT that the token is the prose's referent.  A citation
