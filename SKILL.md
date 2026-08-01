@@ -356,8 +356,8 @@ Two kinds, nothing in between:
 **Launch through the governed route:** run `just launch-lane <task-id> <lane>
 <@agent> <human-head-file> [ccc options] >launch.log 2>&1 &`. It obtains the
 current `master` sha, adds only the canonical lane metadata and standing
-boilerplate, validates and persists the exact final bytes before creating the
-worktree, then supervises the existing dispatcher until its real exit. Its
+boilerplate, validates the exact final bytes and persists their digest before
+creating the worktree, then supervises the existing dispatcher until its real exit. Its
 machine-local attempt record says `unverified attempt` before the runner starts;
 a retry is explicit (`--resume <attempt-id>`) and accepts only the identical
 SHA-256 digest. The background spelling is load-bearing: a foreground terminal

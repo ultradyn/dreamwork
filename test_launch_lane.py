@@ -35,11 +35,11 @@ def launch_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _write(root / "briefs" / "boilerplate.md", "# Standing rules\nDo the checked work.\n")
     _write(root / "dev" / "launch_lane.py", TOOL.read_text(encoding="utf-8"))
     _write(root / "dev" / "dispatch_lane.py", """
-import argparse, subprocess, sys
+import argparse, os, subprocess, sys
 p = argparse.ArgumentParser(); p.add_argument('--prompt'); p.add_argument('--prepare', action='store_true'); p.add_argument('rest', nargs=argparse.REMAINDER)
 a = p.parse_args(); cmd = a.rest[1:] if a.rest and a.rest[0] == '--' else a.rest
 prompt = open(a.prompt, encoding='utf-8').read()
-if a.prepare: raise SystemExit(0)
+if a.prepare: raise SystemExit(int(os.environ.get('DISPATCH_PREPARE_EXIT', '0')))
 raise SystemExit(subprocess.run([*cmd, prompt]).returncode)
 """.lstrip())
     # The production launcher deliberately routes cleanup through this sibling.
@@ -164,6 +164,32 @@ def test_worktree_creation_failure_names_phase_and_inventory_stays_unchanged(
     assert _worktree_rows(launch_repo) == before
 
 
+def test_governed_prepare_failure_reaps_created_worktree(
+    launch_repo: Path, monkeypatch: pytest.MonkeyPatch
+):
+    before = _worktree_rows(launch_repo)
+    env = os.environ.copy(); env["DISPATCH_PREPARE_EXIT"] = "41"
+    result = _run(launch_repo, _head(launch_repo), env=env)
+    assert result.returncode == 1
+    assert "REFUSE phase=governed-prepare" in result.stderr
+    assert "existing dispatcher validation/persistence exited 41" in result.stderr
+    assert "dev/reap.py cleanup exited 0" in result.stderr
+    assert _worktree_rows(launch_repo) == before
+
+
+def test_existing_lane_refuses_without_explicit_resume_and_changes_nothing(launch_repo: Path):
+    env = os.environ.copy(); env["CCC_EXIT"] = "8"
+    head = _head(launch_repo)
+    first = _run(launch_repo, head, env=env)
+    before = _worktree_rows(launch_repo)
+    second = _run(launch_repo, head, env=env)
+    assert first.returncode == 8
+    assert second.returncode == 1
+    assert "REFUSE phase=worktree-preflight" in second.stderr
+    assert "use --resume ATTEMPT_ID" in second.stderr
+    assert _worktree_rows(launch_repo) == before
+
+
 def test_runner_exit_is_not_reported_as_success_and_attempt_is_durable(launch_repo: Path):
     observed = launch_repo / "observed-state"
     env = os.environ.copy(); env["CCC_EXIT"] = "7"; env["CAPTURE_ATTEMPT_STATE"] = str(observed)
@@ -210,7 +236,7 @@ def test_identical_digest_resume_reuses_attempt_and_worktree(launch_repo: Path):
 
 
 def test_prelaunch_persistence_failure_reuses_reap_and_leaves_no_worktree(
-    launch_repo: Path, monkeypatch: pytest.MonkeyPatch
+    launch_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
     spec = importlib.util.spec_from_file_location("launch_lane_cleanup", launch_repo / "dev" / "launch_lane.py")
     module = importlib.util.module_from_spec(spec); assert spec.loader; spec.loader.exec_module(module)
@@ -228,8 +254,12 @@ def test_prelaunch_persistence_failure_reuses_reap_and_leaves_no_worktree(
     monkeypatch.setattr(module, "_write_record", fail_second)
 
     result = module.launch(832, "lane-832", "@agent", _head(launch_repo), [])
+    captured = capsys.readouterr()
     rows = _worktree_rows(launch_repo)
     assert result == 1
+    assert "REFUSE phase=attempt-persistence" in captured.err
+    assert "injected receipt fault" in captured.err
+    assert "dev/reap.py cleanup exited 0" in captured.err
     assert "lane-832" not in rows
     assert _git(launch_repo, "show-ref", "--verify", "refs/heads/lane-832")
 
