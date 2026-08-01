@@ -146,6 +146,23 @@ SUB = "redproof"
 ARMED = "armed"        # begun (original snapshotted), not yet restored
 RESTORED = "restored"  # restore ran; injected_sha recorded
 
+# Re-arm guidance appended to every expectation-drift refusal (#910). The
+# natural lane rhythm — inject, observe red, add a test, restore — edits an
+# expectation file mid-injection, and that breaks the byte pin on purpose
+# (#852): an expectation must not move with its subject. The refusal is
+# correct; what was missing was what to do NEXT. The remedy is always a
+# deliberate re-arm (forget + begin + sabotage + restore), never an automatic
+# one — the human act is what makes the new expectation a claim rather than a
+# side effect.
+_EXPECTATION_DRIFT_REARM = (
+    "Editing an expectation file mid-injection is legitimate (inject -> red "
+    "-> add a test -> restore is the natural lane rhythm) and breaks this "
+    "byte pin on purpose: an expectation must not move with its subject "
+    "(#852). To re-arm deliberately, `forget <path>`, then `begin <path> "
+    "--expectation <source>` against the new bytes, re-sabotage, and "
+    "`restore`, then re-run `check`."
+)
+
 
 def _now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).astimezone().isoformat(timespec="seconds")
@@ -767,7 +784,8 @@ def restore(cwd: Path | None, path: str) -> int:
         if drift:
             raise RedproofError(
                 "declared expectation source changed during the injection; "
-                "refusing to record a red-proof:\n  " + "\n  ".join(drift))
+                "refusing to record a red-proof:\n  " + "\n  ".join(drift)
+                + "\n" + _EXPECTATION_DRIFT_REARM)
 
         injected = _read_wt(root, posix)
 
@@ -1003,7 +1021,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             "source that was not stable across the injection:\n  "
             + "\n  ".join(expectation_drift) +
             "\nThe expectation must remain byte-identical and distinct from "
-            "the injected subject.\n")
+            "the injected subject.\n" + _EXPECTATION_DRIFT_REARM + "\n")
         return 1
 
     try:
