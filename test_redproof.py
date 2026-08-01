@@ -1459,3 +1459,101 @@ class TestBundleStalenessIsRefused:
         # README.md is restored and not a build input
         assert _check(root) == 0, (
             "a restored non-build-input must not trigger the bundle check")
+
+
+# ── #934: redproof and lane_scratch print DIFFERENT roots for one lane ──
+
+class TestBeginStatesTheRedproofRootDistinctFromLaneScratch:
+    """THE #934 defect: ``lane_scratch.py snap`` and ``redproof.py`` print
+    DIFFERENT snapshot roots for the same lane (``snap/`` vs ``redproof/``),
+    and four lanes tripped on a ``cmp`` against the wrong one. The tools and
+    their printed paths were never wrong — every lane recovered by using the
+    exact path the tool PRINTED. The defect is that the standing procedure
+    named one tool while the workflow used two, so an agent following it
+    verbatim constructed the wrong path by default.
+
+    The fix does NOT unify the roots (redproof content-addresses its snapshots
+    by ``sha1(posix_path)``, which is load-bearing for ``check``/``restore``/
+    ``forget`` finding each injection deterministically and for concurrent
+    injections not clobbering each other; ``snap`` is general scratch with
+    lane-chosen names). Instead, ``begin`` STATES the root distinction at the
+    moment the path is in hand, and ``lane_scratch.py``'s docstring defers to
+    redproof for red-proof injections (tested in test_lane_scratch.py).
+
+    The acceptance test: an agent following the written procedure verbatim
+    lands on the right path without having to notice a discrepancy."""
+
+    def test_begin_output_names_the_sibling_lane_scratch_root(self, repo, capsys):
+        """The discrepancy must be STATED in begin's output, not discovered via
+        a false ``cmp``. begin must name ``lane_scratch`` so an agent with both
+        tools' output knows the ``snap/`` root is a separate one.
+
+        DISCRIMINATOR (false on the unfixed tool, true after): the unfixed
+        begin output prints only the ``redproof/`` path and never names
+        ``lane_scratch``. DERIVED FROM the sibling tool's identity
+        (``dev/lane_scratch.py``), not a presentation detail (#917)."""
+        _begin(repo, "router.js")
+        out, _ = capsys.readouterr()
+        assert "lane_scratch" in out, (
+            "begin must name lane_scratch.py so an agent knows its snap/ root "
+            "is separate from redproof's redproof/ root — the discrepancy must "
+            "be stated, not discovered via a false cmp (#934)")
+
+    def test_the_path_begin_prints_holds_the_original_bytes(self, repo, capsys):
+        """Followability: an agent that uses the path begin PRINTED (not one it
+        assumed) reaches the correct baseline. This is how all four #934 lanes
+        recovered, and it is the regression net proving the printed path is the
+        right one — a future change that printed a ``snap/`` path would fail
+        here because the original is under ``redproof/``.
+
+        The expected path is DERIVED FROM the original bytes and the snapshot's
+        existence, not from the same function begin calls to print it (the path
+        is read back from begin's own output and then verified against the
+        original bytes an independent caller captured)."""
+        original = (repo / "router.js").read_bytes()
+        _begin(repo, "router.js")
+        out, _ = capsys.readouterr()
+        # extract the path begin printed — the one after "->"
+        snap_line = next(ln for ln in out.splitlines() if "->" in ln)
+        printed = Path(snap_line.split("->", 1)[1].strip())
+        # the printed path exists and holds exactly the original
+        assert printed.exists(), f"begin printed a path that does not exist: {printed}"
+        assert printed.read_bytes() == original, (
+            "the path begin printed must hold the original bytes — an agent "
+            "cmp-ing against it reaches the right baseline (#934)")
+
+    def test_begin_output_prints_a_redproof_root_not_a_snap_root(self, repo, capsys):
+        """The printed snapshot path is under the ``redproof/`` root, NOT under
+        ``snap/`` (the lane_scratch general-scratch root). Containment on the
+        root IDENTITY (``redproof`` / ``snap`` are literal subdir names), not a
+        presentation detail — matching #930's containment style rather than
+        pinning an exact path string."""
+        _begin(repo, "router.js")
+        out, _ = capsys.readouterr()
+        snap_line = next(ln for ln in out.splitlines() if "->" in ln)
+        printed = Path(snap_line.split("->", 1)[1].strip())
+        parts = printed.parts
+        # DENOMINATOR stated: the red-proof root is real for this lane, and it
+        # is NOT the lane_scratch snap root — the two differ for one lane, which
+        # is the population the #934 friction lives in. This is a PRECONDITION
+        # for the discriminator above, not the proof of followability by itself.
+        assert "redproof" in parts, (
+            f"the printed snapshot must be under the redproof/ root; got {printed}")
+        assert "snap" not in parts, (
+            f"the red-proof snapshot must NOT be under snap/ (lane_scratch's "
+            f"general root); got {printed}")
+
+    def test_restore_verifies_internally_so_a_manual_cmp_is_redundant(
+            self, repo, capsys):
+        """The other half of the fix: ``restore`` verifies the copy internally,
+        so a user of the redproof protocol never needs a manual ``cmp`` at all
+        — which removes the opportunity to aim it at the wrong root. begin's
+        output must say so, pointing a manual cmp at the printed path if one is
+        run anyway."""
+        _begin(repo, "router.js")
+        out, _ = capsys.readouterr()
+        assert "verifies internally" in out, (
+            "begin must say restore verifies internally — a user of this "
+            "protocol needs no manual cmp, which is how the wrong-root cmp is "
+            "avoided entirely (#934)")
+

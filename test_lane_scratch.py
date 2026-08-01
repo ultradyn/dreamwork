@@ -477,3 +477,40 @@ class TestRoleHonestBoundary:
         assert forgotten == author, (
             "unset role defaults to author — the collision is the boundary "
             "the dispatcher must close, not one the tool can close alone")
+
+
+# ── #934: lane_scratch defers to redproof for red-proof injections ─────
+
+class TestDocstringDefersToRedproof:
+    """#934: lane_scratch.py's usage block presents a manual cp/cmp snapshot
+    procedure. That procedure names lane_scratch as the snapshot tool while the
+    actual red-proof protocol (redproof.py, mandated by the boilerplate) uses a
+    different ``redproof/`` root — so an agent following lane_scratch's
+    procedure verbatim constructs the ``snap/`` path and a later ``cmp``
+    against the ``redproof/`` snapshot fails falsely. The docstring must warn
+    about the #934 root split so an agent reading lane_scratch.py sees the
+    hazard rather than discovering it via a false cmp.
+
+    HONEST LIMITATION (stated, per the brief's direction-2 note on doc-only
+    fixes): this asserts the docstring CONTAINS the #934 warning — a necessary
+    condition for followability, not proof that a fresh reader's cognition
+    follows it. A docstring-content check cannot mechanically prove a reader
+    reaches the right path; the behavioural proof of followability lives in
+    test_redproof.py (begin states the root and the printed path holds the
+    original). This check is a regression net: if the warning is removed, it
+    fails. ``#934`` is the hazard's stable identity reference (absent from the
+    original docstring, so this is a real discriminator, not a token that
+    agrees with the tool regardless — #852)."""
+
+    def test_docstring_warns_about_the_934_root_split(self):
+        doc = ls.__doc__ or ""
+        # DISCRIMINATOR: #934 is absent from the pre-fix docstring (which shows
+        # `snap` in its usage block and names `redproof.py begin` at line 30 for
+        # an unrelated reason, so those tokens do NOT discriminate — they agree
+        # with the docstring regardless of the fix). #934 is unique to the added
+        # warning. DERIVED FROM the hazard's identity reference.
+        assert "#934" in doc, (
+            "lane_scratch.py's docstring must warn about the #934 root split "
+            "(snap/ vs redproof/) so an agent reading it does not assume the "
+            "snap/ path is the red-proof snapshot root")
+
