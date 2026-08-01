@@ -106,9 +106,13 @@ def test_unavailable_guard_selection_refuses_instead_of_vacuously_running(
     _assert_retained(root, lane)
 
 
-def test_missing_warn_baseline_refuses_before_merge(landing_repo):
+@pytest.mark.parametrize(
+    "lint_body",
+    ["raise SystemExit(2)\n", "print('lint ran but omitted its trailer')\n"],
+)
+def test_missing_warn_baseline_refuses_before_merge(landing_repo, lint_body):
     root, lane = landing_repo
-    _write(root / "lint.py", "raise SystemExit(2)\n")
+    _write(root / "lint.py", lint_body)
     _git(root, "add", "lint.py")
     _git(root, "commit", "-m", "broken baseline command")
     _git(lane, "rebase", "master")
@@ -119,6 +123,20 @@ def test_missing_warn_baseline_refuses_before_merge(landing_repo):
     assert result.returncode == 1
     assert "REFUSE phase=lint-baseline: WARN baseline was not captured" in result.stderr
     assert _git(root, "rev-parse", "HEAD") == before
+    _assert_retained(root, lane)
+
+
+def test_new_warn_row_refuses_and_retains_lane(landing_repo):
+    root, lane = landing_repo
+    _write(lane / "lint-rows.txt", "old warning\nnew warning\n")
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", "add warning")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "lint WARN row-set comparison: added=1 removed=0" in result.stdout
+    assert "REFUSE phase=lint-comparison: WARN row set changed" in result.stderr
     _assert_retained(root, lane)
 
 

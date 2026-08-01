@@ -154,6 +154,8 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
         f"pre-merge: base={base}@{base_sha} branch={branch}@{branch_sha} "
         f"worktree={lane} status-rows={len(lane_all.stdout.splitlines())} named-tests={len(tests)}"
     )
+    for row in lane_all.stdout.splitlines():
+        print(f"pre-merge lane-status: {row}")
 
     _, baseline = _lint(repo)
     if baseline is None:
