@@ -270,6 +270,15 @@ and committing the rebuilt `client/dist` in the same commit. During a rebase,
 never hand-merge `client/dist/manifest.json`: take one side, then rebuild,
 because it contains derived hashes.
 
+**Doc map.** Do not edit `.dreamwork/docs/doc-map.md` — the coordinator folds its
+rows at merge, and the file is shared across concurrent docs lanes. **Report every
+new doc path in your completion report**; that report is what gets the row folded,
+and without it the map rots silently. A lane adding a plan under
+`.dreamwork/docs/plans/` hits a PREDICTED lint row on `doc-map.md` —
+`plans row omits N plan(s) that exist: <names> — a reader of the map cannot learn they are there` —
+expected, not a regression, when the omitted names are the plans you just added;
+any other `doc-map.md` WARN is a real finding.
+
 **Lane bars are command-, snapshot-, and interpreter-relative.** Run `python3 lint.py`: require
 NO ERRORs and compare the complete WARN row set against the measured baseline, not only the trailer
 count; the rows are indented, so `grep -c '^WARN'` returns a false `0`. A worktree may add
