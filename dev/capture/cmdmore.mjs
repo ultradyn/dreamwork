@@ -187,7 +187,10 @@ try {
     // geometry above still passes. So the control must be live, and when
     // geometry is sound but the control is not visible, the dedicated message
     // below names the exact class (#651: name a mode the guard can detect).
-    const visible = d.opacity > 0 && d.visibility !== 'hidden' &&
+    // visibility === 'visible' (positive), not !== 'hidden' (negative), so
+    // `visibility:collapse` — which paints the same as `hidden` on a non-table
+    // element while retaining its rectangles — is caught too.
+    const visible = d.opacity > 0 && d.visibility === 'visible' &&
                     d.btnW > 0 && d.btnH > 0;
     ok(`${tag}: the ⋯ control is live (opacity ${d.opacity}, ${d.visibility}, ` +
        `${d.btnW.toFixed(0)}×${d.btnH.toFixed(0)})`, visible);
