@@ -30,7 +30,8 @@ import urllib.parse
 import urllib.request
 
 import watch
-from dreamwork_db import Access
+from dreamwork_db import Access, open_database
+from dreamwork_db.tasks import task_store_spec
 
 
 QUESTIONS = """# Questions for the human
@@ -72,8 +73,8 @@ class TestGroupProgressRead(unittest.TestCase):
     def _store(self, root):
         make_target(root)
         path = os.path.join(root, ".dreamwork", "ledger.sqlite3")
-        with watch.open_database(
-                watch.task_store_spec(path), access=Access.WRITE) as store:
+        with open_database(
+                task_store_spec(path), access=Access.WRITE) as store:
             with store.transaction():
                 pass
         conn = sqlite3.connect(path)
@@ -94,8 +95,8 @@ class TestGroupProgressRead(unittest.TestCase):
     def test_collect_names_exact_group_and_landed_membership(self):
         with tempfile.TemporaryDirectory() as root:
             path = self._store(root)
-            with watch.open_database(
-                    watch.task_store_spec(path), access=Access.WRITE) as store:
+            with open_database(
+                    task_store_spec(path), access=Access.WRITE) as store:
                 with store.transaction() as tx:
                     group_id = tx.groups.create(
                         kind="epic", title="Rendered epic", actor="test",
@@ -121,8 +122,8 @@ class TestGroupProgressRead(unittest.TestCase):
     def test_empty_group_is_named_but_has_no_ratio(self):
         with tempfile.TemporaryDirectory() as root:
             path = self._store(root)
-            with watch.open_database(
-                    watch.task_store_spec(path), access=Access.WRITE) as store:
+            with open_database(
+                    task_store_spec(path), access=Access.WRITE) as store:
                 with store.transaction() as tx:
                     tx.groups.create(
                         kind="lane", title="No tasks yet", actor="test",
