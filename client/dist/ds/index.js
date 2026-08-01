@@ -2768,7 +2768,7 @@ var DreamworkDesign = (() => {
   function chatRow(c) {
     const pend = c.status === "pending";
     const turn = c.turns === 1 ? "1 turn" : `${c.turns} turns`;
-    return `<a class="dim chatrow" href="/chat/${encodeURIComponent(c.id)}" data-chat="${esc(c.id)}" data-status="${esc(c.status)}">${pend ? "pending" : "replied"} · ${esc(c.preview)} <span class="age">${turn}</span></a>`;
+    return `<div class="chatrow" id="chat-${esc(c.id)}"><a class="dim" href="/chat/${encodeURIComponent(c.id)}" data-chat="${esc(c.id)}" data-status="${esc(c.status)}">${pend ? "pending" : "replied"} · ${esc(c.preview)} <span class="age">${turn}</span></a></div>`;
   }
   function chatList(d) {
     const chats = d && d.chats || [];

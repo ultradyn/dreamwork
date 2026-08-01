@@ -751,10 +751,16 @@ function chatRow(c) {
   // quiet row, not a lit link — the same dim-row voice the dashboard's other
   // annotation lines keep. encodeURIComponent is the URL-segment escape (esc
   // does not escape "); a chat id is a safe path component regardless.
-  return `<a class="dim chatrow" href="/chat/${encodeURIComponent(c.id)}"` +
+  // #657: the block container both separates adjacent rows and keys each row
+  // through viewNodeKey's standing id branch. Without that identity, inserting
+  // a newest chat reused the previous first row positionally; reconcileGuard
+  // then preserved its client-owned `.age` text ("2 turns") on the new
+  // one-turn pending chat until a reload rebuilt the DOM.
+  return `<div class="chatrow" id="chat-${esc(c.id)}">` +
+    `<a class="dim" href="/chat/${encodeURIComponent(c.id)}"` +
     ` data-chat="${esc(c.id)}" data-status="${esc(c.status)}">` +
     `${pend ? 'pending' : 'replied'} · ${esc(c.preview)}` +
-    ` <span class="age">${turn}</span></a>`;
+    ` <span class="age">${turn}</span></a></div>`;
 }
 function chatList(d) {
   // #563 — the section is ALWAYS visible, even when there are no chats (he

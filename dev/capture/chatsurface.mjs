@@ -59,19 +59,26 @@ declare({
 const DIR = join(OUT, 'target');
 rmSync(DIR, { recursive: true, force: true });
 cpSync('dev/capture/fixture', DIR, { recursive: true });
-const addTurn = (id, role, text) => execFileSync('python3', ['-c',
+const addTurn = (id, role, text, at = null) => execFileSync('python3', ['-c',
   `import watch; watch.apply_chat_turn(${JSON.stringify(DIR)}, ` +
-  `${JSON.stringify(id)}, ${JSON.stringify(role)}, ${JSON.stringify(text)})`],
+  `${JSON.stringify(id)}, ${JSON.stringify(role)}, ${JSON.stringify(text)}, ` +
+  `${JSON.stringify(at)})`],
   { stdio: 'ignore' });
 // pending + unread (one human turn — last turn is his)
-addTurn('chat-unread', 'human', 'a question that needs a reply');
+addTurn('chat-unread', 'human', 'a question that needs a reply',
+        '2026-01-01T00:00:00');
 // replied + READ (human then agent — last turn is the dreamer's)
-addTurn('chat-read', 'human', 'an answered question');
-addTurn('chat-read', 'agent', 'the dreamer replied');
+addTurn('chat-read', 'human', 'an answered question',
+        '2026-01-03T00:00:00');
+addTurn('chat-read', 'agent', 'the dreamer replied',
+        '2026-01-03T00:01:00');
 // replied + UNREAD (he followed up AFTER the reply — last turn is his again)
-addTurn('chat-followup', 'human', 'first message');
-addTurn('chat-followup', 'agent', 'a reply landed');
-addTurn('chat-followup', 'human', 'a follow-up after the reply');
+addTurn('chat-followup', 'human', 'first message',
+        '2026-01-02T00:00:00');
+addTurn('chat-followup', 'agent', 'a reply landed',
+        '2026-01-02T00:01:00');
+addTurn('chat-followup', 'human', 'a follow-up after the reply',
+        '2026-01-02T00:02:00');
 
 // own port — the shared fixture is chatless and this guard owns its target
 const freePort = () => new Promise(res => {
@@ -172,6 +179,8 @@ try {
     const rows = [...document.querySelectorAll('[data-chat]')].map(a => ({
       tag: a.tagName, href: a.getAttribute('href') || '',
       id: a.getAttribute('data-chat') || '',
+      top: Math.round(a.getBoundingClientRect().top),
+      turnText: ((a.querySelector('.age') || {}).textContent || '').trim(),
     }));
     return { label: lab ? lab.textContent : null, rows };
   });
@@ -193,9 +202,54 @@ try {
      dash.rows.length > 0 && dash.rows.every(r => r.tag === 'A'));
   ok('every row links to its /chat/<id> page',
      dash.rows.length > 0 && dash.rows.every(r => r.href === '/chat/' + r.id));
+  ok('adjacent chat rows occupy distinct lines (never "2 turnsreplied")',
+     new Set(dash.rows.map(r => r.top)).size === dash.rows.length);
+  ok('every settled row count matches its authoritative transcript count',
+     dash.rows.length > 0 && dash.rows.every(r => {
+       const rec = byId.get(r.id);
+       const want = rec && (rec.turns === 1 ? '1 turn' : `${rec.turns} turns`);
+       return r.turnText === want;
+     }));
   const followupRow = dash.rows.find(r => r.id === 'chat-followup');
   ok('the followup chat has a row linking to its page',
      !!followupRow && followupRow.href === '/chat/chat-followup');
+
+  // #657: drive the transient state he reported, not the settled reload.
+  // chat-read is deliberately newest before this submission and carries
+  // "2 turns". A fresh pending row is inserted above it. Without a stable
+  // row key morphdom reuses chat-read's positional `.age` node, whose
+  // reconcileGuard-owned text stays "2 turns" even though /data.json already
+  // says the new chat has exactly one complete human turn. A later reload
+  // rebuilds the DOM and appears to "settle" it to 1 — the observed shape.
+  const submitted = await p.evaluate(async () => {
+    const action = crypto.randomUUID();
+    const r = await fetch('/command', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json',
+                'X-Client-Action-Id': action},
+      body: JSON.stringify({kind:'chat', text:'fresh count probe', from:'/'}),
+    });
+    const body = await r.json();
+    await tick();                 // immediate live reconcile; no reload/settle
+    const id = body.receipt && body.receipt.receipt_id;
+    const row = id && document.querySelector(`[data-chat="${id}"]`);
+    const server = await (await fetch('/data.json')).json();
+    const rec = (server.chats || []).find(c => c.id === id);
+    return {
+      status: r.status, id,
+      serverTurns: rec && rec.turns,
+      serverStatus: rec && rec.status,
+      domTurns: row && row.querySelector('.age') &&
+                row.querySelector('.age').textContent.trim(),
+    };
+  });
+  notes.push('fresh chat immediately after submit: ' + JSON.stringify(submitted));
+  ok('fresh chat submission committed a pending one-turn transcript',
+     submitted.status === 202 && submitted.serverStatus === 'pending' &&
+     submitted.serverTurns === 1);
+  ok('fresh chat immediately renders "1 turn"; an unkeyed row must not reuse ' +
+     'the previous chat\'s reconcileGuard-owned "2 turns" age text',
+     submitted.domTurns === '1 turn');
 
   // ── Act 2: the page renders the conversation (drive the real gesture) ───
   // Click the row — the real gesture for arriving at a chat — rather than
