@@ -570,7 +570,13 @@ def test_command_receipt_routes_through_reconcile_replay_writes_nothing(tmp_path
     cli.apply.ADAPTERS["/command"] = spy
     try:
         # First drain: the receipt is not yet applied → write once, UNAPPLIED.
-        code, out, err = _run(cli, ["consume", "--journal", str(path),
+        # --force-unapplied (#619) keeps this setup drain out of the uncleared
+        # sidecar: this test proves the EXACTLY-ONCE property of the replay,
+        # not the #619 carried-over re-report, and a recorded unapplied would
+        # make the rewound replay load it as STILL-UNAPPLIED (exit EX_UNAPPLIED)
+        # — unrelated to what this test asserts.
+        code, out, err = _run(cli, ["consume", "--force-unapplied",
+                                    "--journal", str(path),
                                     "--applied", str(applied)])
         assert code == 0, f"first consume exited {code} (err={err!r})"
         assert spy.writes == n, (

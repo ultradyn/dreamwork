@@ -276,6 +276,117 @@ def _load_pending_read(journal_path: Path) -> dict | None:
         return None
     return mark
 
+
+# --- #619: the durable uncleared-unapplied sidecar. ---
+#
+# The loss this exists to close: `consume` advanced the cursor past a receipt
+# whose idea never entered the task ledger, and the ONLY record that it needed
+# action was a transient `UNAPPLIED` line in stdout — gone the moment the tick
+# was compacted.  Worse, the #526 proof WROTE that receipt's marker into the
+# applied-ledger on the first drain (the exactly-once bookkeeping), so a future
+# replay proves APPLIED and SILENTLY suppresses the re-report.  So the durable
+# records actively concealed the receipt after one tick.
+#
+# WHY OPTION 1 (refuse to advance past unapplied) WAS REJECTED ON MEASUREMENT.
+# `add-idea` (and chat/answer/comment/ask) are NOT expedited
+# (`delivery.EXPEDITE_KINDS == ("do-next",)`), so on the FIRST drain of any new
+# receipt the marker is absent → NOT_APPLIED → the receipt is ALWAYS unapplied.
+# That makes `consumed N, applied 0, unapplied N` the ORDINARY tick, not the
+# exception.  A refusal that fires on that fires every tick, so the coordinator
+# learns `--force-unapplied` as a reflex and the guard is a rubber stamp — the
+# exact degradation the brief predicted.  A non-zero exit on `applied 0` is the
+# same noise.  (And either is hollow for loss besides: the proof loop writes the
+# marker BEFORE advance_cursor, so a post-loop refusal leaves the marker landed
+# and a replay still proves APPLIED.)
+#
+# THE REMEDY (option 2, minimal): make the unapplied ids DURABLE so they survive
+# a compaction, and re-report them every tick until the coordinator CONFIRMS
+# filing.  Confirmation clears an id (`consume --cleared <id>`); until then it
+# carries over as a `STILL-UNAPPLIED` line.  `--force-unapplied` is the escape
+# for a tick the coordinator has handled by inspection (records nothing).
+#
+# THE ALARM IS CARRIED-OVER, NOT FRESH (the degrade-to-zero ruling, #868).
+# Fresh-this-tick unapplied is the ordinary, expected case (the coordinator just
+# read `pending` and is filing), so it stays exit 0 with its `UNAPPLIED` lines.
+# CARRIED-OVER unapplied (uncleared from a previous tick) is the genuine
+# missed-idea signal — that, and only that, is `EX_UNAPPLIED`.  So:
+#   `consumed N, applied N`                         → exit 0  (everything landed)
+#   `consumed N, applied <N`, fresh UNAPPLIED       → exit 0  (ordinary tick)
+#   + `STILL-UNAPPLIED` carried-over                 → exit EX_UNAPPLIED (alarm)
+#   `consumed 0` (and nothing carried over)          → exit 0  (quiet — nothing
+#                                                    needs you)
+# A rubber stamp is impossible: the alarm needs a SECOND tick of non-clearing,
+# which is the actual at-risk condition.  `consumed 0` stays quiet unless
+# something is carried over, so an idle tick does not train the coordinator to
+# ignore the output.
+#
+# This is RECOVERABLE, not impossible (the brief ranked "impossible" higher but
+# that path is the refuted option 1).  It is strictly better than today: the
+# content is never lost (`show <id>` recovers any consumed receipt, #855), and
+# the REMINDER to act is now durable instead of transient.  The remaining
+# residual is the crash window between the proof loop (marker write) and the
+# advance — a pre-existing exactly-once property this change inherits and does
+# not widen; closing it needs the marker to mean "coordinator-confirmed", a
+# bigger change owned elsewhere (named below, out of scope).
+#
+# The sidecar is a JSON object `{"journal_id", "entries": [...]}` sibling to the
+# journal (`<journal>.unapplied`), so `--journal` overrides make it travel in
+# tests exactly as the `.pending-read` marker does.  `journal_id` binds it to
+# THIS journal so a sidecar from a different checkout cannot satisfy it (#658).
+
+
+def _unapplied_path(journal_path: Path) -> Path:
+    """The uncleared-unapplied sidecar for a journal: ``<journal>.unapplied``."""
+    return Path(str(journal_path) + ".unapplied")
+
+
+def _load_unapplied(journal_path: Path, journal_id: str) -> list[dict]:
+    """The uncleared-unapplied entries for THIS journal, or ``[]`` (#619).
+
+    Returns ``[]`` for an absent, corrupt, shapeless, or STALE sidecar (one
+    whose ``journal_id`` is not this journal's) — every one of those degrades to
+    the same "nothing carried over" reading rather than raising (a guard whose
+    subject may not exist has to return a reading, never throw — the
+    "degrade to a reading, never throw" lesson).  Each surviving entry is
+    shape-checked for a string ``receipt_id`` so a later comparison can index it.
+    """
+    up = _unapplied_path(journal_path)
+    if not up.exists():
+        return []
+    try:
+        data = json.loads(up.read_text())
+    except (ValueError, OSError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    if data.get("journal_id") != journal_id:
+        return []  # stale sidecar from a different journal (#658 binding)
+    entries = data.get("entries")
+    if not isinstance(entries, list):
+        return []
+    return [
+        e for e in entries
+        if isinstance(e, dict) and isinstance(e.get("receipt_id"), str)
+    ]
+
+
+def _store_unapplied(journal_path: Path, journal_id: str, entries: list[dict]) -> None:
+    """Overwrite the sidecar with ``entries`` for THIS journal (#619).
+
+    One entry per receipt the drain reported unapplied and the coordinator has
+    not yet cleared.  Overwrites in place: the sidecar is the SET of uncleared
+    ids, not an append-only log, so clearing shrinks it and a fresh drain that
+    records the same id twice keeps one entry.
+    """
+    import time
+    payload = json.dumps({
+        "journal_id": journal_id,
+        "entries": entries,
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    })
+    _unapplied_path(journal_path).write_text(payload)
+
+
 # --- #526: the drain's applied-receipts proof ledger. ---
 #
 # The audit (#519 F4) found that ``apply``'s exactly-once proof
@@ -333,9 +444,13 @@ EXPEDITE_LIMIT_DEFAULT = 10
 # Stable exit codes (asserted by the test).  pending's empty path and consume's
 # 0-event path return EX_OK; a verification refusal returns EX_SOFTWARE (a
 # data-integrity event, not a usage error — the caller re-reads next tick).
+# #619: EX_UNAPPLIED signals carried-over uncleared-unapplied receipts — a
+# genuine missed-idea alarm, NOT a fresh-this-tick drain (that is the ordinary
+# tick and stays EX_OK).  Informational, not an error.
 EX_OK = 0
 EX_USAGE = 64
 EX_SOFTWARE = 70
+EX_UNAPPLIED = 65
 
 _PREVIEW_LIMIT = 80
 
@@ -579,6 +694,62 @@ def _prove_drained(applied_path: str, ev) -> "apply.Proof":
     )
 
 
+def _emit_uncleared(out, uncleared: list[dict]) -> int:
+    """Write the ``STILL-UNAPPLIED`` block for carried-over receipts (#619).
+
+    These are receipts drained unapplied on a PRIOR tick and not yet cleared —
+    the at-risk ideas.  They LEAD the consume output so one is not buried under
+    this tick's count, and each line names its recovery (``show``) on the
+    summary and its id on its own line.  Returns ``EX_UNAPPLIED`` if any are
+    carried over (the missed-idea alarm), else ``EX_OK`` — so a clean drain and
+    an idle tick stay quiet, and only a tick with something still uncleared
+    alarms.
+    """
+    if not uncleared:
+        return EX_OK
+    out.write(
+        f"STILL-UNAPPLIED {len(uncleared)} receipt(s) drained on a prior tick "
+        f"and not yet cleared — `show <id>` to recover, "
+        f"`consume --cleared <id>` once filed\n"
+    )
+    for e in uncleared:
+        out.write(
+            f"STILL-UNAPPLIED\t{e['receipt_id']}\t{e.get('route', '?')}\t"
+            f"ord={e.get('ordinal', '?')}\n"
+        )
+    return EX_UNAPPLIED
+
+
+def _consume_cleared(args, journal_id: str, out, err) -> int:
+    """``--cleared`` mode: remove confirmed-filed ids from the sidecar (#619).
+
+    The coordinator's "I filed these" confirmation — the CLEAR half of the
+    durable uncleared list, and the act that stops a receipt re-reporting every
+    tick.  Does NOT drain and does NOT advance the cursor: it is sidecar
+    maintenance, not a consume, so a bounded ``--through`` has no meaning
+    against it (it is resolved before the bounds).  Reports what it cleared and
+    re-emits whatever remains uncleared.  Returns ``EX_UNAPPLIED`` if anything
+    remains, else ``EX_OK``.
+
+    An id the coordinator names that was never recorded is a no-op for it (not
+    an error): the clear is idempotent, and a twice-cleared id or one cleared
+    before any drain is harmless.  The count printed is the ids that WERE
+    present and removed, so the coordinator can see a typo'd id that cleared
+    nothing.
+    """
+    entries = _load_unapplied(Path(args.journal), journal_id)
+    cleared_set = set(args.cleared)
+    remaining = [e for e in entries if e["receipt_id"] not in cleared_set]
+    removed = sorted(
+        e["receipt_id"] for e in entries if e["receipt_id"] in cleared_set
+    )
+    _store_unapplied(Path(args.journal), journal_id, remaining)
+    out.write(f"cleared {len(removed)} unapplied receipt(s)\n")
+    for rid in removed:
+        out.write(f"CLEARED\t{rid}\n")
+    return _emit_uncleared(out, remaining)
+
+
 def cmd_consume(args, out, err) -> int:
     """Read-then-advance as one act: drain (coordinator_cursor, head].
 
@@ -599,6 +770,19 @@ def cmd_consume(args, out, err) -> int:
     one ``UNAPPLIED`` line per unapplied receipt (id, kind, route) — the list
     the coordinator must act on.  Applied receipts are summarised by the count
     (their content is recoverable via ``show <id>``).
+
+    #619 — the cursor no longer SILENTLY advances past an unapplied receipt.
+    Every drained receipt that proves unapplied is recorded in a durable
+    ``<journal>.unapplied`` sidecar and re-reported as ``STILL-UNAPPLIED`` on
+    every later tick until the coordinator confirms filing (``consume --cleared
+    <id>``).  The exit code distinguishes the three cases the degrade-to-zero
+    ruling (#868) names: a clean drain and an idle tick stay ``EX_OK``; a tick
+    with CARRIED-OVER (still-uncleared) unapplied receipts exits ``EX_UNAPPLIED``
+    — the missed-idea alarm.  Fresh-this-tick unapplied is the ORDINARY tick
+    (every non-expedited receipt is unapplied on its first drain) and stays
+    ``EX_OK``, so the alarm cannot rubber-stamp.  See the #619 note above the
+    sidecar helpers for why option 1 (refuse to advance) was rejected on
+    measurement.
     """
     journal = Path(args.journal)
     if not journal.exists():
@@ -606,6 +790,14 @@ def cmd_consume(args, out, err) -> int:
         out.write("consumed 0 event(s)\n")
         return EX_OK
     with open_journal(args.journal) as j:
+        journal_id = j.journal_id  # #619: bind the uncleared sidecar to THIS journal
+        # --- #619: --cleared is a sidecar-maintenance mode (no drain, no
+        # advance).  Resolve it BEFORE the --through bounds — it is the
+        # coordinator's "I filed these" confirmation, not a consume, and a
+        # bounded --through has no meaning against it.
+        if args.cleared is not None:
+            return _consume_cleared(args, journal_id, out, err)
+        uncleared = _load_unapplied(Path(args.journal), journal_id)
         # --- #531: bound the advance to what the prior pending read reported.
         # `consume` without `--through` advances to the live head (today's
         # semantics).  `consume --through H` advances at most through H — the
@@ -622,7 +814,6 @@ def cmd_consume(args, out, err) -> int:
             # the journal directly (the same row advance_cursor writes/reads).
             cursor_ordinal = j.cursor(CONSUMER).scanned_through_event_ordinal
             head_ordinal = j.head_ordinal()
-            journal_id = j.journal_id  # #658: bind the marker to THIS journal
             if through <= cursor_ordinal:
                 # At-or-below the cursor: a rewind (through < cursor) or a
                 # no-op (through == cursor).  Neither may pass silently.
@@ -728,8 +919,13 @@ def cmd_consume(args, out, err) -> int:
         if target_ord <= cursor_ordinal:
             # Genuinely nothing to advance: the cursor already sits at or past
             # the target.  (An up-to-date consumer reads this on every tick.)
+            # #619: an idle tick still re-reports carried-over uncleared
+            # unapplied receipts (the at-risk ideas) — "nothing needs you"
+            # holds only when nothing is carried over (#136: "nothing needs
+            # you" and "something is hiding" must not render identically).
+            code = _emit_uncleared(out, uncleared)
             out.write("consumed 0 event(s)\n")
-            return EX_OK
+            return code
         drained = [ev for ev in events if ev.ordinal <= target_ord]
         # The expected hash at the target ordinal.  When the target IS a
         # receipt in `events` use its hash directly; otherwise (a transition,
@@ -778,6 +974,11 @@ def cmd_consume(args, out, err) -> int:
                 f"since the read — cursor unmoved, re-read next tick\n"
             )
             return EX_SOFTWARE
+        # #619: carried-over uncleared LEAD the output, so an at-risk idea is
+        # not buried under this tick's count.  The exit code follows the
+        # carried-over alarm (EX_UNAPPLIED iff something is still uncleared);
+        # fresh-this-tick unapplied is the ordinary tick and stays exit 0.
+        code = _emit_uncleared(out, uncleared)
         out.write(f"consumed {len(drained)} event(s)\n")
         out.write(f"applied {len(applied)}\n")
         out.write(f"unapplied {len(unapplied)}\n")
@@ -812,7 +1013,24 @@ def cmd_consume(args, out, err) -> int:
             oneline = " ".join(text.split())
             out.write(f"CHAT\t{chat_id}\t{oneline}\n")
             out.write(f"  reply: {_reply_command(chat_id)}\n")
-        return EX_OK
+        # --- #619: record this tick's fresh unapplied into the durable sidecar
+        # so they survive a compaction and re-report next tick unless cleared.
+        # --force-unapplied records nothing — the escape for a tick the
+        # coordinator has handled by inspection (bootstrap, or a deliberate
+        # "do not track this drain").  Carried-over uncleared persist in the
+        # sidecar regardless: force is about THIS tick's fresh receipts, not
+        # about forgetting ones already recorded.
+        if not args.force_unapplied:
+            existing = {e["receipt_id"] for e in uncleared}
+            fresh = [
+                {"receipt_id": ev.receipt_id, "ordinal": ev.ordinal,
+                 "route": ev.route, "kind": EVENT_KIND}
+                for ev in unapplied
+                if ev.receipt_id not in existing
+            ]
+            if fresh:
+                _store_unapplied(Path(args.journal), journal_id, uncleared + fresh)
+        return code
 
 
 def _expedited_record(ev, kind: str) -> str:
@@ -1086,6 +1304,27 @@ def _parser() -> argparse.ArgumentParser:
             "past ordinals never listed, below it means the bound came from an "
             "older or truncated view rather than that read.  Bare `consume` is "
             "never gated by the marker."
+        ),
+    )
+    pc.add_argument(
+        "--cleared", nargs="*", default=None, metavar="RECEIPT-ID",
+        help=(
+            "#619 — confirm that these receipt ids (drained unapplied on a "
+            "prior tick) have been filed, removing them from the uncleared "
+            "sidecar so they stop re-reporting.  Sidecar-maintenance mode: no "
+            "drain, no advance.  With no ids, just reports what is still "
+            "uncleared.  Exits EX_UNAPPLIED if anything remains uncleared."
+        ),
+    )
+    pc.add_argument(
+        "--force-unapplied", action="store_true",
+        help=(
+            "#619 — escape hatch: drain normally but do NOT record this tick's "
+            "fresh unapplied receipts into the uncleared sidecar (carried-over "
+            "ones still re-report).  For a tick handled by inspection, or "
+            "bootstrap.  The safe default (no flag) records every unapplied "
+            "receipt durably; do not make this reflexive or an idea can be "
+            "lost the way it was before #619."
         ),
     )
 
