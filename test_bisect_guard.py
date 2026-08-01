@@ -139,10 +139,17 @@ def test_comment_magic_and_echo_cannot_manufacture_a_judged_pass(revision_tree):
 
 
 def test_structural_recipe_check_does_not_claim_to_interpret_shell_semantics(revision_tree):
-    repo, sha = revision_tree
+    repo, _sha = revision_tree
+    (repo / "justfile").write_text(valid_recipe('    echo "  PASS qroll"'))
+    git(repo, "add", "justfile")
+    git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "indirect gate")
+    sha = git(repo, "rev-parse", "HEAD")
 
-    # audit_shape is never called: this is the explicit remaining false-green.
+    # audit_shape is never called: this is the explicit remaining false-green,
+    # retained as an executable statement of the documented semantic boundary.
     assert bg.inspect_revision_tree(repo, sha, "qroll") is None
+    result = bg.judge_revision(repo, sha, "qroll", free_port(), "guard preflight: OK [test]")
+    assert result.verdict is bg.Verdict.PASS
 
 
 def test_locked_temporary_worktree_is_reported_and_preserved(revision_tree, tmp_path,

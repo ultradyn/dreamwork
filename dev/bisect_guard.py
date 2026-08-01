@@ -177,10 +177,13 @@ def read_preflight(repo: Path) -> str:
 def _remove_worktree(repo: Path, tree: Path) -> str | None:
     """Remove one private worktree, reporting registry evidence on failure."""
     removal = _run(["git", "worktree", "remove", "--force", str(tree)], cwd=repo)
-    if removal.returncode == 0:
-        return None
     listing = _run(["git", "worktree", "list", "--porcelain"], cwd=repo)
-    registered = listing.returncode == 0 and f"worktree {tree}" in listing.stdout.splitlines()
+    if listing.returncode != 0:
+        return ("temporary worktree cleanup could not verify the registry after "
+                f"git worktree remove exited {removal.returncode}: {listing.stdout.strip()}")
+    registered = f"worktree {tree}" in listing.stdout.splitlines()
+    if removal.returncode == 0 and not registered:
+        return None
     state = "registry entry survived" if registered else "registry survival could not be confirmed"
     detail = removal.stdout.strip() or f"git worktree remove exited {removal.returncode}"
     return f"temporary worktree cleanup failed; {state} for {tree}: {detail}"
