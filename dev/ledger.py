@@ -543,10 +543,12 @@ def _retitle_store(dw_dir, task_id, title, why):
 def file_text(text, title, note, priority, type, origin):
     """Markdown-mode file: insert a new entry under ``## Open``, bump ``Next id``.
 
-    Returns the new text (the caller writes it). Raises ``LedgerError`` on any
-    refusal or invariant violation; it never returns a text that fails
-    ``assert_headings``. The entry shape matches the ledger's
-    ``- **#N** — title · P2 · [type ·] origin: **value**`` idiom.
+    Returns ``(new_text, new_id)`` — the new text (the caller writes it) and the
+    id that was allocated, so a caller can report what it filed without
+    re-parsing. Raises ``LedgerError`` on any refusal or invariant violation;
+    it never returns a text that fails ``assert_headings``. The entry shape
+    matches the ledger's ``- **#N** — title · P2 · [type ·] origin: **value**``
+    idiom.
     """
     assert_headings(text, "before file")
 
@@ -584,7 +586,7 @@ def file_text(text, title, note, priority, type, origin):
         "Next id: **{}**".format(new_id + 1), new_text, count=1)
 
     assert_headings(new_text, "after file")
-    return new_text
+    return new_text, new_id
 
 
 def note_text(text, task_id, note):
@@ -2765,15 +2767,15 @@ def _dispatch(args):
             sys.stdout.write(_reach_trailer(args.repo, dw_dir))
             return 0
         if args.cmd == "file":
-            new_text = file_text(text, args.title, args.note, args.priority,
-                                 args.type, args.origin)
+            new_text, new_id = file_text(text, args.title, args.note,
+                                         args.priority, args.type, args.origin)
             if args.dry_run:
                 sys.stdout.write(new_text)
                 if not new_text.endswith("\n"):
                     sys.stdout.write("\n")
                 return 0
             _write(args.ledger, new_text)
-            sys.stdout.write(f"filed into {args.ledger}\n")
+            sys.stdout.write(f"filed #{new_id} into {args.ledger}\n")
             return 0
         if args.cmd == "note":
             new_text = note_text(text, args.id, args.note)  # asserts before AND after
