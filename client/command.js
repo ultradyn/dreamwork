@@ -852,15 +852,13 @@ function mountComposer(target) {
     }
     composing = false;          // from here, anything he does means "still here"
     {
-      // THROUGH `postJSON`, not a fetch of its own (#175). It is the one seam
-      // every submission passes, so routing the composer through it is what
-      // makes the client-side record complete rather than well-intentioned —
-      // a second fetch here would be a third of his submissions unwitnessed,
-      // which is #191's lesson about one gesture spelled two ways, aimed at
-      // data instead of at motion.
+      // THROUGH postCommand → postJSON, not a fetch of its own (#175/#344).
+      // postCommand is the one seam every in-page command send passes — the
+      // composer and a per-row do-next control alike — so a row's do-next is
+      // the SAME request this is, not a second source of truth about what a
+      // do-next is. (#191: one gesture spelled two ways, aimed at data.)
       const attempt=confirmation.begin();
-      const r = await postJSON('/command', { kind, text, from: fromPath() },
-          DraftStore.attemptId(composerLid()));
+      const r = await postCommand(kind, text, DraftStore.attemptId(composerLid()));
       const cv = r && r._dwv;
       if (r && cv && cv.landed) {
         if(!attempt.success())return;
