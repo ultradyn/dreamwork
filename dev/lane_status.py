@@ -200,13 +200,13 @@ def sweep(repo: Path) -> int:
               + msg + ".")
         return 0
 
-    any_armed = False
+    armed_liveness: set[str] = set()
     for label, path in lanes:
         live = _liveness(path)
         dirty = _dirty_count(path)
         armed_status, armed_detail = _armed_injections(path, repo)
         if armed_status == "ARMED":
-            any_armed = True
+            armed_liveness.add(live.partition(" ")[0])
         dirty_str = f"{dirty} dirty" if dirty >= 0 else "dirty-unknown"
         parts = [f"{live:<20}", dirty_str]
         if armed_status != "clean":
@@ -219,9 +219,18 @@ def sweep(repo: Path) -> int:
                 if detail_line.strip():
                     print(f"    {detail_line.strip()}")
 
-    if any_armed:
-        print("lane_status: ARMED injection(s) found — a lane died mid-red-proof "
-              "with sabotaged files unrestored. Restore them before merging.")
+    if armed_liveness:
+        if "LIVE" in armed_liveness:
+            print("lane_status: ARMED+LIVE injection(s) found — red-proof in "
+                  "progress. Do not restore them while the lane is live; wait "
+                  "for it to finish, and do not merge yet.")
+        if "DEAD" in armed_liveness:
+            print("lane_status: ARMED+DEAD injection(s) found — a lane died "
+                  "mid-red-proof with sabotaged files unrestored. Restore them "
+                  "before merging.")
+        if armed_liveness - {"LIVE", "DEAD"}:
+            print("lane_status: ARMED injection(s) found with unconfirmed lane "
+                  "liveness — do not merge; inspect liveness before restoring.")
         return 1
     return 0
 
