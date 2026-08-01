@@ -204,8 +204,8 @@ function activateDoubleClickButton(btn, act, now = Date.now()) {
 /* a small standard picture-in-picture glyph — a low-emphasis action placed
    after doc/review affordances so pop-out is discoverable, never surprising.
    Clicking it floats the target (data-pipurl) in an identity-headed window. */
-const PIP_SVG = '<svg viewBox="0 0 22 18" width="14" height="12"' +
-  ' aria-hidden="true"><rect x="1" y="1" width="20" height="16" rx="2.5"' +
+const PIP_SVG = '<svg viewBox="0 0 22 18" aria-hidden="true"' +
+  '><rect x="1" y="1" width="20" height="16" rx="2.5"' +
   ' fill="none" stroke="currentColor" stroke-width="1.6"/>' +
   '<rect x="10.5" y="8.5" width="9" height="7" rx="1.2"' +
   ' fill="currentColor"/></svg>';
