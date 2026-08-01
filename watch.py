@@ -4110,7 +4110,7 @@ SUMMARY_DENIED = frozenset({
     "plugin_commands",   # machine UI vocabulary (prose desc/label), not a
                          #   project-status summary, and reveals the plugin set
     "chats",             # #504 topic-chat transcripts — his words + the
-    "groups", "settings",  # replies/group prose; local preference metadata
+    "groups", "goals", "settings",  # replies/group prose; local preference metadata
 })                       #   descriptions — authored prose, plus member ids
 
 
