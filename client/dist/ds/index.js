@@ -1941,6 +1941,14 @@ var DreamworkDesign = (() => {
     d.textContent = t ?? "";
     return d.innerHTML.replace(/"/g, "&quot;");
   };
+  function splitBar(rows, aria, key, animated) {
+    const total = Array.isArray(rows) ? rows.reduce((n, row) => n + Number(row[1] || 0), 0) : 0;
+    if (!(total > 0)) return "";
+    return `<div class="provbar${animated ? " panimate" : ""}" role="img" aria-label="${escA(aria)}">` + rows.map(([name, count, cls]) => {
+      const value = Number(count || 0);
+      return `<div id="${escA(`split-${key}-${cls}`)}" class="provseg ${escA(cls)}" style="flex-grow:${value};min-width:${value ? 2 : 0}px" title="${escA(`${name} ${value}`)}" aria-hidden="true"></div>`;
+    }).join("") + `</div>`;
+  }
   var ageStr = (mt) => {
     let s = Math.max(0, Date.now() / 1e3 - mt);
     for (const [u, div] of [["d", 86400], ["h", 3600], ["m", 60]])
@@ -2703,12 +2711,27 @@ var DreamworkDesign = (() => {
     ];
     const incomplete = p.history_complete === false;
     const aria = `task provenance: ${rows.map(([n, c]) => `${n} ${c}`).join(", ")} — ${total} first sightings in recorded git history` + (incomplete ? ", coverage is incomplete (shallow clone)" : "");
-    return `<div class="bdprov"><div class="provbar" role="img" aria-label="${esc(aria)}">` + rows.map(([n, c, cls]) => (
-      /* Flex distributes the exact remaining track after the two gaps, so
-         independently rounded percentages cannot leave a false empty sliver.
-         A real but tiny cohort stays visible; zero remains truly absent. */
-      `<div class="provseg ${cls}" style="--share:${c};min-width:${c ? 2 : 0}px" title="${esc(n)} ${c}" aria-hidden="true"></div>`
-    )).join("") + `</div><div class="provline" title="${esc(rows.map(([n, c]) => `${n} ${c}`).join(" · "))}">` + rows.map(([n, c, cls]) => `<span class="${cls}">${esc(n)} ${c}</span>`).join(" · ") + `</div><div class="provsrc">${total} first sightings in recorded git history</div>` + (incomplete ? `<div class="provsrc">shallow clone — first sightings before its boundary are invisible, so coverage is incomplete</div>` : "") + `</div>`;
+    return `<div class="bdprov">` + splitBar(rows, aria, "provenance", false) + `<div class="provline" title="${esc(rows.map(([n, c]) => `${n} ${c}`).join(" · "))}">` + rows.map(([n, c, cls]) => `<span class="${cls}">${esc(n)} ${c}</span>`).join(" · ") + `</div><div class="provsrc">${total} first sightings in recorded git history</div>` + (incomplete ? `<div class="provsrc">shallow clone — first sightings before its boundary are invisible, so coverage is incomplete</div>` : "") + `</div>`;
+  }
+  function groupProgressBlock(g) {
+    const members = Array.isArray(g.member_task_ids) ? g.member_task_ids : [];
+    const landed = Array.isArray(g.landed_task_ids) ? g.landed_task_ids : [];
+    const memberSet = new Set(members);
+    const plausible = members.length > 0 && memberSet.size === members.length && new Set(landed).size === landed.length && landed.every((id) => memberSet.has(id)) && g.total_count === members.length && g.completed_count === landed.length && g.completed === (landed.length === members.length);
+    const name = `${g.kind} #${g.id} ${g.title}`;
+    if (!plausible)
+      return `<div class="dim groupprogress" data-group-id="${escA(g.id)}">${esc(name)} — progress unavailable${g.progress_error ? `: ${esc(g.progress_error)}` : ""}</div>`;
+    const remaining = members.length - landed.length;
+    const rows = [
+      ["landed", landed.length, "phuman"],
+      ["remaining", remaining, "punknown"]
+    ];
+    const aria = `${name}: ${landed.length} of ${members.length} tasks landed`;
+    return `<div class="bdprov groupprogress" data-group-id="${escA(g.id)}" data-member-task-ids="${escA(members.join(","))}" data-landed-task-ids="${escA(landed.join(","))}"><div class="provline">${esc(name)}</div>` + splitBar(rows, aria, `group-${g.id}`, true) + `<div class="provsrc">${landed.length} of ${members.length} tasks landed</div></div>`;
+  }
+  function groupProgressPanel(groups) {
+    if (!Array.isArray(groups) || !groups.length) return "";
+    return label(`task groups (${groups.length})`) + groups.map(groupProgressBlock).join("");
   }
   function medDur(m) {
     if (!m && m !== 0) return "";
@@ -2902,6 +2925,7 @@ var DreamworkDesign = (() => {
         h += `<div class="dim"><a href="/reviews">all ${d.reviews.length} reviews →</a></div>`;
     }
     h += label("files") + ["DREAMWORK.md", "questions.md", "lessons.md"].map((n) => expand(n, mdB(d.files[n], n), "", `file:${n}`)).join("");
+    h += groupProgressPanel(d.groups);
     h += burnPanel(d);
     h += statusBlock(d.status, d.pending_handoffs);
     h += posturePicker(d);

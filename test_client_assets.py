@@ -100,6 +100,19 @@ def test_style_rewrap_is_exact_and_the_file_is_real_css():
     assert watch.STYLE.endswith("</style>")
 
 
+def test_task_provenance_and_group_progress_share_one_split_bar_component():
+    """#440/#836: one supported bar implementation, two callers."""
+    components = (CLIENT / "components.js").read_text(encoding="utf-8")
+    views = (CLIENT / "views.js").read_text(encoding="utf-8")
+    assert components.count('function splitBar(') == 1, (
+        "client/components.js must define exactly one splitBar component")
+    assert views.count("splitBar(") == 2, (
+        "client/views.js must route provenance and group progress through "
+        "the same splitBar component")
+    assert '<div class="provbar' not in views, (
+        "client/views.js hand-built a second bar instead of using splitBar")
+
+
 def test_every_asset_actually_reaches_the_assembled_page():
     """A faithful loader is not enough — the asset must be IN the page.
 

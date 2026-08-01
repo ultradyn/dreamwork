@@ -509,14 +509,7 @@ function provBlock(p) {
     ` — ${total} first sightings in recorded git history` +
     (incomplete ? ', coverage is incomplete (shallow clone)' : '');
   return `<div class="bdprov">` +
-    `<div class="provbar" role="img" aria-label="${esc(aria)}">` +
-    rows.map(([n, c, cls]) =>
-      /* Flex distributes the exact remaining track after the two gaps, so
-         independently rounded percentages cannot leave a false empty sliver.
-         A real but tiny cohort stays visible; zero remains truly absent. */
-      `<div class="provseg ${cls}" style="--share:${c};min-width:${c ? 2 : 0}px" ` +
-      `title="${esc(n)} ${c}" aria-hidden="true"></div>`).join('') +
-    `</div>` +
+    splitBar(rows, aria, 'provenance', false) +
     `<div class="provline" title="${esc(rows.map(([n, c]) => `${n} ${c}`).join(' · '))}">` +
     rows.map(([n, c, cls]) =>
       `<span class="${cls}">${esc(n)} ${c}</span>`).join(' · ') +
@@ -527,6 +520,40 @@ function provBlock(p) {
       ? `<div class="provsrc">shallow clone — first sightings before its ` +
         `boundary are invisible, so coverage is incomplete</div>` : '') +
     `</div>`;
+}
+
+/* #836 — group progress uses the SAME split bar as task provenance. The
+   remaining segment is literally `punknown`, so the base bar's historical-
+   unknown hatch is the unfilled paint rather than a nearby imitation. */
+function groupProgressBlock(g) {
+  const members = Array.isArray(g.member_task_ids) ? g.member_task_ids : [];
+  const landed = Array.isArray(g.landed_task_ids) ? g.landed_task_ids : [];
+  const memberSet = new Set(members);
+  const plausible = members.length > 0 && memberSet.size === members.length &&
+    new Set(landed).size === landed.length && landed.every(id => memberSet.has(id)) &&
+    g.total_count === members.length && g.completed_count === landed.length &&
+    g.completed === (landed.length === members.length);
+  const name = `${g.kind} #${g.id} ${g.title}`;
+  if (!plausible)
+    return `<div class="dim groupprogress" data-group-id="${escA(g.id)}">` +
+      `${esc(name)} — progress unavailable${g.progress_error
+        ? `: ${esc(g.progress_error)}` : ''}</div>`;
+  const remaining = members.length - landed.length;
+  const rows = [['landed', landed.length, 'phuman'],
+                ['remaining', remaining, 'punknown']];
+  const aria = `${name}: ${landed.length} of ${members.length} tasks landed`;
+  return `<div class="bdprov groupprogress" data-group-id="${escA(g.id)}" ` +
+    `data-member-task-ids="${escA(members.join(','))}" ` +
+    `data-landed-task-ids="${escA(landed.join(','))}">` +
+    `<div class="provline">${esc(name)}</div>` +
+    splitBar(rows, aria, `group-${g.id}`, true) +
+    `<div class="provsrc">${landed.length} of ${members.length} tasks landed</div>` +
+    `</div>`;
+}
+
+function groupProgressPanel(groups) {
+  if (!Array.isArray(groups) || !groups.length) return '';
+  return label(`task groups (${groups.length})`) + groups.map(groupProgressBlock).join('');
 }
 /* the median filed-to-landed duration (#218). One honest number — the
    median of every filed-to-landed pair the walk already holds — and the
@@ -1047,6 +1074,7 @@ function buildDashboard(d) {
   h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
          expand(n, mdB(d.files[n], n), '', `file:${n}`)).join('');
+  h += groupProgressPanel(d.groups);
   // ...then how the work itself is going (#142). Below the questions and the
   // reviews on purpose: the top of this page is what NEEDS him — a fault,
   // what just happened, what he must answer — and the burndown is context
