@@ -6465,7 +6465,9 @@ class TestGoalsRoute(unittest.TestCase):
 
         with unittest.mock.patch.object(GoalRepository, "preorder", drop_child):
             payload = watch.goal_tree_payload(self.target)
-        self.assertEqual(payload["health"], "incomplete")
+        self.assertEqual(
+            payload["health"], "incomplete",
+            "partial walk rendered as healthy: examined 2 of 3 goal nodes")
         self.assertEqual(payload["examined_count"], 2)
         self.assertEqual(payload["expected_count"], 3)
         self.assertEqual(payload["nodes"], [])
@@ -6508,12 +6510,24 @@ class TestGoalsRoute(unittest.TestCase):
             watch.make_handler), "#890 must not add a POST /goals branch")
 
     def test_page_wires_one_native_goals_authority(self):
-        self.assertIn("loc.pathname === '/goals'", watch.PAGE)
-        self.assertIn("a.pathname === '/goals'", watch.PAGE)
+        self.assertIn(
+            "loc.pathname === '/goals'", watch.PAGE,
+            "client routeOf no longer claims /goals")
+        self.assertIn(
+            "a.pathname === '/goals'", watch.PAGE,
+            "same-document links no longer claim /goals")
         self.assertNotIn("function buildGoals(", watch.PAGE)
         self.assertIn(
             "Native /goals read surface; sole full-page renderer.",
             watch.NATIVE_JS)
+        self.assertIn(
+            "no goals yet — the examined tree is genuinely empty",
+            watch.NATIVE_JS,
+            "native /goals empty copy no longer distinguishes a healthy 0/0 tree")
+        self.assertIn(
+            "goal tree unavailable: examined 0 nodes; no canonical goal store",
+            watch.NATIVE_JS,
+            "native /goals failure copy no longer names the unreadable zero")
 
 
 class TestAppShell(unittest.TestCase):
