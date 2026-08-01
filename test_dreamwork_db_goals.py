@@ -146,6 +146,49 @@ def test_v008_empty_downgrade_restores_v007_without_loss(store_path):
         conn.close()
 
 
+def test_a_real_v007_store_upgrades_in_place_to_v008(store_path):
+    """Red on Migration(7, 8, v008_goals.upgrade), against the v007 target."""
+    v008_goals = importlib.import_module(
+        "dreamwork_db.migrations.v008_goals"
+    )
+    conn = sqlite3.connect(store_path)
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("BEGIN")
+    v008_goals.downgrade(conn)
+    conn.execute(
+        "INSERT INTO task_group (kind,title,created_by,created_at)"
+        " VALUES ('epic','existing group','test','now')"
+    )
+    conn.execute(
+        "INSERT INTO user_setting (userid,key,value)"
+        " VALUES ('local','gfx.dither','false')"
+    )
+    conn.execute("COMMIT")
+    conn.close()
+
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        with db.transaction():
+            pass
+
+    conn = sqlite3.connect(store_path)
+    try:
+        assert conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone() == ("8",)
+        assert conn.execute(
+            "SELECT kind,title FROM task_group"
+        ).fetchall() == [("epic", "existing group")], (
+            "v007 -> v008 must preserve the existing group population"
+        )
+        assert conn.execute(
+            "SELECT userid,key,value FROM user_setting"
+        ).fetchall() == [("local", "gfx.dither", "false")], (
+            "v007 -> v008 must preserve #584's user-setting rows"
+        )
+    finally:
+        conn.close()
+
+
 def test_canonical_store_composes_the_one_goal_repository(store_path):
     """Red on store.py:dreamwork_store_spec repository composition."""
     spec = dreamwork_store_spec(store_path)

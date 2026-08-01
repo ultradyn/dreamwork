@@ -99,6 +99,10 @@ def downgrade(conn: sqlite3.Connection) -> None:
         "goal_rank values": int(conn.execute(
             "SELECT COUNT(*) FROM task_group WHERE goal_rank IS NOT NULL"
         ).fetchone()[0]),
+        "current_goal_id pointer": int(conn.execute(
+            "SELECT COUNT(*) FROM meta"
+            " WHERE key = 'current_goal_id' AND value <> ''"
+        ).fetchone()[0]),
         "goal task_group rows": int(conn.execute(
             "SELECT COUNT(*) FROM task_group WHERE kind = 'goal'"
         ).fetchone()[0]),
