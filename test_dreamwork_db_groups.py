@@ -110,6 +110,11 @@ def test_equal_size_wrong_membership_cannot_false_green(store_path):
         with store.transaction() as tx:
             actual = tx.groups.progress(group_id).member_task_ids
 
+    # The two demonstrated false-green shapes both pass on this broken input:
+    # same cardinality, and an "expected" set derived from the subject itself.
+    assert len(actual) == 3
+    derived_expected = set(actual)
+    assert set(actual) == derived_expected
     with pytest.raises(AssertionError, match=r"task 102.*task 104"):
         assert actual == (101, 102, 103), (
             f"epic #{group_id} membership lost task 102 and gained task 104; "
@@ -121,6 +126,9 @@ def test_empty_group_cannot_report_zero_or_complete(store_path):
     """Direction 2(b): no denominator means the computation did not judge."""
     with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
         group_id = _create_group(store, kind="lane", title="No tasks yet")
+        # Both plausible naive formulas confidently answer an empty population.
+        assert all([]) is True
+        assert (0 / 1) == 0
         with store.transaction() as tx:
             with pytest.raises(
                 EmptyGroup,
