@@ -2905,6 +2905,7 @@ var DreamworkDesign = (() => {
     h += burnPanel(d);
     h += statusBlock(d.status, d.pending_handoffs);
     h += posturePicker(d);
+    h += subagentPolicyPicker(d);
     h += tintPicker(d);
     h += drawModePicker();
     return h + `</div>`;
@@ -3895,6 +3896,30 @@ var DreamworkDesign = (() => {
     const srcInner = arm ? esc("arming override…") : remindSlotInner();
     return `<section class="posture" id="posture" aria-label="posture"><div class="posture-head"><div class="label">posture</div><div class="posture-src${cur.source === "file" ? " file" : ""}" id="posture-src">${srcInner}</div></div><div class="posture-axes"><div class="paxis" data-axis="pace"><div class="paxis-lab" id="pace-lab">pace</div><div class="sgroup paxis-chips" role="radiogroup" data-axis="pace" aria-labelledby="pace-lab"><div class="sgind"></div>${paceChips}</div></div><div class="paxis" data-axis="asking"><div class="paxis-lab" id="asking-lab">asking</div><div class="sgroup paxis-chips" role="radiogroup" data-axis="asking" aria-labelledby="asking-lab"><div class="sgind"></div>${askChips}</div></div><div class="paxis" data-axis="delegation"><div class="paxis-lab" id="dlg-lab">delegation · avg concurrency target</div><div class="pstep" role="group" aria-labelledby="dlg-lab"><button type="button" class="pstepbtn" id="pstepdec" aria-label="decrease delegation target" onclick="stepPostureDelegation(-1)"${cur.delegation <= 0 ? " disabled" : ""}>−</button><span class="pstepval" id="pstepval" aria-live="polite">${esc(String(cur.delegation))}</span><button type="button" class="pstepbtn" id="pstepinc" aria-label="increase delegation target" onclick="stepPostureDelegation(1)"${cur.delegation >= POSTURE_DELEGATION_UI_MAX ? " disabled" : ""}>+</button><span class="psteplabel" id="psteplabel" data-label="${esc(dlgLab)}">${esc(dlgLab)}</span></div><div class="pstephint">target, not a cap · 0 is occasional, not forbidden</div></div></div><div class="paxis" data-axis="delivery"><div class="paxis-lab" id="delivery-lab">delivery · when interrupted</div><div class="sgroup paxis-chips" role="radiogroup" data-axis="delivery" aria-labelledby="delivery-lab"><div class="sgind"></div>${deliveryChips}</div></div><div class="paxis" data-axis="orchestration"><div class="paxis-lab" id="orchestration-lab">orchestration · coordinator role</div><div class="sgroup paxis-chips" role="radiogroup" data-axis="orchestration" aria-labelledby="orchestration-lab"><div class="sgind"></div>${orchChips}</div></div><div class="pdesc" id="pdesc" role="tooltip" aria-hidden="true"><span class="pdesc-text" id="pdesc-text"></span></div></section><div class="parm" id="parm"><div class="pbar" id="pbar" hidden aria-hidden="true"><div class="pbarfill" id="pbarfill"></div></div><span class="pcount" id="pcount" aria-live="polite"></span><span class="pdep" id="pdep" aria-live="polite"></span></div><div class="pmsg" id="pmsg" aria-live="polite"></div>`;
   }
+  var SUBAGENT_POLICY_PLACEHOLDERS = [
+    "e.g. no subagents — direct work only",
+    "e.g. specific models per task kind",
+    "e.g. custom worktree dirs for parallel agents",
+    "e.g. roles: reviewer, implementer, explorer",
+    "e.g. build boxes and which tools they run",
+    "e.g. deploy auth — who may ship"
+  ];
+  var SUBAGENT_POLICY_PLACEHOLDER_MS = 1e4;
+  function subagentPolicyPicker(d) {
+    const p = d && d.posture || {};
+    const has = p.subagent_policy_source === "file";
+    const ph = SUBAGENT_POLICY_PLACEHOLDERS[Math.floor(Date.now() / SUBAGENT_POLICY_PLACEHOLDER_MS) % SUBAGENT_POLICY_PLACEHOLDERS.length];
+    return `<section class="spolicy" id="spolicy" aria-label="subagent policy"><div class="spolicy-head"><div class="label">subagent policy</div><div class="spolicy-src${has ? " file" : ""}" id="spolicy-src">${has ? "override" : "standing default"}</div></div><div class="spolicy-body"><textarea class="spolicy-field" id="spolicy-field" rows="3" placeholder="${esc(ph)}" aria-describedby="spolicy-msg" spellcheck="false"></textarea><div class="spolicy-actions"><button type="button" class="sgbtn spolicy-save" id="spolicy-save" onclick="commitSubagentPolicy()">save</button><button type="button" class="sgbtn spolicy-reset" id="spolicy-reset"${has ? "" : " disabled"} onclick="resetSubagentPolicy()">reset</button></div></div><div class="spolicy-msg" id="spolicy-msg" aria-live="polite"></div></section>`;
+  }
+  function syncSubagentPolicyValue(d) {
+    const f = document.getElementById("spolicy-field");
+    if (!f) return;
+    const p = d && d.posture || {};
+    const has = p.subagent_policy_source === "file";
+    const want = has ? String(p.subagent_policy || "") : "";
+    if (document.activeElement === f) return;
+    if (f.value !== want) f.value = want;
+  }
   var pdescKey = null;
   var pdescPendingKey = null;
   var pdescMorphGen = 0;
@@ -4683,6 +4708,7 @@ var DreamworkDesign = (() => {
     revealReviewDecisions();
     revealQuestionUpdates();
     syncPostureFromData();
+    syncSubagentPolicyValue(data);
     restoreRolls();
     restoreAnswerDrafts();
     bindAskDraft();
