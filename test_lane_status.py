@@ -138,7 +138,41 @@ def test_sweep_reports_armed_injections_prominently(tmp_path):
     assert "cx-armed" in result.stdout
     assert "ARMED" in result.stdout
     assert "victim.py" in result.stdout
-    assert "mid-red-proof" in result.stdout
+    assert (
+        "lane_status: ARMED+DEAD injection(s) found — a lane died "
+        "mid-red-proof with sabotaged files unrestored. Restore them before "
+        "merging."
+    ) in result.stdout
+    assert "ARMED+LIVE injection(s) found" not in result.stdout
+
+
+def test_sweep_reports_armed_live_injection_as_redproof_in_progress(tmp_path):
+    """An armed live lane is an expected red-proof in progress, not a death."""
+    repo = _make_repo(tmp_path)
+    wt = _add_worktree(repo, "cx-armed-live")
+    scratch = tmp_path / "redproof-scratch"
+    _arm_injection(wt, scratch)
+    sleeper = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"], cwd=wt,
+    )
+    try:
+        _write_lock(wt, sleeper.pid, "cx-armed-live")
+        result = _run_sweep(repo, env=_sweep_env(scratch))
+    finally:
+        sleeper.terminate()
+        sleeper.wait(timeout=5)
+
+    assert result.returncode == 1, "every ARMED injection must still trip exit 1"
+    row = next(line for line in result.stdout.splitlines()
+               if "cx-armed-live" in line)
+    assert f"LIVE pid={sleeper.pid}" in row
+    assert "ARMED" in row
+    assert (
+        "lane_status: ARMED+LIVE injection(s) found — red-proof in progress. "
+        "Do not restore them while the lane is live; wait for it to finish, "
+        "and do not merge yet."
+    ) in result.stdout
+    assert "a lane died mid-red-proof" not in result.stdout
 
 
 def test_sweep_reports_each_condition_independently_not_lumped(tmp_path):
