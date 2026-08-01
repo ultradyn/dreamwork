@@ -16,6 +16,7 @@ default-valued fixture and prove nothing.
 
 import json
 import selectors
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -244,6 +245,61 @@ class TestLiveFleetDetector:
         assert "examined 0 process candidates" in out
         assert "lanes 0 live" not in out, \
             "broken detector was indistinguishable from no live lanes"
+
+    def test_tick_and_status_sync_agree_on_sibling_root_process_table(
+            self, tmp_path, monkeypatch):
+        """#868: bind both probes to an independently proven live fixture."""
+        perl = shutil.which("perl")
+        if not perl:
+            pytest.skip("perl is required to shape a ccc-style argv")
+
+        target_path = tmp_path / "project"
+        target = make_target(target_path, posture=HOT)
+        lane = "cx-868-fixture"
+        worktree = tmp_path / ".worktrees" / lane
+        worktree.mkdir(parents=True)
+        brief = "Worktree: %s\nLane: test" % worktree
+        proc = subprocess.Popen(
+            ["ccc", "-e", "sleep 30", "--", brief], executable=perl,
+            cwd=target, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        try:
+            # Independent positive control: prove the fixture process is live
+            # and carries the sibling-root lane path before either probe runs.
+            assert status_sync._pid_alive(proc.pid), \
+                "precondition: fixture lane process is not live"
+            raw = Path("/proc/%d/cmdline" % proc.pid).read_bytes()
+            assert str(worktree).encode() in raw, \
+                "precondition: fixture argv does not carry the lane path"
+            expected = {lane}
+
+            # Freeze the examined population to this one independently proven
+            # process. This denominator distinguishes an empty fleet from a
+            # detector that examined nothing.
+            monkeypatch.setattr(
+                status_sync.os, "listdir",
+                lambda path: [str(proc.pid)] if path == "/proc" else [])
+            stats = {}
+            ccc, _phantoms, agent = status_sync.discover_lanes(
+                Path(target), stats=stats)
+            status_names = {row[0] for row in ccc} | {row[0] for row in agent}
+            status_probe = (
+                "status_sync examined %d process(es) and found %d live lane(s) %s"
+                % (stats.get("process_candidates", 0), len(status_names),
+                   sorted(status_names)))
+            assert stats.get("process_candidates") == 1 and \
+                status_names == expected, \
+                "fixture independently proved 1 live lane; " + status_probe
+
+            tick = tick_line.facts(target)
+            expected_tick = "lanes 1 live [%s] (probe examined 1 processes)" % lane
+            assert expected_tick in tick, \
+                ("fixture independently proved 1 live lane; %s; tick found "
+                 "a different live count or denominator: %s" %
+                 (status_probe, tick))
+        finally:
+            proc.kill()
+            proc.wait()
 
 
 class TestTheContradictionIsAdjacent:
