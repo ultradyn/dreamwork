@@ -106,11 +106,11 @@ def test_server_cwd_uses_matching_process_not_callers_cwd(tmp_path, monkeypatch)
     )
     root = msr.default_output_root(resolved)
 
-    assert pid == 1234
     assert root == server / ".playwright-mcp", (
         f"reported root {root} is not server PID 1234's output root "
         f"{server / '.playwright-mcp'}; the resolver used lane cwd {lane}"
     )
+    assert pid == 1234
 
 
 def test_server_cwd_disambiguates_other_sessions(tmp_path):
