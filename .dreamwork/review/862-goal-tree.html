@@ -6,9 +6,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
 <meta name="dreamwork-review-template" content="v1+5c98fb09">
-<meta name="dreamwork-review-ask" content="ask">
-<meta name="dreamwork-review-if-silent" content="if-silent">
-<title>#862 · A goal tree for the dreamworker · design for approval</title>
+<meta name="dreamwork-review-ask" content="exempt: ruled 2026-08-01 — all nine are settled; this page is now the record of what you decided, not an ask">
+<meta name="dreamwork-review-if-silent" content="exempt: nothing is parked on you — the rulings landed, and implementation is sequenced behind #584">
+<title>#862 · A goal tree for the dreamworker · design, ruled</title>
 <style>
 /* Offline-clean by construction: no fetches, no external fonts, no images.
    Tokens are watch.py's, value for value, because this is read inside the
@@ -300,11 +300,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 </style>
 </head>
 <body>
-<a class="skip" href="#questions">Skip to the questions</a>
+<a class="skip" href="#questions">Skip to your rulings</a>
 <nav class="toprail" aria-label="Artifact navigation">
   <div class="toprail-in">
-    <div class="identity"><b>goal tree</b><span>task #862 · design only</span></div>
-    <div class="topactions"><span class="status pending">awaiting approval</span><a class="full" href="#store">store</a><a href="#tick">tick</a><a href="#panel">panel</a><a href="#prior">#95</a><a href="#questions">questions</a></div>
+    <div class="identity"><b>goal tree</b><span>task #862 · ruled</span></div>
+    <div class="topactions"><span class="status settled">decided · 2026-08-01 · eight rec, one override</span><a class="full" href="#ruled">ruled</a><a href="#store">store</a><a href="#sizing">Q4</a><a href="#panel">panel</a><a href="#prior">#95</a><a href="#questions">questions</a></div>
   </div>
 </nav>
 
@@ -313,44 +313,56 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 <header>
   <div class="hero-grid">
     <div>
-      <div class="kicker"><h1>Your goal tree already exists in the ledger. It is missing four things.</h1><span class="proposal">design only — no code lands until you approve</span></div>
-      <div class="sub">task #862 · 1 August 2026 · nine questions, one recommendation each</div>
+      <div class="kicker"><h1>You ruled on all nine. Q4 struck the leaf's task bound rather than moving it.</h1><span class="proposal">ruled — implementation authorised, sequenced behind #584; still no code here</span></div>
+      <div class="sub">task #862 · ruled 1 August 2026 · eight rec · Q4 overridden · three new requirements</div>
       <p class="lead">You asked for a current goal shown every tick, editable by you, completable
       only after subagents <em>fail</em> to refute it — and then for a tree of them, with blocked
-      branches you can steer around. This is that design. The load-bearing finding is that
-      <strong>three of the four pieces are already built</strong>: <code>task_group</code> gained
-      arbitrary-depth parents, an open kind vocabulary and dependency edges in
-      <code>v005</code>, and the tick line has carried per-beat facts since <code>#673</code>.
-      What is genuinely new is the <strong>refutation panel</strong>, and it is the part this page
-      spends its length on. Nothing is built.</p>
-      <p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> nothing
-      happens — the design stays design-only, no migration runs, no route is added, and
-      <code>#862</code> stays open. This is the same gate <code>#691</code> is sitting behind.</p>
-      <div id="ask" class="ask-block">
-        <div class="label">What approval decides</div>
-        <p class="ask-q">Nine questions, each with a recommendation, at the foot of this page.
-        The three that change the shape rather than the detail: <strong>Q1</strong> does the goal
-        tree <em>replace</em> the session goal; <strong>Q2</strong> does one refuter's refusal sink
-        a completion, or does the panel vote; <strong>Q3</strong> when the panel cannot run at all,
-        does the goal complete or stall?</p>
-        <p class="ask-answers"><span class="key">accepted answers</span>
-        <code>approved</code> &nbsp;&middot;&nbsp; <code>approved except Qn</code>
-        &nbsp;&middot;&nbsp; per-question rulings &nbsp;&middot;&nbsp; free text
-        &nbsp;&middot;&nbsp; <em>"not yet"</em> is a real answer</p>
-      </div>
-      <div class="call"><strong>The recommendation in one line:</strong> goals are
+      branches you can steer around. This is that design, <strong>reconciled against your rulings of
+      1 August</strong>. Its load-bearing finding is unchanged: <strong>three of the four pieces are
+      already built</strong> — <code>task_group</code> gained arbitrary-depth parents, an open kind
+      vocabulary and dependency edges in <code>v005</code>, and the tick line has carried per-beat
+      facts since <code>#673</code>. What is genuinely new is the <strong>refutation panel</strong>,
+      and it is the part this page spends its length on.</p>
+      <p class="read">Eight questions took the recommendation. <strong>Q4 you overrode</strong>, and
+      it removed a bound rather than moving one — so the rejected recommendation is still shown
+      where it was made, marked as overridden, because a reader who meets only the new text cannot
+      tell that 6–24 was considered and refused. <strong>Three requirements arrived that were not in
+      this design at all</strong>; the next section names each and where it landed. Nothing here is
+      built yet.</p>
+      <div class="call"><strong>The design in one line, as ruled:</strong> goals are
       <code>task_group</code> rows with <code>kind='goal'</code> — one seed row, not a second store;
       the tick line carries a 48-character handle and nothing more; a details edit is a new
-      <em>quiet</em> delivery class that never wakes the loop; and completion needs
-      <strong>three refuters with three different lenses, any one of which can sink it</strong>,
-      failing closed when the panel cannot run.</div>
+      <em>quiet</em> delivery class that never wakes the loop; a leaf holds <strong>as many tasks as
+      sensible decomposition needs</strong>, split for parallelism rather than to a count; and
+      completion needs <strong>three refuters on three lenses, each enumerating every refutation it
+      can find, any one of which sinks the claim</strong> — failing closed, and asking you, when the
+      panel cannot run.</div>
     </div>
     <div class="version-mark" aria-label="At a glance">
       <span class="big">3</span>
-      <small>of the four pieces already exist in the ledger<br>1 new migration, 1 new route, 1 new panel<br>0 lines of implementation in this branch</small>
+      <small>of the four pieces already exist in the ledger<br>1 new migration, 1 new route, 1 new panel<br>0 lines of implementation — sequenced behind #584</small>
     </div>
   </div>
 </header>
+
+<section id="ruled" aria-labelledby="ruled-t">
+  <div class="label" id="ruled-t">Your rulings, and the three things they added</div>
+  <p class="read">Eight questions took the recommendation, so most of this page stands as
+  written. What follows is everything that <em>moved</em>: one override, three requirements the
+  design did not contain, and two riders. Each is named at its landing site as well as here,
+  because a new requirement absorbed silently is one nobody can find again.</p>
+  <div class="summary-line"><span>Q4 · overridden</span><span>the leaf's <strong>6–24 task band is struck</strong> — and not replaced by another number. Sensible decomposition governs, and what a split optimises for is parallelism &rarr; <a href="#sizing">leaf size</a></span></div>
+  <div class="summary-line"><span>Q2 · added</span><span>a refuter <strong>enumerates every refutation it can find</strong> instead of emitting one verdict; the panel's product is a fix list worked in a single pass &rarr; <a href="#panel">the panel</a></span></div>
+  <div class="summary-line"><span>Q5 · added</span><span>the route is <code>/goals</code>, and it is <strong>your input surface too</strong> — you add goals, and add conditions or details to existing ones &rarr; <a href="#ui">the page</a></span></div>
+  <div class="summary-line"><span>Q7 · added</span><span>goals carry a <strong>priority ordering</strong>, and its purpose is fleet parallelism &rarr; <a href="#blocked">selection</a></span></div>
+  <div class="summary-line"><span>Q3 · widened</span><span>a panel that cannot run fails closed <strong>and</strong> asks a human — both, not either; whether the ask blocks is contextual &rarr; <a href="#panel">fail closed</a></span></div>
+  <div class="summary-line"><span>Q9 · widened</span><span><em>"we can update the protocol from 95 however we like to fit our current and future needs"</em> — so <code>#95</code> is revisable rather than precedent to route around &rarr; <a href="#prior">#95</a></span></div>
+  <p class="quiet">Q1, Q6 and Q8 took the recommendation unchanged: the tree replaces the
+  session goal, you may force-complete past the panel with the bypass recorded, and the quiet
+  delivery class is added. Your prompt-template aside from the same answer — generating a
+  subagent prompt from the task rather than writing one — is <strong>not designed here</strong>;
+  it is filed as <code>#881</code>.</p>
+</section>
 
 <section id="found" aria-labelledby="found-t">
   <div class="label" id="found-t">The reference you named — found, read, and used</div>
@@ -367,12 +379,13 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <div class="summary-line"><span>taken</span><span><strong>PLAN_CHANGES</strong> — the refuter sees how the criteria were edited, because a weakened criterion is itself a finding</span></div>
   <div class="summary-line"><span>taken</span><span>the <code>blocking</code> vocabulary — <code>none</code> / <code>contradiction</code> / <code>unverifiable</code>; the last two are your decision, not a retry</span></div>
   <div class="summary-line"><span>taken</span><span><strong>bias-to-fail upstream</strong> — a malformed or missing verdict becomes a synthetic refute at the refuter, not a gap at the aggregator</span></div>
-  <div class="summary-line"><span>diverged</span><span>grok runs <strong>three identical</strong> skeptics and takes a majority. We run three <strong>different lenses</strong> and require unanimity — Q2</span></div>
-  <div class="summary-line"><span>diverged</span><span>grok <strong>fails open</strong> when its harness breaks. We fail closed — Q3</span></div>
+  <div class="summary-line"><span>diverged</span><span>grok runs <strong>three identical</strong> skeptics and takes a majority. We run three <strong>different lenses</strong> and require unanimity — Q2, ruled</span></div>
+  <div class="summary-line"><span>diverged</span><span>grok <strong>fails open</strong> when its harness breaks. We fail closed, and ask — Q3, ruled</span></div>
+  <div class="summary-line"><span>widened</span><span>grok's skeptic reports what it found on the way to a verdict. Ours is told to find <strong>everything</strong> — the verdict is the gate, the enumeration is the point — Q2's addition</span></div>
 </section>
 
 <section id="store" aria-labelledby="store-t">
-  <div class="label" id="store-t">Question 1 &middot; Where goals are stored</div>
+  <div class="label" id="store-t">Design call 1 &middot; Where goals are stored</div>
   <p class="read"><strong>The ledger, as <code>task_group</code> rows with
   <code>kind='goal'</code>.</strong> Not a file, not a table of its own, not a second store.
   The reason is not doctrine — it is that <code>v005_hierarchy</code> already built the goal
@@ -395,7 +408,8 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
     <tr><td><code>GroupRepository.progress()</code></td><td>subtree rollup that <strong>refuses</strong> rather than returning zero</td></tr>
   </table>
   </div>
-  <p>So <code>v007_goals</code> is small. Three additions, and only the first is interesting:</p>
+  <p>So <code>v007_goals</code> is small. Four additions — the first is the interesting one,
+  and the fourth is the one your Q7 ruling requires:</p>
   <pre><code class="language-sql"><span class="tok-com">-- 1. Goals need a state the member tasks cannot derive. A goal is complete</span>
 <span class="tok-com">--    when the PANEL says so, never because its tasks all landed — that is the</span>
 <span class="tok-com">--    whole point of the gate, so it cannot be a derived column.</span>
@@ -422,14 +436,21 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
     <span class="tok-var">lens</span>          <span class="tok-typ">TEXT</span>    <span class="tok-kw">NOT</span> <span class="tok-kw">NULL</span><span class="tok-op">,</span>   <span class="tok-com">-- criteria | evidence | use</span>
     <span class="tok-var">refuted</span>       <span class="tok-typ">INTEGER</span> <span class="tok-kw">NOT</span> <span class="tok-kw">NULL</span> <span class="tok-kw">CHECK</span> <span class="tok-op">(</span><span class="tok-var">refuted</span> <span class="tok-kw">IN</span> <span class="tok-op">(</span><span class="tok-num">0</span><span class="tok-op">,</span> <span class="tok-num">1</span><span class="tok-op">)),</span>
     <span class="tok-var">blocking</span>      <span class="tok-typ">TEXT</span>    <span class="tok-kw">NOT</span> <span class="tok-kw">NULL</span> <span class="tok-kw">DEFAULT</span> <span class="tok-str">'none'</span><span class="tok-op">,</span>
-    <span class="tok-var">findings</span>      <span class="tok-typ">TEXT</span>    <span class="tok-kw">NOT</span> <span class="tok-kw">NULL</span><span class="tok-op">,</span>   <span class="tok-com">-- JSON array, grok's shape</span>
+    <span class="tok-var">findings</span>      <span class="tok-typ">TEXT</span>    <span class="tok-kw">NOT</span> <span class="tok-kw">NULL</span><span class="tok-op">,</span>   <span class="tok-com">-- JSON array; EVERY refutation found, not the first</span>
     <span class="tok-var">corroborated</span>  <span class="tok-typ">TEXT</span>    <span class="tok-kw">NOT</span> <span class="tok-kw">NULL</span><span class="tok-op">,</span>   <span class="tok-com">-- JSON array; EMPTY on a pass is malformed, not a pass</span>
     <span class="tok-var">examined</span>      <span class="tok-typ">TEXT</span>    <span class="tok-kw">NOT</span> <span class="tok-kw">NULL</span>    <span class="tok-com">-- JSON: {criteria: n, members: n} — the precondition</span>
 <span class="tok-op">);</span>
 
 <span class="tok-com">-- 3. Which goal is current. A pointer, not a column, so exactly one row can</span>
 <span class="tok-com">--    hold it and a stale second `current` is unrepresentable.</span>
-<span class="tok-kw">INSERT</span> <span class="tok-kw">INTO</span> <span class="tok-fn">meta</span> <span class="tok-op">(</span><span class="tok-kw">key</span><span class="tok-op">,</span> <span class="tok-var">value</span><span class="tok-op">)</span> <span class="tok-kw">VALUES</span> <span class="tok-op">(</span><span class="tok-str">'current_goal_id'</span><span class="tok-op">,</span> <span class="tok-str">''</span><span class="tok-op">);</span></code></pre>
+<span class="tok-kw">INSERT</span> <span class="tok-kw">INTO</span> <span class="tok-fn">meta</span> <span class="tok-op">(</span><span class="tok-kw">key</span><span class="tok-op">,</span> <span class="tok-var">value</span><span class="tok-op">)</span> <span class="tok-kw">VALUES</span> <span class="tok-op">(</span><span class="tok-str">'current_goal_id'</span><span class="tok-op">,</span> <span class="tok-str">''</span><span class="tok-op">);</span>
+
+<span class="tok-com">-- 4. Your Q7 ordering, which nothing today can express: `task_group` carries</span>
+<span class="tok-com">--    no rank column of any kind, so "which unblocked branch does the fleet</span>
+<span class="tok-com">--    fill next" has no answer except an arbitrary one. Sibling-scoped, so a</span>
+<span class="tok-com">--    reorder rewrites one parent's children rather than the tree; a pre-order</span>
+<span class="tok-com">--    walk by rank then yields a total order without storing one.</span>
+<span class="tok-kw">ALTER</span> <span class="tok-kw">TABLE</span> <span class="tok-var">task_group</span> <span class="tok-kw">ADD</span> <span class="tok-kw">COLUMN</span> <span class="tok-var">goal_rank</span> <span class="tok-typ">INTEGER</span><span class="tok-op">;</span>   <span class="tok-com">-- NULL sorts last</span></code></pre>
   <p>The <strong>details</strong> you edit are <code>task_group.description</code>, which
   exists, is <code>TEXT NOT NULL DEFAULT ''</code>, and is empty on every current row. Adding
   a parallel <code>details</code> column would be a second body for one thing.</p>
@@ -440,7 +461,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 </section>
 
 <section id="tick" aria-labelledby="tick-t">
-  <div class="label" id="tick-t">Question 2 &middot; "Shown to them every loop tick"</div>
+  <div class="label" id="tick-t">Design call 2 &middot; "Shown to them every loop tick"</div>
   <p class="read">Three channels could carry it, and they fail differently when the goal is
   long — which it will be, because you will write real acceptance criteria into it.</p>
   <div class="scroller">
@@ -472,7 +493,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 </section>
 
 <section id="quiet" aria-labelledby="quiet-t">
-  <div class="label" id="quiet-t">Question 3 &middot; A details edit must reach the loop without notifying it</div>
+  <div class="label" id="quiet-t">Design call 3 &middot; A details edit must reach the loop without notifying it</div>
   <p class="read">Your words: <em>"An update to the details shouldn't notify the agent. It
   should just appear in the next main loop tick."</em> That is the batched class from the
   delivery-modes ruling — <strong>except that the existing classes do not quite cover it, and
@@ -504,9 +525,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 </section>
 
 <section id="blocked" aria-labelledby="blocked-t">
-  <div class="label" id="blocked-t">Question 4 &middot; What a blocked branch does to selection</div>
-  <p class="read">Almost nothing new, because the store already names the candidates and the
-  selection algorithm already knows what to do with an empty answer.</p>
+  <div class="label" id="blocked-t">Design call 4 &middot; What a blocked branch does to selection, and what orders the rest</div>
+  <p class="read">Blocked-ness needs almost nothing new: the store already names the candidates
+  and the selection algorithm already knows what to do with an empty answer. The
+  <strong>ordering</strong> you added in Q7 is the one genuinely new thing here, because
+  nothing in the store can express it today.</p>
   <div class="stages">
     <div class="stage"><span><b>A branch is blocked</b> when it carries a
     <code>task_group_dependency</code> edge to something unmet, or you mark it blocked.
@@ -518,6 +541,15 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
     candidates honestly"</em>, and <em>"WHICH candidates form a batch, and how many, is
     selection policy and lives in the loop."</em> So this is one clause in SKILL.md step 0,
     not new code.</span></div>
+    <div class="stage"><span><b>The order decides which branch the fleet takes.</b> Your
+    words: <em>"we should have a prioritization order of them so we can keep work
+    parallelized."</em> One current goal still answers <em>what is the loop doing</em> — that
+    is Q7's rec, and it is unchanged. The ordering answers the different question a wide fleet
+    asks: with several branches unblocked and lanes to spare, which do the <em>other</em>
+    lanes take? Without it the coordinator picks arbitrarily, and arbitrary picks are how a
+    fleet ends up spread across work that does not compose. So <code>ready_tasks</code> is
+    walked in rank order; how many candidates become lanes stays selection policy, as
+    above.</span></div>
     <div class="stage"><span><b>Every branch blocked</b> falls through to today's
     behaviour verbatim — step 4 already says <em>"A non-empty queue whose remaining tasks
     are all blocked is idle too — do not spend ticks reconsidering work that cannot
@@ -531,42 +563,56 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 </section>
 
 <section id="sizing" aria-labelledby="sizing-t">
-  <div class="label" id="sizing-t">Question 5 &middot; 2–12 hours against a 15–20 minute cap</div>
-  <p class="read">These are different units and they do not convert. The task cap is a
-  <strong>commit cadence</strong> — SKILL.md's tick asks <em>"Past the ~20-minute cap? Land a
-  coherent point, commit, split the remainder into a new task."</em> A leaf goal is a
-  <strong>deliverable</strong>. They meet at exactly one place: <code>task_group_member</code>.</p>
-  <div class="facts">
-    <div class="fact"><span class="number">6</span><span class="caption">tasks in a 2-hour leaf, at the 20-minute cap</span></div>
-    <div class="fact"><span class="number">48</span><span class="caption">tasks in a 12-hour leaf, at the 15-minute cap</span></div>
-    <div class="fact"><span class="number">24</span><span class="caption">the proposed ceiling — past it, it is not a leaf</span></div>
-    <div class="fact"><span class="number">0</span><span class="caption">live ledger entries carrying a stored size — so the band is counted, not measured</span></div>
-  </div>
-  <p>Forty-eight is too many to be one node, and printing the number is the argument for a
-  rule rather than a guideline:</p>
-  <div class="call"><strong>A leaf goal is 6–24 member tasks.</strong> A leaf that grows past
-  24 is <em>re-parented, not re-estimated</em>: it becomes a parent, its overflow moves into
-  a new child subgoal, and its existing members stay attached where they are. That is the
-  answer to "what happens when a leaf turns out to be 40 hours" — the tree absorbs it, and
-  nothing has to be re-planned from scratch.</div>
-  <p><strong>Who decomposes: the coordinator files subgoals; a dreamer may only propose
-  them.</strong> The scope gate already makes the coordinator name the chain before adding
-  new surface — <em>"this task serves that session goal, which serves that goal in
-  DREAMWORK.md"</em> — and a goal node <em>is</em> that middle link. Handing goal creation to
-  a lane inverts the gate that exists to catch invented links.</p>
-  <div class="notice"><strong>Measured, and it corrects a document.</strong> SKILL.md's
-  task-list conventions say the ledger carries <em>"<code>size</code> (estimated
-  minutes)"</em>. It does not: there is no <code>size</code> column in any migration, no
-  <code>size</code> in <code>dreamwork_db/tasks.py</code> or <code>ledger_parse.py</code>,
-  and <strong>zero</strong> entries in the live ledger carry one. So the 2–12 hour band
-  cannot be checked in minutes today, and this design deliberately states the leaf band in
-  <em>task count</em> — which <code>progress()</code> does derive — rather than in a unit
-  nothing stores. Adding a real <code>size</code> column is a separate task and this feature
-  does not need it.</div>
+  <div class="label" id="sizing-t">Design call 5 &middot; Leaf size &mdash; <strong>Q4, overridden</strong></div>
+  <p class="read"><strong>The recommendation was a leaf of 6&ndash;24 member tasks</strong>,
+  derived by converting your 2&ndash;12 hours against the loop's ~15&ndash;20 minute cap
+  (2h/20min = 6, 12h/15min = 48, and 48 called too many for one node, so 24 became the
+  ceiling). <strong>You rejected the derivation, and the reason matters more than the
+  number:</strong></p>
+  <div class="notice"><em>"the 15-20 min cap is to keep the main agent able to effectively
+  process new events. when using subagents we don't care so much. the leaf goal should have as
+  many tasks as needed for sensible decomposition, and probably all tasks can be handled by one
+  subagent at once unless there's a reason to break them up or doing so allows them to be
+  parallelized (which is good where possible)."</em> &mdash; you, 2026-08-01</div>
+  <p>The cap is about <strong>the coordinator's own event responsiveness</strong>: it exists so
+  the main agent keeps processing what arrives, and a subagent doing the work is not subject to
+  it. So it is not a statement about how large a unit of work may be — it says nothing about a
+  task, and therefore nothing about a leaf, and it <strong>does not convert</strong>. This page
+  had already written that these were different units that do not convert, one line before
+  converting them; the ruling is that the first half was right and the conversion should never
+  have followed it.</p>
+  <div class="call"><strong>A leaf goal holds as many tasks as sensible decomposition needs,
+  and what a split optimises for is parallelism.</strong> One subagent may take a whole leaf
+  when there is no reason to break it up. Breaking it up is right when the pieces are genuinely
+  independent — that is what lets them run at once, and running wide is the thing worth
+  buying. <strong>No count replaces 6&ndash;24.</strong> A fresh band — 4&ndash;40, "about a
+  dozen" — would be the same mistake wearing a new constant, and would re-impose a ceiling
+  where the ruling put a judgement.</div>
+  <p>What the struck rule carried and the ruling keeps: your hours and the loop's minutes still
+  meet at exactly one place, <code>task_group_member</code>; and a leaf that turns out far
+  larger than expected is still absorbed by <strong>re-parenting</strong> rather than
+  re-planning — it becomes a parent and its separable parts move into children, its existing
+  members staying where they are. That is now a description of what decomposition does when the
+  parts come apart, not a threshold that fires at 25.</p>
+  <p><strong>Who decomposes: the coordinator files subgoals, a dreamer may only propose them
+  &mdash; and you may add them directly</strong> (Q5). The scope gate already makes the
+  coordinator name the chain before adding new surface — <em>"this task serves that session
+  goal, which serves that goal in DREAMWORK.md"</em> — and a goal node <em>is</em> that middle
+  link, so handing goal creation to a lane inverts the gate that exists to catch invented
+  links. You are not subject to that gate: a goal you write <em>is</em> the top of a chain.</p>
+  <div class="notice"><strong>One measurement here survives the override untouched, because it
+  was never part of the derivation — and it has since been acted on.</strong> This design found
+  that SKILL.md's task-list conventions claimed the ledger carries <em>"<code>size</code>
+  (estimated minutes)"</em> when nothing stores one: no <code>size</code> column in any
+  migration, none in <code>dreamwork_db/tasks.py</code> or <code>ledger_parse.py</code>, and
+  <strong>zero</strong> live entries carrying it. <code>#874</code> has now removed that phantom
+  field from both SKILL.md sites (<code>9a00f4d6</code>), citing this Q4 ruling as the reason to
+  correct the doc rather than add the column. The fact behind it is unchanged: a leaf could not
+  have been checked in hours or minutes even under the rule you struck.</div>
 </section>
 
 <section id="panel" aria-labelledby="panel-t">
-  <div class="label" id="panel-t">Question 6 &middot; The refutation gate</div>
+  <div class="label" id="panel-t">Design call 6 &middot; The refutation gate</div>
   <p class="read">This is the part you cannot get from the existing pieces, and the part
   where a mistake marks real goals complete. Four sub-questions: what a refuter is
   <em>given</em>, what makes them <em>independent</em>, what <em>counts</em> as refutation,
@@ -611,6 +657,14 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
     thing on the real path: opens the route, invokes the verb, reads the pixels. Catches a
     feature that satisfies every criterion and is unusable.</span></div>
   </div>
+  <div class="call"><strong>Each lens enumerates; it does not stop at its first hit.</strong>
+  Your words: <em>"these subagents should be told to come up with all the refutations they can,
+  not just one or two. we want to get a good list to fix as much as possible at once."</em> A
+  refuter that finds one fatal problem and returns has done a third of its job — under "any one
+  refutes" the outcome was already settled by that first finding, so everything it then stops
+  looking for becomes a later round nobody needed. The lens brief therefore asks for a complete
+  list <em>within its own lens</em>, and the verdict's <code>findings</code> array is that
+  list.</div>
   <p>Independence is then enforced three ways, all of which already exist here: at least one
   refuter on a <strong>different provider</strong> (a <code>ccc</code> lane, not another
   Claude) because a same-model panel shares priors; a <strong>lane-private scratch</strong>
@@ -639,6 +693,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   paid for by adopting grok's anti-ratchet verbatim: on round ≥2 the panel's primary job is
   checking prior gaps are fixed, and a new objection is grounds only when it is a
   demonstrable defect or an unmet gating criterion, never a fresh preference.</p>
+  <p><strong>So the boolean is only the gate; the list is the product.</strong> Whether the goal
+  completes is decided by whether <em>any</em> lens refuted. What gets <em>done</em> is decided
+  by everything all three found. A round that returns one refutation and a verdict has produced
+  a correct gate and a poor product — the distinction your Q2 addition draws, and the reason the
+  fix pass below works a batch rather than a blocker.</p>
 
   <div class="label">The false green: what stops a refuter passing a goal it never examined</div>
   <p>This is the highest-stakes vacuous green on the page, because its output marks real
@@ -674,17 +733,28 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   loop <em>"prefers a loud wrong state to a quiet one."</em></p>
   <div class="call">A panel that cannot run leaves the goal in <code>claimed</code>, records
   <code>outcome: unrun</code> with the reason, and the tick line says <code>goal #G7 CLAIMED
-  — PANEL UNRUN (spawn refused)</code>. The cost is a goal that sits claimed until someone
-  looks. The benefit is that no goal is ever marked complete by an infrastructure failure.</div>
+  — PANEL UNRUN (spawn refused)</code>. <strong>And it asks a human</strong> — your ruling was
+  <em>"rec + ask a human (may or may not block depending on context)"</em>, both rather than
+  either. So a question parks carrying the reason, and whether the loop waits on the answer or
+  moves to another branch is read from context rather than fixed here. Failing closed is the
+  <em>state</em>, the ask is the escalation, and only the blocking is contextual. No goal is
+  marked complete by an infrastructure failure, and none sits claimed in silence.</div>
 
   <div class="label">What happens on refutation</div>
   <p>Grok inlines the gaps into its implementer's next nudge. We do not have one implementer
   session — we have a queue, so findings become work:</p>
   <div class="spine">
     <div class="spine-row"><div class="spine-key">round 1–2</div><div class="spine-rail"><span class="spine-dot"></span></div><div class="spine-body">
-      <p>Each finding files a task — <code>origin: loop</code>, parented to the goal node,
-      priority inherited. The loop picks them up by ordinary selection. No special path, and
-      no separate to-do list only the panel can see.</p></div></div>
+      <p><strong>Evaluate, then fix the lot in one pass.</strong> Your instruction:
+      <em>"evaluate the claimed refutation and then address it by fixing all issues
+      identified"</em> — so a finding is itself a <em>claim</em>, and the first step is judging
+      it rather than obeying it (grok names an invented requirement as the most common false
+      refute, which is what <code>## Not in scope</code> exists to kill). What survives becomes
+      work: each finding files a task — <code>origin: loop</code>, parented to the goal node,
+      priority inherited — and the round's whole surviving set is worked as <strong>one
+      batch</strong>. The loop picks them up by ordinary selection; no special path, no separate
+      to-do list only the panel can see. A finding the loop dismisses is recorded with its
+      reason, because that is precisely what round 2 must be able to re-read.</p></div></div>
     <div class="spine-row"><div class="spine-key">stall</div><div class="spine-rail"><span class="spine-dot"></span></div><div class="spine-body">
       <p>Two rounds with the same finding fingerprints ⇒ the goal moves to
       <code>blocked</code>, reason <code>no-progress</code>, and parks a question. Grok's
@@ -704,35 +774,50 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <p>Three refuters, each reading a goal, its details, its members' commits, and doing cheap
   spot-checks — roughly a small lane each, so <strong>one panel ≈ one ordinary lane's
   cost</strong>. With the three-round cap, a goal completion costs <strong>at most about
-  three lanes</strong>. Against a leaf of 6–24 tasks that is roughly <strong>4–15%
-  overhead</strong>, worst case at the small end.</p>
+  three lanes</strong>. With the leaf band struck, the overhead is a ratio rather than a
+  quotable figure: three lanes over the leaf's own task count — about 15% for a leaf of six,
+  about 6% for a leaf of twenty.</p>
   <div class="notice"><strong>The ratio is the argument, and it only works at this
   altitude.</strong> The panel is per <em>goal</em>, not per task. Run per task it would cost
-  more than the work; run per goal it is a rounding error against 6–24 tasks, and it is the
-  only gate standing between "the agent said it was done" and "it is done."</div>
+  more than the work it gates; run per goal it is small against any leaf worth calling one, and
+  it is the only gate standing between "the agent said it was done" and "it is done."</div>
 </section>
 
 <section id="ui" aria-labelledby="ui-t">
-  <div class="label" id="ui-t">The dashboard line and <code>/dw-goals</code></div>
-  <p class="read">You asked for the title on the project dashboard, clicking through to a
-  <code>/dw-goals</code> page listing the goal and its details.</p>
+  <div class="label" id="ui-t">The dashboard line and <code>/goals</code></div>
+  <p class="read">You asked for the title on the project dashboard, clicking through to a page
+  listing the goal and its details. <strong>The route is <code>/goals</code></strong> — the
+  <code>dw-</code> prefix was only marking these as the <em>project's</em> dreamwork goals
+  rather than personal ones (<em>"it's kinda both i guess"</em>), and bare matches every other
+  route here. Disambiguating between projects is the hub's namespacing problem, not this
+  route's name.</p>
   <div class="frames">
     <div class="frame"><strong>Dashboard</strong> — one row in the status region, above the
     fold: state chip, title, progress (<code>7/19</code>), and the blocked count when
     non-zero. The whole row is the link. Nothing else about goals renders here.</div>
-    <div class="frame"><strong><code>/dw-goals</code></strong> — the current goal in full
+    <div class="frame"><strong><code>/goals</code></strong> — the current goal in full
     (details rendered, criteria as a checklist, member tasks with states, blockers by name),
-    then the tree: ancestors above, siblings beside, subgoals below. Then the last panel
-    verdict with its findings per lens, because that is what you will want when a goal is
-    stuck. The details are editable in place; the state is not — the panel owns
-    <code>complete</code>.</div>
+    then the tree: ancestors above, siblings beside, subgoals below, each in rank order. Then
+    the last panel verdict with its findings per lens, because that is what you will want when
+    a goal is stuck.</div>
   </div>
+  <div class="call"><strong>And it is a writing surface, not a reading one</strong> — your Q5
+  addition: <em>"the user should be able to add goals or conditions/details on goals."</em>
+  Three writes, and the design only had the first: <strong>edit</strong> a goal's details in
+  place; <strong>add a condition</strong>, which appends a criterion to <code>## Done when</code>
+  and so edits the very contract the panel judges (allowed, and the reason is one section
+  below — a criterion <em>you</em> change is the new contract, not a finding); and
+  <strong>add a goal</strong> outright, anywhere in the tree, with its rank among its siblings.
+  All three are <em>quiet</em> writes: they land in the store and surface at the next tick,
+  which is the rule you set for details edits and which has no reason to differ here. What
+  stays un-writable is the goal <em>state</em> — the panel owns <code>complete</code>, bar the
+  Q6 force-complete, which is a recorded act rather than an edit.</div>
   <p><strong>Both transitions obey <code>transitions.md</code>, with no new idiom.</strong>
   Clicking the dashboard row is the route change, which is the reference implementation. The
   state chip changing and the goal row appearing when a first goal is set are smaller
   instances of the same gesture and reuse it — this repo's one rule with no exceptions, and
   it applies to a chip exactly as much as to a page.</p>
-  <p class="quiet">Route mechanics: <code>/dw-goals</code> joins the same-document tuple in
+  <p class="quiet">Route mechanics: <code>/goals</code> joins the same-document tuple in
   <code>watch.do_GET</code>, a <code>/goalsdata</code> JSON endpoint follows
   <code>/tasksdata</code>'s shape, and the view and router entry land in
   <code>client/</code> with a <code>just build-client</code> rebuild — the React transition
@@ -744,7 +829,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <div class="scroller">
   <table>
     <tr><th>actor</th><th>may</th><th>may not</th></tr>
-    <tr><td>you</td><td>set, replace, edit, reprioritise, block, force-complete</td><td>—</td></tr>
+    <tr><td>you</td><td><strong>add</strong>, set, replace, edit (details and conditions), reprioritise, block, force-complete</td><td>—</td></tr>
     <tr><td>the loop</td><td>create one <em>when none is current</em>; file subgoals; <strong>claim</strong> completion</td><td>mark complete; overrule your edits; delete a goal</td></tr>
     <tr><td>a lane / dreamer</td><td>read</td><td>every goal write — the single-writer rule <code>questions.md</code> carries</td></tr>
     <tr><td>the panel</td><td><code>claimed → complete</code> or <code>→ open</code>, plus findings</td><td>anything else</td></tr>
@@ -765,7 +850,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <div class="summary-line"><span>## Done when</span><span>3–7 numbered criteria. <strong>This is the contract the panel judges.</strong> If the goal came from you, your words are criterion 0, quoted and unedited</span></div>
   <div class="summary-line"><span>## Not in scope</span><span>grok's non-goals, and its rule comes with it: the panel never refutes for something listed here. This is what stops refuters inventing requirements — grok names it the most common false refute</span></div>
   <div class="summary-line"><span>## How we will know</span><span>the verification plan: which guards, which checks, what evidence a refuter should expect to find. <strong>Required, not optional</strong> — a goal without it is a goal the panel can only judge by feel</span></div>
-  <div class="summary-line"><span>## Size</span><span>estimated task count against the 6–24 band, restated as the leaf grows</span></div>
+  <div class="summary-line"><span>## Decomposition</span><span>how this leaf comes apart and what can run at once — the parallelism note your Q4 ruling makes the point of the exercise. No count to hit; a leaf that does not come apart says so here</span></div>
   <div class="summary-line"><span>provenance</span><span>origin, your receipt id when it came from you, created_at, base sha — filled by the tool, never typed</span></div>
 </section>
 
@@ -790,7 +875,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       written by <code>status-sync</code>. Today SKILL.md lists it among the fields the tool
       <em>"leaves alone, because those are the fields a tool cannot derive"</em> — once the
       goal lives in the store a tool <em>can</em> derive it, and that sentence flips. A real
-      change to a documented contract, so it is Q1.</p></div></div>
+      change to a documented contract, which is why it was Q1 — ruled, rec taken.</p></div></div>
     <div class="spine-row"><div class="spine-key">migration</div><div class="spine-rail"><span class="spine-dot"></span></div><div class="spine-body">
       <p>One row. The current session-goal string becomes the first goal node,
       <code>origin: loop</code>. Nothing is lost, and <code>wrap up</code>'s ritual —
@@ -833,6 +918,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
     Goal node ids live in the store; DREAMWORK.md keeps its free-text headings and its
     dangling-name check, both untouched.</span></div>
   </div>
+  <p><strong>And your Q9 ruling widens what this section is for.</strong> You took the rec and
+  added: <em>"we can update the protocol from 95 however we like to fit our current and future
+  needs."</em> So <code>#95</code> is a record of what was decided in July, not a boundary to
+  route around — the two reversals are permitted, not merely argued. What survives that licence
+  is why they are named at all: a decision reversed silently is one nobody can audit later.</p>
   <div class="notice"><strong>The character argument from D2 survives, and this design is
   built to keep it.</strong> #95 rejected enforcement partly because it <em>"fights the
   loop's character: the free-flowing 'potter productively' quality comes partly from being
@@ -843,58 +933,88 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 </section>
 
 <section id="questions" aria-labelledby="q-t">
-  <div class="label" id="q-t">The nine open questions</div>
-  <p class="read">Each carries a recommendation. Ruling on none of them is the same as
-  ruling on none of the page — nothing gets built either way.</p>
+  <div class="label" id="q-t">The nine questions, and how you ruled</div>
+  <p class="read">Ruled 1 August 2026 via the dashboard. Each question is kept with the
+  recommendation it carried and your answer beside it, so a reader in a month can see what was
+  asked, what was proposed, and what was decided — including the one that was proposed and
+  refused.</p>
   <div class="choice"><b>Q1 · Does the goal tree replace the session goal?</b>
-  <span class="answer"><b>rec: yes.</b> <code>status.json.session_goal</code> becomes derived
-  and <code>status-sync</code> starts writing it. Needs your nod because SKILL.md currently
-  forbids exactly that.</span></div>
+  <div class="answer"><b>rec: yes &middot; ruled: rec.</b> <code>status.json.session_goal</code>
+  becomes derived and <code>status-sync</code> starts writing it, flipping the SKILL.md line
+  that lists it among the fields a tool cannot derive.</div></div>
   <div class="choice"><b>Q2 · One refuter's refusal, or a majority?</b>
-  <span class="answer"><b>rec: any one refutes.</b> Our three lenses are not interchangeable,
-  so a lone dissent is signal rather than noise. Grok votes because its three are identical.
-  Cost: more false refutes, bounded by the anti-ratchet rule.</span></div>
+  <div class="answer"><b>rec: any one refutes &middot; ruled: rec, and widened.</b> The gate
+  stands. What changed is the refuter's job: <em>"these subagents should be told to come up with
+  all the refutations they can, not just one or two. we want to get a good list to fix as much
+  as possible at once"</em>, then <em>"evaluate the claimed refutation and then address it by
+  fixing all issues identified."</em> So a refuter <b>enumerates</b> rather than votes, and the
+  panel's product is a fix list evaluated and worked in one pass — see
+  <a href="#panel">the panel</a>.</div></div>
   <div class="choice"><b>Q3 · When the panel cannot run at all?</b>
-  <span class="answer"><b>rec: fail closed</b> — goal stays <code>claimed</code>, loudly.
-  Diverges from grok deliberately: it has a human watching, we run unattended.</span></div>
+  <div class="answer"><b>rec: fail closed &middot; ruled: rec <em>and</em> ask a human</b> —
+  <em>"(may or may not block depending on context)"</em>. Both, not either: the goal stays
+  <code>claimed</code>, and a question parks with the reason; whether the loop waits on it is
+  contextual.</div></div>
   <div class="choice"><b>Q4 · Is the leaf band 6–24 tasks?</b>
-  <span class="answer"><b>rec: yes.</b> Your 2–12 hours converted by commit cadence, not
-  measured — nothing stores task size today. Past 24 the leaf is re-parented, not
-  re-estimated.</span></div>
+  <div class="answer"><b>rec: yes &middot; ruled: OVERRIDDEN.</b> The rec derived 6–24 by
+  converting your 2–12 hours against the ~15–20 minute cap. You rejected the derivation, not
+  just the figure: <em>"the 15-20 min cap is to keep the main agent able to effectively process
+  new events. when using subagents we don't care so much. the leaf goal should have as many
+  tasks as needed for sensible decomposition, and probably all tasks can be handled by one
+  subagent at once unless there's a reason to break them up or doing so allows them to be
+  parallelized (which is good where possible)."</em> The cap governs the coordinator's event
+  responsiveness and converts into nothing; decomposition governs the leaf, and parallelism is
+  what a split buys. <b>No replacement number was set, and none should be inferred</b> — 6–24
+  is still printed here and in <a href="#sizing">leaf size</a>, marked, rather than quietly
+  deleted, so nobody re-derives it.</div></div>
   <div class="choice"><b>Q5 · <code>/dw-goals</code> or <code>/goals</code>?</b>
-  <span class="answer"><b>rec: your literal <code>/dw-goals</code>.</b> Every other route here
-  is bare (<code>/tasks</code>, <code>/questions</code>), so it will look odd — but the prefix
-  earns its keep in a hub aggregating several projects. Say the word and it is
-  <code>/goals</code>.</span></div>
+  <div class="answer"><b>rec: <code>/dw-goals</code> &middot; ruled: <code>/goals</code>,
+  plus a requirement.</b> <em>"/goals is fine, i just wanted to make it clear that it was
+  dreamwork goals for the project rather that user goals, but it's kinda both i guess, the user
+  should be able to add goals or conditions/details on goals."</em> The prefix was marking
+  ownership, not naming a route — and the tree is now <b>your</b> input surface as well as the
+  loop's: <a href="#ui">the page</a>.</div></div>
   <div class="choice"><b>Q6 · May you force-complete, bypassing the panel?</b>
-  <span class="answer"><b>rec: yes</b> — you are the principal — and the claim records that it
-  bypassed, so the history never reads as though a panel passed it.</span></div>
+  <div class="answer"><b>rec: yes &middot; ruled: rec.</b> You are the principal, and the claim
+  records that it bypassed, so the history never reads as though a panel passed it.</div></div>
   <div class="choice"><b>Q7 · One current goal, or one per unblocked branch?</b>
-  <span class="answer"><b>rec: one.</b> The tree already holds the alternatives, and two
-  current goals is two answers to "what is the loop doing" — the shape this repo keeps paying
-  for.</span></div>
+  <div class="answer"><b>rec: one &middot; ruled: rec, plus an ordering.</b> <em>"we should
+  have a prioritization order of them so we can keep work parallelized."</em> One current goal
+  still answers <em>what is the loop doing</em>; the order answers what the <em>rest</em> of the
+  fleet takes, which is the question a wide fleet asks and nothing in the store could answer —
+  <a href="#blocked">selection</a>, and a rank column in
+  <a href="#store">the migration</a>.</div></div>
   <div class="choice"><b>Q8 · Is the quiet delivery class acceptable?</b>
-  <span class="answer"><b>rec: yes.</b> It is one <code>QUIET_KINDS</code> membership test
-  before the posture read. Your requirement was unconditional, and the ruled batched class is
-  conditional on a posture you have not set.</span></div>
+  <div class="answer"><b>rec: yes &middot; ruled: rec.</b> One <code>QUIET_KINDS</code>
+  membership test before the posture read. Your requirement was unconditional; the ruled batched
+  class is conditional on a posture you have not set.</div></div>
   <div class="choice"><b>Q9 · Does blocked-ness reopen #95's D2?</b>
-  <span class="answer"><b>rec: yes, narrowly.</b> #95 deferred branch focus until drift
-  proved real and your request is that drift. But only <em>blocked-ness</em> steers — nothing
-  forbids off-branch work, so the pottering character D2 protected is intact.</span></div>
+  <div class="answer"><b>rec: yes, narrowly &middot; ruled: rec, and licensed.</b> <em>"we can
+  update the protocol from 95 however we like to fit our current and future needs."</em> So the
+  reversals are permitted outright rather than argued past — <a href="#prior">#95</a>. Only
+  blocked-ness steers; nothing forbids off-branch work.</div></div>
+  <p class="quiet">One thing in the same answer is deliberately not designed here: <em>"having
+  subagent prompts pre-written alongside tasks might speed things up a lot … if we could just
+  use a template to generate the prompt automatically."</em> That is a different feature with a
+  different store question, and it is filed as <code>#881</code>.</p>
 </section>
 
 <section id="next" aria-labelledby="n-t">
-  <div class="label" id="n-t">What approval means, and what it does not</div>
-  <div class="approval">Approving accepts the storage decision, the tick-line budget, the
-  quiet delivery class, the leaf band, the three-lens panel and its two divergences from grok,
-  and the nine recommendations you do not overrule. It <strong>does not</strong> authorise a
-  migration, a route, a client view, or a panel run — the first increment under this id is
-  <code>v007_goals</code> plus its red-first fixtures, each naming the production line that
-  must change for it to fail. This branch contains <strong>no implementation</strong>: one
-  source file, one built artifact, nothing else.</div>
+  <div class="label" id="n-t">What is authorised now, and what still is not</div>
+  <div class="approval">Your rulings authorise implementation: the storage decision, the
+  tick-line budget, the quiet delivery class, a leaf sized by decomposition rather than by
+  count, the three-lens <em>enumerating</em> panel with its two divergences from grok, the
+  <code>/goals</code> route as a writing surface, and the priority ordering. They do
+  <strong>not</strong> mean it starts this minute: implementation is <strong>sequenced behind
+  <code>#584</code></strong>, which is adding <code>user_setting</code> to this same ledger
+  store — two lanes racing the migration ladder is a conflict with no upside, and
+  <code>v007_goals</code> is cheap to write after that lands and expensive to rebase into it.
+  The first increment is then <code>v007_goals</code> plus its red-first fixtures, each naming
+  the production line that must change for it to fail. This page and this branch still contain
+  <strong>no implementation</strong>: one source file, one built artifact, nothing else.</div>
 </section>
 
-<footer>task #862 · design only · grok reference read at <code>~/src/refs/grok-build/crates/codegen/xai-grok-shell/src/session/</code> <span class="dimmer">· built from review template v1+5c98fb09</span></footer>
+<footer>task #862 · ruled 2026-08-01 · design only · grok reference read at <code>~/src/refs/grok-build/crates/codegen/xai-grok-shell/src/session/</code> <span class="dimmer">· built from review template v1+5c98fb09</span></footer>
 
 </main>
 </body>
