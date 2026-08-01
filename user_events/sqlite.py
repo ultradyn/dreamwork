@@ -1624,6 +1624,42 @@ def open_journal(path: PathLike) -> Journal:
     return Journal(p, conn, journal_id)
 
 
+def open_journal_readonly(path: PathLike) -> Journal:
+    """Open an EXISTING journal read-only — the structural read door (#855).
+
+    Parallel to :func:`open_journal` but opens through ``core._connect`` with
+    ``Access.READ``: the connection URI carries ``?mode=ro`` and
+    ``PRAGMA query_only=ON`` is set, so the handle cannot mutate the store even
+    if a caller fumbles a later edit.  This is the door a read-only verb
+    (``journal_consume.py show``) opens INSTEAD of the writing
+    :func:`open_journal`, so "read-only" is a property of the OPEN and not of
+    the care taken in composing a query string — the single-writer rule made
+    structural.  #855 was filed because a hand-written ``sqlite3`` heredoc is
+    one typo away from a writing open, and the gap it left was the loop's own
+    documented happy path ending at a truncated preview line.
+
+    No schema is applied and no directory is created: the journal must already
+    exist, and only the meta version-check runs, so a read never creates or
+    migrates the store.  A caller that points this at an absent path gets a
+    read failure rather than a created db — verify ``Path(path).exists()``
+    first when a "not found" verdict is the desired outcome (``cmd_show``
+    does exactly that).  ``_bootstrap_meta`` writes only on a NEW journal
+    (absent here by construction), and ``query_only=ON`` is fail-closed if it
+    ever tried, so this open is provably side-effect-free.
+    """
+    p = Path(path)
+    conn = db_core._connect(
+        StoreSpec(path=p, busy_timeout_ms=BUSY_TIMEOUT_MS), db_core.Access.READ
+    )
+    conn.row_factory = sqlite3.Row
+    try:
+        journal_id = _bootstrap_meta(conn)  # read + version-check; no schema DDL.
+    except Exception:
+        conn.close()
+        raise
+    return Journal(p, conn, journal_id)
+
+
 # Backend registry for the adapter contract suite (B8). A second backend adds
 # a registry entry and inherits every contract test; no new test is written.
 # The meta-test derives counts from this map and collected node ids — never a
