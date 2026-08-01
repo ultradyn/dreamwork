@@ -118,6 +118,30 @@ _RESERVED_FIELD = re.compile(
     r"^(Worktree|Branch|Base sha|Repo root|Lane-owns|Coordinator inbox)\b", re.MULTILINE
 )
 
+# A Markdown ATX heading, per CommonMark §4.2: 0–3 leading spaces, 1–6 `#`, then
+# a space (or tab) or end-of-line.  A bare leading `#` with no following space —
+# `#847 is the campaign` — is NOT a heading, which is the distinction #947 turns
+# on: opening a sentence with a task id is the house style and must not read as
+# a section opener.  The previous code used `startswith("#")` and treated every
+# such line as a heading, so the section it belonged to was left apparently
+# empty.  ONE definition is shared by `_substantive` and `validate_core`'s
+# section walk (#852/#905: the checker and the checked must not disagree about
+# their subject).
+_ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
+
+
+def _is_atx_heading(line: str) -> bool:
+    """Whether ``line`` opens a Markdown ATX heading (CommonMark §4.2)."""
+    return _ATX_HEADING.match(line) is not None
+
+
+# A fenced code-block opener (CommonMark §4.5): up to 3 leading spaces, then 3+
+# backticks or tildes.  Lines inside a fence are never headings and never
+# structure — a brief whose job is to describe document structure must be able
+# to quote Markdown, and a fenced ``## Read ...`` is a quotation, not a section
+# of the brief (#947 third instance).
+_FENCE_OPEN = re.compile(r"^( {0,3})(`{3,}|~{3,})")
+
 
 class BriefFault(Exception):
     """A brief could not be generated from the inputs given."""
@@ -234,7 +258,7 @@ def task_record(task: int, ledger: Path) -> dict:
 def _substantive(line: str) -> bool:
     """True if the line carries authored content rather than fill-in or structure."""
     stripped = line.strip()
-    if not stripped or stripped.startswith("#"):
+    if not stripped or _is_atx_heading(line):
         return False
     body = _DECORATION.match(stripped)
     inner = body.group(1).strip() if body else stripped
@@ -297,17 +321,43 @@ def validate_core(core: str) -> None:
 
     heading: str | None = None
     body_seen = False
-    for line in [*lines, "# end"]:
-        if line.lstrip().startswith("#"):
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    sections_seen = 0
+    empties: list[tuple[str, str]] = []  # (heading line, the line that closed it)
+
+    def closes_fence(line: str) -> bool:
+        return re.match(
+            rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+        ) is not None
+
+    for line in lines:
+        if in_fence:
+            if closes_fence(line):
+                in_fence = False
+            # Inside a fence a line is never a heading and never structure.
+            continue
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            # A code block IS authored content under the current section.
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            body_seen = True
+            continue
+        if _is_atx_heading(line):
+            sections_seen += 1
             if heading is not None and not body_seen:
-                raise BriefFault(
-                    f"the authored core section {heading.strip()!r} has no body — a "
-                    "copied heading with nothing under it reads as a written section "
-                    "and is not one"
-                )
+                empties.append((heading, line))
             heading, body_seen = line, False
         elif _substantive(line):
             body_seen = True
+    # Flush the final section: a heading left open at end-of-core.
+    if heading is not None and not body_seen:
+        empties.append((heading, "end of the core"))
+    if empties:
+        raise BriefFault(_no_body_message(empties, sections_seen))
 
     for index, line in enumerate(lines):
         if _DIRECTION_2.search(line) and any(_substantive(rest) for rest in lines[index + 1:]):
@@ -317,6 +367,39 @@ def validate_core(core: str) -> None:
         "\"here is how a test of this could pass while the thing is broken\" is "
         "task-specific and carries this loop's quality; 40 of the 40 most recent "
         "briefs carry one (dev/brief_corpus_stats.py)"
+    )
+
+
+def _no_body_message(empties: list[tuple[str, str]], sections_seen: int) -> str:
+    """The 'section has no body' refusal, naming every offender and what it saw.
+
+    #940: a refusal names what it OBSERVED, not only the condition — so each
+    empty heading is paired with the line that closed it with no prose between
+    (another heading, or end-of-core).  core-847b cost two launch cycles because
+    the refusal stopped at the first offender, so EVERY empty section is named.
+    The denominator is printed (#868): a run that examined zero sections must
+    not read the same as one that examined forty and found them all written.
+    """
+    def closer_phrase(closer: str) -> str:
+        if closer == "end of the core":
+            return "end of the core"
+        return f"the next heading {closer.strip()!r}"
+
+    single = "a copied heading with nothing under it reads as a written section and is not one"
+    if len(empties) == 1:
+        head, closer = empties[0]
+        return (
+            f"the authored core section {head.strip()!r} has no body — {single}; "
+            f"the line that ended it with no prose between was {closer_phrase(closer)}"
+        )
+    parts = [
+        f"{head.strip()!r} (closed by {closer_phrase(closer)})"
+        for head, closer in empties
+    ]
+    return (
+        f"the authored core has {len(empties)} of {sections_seen} sections with no "
+        f"body — {single}. Each heading below was followed by another heading "
+        f"(or end of core) with no prose between:\n  " + ";\n  ".join(parts)
     )
 
 
