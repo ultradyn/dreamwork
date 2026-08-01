@@ -5061,6 +5061,47 @@ class TestCollector(unittest.TestCase):
         # It NAMES the cause — find_library returned None — not a bare None.
         self.assertIn("None", label)
 
+    def test_statx_birth_ns_records_which_libc_resolution_won(self):
+        # #689 — #680's tests bind _resolve_statx_libc DIRECTLY, so they pass
+        # while the sole caller (_statx_birth_ns) can silently drop the label
+        # — and it did. This test binds the CALL SITE: it exercises
+        # _statx_birth_ns and asserts the label reaches the module-level record
+        # _statx_libc_label, mirroring file_notify.Watcher.selection_log (#664).
+        # PRODUCTION LINE: ``_statx_libc_label = resolved_as`` inside
+        # _statx_birth_ns. Revert to the old ``libc, _resolved_as = ...`` discard
+        # and _statx_libc_label stays None — this test fails.
+        watch._statx_libc_label = None  # prove it is written, not pre-set
+        watch._statx_birth_ns(__file__)
+        self.assertIsNotNone(
+            watch._statx_libc_label,
+            "the call site discarded the label: _resolve_statx_libc returns "
+            "it but _statx_birth_ns never stored it (#689)")
+        # The label must name the load that actually happened (#651) — one of
+        # _resolve_statx_libc's documented outcomes, never a bare empty string.
+        label = watch._statx_libc_label
+        self.assertTrue(label, f"label is empty: {label!r}")
+        self.assertTrue(
+            label.startswith(("CDLL(None)", "find_library:", "unresolved:")),
+            f"label does not name a known resolution: {label!r}")
+
+    def test_statx_birth_ns_records_unresolved_outcome_at_call_site(self):
+        # #689/#702 — forced-unresolved still reaches the surface. 'unresolved:
+        # …' is a real outcome and must surface as one, not vanish silently.
+        # This patches _resolve_statx_libc to return the forced outcome, then
+        # asserts _statx_birth_ns (the CALL SITE) stored it.
+        # PRODUCTION LINE: ``_statx_libc_label = resolved_as`` — remove it and
+        # the record stays None regardless of what the helper returns.
+        watch._statx_libc_label = None
+        with unittest.mock.patch.object(
+                watch, "_resolve_statx_libc",
+                return_value=(None, "unresolved: forced for test")):
+            result = watch._statx_birth_ns("/nonexistent-for-test")
+        self.assertIsNone(result, "forced-unresolved must yield None")
+        self.assertEqual(
+            watch._statx_libc_label, "unresolved: forced for test",
+            "the call site dropped the unresolved label — 'unresolved: …' is "
+            "a real outcome and must surface (#702)")
+
     def test_page_emits_created_age_and_modified_secondary(self):
         # Static guard on the production render path for #463 parts 2+3.
         # PRODUCTION LINES: buildDashboard's review age HTML, and ages()'

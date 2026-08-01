@@ -3353,6 +3353,14 @@ def _resolve_statx_libc():
         return None, f"unresolved: {name} has no statx ({exc})"
 
 
+# ── #689: record which statx-libc resolution won, readable after the fact ─
+# Mirrors file_notify.Watcher.selection_log (#664): the label that
+# _resolve_statx_libc returns names which load won, and that fact was
+# computed and discarded — the exact silence #680 was filed to end. Silent:
+# no log line per lookup; a diagnostic or check reads this after the fact.
+_statx_libc_label: str | None = None
+
+
 def _statx_birth_ns(path):
     """Return birth time in nanoseconds, or None when unavailable.
 
@@ -3362,12 +3370,16 @@ def _statx_birth_ns(path):
     libc is resolved via ``_resolve_statx_libc`` — the robust CDLL(None)-first
     form that matches ``file_notify._libc`` (#680). The old find_library-only
     form returned None on musl and was the attractor for a silent CDLL(None).
+    The winning label is stored in ``_statx_libc_label`` so the resolution is
+    legible after the fact — not computed and discarded (#689).
     """
     try:
         import ctypes
     except ImportError:
         return None
-    libc, _resolved_as = _resolve_statx_libc()
+    libc, resolved_as = _resolve_statx_libc()
+    global _statx_libc_label
+    _statx_libc_label = resolved_as  # #689: record, don't discard
     if libc is None:
         return None
     statx = libc.statx
