@@ -2772,3 +2772,30 @@ would need a build at serve time, which the no-node requirement refuses. The
 honest statement is **divergence impossible at the markup level** (the build
 consumes `client/*.js` in place and restates no markup) and **staleness
 impossible to miss**.
+
+## `dev/ingest_plan_hierarchy.py` — a one-shot ingestion script, not a parsed file (#842)
+
+Not loop-written and not parsed by a tool at runtime: it is a **reviewable,
+re-runnable ingestion script** the coordinator drives once against a COPY of
+the live ledger (`--ledger <copy>`), reviews the printed tree, then runs
+against live. Its shape is stated here because it is the first real content
+through v005 and its conventions (idempotency model, the two dependency
+homes) are load-bearing for any sibling ingestion.
+
+- **Idempotency: refuse-on-prior-success.** A second run refuses (exit 2,
+  `Conflict`) if a milestone titled `Live voice dictation` already exists —
+  detection by milestone title, because the milestone is the first row
+  created and the last to survive a commit. The whole ingestion is ONE
+  transaction, so a half-run rolls back clean and a re-run starts fresh.
+- **Two dependency homes, kept distinct (#440/#841 §4).** Task→task edges go
+  in v001's `depends` (which has no public write verb — the script reaches
+  the session directly); only edges with a group endpoint go in
+  `task_group_dependency`. The schema's third CHECK refuses task→task rows
+  in the latter, so getting it backwards is a database error, not a silent
+  duplicate.
+- **`--ledger` is the SQLite store, not `tasks.md`.** Unlike the markdown
+  verbs, this script targets `.dreamwork/ledger.sqlite3` (or a copy). It
+  never writes the live store from a lane — the coordinator runs it.
+- **Bodies carry the rulings verbatim.** Max's four planning rulings are
+  embedded in the task bodies so they are not lost; the red-proof asserts a
+  verbatim phrase survives.
