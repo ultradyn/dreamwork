@@ -14120,7 +14120,7 @@ class TestDeployRefusalCopy(unittest.TestCase):
 
 
 class TestUserSettings(unittest.TestCase):
-    """#584 effective reads and the journal-governed /settings write route."""
+    """#584/#865 effective reads and journal-governed batch settings writes."""
 
     def _serve(self, target):
         server = http.server.ThreadingHTTPServer(
@@ -14137,6 +14137,14 @@ class TestUserSettings(unittest.TestCase):
         with urllib.request.urlopen(req, timeout=5) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
 
+    def _get_json(self, url):
+        try:
+            response = urllib.request.urlopen(url, timeout=5)
+        except urllib.error.HTTPError as exc:
+            response = exc
+        with response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+
     def test_unset_read_returns_literal_default_and_registry_metadata(self):
         with tempfile.TemporaryDirectory() as d:
             _store_target(d)
@@ -14146,6 +14154,104 @@ class TestUserSettings(unittest.TestCase):
             # Independent literal closes registry self-agreement.
             self.assertEqual(state["values"]["gfx.dither"], "ign")
             self.assertEqual(state["registry"]["gfx.dither"]["kind"], "enum")
+
+    def test_batch_http_get_returns_two_defaults_and_refuses_unknown(self):
+        with tempfile.TemporaryDirectory() as d:
+            _store_target(d)
+            base = self._serve(d)
+            keys = ["gfx.dither", "composer.rememberManualResize"]
+            self.assertEqual(len(keys), 2)
+            status, body = self._get_json(
+                base + "/settingsdata?" + urllib.parse.urlencode(
+                    [("key", key) for key in keys]))
+            self.assertEqual(status, 200)
+            self.assertEqual(body["values"], {
+                "gfx.dither": "ign", "composer.rememberManualResize": False,
+            })
+            status, refused = self._get_json(
+                base + "/settingsdata?key=gfx.dither&key=unregistered.dump")
+            self.assertEqual(status, 400)
+            self.assertEqual(refused["errors"], {
+                "unregistered.dump": "unknown setting key 'unregistered.dump'",
+            })
+
+    def test_empty_http_batches_are_refused_not_vacuously_successful(self):
+        with tempfile.TemporaryDirectory() as d:
+            _store_target(d)
+            base = self._serve(d)
+            status, refused = self._get_json(base + "/settingsdata")
+            self.assertEqual(status, 400)
+            self.assertEqual(refused["errors"], {
+                "$batch": "at least one setting key is required",
+            })
+            status, refused = self._post_json(
+                base + "/settings", {"values": {}})
+            self.assertEqual(status, 202)
+            self.assertTrue(refused["rejected"], refused)
+            self.assertEqual(refused["reason"], "schema_invalid")
+
+    def test_batch_http_set_is_atomic_and_reports_invalid_second_key(self):
+        with tempfile.TemporaryDirectory() as d:
+            dw = _store_target(d)
+            base = self._serve(d)
+            values = {"composer.rememberManualResize": True,
+                      "gfx.dither": "invalid"}
+            self.assertEqual(len(values), 2)
+            status, refused = self._post_json(base + "/settings", {"values": values})
+            self.assertEqual(status, 202)
+            self.assertTrue(refused["rejected"], refused)
+            self.assertEqual(refused["detail"], "invalid_settings")
+            self.assertEqual(refused["errors"], {
+                "gfx.dither": "expected one of 'ign', 'white-noise', 'bayer'",
+            })
+            state = watch.read_settings(d)["values"]
+            self.assertFalse(state["composer.rememberManualResize"])
+            self.assertEqual(state["gfx.dither"], "ign")
+            unknowns = {"composer.rememberManualResize": True,
+                        "unregistered.dump": True}
+            self.assertEqual(len(unknowns), 2)
+            status, refused = self._post_json(
+                base + "/settings", {"values": unknowns})
+            self.assertEqual(status, 202)
+            self.assertTrue(refused["rejected"], refused)
+            self.assertEqual(refused["errors"], {
+                "unregistered.dump": "unknown setting key 'unregistered.dump'",
+            })
+            self.assertFalse(
+                watch.read_settings(d)["values"]["composer.rememberManualResize"])
+            import sqlite3
+            conn = sqlite3.connect(str(watch.store_path(dw)))
+            try:
+                self.assertEqual(conn.execute(
+                    "SELECT COUNT(*) FROM user_setting WHERE key = ?",
+                    ("unregistered.dump",)).fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_batch_http_set_returns_changed_values_and_default_deletes(self):
+        with tempfile.TemporaryDirectory() as d:
+            dw = _store_target(d)
+            base = self._serve(d)
+            values = {"gfx.dither": "bayer",
+                      "composer.rememberManualResize": True}
+            self.assertEqual(len(values), 2)
+            status, body = self._post_json(base + "/settings", {"values": values})
+            self.assertEqual(status, 202)
+            self.assertEqual(body["changed"], list(values))
+            self.assertEqual(body["values"], values)
+            defaults = {"gfx.dither": "ign",
+                        "composer.rememberManualResize": False}
+            status, reset = self._post_json(base + "/settings", {"values": defaults})
+            self.assertEqual(status, 202)
+            self.assertEqual(reset["changed"], list(defaults))
+            self.assertEqual(reset["values"], defaults)
+            import sqlite3
+            conn = sqlite3.connect(str(watch.store_path(dw)))
+            try:
+                self.assertEqual(conn.execute(
+                    "SELECT COUNT(*) FROM user_setting").fetchone()[0], 0)
+            finally:
+                conn.close()
 
     def test_route_validates_writes_and_default_deletes_override(self):
         with tempfile.TemporaryDirectory() as d:
@@ -14171,7 +14277,7 @@ class TestUserSettings(unittest.TestCase):
             status, body = self._post_json(base + "/settings", {
                 "key": "gfx.dither", "value": "ign"})
             self.assertEqual(status, 202)
-            self.assertTrue(body["changed"])
+            self.assertEqual(body["changed"], ["gfx.dither"])
             self.assertEqual(watch.read_settings(d)["values"]["gfx.dither"],
                              "ign")
             import sqlite3
