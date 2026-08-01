@@ -9,6 +9,22 @@ The complete pytest population ran: **3192 passed / 22 failed / 0 skipped /
 That omission cannot make the repository's state unknown or green: 22 pytest
 failures already make it red.
 
+Before hand-off, this lane rebased onto local `master`, which had advanced by
+seven commits:
+
+```console
+$ git rev-parse master; git rev-list --count HEAD..master; git rebase master
+b74baaf2c4b1a85cfffe75b8d30c27d784675b5b
+7
+Successfully rebased and updated refs/heads/cx-919baseline.
+```
+
+The measurement is therefore still valid for its recorded SHA
+`a23dd6a01ed77ac91aba577e2e28e5deb30f1dc2`, but it does **not** describe the
+rebased `b74baaf2c4b1a85cfffe75b8d30c27d784675b5b` tree. I did not manufacture a
+current count by carrying the older result across that boundary, and I did not
+add a second resource-heavy suite run while the browser fleet remained live.
+
 The measurement finished at `2026-08-02T04:04:53+10:00`. That timestamp and
 SHA came from:
 
