@@ -43,7 +43,7 @@
   And deletion stays available later; it cannot be undone if taken now.
 
 
-  - **Update (2026-08-02 00:30, coordinator):** the stakes changed, and the honest answer is now
+  - **Follow-up (loop, 2026-08-02 00:30):** the stakes changed, and the honest answer is now
     narrower than when I asked. The cutoff lane delivered and is correct — but it lands with an honest
     residual of **4 errors**, and `land-lane` captures its WARN baseline only when lint emits a
     `clean (N warning(s))` trailer. With any errors it refuses at `lint-baseline`. **So merging that
