@@ -308,8 +308,9 @@ both needed, and the discipline is the half that closes that case.
 ## Selecting the next task
 
 0. **Sync.** Check the task list first. Resume unblocked in-progress work
-   before starting anything new; then take any task marked next-up
-   (marked next-up in the ledger, newest first, clearing the mark on start) —
+   before starting anything new; then take any task marked next-up —
+   `ledger.py list` puts them first, newest mark first, tagged `NEXT-UP`, and
+   `ledger.py next-up <id> --clear --why …` clears the mark as you start —
    an explicit human steer outranks the agent's own ideas. Then: any
    goal/philosophy misalignment **you already know about** (DREAMWORK.md
    stale or contradicted) outranks everything below — restore alignment
@@ -936,7 +937,8 @@ results, no ceremony.
   an entry that failed lint on the next increment.
 - The ledger carries what selection and triage read: `priority` (P1-P3),
   `type` (idea | task | bug | experiment | chore), `feasibility` (note
-  from triage), the next-up mark (set by `do next`, cleared on start),
+  from triage), the next-up mark (an event, not a column — set by `do next`,
+  cleared on start, and it ranks `list` rather than merely tagging it),
   owner or blocked-on, and — once a task is scope-gated — its `goal` and
   `parent`. Mirror them into the backend's `metadata` where it surfaces
   them (Guardrails: never depend on a channel you have not read back).
@@ -959,11 +961,13 @@ if Max is away).
 - `do now: <text>` — immediate. Park the current increment at a coherent
   point (commit it, or stash and split a remainder task), create the task
   as in_progress, and work it right away.
-- `do next: <text>` — queue-jump. Create the task and mark it next-up
-  (next-up mark in the ledger); it gets picked as soon as the current task
-  lands, ahead of priority order. Several next-ups: newest first — the
-  human's latest steer wins. Bare `do next` (no text): just run the
-  selection algorithm now.
+- `do next: <text>` — queue-jump. Create the task, then mark it with
+  `ledger.py next-up <id> --why '<his words>'`; it gets picked as soon as the
+  current task lands, ahead of priority order. Several next-ups: newest first
+  — the human's latest steer wins. **Mark it in the same increment you file
+  it**: the mark is the only durable home the steer has, and a steer left in
+  session context is a cache, not a memory (#884). Bare `do next` (no text):
+  just run the selection algorithm now.
 - `add idea: <text>` — capture, then expand. Add to the task list slotted
   by priority (feasibility-triage if complex); doesn't jump the queue.
   Then briefly develop the idea in line with the project's philosophy and

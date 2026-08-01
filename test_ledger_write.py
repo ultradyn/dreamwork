@@ -1031,3 +1031,87 @@ def test_reprioritise_works_on_a_landed_task(store):
     after = store.conn.execute(
         "SELECT priority FROM task WHERE id = ?", (tid,)).fetchone()[0]
     assert after == "P1"
+
+
+# ===========================================================================
+# next-up (#884) — the mark is DERIVED from the event log, so these bind the
+# derivation, not a column.
+# ===========================================================================
+
+
+def _marks(store):
+    """``next_up_ordinals`` through a transaction — a WRITE handle requires
+    one for every repository call, read or not."""
+    with store.transaction():
+        return store.tasks.next_up_ordinals()
+
+
+def test_set_next_up_emits_the_cause_v001_seeded_and_never_used(store):
+    """The storage was already installed; #884 only wired a writer to it.
+
+    PRODUCTION LINE: the ``cause="next_up_set"`` append in
+    ``TaskRepository.set_next_up``. RED: change the cause string and the
+    FOREIGN KEY into ``task_cause`` rejects it — which is the point: the
+    enumeration is the contract, not a convention.
+    """
+    seeded = {r[0] for r in store.conn.execute("SELECT cause FROM task_cause")}
+    assert {"next_up_set", "next_up_cleared"} <= seeded, (
+        f"precondition: v001 seeds both causes: {sorted(seeded)}")
+    task_id = ledger_write.file_task(store, "a task", "body")
+    assert _marks(store) == {}, "born unmarked"
+
+    ledger_write.set_next_up(store, task_id, why="he asked for this one")
+
+    rows = store.conn.execute(
+        "SELECT cause, detail, from_state, to_state FROM task_event"
+        " WHERE task_id = ? AND cause LIKE 'next_up%'", (task_id,)).fetchall()
+    assert rows == [("next_up_set", "he asked for this one", "open", "open")], rows
+    assert _marks(store) == {
+        task_id: store.conn.execute(
+            "SELECT MAX(ordinal) FROM task_event WHERE task_id = ?",
+            (task_id,)).fetchone()[0]}
+
+
+def test_re_marking_mints_a_newer_ordinal_rather_than_refusing(store):
+    """"Several next-ups: newest first" needs a re-mark to MOVE the task."""
+    a = ledger_write.file_task(store, "first", "body")
+    b = ledger_write.file_task(store, "second", "body")
+    ledger_write.set_next_up(store, a, why="this one")
+    ledger_write.set_next_up(store, b, why="no, this one")
+    ledger_write.set_next_up(store, a, why="back to the first")
+    marks = _marks(store)
+    assert marks[a] > marks[b], (
+        f"the latest steer must carry the highest ordinal: {marks}")
+
+
+def test_a_landed_task_cannot_be_marked_next_up(store):
+    """PRODUCTION LINE: the ``state != "open"`` guard in ``set_next_up``."""
+    task_id = ledger_write.file_task(store, "a task", "body")
+    ledger_write.land_task(store, task_id)
+    with pytest.raises(ledger_write.BadState, match="not 'open'"):
+        ledger_write.set_next_up(store, task_id, why="too late")
+
+
+def test_landing_a_marked_task_drops_it_from_the_mark_set(store):
+    """A forgotten clear must self-heal at land, not hoist finished work.
+
+    PRODUCTION LINE: the ``t.state = 'open'`` clause in
+    ``next_up_ordinals``. RED: drop it and a landed task stays marked
+    forever, so `list` (unfiltered) keeps ranking work that is done.
+    """
+    task_id = ledger_write.file_task(store, "a task", "body")
+    ledger_write.set_next_up(store, task_id, why="steer")
+    assert task_id in _marks(store), "precondition: marked"
+    ledger_write.land_task(store, task_id)
+    assert _marks(store) == {}, (
+        "a landed task is not next-up whatever its event history says")
+
+
+def test_next_up_writes_require_a_why(store):
+    """The steer's words are the reason the record is worth keeping."""
+    task_id = ledger_write.file_task(store, "a task", "body")
+    with pytest.raises(ledger_write.WriteError, match="non-empty"):
+        ledger_write.set_next_up(store, task_id, why="   ")
+    ledger_write.set_next_up(store, task_id, why="ok")
+    with pytest.raises(ledger_write.WriteError, match="non-empty"):
+        ledger_write.clear_next_up(store, task_id, why="")

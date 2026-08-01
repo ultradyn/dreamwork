@@ -233,7 +233,8 @@ def test_count_human_shape(migrate, dev_ledger, tmp_path):
 # list
 # ===========================================================================
 
-_CONTRACT_KEYS = {"id", "state", "title", "priority", "type", "origin"}
+_CONTRACT_KEYS = {"id", "state", "title", "priority", "type", "origin",
+                  "next_up"}  # #884 — the mark rides the same contract
 
 
 def test_list_json_store_ids_match_fixture(migrate, dev_ledger, tmp_path):
@@ -541,6 +542,10 @@ _VERB_ARGV = {
     "reprioritise": ["reprioritise", "10", "P3", "--why", "x"],
     "unblock": ["unblock", "10", "--why", "x"],
     "retitle": ["retitle", "10", "new title", "--why", "x"],
+    # #884 — the next-up mark. Same store-mode write shape as the #627 verbs,
+    # so the same gate applies and the argv needs a valid --why plus a
+    # fixture id.
+    "next-up": ["next-up", "10", "--why", "x"],
     # #645 increment 9 — the questions/reviews verbs. They ride the #667
     # gate like every other verb (it sits at the TOP of `_dispatch`, before
     # the question/review dispatch block, so each refuses, exits 2, keeps the
@@ -1379,3 +1384,183 @@ def test_ledger_view_refuses_the_ledger_file_with_a_named_mistake(tmp_path):
     tasks_md.write_text("# ledger\n")  # the file a caller mistakes for dw
     with pytest.raises(TypeError, match=r"\.dreamwork.*not tasks\.md.*tuple"):
         lint.ledger_view(tasks_md)
+
+
+# ===========================================================================
+# next-up — the #884 mark. These bind SELECTION, not storage: setting a mark
+# and reading it back would prove the mark exists and changes nothing, which
+# is the defect one layer up from the one #884 found.
+# ===========================================================================
+
+
+def _list_json(dev_ledger, dw, *extra):
+    rc, out, err = _run(dev_ledger, ["list", "--state", "open",
+                                     "--json", "--ledger", str(dw / "tasks.md"),
+                                     *extra])
+    assert rc == 0, (rc, err)
+    return json.loads(out)
+
+
+def test_a_marked_task_outranks_a_higher_priority_unmarked_one(
+        migrate, dev_ledger, tmp_path):
+    """The one assertion #884 is about: `list` puts the steered task first.
+
+    PRODUCTION LINE: the ``recs.sort(key=lambda r: -(r.get("next_up") or 0))``
+    hoist in ``dev/ledger.py::_records_for``. RED: delete it and the marked
+    P3 stays at its id position behind the unmarked P1.
+
+    Every precondition this test's MEANING depends on is derived from the
+    fixture at runtime and asserted, because a literal tuned to today's
+    fixture is a check with an expiry date nobody can see: the marked task
+    must start out ranked BELOW the rival (else "it is first" was already
+    true) and must carry a STRICTLY WORSE priority band (else it is not
+    outranking anything).
+    """
+    dw = _store_dw(migrate, tmp_path / ".dreamwork")
+    before = _list_json(dev_ledger, dw)
+    assert len(before) >= 2, f"fixture must hold two open tasks: {before}"
+    rival, steered = before[0], before[-1]
+    assert steered["priority"] > rival["priority"], (
+        f"precondition: the task to be marked (#{steered['id']} "
+        f"{steered['priority']}) must rank WORSE than the one it has to beat "
+        f"(#{rival['id']} {rival['priority']}) — otherwise the mark is not "
+        f"overriding priority at all")
+    assert rival["next_up"] is None and steered["next_up"] is None, (
+        f"precondition: nothing is marked before the act: {before}")
+
+    rc, out, err = _run(dev_ledger, ["next-up", str(steered["id"]),
+                                     "--why", "he said do this next",
+                                     "--ledger", str(dw / "tasks.md")])
+    assert rc == 0, (rc, err)
+    assert f"marked #{steered['id']} next-up" in out, out
+
+    after = _list_json(dev_ledger, dw)
+    assert after[0]["id"] == steered["id"], (
+        f"the marked task must be FIRST, ahead of the higher-priority "
+        f"#{rival['id']} ({rival['priority']}): {[r['id'] for r in after]}")
+    assert after[0]["next_up"] is not None, after[0]
+    assert {r["id"] for r in after} == {r["id"] for r in before}, (
+        "the hoist must reorder the list, never change its membership")
+
+    # The human line has to say it too: a marked task at the top of an
+    # id-sorted list is indistinguishable from the lowest id.
+    rc, human, err = _run(dev_ledger, ["list", "--state", "open",
+                                       "--ledger", str(dw / "tasks.md")])
+    assert rc == 0, (rc, err)
+    assert human.splitlines()[0].startswith(f"#{steered['id']}  "), human
+    assert "NEXT-UP" in human.splitlines()[0], human
+
+
+def test_the_newest_mark_wins_when_several_are_marked(
+        migrate, dev_ledger, tmp_path):
+    """"Several next-ups: newest first — the human's latest steer wins."
+
+    PRODUCTION LINE: the ordinal returned by
+    ``TaskRepository.next_up_ordinals`` and used as the hoist key. RED: return
+    a constant (say ``1``) for every mark and the two marked tasks fall back
+    to id order, so the OLDER steer comes first.
+    """
+    dw = _store_dw(migrate, tmp_path / ".dreamwork")
+    ids = [r["id"] for r in _list_json(dev_ledger, dw)]
+    assert len(ids) >= 2, ids
+    first_steer, latest_steer = ids[0], ids[-1]
+    assert first_steer < latest_steer, (
+        f"precondition: the LATER steer must sort AFTER the earlier one by "
+        f"id, or 'newest first' is indistinguishable from 'lowest id first': "
+        f"{ids}")
+    for task_id, why in ((first_steer, "first steer"), (latest_steer, "then this")):
+        rc, _out, err = _run(dev_ledger, ["next-up", str(task_id), "--why", why,
+                                          "--ledger", str(dw / "tasks.md")])
+        assert rc == 0, (rc, err)
+
+    after = _list_json(dev_ledger, dw)
+    assert [r["id"] for r in after[:2]] == [latest_steer, first_steer], (
+        f"newest mark first: {[r['id'] for r in after]}")
+    assert after[0]["next_up"] > after[1]["next_up"], (
+        "the ordinal must be strictly increasing across marks, or 'newest' "
+        f"has no meaning: {after[0]['next_up']} vs {after[1]['next_up']}")
+
+
+def test_clearing_the_mark_restores_the_ordinary_order(
+        migrate, dev_ledger, tmp_path):
+    """"Clearing the mark on start" has to actually un-rank the task.
+
+    PRODUCTION LINE: the ``next_up_cleared`` append in
+    ``TaskRepository.clear_next_up``. RED: drop the append and the newest
+    event stays ``next_up_set``, so the task is still hoisted after a clear
+    that reported success.
+    """
+    dw = _store_dw(migrate, tmp_path / ".dreamwork")
+    before = [r["id"] for r in _list_json(dev_ledger, dw)]
+    steered = before[-1]
+    _run(dev_ledger, ["next-up", str(steered), "--why", "steer",
+                      "--ledger", str(dw / "tasks.md")])
+    assert _list_json(dev_ledger, dw)[0]["id"] == steered, "mark did not take"
+
+    rc, out, err = _run(dev_ledger, ["next-up", str(steered), "--clear",
+                                     "--why", "started it",
+                                     "--ledger", str(dw / "tasks.md")])
+    assert rc == 0, (rc, err)
+    assert f"cleared #{steered}'s next-up mark" in out, out
+    after = _list_json(dev_ledger, dw)
+    assert [r["id"] for r in after] == before, (
+        f"clearing must restore the pre-mark order: {[r['id'] for r in after]}")
+    assert all(r["next_up"] is None for r in after), after
+
+
+def test_a_clear_that_clears_nothing_refuses(migrate, dev_ledger, tmp_path):
+    """#671's rule, applied: a clear on an unmarked task is not success.
+
+    PRODUCTION LINE: the ``NotNextUp`` guard in
+    ``TaskRepository.clear_next_up``. RED: drop it and the CLI exits 0 while
+    appending a ``next_up_cleared`` event for a mark that never existed.
+    """
+    dw = _store_dw(migrate, tmp_path / ".dreamwork")
+    unmarked = _list_json(dev_ledger, dw)[0]
+    assert unmarked["next_up"] is None, unmarked
+    rc, out, err = _run(dev_ledger, ["next-up", str(unmarked["id"]), "--clear",
+                                     "--why", "x",
+                                     "--ledger", str(dw / "tasks.md")])
+    assert rc == 1, (rc, out, err)
+    assert "not marked next-up" in err, err
+    assert out == "", f"a refusal must not print a success line: {out!r}"
+
+
+def test_next_up_refuses_markdown_mode(migrate, dev_ledger, tmp_path):
+    """The mark is an event in the store; markdown mode has no event log."""
+    dw = _store_dw(migrate, tmp_path / ".dreamwork", cut_over=False)
+    rc, out, err = _run(dev_ledger, ["next-up", "10", "--why", "x",
+                                     "--ledger", str(dw / "tasks.md")])
+    assert rc == 1, (rc, out, err)
+    assert "next-up is store-mode only" in err, err
+
+
+def test_a_marked_task_that_is_blocked_says_so_on_the_hoisted_line(
+        migrate, dev_ledger, tmp_path):
+    """The hoist makes blockedness urgent to know: `list` shows no blocker
+    otherwise, so a steer onto blocked work is picked and only then found.
+
+    PRODUCTION LINE: the ``BLOCKED:`` branch in ``dev/ledger.py::_list_line``.
+    RED: drop it and the marked blocked task sits at the top of the list
+    reading exactly like ready work.
+    """
+    dw = tmp_path / ".dreamwork"
+    dw.mkdir()
+    (dw / "tasks.md").write_text(LEDGER)
+    db_path = dw / ledger_parse.STORE_FILENAME
+    ledger_store.open_store(str(db_path), seed_next_id=1).close()
+    _write_watermark(db_path)
+    with open_database(task_store_spec(db_path), access=Access.WRITE) as store:
+        stuck = ledger_write.file_task(
+            store, "steered onto blocked work", "body", priority="P3",
+            origin="human", blocked_on="a ruling from him")
+        ledger_write.file_task(store, "ready work", "body", priority="P1")
+        ledger_write.set_next_up(store, stuck, why="do this one")
+
+    rc, out, err = _run(dev_ledger, ["list", "--state", "open",
+                                     "--ledger", str(dw / "tasks.md")])
+    assert rc == 0, (rc, err)
+    top = [ln for ln in out.splitlines() if ln.startswith("#")][0]
+    assert top.startswith(f"#{stuck}  "), f"precondition: the mark hoists: {out}"
+    assert "NEXT-UP" in top and "BLOCKED:a ruling from him" in top, (
+        f"a hoisted task that cannot be taken must say so: {top!r}")
