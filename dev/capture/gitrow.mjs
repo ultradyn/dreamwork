@@ -55,14 +55,18 @@ const PORT = await freePort();
 
 const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 const notes = []; const errs = [];
-/* FLOOR — below this many distinct sampled positions, between()==0 is
-   structurally guaranteed and carries no travel-vs-teleport signal: you
-   need at least 3 (start, a part-way, end) for between >= 1 to even be
-   POSSIBLE. Below it the guard SKIPs with a stated reason instead of
-   redding on code that is correct (#345). A skip is not a pass: it is
-   visible as SKIP in the output and counted in the summary line, and it
-   names the remedy — "sampled N, floor M" — never the bare "did not
-   move" that was true about the sampler and false about the code (#940). */
+/* FLOOR — below this many rAF callbacks the sampler itself was starved
+   and between()==0 carries no travel-vs-teleport signal. The floor is on
+   seen.length (total frames the rAF ran), NOT on t.positions (distinct
+   values): a real teleport at 60fps has seen.length≈90 but positions=2
+   (start and end only), so a positions-floor would MASK the teleport by
+   skipping it. A seen.length-floor correctly FAILs the teleport (the
+   sampler ran fine, there were just no part-way frames) while SKIPping
+   genuine starvation (few callbacks = frozen browser). #345.
+   A skip is not a pass: it is visible as SKIP in the output and counted
+   in the summary line, and it names the remedy — "sampled N frames, floor
+   M" — never the bare "did not move" that was true about the sampler and
+   false about the code (#940). */
 const FLOOR = 3;
 const skip = (n, why) => checks.push(`SKIP ${n} — could not measure: ${why}`);
 let finished = false;
@@ -284,12 +288,11 @@ ok('...with a panel below them to be displaced', shape.below);
      !!click && click.landed);
   ok('opening: the panel below is displaced at all (else vacuous)', t.moved >= 60);
   // THE ASSERTION. A snap has zero frames strictly between the ends.
-  // #345: the shape needs at least FLOOR distinct positions to be
-  // measurable — below it, between()==0 is structural, not a teleport
-  // signal. The denominator (sampled N, floor M) prints on every run
-  // so a 40-position pass and a 3-position skip never report alike (#868).
-  const denom = `sampled ${t.positions} positions (floor ${FLOOR})`;
-  if (t.positions < FLOOR) {
+  // #345: the floor is on seen.length (sampler health), not positions
+  // — a teleport has positions=2 but seen.length≈90, so the floor on
+  // seen.length correctly FAILs the teleport while SKIPping starvation.
+  const denom = `sampled ${seen.length} frames (${t.positions} positions, floor ${FLOOR})`;
+  if (seen.length < FLOOR) {
     skip('opening: ...and it travels there rather than teleporting', denom);
     skip('opening: the row itself grows continuously rather than in one step', denom);
     skip('opening: the revealed body eases in rather than blinking on', denom);
@@ -401,8 +404,8 @@ ok('...with a panel below them to be displaced', shape.below);
   ok('closing: the click reached the summary (pointer-events / overlay gate, #141)',
      !!click && click.landed);
   ok('closing: the panel below is displaced at all (else vacuous)', t.moved >= 60);
-  const cdenom = `sampled ${t.positions} positions (floor ${FLOOR})`;
-  if (t.positions < FLOOR) {
+  const cdenom = `sampled ${seen.length} frames (${t.positions} positions, floor ${FLOOR})`;
+  if (seen.length < FLOOR) {
     skip('closing: ...and it travels there rather than teleporting', cdenom);
   } else {
     ok(`closing: ...and it travels there rather than teleporting (${cdenom})`, t.partway >= 1);
