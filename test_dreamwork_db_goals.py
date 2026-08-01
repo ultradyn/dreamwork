@@ -309,6 +309,12 @@ def test_goal_state_transitions_are_one_closed_graph(store_path):
         goal_id = _goal(db, "Lifecycle")
         for state in ("claimed", "open", "blocked", "open", "complete"):
             with db.transaction() as tx:
+                if state == "complete":
+                    tx.goals.append_claim(
+                        goal_id, claimed_by="loop", claimed_at="now",
+                        summary="panel complete", base_sha=None,
+                        details_sha="details", round=1, outcome="complete",
+                    )
                 assert tx.goals.set_state(goal_id, state) == "changed"
         with db.transaction() as tx:
             assert tx.goals.state(goal_id) == "complete"
@@ -317,6 +323,18 @@ def test_goal_state_transitions_are_one_closed_graph(store_path):
                 ValidationError, match=r"illegal goal state transition complete -> open"
             ):
                 tx.goals.set_state(goal_id, "open")
+
+
+def test_goal_cannot_be_completed_without_a_recorded_claim(store_path):
+    """A bare state write must not erase panel-versus-bypass history."""
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        goal_id = _goal(db, "Claim required")
+        with db.transaction() as tx:
+            with pytest.raises(
+                ValidationError,
+                match=r"cannot complete goal .* without a completed claim",
+            ):
+                tx.goals.set_state(goal_id, "complete")
 
 
 def test_landed_members_do_not_derive_goal_complete(store_path):

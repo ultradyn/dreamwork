@@ -173,6 +173,16 @@ class GoalRepository:
             raise ValidationError(
                 f"illegal goal state transition {previous} -> {state}"
             )
+        if state == "complete":
+            recorded = self._session.execute(
+                "SELECT 1 FROM goal_claim "
+                "WHERE group_id = ? AND outcome = 'complete' LIMIT 1",
+                (group_id,),
+            ).fetchone()
+            if recorded is None:
+                raise ValidationError(
+                    f"cannot complete goal #{group_id} without a completed claim"
+                )
         self._session.execute(
             "UPDATE task_group SET goal_state = ? WHERE id = ?",
             (state, group_id),
