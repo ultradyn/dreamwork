@@ -1828,3 +1828,278 @@ def test_consume_drains_transition_head_then_pending_quiet(tmp_path: Path):
     assert out3 == "" and err3 == "", (
         f"after draining to head, pending is genuinely quiet (cursor at head, "
         f"not hiding); got {out3!r} / {err3!r}")
+
+
+# ---------------------------------------------------------------------------
+# #864 — the EXPEDITED delivery class.
+#
+# The whole safety argument is that `expedite` is a READER: it delivers without
+# advancing the cursor, so the tick can neither double-consume nor lose an
+# event, and the DOUBLE DELIVERY is stopped by the #526/#527 proof instead.
+# Each test below therefore asserts the SURVIVING PENDING SET, not only the
+# delivered set — the brief's direction-2 candidates are exactly the two
+# failures a delivered-set-only assertion cannot tell apart:
+#   * cursor never advanced  -> delivered looks right; every tick redelivers.
+#   * cursor advanced past unread -> delivered looks right; the rest are lost.
+# ---------------------------------------------------------------------------
+
+def _cmd_body(kind: str, text: str) -> bytes:
+    """A ``/command`` receipt payload in the shape watch._handle_command commits.
+
+    The kind is INSIDE the payload, which is the whole reason the expedited
+    flag needs no journal surface: it is the same string PREEMPT_KINDS already
+    matches on.
+    """
+    import json as _json
+    return _json.dumps({"kind": kind, "text": text}).encode("utf-8")
+
+
+def _expedited_ids(text: str) -> list[str]:
+    """Receipt ids of the column-0 ``EXPEDITED`` record lines, in order.
+
+    Continuation lines are indented two spaces, so a payload whose own text
+    begins a line with ``EXPEDITED`` cannot be miscounted as a record — that
+    indentation is the #126 forged-line defence and this parser depends on it.
+    """
+    return [ln.split("\t")[1] for ln in text.splitlines()
+            if ln.startswith("EXPEDITED\t")]
+
+
+def _cursor_ordinal(path: Path) -> int:
+    """The coordinator cursor position, read from the db, never from the CLI."""
+    with open_journal(path) as j:
+        return j.cursor(CONSUMER).scanned_through_event_ordinal
+
+
+def _seed_mixed(path: Path, kinds: list[str]) -> list[str]:
+    """Seed one ``/command`` receipt per kind; return the receipt ids in order."""
+    bodies = [_cmd_body(k, f"instruction {i} for {k}") for i, k in enumerate(kinds)]
+    return [r.receipt_id for r in _seed(path, bodies, route="/command")]
+
+
+def test_expedite_delivers_only_expedited_and_leaves_every_event_pending(tmp_path: Path):
+    """PRODUCTION LINES: ``cmd_expedite``'s candidate filter (``if expedited``)
+    and the ABSENCE of any ``advance_cursor`` call in that verb.
+
+    Three assertions, and the last two are the direction-2 closers:
+
+      1. delivered == exactly the expedited ids.  The fixture asserts at
+         runtime that BOTH classes are non-empty and that the expedited are a
+         PROPER subset — a fixture where every receipt is expedited cannot
+         detect a flag that is ignored, and one where none is cannot detect a
+         flag that is inverted.
+      2. the SURVIVING PENDING SET after the hook == the full seeded set.  An
+         assertion on the delivered set alone passes while the cursor was never
+         advanced (so every tick redelivers forever) AND while it was advanced
+         past unread events (so they are silently lost); only the survivors
+         distinguish those two from the correct behaviour.
+      3. the cursor ordinal, read from the db rather than from the CLI, is
+         unmoved.
+    """
+    cli = _load_cli()
+    path = tmp_path / "j.sqlite3"
+    kinds = ["add-idea", "do-next", "maintenance", "do-next", "add-idea"]
+    ids = _seed_mixed(path, kinds)
+    from user_events import delivery
+    expedited_kinds = [k for k in kinds if k in delivery.EXPEDITE_KINDS]
+    assert 0 < len(expedited_kinds) < len(kinds), (
+        f"precondition: the fixture must hold BOTH expedited and ordinary "
+        f"receipts, or the flag being ignored is undetectable; kinds={kinds}, "
+        f"EXPEDITE_KINDS={delivery.EXPEDITE_KINDS}")
+    want = [rid for rid, k in zip(ids, kinds) if k in delivery.EXPEDITE_KINDS]
+
+    before = _cursor_ordinal(path)
+    code, out, err = _run(cli, ["expedite", "--journal", str(path),
+                                "--applied", str(tmp_path / "applied.md"),
+                                "--limit", str(len(kinds) + 1)])
+    assert code == 0, f"expedite exit {code} (err={err!r})"
+    assert _expedited_ids(out) == want, (
+        f"expedite must deliver exactly the expedited receipts, in ordinal "
+        f"order: want {want}, got {_expedited_ids(out)} "
+        f"(kinds in seed order: {kinds})")
+
+    # (2) the survivors — the direction-2 closer.
+    code2, out2, _ = _run(cli, ["pending", "--journal", str(path)])
+    assert code2 == 0
+    assert _pending_ids(out2) == ids, (
+        f"every seeded receipt must STILL be pending after the hook — the hook "
+        f"delivers, the tick drains. want {ids}, got {_pending_ids(out2)}; if "
+        f"the expedited ones are missing the cursor advanced past unread "
+        f"events (silent loss), and if the list is short the range moved")
+    assert _cursor_ordinal(path) == before == 0, (
+        f"the cursor must not move: {before} -> {_cursor_ordinal(path)}")
+
+
+def test_expedite_under_a_cap_prioritises_expedited_over_lower_ordinal_ordinary(tmp_path: Path):
+    """PRODUCTION LINE: the sort key in ``cmd_expedite`` —
+    ``key=lambda ce: (0 if ce[0] else 1, ce[1].ordinal)``.
+
+    "Oh if we have a cap on events drained at once, these flagged expedited
+    should be prioritized."  Prioritisation only MANIFESTS under a cap, so this
+    asserts, at runtime and derived from the fixture rather than from literals:
+
+      * the cap is genuinely reached (``limit`` < the number of pending events),
+        because with a cap above the population every order passes; and
+      * every ordinary receipt holds a STRICTLY LOWER ordinal than every
+        expedited one, so an implementation that ordered by ordinal alone would
+        fill the whole slice with ordinary receipts and deliver nothing.
+
+    Without both preconditions this test is green on a broken sort key.
+    """
+    cli = _load_cli()
+    path = tmp_path / "j.sqlite3"
+    kinds = ["add-idea"] * 6 + ["do-next"] * 6
+    ids = _seed_mixed(path, kinds)
+    from user_events import delivery
+    limit = 4
+    with open_journal(path) as j:
+        ords = {ev.receipt_id: ev.ordinal for ev in j.events_since_cursor(CONSUMER)}
+    exp_ords = [ords[r] for r, k in zip(ids, kinds) if k in delivery.EXPEDITE_KINDS]
+    ord_ords = [ords[r] for r, k in zip(ids, kinds) if k not in delivery.EXPEDITE_KINDS]
+    assert limit < len(ids), (
+        f"precondition: the cap ({limit}) must be BELOW the population "
+        f"({len(ids)}) or prioritisation is untested")
+    assert exp_ords and ord_ords and max(ord_ords) < min(exp_ords), (
+        f"precondition: every ordinary receipt must sit BELOW every expedited "
+        f"one (ordinary {ord_ords}, expedited {exp_ords}) — otherwise plain "
+        f"ordinal order would pass this test by accident")
+
+    want = [r for r, k in zip(ids, kinds) if k in delivery.EXPEDITE_KINDS][:limit]
+    code, out, err = _run(cli, ["expedite", "--journal", str(path),
+                                "--applied", str(tmp_path / "applied.md"),
+                                "--limit", str(limit)])
+    assert code == 0, f"expedite exit {code} (err={err!r})"
+    assert _expedited_ids(out) == want, (
+        f"under a cap of {limit} the expedited receipts take the slots even "
+        f"though the ordinary ones hold the lower ordinals: want {want} "
+        f"(ordinals {exp_ords[:limit]}), got {_expedited_ids(out)}")
+    over = len(exp_ords) - limit
+    assert f"{over} over the cap ({limit})" in err, (
+        f"what the cap excluded must be counted out loud, not dropped (#702): "
+        f"expected '{over} over the cap ({limit})' in {err!r}")
+    # And the excluded ones are not lost: still pending, for the tick.
+    code2, out2, _ = _run(cli, ["pending", "--journal", str(path)])
+    assert _pending_ids(out2) == ids, (
+        f"the cap withholds, it does not consume: want {ids}, got "
+        f"{_pending_ids(out2)}")
+
+
+def test_expedite_does_not_write_the_read_coverage_marker_so_the_tick_is_not_jammed(tmp_path: Path):
+    """PRODUCTION LINE: the ABSENCE of a ``_write_pending_read`` call in
+    ``cmd_expedite`` (``cmd_pending`` has one; this verb must not).
+
+    If the hook wrote the #658 marker, a hook firing between the coordinator's
+    ``pending`` and its ``consume --through N`` would rewrite it and #712's
+    ``through == mark['through']`` guard would REFUSE the drain — a hook that
+    silently jams the tick it exists to help.  Two assertions: the marker file
+    is byte-identical across the hook run, and the bounded consume that follows
+    still succeeds.
+    """
+    cli = _load_cli()
+    path = tmp_path / "j.sqlite3"
+    ids = _seed_mixed(path, ["do-next", "add-idea", "do-next"])
+    code, out, err = _run(cli, ["pending", "--journal", str(path)])
+    assert code == 0 and _pending_ids(out) == ids
+    marker = cli._pending_read_path(path)
+    assert marker.exists(), "precondition: pending must have written the marker"
+    before = marker.read_bytes()
+    assert before.strip(), "precondition: the marker must be non-empty"
+
+    code2, _, _ = _run(cli, ["expedite", "--journal", str(path),
+                             "--applied", str(tmp_path / "applied.md")])
+    assert code2 == 0
+    assert marker.read_bytes() == before, (
+        f"expedite must not touch the #658 read-coverage marker; it changed "
+        f"from {before!r} to {marker.read_bytes()!r}, which would make the "
+        f"coordinator's next `consume --through` refuse")
+
+    with open_journal(path) as j:
+        head = j.head_ordinal()
+    code3, out3, err3 = _run(cli, ["consume", "--journal", str(path),
+                                   "--applied", str(tmp_path / "applied.md"),
+                                   "--through", str(head)])
+    assert code3 == 0, (
+        f"the tick's bounded consume must still succeed after a hook fired "
+        f"mid-sequence; got exit {code3} (err={err3!r})")
+
+
+def test_expedited_delivered_at_a_pause_is_not_in_the_ticks_act_list_but_is_named(tmp_path: Path):
+    """PRODUCTION LINES: ``_prove_drained`` inside ``cmd_expedite`` (the marker
+    that lands at the pause) and the ``EXPEDITED`` naming loop in ``cmd_consume``.
+
+    #519/#527: the same instruction delivered twice must be ACTED ON ONCE.  The
+    drain's act-list is its ``UNAPPLIED`` lines, so an expedited receipt already
+    delivered at a pause must be ABSENT from it while the ordinary receipts of
+    the same drain are present — that contrast is what makes the assertion
+    discriminating rather than "the list is short".
+
+    And it must not be absent SILENTLY (#136): if the hook's output never
+    reached the agent, a bare ``applied N`` would swallow one of his
+    instructions, so ``consume`` names each one on an ``EXPEDITED`` line.
+    """
+    cli = _load_cli()
+    path = tmp_path / "j.sqlite3"
+    applied = str(tmp_path / "applied.md")
+    kinds = ["add-idea", "do-next", "maintenance"]
+    ids = _seed_mixed(path, kinds)
+    from user_events import delivery
+    exp = [r for r, k in zip(ids, kinds) if k in delivery.EXPEDITE_KINDS]
+    ordinary = [r for r, k in zip(ids, kinds) if k not in delivery.EXPEDITE_KINDS]
+    assert exp and ordinary, "precondition: both classes present, or no contrast"
+
+    code, out, _ = _run(cli, ["expedite", "--journal", str(path),
+                              "--applied", applied])
+    assert code == 0 and _expedited_ids(out) == exp
+
+    code1, pout, _ = _run(cli, ["pending", "--journal", str(path)])
+    assert _pending_ids(pout) == ids, "the hook left everything pending"
+    with open_journal(path) as j:
+        head = j.head_ordinal()
+    code2, cout, cerr = _run(cli, ["consume", "--journal", str(path),
+                                   "--applied", applied, "--through", str(head)])
+    assert code2 == 0, f"consume exit {code2} (err={cerr!r})"
+    assert _unapplied_ids(cout) == ordinary, (
+        f"the tick's act-list must hold the ORDINARY receipts only — the "
+        f"expedited ones were acted on at the pause: want {ordinary}, got "
+        f"{_unapplied_ids(cout)} (expedited were {exp})")
+    assert _expedited_ids(cout) == exp, (
+        f"consume must NAME each already-delivered expedited receipt, so a "
+        f"hook whose output was never seen cannot swallow it in silence: want "
+        f"{exp}, got {_expedited_ids(cout)}")
+
+    code3, out3, err3 = _run(cli, ["pending", "--journal", str(path)])
+    assert out3 == "", (
+        f"and the ordinary drain still drained them — 'it can also be drained "
+        f"like normal from the event queue'; pending still shows {out3!r}")
+
+
+def test_expedite_at_a_second_pause_delivers_nothing_again(tmp_path: Path):
+    """PRODUCTION LINE: the ``verdict is apply.Proof.NOT_APPLIED`` test in
+    ``cmd_expedite``'s delivery loop.
+
+    A stop hook fires at EVERY pause.  Without the proof gate it would re-emit
+    the same text at each one — which is both the #519 double-delivery and a
+    hook that talks forever.  The second run must deliver nothing while the
+    receipts are still pending, so "nothing to say" is proven distinct from
+    "nothing is there".
+    """
+    cli = _load_cli()
+    path = tmp_path / "j.sqlite3"
+    applied = str(tmp_path / "applied.md")
+    ids = _seed_mixed(path, ["do-next", "add-idea"])
+    code, out, _ = _run(cli, ["expedite", "--journal", str(path), "--applied", applied])
+    first = _expedited_ids(out)
+    assert code == 0 and len(first) == 1, f"precondition: one delivery, got {first}"
+
+    code2, out2, err2 = _run(cli, ["expedite", "--journal", str(path),
+                                   "--applied", applied])
+    assert code2 == 0
+    assert _expedited_ids(out2) == [], (
+        f"a second pause must repeat nothing; got {_expedited_ids(out2)}")
+    assert "delivered 0 of 1 expedited" in err2 and "applied" in err2, (
+        f"and it must SAY it withheld one already-delivered receipt rather "
+        f"than fall silent (#136); got {err2!r}")
+    code3, out3, _ = _run(cli, ["pending", "--journal", str(path)])
+    assert _pending_ids(out3) == ids, (
+        f"the receipts are still pending for the tick — the silence is the "
+        f"proof gate, not an empty queue: want {ids}, got {_pending_ids(out3)}")

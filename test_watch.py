@@ -11764,6 +11764,56 @@ class TestDeliveryWakeRouting(unittest.TestCase):
                 self.assertTrue(watch.emits_wake(route, instant), route)
                 self.assertFalse(watch.emits_wake(route, batched), route)
 
+    def test_expedited_kind_withholds_the_wake_only_when_the_gate_is_on(self):
+        """Production line: the `if kind in EXPEDITE_KINDS and
+        expedite_enabled(target): return False` branch in emits_wake (#864).
+
+        EXPEDITED never interrupts — "it doesn't interrupt the agent, just gets
+        delivered early if it's possible to do so" — but only once the gate is
+        on, because a checkout with no stop hook installed must keep today's
+        pre-emption rather than lose the promptness with nothing to replace it.
+
+        PRECONDITIONS asserted at runtime, because without them this is green on
+        a gate that does nothing: every expedited kind must currently be a
+        PRE-EMPT kind (so the branch genuinely changes an answer), and the
+        control kind must not be expedited (so "the gate silences everything" —
+        the obvious wrong implementation — fails here).
+        """
+        expedited = set(watch.EXPEDITE_KINDS)
+        self.assertTrue(expedited, "EXPEDITE_KINDS must not be empty")
+        self.assertTrue(expedited <= set(watch.PREEMPT_KINDS),
+                        f"{expedited} must be pre-empt kinds today, or the "
+                        f"gate flips nothing and this test proves nothing")
+        control = "do-now"
+        self.assertNotIn(control, expedited,
+                         "the control kind must NOT be expedited")
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            batched = os.path.join(d, "b")
+            os.makedirs(os.path.join(batched, ".dreamwork"))
+            self.assertTrue(
+                watch.write_posture(batched, "idle", "ask", 0, "batched"))
+            gate = os.path.join(d, ".dreamwork", "expedite")
+            for where in (d, batched):
+                for kind in expedited:
+                    self.assertTrue(watch.emits_wake(kind, where), (kind, where))
+            with open(gate, "w", encoding="utf-8") as f:
+                f.write(watch.EXPEDITE_ON + "\n")
+            for kind in expedited:
+                self.assertFalse(
+                    watch.emits_wake(kind, d), f"{kind} must not wake, gate on")
+            # The control: the gate must silence the EXPEDITED kinds and
+            # nothing else. A gate that turned every wake off would pass the
+            # assertions above and fail here.
+            self.assertTrue(watch.emits_wake(control, d))
+            self.assertTrue(watch.emits_wake("chat", d))
+            # An unknown value is not `on`: a gate fails to the inert state.
+            with open(gate, "w", encoding="utf-8") as f:
+                f.write("yes\n")
+            for kind in expedited:
+                self.assertTrue(watch.emits_wake(kind, d),
+                                f"{kind}: an unrecognised gate value is OFF")
+
     def test_command_preempt_kinds_wake_in_batched(self):
         """Live: do-now/do-next wake even in batched mode; receipt always lands.
 
