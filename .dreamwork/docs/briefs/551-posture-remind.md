@@ -18,7 +18,7 @@ Two parts, one lane, both in `watch.py` (plus one guard + tests):
 
 Today `.posture-head` carries the `posture` label and a `#posture-src`
 div whose text is one of three states (`paintPostureSelection`
-watch.py:5489-5502 @ dc739001; initial render `posturePicker` watch.py:5760-5768 @ dc739001):
+watch.py:5489-5502 @ 46442d0a; initial render `posturePicker` watch.py:5760-5768 @ 46442d0a):
 
 - **armed** (a posture change is pending): `arming override…`
 - **ambient, file source**: `override · .dreamwork/posture`
@@ -32,7 +32,7 @@ state earns words. So:
 - **Both ambient states: replaced by a 'remind' link-btn** — a
   `<button type="button">` (actions are buttons, not anchors) styled as
   the dim-link idiom already in the panel family (cf. the
-  `all N reviews →` line at watch.py:4063 @ dc739001; spare, lowercase-leaning
+  `all N reviews →` line at watch.py:4063 @ 46442d0a; spare, lowercase-leaning
   voice). Label: `remind`.
 - **On press**: POST `/remind` (part 2). On a 202 `ok` response, visual
   confirmation in the slot (e.g. `sent · the loop has been reminded` —
@@ -40,7 +40,7 @@ state earns words. So:
   least 10s** (disabled, visibly at rest — not pointer-events trickery).
   After the cooldown the slot returns to `remind`.
 - **The cooldown/confirmation state lives in module-scope JS**, exactly
-  like `postArmTimer`/`postArmUntil` (watch.py:5504-5520 @ dc739001) — never read
+  like `postArmTimer`/`postArmUntil` (watch.py:5504-5520 @ 46442d0a) — never read
   back from the DOM. The dashboard live re-renders `posturePicker` from
   data; a re-render mid-cooldown must repaint the confirming/disabled
   state, not resurrect a clickable `remind`.
