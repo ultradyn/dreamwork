@@ -129,7 +129,6 @@ def server_cwd(
     lane and server is the discriminator. Ambiguous or unreadable state is an
     error: caller cwd is never a substitute for server state.
     """
-    return os.getpid(), Path.cwd()  # red-proof: reintroduce the caller-cwd defect
     caller_session = _session_id(environ)
     candidates: list[tuple[int, Path, str | None]] = []
     unreadable: list[int] = []
