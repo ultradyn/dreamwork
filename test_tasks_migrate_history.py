@@ -194,9 +194,9 @@ def test_first_sight_events_match_markdown_first_sight_model(module):
 def test_event_chain_links_and_verifies(module):
     a = _analysis(module, CURRENT[2])
     r = module.recover_groomed_history(a, SNAPSHOTS)
-    chained = module.chain_events(r["events"])
+    chained = module.chain_events(r["events"], module.LEGACY_GENESIS_HASH)
     assert len(chained) == len(r["events"])
-    prev = module.genesis_hash()
+    prev = module.LEGACY_GENESIS_HASH
     for e in chained:
         assert e["prev_hash"] == prev, "prev_hash must link to the running head"
         assert e["hash"] == module.hash_event(prev, module.canonical_event_bytes(e)), \
@@ -208,10 +208,10 @@ def test_chain_prev_hash_term_is_load_bearing(module):
     """Swapping a prior event's detail must move every later hash (B3)."""
     a = _analysis(module, CURRENT[2])
     r = module.recover_groomed_history(a, SNAPSHOTS)
-    base = module.chain_events(r["events"])
+    base = module.chain_events(r["events"], module.LEGACY_GENESIS_HASH)
     tampered = list(r["events"])
     tampered[0] = dict(tampered[0], detail=tampered[0]["detail"] + " X")
-    other = module.chain_events(tampered)
+    other = module.chain_events(tampered, module.LEGACY_GENESIS_HASH)
     assert base[0]["hash"] != other[0]["hash"], "detail change must move hash 0"
     assert base[-1]["hash"] != other[-1]["hash"], "a later hash must move too"
 
@@ -266,9 +266,10 @@ def test_import_history_inserts_rows_and_events(module, tmp_path):
 def test_import_history_chain_validates_against_recompute(module, tmp_path):
     db = _scratch(tmp_path)
     _hist(module, CURRENT[2], SNAPSHOTS, db)
-    ev = _ro(db).execute("SELECT * FROM task_event ORDER BY ordinal").fetchall()
+    conn = _ro(db)
+    ev = conn.execute("SELECT * FROM task_event ORDER BY ordinal").fetchall()
     assert ev, "no events imported"
-    prev = module.genesis_hash()
+    prev = module.genesis_hash(conn)
     for r in ev:
         d = dict(r)
         assert r["prev_hash"] == prev, "stored prev_hash must link the running head"
@@ -454,6 +455,5 @@ def test_live_history_recovers_real_groomed_ids(module, tmp_path):
         assert not conn.execute("SELECT 1 FROM task WHERE id = ?",
                                 (i,)).fetchone(), \
             f"#{i} unrecoverable but has a row — fabrication"
-
 
 

@@ -113,6 +113,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ledger_parse  # noqa: E402 — the ONE entry/origin grammar (#352)
 import ledger_store  # noqa: E402 — closed sets + verified seed derivation
 from ledger_store import (  # noqa: E402 — the ONE task_event chain construction (#294 inc 9)
+    LEGACY_GENESIS_HASH,
     canonical_event_bytes,
     chain_events,
     genesis_hash,
@@ -691,7 +692,7 @@ def _populate_events(conn: sqlite3.Connection, events: list) -> int:
     events = [e for e in events if e["task_id"] in have_ids]
     if not events:
         return 0
-    for e in chain_events(events):
+    for e in chain_events(events, genesis_hash(conn)):
         conn.execute(
             "INSERT INTO task_event(task_id, at, cause, from_state,"
             " to_state, actor, receipt_id, detail, prev_hash, hash)"
@@ -879,7 +880,7 @@ def _verify_history(a, conn, db_ids, snapshots_fn) -> list:
                 "event backing it — that row is a fabrication")
     all_ev = conn.execute(
         "SELECT * FROM task_event ORDER BY ordinal").fetchall()
-    prev = genesis_hash()
+    prev = genesis_hash(conn)
     for r in all_ev:
         d = dict(r)
         if r["prev_hash"] != prev:
@@ -1273,7 +1274,7 @@ def verify_task_event_chain(db_path: str) -> list[str]:
     try:
         rows = conn.execute(
             "SELECT * FROM task_event ORDER BY ordinal").fetchall()
-        prev = genesis_hash()
+        prev = genesis_hash(conn)
         for r in rows:
             d = dict(r)
             if r["prev_hash"] != prev:

@@ -2489,6 +2489,47 @@ properties, each load-bearing:
   the coordinator writes them. The chain is untouched, so it verifies
   trivially. `note_task` works in any state (open or landed) and raises
   `TaskNotFound` on a missing id.
+- **Genesis belongs to the journal, not the schema version.** Schema v6 stores
+  the 64-lowercase-hex root in `meta.task_event_genesis`. Existing non-empty
+  journals adopt ordinal 1's recorded `prev_hash` without changing any event;
+  the live journal therefore keeps its independently pinned v1 root
+  `dbb5fcbf8ada5ef7…`. Empty journals persist that same frozen format root,
+  preserving byte-identical replay; the value is journal-local data, so a
+  future distinct/re-seeded journal requires an explicit format migration
+  rather than changing when `SCHEMA_VERSION` moves.
+  Verification starts from this meta value and refuses a missing/malformed
+  value; it never lets ordinal 1 nominate its own root. This repairs the
+  verifier, not history: all 1,313 live rows recompute unchanged from the true
+  root, so there is no evidence of tampering. The migration is trust on first
+  use. A genesis stored beside the events prevents accidental schema/code
+  drift and distinguishes journals, but is not an external authenticity
+  anchor: an attacker able to rewrite the database can replace the meta value
+  and re-chain every event. Detecting that threat requires a signed or
+  separately stored chain-head/root receipt.
+
+  The #848 ruling used IGC in the context of an intact v1-rooted live chain,
+  schema migrations that must not rewrite history, and a portable replay
+  format that omits hashes and genesis. Goals: **G1** preserve every recorded
+  event/hash byte; **G2** later schema bumps cannot move the root; **G3** the
+  journal carries the authority needed to make a future re-seed explicit;
+  **G4** identical portable journals still replay byte-identically; **G5** a
+  forged ordinal 1 cannot nominate its own root during verification.
+
+  | Idea | All | G1 | G2 | G3 | G4 | G5 |
+  |---|:---:|:---:|:---:|:---:|:---:|:---:|
+  | freeze only a code constant | ✘ | ✔ | ✔ | ✘ | ✔ | ✔ |
+  | store frozen-default root per journal | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+  | store a new random root per journal | ✘ | ✔ | ✔ | ✔ | ✘ | ✔ |
+  | re-chain during each migration | ✘ | ✘ | ✔ | ✔ | ✔ | ✔ |
+
+  The code-only constant fails G3: two journals cannot state different roots
+  without another code change. Random-by-default fails G4 because the `.jsonl`
+  format carries no root, so two identical replays produce different stores.
+  Re-chaining fails G1 and destroys the historical evidence. The surviving
+  design stores the frozen v1 default independently in each journal. What it
+  gives up is unique roots by default; gaining those later requires extending
+  the portable format to carry/bind journal identity and is not smuggled into
+  this repair.
 - **Actor is explicit** (default `'loop'`), never fabricated as the human.
   The `filed` event records `NULL → open` (cause `filed_from_command`); the
   `landed` event records `open → landed` (cause `landed`). The note a fold

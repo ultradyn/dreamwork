@@ -146,8 +146,8 @@ def _write_first_sight_events(db_path, arrived, landed):
     for tid, epoch in sorted(landed.items()):
         events.append(mod._history_event(tid, epoch, "open", "landed",
                                           "b%07d" % tid, "landed"))
-    chained = mod.chain_events(events)
     conn = sqlite3.connect(str(db_path))
+    chained = mod.chain_events(events, mod.genesis_hash(conn))
     conn.execute("BEGIN IMMEDIATE")
     for e in chained:
         conn.execute(

@@ -81,9 +81,9 @@ from dreamwork_db import core as db_core  # noqa: E402
 # Importing these (rather than restating them) is the #352 contract.
 import ledger_store
 from ledger_store import (
+    LEGACY_GENESIS_HASH,
     append_chained_event,
     canonical_event_bytes,
-    genesis_hash,
     hash_event,
 )
 
@@ -305,7 +305,10 @@ def verify_chain(events: list) -> list:
     An empty list verifies cleanly (genesis only).
     """
     failures = []
-    prev = genesis_hash()
+    # The portable v1 .jsonl format carries canonical events but no journal
+    # metadata.  Its deterministic reconstruction therefore keeps the frozen
+    # legacy format root; replay into a store uses that store's own genesis.
+    prev = LEGACY_GENESIS_HASH
     for i, e in enumerate(events, 1):
         h = hash_event(prev, canonical_event_bytes(e))
         # The recomputed chain is the truth; there is no carried hash to

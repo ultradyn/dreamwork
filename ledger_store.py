@@ -48,6 +48,10 @@ from dreamwork_db.migrations.v001_legacy import (
     TASK_CAUSES,
     TASK_STATES,
 )
+from dreamwork_db.migrations.v006_event_genesis import (
+    LEGACY_GENESIS_HASH,
+    META_KEY as EVENT_GENESIS_META_KEY,
+)
 
 PathLike = Union[str, os.PathLike]
 
@@ -91,10 +95,24 @@ def _length_framed(*parts) -> bytes:
     return bytes(out)
 
 
-def genesis_hash() -> str:
-    """H_0 = SHA-256(journal_id || schema_version) — the task-event chain seed."""
-    return hashlib.sha256(
-        f"ud-dreamwork.task-ledger{SCHEMA_VERSION}".encode()).hexdigest()
+def genesis_hash(conn) -> str:
+    """Return this journal's persisted task-event chain seed.
+
+    The seed is data, not a function of the moving schema version.  Missing or
+    malformed metadata fails closed: deriving it from ordinal 1 here would let
+    a forged chain nominate its own root and verify forever.
+    """
+    row = conn.execute(
+        "SELECT value FROM meta WHERE key = ?", (EVENT_GENESIS_META_KEY,)
+    ).fetchone()
+    value = None if row is None else row[0]
+    if (not isinstance(value, str) or len(value) != 64
+            or any(ch not in "0123456789abcdef" for ch in value)):
+        raise SchemaVersionError(
+            f"ledger meta {EVENT_GENESIS_META_KEY!r} is missing or invalid; "
+            "refuse to infer genesis from task_event ordinal 1"
+        )
+    return value
 
 
 def canonical_event_bytes(e: dict) -> bytes:
@@ -114,7 +132,7 @@ def hash_event(prev_hash: str, canonical: bytes) -> str:
         DOMAIN_TAG + prev_hash.encode("ascii") + canonical).hexdigest()
 
 
-def chain_events(events: list) -> list:
+def chain_events(events: list, genesis: str) -> list:
     """Order events deterministically and append prev_hash/hash per the chain.
 
     Order is ``(at, task_id, rank)`` with first-sight (from_state is None)
@@ -124,7 +142,7 @@ def chain_events(events: list) -> list:
     """
     ordered = sorted(events, key=lambda e: (
         e["at"], e["task_id"], 0 if e["from_state"] is None else 1))
-    prev, chained = genesis_hash(), []
+    prev, chained = genesis, []
     for e in ordered:
         h = hash_event(prev, canonical_event_bytes(e))
         chained.append({**e, "prev_hash": prev, "hash": h})
@@ -145,7 +163,7 @@ def last_event_hash(conn) -> str:
     row = conn.execute(
         "SELECT hash FROM task_event ORDER BY ordinal DESC LIMIT 1"
     ).fetchone()
-    return row[0] if row else genesis_hash()
+    return row[0] if row else genesis_hash(conn)
 
 
 def append_chained_event(
