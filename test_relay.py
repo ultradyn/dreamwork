@@ -5,6 +5,7 @@ mangled by shell expansion must survive verbatim, and the header must come
 from the clock rather than from an argument anyone can invent.
 """
 
+import io
 import re
 from datetime import datetime
 
@@ -22,6 +23,15 @@ $USER must all survive, as must a literal backslash \\ and "quotes"."""
 def inbox(tmp_path, monkeypatch):
     monkeypatch.setattr(relay_mod, "INBOX_DIR", tmp_path)
     return tmp_path
+
+
+def register_reader(inbox, agent):
+    path = inbox / f"{agent}-inbox.md"
+    path.touch()
+    (inbox / "coord-inbox.md").write_text(
+        f"[{agent}] started; background-monitor: yes; watching-inbox: yes; inbox: {path}\n"
+    )
+    return path
 
 
 class TestTheBugItExistsFor:
@@ -96,9 +106,44 @@ class TestShape:
 
 class TestCli:
     def test_reads_the_body_from_stdin(self, inbox, monkeypatch, capsys):
-        monkeypatch.setattr("sys.stdin", __import__("io").StringIO(HOSTILE))
+        register_reader(inbox, "dreamer-thread")
+        monkeypatch.setattr(relay_mod, "registered_ccc_lanes", lambda: ({}, None))
+        monkeypatch.setattr("sys.stdin", io.StringIO(HOSTILE))
         assert relay_mod.main(["dreamer-thread"]) == 0
         assert "`- **`" in (inbox / "dreamer-thread-inbox.md").read_text()
+
+    def test_refuses_a_registered_ccc_lane_before_writing(self, inbox, monkeypatch, capsys):
+        monkeypatch.setattr(
+            relay_mod, "registered_ccc_lanes", lambda: ({"cx-912relay": inbox / "worktree"}, None)
+        )
+        monkeypatch.setattr("sys.stdin", io.StringIO("prepare for rebase"))
+
+        assert relay_mod.main(["cx-912relay"]) == 3
+        assert not (inbox / "cx-912relay-inbox.md").exists()
+        assert capsys.readouterr().err == (
+            f"relay: REFUSE cx-912relay is a ccc lane at {inbox / 'worktree'}; "
+            "ccc lanes never read agent-comms inboxes\n"
+        )
+
+    def test_refuses_an_unrecognised_name_before_writing(self, inbox, monkeypatch, capsys):
+        monkeypatch.setattr(relay_mod, "registered_ccc_lanes", lambda: ({}, None))
+        monkeypatch.setattr("sys.stdin", io.StringIO("hello"))
+
+        assert relay_mod.main(["glm-344rowz"]) == 4
+        assert not (inbox / "glm-344rowz-inbox.md").exists()
+        assert capsys.readouterr().err == (
+            "relay: REFUSE glm-344rowz is unrecognised; no ccc lane or declared "
+            "agent-comms reader matches that name\n"
+        )
+
+    def test_relays_to_a_declared_reader(self, inbox, monkeypatch, capsys):
+        path = register_reader(inbox, "dreamer-thread")
+        monkeypatch.setattr(relay_mod, "registered_ccc_lanes", lambda: ({}, None))
+        monkeypatch.setattr("sys.stdin", io.StringIO("hello"))
+
+        assert relay_mod.main(["dreamer-thread"]) == 0
+        assert "hello" in path.read_text()
+        assert capsys.readouterr().out == f"relayed to declared reader dreamer-thread at {path}\n"
 
     def test_an_empty_body_writes_nothing_and_says_so(self, inbox, monkeypatch, capsys):
         monkeypatch.setattr("sys.stdin", __import__("io").StringIO("   \n"))
