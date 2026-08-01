@@ -42,6 +42,7 @@ USAGE
   python3 dev/ledger.py get <id> [--ledger PATH]
   python3 dev/ledger.py count [--state open|landed] [--json] [--ledger PATH]
   python3 dev/ledger.py reviews list|get <artifact> [--ledger PATH]
+  python3 dev/ledger.py groups create|add-task|get|list|add-trigger ... [--ledger PATH]
 
 FROM A LANE WORKTREE, `--ledger` IS NOT OPTIONAL (#667). The store is
 gitignored (#294), so it never travels; the default `.dreamwork/tasks.md`
@@ -83,6 +84,7 @@ from dreamwork_db import Access, Conflict, NotFound, ValidationError, open_datab
 from dreamwork_db.tasks import task_store_spec  # noqa: E402
 from dreamwork_db.questions import (  # noqa: E402  — #645 increment 9 CLI verbs
     question_store_spec, questions_cut_over, QUESTIONS_WATERMARK_KEY)
+from dreamwork_db.groups import EmptyGroup  # noqa: E402 — #824 honest progress
 import lint  # noqa: E402 — NEXT_ID, the one header reader
 import ledger_store  # noqa: E402 — legacy groom compatibility
 import ledger_write  # noqa: E402 — file_task / land_task (#294 inc 9)
@@ -1861,6 +1863,147 @@ def _verb_reviews_link(args, dw_dir):
     return 0
 
 
+def _group_record(group):
+    return {
+        "id": group.id,
+        "kind": group.kind,
+        "title": group.title,
+        "description": group.description,
+        "created_by": group.created_by,
+        "created_at": group.created_at,
+    }
+
+
+def _group_progress_record(progress):
+    return {
+        "completed": progress.completed,
+        "completed_count": progress.completed_count,
+        "total_count": progress.total_count,
+        "member_task_ids": list(progress.member_task_ids),
+        "landed_task_ids": list(progress.landed_task_ids),
+    }
+
+
+def _verb_groups(args, dw_dir):
+    """First-class grouping CLI; completion-trigger definitions stay inert."""
+    db_path = store_path(dw_dir)
+    if not db_path.exists():
+        sys.stderr.write(
+            f"ledger: groups requires a store at {db_path} — grouping has "
+            "one DB home and no markdown fallback\n"
+        )
+        return 1
+    actor = getattr(args, "actor", None) or "coordinator"
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        if args.groups_cmd == "list":
+            with open_database(question_store_spec(db_path),
+                               access=Access.READ) as store:
+                groups = store.groups.list()
+            records = [_group_record(group) for group in groups]
+            if args.json:
+                sys.stdout.write(json.dumps(records, sort_keys=True) + "\n")
+            elif records:
+                for rec in records:
+                    sys.stdout.write(
+                        f"#{rec['id']} {rec['kind']} {rec['title']}\n"
+                    )
+            else:
+                sys.stdout.write("(no task groups)\n")
+            return 0
+
+        if args.groups_cmd == "get":
+            with open_database(question_store_spec(db_path),
+                               access=Access.READ) as store:
+                group = store.groups.get(args.group_id)
+                triggers = store.groups.triggers(args.group_id)
+                try:
+                    progress = store.groups.progress(args.group_id)
+                except EmptyGroup as exc:
+                    progress = None
+                    progress_error = str(exc)
+            rec = _group_record(group)
+            rec["progress"] = (
+                _group_progress_record(progress) if progress is not None else None
+            )
+            rec["completion_triggers"] = [
+                {
+                    "id": trigger.id,
+                    "task_title": trigger.task_title,
+                    "task_priority": trigger.task_priority,
+                    "task_type": trigger.task_type,
+                }
+                for trigger in triggers
+            ]
+            if progress is None:
+                rec["progress_error"] = progress_error
+            if args.json:
+                sys.stdout.write(json.dumps(rec, sort_keys=True) + "\n")
+            else:
+                sys.stdout.write(
+                    f"#{group.id} {group.kind}\n"
+                    f"title: {group.title}\n"
+                )
+                if progress is None:
+                    sys.stdout.write(f"progress: DID NOT JUDGE — {progress_error}\n")
+                else:
+                    sys.stdout.write(
+                        f"progress: {progress.completed_count}/{progress.total_count}"
+                        f" ({'completed' if progress.completed else 'open'})\n"
+                        f"member_task_ids: {list(progress.member_task_ids)}\n"
+                        f"landed_task_ids: {list(progress.landed_task_ids)}\n"
+                    )
+                sys.stdout.write(
+                    "completion_triggers: "
+                    + (", ".join(
+                        f"#{item.id} {item.task_title!r}" for item in triggers
+                    ) or "none")
+                    + "\n"
+                )
+            # A zero-member group was inspected, but progress was not judged.
+            # Nonzero makes that impossible to mistake for a green 0/0 bar.
+            return 2 if progress is None else 0
+
+        with open_database(question_store_spec(db_path),
+                           access=Access.WRITE) as store:
+            with store.transaction() as tx:
+                if args.groups_cmd == "create":
+                    group_id = tx.groups.create(
+                        kind=args.kind, title=args.title,
+                        description=args.description or "",
+                        actor=actor, at=at,
+                    )
+                    disposition = f"created {args.kind} #{group_id}"
+                elif args.groups_cmd == "add-task":
+                    status = tx.groups.add_task(
+                        args.group_id, args.task_id, actor=actor, at=at,
+                    )
+                    disposition = (
+                        f"task #{args.task_id} {status} in group #{args.group_id}"
+                    )
+                elif args.groups_cmd == "add-trigger":
+                    trigger_id, status = tx.groups.register_completion_task(
+                        args.group_id, title=args.title, priority=args.priority,
+                        task_type=args.type, actor=actor, at=at,
+                    )
+                    disposition = (
+                        f"completion trigger #{trigger_id} {status} for group"
+                        f" #{args.group_id} (inert; no task filed)"
+                    )
+                else:  # argparse makes this unreachable; keep failure named.
+                    raise ValidationError(
+                        f"unknown groups command {args.groups_cmd!r}"
+                    )
+        sys.stdout.write(f"groups: {disposition}\n")
+        return 0
+    except NotFound as exc:
+        sys.stderr.write(f"groups: {exc}\n")
+        return 1
+    except (Conflict, ValidationError) as exc:
+        sys.stderr.write(f"groups: {exc}\n")
+        return 2
+
+
 # ---------------------------------------------------------------------------
 # #558 — groom: backfill NULL origins to 'unknown' (the truthful pre-contract
 # value), store-mode only. The audited surface for that backfill — never raw
@@ -2132,6 +2275,40 @@ def main(argv=None):
     plink.add_argument("--ledger", default=LEDGER_DEFAULT,
                        help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
 
+    pgroups = sub.add_parser(
+        "groups",
+        help="store-backed lanes, epics, milestones, membership and progress [#824]")
+    groups_sub = pgroups.add_subparsers(dest="groups_cmd", required=True)
+    groups_list = groups_sub.add_parser("list", help="list first-class groups")
+    groups_list.add_argument("--json", action="store_true")
+    groups_list.add_argument("--ledger", default=LEDGER_DEFAULT)
+    groups_get = groups_sub.add_parser(
+        "get", help="read exact membership and derived progress")
+    groups_get.add_argument("group_id", type=int)
+    groups_get.add_argument("--json", action="store_true")
+    groups_get.add_argument("--ledger", default=LEDGER_DEFAULT)
+    groups_create = groups_sub.add_parser("create", help="create a group record")
+    groups_create.add_argument("kind", choices=("lane", "epic", "milestone"))
+    groups_create.add_argument("title")
+    groups_create.add_argument("--description", default=None)
+    groups_create.add_argument("--actor", default=None)
+    groups_create.add_argument("--ledger", default=LEDGER_DEFAULT)
+    groups_add = groups_sub.add_parser(
+        "add-task", help="add one canonical task id to a group")
+    groups_add.add_argument("group_id", type=int)
+    groups_add.add_argument("task_id", type=int)
+    groups_add.add_argument("--actor", default=None)
+    groups_add.add_argument("--ledger", default=LEDGER_DEFAULT)
+    groups_trigger = groups_sub.add_parser(
+        "add-trigger",
+        help="register an inert task definition for group completion")
+    groups_trigger.add_argument("group_id", type=int)
+    groups_trigger.add_argument("title")
+    groups_trigger.add_argument("--priority", default=None)
+    groups_trigger.add_argument("--type", default="task")
+    groups_trigger.add_argument("--actor", default=None)
+    groups_trigger.add_argument("--ledger", default=LEDGER_DEFAULT)
+
     args = p.parse_args(argv)
     rc = _dispatch(args)
     # #357 — the warning footer tacks onto stderr on every verb's success
@@ -2304,6 +2481,8 @@ def _dispatch(args):
         return _verb_get(args, dw_dir)
     if args.cmd == "reviews":
         return _verb_reviews(args, dw_dir)
+    if args.cmd == "groups":
+        return _verb_groups(args, dw_dir)
 
     # #558 — groom dispatches on source_of_truth itself (it is store-mode
     # only and refuses markdown with a named reason), so like the #497 read

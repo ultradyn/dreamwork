@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -9,11 +10,17 @@ import pytest
 from dreamwork_db import Access, ValidationError, open_database
 from dreamwork_db.groups import EmptyGroup
 from dreamwork_db.tasks import task_store_spec
+from dev import ledger as ledger_cli
 
 
 @pytest.fixture
 def store_path(tmp_path):
-    path = tmp_path / "ledger.sqlite3"
+    dw = tmp_path / ".dreamwork"
+    dw.mkdir()
+    path = dw / "ledger.sqlite3"
+    (dw / "tasks.md").write_text(
+        "---\ndreamwork-ledger: migrated\nsource-of-truth: store\n---\n"
+    )
     with open_database(task_store_spec(path), access=Access.WRITE) as store:
         with store.transaction():
             pass
@@ -173,3 +180,57 @@ def test_unknown_group_kind_is_named_before_sql(store_path):
     with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
         with pytest.raises(ValidationError, match=r"lane.*epic.*milestone"):
             _create_group(store, kind="squad")
+
+
+def _cli(store_path, capsys, *argv):
+    rc = ledger_cli.main([
+        "groups", *argv, "--ledger", str(store_path.parent / "tasks.md")
+    ])
+    captured = capsys.readouterr()
+    return rc, captured.out, captured.err
+
+
+def test_groups_cli_exposes_exact_membership_and_progress(store_path, capsys):
+    _insert_tasks(store_path, [(401, "landed"), (402, "open")])
+    rc, out, err = _cli(store_path, capsys, "create", "epic", "CLI epic")
+    assert rc == 0 and "created epic #1" in out
+    for task_id in (401, 402):
+        rc, out, err = _cli(store_path, capsys, "add-task", "1", str(task_id))
+        assert rc == 0, f"failed adding task #{task_id}: {err}"
+
+    rc, out, err = _cli(store_path, capsys, "get", "1", "--json")
+    assert rc == 0, err
+    record = json.loads(out.splitlines()[0])
+    assert record["progress"]["member_task_ids"] == [401, 402], (
+        f"epic #1 CLI returned wrong task membership: {record['progress']}"
+    )
+    assert record["progress"]["landed_task_ids"] == [401]
+    assert record["progress"]["completed_count"] == 1
+    assert record["progress"]["total_count"] == 2
+
+
+def test_groups_cli_empty_progress_is_a_nonzero_did_not_judge(store_path, capsys):
+    rc, out, err = _cli(store_path, capsys, "create", "lane", "Empty lane")
+    assert rc == 0, err
+    rc, out, err = _cli(store_path, capsys, "get", "1")
+    assert rc == 2
+    assert "progress: DID NOT JUDGE" in out
+    assert "0 member tasks" in out
+
+
+def test_groups_cli_registers_inert_trigger_without_filing_task(store_path, capsys):
+    _insert_tasks(store_path, [(501, "landed")])
+    _cli(store_path, capsys, "create", "milestone", "Release")
+    _cli(store_path, capsys, "add-task", "1", "501")
+    rc, out, err = _cli(
+        store_path, capsys, "add-trigger", "1", "Review release",
+        "--priority", "P1",
+    )
+    assert rc == 0, err
+    assert "inert; no task filed" in out
+    conn = sqlite3.connect(store_path)
+    try:
+        task_ids = [row[0] for row in conn.execute("SELECT id FROM task")]
+    finally:
+        conn.close()
+    assert task_ids == [501], "adding a trigger must not auto-file into task"
