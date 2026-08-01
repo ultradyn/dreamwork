@@ -164,6 +164,44 @@ unique definition of a symbol named by a `watch.py` citation is frequently in a
 different file — so the rule confidently rewrites `watch.py:3712` to
 `client/views.js:476`, repairing the coordinate and destroying the record.
 
+### 2.6 The same disease in a second instrument — and it is red on master now
+
+`dev/check_watch_citations.py` is an example, not the inventory.
+`dev/apply_reanchors_i3.py` carries a **74-member** `ANCHORS` table — the
+`REVIEWED_DOCS` population that `check_watch_citations.py` deliberately excludes
+— and `ReviewedAnchor.resolve()` is the *strongest* form of the anchoring idea
+this repo has built: symbol **plus exact multi-line evidence text** plus an
+optional Python scope, re-located by exact block search, refusing on missing or
+ambiguous matches rather than guessing.
+
+At the base sha, in a clean clone, with nothing of mine applied:
+
+```
+$ git -C $C rev-parse --short HEAD        # 55afc4f6, clean tree
+$ python3 -m pytest -p no:randomly test_reanchor_citations.py -q
+E ValueError: reviewed citation anchors did not resolve:
+E   watch.py:5081 (_send) cannot be reanchored: reviewed evidence is missing; drift unknown
+E   watch.py:5199 (parsed.path) cannot be reanchored: reviewed evidence is missing; drift unknown
+E assert (345, 3) == (342, 0)              # a hardcoded literal in the test itself
+2 failed, 13 passed
+```
+
+**2 of 74 anchors are dead and master is red.** Two different failure modes in
+one file: evidence text that no longer exists (the anchor cannot resolve), and
+a test literal — `(342, 0)` — derived from the tree on the day it was written.
+
+Credit where it is due: this instrument fails *honestly*. It refuses rather
+than guessing, which is the discipline the filing admires and which idea 3a
+below does not have. But it demonstrates the cost that discipline carries, and
+it separates two questions this repo has been answering as one: **a living-prose
+citation should be re-reviewed when the code it names changes; a historical
+record should never need touching again.** `ANCHORS` applies a living-prose
+instrument to a corpus that is partly historical, so ordinary code edits
+generate reds only a human can clear. That is #914's complaint in a second
+incarnation.
+
+*(Out of scope here and not fixed: master is red. Reported to the coordinator.)*
+
 ## 3. Candidates — IGC
 
 **Context.** `watch.py` is 7100 lines and grows several times a night under
@@ -175,29 +213,45 @@ constant. The pins on those 19 are measurably false (§2.4).
 human edit · **G2** a zero is loud — "examined nothing" cannot print like
 "nothing failed" · **G3** never certifies a claim that is false · **G4** needs
 no flag-day rewrite of the corpus while lanes are landing · **G5** retains a
-reachable, discriminating red.
+reachable, discriminating red · **G6** an ordinary edit to the cited code does
+not oblige a human to re-record the instrument's expectation.
 
-| Idea | All | G1 | G2 | G3 | G4 | G5 |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|
-| 1. Status quo — global `DRIFT`, re-measured by hand | ✘ | ✘ | ✔ | ✘ | ✔ | ✔ |
-| 2. Per-citation offset from the real diff (#845) | ✘ | ✔ | ✔ | ✘ | ✔ | ✔ |
-| 3. Symbol anchors via `reanchor_citations`' rule | ✘ | ✔ | ? | ✘ | ✘ | ✘ |
-| 4. Content hash / context fingerprint | ✘ | ✔ | ✘ | ✘ | ✘ | ✔ |
-| 5. Tolerant fuzzy re-location (±N lines) | ✘ | ✔ | ✔ | ✘ | ✔ | ✘ |
-| 6. Accept drift; auto-re-certify | ✘ | ✔ | ✔ | ✘ | ✔ | ✘ |
-| 7. **Retire the oracle; assert the property directly** | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+G6 is the goal this corpus specifically needs, and it is why the answer differs
+for living prose and historical records. The 19 are historical: they describe a
+past tree, so no present-day code change can make them need editing. Any
+instrument that says otherwise is asking humans to maintain a record of the
+past against the present.
+
+| Idea | All | G1 | G2 | G3 | G4 | G5 | G6 |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| 1. Status quo — global `DRIFT`, re-measured by hand | ✘ | ✘ | ✔ | ✘ | ✔ | ✔ | ✘ |
+| 2. Per-citation offset from the real diff (#845) | ✘ | ✔ | ✔ | ✘ | ✔ | ✔ | ✔ |
+| 3a. Unique-symbol-definition rule (`reanchor_citations`) | ✘ | ✔ | ? | ✘ | ✘ | ✘ | ✔ |
+| 3b. Symbol + exact evidence + scope (`apply_reanchors_i3`) | ✘ | ✔ | ✔ | ✔ | ✘ | ✔ | ✘ |
+| 4. Content hash / context fingerprint | ✘ | ✔ | ✘ | ✘ | ✘ | ✔ | ✘ |
+| 5. Tolerant fuzzy re-location (±N lines) | ✘ | ✔ | ✔ | ✘ | ✔ | ✘ | ✔ |
+| 6. Accept drift; auto-re-certify | ✘ | ✔ | ✔ | ✘ | ✔ | ✘ | ✔ |
+| 7. **Retire the oracle; assert the property directly** | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 
 The decisive errors:
 
 - **1 · G1** measured: 19 → 0 on one inserted line (§2.3). **G3** measured: 0/12
-  prose symbols within ±5 of their pin (§2.4). This is the idea that already
-  deformed a lane's code.
+  prose symbols within ±5 of their pin (§2.4). **G6** the constant is
+  hand-measured. This is the idea that already deformed a lane's code.
 - **2 · G3** a per-citation offset certifies the *offset*, never the *claim*. It
   makes the false certification of §2.4 cheaper to produce, not rarer — and
   #847's record documents the exact live case.
-- **3 · G3** measured: 10/10 unique resolutions are wrong (§2.5). **G4** it *is*
+- **3a · G3** measured: 10/10 unique resolutions are wrong (§2.5). **G4** it *is*
   the flag-day rewrite. **G5** 9 of 19 name no resolvable symbol at all, so the
   guard would carry a permanent 47% unadjudicated class over its whole subject.
+- **3b — the strongest rival, and it is refuted by measurement, not argument.**
+  It is already built, already applied to 74 anchors, and honest by design
+  (hence its ✔ on G3, which 3a lacks). **G6** is decisive: §2.6 measures it red
+  on clean master, with 2 of 74 anchors dead because the evidence text they
+  quote no longer exists. Every ordinary edit to cited code obliges a human to
+  re-review and re-record. **G4** applying it to the 19 is the flag-day rewrite
+  again. Rejecting 3b is rejecting the best version of the brief's direction,
+  on evidence from this repo's own running instrument.
 - **4 · G3/G2** same class as 2, with a larger coincidence surface. This repo
   has already paid for it: `DISTINCTIVE_MIN_LEN` exists because 681 blank lines
   in the base revision are byte-identical to each other, and the lessons record
@@ -303,8 +357,12 @@ Red-proof both directions, for the lane that ships it:
 ## 6. What this design does not do
 
 It does not adopt symbol anchors for the existing corpus — measured wrong 10
-times out of 10 (§2.5). It leaves symbol naming to **new** prose, where it
-costs nothing at write time and is #880's proper subject: *a new citation names
-a symbol and does not name a line.* Converting 348 existing ones is #847's
-paydown, is judgement per citation, and is not made easier by any anchor scheme
-in §3.
+times out of 10 (§2.5), and their strongest implementation is red on master
+(§2.6). It leaves symbol naming to **new** prose, where it costs nothing at
+write time and is #880's proper subject: *a new citation names a symbol and
+does not name a line.* Converting 348 existing ones is #847's paydown, is
+judgement per citation, and is not made easier by any anchor scheme in §3.
+
+It does not repair the false pins (§2.4) or the two dead `ANCHORS` (§2.6).
+Both are named here so the next lane starts from them rather than rediscovering
+them; both need filing.
