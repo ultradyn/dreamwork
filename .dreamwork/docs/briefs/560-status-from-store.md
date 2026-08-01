@@ -13,7 +13,7 @@ His words, verbatim:
 
 ## The defect
 
-The status section (`statusBlock`, watch.py:3417+, "the status section
+The status section (`statusBlock`, watch.py:3417+ @ dc739001, "the status section
 (#130)") renders `status.json` — a **hand-maintained loop claim** that drifts
 from the truth the store already holds. This repo has measured that drift
 before: #362 (queue summed 115 against 123 open; `current_task_ids` empty

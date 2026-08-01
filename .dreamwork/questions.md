@@ -211,7 +211,7 @@
   **First, a measurement that changes the problem.** The inefficiency is real but **mislocated**.
   `/data.json` is **917,407 bytes**, uncompressed, ~200 ms; `/mtime` is 36 bytes / 3 ms, so the poll
   is nearly free. The damage is that the 2 s change-gate **never closes**: a sqlite read moves
-  `ledger.sqlite3-shm`'s mtime, `-shm` is not in `WATCHED_MTIME_IGNORED` (`watch.py:3654`), so
+  `ledger.sqlite3-shm`'s mtime, `-shm` is not in `WATCHED_MTIME_IGNORED` (`watch.py`), so
   **serving `/data.json` marks the state changed** and the next poll refetches it — self-perpetuating,
   15 of 15 polls "changed" over 30 s, reproduced from a single fetch. Real change in the same window:
   21 bytes when quiet, 5.4 KB over 60 s including a commit — **0.6% of what was shipped**. Filed as
@@ -1676,7 +1676,7 @@
 
   - **Q2 — one amendment to the design.** Amend §"Receive and idempotency" law 2 so
     the server keeps a **partial witness, marked incomplete**, for an interrupted
-    body. **Rec: yes.** Today it witnesses interrupted bodies *badly*: `watch.py:5380`
+    body. **Rec: yes.** Today it witnesses interrupted bodies *badly*: `watch.py`
     reads `min(nbytes, MAX_BODY)` and never compares the result to `nbytes`, so a
     short read is recorded as a complete line (that is #371, filed). Tightening
     receipts without this amendment would make a partial answer **less** recoverable

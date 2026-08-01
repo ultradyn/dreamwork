@@ -133,7 +133,7 @@ test is the load-bearing proof).
 - **#608** (landed): *"snapshot the FIXED file, the state you must END on"* —
   redproof snapshots the post-fix file; restore returns the fixed state.
 - **#620** (landed): *"a suffix, not the two names the #614 plan proposed"* —
-  `WATCHED_MTIME_IGNORED_SUFFIXES = ("-shm",)` at watch.py:4068; phase 0 is done.
+  `WATCHED_MTIME_IGNORED_SUFFIXES = ("-shm",)` at watch.py:4068 @ dc739001; phase 0 is done.
 
 ## Verification (run, with load)
 

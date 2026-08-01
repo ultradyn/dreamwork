@@ -23,7 +23,7 @@ the served page.
 - `watch.py:694-707` assembles the sole inline script from morphdom and the
   eight `client/*` assets. It appends `ROUTER_JS + COMMAND_JS`; it neither reads
   nor appends `client/dist/native.js`.
-- `watch.py:5169-5174` serves that one assembled page for `/research`.
+- `watch.py:5169-5174 @ dc739001` serves that one assembled page for `/research`.
   `watch.py` has no static route for `client/dist/native.js`; unmatched GETs
   fall through to 404.
 - `dev/build/src/native-entry.js:26-27` states the intended seam: the bundle

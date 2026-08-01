@@ -4,7 +4,7 @@
 
 Adopt **A: a lightweight annotation sidecar whose selections may be promoted once into a #229 topic chat**. It preserves a lifecycle for each mark without making every mark expensive. **B, one chat per annotation**, creates chat-list pollution and worker/context cost before discussion is warranted. **C, one document-level review chat**, is quieter but loses per-mark identity, resolution and orphan handling.
 
-This is a proposal, not implementation authority. The existing review view deliberately embeds the self-contained artifact in a style-isolated iframe and optionally docks its originating question beside it (`watch.py:1946-1965`, `buildReview`; raw delivery is confined to `.dreamwork/review` at `watch.py:6179-6193`, `/reviewraw`). The current dock is responsive—sticky on wide layouts and static below 900px (`watch.py:637-642`, `.qdock`)—but it is question-level, not selection-level.
+This is a proposal, not implementation authority. The existing review view deliberately embeds the self-contained artifact in a style-isolated iframe and optionally docks its originating question beside it (`watch.py:1946-1965`, `buildReview`; raw delivery is confined to `.dreamwork/review` at `watch.py`, `/reviewraw`). The current dock is responsive—sticky on wide layouts and static below 900px (`watch.py:637-642`, `.qdock`)—but it is question-level, not selection-level.
 
 ## Model and truth boundaries
 

@@ -45,7 +45,7 @@ survive as the *sole* fix for the 1GB buffer.
 
 ### Body production and send path
 
-`/filebytes` is handled in `do_GET` at `watch.py:5190`. It resolves the
+`/filebytes` is handled in `do_GET` at `watch.py`. It resolves the
 path, branches on `detect_file_kind`, and calls `_send_bytes`:
 
 ```
@@ -57,7 +57,7 @@ else:
     self._send_bytes(full, rel, inline=True)
 ```
 
-`_send_bytes` (`watch.py:5139`):
+`_send_bytes` (`watch.py`):
 
 1. `data = read_bytes(full)` at **:8968** — **entire file into one `bytes` object**.
 2. `send_response(200)` plus headers from the **length of that object** (`:8971-8983`).
@@ -115,7 +115,7 @@ file.**
 ### Confinement — the claim is true, and here is the check
 
 Every file-serving route is supposed to go through `resolve_confined`
-(`watch.py:4606`):
+(`watch.py`):
 
 ```python
 def resolve_confined(target, rel):
@@ -278,7 +278,7 @@ After confinement + kind + headers:
 - reimplemented as a generator / left as a test-only footgun that production
   stops calling.
 
-**Client disconnect:** `_expected_disconnect` already exists (`watch.py:4860`)
+**Client disconnect:** `_expected_disconnect` already exists (`watch.py`)
 and `Handler.handle` already quiets pipe errors for the whole request
 (`:8912-8925`, #299). Streaming large bodies makes mid-stream navigations more
 visible; the existing wrapper should already cover `wfile.write` raises. Confirm
@@ -341,7 +341,7 @@ not `Accept-Ranges`.
 
 ### Cache-Control revisit (parked question from the ledger)
 
-Today: `private, max-age=0, must-revalidate` (`watch.py:5139`).
+Today: `private, max-age=0, must-revalidate` (`watch.py`).
 
 | directive | why it was chosen | still right? |
 |---|---|---|
@@ -545,7 +545,7 @@ read as an oversight. Measured so nobody has to guess:
 ### What is there today
 
 ```python
-# watch.py:5312 (the /reviewraw handler)
+# watch.py (the /reviewraw handler)
 name = parse_qs … p
 full = resolve_confined(target, os.path.join(".dreamwork", "review", name))
     if name and "/" not in name else None

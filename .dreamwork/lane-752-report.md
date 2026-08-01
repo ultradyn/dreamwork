@@ -41,7 +41,7 @@ untouched exactly as scoped.
    241 identifiers. Result: 224 numeric ids resolved; 13 numeric ids and four
    suffix ids did not.
 4. Judge every occurrence, not merely every unique id. Mixed uses matter:
-   `#126` is right at `watch.py:4785` for page provenance and wrong at
+   `#126` is right at `watch.py:4785 @ dc739001` for page provenance and wrong at
    `watch.py:2685` for newline collapse; `#440` is right in the ledger tool and
    wrong when transferred to lane-process classification.
 

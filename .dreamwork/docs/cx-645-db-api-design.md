@@ -116,7 +116,7 @@ The question migration has ten concrete surfaces, not one file read:
 
 | Surface | What it needs after cutover |
 |---|---|
-| `watch.collect()` (`watch.py:3770`) | one read snapshot yielding Open, awaiting-fold and Answered DTOs; counts; health; stable ids; revision/`updated_at` |
+| `watch.collect()` (`watch.py`) | one read snapshot yielding Open, awaiting-fold and Answered DTOs; counts; health; stable ids; revision/`updated_at` |
 | `track_question_updates()` | retire its JSON signature sidecar; database revision/`updated_at` is the fact it was reconstructing |
 | `POST /answer` | `questions.answer(id, body, actor, action_id)`, not a title-based whole-file rewrite |
 | `POST /comment` | append a typed message by id in any state |

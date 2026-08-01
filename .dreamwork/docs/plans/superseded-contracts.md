@@ -15,7 +15,7 @@ with the defect fully present (lesson, 2026-07-29). The client write path
 branches on `res.ok` alone:
 
 ```
-watch.py:3576   if (!res || !res.ok) { qaFail(card, res ? res.status : 0); return; }
+watch.py   if (!res || !res.ok) { qaFail(card, res ? res.status : 0); return; }
 ```
 
 The fake pins the refusal at `status: 409` (`health.mjs:212`), so it only
@@ -27,7 +27,7 @@ cleared, and the next tick puts the question back with no explanation.
 **The sharp half, and it is the brief's hardest requirement:** a checker
 that greps fakes for a pinned status and checks it against the production
 constant would NOT have caught this, because `409` is still exactly what
-production returns for a `/answer` refusal today (`watch.py:5533`,
+production returns for a `/answer` refusal today (`watch.py`,
 `self.send_error(409)` in `_handle_answer`). The pinned fact is **not
 stale**. The blindness is in the fake's **scope**: it drives one of the
 two statuses the client branches on. The contract that moved is the one
@@ -113,7 +113,7 @@ impossible without a bridge this repo does not have.
 - **R1 ✘G1:** `health.mjs`'s `409` *is* the production constant — the grep passes and the blindness remains. This is the brief's own warning made concrete: the motivating instance refutes the grep checker. **✘G4:** the constants are Python literals in `watch.py`; an `.mjs` cannot import them, and the file is held by another lane. **✘G3:** a sweep over every `route.fulfill` is stale the day a 70th guard is written.
 - **R2 ✘G1, ✘G4:** even if the constant were importable, importing `409` does not add the `202` case — the scope blindness survives. Same language-boundary block as R1.
 - **R3 ✘G3, ✘G5, ?G1:** a registry of "refusal statuses the client branches on" could in principle force coverage of `{409, 202}` — but the registry is itself a literal tuned to today's client (`✘G5`), maintained across every guard (`✘G3`). It moves the supersession hazard from the fake into the registry without removing it.
-- **R4 ✘G1:** `409` still appears verbatim in `watch.py:5533` — the assertion passes and the `E5` blindness is unchanged. Correctly catches the *stale-value* fakes (`docktarget`'s `200`, the `500`s) and worth landing for those, but it is not the general mechanism because it misses the instance that motivated the task.
+- **R4 ✘G1:** `409` still appears verbatim in `watch.py` — the assertion passes and the `E5` blindness is unchanged. Correctly catches the *stale-value* fakes (`docktarget`'s `200`, the `500`s) and worth landing for those, but it is not the general mechanism because it misses the instance that motivated the task.
 - **R5 ✔all:** the survivor. It forces the one thing the `E5` instance lacked — a refusal driven on a status the client treats as *success* — and derives the count at runtime so it cannot quietly drop back to `4xx`-only. It is per-guard (inherited like `serve.mjs`), needs no `watch.py` edit and no cross-language import, and carries no literal. **Its honest limit:** it guards refusal paths specifically; it does not detect a stale *success* status (`docktarget`'s `200`). R4 is the complement for those — the two together cover the family, and both are narrow.
 
 **Survivor: R5**, landed concretely as a coverage assertion inside the
@@ -138,7 +138,7 @@ guard counts the refusal statuses it drove and requires at least one
 The existing `409` scenario is untouched and stays green.
 
 **Red-proof (non-circular).** The production line whose change reds the
-new checks is `watch.py:3576` (`if (!res || !res.ok)`). It is red
+new checks is `watch.py` (`if (!res || !res.ok)`). It is red
 *against the current client*: `E5b` has not merged, so a `202` refusal
 slips past `!res.ok`, the morph runs, the card becomes answered and the
 text is cleared, and the new checks FAIL. Crucially, **this diff touches

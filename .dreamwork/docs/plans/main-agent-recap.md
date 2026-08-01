@@ -592,7 +592,7 @@ useful without the later ones:
    `killpg`, and the terminal statuses. Ships with `.dreamwork/recap` absent.
 4. **The dashboard read** — the `collect()` key, its mandatory
    `SUMMARY_ALLOWED`/`SUMMARY_DENIED` classification (a new key that is in
-   neither reds by design, `watch.py:4069-4078`), and the render with its four
+   neither reds by design, `watch.py`), and the render with its four
    states. **No motion yet.**
 5. **The transition** — `bdContentSwap` keyed on `recap.id`, reduced-motion
    parity, and a guard that proves the gesture fires once per recap and not once
