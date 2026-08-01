@@ -55,12 +55,30 @@ const PORT = await freePort();
 
 const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 const notes = []; const errs = [];
+/* FLOOR — below this many rAF callbacks the sampler itself was starved
+   and between()==0 carries no travel-vs-teleport signal. The floor is on
+   seen.length (total frames the rAF ran), NOT on t.positions (distinct
+   values): a real teleport at 60fps has seen.length≈90 but positions=2
+   (start and end only), so a positions-floor would MASK the teleport by
+   skipping it. A seen.length-floor correctly FAILs the teleport (the
+   sampler ran fine, there were just no part-way frames) while SKIPping
+   genuine starvation (few callbacks = frozen browser). #345.
+   A skip is not a pass: it is visible as SKIP in the output and counted
+   in the summary line, and it names the remedy — "sampled N frames, floor
+   M" — never the bare "did not move" that was true about the sampler and
+   false about the code (#940). */
+const FLOOR = 3;
+const skip = (n, why) => checks.push(`SKIP ${n} — could not measure: ${why}`);
 let finished = false;
 process.on('exit', () => {
   if (!finished) checks.push('FAIL the guard threw before finishing its checks');
   console.log(notes.join('\n'));
   console.log('----');
   console.log(checks.join('\n'));
+  const np = checks.filter(c => c.startsWith('PASS')).length;
+  const nf = checks.filter(c => c.startsWith('FAIL')).length;
+  const ns = checks.filter(c => c.startsWith('SKIP')).length;
+  console.log(`summary: ${np} pass, ${nf} fail, ${ns} skip`);
   if (errs.length) console.log(errs.join('\n'));
 });
 
@@ -270,10 +288,20 @@ ok('...with a panel below them to be displaced', shape.below);
      !!click && click.landed);
   ok('opening: the panel below is displaced at all (else vacuous)', t.moved >= 60);
   // THE ASSERTION. A snap has zero frames strictly between the ends.
-  ok('opening: ...and it travels there rather than teleporting', t.partway >= 1);
-  ok('opening: the row itself grows continuously rather than in one step',
-     hPartway >= 1);
-  ok('opening: the revealed body eases in rather than blinking on', mid >= 1);
+  // #345: the floor is on seen.length (sampler health), not positions
+  // — a teleport has positions=2 but seen.length≈90, so the floor on
+  // seen.length correctly FAILs the teleport while SKIPping starvation.
+  const denom = `sampled ${seen.length} frames (${t.positions} positions, floor ${FLOOR})`;
+  if (seen.length < FLOOR) {
+    skip('opening: ...and it travels there rather than teleporting', denom);
+    skip('opening: the row itself grows continuously rather than in one step', denom);
+    skip('opening: the revealed body eases in rather than blinking on', denom);
+  } else {
+    ok(`opening: ...and it travels there rather than teleporting (${denom})`, t.partway >= 1);
+    ok('opening: the row itself grows continuously rather than in one step',
+       hPartway >= 1);
+    ok('opening: the revealed body eases in rather than blinking on', mid >= 1);
+  }
   /* the FLIP-window contract, stated as the two things a mis-measured travel
      does. 4px each: a clean ease lands within ~1.5px, and the failure both
      describe is `details[open]`'s 2 x .5rem — 16px. Nothing to tune between. */
@@ -376,7 +404,12 @@ ok('...with a panel below them to be displaced', shape.below);
   ok('closing: the click reached the summary (pointer-events / overlay gate, #141)',
      !!click && click.landed);
   ok('closing: the panel below is displaced at all (else vacuous)', t.moved >= 60);
-  ok('closing: ...and it travels there rather than teleporting', t.partway >= 1);
+  const cdenom = `sampled ${seen.length} frames (${t.positions} positions, floor ${FLOOR})`;
+  if (seen.length < FLOOR) {
+    skip('closing: ...and it travels there rather than teleporting', cdenom);
+  } else {
+    ok(`closing: ...and it travels there rather than teleporting (${cdenom})`, t.partway >= 1);
+  }
   ok('closing: ...and it has arrived when the travel ends', t.late <= 4);
   ok('closing: ...having never gone past where it ends up', t.over <= 4);
   ok('closing: the leaving body dreams away rather than being cut off',
