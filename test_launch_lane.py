@@ -261,8 +261,10 @@ def test_launcher_dispatches_brief_pys_canonical_frame(launch_repo: Path):
     captured = launch_repo / "captured-prompt.md"
     env = os.environ.copy(); env["CAPTURE_PROMPT"] = str(captured)
     result = _run(launch_repo, _head(launch_repo), env=env)
+    assert result.returncode == 0, (
+        f"canonical brief never reached the runner: {result.stderr}"
+    )
     prompt = captured.read_text(encoding="utf-8")
-    assert result.returncode == 0, result.stderr
     assert prompt.count("## Canonical frame") == 1
     assert prompt.count("Lane-owns: dev/thing.py") == 1
     assert prompt.endswith("# Standing rules\nDo the checked work.\n")
