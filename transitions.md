@@ -524,6 +524,13 @@ graceful, it is a change to be prevented. Contract, measurements and the
   travelled".
 - **The ripple.** A soft expanding ring marks a received command; a felt
   pulse, not a modal.
+- **The double-click action.** Its first click cross-dissolves the ordinary
+  label into `Action` while a four-second radial countdown renders *in the
+  outline itself*: remaining time is the thick arc and elapsed time leaves
+  only the ordinary thin action outline. A second click inside that window
+  acts and dissolves back; expiry disarms without acting. Reduced motion keeps
+  the same four-second ceremony and legible armed state, but snaps the label
+  and holds the full thick outline instead of sweeping it.
 - **The composer's sliding indicator.** Choosing a command kind slides the
   selection background to it (~.3s, the dream easing) — the composer's one
   piece of crisp motion. It lands without sliding on open and on reflow; see
@@ -702,4 +709,3 @@ graceful, it is a change to be prevented. Contract, measurements and the
   mid-transition haze is fine. (2) *Frame continuity* — the `#dreambg`
   canvas never unmounts, pauses, or resets across navigation; its frame
   tally stays monotonic. Both are guarded by tests; keep them green.
-

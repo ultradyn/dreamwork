@@ -2004,8 +2004,77 @@ var DreamworkDesign = (() => {
     el.replaceChildren(frag);
   };
   var label = (t) => `<div class="label">${t}</div>`;
+  var buttonAttrs = (attrs) => Object.entries(attrs || {}).map(([name, value]) => ` ${name}="${escA(value)}"`).join("");
+  var actionButton = ({
+    label: label2,
+    icon = "",
+    className = "",
+    title = "",
+    attrs = {},
+    iconOnly = false,
+    armedLabel = ""
+  }) => {
+    const labels = armedLabel ? `<span class="uibtnlabels"><span>${escA(label2)}</span><span class="uibtnarmed">${escA(armedLabel)}</span></span>` : iconOnly ? "" : `<span class="uibtnlabel">${escA(label2)}</span>`;
+    return `<button class="uibtn uibtn-action${armedLabel ? " uibtn-double" : ""}${className ? ` ${className}` : ""}" type="button"${title ? ` title="${escA(title)}"` : ""} aria-label="${escA(label2)}"${armedLabel ? ' aria-pressed="false"' : ""}${buttonAttrs(attrs)}>${icon}${labels}</button>`;
+  };
+  var DOUBLE_CLICK_WINDOW_MS = 4e3;
+  var doubleClickButton = ({
+    label: label2,
+    icon,
+    className = "",
+    attrs = {},
+    armedLabel = "Action",
+    windowMs = DOUBLE_CLICK_WINDOW_MS
+  }) => actionButton({ label: label2, icon, className, armedLabel, attrs: {
+    ...attrs,
+    "data-double-window": windowMs,
+    style: `--double-click-window:${windowMs}ms`,
+    "data-rest-label": label2,
+    "data-armed-label": armedLabel
+  } });
+  var ARCHIVE_SVG = '<svg viewBox="0 0 20 18" width="14" height="13" aria-hidden="true"><path d="M2.5 5.5h15v10.5h-15zM1.5 2h17v3.5h-17z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7 9h6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+  var doubleClickButtonState = /* @__PURE__ */ new WeakMap();
+  function disarmDoubleClickButton(btn) {
+    const state = doubleClickButtonState.get(btn);
+    if (state && state.timer) clearTimeout(state.timer);
+    doubleClickButtonState.delete(btn);
+    btn.classList.remove("armed");
+    btn.setAttribute("aria-pressed", "false");
+    btn.setAttribute("aria-label", btn.getAttribute("data-rest-label") || "action");
+  }
+  function activateDoubleClickButton(btn, act, now = Date.now()) {
+    const windowMs = Number(btn.getAttribute("data-double-window")) || DOUBLE_CLICK_WINDOW_MS;
+    const state = doubleClickButtonState.get(btn);
+    if (state) {
+      disarmDoubleClickButton(btn);
+      if (now - state.armedAt < windowMs) {
+        act();
+        return true;
+      }
+      return false;
+    }
+    const armedLabel = btn.getAttribute("data-armed-label") || "Action";
+    btn.classList.remove("armed");
+    void btn.offsetWidth;
+    btn.classList.add("armed");
+    btn.setAttribute("aria-pressed", "true");
+    btn.setAttribute("aria-label", `${armedLabel}: activate again within ${windowMs / 1e3} seconds`);
+    const armed = { armedAt: now, timer: null };
+    armed.timer = setTimeout(() => {
+      if (doubleClickButtonState.get(btn) === armed) disarmDoubleClickButton(btn);
+    }, windowMs);
+    doubleClickButtonState.set(btn, armed);
+    return false;
+  }
   var PIP_SVG = '<svg viewBox="0 0 22 18" width="14" height="12" aria-hidden="true"><rect x="1" y="1" width="20" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="10.5" y="8.5" width="9" height="7" rx="1.2" fill="currentColor"/></svg>';
-  var pipBtn = (url, label2) => `<button class="pipbtn" type="button" title="pop out — floats while you navigate" aria-label="pop out ${escA(label2)}" data-pipurl="${escA(url)}" data-piplabel="${escA(label2)}">${PIP_SVG}</button>`;
+  var pipBtn = (url, label2) => actionButton({
+    label: `pop out ${label2}`,
+    icon: PIP_SVG,
+    iconOnly: true,
+    className: "pipbtn",
+    title: "pop out — floats while you navigate",
+    attrs: { "data-pipurl": url, "data-piplabel": label2 }
+  });
   var TAIL_CH = 6;
   var tailCut = (s) => {
     let cut = Math.max(0, s.length - TAIL_CH);
@@ -2812,7 +2881,18 @@ var DreamworkDesign = (() => {
   function chatArchiveBar(fetched) {
     const archived = !!fetched.archived;
     const verb = archived ? "unarchive" : "archive";
-    return `<div class="chatbar dim"><button type="button" class="chatarchbtn" data-chat="${esc(fetched.id)}" data-archive="${archived ? "0" : "1"}">${verb}</button> <span id="chatarchmsg" class="cmdmsg" aria-live="polite"></span></div>`;
+    const id = String(fetched.id || "");
+    if (typeof doubleClickButton !== "function" || typeof pipBtn !== "function")
+      return `<div class="chatbar dim"><button type="button" class="chatarchbtn" data-chat="${esc(id)}" data-archive="${archived ? "0" : "1"}">${verb}</button> <span id="chatarchmsg" class="cmdmsg" aria-live="polite"></span></div>`;
+    const archive = doubleClickButton({
+      label: verb,
+      armedLabel: "Action",
+      icon: ARCHIVE_SVG,
+      className: "chatarchbtn",
+      attrs: { "data-chat": id, "data-archive": archived ? "0" : "1" }
+    });
+    const title = fetched.title || "topic chat";
+    return `<div class="chatbar dim">` + pipBtn(`/chat/${encodeURIComponent(id)}`, title) + archive + ` <span id="chatarchmsg" class="cmdmsg" aria-live="polite"></span></div>`;
   }
   var chatArchInFlight = false;
   var _chatArchConfirm = null;
@@ -2825,7 +2905,10 @@ var DreamworkDesign = (() => {
     chatArchInFlight = false;
     if (_chatArchConfirm) _chatArchConfirm.clear();
   }
-  async function sendChatArchive(btn) {
+  function sendChatArchive(btn) {
+    return activateDoubleClickButton(btn, () => commitChatArchive(btn));
+  }
+  async function commitChatArchive(btn) {
     if (chatArchInFlight) return;
     const chatId = btn.getAttribute("data-chat") || view && view.param || "";
     if (!chatId) return;

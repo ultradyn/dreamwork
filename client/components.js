@@ -131,7 +131,77 @@ const paintDayAge = (el, ct) => {
 };
 /* components: every section on every watch page renders through these */
 const label = t => `<div class="label">${t}</div>`;
-/* a small standard picture-in-picture glyph — a low-emphasis button placed
+/* #819 — ONE button vocabulary. An action is outlined; specialist action
+   types add behaviour without restating the button. Attribute names and
+   classes are internal component inputs; every value that reaches markup is
+   escaped here, at the one emit site. */
+const buttonAttrs = attrs => Object.entries(attrs || {}).map(([name, value]) =>
+  ` ${name}="${escA(value)}"`).join('');
+const actionButton = ({ label, icon = '', className = '', title = '',
+                        attrs = {}, iconOnly = false, armedLabel = '' }) => {
+  const labels = armedLabel
+    ? `<span class="uibtnlabels"><span>${escA(label)}</span>` +
+      `<span class="uibtnarmed">${escA(armedLabel)}</span></span>`
+    : (iconOnly ? '' : `<span class="uibtnlabel">${escA(label)}</span>`);
+  return `<button class="uibtn uibtn-action${armedLabel ? ' uibtn-double' : ''}` +
+    `${className ? ` ${className}` : ''}" type="button"` +
+    `${title ? ` title="${escA(title)}"` : ''} aria-label="${escA(label)}"` +
+    `${armedLabel ? ' aria-pressed="false"' : ''}${buttonAttrs(attrs)}>` +
+    `${icon}${labels}</button>`;
+};
+
+const DOUBLE_CLICK_WINDOW_MS = 4000;
+const doubleClickButton = ({ label, icon, className = '', attrs = {},
+                             armedLabel = 'Action', windowMs = DOUBLE_CLICK_WINDOW_MS }) =>
+  actionButton({ label, icon, className, armedLabel, attrs: {
+    ...attrs, 'data-double-window': windowMs,
+    style: `--double-click-window:${windowMs}ms`,
+    'data-rest-label': label, 'data-armed-label': armedLabel,
+  }});
+
+const ARCHIVE_SVG = '<svg viewBox="0 0 20 18" width="14" height="13"' +
+  ' aria-hidden="true"><path d="M2.5 5.5h15v10.5h-15zM1.5 2h17v3.5h-17z"' +
+  ' fill="none" stroke="currentColor" stroke-width="1.4"' +
+  ' stroke-linejoin="round"/><path d="M7 9h6" fill="none"' +
+  ' stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+
+const doubleClickButtonState = new WeakMap();
+function disarmDoubleClickButton(btn) {
+  const state = doubleClickButtonState.get(btn);
+  if (state && state.timer) clearTimeout(state.timer);
+  doubleClickButtonState.delete(btn);
+  btn.classList.remove('armed');
+  btn.setAttribute('aria-pressed', 'false');
+  btn.setAttribute('aria-label', btn.getAttribute('data-rest-label') || 'action');
+}
+/* First activation arms; only a second activation inside the component's
+   window acts. `now` is injectable so a timing check can drive both sides of
+   the boundary rather than waiting and accidentally testing only the happy
+   path. Returns true only when `act` was admitted. */
+function activateDoubleClickButton(btn, act, now = Date.now()) {
+  const windowMs = Number(btn.getAttribute('data-double-window')) ||
+    DOUBLE_CLICK_WINDOW_MS;
+  const state = doubleClickButtonState.get(btn);
+  if (state) {
+    disarmDoubleClickButton(btn);
+    if (now - state.armedAt < windowMs) { act(); return true; }
+    return false;
+  }
+  const armedLabel = btn.getAttribute('data-armed-label') || 'Action';
+  btn.classList.remove('armed');
+  void btn.offsetWidth; // a fresh radial countdown after a prior expiry
+  btn.classList.add('armed');
+  btn.setAttribute('aria-pressed', 'true');
+  btn.setAttribute('aria-label', `${armedLabel}: activate again within ${windowMs / 1000} seconds`);
+  const armed = { armedAt: now, timer: null };
+  armed.timer = setTimeout(() => {
+    if (doubleClickButtonState.get(btn) === armed) disarmDoubleClickButton(btn);
+  }, windowMs);
+  doubleClickButtonState.set(btn, armed);
+  return false;
+}
+
+/* a small standard picture-in-picture glyph — a low-emphasis action placed
    after doc/review affordances so pop-out is discoverable, never surprising.
    Clicking it floats the target (data-pipurl) in an identity-headed window. */
 const PIP_SVG = '<svg viewBox="0 0 22 18" width="14" height="12"' +
@@ -139,10 +209,11 @@ const PIP_SVG = '<svg viewBox="0 0 22 18" width="14" height="12"' +
   ' fill="none" stroke="currentColor" stroke-width="1.6"/>' +
   '<rect x="10.5" y="8.5" width="9" height="7" rx="1.2"' +
   ' fill="currentColor"/></svg>';
-const pipBtn = (url, label) =>
-  `<button class="pipbtn" type="button" title="pop out — floats while you` +
-  ` navigate" aria-label="pop out ${escA(label)}" data-pipurl="${escA(url)}"` +
-  ` data-piplabel="${escA(label)}">${PIP_SVG}</button>`;
+const pipBtn = (url, label) => actionButton({
+  label: `pop out ${label}`, icon: PIP_SVG, iconOnly: true,
+  className: 'pipbtn', title: 'pop out — floats while you navigate',
+  attrs: { 'data-pipurl': url, 'data-piplabel': label },
+});
 /* #506 + #595 — the ONE emit for a known-internal path and its pip.
    Two guarantees at once, and until #595 the codebase could only hold one:
 
