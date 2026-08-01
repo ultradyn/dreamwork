@@ -3524,3 +3524,56 @@ The standing contract already says not to trust a literal sha in a brief. The sa
 owed to a claim that a **sibling is dead** — and it is cheaper to check than a sha is. This is the
 third entry in this file about asserting a conclusion from an absence; the absence of a transcript
 meant "ccc writes it at exit", not "the process is gone".
+
+## A revert restores the tree but not the history, so a mass untrack cannot be undone by reverting it (2026-08-01, #867/#882, mine, and I made it worse before I made it better)
+
+`#867`'s merge landed red: it untracked 372 briefs, and lint's four brief checks are
+**git-history-derived** — they resolve a cutoff and then ask of each brief *"was this added after the
+rule landed?"* by consulting git. Untracking destroys the only record those checks consult, so the
+classification returned `in_scope=[]`, `grandfathered=[]`, and two tests failed, one of them by its
+own vacuity guard (*"no brief is in scope — the check is vacuous"*). That guard is the reason this is
+a story about a repair rather than about a silent regression.
+
+**My first repair made it strictly worse.** `git revert -m 1` on the merge took 2 test failures to 6
+and took lint from clean to **84 errors**. The mechanism is worth holding onto because it is not
+obvious: reverting a mass untrack **re-adds every file with a fresh add-date**, so all 372 briefs
+then read as newly added and 84 failed a rule that only applies to new briefs. The revert restored
+every byte of the tree correctly and still produced a state the checks had never seen. `git reset
+--hard` to the last green merge was the faithful repair, because history is what the checks read and
+only a reset restores it.
+
+The transferable rule: **before reverting, ask what the checks read.** If any of them read git
+history rather than file content, a revert is a *different* state, not the previous one — and the
+larger the file-count of the original change, the more violently different it is.
+
+Two corollaries, both paid for tonight:
+
+- **A `REFUSE` message is not a statement that nothing happened.** `land-lane` printed
+  `REFUSE phase=named-tests` and its very next line read `examined: merge=69fc8e9b...` — it had
+  already merged. It was honest about the rest (it retained the branch and worktree and said
+  *"deliberately did not perform: dev/reap.py lane retirement"*), but master carried a red merge
+  while the log said refused. A gate whose verdict arrives after its action is not a gate; `#882`
+  is now P0 for exactly this.
+- **Check the destructive command's precondition in the same command.** Both repairs here were run
+  as `test <condition> && echo "CHECK PASSED: ..." && <destructive>`, so the check could not pass
+  visually while gating nothing. Before the reset that meant proving both lanes' work was retained
+  on their branches and that the discarded merge was unpushed.
+
+## A lane rebasing onto master while the coordinator is repairing master will rebase onto the repair (2026-08-01, #884)
+
+`cx-884nextup` finished during the window above and did exactly what its brief told it to — rebased
+onto local `master` — which at that instant was my `git revert` commit. Its branch came back
+carrying the revert, the red merge, and both of `#867`'s commits in its ancestry, none of which
+survived on master. Fixed by `git rebase --onto master <the-revert-sha> <branch>`, replaying only
+its own six commits; clean.
+
+Nothing the lane did was wrong, and the brief instruction it followed is the right one. The lesson
+is for the coordinator: **while you are rewriting master, lanes are still reading it.** Either the
+repair window is short enough that no lane lands inside it, or every lane that reports during it
+needs its base re-checked before gating — and `git log --oneline master..<branch>` shows it in one
+command, because commits that are not on master appear in that list and stand out immediately.
+
+The same lane also reported a repo-wide guard as *"RED ON PRISTINE MASTER, not from me"*, having
+verified it with `git archive` of the sha its brief named as base. That sha was the red merge. Its
+method was right, its inference was reasonable, and its conclusion was wrong — **the base sha in
+your brief is not a promise that the base was ever good.**
