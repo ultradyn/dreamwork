@@ -3889,6 +3889,7 @@ CITE_LINE = re.compile(r"(?<![\w/])([A-Za-z0-9_][\w./-]*\.[A-Za-z]\w*):(\d+)(?!\
 HISTORICAL_DOC_PATHS = {
     ".dreamwork/handoffs.md",
     ".dreamwork/lessons.md",
+    ".dreamwork/docs/plans/render-architecture.md",
 }
 HISTORICAL_DOC_PREFIXES = (
     ".dreamwork/docs/briefs/",
