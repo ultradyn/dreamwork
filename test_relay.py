@@ -172,7 +172,9 @@ class TestCli:
 
         assert relay_mod.main(["dreamer-thread"]) == 0
         assert "hello" in path.read_text()
-        assert capsys.readouterr().out == f"relayed to declared reader dreamer-thread at {path}\n"
+        assert capsys.readouterr().out == (
+            f"appended to existing inbox {path} for dreamer-thread; no wake performed\n"
+        )
 
     def test_an_empty_body_writes_nothing_and_says_so(self, inbox, monkeypatch, capsys):
         monkeypatch.setattr("sys.stdin", __import__("io").StringIO("   \n"))

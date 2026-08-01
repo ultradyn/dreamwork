@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         sender=args.sender,
         inbox_dir=inbox_dir,
     )
-    print(f"relayed to declared reader {target} at {path}")
+    print(f"appended to existing inbox {path} for {target}; no wake performed")
     return 0
 
 
