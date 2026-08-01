@@ -6775,6 +6775,13 @@ class TestAppShell(unittest.TestCase):
         self.assertNotIn(
             "document.getElementById('view').innerHTML = html", sc)
 
+    def test_unchanged_delta_still_reconciles_the_review_dock(self):
+        tick = watch.PAGE.split('async function tick()', 1)[1][:5000]
+        skip = tick.index("} else if (view.name !== 'review') {")
+        render = tick.index('const html = await buildCurrent();')
+        self.assertLess(skip, render)
+        self.assertIn('setLiveContent(html);', tick[render:])
+
     def test_505p2_review_dock_is_reconciled_not_replaced(self):
         # #505 phase 2 (Q3): the review dock is reconciled through the keyed
         # reconciler, not wholesale-replaceWith'd. Only the swap MECHANISM

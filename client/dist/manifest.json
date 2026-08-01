@@ -14,7 +14,7 @@
     "client/command.js": "ad0c95e8bedea7b427b526b87b713833f386206341c92940ccc29a552941b78c",
     "client/components.js": "2bd1d6d378c19aef6acd97b27971c1c9716411fac1f2a3e47027565d9fc6def5",
     "client/favicon.js": "746a512fb2d23b6ac1294f4d5fdbb4bcc5809a93cae1fe6e78dbbe70882ba901",
-    "client/router.js": "eaa88b718cdd927ddd8030e0754733ea131bd94117bf0a9621702467796e6f81",
+    "client/router.js": "3ab6006c8a9c21fe9add1e1fd29b1d8979bf40517fd3800da0fcfc832a6ef3b0",
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
     "client/style.css": "0fc8ee6d5ca475923cc91b035b0e5494febca6b3ace1239800458cd90388cbcd",
     "client/views.js": "d948159c419ad1234e5a162a599f9880a630844aad3b085edcd3e4d238039b2f",
@@ -27,7 +27,7 @@
     "dev/build/wrapper-exports.js": "9ea5838ef66144742cb10ec8d35cea04d92ca35ea2e11060c26510cd05b6b53b"
   },
   "outputs": {
-    "client/dist/ds/index.js": "35d41aa71370337e58570298d631c4b8c8835080bd28b75dffe5823b673d0592",
+    "client/dist/ds/index.js": "8891be69a17392bde9f0fea8450db13203de090aee8a90f2f9f23dec1bc93778",
     "client/dist/ds/styles.css": "0fc8ee6d5ca475923cc91b035b0e5494febca6b3ace1239800458cd90388cbcd",
     "client/dist/native.js": "72b5dadd94bdbd0339df6add61d330f759c0a1a451f6c06b8368f17f17d5a6c7"
   },

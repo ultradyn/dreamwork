@@ -6860,7 +6860,7 @@ var DreamworkDesign = (() => {
         const d = await fetchDataResponse();
         if (d) {
           setData(d);
-        } else {
+        } else if (view.name !== "review") {
           setTimeout(tick, 2e3);
           return;
         }
