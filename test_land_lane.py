@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -408,10 +409,21 @@ def test_empty_registry_refuses_with_loud_zero_denominators(landing_repo):
     result = _run(root, "test_named.py")
 
     assert result.returncode == 1
-    assert (
-        "audited 1 registry/ies across 1 launch-identity dir(s); "
-        "no injections registered"
-    ) in result.stderr
+    # Degrade-to-zero visibility (#868): the refusal must PRINT its denominators
+    # so a reader can see which population was empty. The counts themselves are
+    # not pinned here — `redproof.py` builds `audit_sources` from the legacy
+    # registry PLUS every launch-identity dir (two disjoint populations), so
+    # "1 registry/ies across 0 launch-identity dir(s)" is the true and correct
+    # reading of this fixture, not a contradiction. An earlier revision of this
+    # test asserted "1 across 1" because the word "across" implies a containment
+    # that does not hold, and that cost this branch a gate. #942 owns rewording
+    # that message; asserting the STRUCTURE rather than its prose is what keeps
+    # this test honest across the rewrite.
+    assert re.search(
+        r"audited \d+ registry/ies across \d+ launch-identity dir\(s\); "
+        r"no injections registered",
+        result.stderr,
+    ), result.stderr
     assert "--require 1 was set" in result.stderr
     assert "commits examined=1" in result.stderr
     assert "registries audited=ALL DISCOVERABLE" in result.stderr
