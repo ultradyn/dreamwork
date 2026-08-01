@@ -366,3 +366,12 @@ judgement per citation, and is not made easier by any anchor scheme in §3.
 It does not repair the false pins (§2.4) or the two dead `ANCHORS` (§2.6).
 Both are named here so the next lane starts from them rather than rediscovering
 them; both need filing.
+
+One edge #880 will have to answer, and this document is its first instance:
+**quoted tool output carries coordinates the document does not own.** The eleven
+`file:line` tokens above are all in range, but `watch.py:5081` and
+`watch.py:5199` are inside a verbatim pytest failure — rewriting them would
+falsify the quotation, and leaving them means a living doc carries bare line
+numbers it cannot maintain. A rule of the form *living prose must not cite a
+line number* needs an explicit carve-out for quoted output, or its first
+enforcement pass will corrupt evidence.
