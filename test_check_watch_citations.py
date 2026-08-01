@@ -1,5 +1,6 @@
 """Standing contract for the citation pins retained by #921."""
 
+import re
 from collections import Counter
 from pathlib import Path
 import subprocess
@@ -61,14 +62,29 @@ REVIEWED_PIN_COUNTS = Counter({
 
 # repo-wide-guard: checks every citation in the explicit multi-document #801 population
 def test_reviewed_watch_citation_population_is_still_resolved(capsys):
+    # (2) The contract: production enrolment must match the reviewed population.
+    # A contract asserts intent; a mirror asserts nothing (#928).  This is the
+    # one place the full multiset is pinned, and it stays.
     assert citations.PINNED_CITATIONS == REVIEWED_PIN_COUNTS
-    assert REVIEWED_PIN_COUNTS.total() == 18
+    # (3) Degrade-to-zero guard (#868): the reviewed population must be non-empty.
+    # The exact count added no discrimination over (2) — only the both-empty
+    # case — so the literal 18 is retired; >0 catches the same case with zero
+    # bump cost on every legitimate enrolment change.
+    assert REVIEWED_PIN_COUNTS.total() > 0
     assert citations.check(ROOT) == 0
     output = capsys.readouterr().out
-    assert (
-        "PASS: 18 of 18 pinned across 34 document(s); 216 citation(s) seen — "
-        "pinned, not verified against the pinned revision"
-    ) in output
+    # (4a) The #921 narrowing stated in the PASS line: the guard pins
+    # coordinates, it does not verify them against the pinned revision.
+    assert "pinned, not verified against the pinned revision" in output
+    # (4b) Degrade-to-zero visibility (#868): the PASS line prints its
+    # denominators so a human can see "0 of 0" rather than read it as success.
+    # The counts themselves are pinned by (2) and the guard's exit 0 — the
+    # test asserts the STRUCTURE has them, not a hardcoded number.
+    assert re.search(
+        r"PASS: \d+ of \d+ pinned across \d+ document\(s\); "
+        r"\d+ citation\(s\) seen",
+        output,
+    )
 
 
 def test_zero_resolved_citations_is_a_fault_not_a_vacuous_pass(
@@ -100,10 +116,17 @@ def test_watch_insertion_is_irrelevant_but_missing_citation_still_fails(
         encoding="utf-8",
     )
     assert citations.check(root) == 1
+    missing_output = capsys.readouterr().out
     assert (
         "MISSING doc.md: watch.py:2: expected 1 occurrence(s), saw 0"
-        in capsys.readouterr().out
+        in missing_output
     )
+    # The #940 enrolment note names both files and states the coordinator role,
+    # so a lane seeing its own correct repair knows an enrolment update is the
+    # answer rather than weakening the guard.
+    assert "dev/check_watch_citations.py" in missing_output
+    assert "test_check_watch_citations.py" in missing_output
+    assert "COORDINATOR act" in missing_output
     assert revision
 
 
@@ -126,14 +149,25 @@ def test_pin_and_revision_failures_name_the_identity(monkeypatch, tmp_path, caps
     monkeypatch.setattr(citations, "AFFECTED_DOCS", {"doc.md"})
     monkeypatch.setattr(citations, "PINNED_CITATIONS", Counter({("doc.md", "watch.py:2"): 1}))
     assert citations.check(root) == 1
+    unpinned_output = capsys.readouterr().out
     assert (
         "UNPINNED doc.md: watch.py:2: occurrence 1 of 1 is not followed by @ <rev>"
-        in capsys.readouterr().out
+        in unpinned_output
     )
+    # The #940 note fires for UNPINNED too — a pin retired to prose is the
+    # other shape a correct repair produces (direction-2 candidate: the note
+    # must not be MISSING-only).
+    assert "dev/check_watch_citations.py" in unpinned_output
+    assert "test_check_watch_citations.py" in unpinned_output
 
     (root / "doc.md").write_text("watch.py:2 @ deadbeef\n", encoding="utf-8")
     assert citations.check(root) == 1
+    unresolved_output = capsys.readouterr().out
     assert (
         "UNRESOLVABLE doc.md: watch.py:2: @ deadbeef does not resolve to a commit"
-        in capsys.readouterr().out
+        in unresolved_output
     )
+    # An unresolvable hash is NOT a correct repair, so the enrolment note must
+    # NOT appear — this is the direction-2 check that the note is scoped to
+    # MISSING/UNPINNED rather than firing on every finding type.
+    assert "COORDINATOR act" not in unresolved_output
