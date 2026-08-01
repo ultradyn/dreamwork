@@ -1118,6 +1118,41 @@
   #status .stneedrow { color:var(--lit); margin:.15rem 0; }
   #status .sttask { color:var(--bright); }
   #status .stgoal { color:var(--muted); margin:.1rem 0 .55rem; }
+  .goalhandle { display:grid; grid-template-columns:auto minmax(0,1fr) auto;
+    gap:1ch; align-items:baseline; margin:.2rem 0 1rem; padding:.65rem 0;
+    border-block:1px solid var(--line); color:inherit; text-decoration:none; }
+  .goalhandle:hover .goaltitle { color:var(--bright); }
+  .goalhandle.fault,.goalhandle.empty { grid-template-columns:minmax(0,1fr) auto;
+    color:var(--dim); }
+  .goalhandle.fault { border-left:2px solid var(--warn); padding-left:1ch;
+    color:var(--warn); }
+  .goalstate { color:var(--text); font-size:.7rem; text-transform:uppercase;
+    letter-spacing:.06em; }
+  .goalstate.claimed { color:var(--accent); }
+  .goalstate.complete { color:var(--ok); }
+  .goalstate.blocked { color:var(--warn); }
+  .goaltitle { color:var(--lit); }
+  .goalprogress { color:var(--dim); font-size:.72rem; white-space:nowrap; }
+  .goalpage-count { color:var(--dim); margin-bottom:1.2rem; }
+  .goalpage-fault { border-left:2px solid var(--warn); padding:.6rem 1ch;
+    color:var(--warn); }
+  .goalcurrent { border-left:2px solid var(--accent); padding-left:1.2ch;
+    margin-bottom:2rem; }
+  .goalcurrent-head,.goaltree-row { display:flex; gap:1ch; align-items:baseline;
+    flex-wrap:wrap; }
+  .goalcurrent h2 { color:var(--bright); font-size:1rem; }
+  .goalmeta { color:var(--dim); font-size:.72rem; }
+  .goalcriteria { list-style:none; padding:0; }
+  .goalcriteria li { padding:.25rem 0; }
+  .goalcriteria li::before { content:'□'; color:var(--accent); margin-right:1ch; }
+  .goaltask,.goalblocker,.goalverdict { padding:.4rem 0;
+    border-top:1px solid var(--line); }
+  .goaltask .landed { color:var(--dim); }
+  .goalblocker { color:var(--warn); }
+  .goaltree { margin:1rem 0 2rem; }
+  .goaltree-row { padding:.48rem 0; border-top:1px solid var(--line); }
+  .goaltree-title { color:var(--text); }
+  .goalverdict.refuted { border-left:2px solid var(--bad); padding-left:1ch; }
   #status .stagent { display:flex; gap:1.5ch; flex-wrap:wrap;
     margin:.2rem 0; }
   #status .stname { color:var(--lit); flex:none; }

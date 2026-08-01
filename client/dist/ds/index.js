@@ -2685,6 +2685,21 @@ var DreamworkDesign = (() => {
       );
     return h + `</div>`;
   }
+  function goalHandle(payload) {
+    if (!payload || payload.health === "missing") return "";
+    const examined = Number(payload.examined_count) || 0;
+    const expected = Number(payload.expected_count) || 0;
+    if (payload.health !== "ok")
+      return `<a class="goalhandle fault" href="/goals"><span>goal tree ${esc(payload.health)}</span><span>${esc(`${examined}/${expected} nodes examined`)}</span></a>`;
+    const current = (payload.nodes || []).find(
+      (node) => node.id === payload.current_goal_id
+    );
+    if (!current)
+      return `<a class="goalhandle empty" href="/goals"><span>${expected ? "no current goal" : "no goals yet"}</span><span>${esc(`${examined}/${expected} nodes examined`)}</span></a>`;
+    const progress = typeof current.total_count === "number" ? `${current.completed_count}/${current.total_count}` : "progress unavailable";
+    const blocked = (current.blockers || []).length;
+    return `<a class="goalhandle" href="/goals"><span class="goalstate ${esc(current.state)}">${esc(current.state)}</span><span class="goaltitle">${esc(current.title)}</span><span class="goalprogress">${esc(progress)}` + (blocked ? ` · ${blocked} blocked` : "") + `</span></a>`;
+  }
   var qSummary = (d) => {
     const n = d.open_questions || 0;
     const fold = d.questions_open.filter((q) => q.answer).length;
@@ -2994,6 +3009,7 @@ var DreamworkDesign = (() => {
   function buildDashboard(d) {
     let h = `<div id="sections">`;
     h += qHealth(d);
+    h += goalHandle(d.goals);
     h += label("commits") + servingLine(d) + `<div class="git">` + d.git.map(gitRow).join("") + `</div>`;
     h += label(`dreams (${d.dreams.length})`) + (d.dreams.map(dreamBlock).join("") || '<div class="dim">none active</div>') + (d.dreams_archive.length ? expand(
       `archive (${d.dreams_archive.length})`,
@@ -3688,8 +3704,8 @@ var DreamworkDesign = (() => {
   };
   var view = { name: null, param: null, q: null };
   var fileCache = { param: null, fetched: void 0 };
-  var TINT = { dashboard: 0, questions: 0.14, answers: 0.08, settings: -0.04, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19, chat: 0.05 };
-  var SEED = { dashboard: 7, questions: 23, answers: 29, settings: 37, file: 41, review: 61, question: 67, research: 71, reviews: 73, chat: 89 };
+  var TINT = { dashboard: 0, questions: 0.14, answers: 0.08, settings: -0.04, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19, goals: 0.11, chat: 0.05 };
+  var SEED = { dashboard: 7, questions: 23, answers: 29, settings: 37, file: 41, review: 61, question: 67, research: 71, reviews: 73, goals: 79, chat: 89 };
   var TITLE_ROUTE = {
     dashboard: () => "",
     questions: () => "questions",
@@ -3700,6 +3716,7 @@ var DreamworkDesign = (() => {
     question: () => "question",
     research: (p) => "research" + (p ? " " + p : ""),
     reviews: () => "reviews",
+    goals: () => "goals",
     chat: () => "chat"
   };
   var STALE_TICK_MS = 10 * 60 * 1e3;
@@ -4429,6 +4446,7 @@ var DreamworkDesign = (() => {
       return { name: "research", param: sp.get("p") };
     }
     if (loc.pathname === "/reviews") return { name: "reviews", param: null };
+    if (loc.pathname === "/goals") return { name: "goals", param: null };
     if (loc.pathname === "/chat" || loc.pathname.startsWith("/chat/")) {
       const seg = loc.pathname.slice(6);
       return { name: "chat", param: seg ? decodeURIComponent(seg) : null };
@@ -6158,6 +6176,7 @@ var DreamworkDesign = (() => {
     /* #545 — the listing surface; the heading names it like the research
        listing does. */
     reviews: () => "reviews",
+    goals: () => "goals",
     /* #562 — the chat page's heading is the chat's DERIVED title (from d.chats,
        the same derivation the list shows), not the bare word "chat": a chat is
        its own subject, so its name heads the page. Falls back to 'chat' while
@@ -6224,6 +6243,8 @@ var DreamworkDesign = (() => {
       return row2;
     }
     if (v.name === "reviews")
+      return [{ k: "home", html: '<a href="/">&larr; dashboard</a>' }];
+    if (v.name === "goals")
       return [{ k: "home", html: '<a href="/">&larr; dashboard</a>' }];
     if (v.name === "chat")
       return [{ k: "home", html: '<a href="/">&larr; dashboard</a>' }];
@@ -6781,7 +6802,7 @@ var DreamworkDesign = (() => {
     view = { name, param, q: opts.q || null, mode };
     applyTitle();
     if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
-    const url = name === "questions" ? "/questions" : name === "answers" ? "/answers" : name === "settings" ? "/settings" : name === "file" ? "/file?p=" + encodeURIComponent(param || "") + (mode === "source" ? "&view=source" : "") : name === "review" ? "/review?p=" + encodeURIComponent(param || "") + (opts.q ? "&q=" + encodeURIComponent(opts.q) : "") : name === "question" ? "/question?qid=" + encodeURIComponent(param || "") : name === "research" ? "/research" + (param ? "?p=" + encodeURIComponent(param) : "") : name === "reviews" ? "/reviews" : name === "chat" ? "/chat/" + encodeURIComponent(param || "") : "/";
+    const url = name === "questions" ? "/questions" : name === "answers" ? "/answers" : name === "settings" ? "/settings" : name === "file" ? "/file?p=" + encodeURIComponent(param || "") + (mode === "source" ? "&view=source" : "") : name === "review" ? "/review?p=" + encodeURIComponent(param || "") + (opts.q ? "&q=" + encodeURIComponent(opts.q) : "") : name === "question" ? "/question?qid=" + encodeURIComponent(param || "") : name === "research" ? "/research" + (param ? "?p=" + encodeURIComponent(param) : "") : name === "reviews" ? "/reviews" : name === "goals" ? "/goals" : name === "chat" ? "/chat/" + encodeURIComponent(param || "") : "/";
     const artifactDoc = name === "review" || name === "research" && !!param;
     if (opts.push) history.pushState({ name, param, q: opts.q || null }, "", url);
     const html = await buildCurrent();
@@ -6804,7 +6825,7 @@ var DreamworkDesign = (() => {
   function isInternal(a) {
     if (!a || a.target === "_blank" || a.hasAttribute("download")) return false;
     if (a.origin !== location.origin) return false;
-    return a.pathname === "/" || a.pathname === "/questions" || a.pathname === "/answers" || a.pathname === "/settings" || a.pathname === "/file" || a.pathname === "/review" || a.pathname === "/question" || a.pathname === "/research" || a.pathname === "/reviews" || a.pathname.startsWith("/chat/");
+    return a.pathname === "/" || a.pathname === "/questions" || a.pathname === "/answers" || a.pathname === "/settings" || a.pathname === "/file" || a.pathname === "/review" || a.pathname === "/question" || a.pathname === "/research" || a.pathname === "/reviews" || a.pathname === "/goals" || a.pathname.startsWith("/chat/");
   }
   addEventListener("click", (e) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

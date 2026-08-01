@@ -14,21 +14,22 @@
     "client/command.js": "ad0c95e8bedea7b427b526b87b713833f386206341c92940ccc29a552941b78c",
     "client/components.js": "2bd1d6d378c19aef6acd97b27971c1c9716411fac1f2a3e47027565d9fc6def5",
     "client/favicon.js": "746a512fb2d23b6ac1294f4d5fdbb4bcc5809a93cae1fe6e78dbbe70882ba901",
-    "client/router.js": "244722ba1b71a85e776ab2f1900d49210ba6cc875edc719355de9570f249d9a6",
+    "client/router.js": "eaa88b718cdd927ddd8030e0754733ea131bd94117bf0a9621702467796e6f81",
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
-    "client/style.css": "f20f0796439d08fc3491b5a366f5d56e3374a0eec6d5471986a2dc294bfcca02",
-    "client/views.js": "8487e0d2257efe9dbd1215f95e2e7f1413ab1781edf073a72399147582a8d20d",
+    "client/style.css": "4e0279d5dad2f0b10ca50b0f32afa57d79f8bf6d36614dfe1b0b8d93844db655",
+    "client/views.js": "d948159c419ad1234e5a162a599f9880a630844aad3b085edcd3e4d238039b2f",
     "dev/build/src/delegate.js": "8cbeb4bce8ccaee70c8dc6ae76160eeb8dd9f8f3a92ca51e28712747ee28b293",
-    "dev/build/src/native-entry.js": "4ff037a2c6e74c1268459db675b16dc2da9831922956d460bfe724a2d37c2a8f",
+    "dev/build/src/goals.js": "9e8dba1565782662a68451e756cf1526641d9bca549a8f2d1a32ffffdedb0404",
+    "dev/build/src/native-entry.js": "42c071b11224dd1be63aa3065ae59c45cc6dafb5bb3f1200b8fa30821b10f9d4",
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
     "dev/build/src/registry.js": "be11d2691bd0fb31c4e8df658bb79cf289a3ad1164319a5a1aa86174b2c9e825",
     "dev/build/src/research.js": "d792c7bd01be52922baa765afee4e5f77d9e0d35feaff0679a9f803ce1b63f73",
     "dev/build/wrapper-exports.js": "9ea5838ef66144742cb10ec8d35cea04d92ca35ea2e11060c26510cd05b6b53b"
   },
   "outputs": {
-    "client/dist/ds/index.js": "bb517ebee9a946b61c904976908f9a1270dea0281e98c275a11ace896def61ec",
-    "client/dist/ds/styles.css": "f20f0796439d08fc3491b5a366f5d56e3374a0eec6d5471986a2dc294bfcca02",
-    "client/dist/native.js": "e1211897fd595304a88af9107df17ec2d3b4031e371189be81e091d845830be5"
+    "client/dist/ds/index.js": "35d41aa71370337e58570298d631c4b8c8835080bd28b75dffe5823b673d0592",
+    "client/dist/ds/styles.css": "4e0279d5dad2f0b10ca50b0f32afa57d79f8bf6d36614dfe1b0b8d93844db655",
+    "client/dist/native.js": "633f67697c96fe15f5164d163534fba054ce7c4b611c5438fb67563a853c353c"
   },
   "schema": 1,
   "tool": {

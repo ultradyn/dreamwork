@@ -224,6 +224,30 @@ function statusBlock(s, handoffs) {
       rest.map(k => stField(k, s[k])).join(''), 'dim', 'status-rest');
   return h + `</div>`;
 }
+
+function goalHandle(payload) {
+  if (!payload || payload.health === 'missing') return '';
+  const examined = Number(payload.examined_count) || 0;
+  const expected = Number(payload.expected_count) || 0;
+  if (payload.health !== 'ok')
+    return `<a class="goalhandle fault" href="/goals">` +
+      `<span>goal tree ${esc(payload.health)}</span>` +
+      `<span>${esc(`${examined}/${expected} nodes examined`)}</span></a>`;
+  const current = (payload.nodes || []).find(
+    node => node.id === payload.current_goal_id);
+  if (!current)
+    return `<a class="goalhandle empty" href="/goals">` +
+      `<span>${expected ? 'no current goal' : 'no goals yet'}</span>` +
+      `<span>${esc(`${examined}/${expected} nodes examined`)}</span></a>`;
+  const progress = typeof current.total_count === 'number'
+    ? `${current.completed_count}/${current.total_count}` : 'progress unavailable';
+  const blocked = (current.blockers || []).length;
+  return `<a class="goalhandle" href="/goals">` +
+    `<span class="goalstate ${esc(current.state)}">${esc(current.state)}</span>` +
+    `<span class="goaltitle">${esc(current.title)}</span>` +
+    `<span class="goalprogress">${esc(progress)}` +
+      (blocked ? ` · ${blocked} blocked` : '') + `</span></a>`;
+}
 /* ── the dashboard's questions section folds (#141) ───────────────────────
    His words: "on the dashboard, the questions section should be collapsed by
    default and show how many questions there are left to answer. it should be
@@ -1039,6 +1063,7 @@ function buildDashboard(d) {
   // just DONE — "near the top of dreamworker dashboard should be the most
   // recent 5 commits" (human, 2026-07-25, #151). Nothing else changed order.
   h += qHealth(d);
+  h += goalHandle(d.goals);
   h += label('commits') + servingLine(d) + `<div class="git">` +
        d.git.map(gitRow).join('') + `</div>`;
   h += label(`dreams (${d.dreams.length})`) +
