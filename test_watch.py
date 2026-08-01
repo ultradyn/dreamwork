@@ -6777,7 +6777,11 @@ class TestAppShell(unittest.TestCase):
 
     def test_unchanged_delta_still_reconciles_the_review_dock(self):
         tick = watch.PAGE.split('async function tick()', 1)[1][:5000]
-        skip = tick.index("} else if (view.name !== 'review') {")
+        review_exception = "} else if (view.name !== 'review') {"
+        self.assertIn(
+            review_exception, tick,
+            "an unchanged review delta returned before dock reconciliation")
+        skip = tick.index(review_exception)
         render = tick.index('const html = await buildCurrent();')
         self.assertLess(skip, render)
         self.assertIn('setLiveContent(html);', tick[render:])
