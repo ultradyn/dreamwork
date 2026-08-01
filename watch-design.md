@@ -389,14 +389,17 @@ whether it is really this one.
 One mono stack, two sizes (heading `1rem`, body `.8rem`, labels `.7rem`).
 No cards, borders-as-decoration, pills, or shadows in the reading views —
 structure comes from whitespace and dim uppercase labels (`.label`, letter-
-spaced). Reading column is `max-width:72ch`, centred; there are three
+spaced). Reading column is `max-width:72ch`, centred; there are four
 deliberate width exceptions — the review view (`body.review` widens the
 column for the artifact + docked question, and **he sets the ratio between
-them** — see The review pane) and the file view (`body.file` widens it to
-`110ch` for source — see The file view's source pane), and the question focus view
+them** — see The review pane), the file view (`body.file` widens it to
+`110ch` for source — see The file view's source pane), the question focus view
 (`body.question` widens it to `1040px` for the dual column — see The question
-focus view's dual column). Dividers are
-hairlines (`--line`), not boxes.
+focus view's dual column), and the task triage view (`/tasks2` widens it for
+its list + detail split; it reuses `body.review`'s wide column and the
+`#reviewwrap` node contract rather than minting a fifth body-class rule — see
+`buildTasks2` in client/views.js, and The review pane for the shared split).
+Dividers are hairlines (`--line`), not boxes.
 
 ### The page never moves sideways (#312, #595, #597)
 

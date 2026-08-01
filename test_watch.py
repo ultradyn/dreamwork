@@ -5461,6 +5461,47 @@ class TestCollector(unittest.TestCase):
             "a second would be a second source of truth. found: %r" % cmd_keys)
         self.assertIn('"/command"', cmd_keys[0])
 
+    def test_tasks2_row_steer_rides_the_one_command_seam(self):
+        # #344: a /tasks2 row's "do next" control must ride postCommand —
+        # the one seam the composer's do-next rides — so a row's steer is
+        # the SAME request typing do-next/#<id> is, never a second /command
+        # fetch. The server-side contract (body parity + a single route) is
+        # pinned in test_do_next_row_control_is_indistinguishable_from_typed;
+        # THIS guard is the client half. Its discriminating case is the one
+        # the previous lane's finding named: a control that sends the RIGHT
+        # body through the WRONG transport. A guard that only compared the
+        # body would pass on a direct `fetch('/command', {correct body})`;
+        # naming the postCommand symbol AND refusing any direct /command
+        # fetch in views.js closes that.
+        src = watch.VIEWS_JS
+        # the control exists on a rendered row (anti-vacuity: build a real
+        # row, do not pattern-match source). taskTriageRow needs only esc.
+        row_fn = _extract_js_fn(src, "function taskTriageRow(")
+        script = "const esc = x => String(x == null ? '' : x);\n" \
+                 "const escA = esc;\n" + row_fn + textwrap.dedent("""
+            const row = taskTriageRow(
+              {id:7,state:'open',title:'wire the rows',priority:'P1',
+               type:'feat',origin:'human',date:'2026-08-02T00:00:00Z'}, 7);
+            if (!row.includes('data-do-next="7"') || !row.includes('<button'))
+              process.exit(31);
+            if (row.includes('href="/tasks2?t=7"')) process.exit(0);
+            process.exit(32);
+        """)
+        subprocess.check_call(["node", "-e", script])
+        # the dispatch names the postCommand symbol, tied to the do-next
+        # kind — so removing it (or routing through a fetch) reds here.
+        self.assertIn("postCommand('do-next'", src)
+        # closure for direction 2: no second transport in any literal quote
+        # form (single/double/template). A cosmetic postCommand ref plus a
+        # double-quoted fetch("/command", {correct body}) would pass a guard
+        # that named only one quote — found by simulating the assertions
+        # against that input. (A variable-indirected fetch — fetch(url) — is
+        # beyond a substring guard; that closure is the SERVER-side single-
+        # route count in test_do_next_row_control_is_indistinguishable_,
+        # which this guard does not weaken.)
+        for q in ("'", '"', '`'):
+            self.assertNotIn('fetch(%s/command' % q, src)
+
     def test_from_hint_never_emits_a_hint_it_cannot_vouch_for(self):
         # The line is read by an agent that then ACTS, so a path that could
         # forge structure yields no hint at all — a wrong hint is worse than

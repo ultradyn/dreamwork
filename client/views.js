@@ -1426,13 +1426,24 @@ function taskTriageRow(task, selected) {
                   task.date ? task.date.slice(0, 10) : null]
     .filter(Boolean).join(' · ');
   const current = task.id === selected;
-  return `<a class="goalhandle" data-task-row="${task.id}"` +
-    ` href="/tasks2?t=${task.id}"${current ? ' aria-current="page"' : ''}` +
+  // the row is two controls over one task: the link navigates to its
+  // detail (the navigate principle — a task is its own subject), and the
+  // button aims the loop at it. The button rides postCommand — the one
+  // seam the composer's do-next rides (#344) — so a row's steer is the
+  // SAME request typing do-next/#<id> into the composer is: same endpoint,
+  // same {kind,text,from} body. A second /command fetch would be a second
+  // source of truth about what a do-next is (#191: one gesture, aimed at
+  // data). No confirmation step — do-next is a reversible steer.
+  const link = `<a class="goalhandle"${current ? ' aria-current="page"' : ''}` +
     (current ? ` style="border-left:2px solid var(--accent);padding-left:.7rem"` : '') +
-    `><span class="goalstate ${escA(task.state || 'unknown')}">#${task.id}</span>` +
+    ` href="/tasks2?t=${task.id}">` +
+    `<span class="goalstate ${escA(task.state || 'unknown')}">#${task.id}</span>` +
     `<span class="goaltitle">${esc(task.title || 'untitled task')}</span>` +
     `<span class="goalprogress">${esc(task.priority || 'priority unknown')}</span>` +
     `<span class="goalmeta">${esc(facets || 'details unknown')}</span></a>`;
+  return `<div class="taskrow" data-task-row="${task.id}">${link}` +
+    `<button class="tasksteer" type="button" data-do-next="${task.id}" ` +
+    `aria-label="steer the loop at #${task.id}">do next</button></div>`;
 }
 function taskTriageFact(key, value) {
   const shown = value == null || value === '' ? 'unknown' : String(value);
@@ -1650,6 +1661,19 @@ addEventListener('click', e => {
   const el = e.target.closest && e.target.closest('[data-setting-value]');
   if (!el || el.disabled) return;
   saveSetting(el, JSON.parse(decodeURIComponent(el.dataset.settingValue)));
+});
+/* #344 — a /tasks2 row's "do next" button aims the loop at that task.
+   THROUGH postCommand → postJSON (#175), the one seam the composer's
+   do-next rides, never a fetch of its own: the row's steer is the SAME
+   request typing do-next/#<id> into the composer is, so a second way to
+   emit do-next cannot grow here. Disabled for the in-flight POST only —
+   no confirmation step, mirroring the ask box's one-in-flight rule. */
+addEventListener('click', e => {
+  const btn = e.target.closest && e.target.closest('[data-do-next]');
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  postCommand('do-next', '#' + btn.getAttribute('data-do-next'))
+    .finally(() => { btn.disabled = false; });
 });
 addEventListener('change', e => {
   const el = e.target.closest && e.target.closest('[data-setting-input]');
