@@ -233,8 +233,12 @@ class TestCli:
     def test_prints_the_path_and_creates_it(self, repo):
         out = subprocess.check_output(
             ["python3", str(CLI_PATH), "snap", "--cwd", str(repo)], text=True).strip()
-        assert Path(out).is_dir()
-        assert out.endswith("/master/snap")
+        path = Path(out)
+        assert path.is_dir()
+        assert path.is_relative_to(ls.SCRATCH_ROOT), (
+            f"snapshot path escaped SCRATCH_ROOT: {path}"
+        )
+        assert path.name == "snap"
 
     def test_no_create_flag(self, repo, tmp_path):
         out = subprocess.check_output(
@@ -247,8 +251,12 @@ class TestCli:
             ["python3", str(CLI_PATH), "measure", "--cwd", str(repo)],
             text=True,
         ).strip()
-        assert Path(out).is_dir()
-        assert out.endswith("/master/measure")
+        path = Path(out)
+        assert path.is_dir()
+        assert path.is_relative_to(ls.SCRATCH_ROOT), (
+            f"measurement path escaped SCRATCH_ROOT: {path}"
+        )
+        assert path.name == "measure"
 
 
 class TestMtimePositiveControl:
