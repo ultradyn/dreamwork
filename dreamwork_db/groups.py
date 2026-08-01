@@ -223,4 +223,3 @@ def _stored_group(row: tuple[Any, ...]) -> StoredGroup:
 def _require_text(value: str, label: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValidationError(f"{label} must be a non-empty string, got {value!r}")
-
