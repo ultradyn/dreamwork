@@ -18,18 +18,12 @@ ROOT = Path(__file__).resolve().parent
 CAP = ROOT / "dev" / "capture"
 HELPER = CAP / "outdir.mjs"
 
-# The outdir-shaped guards counted at the #376 sweep. The drift guard asserts
-# importers >= this: growth (a new guard using the helper) grows it and passes;
-# a revert (a guard dropped from the helper) shrinks it and fails. Derived from
-# the census — every dev/capture/*.mjs whose process.argv[2] is its output dir.
-CENSUS = 84
-
 # Files that are NOT outdir-shaped and must NOT be forced onto the helper:
 # above_fold.mjs is a flag-parsing CLI whose argv[2] is a file/url target, not
 # an outdir; the rest are imported libraries / a server that read no argv[2].
 EXEMPT = {
     "above_fold.mjs",
-    "dom.mjs", "report.mjs", "optrace.mjs", "serve.mjs",
+    "dom.mjs", "report.mjs", "optrace.mjs", "posturekeys.mjs", "serve.mjs",
     "outdir.mjs",  # the helper itself
 }
 
@@ -140,12 +134,19 @@ def test_no_guard_reads_argv2_directly():
 
 
 def test_outdir_sweep_count():
-    """The sweep converted every outdir-shaped guard. A revert shrinks this;
-    growth grows it. Both directions are correct; shrink is the failure."""
-    importers = [
+    """Every derived outdir-shaped guard imports the shared parser."""
+    guard_files = set(_guard_files()) - EXEMPT
+    assert {"draft.mjs", "wisp.mjs"} <= guard_files, (
+        "outdir guard derivation found no plausible population: "
+        f"missing sentinels {sorted({'draft.mjs', 'wisp.mjs'} - guard_files)}")
+    importers = {
         name for name in _guard_files()
-        if name not in EXEMPT
-        and "from './outdir.mjs'" in (CAP / name).read_text()
-    ]
-    assert len(importers) >= CENSUS, (
-        f"outdir sweep shrank: {len(importers)} importers < census {CENSUS}")
+        if re.search(
+            r"^import \{ outdir \} from './outdir\.mjs';$",
+            (CAP / name).read_text(),
+            re.MULTILINE,
+        )
+    }
+    assert importers == guard_files, (
+        f"guards missing shared outdir import: {sorted(guard_files - importers)}; "
+        f"unexpected importers: {sorted(importers - guard_files)}")
