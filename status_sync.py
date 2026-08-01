@@ -68,6 +68,7 @@ LEDGER_HEAD = re.compile(rf"^- \*\*({watch.IDS_ONLY_SPAN})\*\*", re.M)
 # one home is ledger_parse now.
 from ledger_parse import ENTRY_ID  # noqa: E402
 from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
+import lane_liveness  # noqa: E402
 from worktree_paths import WORKTREE_DIR  # noqa: E402
 from worktree_paths import worktree_roots as _canonical_worktree_roots  # noqa: E402
 
@@ -174,15 +175,7 @@ def audit_queued_dispatches(status: dict, states: dict[int, str]) -> None:
              questions, "" if questions == 1 else "s", unclassifiable))
 
 
-class LivenessUnknown(Exception):
-    """The probe could not tell which lanes are live.
-
-    "I could not tell" and "nothing is running" must not be the same value:
-    the old `OSError` branch returned `[]`, and that empty list was then
-    written over a correct hand-written `current_task_ids` for the whole
-    duration of every flagged dispatch (#402a). A caller that cannot tell
-    leaves the derived fields alone.
-    """
+LivenessUnknown = lane_liveness.LivenessUnknown
 
 
 def _argv_listing() -> str:
@@ -217,17 +210,7 @@ def _pid_alive(pid) -> bool:
     on a clean "no such process" (a dead lane); raises `LivenessUnknown` on
     anything we cannot interpret, because that is not "dead".
     """
-    try:
-        os.kill(int(pid), 0)
-        return True
-    except ProcessLookupError:          # ESRCH — the lane is gone. Not live.
-        return False
-    except (TypeError, ValueError):
-        # An unparseable pid is malformed input, not liveness data; a lane we
-        # cannot evaluate must not let the tool write a derived value.
-        raise LivenessUnknown("unparseable dreamers pid: %r" % (pid,))
-    except OSError as e:                # EPERM etc. — we cannot tell.
-        raise LivenessUnknown("kill -0 %r failed: %s" % (pid, e))
+    return lane_liveness.pid_alive(pid)
 
 
 def _pid_matches_lane(pid, brief) -> bool:
@@ -239,29 +222,9 @@ def _pid_matches_lane(pid, brief) -> bool:
     argv carries the worktree path instead (#775).  Either binding is exact
     to this pid; a global process-list match would merely move the reuse race.
     """
-    if not _pid_alive(pid):
-        return False
-    if not isinstance(brief, str) or not brief:
-        raise LivenessUnknown("live pid has no lane brief identity: %r" % pid)
-
-    lane_dir = str(Path(brief).parent)
-    cwd = _read_proc_cwd(int(pid))
-    if os.path.isabs(lane_dir) and (
-            cwd == lane_dir or (cwd and cwd.startswith(lane_dir + os.sep))):
-        return True
-
-    try:
-        with open("/proc/%d/cmdline" % int(pid), "rb") as f:
-            raw = f.read()
-    except FileNotFoundError:
-        return False                    # exited between kill(0) and the read
-    except OSError as e:
-        raise LivenessUnknown("cannot read pid %r identity: %s" % (pid, e))
-
-    needles = [brief.encode()]
-    if WORKTREE_DIR in Path(brief).parts:
-        needles.append(lane_dir.encode())
-    return any(needle in raw for needle in needles)
+    return lane_liveness.pid_matches_lane(
+        pid, brief, is_pid_alive=_pid_alive, proc_cwd=_read_proc_cwd
+    )
 
 
 def live_lanes(dreamers: list[dict]) -> tuple[set, list[dict]]:
@@ -377,10 +340,7 @@ def _lane_worktree_path(target: Path, lane: str, pid: int) -> Path:
 
 def _read_proc_cwd(pid: int) -> str | None:
     """`readlink /proc/<pid>/cwd`, or None if unreadable (gone / no perm)."""
-    try:
-        return os.readlink("/proc/%d/cwd" % pid)
-    except OSError:
-        return None
+    return lane_liveness.read_proc_cwd(pid)
 
 
 def _argv_lane(pid: int, wt_root: str) -> str | None:

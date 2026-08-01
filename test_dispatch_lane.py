@@ -2,6 +2,7 @@
 """Contract tests for the checked Dreamwork lane dispatch route (#768)."""
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -9,6 +10,7 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -41,6 +43,8 @@ def _sandbox_cli(tmp_path: Path) -> tuple[Path, Path]:
     (root / "briefs").mkdir()
     cli = root / "dev" / "dispatch_lane.py"
     shutil.copy2(CLI, cli)
+    shutil.copy2(ROOT / "lane_liveness.py", root / "lane_liveness.py")
+    shutil.copy2(ROOT / "worktree_paths.py", root / "worktree_paths.py")
     shutil.copytree(ROOT / "dreamwork_db", root / "dreamwork_db")
     shutil.copy2(ROOT / "ledger_store.py", root / "ledger_store.py")
     (root / "briefs" / "boilerplate.md").write_text(CONTRACT, encoding="utf-8")
@@ -76,6 +80,8 @@ def _linked_worktree_cli(tmp_path: Path) -> tuple[Path, Path, Path]:
     (lane / "briefs").mkdir()
     cli = lane / "dev" / "dispatch_lane.py"
     shutil.copy2(CLI, cli)
+    shutil.copy2(ROOT / "lane_liveness.py", lane / "lane_liveness.py")
+    shutil.copy2(ROOT / "worktree_paths.py", lane / "worktree_paths.py")
     shutil.copytree(ROOT / "dreamwork_db", lane / "dreamwork_db")
     shutil.copy2(ROOT / "ledger_store.py", lane / "ledger_store.py")
     (lane / "briefs" / "boilerplate.md").write_text(CONTRACT, encoding="utf-8")
@@ -111,10 +117,12 @@ def _healthy_prompt(
         capture_output=True,
         text=True,
     ).stdout.strip()
+    worktree = coordinator_root / ".worktrees" / lane
+    worktree.mkdir(parents=True, exist_ok=True)
     prompt = tmp_path / f"prompt-{lane}.txt"
     prompt.write_text(
         f"# Brief — #{task}: task-specific lane head\n\n"
-        f"Worktree: {coordinator_root}/.worktrees/{lane}\n"
+        f"Worktree: {worktree}\n"
         f"Branch: {lane}\n"
         f"Base sha: {base_sha}\n"
         "Coordinator inbox — ABSOLUTE path, append your completion summary "
@@ -123,6 +131,93 @@ def _healthy_prompt(
         encoding="utf-8",
     )
     return prompt
+
+
+def _start_live_dispatch(cli: Path, prompt: Path, worktree: Path) -> subprocess.Popen:
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    process = subprocess.Popen(
+        [
+            sys.executable, str(cli), "--prompt", str(prompt), "--",
+            sys.executable, "-c", "import time; time.sleep(60)", str(worktree),
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
+    lock = worktree / ".dreamwork" / "lane.lock"
+    for _ in range(250):
+        if lock.is_file():
+            break
+        if process.poll() is not None:
+            raise AssertionError(f"fixture dispatch exited before writing {lock}")
+        time.sleep(0.02)
+    else:
+        raise AssertionError(f"fixture dispatch did not write {lock}")
+
+    # Independent truth, deliberately not derived through lane_liveness.
+    os.kill(process.pid, 0)
+    raw = Path(f"/proc/{process.pid}/cmdline").read_bytes()
+    assert str(worktree).encode() in raw, (
+        f"precondition: live pid {process.pid} argv does not carry worktree {worktree}"
+    )
+    return process
+
+
+def test_second_dispatch_refuses_independently_proven_live_worktree(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    lane = "cx-live-lock"
+    prompt = _healthy_prompt(tmp_path, root, task=900, lane=lane)
+    worktree = root / ".worktrees" / lane
+    process = _start_live_dispatch(cli, prompt, worktree)
+    try:
+        result = _run(cli, prompt, sys.executable, "-c", "pass")
+        assert result.returncode == 2, (
+            f"dispatch into {worktree} allowed through live pid {process.pid} "
+            f"lane {lane}: rc={result.returncode}, stderr={result.stderr!r}"
+        )
+        expected = (
+            f"dispatch refused: worktree {worktree} already has live lane {lane!r}: "
+            f"pid {process.pid}, task #900, brief {prompt.resolve()}"
+        )
+        assert result.stderr.strip() == expected, (
+            "dispatch failed for a reason other than the live-lane refusal: "
+            f"rc={result.returncode}, stderr={result.stderr!r}"
+        )
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+
+def test_dead_pid_lock_is_retired_and_worktree_can_be_reused(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    lane = "cx-stale-lock"
+    prompt = _healthy_prompt(tmp_path, root, task=901, lane=lane)
+    worktree = root / ".worktrees" / lane
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait(timeout=5)
+    with pytest.raises(ProcessLookupError):
+        os.kill(dead.pid, 0)
+
+    lock_dir = worktree / ".dreamwork"
+    lock_dir.mkdir()
+    lock = lock_dir / "lane.lock"
+    lock.write_text(json.dumps({
+        "pid": dead.pid,
+        "task": 900,
+        "lane": lane,
+        "brief": "/fixture/dead-brief.md",
+        "identity": str(worktree / f".{lane}-lane-identity"),
+    }) + "\n", encoding="utf-8")
+
+    result = _run(cli, prompt, sys.executable, "-c", "pass")
+
+    assert result.returncode == 0, (
+        f"stale lock for independently dead pid {dead.pid} locked out {worktree}: "
+        f"stderr={result.stderr!r}"
+    )
+    replacement = json.loads(lock.read_text(encoding="utf-8"))
+    assert replacement["pid"] != dead.pid and replacement["task"] == 901
 
 
 def test_healthy_dispatch_is_silent_and_passes_prompt_as_one_argument(tmp_path):
