@@ -989,7 +989,12 @@
   .chaturn { margin:.5rem 0; }
   .chaturn .chatmeta { color:var(--dim); }
   .chaturn .chatwho { color:var(--muted); }
-  .chaturn .chatbody { color:var(--lit); }
+  /* #827: chat bodies use the shared markdown vocabulary (.mdh/.mdli/
+     .mdcode), but a turn begins at the conversation rail rather than the
+     file view's 1ch inset. Paragraph spacing makes blank-line structure
+     visible; fences keep the shared non-wrapping, locally-scrolling rule. */
+  .chaturn .chatbody.md { color:var(--lit); margin:.2rem 0 .8rem; }
+  .chaturn .chatbody.md > p { margin:.35rem 0; }
   /* #452 — the per-card way into the focused page. Headline chrome, so it
      is quiet at rest (dimmer than the age it sits beside) and discovers
      itself on hover/focus with the page's ordinary link signal. No motion

@@ -53,9 +53,10 @@ declare({
 });
 
 // ── a target with REAL transcripts, through the production writer ──────────
-// apply_chat_turn is the one writer (#504): it one-lines the body and its
-// parser anchors both dw-turn markers at line start, so planting through it
-// proves the page reads what the loop writes. Never hand-build transcript text.
+// apply_chat_turn is the one writer (#504/#827): it preserves body structure,
+// reversibly escapes structural-looking marker lines, and its parser anchors
+// both dw-turn markers at line start. Planting through it proves the page reads
+// what the loop writes. Never hand-build transcript text.
 const DIR = join(OUT, 'target');
 rmSync(DIR, { recursive: true, force: true });
 cpSync('dev/capture/fixture', DIR, { recursive: true });
@@ -70,7 +71,11 @@ addTurn('chat-unread', 'human', 'a question that needs a reply',
 // replied + READ (human then agent — last turn is the dreamer's)
 addTurn('chat-read', 'human', 'an answered question',
         '2026-01-03T00:00:00');
-addTurn('chat-read', 'agent', 'the dreamer replied',
+const MARKDOWN_REPLY = 'First paragraph.\n\nSecond paragraph.\n\n' +
+  '## Rendered reply\n\n- first item\n- second item\n\n' +
+  '```python\nprint("<unsafe>")\n```\n\n' +
+  '<script id="chat-inject">window.chatInjected=1</script>';
+addTurn('chat-read', 'agent', MARKDOWN_REPLY,
         '2026-01-03T00:01:00');
 // replied + UNREAD (he followed up AFTER the reply — last turn is his again)
 addTurn('chat-followup', 'human', 'first message',
@@ -293,6 +298,43 @@ try {
        chat.head === 'first message');
     ok('the page carries a way back to the dashboard', chat.back);
   }
+
+  // #827: assert the RENDERED DOM, never the input string. The fixture was
+  // planted through apply_chat_turn, so these nodes jointly prove transcript
+  // newlines survived and chatTurn passed the parsed body through the shared
+  // markdown renderer. Raw HTML remains inert visible text: mdInline escapes
+  // before mdSpans adds its own trusted markup.
+  await p.goto(`${BASE}/chat/chat-read`, { waitUntil: 'networkidle' });
+  await waitFor(p, '.chaturn[data-role="agent"] .chatbody');
+  const markdown = await p.evaluate(() => {
+    const body = document.querySelector('.chaturn[data-role="agent"] .chatbody');
+    return {
+      paragraphs: body ? [...body.querySelectorAll(':scope > p')]
+        .map(n => (n.textContent || '').trim()) : [],
+      heading: body && body.querySelector('.mdh')
+        ? body.querySelector('.mdh').textContent.trim() : '',
+      bullets: body ? [...body.querySelectorAll('.mdli')]
+        .map(n => (n.textContent || '').trim()) : [],
+      code: body && body.querySelector('pre.mdcode')
+        ? body.querySelector('pre.mdcode').textContent : '',
+      injectedNode: !!document.querySelector('#chat-inject'),
+      injectedEffect: window.chatInjected === 1,
+      literalScript: body ? body.textContent.includes('<script id="chat-inject">') : false,
+    };
+  });
+  notes.push('markdown chat DOM: ' + JSON.stringify(markdown));
+  ok('#827 markdown DOM preserves two separate paragraphs',
+     JSON.stringify(markdown.paragraphs.slice(0, 2)) ===
+       JSON.stringify(['First paragraph.', 'Second paragraph.']));
+  ok('#827 markdown DOM renders the heading node',
+     markdown.heading === 'Rendered reply');
+  ok('#827 markdown DOM renders both bullet nodes',
+     JSON.stringify(markdown.bullets) ===
+       JSON.stringify(['first item', 'second item']));
+  ok('#827 markdown DOM renders the fenced code node',
+     markdown.code === 'print("<unsafe>")');
+  ok('#827 raw HTML is escaped before markdown markup is introduced',
+     !markdown.injectedNode && !markdown.injectedEffect && markdown.literalScript);
 
   // ── Act 2: unknown id degrades in the page's own voice ──────────────────
   // A deep link to an id that is not a chat must render the not-found notice,

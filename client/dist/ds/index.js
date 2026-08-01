@@ -2779,7 +2779,7 @@ var DreamworkDesign = (() => {
   }
   function chatTurn(t) {
     const you = t.role === "human";
-    return `<div class="chaturn" data-role="${esc(t.role)}"><div class="chatmeta"><span class="chatwho">${you ? "you" : "dreamer"}</span> <span class="age">${esc(t.at)}</span></div><div class="chatbody">${esc(t.body)}</div></div>`;
+    return `<div class="chaturn" data-role="${esc(t.role)}"><div class="chatmeta"><span class="chatwho">${you ? "you" : "dreamer"}</span> <span class="age">${esc(t.at)}</span></div><div class="chatbody md">${mdRender(t.body, mdInline)}</div></div>`;
   }
   function buildChat(fetched) {
     if (!fetched)
