@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dreamwork_db import Access, dreamwork_store_spec, open_database
+from dreamwork_db import Access, open_database
 from dreamwork_db.questions import question_store_spec
+from dreamwork_db.store import dreamwork_store_spec
 from dreamwork_db.tasks import task_store_spec
 
 
