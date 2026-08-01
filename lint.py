@@ -3769,43 +3769,87 @@ def check_skill_version(dw: Path, rep: Report) -> None:
 
 
 def check_dreams(dw: Path, rep: Report) -> None:
-    """Filenames only. The contract here IS the filename — it carries the
-    date and time that ordering depends on."""
+    """Check ordering stamps against independent introducing-commit times."""
     d = dw / "dreams"
     if not d.is_dir():
+        rep.add(WARN, "dreams/", "examined 0 dreams — directory absent, so timestamp correctness is UNKNOWN")
         return
     names = sorted(d.glob("*.md"))
+    if not names:
+        rep.add(WARN, "dreams/", "examined 0 dreams — no timestamp evidence; this is not an all-clear")
+        return
     bad = [p.name for p in names if not DREAM_NAME.match(p.name)]
     if bad:
         rep.add(WARN, "dreams/", f"{len(bad)} misnamed (want YYYY-MM-DD-HHMM-slug.md): {bad[:3]}")
         return
 
-    # A dream stamped in the FUTURE sorts wrong forever, and the filename IS
-    # the ordering. Three different dreamers did this on 2026-07-25 — one by
-    # 65 minutes — each estimating elapsed time instead of running `date`.
-    # Same bias as the status.json check above, in the one place where the
-    # damage is permanent rather than momentary.
+    # The introducing commit is independent evidence of when the file was
+    # written.  Two hours admits an early dream in a long increment, while
+    # rejecting both measured failures: ~4h future and 10h past (UTC on AEST).
     from datetime import datetime
 
-    now = datetime.now()
-    ahead = []
+    window_seconds = 2 * 60 * 60
+    legacy_names = {"2026-08-01-1947-citation-repair-enrollment-red.md"}
+    wrong = []
+    legacy = []
+    unknown = []
     for p in names:
         stamp = p.name[:15]  # YYYY-MM-DD-HHMM — 15 chars, not 16
         try:
-            when = datetime.strptime(stamp, "%Y-%m-%d-%H%M")
-        except ValueError:
+            result = subprocess.run(
+                [
+                    "git", "-C", str(dw.parent), "log", "--follow",
+                    "--diff-filter=A", "-1", "--format=%cI", "--",
+                    str(p.relative_to(dw.parent)),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            unknown.append(p.name)
             continue
-        if (when - now).total_seconds() > 300:
-            ahead.append(p.name)
-    if ahead:
+        committed_text = result.stdout.strip()
+        if not committed_text:
+            unknown.append(p.name)
+            continue
+        try:
+            committed = datetime.fromisoformat(committed_text)
+            when = datetime.strptime(stamp, "%Y-%m-%d-%H%M").replace(tzinfo=committed.tzinfo)
+        except ValueError:
+            unknown.append(p.name)
+            continue
+        delta = (when - committed).total_seconds()
+        if abs(delta) > window_seconds:
+            direction = "FUTURE" if delta > 0 else "PAST"
+            distance = abs(int(delta))
+            hours, remainder = divmod(distance, 3600)
+            minutes = remainder // 60
+            finding = f"{p.name} is {hours}h {minutes}m in the {direction} of its introducing commit"
+            if p.name in legacy_names:
+                legacy.append(finding)
+            else:
+                wrong.append(finding)
+    if wrong:
         rep.add(
             ERROR,
             "dreams/",
-            f"{len(ahead)} stamped in the FUTURE, so they sort wrong forever: "
-            f"{ahead[:3]} — get <hhmm> from `date`, never from memory",
+            f"{len(wrong)} stamp(s) outside the ±2h commit window: {wrong[:3]} — "
+            "get <hhmm> from `date`, never from memory or UTC",
+        )
+    if unknown:
+        rep.add(
+            WARN,
+            "dreams/",
+            f"examined {len(names)} dream(s); {len(unknown)} timestamp(s) UNKNOWN because no valid introducing-commit comparison was available: {unknown[:3]}",
         )
     else:
-        rep.add(OK, "dreams/", f"{len(names)} named correctly")
+        legacy_note = f"; {len(legacy)} known legacy mismatch retained: {legacy}" if legacy else ""
+        rep.add(
+            OK,
+            "dreams/",
+            f"examined {len(names)} dream(s) against introducing commit time; ±2h window{legacy_note}",
+        )
 
 
 DOC_MAP_PLANS_ROW = re.compile(r"^\|\s*`\.dreamwork/docs/plans/`\s*\|(.*)$", re.M)
@@ -4674,6 +4718,24 @@ def brief_has_blanket_markdown_prohibition(text: str) -> bool:
 def check_brief_dream_contradictions(dw: Path, rep: Report) -> None:
     """A cancelled dream instruction leaves no artifact, so inspect the cause."""
     briefs_dir = dw / "docs" / "briefs"
+    if not briefs_dir.is_dir():
+        # #838/#867: the brief corpus is OPERATOR-LOCAL, so its ABSENCE is an
+        # expected state (a --target scratch tree, a fresh checkout), not a
+        # broken detector. Erroring here made `lint --target <empty>` exit 1
+        # and left six test_lint.py fixtures red on master from 36284c38.
+        #
+        # An absent directory and a PRESENT-but-empty one are different facts
+        # and must not print alike: the second still ERRORs below, because a
+        # briefs/ that exists and yields nothing IS a broken detector. Saying
+        # "examined nothing, and that is not an all-clear" is #867's standing
+        # requirement for every consumer of this corpus (#868/#915).
+        rep.add(
+            WARN, "brief dream rules",
+            "brief corpus directory absent — operator-local (#838), so this "
+            "check examined 0 brief(s) and reached NO verdict; this is not an "
+            "all-clear",
+        )
+        return
     paths = sorted(path for path in briefs_dir.glob("*.md") if path.is_file())
     dream = 0
     both: list[Path] = []
