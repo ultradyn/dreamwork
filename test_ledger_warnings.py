@@ -53,6 +53,29 @@ def dev_ledger():
     return _load_dev_ledger()
 
 
+def _blocked_store(tmp_path):
+    """Scratch cut-over store with all three blocker parse states."""
+    from test_ledger_dispatch import (
+        LEDGER as source, _load_migrate, _setup_store, _write_watermark)
+    from dreamwork_db import Access, open_database
+    from dreamwork_db.tasks import task_store_spec
+
+    dw = tmp_path / "dw"
+    dw.mkdir()
+    (dw / "tasks.md").write_text(source)
+    db = _setup_store(_load_migrate(), dw, source)
+    _write_watermark(db)
+    with open_database(task_store_spec(db), access=Access.WRITE) as store:
+        with store.transaction():
+            landed = store.tasks.file(
+                "all landed", "body", blocked_on="blocked on #11")
+            still_open = store.tasks.file(
+                "one open", "body", blocked_on="blocked on #11 and #12")
+            unknown = store.tasks.file(
+                "prose only", "body", blocked_on="blocked on his ruling")
+    return dw, landed, still_open, unknown
+
+
 # A markdown-mode ledger with two open tasks (no watermark → no store).
 # Used wherever the footer must actually EMIT (open-task count > 0), so the
 # stream / exit-code / zero-absent tests are not vacuous.
@@ -81,6 +104,82 @@ Next id: **20**
 
 ## Recently landed
 """
+
+
+def test_blocker_id_parser_accepts_display_variants_not_bare_numbers(dev_ledger):
+    """The blocker grammar is #N even inside URLs/code spans; never bare N."""
+    assert dev_ledger._named_blocker_ids(
+        "blocked on `#12`, https://example.test/#14 and again #12") == (12, 14)
+    assert dev_ledger._named_blocker_ids(
+        "blocked on task 12, /issues/14, abc#16, #0, or his ruling") == ()
+
+
+def test_counts_names_population_and_all_three_blocker_states(
+        dev_ledger, tmp_path, capsys):
+    """A stale edge, real edge, and unparseable prose cannot share an output."""
+    dw, landed, still_open, unknown = _blocked_store(tmp_path)
+
+    records = dev_ledger._read_records(str(dw))
+    open_population = [r for r in records if r["state"] == "open"]
+    blocked_population = [r for r in open_population if r["blocked_on"]]
+    assert open_population, "precondition: counts must examine open tasks"
+    assert len(blocked_population) == 3, (
+        "precondition: fixture must carry all three blocker states")
+
+    rc = dev_ledger.main(["counts", "--ledger", str(dw / "tasks.md")])
+    captured = capsys.readouterr()
+    out, warning = captured.out, captured.err
+    assert rc == 0
+    assert (
+        f"examined {len(open_population)} open task(s), "
+        f"{len(blocked_population)} carrying a blocker" in warning)
+    assert f"WARNING every named blocker landed: #{landed}" in warning
+    assert f"some named blocker still open: #{still_open}" in warning
+    assert f"no id parseable, unknown: #{unknown}" in warning
+    assert "blocked_on:" not in out, "advisory must not corrupt counts stdout"
+
+
+def test_counts_record_population_failure_is_unknown_not_all_clear(dev_ledger):
+    """A zero record projection cannot erase a known non-zero population."""
+    out = dev_ledger._blocked_on_report([], expected_open=3)
+    assert "UNKNOWN" in out
+    assert "examined 0 open task(s)" in out
+    assert "counts projection found 3" in out
+    assert "every named blocker landed" not in out
+
+
+def test_fold_reports_only_dependents_newly_clear_of_named_blockers(
+        dev_ledger, tmp_path, capsys):
+    """Fold reports actionable dependents and leaves blocked_on untouched."""
+    from dreamwork_db import Access, open_database
+    from dreamwork_db.tasks import task_store_spec
+    from test_ledger_dispatch import (
+        LEDGER as source, _load_migrate, _setup_store, _write_watermark)
+
+    dw = tmp_path / "dw"
+    dw.mkdir()
+    (dw / "tasks.md").write_text(source)
+    db = _setup_store(_load_migrate(), dw, source)
+    _write_watermark(db)
+    with open_database(task_store_spec(db), access=Access.WRITE) as store:
+        with store.transaction():
+            unblocked = store.tasks.file(
+                "depends only on 12", "body", blocked_on="blocked on #12")
+            remains_blocked = store.tasks.file(
+                "depends on 12 and 10", "body",
+                blocked_on="blocked on #12 and #10")
+
+    rc = dev_ledger.main([
+        "fold", "12", "--note", "landed abc1234",
+        "--ledger", str(dw / "tasks.md")])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert f"folding #12 unblocks #{unblocked}" in out
+    assert f"#{remains_blocked}" not in out.split("folding #12 unblocks", 1)[1].splitlines()[0]
+
+    records = {r["id"]: r for r in dev_ledger._read_records(str(dw))}
+    assert records[unblocked]["blocked_on"] == "blocked on #12"
+    assert records[remains_blocked]["blocked_on"] == "blocked on #12 and #10"
 
 # questions.md carrying an answer-tagged bullet UNDER ## Open — the one shape
 # lint.check_unfolded_answers warns over (#366). The stamp matches
