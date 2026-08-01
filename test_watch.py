@@ -8057,7 +8057,8 @@ class TestAppShell(unittest.TestCase):
         # #79: submitting an answer morphs the box into the answered state
         # (restated through the shared qaInner), and Ctrl/Cmd+Enter submits
         # from a field.
-        for token in ('qaInner(next, key)', 'requestSubmit',
+        for token in ("qaInner(next, key, card.dataset.qsurface || 'list')",
+                      'requestSubmit',
                       "(e.ctrlKey || e.metaKey) && e.key === 'Enter'"):
             self.assertIn(token, watch.PAGE)
 
