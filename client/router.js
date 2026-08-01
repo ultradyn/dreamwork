@@ -912,10 +912,11 @@ async function commitSubagentPolicy() {
         from: location.pathname + location.search,
       }),
     });
+    const readback = res.clone();
     const v = await writeVerdict(res);
     ok = v.landed;
     if (v.landed) {
-      try { body = await res.json(); } catch (e) { body = null; }
+      try { body = await readback.json(); } catch (e) { body = null; }
     }
   } catch (e) { ok = false; }
   if (save) save.disabled = false;
@@ -953,10 +954,11 @@ async function resetSubagentPolicy() {
         from: location.pathname + location.search,
       }),
     });
+    const readback = res.clone();
     const v = await writeVerdict(res);
     ok = v.landed;
     if (v.landed) {
-      try { body = await res.json(); } catch (e) { body = null; }
+      try { body = await readback.json(); } catch (e) { body = null; }
     }
   } catch (e) { ok = false; }
   if (reset) reset.disabled = false;

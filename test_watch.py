@@ -10957,6 +10957,73 @@ process.stdout.write(JSON.stringify({got, all: SUBAGENT_POLICY_PLACEHOLDERS,
                         "build boxes", "deploy auth"):
             self.assertIn(example, diversity)
 
+    def test_subagent_policy_client_keeps_verdict_and_readback_bodies(self):
+        """The verdict may consume JSON without starving the UI read-back."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node unavailable")
+        verdict = _extract_js_fn(watch.PAGE, "async function writeVerdict(")
+        start = watch.PAGE.index("async function commitSubagentPolicy(")
+        end = watch.PAGE.index("/* Shared description", start)
+        handlers = watch.PAGE[start:end]
+        script = verdict + handlers + r"""
+const els = {
+  "spolicy-field": {value: "typed policy\n"},
+  "spolicy-msg": {textContent: ""},
+  "spolicy-save": {disabled: false},
+  "spolicy-reset": {disabled: true},
+  "spolicy-src": {textContent: "standing default", className: "spolicy-src"},
+};
+globalThis.document = {getElementById: id => els[id] || null};
+globalThis.location = {pathname: "/", search: ""};
+globalThis.data = {posture: {}};
+let reset = false;
+const calls = [];
+globalThis.fetch = async (url, opts) => {
+  const requestBody = JSON.parse(opts.body);
+  calls.push({url, method: opts.method, body: requestBody});
+  reset = requestBody.reset === true;
+  const body = reset
+    ? {ok: true, changed: true, subagent_policy: "default policy\n",
+       subagent_policy_source: "default"}
+    : {ok: true, changed: true, subagent_policy: "typed policy\n",
+       subagent_policy_source: "file"};
+  return new Response(JSON.stringify(body), {status: 202,
+    headers: {"Content-Type": "application/json"}});
+};
+await commitSubagentPolicy();
+const saved = {msg: els["spolicy-msg"].textContent,
+  field: els["spolicy-field"].value, src: els["spolicy-src"].textContent,
+  resetDisabled: els["spolicy-reset"].disabled,
+  policy: data.posture.subagent_policy,
+  source: data.posture.subagent_policy_source};
+await resetSubagentPolicy();
+const cleared = {msg: els["spolicy-msg"].textContent,
+  field: els["spolicy-field"].value, src: els["spolicy-src"].textContent,
+  resetDisabled: els["spolicy-reset"].disabled,
+  policy: data.posture.subagent_policy,
+  source: data.posture.subagent_policy_source};
+process.stdout.write(JSON.stringify({saved, cleared, calls}));
+"""
+        proc = subprocess.run([node, "--input-type=module", "-e", script],
+                              capture_output=True, text=True, timeout=5)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        got = json.loads(proc.stdout)
+        self.assertEqual(got["saved"], {
+            "msg": "policy saved", "field": "typed policy\n",
+            "src": "override", "resetDisabled": False,
+            "policy": "typed policy\n", "source": "file"})
+        self.assertEqual(got["cleared"], {
+            "msg": "policy reset to default", "field": "",
+            "src": "standing default", "resetDisabled": True,
+            "policy": "default policy\n", "source": "default"})
+        self.assertEqual(got["calls"], [
+            {"url": "/subagent-policy", "method": "POST",
+             "body": {"policy": "typed policy\n", "from": "/"}},
+            {"url": "/subagent-policy", "method": "POST",
+             "body": {"reset": True, "from": "/"}},
+        ])
+
     def test_blank_save_is_rejected_not_written_as_inert(self):
         """A blank save must be refused, not persisted as an inert file.
         write_subagent_policy refuses blank; the route maps that to a
