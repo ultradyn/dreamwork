@@ -141,6 +141,27 @@ class TestExpectedProductionConstants:
         assert rows[0][0] == lint.ERROR, rows
         assert "production constant TASK_EDGES" in rows[0][1]
 
+    def test_an_intermediate_name_cannot_hide_the_shared_authority(self, tmp_path):
+        rows = self._check(
+            tmp_path,
+            "from subject import TASK_EDGES\n"
+            "copied_edges = TASK_EDGES\n"
+            "EXPECTED_EDGE_SET = frozenset(copied_edges)\n",
+        )
+        assert rows[0][0] == lint.ERROR, rows
+        assert "production constant TASK_EDGES" in rows[0][1]
+
+    def test_a_helper_returning_the_constant_cannot_hide_it(self, tmp_path):
+        rows = self._check(
+            tmp_path,
+            "from subject import TASK_EDGES\n"
+            "def subject_edges():\n"
+            "    return TASK_EDGES\n"
+            "EXPECTED_EDGE_SET = frozenset(subject_edges())\n",
+        )
+        assert rows[0][0] == lint.ERROR, rows
+        assert "production constant TASK_EDGES" in rows[0][1]
+
     def test_independently_built_helper_is_silent(self, tmp_path):
         rows = self._check(
             tmp_path,
