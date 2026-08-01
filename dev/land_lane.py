@@ -13,7 +13,7 @@ from typing import Sequence
 
 
 WARN_ROW = re.compile(r"^\s+WARN(?:\s|$)")
-LINT_TRAILER = re.compile(r"^clean \(\d+ warning\(s\)\)$", re.MULTILINE)
+LINT_TRAILER = re.compile(r"^clean \((\d+) warning\(s\)\)$", re.MULTILINE)
 
 
 def _run(args: Sequence[str], repo: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -85,9 +85,11 @@ def _lint(repo: Path) -> tuple[subprocess.CompletedProcess[str], tuple[str, ...]
     result = _run([sys.executable, "lint.py"], repo)
     _relay(result)
     combined = result.stdout + result.stderr
-    if result.returncode or not LINT_TRAILER.search(combined):
+    trailer = LINT_TRAILER.search(combined)
+    rows = _warn_rows(combined)
+    if result.returncode or trailer is None or int(trailer.group(1)) != len(rows):
         return result, None
-    return result, _warn_rows(combined)
+    return result, rows
 
 
 def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:

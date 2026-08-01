@@ -108,7 +108,11 @@ def test_unavailable_guard_selection_refuses_instead_of_vacuously_running(
 
 @pytest.mark.parametrize(
     "lint_body",
-    ["raise SystemExit(2)\n", "print('lint ran but omitted its trailer')\n"],
+    [
+        "raise SystemExit(2)\n",
+        "print('lint ran but omitted its trailer')\n",
+        "print('clean (1 warning(s))')\n",
+    ],
 )
 def test_missing_warn_baseline_refuses_before_merge(landing_repo, lint_body):
     root, lane = landing_repo
@@ -211,6 +215,29 @@ def test_success_runs_real_reap_and_retains_branch_only(landing_repo):
     assert "worktree retired by dev/reap.py" in result.stdout
     assert not lane.exists()
     assert _git(root, "show-ref", "--verify", "refs/heads/lane")
+
+
+def test_reap_refusal_is_binding_when_lane_becomes_dirty_during_gates(landing_repo):
+    root, lane = landing_repo
+    _write(
+        lane / "test_dirty_lane.py",
+        "from pathlib import Path\n"
+        "def test_dirty_lane():\n"
+        "    Path('../lane/feature.txt').write_text('dirty after preflight\\n')\n",
+    )
+    _git(lane, "add", "test_dirty_lane.py")
+    _git(lane, "commit", "-m", "exercise preserve refusal")
+
+    result = _run(root, "test_dirty_lane.py")
+
+    assert result.returncode == 1
+    assert (
+        f"reap examined path={lane.resolve()} tracked-dirty=1 untracked=0 ignored=0 "
+        "unmerged-commits=0"
+    ) in result.stderr
+    assert "REFUSE: tracked path would be lost: feature.txt" in result.stderr
+    assert "REFUSE phase=retirement: dev/reap.py refused with exit 1" in result.stderr
+    _assert_retained(root, lane)
 
 
 def test_land_tool_contains_no_second_worktree_removal_route():
