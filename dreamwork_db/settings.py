@@ -17,6 +17,8 @@ class SettingRepository:
         self._session = session
 
     def effective(self, userid: str = LOCAL_USER_ID) -> dict[str, Any]:
+        if userid != LOCAL_USER_ID:
+            raise ValidationError(f"unsupported userid {userid!r}; v1 is local-only")
         values = defaults()
         rows = self._session.execute(
             "SELECT key, value FROM user_setting WHERE userid = ? ORDER BY key",
@@ -34,6 +36,8 @@ class SettingRepository:
         return values
 
     def set(self, key: str, value: Any, userid: str = LOCAL_USER_ID) -> bool:
+        if userid != LOCAL_USER_ID:
+            raise ValidationError(f"unsupported userid {userid!r}; v1 is local-only")
         try:
             validate_value(key, value)
         except SettingValidationError as exc:
@@ -50,7 +54,9 @@ class SettingRepository:
                 (userid, key),
             )
             return True
-        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        encoded = json.dumps(
+            value, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+        )
         if existing is not None and existing[0] == encoded:
             return False
         self._session.execute(

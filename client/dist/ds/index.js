@@ -3175,6 +3175,73 @@ var DreamworkDesign = (() => {
       return label("reviews") + '<div class="dim">none yet</div>';
     return label("reviews") + d.reviews.map((r) => artifactRow(r, "review")).join("");
   }
+  function settingChoice(key, value, labelText, current, disabled) {
+    const on = value === current;
+    return `<button type="button" class="sgbtn${on ? " on" : ""}" data-setting-key="${escA(encodeURIComponent(key))}" data-setting-value="${escA(encodeURIComponent(JSON.stringify(value)))}" aria-pressed="${on ? "true" : "false"}"${disabled ? " disabled" : ""}>${esc(labelText)}</button>`;
+  }
+  function settingControl(key, spec, value, disabled) {
+    if (spec.kind === "boolean")
+      return `<div class="sgroup setting-choices" role="group" aria-label="${escA(spec.label)}">` + settingChoice(key, false, "off", value, disabled) + settingChoice(key, true, "on", value, disabled) + `</div>`;
+    if (spec.kind === "enum") {
+      const labels = spec.labels || {};
+      return `<div class="sgroup setting-choices" role="group" aria-label="${escA(spec.label)}">` + (spec.values || []).map((v) => settingChoice(
+        key,
+        v,
+        labels[v] || v,
+        value,
+        disabled
+      )).join("") + `</div>`;
+    }
+    const type = spec.kind === "number" ? "number" : "text";
+    const min = spec.minimum == null ? "" : ` min="${escA(spec.minimum)}"`;
+    const max = spec.maximum == null ? "" : ` max="${escA(spec.maximum)}"`;
+    return `<input class="setting-input" type="${type}" data-setting-input data-setting-key="${escA(encodeURIComponent(key))}" value="${escA(value == null ? "" : value)}"${min}${max}${disabled ? " disabled" : ""}>`;
+  }
+  function buildSettings(d) {
+    if (!d || !d.settings) return '<div class="dim">loading…</div>';
+    const state = d.settings, registry = state.registry || {};
+    const values = state.values || {}, disabled = !state.available;
+    const grouped = {};
+    Object.entries(registry).forEach(([key, spec]) => {
+      var _a;
+      return (grouped[_a = spec.category] || (grouped[_a] = [])).push([key, spec]);
+    });
+    let h = state.error ? `<div class="qhealth unreadable"><div class="qhlabel">settings unavailable</div><div class="qhbody">${esc(state.error)}</div></div>` : "";
+    for (const [category, rows] of Object.entries(grouped)) {
+      h += `<section class="settings-group">${label(category)}`;
+      h += rows.map(([key, spec]) => `<div class="setting-row" data-setting-row="${escA(key)}"><div class="setting-copy"><div class="setting-label">${esc(spec.label)}</div><div class="setting-description">${esc(spec.description)}</div></div>` + settingControl(key, spec, values[key], disabled) + `</div>`).join("");
+      h += `</section>`;
+    }
+    if (!Object.keys(registry).length) h += '<div class="dim">no settings registered</div>';
+    return `<div id="settings-page">${h}<div id="settings-msg" class="dim" role="status"></div></div>`;
+  }
+  async function saveSetting(el, value) {
+    const key = decodeURIComponent(el.dataset.settingKey || "");
+    const msg = document.getElementById("settings-msg");
+    if (msg) msg.textContent = "saving…";
+    const res = await postJSON("/settings", { key, value });
+    const verdict = res && res._dwv;
+    if (!verdict || !verdict.landed) {
+      if (msg) msg.textContent = "not saved";
+      return;
+    }
+    if (data && data.settings && data.settings.values)
+      data.settings.values[key] = value;
+    commitCurrent(buildSettings(data));
+    const done = document.getElementById("settings-msg");
+    if (done) done.textContent = "saved";
+  }
+  addEventListener("click", (e) => {
+    const el = e.target.closest && e.target.closest("[data-setting-value]");
+    if (!el || el.disabled) return;
+    saveSetting(el, JSON.parse(decodeURIComponent(el.dataset.settingValue)));
+  });
+  addEventListener("change", (e) => {
+    const el = e.target.closest && e.target.closest("[data-setting-input]");
+    if (!el || el.disabled) return;
+    const value = el.type === "number" ? Number(el.value) : el.value;
+    saveSetting(el, value);
+  });
   function buildQuestion(title, d) {
     if (!d) return '<div class="dim">loading…</div>';
     if (title) {
@@ -3621,12 +3688,13 @@ var DreamworkDesign = (() => {
   };
   var view = { name: null, param: null, q: null };
   var fileCache = { param: null, fetched: void 0 };
-  var TINT = { dashboard: 0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19, chat: 0.05 };
-  var SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61, question: 67, research: 71, reviews: 73, chat: 89 };
+  var TINT = { dashboard: 0, questions: 0.14, answers: 0.08, settings: -0.04, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19, chat: 0.05 };
+  var SEED = { dashboard: 7, questions: 23, answers: 29, settings: 37, file: 41, review: 61, question: 67, research: 71, reviews: 73, chat: 89 };
   var TITLE_ROUTE = {
     dashboard: () => "",
     questions: () => "questions",
     answers: () => "answers",
+    settings: () => "settings",
     file: (p) => p || "file",
     review: (p) => "review " + (p || ""),
     question: () => "question",
@@ -4339,6 +4407,7 @@ var DreamworkDesign = (() => {
   function routeOf(loc) {
     if (loc.pathname === "/questions") return { name: "questions", param: null };
     if (loc.pathname === "/answers") return { name: "answers", param: null };
+    if (loc.pathname === "/settings") return { name: "settings", param: null };
     if (loc.pathname === "/file") {
       const sp = new URLSearchParams(loc.search);
       return {
@@ -4426,6 +4495,7 @@ var DreamworkDesign = (() => {
     if (view.name === "review") return buildReview(view.param, view.q, d);
     if (view.name === "question") return buildQuestion(view.param, d);
     if (view.name === "reviews") return buildReviews(d);
+    if (view.name === "settings") return buildSettings(d);
     if (!d) return '<div class="dim">loading…</div>';
     if (view.name === "questions") return buildQuestions(d);
     if (view.name === "answers") return buildAnswers(d);
@@ -6070,6 +6140,7 @@ var DreamworkDesign = (() => {
     dashboard: () => "dreamwork watch",
     questions: () => "questions",
     answers: () => "answers",
+    settings: () => "settings",
     /* #284: the BASENAME is the heading. The parent path is metadata and lives
        one line down, in the crumb row (`crumbsFor`). */
     file: (v) => esc(fileBase(v.param || "")),
@@ -6115,7 +6186,7 @@ var DreamworkDesign = (() => {
   }
   function crumbsFor(v, d) {
     const home = { k: "home", html: '<a href="/">&larr; dashboard</a>' };
-    if (v.name === "questions" || v.name === "answers") return [home];
+    if (v.name === "questions" || v.name === "answers" || v.name === "settings") return [home];
     if (v.name === "file") {
       const p = v.param || "", dir = fileDir(p);
       const row2 = [home];
@@ -6167,6 +6238,7 @@ var DreamworkDesign = (() => {
     });
     row.push(
       { k: "updated", html: '<span id="upd"></span>' },
+      { k: "settings", html: '<a href="/settings">settings</a>' },
       // the count is zero whether everything is answered or the file cannot be
       // read, so the crumb must not quietly render the broken case as the calm
       // one (#136) — it is the badge he glances at from every route.
@@ -6709,7 +6781,7 @@ var DreamworkDesign = (() => {
     view = { name, param, q: opts.q || null, mode };
     applyTitle();
     if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
-    const url = name === "questions" ? "/questions" : name === "answers" ? "/answers" : name === "file" ? "/file?p=" + encodeURIComponent(param || "") + (mode === "source" ? "&view=source" : "") : name === "review" ? "/review?p=" + encodeURIComponent(param || "") + (opts.q ? "&q=" + encodeURIComponent(opts.q) : "") : name === "question" ? "/question?qid=" + encodeURIComponent(param || "") : name === "research" ? "/research" + (param ? "?p=" + encodeURIComponent(param) : "") : name === "reviews" ? "/reviews" : name === "chat" ? "/chat/" + encodeURIComponent(param || "") : "/";
+    const url = name === "questions" ? "/questions" : name === "answers" ? "/answers" : name === "settings" ? "/settings" : name === "file" ? "/file?p=" + encodeURIComponent(param || "") + (mode === "source" ? "&view=source" : "") : name === "review" ? "/review?p=" + encodeURIComponent(param || "") + (opts.q ? "&q=" + encodeURIComponent(opts.q) : "") : name === "question" ? "/question?qid=" + encodeURIComponent(param || "") : name === "research" ? "/research" + (param ? "?p=" + encodeURIComponent(param) : "") : name === "reviews" ? "/reviews" : name === "chat" ? "/chat/" + encodeURIComponent(param || "") : "/";
     const artifactDoc = name === "review" || name === "research" && !!param;
     if (opts.push) history.pushState({ name, param, q: opts.q || null }, "", url);
     const html = await buildCurrent();
@@ -6732,7 +6804,7 @@ var DreamworkDesign = (() => {
   function isInternal(a) {
     if (!a || a.target === "_blank" || a.hasAttribute("download")) return false;
     if (a.origin !== location.origin) return false;
-    return a.pathname === "/" || a.pathname === "/questions" || a.pathname === "/answers" || a.pathname === "/file" || a.pathname === "/review" || a.pathname === "/question" || a.pathname === "/research" || a.pathname === "/reviews" || a.pathname.startsWith("/chat/");
+    return a.pathname === "/" || a.pathname === "/questions" || a.pathname === "/answers" || a.pathname === "/settings" || a.pathname === "/file" || a.pathname === "/review" || a.pathname === "/question" || a.pathname === "/research" || a.pathname === "/reviews" || a.pathname.startsWith("/chat/");
   }
   addEventListener("click", (e) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

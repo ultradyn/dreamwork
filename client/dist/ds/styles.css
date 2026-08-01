@@ -1912,6 +1912,25 @@
     .pdesc, .pdesc-text { transition:none; }
     .pdep { transition:none; }   /* #569: width snaps, function unchanged */
   }
+
+  /* #584 registry-driven settings: description owns the flexible column;
+     controls keep their natural width and wrap on narrow screens. */
+  .settings-group { margin-bottom:2rem; }
+  .setting-row { display:flex; align-items:center; justify-content:space-between;
+    gap:1.5rem; padding:.85rem 0; border-bottom:1px solid var(--line); }
+  .setting-copy { min-width:0; }
+  .setting-label { color:var(--lit); margin-bottom:.25rem; }
+  .setting-description { color:var(--dim); line-height:1.5; }
+  .setting-choices { flex:none; justify-content:flex-end; }
+  .setting-input { width:min(18rem, 42vw); color:var(--lit);
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:var(--radius); padding:.45rem .55rem; font:inherit; }
+  #settings-msg { min-height:1.4em; margin-top:.75rem; }
+  @media (max-width:560px) {
+    .setting-row { align-items:flex-start; flex-direction:column; gap:.65rem; }
+    .setting-choices { justify-content:flex-start; }
+    .setting-input { width:100%; box-sizing:border-box; }
+  }
   /* ── what he has sent, from this browser (#165) ───────────────────────
      The row is the page's standing shape for a list of small facts — the
      commits panel's, one surface over: a fixed-height flex row, the identity

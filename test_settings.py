@@ -24,9 +24,12 @@ def test_known_default_is_pinned_independently_of_registry():
     assert SETTINGS[KNOWN_KEY].default == "ign"
 
 
-def test_validation_refuses_invalid_and_unknown_values():
+def test_validation_refuses_invalid_value():
     with pytest.raises(SettingValidationError, match="expected one of"):
         validate_value(KNOWN_KEY, "not-a-dither")
+
+
+def test_validation_refuses_unknown_key():
     with pytest.raises(SettingValidationError, match="unknown setting key"):
         validate_value("unregistered.dump", {"anything": "goes"})
 
@@ -74,3 +77,6 @@ def test_repository_refuses_invalid_and_unknown_writes(tmp_path):
         with pytest.raises(ValidationError, match="unknown setting key"):
             with db.transaction():
                 db.settings.set("arbitrary", True)
+        with pytest.raises(ValidationError, match="local-only"):
+            with db.transaction():
+                db.settings.set(KNOWN_KEY, "bayer", userid="someone-else")

@@ -3932,7 +3932,7 @@ def collect(target, burn_step=None):
         # #445 three-axis posture (pace × asking × delegation). Absent file
         # → derived from run-mode via lint.derive_posture (single source).
         # Rides the same /mtime poll so every open window converges.
-        "posture": resolve_posture(target),
+        "posture": resolve_posture(target), "settings": read_settings(target),
         # plugin-contributed command kinds (#86), for the same reason and by
         # the same route. The core vocabulary is baked into the page shell
         # because it is a property of watch.py; this half is a property of the
@@ -4110,7 +4110,7 @@ SUMMARY_DENIED = frozenset({
     "plugin_commands",   # machine UI vocabulary (prose desc/label), not a
                          #   project-status summary, and reveals the plugin set
     "chats",             # #504 topic-chat transcripts — his words + the
-    "groups",            #   dreamer's replies; and #836/#824 group titles and
+    "groups", "settings",  # replies/group prose; local preference metadata
 })                       #   descriptions — authored prose, plus member ids
 
 
@@ -4516,6 +4516,34 @@ def write_posture(target, pace, asking, delegation, delivery=None,
         return True
     except OSError:
         return False
+
+
+def read_settings(target):
+    """Return registry metadata plus effective values for the local user."""
+    import settings as user_settings
+    values = user_settings.defaults()
+    dw = os.path.join(target, ".dreamwork")
+    available = source_of_truth(dw) == "store"
+    error = None if available else "settings require the ledger store"
+    if available:
+        try:
+            from dreamwork_db import Access, open_database
+            from dreamwork_db.tasks import task_store_spec
+            with open_database(
+                    task_store_spec(store_path(dw)), access=Access.READ) as db:
+                values = db.settings.effective(user_settings.LOCAL_USER_ID)
+        except Exception as exc:
+            # Invalid persisted data must not masquerade as defaults. Keep the
+            # page renderable, but carry a loud fault and disable writes.
+            available = False
+            error = str(exc)
+    return {
+        "userid": user_settings.LOCAL_USER_ID,
+        "available": available,
+        "error": error,
+        "values": values,
+        "registry": user_settings.public_registry(),
+    }
 
 
 def write_subagent_policy(target, text):
@@ -5459,7 +5487,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # router renders the matching view (deep links keep working).
             # #562: /chat/<id> is a same-document route too — the id is a path
             # segment, so it is matched by prefix rather than the fixed set.
-            if (parsed.path in ("/", "/questions", "/answers", "/file",
+            if (parsed.path in ("/", "/questions", "/answers", "/settings", "/file",
                                "/review", "/question", "/research",
                                "/reviews", "/tasks")
                     or parsed.path == "/chat"
@@ -5932,6 +5960,40 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                           f'"{one_line(question_title)}" -> .dreamwork/ledger.sqlite3')
             self._send_receipt(json.dumps({"ok": True, "decision": decision}),
                                "application/json")
+
+        def _handle_settings(self):
+            """Persist one validated setting through the canonical store."""
+            import settings as user_settings
+            from dreamwork_db import Access, ValidationError, open_database
+            from dreamwork_db.tasks import task_store_spec
+            req = self._read_json()
+            if req is None:
+                self._reject("malformed_json"); return
+            if not isinstance(req, dict) or "key" not in req or "value" not in req:
+                self._reject("schema_invalid"); return
+            key = req.get("key")
+            if not isinstance(key, str):
+                self._reject("schema_invalid"); return
+            dw = os.path.join(target, ".dreamwork")
+            if source_of_truth(dw) != "store":
+                self._reject("domain_invalid", detail="no_store"); return
+            try:
+                with open_database(
+                        task_store_spec(store_path(dw)),
+                        access=Access.WRITE) as db:
+                    with db.transaction():
+                        changed = db.settings.set(
+                            key, req["value"], user_settings.LOCAL_USER_ID)
+            except ValidationError as exc:
+                self._reject("domain_invalid", detail=str(exc)); return
+            except Exception:
+                self.send_error(500); return
+            if changed:
+                log_event(target, f'settings via watch: "{one_line(key)}" '
+                          '-> .dreamwork/ledger.sqlite3')
+            self._send_receipt(json.dumps({
+                "ok": True, "changed": changed, "key": key,
+            }), "application/json")
 
         def _handle_command(self):
             req = self._read_json()
@@ -6465,6 +6527,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             "/chat-reply": _handle_chat_reply,
             "/chat-archive": _handle_chat_archive,
             "/decide": _handle_decide,
+            "/settings": _handle_settings,
             "/tint": _handle_tint,
             "/run-mode": _handle_run_mode,
             "/posture": _handle_posture,

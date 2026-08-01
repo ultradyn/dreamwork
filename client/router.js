@@ -46,11 +46,11 @@ let view = { name: null, param: null, q: null };
    The /filedata response carries one of those shapes; never the bytes. */
 let fileCache = { param: null, fetched: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
-const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19, chat: 0.05 };
+const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, settings: -0.04, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19, chat: 0.05 };
 /* per-route dissolve signature: each destination swirls from its own
    turbulence seed, so arriving somewhere has a consistent feel (pairs with
    the per-route tint). Distinct small integers give distinct fields. */
-const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61, question: 67, research: 71, reviews: 73, chat: 89 };
+const SEED = { dashboard: 7, questions: 23, answers: 29, settings: 37, file: 41, review: 61, question: 67, research: 71, reviews: 73, chat: 89 };
 /* ── the tab title (#153) ─────────────────────────────────────────────────
    The title is the ONLY part of this dashboard that exists while the tab is
    backgrounded, which is most of its life — so it answers the page's whole
@@ -85,6 +85,7 @@ const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61, q
    unparseable `last_tick` gets none either, on `note_author`'s rule. */
 const TITLE_ROUTE = { dashboard: () => '', questions: () => 'questions',
                       answers: () => 'answers',
+                      settings: () => 'settings',
                       file: p => p || 'file',
                       review: p => 'review ' + (p || ''),
                       question: () => 'question',
@@ -1280,6 +1281,7 @@ function applyTitle() {
 function routeOf(loc) {
   if (loc.pathname === '/questions') return { name: 'questions', param: null };
   if (loc.pathname === '/answers') return { name: 'answers', param: null };
+  if (loc.pathname === '/settings') return { name: 'settings', param: null };
   if (loc.pathname === '/file') {
     const sp = new URLSearchParams(loc.search);
     /* #252 — the view mode is part of the ROUTE, not a toggle the page
@@ -1400,6 +1402,7 @@ async function buildCurrent() {
   if (view.name === 'review') return buildReview(view.param, view.q, d);
   if (view.name === 'question') return buildQuestion(view.param, d);
   if (view.name === 'reviews') return buildReviews(d);
+  if (view.name === 'settings') return buildSettings(d);
   if (!d) return '<div class="dim">loading…</div>';
   if (view.name === 'questions') return buildQuestions(d);
   if (view.name === 'answers') return buildAnswers(d);
@@ -3735,6 +3738,7 @@ const TITLES = {
   dashboard: () => 'dreamwork watch',
   questions: () => 'questions',
   answers: () => 'answers',
+  settings: () => 'settings',
   /* #284: the BASENAME is the heading. The parent path is metadata and lives
      one line down, in the crumb row (`crumbsFor`). */
   file: v => esc(fileBase(v.param || '')),
@@ -3820,7 +3824,7 @@ function paintFileMode(v, slide) {
 }
 function crumbsFor(v, d) {
   const home = { k:'home', html:'<a href="/">&larr; dashboard</a>' };
-  if (v.name === 'questions' || v.name === 'answers') return [home];
+  if (v.name === 'questions' || v.name === 'answers' || v.name === 'settings') return [home];
   if (v.name === 'file') {
     const p = v.param || '', dir = fileDir(p);
     const row = [home];
@@ -3894,6 +3898,7 @@ function crumbsFor(v, d) {
          '<span class="wrapany">' + esc(sv) + '</span>' });
   row.push(
     { k:'updated', html:'<span id="upd"></span>' },
+    { k:'settings', html:'<a href="/settings">settings</a>' },
     // the count is zero whether everything is answered or the file cannot be
     // read, so the crumb must not quietly render the broken case as the calm
     // one (#136) — it is the badge he glances at from every route.
@@ -4648,6 +4653,7 @@ async function navigate(name, param, opts) {
   if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
   const url = name === 'questions' ? '/questions'
     : name === 'answers' ? '/answers'
+    : name === 'settings' ? '/settings'
     : name === 'file' ? '/file?p=' + encodeURIComponent(param || '') +
         (mode === 'source' ? '&view=source' : '')
     : name === 'review' ? '/review?p=' + encodeURIComponent(param || '') +
@@ -4686,6 +4692,7 @@ function isInternal(a) {
   if (a.origin !== location.origin) return false;
   return a.pathname === '/' || a.pathname === '/questions'
       || a.pathname === '/answers'
+      || a.pathname === '/settings'
       || a.pathname === '/file' || a.pathname === '/review'
       || a.pathname === '/question' || a.pathname === '/research'
       || a.pathname === '/reviews'

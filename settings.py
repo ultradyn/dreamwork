@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -112,6 +113,8 @@ def validate_value_for(spec: Setting, value: Any) -> Any:
     elif spec.kind == "number":
         if type(value) not in (int, float):
             raise SettingValidationError("expected a number")
+        if not math.isfinite(value):
+            raise SettingValidationError("expected a finite number")
         if spec.minimum is not None and value < spec.minimum:
             raise SettingValidationError(f"expected a number >= {spec.minimum}")
         if spec.maximum is not None and value > spec.maximum:
