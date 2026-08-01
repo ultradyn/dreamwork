@@ -623,15 +623,31 @@ def test_verify_pending_rejects_changed_artifact(tmp_path):
 
 def test_verify_pending_rejects_absent_artifact(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
-    prompt = _healthy_prompt(tmp_path, root)
+    prompt = _healthy_prompt(tmp_path, root, task=173, lane="cx-legacy")
     assert _run(cli, prompt, "true").returncode == 0
-    artifact = root / ".dreamwork" / "docs" / "briefs" / "900-cx-test.md"
+    artifact = root / ".dreamwork" / "docs" / "briefs" / "173-cx-legacy.md"
     artifact.unlink()
 
     result = _run(cli)
 
     assert result.returncode == 2
-    assert "has no governed brief artifact" in result.stderr
+    assert (
+        "integrity receipt 173-cx-legacy.sha256 has no brief artifact "
+        "173-cx-legacy.md"
+    ) in result.stderr
+
+
+def test_verify_pending_accepts_receipted_briefs_on_both_sides_of_cutoff(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    legacy = _healthy_prompt(tmp_path, root, task=173, lane="cx-legacy")
+    governed = _healthy_prompt(tmp_path, root, task=900, lane="cx-governed")
+    assert _run(cli, legacy, "true").returncode == 0
+    assert _run(cli, governed, "true").returncode == 0
+
+    result = _run(cli)
+
+    assert result.returncode == 0, result.stderr
+    assert "brief integrity verified: 2 governed brief(s) matched receipts" in result.stdout
 
 
 def test_verify_pending_that_examined_nothing_does_not_pass(tmp_path):

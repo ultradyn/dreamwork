@@ -656,11 +656,11 @@ commit-corpus:
     set -euo pipefail
     python3 dev/dispatch_lane.py --verify-pending
     staged=0
-    for md in .dreamwork/docs/briefs/*.md; do
-        [ -f "$md" ] || continue
-        receipt="${md%.md}.sha256"
-        if [ ! -f "$receipt" ]; then
-            echo "refusing: $md has no .sha256 receipt (half-committed pair is worse than neither, #766)" >&2
+    for receipt in .dreamwork/docs/briefs/*.sha256; do
+        [ -f "$receipt" ] || continue
+        md="${receipt%.sha256}.md"
+        if [ ! -f "$md" ]; then
+            echo "refusing: $receipt has no .md artifact (half-committed pair is worse than neither, #766)" >&2
             exit 1
         fi
         git add "$md" "$receipt"
