@@ -9630,6 +9630,17 @@ class TestRetiredPhrasings:
                                   "registered 1 retired phrasing(s); scanned "
                                   "1 tracked Markdown document(s)")]
 
+    def test_text_after_a_closed_strike_is_live(self, tmp_path):
+        dw = self._repo(tmp_path, {
+            "docs/live.md": (
+                "~~an older, unrelated claim~~\n\n"
+                "The no-build single-file constraint still binds.\n"
+                "\n~~another unrelated historical claim~~\n"),
+        })
+        warnings = [d for level, _, d in self._rows(dw) if level == lint.WARN]
+        assert len(warnings) == 1
+        assert warnings[0].startswith("docs/live.md:3 repeats retired phrasing")
+
     def test_affirmative_ruling_quote_is_not_a_false_positive(self, tmp_path):
         dw = self._repo(tmp_path, {
             "watch-design.md": (

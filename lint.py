@@ -6783,9 +6783,10 @@ def _ruling_citation_pattern(ruling: str) -> re.Pattern[str] | None:
 
 
 def _inside_strikethrough(text: str, start: int, end: int) -> bool:
-    opening = text.rfind("~~", 0, start + 1)
-    closing = text.find("~~", end)
-    return opening >= 0 and closing >= 0 and text.find("~~", opening + 2, start) < 0
+    # Each balanced pair toggles the state. Treating the nearest preceding
+    # delimiter as an opener misreads text *after* ``~~closed history~~`` as
+    # struck until the next unrelated strike later in the document.
+    return text.count("~~", 0, start) % 2 == 1 and text.find("~~", end) >= 0
 
 
 def _retirement_marker_near(
