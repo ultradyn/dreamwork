@@ -164,8 +164,10 @@ class TestMemoryPressure:
         mem = {"SwapTotal": 60 * 1024 * 1024, "SwapFree": 10 * 1024 * 1024,
                "MemAvailable": avail, "MemTotal": 60 * 1024 * 1024}
         msg = ct.render(_scan([]), mem)
-        assert "memory-bound" not in msg
-        assert "mem:" not in msg  # no clause at all on a healthy machine
+        assert msg == (
+            "concurrent tests: no other pytest suites; "
+            "0 browser/guard processes (advisory)"
+        )
 
     def test_calm_machine_has_no_memory_clause(self):
         # #612: a calm machine omits the clause entirely (fewest tokens). Healthy
@@ -173,7 +175,10 @@ class TestMemoryPressure:
         mem = {"MemAvailable": 30 * 1024 * 1024, "MemTotal": 60 * 1024 * 1024,
                "SwapTotal": 4 * 1024 * 1024, "SwapFree": 4 * 1024 * 1024}
         msg = ct.render(_scan([]), mem)
-        assert "mem:" not in msg
+        assert msg == (
+            "concurrent tests: no other pytest suites; "
+            "0 browser/guard processes (advisory)"
+        )
 
     def test_no_meminfo_is_calm(self):
         # mem=None (/proc/meminfo unreadable): no clause is fabricated. The
@@ -182,14 +187,37 @@ class TestMemoryPressure:
         msg = ct.render(_scan([]), None)
         assert "mem:" not in msg
 
-    def test_missing_memavailable_is_calm(self):
-        # MemTotal present but MemAvailable key absent (old kernel): the one
-        # number the trigger needs is missing, so it cannot classify pressure
-        # and stays silent instead of fabricating a verdict.
-        mem = {"MemTotal": 60 * 1024 * 1024, "SwapTotal": 60 * 1024 * 1024,
+    def test_missing_memavailable_says_pressure_was_not_measured(self):
+        # Older-kernel state: swap is full, but the chosen pressure reading is
+        # absent. Do not revive swap as a proxy; distinguish "not measured"
+        # from the healthy path instead.
+        mem = {"MemTotal": 16 * 1024 * 1024, "SwapTotal": 8 * 1024 * 1024,
                "SwapFree": 0}
         msg = ct.render(_scan([]), mem)
-        assert "mem:" not in msg
+        assert msg == (
+            "concurrent tests: no other pytest suites; 0 browser/guard processes; "
+            "mem: MemAvailable absent (memory pressure not measured) (advisory)"
+        )
+
+    def test_negative_memavailable_is_reported_as_impossible(self):
+        mem = {"MemAvailable": -1 * 1024 * 1024,
+               "MemTotal": 16 * 1024 * 1024}
+        msg = ct.render(_scan([]), mem)
+        assert msg == (
+            "concurrent tests: no other pytest suites; 0 browser/guard processes; "
+            "mem: impossible MemAvailable -1G of 16G MemTotal "
+            "(memory pressure not measured) (advisory)"
+        )
+
+    def test_memavailable_above_total_is_reported_as_impossible(self):
+        mem = {"MemAvailable": 32 * 1024 * 1024,
+               "MemTotal": 16 * 1024 * 1024}
+        msg = ct.render(_scan([]), mem)
+        assert msg == (
+            "concurrent tests: no other pytest suites; 0 browser/guard processes; "
+            "mem: impossible MemAvailable 32G of 16G MemTotal "
+            "(memory pressure not measured) (advisory)"
+        )
 
 
 # ── argv-token classification edge cases (brief direction 2 candidate 2) ──

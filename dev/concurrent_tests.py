@@ -235,13 +235,22 @@ def render(result: dict, mem: dict[str, int] | None) -> str:
     # keying on it printed "memory-bound" beside 28G available and sent the
     # reader chasing a leak that was not there. The wording reports the reading
     # ("low available memory"); it does not diagnose a cause it did not prove.
-    # Absent on a calm machine (#612); missing MemAvailable stays silent rather
-    # than fabricate a verdict.
+    # Absent on a calm machine (#612). A missing or impossible MemAvailable
+    # reports that pressure was not measured; neither state fabricates a
+    # verdict, and neither is allowed to look like the healthy silent path.
     if mem and mem.get("MemTotal", 0) > 0:
+        total = mem["MemTotal"]
         avail = mem.get("MemAvailable")
-        if avail is not None and avail < _LOW_AVAIL_KIB:
+        if avail is None:
+            clauses.append("mem: MemAvailable absent (memory pressure not measured)")
+        elif avail < 0 or avail > total:
             clauses.append(
-                f"mem: {_gib(avail)} available of {_gib(mem['MemTotal'])} "
+                f"mem: impossible MemAvailable {_gib(avail)} of {_gib(total)} MemTotal "
+                "(memory pressure not measured)"
+            )
+        elif avail < _LOW_AVAIL_KIB:
+            clauses.append(
+                f"mem: {_gib(avail)} available of {_gib(total)} "
                 "(low available memory — a browser lane costs RAM a pytest lane does not)"
             )
     return "; ".join(clauses) + " (advisory)"
