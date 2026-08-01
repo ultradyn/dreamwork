@@ -663,7 +663,11 @@ def test_dispatch_lane_recipe_is_at_prefixed_so_the_route_is_silent():
     someone removed the '@' prefix from the dispatch-lane recipe body."""
     justfile = (ROOT / "justfile").read_text(encoding="utf-8")
     recipe_start = justfile.index("dispatch-lane prompt agent *CCC_ARGS:")
-    recipe_body = justfile[recipe_start:]
+    # Scope to the dispatch-lane recipe only, not to EOF: other recipes
+    # legitimately call dispatch_lane.py (e.g. --verify-pending in
+    # commit-corpus), and slicing to the end of file would count them.
+    next_recipe = justfile.find("\n\n#", recipe_start)
+    recipe_body = justfile[recipe_start : next_recipe if next_recipe > 0 else len(justfile)]
     recipe_lines = [
         line for line in recipe_body.splitlines()
         if "dispatch_lane.py" in line and not line.lstrip().startswith("#")
