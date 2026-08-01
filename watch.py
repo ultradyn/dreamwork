@@ -678,7 +678,7 @@ NOT_FOUND_PAGE = page_shell(
 # derives its want-set from `expected_inputs`, so a fifth source file added
 # without a line here is a named red rather than a deployment that reads stale
 # forever.
-DATA_SIBLINGS = ("vendor/morphdom.min.js", "vendor/LICENSE.morphdom",
+DATA_SIBLINGS = ("SKILL.md", "vendor/morphdom.min.js", "vendor/LICENSE.morphdom",
                  "client/style.css",
                  "client/app_body.html",
                  "client/components.js",
