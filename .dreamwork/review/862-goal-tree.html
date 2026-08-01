@@ -303,8 +303,8 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 <a class="skip" href="#questions">Skip to your rulings</a>
 <nav class="toprail" aria-label="Artifact navigation">
   <div class="toprail-in">
-    <div class="identity"><b>goal tree</b><span>task #862 · ruled · design only</span></div>
-    <div class="topactions"><span class="status settled">decided · 2026-08-01 · eight rec, one override, three additions</span><a class="full" href="#ruled">ruled</a><a href="#store">store</a><a href="#sizing">Q4</a><a href="#panel">panel</a><a href="#prior">#95</a><a href="#questions">questions</a></div>
+    <div class="identity"><b>goal tree</b><span>task #862 · ruled</span></div>
+    <div class="topactions"><span class="status settled">decided · 2026-08-01 · eight rec, one override</span><a class="full" href="#ruled">ruled</a><a href="#store">store</a><a href="#sizing">Q4</a><a href="#panel">panel</a><a href="#prior">#95</a><a href="#questions">questions</a></div>
   </div>
 </nav>
 
@@ -587,7 +587,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   independent — that is what lets them run at once, and running wide is the thing worth
   buying. <strong>No count replaces 6&ndash;24.</strong> A fresh band — 4&ndash;40, "about a
   dozen" — would be the same mistake wearing a new constant, and would re-impose a ceiling
-  where the ruling put a judgement.</p>
+  where the ruling put a judgement.</div>
   <p>What the struck rule carried and the ruling keeps: your hours and the loop's minutes still
   meet at exactly one place, <code>task_group_member</code>; and a leaf that turns out far
   larger than expected is still absorbed by <strong>re-parenting</strong> rather than
@@ -939,24 +939,24 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   asked, what was proposed, and what was decided — including the one that was proposed and
   refused.</p>
   <div class="choice"><b>Q1 · Does the goal tree replace the session goal?</b>
-  <span class="answer"><b>rec: yes &middot; ruled: rec.</b> <code>status.json.session_goal</code>
+  <div class="answer"><b>rec: yes &middot; ruled: rec.</b> <code>status.json.session_goal</code>
   becomes derived and <code>status-sync</code> starts writing it, flipping the SKILL.md line
-  that lists it among the fields a tool cannot derive.</span></div>
+  that lists it among the fields a tool cannot derive.</div></div>
   <div class="choice"><b>Q2 · One refuter's refusal, or a majority?</b>
-  <span class="answer"><b>rec: any one refutes &middot; ruled: rec, and widened.</b> The gate
+  <div class="answer"><b>rec: any one refutes &middot; ruled: rec, and widened.</b> The gate
   stands. What changed is the refuter's job: <em>"these subagents should be told to come up with
   all the refutations they can, not just one or two. we want to get a good list to fix as much
   as possible at once"</em>, then <em>"evaluate the claimed refutation and then address it by
   fixing all issues identified."</em> So a refuter <b>enumerates</b> rather than votes, and the
   panel's product is a fix list evaluated and worked in one pass — see
-  <a href="#panel">the panel</a>.</span></div>
+  <a href="#panel">the panel</a>.</div></div>
   <div class="choice"><b>Q3 · When the panel cannot run at all?</b>
-  <span class="answer"><b>rec: fail closed &middot; ruled: rec <em>and</em> ask a human</b> —
+  <div class="answer"><b>rec: fail closed &middot; ruled: rec <em>and</em> ask a human</b> —
   <em>"(may or may not block depending on context)"</em>. Both, not either: the goal stays
   <code>claimed</code>, and a question parks with the reason; whether the loop waits on it is
-  contextual.</span></div>
+  contextual.</div></div>
   <div class="choice"><b>Q4 · Is the leaf band 6–24 tasks?</b>
-  <span class="answer"><b>rec: yes &middot; ruled: OVERRIDDEN.</b> The rec derived 6–24 by
+  <div class="answer"><b>rec: yes &middot; ruled: OVERRIDDEN.</b> The rec derived 6–24 by
   converting your 2–12 hours against the ~15–20 minute cap. You rejected the derivation, not
   just the figure: <em>"the 15-20 min cap is to keep the main agent able to effectively process
   new events. when using subagents we don't care so much. the leaf goal should have as many
@@ -966,33 +966,33 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   responsiveness and converts into nothing; decomposition governs the leaf, and parallelism is
   what a split buys. <b>No replacement number was set, and none should be inferred</b> — 6–24
   is still printed here and in <a href="#sizing">leaf size</a>, marked, rather than quietly
-  deleted, so nobody re-derives it.</span></div>
+  deleted, so nobody re-derives it.</div></div>
   <div class="choice"><b>Q5 · <code>/dw-goals</code> or <code>/goals</code>?</b>
-  <span class="answer"><b>rec: <code>/dw-goals</code> &middot; ruled: <code>/goals</code>,
+  <div class="answer"><b>rec: <code>/dw-goals</code> &middot; ruled: <code>/goals</code>,
   plus a requirement.</b> <em>"/goals is fine, i just wanted to make it clear that it was
   dreamwork goals for the project rather that user goals, but it's kinda both i guess, the user
   should be able to add goals or conditions/details on goals."</em> The prefix was marking
   ownership, not naming a route — and the tree is now <b>your</b> input surface as well as the
-  loop's: <a href="#ui">the page</a>.</span></div>
+  loop's: <a href="#ui">the page</a>.</div></div>
   <div class="choice"><b>Q6 · May you force-complete, bypassing the panel?</b>
-  <span class="answer"><b>rec: yes &middot; ruled: rec.</b> You are the principal, and the claim
-  records that it bypassed, so the history never reads as though a panel passed it.</span></div>
+  <div class="answer"><b>rec: yes &middot; ruled: rec.</b> You are the principal, and the claim
+  records that it bypassed, so the history never reads as though a panel passed it.</div></div>
   <div class="choice"><b>Q7 · One current goal, or one per unblocked branch?</b>
-  <span class="answer"><b>rec: one &middot; ruled: rec, plus an ordering.</b> <em>"we should
+  <div class="answer"><b>rec: one &middot; ruled: rec, plus an ordering.</b> <em>"we should
   have a prioritization order of them so we can keep work parallelized."</em> One current goal
   still answers <em>what is the loop doing</em>; the order answers what the <em>rest</em> of the
   fleet takes, which is the question a wide fleet asks and nothing in the store could answer —
   <a href="#blocked">selection</a>, and a rank column in
-  <a href="#store">the migration</a>.</span></div>
+  <a href="#store">the migration</a>.</div></div>
   <div class="choice"><b>Q8 · Is the quiet delivery class acceptable?</b>
-  <span class="answer"><b>rec: yes &middot; ruled: rec.</b> One <code>QUIET_KINDS</code>
+  <div class="answer"><b>rec: yes &middot; ruled: rec.</b> One <code>QUIET_KINDS</code>
   membership test before the posture read. Your requirement was unconditional; the ruled batched
-  class is conditional on a posture you have not set.</span></div>
+  class is conditional on a posture you have not set.</div></div>
   <div class="choice"><b>Q9 · Does blocked-ness reopen #95's D2?</b>
-  <span class="answer"><b>rec: yes, narrowly &middot; ruled: rec, and licensed.</b> <em>"we can
+  <div class="answer"><b>rec: yes, narrowly &middot; ruled: rec, and licensed.</b> <em>"we can
   update the protocol from 95 however we like to fit our current and future needs."</em> So the
   reversals are permitted outright rather than argued past — <a href="#prior">#95</a>. Only
-  blocked-ness steers; nothing forbids off-branch work.</span></div>
+  blocked-ness steers; nothing forbids off-branch work.</div></div>
   <p class="quiet">One thing in the same answer is deliberately not designed here: <em>"having
   subagent prompts pre-written alongside tasks might speed things up a lot … if we could just
   use a template to generate the prompt automatically."</em> That is a different feature with a
