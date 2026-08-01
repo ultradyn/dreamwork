@@ -323,6 +323,74 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
             base_state=_base_state(repo, base, base_sha),
         )
 
+    branch_commits = _git(repo, "rev-list", "--count", f"{base_sha}..{branch_sha}")
+    try:
+        commits_examined = int(branch_commits.stdout.strip())
+    except ValueError:
+        commits_examined = -1
+    if branch_commits.returncode or commits_examined < 0:
+        _relay(branch_commits)
+        return _refuse(
+            "red-proof-history",
+            "could not count the branch commits the red-proof scan must examine",
+            f"base={base_sha}; branch={branch_sha}; rev-list exit={branch_commits.returncode}",
+            retained,
+            base_state=_base_state(repo, base, base_sha),
+        )
+
+    redproof_env = os.environ.copy()
+    redproof_env.pop("DREAMWORK_LANE_ID", None)
+    redproof_env["DREAMWORK_LANE_ROLE"] = "author"
+    redproof = _run(
+        [
+            sys.executable,
+            str(Path(__file__).with_name("redproof.py")),
+            "check",
+            "--cwd",
+            str(lane),
+            "--base",
+            base_sha,
+            "--require",
+            "1",
+        ],
+        repo,
+        env=redproof_env,
+    )
+    _relay(redproof)
+    audited_lane_head = _git_text(lane, "rev-parse", "HEAD")
+    audited_branch_sha = _git_text(repo, "rev-parse", "--verify", f"refs/heads/{branch}")
+    population = (
+        f"commits examined={commits_examined}; registries audited=ALL DISCOVERABLE "
+        "by dev/redproof.py (zero is not accepted); injections registered>=1 required; "
+        f"audited tip={audited_lane_head or 'UNREADABLE'}"
+    )
+    if redproof.returncode:
+        return _refuse(
+            "red-proof-history",
+            f"dev/redproof.py check refused or faulted with exit {redproof.returncode}",
+            population,
+            retained,
+            base_state=_base_state(repo, base, base_sha),
+        )
+    if commits_examined == 0:
+        return _refuse(
+            "red-proof-history",
+            "EXAMINED NO COMMIT; an empty history range is not an all-clear",
+            population,
+            retained,
+            base_state=_base_state(repo, base, base_sha),
+        )
+    if audited_lane_head != branch_sha or audited_branch_sha != branch_sha:
+        return _refuse(
+            "red-proof-history",
+            "branch tip moved while its red-proof history was being audited",
+            population
+            + f"; preflight tip={branch_sha}; branch now={audited_branch_sha or 'UNREADABLE'}",
+            retained,
+            base_state=_base_state(repo, base, base_sha),
+        )
+    print(f"red-proof-history: PASS; {population}")
+
     detach = _git(repo, "checkout", "--detach", base_sha)
     if detach.returncode:
         _relay(detach)
@@ -354,7 +422,7 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
             ),
         )
 
-    merge = _git(repo, "merge", "--no-ff", branch, "-m", f"Merge {branch}")
+    merge = _git(repo, "merge", "--no-ff", branch_sha, "-m", f"Merge {branch}")
     _relay(merge)
     if merge.returncode:
         _git(repo, "merge", "--abort")
