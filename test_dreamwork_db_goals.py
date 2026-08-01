@@ -8,7 +8,9 @@ import sqlite3
 
 import pytest
 
-from dreamwork_db import Access, SchemaMismatch, ValidationError, open_database
+from dreamwork_db import (
+    Access, NotFound, SchemaMismatch, ValidationError, open_database,
+)
 from dreamwork_db.store import dreamwork_store_spec
 
 
@@ -95,15 +97,21 @@ def test_v008_downgrade_names_every_nonempty_fact_before_discarding(store_path):
         (claim_id, "criteria", 1, '["gap"]', "[]",
          '{"criteria":1,"members":1}'),
     )
+    conn.execute(
+        "UPDATE meta SET value=? WHERE key='current_goal_id'", (str(group_id),)
+    )
     conn.commit()
     conn.execute("BEGIN")
     try:
         with pytest.raises(SchemaMismatch) as caught:
             v008_goals.downgrade(conn)
         message = str(caught.value)
+        # Every fact v008 added is populated here, so every one must be named:
+        # a rollback that lists three of six still discards the other three.
         for expected in (
             "goal_claim=1", "goal_verdict=1", "goal_state values=1",
-            "goal_rank values=1",
+            "goal_rank values=1", "current_goal_id pointer=1",
+            "goal task_group rows=1",
         ):
             assert expected in message, (
                 "v008_goals.downgrade must name every destructive population; "
@@ -111,6 +119,14 @@ def test_v008_downgrade_names_every_nonempty_fact_before_discarding(store_path):
             )
     finally:
         conn.execute("ROLLBACK")
+        conn.close()
+    conn = sqlite3.connect(store_path)
+    try:
+        assert conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone() == ("8",), "a refused downgrade must not move the version"
+        assert conn.execute("SELECT COUNT(*) FROM goal_claim").fetchone() == (1,)
+    finally:
         conn.close()
 
 
@@ -264,19 +280,34 @@ def test_landed_members_do_not_derive_goal_complete(store_path):
 
 
 def test_rank_collisions_and_all_null_still_have_total_preorder(store_path):
-    """Direction 2(5): red on GoalRepository.preorder's id tie-break."""
+    """Direction 2(5): red on GoalRepository.ranked_children's ORDER BY."""
     with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
         root_a = _goal(db, "Root A")
         root_b = _goal(db, "Root B")
+        root_c = _goal(db, "Root C")
         child_a = _goal(db, "Child A", parent_id=root_a)
         child_b = _goal(db, "Child B", parent_id=root_a)
         with db.transaction() as tx:
+            tx.goals.set_rank(root_c, 5)
             tx.goals.set_rank(child_a, 7)
             tx.goals.set_rank(child_b, 7)
-        # Roots are all-NULL; children collide. Both ties resolve by durable id.
+        with db.transaction() as tx:
+            # Two preconditions this expectation depends on, derived rather
+            # than assumed. The ranked root must hold the LATEST id, or plain
+            # id order yields the same answer and NULL-last is never
+            # exercised; the siblings must genuinely collide, or the tie is
+            # never reached.
+            assert root_c > root_a and root_c > root_b, (
+                f"the ranked root must sort after the NULL roots by id: "
+                f"{root_c} vs {(root_a, root_b)}"
+            )
+            assert tx.goals.rank(child_a) == tx.goals.rank(child_b) is not None, (
+                "the sibling ranks must collide for the tie-break to decide"
+            )
+        # Ranked roots first, NULL roots last by id; colliding children by id.
         with db.transaction() as tx:
             assert tx.goals.preorder() == (
-                root_a, child_a, child_b, root_b
+                root_c, root_a, child_a, child_b, root_b
             ), "rank, NULL-last, then id must yield one deterministic total order"
 
 
@@ -302,8 +333,24 @@ def test_claim_and_verdict_append_round_trip_structured_evidence(store_path):
         assert verdict.examined == {"criteria": 1, "members": 2}
 
 
-def test_zero_examined_is_did_not_judge_not_a_pass(store_path):
+#: Both-zero alone cannot tell ``or`` from ``and`` in the examined guard, and
+#: the mixed rows are the dangerous ones: a panel that read three criteria and
+#: zero members looks busy in every field a reader checks.
+ZERO_EXAMINED = (
+    {"criteria": 0, "members": 0},
+    {"criteria": 3, "members": 0},
+    {"criteria": 0, "members": 3},
+)
+
+
+def test_any_zero_examined_is_did_not_judge_not_a_pass(store_path):
     """Direction 2(1): red on append_verdict's examined precondition."""
+    assert any(
+        0 in case.values() and any(case.values()) for case in ZERO_EXAMINED
+    ), (
+        "ZERO_EXAMINED must contain a PARTIAL zero, or an `and` between the "
+        "two counts passes this test while storing an unexamined population"
+    )
     with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
         goal_id = _goal(db, "Non-vacuous")
         with db.transaction() as tx:
@@ -311,16 +358,20 @@ def test_zero_examined_is_did_not_judge_not_a_pass(store_path):
                 goal_id, claimed_by="loop", claimed_at="now", summary="done",
                 base_sha="abc", details_sha="def", round=1,
             )
-        with db.transaction() as tx:
-            with pytest.raises(
-                ValidationError,
-                match=r"DID NOT JUDGE.*criteria=0.*members=0",
-            ):
-                tx.goals.append_verdict(
-                    claim.id, lens="criteria", refuted=False, findings=[],
-                    corroborated=[{"criterion": "C1", "sha": "abc"}],
-                    examined={"criteria": 0, "members": 0},
-                )
+        for examined in ZERO_EXAMINED:
+            with db.transaction() as tx:
+                with pytest.raises(
+                    ValidationError,
+                    match=(
+                        r"DID NOT JUDGE.*criteria=%d.*members=%d"
+                        % (examined["criteria"], examined["members"])
+                    ),
+                ):
+                    tx.goals.append_verdict(
+                        claim.id, lens="criteria", refuted=False, findings=[],
+                        corroborated=[{"criterion": "C1", "sha": "abc"}],
+                        examined=examined,
+                    )
         with db.transaction() as tx:
             real = tx.goals.append_verdict(
                 claim.id, lens="criteria", refuted=False, findings=[],
@@ -328,6 +379,11 @@ def test_zero_examined_is_did_not_judge_not_a_pass(store_path):
                 examined={"criteria": 1, "members": 1},
             )
         assert real.refuted is False
+        with db.transaction() as tx:
+            assert len(tx.goals.verdicts(claim.id)) == 1, (
+                "only the examined verdict may have been stored; a refused one "
+                "that still landed is the vacuous pass this guard exists for"
+            )
 
 
 def test_empty_corroborated_pass_is_malformed(store_path):
@@ -347,3 +403,125 @@ def test_empty_corroborated_pass_is_malformed(store_path):
                     claim.id, lens="criteria", refuted=False, findings=[],
                     corroborated=[], examined={"criteria": 1, "members": 1},
                 )
+        # The mirror: an enumeration is the refuter's product, so a refutation
+        # that found nothing to say is malformed for the same reason.
+        with db.transaction() as tx:
+            with pytest.raises(
+                ValidationError, match=r"malformed refutation.*findings.*empty"
+            ):
+                tx.goals.append_verdict(
+                    claim.id, lens="evidence", refuted=True, findings=[],
+                    corroborated=[], examined={"criteria": 1, "members": 1},
+                )
+        with db.transaction() as tx:
+            assert tx.goals.verdicts(claim.id) == (), (
+                "neither malformed verdict may have reached the table"
+            )
+
+
+def test_a_malformed_verdict_row_is_refused_on_read(store_path):
+    """Direction 2(2): red on GoalRepository.verdicts' stored-shape guards.
+
+    ``append_verdict`` is not the only writer a real store will ever see — a
+    hand-patched row, or a future writer, reaches the same table.  An uncited
+    pass must not become a pass by having been written some other way.
+    """
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        goal_id = _goal(db, "Hand-patched")
+        with db.transaction() as tx:
+            claim = tx.goals.append_claim(
+                goal_id, claimed_by="loop", claimed_at="now", summary="done",
+                base_sha="abc", details_sha="def", round=1,
+            )
+    conn = sqlite3.connect(store_path)
+    try:
+        conn.execute(
+            "INSERT INTO goal_verdict"
+            " (claim_id,lens,refuted,findings,corroborated,examined)"
+            " VALUES (?,'criteria',0,'[]','[]','{\"criteria\":2,\"members\":2}')",
+            (claim.id,),
+        )
+        conn.commit()
+        # The row is a well-formed PASS in every column the table constrains:
+        # only the corroboration rule makes it malformed.
+        assert conn.execute(
+            "SELECT refuted, examined FROM goal_verdict"
+        ).fetchone() == (0, '{"criteria":2,"members":2}'), (
+            "the fixture must be an examined pass, or the read fails on the "
+            "examined precondition instead of on the missing corroboration"
+        )
+    finally:
+        conn.close()
+    with open_database(dreamwork_store_spec(store_path), access=Access.READ) as db:
+        with pytest.raises(
+            SchemaMismatch, match=r"malformed pass with no corroboration"
+        ):
+            db.goals.verdicts(claim.id)
+
+
+def test_the_pointer_makes_a_second_current_unrepresentable(store_path):
+    """Direction 2(3): the design's claim, tested rather than restated.
+
+    The mechanism is v001's ``meta.key TEXT PRIMARY KEY`` — v008 adds a row to
+    a table that already refuses a second one.  A *dangling* pointer is still
+    representable, so the second half asserts that it reads loudly.
+    """
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        goal_id = _goal(db, "Only current")
+        with db.transaction() as tx:
+            tx.goals.set_current_goal_id(goal_id)
+
+    conn = sqlite3.connect(store_path)
+    try:
+        with pytest.raises(sqlite3.IntegrityError, match=r"meta\.key"):
+            conn.execute(
+                "INSERT INTO meta (key,value) VALUES ('current_goal_id','999')"
+            )
+        conn.rollback()
+        assert conn.execute(
+            "SELECT COUNT(*) FROM meta WHERE key='current_goal_id'"
+        ).fetchone() == (1,)
+        # Representable, and the point of the test: nothing stops the goal row
+        # going away underneath a live pointer.
+        conn.execute("DELETE FROM task_group WHERE id=?", (goal_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    with open_database(dreamwork_store_spec(store_path), access=Access.READ) as db:
+        with pytest.raises(NotFound, match=rf"no task group #{goal_id}"):
+            db.goals.current_goal_id()
+
+
+def test_every_claim_round_is_kept_with_its_verdicts(store_path):
+    """Direction 2: goal_claim/goal_verdict are append-only across rounds.
+
+    Round 2 must be able to read round 1's gaps, so round 1 has to survive
+    round 2 being written — findings and all.
+    """
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        goal_id = _goal(db, "Two rounds")
+        with db.transaction() as tx:
+            first = tx.goals.append_claim(
+                goal_id, claimed_by="loop", claimed_at="t1", summary="round 1",
+                base_sha=None, details_sha="d1", round=1, outcome="refuted",
+            )
+            tx.goals.append_verdict(
+                first.id, lens="criteria", refuted=True,
+                findings=["criterion 3 has no evidence"], corroborated=[],
+                blocking="none", examined={"criteria": 3, "members": 2},
+            )
+        with db.transaction() as tx:
+            second = tx.goals.append_claim(
+                goal_id, claimed_by="loop", claimed_at="t2", summary="round 2",
+                base_sha="abc", details_sha="d2", round=2,
+            )
+        with db.transaction() as tx:
+            assert tx.goals.claims(goal_id) == (first, second), (
+                "a second round must append; round 1 is what round 2 reads"
+            )
+            round_one = tx.goals.verdicts(first.id)
+            assert [v.findings for v in round_one] == [
+                ("criterion 3 has no evidence",)
+            ], "round 1's enumeration must survive round 2 verbatim"
+            assert tx.goals.verdicts(second.id) == ()
