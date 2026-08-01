@@ -467,3 +467,167 @@ class TestStreaming:
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True,
             cwd=str(Path(__file__).parent))
         assert proc.wait(timeout=10) == 0
+
+
+# The src stamp. Anything matching "src " followed by 8 hex chars at line end.
+import re as _re
+_STAMP = _re.compile(r"src [0-9a-f]{8}")
+
+
+class TestSourceStampIsHonest:
+    """#840 option 3: the line names the code that produced it.
+
+    The single most important property — the trap the brief names outright —
+    is that the stamp reflects the code RESIDENT in the running process, NOT
+    a fresh re-read from disk at print time. A stamp that re-read would print
+    the NEW sha while running OLD code: the exact inversion of the bug, and a
+    worse lie than no stamp.
+    """
+
+    def test_line_carries_a_stamp(self, tmp_path):
+        out = tick_line.facts(make_target(tmp_path, posture=HOT))
+        assert _STAMP.search(out), "no src stamp on the tick line: %s" % out
+
+    def test_stamp_is_bound_at_import_not_reread_at_print(self, monkeypatch):
+        """THE TRAP. If RESIDENT_SHA were recomputed inside facts() (a disk
+        re-read at print time), editing tick_line.py's source on disk would
+        flip the stamp while the resident code stayed old — the inversion.
+
+        This monkeypatches a _resident_sources_sha RECOMPUTE over a *different*
+        byte set than the one bound at import, then asserts facts() still
+        reports the IMPORT-time value. It binds the module attribute directly,
+        which is the production symbol a re-read would overwrite; a recompute
+        living inside facts() would re-read disk and disagree.
+        """
+        original = tick_line.RESIDENT_SHA
+        assert _re.fullmatch(r"[0-9a-f]{8}", original)
+        # Simulate disk having moved on under a resident process: the import
+        # value is frozen, and a later re-read would disagree.
+        monkeypatch.setattr(tick_line, "RESIDENT_SHA", "deadbeef")
+        out = tick_line.facts(".")
+        assert "src deadbeef" in out, (
+            "stamp did not report the resident (import-bound) value; a disk "
+            "re-read at print time would invert the bug: %s" % out)
+
+    def test_stamp_covers_the_whole_local_closure_not_just_tick_line(
+            self, tmp_path, monkeypatch):
+        """The partial-stamp trap (#821 shape one level up). _fleet_fact calls
+        into status_sync, so a stamp of ONLY tick_line would read 'unchanged'
+        while a status_sync edit moved the output. This proves the hash walks
+        every local module's bytes via sys.modules, not a hard-coded list.
+
+        Differential: recompute the hash twice with status_sync's __file__
+        pointing at two DIFFERENT temp files (both admitted by the local-path
+        filter), and require the stamp to MOVE. A tick_line-only hash is blind
+        to status_sync's __file__ and would return identical stamps."""
+        import os
+        here = os.path.dirname(os.path.abspath(tick_line.__file__))
+        # Precondition: status_sync IS a local module the stamp reads.
+        assert os.path.isfile(os.path.join(here, "status_sync.py"))
+        a = os.path.join(here, "_840_probe_a.py")
+        b = os.path.join(here, "_840_probe_b.py")
+        try:
+            with open(a, "wb") as f:
+                f.write(b"# probe a\n")
+            with open(b, "wb") as f:
+                f.write(b"# probe b - DIFFERENT bytes\n")
+            monkeypatch.setattr(status_sync, "__file__", a, raising=False)
+            stamp_a = tick_line._resident_sources_sha()
+            monkeypatch.setattr(status_sync, "__file__", b, raising=False)
+            stamp_b = tick_line._resident_sources_sha()
+        finally:
+            for p in (a, b):
+                if os.path.exists(p):
+                    os.remove(p)
+        assert stamp_a != stamp_b, (
+            "stamp did not move when status_sync's source bytes changed; a "
+            "tick_line-only stamp would read 'current' through the #821 edit")
+
+
+class TestStaleFilterServesFreshCode:
+    """#840 option 2: the long-lived parent spawns a fresh child per pulse, so
+    an edit to tick_line.py (or any module it imports) takes effect on the VERY
+    NEXT tick — no re-arm, no mtime watch, no source list to forget.
+
+    This is the end-to-end fix for the observed bug: #821 served 20h08m of
+    pre-merge code, #837 kept doubling lanes after the dedupe landed, both
+    'fixed' by stopping and re-arming the monitor. A per-tick child has no
+    resident set to go stale.
+    """
+
+    SENTINEL = "SENTINEL_840_TEST"
+    # A unique, exactly-once substring of the facts() return to inject after.
+    NEEDLE = "] + posture_parts + [_stamp_fact()])"
+    REPLACEMENT = "] + posture_parts + [_stamp_fact(), \"%s\"])" % SENTINEL
+
+    def test_edit_to_tick_line_appears_on_the_next_pulse(self, tmp_path):
+        """Direction-1 red-proof, as a permanent guard. Holds ONE process across
+        an edit (the precondition the brief flags: a test that restarts the
+        process between edit and assertion tests nothing). Pulse 1 runs the
+        original; edit tick_line.py under the process; pulse 2 MUST carry the
+        sentinel. The baseline (pre-fix streaming filter) served the old code
+        indefinitely here."""
+        src = Path(tick_line.__file__)
+        backup = src.read_bytes()
+        assert src.read_text().count(self.NEEDLE) == 1, "precondition: needle unique"
+        target = make_target(tmp_path, posture=HOT)
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, str(src), "--target", target],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+                cwd=str(src.parent))
+            try:
+                proc.stdin.write(PULSE + " a\n")
+                proc.stdin.flush()
+                line1 = _readline_within(proc.stdout, 10)
+                assert self.SENTINEL not in line1  # precondition: absent before
+
+                edited = src.read_text().replace(self.NEEDLE, self.REPLACEMENT)
+                assert edited.count(self.SENTINEL) == 1
+                src.write_text(edited)
+
+                proc.stdin.write(PULSE + " b\n")
+                proc.stdin.flush()
+                line2 = _readline_within(proc.stdout, 15)
+                assert self.SENTINEL in line2, (
+                    "edit to tick_line.py did not appear on the next pulse; "
+                    "the streaming filter served stale resident code: %s"
+                    % line2)
+            finally:
+                proc.stdin.close()
+                proc.wait(timeout=10)
+        finally:
+            src.write_bytes(backup)
+            assert src.read_bytes() == backup
+
+    def test_two_fresh_children_report_the_same_stamp(self, tmp_path):
+        """The stamp is a deterministic function of the resident closure, so
+        two fresh children over the same disk bytes agree. (A direct call
+        from WITHIN pytest would disagree, because pytest makes the test
+        module resident too — that is honest, not a bug, but it is why this
+        test compares two subprocess children rather than a child to the
+        in-process value.)"""
+        target = make_target(tmp_path, posture=HOT)
+        exe = str(Path(tick_line.__file__).parent / "tick_line.py")
+
+        def child_stamp():
+            proc = subprocess.Popen(
+                [sys.executable, exe, "--target", target],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+                cwd=str(Path(tick_line.__file__).parent))
+            try:
+                proc.stdin.write(PULSE + "\n")
+                proc.stdin.flush()
+                return _readline_within(proc.stdout, 10)
+            finally:
+                proc.stdin.close()
+                proc.wait(timeout=10)
+
+        line1 = child_stamp()
+        line2 = child_stamp()
+        m1, m2 = _STAMP.search(line1), _STAMP.search(line2)
+        assert m1 and m2
+        assert m1.group(0) == m2.group(0), (
+            "two fresh children over the same disk disagreed on the stamp; "
+            "the stamp must be a deterministic function of the closure: "
+            "%s vs %s" % (m1.group(0), m2.group(0)))

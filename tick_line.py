@@ -62,6 +62,9 @@ no failure in this file can cost the loop its wake.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -71,6 +74,54 @@ import watch
 # The separator between the pulse and the facts, and between facts. Matches the
 # ` · ` the ledger and hand-off rows already use for co-ordinate lists.
 SEP = " · "
+
+
+def _resident_sources_sha() -> str:
+    """First 8 hex of sha256 over the source bytes of every LOCAL module that
+    is resident in this process, read once at import (#840, option 3).
+
+    LOCAL = a module whose ``__file__`` lives under this repo tree (same root
+    as tick_line.py), so stdlib and third-party packages are excluded. By the
+    time this runs — at the end of tick_line's import — ``sys.modules`` already
+    holds the whole resident closure: status_sync, watch, ledger_parse,
+    client_dist, and the ``dreamwork_db`` / ``user_events`` packages they pull
+    in. So the hash MOVES when any of them changes. A stamp of tick_line alone
+    would read "unchanged" while a status_sync edit moved the output — the
+    partial-stamp form of the partial-watch trap that made #821's fix look like
+    a no-op while the filter kept serving it.
+
+    Read at IMPORT (this call binds ``RESIDENT_SHA`` once); never at print. The
+    stamp must name the code that is RESIDENT, so a long-lived filter that has
+    gone stale prints its OLD sha and the staleness is VISIBLE rather than
+    silent. Re-reading at print time would print the NEW sha while running OLD
+    code — the exact inversion of the bug, and a worse lie than no stamp. The
+    per-tick child (below) makes this moot in the live pipeline: a fresh
+    interpreter's resident bytes ARE the current disk bytes, so the stamp is
+    honest there for the trivial reason that nothing has had time to go stale.
+    """
+    prefix = os.path.dirname(os.path.abspath(__file__)) + os.sep
+    files = set()
+    for mod in sys.modules.values():
+        f = getattr(mod, "__file__", None)
+        if not f:
+            continue
+        try:
+            af = os.path.abspath(f)
+        except (OSError, ValueError):
+            continue
+        if af.startswith(prefix):
+            files.add(af)
+    h = hashlib.sha256()
+    for f in sorted(files):
+        try:
+            with open(f, "rb") as fh:
+                h.update(fh.read())
+        except OSError:
+            continue
+    return h.hexdigest()[:8]
+
+
+RESIDENT_SHA = _resident_sources_sha()
 
 
 def _posture_facts(p: dict) -> list[str]:
@@ -239,6 +290,18 @@ def _guarded(fn, label: str) -> str:
         return _unresolved(label, exc)
 
 
+def _stamp_fact() -> str:
+    """Which code produced this line — the resident sha, not the disk sha.
+
+    Trailing the line on purpose: it is provenance, never a number acted on,
+    so it sits where nothing can push the fleet count out of view (#612). A
+    reader who suspects the filter is stale compares this to a direct call's
+    stamp; a mismatch is the legible sign that was MISSING when #821/#837
+    served hours-old code with no indication.
+    """
+    return "src %s" % RESIDENT_SHA
+
+
 def facts(target: str) -> str:
     """The whole appended fragment. Never raises, never returns empty.
 
@@ -267,7 +330,7 @@ def facts(target: str) -> str:
         _guarded(lambda: _fleet_fact(target), "fleet"),
         delegation,
         _guarded(lambda: _open_fact(target), "open"),
-    ] + posture_parts)
+    ] + posture_parts + [_stamp_fact()])
 
 
 def decorate(pulse: str, target: str) -> str:
@@ -280,28 +343,54 @@ def main(argv: list[str] | None = None) -> int:
         prog="tick_line.py",
         description="Append the live posture and fleet to each heartbeat pulse.")
     ap.add_argument("--target", default=".", help="target project directory")
+    # Internal: the parent loop spawns this image per pulse (--one-shot) so
+    # every tick runs the code currently on disk. Suppressed from --help.
+    ap.add_argument("--one-shot", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--pulse", default="", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
 
+    if args.one_shot:
+        # CHILD PATH — one decoration in a FRESH interpreter, then exit. The
+        # parent spawns this per pulse, so the facts always reflect the code on
+        # disk for tick_line AND every module it imports. A streaming filter
+        # holds its imports for the process lifetime, which is exactly why an
+        # edit to tick_line.py (or status_sync, or watch) was inert until the
+        # monitor was re-armed — #821 served 20h08m of pre-merge code, #837
+        # kept doubling lanes after the dedupe landed. A fresh interpreter per
+        # tick has no resident set to go stale (#840, option 2: correct by
+        # construction — no mtime watch, no source list to forget).
+        sys.stdout.write(decorate(args.pulse, args.target) + "\n")
+        return 0
+
+    # PARENT PATH — the long-lived pipe filter. heartbeat stays the only
+    # scheduler; this reads its pulses and hands each one to a fresh child.
+    # The pulse passes through UNCONDITIONALLY (#655): a child failure degrades
+    # the facts to a loud UNRESOLVED, it never costs the loop its wake.
+    self = os.path.abspath(__file__)
     while True:
         pulse = sys.stdin.readline()
         if not pulse:
             return 0
-        # `flush=True` IS THE TICK. Measured, and it is the whole reason
-        # TestStreaming runs a real process: stdout to a pipe is
-        # BLOCK-buffered, not line-buffered, so without this the decorated
-        # lines sit in an 8KB buffer while the coordinator waits. At ~300
-        # bytes a tick that is roughly 27 ticks — over two hours of silence
-        # from the loop's only wake channel, ending in a burst. Dropping it
-        # makes that test hang rather than fail, which is what it looked like
-        # when this was red-proved.
-        #
-        # `readline()` rather than `for pulse in sys.stdin` is NOT part of that
-        # contract, and the comment here used to claim it was. Red-proving the
-        # claim refuted it: iteration was swapped in and every streaming test
-        # still passed, because TextIOWrapper iteration calls readline() and
-        # the read-ahead this warned about is a Python 2 behaviour. The form is
-        # kept only for the explicit EOF branch; nothing depends on it.
-        print(decorate(pulse.rstrip("\n"), args.target), flush=True)
+        pulse = pulse.rstrip("\n")
+        result = subprocess.run(
+            [sys.executable, self, "--one-shot", "--target", args.target,
+             "--pulse", pulse],
+            capture_output=True, text=True)
+        if result.returncode == 0:
+            sys.stdout.write(result.stdout)
+        else:
+            sys.stdout.write(pulse + SEP + _unresolved(
+                "tick child", ChildProcessError(
+                    "exit %d%s" % (result.returncode,
+                                   ": " + result.stderr.strip().splitlines()[-1][:100]
+                                   if result.stderr.strip() else ""))) + "\n")
+        # `flush` IS THE TICK. Measured: stdout to a pipe is BLOCK-buffered,
+        # not line-buffered, so without this the decorated lines sit in an 8KB
+        # buffer while the coordinator waits — ~27 ticks, over two hours of
+        # silence from the loop's only wake channel, ending in a burst. The
+        # per-tick child does not change this: the child writes to a pipe the
+        # parent captures, and it is the PARENT's stdout the reader is on.
+        sys.stdout.flush()
 
 
 if __name__ == "__main__":
