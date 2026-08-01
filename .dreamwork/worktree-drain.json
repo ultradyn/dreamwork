@@ -2,9 +2,7 @@
   "version": 2,
   "root": ".worktrees",
   "root_present": true,
-  "high_water_count": 1,
-  "allowed_worktrees": [
-    "cx-846wtmove"
-  ],
-  "last_observed_size_bytes": 35228789
+  "high_water_count": 0,
+  "allowed_worktrees": [],
+  "last_observed_size_bytes": 436853
 }
