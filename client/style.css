@@ -1790,6 +1790,35 @@
   .pdep.snap { transition:none; }
   .pmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
   .pmsg:empty { display:none; }
+  /* #646+#580: the free-text subagent policy control — a sibling under the
+     posture section. A textarea sized for short policies (a few words, or
+     20-30 with a custom instruction), with explicit save/reset actions that
+     are deliberately NOT on the posture arm's 10s timer. The field treatment
+     echoes .askform textarea (the composer's box) so the surface reads as
+     the same kind of thing — a place you write into — without inventing a
+     second field vocabulary. Reduced motion: the textarea has no transition
+     to suppress (it is a static input), matching the composer. */
+  .spolicy { margin:.35rem 0 .5rem; }
+  .spolicy-head { display:flex; align-items:baseline; gap:.55rem;
+    margin-bottom:.25rem; }
+  .spolicy-head .label { margin:0; }
+  .spolicy-src { color:var(--dimmer); font-size:.65rem; margin:0;
+    text-transform:none; letter-spacing:0; font-weight:400; }
+  .spolicy-src.file { color:var(--dim); }
+  .spolicy-body { display:flex; flex-direction:column; gap:.3rem; }
+  .spolicy-field { display:block; box-sizing:border-box; width:100%;
+    min-height:3.2rem; resize:vertical;
+    background:var(--panel); color:var(--lit);
+    border:1px solid var(--line); border-radius:4px;
+    padding:.4rem .5rem; font:inherit; font-size:.78rem;
+    line-height:1.4; margin:0; }
+  .spolicy-field:focus { border-color:var(--border); outline:0; }
+  .spolicy-actions { display:flex; gap:.3rem; }
+  .spolicy-save { color:var(--accent); }
+  .spolicy-reset { color:var(--dim); }
+  .spolicy-reset:disabled { color:var(--dimmer); cursor:default; opacity:.72; }
+  .spolicy-msg { color:var(--dim); font-size:.7rem; margin:.15rem 0 0; }
+  .spolicy-msg:empty { display:none; }
   /* #488: description shell always reserves layout height. Visibility is
      opacity only — never display:none / never inserted-removed — so hover
      cannot reflow the card or anything below it. Empty space is intentional. */

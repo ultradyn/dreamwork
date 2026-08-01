@@ -830,6 +830,150 @@ function posturePicker(d) {
     `<span class="pdep" id="pdep" aria-live="polite"></span></div>` +
     `<div class="pmsg" id="pmsg" aria-live="polite"></div>`;
 }
+/* ── #646 + #580: free-text subagent policy control ───────────────────────
+   SIBLING of the posture picker, placed directly under it. Every posture
+   axis arms on a shared 10s pending; this control commits EXPLICITLY on a
+   Save button (his ruling — the inconsistency is the request), so it has
+   its own POST /subagent-policy and its own gesture, not a field on /posture.
+   Reset = delete the file (returns to the standing default), NOT clear-to-
+   empty — the read side decided that, and an inert file is what lint then
+   has to complain about.
+
+   #580's half (do not drop it): the placeholder CYCLES through several
+   options on each render, diversity matters, and policies are short. The
+   set below is drawn from his own examples of what a policy names. */
+const SUBAGENT_POLICY_PLACEHOLDERS = [
+  'e.g. no subagents — direct work only',
+  'e.g. specific models per task kind',
+  'e.g. custom worktree dirs for parallel agents',
+  'e.g. roles: reviewer, implementer, explorer',
+  'e.g. build boxes and which tools they run',
+  'e.g. deploy auth — who may ship',
+];
+function subagentPolicyPicker(d) {
+  const p = (d && d.posture) || {};
+  const has = p.subagent_policy_source === 'file';
+  // One placeholder per render, picked at random so consecutive ticks cycle.
+  // A fixed placeholder would not show "diversity matters"; a rotating one
+  // does, and it never collides with real text because it is the EMPTY state.
+  const ph = SUBAGENT_POLICY_PLACEHOLDERS[
+    Math.floor(Math.random() * SUBAGENT_POLICY_PLACEHOLDERS.length)];
+  return `<section class="spolicy" id="spolicy" aria-label="subagent policy">` +
+    `<div class="spolicy-head"><div class="label">subagent policy</div>` +
+    `<div class="spolicy-src${has ? ' file' : ''}" id="spolicy-src">` +
+    `${has ? 'override' : 'standing default'}</div></div>` +
+    `<div class="spolicy-body">` +
+    `<textarea class="spolicy-field" id="spolicy-field" rows="3"` +
+    ` placeholder="${esc(ph)}" aria-describedby="spolicy-msg"` +
+    ` spellcheck="false"></textarea>` +
+    `<div class="spolicy-actions">` +
+    `<button type="button" class="sgbtn spolicy-save" id="spolicy-save"` +
+    ` onclick="commitSubagentPolicy()">save</button>` +
+    `<button type="button" class="sgbtn spolicy-reset" id="spolicy-reset"` +
+    `${has ? '' : ' disabled'}` +
+    ` onclick="resetSubagentPolicy()">reset</button></div></div>` +
+    `<div class="spolicy-msg" id="spolicy-msg" aria-live="polite"></div>` +
+    `</section>`;
+}
+/* The textarea value is injected AFTER morphdom commits the HTML, because the
+   stored policy is free text that may contain characters an HTML parser would
+   reinterpret (<, >, &) if they sat inside the string-built markup. Setting
+   .value on the live DOM node is safe — it never passes through a parser.
+   Called from the tick's post-morph hook alongside the other sync calls. */
+function syncSubagentPolicyValue(d) {
+  const f = document.getElementById('spolicy-field');
+  if (!f) return;
+  const p = (d && d.posture) || {};
+  const has = p.subagent_policy_source === 'file';
+  const want = has ? String(p.subagent_policy || '') : '';
+  // Only overwrite when the field is NOT the active edit target and the
+  // server-side value differs — so a user mid-edit is never clobbered by a
+  // 2s tick, and an unchanged tick does not reset the cursor.
+  if (document.activeElement === f) return;
+  if (f.value !== want) f.value = want;
+}
+/* Save: POST the field's current text. The "saved" message fires ONLY after
+   writeVerdict confirms the write landed (#651 — a name must not imply more
+   than it proves), and the response's read-back value is what updates the
+   field, not the text we sent (#632/#659 round-trip proof in UI form). */
+async function commitSubagentPolicy() {
+  const f = document.getElementById('spolicy-field');
+  const msg = document.getElementById('spolicy-msg');
+  const save = document.getElementById('spolicy-save');
+  if (save) save.disabled = true;
+  let ok = false;
+  let body = null;
+  try {
+    const res = await fetch('/subagent-policy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        policy: f ? f.value : '',
+        from: location.pathname + location.search,
+      }),
+    });
+    const v = await writeVerdict(res);
+    ok = v.landed;
+    if (v.landed) {
+      try { body = await res.json(); } catch (e) { body = null; }
+    }
+  } catch (e) { ok = false; }
+  if (save) save.disabled = false;
+  if (ok && body) {
+    if (data && data.posture) {
+      data.posture.subagent_policy = body.subagent_policy;
+      data.posture.subagent_policy_source = body.subagent_policy_source;
+    }
+    if (f && body.subagent_policy != null) f.value = body.subagent_policy;
+    if (msg) msg.textContent = body.changed ? 'policy saved' : 'no change';
+    const src = document.getElementById('spolicy-src');
+    if (src) { src.textContent = 'override'; src.className = 'spolicy-src file'; }
+    const reset = document.getElementById('spolicy-reset');
+    if (reset) reset.disabled = false;
+  } else if (msg) {
+    msg.textContent = 'could not save the policy — the write was refused';
+  }
+}
+/* Reset: POST reset=true, which deletes the file server-side. The field
+   clears ONLY after the verdict lands, and clears to EMPTY (the standing
+   default fills it on the next tick), NOT to the default's text locally —
+   so a reset that failed server-side does not look done (#671). */
+async function resetSubagentPolicy() {
+  const f = document.getElementById('spolicy-field');
+  const msg = document.getElementById('spolicy-msg');
+  const reset = document.getElementById('spolicy-reset');
+  if (reset) reset.disabled = true;
+  let ok = false;
+  let body = null;
+  try {
+    const res = await fetch('/subagent-policy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reset: true,
+        from: location.pathname + location.search,
+      }),
+    });
+    const v = await writeVerdict(res);
+    ok = v.landed;
+    if (v.landed) {
+      try { body = await res.json(); } catch (e) { body = null; }
+    }
+  } catch (e) { ok = false; }
+  if (reset) reset.disabled = false;
+  if (ok && body) {
+    if (data && data.posture) {
+      data.posture.subagent_policy = body.subagent_policy;
+      data.posture.subagent_policy_source = body.subagent_policy_source;
+    }
+    if (f) f.value = '';
+    if (msg) msg.textContent = body.changed ? 'policy reset to default' : 'already default';
+    const src = document.getElementById('spolicy-src');
+    if (src) { src.textContent = 'standing default'; src.className = 'spolicy-src'; }
+    if (reset) reset.disabled = true;
+  } else if (msg) {
+    msg.textContent = 'could not reset the policy — the write was refused';
+  }
+}
+
 /* Shared description for posture stops — presentation only; never arms. */
 let pdescKey = null;
 let pdescPendingKey = null;
@@ -1787,6 +1931,9 @@ function finishViewCommit() {
   // picker it used to sit beside was removed in #547; posture derives from
   // .dreamwork/run-mode via collect(), independent of any picker surface).
   syncPostureFromData();
+  // #646: inject the stored policy text into the textarea AFTER morphdom,
+  // so free text never passes through the HTML string-builder (parser-safe).
+  syncSubagentPolicyValue(data);
   // #454: rolled questions re-roll here, on the same argument as the
   // drafts below — every render commits through this seam, and the tick's
   // regroups measure AFTER it, so a kept roll invents no travel.
