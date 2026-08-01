@@ -212,6 +212,31 @@ class TestInRepoWorktreeDrain:
         assert "count 2" in rep.rows[-1][2]
         assert state.read_bytes() == before, "a red run must not bless its count"
 
+    def test_unrecorded_worktree_is_read_from_the_real_git_registry(
+            self, tmp_path, monkeypatch):
+        root = tmp_path / "repo"
+        root.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "master"], cwd=root,
+                       check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=Test", "-c",
+             "user.email=test@example.invalid", "commit", "--allow-empty",
+             "-qm", "base"], cwd=root, check=True)
+        offender = root / ".worktrees" / "regression"
+        subprocess.run(
+            ["git", "worktree", "add", "-q", "-b", "regression",
+             str(offender)], cwd=root, check=True)
+        (root / ".dreamwork").mkdir()
+        _drain_state(root / ".dreamwork", allowed=(),
+                     size=lint._tree_size(root / ".worktrees"))
+        monkeypatch.setattr(lint, "_prior_drain_state",
+                            lambda target, current: None)
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(root / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert str(offender) in rep.rows[-1][2]
+        assert "count 1" in rep.rows[-1][2]
+
     def test_size_growth_trips_even_when_registered_count_is_unchanged(
             self, tmp_path, monkeypatch):
         t = target(tmp_path)
@@ -227,6 +252,21 @@ class TestInRepoWorktreeDrain:
         assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
         assert "size grew from recorded 123" in rep.rows[-1][2]
         assert "registered count stayed 1" in rep.rows[-1][2]
+
+    def test_unregistered_stray_bytes_trip_while_count_stays_zero(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        stray = t / ".worktrees" / "stray" / "cache"
+        stray.mkdir(parents=True)
+        stray.joinpath("blob").write_bytes(b"x" * 4096)
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        monkeypatch.setattr(lint, "_registered_in_repo_worktrees",
+                            lambda main, old: [])
+        _drain_state(t / ".dreamwork", allowed=(), size=123)
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "registered count stayed 0" in rep.rows[-1][2]
 
     def test_size_shrink_requires_lowering_the_checkpoint(
             self, tmp_path, monkeypatch):
