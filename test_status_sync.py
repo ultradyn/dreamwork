@@ -147,7 +147,8 @@ class TestPruneDeadLanes:
     """
 
     def test_dead_pruned_live_kept_counts_derived(self, tmp_path):
-        live_proc = _spawn_lane(f"/tmp/brief-402a-live-{time.time_ns()}.md")
+        live_brief = f"/tmp/brief-402a-live-{time.time_ns()}.md"
+        live_proc = _spawn_lane(live_brief)
         dead_pid = _dead_pid()
         try:
             time.sleep(0.6)
@@ -155,7 +156,7 @@ class TestPruneDeadLanes:
             assert status_sync._pid_alive(live_proc.pid), "live pid must be alive"
             assert not status_sync._pid_alive(dead_pid), "dead pid must be dead"
             dreamers = [
-                {"task": 7, "pid": live_proc.pid, "brief": "live"},
+                {"task": 7, "pid": live_proc.pid, "brief": live_brief},
                 {"task": 9, "pid": dead_pid, "brief": "dead"},
             ]
             n_alive = sum(1 for d in dreamers
@@ -166,13 +167,39 @@ class TestPruneDeadLanes:
 
             live, pruned = status_sync.live_lanes(dreamers)
             live_tasks = {d["task"] for d in pruned}
-            assert 7 in live_tasks and 9 not in live_tasks
+            assert 9 not in live_tasks, \
+                "dead lane was still reported live: task 9 in %s" % live_tasks
+            assert 7 in live_tasks, \
+                "live lane disappeared while pruning task 9: %s" % live_tasks
             assert len(pruned) == n_alive          # dead lane gone
             # Survivors are kept verbatim — nothing else about them changes.
             assert pruned == [d for d in dreamers if d["task"] == 7]
         finally:
             live_proc.kill()
             live_proc.wait()
+
+    def test_reused_pid_does_not_impersonate_a_lane(self):
+        """A live pid is necessary but not sufficient: it must still carry
+        the recorded lane identity through cwd or its exact argv.
+
+        Direction 1 seam: ``status_sync.live_lanes`` calling
+        ``_pid_matches_lane``. Revert that call to ``_pid_alive`` and this
+        fails on the discriminating message below, not merely a count.
+        """
+        real_brief = f"/tmp/brief-821-real-{time.time_ns()}.md"
+        proc = _spawn_lane(real_brief)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid), \
+                "precondition: candidate pid must be alive"
+            reused = {"task": 821, "pid": proc.pid,
+                      "brief": "/tmp/different-lane/BRIEF.md"}
+            live, pruned = status_sync.live_lanes([reused])
+            assert 821 not in live and reused not in pruned, \
+                "dead lane was still reported live because its pid was reused"
+        finally:
+            proc.kill()
+            proc.wait()
 
 
 # ── 3. a failed probe changes nothing ────────────────────────────────────
@@ -493,14 +520,15 @@ class TestReapLandedTask:
     """
 
     def test_live_pid_landed_task_is_reaped_sync_continues(self, tmp_path):
-        live_proc = _spawn_lane(f"/tmp/brief-402a-landed-{time.time_ns()}.md")
+        brief = f"/tmp/brief-402a-landed-{time.time_ns()}.md"
+        live_proc = _spawn_lane(brief)
         try:
             time.sleep(0.6)
             assert status_sync._pid_alive(live_proc.pid), \
                 "precondition: live pid must be alive"
             # The entry's task (999) is deliberately NOT in the open ledger.
             dreamers = [{"task": 999, "pid": live_proc.pid,
-                         "brief": "/no/such/brief.md"}]
+                         "brief": brief}]
             # Precondition: 999 is not an open id, so the entry is stale.
             ledger = _ledger(7, 8)            # open: 7, 8 — not 999
             assert 999 not in status_sync.open_ids(ledger), \
@@ -525,12 +553,13 @@ class TestReapLandedTask:
             live_proc.wait()
 
     def test_live_pid_open_task_is_kept(self, tmp_path):
-        live_proc = _spawn_lane(f"/tmp/brief-402a-keep-{time.time_ns()}.md")
+        brief = f"/tmp/brief-402a-keep-{time.time_ns()}.md"
+        live_proc = _spawn_lane(brief)
         try:
             time.sleep(0.6)
             assert status_sync._pid_alive(live_proc.pid)
             dreamers = [{"task": 7, "pid": live_proc.pid,
-                         "brief": "/no/such/brief.md"}]
+                         "brief": brief}]
             ledger = _ledger(7, 8)            # 7 IS open
             assert 7 in status_sync.open_ids(ledger), \
                 "precondition: task 7 must be open"
@@ -615,13 +644,14 @@ class TestNormaliseOnWrite:
     """
 
     def test_quoted_plain_id_becomes_int_in_dreamers(self, tmp_path):
-        live_proc = _spawn_lane(f"/tmp/brief-402a-norm-{time.time_ns()}.md")
+        brief = f"/tmp/brief-402a-norm-{time.time_ns()}.md"
+        live_proc = _spawn_lane(brief)
         try:
             time.sleep(0.6)
             assert status_sync._pid_alive(live_proc.pid)
             # "172" is a quoted plain id — wrong, but tolerated on read.
             dreamers = [{"task": "172", "pid": live_proc.pid,
-                         "brief": f"/tmp/brief-402a-norm-{time.time_ns()}.md"}]
+                         "brief": brief}]
             status = {"dreamers": dreamers, "current_task_ids": [],
                       "queue": {}, "task": "t"}
             ledger = _ledger(172)
@@ -647,12 +677,13 @@ class TestNormaliseOnWrite:
             live_proc.wait()
 
     def test_sub_id_stays_string(self, tmp_path):
-        live_proc = _spawn_lane(f"/tmp/brief-402a-sub-{time.time_ns()}.md")
+        brief = f"/tmp/brief-402a-sub-{time.time_ns()}.md"
+        live_proc = _spawn_lane(brief)
         try:
             time.sleep(0.6)
             assert status_sync._pid_alive(live_proc.pid)
             dreamers = [{"task": "392a", "pid": live_proc.pid,
-                         "brief": f"/tmp/brief-402a-sub-{time.time_ns()}.md"}]
+                         "brief": brief}]
             status = {"dreamers": dreamers, "current_task_ids": [],
                       "queue": {}, "task": "t"}
             ledger = _ledger(392)          # base id 392 is open
@@ -804,7 +835,8 @@ class TestMalformedTaskNotReapedAsDead:
     """
 
     def test_hash_prefixed_task_is_kept_and_flagged_not_reaped(self, tmp_path):
-        live_proc = _spawn_lane(f"/tmp/brief-702-hash-{time.time_ns()}.md")
+        brief = f"/tmp/brief-702-hash-{time.time_ns()}.md"
+        live_proc = _spawn_lane(brief)
         try:
             time.sleep(0.6)
             assert status_sync._pid_alive(live_proc.pid), \
@@ -814,7 +846,7 @@ class TestMalformedTaskNotReapedAsDead:
             assert status_sync._base_id("#696") is None, \
                 "precondition: _base_id must not reach a #-prefixed id"
             dreamers = [{"task": "#696", "pid": live_proc.pid,
-                         "brief": f"/tmp/brief-702-hash-{time.time_ns()}.md"}]
+                         "brief": brief}]
             ledger = _ledger(696)           # 696 IS open — the lane is real
             assert 696 in status_sync.open_ids(ledger), \
                 "precondition: task 696 must be open"
@@ -852,14 +884,15 @@ class TestMalformedTaskNotReapedAsDead:
         # IS derivable and is NOT open must STILL be reaped with the "reaped"
         # message — the malformed carve-out must not turn "keep malformed" into
         # "keep everything". A genuinely landed lane is 999, not open.
-        live_proc = _spawn_lane(f"/tmp/brief-702-landed-{time.time_ns()}.md")
+        brief = f"/tmp/brief-702-landed-{time.time_ns()}.md"
+        live_proc = _spawn_lane(brief)
         try:
             time.sleep(0.6)
             assert status_sync._pid_alive(live_proc.pid)
             assert status_sync._base_id(999) == 999, \
                 "precondition: a plain int yields its base"
             dreamers = [{"task": 999, "pid": live_proc.pid,
-                         "brief": f"/tmp/brief-702-landed-{time.time_ns()}.md"}]
+                         "brief": brief}]
             ledger = _ledger(696)           # 696 open — 999 is NOT (landed)
             assert 999 not in status_sync.open_ids(ledger), \
                 "precondition: task 999 must be landed"
@@ -878,6 +911,29 @@ class TestMalformedTaskNotReapedAsDead:
         finally:
             live_proc.kill()
             live_proc.wait()
+
+    def test_dead_process_reaps_even_when_task_cannot_be_compared(self,
+                                                                  tmp_path):
+        """Process death and ledger landing are independent predicates.
+
+        A malformed task id is kept only when its process is still the lane;
+        the ``cannot compare`` refusal must not preserve a dead process entry.
+        """
+        dead_pid = _dead_pid()
+        assert not status_sync._pid_alive(dead_pid), \
+            "precondition: lane process must be dead"
+        entry = {"task": "#696", "pid": dead_pid,
+                 "brief": "/tmp/dead-821/BRIEF.md"}
+        status = {"dreamers": [entry], "current_task_ids": ["#696"],
+                  "queue": {}, "task": "t"}
+        rc, out, err = _run(status, _ledger(696), tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        assert result["dreamers"] == [], \
+            "dead lane was preserved by the cannot-compare ledger refusal"
+        assert "KEPT" not in err, \
+            "dead lane incorrectly reached the landed-task comparison: %s" % err
 
 
 # ── 10. status.json is ephemera: read it defensively (#402) ────────────
@@ -2212,6 +2268,24 @@ def test_discover_lanes_arity_is_three(tmp_path):
         "need updating together (was %d-tuple)" % len(result)
 
 
+def test_discovery_accounts_for_the_candidate_population(tmp_path, monkeypatch):
+    """#671/#821: zero live lanes is valid only after a real population scan.
+
+    Direction 2 seam: ``status_sync.discover_lanes`` incrementing
+    ``process_candidates`` inside its numeric ``/proc`` loop. Replacing that
+    loop with an empty iterable must name the broken instrument below.
+    """
+    monkeypatch.setattr(status_sync.os, "listdir",
+                        lambda path: ["101", "202", "x"])
+    monkeypatch.setattr(status_sync, "_read_proc_cwd", lambda pid: None)
+    monkeypatch.setattr(status_sync, "_argv_lane", lambda pid, root: None)
+    stats = {}
+    found, phantoms, agent = status_sync.discover_lanes(tmp_path, stats=stats)
+    assert found == phantoms == agent == []
+    assert stats.get("process_candidates") == 2, \
+        "lane detector examined no plausible process candidates: %r" % stats
+
+
 # ── 18. #775: a lane whose cwd is NOT its worktree is found via argv ────
 #
 # THE BUG: status_sync.py's discover_lanes walked /proc/*/cwd for paths
@@ -2474,4 +2548,3 @@ class TestArgvDiscoveryInjectedTable:
         assert any(p[0] == fake_lane for p in phantoms), \
             "a process naming a non-existent worktree must be a phantom, " \
             "not silently dropped: phantoms=%s" % phantoms
-

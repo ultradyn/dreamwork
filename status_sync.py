@@ -228,6 +228,40 @@ def _pid_alive(pid) -> bool:
         raise LivenessUnknown("kill -0 %r failed: %s" % (pid, e))
 
 
+def _pid_matches_lane(pid, brief) -> bool:
+    """Whether ``pid`` is alive *and* still carries ``brief``'s lane identity.
+
+    A bare pid is not identity: after reuse, ``kill -0`` succeeds for an
+    unrelated process.  Agent-tool lanes keep their worktree as cwd; ccc
+    runners deliberately exec from the main checkout, so their controlled
+    argv carries the worktree path instead (#775).  Either binding is exact
+    to this pid; a global process-list match would merely move the reuse race.
+    """
+    if not _pid_alive(pid):
+        return False
+    if not isinstance(brief, str) or not brief:
+        raise LivenessUnknown("live pid has no lane brief identity: %r" % pid)
+
+    lane_dir = str(Path(brief).parent)
+    cwd = _read_proc_cwd(int(pid))
+    if os.path.isabs(lane_dir) and (
+            cwd == lane_dir or (cwd and cwd.startswith(lane_dir + os.sep))):
+        return True
+
+    try:
+        with open("/proc/%d/cmdline" % int(pid), "rb") as f:
+            raw = f.read()
+    except FileNotFoundError:
+        return False                    # exited between kill(0) and the read
+    except OSError as e:
+        raise LivenessUnknown("cannot read pid %r identity: %s" % (pid, e))
+
+    needles = [brief.encode()]
+    if WORKTREE_DIR in Path(brief).parts:
+        needles.append(lane_dir.encode())
+    return any(needle in raw for needle in needles)
+
+
 def live_lanes(dreamers: list[dict]) -> tuple[set, list[dict]]:
     """Return `(live_tasks, pruned_dreamers)`; raise `LivenessUnknown`.
 
@@ -256,7 +290,7 @@ def live_lanes(dreamers: list[dict]) -> tuple[set, list[dict]]:
         pid = d.get("pid")
         brief = d.get("brief")
         if not _missing_pid(d):
-            is_live = _pid_alive(pid)
+            is_live = _pid_matches_lane(pid, brief)
         elif brief:
             is_live = brief in ps
         else:
@@ -504,7 +538,7 @@ def _ancestor_pids() -> set[int]:
     return ancestors
 
 
-def discover_lanes(target: Path):
+def discover_lanes(target: Path, *, stats: dict | None = None):
     """Live lanes the cwd probe can see, as ``(found, phantoms, agent_tool)``.
 
     Walks ``/proc/*/cwd`` for paths under ``<target>/.worktrees/`` (#716),
@@ -554,9 +588,11 @@ def discover_lanes(target: Path):
     # the probe cannot classify is carried, never silently dropped (#702).
     agent_tool = []
     seen_lanes = set()
+    process_candidates = 0
     for entry in os.listdir("/proc"):
         if not entry.isdigit():
             continue
+        process_candidates += 1
         pid = int(entry)
         cwd = _read_proc_cwd(pid)
         cwd_lane = (cwd is not None
@@ -614,6 +650,11 @@ def discover_lanes(target: Path):
                 seen_lanes.add(lane)
     # Stable order by lane name so the merge and the stderr report are
     # deterministic across runs reading the same process table.
+    if stats is not None:
+        # #821: an empty result is trustworthy only when the detector really
+        # examined a plausible process population.  The tick line publishes
+        # this count, so an inert /proc walk cannot impersonate "no lanes".
+        stats["process_candidates"] = process_candidates
     return (sorted(found, key=lambda lpm: lpm[0]),
             sorted(phantoms, key=lambda lp: lp[0]),
             sorted(agent_tool, key=lambda lp: lp[0]))
