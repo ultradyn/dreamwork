@@ -527,6 +527,80 @@ def test_sweep_resolves_citations_in_the_repo_it_was_given(
         f"{out!r}")
 
 
+def test_sweep_merge_citation_acknowledges_each_lane_commit(tmp_path):
+    """A land-lane merge sha cites the exact commits its side branch brought.
+
+    The expected commit population comes from the two explicit ``_commit``
+    results below, not from the production ``rev-list`` call (#894/#905).
+    """
+    root = _bare_repo(tmp_path, "merge-citation")
+    _commit(root, "docs: base")
+    trunk = _git(root, "symbolic-ref", "--short", "HEAD").stdout.strip()
+    _git(root, "checkout", "-q", "-b", "lane-11")
+    first = _commit(root, "test(#11): first lane increment")
+    second = _commit(root, "feat(#11): second lane increment")
+    _git(root, "checkout", "-q", trunk)
+    _git(root, "merge", "-q", "--no-ff", "lane-11", "-m", "Merge lane-11")
+    merge = _git(root, "rev-parse", "HEAD").stdout.strip()
+    citation = merge[:8]
+
+    ledger_text = (
+        "# Task ledger\n\nNext id: **12**\n\n## Open\n"
+        "- **#11** — partial landing stays open · origin: **loop**\n"
+        f"  · land-lane printed merge `{citation}`\n\n"
+        "## Recently landed\n")
+    out = ledger.sweep_text(
+        ledger_text,
+        [(second, "feat(#11): second lane increment"),
+         (first, "test(#11): first lane increment")],
+        "base-sha", "markdown", repo=root)
+
+    assert "  #11 —" not in out, (
+        f"#11 cites merge {citation}, whose explicitly planted lane commits are "
+        f"{first[:8]} and {second[:8]}; neither may remain an UNCITED finding: "
+        f"{out!r}")
+    assert "CITED-OPEN #11" in out, (
+        f"the merge citation is evidence but does not close #11: {out!r}")
+    assert "citation resolution: 1/1 cited sha(s) resolved" in out, out
+    assert f"`{citation}`:2" in out, (
+        f"the resolution denominator must say that {citation} yielded the two "
+        f"explicitly planted lane commits: {out!r}")
+
+
+def test_sweep_unrelated_merge_citation_does_not_hide_a_landing(tmp_path):
+    """Direction 2: a different task's merge must not false-green #11."""
+    root = _bare_repo(tmp_path, "unrelated-merge")
+    _commit(root, "docs: base")
+    trunk = _git(root, "symbolic-ref", "--short", "HEAD").stdout.strip()
+    _git(root, "checkout", "-q", "-b", "lane-12")
+    other_commit = _commit(root, "feat(#12): another task's landing")
+    _git(root, "checkout", "-q", trunk)
+    _git(root, "merge", "-q", "--no-ff", "lane-12", "-m", "Merge lane-12")
+    other_merge = _git(root, "rev-parse", "HEAD").stdout.strip()
+    actual = _commit(root, "fix(#11): uncited landing after the other merge")
+    citation = other_merge[:8]
+    missing = "ffffffffffffffffffffffffffffffffffffffff"
+
+    ledger_text = (
+        "# Task ledger\n\nNext id: **13**\n\n## Open\n"
+        "- **#11** — genuinely uncited · origin: **loop**\n"
+        f"  · unrelated task merge `{citation}` and bad citation `{missing}`\n"
+        "- **#12** — other task · origin: **loop**\n\n"
+        "## Recently landed\n")
+    out = ledger.sweep_text(
+        ledger_text, [(actual, "fix(#11): uncited landing after the other merge")],
+        "base-sha", "markdown", repo=root)
+
+    assert "  #11 —" in out and "CITED-OPEN #11" not in out, (
+        f"#11 cites merge {citation}, but that merge yielded only the explicitly "
+        f"planted #12 commit {other_commit[:8]}, not #11's {actual[:8]}; #11 "
+        f"must remain visibly UNCITED: {out!r}")
+    assert "citation resolution: 1/2 cited sha(s) resolved" in out, out
+    assert f"`{citation}`:1" in out and f"`{missing}`:0" in out, (
+        f"each resolution candidate needs a denominator, including zero for "
+        f"the deliberately missing hardcoded sha: {out!r}")
+
+
 @pytest.mark.parametrize(
     "failure",
     [ledger.subprocess.TimeoutExpired(["git", "cat-file"], timeout=20),

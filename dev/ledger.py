@@ -833,15 +833,20 @@ _CITED_SHA = re.compile(r"\b[0-9a-f]{7,40}\b")
 
 
 def _resolved_cites(commits, bodies, repo):
-    """A `cites(sha, body)` predicate that resolves shas git cannot abbreviate.
+    """Resolve citation widths and merges once; return predicate and receipt.
 
     Substring first (the common case — a citation and a commit sha at the same
     width still match textually), then resolution for the residue: the commit
     sha and every 7+ hex citation in the body are resolved to full 40-char
     object ids through one ``git cat-file --batch-check`` call, and the pair
-    counts as cited when their resolved ids match. Returns the predicate plus
-    whether git failed and the plain substring fallback was used, so the four
-    #404 pins on `sweep` keep binding without hiding degraded operation.
+    counts as cited when their resolved ids match. A cited merge expands to
+    the commits its second parent brought in (first-parent..second-parent), so
+    the merge sha printed by ``land-lane`` acknowledges the lane commits that
+    ``sweep`` sees. A non-merge yields itself.
+
+    Returns ``(predicate, degraded, receipt)``. Each receipt row is
+    ``(citation_as_written, object_resolved, yielded_commit_count)``; zero is
+    kept visible for missing objects and empty/unavailable merge ranges.
     """
     def substring(sha, body):
         return sha in body
@@ -858,12 +863,14 @@ def _resolved_cites(commits, bodies, repo):
             if body and sha not in body:
                 residue.append((sha, body))
     if not residue:
-        return substring, False
+        return substring, False, []
     # one batched resolve: the residue commit shas + every cited sha in the
     # bodies that produced a residue (the small set #724 measured at ~160).
     to_resolve = {sha for sha, _ in residue}
     for _, body in residue:
         to_resolve.update(_CITED_SHA.findall(body))
+    citations = sorted({
+        cited for _, body in residue for cited in _CITED_SHA.findall(body)})
     try:
         out = subprocess.run(
             ["git", "-C", str(repo), "cat-file", "--batch-check"],
@@ -871,7 +878,7 @@ def _resolved_cites(commits, bodies, repo):
             capture_output=True, text=True, timeout=20,
         )
     except (OSError, subprocess.SubprocessError):
-        return substring, True
+        return substring, True, [(s, False, 0) for s in citations]
     full = {}  # input sha (verbatim) -> 40-char object id it resolved to
     if out.returncode == 0:
         resolved = [ln.split() for ln in out.stdout.splitlines() if ln.strip()]
@@ -879,6 +886,62 @@ def _resolved_cites(commits, bodies, repo):
             # res is [full_sha, 'commit', size] or [sha, 'missing']
             if len(res) >= 2 and res[1] == "commit":
                 full[short_in] = res[0]
+    if out.returncode != 0:
+        return substring, True, [(s, False, 0) for s in citations]
+
+    # Inspect all resolved citations in one process. A normal commit yields
+    # itself; a merge is replaced by exactly the side-parent commits that were
+    # not already reachable from its first parent. This excludes the merge
+    # commit itself, whose subject usually carries no task id (#894).
+    citation_objects = sorted({full[s] for s in citations if s in full})
+    parents = {}
+    degraded = False
+    if citation_objects:
+        try:
+            parent_out = subprocess.run(
+                ["git", "-C", str(repo), "rev-list", "--parents", "--no-walk",
+                 *citation_objects],
+                capture_output=True, text=True, timeout=20,
+            )
+        except (OSError, subprocess.SubprocessError):
+            parent_out = None
+        if parent_out is None or parent_out.returncode != 0:
+            degraded = True
+        else:
+            for line in parent_out.stdout.splitlines():
+                fields = line.split()
+                if fields:
+                    parents[fields[0]] = fields[1:]
+
+    yielded = {}
+    for obj in citation_objects:
+        obj_parents = parents.get(obj)
+        if obj_parents is None:
+            yielded[obj] = set()
+            degraded = True
+        elif len(obj_parents) < 2:
+            yielded[obj] = {obj}
+        else:
+            try:
+                range_out = subprocess.run(
+                    ["git", "-C", str(repo), "rev-list",
+                     f"{obj_parents[0]}..{obj_parents[1]}"],
+                    capture_output=True, text=True, timeout=20,
+                )
+            except (OSError, subprocess.SubprocessError):
+                range_out = None
+            if range_out is None or range_out.returncode != 0:
+                yielded[obj] = set()
+                degraded = True
+            else:
+                yielded[obj] = {
+                    line.strip() for line in range_out.stdout.splitlines()
+                    if line.strip()}
+
+    receipt = [
+        (s, s in full, len(yielded.get(full.get(s), set())))
+        for s in citations]
+
     # each body's set of resolved full shas. The body sweep passes is a
     # different string object than the one _resolved_cites saw (sweep rebuilds
     # its own bodies map), so the set must be derived from the resolved
@@ -891,8 +954,10 @@ def _resolved_cites(commits, bodies, repo):
         if cited is None:
             return False  # the commit itself does not resolve here
         return cited in {
-            full[s] for s in _CITED_SHA.findall(body) if s in full}
-    return _cites, False
+            commit
+            for s in _CITED_SHA.findall(body)
+            for commit in yielded.get(full.get(s), set())}
+    return _cites, degraded, receipt
 
 
 def sweep_text(text, commits, since, source, repo="."):
@@ -936,7 +1001,7 @@ def sweep_text(text, commits, since, source, repo="."):
     for ids, body in ledger_entries(open_section_text(text) or ""):
         for tid in ids:
             bodies[tid] = body
-    cites, degraded = _resolved_cites(commits, bodies, repo)
+    cites, degraded, resolution = _resolved_cites(commits, bodies, repo)
     n, findings, cited_open = _sweep_classified(text, commits, cites=cites)
     open_ids, landed_ids = watch.parse_ledger(text)
     expected_body_ids = {int(tid) for tid in open_ids}
@@ -959,10 +1024,17 @@ def sweep_text(text, commits, since, source, repo="."):
              f"/ {len(parsed_body_ids)} parsed body ids "
              f"({idbearing} id-bearing, {skipped} skipped, mostly {dom}); "
              f"{len(cited_open)} open id(s) excluded by sha-citation"]
+    resolved_n = sum(1 for _, resolved, _ in resolution if resolved)
+    yielded = ", ".join(
+        f"`{sha}`:{count}" for sha, _, count in resolution) or "none"
+    lines.append(
+        f"sweep: citation resolution: {resolved_n}/{len(resolution)} cited "
+        f"sha(s) resolved; landing commits yielded per sha: {yielded}")
     if degraded:
         lines.append(
-            "sweep: DEGRADED — git citation resolution was unavailable; "
-            "used substring matching only")
+            "sweep: DEGRADED — git citation or merge-range resolution was "
+            "incomplete; unresolved citations yielded zero commits and only "
+            "available substring matching remained")
     if not open_ids and not landed_ids:
         # The wording deliberately does NOT contain the clean verdict's phrase,
         # even to deny it: the #667 test asserts that phrase's ABSENCE by plain
