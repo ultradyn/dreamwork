@@ -228,6 +228,7 @@ wake status today, each verified against the handler while writing this section:
 |---|---|---|---|
 | `/command` | `_handle_command` (`14341`) | `if emits_wake(kind, target):` (`14363`) → `log_event` (`14364`) | **GATED** — pre-empt kinds (`chat`/`do-now`/`do-next`) always wake; `add-idea`/`maintenance`/plugin kinds wake only in instant mode. COMPLIANT |
 | `/chat-reply` | `_handle_chat_reply` | `if emits_wake("chat", target):` → `log_event` | **GATED BY CONVERSATIONAL KIND** — replies wake in every mode under #818, while retaining their durable receipt. COMPLIANT |
+| `/chat-archive` | `_handle_chat_archive` | no `log_event` call | **non-waking by design** — archive state is a durable sidecar mutation, not a conversation turn |
 | `/answer` | `_handle_answer` (`14206`) | `if emits_wake("/answer", target):` (`14236`) → `log_event` (`14237`) | **GATED** — batched kind. COMPLIANT |
 | `/ask` | `_handle_ask` (`14181`) | `if emits_wake("/ask", target):` (`14201`) → `log_event` (`14202`) | **GATED** — batched kind. COMPLIANT |
 | `/comment` | `_handle_comment` (`14243`) | `if emits_wake("/comment", target):` (`14271`) → `log_event` (`14272`) | **GATED** — batched kind. COMPLIANT |
@@ -235,13 +236,15 @@ wake status today, each verified against the handler while writing this section:
 | `/tint` | `_handle_tint` (`14367`) | no `log_event` call at all | **non-waking by design** — a colour is not a thing an agent acts on; the loop learns it from the file via the 2s poll, not a wake (handler docstring: *"DELIBERATELY NOT AN EVENTS-LOG LINE, and it is the only write here that is not"*) |
 | `/run-mode` | `_handle_run_mode` (`14392`) | none — unconditional `log_event` (`14417`) on a real change | **always-instant carve-out** — control-plane (see next section) |
 | `/posture` | `_handle_posture` (`14421`) | none — posture-triple `log_event` (`14495`) + delivery-axis `log_event` (`14499`), each on a real change | **always-instant carve-out** — control-plane (see next section) |
+| `/subagent-policy` | `_handle_subagent_policy` | transition-only `log_event` on a real change | **always-instant carve-out** — control-plane; authored policy text remains only in its file and receipt |
+| `/remind` | `_handle_remind` | no `log_event`; relays directly to the coordinator inbox | **non-waking by this channel** — the relay append is its delivery mechanism |
 | `/deploy` | `_handle_deploy` (`14508`) | no `log_event` call at all | **non-waking by design** — it restarts the server; success is a new `GENERATION` on `/mtime`, not a wake line |
 
 So the "one decision point per write route" this section once asserted is now
 realised for four of the five content routes. The fifth — `/decide` — is the gap
 #515 closes; until it lands, a `/decide` under `delivery: batched` fires its wake
 line every time. `/tint` and `/deploy` correctly have no wake line at all (a
-colour and a restart are not agent actions). The two control routes wake
+colour and a restart are not agent actions). The control routes wake
 unconditionally and on purpose — that carve-out is the next section.
 
 ## Wake channels outside the route table (#517)
