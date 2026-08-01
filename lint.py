@@ -4610,6 +4610,118 @@ def brief_corpus_fingerprint(root: Path) -> str:
     return digest.hexdigest()
 
 
+_BRIEF_DREAM_INSTRUCTION = re.compile(
+    r"\b(?:write|create)\b[^\n]*\.dreamwork/dreams/", re.IGNORECASE,
+)
+_BRIEF_MARKDOWN_CLASS = re.compile(
+    r"(?:\.md\s+(?:file|document)s?\b|markdown\s+(?:file|document)s?\b)",
+    re.IGNORECASE,
+)
+_BRIEF_BLANKET = re.compile(r"\b(?:any|all|every)\b", re.IGNORECASE)
+_BRIEF_PROHIBITION = re.compile(
+    r"\b(?:do\s+not|don't|must\s+not|never|no)\b.*"
+    r"\b(?:edit|write|create|modify|touch|change)(?:ed|ing|s)?\b|"
+    r"\b(?:edit|write|create|modify|touch|change)(?:ed|ing|s)?\b.*"
+    r"\b(?:forbidden|prohibited|not\s+allowed)\b",
+    re.IGNORECASE,
+)
+# The coordinator's #936 measurement names nine of these artifacts and requires
+# that they remain as evidence; the live check found 925 as the tenth. Grandfather
+# artifacts, not task ids: another lane reusing an id under a different filename
+# is still an ERROR.
+_BRIEF_DREAM_CONTRADICTION_EVIDENCE = frozenset({
+    "921-cx-921pinned.md",
+    "925-glm-925dangling.md",
+    "926-cx-926armedlive.md",
+    "927-cx-927deployanchor.md",
+    "928-cx-928schemapins.md",
+    "929-cx-929v5fixture.md",
+    "930-cx-930pathdepth.md",
+    "931-cx-931routepop.md",
+    "932-cx-932capture.md",
+    "933-cx-933lexguard.md",
+})
+
+
+def _brief_prose_units(text: str) -> list[str]:
+    """Keep a wrapped list item together without conflating sibling rules."""
+    units: list[str] = []
+    current: list[str] = []
+    for line in [*text.splitlines(), ""]:
+        if not line.strip() or re.match(r"^\s*(?:[-*+] |\d+[.)] )", line):
+            if current:
+                units.append(" ".join(current))
+            current = [line] if line.strip() else []
+        else:
+            current.append(line)
+    return units
+
+
+def brief_has_blanket_markdown_prohibition(text: str) -> bool:
+    """Recognize the prohibited class by meaning, not one measured spelling."""
+    for unit in _brief_prose_units(text):
+        prose = re.sub(r"[`*_]", "", " ".join(unit.split()))
+        # A direction-2 candidate may quote the bad instruction as a specimen;
+        # quoted diagnosis is not itself an instruction to the lane.
+        prose = re.sub(r'["“][^"”]*["”]', "", prose)
+        if (_BRIEF_MARKDOWN_CLASS.search(prose)
+                and _BRIEF_BLANKET.search(prose)
+                and _BRIEF_PROHIBITION.search(prose)):
+            return True
+    return False
+
+
+def check_brief_dream_contradictions(dw: Path, rep: Report) -> None:
+    """A cancelled dream instruction leaves no artifact, so inspect the cause."""
+    briefs_dir = dw / "docs" / "briefs"
+    paths = sorted(path for path in briefs_dir.glob("*.md") if path.is_file())
+    dream = 0
+    both: list[Path] = []
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            rep.add(ERROR, "brief dream rules", f"could not read {path}: {exc}")
+            continue
+        if _BRIEF_DREAM_INSTRUCTION.search(text):
+            dream += 1
+            if brief_has_blanket_markdown_prohibition(text):
+                both.append(path)
+
+    detail = (
+        f"examined {len(paths)} brief(s); {dream} carry the dream-file "
+        f"instruction; {len(both)} carry both instruction and blanket Markdown "
+        "prohibition"
+    )
+    rep.add(ERROR if not paths else OK, "brief dream rules", detail)
+    grandfathered = sum(
+        path.name in _BRIEF_DREAM_CONTRADICTION_EVIDENCE for path in both
+    )
+    known = sorted(
+        path.name for path in both
+        if path.name in _BRIEF_DREAM_CONTRADICTION_EVIDENCE
+    )
+    if known:
+        # Named here rather than one WARN row per file: these briefs are
+        # evidence and never get rewritten, so a per-file WARN would be
+        # permanent, and `land_lane.py`'s lint-comparison refuses any ADDED
+        # WARN row — which would make this check unlandable by construction.
+        rep.add(
+            OK, "brief dream rules",
+            f"{len(known)} of {len(both)} contradiction(s) are registered "
+            f"grandfathered evidence artifacts, do not rewrite: "
+            + " ".join(known),
+        )
+    for path in both:
+        if path.name in _BRIEF_DREAM_CONTRADICTION_EVIDENCE:
+            continue
+        rep.add(
+            ERROR, "brief dream rules",
+            f"{path.name} instructs .dreamwork/dreams/ but prohibits the "
+            "Markdown-file class needed to obey it",
+        )
+
+
 def resolve_handoff_obligation_cutoff(root: Path) -> str | None:
     """The commit that introduced the hand-off dispatch obligation into SKILL.md.
 
@@ -6948,11 +7060,12 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_placeholder_citations(dw, rep)
     check_citation_range(dw, rep)
     check_handoffs(dw, watch, rep)
-    # These five checks all read the dispatcher's corpus. Since #770 the
+    # These six checks all read the dispatcher's corpus. Since #770 the
     # correct dispatch route writes that corpus in the main checkout while a
     # gate may be reading it. Bind their block to one content identity: a
     # changed identity is concurrent input, not evidence that the merge is bad.
     brief_corpus_before = brief_corpus_fingerprint(dw.parent)
+    check_brief_dream_contradictions(dw, rep)
     check_brief_handoff_obligation(dw, rep)
     check_brief_worktree_abs_inbox(dw, rep)
     check_brief_lane_scratch(dw, rep)
@@ -6962,7 +7075,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     if brief_corpus_before != brief_corpus_after:
         rep.add(
             ERROR, "brief corpus",
-            "CHANGED DURING LINT — the five brief-corpus checks did not "
+            "CHANGED DURING LINT — the six brief-corpus checks did not "
             "examine one "
             "fixed corpus "
             f"({brief_corpus_before[:12]} -> {brief_corpus_after[:12]}); "

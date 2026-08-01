@@ -100,6 +100,18 @@ _PLACEHOLDER_BODY = re.compile(
     re.IGNORECASE,
 )
 _DIRECTION_2 = re.compile(r"direction[ ‑-]?2", re.IGNORECASE)
+_MARKDOWN_CLASS = re.compile(
+    r"(?:\.md\s+(?:file|document)s?\b|markdown\s+(?:file|document)s?\b)",
+    re.IGNORECASE,
+)
+_BLANKET = re.compile(r"\b(?:any|all|every)\b", re.IGNORECASE)
+_PROHIBITION = re.compile(
+    r"\b(?:do\s+not|don't|must\s+not|never|no)\b.*"
+    r"\b(?:edit|write|create|modify|touch|change)(?:ed|ing|s)?\b|"
+    r"\b(?:edit|write|create|modify|touch|change)(?:ed|ing|s)?\b.*"
+    r"\b(?:forbidden|prohibited|not\s+allowed)\b",
+    re.IGNORECASE,
+)
 # Header fields the generator owns.  A core that also carries one would give
 # dispatch_lane two `Branch:` lines and no way to tell which is the instruction.
 _RESERVED_FIELD = re.compile(
@@ -109,6 +121,31 @@ _RESERVED_FIELD = re.compile(
 
 class BriefFault(Exception):
     """A brief could not be generated from the inputs given."""
+
+
+def blanket_markdown_prohibition(text: str) -> bool:
+    """Whether one prose block forbids the whole Markdown-file class.
+
+    This is intentionally semantic rather than pinned to the measured
+    ``.md document`` spelling: ``any Markdown file`` is the same defect.
+    Paragraphs are normalized so ordinary Markdown wrapping cannot hide it.
+    """
+    blocks: list[str] = []
+    current: list[str] = []
+    for line in [*text.splitlines(), ""]:
+        if not line.strip() or re.match(r"^\s*(?:[-*+] |\d+[.)] )", line):
+            if current:
+                blocks.append(" ".join(current))
+            current = [line] if line.strip() else []
+        else:
+            current.append(line)
+    for block in blocks:
+        prose = re.sub(r"[`*_]", "", " ".join(block.split()))
+        prose = re.sub(r'["“][^"”]*["”]', "", prose)
+        if (_MARKDOWN_CLASS.search(prose) and _BLANKET.search(prose)
+                and _PROHIBITION.search(prose)):
+            return True
+    return False
 
 
 def _git(*args: str) -> str:
@@ -238,6 +275,18 @@ def validate_core(core: str) -> None:
             "from the quotation; remove it from the core"
         )
 
+    if blanket_markdown_prohibition(core):
+        raise BriefFault(
+            "the authored core prohibits the whole Markdown-file class while the "
+            "standing contract requires .dreamwork/inbox.md and may require a "
+            ".dreamwork/dreams/<date>-<time>-<slug>.md file; protect the campaign "
+            "by identity instead: `Documents you must NOT edit — "
+            ".dreamwork/docs/**.md, .dreamwork/lessons.md, .dreamwork/handoffs.md, "
+            ".dreamwork/tasks.md, .dreamwork/questions.md, doc-map.md, DREAMWORK.md, "
+            "README.md`, with .dreamwork/inbox.md and .dreamwork/dreams/ explicitly "
+            "outside that prohibition"
+        )
+
     lines = core.splitlines()
     if not any(_substantive(line) for line in lines):
         raise BriefFault(
@@ -296,8 +345,13 @@ def _read(path: Path, label: str) -> str:
 
 def build(task: int, branch: str, owns: list[str], core: str, *,
           ledger: Path | None = None, frame_path: Path = FRAME_PATH,
-          boilerplate_path: Path = BOILERPLATE_PATH) -> str:
-    checkout = main_checkout()
+          boilerplate_path: Path = BOILERPLATE_PATH,
+          prepared_worktree: Path | None = None,
+          prepared_base_sha: str | None = None,
+          prepared_checkout: Path | None = None) -> str:
+    checkout = prepared_checkout.resolve() if prepared_checkout else main_checkout()
+    if prepared_checkout is not None and not prepared_checkout.is_absolute():
+        raise BriefFault(f"prepared checkout must be absolute: {prepared_checkout}")
     ledger = ledger or (checkout / ".dreamwork" / "tasks.md")
     if not owns:
         raise BriefFault(
@@ -323,13 +377,26 @@ def build(task: int, branch: str, owns: list[str], core: str, *,
         )
 
     record = task_record(task, ledger)
-    worktree = worktree_for(branch)
+    if (prepared_worktree is None) != (prepared_base_sha is None):
+        raise BriefFault(
+            "prepared_worktree and prepared_base_sha must be supplied together"
+        )
+    if prepared_worktree is None:
+        worktree = worktree_for(branch)
+        resolved_base = base_sha(branch)
+    else:
+        worktree = prepared_worktree.resolve()
+        if not prepared_worktree.is_absolute():
+            raise BriefFault(f"prepared worktree must be absolute: {prepared_worktree}")
+        if not re.fullmatch(r"[0-9a-f]{40}", prepared_base_sha or ""):
+            raise BriefFault(f"prepared base sha is not a commit id: {prepared_base_sha!r}")
+        resolved_base = prepared_base_sha
     head = "\n".join([
         f"# Task #{task} — {record['title'].strip()}",
         "",
         f"Worktree: {worktree}",
         f"Branch: {branch}",
-        f"Base sha: {base_sha(branch)}",
+        f"Base sha: {resolved_base}",
         f"Lane-owns: {', '.join(owns)}",
         "",
         f"Repo root: {checkout}",

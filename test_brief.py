@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT / "dev"))
 
 import brief  # noqa: E402
 import dispatch_lane  # noqa: E402
+import lint  # noqa: E402
 
 
 # A minimal core that passes: substantive prose plus a direction-2 section with
@@ -162,6 +163,22 @@ def test_worktree_is_asked_of_git_not_guessed(lane, lane_checkout):
     assert "no worktree is checked out on branch" in str(excinfo.value)
 
 
+def test_prepared_build_composes_before_the_worktree_exists(tmp_path):
+    branch = "brief-prepared-936-does-not-exist"
+    base = subprocess.run(
+        ["git", "rev-parse", "master"], cwd=ROOT,
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    expected = (tmp_path / "future-worktree").resolve()
+    text = brief.build(
+        881, branch, ["dev/brief.py"], GOOD_CORE,
+        prepared_worktree=expected, prepared_base_sha=base,
+    )
+    assert f"Worktree: {expected}" in text
+    assert f"Branch: {branch}" in text
+    assert f"Base sha: {base}" in text
+
+
 # --- direction 2, construction 1: an EMPTY authored core still emits --------
 
 def test_empty_core_is_refused(lane):
@@ -186,6 +203,18 @@ def test_placeholder_core_is_refused(lane, core):
         brief.build(881, lane, ["dev/brief.py"], core)
     message = str(excinfo.value)
     assert ("no substantive line" in message or "has no body" in message), message
+
+
+@pytest.mark.parametrize("prohibition", [
+    "Do NOT edit any `.md` document.",
+    "You must not edit any Markdown file.",
+])
+def test_blanket_markdown_prohibition_is_refused_by_meaning(lane, prohibition):
+    core = GOOD_CORE + "\n## Scope\n\n" + prohibition + "\n"
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief.build(881, lane, ["dev/brief.py"], core)
+    assert "prohibits the whole Markdown-file class" in str(excinfo.value)
+    assert ".dreamwork/inbox.md" in str(excinfo.value)
 
 
 def test_a_copied_heading_with_no_body_is_refused_by_name(lane):
@@ -519,3 +548,83 @@ def test_an_empty_ledger_is_refused_rather_than_reported_as_not_found(tmp_path, 
     with pytest.raises(brief.BriefFault) as excinfo:
         brief.build(881, lane, ["dev/brief.py"], GOOD_CORE, ledger=ledger)
     assert "holds NO entries at all" in str(excinfo.value)
+
+
+def _dream_rows(tmp_path: Path, documents: dict[str, str]):
+    briefs = tmp_path / ".dreamwork" / "docs" / "briefs"
+    briefs.mkdir(parents=True)
+    for name, text in documents.items():
+        (briefs / name).write_text(text, encoding="utf-8")
+    rep = lint.Report()
+    lint.check_brief_dream_contradictions(tmp_path / ".dreamwork", rep)
+    return rep.rows
+
+
+def test_brief_dream_lint_catches_semantic_variant_and_prints_denominators(tmp_path):
+    rows = _dream_rows(tmp_path, {
+        "safe.md": "Do not edit `.dreamwork/docs/plan.md`.\n",
+        "bad.md": (
+            "Something beyond the result? Write `.dreamwork/dreams/x.md`.\n\n"
+            "You must not edit any Markdown file.\n"
+        ),
+    })
+    coverage = [detail for level, what, detail in rows
+                if level == lint.OK and what == "brief dream rules"]
+    errors = [detail for level, _, detail in rows if level == lint.ERROR]
+    assert coverage == [
+        "examined 2 brief(s); 1 carry the dream-file instruction; 1 carry both "
+        "instruction and blanket Markdown prohibition"
+    ]
+    assert errors == [
+        "bad.md instructs .dreamwork/dreams/ but prohibits the Markdown-file "
+        "class needed to obey it"
+    ]
+
+
+def test_brief_dream_lint_zero_population_is_loud(tmp_path):
+    rows = _dream_rows(tmp_path, {})
+    assert rows == [(lint.ERROR, "brief dream rules",
+                     "examined 0 brief(s); 0 carry the dream-file instruction; "
+                     "0 carry both instruction and blanket Markdown prohibition")]
+
+
+def test_a_quoted_direction_2_specimen_is_not_an_active_prohibition(tmp_path):
+    rows = _dream_rows(tmp_path, {
+        "candidate.md": (
+            "Write `.dreamwork/dreams/x.md`.\n\n"
+            "A false-green candidate says \"do not edit any Markdown file\".\n"
+        ),
+    })
+    assert not [row for row in rows if row[0] == lint.ERROR], rows
+    assert "0 carry both" in rows[0][2]
+
+
+def test_the_nine_measured_artifacts_are_evidence_not_a_permanent_red(tmp_path):
+    contradiction = (
+        "Write `.dreamwork/dreams/x.md`.\n\n"
+        "Do not edit any Markdown file.\n"
+    )
+    rows = _dream_rows(tmp_path, {
+        "930-cx-930pathdepth.md": contradiction,
+        "930-a-future-reuse.md": contradiction,
+    })
+    warns = [detail for level, _, detail in rows if level == lint.WARN]
+    errors = [detail for level, _, detail in rows if level == lint.ERROR]
+    oks = [detail for level, _, detail in rows if level == lint.OK]
+    # Not a permanent RED, and not a permanent WARN either: `land_lane.py`'s
+    # lint-comparison phase refuses any ADDED WARN row, and these briefs are
+    # evidence that never gets rewritten — so a per-file WARN would make this
+    # check unlandable by construction. The names still have to be reported.
+    assert warns == [], warns
+    assert any("930-cx-930pathdepth.md" in detail
+               and "do not rewrite" in detail for detail in oks), oks
+    assert errors == [
+        "930-a-future-reuse.md instructs .dreamwork/dreams/ but prohibits the "
+        "Markdown-file class needed to obey it"
+    ]
+
+
+def test_brief_py_output_does_not_trip_the_dream_lint(tmp_path, generated):
+    rows = _dream_rows(tmp_path, {"generated.md": generated})
+    assert not [row for row in rows if row[0] == lint.ERROR], rows
+    assert "examined 1 brief(s)" in rows[0][2]
