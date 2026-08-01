@@ -2245,6 +2245,24 @@ def test_discover_lanes_arity_is_three(tmp_path):
         "need updating together (was %d-tuple)" % len(result)
 
 
+def test_discovery_accounts_for_the_candidate_population(tmp_path, monkeypatch):
+    """#671/#821: zero live lanes is valid only after a real population scan.
+
+    Direction 2 seam: ``status_sync.discover_lanes`` incrementing
+    ``process_candidates`` inside its numeric ``/proc`` loop. Replacing that
+    loop with an empty iterable must name the broken instrument below.
+    """
+    monkeypatch.setattr(status_sync.os, "listdir",
+                        lambda path: ["101", "202", "x"])
+    monkeypatch.setattr(status_sync, "_read_proc_cwd", lambda pid: None)
+    monkeypatch.setattr(status_sync, "_argv_lane", lambda pid, root: None)
+    stats = {}
+    found, phantoms, agent = status_sync.discover_lanes(tmp_path, stats=stats)
+    assert found == phantoms == agent == []
+    assert stats.get("process_candidates") == 2, \
+        "lane detector examined no plausible process candidates: %r" % stats
+
+
 # ── 18. #775: a lane whose cwd is NOT its worktree is found via argv ────
 #
 # THE BUG: status_sync.py's discover_lanes walked /proc/*/cwd for paths

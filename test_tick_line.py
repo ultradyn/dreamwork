@@ -127,7 +127,8 @@ class TestTracksTheFile:
 
         monkeypatch.setattr(status_sync, "discover_lanes", two_live)
         out = tick_line.facts(target)
-        assert "lanes 2 live [cx-one, cx-two]" in out
+        assert "lanes 2 live [cx-one, cx-two]" in out, \
+            "live lanes cx-one/cx-two were omitted from the tick line: %s" % out
         assert "probe examined 37 processes" in out
 
     def test_dead_processes_do_not_inherit_the_recorded_lane_count(
@@ -203,7 +204,9 @@ class TestLiveFleetDetector:
 
         monkeypatch.setattr(status_sync, "discover_lanes", inert)
         out = tick_line.facts(target)
-        assert "FLEET UNRESOLVED" in out
+        assert "FLEET UNRESOLVED" in out, \
+            "detector examined zero candidates but tick reported an empty " \
+            "live fleet: %s" % out
         assert "examined 0 process candidates" in out
         assert "lanes 0 live" not in out, \
             "broken detector was indistinguishable from no live lanes"
