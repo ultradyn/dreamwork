@@ -4857,8 +4857,8 @@ def log_submission(target, path, body, nbytes, truncated=False, short=False):
 
 
 # Accepted POST /command kinds, derived from the one vocabulary (COMMANDS,
-# top of file). Each becomes a source-tagged watch-events.log line the loop's
-# tail monitor wakes on (same transport as answers); no file is written.
+# top of file). Each becomes a journal entry and a source-tagged
+# watch-events.log wake line for the loop's tail monitor.
 COMMAND_KINDS = tuple(c["kind"] for c in COMMANDS)
 
 

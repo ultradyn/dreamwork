@@ -2,9 +2,9 @@
 """Measure a Python module's version-style startup path without hiding the floor.
 
 The target operation deliberately does almost nothing after import: it returns
-the imported module's name.  This makes the fresh-process result an upper bound
-for a future ``version`` verb with the same import graph, while the paired
-interpreter control and warm-import probe show where that time went.
+the imported module's name.  This models a future ``version`` verb whose useful
+work is negligible, while the paired interpreter control and warm-import probe
+show where that time went.
 """
 
 from __future__ import annotations

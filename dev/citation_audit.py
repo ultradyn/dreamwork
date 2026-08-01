@@ -25,12 +25,12 @@ tracked-vs-on-disk split, and flags it prominently when the audit is
 incomplete (#788).
 
 Usage:
-    python3 dev/citation_audit.py [--briefs DIR] [--dw-dir DIR] [--quiet]
+    python3 dev/citation_audit.py [--briefs DIR] [--dw-dir DIR] [--verbose]
 
     --briefs DIR    the brief corpus to audit (default: .dreamwork/docs/briefs)
     --dw-dir DIR    the .dreamwork dir containing the ledger store
                     (default: auto-detect the main checkout)
-    --quiet         suppress per-citation detail; print summary only
+    --verbose       show UNCLASSIFIABLE detail in addition to the default summary
 
 From a worktree, the default resolves the MAIN checkout because the ledger store
 is gitignored and cannot travel.  Pass --dw-dir only to select a different store.
@@ -330,7 +330,7 @@ def main(argv: list[str] | None = None) -> int:
         "--dw-dir", type=Path, default=None,
         help=".dreamwork/ dir containing the ledger store",
     )
-    parser.add_argument("--quiet", action="store_true", help="summary only")
+    parser.add_argument("--quiet", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--verbose", action="store_true", help="show UNCLASSIFIABLE details")
     args = parser.parse_args(argv)
 
