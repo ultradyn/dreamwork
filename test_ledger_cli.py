@@ -1024,10 +1024,14 @@ def _sweep_fixture(migrate, tmp_path, name="main"):
     return root, dw
 
 
-def _sweep(dev_ledger, root, dw, since=None):
+def _sweep(dev_ledger, root, dw, since=None, all_history=False):
     args = ["sweep", "--ledger", str(dw / "tasks.md"), "--repo", str(root)]
+    assert not (since is not None and all_history), \
+        "test helper cannot request rival sweep windows"
     if since is not None:
         args += ["--since", since]
+    if all_history:
+        args += ["--all-history"]
     rc, out, err = _run(dev_ledger, args)
     assert rc == 0, f"#404 ruled sweep exit-0 advisory, got {rc}: {err!r}"
     return out
@@ -1149,7 +1153,7 @@ def test_sweep_reports_how_many_subjects_it_understood_not_just_examined(
         f"the dominant skip shape must be named, not dropped silently: {out!r}")
 
 
-def test_sweep_subtracts_a_cited_sha_read_from_the_store_body(
+def test_sweep_reports_a_cited_open_sha_read_from_the_store_body(
         migrate, dev_ledger, tmp_path):
     """DIRECTION-2 CLOSURE for the test above, and it covers real ground.
 
@@ -1191,8 +1195,54 @@ def test_sweep_subtracts_a_cited_sha_read_from_the_store_body(
     out = _sweep(dev_ledger, root, dw)
 
     assert _named_ids(out) == {uncited}, (
-        f"exactly the uncited landing may be named — #{cited} cites its sha "
-        f"({cited_sha}) in the store body and must be subtracted: {out!r}")
+        f"exactly the uncited landing may be in the ordinary finding bucket: "
+        f"{out!r}")
+    assert f"CITED-OPEN #{cited}" in out and cited_sha in out, (
+        f"#{cited} cites {cited_sha} but remains open, so citation must move it "
+        f"to the anomaly bucket rather than erase it: {out!r}")
+    assert "1 open id(s) excluded by sha-citation" in out, out
+
+
+def test_sweep_all_history_recovers_a_landing_before_the_fold_window(
+        migrate, dev_ledger, tmp_path):
+    """A bounded sweep cannot self-heal; the periodic mode can.
+
+    The old landing is planted BEFORE a real Fold subject.  Default sweep must
+    truthfully show the fold sha as its exclusive window start and omit that
+    old id; ``--all-history`` must scan a non-empty larger population and name
+    it.  The id comes from the live fixture, not a constant shared with the
+    production matcher.
+
+    PRODUCTION SEAM: ``_dispatch``'s ``args.all_history`` branch.  RED: ignore
+    the flag and call ``_default_since``; the full-history run still examines
+    only the post-fold commit and the old landing remains invisible.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    open_ids, _landed_ids = _fixture_ids()
+    assert open_ids, "precondition: full-history recovery needs an open id"
+    tid = min(int(i) for i in open_ids)
+    old_sha = _plant(root, f"fix(#{tid}): landing before a missed fold")
+    _plant(root, "Fold #999 (reconciled something else)")
+    fold_sha = _git(root, "rev-parse", "HEAD").stdout.strip()
+    _plant(root, "docs: post-fold churn")
+
+    bounded = _sweep(dev_ledger, root, dw)
+    full = _sweep(dev_ledger, root, dw, all_history=True)
+
+    assert f"window start: {fold_sha[:12]} (exclusive)" in bounded, bounded
+    assert tid not in _named_ids(bounded), (
+        f"precondition: the old #{tid} landing must be outside the default "
+        f"window: {bounded!r}")
+    assert "window start: repository root (full history)" in full, full
+    assert tid in _named_ids(full) and old_sha in full, (
+        f"--all-history must recover the pre-fold landing for #{tid}: {full!r}")
+    bounded_n = int(re.search(r"examined (\d+) commits", bounded).group(1))
+    full_n = int(re.search(r"examined (\d+) commits", full).group(1))
+    history_n = int(_git(root, "rev-list", "--count", "HEAD").stdout.strip())
+    assert bounded_n > 0 and full_n == history_n > bounded_n, (
+        f"both populations must be non-empty and full history must equal git's "
+        f"independent HEAD count: bounded={bounded_n}, full={full_n}, "
+        f"git={history_n}")
 
 
 def test_sweep_that_read_no_entries_refuses_to_call_it_nothing_to_review(
