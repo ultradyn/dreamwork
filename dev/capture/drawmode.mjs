@@ -51,7 +51,6 @@ for (const page of [writer, sibling]) {
 
 const choose = async (page, mode) => {
   await page.click(`.drawpick [data-drawmode="${mode}"]`);
-  await waitFor(page, `.drawpick [data-drawmode="${mode}"][aria-checked="true"]`);
 };
 const adopted = async (page, mode) => {
   for (let i = 0; i < 20; i++) {
@@ -71,26 +70,30 @@ const observed = page => page.evaluate(() => ({
 }));
 
 await choose(writer, 'paused');
+const writerAppliedPaused = await adopted(writer, 'paused');
 const siblingAdoptedPaused = await adopted(sibling, 'paused');
 const w1 = await observed(writer), s1 = await observed(sibling);
 notes.push('writer -> paused: ' + JSON.stringify({ writer: w1, sibling: s1 }));
 ok('the writing tab applied its own change exactly once (storage does not fire there)',
-   w1.mode === 'paused' && w1.checked === 'paused' &&
+   writerAppliedPaused && w1.mode === 'paused' && w1.checked === 'paused' &&
    JSON.stringify(w1.calls) === JSON.stringify(['paused']));
 ok('the sibling tab adopted the writer change exactly once without a reload',
    siblingAdoptedPaused && s1.mode === 'paused' && s1.checked === 'paused' &&
    JSON.stringify(s1.calls) === JSON.stringify(['paused']));
 
+for (const page of [writer, sibling])
+  await page.evaluate(() => { window.__drawModeCalls = []; });
 await choose(sibling, 'light');
 const writerAdoptedLight = await adopted(writer, 'light');
+const siblingAppliedLight = await adopted(sibling, 'light');
 const w2 = await observed(writer), s2 = await observed(sibling);
 notes.push('sibling -> light: ' + JSON.stringify({ writer: w2, sibling: s2 }));
 ok('sync is bidirectional: the first tab adopted the sibling change once',
    writerAdoptedLight && w2.mode === 'light' && w2.checked === 'light' &&
-   JSON.stringify(w2.calls) === JSON.stringify(['paused', 'light']));
+   JSON.stringify(w2.calls) === JSON.stringify(['light']));
 ok('the second writing tab also applied locally exactly once',
-   s2.mode === 'light' && s2.checked === 'light' &&
-   JSON.stringify(s2.calls) === JSON.stringify(['paused', 'light']));
+   siblingAppliedLight && s2.mode === 'light' && s2.checked === 'light' &&
+   JSON.stringify(s2.calls) === JSON.stringify(['light']));
 ok('both tabs expose the same per-browser persisted value',
    w2.stored === 'light' && s2.stored === 'light');
 ok('the two-tab exercise raised no page errors', errs.length === 0);
