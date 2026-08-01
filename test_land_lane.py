@@ -10,6 +10,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parent
 TOOL = REPO / "dev" / "land_lane.py"
+REDPROOF = REPO / "dev" / "redproof.py"
 
 
 def _load_tool():
@@ -34,9 +35,20 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _redproof(lane: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(REDPROOF), *args, "--cwd", str(lane)],
+        cwd=lane,
+        capture_output=True,
+        text=True,
+    )
+
+
 @pytest.fixture
 def landing_repo(tmp_path: Path):
-    root = tmp_path / "repo"
+    # lane_scratch keys repositories by checkout-directory name; keep the
+    # fixture's red-proof registry isolated across pytest cases.
+    root = tmp_path / f"repo-{tmp_path.parent.name}-{tmp_path.name}"
     lane = tmp_path / "lane"
     root.mkdir()
     _git(root, "init", "-b", "master")
@@ -65,6 +77,11 @@ def landing_repo(tmp_path: Path):
     _write(lane / "feature.txt", "lane\n")
     _git(lane, "add", "feature.txt")
     _git(lane, "commit", "-m", "lane change")
+    armed = _redproof(lane, "begin", "feature.txt", "--expectation", "test_named.py")
+    assert armed.returncode == 0, armed.stdout + armed.stderr
+    _write(lane / "feature.txt", "recorded red-proof injection\n")
+    restored = _redproof(lane, "restore", "feature.txt")
+    assert restored.returncode == 0, restored.stdout + restored.stderr
     return root, lane
 
 
@@ -351,6 +368,54 @@ def test_stale_lane_refuses_before_baseline_or_merge(landing_repo):
 
     assert result.returncode == 1
     assert "REFUSE phase=preflight: branch is not rebased onto current master" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_history_injection_refuses_before_detach_and_names_the_commit(
+    landing_repo, monkeypatch
+):
+    """Exercise the real registry + git-history path, not a mocked scan result."""
+    root, lane = landing_repo
+    _write(lane / "feature.txt", "recorded red-proof injection\n")
+    _git(lane, "add", "feature.txt")
+    _git(lane, "commit", "-m", "test injection held in history")
+    injected_commit = _git(lane, "rev-parse", "HEAD")
+    _write(lane / "feature.txt", "lane\n")
+    _git(lane, "add", "feature.txt")
+    _git(lane, "commit", "-m", "restore fixed tree")
+    before = _git(root, "rev-parse", "HEAD")
+    monkeypatch.setenv("DREAMWORK_LANE_ID", "wrong-coordinator-identity")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "history: examined 3 commit(s)" in result.stdout
+    assert "1 holding a recorded injection" in result.stdout
+    assert "REFUSE phase=red-proof-history" in result.stderr
+    assert "commit(s) on this branch still hold a recorded injection" in result.stderr
+    assert injected_commit[:12] in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_empty_registry_refuses_with_loud_zero_denominators(landing_repo):
+    root, lane = landing_repo
+    forgotten = _redproof(lane, "forget", "feature.txt")
+    assert forgotten.returncode == 0, forgotten.stdout + forgotten.stderr
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert (
+        "audited 1 registry/ies across 1 launch-identity dir(s); "
+        "no injections registered"
+    ) in result.stderr
+    assert "--require 1 was set" in result.stderr
+    assert "commits examined=1" in result.stderr
+    assert "registries audited=ALL DISCOVERABLE" in result.stderr
+    assert "injections registered>=1 required" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
 
