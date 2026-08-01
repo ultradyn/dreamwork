@@ -1532,6 +1532,87 @@ def enforce_if_silent_contract(document, no_if_silent):
     return "if-silent"
 
 
+# ── built-tree integrity (#887) ──────────────────────────────────────────
+#
+# These checks deliberately run after every rewrite in render(). Checking the
+# source body would share its authority with the subject and could not see a
+# broken tag emitted by highlighting or by the mark-rail injection.
+
+class _BuiltTreeScan(html.parser.HTMLParser):
+    """Strict tag sequence over the built elements.
+
+    HTMLParser is only the tokenizer. Its forgiving tree repair is not the
+    verdict: this class maintains its own stack and reports every mismatch.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack = []        # [(tag, (line, column))]
+        self.elements = []     # [(tag, (line, column))]
+        self.findings = []
+
+    def _element(self, tag, attrs):
+        where = self.getpos()
+        self.elements.append((tag, where))
+        return where
+
+    def handle_starttag(self, tag, attrs):
+        where = self._element(tag, attrs)
+        if tag not in _VOID:
+            self.stack.append((tag, where))
+
+    def handle_startendtag(self, tag, attrs):
+        self._element(tag, attrs)
+
+    def handle_endtag(self, tag):
+        line, column = self.getpos()
+        if tag in _VOID:
+            self.findings.append(
+                "closing </%s> at line %d column %d names a void element, "
+                "which has no closing tag" % (tag, line, column))
+            return
+        if not self.stack:
+            self.findings.append(
+                "closing </%s> at line %d column %d has no open element to "
+                "close" % (tag, line, column))
+            return
+        open_tag, (open_line, open_column) = self.stack[-1]
+        if open_tag == tag:
+            self.stack.pop()
+            return
+        self.findings.append(
+            "closing </%s> at line %d column %d cannot close open <%s> from "
+            "line %d column %d; expected </%s>" % (
+                tag, line, column, open_tag, open_line, open_column, open_tag))
+        # Re-synchronise only when this closer names an older open element.
+        # Otherwise leave the stack intact so a later correct closer can still
+        # be judged and the mismatch does not manufacture a cascade.
+        matches = [i for i, (name, _) in enumerate(self.stack) if name == tag]
+        if matches:
+            del self.stack[matches[-1]:]
+
+    def close(self):
+        super().close()
+        if self.stack:
+            tag, (line, column) = self.stack[-1]
+            self.findings.append(
+                "open <%s> from line %d column %d reaches end of built HTML "
+                "without </%s>" % (tag, line, column, tag))
+
+
+def built_html_findings(document):
+    """`(findings, element_count)` derived only from the built HTML tree."""
+    scan = _BuiltTreeScan()
+    scan.feed(document)
+    scan.close()
+    findings = list(scan.findings)
+    if not scan.elements:
+        findings.append(
+            "built HTML parse examined 0 elements — refusing a zero-denominator "
+            "check that would report an empty page as clean")
+    return findings, len(scan.elements)
+
+
 # ── the build ─────────────────────────────────────────────────────────────
 
 
@@ -1718,6 +1799,11 @@ def render(fields, template=None, warn=None):
     if_silent_content = enforce_if_silent_contract(
         out, fields.get("no_if_silent", ""))
     out = _inject_if_silent_meta(out, if_silent_content)
+    findings, _ = built_html_findings(out)
+    if findings:
+        raise ArtifactError(
+            "built HTML is structurally invalid:\n  %s"
+            % "\n  ".join(findings))
     return out
 
 
@@ -2127,6 +2213,7 @@ def main(argv=None):
         return report_corpus_coverage(result)
 
     worst = 0
+    examined_elements = 0
     for path in args.path:
         try:
             with open(path, encoding="utf-8") as handle:
@@ -2141,6 +2228,13 @@ def main(argv=None):
                                 else "  (built from %s)" % artifact_stamp(document)))
         if verdict == "stale":
             worst = 1
+        findings, count = built_html_findings(document)
+        examined_elements += count
+        for finding in findings:
+            print("  ERROR       %s (%s)" % (path, finding))
+            worst = 1
+    print("  CHECKED     %d built artifact(s), %d element(s)" %
+          (len(args.path), examined_elements))
     return worst
 
 

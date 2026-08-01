@@ -2419,6 +2419,10 @@ no_if_silent: test fixture — no decision to park
         return [d for lvl, w, d in self._run(t).rows
                 if lvl == lint.WARN and w == "review/"]
 
+    def _errors(self, t):
+        return [d for lvl, w, d in self._run(t).rows
+                if lvl == lint.ERROR and w == "review/"]
+
     def test_a_stale_artifact_warns(self, tmp_path):
         t = self._target(tmp_path, **{"stale.html": self._stale_doc()})
         rows = self._warns(t)
@@ -2442,6 +2446,25 @@ no_if_silent: test fixture — no decision to park
             tmp_path, **{"old.html": "<html><body>pre-template</body></html>"})
         assert self._warns(t) == []
         assert not self._run(t).failed
+
+    def test_a_malformed_built_artifact_errors_with_the_mismatched_tags(
+            self, tmp_path):
+        t = self._target(
+            tmp_path,
+            **{"broken.html": "<html><body><div class=\"call\">x</p></body></html>"})
+        errors = self._errors(t)
+        assert any(
+            "broken.html" in row
+            and "closing </p>" in row
+            and "cannot close open <div>" in row
+            for row in errors), errors
+
+    def test_an_empty_artifact_errors_instead_of_passing_zero_elements(
+            self, tmp_path):
+        t = self._target(tmp_path, **{"empty.html": ""})
+        errors = self._errors(t)
+        assert any("examined 0 elements" in row for row in errors), errors
+        assert any("no trustworthy denominator" in row for row in errors), errors
 
     def test_stale_and_untemplated_warn_only_the_stale(self, tmp_path):
         # Discrimination: untemplated must not dilute the stale signal, and a
@@ -2501,6 +2524,7 @@ no_if_silent: test fixture — no decision to park
         rep = lint.Report()
         lint.check_review_artifacts(lint.SKILL_DIR / ".dreamwork", rep)
         assert not [d for l, w, d in rep.rows if l == lint.WARN], rep.render()
+        assert not rep.failed, rep.render()
 
 
 class TestSelfCompletedOpen:

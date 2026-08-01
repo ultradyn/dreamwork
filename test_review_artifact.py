@@ -923,6 +923,65 @@ def test_cli_check_reports_and_exits_nonzero_on_stale(tmp_path, capsys):
     assert ra.main(["check", str(stale)]) == 1
     printed = capsys.readouterr().out
     assert "current" in printed and "stale" in printed
+    assert "CHECKED     1 built artifact(s)" in printed
+
+
+def test_built_mismatched_closer_names_both_tags():
+    document = '<html><body><div class="call">ruling</p></body></html>'
+    findings, elements = ra.built_html_findings(document)
+    assert elements == 3, "the denominator must come from the built tree"
+    assert any(
+        "closing </p>" in finding
+        and "cannot close open <div>" in finding
+        and "expected </div>" in finding
+        for finding in findings), findings
+
+
+def test_an_empty_built_parse_refuses_with_its_zero_denominator():
+    assert ra.built_html_findings("") == ([
+        "built HTML parse examined 0 elements — refusing a zero-denominator "
+        "check that would report an empty page as clean"
+    ], 0)
+
+
+def test_well_formed_source_malformed_by_highlighting_is_still_caught(
+        template, monkeypatch):
+    """Direction 2: the source is sound; the real rewrite seam breaks output."""
+    source = SOURCE.replace(
+        '<p class="read">The palette drifted because nothing owned it.</p>',
+        '<pre><code class="language-python">if ready:</code></pre>')
+    fields = ra.parse_source(source)
+    assert ra.built_html_findings(fields["body"])[0] == [], \
+        "precondition: the authored body is well-formed"
+    real_highlight = ra.highlight
+
+    def malformed_highlight(document):
+        rewritten = real_highlight(document)
+        assert '<span class="tok-kw">if</span>' in rewritten, \
+            "precondition: the production highlighter rewrote the code token"
+        return rewritten.replace(
+            '<span class="tok-kw">if</span>',
+            '<span class="tok-kw">if</p>', 1)
+
+    monkeypatch.setattr(ra, "highlight", malformed_highlight)
+    with pytest.raises(
+            ra.ArtifactError,
+            match=r"closing </p> .* cannot close open <span> .* expected </span>"):
+        ra.render(fields, template=template)
+
+
+def test_every_served_artifact_has_a_nonempty_clean_built_tree():
+    built = sorted((__import__("pathlib").Path(REVIEW_DIR)).glob("*.html"))
+    assert len(built) >= 35, "the served-artifact population unexpectedly shrank"
+    elements = 0
+    failures = {}
+    for path in built:
+        findings, count = ra.built_html_findings(path.read_text(encoding="utf-8"))
+        elements += count
+        if findings:
+            failures[path.name] = findings
+    assert elements > 12000, "the built-tree parse degraded below its measured floor"
+    assert not failures, failures
 
 
 def test_cli_version_matches_the_module(capsys):
@@ -980,9 +1039,10 @@ def test_a_marked_block_gains_spans_and_an_unmarked_block_does_not(template):
     declares its language is coloured and the block that does not is left
     alone. Both halves are asserted in the same run, and the contrast
     (spans present vs absent) is derived at runtime."""
-    marked = '<pre><code class="language-python">%s</code></pre>' % PY_SAMPLE
-    bare = '<pre><code>%s</code></pre>' % PY_SAMPLE      # no language at all
-    plain = '<pre>%s</pre>' % PY_SAMPLE                  # not even a <code>
+    sample_html = html.escape(PY_SAMPLE, quote=False)
+    marked = '<pre><code class="language-python">%s</code></pre>' % sample_html
+    bare = '<pre><code>%s</code></pre>' % sample_html   # no language at all
+    plain = '<pre>%s</pre>' % sample_html               # not even a <code>
     # Precondition: the sample actually exercises the highlighter, or "no
     # spans" could pass because nothing was there to colour.
     assert "def " in PY_SAMPLE and "<" in PY_SAMPLE, \
@@ -1007,7 +1067,7 @@ def test_a_marked_block_gains_spans_and_an_unmarked_block_does_not(template):
     # silently colouring the bare one too — the contrast is the assertion.
     where = built.index(bare)
     bare_inner = built[where + len("<pre><code>"):
-                       where + len("<pre><code>") + len(PY_SAMPLE)]
+                       where + len("<pre><code>") + len(sample_html)]
     bare_count = bare_inner.count("<span")
     assert bare_count == 0, \
         "unmarked block gained %d span(s) — the gate is not discriminating: %r" \
