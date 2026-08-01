@@ -8,6 +8,7 @@ import pytest
 
 from dreamwork_db import Access, SchemaMismatch, StoreSpec, open_database
 from dreamwork_db.migrate import MIGRATIONS, SCHEMA_VERSION, initialize_legacy_store
+from dreamwork_db.migrations import v004_groups
 from ledger_store import SchemaVersionError, SeedError, open_store
 
 
@@ -143,7 +144,7 @@ def test_historical_v1_store_migrates_through_v2_to_current_on_reopen(tmp_path):
         )
 
 
-def test_frozen_v2_store_migrates_to_v3_shape_and_reports_zero_legacy_rows(
+def test_frozen_v2_store_migrates_through_v3_to_v4_and_reports_zero_legacy_rows(
         tmp_path):
     path = tmp_path / "frozen-v2.sqlite3"
     _frozen_v2_store(path)
@@ -167,7 +168,7 @@ def test_frozen_v2_store_migrates_to_v3_shape_and_reports_zero_legacy_rows(
         version = after.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
         ).fetchone()[0]
-        assert version == "3", f"v2->v3 must record version 3, got {version!r}"
+        assert version == "4", f"v2->v4 must record version 4, got {version!r}"
         assert _columns(after, "question") == {
             "id", "status", "title", "body_markdown", "priority",
             "asked_at", "asked_precision", "created_by", "created_at",
@@ -187,6 +188,16 @@ def test_frozen_v2_store_migrates_to_v3_shape_and_reports_zero_legacy_rows(
         assert _columns(after, "review_link") == {
             "id", "review_id", "link_kind", "task_id", "issue_id",
             "question_id", "decision", "decided_at", "decided_by",
+        }
+        assert _columns(after, "task_group") == {
+            "id", "kind", "title", "description", "created_by", "created_at",
+        }
+        assert _columns(after, "task_group_member") == {
+            "group_id", "task_id", "added_by", "added_at",
+        }
+        assert _columns(after, "task_group_trigger") == {
+            "id", "group_id", "event", "task_title", "task_priority",
+            "task_type", "created_by", "created_at",
         }
         assert _columns(after, "review_decision") == {
             "artifact", "question_title", "decision", "decided_at", "actor"
@@ -343,7 +354,7 @@ def test_newer_schema_version_is_refused_with_legacy_public_type(tmp_path):
             "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         )
         conn.execute(
-            "INSERT INTO meta(key, value) VALUES ('schema_version', '4')"
+            "INSERT INTO meta(key, value) VALUES ('schema_version', '5')"
         )
         conn.commit()
     finally:
@@ -359,9 +370,9 @@ def test_newer_schema_version_is_refused_with_legacy_public_type(tmp_path):
         "the retained legacy SchemaVersionError must also cross the new "
         "database API as SchemaMismatch"
     )
-    assert "schema_version 4 > supported 3" in str(caught.value), (
-        "newer-version refusal must name stored version 4 and supported "
-        f"version 3, got {str(caught.value)!r}"
+    assert "schema_version 5 > supported 4" in str(caught.value), (
+        "newer-version refusal must name stored version 5 and supported "
+        f"version 4, got {str(caught.value)!r}"
     )
 
 
@@ -383,11 +394,51 @@ def test_new_store_seed_refusal_and_established_reopen_keep_public_type(tmp_path
         )
 
 
-def test_ladder_declares_the_single_ordered_path_to_v3():
+def test_ladder_declares_the_single_ordered_path_to_v4():
     versions = [
         (step.source_version, step.target_version) for step in MIGRATIONS
     ]
-    assert versions == [(1, 2), (2, 3)], (
-        "migration ladder must retain exactly one ordered path through v3, "
+    assert versions == [(1, 2), (2, 3), (3, 4)], (
+        "migration ladder must retain exactly one ordered path through v4, "
         f"got {versions!r}"
     )
+
+
+def test_empty_v4_group_schema_rolls_back_to_v3_without_touching_tasks(tmp_path):
+    path = tmp_path / "rollback-v4.sqlite3"
+    _migrate_through_core(path)
+    conn = sqlite3.connect(path)
+    try:
+        before = conn.execute(
+            "SELECT id, state, title, body FROM task ORDER BY id"
+        ).fetchall()
+        v004_groups.downgrade(conn)
+        conn.commit()
+        assert conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone()[0] == "3"
+        assert not ({"task_group", "task_group_member", "task_group_trigger"}
+                    & _tables(conn))
+        after = conn.execute(
+            "SELECT id, state, title, body FROM task ORDER BY id"
+        ).fetchall()
+        assert after == before, "v4 rollback must not rewrite existing tasks"
+    finally:
+        conn.close()
+
+
+def test_v4_rollback_refuses_to_discard_grouping_facts(tmp_path):
+    path = tmp_path / "nonempty-v4.sqlite3"
+    _migrate_through_core(path)
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute(
+            "INSERT INTO task_group"
+            " (kind,title,description,created_by,created_at)"
+            " VALUES ('epic','kept','','test','now')"
+        )
+        with pytest.raises(SchemaMismatch, match=r"task_group=1"):
+            v004_groups.downgrade(conn)
+        assert "task_group" in _tables(conn)
+    finally:
+        conn.close()
