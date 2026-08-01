@@ -7,6 +7,11 @@ implementation, so nothing here has been built. Three open questions are in
 Everything below rests on measurements taken tonight against the live loop, not
 on assumption. Where I could not measure, I say so.
 
+**Reconciliation note (2026-08-01).** This remains the one design of record.
+The unmerged `cx-691recap` branch is provenance for corrections folded below
+after the reusable `dreamwork_db` and session-log seams landed; its
+`recap-design.md` is not a second design and does not supersede this file.
+
 ---
 
 ## 1. What it does
@@ -99,25 +104,25 @@ the obvious derivation gives the wrong file.**
 This is the `#136` shape waiting to happen: a recap built from the two-day-old
 file would be fluent, confident, and about work that finished on Wednesday.
 
-**What the design does about it.** The runner resolves its source in one order
-and refuses rather than guesses:
-
-1. `status.json["agent_session"]["session_id"]`, then find the file whose
-   basename is that uuid under the client's projects root — **searching all
-   slugs**, because the slug is not derivable.
-2. If that key is absent, or the file is missing, or its last record is older
-   than three beats: **write a row with `status = 'no-source'` and the reason,
-   and start no model process.** The dashboard renders that reason.
-
-There is no third step. A "newest jsonl anywhere" fallback is exactly the
-confident-wrong-answer this loop keeps filing bugs about, and it would have
-picked a live *lane's* transcript over the coordinator's on this host tonight.
+**What the design does about it.** Read the recorded main-agent session id and
+pass it to the existing `session_source.resolve` seam. Accept only its `live`
+result; preserve `absent`, `mismatch`, `missing`, and `stale` as distinct
+`no_source` attempt details and start no model process. There is no fallback.
+A "newest jsonl anywhere" or cwd-derived path is exactly the
+confident-wrong-answer this loop keeps filing bugs about, and either would pick
+the wrong transcript on the measured state above.
 
 **This is worth a task of its own** — `agent_session` being unpopulated is a
 `#665` regression that also silently disables the session-log view (`#613`). I
 have not filed it; naming it for the coordinator per the brief.
 
 ### 3.3 What the digest contains
+
+The projector consumes the existing `session_log` service/scanner for stable
+ordering, record classification, tool-use/result pairing, diagnostics,
+compaction nodes, and its event cursor. It does not add a second JSONL parser.
+Advance the cursor only after a terminal `ok` or judged `unchanged` attempt;
+runner failure leaves the missed actions in the next window.
 
 One line per step, newest-relevant detail kept, bodies never:
 
@@ -239,11 +244,11 @@ What decides it is contract and mechanism:
   bytes and no human intent to witness. It is precisely a projection. That store
   also has **no migration ladder** (it refuses to open on any version delta) and
   an explicit module-ownership fence.
-- **`ledger.sqlite3` already hosts exactly this shape.** `review_decision` is a
-  non-task, dashboard-facing table living there (`file-formats.md:2452`). Adding
-  a table is one `CREATE TABLE IF NOT EXISTS` in `ledger_store._SCHEMA_SQL`,
-  which is `executescript`-ed on **every** `open_store`, so it appears in
-  existing stores on next open with **no `SCHEMA_VERSION` bump**.
+- **`ledger.sqlite3` already hosts exactly this shape, but now has an ordered
+  migration contract.** The current store is schema v3. Add
+  `dreamwork_db/migrations/v004_recaps.py` and advance the ordered ladder to v4;
+  do not smuggle a current table into the legacy bootstrap SQL or rely on
+  `CREATE TABLE IF NOT EXISTS` during every open.
 - **It reaches the dashboard with no new channel.** `watched_mtime` walks
   `.dreamwork/` including `ledger.sqlite3` and its `-wal`, so a recap write moves
   `/mtime` and the next `collect()` re-derives. Nothing new to build.
@@ -252,26 +257,50 @@ A third store was considered and refused: it would buy nothing the ledger store
 does not already give, and it would be a fourth thing to open, migrate and back
 up.
 
-Shape, with the failure columns being the point rather than an afterthought:
+The current composition seam is
+`dreamwork_db.store.dreamwork_store_spec`: one `StoreSpec` registers `tasks`,
+`questions`, and `reviews` and applies `initialize_legacy_store`. Add a
+`dreamwork_db.recaps.RecapRepository` beside those repositories. Keep
+`task_store_spec` and `question_store_spec` as compatibility delegates and do
+**not** create a rival `recap_store_spec`. Reads use a short
+`open_database(..., Access.READ)` snapshot; writes use
+`open_database(..., Access.WRITE)` plus `handle.transaction()`. The dashboard
+consumes a repository DTO, never SQL or `sqlite3.Row` in `watch.py`.
+
+Shape, with the attempt lifecycle being the point rather than an afterthought:
 
 ```sql
-CREATE TABLE IF NOT EXISTS recap (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  at            TEXT NOT NULL,   -- ISO8601 UTC, when the attempt finished
-  status        TEXT NOT NULL,   -- ok | empty | error | timeout | no-source
-  text          TEXT,            -- the prose; NULL unless status='ok'
-  detail        TEXT,            -- why not, when not ok (stderr tail, reason)
-  source_path   TEXT,            -- the transcript recapped
-  source_session TEXT,
-  window_from   TEXT,            -- first step covered
-  window_to     TEXT,            -- last step covered
-  steps         INTEGER,
-  steps_elided  INTEGER,
-  compactions   INTEGER,         -- boundaries crossed in the window
-  runner        TEXT NOT NULL,   -- e.g. 'ccc -y @glm52'
-  prompt_bytes  INTEGER,
-  duration_ms   INTEGER,
-  run_log       TEXT             -- ccc's own run dir, parsed from stderr
+CREATE TABLE recap_attempt (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  beat_at            TEXT NOT NULL,
+  due_at             TEXT NOT NULL,
+  deadline_at        TEXT NOT NULL,
+  started_at         TEXT NOT NULL,
+  finished_at        TEXT,
+  status             TEXT NOT NULL CHECK (status IN
+                       ('running','ok','unchanged','no_source','digest_error',
+                        'runner_error','timeout','invalid_output')),
+  recap_text         TEXT,
+  detail             TEXT,
+  source_session_id  TEXT,
+  source_cursor_from INTEGER,
+  source_cursor_to   INTEGER,
+  records_examined   INTEGER,
+  events_selected    INTEGER,
+  events_elided      INTEGER,
+  diagnostics_count  INTEGER,
+  model              TEXT NOT NULL,
+  every_n            INTEGER NOT NULL CHECK (every_n > 0),
+  prompt_bytes       INTEGER,
+  prompt_sha256      TEXT,
+  projector_version  INTEGER NOT NULL,
+  duration_ms        INTEGER,
+  exit_code          INTEGER,
+  runner_log_path    TEXT,
+  UNIQUE (beat_at),
+  CHECK ((status = 'running') = (finished_at IS NULL)),
+  CHECK ((status = 'ok') = (recap_text IS NOT NULL)),
+  CHECK (recap_text IS NULL OR length(CAST(recap_text AS BLOB)) <= 2048)
 );
 ```
 
@@ -279,9 +308,18 @@ Note the timestamps: transcript records are **UTC with a `Z`** while the loop's
 own files are local. Every comparison in the runner is in UTC and every render
 is local. Getting this wrong is a silent ten-hour error on this host.
 
-`run_log` is free forensics — `ccc` prints its run directory on stderr
+`runner_log_path` is free forensics — `ccc` prints its run directory on stderr
 (`>> ccc:output-log >> …/runs/grok-…`), and `#686`'s lesson is that the cheap
 path leaves nothing else behind.
+
+After acquiring the target-scoped lock, insert and commit `running` **before**
+reading the transcript or starting `ccc`; finalize that row with an
+`UPDATE ... WHERE id = ? AND status = 'running'` in a second transaction. A
+process death therefore leaves an overdue fact rather than no attempt. A DB
+failure starts no model, advances no source cursor, and cannot escape into the
+heartbeat pipe. Preserve the core's typed `Busy`, `Corrupt`, `SchemaMismatch`,
+`ConstraintViolation`, `ValidationError`, `Conflict`, and `DatabaseError`
+outcomes instead of flattening them into prose.
 
 **The runner never touches this table, the repo, or git.** Its entire contract
 is *argv in, text on stdout*. The Python wrapper owns persistence. That is what
@@ -388,53 +426,31 @@ the next one, so a hung run is dead long before the next fires.
 
 ## 8. The feature gate and the runner config
 
-### 8.1 The uncomfortable finding
+### 8.1 The current convention
 
-`SKILL.md:913` says, in full: `- Experiments are feature-gated.` That is the
-entire text. It has no mechanism, no example, no cross-reference, and **nothing
-in the codebase implements a thing called a feature gate.** A design that
-claimed to "follow the existing convention" would be citing a convention that
-does not exist. So I looked at what actually gates things here:
+`SKILL.md` now defines the experiment gate: one tracked `.dreamwork/<name>`
+file, **absent means off**, with its format documented in `file-formats.md` and
+validated by `lint.py`. The recap follows that convention directly; it is not a
+plugin, environment toggle, or `enabled:` field inside an always-present file.
 
-- **The `DREAMWORK.md` `- Load:` consent line** is the strongest — checked into
-  git so it travels, off is one deleted line, and the gated code re-reads it at
-  runtime rather than trusting load-time. But its parser rejects any id not
-  matching `^ud-dreamwork-[a-z0-9-]+$`, so using it means making the recap a
-  *plugin*, which is machinery for one script.
-- **The `.dreamwork/<knob>` file family** (`watch-port`, `watch-tint`, `posture`,
-  `run-mode`, `subagent-policy`) is the established machine-read runtime-knob
-  surface, with a documented `key: value` grammar (`file-formats.md:1139-1145`),
-  a `lint.py` check per file, and two members (`watch-port`, `watch-tint`) that
-  are **tracked in git**. Its stated character is "steer, never gate" — but that
-  is a description of the knobs that exist, not a prohibition.
-- A strict `=== '1'` env opt-in (`DW_UPDATE_EVIDENCE`) is the only *test-enforced*
-  default-off gate here, but env vars do not travel and cannot be seen.
+### 8.2 Shape and behaviour
 
-### 8.2 What I recommend
-
-**A tracked `.dreamwork/recap` file carrying both the gate and the runner, in the
-existing knob grammar:**
+Tracked `.dreamwork/recap`:
 
 ```
-enabled: no
-runner: ccc -y @glm52
+model: glm52
 every: 1
 ```
 
-Absent file, or `enabled: no`, means `recap_tick.py` exits before doing anything
-— **no model process is started**. Closed key set, so an unknown key is a lint
-ERROR the way an unknown posture axis is (`file-formats.md:1268-1271`) — a
-misspelled `enable:` must fail loud, not silently leave the feature on.
+The file is absent by default. When present, `model` is a ccc alias in a narrow
+identifier grammar and `every` is a bounded positive integer (`1` means every
+beat). Missing, unknown, duplicate, or invalid values are a config error: no
+model starts and the dashboard names the error. Re-read the file every pulse,
+so deleting it turns the feature off without restart.
 
-Three reasons this over a plugin: it is one file in a family that already exists;
-it puts the gate and the "configurable runner" you asked for in the same place,
-so there is one thing to read to know what will happen; and `runner` being free
-text means changing the model is an edit, not a release — no plugin system for
-one runner.
-
-**The default is `no`, and the increment that lands it writes `enabled: yes`
-into this target explicitly.** This is a shipped skill: a target that upgrades
-must not silently acquire a model call every 4.75 minutes.
+There is deliberately no arbitrary `runner:` shell string. The v1 adapter
+constructs fixed argv, `ccc -y @<model>`; changing the model remains data,
+without making a tracked config file a command-execution surface.
 
 Honest limit, stated rather than glossed: with the gate off, the ~11 MB
 `recap_tick.py` process still sits reading the pipe. The **runner** never
@@ -443,9 +459,8 @@ spawns, which is the cost that matters and the thing the brief asked for, but
 command is the harder off-switch; it needs a re-arm to take effect, which is why
 it cannot be the everyday one.
 
-**How you turn it off:** set `enabled: no` in `.dreamwork/recap`. It takes
-effect on the next beat — the file is re-read every pulse, never cached, so
-there is no restart and no window where it is still running.
+**How you turn it off:** delete `.dreamwork/recap`. It takes effect on the next
+beat; no model process starts after the absent gate is observed.
 
 ---
 
@@ -472,7 +487,7 @@ and nothing new.** `transitions.md:646-652` describes exactly this case — a
 container that stays while its content is replaced, *"old values out as new
 values in"* on a `.42s` envelope, *"one gesture one level down, never a second
 idiom"*, reduced motion snapping the swap. The implementation is
-`bdContentSwap(el, freshHTML)` at `client/router.js:2696` plus
+`bdContentSwap(el, freshHTML)` at `client/router.js:2843` plus
 `client/style.css:589-611`. Reusing it verbatim is the whole point: inventing a
 recap-specific fade would be the second idiom that rule forbids.
 
@@ -480,7 +495,7 @@ Three bindings, and the first is the one that would actually bite:
 
 1. **Gate on `recap.id`, never on the tick.** The dashboard re-renders every 2 s;
    a recap changes every ~4.75 min. Ungated, the gesture replays about 142 times
-   per recap — *"motion with nothing behind it"* (`router.js:4361-4366`, the
+   per recap — *"motion with nothing behind it"* (`router.js:2834-2836`, the
    `#151` rule). `bdContentSwap` has a text-equality short-circuit, but two
    consecutive recaps of a quiet loop can be byte-identical, and re-dissolving
    identical text *"says a change happened where none did"*.
@@ -499,9 +514,9 @@ than "it animates".
 Filed in `.dreamwork/questions.md` under `## Open` as one entry with three
 questions, each carrying a `rec`:
 
-- **`Q1` — the gate's home.** A tracked `.dreamwork/recap` knob file (rec), a
-  real `ud-dreamwork-recap` plugin borrowing the one proven consent gate, or a
-  strict env opt-in. §8.
+- **`Q1` — the gate's home.** The now-documented convention makes a tracked,
+  absent-means-off `.dreamwork/recap` file the recommendation (§8). This remains
+  his question to confirm; the convention does not answer it on his behalf.
 - **`Q2` — cadence.** Every beat is 303 runs/day. Every second beat halves it and
   doubles the window, which the cap absorbs. Rec: every beat while you are
   watching it, `every: 2` as the knob that lets you back off without a code
@@ -517,17 +532,12 @@ questions, each carrying a `rec`:
 **The stale recap.** The failure that matters is a dashboard showing a
 four-hour-old recap that looks exactly like a four-minute-old one — `#136` in a
 new place. So: every attempt writes a row, including the ones that produce
-nothing, and the render is **three states from the data, never two**, following
-the `pending_events` precedent (`status_derive.py:173-195`):
-
-- a recent `ok` → the prose and its age;
-- an `ok` older than two beats, with failures since → the prose *dimmed*, and
-  "recap stale — last succeeded 21:12, 3 attempts failed since";
-- no `ok` ever → "no recap yet", which is calm, and is a different string from
-  "recap runner failing", which is not.
-
-The gated-off case is a fourth, and it says "recap is off" rather than rendering
-as absence.
+nothing. The dashboard distinguishes off; no attempt; `running`; fresh `ok`;
+judged `unchanged`; failure before any success; failure after success; overdue
+`running`; and config/DB unavailable. A newer failure makes old prose stale
+immediately, while `unchanged` refreshes the judgement without inventing new
+prose. The attempt id, displayed recap id, generated/checked times, age, and
+failures-since-success come from the repository DTO rather than client policy.
 
 **The compaction boundary.** Handled in §4: the transcript keeps everything, so
 the recap keeps reading actions; the summary blob is dropped by an exact field
@@ -575,14 +585,14 @@ useful without the later ones:
    marker, UTC) and none of the risk. **It is useful by itself**: run it and read
    what the agent has been doing, with no model involved at all. Testable against
    a fixture transcript, including a synthetic compaction boundary.
-2. **The `recap` table and its writer** — one `CREATE TABLE IF NOT EXISTS`, a
-   `record_recap()`, a `latest_recap()` read. Still no model: increment 1's output
-   can be stored by hand to prove the path end to end.
+2. **The v4 migration and `RecapRepository`** — register it in
+   `dreamwork_store_spec`, including the committed `running` attempt and final
+   compare-and-set transaction. Still no model.
 3. **`recap_tick.py`** — the gate, the runner invocation, the timeout with
-   `killpg`, and the five statuses. Ships with `enabled: no`.
+   `killpg`, and the terminal statuses. Ships with `.dreamwork/recap` absent.
 4. **The dashboard read** — the `collect()` key, its mandatory
    `SUMMARY_ALLOWED`/`SUMMARY_DENIED` classification (a new key that is in
-   neither reds by design, `watch.py:3856-3858`), and the render with its four
+   neither reds by design, `watch.py:4069-4078`), and the render with its four
    states. **No motion yet.**
 5. **The transition** — `bdContentSwap` keyed on `recap.id`, reduced-motion
    parity, and a guard that proves the gesture fires once per recap and not once
@@ -627,10 +637,9 @@ Steps 1 and 2 together are the smallest honestly useful version.
   verified over a 3-hour window that crossed two compactions.
 
 - **The ledger store, not the journal.** Gitignoring does not discriminate (both
-  are). The journal is receipt-authority-only by its own design and has no
-  migration ladder; the ledger store already hosts a non-task dashboard-facing
-  table, takes a new table with no version bump, and reaches the dashboard
-  through the existing `/mtime` poll with no new channel.
+  are). Add a v4 migration and `RecapRepository` to the canonical
+  `dreamwork_store_spec`; do not create raw SQL in `watch.py`, a second store,
+  or a recap-only spec. Existing DB/WAL mtime polling reaches the dashboard.
 
 - **Scheduling: a `tee` leg on the existing heartbeat pipeline** (IGC over six
   candidates). An independent timer can hold an offset but not a *phase* —
@@ -640,25 +649,21 @@ Steps 1 and 2 together are the smallest honestly useful version.
   already running?" never needs the `#675` probe. Timeout 120 s, killing the
   **process group** (a `ccc` run is 7 processes, ~240 MB).
 
-- **Gate: a tracked `.dreamwork/recap` file** carrying `enabled`, `runner` and
-  `every` in the existing knob grammar — gate and configurable runner in one
-  place, closed key set so a typo fails loud, default **off** so upgrading
-  targets do not silently gain a model call. Caveat stated: the ~11 MB consumer
-  still reads the pipe when off; the *runner* never starts. Note that
-  `SKILL.md:913`'s "experiments are feature-gated" has **no implementation
-  anywhere** — there is no existing convention to match, which is why this is a
-  question.
+- **Gate: a tracked `.dreamwork/recap` file, absent means off.** It carries only
+  bounded `model` and `every` data; the ccc argv is fixed, not a configurable
+  shell string. The resident sidecar may still read pulses while off, but it
+  starts no model and opens no WRITE handle.
 
 - **Motion: reuse `#559`'s cross-dissolve, gated on `recap.id` not on the tick**
   — otherwise the gesture replays ~142× per recap. Flagged as a question because
   `transitions.md`'s default for a tick-re-rendered panel is *no motion*, said
   explicitly in five code sites, against your "transition when updated".
 
-- **Failure is designed, not discovered.** Every attempt writes a row including
-  the ones that produce nothing; `empty` and `error` are distinct statuses;
-  stderr is captured because a 401 leaves zero bytes everywhere else. The render
-  has four states so that "quiet loop", "stale recap", "never ran" and "switched
-  off" cannot look alike — the `#136` rule.
+- **Failure is designed, not discovered.** A committed `running` row precedes
+  transcript/model work and is finalized transactionally, so death leaves an
+  overdue fact. `unchanged`, source, digest, runner, timeout, and invalid-output
+  outcomes stay distinct; stderr is captured because a 401 leaves zero bytes
+  elsewhere. Old prose cannot look current after a newer failure.
 
 - **Cost: ~8% duty cycle, ~20 MB time-averaged, ~0.5M cheap tokens/day.** The
   timeout is a memory control first: without it a hung run makes a quarter-gig
