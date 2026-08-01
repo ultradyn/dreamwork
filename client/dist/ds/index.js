@@ -2335,6 +2335,7 @@ var DreamworkDesign = (() => {
     return [f.slice(0, at), f.slice(at)];
   };
   var qaState = (q, key) => key[0] === "a" ? "folded" : q.answer ? "awaiting" : "open";
+  var isQuestionReadingSurface = (surface) => surface === "focus" || surface === "dock";
   var qtHtml = (title) => {
     const m = /^(P[123] · )?(\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?( — )([\s\S]*)$/.exec(title || "");
     if (!m) return esc(title);
@@ -2356,9 +2357,9 @@ var DreamworkDesign = (() => {
     if (u == null || !(u > 0)) return "";
     return `<span class="rsep"> · </span><span class="age qup" data-ut="${u}" data-q-upd="${esc(q.title || "")}"></span>`;
   };
-  var qfocusLink = (title) => typeof view !== "undefined" && view && view.name === "question" ? "" : ` <a class="qfocus" href="/question?qid=${encodeURIComponent(title)}" title="focus this question — open it on its own page" aria-label="focus this question on its own page">focus</a>`;
-  var qrollBtn = (title) => typeof view !== "undefined" && view && view.name === "question" ? "" : ` <button type="button" class="qroll" aria-expanded="true" title="roll this question up to its first lines" aria-label="roll this question up to its first lines">roll up</button>`;
-  var qaInner = (q, key) => {
+  var qfocusLink = (title, surface) => surface === "focus" ? "" : ` <a class="qfocus" href="/question?qid=${encodeURIComponent(title)}" title="focus this question — open it on its own page" aria-label="focus this question on its own page">focus</a>`;
+  var qrollBtn = (surface) => isQuestionReadingSurface(surface) ? "" : ` <button type="button" class="qroll" aria-expanded="true" title="roll this question up to its first lines" aria-label="roll this question up to its first lines">roll up</button>`;
+  var qaInner = (q, key, surface = "list") => {
     const st = qaState(q, key);
     const body = q.body && q.body.trim() ? mdBReview(q.body.trim(), q.title) : "";
     const [settled, since] = qaThread(q);
@@ -2367,13 +2368,13 @@ var DreamworkDesign = (() => {
     const foot = followThread(settled, true) + answer + followThread(since, false);
     const compose = qaCompose(key, st, q.title);
     const up = qUpdatedHtml(q);
-    const focus = qfocusLink(q.title);
-    const roll = st === "open" ? qrollBtn(q.title) : "";
+    const focus = qfocusLink(q.title, surface);
+    const roll = st === "open" ? qrollBtn(surface) : "";
     if (st === "folded")
       return `<details class="qfold"><summary class="qt">${qtHtml(q.title)}${up}` + (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : "") + `${focus}</summary><div class="qbody">${body}${foot}</div>${compose}</details>`;
     return `<div class="qbody"><div class="qt">${qtHtml(q.title)}${up}${roll}${focus}</div>${body}${foot}</div>${compose}`;
   };
-  var qaCard = (q, key) => `<div class="qa ${qaState(q, key)}" data-qkey="${key}" data-qid="${encodeURIComponent(q.title)}">${qaInner(q, key)}</div>`;
+  var qaCard = (q, key, surface = "list") => `<div class="qa ${qaState(q, key)}" data-qkey="${key}" data-qid="${encodeURIComponent(q.title)}" data-qsurface="${surface}">${qaInner(q, key, surface)}</div>`;
   var qaEntry = (key, card) => {
     if (!data || !key) return null;
     const list = key[0] === "a" ? data.answered_entries : data.questions_open;
@@ -3141,7 +3142,7 @@ var DreamworkDesign = (() => {
     if (q && d) {
       const i = d.questions_open.findIndex((x) => x.title === q);
       if (i >= 0)
-        dock = `<aside class="qdock" id="qdock">` + label("answering") + qaCard(d.questions_open[i], "o" + i) + `</aside>`;
+        dock = `<aside class="qdock" id="qdock">` + label("answering") + qaCard(d.questions_open[i], "o" + i, "dock") + `</aside>`;
     }
     const pct = readSplit();
     return `<div id="reviewwrap"${dock ? "" : ' class="nodock"'}` + (dock ? ` style="--rsplit:${pct.toFixed(1)}%"` : "") + `><div id="reviewdoc"><iframe id="reviewframe" src="${src}" title="review artifact" loading="lazy"></iframe></div>` + (dock ? reviewSplitBar(pct) : "") + dock + `</div>`;
@@ -3176,10 +3177,10 @@ var DreamworkDesign = (() => {
     if (title) {
       const oi = (d.questions_open || []).findIndex((x) => x.title === title);
       if (oi >= 0)
-        return `<div id="qfocus" class="qdual">` + qaCard(d.questions_open[oi], "o" + oi) + `</div>`;
+        return `<div id="qfocus" class="qdual">` + qaCard(d.questions_open[oi], "o" + oi, "focus") + `</div>`;
       const ai = d.answered_entries.findIndex((x) => x.title === title);
       if (ai >= 0)
-        return `<div id="qfocus" class="qdual">` + qaCard(d.answered_entries[ai], "a" + ai) + `</div>`;
+        return `<div id="qfocus" class="qdual">` + qaCard(d.answered_entries[ai], "a" + ai, "focus") + `</div>`;
     }
     return `<div id="qfocus"><div class="qmissing"><div class="qmisshead">not found</div><div class="qmissbody">this link names a question the list no longer has — it was most likely re-titled or removed while you watched. No other question has been substituted for it.</div><div class="qmissback"><a href="/questions">&larr; back to questions</a></div></div></div>`;
   }
@@ -3453,7 +3454,7 @@ var DreamworkDesign = (() => {
     const before = snapshotCards();
     const next = Object.assign({}, q, { answer: val });
     card.className = "qa " + qaState(next, key);
-    card.innerHTML = qaInner(next, key);
+    card.innerHTML = qaInner(next, key, card.dataset.qsurface || "list");
     const anstext = card.querySelector(".anstext");
     const toRect = anstext && anstext.getBoundingClientRect();
     regroupCards(before, null, null, card);
@@ -5131,14 +5132,13 @@ var DreamworkDesign = (() => {
   function restoreRolls() {
     if (!rolledQids.size && !document.querySelector(".qa.rolled")) return;
     document.querySelectorAll(".qa[data-qid]").forEach((card) => {
-      if (card.closest(".qdock")) return;
       let title = null;
       try {
         title = decodeURIComponent(card.dataset.qid);
       } catch (e) {
         return;
       }
-      const want = rolledQids.has(title);
+      const want = !isQuestionReadingSurface(card.dataset.qsurface) && rolledQids.has(title);
       if (want !== card.classList.contains("rolled")) setRolled(card, want);
     });
   }
@@ -5184,7 +5184,7 @@ var DreamworkDesign = (() => {
     const btn = e.target.closest("button.qroll");
     if (!btn) return;
     const card = btn.closest(".qa[data-qid]");
-    if (!card || card.closest(".qdock")) return;
+    if (!card || isQuestionReadingSurface(card.dataset.qsurface)) return;
     e.preventDefault();
     toggleRoll(card);
   });
@@ -5202,7 +5202,7 @@ var DreamworkDesign = (() => {
     const card = document.querySelector(
       '.qa[data-qid="' + encodeURIComponent(m.qid) + '"]'
     );
-    if (card && !card.closest(".qdock") && !!m.rolled !== card.classList.contains("rolled"))
+    if (card && !isQuestionReadingSurface(card.dataset.qsurface) && !!m.rolled !== card.classList.contains("rolled"))
       applyRoll(card, !!m.rolled);
   });
   async function loadRolls() {

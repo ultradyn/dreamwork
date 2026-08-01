@@ -719,7 +719,7 @@ const qaThread = q => {
    renders through this one card, so a change to how a question looks is one
    edit rather than a hunt.
 
-   Contract: `qaCard(q, key)`. The key ADDRESSES the entry in live `data`:
+   Contract: `qaCard(q, key, surface='list')`. The key ADDRESSES the entry in live `data`:
    'o'+index into `questions_open`, 'a'+index into `answered_entries`. It is
    never a title round-tripped through the DOM, so a stale render cannot
    write to the wrong entry. The state is DERIVED from the key and the entry,
@@ -730,10 +730,19 @@ const qaThread = q => {
                 answer on a quiet accent rail with a ✓, no box, so it never
                 reads as still-open
      folded   — key is 'a…'; the loop has folded it into `## Answered`
+   `surface` says where the card is being read. It is explicit rather than a
+   read of the router's global `view`, so the card, its controls and the roll
+   restorer cannot disagree about the surface the user can actually see.
    `qaInner` is split out so the submit morph can restate a live card in its
    new state in place instead of assembling look-alike markup. */
 const qaState = (q, key) =>
   key[0] === 'a' ? 'folded' : (q.answer ? 'awaiting' : 'open');
+/* A reading surface shows the whole question and therefore has no meaningful
+   rolled state. Focus and the review dock are callers of this ONE predicate;
+   list/dashboard cards are not. Persisted roll truth stays separate — the
+   router suppresses its rendering here without rewriting that truth. */
+const isQuestionReadingSurface = surface =>
+  surface === 'focus' || surface === 'dock';
 /* The one structural difference between the states (#111). A folded entry is
    waiting on NOBODY, so it collapses — through the page's existing `expand`
    idiom, `<details>`/`<summary>`, marker and all. Its title line BECOMES the
@@ -811,10 +820,10 @@ const qUpdatedHtml = q => {
    card itself carries as data-qid, so the link and the card cannot
    disagree about which question they name. It is headline CHROME, so it is
    a node with a class, and that class is listed in dockHeadline (#474's
-   rule). Suppressed on the focus page itself — the page IS the focus —
-   which is a per-view read of the same `view` the router owns. */
-const qfocusLink = title =>
-  (typeof view !== 'undefined' && view && view.name === 'question') ? '' :
+   rule). Suppressed when the card's explicit surface is focus — the page IS
+   the focus — so markup never guesses its surface from router-global state. */
+const qfocusLink = (title, surface) =>
+  surface === 'focus' ? '' :
   ` <a class="qfocus" href="/question?qid=${encodeURIComponent(title)}"` +
   ` title="focus this question — open it on its own page"` +
   ` aria-label="focus this question on its own page">focus</a>`;
@@ -827,17 +836,15 @@ const qfocusLink = title =>
    own arrival rather than appearing. Open state ONLY — the styleguide's
    axis already answers for the other two: awaiting still needs the loop
    (it does not collapse), and folded IS the collapse (#111). Emitted
-   everywhere the focus link is, including the dock, where CSS declines it
-   (the dock card is the reading surface; it is never rolled) — which is
-   why `.qroll` is listed in dom.mjs's dockHeadline chrome strip (#474's
-   rule: headline chrome is a node, and the node is listed there).
-   Suppressed on the focus page itself, like the focus link. */
-const qrollBtn = title =>
-  (typeof view !== 'undefined' && view && view.name === 'question') ? '' :
+   offered only when the card's explicit surface says roll has meaning. The
+   same predicate also suppresses persisted roll rendering after a route or
+   tick, so a hidden control and a rolled card cannot diverge again. */
+const qrollBtn = surface =>
+  isQuestionReadingSurface(surface) ? '' :
   ` <button type="button" class="qroll" aria-expanded="true"` +
   ` title="roll this question up to its first lines"` +
   ` aria-label="roll this question up to its first lines">roll up</button>`;
-const qaInner = (q, key) => {
+const qaInner = (q, key, surface='list') => {
   const st = qaState(q, key);
   const body = q.body && q.body.trim() ? mdBReview(q.body.trim(), q.title) : '';
   const [settled, since] = qaThread(q);
@@ -890,8 +897,8 @@ const qaInner = (q, key) => {
      created age is there — a settled entry that cannot be found again has
      simply been hidden. */
   const up = qUpdatedHtml(q);
-  const focus = qfocusLink(q.title);
-  const roll = st === 'open' ? qrollBtn(q.title) : '';
+  const focus = qfocusLink(q.title, surface);
+  const roll = st === 'open' ? qrollBtn(surface) : '';
   if (st === 'folded')
     return `<details class="qfold"><summary class="qt">${qtHtml(q.title)}${up}` +
       (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : '') +
@@ -906,9 +913,10 @@ const qaInner = (q, key) => {
    answered_entries. The regroup animation keys off qid: it is the same
    question, so it travels rather than being re-set (#77). URI-encoded
    because a title may contain quotes and this is an attribute. */
-const qaCard = (q, key) =>
+const qaCard = (q, key, surface='list') =>
   `<div class="qa ${qaState(q, key)}" data-qkey="${key}"` +
-  ` data-qid="${encodeURIComponent(q.title)}">${qaInner(q, key)}</div>`;
+  ` data-qid="${encodeURIComponent(q.title)}" data-qsurface="${surface}">` +
+  `${qaInner(q, key, surface)}</div>`;
 /* Resolve the logical question a LIVE CARD names, never merely the position it
    occupied when rendered (#266). A review route does not rebuild its dock on
    the data tick, so its `o<n>` can become stale while questions_open re-sorts.

@@ -103,8 +103,8 @@ export async function dockHeadline(page) {
     // actually REMOVED something rather than trusting it silently.
     // `.qfocus` is #452's per-card focus link — headline chrome like the
     // rest, removed for the same identity question. `.qroll` is #454's
-    // roll-up button, emitted on dock cards too (CSS declines it there)
-    // and stripped here for the same reason.
+    // roll-up button; reading surfaces now omit it in markup, while list
+    // cards still need it stripped for the same stable-headline comparison.
     clone.querySelectorAll('.qage, .age, .qup, .rsep, .qfocus, .qroll')
       .forEach(n => n.remove());
     return clone.textContent;

@@ -28,6 +28,10 @@
        through the standing 'storage'-event idiom
      - composition with #452: the rolled card still shows its focus link
        inside the clamp
+     - a persisted roll is PRESENTATIONAL: /question and the review dock are
+       reading surfaces, so both render the card unrolled and omit the roll
+       control without destroying the stored state; returning to /questions
+       restores the same roll
 
    Production lines the red-proofs name (watch.py):
      · qaInner's `st === 'open' ? qrollBtn(...)` emission — removing it
@@ -53,7 +57,8 @@ const { ok, declare, finish, notes } = makeReporter();
 declare({
   drives: '/questions: the roll affordance on a real open card (click AND ' +
           'keyboard), the roll + unroll gestures traced per frame, a reload, ' +
-          'and a second tab on the same origin',
+          '/question focus, /review dock, return to /questions, and a second ' +
+          'tab on the same origin',
   traceWindow: 'rAF height traces over each gesture (~1.2s; the card travel ' +
                'is 850ms). Floor/line evidence is measured geometry, not ' +
                'frames; persistence evidence is a real reload.',
@@ -112,6 +117,13 @@ ok('awaiting and folded cards carry NO roll affordance ' +
 /* ── the floor, derived at runtime: open vs rolled, in measured LINES ───── */
 const geo0 = await p.evaluate(qid => {
   const card = document.querySelector(`.qa[data-qid="${qid}"]`);
+  const body = card.querySelector('.qbody');
+  const bodyRects = [...body.children].map(n => n.getBoundingClientRect())
+    .filter(r => r.width || r.height);
+  const bodyContent = bodyRects.length
+    ? Math.max(...bodyRects.map(r => r.bottom)) -
+      Math.min(...bodyRects.map(r => r.top))
+    : 0;
   const probe = card.querySelector('.qbody .md p') || card.querySelector('.qt');
   const cs = getComputedStyle(probe);
   let lh = parseFloat(cs.lineHeight);
@@ -127,7 +139,8 @@ const geo0 = await p.evaluate(qid => {
     lh = pr.getBoundingClientRect().height / 2;
     pr.remove();
   }
-  return { open: card.getBoundingClientRect().height, lh };
+  return { open: card.getBoundingClientRect().height,
+           bodyContent, lh };
 }, enc);
 ok('precondition: the fixture card has a measurable line height',
    geo0.lh > 0 && Number.isFinite(geo0.lh));
@@ -147,14 +160,18 @@ const rollTrace = await p.evaluate(qid => new Promise(res => {
 }), enc);
 const rolledH = rollTrace.hs.at(-1);
 const rollSpan = Math.abs(rollTrace.hs[0] - rolledH);
+const rolledBodyH = await p.evaluate(qid =>
+  document.querySelector(`.qa[data-qid="${qid}"] .qbody`)
+    .getBoundingClientRect().height, enc);
 notes.push(`roll: open=${rollTrace.hs[0]} rolled=${rolledH} ` +
+           `body=${geo0.bodyContent}->${rolledBodyH} ` +
            `lh=${geo0.lh} lines=${(rolledH / geo0.lh).toFixed(2)}`);
 ok('the card rolled to a 5-6 line scroll-top (floor derived from the ' +
    'measured line height, never a pinned pixel constant)',
    rolledH / geo0.lh >= 4.5 && rolledH / geo0.lh <= 6.5);
-ok('precondition: the fixture card really collapses (open strictly taller ' +
-   'than rolled — the gap is derived, not assumed)',
-   geo0.open > rolledH && rollTrace.hs[0] > rolledH);
+ok('precondition: the fixture BODY itself really clips (not merely a short ' +
+   'body whose compose box disappears — the gap is derived, not assumed)',
+   geo0.bodyContent > rolledBodyH + 1);
 ok('the roll TRAVELS (a part-way frame exists; a snap has none)',
    rollSpan > 40 && between(rollTrace.hs, rollTrace.hs[0], rolledH) >= 1);
 ok('no frame goes PAST the rolled height, and the last frame is at it',
@@ -232,6 +249,89 @@ ok('the roll SURVIVES THE RELOAD (his standing rule: never lose UI state ' +
    afterReload.cls.includes('rolled') &&
    afterReload.expanded === 'false' &&
    afterReload.h / geo0.lh <= 6.5);
+
+/* ── reading surfaces: suppress the rendering, preserve the truth ─────────
+   The fixture has already proved this card genuinely collapses and that its
+   IndexedDB record is true. Focus it from the ACTUALLY rolled card so an
+   unrolled focus cannot pass merely because this phase never rolled it. */
+await p.click(`.qa[data-qid="${enc}"] a.qfocus`);
+await sleep(1400);
+const focused = await p.evaluate(qid => {
+  const card = document.querySelector(`.qa[data-qid="${qid}"]`);
+  const body = card && card.querySelector('.qbody');
+  return card ? {
+    cls: card.className,
+    h: card.getBoundingClientRect().height,
+    bodyClientH: body ? body.clientHeight : 0,
+    bodyScrollH: body ? body.scrollHeight : 0,
+    rollControl: !!card.querySelector('button.qroll'),
+  } : null;
+}, enc);
+const focusedStored = await p.evaluate(({dbName, title}) => new Promise(res => {
+  let rq;
+  try { rq = indexedDB.open(dbName, 1); } catch (e) { return res(null); }
+  rq.onsuccess = () => {
+    const db = rq.result;
+    if (!db.objectStoreNames.contains('ui')) { db.close(); return res(null); }
+    const tx = db.transaction('ui', 'readonly');
+    const get = tx.objectStore('ui').get('qroll:' + title);
+    get.onsuccess = () => { db.close(); res(get.result || null); };
+    get.onerror = tx.onerror = tx.onabort = () => { db.close(); res(null); };
+  };
+  rq.onerror = rq.onblocked = () => res(null);
+}), { dbName: 'dw-ui:' + target, title: openQ.title });
+notes.push('focus reading surface: ' + JSON.stringify(focused) +
+           '; persisted=' + JSON.stringify(focusedStored));
+ok('focus keeps the persisted roll TRUE while suppressing it in this reading ' +
+   'surface', !!focusedStored && focusedStored.k === 'qroll:' + openQ.title &&
+   focusedStored.v === true && !!focused && !focused.cls.includes('rolled'));
+ok(`focus is unclipped: class=${JSON.stringify(focused && focused.cls)}, ` +
+   `card=${focused && focused.h}px, body=${focused && focused.bodyClientH}/` +
+   `${focused && focused.bodyScrollH}px, rolled-list=${afterReload && afterReload.h}px`,
+   !!focused && focused.h > afterReload.h + 40 &&
+   focused.bodyClientH + 1 >= focused.bodyScrollH);
+ok('focus offers NO roll control (a reading surface cannot enter a state it ' +
+   'will not render)', !!focused && focused.rollControl === false);
+
+await p.click('#meta .crumb a[href="/questions"]');
+await sleep(1400);
+const afterFocusReturn = await p.evaluate(qid => {
+  const card = document.querySelector(`.qa[data-qid="${qid}"]`);
+  const btn = card && card.querySelector('button.qroll');
+  return card ? { cls: card.className,
+                  h: card.getBoundingClientRect().height,
+                  expanded: btn ? btn.getAttribute('aria-expanded') : null }
+              : null;
+}, enc);
+notes.push('after focus return: ' + JSON.stringify(afterFocusReturn));
+ok('returning to /questions restores the SAME persisted roll (focus did not ' +
+   'destroy cross-surface state)', !!afterFocusReturn &&
+   afterFocusReturn.cls.includes('rolled') &&
+   afterFocusReturn.expanded === 'false' &&
+   afterFocusReturn.h / geo0.lh <= 6.5);
+
+const review = d.reviews && d.reviews[0];
+ok('precondition: the fixture exposes a review for the dock reading surface',
+   !!review);
+if (review) {
+  await p.goto(`${BASE}/review?p=${encodeURIComponent(review.name)}` +
+               `&q=${encodeURIComponent(openQ.title)}`,
+               { waitUntil: 'networkidle' });
+  await sleep(1200);
+  const dock = await p.evaluate(qid => {
+    const card = document.querySelector(`#qdock .qa[data-qid="${qid}"]`);
+    return card ? { cls: card.className,
+                    h: card.getBoundingClientRect().height,
+                    rollControl: !!card.querySelector('button.qroll') }
+                : null;
+  }, enc);
+  notes.push('dock reading surface: ' + JSON.stringify(dock));
+  ok('the dock is the other reading surface: it stays unrolled and offers ' +
+     'NO roll control', !!dock && !dock.cls.includes('rolled') &&
+     dock.rollControl === false);
+  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+  await sleep(1200);
+}
 
 /* ── cross-tab sync: a second tab follows through the storage event ─────── */
 const p2 = await ctx.newPage();

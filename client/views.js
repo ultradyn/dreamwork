@@ -1385,7 +1385,8 @@ function buildReview(name, q, d) {
     const i = d.questions_open.findIndex(x => x.title === q);
     if (i >= 0)
       dock = `<aside class="qdock" id="qdock">` +
-        label('answering') + qaCard(d.questions_open[i], 'o' + i) + `</aside>`;
+        label('answering') + qaCard(d.questions_open[i], 'o' + i, 'dock') +
+        `</aside>`;
   }
   // The width he dragged is emitted INTO the markup rather than applied after
   // paint: a route change already animates this column's outer width, and a
@@ -1482,7 +1483,7 @@ function buildQuestion(title, d) {
     const oi = (d.questions_open || []).findIndex(x => x.title === title);
     if (oi >= 0)
       return `<div id="qfocus" class="qdual">` +
-        qaCard(d.questions_open[oi], 'o' + oi) + `</div>`;
+        qaCard(d.questions_open[oi], 'o' + oi, 'focus') + `</div>`;
     /* the fold, followed: answering re-indexes the entry into
        answered_entries while he watches, and the page moves WITH it — a
        live question reported as gone is the failure this route exists to
@@ -1490,7 +1491,7 @@ function buildQuestion(title, d) {
     const ai = d.answered_entries.findIndex(x => x.title === title);
     if (ai >= 0)
       return `<div id="qfocus" class="qdual">` +
-        qaCard(d.answered_entries[ai], 'a' + ai) + `</div>`;
+        qaCard(d.answered_entries[ai], 'a' + ai, 'focus') + `</div>`;
   }
   /* Unresolved. The notice says WHAT (the key names nothing live), WHY
      (most likely a retitle), and the way back — and it guesses at nothing:
@@ -1979,7 +1980,7 @@ async function sendAnswer(key) {
   const before = snapshotCards();
   const next = Object.assign({}, q, { answer: val });
   card.className = 'qa ' + qaState(next, key);
-  card.innerHTML = qaInner(next, key);
+  card.innerHTML = qaInner(next, key, card.dataset.qsurface || 'list');
   const anstext = card.querySelector('.anstext');
   // the settled destination, measured before the regroup clamps the card's
   // height for its travel — the flip's `to` is where the answer ENDS UP
