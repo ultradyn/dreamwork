@@ -6623,7 +6623,7 @@ def _autoreload_sources():
             + [os.path.join(SELF_DIR, rel) for rel in dist])
 
 
-def _sources_mtime():
+def _sources_mtime(sources=None):
     """{path: mtime} for every watched source, or None if ANY is absent.
 
     None means "do not judge this tick", and the caller skips. That is the
@@ -6637,9 +6637,16 @@ def _sources_mtime():
     which is the only case this guard is about. So the previous version
     re-exec'd on a lower max during exactly the window it documented itself
     as protecting.
+
+    `sources` is optional so the caller can pin the SAME list it announces
+    (#629): the printed count, the absent-file names, and the mtimes the loop
+    compares are one truth, not three reads of `_autoreload_sources()` that a
+    later change could drift apart. Defaults to `_autoreload_sources()`.
     """
+    if sources is None:
+        sources = _autoreload_sources()
     stamps = {}
-    for path in _autoreload_sources():
+    for path in sources:
         try:
             stamps[path] = os.path.getmtime(path)
         except OSError:
@@ -6647,18 +6654,55 @@ def _sources_mtime():
     return stamps
 
 
+def _autoreload_status_line(sources):
+    """The one startup line the reloader prints. #629/#868: a watcher that
+    found every source and one that found none must not print the same thing,
+    so healthy STATES the count and a watcher that cannot start NAMES what is
+    absent (rather than going silent). Pure over `sources` — it does not call
+    `_sources_mtime`; the caller has already tried and branches on None — so
+    the healthy-vs-dead announce is testable without running the re-exec loop.
+    """
+    missing = [p for p in sources if not os.path.exists(p)]
+    if missing:
+        return ("WARNING: --autoreload inactive — %d watched source%s absent "
+                "at startup: %s" % (len(missing),
+                                    "" if len(missing) == 1 else "s",
+                                    ", ".join(missing)))
+    return "autoreload: watching %d source%s" % (
+        len(sources), "" if len(sources) == 1 else "s")
+
+
 def _watch_source_and_restart(interval=1.0):
     """--autoreload: re-exec this process when its own source changes, so an
     edit takes effect with no manual restart. "Its own source" is watch.py
     AND the client assets it serves (#397). The listening socket is
     close-on-exec (Python default) so the port frees for the new image;
-    clients reload on the changed GENERATION. Daemon thread; never blocks."""
-    last = _sources_mtime()
+    clients reload on the changed GENERATION. Daemon thread; never blocks.
+
+    #629/#868 — the watch set is a denominator. A run that found no sources
+    and one that found all of them must not behave alike, so the reloader
+    announces what it watches, and a source absent at startup is named loudly
+    instead of silently disabling the flag. The previous body did `last =
+    _sources_mtime(); if last is None: return` — no print, no warning — so a
+    missing dist file or a renamed asset at startup killed `--autoreload` for
+    the whole session with no signal anywhere. That is the same family as an
+    instrument that reports 'no change' when the change is real: a flag whose
+    name promises reload silently delivers nothing. `sources` is pinned once
+    so the announce, the absent-file list, and the loop's comparison are one
+    truth. This is dev-scoped: `--autoreload`/`--dev` only; production serves
+    the import-time cache by design and never re-reads per request."""
+    sources = _autoreload_sources()
+    last = _sources_mtime(sources)
+    print(_autoreload_status_line(sources))
     if last is None:
+        # Not the rename window: nothing is being edited at startup. A source
+        # is genuinely absent — announce (above) and stop, rather than serve a
+        # false "autoreload is on" by looping over a set the loop can never
+        # read. The announce is what makes 'watching nothing' unlike 'all'.
         return
     while True:
         time.sleep(interval)
-        now = _sources_mtime()
+        now = _sources_mtime(sources)
         if now is None:
             continue
         if now != last:

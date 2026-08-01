@@ -10017,6 +10017,105 @@ process.stdout.write(JSON.stringify({afterInit, afterRestore:saves, reads,
                       "#570: a submit must re-enable autoexpand (clear _manual)")
 
 
+class TestAutoreloadWatchSet(unittest.TestCase):
+    """#629 — the SERVER half of autoreload: which sources the watcher covers,
+    and that a watcher which cannot start says so. The client-side reload
+    (parseMtime / serverGen) is covered by test_page_has_autoreload_client;
+    this covers _autoreload_sources / _sources_mtime /
+    _watch_source_and_restart, which #953's foo.py->test_foo.py convention
+    missed because none of them is named test_watch_*."""
+
+    def test_watch_set_covers_self_and_every_client_asset(self):
+        # The page is assembled from _CLIENT_ASSETS at import (#397). If the
+        # watch set ever narrows back to watch.py alone — the #629 sharper
+        # half, closed by the #397 blind-spots follow-up (8e102959) — an edit
+        # under client/ is invisible to a running server and the lane reads
+        # its own correct work as a no-op. Membership, not a literal count,
+        # stays correct when dist/native sources grow the set later (#630).
+        sources = watch._autoreload_sources()
+        self.assertIn(os.path.abspath(watch.__file__), sources)
+        for name in watch._CLIENT_ASSETS:
+            self.assertIn(
+                os.path.join(watch.CLIENT_DIR, name), sources,
+                "client asset %s is not watched; an edit to it is invisible "
+                "under --autoreload until a manual restart (#629)" % name)
+
+    def test_watch_set_count_does_not_collapse_to_self(self):
+        # #868: the watch set is a denominator. A set that silently collapsed
+        # to one entry (just watch.py) serves stale client/ bytes under
+        # --autoreload with no signal. The floor is 1 (self) + every client
+        # asset the page is built from; dist/native are additive on top, so a
+        # literal total would carry an expiry date (#630 grew the set).
+        sources = watch._autoreload_sources()
+        floor = 1 + len(watch._CLIENT_ASSETS)
+        self.assertGreaterEqual(
+            len(sources), floor,
+            "watch set is %d, floor is %d — a collapsed denominator makes "
+            "--autoreload a silent no-op over client/ edits" % (
+                len(sources), floor))
+
+    def test_sources_mtime_is_per_path_and_none_if_any_absent(self):
+        # #397 blind-spots: a per-path MAPPING (not max() over readable), so
+        # the absent file being edited is not silently dropped from the
+        # comparison. None if ANY is absent is the rename-window mitigation —
+        # but only INSIDE the loop; the startup caller must not treat None as
+        # a silent off-switch (see test_watcher_*_when_a_source_is_absent).
+        real = watch._sources_mtime()
+        self.assertIsInstance(real, dict)
+        self.assertEqual(len(real), len(watch._autoreload_sources()))
+        ghost = os.path.join(watch.CLIENT_DIR, "absent-for-test.js")
+        self.assertFalse(os.path.exists(ghost))
+        self.assertIsNone(
+            watch._sources_mtime([os.path.abspath(watch.__file__), ghost]))
+
+    def test_status_line_states_count_when_healthy(self):
+        # #868: a reloader that found every source states how many it watches.
+        line = watch._autoreload_status_line([os.path.abspath(watch.__file__)])
+        self.assertIn("autoreload: watching", line)
+        self.assertIn("1 source", line)
+
+    def test_status_line_warns_and_names_absent_when_dead(self):
+        # #629/#868: a source absent at startup must NOT be silent. The line
+        # names the absent file so 'watching nothing' reads unlike 'watching
+        # all' — the discrimination the silent `return` destroyed.
+        ghost = os.path.join(watch.CLIENT_DIR, "absent-for-test.js")
+        self.assertFalse(os.path.exists(ghost))
+        line = watch._autoreload_status_line(
+            [os.path.abspath(watch.__file__), ghost])
+        self.assertIn("WARNING", line)
+        self.assertIn("--autoreload inactive", line)
+        self.assertIn(ghost, line)
+
+    def test_watcher_returns_loudly_when_a_source_is_absent(self):
+        # The real defect, exercised on the function itself (not the helper):
+        # _watch_source_and_restart used to `return` silently when
+        # _sources_mtime() was None at startup, disabling --autoreload for the
+        # whole session with no signal anywhere. Now it announces and returns.
+        # The thread must TERMINATE (not loop) and stdout must carry the
+        # WARNING naming the absent file — the same input that used to print
+        # nothing.
+        ghost = os.path.join(watch.CLIENT_DIR, "absent-for-test.js")
+        self.assertFalse(os.path.exists(ghost))
+        with unittest.mock.patch.object(
+                watch, "_autoreload_sources",
+                return_value=[os.path.abspath(watch.__file__), ghost]):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                th = threading.Thread(
+                    target=watch._watch_source_and_restart, args=(0.05,),
+                    daemon=True)
+                th.start()
+                th.join(timeout=1.0)
+            self.assertFalse(
+                th.is_alive(),
+                "watcher must return (not loop) when a source is absent at "
+                "startup; a looping watcher over an unreadable set is the "
+                "false 'autoreload is on' the announce exists to kill")
+            self.assertIn("WARNING", buf.getvalue())
+            self.assertIn("--autoreload inactive", buf.getvalue())
+            self.assertIn(ghost, buf.getvalue())
+
+
 class TestSubmissionLog(unittest.TestCase):
     """#199 — his words are on disk before anything can refuse them.
 
