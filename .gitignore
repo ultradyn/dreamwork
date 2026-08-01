@@ -98,3 +98,4 @@ dev/capture/fixture/.dreamwork/.status-keys
 # `just deploy` ships committed state and the dashboard must come up with no
 # node at all. `npm ci` in dev/build restores this from package-lock.json.
 dev/build/node_modules/
+.claude/
