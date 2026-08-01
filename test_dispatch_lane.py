@@ -4,6 +4,7 @@
 import hashlib
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -16,14 +17,32 @@ CLI = ROOT / "dev" / "dispatch_lane.py"
 CONTRACT = (ROOT / "briefs" / "boilerplate.md").read_text(encoding="utf-8")
 
 
+def _ledger_fixture(root: Path) -> None:
+    dreamwork = root / ".dreamwork"
+    dreamwork.mkdir()
+    connection = sqlite3.connect(dreamwork / "ledger.sqlite3")
+    connection.execute(
+        "CREATE TABLE task (id INTEGER PRIMARY KEY, state TEXT NOT NULL DEFAULT 'open')"
+    )
+    connection.executemany(
+        "INSERT INTO task(id) VALUES (?)",
+        [(task_id,) for task_id in (136, 349, 440, 671, 755, 776, 900, 901, 902, 903, 904)],
+    )
+    connection.commit()
+    connection.close()
+
+
 def _sandbox_cli(tmp_path: Path) -> tuple[Path, Path]:
     root = tmp_path / "repo"
     (root / "dev").mkdir(parents=True)
     (root / "briefs").mkdir()
     cli = root / "dev" / "dispatch_lane.py"
     shutil.copy2(CLI, cli)
+    shutil.copytree(ROOT / "dreamwork_db", root / "dreamwork_db")
+    shutil.copy2(ROOT / "ledger_store.py", root / "ledger_store.py")
     (root / "briefs" / "boilerplate.md").write_text(CONTRACT, encoding="utf-8")
     subprocess.run(["git", "init", "-q", str(root)], check=True)
+    _ledger_fixture(root)
     return cli, root
 
 
@@ -37,6 +56,7 @@ def _linked_worktree_cli(tmp_path: Path) -> tuple[Path, Path, Path]:
         cwd=main,
         check=True,
     )
+    _ledger_fixture(main)
     lane = tmp_path / "lane"
     subprocess.run(
         ["git", "worktree", "add", "-q", "-b", "cx-linked", str(lane)],
@@ -47,6 +67,8 @@ def _linked_worktree_cli(tmp_path: Path) -> tuple[Path, Path, Path]:
     (lane / "briefs").mkdir()
     cli = lane / "dev" / "dispatch_lane.py"
     shutil.copy2(CLI, cli)
+    shutil.copytree(ROOT / "dreamwork_db", lane / "dreamwork_db")
+    shutil.copy2(ROOT / "ledger_store.py", lane / "ledger_store.py")
     (lane / "briefs" / "boilerplate.md").write_text(CONTRACT, encoding="utf-8")
     return cli, main, lane
 
@@ -96,6 +118,89 @@ def test_healthy_dispatch_is_silent_and_passes_prompt_as_one_argument(tmp_path):
     persisted = root / ".dreamwork" / "docs" / "briefs" / "900-cx-test.md"
     assert persisted.read_text(encoding="utf-8") == prompt.read_text(encoding="utf-8")
     assert persisted.with_suffix(".sha256").is_file()
+
+
+def test_unresolved_ledger_get_is_reported_but_does_not_block(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    prompt.write_text(
+        prompt.read_text(encoding="utf-8").replace(
+            "\n\n" + CONTRACT,
+            "\n\nRun `python3 dev/ledger.py get 199`.\n\n" + CONTRACT,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 0
+    assert "ledger.py get 199 names #199, which does not exist" in result.stderr
+    assert "launch allowed because instruction and quotation" in result.stderr
+
+
+def test_retired_bare_citation_reports_without_blocking_healthy_brief(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    prompt.write_text(
+        prompt.read_text(encoding="utf-8").replace(
+            "\n\n" + CONTRACT,
+            "\n\nReal tasks #671, #440, and #755 apply; #199's lesson is historical.\n\n"
+            + CONTRACT,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 0
+    assert "unresolved bare citation(s) #199" in result.stderr
+    assert "ledger.py get 199" not in result.stderr
+
+
+def test_unavailable_ledger_is_reported_and_does_not_block(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    (root / ".dreamwork" / "ledger.sqlite3").unlink()
+    prompt = _healthy_prompt(tmp_path, root)
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 0
+    assert "ledger reference check DID NOT RUN" in result.stderr
+    assert "launch allowed" in result.stderr
+
+
+def test_locked_ledger_is_reported_and_does_not_block(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    lock = sqlite3.connect(root / ".dreamwork" / "ledger.sqlite3")
+    lock.execute("BEGIN EXCLUSIVE")
+    try:
+        result = _run(cli, prompt, "true")
+    finally:
+        lock.rollback()
+        lock.close()
+
+    assert result.returncode == 0
+    assert "ledger reference check DID NOT RUN" in result.stderr
+    assert "database is locked" in result.stderr
+    assert "launch allowed" in result.stderr
+
+
+def test_unclassified_core_read_failure_is_reported_and_does_not_block(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    store = root / ".dreamwork" / "ledger.sqlite3"
+    connection = sqlite3.connect(store)
+    connection.execute("ALTER TABLE task RENAME COLUMN state TO unknown_state")
+    connection.commit()
+    connection.close()
+    prompt = _healthy_prompt(tmp_path, root)
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 0
+    assert "ledger reference check DID NOT RUN" in result.stderr
+    assert "no such column: state" in result.stderr
+    assert "launch allowed" in result.stderr
 
 
 def test_dispatch_refuses_the_ambiguous_hand_off_wording(tmp_path):
