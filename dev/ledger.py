@@ -94,6 +94,7 @@ from user_events.sqlite import open_journal  # noqa: E402 — the journal read A
 
 LEDGER_DEFAULT = ".dreamwork/tasks.md"
 NOTE_PREFIX = "  · "  # two-space indent, U+00B7, space — the ledger's continuation idiom
+_BLOCKER_ID = re.compile(r"(?<![\w#])#([1-9]\d*)\b")
 
 
 class LedgerError(Exception):
@@ -157,6 +158,77 @@ def counts_text(text):
         f"landed ids: {len(landed_ids)}   "
         f"(len(watch.parse_ledger(text)[1]) — anchored `## Recently landed`)\n"
     )
+
+
+def _named_blocker_ids(blocked_on):
+    """Task ids explicitly named as ``#N`` in free-form blocker prose.
+
+    The store deliberately keeps ``blocked_on`` as prose, not an edge.  Be
+    liberal about presentation (URLs and code spans still name the same id),
+    but strict about the identifier itself: bare digits and ``task 12`` are
+    not task references.  Preserve first-seen order and ignore duplicates.
+    """
+    return tuple(dict.fromkeys(
+        int(match) for match in _BLOCKER_ID.findall(blocked_on or "")))
+
+
+def _blocked_on_states(records):
+    """Classify open blocked tasks without turning unknown prose into clear.
+
+    Returns the examined population and three disjoint task-id buckets:
+    every explicitly named blocker landed; at least one named blocker is not
+    landed; and no task id was parseable.  The last state is UNKNOWN, never
+    an all-clear.
+    """
+    open_records = [record for record in records if record["state"] == "open"]
+    landed_ids = {record["id"] for record in records
+                  if record["state"] == "landed"}
+    carrying = [record for record in open_records
+                if (record.get("blocked_on") or "").strip()]
+    states = {"landed": [], "still_open": [], "unknown": []}
+    for record in carrying:
+        blocker_ids = _named_blocker_ids(record["blocked_on"])
+        if not blocker_ids:
+            states["unknown"].append(record["id"])
+        elif all(task_id in landed_ids for task_id in blocker_ids):
+            states["landed"].append(record["id"])
+        else:
+            states["still_open"].append(record["id"])
+    return len(open_records), len(carrying), states
+
+
+def _blocked_on_report(records, expected_open=None):
+    """Advisory ``counts`` stderr; all three parse states stay visible."""
+    examined, carrying, states = _blocked_on_states(records)
+    if expected_open is not None and examined != expected_open:
+        return (
+            f"blocked_on: UNKNOWN — examined {examined} open task(s), but "
+            f"the counts projection found {expected_open}; blocker records "
+            "were not fully readable\n"
+        )
+
+    def ids_or_none(key):
+        ids = states[key]
+        return " ".join(f"#{task_id}" for task_id in ids) if ids else "none"
+
+    landed_label = ("WARNING " if states["landed"] else "") \
+        + "every named blocker landed"
+    return (
+        f"blocked_on: examined {examined} open task(s), "
+        f"{carrying} carrying a blocker\n"
+        f"{landed_label}: {ids_or_none('landed')}\n"
+        f"some named blocker still open: {ids_or_none('still_open')}\n"
+        f"no id parseable, unknown: {ids_or_none('unknown')}\n"
+    )
+
+
+def _newly_unblocked_dependents(records, blocker_id):
+    """Open tasks for which landing *blocker_id* completes all named ids."""
+    _, _, states = _blocked_on_states(records)
+    stale = set(states["landed"])
+    return [record["id"] for record in records
+            if record["id"] in stale
+            and blocker_id in _named_blocker_ids(record.get("blocked_on"))]
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +521,11 @@ def _fold_store(dw_dir, task_id, note):
     with open_database(
             task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
         ledger_write.land_task(store, task_id, note=note)
+    dependents = _newly_unblocked_dependents(store_records(dw_dir), task_id)
+    if dependents:
+        sys.stdout.write(
+            f"folding #{task_id} unblocks "
+            + " ".join(f"#{dependent}" for dependent in dependents) + "\n")
     sys.stdout.write(f"folded #{task_id} (store: state open→landed)\n")
 
 
@@ -2837,6 +2914,10 @@ def _dispatch(args):
             f"(store_ids_by_state — task.state='open')\n"
             f"landed ids: {len(landed_ids)}   "
             f"(store_ids_by_state — task.state='landed')\n")
+        # Advisory detail stays on stderr, like the warning footer.  `counts`
+        # stdout remains the stable id-count projection for pipe consumers.
+        sys.stderr.write(
+            _blocked_on_report(store_records(dw_dir), len(open_ids)))
         return 0
 
     if not ledger_path.exists():
