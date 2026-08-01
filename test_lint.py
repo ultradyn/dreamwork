@@ -110,6 +110,88 @@ class TestSettingsRegistry:
         assert lint.SETTINGS["gfx.dither"].default == "ign"
 
 
+class TestExpectedProductionConstants:
+    """#905 — expected values must not share production's authority."""
+
+    def _check(self, tmp_path, test_source, *, production="TASK_EDGES = []\n"):
+        (tmp_path / "lint.py").write_text("# marks this as the skill repo\n")
+        (tmp_path / "subject.py").write_text(production)
+        (tmp_path / "test_subject.py").write_text(test_source)
+        rep = lint.Report()
+        lint.check_expected_production_constants(tmp_path, rep)
+        return [(level, detail) for level, what, detail in rep.rows
+                if what == "test expectations"]
+
+    def test_imported_constant_building_expected_value_is_an_error(self, tmp_path):
+        rows = self._check(
+            tmp_path,
+            "from subject import TASK_EDGES\n"
+            "EXPECTED_EDGE_SET = frozenset((a, b) for a, b in TASK_EDGES)\n",
+        )
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "EXPECTED_EDGE_SET uses imported production constant TASK_EDGES" in rows[0][1]
+        assert "among 1 test module(s)" in rows[0][1], rows[0][1]
+
+    def test_an_import_alias_keeps_the_production_identity(self, tmp_path):
+        rows = self._check(
+            tmp_path,
+            "from subject import TASK_EDGES as edges\n"
+            "EXPECTED_EDGE_SET = set(edges)\n",
+        )
+        assert rows[0][0] == lint.ERROR, rows
+        assert "production constant TASK_EDGES" in rows[0][1]
+
+    def test_independently_built_helper_is_silent(self, tmp_path):
+        rows = self._check(
+            tmp_path,
+            "import subject\n"
+            "def frame(value):\n"
+            "    return str(value).encode()\n"
+            "EXPECTED_BYTES = frame('independent contract')\n"
+            "def test_contract():\n"
+            "    assert subject.canonical('x') == EXPECTED_BYTES\n",
+            production="def canonical(value):\n    return value.encode()\n",
+        )
+        assert rows == [(lint.OK,
+                         "examined 1 test module(s); no EXPECTED_* value uses "
+                         "an imported production constant")]
+
+    def test_literal_expected_value_is_not_banned(self, tmp_path):
+        rows = self._check(
+            tmp_path,
+            "from subject import TASK_EDGES\n"
+            "EXPECTED_EDGE_SET = frozenset({('M', 'B')})\n"
+            "def test_edges():\n"
+            "    assert set(TASK_EDGES) == EXPECTED_EDGE_SET\n",
+        )
+        assert rows[0][0] == lint.OK, rows
+
+    def test_non_expected_name_is_outside_the_strict_convention(self, tmp_path):
+        rows = self._check(
+            tmp_path,
+            "from subject import TASK_EDGES\n"
+            "GOLDEN_EDGE_SET = frozenset(TASK_EDGES)\n",
+        )
+        assert rows[0][0] == lint.OK, rows
+
+    def test_zero_test_modules_is_an_error_not_an_all_clear(self, tmp_path):
+        (tmp_path / "lint.py").write_text("# marks this as the skill repo\n")
+        rep = lint.Report()
+        lint.check_expected_production_constants(tmp_path, rep)
+        rows = [(level, detail) for level, what, detail in rep.rows
+                if what == "test expectations"]
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "examined 0 test modules" in rows[0][1], rows[0][1]
+
+    def test_this_repo_has_a_nonempty_clean_population(self):
+        rep = lint.Report()
+        lint.check_expected_production_constants(lint.SKILL_DIR, rep)
+        rows = [(level, detail) for level, what, detail in rep.rows
+                if what == "test expectations"]
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "examined " in rows[0][1] and "examined 0" not in rows[0][1]
+
+
 def _drain_state(dw: Path, allowed=("cx-846wtmove",), root=".worktrees",
                  *, root_present=True, size=123) -> Path:
     path = dw / lint.WORKTREE_DRAIN_STATE

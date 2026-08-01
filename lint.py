@@ -29,6 +29,7 @@ Levels:
 from __future__ import annotations
 
 import argparse
+import ast
 import difflib
 import hashlib
 import importlib.util
@@ -2743,6 +2744,96 @@ def check_guards_registered(root: Path, rep: Report) -> None:
     if not orphans and not missing:
         rep.add(OK, "justfile",
                 f"{len(registered)} guard(s) registered, each with a file")
+
+
+def _production_imports(root: Path, tree: ast.Module) -> dict[str, str]:
+    """Local production constants imported directly by a test module."""
+    imported = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or node.level or not node.module:
+            continue
+        parts = node.module.split(".")
+        if any(part.startswith("test_") or part == "tests" for part in parts):
+            continue
+        module = root.joinpath(*parts)
+        if not (module.with_suffix(".py").is_file() or
+                (module / "__init__.py").is_file()):
+            continue
+        for alias in node.names:
+            if re.fullmatch(r"[A-Z][A-Z0-9_]*", alias.name):
+                imported[alias.asname or alias.name] = alias.name
+    return imported
+
+
+def check_expected_production_constants(root: Path, rep: Report) -> None:
+    """Refuse EXPECTED_* values built from imported production constants.
+
+    IGC for #905 chose AST identity analysis over textual matching: aliases,
+    comprehensions and multiline expressions remain connected to the imported
+    symbol, while an independently built helper remains outside the finding.
+    The name boundary is deliberately strict: only module-level EXPECTED_*
+    assignments express the convention this rule promises to police. A broad
+    "derived expectation" rule was rejected because test_chain_golden.py's
+    independent framing helper is the canonical correct pattern.
+    """
+    if not (root / "lint.py").is_file():
+        return
+    tests = sorted(root.rglob("test_*.py"))
+    if not tests:
+        rep.add(ERROR, "test expectations",
+                "examined 0 test modules — no EXPECTED_* construction could "
+                "be checked; this is not a clean result")
+        return
+
+    findings = []
+    parse_errors = []
+    for path in tests:
+        try:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+        except (OSError, SyntaxError) as exc:
+            parse_errors.append(f"{path.relative_to(root)} ({exc})")
+            continue
+        imported = _production_imports(root, tree)
+        if not imported:
+            continue
+        for node in tree.body:
+            value = None
+            targets = []
+            if isinstance(node, ast.Assign):
+                value, targets = node.value, node.targets
+            elif isinstance(node, ast.AnnAssign):
+                value, targets = node.value, [node.target]
+            if value is None:
+                continue
+            expected = [target.id for target in targets
+                        if isinstance(target, ast.Name) and
+                        target.id.startswith("EXPECTED_")]
+            if not expected:
+                continue
+            used = sorted({part.id for part in ast.walk(value)
+                           if isinstance(part, ast.Name) and
+                           part.id in imported})
+            for expected_name in expected:
+                for local_name in used:
+                    findings.append(
+                        f"{path.relative_to(root)}:{node.lineno} "
+                        f"{expected_name} uses imported production constant "
+                        f"{imported[local_name]}"
+                    )
+
+    if parse_errors:
+        rep.add(ERROR, "test expectations",
+                f"could not parse {len(parse_errors)} of {len(tests)} test "
+                f"module(s): {'; '.join(parse_errors)}")
+    if findings:
+        rep.add(ERROR, "test expectations",
+                f"{len(findings)} shared-authority expectation(s) among "
+                f"{len(tests)} test module(s): {'; '.join(findings)}")
+    elif not parse_errors:
+        rep.add(OK, "test expectations",
+                f"examined {len(tests)} test module(s); no EXPECTED_* value "
+                "uses an imported production constant")
 
 
 # #471 — registration is not execution. A guard in DEFAULT_GUARDS gates
@@ -6584,6 +6675,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are
     # the tool's own, so this only says anything when linting this repo.
     check_commit_cleanup(dw.parent, rep)
+    check_expected_production_constants(dw.parent, rep)
     check_guards_registered(dw.parent, rep)
     check_guards_execution_accounting(dw.parent, rep)
     check_client_dist(dw.parent, rep)
