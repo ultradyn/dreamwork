@@ -49,6 +49,14 @@ from pathlib import Path
 HERE = Path(__file__).resolve()
 VERB = HERE.parent / "journal_consume.py"
 
+# The cap has ONE home, and it is the verb's — a second literal here would be a
+# default that silently disagreed with the documented one the moment either
+# moved.  Imported rather than restated, the same discipline EXPEDITE_KINDS is
+# under.  (`dev/` has no `__init__.py`, so the root goes on the path first, the
+# way `test_check_watch_citations.py` reaches `dev.check_watch_citations`.)
+sys.path.insert(0, str(HERE.parent.parent))
+from dev.journal_consume import EXPEDITE_LIMIT_DEFAULT as LIMIT_DEFAULT  # noqa: E402
+
 # The gate file and its one legal value — `watch.expedite_enabled` reads the
 # same two constants' worth of contract, and `file-formats.md` states it once.
 GATE_REL = Path(".dreamwork") / "expedite"
@@ -60,10 +68,6 @@ SETTINGS_REL = Path(".claude") / "settings.json"
 
 EX_OK = 0
 EX_USAGE = 64
-
-# A pause is an interstice, not a tick: the cap keeps one from becoming a wall
-# of text.  Whatever it excludes is still pending and the tick drains it.
-LIMIT_DEFAULT = 10
 
 
 def _target(args) -> Path:
