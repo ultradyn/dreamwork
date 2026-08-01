@@ -179,6 +179,42 @@
 
 ## Answered
 
+- **P1 · 2026-08-01 18:20 — #848: the ledger's tamper-evidence chain has been broken since SCHEMA_VERSION left 1. One ruling needed.**
+  `ledger_store.genesis_hash()` is `SHA-256("ud-dreamwork.task-ledger" + SCHEMA_VERSION)`. The live journal
+  was seeded when that number was **1**; the code has since moved it 1 → 3 → 4 → 5. So `verify_task_event_chain`
+  recomputes from a seed the data never used, and fails at ordinal 1. **Every schema migration has silently
+  invalidated the chain at its root.** Nobody saw it because the verifier is only ever pointed at fixtures it
+  just built, where code and data share the current version by construction — it cannot detect a drift between
+  code and data.
+
+  **The good news first, because a red integrity check invites the wrong assumption: nothing was tampered with.**
+  On a copy of the live ledger, freezing the seed at its v1 value takes the verifier from 2 failures to **0 across
+  all 1311 rows**. The recorded hashes are internally consistent from the true genesis to the head. The chain has
+  been doing its job the whole time; what broke was our ability to *ask* it. I have not written the live ledger.
+
+  **`Q1` — should the chain's seed be a frozen constant, or data stored in the journal?**
+  **`rec: store it in the journal`** — a meta row written at creation, verified against. The seed *is* a property
+  of the journal rather than of the code, and storing it makes a future re-seed explicit instead of accidental.
+  The alternative, freezing a constant distinct from `SCHEMA_VERSION`, is smaller and is *proven sufficient* by
+  the measurement above — but it says every journal that will ever exist shares one genesis, and this repo builds
+  fixture and test stores constantly, so the first time two journals need different seeds the constant is wrong
+  again. Cost of the recommendation is a v006 migration plus a fallback rule for stores that predate it.
+  A third option — re-chaining on every migration — I have rejected outright: it would let a migration rewrite
+  history and still verify, destroying the exact property the chain exists for.
+
+  Either way the recorded literal in `test_chain_golden.py` moves **once**, in the same commit as a
+  `file-formats.md` contract edit, because that file's own header declares its literals to *be* the chain format.
+  If the live journal then needs a one-time operation, I will run it — a lane never writes the live ledger.
+  - **Answer (via watch, 2026-08-01 18:16):** rec
+
+  **→ ANSWERED 2026-08-01 18:17 (receipt 272eb3eb): `rec`.** He took the recommendation:
+  **the genesis is stored in the journal**, not frozen as a constant. So a v006 migration writes a
+  meta row at creation and the verifier checks against that, with a fallback rule for stores that
+  predate it; the frozen-constant option is dropped. `test_chain_golden.py`'s literal still moves
+  exactly once, in the same commit as the `file-formats.md` contract edit. `#848`'s lane
+  (`cx-848genesis`) was dispatched before this landed and told to check this file at its decision
+  point — his answer now governs over its own IGC.
+
 - **P1 · 2026-08-01 — #738: should the draw-frequency setting persist server-side like tint?**
   (Asked by `#733`'s lane; `#733` LANDED as `ecde64ca` and the parity follow-up it left is now
   `#738`, which is what this ask gates — `#306`: only the title is read, so it must name the OPEN
