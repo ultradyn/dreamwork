@@ -100,10 +100,18 @@ def _read_back(db, created):
         "groups": groups,
         "members": members,
         "depends": depends,
+        # NO FILTER. The `if both endpoints are known` guard this used to carry
+        # made every edge touching a task outside the ingested 13 INVISIBLE —
+        # including one pointing at the React gate task, which is exactly the
+        # mistake of writing the group->task dependency into `depends`. Found at
+        # the merge gate by construction: injecting depends(A -> gate) grew the
+        # raw table 11 -> 12 while depends_keys stayed 11 and the SET assertion
+        # still passed. An unknown id now renders as `?<id>` and fails the
+        # comparison by name, because a view filtered by the same map that
+        # defines the expectation cannot witness against it (#852).
         "depends_keys": sorted(
-            (id_to_key.get(t, "?"), id_to_key.get(n, "?"))
-            for t, n in depends
-            if id_to_key.get(t) and id_to_key.get(n)),
+            (id_to_key.get(t, "?%d" % t), id_to_key.get(n, "?%d" % n))
+            for t, n in depends),
         "tgd": tgd,
     }
 
