@@ -65,12 +65,13 @@ you looked). An unresolvable base is a FAULT, not a zero.
 
 THREE ZERO-STATES, NOT ONE (#136)
 ---------------------------------
-- No registry file at all → **calm zero**: "no injections registered". A lane
-  that never used the tool is not faulty; the tool is opt-in (#683 point 3).
+- No registry file at all → **no evidence**: "no injections registered". A
+  lane that never used the tool is not faulty, but this result must not read as
+  a red-proof that examined nothing (#683 point 3).
 - Registry present but unparseable → **FAULT** (exit 2): a broken channel must
   not read as a calm zero.
-- Registry present and empty → **calm zero**: the discipline ran and nothing
-  is live.
+- Registry present and empty → **no evidence**: the tool observed no changed
+  bytes, so there is no injection receipt to interpret.
 
 FAIL CLOSED (#671)
 ------------------
@@ -86,6 +87,16 @@ about, and requiring ≥1 registration would refuse a genuinely clean hand-off
 that simply had no red-proof step. The byte-sha check also passes if a lane
 restores and then re-applies a *different* sabotage than the one recorded —
 see the report's direction-2 section. Both are named, not hidden.
+
+Most importantly, file bytes cannot establish red-proof semantics. A target
+named ``test_*.py`` or ``dev/capture/*.mjs`` is reported as ``test-like``;
+everything else is conservatively ``other``, never ``production``. The path is
+the resolved, worktree-confined target recorded by ``begin``, so a symlink or
+relative spelling cannot hide a test-like target. This lexical signal is only
+advisory: legitimate injections can target guard fixtures, and test files can
+have other names. ``check`` therefore says explicitly that it verified
+restoration and branch absence only — not that a test reached a production
+seam, nor that a reported failure was discriminating (#795).
 
 The history scan inherits all of that, and adds two of its own, both with a
 test that asserts the miss so closing one fails loudly:
@@ -162,6 +173,21 @@ def _worktree_path(root: Path, path: str) -> tuple[str, Path]:
     except (OSError, RuntimeError) as exc:
         raise RedproofError(f"cannot resolve path {posix!r}: {exc}") from exc
     return relative.as_posix(), resolved
+
+
+def _target_kind(posix_path: str) -> str:
+    """Conservative lexical signal for targets likely to be test machinery.
+
+    The complement is deliberately ``other``, not ``production``: a filename
+    cannot prove semantics, and test files need not follow either convention.
+    ``posix_path`` is the resolved canonical key returned by ``_worktree_path``.
+    """
+    path = Path(posix_path)
+    if path.name.startswith("test_") and path.suffix == ".py":
+        return "test-like"
+    if posix_path.startswith("dev/capture/") and path.suffix == ".mjs":
+        return "test-like"
+    return "other"
 
 
 def _role(cwd: Path | None = None) -> str:
@@ -585,7 +611,7 @@ def forget(cwd: Path | None, path: str) -> int:
 def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int:
     """Hand-off gate: refuse if a registered injection survives in tree OR history.
 
-    Exit 0 = clean hand-off (or calm zero: no injections registered).
+    Exit 0 = restoration clean, or no evidence when no injection is registered.
     Exit 1 = REFUSAL: a registered injection is live in the tree, or committed
              on this branch (#710).
     Exit 2 = FAULT: could not evaluate (#671/#136).
@@ -607,8 +633,9 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int
         return 2
 
     if not entries:
-        # Calm zero. "absent" (never used) and "empty" (ran, nothing live) are
-        # both calm; an unparseable registry already raised before we got here.
+        # Honest zero. "absent" (never used) and "empty" (ran, nothing live)
+        # both provide no restoration evidence; an unparseable registry already
+        # raised before we got here.
         label = "no injections registered" if source == "absent" else "registry empty"
         if require > 0:
             sys.stderr.write(
@@ -616,8 +643,8 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int
                 f"{require} was set. A hand-off that the brief mandated "
                 f"red-proofing must show at least one registered injection.\n")
             return 1
-        print(f"check: calm — {label} (role: {role}; opt-in discipline; "
-              f"nothing to evaluate).")
+        print(f"check: no evidence — {label} (role: {role}); injection "
+              f"restoration was not evaluated; production reach was not evaluated.")
         return 0
 
     armed: list[dict] = []
@@ -685,12 +712,22 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int
         return 1
 
     restored = [e for e in entries if e.get("state") == RESTORED]
+    kinds = [_target_kind(e["path"]) for e in restored]
+    test_like = kinds.count("test-like")
+    other = kinds.count("other")
     listed = "\n".join(
-        f"  {e['path']} (sha {e.get('injected_sha', '?')[:12]}, "
+        f"  [{_target_kind(e['path'])}] {e['path']} "
+        f"(sha {e.get('injected_sha', '?')[:12]}, "
         f"hint: {e.get('injected_hint', '?')!r})" for e in restored)
-    print(f"check: clean — {len(restored)} injection(s) registered (role: "
-          f"{role}), all restored and absent from the working tree and from "
-          f"this branch's commits:")
+    print(f"check: restoration clean — {len(restored)} injection(s) registered "
+          f"(role: {role}); registered bytes are restored and absent from the "
+          f"working tree and from this branch's commits.")
+    print(f"targets: {other} other target(s), {test_like} test-like target(s).")
+    print("tool scope: red-proof semantics and production reach were NOT verified.")
+    if test_like:
+        print("WARNING: test-like targets are valid when test/guard tooling is "
+              "the named production subject; otherwise this does not establish "
+              "a production injection.")
     if listed:
         print(listed)
     return 0
