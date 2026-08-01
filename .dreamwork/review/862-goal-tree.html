@@ -601,14 +601,14 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   link, so handing goal creation to a lane inverts the gate that exists to catch invented
   links. You are not subject to that gate: a goal you write <em>is</em> the top of a chain.</p>
   <div class="notice"><strong>One measurement here survives the override untouched, because it
-  was never part of the derivation.</strong> SKILL.md's task-list conventions say the ledger
-  carries <em>"<code>size</code> (estimated minutes)"</em>. It does not: there is no
-  <code>size</code> column in any migration, no <code>size</code> in
-  <code>dreamwork_db/tasks.py</code> or <code>ledger_parse.py</code>, and <strong>zero</strong>
-  entries in the live ledger carry one. SKILL.md is wrong about its own store — and a leaf could
-  not have been checked in hours or minutes even under the rule you struck. Correcting that
-  sentence, or adding a real <code>size</code> column, is a separate task this feature does not
-  need.</div>
+  was never part of the derivation — and it has since been acted on.</strong> This design found
+  that SKILL.md's task-list conventions claimed the ledger carries <em>"<code>size</code>
+  (estimated minutes)"</em> when nothing stores one: no <code>size</code> column in any
+  migration, none in <code>dreamwork_db/tasks.py</code> or <code>ledger_parse.py</code>, and
+  <strong>zero</strong> live entries carrying it. <code>#874</code> has now removed that phantom
+  field from both SKILL.md sites (<code>9a00f4d6</code>), citing this Q4 ruling as the reason to
+  correct the doc rather than add the column. The fact behind it is unchanged: a leaf could not
+  have been checked in hours or minutes even under the rule you struck.</div>
 </section>
 
 <section id="panel" aria-labelledby="panel-t">
