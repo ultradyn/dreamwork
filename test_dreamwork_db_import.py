@@ -339,8 +339,21 @@ class TestDatelessEntries:
         m = _manifest(DATELESS_FIXTURE)
         _import(m, scratch_store)
         snap = _snapshot(scratch_store)
-        answered = [sq for sq in snap.questions if sq.status == "answered"]
-        assert len(answered) == 3
+        expected = {
+            1: "unanswered",
+            2: "answered",
+            3: "answered",
+            4: "answered",
+        }
+        actual = {ordinal: sq.status
+                  for ordinal, sq in enumerate(snap.questions, start=1)}
+        wrong = {ordinal: {"expected": status, "actual": actual.get(ordinal)}
+                 for ordinal, status in expected.items()
+                 if actual.get(ordinal) != status}
+        assert actual.keys() == expected.keys(), (
+            f"dateless question ordinals differ: expected {sorted(expected)}, "
+            f"got {sorted(actual)}")
+        assert wrong == {}, f"dateless question statuses wrong by ordinal: {wrong}"
 
     def test_dateless_asked_at_preserved(self, scratch_store):
         """Asked_at is present in the title, so it is NOT null for these.
