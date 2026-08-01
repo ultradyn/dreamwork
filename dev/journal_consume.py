@@ -130,18 +130,27 @@ drained receipt through ``reconcile``/the adapter registry before advancing.
 Consumer name is the literal ``'coordinator'`` (delivery-modes.md §"How an
 agent consumes the cursor in batched mode").
 
-  show      READ-ONLY.  Prints the FULL decoded payload of one receipt, plus a
-            small metadata header (receipt_id, state, revision,
-            client_action_id, request_digest — the fields ``get_receipt``
-            returns, one per line).  Never advances the cursor; never writes.
+  show      READ-ONLY.  Prints the FULL decoded payload of one or more
+            receipts, each preceded by a small metadata header (receipt_id,
+            state, revision, client_action_id, request_digest — the fields
+            ``get_receipt`` returns).  Selectors are positional and may be an
+            ORDINAL (what ``pending``/``consume`` print — all-digits) or a
+            RECEIPT-ID (any other token).  Ordinals live on ``events``; a
+            receipt does not carry its ordinal, so an ordinal selector joins
+            ``events``→``receipts`` to find the receipt_id (#855: a schema
+            detail encoded here once, not re-guessed each time).  Never
+            advances the cursor; never writes.  Opens through
+            ``open_journal_readonly`` (``mode=ro`` + ``query_only=ON``) so
+            read-only-ness is a property of the OPEN, not of the care taken
+            in composing a query — the single-writer rule made structural.
             Works for ALREADY-CONSUMED receipts too — consumption only moves
             the cursor, the receipt and its event rows persist — so a blindly
             consumed event (its content was never read, only its id printed)
-            is recoverable here without hand SQL.  This closes the lossy-tick
-            failure that already cost one human instruction: the coordinator
-            once ran ``consume`` with no prior ``pending`` read, and the only
-            way back to a payload was a hand-written sqlite query that failed
-            twice on schema guesses before it worked.
+            is recoverable here without hand SQL.  This closes the gap that
+            cost one human instruction: the coordinator once ran ``consume``
+            with no prior ``pending`` read, and the only way back to a payload
+            was a hand-written sqlite query that failed twice on schema
+            guesses before it worked (#855).
 
   expedite  #864 — the EXPEDITED class's delivery verb, called by the repo's
             Claude Code stop hook when the agent pauses.  It is a READER: it
@@ -165,7 +174,7 @@ USAGE
                                          [--through ORDINAL]
   python3 dev/journal_consume.py expedite [--journal PATH] [--applied PATH] \
                                           [--limit N]
-  python3 dev/journal_consume.py show <receipt-id> [--journal PATH]
+  python3 dev/journal_consume.py show <ord|receipt-id>... [--journal PATH]
 """
 from __future__ import annotations
 
@@ -180,6 +189,7 @@ from pathlib import Path
 # as `python3 dev/journal_consume.py` (sys.path[0] is then `dev/`, not the cwd).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from user_events.sqlite import open_journal  # noqa: E402  — the public API
+from user_events.sqlite import open_journal_readonly  # noqa: E402  — #855 read-only door
 from user_events import apply  # noqa: E402  — the exactly-once proof (lane D); wiring it into the drain (#526)
 from user_events import delivery  # noqa: E402  — the EXPEDITED class predicate (#864)
 
@@ -924,27 +934,89 @@ _SHOW_HEADER_KEYS = (
 
 
 def cmd_show(args, out, err) -> int:
-    """Read-only: print the FULL decoded payload of one receipt (#512).
+    """Read-only: print the FULL decoded payload of one or more receipts (#855).
 
-    Composes the single public read ``get_receipt(receipt_id)`` — no new
-    journal query, no ``user_events/`` change.  Never advances the cursor; the
-    receipt row persists after consume (consume only moves the cursor), so this
+    Each positional selector is an ORDINAL (all-digits — what ``pending`` and
+    ``consume`` print) or a RECEIPT-ID (any other token).  Composes the single
+    public read ``get_receipt(receipt_id)`` for the payload; an ordinal
+    selector is first joined ``events``→``receipts`` to recover the receipt_id
+    (receipts do not carry the ordinal — #855's schema note, encoded once).
+    Never advances the cursor; the receipt row persists after consume, so this
     is the recovery path for a blindly-consumed event whose content was never
-    read.  An absent journal or unknown receipt both fall to the same
-    "not found" path: a one-line stderr message and EX_USAGE, with no write and
-    no db creation (read-only, the #501 discipline).
+    read.  An absent journal or any unknown selector falls to the same
+    "not found" path: a one-line stderr message per miss and EX_USAGE, with no
+    write and no db creation.
+
+    Opens through ``open_journal_readonly`` — ``mode=ro`` + ``query_only=ON`` —
+    so a read cannot mutate the store even in principle.  Read-only-ness is a
+    property of the OPEN, not of a carefully-typed query string: the gap that
+    motivated #855 was a hand heredoc one character away from a writing open.
     """
     journal = Path(args.journal)
     if not journal.exists():
         # No journal → not found; do not create it (read-only, #501 discipline).
-        err.write(f"show: receipt {args.receipt_id} not found "
-                  f"(journal absent: {args.journal})\n")
+        for sel in args.selectors:
+            err.write(f"show: {sel} not found (journal absent: {args.journal})\n")
         return EX_USAGE
-    with open_journal(args.journal) as j:
-        receipt = j.get_receipt(args.receipt_id)
-    if receipt is None:
-        err.write(f"show: receipt {args.receipt_id} not found\n")
-        return EX_USAGE
+    misses = []
+    with open_journal_readonly(args.journal) as j:
+        for sel in args.selectors:
+            receipt, ord_seen = _resolve_selector(j, sel)
+            if receipt is None:
+                misses.append(sel)
+                err.write(f"show: {sel} not found\n")
+                continue
+            _write_receipt_block(out, receipt, ord_seen)
+    return EX_OK if not misses else EX_USAGE
+
+
+def _resolve_selector(j, selector: str):
+    """Resolve one ORDINAL or RECEIPT-ID selector to ``(receipt, ordinal)``.
+
+    An all-digits selector is an ORDINAL (what ``pending``/``consume`` print);
+    receipt-ids are UUIDs (always contain a hyphen) so the discriminator is
+    unambiguous.  Ordinals live on ``events.event_ordinal`` and a receipt does
+    not carry its ordinal, so an ordinal selector joins ``events``→``receipts``
+    to find the receipt_id before the by-id read (#855: the schema detail that
+    cost two trial-and-error hand queries, encoded here).  A receipt-id
+    selector reads the receipt directly and best-effort looks up its first
+    ordinal for the banner.  Returns ``(receipt_or_None, ordinal_or_None)``;
+    ``(None, None)`` means the selector resolved to no receipt.
+    """
+    if selector.isdigit():
+        ordinal = int(selector)
+        row = j.conn.execute(
+            "SELECT receipt_id FROM events WHERE event_ordinal = ?",
+            (ordinal,),
+        ).fetchone()
+        if row is None:
+            return None, None
+        receipt = j.get_receipt(row["receipt_id"])
+        return receipt, ordinal
+    receipt = j.get_receipt(selector)
+    row = j.conn.execute(
+        "SELECT event_ordinal FROM events WHERE receipt_id = ? "
+        "ORDER BY event_ordinal ASC LIMIT 1",
+        (selector,),
+    ).fetchone()
+    return receipt, (int(row["event_ordinal"]) if row is not None else None)
+
+
+def _write_receipt_block(out, receipt, ord_seen) -> None:
+    """One receipt block: a self-identifying banner, the header, then payload.
+
+    The banner (``# receipt <id>  ord=<n>``) delimits multi-receipt output so a
+    block is self-identifying without a separate separator line, and ``#``
+    reads as metadata to a human scanning the output.  The header keys and the
+    verbatim-payload write are unchanged from the single-receipt ``show``; the
+    deliberate exception to the #126 newline-collapse rule applies here — this
+    output is for an agent to READ, and a payload may be a multi-line human
+    instruction.
+    """
+    banner = f"# receipt {receipt['receipt_id']}"
+    if ord_seen is not None:
+        banner += f"  ord={ord_seen}"
+    out.write(banner + "\n")
     for key in _SHOW_HEADER_KEYS:
         out.write(f"{key}: {receipt[key]}\n")
     payload = receipt["exact_payload_bytes"]
@@ -955,7 +1027,7 @@ def cmd_show(args, out, err) -> int:
         # (no length cap, no preview collapse — this verb is for reading, and a
         # binary payload has nothing legible to read).
         out.write(f"\n<{len(payload)}-byte binary payload>\n")
-        return EX_OK
+        return
     # Newlines are printed VERBATIM here — the deliberate exception to the
     # lessons.md:283 collapse rule that pending/preview obey.  This output is
     # for an agent to READ (a payload may be a multi-line human instruction),
@@ -964,7 +1036,6 @@ def cmd_show(args, out, err) -> int:
     out.write(text)
     if not text.endswith("\n"):
         out.write("\n")
-    return EX_OK
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -1048,9 +1119,16 @@ def _parser() -> argparse.ArgumentParser:
 
     ps = sub.add_parser(
         "show",
-        help="print the full decoded payload of one receipt (read-only, #512)",
+        help="print the full payload of one or more receipts by ordinal or id (read-only, #855)",
     )
-    ps.add_argument("receipt_id", help="the receipt id to read")
+    ps.add_argument(
+        "selectors", nargs="+", metavar="ORD|RECEIPT-ID",
+        help=(
+            "one or more receipts to read — an all-digits token is an ORDINAL "
+            "(what `pending`/`consume` print; joined events→receipts), any "
+            "other token is a receipt-id. Read-only; never advances the cursor."
+        ),
+    )
     ps.add_argument(
         "--journal", default=JOURNAL_DEFAULT,
         help="journal db path (default: %(default)s)",

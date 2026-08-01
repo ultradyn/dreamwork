@@ -34,7 +34,7 @@ import io
 import sqlite3
 from pathlib import Path
 
-from user_events.sqlite import Envelope, open_journal
+from user_events.sqlite import Envelope, open_journal, open_journal_readonly
 
 REPO = Path(__file__).resolve().parent
 CLI_PATH = REPO / "dev" / "journal_consume.py"
@@ -2103,3 +2103,262 @@ def test_expedite_at_a_second_pause_delivers_nothing_again(tmp_path: Path):
     assert _pending_ids(out3) == ids, (
         f"the receipts are still pending for the tick — the silence is the "
         f"proof gate, not an empty queue: want {ids}, got {_pending_ids(out3)}")
+
+
+# ---------------------------------------------------------------------------
+# #855 — show <ord|receipt-id>... : ordinal resolution, multi-receipt,
+#        read-only-by-construction, cursor-stable, tail-survives, count-parity.
+#
+# These close the five direction-2 candidates the brief names for a verb whose
+# subject IS the live journal: truncation invisible to a short fixture,
+# zero-denominator green, the cursor moved, the wrong receipt returned, and an
+# opened read-write connection.  Each asserts the precondition it depends on at
+# runtime so a literal tuned to today's fixture cannot pass vacuously.
+# ---------------------------------------------------------------------------
+
+
+def _receipt_banners(out: str) -> list[str]:
+    """The receipt_id of each ``# receipt <id>`` banner show prints, in order."""
+    banners = []
+    for line in out.splitlines():
+        if line.startswith("# receipt "):
+            banners.append(line.split()[2])
+    return banners
+
+
+def test_show_long_payload_tail_survives(tmp_path: Path):
+    """#855: show prints the FULL payload — the TAIL of a payload longer than
+    the preview limit must appear verbatim.  This is the entire point of the
+    verb (``pending`` already prints the head) and the direction-1 injection
+    target: a show that silently truncates to the preview width passes on a
+    short fixture and fails only here.
+
+    The payload length is derived from the CLI's own ``_PREVIEW_LIMIT`` (never
+    a literal), so a future bump cannot make a literal fixture pass vacuously.
+    The assertion message names the expected tail AND the actual output tail so
+    a red distinguishes a truncation from an unrelated format change.
+
+    RED LINE (run): make ``_write_receipt_block`` print ``_preview(payload)``
+      instead of the verbatim decoded text.  The tail (past the limit) no
+      longer appears → the ``tail in out`` assertion fails, naming both the
+      expected tail and the truncated actual.  Production line: the verbatim
+      ``out.write(text)`` payload write in ``_write_receipt_block``.
+    """
+    cli = _load_cli()
+    limit = cli._PREVIEW_LIMIT
+    path = tmp_path / "tail.sqlite3"
+    head = "H" * limit          # fills the preview width exactly
+    tail = "TAIL-MARKER-" + "z" * 40   # well past the limit, unique suffix
+    payload_text = head + tail
+    assert len(payload_text) > limit, (
+        f"precondition: payload {len(payload_text)} must exceed the preview "
+        f"limit {limit} — else the tail assertion is vacuous")
+    seeded = _seed(path, [payload_text.encode("utf-8")])
+    rid = seeded[0].receipt_id
+
+    code, out, err = _run(cli, ["show", rid, "--journal", str(path)])
+    assert code == 0, f"show must exit 0, got {code} (err={err!r})"
+    assert tail in out, (
+        f"the payload TAIL (past the {limit}-char preview limit) must appear "
+        f"verbatim; expected tail {tail!r} not found in output whose final "
+        f"120 chars are {out[-120:]!r} — a truncation to the preview width "
+        "drops exactly this")
+
+
+def test_show_by_ordinal_returns_that_receipts_payload(tmp_path: Path):
+    """#855: an all-digits selector is an ORDINAL; show returns THAT ordinal's
+    payload, not a neighbour's.  With several receipts in the fixture, an
+    ordinal resolution that returned the wrong row (or always row 1) would
+    still print *something*, so this asserts the MAPPING: selecting ord=k
+    yields payload_k and NOT payload_j for j != k.
+
+    Preconditions derived at runtime: the fixture genuinely holds N>1 receipts
+    (from head_ordinal), the ordinals are 1..N (from _ord_fields of a pending
+    read — never assumed), and the payloads are pairwise distinct.
+
+    RED LINE (run): make ``_resolve_selector`` ignore the ordinal and always
+      read receipt at ordinal 1 (e.g. ``ordinal = 1``), or join on the wrong
+      column.  Selecting ord=N returns payload_1, so ``payload_k in out`` fails
+      for k != 1 and ``payload_k_absent not in out`` fails for k == 1.
+      Production line: the ``SELECT receipt_id FROM events WHERE
+      event_ordinal = ?`` join in ``_resolve_selector``.
+    """
+    cli = _load_cli()
+    path = tmp_path / "ordmap.sqlite3"
+    payloads = [f'{{"marker":"P{i}"}}'.encode("utf-8") for i in range(4)]
+    seeded = _seed(path, payloads)
+    n = len(seeded)
+    assert n >= 3, "precondition: at least 3 receipts so a wrong-row lookup is catchable"
+    with open_journal(path) as j:
+        assert j.head_ordinal() == n, "precondition: head equals the seeded count"
+    # Ordinals 1..N, derived from a pending read (never assumed).
+    code, out_p, _ = _run(cli, ["pending", "--journal", str(path)])
+    ords = _ord_fields(out_p)
+    assert ords == list(range(1, n + 1)), f"precondition: ordinals 1..{n}; got {ords}"
+    payload_by_ord = {ords[i]: payloads[i].decode("utf-8") for i in range(n)}
+    # The markers are pairwise distinct — else the cross-check is vacuous.
+    assert len(set(payload_by_ord.values())) == n, "precondition: distinct payloads"
+
+    # Select ONE ordinal in the middle; assert its payload appears and the
+    # others do NOT (the mapping, not just "something printed").
+    k = ords[n // 2]
+    code, out, err = _run(cli, ["show", str(k), "--journal", str(path)])
+    assert code == 0, f"show {k} exited {code} (err={err!r})"
+    want = payload_by_ord[k]
+    assert want in out, (
+        f"selecting ord={k} must print payload {want!r}; got {out!r}")
+    for j, other in payload_by_ord.items():
+        if j != k:
+            assert other not in out, (
+                f"selecting ord={k} must NOT print ord={j}'s payload "
+                f"{other!r}; got {out!r}")
+
+
+def test_show_multi_receipt_prints_one_block_per_selector(tmp_path: Path):
+    """#855: ``show <sel>...`` prints exactly one block per selector.  This
+    closes two direction-2 inputs at once:
+
+      * zero-denominator green — show on an empty selection "succeeds"; here
+        the fixture genuinely holds N receipts (derived from head_ordinal) and
+        the count of printed banners MUST equal the count of selectors asked
+        for.
+      * wrong receipt returned — a multi-select mixing an ordinal and a
+        receipt-id must return each SELECTED receipt once, in order, with the
+        banner carrying the right id.
+
+    RED LINE (run): make the show loop ``break`` after the first selector, or
+      print only the first resolved receipt.  The banner count falls below the
+      selector count → the parity assertion fails.  Production line: the
+      ``for sel in args.selectors`` loop in cmd_show.
+    """
+    cli = _load_cli()
+    path = tmp_path / "multi.sqlite3"
+    payloads = [f'{{"who":"R{i}"}}'.encode("utf-8") for i in range(3)]
+    seeded = _seed(path, payloads)
+    n = len(seeded)
+    with open_journal(path) as j:
+        assert j.head_ordinal() == n, "precondition: fixture holds N receipts"
+    ids = [r.receipt_id for r in seeded]
+    assert len(set(ids)) == n, "precondition: distinct receipt ids"
+
+    # Mix an ordinal (1) and two receipt-ids; expect three blocks in order.
+    selectors = ["1", ids[1], ids[2]]
+    code, out, err = _run(cli, ["show", *selectors, "--journal", str(path)])
+    assert code == 0, f"multi show exited {code} (err={err!r})"
+    banners = _receipt_banners(out)
+    assert len(banners) == len(selectors), (
+        f"show printed {len(banners)} block(s) for {len(selectors)} selector(s) "
+        f"— count must match; banners={banners!r}, out={out!r}")
+    assert banners == [ids[0], ids[1], ids[2]], (
+        f"blocks must appear in selection order with the right ids; "
+        f"got {banners!r}")
+
+
+def test_show_does_not_move_the_cursor(tmp_path: Path):
+    """#855: a read must not advance the cursor.  This is the most damaging
+    failure available here — a silent advance loses his instructions with a
+    zero exit code — so the cursor is asserted byte-identical (ordinal AND
+    revision) before and after a show, for BOTH the ordinal and receipt-id
+    paths.  A show that read-then-advanced would pass any output assertion.
+
+    PRECONDITION (learned the hard way): the cursor must be at a REAL row, not
+    the default origin, or a cursor-bump injection is a no-op against a
+    non-existent row and the byte-identical check passes trivially (the
+    direction-2 false-green this test was born catching).  So a consume
+    advances the cursor to N first; the cursor row now EXISTS (revision>=1,
+    ordinal=N), and a bump to it is observable.  The cursor position comes from
+    ``j.cursor`` (the real row advance_cursor writes), never faked.
+
+    RED LINE (run): add a write that bumps the cursor inside cmd_show (over a
+      WRITING open, so the bump lands).  The byte-identical assertion fails.
+      Production line: cmd_show performs no write and opens read-only.
+    """
+    cli = _load_cli()
+    path = tmp_path / "nomove-show.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"a":0}', b'{"a":1}', b'{"a":2}'])
+    n = len(seeded)
+    # Advance the cursor to N so a real row exists (else a bump is a no-op).
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, f"setup consume exited {code} (err={err!r})"
+    with open_journal(path) as j:
+        before = j.cursor(CONSUMER)
+    assert (before.scanned_through_event_ordinal, before.revision) == (n, 1), (
+        f"precondition: cursor must sit at a REAL row (ord={n}, rev=1) after "
+        f"consume — else a cursor-bump injection is a no-op and the check is "
+        f"vacuous; got ord={before.scanned_through_event_ordinal} "
+        f"rev={before.revision}")
+    rid = seeded[1].receipt_id
+
+    # show by receipt-id, then by ordinal — neither may move the cursor.
+    for argv in (["show", rid, "--journal", str(path)],
+                 ["show", "1", "--journal", str(path)]):
+        code, out, err = _run(cli, argv)
+        assert code == 0, f"{argv} exited {code} (err={err!r})"
+        with open_journal(path) as j:
+            after = j.cursor(CONSUMER)
+        assert (after.scanned_through_event_ordinal, after.revision) == (n, 1), (
+            f"a show read must leave the cursor byte-identical (expected "
+            f"ord={n} rev=1; got ord={after.scanned_through_event_ordinal} "
+            f"rev={after.revision}); argv={argv}")
+
+
+def test_show_journal_is_opened_read_only(tmp_path: Path):
+    """#855: show's door (``open_journal_readonly``) opens ``mode=ro`` +
+    ``query_only=ON``, so the handle CANNOT mutate the store.  A comment is
+    not a check: this asserts a write through that door RAISES, which fails
+    the moment someone routes show back through the writing ``open_journal``
+    (the original defect — show opened read-write).  This is structural
+    read-only-ness, the property the brief says must survive an edit.
+
+    RED LINE (run): change ``open_journal_readonly`` to call ``open_journal``
+      (write access).  The INSERT below succeeds → ``sqlite3.OperationalError``
+      is not raised → ``pytest.raises`` fails.  Production line: the
+      ``Access.READ`` open in ``open_journal_readonly`` (user_events/sqlite.py).
+    """
+    import pytest
+    from user_events.sqlite import open_journal_readonly as _ro
+
+    path = tmp_path / "ro.sqlite3"
+    _seed(path, [b'{"x":1}'])  # a real journal, so the read-only open is valid
+    assert path.exists(), "precondition: journal exists for a read-only open"
+
+    with _ro(path) as j:
+        # A read works (get_receipt is the public read show composes).
+        assert j.get_receipt is not None
+        # A write MUST be rejected — query_only=ON (mode=ro backs it).  If this
+        # opens read-write, the INSERT succeeds and the assertion below fails.
+        with pytest.raises(sqlite3.OperationalError):
+            j.conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('probe', 'x')"
+            )
+
+
+def test_show_unknown_ordinal_exits_usage(tmp_path: Path):
+    """#855: an ordinal with no event resolves to "not found" — exit EX_USAGE,
+    a stderr line, empty stdout — not a crash and not a silent empty success.
+
+    The precondition (a real journal with a known head, and the probe ordinal
+    above it) is derived from head_ordinal so the miss is genuine.
+
+    RED LINE (run): make ``_resolve_selector`` swallow a missing ordinal row
+      (return an empty receipt dict instead of None).  The block then prints
+      garbage or empty → either the ``out == ''`` or the ``code == EX_USAGE``
+      assertion fails.  Production line: the ``if row is None: return None,
+      None`` branch in ``_resolve_selector``.
+    """
+    cli = _load_cli()
+    path = tmp_path / "ordmiss.sqlite3"
+    _seed(path, [b'{"a":0}', b'{"a":1}'])
+    with open_journal(path) as j:
+        head = j.head_ordinal()
+    probe = head + 10
+    assert probe > head, "precondition: probe ordinal is genuinely above the head"
+
+    code, out, err = _run(cli, ["show", str(probe), "--journal", str(path)])
+    assert code == cli.EX_USAGE, (
+        f"unknown ordinal must exit EX_USAGE({cli.EX_USAGE}); got {code}")
+    assert out == "", f"unknown ordinal must write nothing to stdout; got {out!r}"
+    assert str(probe) in err, (
+        f"the stderr message must name the missing ordinal; got {err!r}")
