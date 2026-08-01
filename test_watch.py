@@ -9280,6 +9280,125 @@ class TestSubmissionLog(unittest.TestCase):
             self.assertEqual(self._lines(d)[0]["req"]["a"], "his text")
 
 
+class TestIngestPlanCommand(unittest.TestCase):
+    """#843 — POST /command kind=ingest-plan: read a confined plan, file flat.
+
+    The whole requirement is "paste a path; the server reads it". These cover
+    the live dispatch through _apply_ingest_plan: a valid plan files its rows
+    and reports the count + ids; a path that escapes confinement and a plan
+    without an ingestion table are NAMED refusals (durable 202 + rejected), not
+    silent no-ops. The pure-function layer (resolve_ingest_path,
+    parse_ingestion_table, file_ingested_tasks) has its own test_ingest_plan.py.
+    """
+
+    PLAN = ("# A plan\n\n## Tasks for ingestion\n\n"
+            "Priority bands are P0–P3.\n\n"
+            "| # | Title | type | pri | blocked on |\n"
+            "|---|---|---|---|---|\n"
+            "| A | `alpha task` | task | P1 | — |\n"
+            "| B | beta idea | idea | P2 | A |\n")
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _post(self, url, obj):
+        """POST JSON; return (status, parsed_body_or_None)."""
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                body = json.loads(r.read().decode("utf-8") or "{}")
+                return r.status, body
+        except urllib.error.HTTPError as e:
+            return e.code, None
+
+    def _target_with_ledger(self, root):
+        """A make_target whose .dreamwork/tasks.md is a filable markdown ledger."""
+        make_target(root)
+        with open(os.path.join(root, ".dreamwork", "tasks.md"), "w") as f:
+            f.write("# Task ledger\n\nNext id: **5**\n\n## Open\n\n"
+                    "## Recently landed\n\n")
+        return root
+
+    def test_the_command_is_hidden_by_default_in_the_extras_menu(self):
+        # His ask verbatim: "not shown by default, just in the extras menu".
+        # common:False is the existing overflow mechanism (maintenance is the
+        # precedent); a check that cannot tell primary-row from overflow has
+        # not tested the ask.
+        entry = next(c for c in watch.COMMANDS if c["kind"] == "ingest-plan")
+        self.assertFalse(entry["common"], (
+            "ingest-plan must be common:False so it appears under the ⋯ extras "
+            "menu, not in the primary command row"))
+        # It reaches the page as a core command (CORE_COMMANDS is the injected
+        # form), so the composer renders it.
+        self.assertIn(
+            "const CORE_COMMANDS = " + json.dumps(list(watch.COMMANDS)),
+            watch.PAGE)
+
+    def test_a_valid_plan_files_its_rows_and_reports_count_and_ids(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(self._target_with_ledger(d))
+            # Put the plan under an allowed root (swap in a tmp root).
+            root = os.path.join(d, "plans")
+            os.makedirs(root)
+            plan = os.path.join(root, "p.md")
+            open(plan, "w").write(self.PLAN)
+            orig = watch.INGEST_PLAN_ROOTS
+            watch.INGEST_PLAN_ROOTS = (root,)
+            try:
+                status, body = self._post(base + "/command",
+                                          {"kind": "ingest-plan", "text": plan})
+            finally:
+                watch.INGEST_PLAN_ROOTS = orig
+            self.assertEqual(status, 202, body)
+            self.assertTrue(body and body.get("ok"), body)
+            # Precondition derived at runtime: the fixture's Next id.
+            self.assertEqual(body["filed"], 2, body)
+            self.assertEqual(len(body["ids"]), 2, body)
+            # The entries landed under ## Open with the reported ids.
+            text = open(os.path.join(d, ".dreamwork", "tasks.md")).read()
+            self.assertIn("- **#%d** — alpha task" % body["ids"][0], text)
+            self.assertIn("- **#%d** — beta idea" % body["ids"][1], text)
+
+    def test_a_path_outside_the_root_is_a_named_refusal(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(self._target_with_ledger(d))
+            watch.INGEST_PLAN_ROOTS = (os.path.join(d, "plans"),)
+            os.makedirs(os.path.join(d, "plans"))
+            status, body = self._post(base + "/command",
+                                      {"kind": "ingest-plan",
+                                       "text": "/etc/passwd"})
+            self.assertEqual(status, 202)
+            self.assertTrue(body and body.get("rejected"), body)
+            # detail narrows the closed-set reason for copy.
+            self.assertEqual(body.get("detail"), "path_not_confined", body)
+
+    def test_a_plan_without_a_table_is_a_named_refusal_not_zero_count(self):
+        # #671 vacuous-pass guard: a table-less plan must refuse by name, not
+        # report "filed 0" as success.
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(self._target_with_ledger(d))
+            root = os.path.join(d, "plans")
+            os.makedirs(root)
+            plan = os.path.join(root, "p.md")
+            open(plan, "w").write("# just prose\n\nno table here\n")
+            watch.INGEST_PLAN_ROOTS = (root,)
+            try:
+                status, body = self._post(base + "/command",
+                                          {"kind": "ingest-plan", "text": plan})
+            finally:
+                watch.INGEST_PLAN_ROOTS = (os.path.expanduser("~/.claude-p/plans"),)
+            self.assertEqual(status, 202)
+            self.assertTrue(body and body.get("rejected"), body)
+            self.assertEqual(body.get("detail"), "no_ingestion_table", body)
+
+
 if __name__ == "__main__":
     unittest.main()
 
