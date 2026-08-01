@@ -37,6 +37,8 @@ import io
 import os
 from pathlib import Path
 
+import pytest
+import test_user_events_http as http_oracle
 import watch
 from user_events.sqlite import Envelope, open_journal
 
@@ -167,28 +169,112 @@ def _causes_for_verb(text: str, verb: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# 0 — drift guard: SUBMISSION_ROUTES equals watch.WRITE_ROUTE_HANDLERS
+# 0 — route population: dispatch vs observed POSTs vs the tool's explicit pin
 # ---------------------------------------------------------------------------
 
-def test_submission_routes_match_watch(tmp_path: Path):
-    """The audit's route set must equal watch's WRITE_ROUTE_HANDLERS exactly.
+def _observed_submission_routes() -> tuple[str, ...]:
+    """Run the independent HTTP harness and return only paths it really POSTed."""
+    case = http_oracle.E2Shadow(
+        methodName="test_a_new_route_would_fail_this_test_not_slip_past"
+    )
+    case.setUp()
+    try:
+        _, _, observed = case.run_all_routes()
+        return observed
+    finally:
+        case.doCleanups()
 
-    A route added to watch must fail here until the audit's constant is updated,
-    or the audit would misclassify the new route's receipts as unknown-route.
 
-    RED LINE (run): drop a route from SUBMISSION_ROUTES (or add a bogus one).
-      The set comparison fails. Production line: the SUBMISSION_ROUTES constant
-      in dev/reconcile_submissions.py; binds to watch.WRITE_ROUTE_HANDLERS.
+def _assert_route_population(production, observed, pinned) -> str:
+    """Bind independent production, request-seam, and pinned populations."""
+    production = set(production)
+    observed_ordered = tuple(observed)
+    observed = set(observed_ordered)
+    pinned = set(pinned)
+    if not observed_ordered:
+        raise AssertionError(
+            "submission-route coverage fault: 0 observed HTTP POST routes "
+            f"across {len(production)} production route(s); examined nothing"
+        )
+    missing = sorted(production - observed)
+    unexpected = sorted(observed - production)
+    assert not missing and not unexpected, (
+        "submission-route HTTP coverage differs: "
+        f"missing={missing}, unexpected={unexpected}; "
+        f"{len(production)} production route(s), "
+        f"{len(observed_ordered)} observed POST(s)"
+    )
+    assert len(observed_ordered) == len(observed), (
+        "submission-route harness POSTed duplicate paths: "
+        f"{list(observed_ordered)}"
+    )
+    assert pinned == observed, (
+        "reconciliation pinned route contract differs from observed POSTs: "
+        f"missing={sorted(observed - pinned)}, "
+        f"unexpected={sorted(pinned - observed)}; "
+        f"{len(observed)} observed route(s), {len(pinned)} pinned route(s)"
+    )
+    return (
+        f"submission-route coverage: {len(production)} production route(s), "
+        f"{len(observed)} observed HTTP POST route(s), "
+        f"{len(pinned)} reconciliation route(s) pinned"
+    )
+
+
+def test_submission_routes_match_watch(tmp_path: Path, capsys):
+    """Dispatch routes equal paths observed at the real HTTP request seam.
+
+    The production source is ``WRITE_ROUTE_HANDLERS``.  The independent source
+    is ``HttpHarness.post``'s record of requests ``run_all_routes`` really sent;
+    merely naming a path in test data cannot enter that record.  The tool's
+    allowlist remains an explicit pin and is checked against the observation.
     """
     cli = _load_cli()
     handler_cls = watch.make_handler(str(tmp_path))
-    expected = set(handler_cls.WRITE_ROUTE_HANDLERS)
-    assert expected == set(cli.SUBMISSION_ROUTES), (
-        f"SUBMISSION_ROUTES drifted from WRITE_ROUTE_HANDLERS: "
-        f"{set(cli.SUBMISSION_ROUTES)} != {expected}"
+    report = _assert_route_population(
+        handler_cls.WRITE_ROUTE_HANDLERS,
+        _observed_submission_routes(),
+        cli.SUBMISSION_ROUTES,
     )
-    # Precondition: the guard means something — there must be >1 route.
-    assert len(expected) >= 5, "precondition: a non-trivial route set"
+    print(report)
+    assert "observed HTTP POST route(s)" in capsys.readouterr().out
+
+
+def test_naming_without_posting_cannot_enter_the_observed_set(tmp_path: Path):
+    """A test-only name cannot satisfy request-seam coverage."""
+    cli = _load_cli()
+    production = set(watch.make_handler(str(tmp_path)).WRITE_ROUTE_HANDLERS)
+    observed = _observed_submission_routes()
+    named_but_not_posted = sorted(production)[0] + "-named-only"
+    with pytest.raises(AssertionError, match=named_but_not_posted):
+        _assert_route_population(
+            production | {named_but_not_posted},
+            observed,
+            set(cli.SUBMISSION_ROUTES) | {named_but_not_posted},
+        )
+
+
+def test_zero_observed_routes_is_a_fault(tmp_path: Path):
+    """An empty request observation is not perfect coverage."""
+    cli = _load_cli()
+    production = watch.make_handler(str(tmp_path)).WRITE_ROUTE_HANDLERS
+    with pytest.raises(AssertionError, match="0 observed HTTP POST routes"):
+        _assert_route_population(production, (), cli.SUBMISSION_ROUTES)
+
+
+def test_zero_pinned_routes_is_a_tool_fault(tmp_path: Path):
+    """The standalone tool also fails closed when its contract is empty."""
+    cli = _load_cli()
+    cli.SUBMISSION_ROUTES = frozenset()
+    code, out, err = _run(
+        cli,
+        ["--journal", str(tmp_path / "missing-journal"),
+         "--submissions", str(tmp_path / "missing-submissions")],
+    )
+    assert code == cli.EX_SOFTWARE
+    assert "0 classification routes pinned" in out
+    assert "examined nothing" in out
+    assert err == ""
 
 
 # ---------------------------------------------------------------------------
