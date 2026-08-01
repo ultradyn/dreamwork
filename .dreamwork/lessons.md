@@ -3666,3 +3666,60 @@ a condition does not delegate responsibility for whether it is achievable — th
 and the scheduler was me. A measurement task carries a **fleet precondition** the way a test carries
 a fixture: it belongs in the dispatch decision, not only in the brief. Either dispatch it alone, or
 dispatch it knowing it will wait, and say which.
+
+## The tool that catches missed folds cannot catch its own missed fold (2026-08-02, #903, mine, measured)
+
+I selected four P1 tasks off `ledger.py list --state open` and dispatched lanes for all four.
+**Three of the four were already landed on master.** I found out only because one lane's branch name
+collided with the branch that had already done the work — `launch-lane` refused with `branch
+cx-797socket already exists`. Two lanes ran ~3.6 minutes redoing finished work before I killed them.
+
+`sweep` exists to prevent exactly this, and it had just told me:
+
+    sweep: examined 145 commits since c3a9ffa0428e against 198 open ids (store) / 198 parsed body ids
+    sweep: 1 open id(s) git names (verb form) that the entry does not cite
+
+Measured afterwards: **21 of 198 open ids lead their own `Merge #<id>:` commit on master.**
+
+Two blind spots, and the first is the general lesson. **sweep's window starts at the most recent
+FOLD COMMIT and only ever moves forward.** The three merges I folded were 14:28-14:41; the window
+started 19:53. They were ancestors of the window start, so sweep could never have named them — not
+tonight, not ever. *A single missed fold is permanently unrecoverable by the very tool whose job is
+to catch missed folds*, because each fold advances the window past the evidence of what it skipped.
+Any cursor-advancing instrument has this shape: if the cursor moves on success, then a failure that
+does not stop the cursor is erased by its own recovery.
+
+The second: sweep subtracts open ids whose entry cites the landing sha. `#800`'s note had said
+`Merged 7f978b35 and it REDDENED MASTER` for hours while its state stayed open, so its own annotation
+filtered it out. **Citing a sha and closing a task are different acts.** Perversely, the more
+carefully a coordinator annotates a landing without folding it, the more certainly the tool goes
+quiet about it — diligence purchasing invisibility.
+
+Both reduce to the family this session has been closing: *a sweep that found nothing because there
+was nothing, and a sweep that found nothing because it looked almost nowhere, print the same
+sentence.* The fix is not a better search, it is **printing the scope alongside the result** — the
+window start, and the count excluded by sha-citation. A report whose scope is invisible in its own
+output is not a report.
+
+Corollary for me: `list --state open` is not a work queue. It is a claim about the world, and git is
+the cheaper authority. Check the branch and the merge before writing a brief, not after the collision.
+
+## I diagnosed a refusal from the last line printed, and the last line was not the refusal (2026-08-02, mine)
+
+`launch-lane` failed and the tail of its log read:
+
+    deliberately did not perform: governed runner launch
+    background-check: no controlling tty was observable; launch-lane cannot prove shell job placement
+    error: Recipe `launch-lane` failed on line 47 with exit code 1
+
+I read the tty line as the cause and started theorising about nondeterministic tty detection, since
+three sibling launches from the identical script had succeeded. It was informational: `launch_lane.py`
+only *prints* on `foreground is None` and continues. The actual refusal was the FIRST line of the
+file — `REFUSE phase=worktree-preflight: branch cx-797socket already exists` — and it was the thread
+that unravelled everything above.
+
+`lessons.md:489` already records that a guard printing its checks at the tail misleads whoever
+diagnoses it. This is the same failure from the other side: **I truncated with `tail` and let output
+order stand in for causal order.** A refusal prints its reason where the refusal happens, which for a
+fail-closed tool is early; the trailing lines are cleanup and are the least informative part of the
+log. Read the whole refusal, or read the head. Never diagnose a fail-closed tool from its tail.
