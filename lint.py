@@ -3906,6 +3906,243 @@ _WALK_SKIP_DIRS = frozenset({
 })
 
 
+WORKTREE_DRAIN_STATE = "worktree-drain.json"
+WORKTREE_DRAIN_ORIGINAL = frozenset({
+    "cx-844btnguard", "cx-846wtmove", "glm-840tickline", "glm-843ingest",
+})
+
+
+def _main_checkout_for(target: Path) -> Path | None:
+    """Main checkout sharing ``target``'s git common dir, or None."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(target), "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    common = Path(out.stdout.strip())
+    if not common.is_absolute():
+        common = (target / common).resolve()
+    return common.parent if common.name == ".git" else None
+
+
+def _registered_in_repo_worktrees(main_root: Path, old_root: Path) -> list[Path] | None:
+    """Registered worktrees whose immediate parent is the draining root."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(main_root), "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    paths = []
+    for line in out.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        path = Path(line[len("worktree "):].strip()).resolve()
+        if path.parent == old_root.resolve():
+            paths.append(path)
+    return sorted(paths)
+
+
+def _tree_size(path: Path) -> int:
+    """Apparent bytes below path, without following symlinks."""
+    total = path.lstat().st_size
+    for dp, dns, fns in os.walk(path, followlinks=False):
+        for name in dns + fns:
+            try:
+                total += (Path(dp) / name).lstat().st_size
+            except FileNotFoundError:
+                pass
+    return total
+
+
+def _drain_state_from_git(target: Path, ref: str) -> dict | None:
+    """Tracked drain state at ref, or None when the file/ref predates it."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(target), "show",
+             f"{ref}:.dreamwork/{WORKTREE_DRAIN_STATE}"],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        value = json.loads(out.stdout)
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _prior_drain_state(target: Path, current: dict) -> dict | None:
+    """Latest earlier checkpoint, crossing any attempted file deletion."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(target), "log", "--format=%H", "--",
+             f".dreamwork/{WORKTREE_DRAIN_STATE}"],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    states = []
+    for sha in out.stdout.splitlines():
+        value = _drain_state_from_git(target, sha)
+        if value is not None:
+            states.append(value)
+    if not states:
+        return None
+    if states[0] != current:
+        return states[0]
+    return states[1] if len(states) > 1 else None
+
+
+def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
+    """Old-root membership/count may only drain; size is reported evidence (#846)."""
+    state_path = dw / WORKTREE_DRAIN_STATE
+    if not state_path.is_file():
+        prior = _prior_drain_state(dw.parent.resolve(), {})
+        if prior is not None:
+            rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                    "committed drain state disappeared after introduction; "
+                    "deletion cannot disable the ratchet or reset its history")
+        return
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        rep.add(ERROR, WORKTREE_DRAIN_STATE, f"unreadable drain state: {exc}")
+        return
+    expected = {"version", "root", "root_present", "high_water_count",
+                "allowed_worktrees", "last_observed_size_bytes"}
+    if (not isinstance(state, dict) or set(state) != expected
+            or state.get("version") != 2 or state.get("root") != ".worktrees"
+            or not isinstance(state.get("root_present"), bool)
+            or not isinstance(state.get("high_water_count"), int)
+            or not isinstance(state.get("last_observed_size_bytes"), int)
+            or not isinstance(state.get("allowed_worktrees"), list)
+            or any(not isinstance(name, str) or "/" in name or not name
+                   for name in state.get("allowed_worktrees", []))
+            or len(set(state.get("allowed_worktrees", [])))
+               != len(state.get("allowed_worktrees", []))
+            or state.get("high_water_count")
+               != len(state.get("allowed_worktrees", []))
+            or (not state.get("root_present")
+                and (state.get("high_water_count") != 0
+                     or state.get("last_observed_size_bytes") != 0))
+            or not set(state.get("allowed_worktrees", [])).issubset(
+                WORKTREE_DRAIN_ORIGINAL)):
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                "invalid drain state — version 2 binds literal `.worktrees` "
+                "presence, count must equal the unique allowed-worktree set, "
+                "an absent root must have zero count/bytes, and allowed names "
+                "may only be removed from the original drain set")
+        return
+
+    target = dw.parent.resolve()
+    main_root = _main_checkout_for(target)
+    if main_root is None:
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                f"cannot resolve git common dir for {target}; refusing to turn "
+                "a wrong path into a permanent green")
+        return
+    old_root = main_root / ".worktrees"
+    prior = _prior_drain_state(target, state)
+    if prior is not None:
+        prior_allowed = prior.get("allowed_worktrees")
+        prior_count = prior.get("high_water_count")
+        prior_present = prior.get("root_present", True)  # v1 recorded a live root
+        prior_size = prior.get("last_observed_size_bytes")
+        if (not isinstance(prior_allowed, list)
+                or not isinstance(prior_count, int)):
+            rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                    "prior committed drain state is unreadable; refusing to "
+                    "accept a transition without a baseline")
+            return
+        if (not set(state["allowed_worktrees"]).issubset(prior_allowed)
+                or state["high_water_count"] > prior_count):
+            added = sorted(set(state["allowed_worktrees"]) - set(prior_allowed))
+            paths = ", ".join(str(old_root / name) for name in added) or "<none>"
+            rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                    f"ratchet state increased at {old_root} from prior committed "
+                    f"count {prior_count} to {state['high_water_count']}; newly "
+                    f"allowed path(s): {paths}; names/count may only be "
+                    "removed/lowered, and zero is absorbing")
+            return
+        if prior_present is False and state["root_present"]:
+            rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                    "ratchet root presence increased from absent to present; "
+                    "an absent in-repo root cannot be recreated")
+            return
+        if (isinstance(prior_size, int)
+                and state["last_observed_size_bytes"] > prior_size):
+            rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                    f"ratchet size checkpoint increased from {prior_size} to "
+                    f"{state['last_observed_size_bytes']} bytes; size may only "
+                    "shrink")
+            return
+    actual_present = old_root.exists()
+    if actual_present != state["root_present"]:
+        if actual_present:
+            detail = "reappeared after the checkpoint recorded it absent"
+        else:
+            detail = "is absent but the checkpoint still records it present"
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                f"in-repo worktree root {detail}: {old_root}; update only a "
+                "real drain transition, never rebaseline growth")
+        return
+    if not actual_present:
+        rep.add(OK, WORKTREE_DRAIN_STATE,
+                f"in-repo worktree root absent at {old_root} (expected end state; "
+                "presence/count/size are locked at zero)")
+        return
+
+    registered = _registered_in_repo_worktrees(main_root, old_root)
+    if registered is None:
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                f"could not enumerate git worktrees under {old_root}; refusing "
+                "to report a zero count")
+        return
+    names = {path.name for path in registered}
+    allowed = set(state["allowed_worktrees"])
+    offenders = sorted(names - allowed)
+    count = len(registered)
+    size = _tree_size(old_root)
+    if offenders or count > state["high_water_count"]:
+        paths = ", ".join(str(old_root / name) for name in offenders) or "<unknown>"
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                f"in-repo worktree ratchet: new path(s) forbidden: {paths}; "
+                f"count {count} exceeds/changes the allowed drain set of "
+                f"{state['high_water_count']}; size evidence {size} bytes "
+                f"(last recorded {state['last_observed_size_bytes']})")
+        return
+    if names != allowed:
+        removed = ", ".join(sorted(allowed - names))
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                f"in-repo worktree drain advanced ({removed} absent); lower the "
+                f"committed allowed set/count from {state['high_water_count']} to "
+                f"{count} and record size evidence {size} bytes before continuing")
+        return
+    if size > state["last_observed_size_bytes"]:
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                f"in-repo worktree size grew from recorded "
+                f"{state['last_observed_size_bytes']} to {size} bytes while "
+                f"registered count stayed {count}; count-only green is forbidden")
+        return
+    if size < state["last_observed_size_bytes"]:
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                f"in-repo worktree size drain advanced from recorded "
+                f"{state['last_observed_size_bytes']} to {size} bytes; lower the "
+                "committed size checkpoint before continuing")
+        return
+    rep.add(OK, WORKTREE_DRAIN_STATE,
+            f"in-repo worktree root present: registered count "
+            f"{count}/{state['high_water_count']}; size checkpoint {size} bytes")
+
+
 def _git_tracked_rels(root: Path) -> list[str] | None:
     """Paths `git ls-files` reports under `root`, or None when there is no repo.
 
@@ -6204,6 +6441,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_guards_registered(dw.parent, rep)
     check_guards_execution_accounting(dw.parent, rep)
     check_client_dist(dw.parent, rep)
+    check_in_repo_worktree_drain(dw, rep)
     # LAST, and it must stay last: the ledger checks that can skip are spread
     # through the list above and each records its own skip as it returns, so
     # the single #611 row can only be rendered once they have all had their

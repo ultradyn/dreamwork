@@ -65,6 +65,7 @@ from pathlib import Path
 # (#655: a hand-rolled reader passed every test its author wrote) and refuses
 # rather than crashes on a file that cannot be parsed (#402).
 from status_sync import _read_status
+from worktree_paths import worktree_roots
 
 # The loop's heartbeat (`initialization.md` step 5): 4.75 min. A transcript is
 # treated as stale once its last record is older than three beats — the one
@@ -348,21 +349,22 @@ def _confined_to_root(path: Path, real_root: Path) -> bool:
 def _target_slug_dirs(target, projects_root) -> list[tuple[str, Path]]:
     """The (slug, path) directories to search for `target`.
 
-    The target's own slug plus every worktree slug under `<target>/.worktrees/*`
-    — a session relocates to a worktree slug (#698), so the switcher must list
-    those too. Only existing dirs are returned by the caller; a missing dir
+    The target's own slug plus every worktree slug under the new sibling
+    `<target>/../.worktrees/*` and draining `<target>/.worktrees/*` roots — a
+    session relocates to a worktree slug (#698/#846), so the switcher must list
+    both. Only existing dirs are returned by the caller; a missing dir
     contributes nothing.
     """
     base = Path(projects_root)
     dirs = []
     main_slug = _slug_for(target)
     dirs.append((main_slug, base / main_slug))
-    wt_root = Path(target) / ".worktrees"
-    if wt_root.is_dir():
-        for wt in sorted(wt_root.iterdir()):
-            if wt.is_dir() and not wt.is_symlink():
-                ws = _slug_for(wt)
-                dirs.append((ws, base / ws))
+    for wt_root in worktree_roots(Path(target)):
+        if wt_root.is_dir():
+            for wt in sorted(wt_root.iterdir()):
+                if wt.is_dir() and not wt.is_symlink():
+                    ws = _slug_for(wt)
+                    dirs.append((ws, base / ws))
     return dirs
 
 

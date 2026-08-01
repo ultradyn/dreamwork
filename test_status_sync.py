@@ -2286,6 +2286,59 @@ def test_discovery_accounts_for_the_candidate_population(tmp_path, monkeypatch):
         "lane detector examined no plausible process candidates: %r" % stats
 
 
+def test_discovery_unions_new_and_draining_roots_as_lane_name_set(
+        tmp_path, monkeypatch):
+    """#846: drain discovery is membership across BOTH roots, not a count."""
+    target = tmp_path / "skill"
+    old_lane = target / ".worktrees" / "lane-old"
+    new_lane = tmp_path / ".worktrees" / "lane-new"
+    old_lane.mkdir(parents=True)
+    new_lane.mkdir(parents=True)
+    cwds = {101: str(old_lane), 202: str(new_lane)}
+    monkeypatch.setattr(status_sync.os, "listdir", lambda path: ["101", "202"])
+    monkeypatch.setattr(status_sync, "_read_proc_cwd", lambda pid: cwds[pid])
+    monkeypatch.setattr(status_sync, "_is_ccc_proc", lambda pid: True)
+    monkeypatch.setattr(status_sync, "_ccc_model", lambda pid: "fixture")
+
+    found, phantoms, agent = status_sync.discover_lanes(target)
+
+    assert [lane for lane, _pid, _model in found] == ["lane-new", "lane-old"], \
+        "drain discovery dropped a root: %r" % (found,)
+    assert phantoms == agent == []
+
+
+def test_discovery_deduplicates_same_lane_name_across_both_roots(
+        tmp_path, monkeypatch):
+    target = tmp_path / "skill"
+    old_lane = target / ".worktrees" / "same"
+    new_lane = tmp_path / ".worktrees" / "same"
+    old_lane.mkdir(parents=True)
+    new_lane.mkdir(parents=True)
+    cwds = {101: str(old_lane), 202: str(new_lane)}
+    monkeypatch.setattr(status_sync.os, "listdir", lambda path: ["101", "202"])
+    monkeypatch.setattr(status_sync, "_read_proc_cwd", lambda pid: cwds[pid])
+    monkeypatch.setattr(status_sync, "_is_ccc_proc", lambda pid: True)
+    monkeypatch.setattr(status_sync, "_ccc_model", lambda pid: "fixture")
+    found, phantoms, agent = status_sync.discover_lanes(target)
+    assert [lane for lane, _pid, _model in found] == ["same"]
+    assert found[0][1] == 202, "the new root must win independent of PID order"
+    assert phantoms == agent == []
+
+
+def test_new_root_lane_persists_actual_brief_identity_for_next_tick(
+        tmp_path, monkeypatch):
+    target = tmp_path / "skill"
+    lane = tmp_path / ".worktrees" / "lane-new"
+    lane.mkdir(parents=True)
+    monkeypatch.setattr(status_sync, "_read_proc_cwd", lambda pid: str(lane))
+    monkeypatch.setattr(status_sync, "_pid_alive", lambda pid: True)
+    brief = str(status_sync._lane_worktree_path(target, "lane-new", 101)
+                / "BRIEF.md")
+    assert brief == str(lane / "BRIEF.md")
+    assert status_sync._pid_matches_lane(101, brief), \
+        "persisted new-root identity would be pruned on the next status sync"
+
+
 # ── 18. #775: a lane whose cwd is NOT its worktree is found via argv ────
 #
 # THE BUG: status_sync.py's discover_lanes walked /proc/*/cwd for paths

@@ -91,6 +91,213 @@ def levels(rep, what):
     return [lvl for lvl, w, _ in rep.rows if w == what]
 
 
+def _drain_state(dw: Path, allowed=("cx-846wtmove",), root=".worktrees",
+                 *, root_present=True, size=123) -> Path:
+    path = dw / lint.WORKTREE_DRAIN_STATE
+    path.write_text(json.dumps({
+        "version": 2,
+        "root": root,
+        "root_present": root_present,
+        "high_water_count": len(allowed),
+        "allowed_worktrees": list(allowed),
+        "last_observed_size_bytes": size,
+    }) + "\n")
+    return path
+
+
+class TestInRepoWorktreeDrain:
+    def test_state_file_deletion_cannot_disable_an_existing_ratchet(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        monkeypatch.setattr(lint, "_prior_drain_state",
+                            lambda target, current: {"high_water_count": 0})
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "deletion cannot disable the ratchet" in rep.rows[-1][2]
+
+    def test_old_root_absent_passes_explicitly_at_bound_path(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        state = _drain_state(t / ".dreamwork", allowed=(),
+                             root_present=False, size=0)
+        before = state.read_bytes()
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        rows = [msg for level, what, msg in rep.rows
+                if what == lint.WORKTREE_DRAIN_STATE]
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.OK]
+        assert "in-repo worktree root absent at" in rows[0]
+        assert rows[0].endswith("presence/count/size are locked at zero)")
+        assert state.read_bytes() == before, "the check must never rebaseline itself"
+
+    def test_absent_root_with_stale_allowance_refuses_until_locked_at_zero(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        _drain_state(t / ".dreamwork", root_present=False, size=0)
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "invalid drain state" in rep.rows[-1][2]
+
+    def test_root_cannot_reappear_after_ratchet_reaches_zero(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        (t / ".worktrees").mkdir()
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        _drain_state(t / ".dreamwork", allowed=(),
+                     root_present=False, size=0)
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "reappeared after the checkpoint recorded it absent" in rep.rows[-1][2]
+
+    def test_present_empty_root_is_distinct_and_locked_at_its_size(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        old_root = t / ".worktrees"
+        old_root.mkdir()
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        monkeypatch.setattr(lint, "_registered_in_repo_worktrees",
+                            lambda main, old: [])
+        size = lint._tree_size(old_root)
+        _drain_state(t / ".dreamwork", allowed=(), size=size)
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.OK]
+        assert "root present: registered count 0/0" in rep.rows[-1][2]
+
+    def test_committed_zero_cannot_be_rebaselined_to_original_name(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        lane = t / ".worktrees" / "cx-846wtmove"
+        lane.mkdir(parents=True)
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        monkeypatch.setattr(lint, "_prior_drain_state", lambda target, current: {
+            "high_water_count": 0, "allowed_worktrees": []})
+        _drain_state(t / ".dreamwork")
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "from prior committed count 0 to 1" \
+            in rep.rows[-1][2]
+        assert str(t / ".worktrees" / "cx-846wtmove") in rep.rows[-1][2]
+
+    def test_wrong_root_cannot_impersonate_absent_end_state(self, tmp_path):
+        t = target(tmp_path)
+        _drain_state(t / ".dreamwork", root=".worktreez")
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "literal `.worktrees`" in rep.rows[-1][2]
+
+    def test_new_registered_path_is_named_and_does_not_raise_baseline(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        old_root = t / ".worktrees"
+        (old_root / "cx-846wtmove").mkdir(parents=True)
+        offender = old_root / "regression"
+        offender.mkdir()
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        monkeypatch.setattr(lint, "_registered_in_repo_worktrees",
+                            lambda main, old: [old / "cx-846wtmove", offender])
+        state = _drain_state(t / ".dreamwork")
+        before = state.read_bytes()
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert str(offender) in rep.rows[-1][2]
+        assert "count 2" in rep.rows[-1][2]
+        assert state.read_bytes() == before, "a red run must not bless its count"
+
+    def test_unrecorded_worktree_is_read_from_the_real_git_registry(
+            self, tmp_path, monkeypatch):
+        root = tmp_path / "repo"
+        root.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "master"], cwd=root,
+                       check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=Test", "-c",
+             "user.email=test@example.invalid", "commit", "--allow-empty",
+             "-qm", "base"], cwd=root, check=True)
+        offender = root / ".worktrees" / "regression"
+        subprocess.run(
+            ["git", "worktree", "add", "-q", "-b", "regression",
+             str(offender)], cwd=root, check=True)
+        (root / ".dreamwork").mkdir()
+        _drain_state(root / ".dreamwork", allowed=(),
+                     size=lint._tree_size(root / ".worktrees"))
+        monkeypatch.setattr(lint, "_prior_drain_state",
+                            lambda target, current: None)
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(root / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert str(offender) in rep.rows[-1][2]
+        assert "count 1" in rep.rows[-1][2]
+
+    def test_size_growth_trips_even_when_registered_count_is_unchanged(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        lane = t / ".worktrees" / "cx-846wtmove"
+        lane.mkdir(parents=True)
+        (lane / "large-build-output").write_bytes(b"x" * 4096)
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        monkeypatch.setattr(lint, "_registered_in_repo_worktrees",
+                            lambda main, old: [lane])
+        _drain_state(t / ".dreamwork")
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "size grew from recorded 123" in rep.rows[-1][2]
+        assert "registered count stayed 1" in rep.rows[-1][2]
+
+    def test_unregistered_stray_bytes_trip_while_count_stays_zero(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        stray = t / ".worktrees" / "stray" / "cache"
+        stray.mkdir(parents=True)
+        stray.joinpath("blob").write_bytes(b"x" * 4096)
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        monkeypatch.setattr(lint, "_registered_in_repo_worktrees",
+                            lambda main, old: [])
+        _drain_state(t / ".dreamwork", allowed=(), size=123)
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "registered count stayed 0" in rep.rows[-1][2]
+
+    def test_size_shrink_requires_lowering_the_checkpoint(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        lane = t / ".worktrees" / "cx-846wtmove"
+        lane.mkdir(parents=True)
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        monkeypatch.setattr(lint, "_registered_in_repo_worktrees",
+                            lambda main, old: [lane])
+        size = lint._tree_size(t / ".worktrees")
+        _drain_state(t / ".dreamwork", size=size + 1)
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "size drain advanced" in rep.rows[-1][2]
+
+    def test_absent_checkpoint_cannot_be_widened_back_to_present(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        (t / ".worktrees").mkdir()
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        monkeypatch.setattr(lint, "_prior_drain_state", lambda target, current: {
+            "root_present": False, "high_water_count": 0,
+            "allowed_worktrees": [], "last_observed_size_bytes": 0})
+        _drain_state(t / ".dreamwork", allowed=(), size=0)
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "root presence increased from absent to present" in rep.rows[-1][2]
+
+
 @pytest.fixture
 def frozen_tree(tmp_path):
     """A detached worktree at HEAD — a fixed tree no concurrent lane can move.
@@ -164,7 +371,8 @@ class TestTheBugItWasBuiltFor:
         detail = next(d for _, w, d in rep.rows if w == "questions.md")
         assert "1 open" in detail and "1 answered" in detail
 
-    def test_this_repo_passes_its_own_linter(self, frozen_tree, tmp_path):
+    def test_this_repo_passes_its_own_linter(
+            self, frozen_tree, tmp_path, monkeypatch):
         # Dogfood: the file the whole bug was about, checked by the tool
         # written because of it.
         #
@@ -214,6 +422,12 @@ class TestTheBugItWasBuiltFor:
         assert lint.source_of_truth(dw) == "store", \
             "store did not materialize — the dogfood would pass on the #592 " \
             "worktree excuse rather than on the real ledger"
+        # #846's ratchet deliberately reads the LIVE git worktree registry,
+        # which cannot be frozen with this content snapshot. Dedicated tests
+        # above bind that check in both directions; exclude the moving external
+        # subject here so #428's fixed-tree dogfood remains a fixed-tree claim.
+        monkeypatch.setattr(lint, "check_in_repo_worktree_drain",
+                            lambda dw, rep: None)
         rep = run(frozen_tree)
         assert not rep.failed, rep.render()
 

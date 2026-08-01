@@ -2,7 +2,7 @@
 name: ud-dreamwork-worktrees
 description: >
   Dreamwork plugin — isolated git worktrees for parallel agents. Two modes:
-  (1) subagent: coordinator launches one-task dreamers in `.worktrees/` with
+  (1) subagent: coordinator launches one-task dreamers in `../.worktrees/` with
   disjoint file ownership, red/green/commit, then validates/rebases/merges/cleans;
   (2) co-agent: longer c2c peers with durable claim ledger, receipt inbox,
   heartbeat/staleness, multi-task claim/release. Load when the loop fans out
@@ -43,7 +43,8 @@ work already fits.
 
 ### Init
 
-1. Ensure `.worktrees/` gitignore (`migrations/2026-07-26-01-…`).
+1. Create new lanes under `../.worktrees/`; keep `.worktrees/` gitignored
+   only for the legacy-root drain (`migrations/2026-07-26-01-…`).
 2. Apply migration 02: machine-local claims dir ready on demand; optional
    `.dreamwork/worktrees-version` stamp (no project claim ledger).
 3. DREAMWORK.md Plugins lines (silence = off):
@@ -79,9 +80,9 @@ do **not** auto-delete worktrees.
 | `~/.config/.../claims.json` | coordinator | machine-local (authoritative claims) |
 | `~/.config/.../inbox.jsonl` | peer + coordinator append | machine-local |
 | `.dreamwork/worktrees-version` | coordinator | project (migration stamp only) |
-| `.gitignore` `.worktrees/` | project | project |
+| `.gitignore` `.worktrees/` | project | project (legacy drain only) |
 | status.json agents | projection of claims | session |
-| Git branch under `.worktrees/` | worker | yes (git) |
+| Git branch under `../.worktrees/` | worker | yes (git) |
 
 ## Install / activation
 
@@ -117,7 +118,8 @@ apply `migrations/2026-07-26-02-contextual-plugin-loading.md` and use
 `hide_plugins.py --check --inventory-out <manifest>` before applying that exact
 preservation manifest.
 
-On load: ensure `.worktrees/` is gitignored; optionally stamp
+On load: create new lanes under `../.worktrees/`; retain the `.worktrees/`
+ignore while old lanes drain; optionally stamp
 `.dreamwork/worktrees-version`. Do **not** create runtime `claims.json` or
 `inbox.jsonl` until the first co-agent offer (lazy).
 

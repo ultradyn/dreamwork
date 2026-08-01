@@ -57,7 +57,7 @@ synthetic readings and never touch the real machine.
 from __future__ import annotations
 
 import os
-import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -114,7 +114,8 @@ def count_lanes(target: Path | None = None) -> int | None:
     first is a bug that must be loud, the second a legitimate unknown.
     #728: a bare ``except Exception`` here turned #675's arity change into
     a silent ``?`` beside a confident verdict, which is how it hid.
-    ``target`` is the project root whose ``.worktrees/`` holds lanes;
+    ``target`` is the project root whose sibling and legacy ``.worktrees/``
+    roots hold lanes;
     resolved from cwd when omitted. #675: this sees only the ccc dispatch
     path, never Agent-tool subagents.
     """
@@ -144,12 +145,22 @@ def count_lanes(target: Path | None = None) -> int | None:
 def _main_checkout() -> Path | None:
     """Resolve the main checkout from a worktree cwd, or None.
 
-    A linked worktree's path looks like ``<root>/.worktrees/<lane>``; the
-    main checkout is ``<root>``. Falls back to cwd when not in a worktree.
+    Git's common dir names the main checkout independent of whether the linked
+    tree is under the legacy in-repo or new sibling ``.worktrees`` root.
     """
     cwd = Path.cwd()
-    m = re.match(r"(.*)/\.worktrees/[^/]+", str(cwd))
-    return Path(m.group(1)) if m else cwd
+    try:
+        cp = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"], cwd=cwd,
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if cp.returncode != 0:
+        return cwd
+    common = Path(cp.stdout.strip())
+    if not common.is_absolute():
+        common = (cwd / common).resolve()
+    return common.parent if common.name == ".git" else None
 
 
 # ── classify + render ──────────────────────────────────────────────────

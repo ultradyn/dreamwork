@@ -30,7 +30,7 @@ cross-host until a relay/shared-fs adapter exists.
       "state": "working",
       "paths": ["watch.py", "dev/capture/answers.mjs"],
       "branch": "fix/247-missing-aid",
-      "worktree": ".worktrees/247-missing-aid",
+      "worktree": "../.worktrees/247-missing-aid",
       "offered_at": "2026-07-26T13:50:00Z",
       "claimed_at": "2026-07-26T13:51:00Z",
       "last_seen": "2026-07-26T13:55:00Z",
@@ -56,7 +56,7 @@ cross-host until a relay/shared-fs adapter exists.
 | `state` | See transitions |
 | `paths` | Explicit owned paths; disjoint across **active** claims |
 | `branch` | `fix/N-slug` / `feat/N-slug` (no `#`) |
-| `worktree` | Relative to target, under `.worktrees/` |
+| `worktree` | Relative to target, under `../.worktrees/` |
 | `last_seen` | Heartbeat / last protocol activity |
 | `receipt_id` | Inbox line id of evidence receipt when ready |
 | `ack_revision` | Ledger `revision` when coordinator acked receipt |

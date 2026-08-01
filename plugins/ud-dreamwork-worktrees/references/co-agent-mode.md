@@ -70,7 +70,7 @@ summary over c2c (coordinator reads ledger — peer does not invent state).
 ```
 c2c: coordinator → peer
   OFFER claim c-001 task #247 paths [watch.py]
-  worktree .worktrees/247-missing-aid branch fix/247-missing-aid
+  worktree ../.worktrees/247-missing-aid branch fix/247-missing-aid
 
 c2c: peer → coordinator
   ACCEPT c-001

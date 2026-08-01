@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Lane-containment pre-commit guard (#465).
 
-A lane dispatched into a worktree (``.worktrees/<name>`` on ``wt/<name>``) can
+A lane dispatched into a worktree (normally ``../.worktrees/<name>`` on
+``wt/<name>``) can
 edit the **main checkout** instead of its worktree, and nothing notices until a
 merge fails — or worse, a coordinator commit sweeps the lane's half-finished
 edits into a ledger commit under the wrong message (``12f47e3`` in this repo's
@@ -76,8 +77,9 @@ from pathlib import Path
 # disabled, and a disabled hook protects nothing.
 BYPASS_ENV = "DREAMWORK_LANE_GUARD_BYPASS"
 
-# Worktrees live under .worktrees/<name> on branch wt/<name>. The branch prefix
-# is the discriminator a registered lane worktree carries.
+# New worktrees live under ../.worktrees/<name>; legacy .worktrees/<name>
+# lanes drain in place. The branch prefix is the location-independent
+# discriminator a registered lane worktree carries.
 LANE_BRANCH_PREFIX = "wt/"
 
 # The git-dir of a linked worktree contains this segment; the main checkout's
@@ -191,7 +193,8 @@ def _briefs_for_lane(main_root: Path, lane_branch: str) -> list[Path]:
     (the coordinator writes it there; the worktree, branched before the brief
     was written, does not carry it). The lane is matched by its worktree name
     suffix (the segment after ``wt/``), which appears in the brief as
-    ``.worktrees/<suffix>`` or ``wt/<suffix>``. A ``.lane-brief`` marker in the
+    ``.worktrees/<suffix>`` (matching either root) or ``wt/<suffix>``. A
+    ``.lane-brief`` marker in the
     worktree (holding the brief's absolute path) is the fast path if a dispatch
     writes one; the scan is the resilient path. Both read the brief the lane was
     actually given, never ``status.json`` (which carries no worktree path).
