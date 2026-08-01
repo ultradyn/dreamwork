@@ -3723,3 +3723,35 @@ diagnoses it. This is the same failure from the other side: **I truncated with `
 order stand in for causal order.** A refusal prints its reason where the refusal happens, which for a
 fail-closed tool is early; the trailing lines are cleanup and are the least informative part of the
 log. Read the whole refusal, or read the head. Never diagnose a fail-closed tool from its tail.
+
+## An unquoted heredoc executed the filenames in a brief, and the receipt certified the damage (2026-08-02, #908, mine)
+
+I wrote a lane's head with `cat > head-908.md <<EOF` and put the three files it was to
+fix inside a fenced block. An unquoted heredoc performs command substitution, so the shell ran
+them:
+
+    zsh: command not found: client_env.py
+    zsh: command not found: initialization.md
+    zsh: command not found: file-formats.md
+
+The lane was dispatched a brief reading *"These three surfaces still describe the old manual,
+author-owned design:"* followed by nothing — and the brief corpus's `.sha256` receipt now certifies
+that. The receipt is doing its job: it records what was ACTUALLY sent, which is why it must never be
+regenerated to look better.
+
+The standing rule in this repo is already *"backticks inside a double-quoted shell argument
+execute"*, which is why long ledger notes go through `--note "$(cat file)"`. The heredoc is the same
+hazard through a different door. **Quote the delimiter — `<<'EOF'` — whenever the body contains a
+backtick or a dollar sign**, and note that a brief is exactly the document most likely to contain
+both, because briefs quote code.
+
+Two things saved it from mattering. The `Lane-owns:` line names the same three files and survived,
+because it is prose rather than a fenced block — a redundancy I had not planned and would not have
+noticed the value of. And the loss was *additive*: the brief said less, not something false.
+
+The near-miss worth remembering is the sibling head in the same batch, where I quoted a Python
+comment block verbatim. Its `# HARDCODED edge set …` lines parsed as markdown headings, the
+validator read task ids `['905', '596']`, and it refused the dispatch outright. **A malformed
+heading is structurally detectable; a missing list is not.** One authoring fault was caught by a
+tool and one reached a lane, and the difference was not care — it was whether the damage had a
+shape a checker could see.
