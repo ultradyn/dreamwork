@@ -1038,6 +1038,16 @@ def forget(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
     return 0
 
 
+def _check_scope_line(audit_sources: list[tuple[str, Path, bool]]) -> str:
+    paths = "; ".join(f"{label}: {path}" for label, path, _ in audit_sources)
+    return f"check: resolved identity registry path(s): {paths}"
+
+
+def _check_error(scope: str, message: str) -> None:
+    """Keep the discriminating error first; append the identity evidence."""
+    sys.stderr.write(message.rstrip("\n") + "\n" + scope + "\n")
+
+
 def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
           lane: str | None = None) -> int:
     """Hand-off gate: refuse if a registered injection survives in tree OR history.
@@ -1103,9 +1113,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                                   / "registry.json", False))
         coordinator_mode = True
 
-    print("check: resolved identity registry path(s):")
-    for label, rp, _ in audit_sources:
-        print(f"  {label}: {rp}")
+    identity_scope = _check_scope_line(audit_sources)
 
     entries: list[dict] = []
     legacy_found = False
@@ -1114,7 +1122,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
         try:
             sub_entries, source = _read_registry_at(rp)
         except RedproofError as exc:
-            sys.stderr.write(f"check: FAULT — {label}: {exc}\n")
+            _check_error(identity_scope, f"check: FAULT — {label}: {exc}")
             return 2
         if source != "absent":
             if is_legacy:
@@ -1166,9 +1174,10 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"did not sweep. If this lane ran a red-proof under a launch "
                 f"identity, pass `--lane <DREAMWORK_LANE_ID>` or inspect its "
                 f"scratch by hand.")
+            print(identity_scope)
             return 0
         if require > 0:
-            sys.stderr.write(
+            _check_error(identity_scope,
                 f"check: FAULT — {require} injection(s) were required "
                 f"(--require) but no redproof registry could be located for "
                 f"this worktree (audited 0 registry/ies across "
@@ -1177,19 +1186,19 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"read; its absence means the proof cannot be verified, not "
                 f"that it passed. If the lane ran, pass "
                 f"`--lane <DREAMWORK_LANE_ID>` or inspect its scratch by "
-                f"hand.\n")
+                f"hand.")
         else:
             # require == 0 but a launch identity ran and left no registry:
             # the lane provably ran, so an absent registry is "could not
             # find", not "none was warranted". Stay fail-closed (#895/#671).
-            sys.stderr.write(
+            _check_error(identity_scope,
                 f"check: FAULT — found {identity_dirs} launch-identity dir(s) "
                 f"but no redproof registry in any of them (role: {role}); 0 "
                 f"injections were required, yet a lane provably ran here and "
                 f"this audit could read no injection registry. This is NOT an "
                 f"all-clear: a registry this audit cannot reach might exist, "
                 f"and an armed injection it held would not be seen. If one was "
-                f"expected, pass `--lane <DREAMWORK_LANE_ID>`.\n")
+                f"expected, pass `--lane <DREAMWORK_LANE_ID>`.")
         return 2
 
     # RETIRED records are history-scan evidence and nothing else (#942), so
@@ -1216,15 +1225,16 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             label += (f" as live evidence — {len(retired)} retired "
                       f"registration(s) remain in history scope")
         if require > 0:
-            sys.stderr.write(
+            _check_error(identity_scope,
                 f"check: REFUSED — {label} (role: {role}), but --require "
                 f"{require} was set. A hand-off that the brief mandated "
-                f"red-proofing must show at least one registered injection.\n")
+                f"red-proofing must show at least one registered injection.")
             return 1
         if not retired:
             print(f"check: no evidence — {label} (role: {role}); injection "
                   f"restoration was not evaluated; production reach was not "
                   f"evaluated.")
+            print(identity_scope)
             return 0
         # Retired-only: there is no restoration to certify, but there ARE
         # recorded bytes to look for in history. Fall through to the scan.
@@ -1250,17 +1260,17 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             wt = _read_wt(root, e["path"])
             expectation_drift.extend(_expectation_drift(root, e))
         except RedproofError as exc:
-            sys.stderr.write(f"check: FAULT — {exc}\n")
+            _check_error(identity_scope, f"check: FAULT — {exc}")
             return 2
         if _sha(wt) == e.get("injected_sha"):
             live.append(e)
 
     if require > 0 and len(active) < require:
-        sys.stderr.write(
+        _check_error(identity_scope,
             f"check: REFUSED — {len(active)} injection(s) registered, but "
             f"--require {require} was set."
             + (f" ({len(retired)} retired registration(s) are in history scope "
-               f"but are not live evidence.)" if retired else "") + "\n")
+               f"but are not live evidence.)" if retired else ""))
         return 1
 
     # Unknown states are refused FIRST and distinctly (#950). They are the
@@ -1275,7 +1285,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
         names = ", ".join(
             f"{e['path']} (state {str(e.get('state'))!r}, from "
             f"{e.get('_source', 'this lane')})" for e in unknown)
-        sys.stderr.write(
+        _check_error(identity_scope,
             f"check: REFUSED — {len(unknown)} of {len(active)} active "
             f"registration(s) are in a state this build of redproof.py cannot "
             f"read ({st_list}): {names}. This build knows only "
@@ -1286,32 +1296,32 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             f"registry format, the pre-merge tool is reading post-lane data it "
             f"cannot classify: re-run the gate from a build that carries the "
             f"branch's change, or resolve the entries by hand. This message is "
-            f"not permission to merge.\n")
+            f"not permission to merge.")
         return 1
 
     if armed:
         names = ", ".join(
             f"{e['path']} (from {e.get('_source', 'this lane')})" for e in armed)
-        sys.stderr.write(
+        _check_error(identity_scope,
             f"check: REFUSED — {len(armed)} of {len(active)} begun-but-"
             f"unrestored injection(s): {names}. An armed entry means the "
             f"red-proof never completed (begin without restore). Run `restore` "
-            f"on each or `forget` a spurious begin.\n")
+            f"on each or `forget` a spurious begin.")
         return 1
 
     if expectation_drift:
-        sys.stderr.write(
+        _check_error(identity_scope,
             "check: REFUSED — a registered injection has an expectation "
             "source that was not stable across the injection:\n  "
             + "\n  ".join(expectation_drift) +
             "\nThe expectation must remain byte-identical and distinct from "
-            "the injected subject.\n" + _EXPECTATION_DRIFT_REARM + "\n")
+            "the injected subject.\n" + _EXPECTATION_DRIFT_REARM)
         return 1
 
     try:
         rep = scan_history(cwd, entries, base)
     except RedproofError as exc:
-        sys.stderr.write(f"check: FAULT — {exc}\n")
+        _check_error(identity_scope, f"check: FAULT — {exc}")
         return 2
     print(history_line(rep))
 
@@ -1323,10 +1333,10 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"injection (sha {e.get('injected_sha', '?')[:12]}, "
                 f"hint: {e.get('injected_hint', '?')!r}). The restore that the "
                 f"report describes did not take — #683.")
-        sys.stderr.write(
+        _check_error(identity_scope,
             "check: REFUSED — hand-off blocked. A registered injection is "
             "still present in the working tree:\n" + "\n".join(lines) +
-            "\nRestore it (cp from the lane-private snapshot) before committing.\n")
+            "\nRestore it (cp from the lane-private snapshot) before committing.")
         return 1
 
     # #877: a restored source whose downstream bundle is stale. The bundle a
@@ -1342,16 +1352,16 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"bytes that disagree with the restored source, so it may "
                 f"still hold the injection.")
         fix = stale_bundles[0].get("fix") or "run `just build-client`"
-        sys.stderr.write(
+        _check_error(identity_scope,
             "check: REFUSED — restored source(s) with a stale downstream "
             "bundle:\n" + "\n".join(lines) +
-            f"\nRebuild after restore ({fix}), then check again. #877\n")
+            f"\nRebuild after restore ({fix}), then check again. #877")
         return 1
 
     if rep["hits"]:
         lines = [f"  {h['commit'][:12]} {h['path']} — {h['subject']!r} "
                  f"(hint: {h['hint']!r})" for h in rep["hits"]]
-        sys.stderr.write(
+        _check_error(identity_scope,
             f"check: REFUSED — the working tree is clean, but {len(rep['hits'])} "
             f"commit(s) on this branch still hold a recorded injection:\n"
             + "\n".join(lines) +
@@ -1360,7 +1370,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             "merge as it stands: a merge makes the defect reachable from master "
             "forever, where bisect, blame and cherry-pick all resurrect it. "
             "Tell the coordinator to SQUASH this branch at merge (the fix for "
-            "this branch only), or rebase the injection out yourself. #710\n")
+            "this branch only), or rebase the injection out yourself. #710")
         return 1
 
     restored = [e for e in active if e.get("state") == RESTORED]
@@ -1372,6 +1382,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
               f"registration(s) only (role: {role}); their recorded bytes are "
               f"absent from this branch's commits. Restoration was not "
               f"evaluated, because no live injection is registered.")
+        print(identity_scope)
         return 0
     kinds = [_target_kind(e["path"]) for e in restored]
     test_like = kinds.count("test-like")
@@ -1394,6 +1405,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
               "a production injection.")
     if listed:
         print(listed)
+    print(identity_scope)
     return 0
 
 

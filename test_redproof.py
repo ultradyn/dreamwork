@@ -1593,7 +1593,8 @@ class TestNamedLaneAcrossEveryCliVerb:
         armed = self._run(repo, env, "check", "--lane", named, "--require", "1")
         assert armed.returncode == 1, armed.stdout + armed.stderr
         assert "begun-but-unrestored" in armed.stderr, armed.stderr
-        assert named_seg in armed.stdout, armed.stdout
+        assert named_seg in armed.stderr, armed.stderr
+        assert armed.stderr.startswith("check: REFUSED —"), armed.stderr
 
         (repo / "router.js").write_text("SABOTAGE FROM NAMED LANE 957\n")
         restore = self._run(repo, env, "restore", "router.js", "--lane", named)
