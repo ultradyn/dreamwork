@@ -1459,6 +1459,86 @@ function buildReviews(d) {
   return label('reviews') +
     d.reviews.map(r => artifactRow(r, 'review')).join('');
 }
+
+/* #584 — generic settings page. Registry metadata and effective values come
+   from one server document; controls never hard-code a setting key or kind. */
+function settingChoice(key, value, labelText, current, disabled) {
+  const on = value === current;
+  return `<button type="button" class="sgbtn${on ? ' on' : ''}"` +
+    ` data-setting-key="${escA(encodeURIComponent(key))}"` +
+    ` data-setting-value="${escA(encodeURIComponent(JSON.stringify(value)))}"` +
+    ` aria-pressed="${on ? 'true' : 'false'}"${disabled ? ' disabled' : ''}>` +
+    `${esc(labelText)}</button>`;
+}
+function settingControl(key, spec, value, disabled) {
+  if (spec.kind === 'boolean')
+    return `<div class="sgroup setting-choices" role="group" aria-label="${escA(spec.label)}">` +
+      settingChoice(key, false, 'off', value, disabled) +
+      settingChoice(key, true, 'on', value, disabled) + `</div>`;
+  if (spec.kind === 'enum') {
+    const labels = spec.labels || {};
+    return `<div class="sgroup setting-choices" role="group" aria-label="${escA(spec.label)}">` +
+      (spec.values || []).map(v => settingChoice(key, v, labels[v] || v,
+                                                 value, disabled)).join('') +
+      `</div>`;
+  }
+  const type = spec.kind === 'number' ? 'number' : 'text';
+  const min = spec.minimum == null ? '' : ` min="${escA(spec.minimum)}"`;
+  const max = spec.maximum == null ? '' : ` max="${escA(spec.maximum)}"`;
+  return `<input class="setting-input" type="${type}"` +
+    ` data-setting-input data-setting-key="${escA(encodeURIComponent(key))}"` +
+    ` value="${escA(value == null ? '' : value)}"${min}${max}` +
+    `${disabled ? ' disabled' : ''}>`;
+}
+function buildSettings(d) {
+  if (!d || !d.settings) return '<div class="dim">loading…</div>';
+  const state = d.settings, registry = state.registry || {};
+  const values = state.values || {}, disabled = !state.available;
+  const grouped = {};
+  Object.entries(registry).forEach(([key, spec]) =>
+    (grouped[spec.category] ||= []).push([key, spec]));
+  let h = state.error
+    ? `<div class="qhealth unreadable"><div class="qhlabel">settings unavailable</div>` +
+      `<div class="qhbody">${esc(state.error)}</div></div>` : '';
+  for (const [category, rows] of Object.entries(grouped)) {
+    h += `<section class="settings-group">${label(category)}`;
+    h += rows.map(([key, spec]) => `<div class="setting-row" data-setting-row="${escA(key)}">` +
+      `<div class="setting-copy"><div class="setting-label">${esc(spec.label)}</div>` +
+      `<div class="setting-description">${esc(spec.description)}</div></div>` +
+      settingControl(key, spec, values[key], disabled) + `</div>`).join('');
+    h += `</section>`;
+  }
+  if (!Object.keys(registry).length) h += '<div class="dim">no settings registered</div>';
+  return `<div id="settings-page">${h}<div id="settings-msg" class="dim" role="status"></div></div>`;
+}
+
+async function saveSetting(el, value) {
+  const key = decodeURIComponent(el.dataset.settingKey || '');
+  const msg = document.getElementById('settings-msg');
+  if (msg) msg.textContent = 'saving…';
+  const res = await postJSON('/settings', {key, value});
+  const verdict = res && res._dwv;
+  if (!verdict || !verdict.landed) {
+    if (msg) msg.textContent = 'not saved';
+    return;
+  }
+  if (data && data.settings && data.settings.values)
+    data.settings.values[key] = value;
+  commitCurrent(buildSettings(data));
+  const done = document.getElementById('settings-msg');
+  if (done) done.textContent = 'saved';
+}
+addEventListener('click', e => {
+  const el = e.target.closest && e.target.closest('[data-setting-value]');
+  if (!el || el.disabled) return;
+  saveSetting(el, JSON.parse(decodeURIComponent(el.dataset.settingValue)));
+});
+addEventListener('change', e => {
+  const el = e.target.closest && e.target.closest('[data-setting-input]');
+  if (!el || el.disabled) return;
+  const value = el.type === 'number' ? Number(el.value) : el.value;
+  saveSetting(el, value);
+});
 /* #452 — ONE question on its own page: a surface the loop's churn cannot
    shift under him mid-answer. The key (`qid` in the URL) is the question's
    TITLE identity — the same string `data-qid` already carries to survive

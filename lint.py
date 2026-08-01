@@ -51,6 +51,7 @@ from dreamwork_db.question_parse import ResolutionKind, classify_resolution_mark
 # comparison is a second answer, and the pair would disagree on the day one of
 # them was edited.
 import client_dist
+from settings import SETTINGS, validate_registry
 
 SKILL_DIR = Path(__file__).resolve().parent
 
@@ -3127,6 +3128,22 @@ def check_expedite_gate(dw: Path, watch, rep: Report) -> None:
         )
     else:
         rep.add(OK, "expedite", raw)
+
+
+def check_settings_registry(rep: Report) -> None:
+    """The code registry is non-vacuous and every declaration is valid."""
+    if not SETTINGS:
+        rep.add(ERROR, "settings registry", "empty — no setting kinds were checked")
+        return
+    if "gfx.dither" not in SETTINGS:
+        rep.add(ERROR, "settings registry", "known key 'gfx.dither' is missing")
+        return
+    errors = validate_registry(SETTINGS)
+    if errors:
+        for error in errors:
+            rep.add(ERROR, "settings registry", error)
+        return
+    rep.add(OK, "settings registry", f"{len(SETTINGS)} registered setting(s) valid")
 
 
 def check_posture(dw: Path, watch, rep: Report) -> None:
@@ -6423,6 +6440,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_watch_tint(dw, watch, rep)
     check_run_mode(dw, watch, rep)
     check_expedite_gate(dw, watch, rep)
+    check_settings_registry(rep)
     check_posture(dw, watch, rep)
     check_subagent_policy(dw, rep)
     check_plugin_commands(dw, watch, rep)

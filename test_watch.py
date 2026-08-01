@@ -14119,6 +14119,84 @@ class TestDeployRefusalCopy(unittest.TestCase):
         self.assertRegex(page, r"detail:\s*\(j && j\.detail\)")
 
 
+class TestUserSettings(unittest.TestCase):
+    """#584 effective reads and the journal-governed /settings write route."""
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _post_json(self, url, obj):
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+
+    def test_unset_read_returns_literal_default_and_registry_metadata(self):
+        with tempfile.TemporaryDirectory() as d:
+            _store_target(d)
+            state = watch.read_settings(d)
+            self.assertTrue(state["available"])
+            self.assertIsNone(state["error"])
+            # Independent literal closes registry self-agreement.
+            self.assertEqual(state["values"]["gfx.dither"], "ign")
+            self.assertEqual(state["registry"]["gfx.dither"]["kind"], "enum")
+
+    def test_route_validates_writes_and_default_deletes_override(self):
+        with tempfile.TemporaryDirectory() as d:
+            dw = _store_target(d)
+            base = self._serve(d)
+            status, body = self._post_json(base + "/settings", {
+                "key": "gfx.dither", "value": "bayer"})
+            self.assertEqual(status, 202)
+            self.assertFalse(body["rejected"] if "rejected" in body else False)
+            self.assertEqual(watch.read_settings(d)["values"]["gfx.dither"],
+                             "bayer")
+            # Invalid and unknown keys are durable refusals, not writes.
+            for payload in (
+                {"key": "gfx.dither", "value": "invalid"},
+                {"key": "arbitrary.dump", "value": True},
+            ):
+                status, refused = self._post_json(base + "/settings", payload)
+                self.assertEqual(status, 202)
+                self.assertTrue(refused["rejected"], refused)
+                self.assertEqual(refused["reason"], "domain_invalid")
+            self.assertEqual(watch.read_settings(d)["values"]["gfx.dither"],
+                             "bayer")
+            status, body = self._post_json(base + "/settings", {
+                "key": "gfx.dither", "value": "ign"})
+            self.assertEqual(status, 202)
+            self.assertTrue(body["changed"])
+            self.assertEqual(watch.read_settings(d)["values"]["gfx.dither"],
+                             "ign")
+            import sqlite3
+            conn = sqlite3.connect(str(watch.store_path(dw)))
+            try:
+                self.assertEqual(conn.execute(
+                    "SELECT COUNT(*) FROM user_setting").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_page_and_route_are_generic_registry_consumers(self):
+        page = watch._get_page()
+        self.assertIn("function buildSettings(d)", page)
+        self.assertIn("Object.entries(registry)", page)
+        self.assertIn("spec.kind === 'boolean'", page)
+        self.assertIn("spec.kind === 'enum'", page)
+        self.assertIn("postJSON('/settings', {key, value})", page)
+        with tempfile.TemporaryDirectory() as d:
+            _store_target(d)
+            base = self._serve(d)
+            with urllib.request.urlopen(base + "/settings", timeout=5) as response:
+                self.assertEqual(response.status, 200)
+                self.assertIn('id="view"', response.read().decode("utf-8"))
+
+
 # ── #289 — review decisions on the watch dashboard ──────────────────────
 # Three surfaces: the LEFT JOIN in list_reviews (data), the artifactRow
 # render (JS, via node-eval), and the /decide POST handler (HTTP against a

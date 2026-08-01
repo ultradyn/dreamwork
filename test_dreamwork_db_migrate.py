@@ -144,7 +144,7 @@ def test_historical_v1_store_migrates_through_v2_to_current_on_reopen(tmp_path):
         )
 
 
-def test_frozen_v2_store_migrates_through_v3_to_v6_and_reports_zero_legacy_rows(
+def test_frozen_v2_store_migrates_through_current_and_reports_zero_legacy_rows(
         tmp_path):
     path = tmp_path / "frozen-v2.sqlite3"
     _frozen_v2_store(path)
@@ -168,13 +168,17 @@ def test_frozen_v2_store_migrates_through_v3_to_v6_and_reports_zero_legacy_rows(
         version = after.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
         ).fetchone()[0]
-        assert version == "6", f"v2->v6 must record version 6, got {version!r}"
+        assert version == str(SCHEMA_VERSION), (
+            f"v2->current must record version {SCHEMA_VERSION}, got {version!r}"
+        )
         genesis = after.execute(
             "SELECT value FROM meta WHERE key='task_event_genesis'"
         ).fetchone()
         assert genesis is not None and len(genesis[0]) == 64, (
             "v6 must persist a journal-local task-event genesis"
         )
+        assert _columns(after, "user_setting") == {"userid", "key", "value"}
+        assert after.execute("SELECT COUNT(*) FROM user_setting").fetchone()[0] == 0
         assert _columns(after, "question") == {
             "id", "status", "title", "body_markdown", "priority",
             "asked_at", "asked_precision", "created_by", "created_at",
@@ -366,7 +370,8 @@ def test_newer_schema_version_is_refused_with_legacy_public_type(tmp_path):
             "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         )
         conn.execute(
-            "INSERT INTO meta(key, value) VALUES ('schema_version', '7')"
+            "INSERT INTO meta(key, value) VALUES ('schema_version', ?)",
+            (str(SCHEMA_VERSION + 1),),
         )
         conn.commit()
     finally:
@@ -382,9 +387,10 @@ def test_newer_schema_version_is_refused_with_legacy_public_type(tmp_path):
         "the retained legacy SchemaVersionError must also cross the new "
         "database API as SchemaMismatch"
     )
-    assert "schema_version 7 > supported 6" in str(caught.value), (
-        "newer-version refusal must name stored version 7 and supported "
-        f"version 6, got {str(caught.value)!r}"
+    assert (f"schema_version {SCHEMA_VERSION + 1} > supported "
+            f"{SCHEMA_VERSION}") in str(caught.value), (
+        "newer-version refusal must name stored and supported versions, got "
+        f"{str(caught.value)!r}"
     )
 
 
@@ -406,12 +412,12 @@ def test_new_store_seed_refusal_and_established_reopen_keep_public_type(tmp_path
         )
 
 
-def test_ladder_declares_the_single_ordered_path_to_v6():
+def test_ladder_declares_the_single_ordered_path_to_current():
     versions = [
         (step.source_version, step.target_version) for step in MIGRATIONS
     ]
-    assert versions == [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6)], (
-        "migration ladder must retain exactly one ordered path through v6, "
+    assert versions == [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)], (
+        "migration ladder must retain exactly one ordered path through current, "
         f"got {versions!r}"
     )
 

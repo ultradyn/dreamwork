@@ -26,7 +26,7 @@ def test_domain_named_specs_delegate_to_one_complete_store_definition(tmp_path):
         # passing by default. Red on master since #824 merged, because the
         # repository was registered and this expectation was not.
         assert tuple(spec.repositories) == (
-            "tasks", "questions", "reviews", "groups"), (
+            "tasks", "questions", "reviews", "groups", "settings"), (
             f"{label} describes a partial or differently ordered store: "
             f"{tuple(spec.repositories)!r}"
         )

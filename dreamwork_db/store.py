@@ -19,6 +19,7 @@ from .groups import GroupRepository
 from .migrate import initialize_legacy_store
 from .questions import QuestionRepository
 from .reviews import ReviewRepository
+from .settings import SettingRepository
 from .tasks import TaskRepository
 
 
@@ -35,6 +36,7 @@ def dreamwork_store_spec(path: PathLike) -> StoreSpec:
             "questions": QuestionRepository,
             "reviews": ReviewRepository,
             "groups": GroupRepository,
+            "settings": SettingRepository,
         },
         initializer=initialize_legacy_store,
     )
