@@ -4742,8 +4742,10 @@ async function tick() {
       const d = await fetchDataResponse();
       if (d) {
         setData(d);
-      } else {
-        // unchanged: no re-render this tick, just reschedule
+      } else if (view.name !== 'review') {
+        // Unchanged routes need no re-render. The review route is the
+        // exception: every watched tick reconciles its live dock so the
+        // dock's scroll/fade state rides the same lifecycle as fresh data.
         setTimeout(tick, 2000);
         return;
       }
