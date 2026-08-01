@@ -100,6 +100,10 @@ def test_server_cwd_uses_matching_process_not_callers_cwd(tmp_path, monkeypatch)
     server.mkdir()
     _fake_server(proc, 1234, server)
     monkeypatch.chdir(lane)
+    assert lane.resolve() != server.resolve(), (
+        "fixture is vacuous: caller cwd equals server cwd, so a caller-cwd "
+        "resolver would look correct"
+    )
 
     pid, resolved = msr.server_cwd(
         proc, {"CLAUDE_CODE_SESSION_ID": "session-a"}
@@ -111,6 +115,38 @@ def test_server_cwd_uses_matching_process_not_callers_cwd(tmp_path, monkeypatch)
         f"{server / '.playwright-mcp'}; the resolver used lane cwd {lane}"
     )
     assert pid == 1234
+
+
+def test_report_prints_the_resolved_server_root(tmp_path, monkeypatch, capsys):
+    lane = tmp_path / "lane"
+    server = tmp_path / "server"
+    lane.mkdir()
+    server.mkdir()
+    monkeypatch.chdir(lane)
+    monkeypatch.setattr(msr, "server_cwd", lambda: (1234, server))
+
+    assert msr.report() == 0
+    output = capsys.readouterr().out
+    assert f"server output root  : {server / '.playwright-mcp'}" in output
+    assert str(lane / ".playwright-mcp") not in output
+
+
+def test_report_says_unknown_instead_of_using_caller_cwd(
+    tmp_path, monkeypatch, capsys
+):
+    lane = tmp_path / "lane"
+    lane.mkdir()
+    monkeypatch.chdir(lane)
+
+    def unresolved():
+        raise msr.ServerResolutionError("several candidates")
+
+    monkeypatch.setattr(msr, "server_cwd", unresolved)
+    assert msr.report() == 2
+    output = capsys.readouterr().out
+    assert "server output root  : UNKNOWN" in output
+    assert "reason           : several candidates" in output
+    assert str(lane / ".playwright-mcp") not in output
 
 
 def test_server_cwd_disambiguates_other_sessions(tmp_path):
