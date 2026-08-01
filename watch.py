@@ -366,6 +366,16 @@ COMMANDS = (
     {"kind": "maintenance", "label": "maintenance", "common": False,
      "sticky": False,
      "desc": "housekeeping: grooming, re-reads, alignment passes"},
+    # #843 — ingest-plan files a plan's tasks into the ledger from a path on
+    # disk. common:False puts it in the ⋯ extras menu only (his ask: "not
+    # shown by default, just in the extras menu"), reusing the existing
+    # overflow mechanism rather than a parallel one. The text field carries
+    # the filesystem path; the server (this machine is where his plans live)
+    # reads it under confinement. v1 is flat filing — #842 will re-ingest
+    # into the hierarchy #841 is building, so no grouping here.
+    {"kind": "ingest-plan", "label": "ingest plan", "common": False,
+     "sticky": False,
+     "desc": "file a plan's tasks into the ledger — paste a path on disk"},
 )
 
 # His colour for this project (#143) — the closed set, and the whole reason
@@ -4930,6 +4940,150 @@ def command_line(kind, text, source="", receipt_id=None):
     return f"command via watch{from_hint(source)}: {kind}{body}{suffix}"
 
 
+# ── #843: ingest-plan — file a plan's tasks into the ledger from a path ──────
+# The server runs on the machine where his plans live, so it reads the file
+# itself; a content-paste would defeat the point of "paste a path". That makes
+# this a route that reads an arbitrary local file, which is why every function
+# below is pure and confinement is a named refusal, not a string check.
+#
+# CONFINEMENT (option 1 of the brief): a small set of allowed roots. A path is
+# resolved with os.path.realpath — which resolves BOTH `..` components AND
+# symlinks — and the RESOLVED result is checked against the root. Checking the
+# raw string first would let `../` and an in-root symlink pointing out walk
+# straight out. This is the OPPOSITE of #425's `abspath`-not-`realpath` rule:
+# #425 preserves the symlink's directory so __file__ keeps resolving to the
+# repo root after watch.py becomes a link; here the goal is CONTAINMENT, so the
+# symlink MUST be resolved (see .dreamwork/docs/migrate-watch-symlink.md:66-76
+# for why the two differ). Do not blanket-copy abspath into a containment check.
+INGEST_PLAN_ROOTS = (
+    os.path.expanduser("~/.claude-p/plans"),
+)
+
+
+def resolve_ingest_path(raw_path):
+    """Resolve a plan path and confine it to an allowed root.
+
+    Returns ``(resolved_path, None)`` when the path is inside an allowed root,
+    or ``(None, message)`` when it escapes. ``realpath`` resolves symlinks and
+    ``..`` together, so a symlink inside the root pointing out is caught by the
+    resolved target sitting outside — the string alone never reaches the check.
+    """
+    resolved = os.path.realpath(os.path.expanduser(raw_path))
+    for root in INGEST_PLAN_ROOTS:
+        root_r = os.path.realpath(root)
+        if resolved == root_r or resolved.startswith(root_r + os.sep):
+            return resolved, None
+    return None, ("%s is not under an allowed ingest root "
+                  "(one of %s)" % (raw_path, ", ".join(INGEST_PLAN_ROOTS)))
+
+
+# The shape to parse: a "## Tasks for ingestion" heading followed by a markdown
+# table whose columns include Title (and optionally type / pri). The worked
+# example (delightful-munching-barto.md) carries `# | Title | type | pri |
+# blocked on`; v1 reads Title/type/pri and drops the blocked-on column — flat
+# filing, because #841 is rebuilding the group schema and #842 will re-ingest
+# into it, so grouping now is work that gets redone next week.
+_INGEST_HEADING = "## Tasks for ingestion"
+
+
+def parse_ingestion_table(text):
+    """Parse a plan's ``## Tasks for ingestion`` table.
+
+    Returns ``(rows, None)`` on success, or ``([], message)`` when the plan has
+    no such heading or no table under it — a command that silently files zero
+    tasks is worse than one that says so. Each row is ``{title, type, priority}``
+    with ``type``/``priority`` defaulting to ``None`` when the column is absent.
+    The Title cell keeps its backticks stripped; the rest of the row's columns
+    are dropped for v1 (#842 ingests the blocked-on hierarchy).
+    """
+    lines = text.split("\n")
+    # Find the heading (any ## level, so a plan nested under a deeper heading
+    # still works). Everything before it is preamble.
+    head_idx = None
+    for i, ln in enumerate(lines):
+        if ln.strip() == _INGEST_HEADING or ln.strip().startswith(
+                _INGEST_HEADING + " "):
+            head_idx = i
+            break
+    if head_idx is None:
+        return [], ("this plan has no '%s' section — nothing to file"
+                    % _INGEST_HEADING)
+    # The first pipe-table after the heading is the ingestion table. A prose
+    # paragraph between heading and table is allowed (the example carries one
+    # naming the priority bands); a sub-heading ends the search.
+    table_start = None
+    for j in range(head_idx + 1, len(lines)):
+        s = lines[j].strip()
+        if s.startswith("|") and s.endswith("|"):
+            table_start = j
+            break
+        if s.startswith("## "):
+            break
+    if table_start is None:
+        return [], ("'%s' has no markdown table under it — nothing to file"
+                    % _INGEST_HEADING)
+    # Skip the header row and its separator (---). Collect data rows until a
+    # non-pipe line or EOF.
+    rows = []
+    for k in range(table_start + 2, len(lines)):
+        s = lines[k].strip()
+        if not (s.startswith("|") and s.endswith("|")):
+            break
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        rows.append(_ingest_row(cells))
+    if not rows:
+        return [], ("'%s' table is empty — nothing to file"
+                    % _INGEST_HEADING)
+    return rows, None
+
+
+def _ingest_row(cells):
+    """Build one filing dict from a table row's cells.
+
+    Column 0 is the row id (#); column 1 is the Title; columns 2 and 3 are type
+    and pri when present. A plan with fewer columns still files (Title is the
+    only required cell); more columns are ignored. Backticks wrapping a Title
+    are stripped so the ledger entry is not a code span.
+    """
+    title = cells[1].strip("`").strip() if len(cells) > 1 else ""
+    type_ = cells[2].strip() if len(cells) > 2 and cells[2].strip() else None
+    pri = cells[3].strip() if len(cells) > 3 and cells[3].strip() else None
+    return {"title": title, "type": type_, "priority": pri}
+
+
+# Regex for the filed-id both modes print: markdown 'filed #N into <path>',
+# store 'filed #N (store)'. One reader, so a cutover changes nothing here.
+_FILED_ID = re.compile(r"filed #(\d+)")
+
+
+def file_ingested_tasks(target, tasks):
+    """File parsed plan tasks into the target's ledger via the ONE writer.
+
+    Subprocesses ``dev/ledger.py file`` (NOT an import — importing ledger.py
+    into watch.py builds a second ``watch`` module object, the documented
+    #425/#397 hazard). ``--ledger <target>/.dreamwork/tasks.md`` lands in the
+    target's store (dw_dir is the ledger's parent, so source_of_truth routes
+    markdown vs store correctly). Returns ``(count, ids)``; a task whose filing
+    exits non-zero stops the run and the count reflects what landed before it.
+    """
+    ledger = os.path.join(target, ".dreamwork", "tasks.md")
+    ledger_py = os.path.join(SELF_DIR, "dev", "ledger.py")
+    ids = []
+    for t in tasks:
+        argv = [sys.executable, ledger_py, "file", t["title"],
+                "--ledger", ledger, "--origin", "human"]
+        if t.get("type"):
+            argv += ["--type", t["type"]]
+        if t.get("priority"):
+            argv += ["--priority", t["priority"]]
+        res = subprocess.run(argv, capture_output=True, timeout=20)
+        if res.returncode != 0:
+            break
+        m = _FILED_ID.search(res.stdout.decode("utf-8", "replace"))
+        ids.append(int(m.group(1)) if m else -1)
+    return len(ids), ids
+
+
 def _expected_disconnect(exc):
     """Exactly the peer-departure errors a cancelled poll can raise (#299):
     the browser went away mid-response, which is expected client behaviour.
@@ -5785,7 +5939,41 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 cid = (result.receipt_id if result and result.receipt_id
                        else str(uuid.uuid4()))
                 apply_chat_turn(target, cid, "human", text, receipt_id=cid)
+            # #843 — ingest-plan: the text field is a filesystem path. The
+            # server reads it (this machine is where his plans live) under
+            # confinement, parses the "## Tasks for ingestion" table, and files
+            # each row flat into the ledger via the ONE writer (dev/ledger.py).
+            # The receipt already committed, so an IO failure is a loud refusal,
+            # not a silent no-op. v1 is flat filing — #841 is rebuilding the
+            # group schema and #842 re-ingests into it.
+            if kind == "ingest-plan":
+                self._apply_ingest_plan(target, text, req); return
             self._send_receipt(json.dumps({"ok": True}), "application/json")
+
+        def _apply_ingest_plan(self, target, path, req):
+            """#843 — read a plan, parse its table, file the rows. Refuses loudly."""
+            resolved, err = resolve_ingest_path(path)
+            if err is not None:
+                self._reject("domain_invalid", detail="path_not_confined"); return
+            try:
+                with open(resolved, "r", encoding="utf-8") as f:
+                    plan = f.read()
+            except OSError:
+                self._reject("domain_invalid", detail="plan_unreadable"); return
+            rows, perr = parse_ingestion_table(plan)
+            if perr is not None:
+                self._reject("domain_invalid", detail="no_ingestion_table"); return
+            count, ids = file_ingested_tasks(target, rows)
+            if emits_wake("ingest-plan", target):
+                result = self.journal_result()
+                rid = result.receipt_id if result else None
+                log_event(target, command_line(
+                    "ingest-plan", "%s → filed %d: %s" % (
+                        os.path.basename(resolved), count,
+                        ", ".join("#%d" % i for i in ids)),
+                    req.get("from"), rid))
+            self._send_receipt(json.dumps({
+                "ok": True, "filed": count, "ids": ids}), "application/json")
 
         def _handle_chat_reply(self):
             """#577 — reply to an existing topic chat from the /chat/<id> page.
