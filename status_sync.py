@@ -35,6 +35,13 @@ Derived here, and nothing else is touched:
                                       default) is kept verbatim — the probe is
                                       blind to it, so it must not prune it; a
                                       landed task still reaps it (#537).
+  agent_session                       from the invoking main agent's measured
+                                      client environment, accepted only when
+                                      its UUID resolves to a live transcript.
+                                      This is evaluated only when the target
+                                      is the invocation cwd, so a lane syncing
+                                      some other checkout cannot overwrite the
+                                      main agent's identity.
 
 Everything a human or coordinator wrote by judgement is left alone: notes,
 owed_verifications, queued_dispatches, deployed, monitors, session_goal, and
@@ -73,11 +80,11 @@ from worktree_paths import WORKTREE_DIR  # noqa: E402
 from worktree_paths import worktree_roots as _canonical_worktree_roots  # noqa: E402
 
 
-# The three top-level keys this tool owns. Everything else in status.json is
+# The top-level keys this tool owns. Everything else in status.json is
 # left to its author, and `coverage` says so on every run by subtracting this
 # tuple from the file's actual keys — so a field added next month shows up in
 # the untouched list without anyone remembering to extend a literal.
-DERIVED = ("queue", "current_task_ids", "dreamers")
+DERIVED = ("queue", "current_task_ids", "dreamers", "agent_session")
 
 
 def open_ids(ledger: str) -> list[int]:
@@ -819,6 +826,56 @@ def _read_status(spath: Path):
     return status, None
 
 
+def _agent_session_record(status: dict, target: Path, *, env=None, now=None,
+                          projects_root=None):
+    """Return the automatically derived main-session record, or ``None``.
+
+    The environment is process-local, so it is authoritative only for a sync
+    of the invoking process's cwd.  An explicit sync of another checkout is a
+    validation of that checkout, not authority to replace its main agent.
+
+    The client registry supplies the candidate UUID; ``session_source`` then
+    has to resolve that UUID as ``live`` using the same id as the independently
+    expected running-process identity.  Merely producing a path is not enough:
+    ``stale``, ``missing``, ``mismatch`` and ``absent`` all become an explicit
+    absent record rather than a false-green identity.
+    """
+    if target.resolve() != Path.cwd().resolve():
+        return None
+
+    # Lazy imports avoid a module cycle: client_env reuses _read_status, and
+    # session_source imports it too.  main() runs only after this module has
+    # defined that shared refusal reader.
+    import client_env
+    import session_source
+
+    env = os.environ if env is None else env
+    rec = client_env.record(env=env, now=now)
+    expected = rec.get("session_id")
+    if projects_root is None:
+        config = env.get("CLAUDE_CONFIG_DIR")
+        projects_root = Path(config) / "projects" if config else None
+    resolved = session_source.resolve(
+        expected, projects_root, now=now, expected_session_id=expected)
+    if resolved.status != "live":
+        prior_note = rec.get("note")
+        rec["session_id"] = None
+        rec["note"] = "%s%sresolved %s: %s" % (
+            (prior_note + "; ") if prior_note else "",
+            ("candidate %s " % expected) if expected else "",
+            resolved.status, resolved.detail)
+
+    # recorded_at dates the identity claim, not each mechanical sync.  Keep it
+    # when the substantive record is unchanged so --check can be idempotent.
+    existing = status.get("agent_session")
+    if isinstance(existing, dict):
+        old_claim = {k: v for k, v in existing.items() if k != "recorded_at"}
+        new_claim = {k: v for k, v in rec.items() if k != "recorded_at"}
+        if old_claim == new_claim and existing.get("recorded_at"):
+            rec["recorded_at"] = existing["recorded_at"]
+    return rec
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", default=".", help="target project directory")
@@ -1104,6 +1161,12 @@ def main(argv: list[str] | None = None) -> int:
         changes.append("dreamers %s (%d -> %d)"
                        % (verb, len(dreamers_in), len(pruned)))
 
+    agent_session = _agent_session_record(status, Path(args.target))
+    if agent_session is not None and status.get("agent_session") != agent_session:
+        state = "live" if agent_session.get("session_id") else "absent"
+        changes.append("agent_session -> %s %s"
+                       % (state, agent_session.get("session_id")))
+
     print(coverage(status))
 
     if args.check:
@@ -1116,6 +1179,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         status["queue"], status["current_task_ids"], status["dreamers"] = (
             want_queue, live, pruned)
+    if agent_session is not None:
+        status["agent_session"] = agent_session
     # #541: write atomically — serialise to a temp file in the SAME directory
     # as status.json, then `os.replace` (a same-filesystem rename, atomic on
     # POSIX/NTFS). A plain `spath.write_text` truncates the real file the

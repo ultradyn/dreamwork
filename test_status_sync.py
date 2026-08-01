@@ -23,11 +23,13 @@ import re
 import shutil
 import subprocess
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 import status_sync
+import session_source
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
@@ -321,6 +323,83 @@ class TestCoverageIsDerived:
         rc, out, err = _run(status, _ledger(1), tmp_path)
         assert rc == 0, err
         assert "coverage:" in out and "already in sync" in out, out
+
+
+class TestAgentSessionWriter:
+    """The normal cwd sync mechanically writes the main session identity.
+
+    The fixture starts with a present but wrong, still-live transcript.  A
+    presence-only assertion and a liveness-only assertion both pass before
+    production runs; only ``expected_session_id`` distinguishes it from the
+    session actually driving the sync.
+    """
+
+    def test_replaces_a_live_wrong_record_with_the_expected_live_session(
+            self, tmp_path, monkeypatch):
+        expected = "3a19e737-cb3f-4dde-8304-3241ac374cdb"
+        wrong = "11111111-2222-3333-4444-555555555555"
+        now = datetime.now(timezone.utc)
+        projects = tmp_path / "config" / "projects"
+        # Deliberately a worktree-shaped slug unrelated to the target cwd.
+        slug = projects / "-elsewhere--worktrees-lane-clientextract"
+        slug.mkdir(parents=True)
+        expected_path = slug / (expected + ".jsonl")
+        wrong_path = slug / (wrong + ".jsonl")
+        expected_path.write_text(json.dumps(
+            {"type": "user", "timestamp": now.isoformat()}) + "\n")
+        wrong_path.write_text(json.dumps(
+            {"type": "user",
+             "timestamp": (now + timedelta(seconds=1)).isoformat()}) + "\n")
+
+        status = {
+            "queue": {"in_progress": 0, "pending": 1},
+            "current_task_ids": [],
+            "dreamers": [],
+            "agent_session": {
+                "client": "claude-code", "session_id": wrong,
+                "is_subagent": None, "recorded_at": now.isoformat(),
+            },
+        }
+        target = _write_target(tmp_path, status, _ledger(858))
+
+        # Direction 2's false green exists before the writer runs: the key is
+        # present and its chosen transcript is even fresh.  The independent
+        # expected id is the assertion that exposes it as the wrong session.
+        assert status["agent_session"]
+        candidates = list(projects.glob("*/*.jsonl"))
+        assert candidates, "precondition: candidate population must be non-empty"
+        liveness_only = session_source.resolve(wrong, projects, now=now)
+        assert liveness_only.status == "live", liveness_only
+        before = session_source.resolve(
+            wrong, projects, now=now, expected_session_id=expected)
+        assert before.status == "mismatch", before
+
+        env = {
+            "CLAUDECODE": "1",
+            "CLAUDE_CODE_SESSION_ID": expected,
+            "CLAUDE_CONFIG_DIR": str(tmp_path / "config"),
+        }
+        monkeypatch.setattr(status_sync.os, "environ", env)
+        monkeypatch.chdir(target)
+        out_s, err_s = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out_s), \
+                contextlib.redirect_stderr(err_s):
+            rc = status_sync.main([])
+        assert rc == 0, err_s.getvalue()
+
+        written = json.loads(
+            (target / ".dreamwork" / "status.json").read_text())
+        assert written["agent_session"]["session_id"] == expected
+        resolved = session_source.resolve(
+            written["agent_session"]["session_id"], projects,
+            now=now, expected_session_id=expected)
+        assert resolved.status == "live", resolved
+        assert resolved.path == expected_path
+        assert "agent_session -> live" in out_s.getvalue()
+        coverage_line = next(
+            line for line in out_s.getvalue().splitlines()
+            if line.startswith("coverage:"))
+        assert "agent_session" not in coverage_line.split("author-owned", 1)[1]
 
 
 # ── 6. --check keeps its contract ────────────────────────────────────────
