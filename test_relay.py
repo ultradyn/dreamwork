@@ -6,7 +6,9 @@ from the clock rather than from an argument anyone can invent.
 """
 
 import io
+import json
 import re
+import subprocess
 from datetime import datetime
 
 import pytest
@@ -102,6 +104,33 @@ class TestShape:
     def test_an_explicit_inbox_filename_is_respected(self, inbox):
         path = relay_mod.relay("dreamer-thread-inbox.md", "body")
         assert path.name == "dreamer-thread-inbox.md"
+
+
+class TestCccLaneDiscovery:
+    def test_a_lane_lock_in_a_registered_worktree_marks_the_lane(self, tmp_path, monkeypatch):
+        worktree = tmp_path / "cx-live"
+        lock = worktree / ".dreamwork" / "lane.lock"
+        lock.parent.mkdir(parents=True)
+        lock.write_text(json.dumps({"lane": "cx-live"}))
+        listing = subprocess.CompletedProcess(
+            [], 0, stdout=f"worktree {worktree}\nHEAD deadbeef\nbranch refs/heads/cx-live\n\n", stderr=""
+        )
+        monkeypatch.setattr(relay_mod.subprocess, "run", lambda *args, **kwargs: listing)
+
+        lanes, fault = relay_mod.registered_ccc_lanes()
+
+        assert fault is None
+        assert lanes == {"cx-live": worktree}
+
+    def test_a_registered_worktree_without_a_lane_lock_is_not_a_ccc_lane(
+        self, tmp_path, monkeypatch
+    ):
+        listing = subprocess.CompletedProcess(
+            [], 0, stdout=f"worktree {tmp_path}\nHEAD deadbeef\nbranch refs/heads/plain\n\n", stderr=""
+        )
+        monkeypatch.setattr(relay_mod.subprocess, "run", lambda *args, **kwargs: listing)
+
+        assert relay_mod.registered_ccc_lanes() == ({}, None)
 
 
 class TestCli:
