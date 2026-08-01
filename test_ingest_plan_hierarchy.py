@@ -34,8 +34,13 @@ from dreamwork_db import Access, Conflict, open_database  # noqa: E402
 from dreamwork_db.store import dreamwork_store_spec  # noqa: E402
 
 
-# --- expected shapes, derived from the plan table (not a remembered count) ---
-EXPECTED_TASK_KEYS = [t["key"] for t in ing.TASKS]
+# HARDCODED task-key set — NOT derived from ing.TASKS.  A check whose
+# expectation is built from the production data under test cannot fail when
+# that data is sabotaged (both sides move together).  This literal is the
+# independent oracle; the plan table (line 491) is its source of truth.
+EXPECTED_TASK_KEYS = frozenset({
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+})
 # HARDCODED edge set — NOT derived from ing.TASK_EDGES.  A check whose
 # expectation is built from the production data under test cannot fail when
 # that data is sabotaged (both sides move together): that is the #596/#655
@@ -146,9 +151,12 @@ def test_full_tree_structure(fresh_store):
         "task A is not a direct member of the milestone (subtree rollup"
         " would not see it)")
 
-    # 13 tasks filed
-    assert len(created["tasks"]) == 13
-    assert sorted(created["tasks"]) == sorted(EXPECTED_TASK_KEYS)
+    # Exact task-key SET: this subsumes a count check and names the broken seam.
+    actual_task_keys = set(created["tasks"])
+    assert actual_task_keys == EXPECTED_TASK_KEYS, (
+        "task key SET mismatch — missing"
+        f" {sorted(EXPECTED_TASK_KEYS - actual_task_keys)}, unexpected"
+        f" {sorted(actual_task_keys - EXPECTED_TASK_KEYS)}")
 
     # edge SET, not count (direction-2 candidate a).  A run that created every
     # task and NO edges would have depends_keys == [] and fail here.
