@@ -2066,7 +2066,7 @@ var DreamworkDesign = (() => {
     doubleClickButtonState.set(btn, armed);
     return false;
   }
-  var PIP_SVG = '<svg viewBox="0 0 22 18" width="14" height="12" aria-hidden="true"><rect x="1" y="1" width="20" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="10.5" y="8.5" width="9" height="7" rx="1.2" fill="currentColor"/></svg>';
+  var PIP_SVG = '<svg viewBox="0 0 22 18" aria-hidden="true"><rect x="1" y="1" width="20" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="10.5" y="8.5" width="9" height="7" rx="1.2" fill="currentColor"/></svg>';
   var pipBtn = (url, label2) => actionButton({
     label: `pop out ${label2}`,
     icon: PIP_SVG,

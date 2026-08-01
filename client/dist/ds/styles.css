@@ -2002,11 +2002,33 @@
      same card-chrome arrival as .qfocus/.qroll (no appear/disappear of its
      own; rides the surface it sits on). user-select:none so a drag across
      prose that contains a body-link pip never swallows the button into the
-     selection (#505; the pip is chrome, not copy). */
-  .pipbtn { padding:.22rem .42rem; vertical-align:middle;
+     selection (#505; the pip is chrome, not copy).
+     #851 — the pip sits INLINE IN PROSE, so its box must not grow the line.
+     .uibtn's `min-height:1.75rem` (28px) and `padding:.22rem …` forced the
+     button box to 28px in a 17px line, pushing the line box taller than its
+     neighbours (the measured "gap between lines"). The pip is iconOnly and
+     carries no strut of its own, so: `min-height:0` drops the 28px floor,
+     `padding-block:0` + `line-height:0` remove the vertical box that fed the
+     strut, `vertical-align:baseline` seats the glyph on the text baseline,
+     and `font-size:inherit` sizes the em glyph against the prose it rides.
+     Measured: a line with a pip is now the same 17px as one without (was 28).
+     The hit target is restored by the `::after` overlay below — it is
+     absolute and contributes nothing to layout, so the line stays flat while
+     the touch area stays ~31×42px (above the 24px minimum, near the old 28). */
+  .pipbtn { min-height:0; padding-block:0; line-height:0;
+    vertical-align:baseline; font-size:inherit;
     user-select:none; -webkit-user-select:none; }
   .pipbtn:hover, .pipbtn:focus-visible { color:var(--accent); }
-  .pipbtn svg { display:block; }
+  .pipbtn svg { display:block; width:1.1em; height:.9em; }
+  /* #851 — the touch target the small box gave up. Absolute, so it extends
+     the clickable area without extending the line box; `pointer-events` stay
+     on the button (an `::after` on the element it belongs to is hit-tested
+     as part of it), and `e.target.closest('.pipbtn')` resolves to the button
+     across the whole overlay. `inset:-.6rem` ≈ 9.6px each side at 16rem-root
+     context, restoring the ~28px-tall target. The ring is NOT on
+     `.uibtn-double` pips (a pip is never double-click-armed), so the conic
+     countdown is unaffected. */
+  .pipbtn::after { content:""; position:absolute; inset:-.6rem -.45rem; }
   /* #506: known-internal path + its pip are ONE unbreakable unit. Without
      nowrap the button orphans onto the next line whenever the path sits
      near a wrap edge (the path is content; the pip is chrome that must

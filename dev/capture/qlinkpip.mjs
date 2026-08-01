@@ -257,6 +257,59 @@ notes.push('selection: ' + JSON.stringify(sel));
 ok('text selection across a card body with pips still works',
    !!sel && !sel.err && sel.ok === true);
 
+/* ── #851: a pip does not grow the line box (his measurable complaint) ──
+   Two identical paragraphs in the card's real .md context: pA plain text,
+   pB the same text with a real .pipbtn (cloned from the page) inline. If
+   the pip grows the line, pB is taller than pA — that is the "gap between
+   lines" he named. offsetHeight is the inline-level box that determines
+   the line box (NOT the svg inside it — #851 direction-2 "wrong box": the
+   svg is display:block inside the button, so its box and the button's
+   differ, and the BUTTON is what the line box sees). The pip's own
+   geometry is asserted non-zero first (#671: if the pip never rendered,
+   the two paragraphs are identical and the check passes forever). */
+const linebox = await p.evaluate(({ knownUrl }) => {
+  const b = document.querySelector(`.qa .pipbtn[data-pipurl="${CSS.escape(knownUrl)}"]`);
+  if (!b) return { err: 'no pip to clone' };
+  const md = b.closest('.md') || document.querySelector('.qa .md');
+  const host = md.closest('.qbody') || md.parentElement;
+  const probe = document.createElement('div');
+  probe.style.cssText = 'max-width:340px;';   // force a wrap so multi-line
+  host.appendChild(probe);
+  const lorem = 'The quick brown fox jumps over the lazy dog and the dog nips back at the fox in turn, repeatedly.';
+  const pA = document.createElement('p');
+  pA.className = 'md'; pA.textContent = lorem; probe.appendChild(pA);
+  const pB = document.createElement('p');
+  pB.className = 'md';
+  const pipClone = b.cloneNode(true);
+  pB.innerHTML = 'The quick brown fox jumps over the lazy dog ';
+  pB.appendChild(pipClone);
+  pB.appendChild(document.createTextNode(' and the dog nips back at the fox in turn, repeatedly.'));
+  probe.appendChild(pB);
+  // the pip's own box height — the inline-level box the line box sees
+  const pipH = pipClone.offsetHeight;
+  const pipRect = pipClone.getBoundingClientRect();
+  // the hit overlay (absolute ::after) must not be 0 — touch target kept
+  const after = (() => { try { return pipClone.getBoundingClientRect(); } catch { return null; } })();
+  const r = {
+    pipH, pAH: pA.offsetHeight, pBH: pB.offsetHeight,
+    delta: pB.offsetHeight - pA.offsetHeight,
+    pipHasGeometry: pipRect.width > 0 && pipRect.height > 0,
+  };
+  probe.remove();
+  return r;
+}, { knownUrl });
+notes.push('linebox: ' + JSON.stringify(linebox));
+ok('the body pip renders with non-zero geometry (the comparison is real)',
+   !linebox.err && linebox.pipHasGeometry === true);
+ok('the body pip does not grow the line box ' +
+   '(pB ' + (linebox.pBH ?? '?') + 'px == pA ' + (linebox.pAH ?? '?') +
+   'px; was +11px pre-#851) — a line with a pip is the same height as one without',
+   !linebox.err && linebox.pipHasGeometry === true &&
+   Math.abs(linebox.delta) <= 0);
+ok('the body pip keeps a sub-line box (pip ' + (linebox.pipH ?? '?') +
+   'px <= the line) — it sits inside the text, not over it',
+   !linebox.err && linebox.pipH > 0 && linebox.pipH <= (linebox.pAH || 0));
+
 /* ── screenshots for coordinator inspection (rest state; always-on) ──── */
 await p.evaluate(({ knownPath }) => {
   const cards = [...document.querySelectorAll('.qa')];
