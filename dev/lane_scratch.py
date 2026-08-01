@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
 import subprocess
 import sys
@@ -88,6 +89,20 @@ _DETACHED = "HEAD"
 
 # Length of the path digest used to separate detached worktrees.
 _DIGEST_LEN = 12
+
+# Role keying (#694): a reviewer runs in the author's own worktree, so two
+# roles resolve to the same lane_key and the reviewer's snapshots can silently
+# overwrite the author's evidence — the exact #652 corruption, one worktree
+# over. The role adds a segment under the lane key so the two never share a
+# private directory.
+#
+# AUTHOR maps to no segment at all: the path is identical to the pre-#694
+# layout, so the four live lanes' snapshots do not move mid-flight. A role that
+# is anything else gets a `role-<slug>` segment.
+ROLE_ENV = "DREAMWORK_LANE_ROLE"
+ROLE_AUTHOR = "author"
+ROLE_REVIEWER = "reviewer"
+_KNOWN_ROLES = (ROLE_AUTHOR, ROLE_REVIEWER)
 
 
 def _git(root: Path, *args: str) -> str | None:
@@ -141,6 +156,47 @@ def lane_key(cwd: Path | None = None) -> str:
     return key
 
 
+def lane_role(*, env: dict | None = None) -> str:
+    """The role this lane is playing (#694): ``author`` or ``reviewer``.
+
+    Comes from ``DREAMWORK_LANE_ROLE``; defaults to AUTHOR because every lane
+    that exists today is an author lane, and a default that moved four live
+    lanes' snapshots would be worse than the bug (#755: a refusal on a healthy
+    input is worse than no check).
+
+    That default is also the honest boundary (#702), not a silent guarantee: a
+    reviewer whose dispatcher does not set the env var gets the author's
+    directory back **while the code is in place and the tests pass** (#671).
+    Making it loud rather than silent is the job of the role appearing on every
+    path the tool prints and every ``check`` verdict redproof reports — a
+    reviewer who reads ``role: author`` on its own gate output sees the
+    collision it would create. The tool cannot force the dispatcher to set the
+    variable; it can only refuse to hide which side it landed on. Setting it is
+    the dispatcher's job (``dev/dispatch_lane.py`` owns that, out of scope here).
+    """
+    source = os.environ if env is None else env
+    role = source.get(ROLE_ENV, ROLE_AUTHOR).strip().lower()
+    return role if role in _KNOWN_ROLES else _slug(role) or ROLE_AUTHOR
+
+
+def role_segment(role: str | None = None) -> str:
+    """The path segment a role adds under the lane key, or ``""`` for author.
+
+    Author is the empty string so the path matches the pre-#694 layout exactly
+    — migration by not moving. Every other role gets ``role-<slug>``, which
+    cannot collide with a branch name (those never contain a slash-escaped
+    ``role-`` prefix in practice, and the slug is one component either way).
+    """
+    r = role if role is not None else lane_role()
+    if r == ROLE_AUTHOR:
+        return ""
+    if r.startswith("role-"):
+        seg = _slug(r)
+    else:
+        seg = _slug(f"role-{r}")
+    return seg or ""
+
+
 def repo_key(cwd: Path | None = None) -> str:
     """Key identifying the repo, shared by a main checkout and its worktrees.
 
@@ -155,9 +211,18 @@ def repo_key(cwd: Path | None = None) -> str:
 
 
 def lane_scratch_dir(cwd: Path | None = None, *, create: bool = True,
-                     sub: str | None = None) -> Path:
-    """This lane's private scratch directory (optionally a named subdir)."""
+                     sub: str | None = None, role: str | None = None) -> Path:
+    """This lane's private scratch directory (optionally a named subdir).
+
+    The path is keyed on repo + lane + **role** (#694): an author and a reviewer
+    who share one worktree get separate private directories so the reviewer's
+    snapshots cannot overwrite the author's evidence. The author role maps to
+    the pre-#694 path (no role segment), so live lanes do not move.
+    """
     path = SCRATCH_ROOT / repo_key(cwd) / lane_key(cwd)
+    seg = role_segment(role)
+    if seg:
+        path = path / seg
     if sub:
         for part in Path(sub).parts:
             path = path / _slug(part)
@@ -236,21 +301,45 @@ def _mtime_control_main(argv: list[str]) -> int:
     return require_mtime_change(args.path, command)
 
 
+def author_dir(cwd: Path | None = None, *, create: bool = False,
+               sub: str | None = None) -> Path:
+    """The AUTHOR's scratch directory, regardless of the caller's own role.
+
+    A reviewer needs to READ the author's evidence (it is what made the #674
+    verdict possible), so this gives it a handle to the author's directory
+    without the reviewer having to know the layout. Read-only by convention:
+    the reviewer writes to its OWN directory, never this one.
+    """
+    return lane_scratch_dir(cwd, create=create, sub=sub, role=ROLE_AUTHOR)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["require-mtime-change"]:
         return _mtime_control_main(argv[1:])
     ap = argparse.ArgumentParser(
-        description="Print this lane's private scratch directory (#652).")
+        description="Print this lane's private scratch directory (#652). "
+                    "Role-keyed (#694): a reviewer gets a separate subdir.")
     ap.add_argument("sub", nargs="?", default=None,
                     help="optional subdirectory, e.g. 'snap'")
     ap.add_argument("--no-create", action="store_true",
                     help="print the path without creating it")
     ap.add_argument("--cwd", default=None,
                     help="derive for this directory instead of the current one")
+    ap.add_argument("--role", default=None,
+                    help=f"override the role (env {ROLE_ENV}, default "
+                         f"{ROLE_AUTHOR}); 'reviewer' keys a separate subdir")
+    ap.add_argument("--author-evidence", action="store_true",
+                    help="print the AUTHOR's directory (for a reviewer to "
+                         "read the author's evidence), not the caller's own")
     args = ap.parse_args(argv)
     cwd = Path(args.cwd) if args.cwd else None
-    print(lane_scratch_dir(cwd, create=not args.no_create, sub=args.sub))
+    if args.author_evidence:
+        print(author_dir(cwd, create=not args.no_create, sub=args.sub))
+        return 0
+    role = args.role or lane_role()
+    d = lane_scratch_dir(cwd, create=not args.no_create, sub=args.sub, role=role)
+    print(d)
     return 0
 
 

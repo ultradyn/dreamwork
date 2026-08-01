@@ -164,8 +164,20 @@ def _worktree_path(root: Path, path: str) -> tuple[str, Path]:
     return relative.as_posix(), resolved
 
 
-def _snap_dir(cwd: Path | None) -> Path:
-    return _ls.lane_scratch_dir(cwd, sub=SUB)
+def _role(cwd: Path | None = None) -> str:
+    """The role this redproof invocation acts under (#694).
+
+    Threading the role through the snapshot/registry path is what separates an
+    author's registry from a reviewer's. Without it, a reviewer running in the
+    author's worktree would read and write the author's registry — the exact
+    collision the tool exists to prevent, one level up from #652.
+    """
+    return _ls.lane_role()
+
+
+def _snap_dir(cwd: Path | None, role: str | None = None) -> Path:
+    return _ls.lane_scratch_dir(cwd, sub=SUB, role=role if role is not None
+                                else _role(cwd))
 
 
 def _registry_path(cwd: Path | None) -> Path:
@@ -587,6 +599,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int
     because a clean tree says nothing about what the branch will merge (#710).
     """
     root = _ls.worktree_root(cwd)
+    role = _role(cwd)
     try:
         entries, source = _read_registry(cwd)
     except RedproofError as exc:
@@ -599,11 +612,12 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int
         label = "no injections registered" if source == "absent" else "registry empty"
         if require > 0:
             sys.stderr.write(
-                f"check: REFUSED — {label}, but --require {require} was set. "
-                f"A hand-off that the brief mandated red-proofing must show at "
-                f"least one registered injection.\n")
+                f"check: REFUSED — {label} (role: {role}), but --require "
+                f"{require} was set. A hand-off that the brief mandated "
+                f"red-proofing must show at least one registered injection.\n")
             return 1
-        print(f"check: calm — {label} (opt-in discipline; nothing to evaluate).")
+        print(f"check: calm — {label} (role: {role}; opt-in discipline; "
+              f"nothing to evaluate).")
         return 0
 
     armed: list[dict] = []
@@ -674,8 +688,9 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int
     listed = "\n".join(
         f"  {e['path']} (sha {e.get('injected_sha', '?')[:12]}, "
         f"hint: {e.get('injected_hint', '?')!r})" for e in restored)
-    print(f"check: clean — {len(restored)} injection(s) registered, all restored "
-          f"and absent from the working tree and from this branch's commits:")
+    print(f"check: clean — {len(restored)} injection(s) registered (role: "
+          f"{role}), all restored and absent from the working tree and from "
+          f"this branch's commits:")
     if listed:
         print(listed)
     return 0

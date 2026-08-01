@@ -680,3 +680,71 @@ class TestPathsStayInWorktree:
         assert "missing/child.txt" in err, err
         assert "does not exist in the working tree" in err, err
         assert "outside the worktree" not in err, err
+
+
+# ── #694: a reviewer's registry is separate, and check says which it checked ──
+
+class TestRoleKeyedRegistries:
+    """THE #694 seam: redproof.py's check must stay truthful across a role
+    split. If author and reviewer have separate registries, check must say
+    WHICH it checked rather than implying it checked both (#671, #651)."""
+
+    def test_check_names_the_role_it_examined_when_clean(self, repo, capsys):
+        """check's clean verdict must carry the role — 'check: clean' that
+        omits the role implies it examined a registry it might not have."""
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("SABOTAGE\n")
+        _restore(repo, "router.js")
+        exit = _check(repo)
+        out, _ = capsys.readouterr()
+        assert exit == 0
+        assert "role: author" in out, (
+            "check must name the role it examined — 'clean' without 'role: "
+            "author' implies it checked a registry it might not have (#651)")
+
+    def test_check_names_the_role_in_calm_zero(self, repo, capsys):
+        """Even calm-zero must carry the role: a calm reviewer says nothing
+        about the author's registry."""
+        exit = _check(repo)
+        out, _ = capsys.readouterr()
+        assert exit == 0
+        assert "role: author" in out
+
+    def test_author_and_reviewer_have_separate_registries(self, repo,
+                                                          monkeypatch):
+        """THE #694 core: two roles in one worktree get separate registries,
+        so a reviewer's begin/restore cannot touch the author's entries."""
+        # author registers an injection
+        monkeypatch.delenv(rp._ls.ROLE_ENV, raising=False)
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("SABOTAGE\n")
+        _restore(repo, "router.js")
+        author_entries, _ = rp._read_registry(repo)
+        assert len(author_entries) == 1, "author should have 1 entry"
+
+        # reviewer — separate registry, sees nothing
+        monkeypatch.setenv(rp._ls.ROLE_ENV, "reviewer")
+        reviewer_entries, source = rp._read_registry(repo)
+        assert reviewer_entries == [], (
+            "reviewer's registry must be empty — separate from author's")
+        assert source == "absent"
+
+    def test_a_reviewer_can_read_the_authors_evidence(self, repo, monkeypatch):
+        """#694 constraint: the author's directory stays READABLE by the
+        reviewer. Isolating by hiding would break the review."""
+        monkeypatch.delenv(rp._ls.ROLE_ENV, raising=False)
+        _begin(repo, "router.js")
+        # the author's snapshot file exists
+        author_snap = rp._snapshot_path(repo, "router.js")
+        assert author_snap.exists()
+
+        # reviewer can resolve and read it via author_dir
+        monkeypatch.setenv(rp._ls.ROLE_ENV, "reviewer")
+        author_ev = rp._ls.author_dir(repo, sub=rp.SUB, create=False)
+        snap_rel = author_snap.relative_to(
+            rp._ls.lane_scratch_dir(repo, sub=rp.SUB, role="author",
+                                    create=False))
+        # the snapshot is under the AUTHOR's dir, which the reviewer can reach
+        assert (author_ev / snap_rel).exists(), (
+            "reviewer must be able to read the author's evidence — "
+            "a fix that isolates by hiding has broken the review")
