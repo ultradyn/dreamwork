@@ -5219,10 +5219,12 @@ class TestCollector(unittest.TestCase):
 
     def test_command_line(self):
         source = inspect.getsource(watch)
+        start = source.index("# Accepted POST /command kinds")
+        contract = source[start:source.index("COMMAND_KINDS =", start)]
         self.assertIn(
             "Each becomes a journal entry and a source-tagged\n"
             "# watch-events.log wake line",
-            source,
+            contract,
             "COMMAND_KINDS comment must name both durable writes",
         )
         self.assertEqual(watch.command_line("add-idea", "a thought"),
