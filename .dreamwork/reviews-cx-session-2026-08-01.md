@@ -46,7 +46,7 @@ Capture the requested base per fetch, reject a delta whose `base` is not that ba
 
 ### MEDIUM — #641's cache can serve a stale full document indefinitely when content changes without `watched_mtime` changing
 
-**Files:** `watch.py:3984-3996 @ dc739001`, `watch.py:3999-4006 @ dc739001`; contract at `file-formats.md:2172-2178`
+**Files:** `watch.py:3984-3996 @ dc739001`, `watch.py:3999-4006 @ 4e83d224`; contract at `file-formats.md:2172-2178`
 
 `_data_json_cached()` is now authoritative even when the caller sends no `since`; it never calls `collect()` again while `watched_mtime` is equal. This changes the old no-`since` semantics and makes a missed version signal survive page reloads.
 
@@ -96,7 +96,7 @@ State audit: treating `Z` as gone is right for this tool — it cannot run and h
 
 ### LOW — #641 claims byte-identical reconstruction, but implementation and test prove only mapping equality
 
-**Files:** `watch.py:3946-3974 @ dc739001`, `test_watch.py:13170-13207`; contract at `file-formats.md:2181-2188`
+**Files:** `watch.py:3946-3974 @ 4e83d224`, `test_watch.py:13170-13207`; contract at `file-formats.md:2181-2188`
 
 `compute_delta()` iterates `set(prev) | set(nxt)`, so added keys enter `changed` in hash-dependent order; `apply_delta()` preserves that order. Across `PYTHONHASHSEED=1..4`, the same `alpha/beta/gamma/delta` target reconstructed in four different serialized orders. The born-red test uses `assertEqual(dict, dict)`, which ignores order. The browser also carries the base's old `generated` value rather than "re-stamping" it.
 

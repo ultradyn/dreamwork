@@ -22,7 +22,7 @@ needs in your report; do not edit them.
 
 ## The defect (mapped, with anchors)
 
-1. **The count line is total-only.** `chatList` (watch.py:4037-4040 @ dc739001)
+1. **The count line is total-only.** `chatList` (watch.py:4037-4040 @ 8b3c10cc)
    renders `topic chats · ${d.chats.length}`. His question: "is that
    unread or total?" — it is total, and it doesn't say so.
 2. **A chat cannot be opened.** `chatRow` (watch.py:4026-4036 @ dc739001) emits an
@@ -71,7 +71,7 @@ the report as a follow-up candidate — do not implement it here.
   arriving at `/chat/<id>` is that gesture. Any element that appears,
   disappears, expands, or changes state on either page obeys it. The
   count line's text changing on a tick is the already-documented settled
-  re-render idiom (see the comment at watch.py:4020-4027 @ dc739001) — reuse it,
+  re-render idiom (see the comment at watch.py:4020-4027 @ 8b3c10cc) — reuse it,
   author nothing new.
 - `watch-design.md` — tokens, type, the dim-row + `.age` idiom the list
   already uses, copy voice, the per-surface contracts. The chat page is
