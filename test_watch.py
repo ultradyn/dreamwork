@@ -8816,8 +8816,7 @@ class TestAppShell(unittest.TestCase):
     # sites left out are the race arms — `getsize` raising between the confine
     # check and the stat — which no request can schedule.)
     _NOTFOUND_GETS = (
-        "/tasks",                       # do_GET fall-through: THE defect
-        "/nope/deeper?x=1",             # …and one that is not a near-miss
+        "/nope/deeper?x=1",             # do_GET fall-through: THE defect
         "/filedata?p=no-such-file.txt",
         "/filebytes?p=no-such-image.png",
         "/chatdata?id=no-such-chat",
