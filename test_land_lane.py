@@ -1020,6 +1020,66 @@ def test_zero_derived_tests_says_why_rather_than_reading_as_coverage(doc_only_re
     assert "rests entirely on the named selection" in result.stdout
 
 
+def test_relevance_warns_when_test_brief_cannot_relate_to_redproof(tmp_path):
+    """#948 direction 1: the real irrelevant-but-existing selection is named.
+
+    `test_brief.py` passes, but none of #953's three rules relates it to a
+    branch that changes only `dev/redproof.py`. The advisory must name the
+    test and both denominators without turning the incomplete model into a
+    refusal.
+    """
+    root, lane = _make_repo(tmp_path)
+    _write(root / "dev" / "redproof.py", "VALUE = 1\n")
+    _write(root / "test_brief.py", "def test_brief(): assert True\n")
+    _git(root, "add", "dev/redproof.py", "test_brief.py")
+    _git(root, "commit", "-m", "add redproof and an unrelated passing test")
+    _git(lane, "rebase", "master")
+    _write(lane / "dev" / "redproof.py", "VALUE = 2\n")
+    _git(lane, "add", "dev/redproof.py")
+    _git(lane, "commit", "-m", "change only redproof")
+    armed = _redproof(lane, "begin", "dev/redproof.py", "--expectation", "test_brief.py")
+    assert armed.returncode == 0, armed.stdout + armed.stderr
+    _write(lane / "dev" / "redproof.py", "VALUE = 999\n")
+    restored = _redproof(lane, "restore", "dev/redproof.py")
+    assert restored.returncode == 0, restored.stdout + restored.stderr
+
+    result = _run(root, "test_brief.py")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "test-relevance: WARN — examined 1 selected test(s) against 1 changed "
+        "path(s); 1 unrelated-as-far-as-the-3-rules-can-tell: test_brief.py"
+    ) in result.stdout
+    assert "remedy: name or add a test related by" in result.stdout
+
+
+def test_relevance_does_not_call_an_empty_changed_population_a_pass(tmp_path):
+    line = land_lane._test_relevance_line(tmp_path, ["test_brief.py"], [])
+    assert line.startswith(
+        "test-relevance: DID NOT CHECK — examined 1 selected test(s) against 0 changed path(s)"
+    )
+    assert "no relevance result is available" in line
+
+
+def test_relevance_import_under_try_is_a_known_false_green(tmp_path):
+    """#948 direction 2: static import reach is not runtime execution reach."""
+    _write(
+        tmp_path / "test_optional.py",
+        "try:\n"
+        "    from dev import redproof\n"
+        "except ImportError:\n"
+        "    redproof = None\n"
+        "def test_unrelated(): assert True\n",
+    )
+
+    line = land_lane._test_relevance_line(
+        tmp_path, ["test_optional.py"], ["dev/redproof.py"]
+    )
+
+    assert line.startswith("test-relevance: OK — examined 1 selected test(s) against 1 changed path(s)")
+    assert "all 1 related by at least one of the 3 rules" in line
+
+
 def test_a_doc_only_lane_with_no_registry_lands_because_none_was_required(
     doc_only_repo,
 ):
