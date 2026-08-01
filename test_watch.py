@@ -6435,6 +6435,15 @@ class TestGoalsRoute(unittest.TestCase):
         self.addCleanup(server.shutdown)
         return port
 
+    def _post(self, port, payload):
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/goals",
+            data=json.dumps(payload).encode("utf-8"), method="POST",
+            headers={"Host": f"allowed.test:{port}",
+                     "Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status, json.loads(response.read())
+
     def test_payload_reads_rank_state_progress_and_inherited_blockers(self):
         prerequisite, root, child = self.ids
         payload = watch.goal_tree_payload(self.target)
@@ -6506,10 +6515,73 @@ class TestGoalsRoute(unittest.TestCase):
                 else:
                     payload = json.loads(body)
                     self.assertEqual(payload["examined_count"], 3)
-        self.assertNotIn('self.path == "/goals"', inspect.getsource(
-            watch.make_handler), "#890 must not add a POST /goals branch")
+
+    def test_three_quiet_writes_commit_receipts_and_change_the_store(self):
+        prerequisite, root, child = self.ids
+        port = self._serve()
+        details = "## Why now\nSharper reason.\n\n## Done when\n- Kept contract\n"
+        writes = [
+            {"action": "edit-details", "goal_id": root,
+             "details": details},
+            {"action": "add-condition", "goal_id": root,
+             "condition": "Human-added contract"},
+            {"action": "add-goal", "title": "Human child",
+             "details": "## Why now\nBecause.\n", "parent_id": root,
+             "rank": 7},
+        ]
+        receipts = []
+        for payload in writes:
+            status, body = self._post(port, payload)
+            self.assertEqual(status, 202)
+            self.assertTrue(body["ok"])
+            self.assertEqual(body["action"], payload["action"])
+            receipts.append(body["receipt"]["receipt_id"])
+        self.assertEqual(len(set(receipts)), 3,
+                         "the three /goals writes did not commit three receipts")
+
+        payload = watch.goal_tree_payload(self.target)
+        by_id = {node["id"]: node for node in payload["nodes"]}
+        self.assertEqual(
+            by_id[root]["details"],
+            details + "- Human-added contract\n",
+            "POST /goals reported success but task_group.description stayed unchanged")
+        self.assertEqual(
+            by_id[root]["criteria"],
+            ["Kept contract", "Human-added contract"],
+            "a human criteria edit was rejected as panel tampering")
+        added_id = max(by_id)
+        self.assertEqual(
+            (by_id[added_id]["title"], by_id[added_id]["parent_id"],
+             by_id[added_id]["rank"]),
+            ("Human child", root, 7),
+            "POST /goals reported success but the ranked goal was not stored")
+        event_path = os.path.join(
+            self.target, ".dreamwork", "watch-events.log")
+        wakes = (watch.read_text(event_path) or "").splitlines()
+        self.assertFalse(
+            wakes,
+            f"quiet /goals write emitted a watch-events wake line: {wakes}")
+
+    def test_invalid_goal_write_is_a_durable_refusal_without_mutation(self):
+        prerequisite, root, child = self.ids
+        before = watch.goal_tree_payload(self.target)
+        status, body = self._post(self._serve(), {
+            "action": "add-condition", "goal_id": child,
+            "condition": ""})
+        self.assertEqual(status, 202)
+        self.assertTrue(body["rejected"])
+        self.assertEqual(body["reason"], "domain_invalid")
+        self.assertEqual(watch.goal_tree_payload(self.target), before)
+
+    def test_goal_writer_reuses_canonical_transaction_seam(self):
+        source = inspect.getsource(watch._handle_goal_write)
+        self.assertIn("task_store_spec(store_path(dw))", source)
+        self.assertIn("access=Access.WRITE", source)
+        self.assertIn("with store.transaction():", source)
+        self.assertNotIn("sqlite3", source)
 
     def test_page_wires_one_native_goals_authority(self):
+        native = watch.NATIVE_JS.replace("\\\n", "")
         self.assertIn(
             "loc.pathname === '/goals'", watch.PAGE,
             "client routeOf no longer claims /goals")
@@ -6522,12 +6594,20 @@ class TestGoalsRoute(unittest.TestCase):
             watch.NATIVE_JS)
         self.assertIn(
             "no goals yet — the examined tree is genuinely empty",
-            watch.NATIVE_JS,
+            native,
             "native /goals empty copy no longer distinguishes a healthy 0/0 tree")
         self.assertIn(
             "goal tree unavailable: examined 0 nodes; no canonical goal store",
-            watch.NATIVE_JS,
+            native,
             "native /goals failure copy no longer names the unreadable zero")
+        for token in ("edit-details", "add-condition", "add-goal",
+                      "saved quietly · appears on the next tick"):
+            self.assertIn(token, native,
+                          f"native /goals write UI lost {token!r}")
+        goals_source = watch.read_text(os.path.join(
+            os.path.dirname(watch.__file__), "dev", "build", "src", "goals.js"))
+        self.assertIn("writeVerdict(response)", goals_source,
+                      "native /goals no longer checks the durable write verdict")
 
 
 class TestAppShell(unittest.TestCase):
