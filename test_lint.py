@@ -9472,6 +9472,8 @@ class TestBoilerplateExpectationDerivation:
     way this repo binds every rule a brief carries."""
 
     PHRASE = lint.EXPECTATION_DERIVATION_PHRASE
+    REDPROOF = ("      python3 dev/redproof.py begin <path> "
+                "--expectation <expectation-source>\n")
 
     def _check(self, t, body=None):
         (t / "SKILL.md").write_text("# skill\n", encoding="utf-8")
@@ -9488,7 +9490,7 @@ class TestBoilerplateExpectationDerivation:
         (t / ".dreamwork").mkdir()
         body = ("# Standing\n- *Direction 1*: inject the defect. "
                 f"**A direction-1 report states {self.PHRASE}** (a literal, "
-                "an idiom).\n")
+                "an idiom).\n" + self.REDPROOF)
         assert self.PHRASE in body, "precondition: phrase present"
         rep = self._check(t, body)
         assert levels(rep, "briefs") == [lint.OK], rep.rows
@@ -9497,7 +9499,8 @@ class TestBoilerplateExpectationDerivation:
     def test_absent_is_an_error_naming_the_phrase(self, tmp_path):
         t = fresh(tmp_path)
         (t / ".dreamwork").mkdir()
-        body = "# Standing\n- *Direction 1*: inject the defect.\n"
+        body = ("# Standing\n- *Direction 1*: inject the defect.\n" +
+                self.REDPROOF)
         assert self.PHRASE not in body, "precondition: phrase absent"
         rep = self._check(t, body)
         assert levels(rep, "briefs") == [lint.ERROR], rep.rows
@@ -9523,6 +9526,45 @@ class TestBoilerplateExpectationDerivation:
         assert self.PHRASE in bp.read_text(encoding="utf-8"), \
             "the real briefs/boilerplate.md must carry the #906 requirement"
 
+    def test_old_redproof_example_is_refused_by_the_real_tool(self, tmp_path):
+        t = fresh(tmp_path)
+        (t / ".dreamwork").mkdir()
+        body = (f"A direction-1 report states {self.PHRASE}.\n"
+                "      python3 dev/redproof.py begin <path>\n")
+        rep = self._check(t, body)
+        assert levels(rep, "briefs") == [lint.ERROR], rep.rows
+        detail = rep.rows[-1][2]
+        assert "must declare at least one expectation source" in detail
+        assert "real tool refuses" in detail
+
+    def test_self_referential_expectation_is_refused_by_the_real_tool(
+            self, tmp_path):
+        t = fresh(tmp_path)
+        (t / ".dreamwork").mkdir()
+        body = (f"A direction-1 report states {self.PHRASE}.\n"
+                "      python3 dev/redproof.py begin <path> "
+                "--expectation <path>\n")
+        rep = self._check(t, body)
+        assert levels(rep, "briefs") == [lint.ERROR], rep.rows
+        detail = rep.rows[-1][2]
+        assert "expectation source 'subject.txt' is the injected file" in detail
+        assert "distinct canonical paths" in detail
+
+    def test_missing_redproof_example_is_not_a_vacuous_pass(self, tmp_path):
+        t = fresh(tmp_path)
+        (t / ".dreamwork").mkdir()
+        rep = self._check(t, f"A direction-1 report states {self.PHRASE}.\n")
+        assert levels(rep, "briefs") == [lint.ERROR], rep.rows
+        assert "no redproof begin example was found" in rep.rows[-1][2]
+
+    def test_real_boilerplate_redproof_example_is_accepted(self):
+        bp = lint.SKILL_DIR / "briefs" / "boilerplate.md"
+        rep = lint.Report()
+        lint.check_boilerplate_expectation_derivation(
+            lint.SKILL_DIR / ".dreamwork", rep)
+        assert levels(rep, "briefs") == [lint.OK], rep.rows
+        assert "accepted redproof begin example" in rep.rows[-1][2]
+
     def test_it_is_wired_into_run_checks(self, tmp_path):
         # A check absent from the one list is a check whose tests cannot fail.
         t = fresh(tmp_path)
@@ -9530,8 +9572,10 @@ class TestBoilerplateExpectationDerivation:
         (t / "SKILL.md").write_text("# skill\n", encoding="utf-8")
         bp = t / "briefs" / "boilerplate.md"
         bp.parent.mkdir(parents=True, exist_ok=True)
-        bp.write_text("# no phrase here\n", encoding="utf-8")
+        bp.write_text("# no phrase or redproof example here\n", encoding="utf-8")
         rep = lint.Report()
         lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
         assert any(self.PHRASE in d and l == lint.ERROR
+                   for l, _, d in rep.rows), rep.rows
+        assert any("no redproof begin example was found" in d and l == lint.ERROR
                    for l, _, d in rep.rows), rep.rows

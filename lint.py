@@ -36,8 +36,10 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent
@@ -5643,9 +5645,74 @@ def handoff_quote(field: str) -> str:
 EXPECTATION_DERIVATION_PHRASE = "what its expectation is derived from"
 
 
+REDPROOF_BEGIN_MARKER = "python3 dev/redproof.py begin"
+REDPROOF_SUBJECT_PLACEHOLDER = "<path>"
+REDPROOF_EXPECTATION_PLACEHOLDER = "<expectation-source>"
+
+
+def _redproof_example_refusal(text: str) -> str | None:
+    """Return the real ``redproof.py begin`` refusal for the documented example.
+
+    Placeholder paths are materialised as two distinct files in a disposable
+    git worktree, then the example's argv is passed to the actual CLI.  This
+    keeps the boilerplate bound to the parser and begin-time validation instead
+    of restating today's required flags here.
+    """
+    examples = [line.strip() for line in text.splitlines()
+                if REDPROOF_BEGIN_MARKER in line]
+    if not examples:
+        return "no redproof begin example was found"
+    if len(examples) != 1:
+        return f"expected exactly one redproof begin example, found {len(examples)}"
+
+    try:
+        argv = shlex.split(examples[0])
+    except ValueError as exc:
+        return f"redproof begin example is not valid shell argv: {exc}"
+    if argv[:3] != ["python3", "dev/redproof.py", "begin"]:
+        return "redproof begin example does not invoke `python3 dev/redproof.py begin`"
+    if REDPROOF_SUBJECT_PLACEHOLDER not in argv:
+        return f"redproof begin example has no {REDPROOF_SUBJECT_PLACEHOLDER} placeholder"
+
+    with tempfile.TemporaryDirectory(prefix="dreamwork-redproof-example-") as raw:
+        fixture = Path(raw)
+        subprocess.run(["git", "init", "-q"], cwd=fixture, check=True,
+                       capture_output=True, text=True)
+        (fixture / "subject.txt").write_text("fixed subject\n", encoding="utf-8")
+        (fixture / "expectation.txt").write_text(
+            "independent expectation\n", encoding="utf-8")
+        subprocess.run(["git", "add", "subject.txt", "expectation.txt"],
+                       cwd=fixture, check=True, capture_output=True, text=True)
+        subprocess.run(
+            ["git", "-c", "user.name=Dreamwork lint", "-c",
+             "user.email=lint@example.invalid", "commit", "-qm", "fixture"],
+            cwd=fixture, check=True, capture_output=True, text=True,
+        )
+        materialised = [
+            "subject.txt" if token == REDPROOF_SUBJECT_PLACEHOLDER else
+            "expectation.txt" if token == REDPROOF_EXPECTATION_PLACEHOLDER else
+            token
+            for token in argv[3:]
+        ]
+        command = [sys.executable, str(SKILL_DIR / "dev" / "redproof.py"),
+                   "begin", *materialised, "--cwd", str(fixture)]
+        result = subprocess.run(command, cwd=fixture, capture_output=True, text=True)
+        if result.returncode != 0:
+            refusal = (result.stderr or result.stdout).strip()
+            return refusal or f"redproof.py begin exited {result.returncode}"
+        cleanup = subprocess.run(
+            [sys.executable, str(SKILL_DIR / "dev" / "redproof.py"),
+             "forget", "subject.txt", "--cwd", str(fixture)],
+            cwd=fixture, capture_output=True, text=True,
+        )
+        if cleanup.returncode != 0:
+            detail = (cleanup.stderr or cleanup.stdout).strip()
+            return f"accepted example could not be cleaned up: {detail}"
+    return None
+
+
 def check_boilerplate_expectation_derivation(dw: Path, rep: Report) -> None:
-    """The standing boilerplate requires a direction-1 report to state what its
-    expectation is derived from (#906).
+    """Bind the boilerplate's expectation rule and redproof command (#906/#909).
 
     An expectation drawn from the same source as the thing it checks — a
     hardcoded literal, an idiom, a non-distinctive line — is silent to every
@@ -5666,6 +5733,10 @@ def check_boilerplate_expectation_derivation(dw: Path, rep: Report) -> None:
     this check; this check only keeps the sentence from silently dropping out
     of the standing contract every future lane is dispatched.
 
+    The redproof example is separately executed against ``dev/redproof.py`` in
+    a disposable worktree, so CLI or begin-time validation drift is an ERROR,
+    not a late refusal paid by every lane.
+
     Scope: only the skill repo carries ``briefs/boilerplate.md`` at its root,
     so a foreign dreamwork target is silent — correct, because this is a
     contract about THIS loop's own briefs. The phrase is distinctive so the
@@ -5676,7 +5747,8 @@ def check_boilerplate_expectation_derivation(dw: Path, rep: Report) -> None:
     if not boilerplate.is_file():
         return
     text = boilerplate.read_text(encoding="utf-8", errors="replace")
-    if EXPECTATION_DERIVATION_PHRASE not in text:
+    missing_derivation = EXPECTATION_DERIVATION_PHRASE not in text
+    if missing_derivation:
         rep.add(
             ERROR, "briefs",
             "briefs/boilerplate.md dropped the direction-1 requirement to state "
@@ -5686,12 +5758,20 @@ def check_boilerplate_expectation_derivation(dw: Path, rep: Report) -> None:
             "required sentence is the only instrument that asks the question at "
             "the moment it is answerable; restore it (#906)",
         )
-        return
-    rep.add(
-        OK, "briefs",
-        "boilerplate carries the direction-1 expectation-derivation requirement "
-        "(#906)",
-    )
+    example_refusal = _redproof_example_refusal(text)
+    if example_refusal is not None:
+        rep.add(
+            ERROR, "briefs",
+            "briefs/boilerplate.md has a redproof begin example the real tool "
+            f"refuses: {example_refusal} — keep the standing example accepted "
+            "by dev/redproof.py (#909)",
+        )
+    if not missing_derivation and example_refusal is None:
+        rep.add(
+            OK, "briefs",
+            "boilerplate carries the direction-1 expectation-derivation "
+            "requirement and an accepted redproof begin example (#906, #909)",
+        )
 
 
 def check_handoffs(dw: Path, watch, rep: Report) -> None:
