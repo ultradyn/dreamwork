@@ -368,6 +368,8 @@ class TestAgentSessionWriter:
         assert status["agent_session"]
         candidates = list(projects.glob("*/*.jsonl"))
         assert candidates, "precondition: candidate population must be non-empty"
+        liveness_only = session_source.resolve(wrong, projects, now=now)
+        assert liveness_only.status == "live", liveness_only
         before = session_source.resolve(
             wrong, projects, now=now, expected_session_id=expected)
         assert before.status == "mismatch", before
