@@ -29,20 +29,24 @@ never types a time. Five different agents invented a timestamp on
 dispatch — so the rule has now lost to the bias five times and the
 opportunity is what gets removed.
 
-WHAT THIS DOES NOT DO: wake the agent. The inbox is durable, not delivered
-— a dreamer reads it between increments, so an agent that has gone idle
-never sees it. Write with this, then send a message through the harness to
-wake it. Durability and delivery are different problems (#144, #150).
+WHAT THIS SERVES: an Agent-tool dreamer that created its inbox and reads it
+between increments. It does not wake that dreamer, so one that has gone idle
+never sees the message until the harness wakes it. A ccc lane is different:
+it never reads an agent-comms inbox at all. The CLI refuses registered ccc
+lanes, and refuses unknown names instead of creating typo-shaped inboxes.
+Durability and delivery are different problems (#144, #150).
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
 
 INBOX_DIR = Path.home() / ".cache/agent-comms/ud-dreamwork"
+REPO_DIR = Path(__file__).resolve().parent
 
 
 def now_stamp() -> str:
@@ -57,6 +61,36 @@ def inbox_for(agent: str, inbox_dir: Path | None = None) -> Path:
     """`dreamer-thread` -> ~/.cache/agent-comms/ud-dreamwork/dreamer-thread-inbox.md"""
     name = agent if agent.endswith("-inbox.md") else f"{agent}-inbox.md"
     return (inbox_dir or INBOX_DIR) / name
+
+
+def registered_ccc_lanes() -> tuple[dict[str, Path], str | None]:
+    """Return lanes marked by lane.lock in registered git worktrees."""
+    result = subprocess.run(
+        ["git", "-C", str(REPO_DIR), "worktree", "list", "--porcelain"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode:
+        return {}, f"git worktree list exited {result.returncode}"
+
+    worktrees = [
+        Path(line.removeprefix("worktree "))
+        for line in result.stdout.splitlines()
+        if line.startswith("worktree ")
+    ]
+    lanes: dict[str, Path] = {}
+    for worktree in worktrees:
+        lock = worktree / ".dreamwork" / "lane.lock"
+        if not lock.is_file():
+            continue
+        try:
+            record = json.loads(lock.read_text(encoding="utf-8"))
+            lane = record["lane"]
+        except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+            return {}, f"could not read ccc lane marker {lock}: {exc}"
+        if not isinstance(lane, str) or not lane:
+            return {}, f"ccc lane marker {lock} has no non-empty lane name"
+        lanes[lane] = worktree
+    return lanes, None
 
 
 def relay(
@@ -103,13 +137,39 @@ def main(argv: list[str] | None = None) -> int:
         print("relay: empty body on stdin — nothing written", file=sys.stderr)
         return 2
 
+    inbox_dir = Path(args.dir).expanduser() if args.dir else INBOX_DIR
+    target = args.agent.removesuffix("-inbox.md")
+    ccc_lanes, classification_fault = registered_ccc_lanes()
+    if classification_fault:
+        print(
+            f"relay: REFUSE {target} is unrecognised because ccc lane discovery failed: "
+            f"{classification_fault}",
+            file=sys.stderr,
+        )
+        return 4
+    if target in ccc_lanes:
+        print(
+            f"relay: REFUSE {target} is a ccc lane at {ccc_lanes[target]}; "
+            "ccc lanes never read agent-comms inboxes",
+            file=sys.stderr,
+        )
+        return 3
+    path = inbox_for(args.agent, inbox_dir)
+    if not path.is_file():
+        print(
+            f"relay: REFUSE {target} is unrecognised; no ccc lane or declared "
+            "agent-comms reader matches that name",
+            file=sys.stderr,
+        )
+        return 4
+
     path = relay(
         args.agent,
         body,
         sender=args.sender,
-        inbox_dir=Path(args.dir).expanduser() if args.dir else None,
+        inbox_dir=inbox_dir,
     )
-    print(f"relayed to {path}")
+    print(f"appended to existing inbox {path} for {target}; no wake performed")
     return 0
 
 
