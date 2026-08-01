@@ -492,6 +492,10 @@ reap *ARGS:
 reap-lane *ARGS:
     python3 dev/reap.py {{ARGS}}
 
+# Merge one rebased lane, run its explicit gates, then retire via dev/reap.py.
+land-lane BRANCH *TESTS:
+    python3 dev/land_lane.py {{BRANCH}} {{TESTS}}
+
 # edit-and-see, for whoever is CHANGING the page. Deliberately not the
 # persisted port: that one belongs to the deployed instance the human is
 # reading, and two servers wanting it is a fight nobody wins. Pass a port
