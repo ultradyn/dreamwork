@@ -428,7 +428,7 @@ const mdLooksLikeRow = line => {
   if (!String(line).includes('|')) return false;
   return mdSplitRow(line).length >= 2;
 };
-function mdBlocks(text) {
+function mdBlocks(text, { preserveSoftBreaks = false } = {}) {
   const out = [];
   let cur = null, fence = null;
   const flush = () => { if (cur) { out.push(cur); cur = null; } };
@@ -451,7 +451,8 @@ function mdBlocks(text) {
     if (qm) {
       const piece = qm[1].trim();
       if (cur && cur.kind === 'quote') {
-        if (piece) cur.text = cur.text ? (cur.text + ' ' + piece) : piece;
+        if (piece) cur.text = cur.text
+          ? (cur.text + (preserveSoftBreaks ? '\n' : ' ') + piece) : piece;
       } else {
         flush();
         cur = { kind: 'quote', text: piece };
@@ -480,7 +481,10 @@ function mdBlocks(text) {
       }
       // ragged header/delimiter column counts → fall through to prose
     }
-    if (cur) { cur.text += ' ' + line.trim(); continue; }   // a wrap: join it
+    if (cur) {
+      cur.text += (preserveSoftBreaks ? '\n' : ' ') + line.trim();
+      continue;
+    }                                                      // a wrap: join it
     cur = { kind:'p', indent:0, text: line.trim() };
   }
   flush();
@@ -491,8 +495,11 @@ function mdBlocks(text) {
    not the raw column count: a question body carries the source file's own
    2-space indent, so absolute columns would push every sub-bullet one level
    too deep. Rank is invariant to whatever base indent the text arrived with. */
-function mdRender(text, inline) {
-  const blocks = mdBlocks(text);
+function mdRender(text, inline, options = {}) {
+  const blocks = mdBlocks(text, options);
+  const renderInline = options.preserveSoftBreaks
+    ? t => inline(t).replace(/\n/g, '<br>')
+    : inline;
   const levels = [...new Set(blocks.filter(b => b.kind === 'li')
     .map(b => b.indent))].sort((a, b) => a - b);
   const mdTable = b => {
@@ -508,12 +515,12 @@ function mdRender(text, inline) {
   };
   return blocks.map(b =>
     b.kind === 'fence' ? `<pre class="mdcode">${esc(b.text)}</pre>` :
-    b.kind === 'h' ? `<div class="mdh">${inline(b.text)}</div>` :
+    b.kind === 'h' ? `<div class="mdh">${renderInline(b.text)}</div>` :
     b.kind === 'li' ? `<div class="mdli" style="--lvl:${levels.indexOf(b.indent)}">` +
-                      `${inline(b.text)}</div>` :
-    b.kind === 'quote' ? `<blockquote class="mdquote">${inline(b.text)}</blockquote>` :
+                      `${renderInline(b.text)}</div>` :
+    b.kind === 'quote' ? `<blockquote class="mdquote">${renderInline(b.text)}</blockquote>` :
     b.kind === 'table' ? mdTable(b)
-                    : `<p>${inline(b.text)}</p>`).join('');
+                    : `<p>${renderInline(b.text)}</p>`).join('');
 }
 /* Inline markdown the loop actually writes: **bold**, *em*, `code`. Bold is
    rendered as LUMINANCE — the page already says "more important" with its

@@ -824,7 +824,9 @@ function chatTurn(t) {
   return `<div class="chaturn" data-role="${esc(t.role)}">` +
     `<div class="chatmeta"><span class="chatwho">${you ? 'you' : 'dreamer'}</span>` +
     ` <span class="age">${esc(t.at)}</span></div>` +
-    `<div class="chatbody md">${mdRender(t.body, mdInline)}</div></div>`;
+    `<div class="chatbody md">${mdRender(t.body, mdInline, {
+      preserveSoftBreaks: true,
+    })}</div></div>`;
 }
 function buildChat(fetched) {
   // Unknown id degrades quietly, in the page's own voice — never a traceback,
