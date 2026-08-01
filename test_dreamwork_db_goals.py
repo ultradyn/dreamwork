@@ -525,3 +525,109 @@ def test_every_claim_round_is_kept_with_its_verdicts(store_path):
                 ("criterion 3 has no evidence",)
             ], "round 1's enumeration must survive round 2 verbatim"
             assert tx.goals.verdicts(second.id) == ()
+
+
+def _append_panel_verdict(tx, claim_id, lens, *, refuted=False, findings=()):
+    return tx.goals.append_verdict(
+        claim_id, lens=lens, refuted=refuted,
+        findings=list(findings),
+        corroborated=[] if refuted else [{"criterion": "C1", "sha": lens}],
+        examined={"criteria": 1, "members": 1},
+    )
+
+
+def test_claim_outcome_is_written_once_and_a_new_round_preserves_it(store_path):
+    """Red on GoalRepository.resolve_claim's conditional UPDATE."""
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        goal_id = _goal(db, "Settles once")
+        with db.transaction() as tx:
+            first = tx.goals.append_claim(
+                goal_id, claimed_by="loop", claimed_at="t1", summary="round 1",
+                base_sha="abc", details_sha="d1", round=1,
+            )
+            settled = tx.goals.resolve_claim(first.id, "refuted")
+            assert settled.outcome == "refuted"
+            with pytest.raises(
+                ValidationError,
+                match=r"outcome is already 'refuted'; terminal outcomes are write-once",
+            ):
+                tx.goals.resolve_claim(first.id, "complete")
+            second = tx.goals.append_claim(
+                goal_id, claimed_by="loop", claimed_at="t2", summary="round 2",
+                base_sha="def", details_sha="d2", round=2,
+            )
+            assert tx.goals.claims(goal_id) == (settled, second)
+
+
+def test_panel_requires_all_three_lenses_and_unanimity(store_path):
+    """Red on finalize_panel's complete-lens set and any-refute reduction."""
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        goal_id = _goal(db, "Three lenses")
+        with db.transaction() as tx:
+            claim = tx.goals.append_claim(
+                goal_id, claimed_by="loop", claimed_at="now", summary="done",
+                base_sha="abc", details_sha="d1", round=1,
+            )
+            _append_panel_verdict(tx, claim.id, "criteria")
+            _append_panel_verdict(tx, claim.id, "evidence")
+            with pytest.raises(
+                ValidationError,
+                match=r"PANEL INCOMPLETE.*missing lenses \('use',\).*FAIL CLOSED AND ASK HUMAN",
+            ):
+                tx.goals.finalize_panel(claim.id)
+            assert tx.goals.claims(goal_id)[0].outcome is None
+            _append_panel_verdict(tx, claim.id, "use")
+            assert tx.goals.finalize_panel(claim.id).outcome == "complete"
+
+        with db.transaction() as tx:
+            refuted = tx.goals.append_claim(
+                goal_id, claimed_by="loop", claimed_at="later", summary="again",
+                base_sha="def", details_sha="d2", round=2,
+            )
+            _append_panel_verdict(tx, refuted.id, "criteria")
+            _append_panel_verdict(
+                tx, refuted.id, "evidence", refuted=True,
+                findings=("proof never reached the seam", "red run was green"),
+            )
+            _append_panel_verdict(tx, refuted.id, "use")
+            assert tx.goals.finalize_panel(refuted.id).outcome == "refuted"
+            evidence = tx.goals.verdicts(refuted.id)[1]
+            assert evidence.findings == (
+                "proof never reached the seam", "red run was green"
+            ), "the full enumeration is the product and must survive finalization"
+
+
+def test_panel_cannot_all_clear_after_examining_zero_criteria(store_path):
+    """Direction 2: three stored passes with a partial zero must not finalize."""
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        goal_id = _goal(db, "Vacuous panel")
+        with db.transaction() as tx:
+            claim = tx.goals.append_claim(
+                goal_id, claimed_by="loop", claimed_at="now", summary="done",
+                base_sha="abc", details_sha="d1", round=1,
+            )
+    conn = sqlite3.connect(store_path)
+    try:
+        for lens in ("criteria", "evidence", "use"):
+            conn.execute(
+                "INSERT INTO goal_verdict"
+                " (claim_id,lens,refuted,findings,corroborated,examined)"
+                " VALUES (?,?,0,'[]','[\"claimed evidence\"]',"
+                " '{\"criteria\":0,\"members\":3}')",
+                (claim.id, lens),
+            )
+        conn.commit()
+        assert conn.execute(
+            "SELECT COUNT(*) FROM goal_verdict WHERE claim_id=? AND refuted=0",
+            (claim.id,),
+        ).fetchone() == (3,), "fixture must be a unanimous stored all-clear"
+    finally:
+        conn.close()
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        with db.transaction() as tx:
+            with pytest.raises(
+                ValidationError,
+                match=r"DID NOT JUDGE.*criteria=0.*members=3",
+            ):
+                tx.goals.finalize_panel(claim.id)
+            assert tx.goals.claims(goal_id)[0].outcome is None
