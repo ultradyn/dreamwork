@@ -163,6 +163,23 @@ def test_unavailable_ledger_is_reported_and_does_not_block(tmp_path):
     assert "launch allowed" in result.stderr
 
 
+def test_locked_ledger_is_reported_and_does_not_block(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    lock = sqlite3.connect(root / ".dreamwork" / "ledger.sqlite3")
+    lock.execute("BEGIN EXCLUSIVE")
+    try:
+        result = _run(cli, prompt, "true")
+    finally:
+        lock.rollback()
+        lock.close()
+
+    assert result.returncode == 0
+    assert "ledger reference check DID NOT RUN" in result.stderr
+    assert "database is locked" in result.stderr
+    assert "launch allowed" in result.stderr
+
+
 def test_dispatch_refuses_the_ambiguous_hand_off_wording(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
     prompt = _healthy_prompt(tmp_path, root)
