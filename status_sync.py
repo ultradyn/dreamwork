@@ -358,14 +358,10 @@ def _argv_lane(pid: int, wt_root: str) -> str | None:
     because ``ccc`` execs away to ``codex-code-mode-host`` / the grok harness;
     the worktree path in argv is the one invariant the dispatch route controls).
 
-    Reads the raw cmdline bytes and scans the WHOLE buffer (a path can span
-    an argv boundary only as a contiguous string; NULs never fall inside a
-    path, so a whole-buffer substring search is safe and faster than
-    splitting). The first ``<wt_root>/<lane>`` prefix wins; the lane is the
-    path component immediately after ``wt_root``. ``wt_root`` ends in
-    ``/.worktrees`` so the path component after it is the lane dir name.
-    Returns ``None`` when no worktree path appears — the process is not a
-    lane-by-argv, and the caller leaves it to its cwd classification.
+    Reads the raw cmdline bytes through :mod:`lane_liveness`'s exact governed
+    ``Worktree:``-line grammar. Incidental worktree paths elsewhere in a brief
+    are prose, not identity. Returns ``None`` when exactly one governed line
+    does not resolve under ``wt_root``.
     """
     try:
         with open("/proc/%d/cmdline" % pid, "rb") as f:
@@ -374,26 +370,8 @@ def _argv_lane(pid: int, wt_root: str) -> str | None:
         return None
     if not raw:
         return None
-    marker = (wt_root + "/").encode()
-    idx = raw.find(marker)
-    if idx < 0:
-        return None
-    rest = raw[idx + len(marker):]
-    # The lane dir name: chars up to the next path sep, NUL, or whitespace.
-    # A NUL ends an argv element; a '/' descends into the lane dir; a space
-    # or quote ends the path in prose (the brief's "Worktree:" line is one
-    # argv element, so a space terminates the path inside it).
-    end = len(rest)
-    for i, b in enumerate(rest):
-        # '/' descends into the lane dir; NUL ends an argv element; space,
-        # tab, newline end the path in prose (the brief's "Worktree:" line
-        # is one argv element, so whitespace terminates the path inside it);
-        # quote chars delimit the path in markdown/prose.
-        if b in (0x2f, 0x00, 0x20, 0x09, 0x0a, 0x22, 0x27):
-            end = i
-            break
-    lane = rest[:end].decode("utf-8", "replace")
-    return lane or None
+    path = lane_liveness._prompt_worktree(raw, (Path(wt_root).resolve(),))
+    return path.name if path is not None else None
 
 
 def _is_ccc_proc(pid: int) -> bool:
