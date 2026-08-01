@@ -3803,3 +3803,42 @@ CLAUDE.md already says to chain a destructive command to its check; that is nece
 sufficient, because a check chained to `&&` still passes when it checked nothing. I did chain it —
 the second time, gated on a real count (`[ "$n" -ge 2 ]`) — and that is the form that was actually
 worth anything.
+
+## "Landed" is a claim about an id, not about a surface (2026-08-02, #344, mine, measured)
+
+I dispatched #344 — *a per-row control on `/tasks` that points the loop at that task* — with a brief
+that said *"#281's `/tasks` route and its data contract exist; build on them"* and then referred
+repeatedly to *"each row on `/tasks`"* and *"do not redesign the row"*.
+
+**There are no rows.** `routeOf` (`client/router.js:1286`) has no `/tasks` case; the path falls
+through to `{name:'dashboard'}`. `/tasks` serves the app shell and renders the dashboard. The lane
+verified this in its base, in master, and after rebase before concluding it, and it was right.
+
+I had checked the thing I have learned to check. `#281` reads **landed** in the store, its merge
+`eddf2f6c` is an ancestor of master, and the route and data contract genuinely exist — `/tasksdata`,
+`tasks_response`, `tasks_payload`, `task_payload_record` all landed. Every check I ran said yes.
+What I did not read was #281's own body, which says in plain words that it is **"Task 1" of twelve**
+and that its lane deliberately refused to build the route's reader. The interactive page is a later
+increment nobody has done.
+
+So this is the mirror of the rule I paid for earlier tonight. That one was: *`list --state open` is
+not a work queue — git is the cheaper authority; check the branch and the merge before writing a
+brief.* This one is its other half: **git tells you a merge happened; it does not tell you a feature
+exists.** An id's state is a fact about a ledger row. A brief's premise is a claim about a surface —
+about a function existing, a route resolving, a row rendering — and only the tree can settle that.
+Between them sits the increment-sized landing, which is the normal case here: most ids land in
+pieces, and a piece that landed is indistinguishable, from the ledger, from a thing that is done.
+
+**The cheap habit:** a brief that says *build on X* must name the symbol, route, or selector the
+lane will attach to, and I must have grepped for that exact thing in master before dispatching. Not
+"is #281 landed" — *"does `routeOf` return a `tasks` route"*. It is one grep, and it is the same
+grep the lane will run in its first two minutes; the only question is whether it runs before the
+brief is written or after the lane is spent.
+
+The lane's own dogfood put it better than I would have: *"a brief that reads as confirming a
+precondition it does not actually establish."* It cost real time — it had to prove an absence across
+three trees, which is the expensive direction — and the recovery was only cheap because the lane
+refused to fabricate the missing surface and instead built the part whose precondition **was** met
+(the shared `postCommand` transport), then guarded it. **The brief was wrong and the increment was
+still good, because the lane treated the premise as falsifiable rather than as an instruction.**
+That is the behaviour to keep asking for.
