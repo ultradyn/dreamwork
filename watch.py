@@ -698,10 +698,12 @@ DATA_SIBLINGS = ("SKILL.md", "vendor/morphdom.min.js", "vendor/LICENSE.morphdom"
                  "client/dist/ds/styles.css",
                  "client/dist/native.js")
 
+_MORPHDOM_FILE = "vendor/morphdom.min.js"
+
 
 def _load_morphdom_js():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        DATA_SIBLINGS[0])
+                        _MORPHDOM_FILE)
     with open(path, encoding="utf-8") as f:
         return f.read()
 
