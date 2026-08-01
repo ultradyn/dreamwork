@@ -14,6 +14,14 @@ def _env_with(path):
     return env
 
 
+def test_module_contract_models_negligible_useful_work_without_a_bound_claim():
+    assert (
+        "models a future ``version`` verb whose useful\nwork is negligible"
+        in startup_benchmark.__doc__
+    ), "startup benchmark contract must state the workload it actually models"
+    assert "upper bound" not in startup_benchmark.__doc__
+
+
 def test_broken_timed_path_refuses_instead_of_reporting_a_fast_number(tmp_path):
     with pytest.raises(startup_benchmark.BenchmarkError) as caught:
         startup_benchmark.benchmark_module(

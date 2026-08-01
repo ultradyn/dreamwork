@@ -1615,6 +1615,17 @@ class TestDocMapPlans:
 
     ROW = "| `.dreamwork/docs/plans/` | Active feature plans ({}) | Prune |\n"
 
+    def test_tasks_row_routes_readers_to_the_live_store(self):
+        doc_map = (lint.SKILL_DIR / ".dreamwork" / "docs" / "doc-map.md").read_text()
+        rows = [line for line in doc_map.splitlines()
+                if line.startswith("| `.dreamwork/tasks.md` |")]
+        assert len(rows) == 1, "doc-map must contain exactly one tasks.md routing row"
+        row = rows[0]
+        assert "Five-line migration shim" in row
+        assert "`.dreamwork/ledger.sqlite3` store" in row, (
+            "tasks.md row must route live-queue readers to the SQLite store"
+        )
+
     def build(self, tmp_path: Path, listed: str, on_disk: list[str]) -> Path:
         t = fresh(tmp_path)
         docs = t / ".dreamwork" / "docs"
