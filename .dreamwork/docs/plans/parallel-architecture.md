@@ -25,8 +25,10 @@ The original measured `watch.py` at **4,008 lines / 58 commits on one day**
 and concluded it *is* the bottleneck, not just feels like one. Both halves
 of that are now sharper:
 
-- **watch.py is 15,563 lines** (verified `wc -l`, 2026-07-30) — nearly 4×
-  the original measurement, and still the largest single file.
+- **watch.py was 15,563 lines on 2026-07-30; it is 6,267 lines on
+  2026-08-01** (both verified with `wc -l`). The dated measurement matters:
+  the client extraction and subsequent module work have already removed most
+  of the old Python monolith, so the old number is history, not current scale.
   ~~**still the single deployed file** (the single-file, no-build,
   one-authority deploy it predicted the split must not break is intact:
   `watch-design.md`'s "one file by design" line)~~ — **that parenthesis was
@@ -288,8 +290,11 @@ advice to enforced contract, and two new families were added.
   had a python stdlib constraint, but otherwise building the webui bundle and
   breaking up watch.py into modules are good and reasonable things."* The
   Python-stdlib half stands; the no-build/single-file half does not. What was
-  true when this was written (no bundler existed) is now a fact about the
-  tree, not a constraint on it.
+  true when this was written (no bundler existed) is now historical:
+  `just build-client` and committed `client/dist/` have landed. That build
+  permission does not create a second independent render authority: the
+  native bundle is derived from the existing client sources, and each route
+  still has one owner at a time.
 - **`python3 watch.py --target . --dev` still works** from a checkout. Held.
 - **Deployment.** ~~`just deploy` still snapshots `git show HEAD:watch.py` to
   a single file.~~ **No longer true as of `#480`/`#425`:** deploy ships the

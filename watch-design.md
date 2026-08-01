@@ -127,8 +127,9 @@ carries a `+` command opener (steer the loop without a chat turn).
     `dev/styleguide_audit.py` classifies on that prefix, and still classifies
     pre-#397 revisions by the old constant ranges because it walks history
     across the extraction.
-- **`client/dist/` is BUILT and committed, and none of it is served yet**
-  (`#630` P1 `#653`, P2). `just build-client` emits two bundles that differ in
+- **`client/dist/` is BUILT and committed; `native.js` is served inline while
+  the design-tool bundle stays off-page** (`#630` P1 `#653`, P2; `#751`, P3).
+  `just build-client` emits two bundles that differ in
   kind, not just in contents, and confusing them is how the dashboard would
   get a second copy of its own builders:
   - `ds/index.js` — the design-tool package. It **concatenates** `client/*.js`
@@ -156,7 +157,8 @@ carries a `+` command opener (steer the loop without a chat turn).
     records sha256 of every input and output, `lint.py` ERRORs, and
     `serving_report` carries the same reading. The authority map (route → which
     registry) belongs to P3, the phase where a route first resolves to a
-    component; at P2 every route is still builder-owned.
+    component. Serving the derived runtime does not create a second authority:
+    each route remains builder- or component-owned, never both.
 - **Loopback by default; trusted LAN only by explicit contract.** The default
   remains `127.0.0.1`. A singular numeric `--bind`, repeatable exact
   `--allow-host`, and navigable allowed `--url-host` may opt into an explicitly
