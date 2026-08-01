@@ -10,6 +10,7 @@ import ledger_store
 from dreamwork_db import (
     Access,
     Busy,
+    ConstraintViolation,
     Corrupt,
     DatabaseError,
     DatabaseHandle,
@@ -395,4 +396,73 @@ def test_a_corrupt_store_write_open_is_named_at_the_connect_seam(tmp_path):
 
     assert isinstance(caught.value, DatabaseError), (
         "Corrupt stopped being a DatabaseError; the degraded path would miss it"
+    )
+
+
+# --- a constraint violation is caller data the store rejected, named not
+# unclassified (#782 follow-up).  sqlite3.IntegrityError is a DatabaseError
+# child, so the widened catch swallowed it into "unclassified store error" --
+# a false statement, because the store worked correctly and rejected caller
+# data that violated a constraint.  The ladder now names it ConstraintViolation,
+# keeping the single-door property intact (callers catch ladder types, not
+# sqlite types) and never calling a precisely-classified error unclassified.
+
+
+class _BrokenConstraint:
+    """Repository whose INSERT violates the NOT NULL on sample(value)."""
+
+    __slots__ = ("_session",)
+
+    def __init__(self, session):
+        self._session = session
+
+    def run(self):
+        return self._session.execute(
+            "INSERT INTO sample(value) VALUES (NULL)"
+        ).fetchall()
+
+
+def test_a_constraint_violation_is_named_not_left_unclassified(tmp_path):
+    path = tmp_path / "store.sqlite3"
+    _create_sample(path, "one")
+    spec = StoreSpec(path=path, repositories={"broken": _BrokenConstraint})
+
+    with open_database(spec, access=Access.WRITE) as db:
+        with pytest.raises(ConstraintViolation, match="constraint") as caught:
+            with db.transaction():
+                db.broken.run()
+
+    # Discriminating: the wrong class fails here, not merely "an exception".
+    # It must not be the honest-unclassified DatabaseError the fallthrough
+    # raises (that would be the #782 false-classification bug), nor raw sqlite.
+    assert not isinstance(caught.value, sqlite3.IntegrityError), (
+        "the constraint violation escaped as a raw sqlite3.IntegrityError; the "
+        "single door (#440) is open"
+    )
+    assert type(caught.value) is ConstraintViolation, (
+        "a constraint violation was swallowed into the unclassified DatabaseError "
+        "fallthrough instead of being named"
+    )
+    # The original sqlite error is carried, never discarded (#702).
+    assert isinstance(caught.value.__cause__, sqlite3.IntegrityError)
+
+
+def test_an_unclassified_operational_error_stays_honest_database_error(tmp_path):
+    """Direction 2b: an OperationalError that is neither busy nor schema-shaped
+    nor a constraint must become the honest unclassified DatabaseError, not be
+    swept into ConstraintViolation.  PRODUCTION LINE: the final
+    ``raise DatabaseError(...)`` fallthrough in _raise_classified."""
+    path = tmp_path / "store.sqlite3"
+    _create_sample(path, "one")
+    spec = StoreSpec(path=path, repositories={"broken": _BrokenSyntax})
+
+    with open_database(spec, access=Access.READ) as db:
+        with pytest.raises(DatabaseError, match="unclassified") as caught:
+            db.broken.run()
+
+    assert not isinstance(caught.value, ConstraintViolation), (
+        "an unclassified OperationalError was swept into ConstraintViolation"
+    )
+    assert not isinstance(caught.value, Busy), (
+        "an unclassified error was mislabelled Busy"
     )

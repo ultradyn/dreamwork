@@ -58,6 +58,22 @@ class Corrupt(DatabaseError):
     """The store file is not a readable SQLite database (code 26)."""
 
 
+class ConstraintViolation(DatabaseError):
+    """Caller data violated a store constraint (FK, unique, CHECK, NOT NULL).
+
+    Unlike ``Busy``, ``Corrupt`` and ``SchemaMismatch`` — which are *store*
+    conditions, the store unable to serve the request — this is the store
+    working correctly and rejecting caller data.  sqlite raises it as
+    ``IntegrityError`` (a ``DatabaseError`` child); the ladder names what it
+    can prove (#651) rather than declaring a precisely-classified error
+    unclassifiable (#702).  The original sqlite error is carried as
+    ``__cause__``.
+
+    Callers should validate before the write (#681 built that validation
+    into ``ledger_write``) rather than catch this as control flow.
+    """
+
+
 RepositoryFactory = Callable[["_RepositorySession"], object]
 Initializer = Callable[[sqlite3.Connection], None]
 
@@ -254,10 +270,10 @@ def _raise_classified(
 
     The ladder is total: a caller that reaches here never sees a raw
     sqlite error escape unnamed (#702). Busy locks, schema-shaped errors,
-    corruption, and every remaining case each become a distinct, honest
-    name (#651): the unclassified case is a plain ``DatabaseError`` that
-    carries the original, never relabelled as something it was not
-    proven to be.
+    corruption, constraint violations, and every remaining case each
+    become a distinct, honest name (#651): the unclassified case is a
+    plain ``DatabaseError`` that carries the original, never relabelled
+    as something it was not proven to be.
 
     The catch surface widened from ``OperationalError`` to
     ``DatabaseError`` so the ladder is total over the full error tree,
@@ -279,6 +295,13 @@ def _raise_classified(
     if "no such column" in text or "no such table" in text:
         raise SchemaMismatch(
             f"store schema mismatch during {operation}: {exc}"
+        ) from exc
+    if isinstance(exc, sqlite3.IntegrityError):
+        # A constraint violation is caller data the store rejected, not a
+        # store condition: sqlite classified it precisely (IntegrityError),
+        # so the ladder names it rather than calling it unclassified (#702).
+        raise ConstraintViolation(
+            f"caller data violated a store constraint during {operation}: {exc}"
         ) from exc
     raise DatabaseError(
         f"unclassified store error during {operation}: {exc}"

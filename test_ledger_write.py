@@ -34,7 +34,7 @@ import pytest
 
 import ledger_store
 import ledger_write
-from dreamwork_db import Access, open_database
+from dreamwork_db import Access, ConstraintViolation, open_database
 from dreamwork_db.tasks import task_store_spec
 from dreamwork_db.tasks import TaskRepository
 
@@ -372,7 +372,10 @@ def test_file_is_one_transaction_task_row_rolled_back_with_its_event(store):
     ).fetchone()
     assert row[0] == 0, "precondition: filed cause must be absent for the FK to fire"
 
-    with pytest.raises(sqlite3.IntegrityError):
+    # The FK violation routes through the ladder (file_task → store.tasks.file
+    # → the dreamwork_db session), so it is named ConstraintViolation, not a
+    # raw sqlite3.IntegrityError: the ladder names what sqlite proved (#651/#702).
+    with pytest.raises(ConstraintViolation, match="constraint"):
         ledger_write.file_task(store, "will not persist", "body",
                                 at="2026-07-29T10:00:00Z")
 
