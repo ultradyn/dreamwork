@@ -1578,14 +1578,16 @@ class TestOtherFiles:
 
     def test_the_measured_four_hour_future_stamp_is_an_error(self, tmp_path):
         rep = self._committed_dream(tmp_path, "2026-08-02-0945", "2026-08-02T05:59:00+10:00")
-        assert ERRORS(rep, "dreams/")
-        detail = next(d for level, where, d in rep.rows if level == lint.ERROR and where == "dreams/")
+        errors = [d for level, where, d in rep.rows if level == lint.ERROR and where == "dreams/"]
+        assert errors, f"expected 3h 46m in the FUTURE, got dreams rows {levels(rep, 'dreams/')}"
+        detail = errors[0]
         assert "3h 46m in the FUTURE of its introducing commit" in detail
 
     def test_the_measured_previous_day_utc_stamp_is_an_error(self, tmp_path):
         rep = self._committed_dream(tmp_path, "2026-08-01-1947", "2026-08-02T05:47:00+10:00")
-        assert ERRORS(rep, "dreams/")
-        detail = next(d for level, where, d in rep.rows if level == lint.ERROR and where == "dreams/")
+        errors = [d for level, where, d in rep.rows if level == lint.ERROR and where == "dreams/"]
+        assert errors, f"expected 10h 0m in the PAST, got dreams rows {levels(rep, 'dreams/')}"
+        detail = errors[0]
         assert "10h 0m in the PAST of its introducing commit" in detail
 
     def test_the_landed_bad_dream_is_named_as_legacy_not_a_standing_warning(self, tmp_path):
