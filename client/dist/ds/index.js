@@ -3554,6 +3554,28 @@ var DreamworkDesign = (() => {
   function applyDrawMode() {
     if (window.dreambg) window.dreambg.setDrawMode(drawMode);
   }
+  function paintDrawModePreference(name) {
+    document.querySelectorAll(".sgroup.drawpick").forEach((g) => {
+      g.querySelectorAll(".sgbtn").forEach((b) => {
+        const on = b.dataset.drawmode === name;
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-checked", on ? "true" : "false");
+      });
+      slideIndicator(g, false);
+    });
+  }
+  function setDrawModePreference(name) {
+    if (DRAW_MODES.indexOf(name) < 0 || drawMode === name) return;
+    drawMode = name;
+    applyDrawMode();
+    paintDrawModePreference(name);
+  }
+  function adoptDrawModePreferenceFromStorage(e) {
+    if (e.key !== drawModeStorageKey()) return;
+    const name = DRAW_MODES.indexOf(e.newValue) >= 0 ? e.newValue : DRAW_MODE_DEFAULT;
+    setDrawModePreference(name);
+  }
+  window.addEventListener("storage", adoptDrawModePreferenceFromStorage);
   function applyTint() {
     if (!data) return;
     const name = TINTS[data.tint] != null ? data.tint : TINT_DEFAULT;
