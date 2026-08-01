@@ -111,9 +111,11 @@ class HttpHarness(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
         self.base = f"http://127.0.0.1:{port}"
         self.host = f"allowed.test:{port}"
+        self.posted_routes = []
 
     # --- urllib path (complete bodies) ---
     def post(self, path, data, *, client_action_id=None):
+        self.posted_routes.append(path)
         body = json.dumps(data).encode()
         headers = {"Host": self.host,
                    "Origin": f"http://{self.host}",
@@ -261,7 +263,9 @@ class E2Shadow(HttpHarness):
         """
         import uuid as _uuid
         import ledger_store
+        from ledger_parse import _WATERMARK_KEY
         marker = _uuid.uuid4().hex[:8]
+        self.posted_routes = []
         statuses = []
         # 1. /ask — records a new question for the dreamer (answers.md).
         statuses.append(self.post(
@@ -324,26 +328,60 @@ class E2Shadow(HttpHarness):
                 json.loads(receipts[0].exact_payload_bytes)["policy"], policy,
                 "/subagent-policy text changed in the receipt path")
             self.assertIn("receipt", json.loads(policy_body))
-        # 9. /decide — review decision (#289). The fixture is markdown-mode
-        #    (no store), so this reaches the domain_invalid refusal — which is
-        #    still a durable receipt (202 on / 200 off, same as every other
-        #    route). The payload passes schema so the refusal is the honest
-        #    "no store" one, not a schema_invalid that never reaches the domain
-        #    check. The closed set the handler validates against: assert it so
-        #    a renamed decision would turn this into a schema rejection wearing
-        #    the domain path's name.
+        # The remaining repository-backed routes need a real store. Seed one
+        # through the canonical compatibility API and add the cut-over marker
+        # source_of_truth reads; this is a fixture store under TemporaryDirectory,
+        # never the live ledger.
+        dw = os.path.join(self.target, ".dreamwork")
+        store = ledger_store.open_store(watch.store_path(dw), seed_next_id=1)
+        store.conn.execute(
+            "INSERT OR REPLACE INTO meta(key,value) VALUES(?,?)",
+            (_WATERMARK_KEY, "e2-shadow-fixture"))
+        store.close()
+
+        # 9. /decide — a valid review decision against the fixture store. The
+        #    closed set the handler validates against is asserted so a renamed
+        #    decision cannot turn this into a schema rejection wearing the
+        #    write path's name.
         self.assertIn("accepted", ledger_store.REVIEW_DECISIONS)
         statuses.append(self.post(
             "/decide", {"artifact": f"artifact-{marker}",
                         "question_title": "A real open question?",
                         "decision": "accepted"})[0])
-        # 10. /deploy — page-triggered just deploy (#462); runner faked.
+
+        # 10. /goals — add a real goal and observe it through the independent
+        #     repository projection. A 202 receipt alone would also describe a
+        #     durable refusal, so the stored node is the write-path proof.
+        goal_title = f"E2 goal {marker}"
+        goal_status, _, goal_body = self.post(
+            "/goals", {"action": "add-goal", "title": goal_title,
+                       "details": "## Done when\n- Persisted\n",
+                       "parent_id": None, "rank": 4})
+        statuses.append(goal_status)
+        goal_result = json.loads(goal_body)
+        goals = watch.goal_tree_payload(self.target)
+        goal_by_id = {node["id"]: node for node in goals["nodes"]}
+        self.assertIn(goal_result["goal_id"], goal_by_id)
+        self.assertEqual(goal_by_id[goal_result["goal_id"]]["title"], goal_title)
+
+        # 11. /settings — persist a non-default registered value and read it
+        #     back through the dashboard's independent settings projection.
+        setting_key, setting_value = "gfx.dither", "white-noise"
+        settings_status, _, settings_body = self.post(
+            "/settings", {"key": setting_key, "value": setting_value})
+        statuses.append(settings_status)
+        self.assertEqual(json.loads(settings_body)["values"],
+                         {setting_key: setting_value})
+        self.assertEqual(watch.read_settings(self.target)["values"][setting_key],
+                         setting_value)
+
+        # 12. /deploy — page-triggered just deploy (#462); runner faked.
         statuses.append(self.post("/deploy", {})[0])
-        # 11. /remind — send the resolved posture to the coordinator inbox
+        # 13. /remind — send the resolved posture to the coordinator inbox
         #     (#551); relay redirected to a temp dir in setUp. Empty {} body
         #     is the normal press.
         statuses.append(self.post("/remind", {})[0])
-        # 12. /chat-reply — continue an EXISTING chat (#577). Its existence
+        # 14. /chat-reply — continue an EXISTING chat (#577). Its existence
         #     guard runs BEFORE apply, so an unknown id is a domain_invalid
         #     refusal — and a refusal still commits a receipt and answers
         #     202 on / 200 off, exactly like the write path. So a bogus id
@@ -368,7 +406,7 @@ class E2Shadow(HttpHarness):
         self.assertIn(reply, watch.read_text(os.path.join(
             self.target, ".dreamwork", watch.CHAT_DIR, cid,
             "transcript.md")))
-        # 13. /chat-archive — archive an EXISTING chat (#709). Its existence
+        # 15. /chat-archive — archive an EXISTING chat (#709). Its existence
         #     guard runs BEFORE the write, so an unknown id is a
         #     domain_invalid refusal — and a refusal still commits a receipt
         #     and answers 202-on/200-off, exactly like every route (#586's
@@ -386,43 +424,38 @@ class E2Shadow(HttpHarness):
         statuses.append(self.post("/chat-archive", {"id": ac, "archive": True})[0])
         self.assertTrue(watch.is_chat_archived(self.target, ac),
             "the archive marker must exist after /chat-archive on a real chat")
-        return statuses, self.submissions_rows()
+        return statuses, self.submissions_rows(), tuple(self.posted_routes)
+
+    def assert_all_write_routes_exercised(self, exercised):
+        """The production dispatch equals the paths this harness really POSTed."""
+        expected = set(WRITE_ROUTES)
+        actual = set(exercised)
+        missing = sorted(expected - actual)
+        unexpected = sorted(actual - expected)
+        self.assertFalse(
+            missing or unexpected,
+            f"write-route coverage differs: missing={missing}, "
+            f"unexpected={unexpected}; posted={list(exercised)}")
+        self.assertEqual(
+            len(exercised), len(actual),
+            f"write-route harness POSTed a duplicate path: {list(exercised)}")
 
     def test_every_write_route_commits_a_receipt_and_changes_nothing_else(self):
         # Run every write route with the journal ON (this harness) and OFF
         # (baseline), each on a fresh target, and compare everything
         # observable except the receipt count.
-        on_statuses, on_subs = self.run_all_routes()
+        on_statuses, on_subs, on_routes = self.run_all_routes()
         with self._baseline_server() as baseline:
-            off_statuses, off_subs = baseline.run_all_routes()
-        # The route list is derived from the dispatch, not hand-copied: assert
-        # its length matches the routes we exercised, so a new route added to
-        # WRITE_ROUTE_HANDLERS without a payload here fails loudly. This literal
-        # is a deliberate alarm — do NOT derive it from WRITE_ROUTE_HANDLERS
-        # (that would be `len(table) == len(table)`, a check born hollow: the
-        # repo has a documented lesson about exactly that shape). Bump it
-        # consciously when extending run_all_routes, and say why here.
-        # 2026-07-30 #496: 8→9 — /decide (#289) joined /deploy (#462) in the
-        # dispatch; both needed payloads in run_all_routes.
-        # 2026-07-30 #551: 9→10 — /remind joined the dispatch; empty-body press.
-        # 2026-07-31 #586: 10→11 — /chat-reply (#577) joined the dispatch;
-        # payload is {"id", "text"} against a chat run_all seeds first via
-        # apply_chat_turn, because the route refuses an id that does not
-        # already exist.
-        # 2026-07-31 #709: 11→12 — /chat-archive joined the dispatch; payload
-        # is {"id", "archive"} against a chat run_all seeds first via
-        # apply_chat_turn, with a behavioural post-condition (the marker file)
-        # because a refusal answers 202-on/200-off identically (#586).
-        # 2026-08-01 #814: 12→13 — /subagent-policy joined run_all with a
-        # receipt-path assertion over exact payload bytes; its authored prose
-        # remains absent from the transition-only watch-events.log line.
-        self.assertEqual(len(WRITE_ROUTES), 13, WRITE_ROUTES)
+            off_statuses, off_subs, off_routes = baseline.run_all_routes()
+        self.assert_all_write_routes_exercised(on_routes)
+        self.assert_all_write_routes_exercised(off_routes)
+        self.assertEqual(on_routes, off_routes)
         # Every route returned 202 with the journal ON (E3 cutover moved the
         # write-route status) and 200 with the journal OFF (the pre-cutover
         # baseline, which still uses _send). The shadow must change only the
         # receipt count and the status code, nothing else.
-        self.assertEqual(on_statuses, [202] * len(WRITE_ROUTES), on_statuses)
-        self.assertEqual(off_statuses, [200] * len(WRITE_ROUTES), off_statuses)
+        self.assertEqual(on_statuses, [202] * len(on_routes), on_statuses)
+        self.assertEqual(off_statuses, [200] * len(off_routes), off_statuses)
         # submissions.log is identical between the two runs (the journal adds a
         # receipt, not a submissions.log line). Compare the fields that are
         # stable across runs (path + whether parsed); timestamps differ.
@@ -434,19 +467,15 @@ class E2Shadow(HttpHarness):
             [("req" in r) for r in off_subs])
         # The discriminating half: with the journal ON, there is exactly one
         # receipt per route. Derived from the route count, never a literal.
-        self.assertEqual(self.receipt_count(), len(WRITE_ROUTES))
+        self.assertEqual(self.receipt_count(), len(on_routes))
 
     def test_a_new_route_would_fail_this_test_not_slip_past(self):
-        # The precondition the "derived route list" claim depends on: the
-        # dispatch table IS the routes we exercise. If a route is added to
-        # WRITE_ROUTE_HANDLERS, run_all_routes does not POST it, so the receipt
-        # count assertion above (len(WRITE_ROUTES)) would still pass while a
-        # route went unshadowed — UNLESS this guard fails first. This is the
-        # plan's "derive the route list" discipline made executable.
-        exercised = 13  # ask, comment, answer, command, tint, run-mode,
-        # posture, subagent-policy, decide, deploy, remind, chat-reply,
-        # chat-archive
-        self.assertEqual(len(WRITE_ROUTES), exercised, WRITE_ROUTES)
+        # Expected routes come from watch's production dispatch. Exercised
+        # routes come from HttpHarness.post, which records only a real request.
+        # A new dispatch entry therefore becomes `missing`, while merely
+        # naming it in test data without POSTing cannot satisfy this check.
+        _, _, exercised = self.run_all_routes()
+        self.assert_all_write_routes_exercised(exercised)
 
     @contextlib.contextmanager
     def _baseline_server(self):
