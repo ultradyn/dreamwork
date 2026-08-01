@@ -242,7 +242,8 @@ full merged-tree sweep is for and remains for (`#651`); nothing here makes that 
 Adding a member needs the entry criterion argued (see the tool's docstring).
 
 **Lane bars are command-, snapshot-, and interpreter-relative.** Run `python3 lint.py`: require
-NO ERRORs and inspect every WARN message against the measured baseline. A worktree may add
+NO ERRORs and compare the complete WARN row set against the measured baseline, not only the trailer
+count; the rows are indented, so `grep -c '^WARN'` returns a false `0`. A worktree may add
 `tasks.md` ledger-absent/zero-entry, `status.json`-absent, and `ledger checks`-examined-nothing
 WARNs because those artifacts do not travel. To inspect live data with the WORKTREE interpreter,
 use `python3 lint.py --target /home/xertrov/.llm-general/skills/ud-dreamwork`; a stale interpreter
