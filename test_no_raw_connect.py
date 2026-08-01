@@ -113,6 +113,8 @@ def test_no_raw_sqlite_connect_in_production_sources() -> None:
     names every offending file:line and the matched source, so the diagnosis
     starts at the call site rather than at a count.
     """
+    # repo-wide-guard: scans EVERY production source for a raw sqlite3.connect
+    # outside the one sanctioned door. Population: all tracked production Python.
     sources = _production_python_sources()
 
     # Precondition the guard depends on: the sanctioned door exists and itself

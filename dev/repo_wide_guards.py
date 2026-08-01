@@ -67,15 +67,27 @@ idiom every existing repo-wide guard of this family uses. It stays SILENT on:
   <subdir>`` and ``--error-unmatch <file>``: path-restricted, so ordinary
   module tests that happen to enumerate a directory.
 
-It CANNOT mechanically discover the other family of repo-wide guard — one that
-derives a population from PRODUCTION CODE and asserts completeness against a
-hand map (``test_the_map_covers_every_verb`` derives verbs from the parser).
-That has no ``git ls-files`` and no whole-repo glob; detecting it would mean
-semantically understanding "this test asserts a set is complete", which no
-narrow signal can do without false-positiving on hundreds of ordinary tests.
-That guard is in the registry BY HAND, and the detector is honest that the
-parser-coverage family is its blind spot — which is precisely why the registry
-is authoritative and the detector is only a backstop for the common form.
+THE OPT-IN MARKER — closing the blind spot for guards that declare themselves
+----------------------------------------------------------------------
+The parser-coverage family (no ``git ls-files``, no whole-repo glob) is
+invisible to the lexical signal above. Detecting "this test asserts a set is
+complete" semantically would false-positive on hundreds of ordinary tests
+(#707/#755), so the detector does not try. Instead, a repo-wide guard
+DECLARES itself with a comment marker in its test source:
+
+    # repo-wide-guard: <one-line reason>
+
+The detector scans for this token as a second signal, alongside ``ls-files``.
+Detection is exact (the guard asserts its own class) and zero-false-positive
+(no ordinary test contains the token by accident).
+
+THE BOUNDARY, NAMED HONESTLY (#651): the marker catches only guards whose
+authors knew to declare it — the gap narrowed from "every parser-coverage
+guard" to "every undeclared guard." ``validate`` states this boundary rather
+than hiding it behind a green: it reports how many candidates each signal
+found and says plainly that undeclared guards are invisible. The registry is
+authoritative; the detector is a backstop for both the common form and the
+declared form.
 
 rglob / os.walk rooted at the REPO ROOT would also be repo-wide, but resolving
 whether an rglob's base IS the repo root (vs a subdirectory) cannot be done
@@ -131,6 +143,23 @@ def is_whole_repo_enumeration(source: str) -> bool:
     return bool(_BARE_LS_FILES.search(source))
 
 
+# The opt-in marker (#780). A repo-wide guard that the lexical detector
+# cannot see (parser-coverage family) declares itself with this comment in
+# its test source. The token is deliberately specific so no ordinary test
+# contains it by accident — detection is exact and zero-false-positive.
+_REPO_WIDE_MARKER = "repo-wide-guard:"
+
+
+def is_declared_repo_wide(source: str) -> bool:
+    """True if ``source`` declares itself a repo-wide guard via the marker.
+
+    The marker is a comment: ``# repo-wide-guard: <one-line reason>``. It is
+    the escape hatch for guards the lexical detector cannot see (no
+    ``git ls-files``). Pure function over source text, like the ls-files signal.
+    """
+    return f"# {_REPO_WIDE_MARKER}" in source
+
+
 def _tracked_test_files() -> list[Path]:
     """Every tracked ``test_*.py`` under the repo root (root + plugins)."""
     try:
@@ -155,11 +184,19 @@ def _tracked_test_files() -> list[Path]:
 
 
 def find_candidate_files() -> list[Path]:
-    """Tracked test files whose source looks like a whole-repo enumeration.
+    """Tracked test files that look repo-wide by EITHER signal.
 
     A candidate is a FINDING, not a member: it still has to meet the entry
     criterion and be classified. ``detect`` reports those whose file is not
     already covered by a registry entry.
+
+    Two independent signals:
+    - ``is_whole_repo_enumeration``: bare ``git ls-files`` (lexical, for the
+      file-enumeration family).
+    - ``is_declared_repo_wide``: the opt-in marker ``# repo-wide-guard:``,
+      which a guard that the lexical detector cannot see declares about itself
+      (#780). This closes the blind spot for the parser-coverage family — a
+      guard that declares itself is detected regardless of its enumeration idiom.
     """
     candidates = []
     for path in _tracked_test_files():
@@ -167,7 +204,7 @@ def find_candidate_files() -> list[Path]:
             source = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        if is_whole_repo_enumeration(source):
+        if is_whole_repo_enumeration(source) or is_declared_repo_wide(source):
             candidates.append(path)
     return candidates
 
@@ -178,10 +215,12 @@ def _registry_files() -> set[str]:
 
 
 def detect_unregistered() -> list[Path]:
-    """Candidate whole-repo guards whose file is not covered by the registry.
+    """Candidate repo-wide guards (by either signal) whose file is not covered
+    by the registry.
 
-    These are the findings a classifier reviews. The parser-coverage family
-    (no git ls-files) is invisible to this — see the module docstring.
+    These are the findings a classifier reviews. The marker closes the
+    parser-coverage blind spot for DECLARED guards; an UNDECLARED guard (no
+    ls-files, no marker) is still invisible — see the module docstring.
     """
     covered = _registry_files()
     return [p for p in find_candidate_files() if p.name not in covered]
@@ -229,6 +268,12 @@ def list_members() -> int:
     return 0
 
 
+def _detect_detail() -> list[Path]:
+    """All candidate files by either signal, for the verbs to report."""
+    covered = _registry_files()
+    return [p for p in find_candidate_files() if p.name not in covered]
+
+
 def validate() -> int:
     """Every registry member must resolve to a real collected test (#671).
 
@@ -236,6 +281,10 @@ def validate() -> int:
     findings). Exit 2 = one or more members are stale, OR the inventory could
     not be read — a guard set that resolves to nothing must NEVER read as
     "all guards passed".
+
+    The detector report states what each signal found and names the boundary
+    it cannot see (#651): an UNDECLARED guard (no ls-files, no marker) is
+    invisible to the detector. Completeness cannot be proven mechanically.
     """
     try:
         stale = [nid for nid in REGISTRY if not _collect_resolves(nid)]
@@ -252,28 +301,35 @@ def validate() -> int:
     print(f"validate: {len(REGISTRY)} registry member(s) all resolve.")
     # The detector runs as a backstop: report unregistered candidates as
     # findings, not failures (they need classification, #702).
-    unregistered = detect_unregistered()
+    unregistered = _detect_detail()
     if unregistered:
-        print("validate: DETECTOR — unregistered whole-repo-enumeration "
-              "candidate(s) to classify (findings, not members):")
+        print("validate: DETECTOR — unregistered candidate(s) to classify "
+              "(findings, not members):")
         for p in unregistered:
-            print(f"  {p.name}  (meets the file-enumeration signal; classify "
-                  f"against the entry criterion, then register or exclude)")
+            signals = []
+            src = p.read_text(encoding="utf-8")
+            if is_whole_repo_enumeration(src):
+                signals.append("file-enumeration")
+            if is_declared_repo_wide(src):
+                signals.append("opt-in-marker")
+            print(f"  {p.name}  ({'+'.join(signals)}; classify against the "
+                  f"entry criterion, then register or exclude)")
     else:
-        print("validate: detector found no unregistered whole-repo-enumeration "
-              "candidate. (The parser-coverage family is invisible to it — see "
-              "the module docstring.)")
+        print("validate: detector found no unregistered candidate by either "
+              "signal (file-enumeration or opt-in marker). An UNDECLARED guard "
+              "(no ls-files, no marker) is invisible — the registry is "
+              "authoritative, not complete.")
     return 0
 
 
 def detect() -> int:
-    """Report whole-repo-enumeration candidates and their registration status."""
+    """Report repo-wide candidates by both signals and their registration status."""
     covered = _registry_files()
     candidates = find_candidate_files()
     if not candidates:
-        print("detect: no whole-repo-enumeration candidate found. The "
-              "parser-coverage family (no git ls-files) is invisible to this "
-              "detector — see the module docstring.")
+        print("detect: no candidate found by either signal (file-enumeration "
+              "or opt-in marker). An UNDECLARED guard (no ls-files, no marker) "
+              "is invisible — the registry is authoritative, not complete.")
         return 0
     for p in candidates:
         status = "registered" if p.name in covered else "UNREGISTERED — classify"
