@@ -9,9 +9,15 @@ import sys
 import textwrap
 from pathlib import Path
 
+import sqlite3
 import subprocess
 
 import pytest
+
+import ledger_parse
+import ledger_store
+from dreamwork_db.core import Access, open_database
+from dreamwork_db.tasks import task_store_spec
 
 # Make dev/ importable when running from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -26,6 +32,7 @@ from dev.citation_audit import (  # noqa: E402
     extract_citations,
     format_report,
 )
+from dev import citation_audit  # noqa: E402
 
 
 # -- fixtures -----------------------------------------------------------------
@@ -48,6 +55,98 @@ def _fixture_entries() -> dict[int, str]:
 @pytest.fixture
 def entries() -> dict[int, str]:
     return _fixture_entries()
+
+
+def _real_store_audit(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A valid citation backed by the real task repository and store schema."""
+    dw_dir = tmp_path / ".dreamwork"
+    briefs = tmp_path / "briefs"
+    dw_dir.mkdir()
+    briefs.mkdir()
+    store = dw_dir / ledger_parse.STORE_FILENAME
+    ledger_store.open_store(store, seed_next_id=199).close()
+    with open_database(task_store_spec(store), access=Access.WRITE) as database:
+        with database.transaction():
+            task_id = database.tasks.file(
+                "a guard whose message names a failure mode it cannot detect",
+                "the assertion passed on the exact input its message warned about",
+                origin="loop",
+            )
+    (briefs / "valid.md").write_text(
+        f"#{task_id} — a guard whose message names a failure mode it cannot detect.\n"
+    )
+    return dw_dir, briefs, store
+
+
+def _run_real_audit(dw_dir: Path, briefs: Path) -> int:
+    return citation_audit.main([
+        "--briefs", str(briefs), "--dw-dir", str(dw_dir), "--quiet",
+    ])
+
+
+def test_documented_store_override_is_the_supported_flag(tmp_path, capsys):
+    """The usage remedy is one spelling which argparse actually accepts (#651)."""
+    assert "--dw-dir" in citation_audit.__doc__
+    assert "--ledger" not in citation_audit.__doc__
+    dw_dir, briefs, _store = _real_store_audit(tmp_path)
+    assert _run_real_audit(dw_dir, briefs) == 0
+    assert "UNCLASSIFIABLE:   1" in capsys.readouterr().out
+
+
+def test_healthy_store_control_does_not_reach_fault_classifier(
+    tmp_path, capsys, monkeypatch,
+):
+    """The healthy-only fixture is the mandatory vacuous false-green shape."""
+    dw_dir, briefs, _store = _real_store_audit(tmp_path)
+    monkeypatch.setattr(
+        citation_audit, "_store_fault_message", lambda _exc: "wrong store fault",
+    )
+    assert _run_real_audit(dw_dir, briefs) == 0
+    captured = capsys.readouterr()
+    assert "UNRESOLVABLE:     0" in captured.out
+    assert captured.err == ""
+
+
+def test_missing_store_is_named_and_never_reported_unresolvable(tmp_path, capsys):
+    """One valid citation stays valid when its store disappears: the store faults."""
+    dw_dir, briefs, store = _real_store_audit(tmp_path)
+    assert _run_real_audit(dw_dir, briefs) == 0
+    healthy = capsys.readouterr()
+    assert "UNRESOLVABLE:     0" in healthy.out
+
+    store.unlink()
+    assert _run_real_audit(dw_dir, briefs) == 2
+    missing = capsys.readouterr()
+    assert missing.err.lower().startswith("citation_audit: store missing:")
+    assert "UNRESOLVABLE" not in missing.out
+
+
+def test_exclusive_lock_is_named_store_busy(tmp_path, capsys):
+    dw_dir, briefs, store = _real_store_audit(tmp_path)
+    lock = sqlite3.connect(store)
+    lock.execute("PRAGMA journal_mode=DELETE")
+    lock.execute("BEGIN EXCLUSIVE")
+    try:
+        assert _run_real_audit(dw_dir, briefs) == 2
+    finally:
+        lock.rollback()
+        lock.close()
+    captured = capsys.readouterr()
+    assert captured.err.lower().startswith("citation_audit: store busy:")
+    assert "database is locked" in captured.err.lower()
+
+
+def test_half_migrated_schema_is_named_schema_mismatch(tmp_path, capsys):
+    dw_dir, briefs, store = _real_store_audit(tmp_path)
+    broken = sqlite3.connect(store)
+    broken.execute("ALTER TABLE task RENAME COLUMN title TO missing_title")
+    broken.commit()
+    broken.close()
+
+    assert _run_real_audit(dw_dir, briefs) == 2
+    captured = capsys.readouterr()
+    assert captured.err.lower().startswith("citation_audit: store schema mismatch:")
+    assert "no such column: title" in captured.err.lower()
 
 
 # -- extract_citations --------------------------------------------------------
@@ -294,8 +393,12 @@ def test_default_corpus_reaches_main_checkout_from_linked_worktree(tmp_path):
         (source / "dev" / "citation_audit.py").read_text()
     )
     (main / "ledger_parse.py").write_text(
+        "from pathlib import Path\n"
+        "def store_path(dreamwork_dir):\n"
+        "    return Path(dreamwork_dir) / 'ledger.sqlite3'\n"
         "def store_records(_dreamwork_dir):\n    return []\n"
     )
+    (main / ".dreamwork" / "ledger.sqlite3").write_text("fixture store marker\n")
     (briefs / "tracked.md").write_text("tracked brief without citations\n")
     subprocess.run(["git", "init", "-q", str(main)], check=True)
     subprocess.run(["git", "-C", str(main), "config", "user.email", "t@t"], check=True)

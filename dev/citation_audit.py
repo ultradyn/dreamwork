@@ -25,14 +25,15 @@ tracked-vs-on-disk split, and flags it prominently when the audit is
 incomplete (#788).
 
 Usage:
-    python3 dev/citation_audit.py [--briefs DIR] [--ledger PATH] [--quiet]
+    python3 dev/citation_audit.py [--briefs DIR] [--dw-dir DIR] [--quiet]
 
     --briefs DIR    the brief corpus to audit (default: .dreamwork/docs/briefs)
-    --ledger PATH   the tasks.md to resolve ids against (default: auto-detect)
+    --dw-dir DIR    the .dreamwork dir containing the ledger store
+                    (default: auto-detect the main checkout)
     --quiet         suppress per-citation detail; print summary only
 
-From a worktree, pass the MAIN checkout's tasks.md via --ledger, because the
-ledger store is gitignored and cannot travel (#667).
+From a worktree, the default resolves the MAIN checkout because the ledger store
+is gitignored and cannot travel.  Pass --dw-dir only to select a different store.
 """
 
 from __future__ import annotations
@@ -85,6 +86,10 @@ def _entries_by_id(dw_dir: Path) -> dict[int, str]:
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     import ledger_parse
+
+    store = ledger_parse.store_path(dw_dir)
+    if not store.is_file():
+        raise FileNotFoundError(store)
 
     result: dict[int, str] = {}
     for r in ledger_parse.store_records(str(dw_dir)):
@@ -273,6 +278,23 @@ def _default_briefs_dir() -> Path:
     return _default_dw_dir() / "docs" / "briefs"
 
 
+def _store_fault_message(exc: Exception) -> str:
+    """Preserve the store ladder's classification at this CLI boundary."""
+    from dreamwork_db.core import Busy, ConstraintViolation, Corrupt, SchemaMismatch
+
+    if isinstance(exc, FileNotFoundError):
+        return f"store missing: {exc}"
+    if isinstance(exc, Busy):
+        return f"store busy: {exc}"
+    if isinstance(exc, Corrupt):
+        return f"store corrupt: {exc}"
+    if isinstance(exc, SchemaMismatch):
+        return f"store schema mismatch: {exc}"
+    if isinstance(exc, ConstraintViolation):
+        return f"store constraint violation: {exc}"
+    return f"unclassified store error: {exc}"
+
+
 def format_report(report: AuditReport, quiet: bool = False) -> str:
     """Human-readable summary.  Always names coverage (#671)."""
     cov = report.coverage
@@ -306,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--briefs", type=Path, default=None, help="brief corpus directory")
     parser.add_argument(
         "--dw-dir", type=Path, default=None,
-        help=".dreamwork/ dir to resolve ids from (store or markdown mode)",
+        help=".dreamwork/ dir containing the ledger store",
     )
     parser.add_argument("--quiet", action="store_true", help="summary only")
     parser.add_argument("--verbose", action="store_true", help="show UNCLASSIFIABLE details")
@@ -322,7 +344,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"citation_audit: dreamwork dir not found: {dw_dir}", file=sys.stderr)
         return 2
 
-    entries = _entries_by_id(dw_dir)
+    try:
+        entries = _entries_by_id(dw_dir)
+    except FileNotFoundError as exc:
+        print(f"citation_audit: {_store_fault_message(exc)}", file=sys.stderr)
+        return 2
+    except Exception as exc:
+        from dreamwork_db.core import DatabaseError
+
+        if not isinstance(exc, DatabaseError):
+            raise
+        print(f"citation_audit: {_store_fault_message(exc)}", file=sys.stderr)
+        return 2
     report = audit_briefs(briefs_dir, entries)
     print(format_report(report, quiet=not args.verbose))
 
