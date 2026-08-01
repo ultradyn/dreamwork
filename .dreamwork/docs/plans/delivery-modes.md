@@ -10,6 +10,34 @@ design; the implementation landed as **#342b** (folded 2026-07-30 — the
 What follows is the design as ruled on — the "his to rule" framings are kept as
 the record, with the outcomes marked.
 
+## 2026-08-01 correction — chat is conversational, not ambiguous (#818)
+
+A live `chat` sent at 15:04 did not reach the coordinator until the 15:08 tick.
+Its receipt had committed correctly; `delivery: batched` suppressed only the
+`watch-events.log` interrupt because `chat` was absent from `PREEMPT_KINDS`.
+That classification was wrong: a chat is a turn in a conversation with a human
+waiting for the next turn, not a parked idea or note.
+
+Context for the IGC decision: preserve the ruled delivery posture while making
+both new chat messages and replies conversationally immediate.
+
+| Idea | All | G1 | G2 | G3 |
+|---|:---:|:---:|:---:|:---:|
+| add `chat` to `PREEMPT_KINDS` | ✔ | ✔ | ✔ | ✔ |
+| add `chat-delivery: instant\|batched` | ✘ | ✔ | ✘ | ✔ |
+
+- **G1:** a new chat or reply emits its wake line even when delivery is batched
+- **G2:** retain one supported delivery posture rather than add a second knob
+  without a human requirement for muting chat
+- **G3:** preserve the receipt/cursor path and change only interrupt policy
+
+The second idea is refuted on G2: it widens a deliberately orthogonal posture
+surface to control a hypothetical chatty-thread case, while the measured and
+explicitly expected behaviour is immediate delivery. The first idea survives.
+`/chat-reply` needs no route carve-out: its handler already calls
+`emits_wake("chat", target)`, correctly classifying the reply by conversational
+kind rather than by route path. Thus one kind-level change covers both halves.
+
 ## Authority and what this builds on
 
 His ask (#342): a mode toggle for delivery method — **instant push** (the agent
@@ -66,12 +94,14 @@ instant mode.** The toggle chooses which one an item rides.
 
 The table is the contract. Each dashboard command kind maps to a default delivery
 mode. **HIS** marks a default he stated; **PROPOSAL** marks one this design
-offers for him to rule on or amend. The four built-in kinds are from `COMMANDS`
-(`watch.py:342`): `add-idea`, `do-next`, `do-now`, `maintenance` (plus
+offers for him to rule on or amend. The five built-in kinds are from `COMMANDS`
+(`watch.py`): `chat`, `add-idea`, `do-next`, `do-now`, `maintenance` (plus
 dynamically-resolved plugin kinds).
 
 | dashboard input | route / kind | default | source | rationale |
 |---|---|---|---|---|
+| new chat message | `/command` `chat` | **instant** | **CORRECTED #818** | a turn in a live human conversation; the human is waiting for the next turn |
+| reply in a chat | `/chat-reply` → `chat` | **instant** | **CORRECTED #818** | the route passes the conversational kind to `emits_wake`, so a continuation is at least as immediate as a new chat |
 | `do now: …` | `/command` `do-now` | **instant** | **HIS** | he stated it interrupts; it is the explicit preemption |
 | `do next: …` | `/command` `do-next` | **instant** | **PROPOSAL** | a queue-jump steer (`SKILL.md:622`) is the same gesture as `do-now`, just one rung less urgent; it names the *next* task, so acting on it promptly costs nothing. He did not name it — open if he disagrees |
 | `add idea: …` / `add task: …` | `/command` `add-idea` | **batched** | **HIS** | he stated it does not interrupt; it parks a thought the loop picks up when it chooses next |
@@ -184,19 +214,20 @@ batch of adapter replays, one cursor advance — on the tick, not on the wake.
 
 The #342 ruling's per-kind wake routing **is landed** in `watch.py` (increment
 #342b, folded 2026-07-30). The seam is `emits_wake(kind, target)` (`watch.py`):
-`kind in PREEMPT_KINDS` (`("do-now","do-next")`, `watch.py`) wakes regardless
+`kind in PREEMPT_KINDS` (`("chat","do-now","do-next")`, `watch.py`) wakes regardless
 of mode; every other kind wakes only when `delivery_mode(target)` (`watch.py`)
 reads `instant` (absent axis → `DELIVERY_DEFAULT = "instant"`, `watch.py`).
 Every wake goes through the single append fn `log_event` (`watch.py`); the
 receipt commits unconditionally in `do_POST` before dispatch. **The receipt is the
 durable home; the wake line is the interrupt.** Withholding the wake line IS batching.
 
-`WRITE_ROUTE_HANDLERS` (`watch.py`) registers **twelve** write routes. Their
+`WRITE_ROUTE_HANDLERS` (`watch.py`) registers **thirteen** write routes. Their
 wake status today, each verified against the handler while writing this section:
 
 | route | handler (def) | wake gate | status |
 |---|---|---|---|
-| `/command` | `_handle_command` (`14341`) | `if emits_wake(kind, target):` (`14363`) → `log_event` (`14364`) | **GATED** — pre-empt kinds (`do-now`/`do-next`) always wake; `add-idea`/`maintenance`/plugin kinds wake only in instant mode. COMPLIANT |
+| `/command` | `_handle_command` (`14341`) | `if emits_wake(kind, target):` (`14363`) → `log_event` (`14364`) | **GATED** — pre-empt kinds (`chat`/`do-now`/`do-next`) always wake; `add-idea`/`maintenance`/plugin kinds wake only in instant mode. COMPLIANT |
+| `/chat-reply` | `_handle_chat_reply` | `if emits_wake("chat", target):` → `log_event` | **GATED BY CONVERSATIONAL KIND** — replies wake in every mode under #818, while retaining their durable receipt. COMPLIANT |
 | `/answer` | `_handle_answer` (`14206`) | `if emits_wake("/answer", target):` (`14236`) → `log_event` (`14237`) | **GATED** — batched kind. COMPLIANT |
 | `/ask` | `_handle_ask` (`14181`) | `if emits_wake("/ask", target):` (`14201`) → `log_event` (`14202`) | **GATED** — batched kind. COMPLIANT |
 | `/comment` | `_handle_comment` (`14243`) | `if emits_wake("/comment", target):` (`14271`) → `log_event` (`14272`) | **GATED** — batched kind. COMPLIANT |
@@ -372,7 +403,8 @@ next gate has to decide.
   instant mode's.**
 
 - **Policy table** maps each dashboard input to a default. Post-ruling every
-  row is settled: `do now`/`do next` → instant; `add idea`/`add task`,
+  row is settled: chat messages/replies and `do now`/`do next` → instant;
+  `add idea`/`add task`,
   `maintenance`, plugins, `/answer`, `/comment`, `/ask` → batched (the
   ambiguous class batches as a whole — his Q1 ruling).
 
@@ -390,10 +422,11 @@ next gate has to decide.
   delivery-modes needs the read that the CLI `list` does not provide. Everything
   else consumes what #263 built.
 
-- **watch.py routing — LANDED (#342b):** the per-kind gate `emits_wake`
+- **watch.py routing — LANDED (#342b, corrected #818):** the per-kind gate `emits_wake`
   (`watch.py`) now decides, per route, whether to emit the wake line; the
-  receipt always commits. Four of the five content routes are gated
-  (`/command`, `/answer`, `/ask`, `/comment`); `/decide` is the gap **#515**
+  receipt always commits. Chat replies reuse the `chat` kind at this gate;
+  `/command`, `/chat-reply`, `/answer`, `/ask`, and `/comment` are gated,
+  while `/decide` is the gap **#515**
   closes (in flight). `/tint` and `/deploy` have no wake line by design; the
   control routes (`/run-mode`, `/posture`) wake unconditionally as a carve-out.
   Withholding the wake line *is* batching.

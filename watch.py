@@ -434,7 +434,7 @@ POSTURE_DELEGATION_DESC = {
 # #342 — delivery: when he is interrupted. Contract copy, not marketing.
 POSTURE_DELIVERY_DESC = {
     "instant": "wake the loop now · every kind fires the moment you send it",
-    "batched": "drain on the next tick · do-now/do-next still pre-empt",
+    "batched": "drain on the next tick · chats and do-now/do-next still pre-empt",
 }
 # #510 — orchestration: does the coordinator implement, or only dispatch +
 # review? Contract copy, not marketing. The axis is inert until a consumer
@@ -4606,13 +4606,13 @@ def subagent_policy_line(action, source=""):
 
 # #342 — per-kind wake routing. The receipt commits UNCONDITIONALLY in do_POST
 # (the E3 invariant); these decide only whether the watch-events.log wake line
-# — the *interrupt* — fires on top. do-now/do-next pre-empt even in batched
+# — the *interrupt* — fires on top. chat/do-now/do-next pre-empt even in batched
 # mode (a do-now that does not pre-empt is a do-now that lied — his Q2 ruling);
 # every other command kind (add-idea, maintenance, plugin kinds) and the
 # /answer, /comment, /ask routes wake only in instant mode, riding the durable
 # receipt and the tick's cursor read otherwise. Withholding the wake line IS
 # batching.
-PREEMPT_KINDS = ("do-now", "do-next")
+PREEMPT_KINDS = ("chat", "do-now", "do-next")
 
 
 def delivery_mode(target):
@@ -4627,7 +4627,7 @@ def delivery_mode(target):
 def emits_wake(kind, target):
     """Per-kind wake routing (#342): does this kind fire the wake line?
 
-    Pre-empt kinds (do-now/do-next) wake regardless of mode; every other kind
+    Pre-empt kinds (chat/do-now/do-next) wake regardless of mode; every other kind
     — add-idea, maintenance, plugin kinds — and the /answer, /comment, /ask
     ROUTES (passed as their path string, which is never a pre-empt kind) wake
     only in instant mode. The receipt always commits in do_POST; this is the
@@ -5801,9 +5801,9 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # no parsed turn is not one you can reply to.
             if not _chat_exists(target, cid):
                 self._reject("domain_invalid", detail="no_such_chat"); return
-            # #342 wake routing — wake the same way a chat send does. A reply
-            # is not a pre-empt kind, so (like the `chat` command) it wakes
-            # only in instant mode; the receipt rides the cursor otherwise.
+            # #342/#818 wake routing — wake the same way a chat send does.
+            # `chat` is a pre-empt kind, so both new messages and replies wake
+            # in every delivery mode; the receipt still rides the cursor too.
             # The wake-line carries this POST's receipt id (#527), so the
             # coordinator can match a drained receipt to a wake it acted on.
             if emits_wake("chat", target):
