@@ -4000,3 +4000,65 @@ must SQUASH this branch when landing"* — it had correctly diagnosed its own di
 past it. A machine-readable signal on the branch would not have been missed, and `redproof.py`
 already knows how to run that scan; **the merge gate simply never asks it** (#935). When a lane can
 see a problem the gate cannot, the gap is in the gate.
+
+## A tool built to stop a failure, bypassed by hand, reproduces that exact failure (2026-08-02, #936/#881/#930, mine, measured)
+
+I hand-retyped the standing-rules block into ten consecutive lane briefs
+tonight. `dev/brief.py` exists to generate that block. Its docstring records
+the measurement (#881) that caused it to be built:
+
+> `## Standing rules` was retyped 33 times and produced **32 distinct
+> bodies** — a lane's rule set depended on what the coordinator remembered.
+
+I reproduced that failure precisely, and the thirty-third variant was the one
+that contradicted itself.
+
+**The measurement.** Of 414 committed briefs, 85 carry the dream instruction
+(*"Something to say beyond your result? Write
+`.dreamwork/dreams/<date>-<time>-<slug>.md`"*). Nine carry **both** that and a
+blanket prohibition on editing *"any `.md` document"* — and all nine are mine,
+from tonight: #921, #926, #927, #928, #929, #930, #931, #932, #933. Dreams
+written across the whole window those ten lanes ran: **zero**. The two dreams
+dated today (01:19, 02:31) both predate the boilerplate.
+
+**What the prohibition was for, and what it caught.** It was aimed at the #847
+citation campaign — a real conflict, since several lanes were rewriting the
+same documents. But it named the **file extension** rather than the thing
+being protected, so it swallowed an instruction that merely shares a suffix.
+That is the #917/#916/#914 family — an instrument keyed on PRESENTATION rather
+than IDENTITY — appearing on the **dispatch** side instead of the instrument
+side. The lanes are not the only thing in this loop that can be keyed wrong.
+
+**Why it went unseen for ten dispatches.** A suppressed dream is *silent*. The
+lane reports its result, the gate is green, the fold is clean, and the missing
+artifact is a file that was never created — there is no row, no count, and no
+red anywhere to notice. Compare the citation campaign, where the same class of
+mistake produced 269 dangling paths that a census could find. **An instruction
+that is cancelled produces no evidence of having been cancelled.** The only
+reason I know is that #930 read both lines, saw they could not both be obeyed,
+picked the prohibition, and *said so in its DOGFOOD*:
+
+> I followed the prohibition and report the conflict here instead of creating
+> that file.
+
+It obeyed the correct reading of what I actually wrote. The defect was mine and
+the report is the only instrument that caught it.
+
+**The general form.** When a repo has already built a tool for an act, doing
+that act by hand is not a shortcut with the same output — it is a silent opt-out
+of every lesson encoded in the tool. The tool is the accumulated record of what
+went wrong last time. `dev/brief.py` refuses an empty core, binds `Lane-owns:`,
+and emits one canonical rule body; I got none of those for ten dispatches and
+did not notice losing them, because what a tool prevents is invisible when it
+is working.
+
+**The tell:** *when you find yourself retyping a block that a tool in this repo
+generates, you are not saving time — you are re-running the experiment that
+produced the tool, with a worse instrument.*
+
+**The coordinator corollary.** Under `orchestration=orchestrator` the brief IS
+the coordinator's work product. It is not scaffolding around the real task; it
+is the entire mechanism by which judgement reaches a lane. A defect in the
+boilerplate is therefore not a clerical error — it is a defect in the only
+thing the coordinator actually ships, and it is multiplied by the fleet size on
+every tick.
