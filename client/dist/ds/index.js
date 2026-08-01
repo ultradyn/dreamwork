@@ -3412,7 +3412,8 @@ var DreamworkDesign = (() => {
       task.date ? task.date.slice(0, 10) : null
     ].filter(Boolean).join(" · ");
     const current = task.id === selected;
-    return `<a class="goalhandle" data-task-row="${task.id}" href="/tasks2?t=${task.id}"${current ? ' aria-current="page"' : ""}` + (current ? ` style="border-left:2px solid var(--accent);padding-left:.7rem"` : "") + `><span class="goalstate ${escA(task.state || "unknown")}">#${task.id}</span><span class="goaltitle">${esc(task.title || "untitled task")}</span><span class="goalprogress">${esc(task.priority || "priority unknown")}</span><span class="goalmeta">${esc(facets || "details unknown")}</span></a>`;
+    const link = `<a class="goalhandle"${current ? ' aria-current="page"' : ""}` + (current ? ` style="border-left:2px solid var(--accent);padding-left:.7rem"` : "") + ` href="/tasks2?t=${task.id}"><span class="goalstate ${escA(task.state || "unknown")}">#${task.id}</span><span class="goaltitle">${esc(task.title || "untitled task")}</span><span class="goalprogress">${esc(task.priority || "priority unknown")}</span><span class="goalmeta">${esc(facets || "details unknown")}</span></a>`;
+    return `<div class="taskrow" data-task-row="${task.id}">${link}<button class="tasksteer" type="button" data-do-next="${task.id}" aria-label="steer the loop at #${task.id}">do next</button></div>`;
   }
   function taskTriageFact(key, value) {
     const shown = value == null || value === "" ? "unknown" : String(value);
@@ -3538,6 +3539,14 @@ var DreamworkDesign = (() => {
     const el = e.target.closest && e.target.closest("[data-setting-value]");
     if (!el || el.disabled) return;
     saveSetting(el, JSON.parse(decodeURIComponent(el.dataset.settingValue)));
+  });
+  addEventListener("click", (e) => {
+    const btn = e.target.closest && e.target.closest("[data-do-next]");
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    postCommand("do-next", "#" + btn.getAttribute("data-do-next")).finally(() => {
+      btn.disabled = false;
+    });
   });
   addEventListener("change", (e) => {
     const el = e.target.closest && e.target.closest("[data-setting-input]");
