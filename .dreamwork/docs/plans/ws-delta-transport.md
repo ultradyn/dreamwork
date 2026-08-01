@@ -51,7 +51,7 @@ remains as the fallback throughout.
 | fact | value | how |
 |---|---|---|
 | `/data.json` payload | **917,407 B** (26 top-level keys) | `curl -w %{size_download}`, 3 runs identical |
-| same, gzip -9 | 328,196 B | offline `gzip -9` — the server sends identity only (`_send`, `watch.py:4412`; response headers carry no `Content-Encoding`) |
+| same, gzip -9 | 328,196 B | offline `gzip -9` — the server sends identity only (`_send`, `watch.py`; response headers carry no `Content-Encoding`) |
 | `/data.json` service time | 160–224 ms | `curl -w %{time_total}`, 3 runs |
 | `collect()` in-process | ~300 ms | timed direct call |
 | `/mtime` | 36 B, ~3 ms | curl, 3 runs |
@@ -69,7 +69,7 @@ remains as the fallback throughout.
 Steady-state cost today, per open window, while the loop is active: **~27 MB
 per minute** of loopback transfer plus **~8–15 % of a core** in `collect()`
 (160–300 ms × one build per window per 2 s tick — the build is per-request,
-`watch.py:4523`, uncached). `dreamhub.py` is a second consumer of the same
+`watch.py`, uncached). `dreamhub.py` is a second consumer of the same
 pair (`dreamhub.py:15,402,425`) and pays the same 917 KB per project per
 change it observes. INFERRED (not measured): the client-side cost of
 `JSON.parse` on 917 KB plus the full string rebuild + morph per tick is
@@ -80,17 +80,17 @@ territory, already ruled, not this plan's.
 
 - Server: `http.server.ThreadingHTTPServer` (`watch.py:306–315`) — one
   daemon thread per connection, unbounded (`/usr/lib/python3.14/http/server.py:154`,
-  `daemon_threads = True`); `serve_forever()` at `watch.py:5424`. A
+  `daemon_threads = True`); `serve_forever()` at `watch.py`. A
   long-lived connection holds one thread and starves nothing — the SSE probe
   confirmed concurrent service while a stream was held.
 - Client: a 2 s `setTimeout` chain (`router.js:4266–4346`) fetches `/mtime`
-  (`"<generation> <watched-mtime>"`, `watch.py:4535–4539`); generation
+  (`"<generation> <watched-mtime>"`, `watch.py`); generation
   change → `location.reload()` (deploy/restart contract, `watch.py:77–81`);
   mtime change → full `/data.json` fetch into `setData` (`router.js:1044`),
   full rebuild, morph + snapshot/restore choreography.
-- `watched_mtime` (`watch.py:3657–3695`): max mtime over `DREAMWORK.md`,
+- `watched_mtime` (`watch.py`): max mtime over `DREAMWORK.md`,
   `.git/logs/HEAD` and every file under `.dreamwork/` (minus
-  `WATCHED_MTIME_IGNORED` = the question-sigs store, `watch.py:3654`), plus
+  `WATCHED_MTIME_IGNORED` = the question-sigs store, `watch.py`), plus
   a listing-fingerprint fraction so deletions are visible (#481, #86).
   `ledger.sqlite3-shm` is **not** excluded, and sqlite touches `-shm` on
   read — including the reads `collect()` itself performs
@@ -99,14 +99,14 @@ territory, already ruled, not this plan's.
   moved only on real writes in measurement (it sat 34 s stale while `-shm`
   churned), so the write signal does not depend on `-shm`.
 - Writes: 11 POST routes in one dispatch table
-  (`WRITE_ROUTE_HANDLERS`, `watch.py:5308–5320`), every one behind
-  `_preflight` Host+Origin (`watch.py:4281–4292`), committing a journal
+  (`WRITE_ROUTE_HANDLERS`, `watch.py`), every one behind
+  `_preflight` Host+Origin (`watch.py`), committing a journal
   receipt before dispatch with `X-Client-Action-Id` idempotency and replay
-  verdicts (`watch.py:4294–4397`), audited by `dev/reconcile_submissions.py`.
+  verdicts (`watch.py`), audited by `dev/reconcile_submissions.py`.
   **This is already an RPC layer with durability guarantees no fresh WS-RPC
   would have on day one.**
 - `collect()` builds the 26-key document fresh per request
-  (`watch.py:3422–3539`) and stamps `generated` (`watch.py:3443`) — so every
+  (`watch.py`) and stamps `generated` (`watch.py`) — so every
   build differs byte-wise even when nothing changed. Any whole-document
   hash/dedup must exclude it.
 - Standing decisions that bind here: server stdlib-only (ruled 2026-07-30,
@@ -117,7 +117,7 @@ territory, already ruled, not this plan's.
   (`dreamhub-design.md:197`; `DREAMWORK.md` second-truth rule — **both scoped
   2026-07-31 19:09, see G6 below**: the rule binds on-disk master state, and
   the renderer sentence was relaxed outright); trusted-LAN
-  is unauthenticated and WAN unsupported (`watch.py:5414–5417`), with
+  is unauthenticated and WAN unsupported (`watch.py`), with
   `hub-public-auth.md` / `hub-ssh-auth.md` holding the public bar.
 
 ## The trap, named before the matrix
@@ -251,7 +251,7 @@ ratification) that G2-no-second-render-authority is per-surface.
 
 - **I1 ✘G6** — "with RPC" over WS means the write operations exist twice:
   once as journaled POSTs (receipt, idempotency key, replay verdict,
-  Origin preflight, submissions audit — `watch.py:4294–4397`,
+  Origin preflight, submissions audit — `watch.py`,
   `reconcile_submissions.py`) and once as WS frames that must either
   reimplement all of that or silently lack it. Two write transports
   maintained in parallel is the exact drift `dreamhub-design.md:197`
@@ -313,7 +313,7 @@ is authorised by this doc.
 
 **Phase 0 — close the broken change-gate** (~3 lines + born-red test).
 Add `ledger.sqlite3-shm` and `user-events.sqlite3-shm` to
-`WATCHED_MTIME_IGNORED` (`watch.py:3654`). Evidence: `-shm` moves on read
+`WATCHED_MTIME_IGNORED` (`watch.py`). Evidence: `-shm` moves on read
 (a single `/data.json` GET moved it — measured); real writes move `-wal`
 and the main db file, which stay watched, so no real change goes dark.
 Born-red test: serve `/data.json` twice, assert `watched_mtime` did not
@@ -350,7 +350,7 @@ Change detection: one server thread runs the existing `watched_mtime` walk
 every 500 ms (2.4 ms measured — 0.5 % of a core) and publishes to
 per-connection queues; each SSE connection is one daemon thread writing
 from its queue (the model the server already runs; the #299 disconnect
-quieting in `Handler.handle`, `watch.py:4257–4270`, already covers the
+quieting in `Handler.handle`, `watch.py`, already covers the
 writer's `BrokenPipeError`). The generation rides every event; the client
 reloads on change exactly as the poll contract does today
 (`router.js:4269–4270`); a server restart drops the stream and
@@ -401,9 +401,9 @@ render architecture is recommended here.
 `/events` serves the same document (as deltas) to the same audience as
 `/data.json`, behind the same `_preflight` Host gate — its exposure class
 is *identical by construction*, so the standing classification
-(loopback/trusted-LAN; WAN unsupported, `watch.py:5414–5417`) transfers
+(loopback/trusted-LAN; WAN unsupported, `watch.py`) transfers
 without a new decision. The `summary()` whitelist discipline
-(`watch.py:3542+`) is untouched; a future *public* stream would be a
+(`watch.py`) is untouched; a future *public* stream would be a
 summary-shaped topic and a separate ruling, exactly as `/summary.json` was.
 When hub-public-auth lands its gate on GETs, SSE inherits it for free
 because it is a GET. (This is the G5 cell's reasoning; a WS Upgrade path

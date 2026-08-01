@@ -73,7 +73,7 @@ session: 31,784 lines, 81.9 MB, 28 compactions, 4 days of loop time. All
 `<cwd-slug>` is the working directory with `/` → `-`. Subagent transcripts
 live beside it at `<session-uuid>/subagents/agent-<slug>-<hash>.jsonl`
 (§10). **The transcript sits OUTSIDE `--target`** — `#180`'s open note
-already flags that `resolve_confined` (`watch.py:3978`) cannot serve it;
+already flags that `resolve_confined` (`watch.py`) cannot serve it;
 §6 designs the gate rather than widening that one.
 
 **Record grammar** (types × counts in the measured file):
@@ -238,7 +238,7 @@ cursor, and the DB writes, and fans events out to registered listeners
 ## 6. Registration, notify, and the API
 
 Four routes; every one rides the existing `_preflight()` authority gate
-(`watch.py:4497`) and adds **no** write exception — the session view reads.
+(`watch.py`) and adds **no** write exception — the session view reads.
 
 - **`POST /session/watch`** `{session?: <id>}` → `{session, client, pages,
   cursor}`. Registers interest; arms the watcher; returns the snapshot
@@ -253,7 +253,7 @@ Four routes; every one rides the existing `_preflight()` authority gate
   events since `cursor` (§3). The *delivery* of "there are new events" is
   `#614`'s decision (websocket/SSE/long-poll); this route is the pull side
   every transport shares, and v1 binds it to the page's existing ~2s
-  `/mtime` tick (`watch.py:4535`) by adding a per-session generation token
+  `/mtime` tick (`watch.py`) by adding a per-session generation token
   — **the one deliberate deviation from "no polling" in v1**, see the
   honesty note below.
 - **`GET /session/peek?session=<id>&byte=<b>&len=<n>`** → the parsed body
@@ -264,7 +264,7 @@ Four routes; every one rides the existing `_preflight()` authority gate
   mtime, size, live-or-not), for a "which session" switcher.
 
 **Confinement.** Session files live outside `--target`, so
-`resolve_confined` (`watch.py:3978`) must not be widened and is not used
+`resolve_confined` (`watch.py`) must not be widened and is not used
 here. The gate is a **server-side registry**: paths are *derived* — client
 root (`~/.claude-p/projects/`) + slug(cwd of target) + `<uuid>.jsonl`
 matched against a strict pattern — and the browser only ever names a

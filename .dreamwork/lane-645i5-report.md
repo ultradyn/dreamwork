@@ -62,7 +62,7 @@ Armed `dev/redproof.py begin watch.py`, injected a literal
 FAILED test_no_raw_connect.py::test_no_raw_sqlite_connect_in_production_sources
 AssertionError: production sources contain raw sqlite3.connect( calls outside the
 sanctioned door (dreamwork_db/core.py); route them through dreamwork_db.core instead:
-    watch.py:3476: _sabotage = sqlite3.connect(str(db))  # REDPROOF: raw connect reintroduced
+    watch.py:3476 @ dc739001: _sabotage = sqlite3.connect(str(db))  # REDPROOF: raw connect reintroduced
 ```
 
 Red on the named file:line, not a count. Restored; guard green.

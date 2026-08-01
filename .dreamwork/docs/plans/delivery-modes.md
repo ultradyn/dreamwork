@@ -28,7 +28,7 @@ Both blockers cleared today:
   `synchronous=FULL`, hash-chained events, a per-consumer read cursor) is the
   durable receipt store, and the **E3 cutover is in `watch.py`**: every write
   route commits a receipt *before* dispatch (`do_POST` → `_journal_receive` at
-  `watch.py:5457`, `Handler._journal_receive` at `watch.py:4963`).
+  `watch.py`, `Handler._journal_receive` at `watch.py`).
 
 This task **consumes #263's cursor and adds the per-kind interrupt policy +
 toggle on top.** Filing a second cursor would be the two-durable-truths failure
@@ -37,8 +37,8 @@ toggle on top.** Filing a second cursor would be the two-durable-truths failure
 ## Two load-bearing facts, measured
 
 **1 · `kind` reaches the wake channel as nothing but a string prefix — so no
-consumer can tell urgency today.** `_handle_command` (`watch.py:5672`) builds
-the wake line with `command_line(kind, text, source)` (`watch.py:4847`), which
+consumer can tell urgency today.** `_handle_command` (`watch.py`) builds
+the wake line with `command_line(kind, text, source)` (`watch.py`), which
 formats `f"command via watch{from_hint(source)}: {kind}{body}"`. An `add-idea`
 and a `do-now` are identical to the tail monitor: both append one line to
 `watch-events.log`, both wake the coordinator exactly as hard. The journal
@@ -54,7 +54,7 @@ pre-journal failure mode verbatim: *"a command he types into the dashboard
 composer exists only as a line in that file… so if the tail monitor is not armed
 (a resumed session, a compacted one, a `watch.py` started after init), his
 `do now:` is lost with no error anywhere."* `watch-events.log` is best-effort
-append (`log_event`, `watch.py:4621`) with `except OSError: pass`; an mtime change
+append (`log_event`, `watch.py`) with `except OSError: pass`; an mtime change
 says the file moved but tells no reader which lines are new, and **session memory
 of the offset is exactly what compaction destroys.** #263 fixes the durable half:
 every write route now commits a receipt with an ordinal in a hash-chained event
@@ -108,7 +108,7 @@ one line in `.dreamwork/posture`, mirroring the exact contract of the other thre
 (`file-formats.md:1124`). Absent → `instant` (today's behaviour: every wake line
 fires), so a posture file that predates the axis behaves identically. This adds a
 line to an existing closed-set file rather than a new file, and it reuses
-`POST /posture` (`watch.py:5863`, dual-write of file + one `watch-events.log`
+`POST /posture` (`watch.py`, dual-write of file + one `watch-events.log`
 line on real change) rather than a new route.
 
 The alternative shape, offered because the brief told me to check how posture is
@@ -183,15 +183,15 @@ batch of adapter replays, one cursor advance — on the tick, not on the wake.
 ## What changed in watch.py's write routes (design-as-built — #342b landed)
 
 The #342 ruling's per-kind wake routing **is landed** in `watch.py` (increment
-#342b, folded 2026-07-30). The seam is `emits_wake(kind, target)` (`watch.py:4575`):
-`kind in PREEMPT_KINDS` (`("do-now","do-next")`, `watch.py:4563`) wakes regardless
-of mode; every other kind wakes only when `delivery_mode(target)` (`watch.py:4566`)
-reads `instant` (absent axis → `DELIVERY_DEFAULT = "instant"`, `watch.py:4538`).
-Every wake goes through the single append fn `log_event` (`watch.py:4621`); the
+#342b, folded 2026-07-30). The seam is `emits_wake(kind, target)` (`watch.py`):
+`kind in PREEMPT_KINDS` (`("do-now","do-next")`, `watch.py`) wakes regardless
+of mode; every other kind wakes only when `delivery_mode(target)` (`watch.py`)
+reads `instant` (absent axis → `DELIVERY_DEFAULT = "instant"`, `watch.py`).
+Every wake goes through the single append fn `log_event` (`watch.py`); the
 receipt commits unconditionally in `do_POST` before dispatch. **The receipt is the
 durable home; the wake line is the interrupt.** Withholding the wake line IS batching.
 
-`WRITE_ROUTE_HANDLERS` (`watch.py:6077`) registers **twelve** write routes. Their
+`WRITE_ROUTE_HANDLERS` (`watch.py`) registers **twelve** write routes. Their
 wake status today, each verified against the handler while writing this section:
 
 | route | handler (def) | wake gate | status |
@@ -222,7 +222,7 @@ has a stated policy:
 
 ### Control-plane wakes — always-instant carve-out
 
-`_handle_run_mode` (`watch.py:5834`) and `_handle_posture` (`watch.py:5863`) each
+`_handle_run_mode` (`watch.py`) and `_handle_posture` (`watch.py`) each
 call `log_event` on a real change with no `emits_wake` branch: a `run-mode via
 watch` line (`14417`), a `posture via watch` line for the pace/asking/delegation
 triple (`14495`), and a `delivery via watch` line for the delivery axis (`14499`).
@@ -238,7 +238,7 @@ as a carve-out rather than leave it an unannotated default.
 
 ### Journal failure-path wakes — always-loud error diagnostics
 
-`_journal_receive` (`watch.py:4668`), `_journal_record_health` (`4685`), and
+`_journal_receive` (`watch.py`), `_journal_record_health` (`4685`), and
 `_journal_reject` (`13542`) each call `log_event`, but **only inside an `except`**
 (at `13524`, `13539`, `13561`). They fire solely when the journal
 open/receive/record/reject itself failed. An error diagnostic should always be loud
@@ -326,8 +326,8 @@ wake-and-act cycles.
 
 The 2026-07-30 ruling settled Q1–Q3. The implementation then landed as
 **#342b** (folded 2026-07-30): the `delivery` posture axis (`delivery_mode`,
-`watch.py:4566`), the per-kind gate (`emits_wake`, `watch.py:4575`), the
-pre-empt set (`PREEMPT_KINDS`, `watch.py:4563`), and the four content-route
+`watch.py`), the per-kind gate (`emits_wake`, `watch.py`), the
+pre-empt set (`PREEMPT_KINDS`, `watch.py`), and the four content-route
 gates named in the table above. The list below is kept as the historical record
 of what the *design doc alone* did not authorise before the ruling — it is
 history, not current state. What is current is the design-as-built state in the
@@ -363,7 +363,7 @@ next gate has to decide.
 
 - **Two measured facts frame it.** (a) `kind` reaches the wake channel
   (`watch-events.log`) as nothing but a string prefix (`command_line`,
-  `watch.py:4847`), so an `add-idea` wakes the loop exactly as hard as a
+  `watch.py`), so an `add-idea` wakes the loop exactly as hard as a
   `do-now` — no consumer can tell urgency today. (b) The command channel was
   push-only and not durable (`SKILL.md:117`: a `do-now` is lost if the monitor is
   off); #263's E3 cutover made every write route commit a durable receipt first,
@@ -391,7 +391,7 @@ next gate has to decide.
   else consumes what #263 built.
 
 - **watch.py routing — LANDED (#342b):** the per-kind gate `emits_wake`
-  (`watch.py:4575`) now decides, per route, whether to emit the wake line; the
+  (`watch.py`) now decides, per route, whether to emit the wake line; the
   receipt always commits. Four of the five content routes are gated
   (`/command`, `/answer`, `/ask`, `/comment`); `/decide` is the gap **#515**
   closes (in flight). `/tint` and `/deploy` have no wake line by design; the

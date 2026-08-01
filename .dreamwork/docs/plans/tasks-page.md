@@ -59,7 +59,7 @@ Defended against the three alternatives, because `#282` will hardcode it and
 `#133` may later prefix it:
 
 - **`/tasks/281` (path segment)** — rejected. The server allowlist is an exact
-  `parsed.path in (…)` membership test (`watch.py:5199` — `("/", "/questions", "/answers", "/file", "/review")`). A path segment turns
+  `parsed.path in (…)` membership test (`watch.py` — `("/", "/questions", "/answers", "/file", "/review")`). A path segment turns
   that into prefix matching, which is a change in *kind* to the one place that
   decides what this server will serve, and it lands in the same seam `#133`
   will rewrite. Query params keep the allowlist exact and get the prefix for
@@ -706,7 +706,7 @@ is no precedent here for skipping it.
 `snapshotCards`/`regroupCards` pair** — a second implementation of "one
 leaves, its neighbours travel" is two things to keep true. Four descriptors
 exist today, not two: `QA_LIST`, `ANSWER_LIST`, `GIT_LIST` and `REVIEW_LIST`
-(`watch.py:3953-3956`). The draft called this the third; it is the fifth, and
+(`watch.py`). The draft called this the third; it is the fifth, and
 the correction matters only because "third" was the argument that one more
 user of one mechanism is unremarkable — with four already there, it is more
 unremarkable, not less.
@@ -746,7 +746,7 @@ lifted above the dissolve so it reads as *that row travelled* rather than
 
 ### 6.4 Disclosures
 
-The detail's raw-entry peek uses `foldDetailsLocal` (`watch.py:4302`) — height
+The detail's raw-entry peek uses `foldDetailsLocal` (`watch.py`) — height
 travel through `travelCard` + `revealBody` arrival + `dreamAway` departure at
 the rect it occupied, the section-fold pieces, and it takes the reduced-motion
 branch (`if (rmr) { det.open = !det.open; return; }`) for free.
@@ -787,10 +787,10 @@ skin, and a stuck one leaves rows invisible and still clickable).
   **`/` is the page's first bare single-key global hotkey, and the draft
   under-stated that.** It cited *"the same rule the shader hotkey already
   obeys"*, and there is no shader hotkey: the main document's only keydown
-  handlers today are `Escape` for the command palette (`watch.py:5409`) and
-  Ctrl/Cmd+Enter to submit from a text field (`watch.py:5415`). The one bare
+  handlers today are `Escape` for the command palette (`watch.py`) and
+  Ctrl/Cmd+Enter to submit from a text field (`watch.py`). The one bare
   single-key handler in the tree is the **debug layer switcher's `l`**, and it
-  lives in a popout (`watch.py:5840`) rather than on the main document. Its
+  lives in a popout (`watch.py`) rather than on the main document. Its
   guard is the idiom to copy verbatim, comment included — *"never hijack a
   keystroke aimed at a text field"*:
 

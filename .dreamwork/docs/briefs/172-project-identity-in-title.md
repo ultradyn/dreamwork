@@ -1,6 +1,7 @@
 # Brief — #172: the project name is not in the title, anywhere
 
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/172`**, branch **`wt/172`**. Do not push, do not merge.
+Lane-owns: watch.py, watch-design.md, dev/capture/, justfile, test_watch.py
 **Never use `attn`** — report through the inbox path at the bottom.
 
 **This is urgent and he is right to be annoyed.** His words at 15:13, verbatim:
@@ -27,7 +28,7 @@ a **P1 that has been open and unstarted**, not work that was done badly.
 
 - The visible title is `<h1 class="htitle" id="htitle">` (`watch.py:1618`), **populated by JS** and
   currently carrying only the route word — empty string on the dashboard route.
-- The tab title comes from `TITLE_ROUTE` (`watch.py:3646`) composed with `titleNeed` and the
+- The tab title comes from `TITLE_ROUTE` (`watch.py:3646 @ dc739001`) composed with `titleNeed` and the
   liveness word. **No project identity in either.**
 - **`/data.json` already carries `target`** — the absolute path of the project
   (`/home/xertrov/.llm-general/skills/ud-dreamwork` here) — plus `tint`. **So the data is already
@@ -52,7 +53,7 @@ changes length**. A layout where identity sits beside the route and slides as `q
 `review 367-option-previews.html` fails this even if it looks fine on one route. **Check it by
 navigating between routes and measuring the identity's box, not by looking at one screenshot.**
 
-One caution already recorded in `watch.py:6143`: **two checkouts can share a basename**, so
+One caution already recorded in `watch.py:6143 @ dc739001`: **two checkouts can share a basename**, so
 basename alone is ambiguous. The popout band's answer is basename *plus* full path. Decide what the
 main title does about that and say why — the full path in an `h1` is almost certainly wrong, a
 `title=`/tooltip or the existing meta line is likely right.

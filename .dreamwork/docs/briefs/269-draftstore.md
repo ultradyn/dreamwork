@@ -40,7 +40,7 @@ hazard this code already races against a timeout (`watch.py:2300`). A straight s
    with **dual-read of the old keys** so no draft in his browser right now is orphaned by the extraction.
    The design's logical id is `kind:scopeKey` inside a `data.target` partition.
 2. **Bind the two boxes that have no persistence at all**: `#askbox` (~`watch.py:2514`) and the popout
-   `#ptext` (~`watch.py:4835`). These are `#459` and they are the cheapest consumers — they are the proof
+   `#ptext` (~`watch.py:4835 @ dc739001`). These are `#459` and they are the cheapest consumers — they are the proof
    the module is a module and not a rename.
 
 If your measurement says the extraction cannot be done without a behaviour change to the shipped path,

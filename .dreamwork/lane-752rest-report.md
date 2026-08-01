@@ -12,7 +12,7 @@ made: `#337` for sticky steering raising the next message's authority, and
 The `#751` merge moved the reported `watch.py:2685` occurrence to current line
 2706; line 2685 is now the `entry = ...` assignment. I changed the cited
 comment, not the stale coordinate. The correct `#126` page-provenance use is
-still present at current `watch.py:4807` and was not touched.
+still present at current `watch.py:4807 @ dc739001` and was not touched.
 
 Commit: `54bb368a` (`fix(#752): correct remaining citation roles`). The change
 is five replaced comment lines across only `dev/ledger.py` and `watch.py`.

@@ -26,8 +26,8 @@ until that proof is red-capable and green.
 
 ## Context and current evidence
 
-`watch.py:3934-3940` currently hashes the exact output of Python
-`json.dumps(core, sort_keys=True, default=str)`. `watch.py:3999-4013` puts that
+`watch.py` currently hashes the exact output of Python
+`json.dumps(core, sort_keys=True, default=str)`. `watch.py` puts that
 hex digest into the delta. `client/router.js:2508-2527` validates the requested
 and held base, applies whole top-level changes and removals, then advances the
 version without reading `check`.
@@ -120,7 +120,7 @@ A because G3 already refutes it.
 
 ## The actual `collect()` value domain
 
-I inspected the production `collect()` return tree (`watch.py:3770-3907`) with
+I inspected the production `collect()` return tree (`watch.py`) with
 its question-signature writer disabled so the read-only probe did not mutate
 the target. The live tree contained only JSON-native values:
 
@@ -149,7 +149,7 @@ not an unbounded theoretical object.
    `40b8230000000000` for the live value (`3ff0000000000000` for `1`).
 
 2. **Unsafe integers are live too.** `list_reviews()` emits `mtime_ns` and
-   `created_ns` (`watch.py:3493-3501`). One observed value was
+   `created_ns` (`watch.py`). One observed value was
    `1785517576390236765`; `JSON.parse` rounds it to the binary64 value whose
    exact integer is `1785517576390236672` (bits `43b8c76ec690f4da`; JavaScript's
    shortest decimal display is `1785517576390236700`). A check over browser

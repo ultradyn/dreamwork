@@ -14,13 +14,13 @@ re-reading the cited region, not carried from the audit's snapshot.
 1. **Mode-gate it.** `question-updated` is a per-kind signal routed under the
    delivery mode, **not** an always-instant carve-out. In `instant` it fires as
    today; in `batched` it is suppressed. The mechanism is the existing
-   `emits_wake` seam — one `if` around the `log_event` call at `watch.py:3765`.
+   `emits_wake` seam — one `if` around the `log_event` call at `watch.py`.
 2. **Not journaled — by construction, and correctly.** The durable record is
    `question-sigs.json` (the sig store) plus `questions.md` itself, both of
    which the loop re-reads every tick. The event is a lossy nudge; journaling it
    would create a second durable truth for content a file already holds.
 3. **Name the swallow defect.** The #534 re-seed branch's early `return`
-   (`watch.py:3735`) skips change detection, so a **real** content change that
+   (`watch.py`) skips change detection, so a **real** content change that
    rides the same collect as an algorithm re-seed loses both its event and its
    `updated_at` stamp (the stamp carries the prior value). That is a defect to
    fix, not a behaviour to design around. Under ruling (1) its blast radius
@@ -36,9 +36,9 @@ re-reading the cited region, not carried from the audit's snapshot.
 **1 · The loop reads `questions.md` on every tick — the event is a nudge, not a
 delivery path.** `SKILL.md:80-87` is the tick habit: *"If `questions.md` changed
 since your last look, check for new human-authored blocks … fold them first."*
-`collect()` (`watch.py:3797`) re-reads the file and re-stamps every entry's
+`collect()` (`watch.py`) re-reads the file and re-stamps every entry's
 `updated_at` from the sig store on **every dashboard poll** (`track_question_updates`
-called at `watch.py:3812`). So the loop learns question content drift from the
+called at `watch.py`). So the loop learns question content drift from the
 file, not from the event. The event's only value is **timing** — waking the
 coordinator between ticks to act one tick sooner. That is precisely the
 instant-vs-batched distinction, which is precisely what the delivery-mode
@@ -76,10 +76,10 @@ measured refutation of leaving this channel ungated (see Decision 1).
 
 **Ruling: `question-updated` is a per-kind signal routed under the delivery
 mode.** Apply the existing `emits_wake(kind, target)` gate
-(`watch.py:4575`) to the emit site at `watch.py:3765`. `"question-updated"` is
-not in `PREEMPT_KINDS` (`("do-now","do-next")`, `watch.py:4563`), so it behaves
+(`watch.py`) to the emit site at `watch.py`. `"question-updated"` is
+not in `PREEMPT_KINDS` (`("do-now","do-next")`, `watch.py`), so it behaves
 exactly like the batched-class content routes: it wakes only in `instant` mode
-(`delivery_mode(target) == DELIVERY_DEFAULT`, `watch.py:4585`).
+(`delivery_mode(target) == DELIVERY_DEFAULT`, `watch.py`).
 
 Why this is right, in delivery-modes' own terms: the question surface **is** the
 batched class (his Q1 ruling: answers/notes/questions batch as a whole). A
@@ -108,14 +108,14 @@ that exists to throttle exactly that class.
 
 **Ruling: do NOT journal `question-updated`.** The submissions journal (#263) is
 the durable record a cursor drain consumes; `watch-events.log` is lossy
-(`log_event` swallows `OSError`, `watch.py:4632-4633`; `file-formats.md:2103`
+(`log_event` swallows `OSError`, `watch.py`; `file-formats.md:2103`
 calls the event half *"a convenience and never a notification to rely on"*). A
 signal that can matter after a restart needs journal durability — but this one
 cannot lose anything, and the reason is structural, not a policy preference:
 
 - **The sig store is the durable record of question content state.**
   `question-sigs.json` is written atomically (`_write_question_sigs`,
-  `watch.py:3792`, tmp + `os.replace`), per-entry content digest + `updated_at`,
+  `watch.py`, tmp + `os.replace`), per-entry content digest + `updated_at`,
   and is the source `collect()` re-stamps from on every poll. It survives
   restart and compaction.
 - **`questions.md` is the authoritative content, polled every tick.** There is
@@ -137,22 +137,22 @@ the (optional, mode-gated) optimisation.
 The brief asked: when a **real** content change rides the **same collect** as an
 algorithm re-seed, is it still reported? **No. The merged #534 code swallows it.**
 
-`track_question_updates` (`watch.py:3683`) has two paths separated by an early
+`track_question_updates` (`watch.py`) has two paths separated by an early
 `return`. The re-seed branch (`if _store_algo(store) != SIG_ALGO:`,
-`watch.py:3717-3735`) recomputes every entry's digest under the current
+`watch.py`) recomputes every entry's digest under the current
 algorithm, **carries forward each entry's prior `updated_at`**
-(`watch.py:3726-3732`), persists the store, and **`return entries`**
-(`watch.py:3735`) — before the change-detection loop (`watch.py:3737-3771`)
+(`watch.py`), persists the store, and **`return entries`**
+(`watch.py`) — before the change-detection loop (`watch.py`)
 ever runs. So in a re-seed collect:
 
 - **No event fires** for a genuine change (the `elif prev.get("digest") != dig:`
-  → `log_event` path at `watch.py:3752-3770` is unreachable).
+  → `log_event` path at `watch.py` is unreachable).
 - **The changed entry's `updated_at` is stale** — it carries the prior value
-  (`seen_at`, `watch.py:3726`), not `now`, so the dashboard shows an old "updated"
+  (`seen_at`, `watch.py`), not `now`, so the dashboard shows an old "updated"
   age for content that did change.
 - **The change is permanently invisible as an event/age:** the re-seed stores
   the entry's *current-algorithm* digest of its *current (changed)* content
-  (`watch.py:3728`), so the next collect sees no digest diff and never fires.
+  (`watch.py`), so the next collect sees no digest diff and never fires.
 
 Cross-algorithm change detection is **impossible by construction**: you cannot
 compare a current-algorithm digest to a stored old-algorithm digest (they differ
@@ -197,8 +197,8 @@ delivery) in the same commit that adds the code guard. One doc place, kept
 single-source per the repo's design-as-built discipline.
 
 The code seam is **also single and pre-existing**: `emits_wake(kind, target)`
-(`watch.py:4575`) is the one per-kind decision point. The implementation adds
-exactly one gate at the emit site (`watch.py:3765`); no new constant is
+(`watch.py`) is the one per-kind decision point. The implementation adds
+exactly one gate at the emit site (`watch.py`); no new constant is
 strictly required (`"question-updated"` is never a pre-empt kind, so passing the
 literal routes it to instant-only, matching how the content routes pass their
 path string as `kind`). A named constant is optional for greppability only.
@@ -209,17 +209,17 @@ path string as `kind`). A named constant is optional for greppability only.
 > Red-first per repo culture: each check must be shown to fail before it passes.
 
 1. **Gate the emit (Decision 1).** Wrap the `log_event` call in
-   `track_question_updates` (`watch.py:3765-3770`) in
+   `track_question_updates` (`watch.py`) in
    `if emits_wake("question-updated", target):`. Verify on HEAD that
    `emits_wake` is imported/in-scope at that site (it is module-level,
-   `watch.py:4575`).
+   `watch.py`).
 2. **Red-first the gate.** Under `delivery: batched`, assert a `questions.md`
    content edit writes **no** `question-updated` line to `watch-events.log`
    (the digest still changes and `updated_at` still stamps — assert *that* too,
    so the check does not pass over the stamping it depends on). Flip to
    `instant` and assert the line *does* fire. Reinstate the bug (remove the
    `if`), watch the batched assertion fail, restore.
-3. **Fix the swallow (Decision 3).** In the re-seed branch (`watch.py:3717-3735`),
+3. **Fix the swallow (Decision 3).** In the re-seed branch (`watch.py`),
    stamp `now = time.time()` and set each entry's `updated_at` to `now` (and
    `e["updated_at"] = now`) instead of carrying `prev_at`. Keep the early
    `return` and the zero-event silence.
@@ -229,7 +229,7 @@ path string as `kind`). A named constant is optional for greppability only.
    ~now (not the carried prior value) and that zero events fired. Revert the
    `now`→`prev_at` change, watch the assertion fail (stale age), restore. State
    the production line your fake store stands in front of (the
-   `_store_algo(store) != SIG_ALGO` read at `watch.py:3717`) and confirm
+   `_store_algo(store) != SIG_ALGO` read at `watch.py`) and confirm
    changing it moves the test.
 5. **Update the policy doc (Decision 4).** Rewrite the `question-updated` stub
    in `delivery-modes.md` (§"Wake channels outside the route table") from
@@ -270,7 +270,7 @@ they are on the record, not because they block:
   authorises no code.
 
 - **Ruling (1) — mode-gate.** `question-updated` is a per-kind signal routed
-  under the delivery mode via the existing `emits_wake` seam (`watch.py:4575`):
+  under the delivery mode via the existing `emits_wake` seam (`watch.py`):
   fires in `instant`, suppressed in `batched`. The question surface is the
   batched class (your Q1), and the loop re-reads `questions.md` every tick
   (`SKILL.md:80-87`), so the event is a one-tick-latency nudge, not a delivery
@@ -285,7 +285,7 @@ they are on the record, not because they block:
   anti-pattern. Loss is bounded to one tick by the per-tick file poll.
 
 - **Ruling (3) — name the swallow defect.** The #534 re-seed branch's early
-  `return` (`watch.py:3735`) skips change detection, so a real content change
+  `return` (`watch.py`) skips change detection, so a real content change
   in the same collect as an algorithm re-seed loses its event and gets a stale
   `updated_at` (carries prior value). Cross-algorithm change detection is
   impossible, so the conservative fix is to stamp `now` for all entries on
@@ -296,7 +296,7 @@ they are on the record, not because they block:
 - **Ruling (4) — policy row in `delivery-modes.md`.** It already has a
   "`question-updated` — policy pending under #516" stub; the implementation lane
   rewrites it to the ruled policy and adds the one `if emits_wake(...)` guard at
-  `watch.py:3765`. One doc place, one code seam.
+  `watch.py`. One doc place, one code seam.
 
 - **Measured basis:** 107 `question-updated` lines in the live log; 63 (59%) in
   one phantom burst at 09:43:31, dated exactly between #509's algorithm change
