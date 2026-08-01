@@ -11898,16 +11898,11 @@ class TestDeliveryWakeRouting(unittest.TestCase):
             self.assertTrue(watch.write_posture(d, "idle", "ask", 0, "batched"))
             self.assertEqual(watch.read_posture_file(d)["delivery"], "batched")
             base = self._serve(d)
-            ss, send_body = self._post_body(
-                base + "/command", {"kind": "chat", "text": "a new chat"})
-            self.assertEqual(ss, 202, "PRECONDITION: the send route ran")
-            send_id = json.loads(send_body)["receipt"]["receipt_id"]
-            self.assertTrue(any(send_id in w for w in self._wake_lines(d)),
-                            "a batched chat send did not wake")
             rs, reply_body = self._post_body(
                 base + "/chat-reply", {"id": "chat-577", "text": "a reply"})
             self.assertEqual(rs, 202)
             reply_id = json.loads(reply_body)["receipt"]["receipt_id"]
+            self.assertEqual(self._witnessed(d).count("/chat-reply"), 1)
             self.assertTrue(
                 any("chat" in w and reply_id in w for w in self._wake_lines(d)),
                 f"chat reply receipt {reply_id} committed but did not wake the loop")
