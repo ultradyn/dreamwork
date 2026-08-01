@@ -213,6 +213,7 @@ await p.evaluate(() => {
       qcol: document.body.style.getPropertyValue('--qcol-top') || '',
       cardH: card ? card.style.height : '',
       cardOv: card ? card.style.overflow : '',
+      cardTf: card ? card.style.transform : '',
       state: card ? card.className : '',
     });
     requestAnimationFrame(tick);
@@ -276,7 +277,9 @@ if (process.env.DW_QJANK_TRACE) {
     `ta.h=${f.ta ? String(f.ta.h).padStart(7) : '   -   '} ` +
     `comp.top=${f.comp ? String(f.comp.top).padStart(8) : '  (none)'} ` +
     `card.top=${f.card ? String(f.card.top).padStart(9) : '  (none)'} ` +
+    `card.left=${f.card ? String(f.card.left).padStart(7) : ' (none)'} ` +
     `card.h=${f.card ? String(f.card.h).padStart(8) : '   -   '} ` +
+    `tf=${(f.cardTf || '-').padEnd(24)} ` +
     `gen=${f.taGen} qcol=${(f.qcol || '-').padStart(7)} ` +
     `inl(h=${f.cardH || '-'},ov=${f.cardOv || '-'}) ${f.state}`);
   notes.push(['── frame trace (DW_QJANK_TRACE) ──', ...rows].join('\n'));

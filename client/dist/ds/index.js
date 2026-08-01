@@ -4994,7 +4994,7 @@ var DreamworkDesign = (() => {
     if (resized) {
       el.style.boxSizing = "border-box";
       el.style.height = was.height + "px";
-      el.style.overflow = "hidden";
+      el.style.overflow = "clip";
     }
     if (lifted) {
       el.style.zIndex = "4";

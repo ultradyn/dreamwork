@@ -1716,6 +1716,23 @@ const scheduleQCol = () => {
 };
 addEventListener('scroll', scheduleQCol, true);
 addEventListener('resize', scheduleQCol);
+/* #863. Only a render or a scroll ever recomputed that station, and answering
+   is neither: the answer lands inside the question body, the midpoint the
+   column is centred on moves, and nothing noticed until the next tick's
+   setContent — which then SNAPPED the column there, measured at 95px, 1.6
+   seconds after he pressed send. So the morph recomputes it, and the column
+   TRAVELS to its new station instead of arriving: `top` is the sticky offset,
+   so a transition on it is the column moving. Armed for the morph only —
+   standing, it would make the column lag his scroll, which is the one thing
+   #583 says it must never do. reduced-motion re-stations without travel. */
+function travelQuestionColumn() {
+  const comp = document.querySelector('#qfocus.qdual .qcompose');
+  if (!comp) return;                       // not the focus view; nothing to do
+  if (rmr) { positionQuestionColumn(); return; }
+  comp.classList.add('qcoltravel');
+  positionQuestionColumn();
+  setTimeout(() => comp.classList.remove('qcoltravel'), CARD_MS + 150);
+}
 
 /* every number on this page that can drift without a disk change is written
    HERE, once a second, as TEXT into nodes that already exist — never through
@@ -1988,6 +2005,9 @@ async function sendAnswer(key) {
   // height for its travel — the flip's `to` is where the answer ENDS UP
   const toRect = anstext && anstext.getBoundingClientRect();
   regroupCards(before, null, null, card);
+  // the answer landed inside the question body, so the visible midpoint the
+  // focus view's response column stations itself on has moved (#863)
+  travelQuestionColumn();
   if (typeof ripple === 'function')
     ripple(fromRect.left + fromRect.width / 2, fromRect.top + 22);
   if (!rmr && anstext && typeof flipDock === 'function')
@@ -2047,6 +2067,8 @@ async function sendComment(key) {
   host.appendChild(f);
   const toRect = f.getBoundingClientRect();
   regroupCards(before, null, null, card);
+  // a note lands inside the body too, so the column re-stations with it (#863)
+  travelQuestionColumn();
   if (typeof ripple === 'function') ripple(fromRect.left + 24, fromRect.top + 14);
   if (!rmr && typeof flipDock === 'function') flipDock(f, fromRect, toRect);
 }

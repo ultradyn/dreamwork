@@ -11,10 +11,10 @@
   ],
   "inputs": {
     "client/app_body.html": "83fe5bb68b8febabb2973637bec30a27872380debe041bde8e85406b384d0472",
-    "client/command.js": "ad0c95e8bedea7b427b526b87b713833f386206341c92940ccc29a552941b78c",
+    "client/command.js": "505eff8f8e66985c776a9289743f1301cab68b732aa3810bad9a4897422df839",
     "client/components.js": "2bd1d6d378c19aef6acd97b27971c1c9716411fac1f2a3e47027565d9fc6def5",
     "client/favicon.js": "746a512fb2d23b6ac1294f4d5fdbb4bcc5809a93cae1fe6e78dbbe70882ba901",
-    "client/router.js": "5d12951a9106ef4a06d06112b9b7ba9e54e9e9bceade1c7456270c401900ff99",
+    "client/router.js": "3706c6e6c374e4baa40c5dd8a483460e54fa09fbde2c77abc331eec258f3a54d",
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
     "client/style.css": "3ed129e3d0b6fa963c886ba705c27b8186d5acd6d4421dc2c2943c4c821eef08",
     "client/views.js": "41d442a2bc81433a4fdfa60ae4187b4eb8b05e5b526fe06efce270d10c13e457",
@@ -26,7 +26,7 @@
     "dev/build/wrapper-exports.js": "9ea5838ef66144742cb10ec8d35cea04d92ca35ea2e11060c26510cd05b6b53b"
   },
   "outputs": {
-    "client/dist/ds/index.js": "e0eaaee4d7bbb42a9035f67d7c68836d8ba07f3ed46de98e64a0bd7166c459ab",
+    "client/dist/ds/index.js": "2ff8ee64edf6fd24746a071542266611bb0d5c6d9b5acabaf205e9b06c0aa215",
     "client/dist/ds/styles.css": "3ed129e3d0b6fa963c886ba705c27b8186d5acd6d4421dc2c2943c4c821eef08",
     "client/dist/native.js": "e1211897fd595304a88af9107df17ec2d3b4031e371189be81e091d845830be5"
   },

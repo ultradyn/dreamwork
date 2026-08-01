@@ -2288,7 +2288,21 @@ function travelCard(el, was, now, lifted) {
     // it move", which is the shape of every motion bug this page has had.
     el.style.boxSizing = 'border-box';
     el.style.height = was.height + 'px';
-    el.style.overflow = 'hidden';          // content must not spill as it folds
+    // CLIP, not hidden, and the distinction is the whole of #863. Both clip
+    // the content the same way — but `hidden` also makes the element a SCROLL
+    // CONTAINER, and a scroll container is where a `position:sticky`
+    // descendant sticks. The focus view's response column is sticky inside
+    // this very card (#583), so for the 850ms of the travel the box stopped
+    // riding the viewport and fell to its static position — then came back
+    // when the cleanup below cleared the style. Two teleports per travel, and
+    // the tick's own regroup runs another travel two seconds later: measured,
+    // FOUR jumps of 279.8px in one submit, which is what he meant by "it jumps
+    // all over the place. multiple times." The card's own top never moved, so
+    // every end-state and did-it-move check passed over all four.
+    // `clip` was always the intent here — the card is never scrollable — and
+    // it creates no scroll container, so the box keeps sticking to the
+    // viewport while the card travels beneath it.
+    el.style.overflow = 'clip';            // content must not spill as it folds
   }
   if (lifted) {
     el.style.zIndex = '4'; el.style.filter = 'blur(5px)'; el.style.opacity = '.4';
