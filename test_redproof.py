@@ -1795,7 +1795,12 @@ class TestTheThreeHistoryZeroesAreDistinct:
         # nothing for the boundary to exclude and this proves nothing.
         recorded = [e for e in entries if e.get("state") == rp.RESTORED][0]
         assert _blob_sha_at(lane, predecessor, "router.js") == recorded["injected_sha"]
-        assert rep["hits"] == [] and len(rep["excluded"]) == 1, rep
+        assert rep["hits"] == [], (
+            "a pre-registration commit was blamed as an armed injection", rep)
+        assert len(rep["excluded"]) == 1, (
+            f"the boundary excluded {predecessor[:12]}, which DOES hold the "
+            f"recorded bytes, and reported nothing — that exclusion is exactly "
+            f"the silent zero #942 hid a real injection behind: {rep}")
         assert rep["excluded"][0]["commit"] == predecessor, rep["excluded"]
 
         line = rp.history_line(rep)
