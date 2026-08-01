@@ -78,6 +78,12 @@ def test_dropping_the_explicit_flag_reports_that_index_lock_appeared(repo, tmp_p
         git_status.poll(repo, git=str(fake_git))
 
 
+def test_explicit_flag_keeps_the_locking_positive_control_quiet(repo, tmp_path):
+    fake_git = _locking_git(tmp_path)
+    result = git_status.poll(repo, git=str(fake_git))
+    assert result.lines == ("## main",)
+
+
 def test_event_guard_catches_a_three_millisecond_lock_that_sampling_misses(repo, tmp_path):
     fake_git = _locking_git(tmp_path, always=True)
 
