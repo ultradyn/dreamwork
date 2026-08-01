@@ -634,3 +634,37 @@ deploy rev="HEAD":
 # Pass a wider range to list pre-baseline misses in full.
 audit-styleguide range="1d089ad..HEAD" window="3":
     python3 dev/styleguide_audit.py {{range}} --window {{window}}
+
+# #788 — commit the persisted brief corpus (.md + .sha256 pairs).
+#
+# #766 landed the write and the integrity receipt; nothing ever committed the
+# result. Untracked briefs cannot travel into a worktree (#611/#685), so a
+# lane auditing the corpus from its worktree sees a silently-truncated input
+# — measured, 12% of the corpus was invisible, and that 12% was the entire
+# subject of #786's audit. This recipe is the one supported route that lands
+# the pairs (#440): it verifies every governed pair (reusing
+# dispatch_lane.py's verify_pending, #766's receipt refusal) then stages both
+# halves of each pair together, so a .md is never committed without its
+# .sha256.
+#
+# COORDINATOR-ONLY — run from the main checkout, never from a lane worktree.
+# A lane must never commit to the main tree. This recipe does not commit for
+# you; it stages and leaves the commit to the human so the message and scope
+# can be reviewed.
+commit-corpus:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    python3 dev/dispatch_lane.py --verify-pending
+    staged=0
+    for md in .dreamwork/docs/briefs/*.md; do
+        [ -f "$md" ] || continue
+        receipt="${md%.md}.sha256"
+        if [ ! -f "$receipt" ]; then
+            echo "refusing: $md has no .sha256 receipt (half-committed pair is worse than neither, #766)" >&2
+            exit 1
+        fi
+        git add "$md" "$receipt"
+        staged=$((staged + 1))
+    done
+    echo "staged $staged brief/receipt pair(s); review with: git status --short .dreamwork/docs/briefs/"
+    echo "commit with: git commit -m 'docs(#788): commit the persisted brief corpus'"
