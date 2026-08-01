@@ -121,6 +121,10 @@ REGISTRY: list[str] = [
     # every parser verb. A lane adding a verb cannot enumerate "every verb"
     # from its diff. (#645 i9's revert.)
     "test_ledger_cli.py::test_the_map_covers_every_verb",
+    # Checks the complete, judgement-classified #801 citation population.
+    # A lane changing one Markdown file cannot enumerate the other classified
+    # documents or know that the population still resolves non-vacuously.
+    "test_check_watch_citations.py::test_reviewed_watch_citation_population_is_still_resolved",
 ]
 
 # The detector signal: a quoted `ls-files` token that is the LAST positional
