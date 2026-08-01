@@ -104,6 +104,16 @@ def _drain_state(dw: Path, allowed=("cx-846wtmove",), root=".worktrees") -> Path
 
 
 class TestInRepoWorktreeDrain:
+    def test_state_file_deletion_cannot_disable_an_existing_ratchet(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        monkeypatch.setattr(lint, "_prior_drain_state",
+                            lambda target, current: {"high_water_count": 0})
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "deletion cannot disable the ratchet" in rep.rows[-1][2]
+
     def test_old_root_absent_passes_explicitly_at_bound_path(
             self, tmp_path, monkeypatch):
         t = target(tmp_path)

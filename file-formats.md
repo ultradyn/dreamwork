@@ -1624,7 +1624,9 @@ without increasing the count still fails. As lanes are reaped, a deliberate
 commit may only remove names and lower the count; lint never rewrites or
 re-baselines this file. Each transition is checked against the prior committed
 checkpoint, so an original name cannot be added back after removal and zero is
-absorbing. `last_observed_size_bytes` is a committed evidence
+absorbing. History lookup crosses deletion commits, and removing the state file
+after introduction is itself an error, so delete/recreate cannot reset the
+baseline. `last_observed_size_bytes` is a committed evidence
 checkpoint, while every lint run reports the current apparent byte size. Size
 is not the hard gate: a build may grow a live lane without creating a worktree.
 When the root is absent, lint reports its exact resolved path and passes as the

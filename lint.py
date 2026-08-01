@@ -3979,17 +3979,37 @@ def _drain_state_from_git(target: Path, ref: str) -> dict | None:
 
 
 def _prior_drain_state(target: Path, current: dict) -> dict | None:
-    """Previous committed checkpoint, including an uncommitted transition."""
-    head = _drain_state_from_git(target, "HEAD")
-    if head is not None and head != current:
-        return head
-    return _drain_state_from_git(target, "HEAD^")
+    """Latest earlier checkpoint, crossing any attempted file deletion."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(target), "log", "--format=%H", "--",
+             f".dreamwork/{WORKTREE_DRAIN_STATE}"],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    states = []
+    for sha in out.stdout.splitlines():
+        value = _drain_state_from_git(target, sha)
+        if value is not None:
+            states.append(value)
+    if not states:
+        return None
+    if states[0] != current:
+        return states[0]
+    return states[1] if len(states) > 1 else None
 
 
 def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
     """Old-root membership/count may only drain; size is reported evidence (#846)."""
     state_path = dw / WORKTREE_DRAIN_STATE
     if not state_path.is_file():
+        prior = _prior_drain_state(dw.parent.resolve(), {})
+        if prior is not None:
+            rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                    "committed drain state disappeared after introduction; "
+                    "deletion cannot disable the ratchet or reset its history")
         return
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
