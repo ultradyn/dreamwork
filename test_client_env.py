@@ -18,7 +18,6 @@ import ast
 import contextlib
 import io
 import json
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -203,8 +202,10 @@ class TestTheRegistryIsTheOneHome:
         The environment here contains ONLY the synthetic variables. A
         `client_env` that named `CLAUDE_CODE_SESSION_ID` directly — anywhere,
         however correctly — resolves nothing from this environment and reds.
-        The whole production path is exercised, not just `identify`: the CLI
-        `write()` is what the orient step runs.
+        The whole production path is exercised, not just `identify`: `write()`
+        is the direct-write path (`status_sync._agent_session_record` is the
+        production writer, but it reuses `record()`, so this binds the registry
+        that path reads).
         """
         monkeypatch.setattr(client_env, "CLIENTS", (FAKE,))
         t = _target(tmp_path, {})
@@ -328,18 +329,31 @@ class TestTheRegistryIsTheOneHome:
 
 # ── integration: the record must survive the other writer ────────────────
 
-class TestStatusSyncLeavesItAlone:
-    """The derived-vs-authored decision, asserted rather than asserted-in-prose.
+class TestStatusSyncOwnsAgentSession:
+    """agent_session is DERIVED (#858): status_sync writes it, cwd-restricted.
 
-    `status_sync` owns `queue`/`current_task_ids`/`dreamers` and leaves
-    everything else to its author. If a later change added `agent_session` to
-    `DERIVED`, the coverage line would stop calling it author-owned and a lane
-    running the syncer would overwrite the main agent's record with its own
-    environment — the exact defect the module docstring argues against.
+    The #665 'author-owned, never derived' contract is superseded.
+    `status_sync._agent_session_record` returns None unless the sync target is
+    the invocation cwd (so a lane syncing another checkout cannot overwrite
+    the main agent's identity), and accepts the candidate UUID only when
+    `session_source` resolves it live. This class pins the classification and
+    the cwd restriction; `test_status_sync.py`'s `TestAgentSessionWriter` pins
+    the live-only write itself.
     """
 
-    def test_the_record_survives_a_sync_and_is_reported_author_owned(
+    def test_agent_session_is_in_the_derived_set(self):
+        # The classification has one home: status_sync.DERIVED. The prose
+        # surfaces must agree (TestProseAgreesWithDerivedClassification).
+        assert "agent_session" in status_sync.DERIVED
+
+    def test_a_sync_of_another_checkout_leaves_the_record_alone(
             self, tmp_path):
+        # The cwd restriction: target != cwd -> _agent_session_record returns
+        # None -> status_sync does not touch agent_session. This is the
+        # property that stops a lane syncing the main checkout from
+        # overwriting the main agent's identity, and it is why a record seeded
+        # by the (target-agnostic) direct write survives a sync run from
+        # elsewhere.
         t = _target(tmp_path, {"task": "on #665"})
         (t / ".dreamwork" / "tasks.md").write_text("## Open\n- **#665** x\n")
         rc, _ = client_env.write(
@@ -351,39 +365,84 @@ class TestStatusSyncLeavesItAlone:
         out_s, err_s = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out_s), contextlib.redirect_stderr(err_s):
             status_sync.main(["--target", str(t)])
-        assert _status(t)["agent_session"] == before
-        assert "agent_session" in out_s.getvalue(), (
-            "the coverage line must name it in the author-owned list")
-        assert "agent_session" not in str(status_sync.DERIVED)
+        assert _status(t)["agent_session"] == before, (
+            "a sync whose target is not the invocation cwd must not touch "
+            "agent_session (the cwd restriction)")
+
+    def test_coverage_lists_agent_session_as_derived_not_author_owned(
+            self, tmp_path):
+        t = _target(tmp_path, {"task": "on #665"})
+        (t / ".dreamwork" / "tasks.md").write_text("## Open\n- **#665** x\n")
+        out_s, err_s = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out_s), contextlib.redirect_stderr(err_s):
+            status_sync.main(["--target", str(t)])
+        coverage = next(line for line in out_s.getvalue().splitlines()
+                        if line.startswith("coverage:"))
+        # Discriminating form (mirrors test_status_sync.py): agent_session
+        # must sit on the derived side of the line, never the author-owned tail.
+        assert "agent_session" in coverage.split("author-owned", 1)[0], (
+            "agent_session is DERIVED; coverage must list it on the derived "
+            "side, not the author-owned side: %s" % coverage)
 
 
-class TestTheOrientStepRunsWhatItDocuments:
-    """The doc is the transmission vector, so the doc is bound to the code.
-
-    #659's transferable finding: *"A wrong docstring propagates further than
-    wrong code because it is what the next author reads instead of the
-    code."* `initialization.md` step 7 tells every target's loop to run this
-    command; if the command is renamed or its flags change, the doc rots
-    silently and the record is never written on any target. So the command is
-    lifted OUT of the doc and actually run.
+class TestTheOrientStepDoesNotHandWriteAgentSession:
+    """The doc is the transmission vector, so the doc is bound to the code
+    (#659). Under #858 agent_session is DERIVED (written by status_sync), so
+    `initialization.md` step 7 must NOT instruct a manual
+    `client_env.py --write` -- that path bypasses the liveness validation #858
+    made load-bearing. This is the prose regression guard for the task's own
+    check: does any surviving text tell an agent to write agent_session by
+    hand?
     """
 
-    def _documented_command(self) -> list[str]:
+    def _step7(self):
         text = (HERE / "initialization.md").read_text()
-        m = re.search(r"python3 <skill-dir>/(client_env\.py[^\n`]*)", text)
-        assert m, ("initialization.md step 7 no longer names a "
-                   "`python3 <skill-dir>/client_env.py …` command")
-        return m.group(1).split()
+        s = text.index("(#665)")
+        e = text.index("8. **Reconcile.**", s)
+        return text[s:e]
 
-    def test_the_documented_command_parses_and_writes(self, tmp_path):
-        # `--target .` in the doc points at the target's own root; the temp
-        # target stands in for it. Every other flag is taken verbatim, so a
-        # renamed or removed flag reds here.
-        argv = [str(tmp_path) if a == "." else a
-                for a in self._documented_command()[1:]]
-        _target(tmp_path, {})
-        out_s = io.StringIO()
-        with contextlib.redirect_stdout(out_s):
-            rc = client_env.main(argv)
-        assert rc == 0, out_s.getvalue()
-        assert "agent_session" in _status(tmp_path)
+    def test_step_7_points_at_status_sync_not_a_manual_write(self):
+        step7 = self._step7()
+        assert "status-sync" in step7 or "status_sync" in step7, (
+            "step 7 must name status-sync as the agent_session writer")
+        assert "client_env.py --write" not in step7, (
+            "step 7 must not instruct a manual agent_session write; "
+            "agent_session is DERIVED (#858) and a hand-written key bypasses "
+            "the liveness check")
+
+
+class TestProseAgreesWithDerivedClassification:
+    """The shared-source-of-truth guard (#908, #858).
+
+    file-formats.md and client_env.py are the contract surfaces agents read.
+    If they call a field 'author-owned' / 'never derived' while
+    `status_sync.DERIVED` classifies it as derived, the prose directs agents to
+    maintain a field the syncer owns -- the exact drift #858's writer replaced
+    and this task closed. The classification has ONE home
+    (`status_sync.DERIVED`); this asserts the prose does not contradict it.
+    Without this guard, re-adding 'Author-owned, never derived' to the row
+    passes every other test -- the false-green of an unguarded prose surface.
+    """
+
+    def _agent_session_row(self):
+        text = (HERE / "file-formats.md").read_text()
+        return next(line for line in text.splitlines()
+                    if line.startswith("| `agent_session`"))
+
+    def test_file_formats_does_not_call_a_derived_field_author_owned(self):
+        # Precondition DERIVED from the code, not a literal: agent_session IS
+        # in DERIVED, so its row must not claim author-ownership.
+        assert "agent_session" in status_sync.DERIVED
+        row = self._agent_session_row()
+        assert "author-owned" not in row.lower(), (
+            "agent_session is in status_sync.DERIVED; its file-formats.md row "
+            "must not call it author-owned: %s" % row[:120])
+        assert "never derived" not in row.lower()
+
+    def test_client_env_docstring_does_not_reassert_authored_not_derived(self):
+        text = (HERE / "client_env.py").read_text()
+        assert "AUTHORED, NOT DERIVED" not in text, (
+            "client_env.py must not re-assert the refuted authored-not-derived "
+            "argument; status_sync is the writer (#858)")
+        assert "leaves it alone by construction" not in text
+        assert "three-tuple" not in text
