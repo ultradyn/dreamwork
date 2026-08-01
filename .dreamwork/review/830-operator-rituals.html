@@ -1,0 +1,404 @@
+<!doctype html>
+<!--Built from the dreamwork review template v1+5c98fb09 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
+<meta name="dreamwork-review-template" content="v1+5c98fb09">
+<meta name="dreamwork-review-ask" content="exempt: his instruction assigned the decision to the coordinator, not to him — &quot;check their findings and then create tasks to implement all the worthwhile additions&quot; (receipt 5898e4d3). This page is the evidence he asked to be able to observe; the ruling on it is recorded in #830&#x27;s ledger entry and in the two filed tasks.">
+<meta name="dreamwork-review-if-silent" content="exempt: nothing waits on him. The decision was already the coordinator&#x27;s and is taken; silence parks nothing and blocks nothing. If he disagrees with either filed task, it is reprioritised or closed like any other entry.">
+<title>#830 · which multi-step operator rituals want a one-step tool · audit</title>
+<style>
+/* Offline-clean by construction: no fetches, no external fonts, no images.
+   Tokens are watch.py's, value for value, because this is read inside the
+   dashboard's own iframe. */
+:root{
+  color-scheme:dark;
+  --bg:#090d16;--bg2:#0c1220;--panel:#111827;--panel2:#162033;
+  --line:#1f2937;--border:#334155;--text:#cbd5e1;--bright:#f4f7fb;
+  --lit:#e5e7eb;--muted:#98a3b5;--dim:#697589;--dimmer:#4b5568;
+  --accent:#a5b4fc;--accent2:#7dd3fc;--ok:#86efac;--warn:#fcd34d;
+  --bad:#fda4af;--ink:#050810;--radius:5px;
+  --ease:cubic-bezier(.32,.1,.2,1);--measure:78ch
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--dimmer) transparent}
+*::selection{background:rgba(165,180,252,.24);color:var(--bright)}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--dimmer);border-radius:4px}
+html{background:var(--bg);scroll-padding-top:5.5rem}
+body{margin:0;background:
+  radial-gradient(ellipse 68rem 34rem at 46% -14rem,rgba(99,102,241,.13),transparent 68%),
+  radial-gradient(ellipse 34rem 24rem at 92% 12%,rgba(14,165,233,.045),transparent 70%),
+  linear-gradient(180deg,var(--bg),#0a0f19 55%,var(--bg));
+  color:var(--text);font-family:ui-monospace,"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  font-size:.82rem;line-height:1.7;overflow-wrap:anywhere}
+a{color:var(--accent);text-underline-offset:.22em;text-decoration-thickness:1px}
+a:hover{color:var(--bright)}
+code{color:var(--lit);background:rgba(22,32,51,.72);padding:.03rem .32ch;border-radius:3px}
+pre{margin:.75rem 0;padding:.9rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.52);color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+/* syntax highlighting tokens (#339) — emitted at build time by
+   review_artifact.py as <span class="tok-…"> inside pre>code. No script in
+   the artifact; if a rule is ever lost the token takes the block's own
+   colour, so highlighting never breaks the code itself. Scoped to pre code
+   so an inline <code> snippet is never coloured by accident. */
+pre code .tok-kw{color:var(--accent)}
+pre code .tok-str{color:var(--ok)}
+pre code .tok-num{color:var(--warn)}
+pre code .tok-com{color:var(--dimmer);font-style:italic}
+pre code .tok-fn{color:var(--accent2)}
+pre code .tok-typ{color:var(--warn)}
+pre code .tok-dec{color:var(--accent)}
+pre code .tok-op{color:var(--muted)}
+pre code .tok-tag{color:var(--accent)}
+pre code .tok-attr{color:var(--accent2)}
+pre code .tok-var{color:inherit}
+strong{font-weight:inherit;color:var(--bright)}em{color:var(--lit)}
+p{margin:.62rem 0}ul,ol{margin:.55rem 0;padding-left:2.4ch}li{margin:.34rem 0}
+h1,h2,h3,h4{margin:0;font:inherit;font-weight:normal;color:var(--bright)}
+h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit);margin-top:1.4rem}
+.wrap{width:min(calc(100% - 2rem),1120px);margin:0 auto}.read{max-width:var(--measure)}
+.skip{position:fixed;z-index:99;top:.6rem;left:.6rem;transform:translateY(-180%);display:inline-flex;align-items:center;min-height:44px;padding:.6rem 1ch;background:var(--bright);color:var(--ink);border-radius:var(--radius);text-decoration:none}
+.skip:focus{transform:none;transition:transform .35s var(--ease)}
+.toprail{position:sticky;top:0;z-index:20;background:rgba(9,13,22,.91);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
+.toprail-in{width:min(calc(100% - 2rem),1120px);min-height:58px;margin:auto;display:flex;align-items:center;gap:1rem;justify-content:space-between}
+.identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
+/* #600 — the chip is keyed on the verdict's enumerated state (review_artifact
+   .status_state), never on every value alike. `--warn` means BROKEN (#136) and
+   an approved review is the furthest thing from broken. Pending is live and
+   waiting on him, which is what the accent is for; settled steps DOWN the ramp
+   and drops the dot, matching #289's darkening idiom for a decided row on the
+   dashboard, so the two surfaces agree about what a decision looks like. The
+   base rule above is left alone on purpose: it is what `unreadable` restates
+   below, and the hand-rolled tasks-page.html still depends on it.
+   Scope, so nobody widens this by accident: watch-design.md states the #136
+   enumeration under `### Tokens`, about client/style.css, and elsewhere treats
+   THIS file's `--warn` on numerals and types as legitimate (the dashboard
+   renames it to `--amber` when it borrows the palette, precisely because the
+   rule is the dashboard's). So the verdict chip is fixed on its own merits —
+   a settled verdict that renders identically to a broken one carries no
+   information, and #289 already dims a decided row on the dashboard — and
+   `.tok-num` / `.tok-typ` are deliberately left alone. */
+.status.pending{color:var(--accent)}.status.pending::before{background:var(--accent);box-shadow:0 0 12px rgba(165,180,252,.55)}
+.status.settled{color:var(--dim)}.status.settled::before{display:none}
+.status.unreadable{color:var(--warn)}.status.unreadable::before{background:var(--warn)}
+main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
+.label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
+.quiet{color:var(--muted)}.dim{color:var(--dim)}.dimmer{color:var(--dimmer)}
+.kicker{display:flex;gap:1ch;align-items:baseline;flex-wrap:wrap}.proposal{color:var(--warn)}
+.sub{color:var(--dim);margin:.25rem 0 1.7rem}
+.lead{font-size:.9rem;line-height:1.78;color:var(--lit);max-width:76ch}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(240px,.45fr);gap:2.5rem;align-items:end}
+/* The one rule this template adds to the artifact it was cut from, and the
+   only entry in test_review_artifact.py's TEMPLATE_ONLY: tasks-page.html
+   always carries an aside, a template has to render without one. */
+.hero-grid.solo{grid-template-columns:minmax(0,1fr)}
+.version-mark{border-left:1px solid var(--accent);padding:.2rem 0 .2rem 1.25rem}
+.version-mark .big{display:block;color:var(--bright);font-size:2.4rem;line-height:1;letter-spacing:-.07em}
+.version-mark small{color:var(--dim)}
+.call{margin:1.2rem 0;padding:1rem 1.2ch;background:linear-gradient(90deg,rgba(165,180,252,.09),transparent);border-left:2px solid var(--accent);max-width:84ch}
+.notice{margin:1rem 0;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--warn);color:var(--muted);max-width:84ch}
+/* #455 — cost of silence: one sentence, not a second summary. Quieter than
+   the ask's accent rail; sits with the lead, not the status chip. */
+#if-silent,.if-silent{margin:.55rem 0 1rem;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--border);color:var(--muted);max-width:var(--measure);font-size:.84rem;line-height:1.6}
+#if-silent .key,.if-silent .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:1.1rem 0}
+.fact{background:var(--bg2);padding:.95rem}.fact .number{display:block;color:var(--bright);font-size:1.3rem;line-height:1.1}.fact .caption{display:block;color:var(--dim);margin-top:.3rem;font-size:.72rem}
+table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem;min-width:max-content}
+th,td{text-align:left;vertical-align:top;padding:.62rem .72ch;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-size:.66rem;text-transform:uppercase;letter-spacing:.065em;font-weight:normal}
+td:first-child{color:var(--lit)}.pass{color:var(--ok)}.unknown{color:var(--warn)}.fail{color:var(--bad)}
+.row-accent td{background:rgba(165,180,252,.045)}
+.scroller{overflow-x:auto}
+.summary-line{display:grid;grid-template-columns:17ch minmax(0,1fr);gap:1.5ch;padding:.5rem 0;border-top:1px solid var(--line)}
+.summary-line:last-child{border-bottom:1px solid var(--line)}
+.key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.68rem}
+.deltas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line)}
+.delta{display:grid;grid-template-columns:3.2ch minmax(0,1fr);gap:1ch;padding:.8rem 1rem .8rem 0;border-bottom:1px solid var(--line)}
+.delta b{color:var(--accent);font-weight:normal}.delta span{color:var(--muted)}
+figure{margin:1rem 0 1.7rem}.figscroll{overflow-x:auto}
+svg{display:block;height:auto}svg text{font-family:ui-monospace,"JetBrains Mono",monospace}
+figcaption{color:var(--dim);font-size:.72rem;margin-top:.4rem}
+
+/* ── the drawn page ───────────────────────────────────────────────────── */
+.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem;align-items:start}
+.frame{border:1px solid var(--border);background:rgba(9,13,22,.8);min-width:0;box-shadow:0 22px 60px rgba(0,0,0,.19)}
+.framebar{display:flex;align-items:center;flex-wrap:wrap;gap:0 1ch;min-height:42px;padding:.35rem 1ch;border-bottom:1px solid var(--line);color:var(--dim);font-size:.72rem}
+.framebar b{font-weight:normal;color:var(--lit);white-space:nowrap}
+.framebody{padding:.9rem 1.1ch}
+.mockhead{display:flex;align-items:center;gap:1ch;margin-bottom:.2rem}
+.opener{color:var(--accent)}
+.mocktitle{color:var(--bright)}
+.crumbs{color:var(--dim);font-size:.72rem;margin-bottom:1rem}
+.ctl{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.2rem 0 .7rem}
+.searchbox{flex:1;min-width:15ch;display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.searchbox span{padding:.3rem .8ch;color:var(--lit)}
+.searchbox i{font-style:normal;color:var(--dimmer);padding:.3rem .8ch;margin-left:auto}
+.sgroup{display:inline-flex;border:1px solid transparent;gap:.15rem}
+.sgbtn{padding:.22rem .7ch;color:var(--dim);border:1px solid transparent;border-radius:var(--radius);white-space:nowrap}
+.sgbtn.on{color:var(--lit);border-color:var(--border)}
+.countline{color:var(--dim);font-size:.72rem;border-bottom:1px solid var(--line);padding-bottom:.5rem;margin-bottom:.2rem}
+.countline b{color:var(--lit);font-weight:normal}
+.tk{display:block;padding:.5rem 0 .52rem;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.tk-1{display:flex;gap:1ch;align-items:baseline}
+.tkid{color:var(--dim);font-weight:normal;flex:none}
+.tkt{color:var(--text);min-width:0;flex:1}
+.tkp{flex:none;color:var(--dim);font-size:.72rem}
+.tkp.p01{color:var(--bright)}.tkp.p2{color:var(--text)}.tkp.p3{color:var(--dim)}
+.tk-2{display:block;color:var(--dim);font-size:.7rem;padding-left:5.5ch}
+.tk.claimed{border-left:2px solid var(--accent);padding-left:.9ch;margin-left:-1.1ch}
+.tk.claimed .tkt{color:var(--bright)}
+.tk.claimed .tk-2 em{color:var(--accent);font-style:normal}
+.tk.blocked .tkt{color:var(--muted)}
+.tk.landed .tkt,.tk.landed .tkid{color:var(--dim)}.tk.landed .tk-2{color:var(--dimmer)}
+.tk.unknownstate .tkt{color:var(--muted)}
+.tk.unknownstate .tk-2 em{color:var(--warn);font-style:normal}
+.tk-2 .stale{color:var(--warn);font-style:normal}
+.hilite{background:rgba(165,180,252,.16);color:var(--bright)}
+.warnline{border-left:2px solid var(--warn);padding:.45rem 0 .45rem 1ch;color:var(--muted);margin:.5rem 0}
+.warnline b{color:var(--warn);font-weight:normal}
+.calmline{color:var(--dim);padding:.45rem 0}
+.detgrid{display:grid;grid-template-columns:13ch minmax(0,1fr);gap:.05rem 1.3ch;font-size:.75rem}
+.detgrid dt{color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-size:.66rem;padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd{margin:0;color:var(--text);padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd em{font-style:normal;color:var(--dim)}
+.mockbody{color:var(--muted);font-size:.75rem;margin-top:1rem;border-top:1px solid var(--line);padding-top:.7rem}
+.peek{color:var(--dim);font-size:.72rem;border-top:1px solid var(--line);margin-top:.8rem;padding-top:.55rem}
+.annot{display:grid;grid-template-columns:3.5ch minmax(0,1fr);gap:.7ch;font-size:.72rem;color:var(--muted);margin:.45rem 0}
+.annot b{color:var(--accent2);font-weight:normal}
+
+/* ── prose furniture ──────────────────────────────────────────────────── */
+.spine{margin:1.4rem 0}
+.spine-row{display:grid;grid-template-columns:15ch 2.4rem minmax(0,1fr);align-items:stretch;min-height:88px}
+.spine-key{padding:.85rem 1rem .85rem 0;color:var(--lit);text-align:right}
+.spine-rail{position:relative}
+.spine-rail::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border)}
+.spine-row:first-child .spine-rail::before{top:50%}
+.spine-row:last-child .spine-rail::before{bottom:50%}
+.spine-dot{position:absolute;z-index:1;left:50%;top:1.15rem;width:9px;height:9px;transform:translateX(-50%);border-radius:50%;background:var(--bg);border:1px solid var(--accent);box-shadow:0 0 0 5px var(--bg)}
+.spine-body{padding:.7rem 0 .85rem 1rem;border-top:1px solid var(--line)}
+.spine-body p{color:var(--muted);margin:.2rem 0;max-width:var(--measure)}
+.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1.6rem}
+.check{padding:.55rem 0;border-top:1px solid var(--line)}
+.check b{font-weight:normal;color:var(--bad)}.check span{color:var(--ok)}
+.stages{counter-reset:stage}
+.stage{counter-increment:stage;display:grid;grid-template-columns:3.4ch minmax(0,1fr);gap:1ch;padding:.68rem 0;border-top:1px solid var(--line)}
+.stage::before{content:counter(stage,decimal-leading-zero);color:var(--accent)}
+.stage b{color:var(--lit);font-weight:normal}.stage span{color:var(--muted)}
+details{border-top:1px solid var(--line);margin:.65rem 0}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;min-height:44px;padding:.6rem 0;color:var(--muted);outline:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+ ";color:var(--dim);white-space:pre}
+details[open]>summary{color:var(--lit);padding-top:1rem}
+details[open]>summary::before{content:"\2212 "}
+.details-in{padding:0 0 1rem 1.5ch;color:var(--muted)}
+details::details-content{block-size:0;opacity:0;filter:blur(3px);overflow:hidden;transition:block-size .72s var(--ease),opacity .45s ease,filter .45s ease;transition-behavior:allow-discrete}
+details[open]::details-content{block-size:auto;opacity:1;filter:none}
+@starting-style{details[open]::details-content{block-size:0;opacity:0;filter:blur(3px)}}
+#decision{scroll-margin-top:4.75rem}
+.choice{padding:1rem 0;border-top:1px solid var(--line)}
+.choice:last-of-type{border-bottom:1px solid var(--line)}
+.choice-grid{display:grid;grid-template-columns:4.5ch minmax(0,1fr);gap:1ch}
+.choice-grid>div{max-width:var(--measure)}
+.choice-tag{color:var(--accent);font-size:1rem}
+.answer{margin-top:.4rem;color:var(--lit)}
+.approval{padding:1rem;background:linear-gradient(90deg,rgba(165,180,252,.1),transparent);color:var(--lit);margin-top:1.2rem}
+footer{margin-top:3.5rem;padding:1.2rem 0 2rem;border-top:1px solid var(--line);color:var(--dimmer)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+
+/* ── essential marks (#367) — rail above the cliff, strip below ──
+   A mark is a flag at a HEIGHT, not a decoration on a box: the tab anchors to
+   the reading column's right edge at the passage's top. The artifact is
+   offline-clean (no script), so this is CSS-only — each tab is a child of its
+   marked element, positioned absolutely against it; the marked element becomes
+   the positioning ancestor (.is-marked). The tab's OUTER box (.marktab)
+   inherits the body font deliberately, so `left:calc(var(--measure) + .4ch)`
+   resolves `--measure:78ch` in BODY ch (the reading column's own unit) rather
+   than the tab's smaller font — a single-element tab would place the flag at
+   the wrong column. The visible postit (.markflag) carries the .66rem size.
+   "Current" is :target (the passage navigated to); next/prev are real fragment
+   links, so the whole thing is keyboard-operable and offline-honest.
+   Below the measured cliff the rail is display:none and the strip shows —
+   option C walk (~32px) + collapsible labelled index (his 2026-07-28 ruling).
+   Expand/collapse reuses details::details-content (transitions.md); no second
+   gesture. */
+.is-marked{position:relative;scroll-margin-top:5.5rem}
+.marktab{position:absolute;top:0;left:calc(var(--measure) + .4ch);z-index:15;display:flex;align-items:baseline;gap:.35ch;line-height:1.25;opacity:.6;transition:opacity .45s var(--ease)}
+.is-marked:target .marktab{opacity:1}
+.markflag{font-size:.66rem;line-height:1.25;padding:.28em .55em;max-width:11.5rem;background:var(--accent);color:var(--ink);border-radius:2px 4px 4px 2px;letter-spacing:-.01em;font-weight:normal;white-space:normal;hyphens:none;word-break:normal;overflow-wrap:normal;box-shadow:0 1px 0 rgba(0,0,0,.25);text-decoration:none;color:var(--ink);display:inline-block}
+.markflag:hover{color:var(--ink)}
+.marknav{display:none;align-items:baseline;gap:.15ch;font-size:.66rem}
+.is-marked:target .marknav{display:inline-flex}
+.marknav a{color:var(--ink);text-decoration:none;padding:0 .25ch;opacity:.75;border-radius:2px}
+.marknav a:hover{opacity:1}
+.marknav a:focus-visible{outline:1px solid var(--ink);outline-offset:1px}
+/* two marks closer than a tab height (a section and its first marked child —
+   the measured 29px densest pair against a 32px tab): stagger the nested tab
+   down so the flags read as two, not one chrome mass. The renderer's problem,
+   not the author's (#367). */
+.marktab[data-stagger]{margin-top:1.05rem}
+/* ── strip below the cliff (#367/2b) ──
+   Hidden above the cliff (rail owns that width). Sticky under the toprail.
+   Collapsed = the walk (~32px); expanded list SITS BENEATH the walk row
+   (summary stays — next/prev remain reachable). No open attr = collapsed
+   every load (no persistence: offline-clean, no script/localStorage). */
+.markstrip{display:none;position:sticky;top:58px;z-index:19;background:rgba(9,13,22,.94);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
+.markstrip-panel{border:0;margin:0}
+.markstrip-panel>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:1ch;min-height:32px;height:auto;padding:.35rem 0;color:var(--muted);outline:none}
+.markstrip-panel>summary::-webkit-details-marker{display:none}
+.markstrip-panel>summary::before{content:none}
+.markstrip-panel[open]>summary{color:var(--lit);padding-top:.35rem}
+.markstrip-in{width:min(calc(100% - 2rem),1120px);margin:0 auto;padding:0}
+.markstrip-sum{width:min(calc(100% - 2rem),1120px);margin:0 auto}
+.markstrip-walk{display:inline-flex;align-items:center;gap:.6ch;font-size:.72rem;min-width:0}
+.markstrip-idle{display:inline-flex;align-items:center;gap:.5ch;color:var(--dim)}
+.markstrip-at{display:none;align-items:center;gap:.5ch}
+.markstrip-at a{color:var(--accent);text-decoration:none;padding:0 .3ch;min-height:32px;display:inline-flex;align-items:center}
+.markstrip-at a:hover{color:var(--bright)}
+.markstrip-pos,.markstrip-count{color:var(--muted);white-space:nowrap}
+.markstrip-chev{color:var(--dim);font-size:.72rem;padding:0 .4ch;flex:none;transition:transform .45s var(--ease),color .45s var(--ease)}
+.markstrip-panel[open] .markstrip-chev{transform:rotate(90deg);color:var(--accent)}
+.markstrip-list{padding:.15rem 0 .55rem;margin:0}
+.markstrip-list ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.15rem}
+.markstrip-list li{margin:0}
+.markstrip-item{display:block;padding:.28rem .55rem;border-radius:3px;color:var(--muted);text-decoration:none;font-size:.72rem;line-height:1.35}
+.markstrip-item:hover,.markstrip-item:focus-visible{color:var(--bright);background:rgba(165,180,252,.08)}
+@media(max-width:859.98px){
+  /* BELOW THE CLIFF: hide the rail (worst-case flag clips past the page
+     edge below ~830px); show the collapsible strip instead. 860 is the
+     existing breakpoint (~26px margin at the wrap-fit boundary). */
+  .marktab{display:none!important}
+  .markstrip{display:block}
+}
+@media(max-width:860px){
+  .hero-grid,.frames,.deltas,.checks{grid-template-columns:1fr}
+  .facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .version-mark{border-left:0;border-top:1px solid var(--line);padding:.7rem 0 0;display:flex;align-items:baseline;gap:1rem}
+  .version-mark .big{flex:none;font-size:1.4rem;letter-spacing:-.04em}
+  .identity span{display:none}.topactions .full{display:none}.topactions{min-width:0}
+  .spine-row{grid-template-columns:9ch 1.8rem minmax(0,1fr)}.spine-key{font-size:.72rem;padding-right:.4rem}
+  .summary-line{grid-template-columns:1fr;gap:.05rem}
+  .detgrid{grid-template-columns:1fr}.detgrid dd{border-top:0;padding-top:0}
+}
+@media(max-width:480px){
+  body{font-size:.79rem}.facts{grid-template-columns:1fr}
+  .tk-2{padding-left:0}.choice-grid{grid-template-columns:3.4ch minmax(0,1fr)}
+  .topactions .status{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;transition-delay:0s!important;filter:none!important}
+  .skip:focus{transition:none}
+}
+@media print{
+  :root{color-scheme:light;--bg:#fff;--bg2:#fff;--panel:#f4f4f5;--panel2:#fff;--line:#bbb;--border:#777;--text:#111;--bright:#000;--lit:#111;--muted:#333;--dim:#444;--dimmer:#555;--accent:#273fa2;--accent2:#075985;--ok:#166534;--warn:#7c4a03;--bad:#991b1b}
+  body{background:#fff}.toprail{position:static;background:#fff;backdrop-filter:none}.topactions{display:none}
+  .frame{box-shadow:none}details::details-content{block-size:auto;opacity:1;filter:none}
+  .frame,.call,.notice,.choice{break-inside:avoid}a{color:#111;text-decoration:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#ranked">Skip to ranked recommendations</a>
+<nav class="toprail" aria-label="Artifact navigation">
+  <div class="toprail-in">
+    <div class="identity"><b>session-log audit · operator lifecycle</b><span>task #830 · coordinator transcript through 2026-08-01 05:56 UTC</span></div>
+    <div class="topactions"><span class="status settled">accepted — both recommendations filed</span></div>
+  </div>
+</nav>
+
+<main class="wrap" id="top">
+
+<header>
+  <div class="hero-grid solo">
+    <div>
+      <div class="kicker"><h1>Two lifecycle tools are warranted. Three tempting additions are not.</h1><span class="proposal">evidence-led recommendations only</span></div>
+      <div class="sub">3,812 Bash calls read programmatically · current recipes checked · no browser guards</div>
+      <p class="lead"><strong>VERIFIED — verdict.</strong> The transcript supports two worthwhile additions: one command to prepare-and-launch a lane, and one command to land-and-retire it. The latter must incorporate the existing <code>reap-lane</code> safety gate rather than create another cleanup route. Lane liveness is already being fixed by <code>#821</code>; journal draining must retain a human semantic step. I found no third recommendation that clears the evidence and safety bars.</p>
+      Coordinator: file only the two ranked recommendations if you agree; this lane files nothing.
+    </div>
+    
+  </div>
+</header>
+
+<section aria-labelledby="decision">
+  <div class="label" id="decision">Decision</div>
+  <p class="read"><strong>INFERRED — recommendation shape.</strong> Treat lane dispatch and lane completion as two lifecycle commands, not a collection of aliases. Each should report its examined population and every phase it actually performed; a calm empty result is acceptable only when it says what it checked. That follows the verified failure in <code>#671</code>: <q>420 commits examined, 177 open ids never seen</q> still printed <q>nothing to review</q>.</p>
+  <p class="read"><strong>VERIFIED — existing slices.</strong> <code>just dispatch-lane</code> validates and persists a supplied prompt; <code>just reap-lane</code> checks tracked dirt and unmerged commits; <code>just status-sync</code> owns live-lane discovery; <code>journal_consume.py</code> records a pending-read bound and refuses unsafe consumption. <code>just --list</code> has no merge/land recipe.</p>
+</section>
+
+<section aria-labelledby="method">
+  <div class="label" id="method">Method and coverage boundary</div>
+  <p class="read"><strong>VERIFIED — transcript population.</strong> I parsed the named JSONL programmatically, reading <strong>3,812</strong> direct <code>Bash</code> tool-use command strings and <strong>4,380</strong> direct tool calls, timestamped from <code>2026-07-30T18:28:57Z</code> through <code>2026-08-01T05:56:12Z</code>. Here-doc bodies were removed before matching command invocations, so a command quoted inside a draft brief does not inflate a count.</p>
+  <pre><code>exact syntactic invocation counts (not success/outcome counts)
+git merge --no-ff                   216
+git worktree add                    188
+just dispatch-lane                  115
+git worktree remove                 141
+journal_consume.py pending           78
+journal_consume.py consume --through 18
+python3 lint.py                     308
+pytest invocation                   346</code></pre>
+  <p class="read"><strong>VERIFIED — supporting surfaces examined.</strong> I read the complete <code>justfile</code> recipe inventory and relevant implementations of <code>dispatch_lane.py</code>, <code>reap.py</code>, and <code>journal_consume.py</code>; mined the 417-line <code>.dreamwork/watch-events.log</code> (164 command events) and the 297-heading coordinator inbox; and opened <code>#440</code>, <code>#657</code>, <code>#660</code>, <code>#671</code>, <code>#764</code>, <code>#786</code>, <code>#809</code>, <code>#821</code>, <code>#828</code>, and <code>#830</code>.</p>
+  <p class="read"><strong>VERIFIED — what this does not claim.</strong> Counts are command occurrences, not completed merges, unique lanes, elapsed minutes, or causal proof. I did not read ordinary prose from the whole transcript, execute browser guards, bind ports <code>35110</code>/<code>35113</code>, or inspect every command’s output. I did not sample activity before this transcript begins. This audit therefore ranks repetition and visible operator steps, not a total time study.</p>
+</section>
+
+<section aria-labelledby="ranked">
+  <div class="label" id="ranked">Ranked recommendations</div>
+
+  <article class="choice">
+    <div class="choice-grid"><div class="choice-tag">01</div><div>
+      <p><strong>INFERRED — build <code>just launch-lane</code>: one accepted brief source → checked worktree → governed launch.</strong></p>
+      <p><strong>VERIFIED — recurrence and cost.</strong> The transcript contains <strong>115</strong> <code>just dispatch-lane</code> launches and <strong>188</strong> worktree-add invocations. The measured current shape takes about 15 operator-authored plumbing lines per lane. The latest observed dispatch is representative:</p>
+      <pre><code>B=$(git rev-parse --short=8 HEAD)
+git worktree add .worktrees/cx-830rituals -b cx-830rituals HEAD
+{ cat &lt;&lt;EOF ...; cat &lt;&lt;'EOF' ...; } &gt; $S/head-830.md
+cat $S/head-830.md briefs/boilerplate.md &gt; $S/p830.md
+just dispatch-lane $S/p830.md @cx-reviewer -y</code></pre>
+      <p><strong>INFERRED — rank calculation.</strong> <code>115 launches × ~15 lines = ~1,725 repeated operator actions</code>; that is the largest observed frequency × stated-cost burden.</p>
+      <p><strong>INFERRED — contract.</strong> Take a task id, lane/branch, agent, and a human-authored brief head; obtain and report the current base; create the worktree; append the canonical boilerplate; validate the exact final brief; persist its digest; launch through the existing dispatcher; and return a durable attempt id plus the real runner result. It must not invent ownership, tests, agent policy, or prose.</p>
+      <p><strong>VERIFIED — failure this must close.</strong> <code>#828</code> measured a <code>@glm52</code> dispatch that exited immediately while leaving a worktree, branch, and zero commits; retrying then refused because the brief corpus identity was occupied. Its exact reported refusal was <q>brief corpus name 660-glm-660ruling.md already belongs to another dispatch</q>. The current dispatcher persists before <code>execvp</code> and cannot report a runner that exits after exec.</p>
+      <p><strong>INFERRED — what would make this tool wrong.</strong> It is wrong if a runner refusal is shown as a launch, if it erases a possibly-live corpus identity just because a process is not immediately observable, or if it changes a retry’s brief bytes while presenting it as the same attempt. On pre-launch failure it must leave no new worktree or report the exact retained state; on post-launch uncertainty it must say <em>unverified attempt</em>, preserve the bytes, and require an explicit identical-digest retry/resume path.</p>
+    </div></div>
+  </article>
+
+  <article class="choice">
+    <div class="choice-grid"><div class="choice-tag">02</div><div>
+      <p><strong>INFERRED — build <code>just land-lane</code>: one branch → merge gate → preserve-aware retirement.</strong></p>
+      <p><strong>VERIFIED — recurrence and cost.</strong> There are <strong>216</strong> <code>git merge --no-ff</code> invocations. The standing merge ritual is six separate acts: merge, named tests, lint, complete WARN-row comparison, the repo-wide guard list, and worktree preserve-check. Its stated burden is therefore <code>216 × ~6 = ~1,296</code> operator actions before counting cleanup.</p>
+      <pre><code>git merge --no-ff &lt;lane&gt;
+just pytest &lt;named tests&gt;
+python3 lint.py                 # compare full WARN rows, not only trailer
+python3 dev/repo_wide_guards.py list
+just pytest $(python3 dev/repo_wide_guards.py list)
+git -C .worktrees/&lt;lane&gt; status --porcelain --ignored</code></pre>
+      <p><strong>VERIFIED — safety evidence.</strong> The session recorded <strong>141</strong> raw <code>git worktree remove</code> invocations. After <code>reap-lane</code> landed, a later twelve-hour slice still has 60 raw removes versus 14 <code>just reap-lane</code> calls. The current <code>reap-lane</code> does use <code>git status --porcelain --ignored</code> and checks unmerged commits, but it is a separate remembered act; a raw removal bypasses it.</p>
+      <p><strong>VERIFIED — concrete loss.</strong> The latest <code>Merge #660</code> message says a completed lane was force-removed <q>WITHOUT a preserve-check</q> and recovered as <code>b2ff93f2</code> only from the reflog. This is a recurrence with material loss potential, not a style preference.</p>
+      <p><strong>INFERRED — contract.</strong> Require an explicit branch and named test selection; record pre-merge branch/worktree state; merge; run only the named test subset plus the generated repo-wide guard set; emit the full lint WARN rows and a baseline comparison; then call the existing <code>reap-lane</code> implementation, never raw <code>git worktree remove</code>. Stop before ledger folding and branch deletion unless their exact preconditions are separately declared.</p>
+      <p><strong>INFERRED — what would make this tool wrong.</strong> It is wrong if it turns a missing test selection, missing WARN baseline, or unavailable guard set into a green-looking zero; if it deletes a lane after any failed gate phase; or if it merely prints a preserve warning while proceeding. On any refusal it must retain the branch/worktree and name the phase, files/commits examined, and operation it deliberately did not perform.</p>
+    </div></div>
+  </article>
+</section>
+
+<section aria-labelledby="not-recommended">
+  <div class="label" id="not-recommended">Verified exclusions</div>
+  <div class="checks">
+    <div class="check"><b>NO NEW LIVENESS TOOL</b><br><span><strong>VERIFIED.</strong> <code>#821</code> already corrects the tick line to use <code>status_sync</code>'s detector. Its worktree currently contains three commits. The issue’s correction says the detector already worked; the ad-hoc <code>ps</code>/<code>pgrep</code> predicates were the failure. The seed’s exact <q>two double-dispatches (#657, #660)</q> is not sustained: <code>#821</code> documents the live duplicate for <code>#657</code>; <code>#660</code> was a dead-on-arrival/retry sequence under <code>#828</code>, not two concurrently live lanes.</span></div>
+    <div class="check"><b>NO ONE-CLICK JOURNAL DRAIN</b><br><span><strong>VERIFIED.</strong> <code>pending</code> recurs 78 times and bounded <code>consume --through</code> 18 times, but the missing middle act is deciding what each receipt means. <code>pending</code> records the true head; <code>consume</code> refuses when its bound exceeds the same read. Automatically consuming would silently acknowledge content not acted on, the exact safety property the two commands preserve.</span></div>
+    <div class="check"><b>NO SECOND CLEANUP ROUTE</b><br><span><strong>VERIFIED.</strong> <code>just reap-lane</code> is already the supported checked remover. The worthwhile work is to make <code>land-lane</code> call that existing seam, not to create a competing cleanup command. This follows <code>#440</code>'s verified lesson: the fifth hand-rolled ledger parser failed despite an importable production parser; the landed fix made one supported fold path.</span></div>
+  </div>
+</section>
+
+<section aria-labelledby="evidence">
+  <div class="label" id="evidence">Citation discipline</div>
+  <p class="read"><strong>VERIFIED — #764.</strong> Its record says a cited lesson line moved to another lesson and that a correct coordinate can rot; this artifact cites issue content and command excerpts, not stale line numbers.</p>
+  <p class="read"><strong>VERIFIED — #786.</strong> Its follow-up corrected a lane’s 219-brief measurement to 251 briefs in the main checkout. Accordingly, I do not treat a worktree-only count as a fact about the coordinator’s live corpus.</p>
+  <p class="read"><strong>VERIFIED — #809.</strong> The referenced review report fixed its sampling method before reporting findings and refused to extrapolate a focused ratio. This review follows that discipline: whole-log command extraction is complete for the named file; causal/time-cost conclusions are bounded and labelled.</p>
+</section>
+
+<footer>Prepared for task #830 · 1 August 2026 · self-contained and offline-clean. Claims marked VERIFIED are measured from the stated sources; claims marked INFERRED are design judgement. Browser guards were deliberately not run. <span class="dimmer">· built from review template v1+5c98fb09</span></footer>
+
+</main>
+</body>
+</html>
