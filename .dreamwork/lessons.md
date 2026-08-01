@@ -3487,3 +3487,40 @@ The control was one dispatch away: **run the thing that should succeed and see w
 artifact appears.** An absence is consistent with many stories; only a positive control tells you
 which. This is the same shape as the `#646` note I had to publicly correct earlier the same day —
 asserting a conclusion from a check I had not thought through.
+
+## A false zero is more dangerous than a wrong number, because it reads as an all-clear (2026-08-01, #868)
+
+The tick line reported `lanes 0 live` for several consecutive ticks while six `ccc` lanes were
+provably running — `pgrep -af ccc` listed every one by pid with its runner child. I believed it,
+concluded a lane had died, and **reaped a running lane's worktree**, destroying its uncommitted work
+and leaving the agent running with its cwd in the main checkout.
+
+Two things make this worth keeping. First, the failure mode: a probe that degrades to **zero**
+degrades to the one value that means "nothing is running" — the alarm condition — so it fires
+permanently and the reader learns to skip it. A number that degraded to "unknown" would have stopped
+me. Second, the cost was not the wrong reading, it was the **destructive act I took on its
+authority**. Before an irreversible step, the reading that justifies it deserves an independent
+second measurement: `pgrep` disagreed with the tick line and took four seconds to run.
+
+## Never `pkill -f` a pattern that can appear in another agent's command line — kill by pid (2026-08-01, #869)
+
+A lane ran `pkill -f "port 39893"` to clear its own measurement server. `-f` matches the **full
+command line of every process**, including other agents' wrapper shells that merely mention the
+string; its own shell matched and died at exit 144, which is how it noticed. It had the pid and used
+a pattern anyway. With a fleet out, a pattern kill is a fleet-wide weapon fired at one target.
+
+The same lane may have killed a sibling this way and said so plainly rather than assuming innocence
+— which is the right instinct and is why we know about it at all.
+
+## Do not inherit a claim that a sibling lane is dead; `git log` settles it in one command (2026-08-01, #863)
+
+I wrote in a brief that a prior lane on the task "died", "committed nothing", and that "that worktree
+has been reaped, so the file is gone" — and closed with "treat this brief as the only inherited
+context and measure everything yourself." Every clause was wrong, and the last one actively steered
+the reader away from the `git log --oneline -1` that would have shown it. The lane was alive, it had
+committed a 314-line guard, and it went on to write the actual fix.
+
+The standing contract already says not to trust a literal sha in a brief. The same scepticism is
+owed to a claim that a **sibling is dead** — and it is cheaper to check than a sha is. This is the
+third entry in this file about asserting a conclusion from an absence; the absence of a transcript
+meant "ccc writes it at exit", not "the process is gone".
