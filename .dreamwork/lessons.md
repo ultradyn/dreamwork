@@ -3605,3 +3605,26 @@ Two things made this cheap rather than expensive, and both are the habit, not lu
 `cat` is evaluated once and its *output* is not re-evaluated, so backticks, `$`, and quotes survive
 intact. Do not reach for single quotes instead — these notes are full of apostrophes. Verified by
 re-reading the repaired note: the backticks are in the store.
+
+## A rebased lane's tree and its merge's tree are byte-identical, so no content check can tell them apart (2026-08-01, #882)
+
+Fixing the gate-order defect, I detached HEAD at the merge and ran every gate there. Asked to
+construct the case where the gates judge the WRONG tree and still pass, I expected to reason about
+it and instead measured it: detach at `branch_sha` rather than `base_sha`, so `git merge --no-ff`
+answers *"Already up to date"* and no merge commit exists at all. **The full suite went green** —
+four gates passed, `master` was fast-forwarded, the lane was reaped — because a `--no-ff` merge of
+an already-rebased branch produces a tree identical to the branch's. Nothing that reads files can
+see the difference; the only witness is git's own parent record.
+
+So the population rule has a sharper edge here than usual. It is not that the checks *might* be
+fooled by the wrong tree — for a rebased lane they are **guaranteed** to be, because the two trees
+are equal. The gate now proves what it is standing on before any check is believed:
+`git rev-list --parents -n 1 HEAD` must equal exactly the base and branch shas preflight read
+(`merge-identity`). The check binds a fact the subject cannot rewrite; every content check binds one
+it can.
+
+The companion, from the same construction: `merge-identity` reads HEAD in the main checkout, so it
+does **not** bind where each gate subprocess actually runs. Pointing one gate's `cwd` at the lane
+worktree passes it. What catches that is a fixture whose named test writes its verdict to a file in
+its own cwd — the file's *location* is the evidence, and its absence must be an assertion with a
+sentence on it, not a `FileNotFoundError`.
