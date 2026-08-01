@@ -345,6 +345,46 @@ def build(task: int, branch: str, owns: list[str], core: str, *,
     return "\n\n".join([head.rstrip("\n"), core.strip(), *frame, boilerplate.rstrip("\n")]) + "\n"
 
 
+def core_from_task(task: int, ledger: Path | None = None) -> str:
+    """The task record's own body, as the authored core — the "alongside tasks" half.
+
+    Max's ask was for prompts "pre-written alongside tasks".  Measured on this
+    task's own record: the body already carried the defect, its measurements,
+    the fix-shape fork, and the direction-2 hazards.  So the durable home for an
+    authored core ALREADY EXISTS and it is the task body — no draft-prompt
+    column, no second store, no writer added beside the coordinator's.
+
+    The body is lifted, never templated, and `validate_core` still runs on it.
+    A record with no direction-2 reasoning is refused exactly as a hand-written
+    core would be, which reports a thin task record rather than papering over it.
+    """
+    ledger = ledger or (main_checkout() / ".dreamwork" / "tasks.md")
+    body = _core_of(task_record(task, ledger).get("body") or "", task)
+    if not body:
+        raise BriefFault(
+            f"#{task}'s record carries no body beyond its title, so there is no "
+            "authored core to lift; write the core and pass --core"
+        )
+    return body
+
+
+def _core_of(body: str, task: int) -> str:
+    """The authored prose of a record body, in either ledger mode.
+
+    Store mode returns the body alone; MARKDOWN mode returns the
+    ``- **#<id>** <title>`` head line followed by the body indented under it
+    (measured, not assumed).  Emitting that verbatim would open the brief with
+    a stray bullet, and would make a title-only record look like a core.  So
+    drop the head line and dedent by the common leading whitespace.
+    """
+    lines = body.splitlines()
+    if lines and re.match(rf"^- \*\*#{task}\*\*", lines[0]):
+        lines = lines[1:]
+    indents = [len(line) - len(line.lstrip()) for line in lines if line.strip()]
+    dedent = min(indents) if indents else 0
+    return "\n".join(line[dedent:] if line.strip() else "" for line in lines).strip()
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--task", type=int, required=True, help="the task id")
@@ -355,6 +395,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--core", type=Path,
         help="file holding the authored core; `-` or omitted reads stdin")
+    parser.add_argument(
+        "--core-from-task", action="store_true",
+        help="use the task record's own body as the authored core (#881 storage call)")
     parser.add_argument("--ledger", type=Path, help="ledger path (default: the main checkout's)")
     parser.add_argument("--frame", type=Path, default=FRAME_PATH)
     parser.add_argument("--out", type=Path, help="write here instead of stdout")
@@ -364,7 +407,11 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if args.core is None or str(args.core) == "-":
+        if args.core_from_task:
+            if args.core is not None:
+                raise BriefFault("--core and --core-from-task name two different cores")
+            core = core_from_task(args.task, args.ledger)
+        elif args.core is None or str(args.core) == "-":
             if sys.stdin.isatty():
                 raise BriefFault(
                     "no authored core: --core was not given and stdin is a terminal"

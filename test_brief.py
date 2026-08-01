@@ -47,6 +47,16 @@ GOOD_CORE = """## The defect, measured
 """
 
 
+def _indent(text: str) -> str:
+    """Markdown-mode bodies sit indented under their `- **#id**` head line.
+
+    Measured against `ledger._read_records`: an unindented body is dropped
+    entirely, and the head line comes back INSIDE `body` in markdown mode but
+    not in store mode — which is why `brief._core_of` exists.
+    """
+    return "\n".join(f"  {line}" if line.strip() else "" for line in text.splitlines())
+
+
 def _this_branch() -> str:
     return subprocess.run(
         ["git", "-C", str(ROOT), "rev-parse", "--abbrev-ref", "HEAD"],
@@ -347,10 +357,10 @@ def test_the_delivered_argv_carries_the_standing_rules(tmp_path, lane):
     finally:
         process.wait(timeout=30)
 
-    payload = [item for item in delivered if item.startswith(b"# Task #881")]
-    assert len(payload) == 1, f"argv carried {len(payload)} brief items: {delivered!r}"
-    text = payload[0].decode("utf-8")
     try:
+        payload = [item for item in delivered if item.startswith(b"# Task #881")]
+        assert len(payload) == 1, f"argv carried {len(payload)} brief items: {delivered!r}"
+        text = payload[0].decode("utf-8")
         assert text == anchored, (
             f"delivered {len(text)} bytes, sent {len(anchored)} — the runner did "
             "not receive the brief that was validated"
@@ -391,6 +401,45 @@ def test_a_core_declaring_a_generated_field_is_refused(lane):
     with pytest.raises(brief.BriefFault) as excinfo:
         brief.build(881, lane, ["dev/brief.py"], core)
     assert "declares Branch:, which this tool generates" in str(excinfo.value)
+
+
+def test_core_from_task_lifts_the_body_and_still_validates_it(lane, tmp_path):
+    """The storage answer, executed: the task body IS the authored core's home.
+
+    No draft-prompt column and no second store — and lifting is not templating,
+    because `validate_core` still runs on what was lifted. A record with no
+    direction-2 reasoning is refused exactly as a hand-written core would be.
+    """
+    (tmp_path / ".dreamwork").mkdir()
+    ledger = tmp_path / ".dreamwork" / "tasks.md"
+    rich = ("## The defect\n\nRetyped 33 times, 32 distinct bodies.\n\n"
+            "## Direction 2\n\nA check that reads its own fixture cannot fail.\n")
+    thin = "Make the thing faster. It is slow.\n"
+    ledger.write_text(
+        "# Tasks\n\n## Open\n\n"
+        f"- **#901** rich record\n\n{_indent(rich)}\n"
+        f"- **#902** thin record\n\n{_indent(thin)}\n"
+        "\n## Recently landed\n", encoding="utf-8")
+
+    lifted = brief.core_from_task(901, ledger)
+    assert "Direction 2" in lifted and "32 distinct bodies" in lifted
+    assert re.search(r"^## Direction 2$", brief.build(
+        901, lane, ["dev/brief.py"], lifted, ledger=ledger), re.MULTILINE)
+
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief.build(902, lane, ["dev/brief.py"],
+                    brief.core_from_task(902, ledger), ledger=ledger)
+    assert "names no direction-2 construction" in str(excinfo.value)
+
+
+def test_core_from_task_refuses_an_empty_body(lane, tmp_path):
+    (tmp_path / ".dreamwork").mkdir()
+    ledger = tmp_path / ".dreamwork" / "tasks.md"
+    ledger.write_text("# Tasks\n\n## Open\n\n- **#903** titled but bodyless\n\n"
+                      "## Recently landed\n", encoding="utf-8")
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief.core_from_task(903, ledger)
+    assert "carries no body beyond its title" in str(excinfo.value)
 
 
 def test_an_unknown_task_is_refused_with_the_denominator(lane):
