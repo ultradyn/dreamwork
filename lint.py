@@ -4016,10 +4016,11 @@ def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
     except (OSError, json.JSONDecodeError) as exc:
         rep.add(ERROR, WORKTREE_DRAIN_STATE, f"unreadable drain state: {exc}")
         return
-    expected = {"version", "root", "high_water_count", "allowed_worktrees",
-                "last_observed_size_bytes"}
+    expected = {"version", "root", "root_present", "high_water_count",
+                "allowed_worktrees", "last_observed_size_bytes"}
     if (not isinstance(state, dict) or set(state) != expected
-            or state.get("version") != 1 or state.get("root") != ".worktrees"
+            or state.get("version") != 2 or state.get("root") != ".worktrees"
+            or not isinstance(state.get("root_present"), bool)
             or not isinstance(state.get("high_water_count"), int)
             or not isinstance(state.get("last_observed_size_bytes"), int)
             or not isinstance(state.get("allowed_worktrees"), list)
@@ -4029,13 +4030,16 @@ def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
                != len(state.get("allowed_worktrees", []))
             or state.get("high_water_count")
                != len(state.get("allowed_worktrees", []))
+            or (not state.get("root_present")
+                and (state.get("high_water_count") != 0
+                     or state.get("last_observed_size_bytes") != 0))
             or not set(state.get("allowed_worktrees", [])).issubset(
                 WORKTREE_DRAIN_ORIGINAL)):
         rep.add(ERROR, WORKTREE_DRAIN_STATE,
-                "invalid drain state — root must be literal `.worktrees`, "
-                "count must equal the unique allowed-worktree set, and byte/count "
-                "fields must be integers, and allowed names may only be removed "
-                "from the original drain set")
+                "invalid drain state — version 2 binds literal `.worktrees` "
+                "presence, count must equal the unique allowed-worktree set, "
+                "an absent root must have zero count/bytes, and allowed names "
+                "may only be removed from the original drain set")
         return
 
     target = dw.parent.resolve()
@@ -4043,6 +4047,8 @@ def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
     if prior is not None:
         prior_allowed = prior.get("allowed_worktrees")
         prior_count = prior.get("high_water_count")
+        prior_present = prior.get("root_present", True)  # v1 recorded a live root
+        prior_size = prior.get("last_observed_size_bytes")
         if (not isinstance(prior_allowed, list)
                 or not isinstance(prior_count, int)):
             rep.add(ERROR, WORKTREE_DRAIN_STATE,
@@ -4056,6 +4062,18 @@ def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
                     f"{prior_count} to {state['high_water_count']}; names/count "
                     "may only be removed/lowered, and zero is absorbing")
             return
+        if prior_present is False and state["root_present"]:
+            rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                    "ratchet root presence increased from absent to present; "
+                    "an absent in-repo root cannot be recreated")
+            return
+        if (isinstance(prior_size, int)
+                and state["last_observed_size_bytes"] > prior_size):
+            rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                    f"ratchet size checkpoint increased from {prior_size} to "
+                    f"{state['last_observed_size_bytes']} bytes; size may only "
+                    "shrink")
+            return
     main_root = _main_checkout_for(target)
     if main_root is None:
         rep.add(ERROR, WORKTREE_DRAIN_STATE,
@@ -4063,20 +4081,20 @@ def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
                 "a wrong path into a permanent green")
         return
     old_root = main_root / ".worktrees"
-    if not old_root.exists():
-        if state["high_water_count"] != 0:
-            rep.add(ERROR, WORKTREE_DRAIN_STATE,
-                    f"in-repo worktree root absent at {old_root}, but the ratchet "
-                    f"still allows {state['high_water_count']} path(s); lower the "
-                    "committed state to zero so this end state cannot regress")
-            return
+    actual_present = old_root.exists()
+    if actual_present != state["root_present"]:
+        if actual_present:
+            detail = "reappeared after the checkpoint recorded it absent"
+        else:
+            detail = "is absent but the checkpoint still records it present"
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                f"in-repo worktree root {detail}: {old_root}; update only a "
+                "real drain transition, never rebaseline growth")
+        return
+    if not actual_present:
         rep.add(OK, WORKTREE_DRAIN_STATE,
                 f"in-repo worktree root absent at {old_root} (expected end state; "
-                "path is bound to literal `.worktrees`)")
-        return
-    if state["high_water_count"] == 0:
-        rep.add(ERROR, WORKTREE_DRAIN_STATE,
-                f"in-repo worktree root reappeared after reaching zero: {old_root}")
+                "presence/count/size are locked at zero)")
         return
 
     registered = _registered_in_repo_worktrees(main_root, old_root)
@@ -4105,10 +4123,21 @@ def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
                 f"committed allowed set/count from {state['high_water_count']} to "
                 f"{count} and record size evidence {size} bytes before continuing")
         return
+    if size > state["last_observed_size_bytes"]:
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                f"in-repo worktree size grew from recorded "
+                f"{state['last_observed_size_bytes']} to {size} bytes while "
+                f"registered count stayed {count}; count-only green is forbidden")
+        return
+    if size < state["last_observed_size_bytes"]:
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                f"in-repo worktree size drain advanced from recorded "
+                f"{state['last_observed_size_bytes']} to {size} bytes; lower the "
+                "committed size checkpoint before continuing")
+        return
     rep.add(OK, WORKTREE_DRAIN_STATE,
-            f"in-repo worktrees draining: count {count}/{state['high_water_count']}; "
-            f"size evidence {size} bytes (last recorded "
-            f"{state['last_observed_size_bytes']})")
+            f"in-repo worktree root present: registered count "
+            f"{count}/{state['high_water_count']}; size checkpoint {size} bytes")
 
 
 def _git_tracked_rels(root: Path) -> list[str] | None:

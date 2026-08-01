@@ -1610,11 +1610,12 @@ even when lint runs from a linked worktree:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "root": ".worktrees",
-  "high_water_count": 4,
-  "allowed_worktrees": ["lane-a", "lane-b", "lane-c", "lane-d"],
-  "last_observed_size_bytes": 127486064
+  "root_present": true,
+  "high_water_count": 1,
+  "allowed_worktrees": ["lane-a"],
+  "last_observed_size_bytes": 35228789
 }
 ```
 
@@ -1626,12 +1627,13 @@ re-baselines this file. Each transition is checked against the prior committed
 checkpoint, so an original name cannot be added back after removal and zero is
 absorbing. History lookup crosses deletion commits, and removing the state file
 after introduction is itself an error, so delete/recreate cannot reset the
-baseline. `last_observed_size_bytes` is a committed evidence
-checkpoint, while every lint run reports the current apparent byte size. Size
-is not the hard gate: a build may grow a live lane without creating a worktree.
-When the root is absent, lint reports its exact resolved path and passes as the
-intended end state; any other `root` token is an error, closing the typo-is-green
-case.
+baseline. `root_present` distinguishes an absent root from a present root with
+zero registered worktrees; it may transition from true to false but never back.
+An absent root requires zero allowed names and zero bytes. The apparent byte
+size must equal `last_observed_size_bytes`: growth is forbidden even when the
+registered count stays unchanged, and shrinkage requires lowering the committed
+checkpoint so it cannot silently regrow under a stale high-water mark. Any other
+`root` token is an error, closing the typo-is-green case.
 
 ## `.dreamwork/.status-keys` — the only file `lint.py` writes (#303)
 
