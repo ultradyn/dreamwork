@@ -1238,9 +1238,11 @@ def test_sweep_all_history_recovers_a_landing_before_the_fold_window(
         f"--all-history must recover the pre-fold landing for #{tid}: {full!r}")
     bounded_n = int(re.search(r"examined (\d+) commits", bounded).group(1))
     full_n = int(re.search(r"examined (\d+) commits", full).group(1))
-    assert bounded_n > 0 and full_n > bounded_n, (
-        f"both populations must be non-empty and full history must be larger: "
-        f"bounded={bounded_n}, full={full_n}")
+    history_n = int(_git(root, "rev-list", "--count", "HEAD").stdout.strip())
+    assert bounded_n > 0 and full_n == history_n > bounded_n, (
+        f"both populations must be non-empty and full history must equal git's "
+        f"independent HEAD count: bounded={bounded_n}, full={full_n}, "
+        f"git={history_n}")
 
 
 def test_sweep_that_read_no_entries_refuses_to_call_it_nothing_to_review(
