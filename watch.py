@@ -4526,8 +4526,9 @@ def delete_subagent_policy(target):
 
     Returns True when the override was present and removed; False when it was
     already absent (nothing to reset — the standing default is already in
-    effect). Neither outcome is an error: reset to an already-default state is
-    idempotent, the same way an identical posture chip press is 202 + no event.
+    effect); None when deletion failed. Absence is idempotent, but an unlink
+    failure must stay distinct so the route cannot report a successful reset
+    while the override remains on disk.
     """
     lint = _posture_vocab()
     path = os.path.join(target, ".dreamwork", lint.SUBAGENT_POLICY_FILE)
@@ -4537,7 +4538,7 @@ def delete_subagent_policy(target):
     except FileNotFoundError:
         return False
     except OSError:
-        return False
+        return None
 
 
 def posture_line(pace, asking, delegation, orchestration, source=""):
@@ -6087,6 +6088,9 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # read uses read_text_full (the whole-file reader) and the
             # comparison is byte-for-byte.
             persisted = read_subagent_policy(target)
+            if persisted != text:
+                self.send_error(500, "policy persistence mismatch")
+                return
             log_event(target, subagent_policy_line("set", from_path))
             self._send_receipt(json.dumps({
                 "ok": True, "changed": True,

@@ -12,6 +12,7 @@ import io
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import struct
@@ -9857,6 +9858,16 @@ class TestPosture(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code
 
+    def _post_json(self, url, obj):
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            return e.code, None
+
     def _lines(self, d):
         path = os.path.join(d, ".dreamwork", "submissions.log")
         if not os.path.exists(path):
@@ -10811,6 +10822,26 @@ class TestPosture(unittest.TestCase):
             self.assertTrue(os.path.exists(
                 os.path.join(d, ".dreamwork", "subagent-policy")))
 
+    def test_save_route_refuses_success_when_writer_changes_nothing(self):
+        """A helper success cannot mint a success receipt without read-back.
+
+        This is the brief's false-green exactly: the POST reaches the handler,
+        the writer claims success, but the old bytes remain on disk.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            self.assertTrue(watch.write_subagent_policy(d, "old policy\n"))
+            with unittest.mock.patch.object(watch, "atomic_write_text",
+                                            return_value=None):
+                status, body = self._post_json(
+                    base + "/subagent-policy", {"policy": "new policy\n"})
+            self.assertEqual(status, 500, "unchanged disk bytes read as saved")
+            self.assertIsNone(body)
+            self.assertEqual(watch.read_subagent_policy(d), "old policy\n")
+            self.assertFalse(any("subagent policy via watch" in e
+                                 for e in self._policy_events(d)))
+
     def test_save_route_emits_one_event_line_on_a_real_change(self):
         """Production line: log_event + subagent_policy_line. The event
         carries the TRANSITION ('set'), never the free text — so a policy
@@ -10869,6 +10900,62 @@ class TestPosture(unittest.TestCase):
             self.assertEqual(status, 202)
             self.assertFalse(os.path.exists(
                 os.path.join(d, ".dreamwork", "subagent-policy")))
+
+    def test_reset_route_refuses_success_when_unlink_fails(self):
+        """An unlink failure is not the same state as an absent override."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            self.assertTrue(watch.write_subagent_policy(d, "keep me\n"))
+            with unittest.mock.patch.object(
+                    watch.os, "unlink", side_effect=PermissionError("denied")):
+                status, body = self._post_json(
+                    base + "/subagent-policy", {"reset": True})
+            self.assertEqual(status, 500,
+                             "remaining override read as already default")
+            self.assertIsNone(body)
+            self.assertEqual(watch.read_subagent_policy(d), "keep me\n")
+            self.assertTrue(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+            self.assertFalse(any("subagent policy via watch" in e
+                                 for e in self._policy_events(d)))
+
+    def test_subagent_policy_control_is_explicit_and_cycles_every_example(self):
+        """The union spec's UI halves are executable, not comment claims."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node unavailable")
+        start = watch.PAGE.index("const SUBAGENT_POLICY_PLACEHOLDERS")
+        end = watch.PAGE.index("/* The textarea value", start)
+        block = watch.PAGE[start:end]
+        self.assertEqual(block.count('onclick="commitSubagentPolicy()"'), 1)
+        self.assertEqual(block.count('onclick="resetSubagentPolicy()"'), 1)
+        textarea = block[block.index("<textarea"):block.index("</textarea>")]
+        for implicit in ("oninput=", "onchange=", "onblur="):
+            self.assertNotIn(implicit, textarea)
+        script = block + r"""
+function esc(s) { return String(s); }
+function placeholderAt(t) {
+  Date.now = () => t;
+  const html = subagentPolicyPicker({posture: {}});
+  return html.match(/placeholder="([^"]+)"/)[1];
+}
+const step = SUBAGENT_POLICY_PLACEHOLDER_MS;
+const got = SUBAGENT_POLICY_PLACEHOLDERS.map((_, i) => placeholderAt(i * step));
+process.stdout.write(JSON.stringify({got, all: SUBAGENT_POLICY_PLACEHOLDERS,
+  wraps: placeholderAt(SUBAGENT_POLICY_PLACEHOLDERS.length * step)}));
+"""
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=5)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        got = json.loads(proc.stdout)
+        self.assertEqual(got["got"], got["all"])
+        self.assertEqual(got["wraps"], got["all"][0])
+        self.assertEqual(len(set(got["all"])), 6)
+        diversity = " ".join(got["all"])
+        for example in ("no subagents", "models", "worktree", "roles",
+                        "build boxes", "deploy auth"):
+            self.assertIn(example, diversity)
 
     def test_blank_save_is_rejected_not_written_as_inert(self):
         """A blank save must be refused, not persisted as an inert file.

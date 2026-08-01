@@ -850,14 +850,15 @@ const SUBAGENT_POLICY_PLACEHOLDERS = [
   'e.g. build boxes and which tools they run',
   'e.g. deploy auth — who may ship',
 ];
+const SUBAGENT_POLICY_PLACEHOLDER_MS = 10_000;
 function subagentPolicyPicker(d) {
   const p = (d && d.posture) || {};
   const has = p.subagent_policy_source === 'file';
-  // One placeholder per render, picked at random so consecutive ticks cycle.
-  // A fixed placeholder would not show "diversity matters"; a rotating one
-  // does, and it never collides with real text because it is the EMPTY state.
+  // Advance through every example in order. Time-bucketing keeps ordinary 2s
+  // data ticks hash-identical while still rotating a genuinely empty field.
   const ph = SUBAGENT_POLICY_PLACEHOLDERS[
-    Math.floor(Math.random() * SUBAGENT_POLICY_PLACEHOLDERS.length)];
+    Math.floor(Date.now() / SUBAGENT_POLICY_PLACEHOLDER_MS)
+      % SUBAGENT_POLICY_PLACEHOLDERS.length];
   return `<section class="spolicy" id="spolicy" aria-label="subagent policy">` +
     `<div class="spolicy-head"><div class="label">subagent policy</div>` +
     `<div class="spolicy-src${has ? ' file' : ''}" id="spolicy-src">` +
