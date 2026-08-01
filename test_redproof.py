@@ -45,7 +45,10 @@ def repo(tmp_path: Path, monkeypatch) -> Path:
     """A real git repo with one tracked file.
 
     The scratch root is redirected under tmp_path so tests do not collide with
-    real lanes (the #652 hazard these tests exist alongside)."""
+    real lanes (the #652 hazard these tests exist alongside). A launch identity
+    is set so the fixture models a REAL lane (#870): begin/restore/check resolve
+    the lane's own token-keyed registry (MODE A). The coordinator path — no
+    identity, enumeration — has its own tests below (#895)."""
     root = tmp_path / "repo"
     root.mkdir()
     _git(root, "init", "-q", "-b", "master", ".")
@@ -54,6 +57,9 @@ def repo(tmp_path: Path, monkeypatch) -> Path:
     _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
     # Redirect the lane-private scratch root so tests own their registry.
     monkeypatch.setattr(rp._ls, "SCRATCH_ROOT", tmp_path / "scratch")
+    # Model a dispatched lane: a launch identity is in env (#870). Without it a
+    # test is indistinguishable from the coordinator, whose audit must enumerate.
+    monkeypatch.setenv(rp._ls.IDENTITY_ENV, "fixture-lane-aa895")
     return root
 
 
@@ -921,6 +927,115 @@ class TestRoleKeyedRegistries:
             "a fix that isolates by hiding has broken the review")
 
 
+# ── #895: a coordinator's audit must SEE a lane's registry from outside it ──
+
+class TestCoordinatorAuditSeesTheLane:
+    """THE #895 red run. #870 keyed lane scratch on a dispatcher-generated
+    DREAMWORK_LANE_ID that is UNSET in the coordinator's shell, so the
+    coordinator's `check` resolved an empty scratch and printed an all-clear
+    over whatever the lane's real state was. Two halves, both load-bearing:
+
+    (1) Direction 2 — the whole point: a lane leaves an ARMED injection on disk
+        (#863's exact state) and the coordinator's audit must REFUSE naming it,
+        not print "no evidence".
+    (2) The blind case must not read as an all-clear: "no evidence" and "I could
+        not read this lane's registry" are opposite facts and were one sentence.
+    """
+
+    def _as_coordinator(self, monkeypatch):
+        """Drop the launch identity, modelling the coordinator's shell (#870)."""
+        monkeypatch.delenv(rp._ls.IDENTITY_ENV, raising=False)
+
+    def test_an_armed_injection_in_a_lane_is_refused_by_the_coordinator(
+            self, repo, monkeypatch, capsys):
+        """DIRECTION 2 — reproducible, not hypothetical. A lane (token set)
+        begins an injection and leaves it ARMED on disk. The coordinator (token
+        unset) audits the worktree. It must REFUSE naming the armed path —
+        exactly #863's state, where this refusal was the only reason two armed
+        injections were caught."""
+        _begin(repo, "router.js")          # armed, never restored
+        # PRECONDITION: the lane genuinely armed an injection under its token.
+        lane_registry = rp._registry_path(repo)
+        assert lane_registry.exists(), "fixture did not arm an injection"
+        armed_before = [e for e in rp._read_registry(repo)[0]
+                        if e.get("state") == rp.ARMED]
+        assert armed_before, "fixture's armed entry is missing — test proves nothing"
+
+        self._as_coordinator(monkeypatch)
+        # The coordinator resolves a DIFFERENT, tokenless path by default:
+        assert rp._registry_path(repo) != lane_registry
+
+        exit = _check(repo)
+        _, err = capsys.readouterr()
+        assert exit == 1, (
+            f"a coordinator's audit MUST refuse an armed injection (#863); "
+            f"got exit {exit}, stderr={err!r}")
+        # discriminating: the armed PATH is named, and it names the identity dir
+        # the injection came from — a bare 'refused' is not enough.
+        assert "router.js" in err, err
+        assert "unrestored" in err or "armed" in err, err
+
+    def test_a_restored_lane_is_seen_as_clean_not_as_no_evidence(
+            self, repo, monkeypatch, capsys):
+        """The #888 scenario: a lane registered + restored injections, and the
+        coordinator's audit printed "no evidence" — read as 'died before
+        red-proofing'. The lane had done everything. Enumeration must FIND the
+        registry and report restoration clean."""
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("SABOTAGE\n")
+        _restore(repo, "router.js")
+        # PRECONDITION: the lane has a restored entry under its token.
+        restored = [e for e in rp._read_registry(repo)[0]
+                    if e.get("state") == rp.RESTORED]
+        assert restored, "fixture did not restore — test proves nothing"
+
+        self._as_coordinator(monkeypatch)
+        exit = _check(repo)
+        out, _ = capsys.readouterr()
+        assert exit == 0, out
+        # discriminating: "restoration clean", NOT "no evidence"
+        assert "restoration clean" in out, out
+        assert "no evidence" not in out, (
+            "the coordinator printed 'no evidence' over a lane that restored — "
+            "the exact #888/#895 misread")
+
+    def test_the_blind_case_does_not_read_as_an_all_clear(
+            self, repo, monkeypatch, capsys):
+        """A coordinator auditing a worktree with NO lane scratch at all must
+        NOT print calm zero. "no evidence" and "could not read this lane's
+        registry" are opposite facts (#895, #671)."""
+        self._as_coordinator(monkeypatch)
+        # PRECONDITION: no identity dirs, no legacy registry — nothing to find.
+        assert rp._ls.lane_identity_dirs(repo) == []
+        assert not rp._redproof_dir(repo, "", rp._role(repo)).exists()
+
+        exit = _check(repo)
+        _, err = capsys.readouterr()
+        assert exit == 2, (
+            "a coordinator that located no registry must FAULT, not pass (#671)")
+        # discriminating: it must say it could NOT locate the lane, and that this
+        # is NOT an all-clear — never the calm-zero "no evidence" sentence.
+        assert "no evidence" not in err, (
+            "the blind case printed the all-clear sentence over nothing found")
+        assert "NOT an all-clear" in err, err
+        assert "could not locate" in err, err
+
+    def test_lane_flag_audits_a_named_identity_exactly(
+            self, repo, monkeypatch, capsys):
+        """`--lane <token>` resolves the named launch identity's registry
+        exactly, even from the coordinator's shell (no env)."""
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("SABOTAGE\n")
+        _restore(repo, "router.js")
+        token = "fixture-lane-aa895"
+
+        self._as_coordinator(monkeypatch)
+        exit = _check(repo, lane=token)
+        out, _ = capsys.readouterr()
+        assert exit == 0, out
+        assert "restoration clean" in out, out
+
+
 # ── #877: a restored source whose downstream bundle is stale ──────────
 
 def _build_bundle(root: Path) -> None:
@@ -976,6 +1091,7 @@ def bundle_repo(tmp_path: Path, monkeypatch) -> Path:
     _git(root, "add", ".")
     _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
     monkeypatch.setattr(rp._ls, "SCRATCH_ROOT", tmp_path / "scratch")
+    monkeypatch.setenv(rp._ls.IDENTITY_ENV, "fixture-bundle-aa895")
     return root
 
 

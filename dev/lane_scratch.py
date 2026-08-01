@@ -229,6 +229,30 @@ def repo_key(cwd: Path | None = None) -> str:
     return _slug(root.name)
 
 
+def lane_identity_dirs(cwd: Path | None = None) -> list[Path]:
+    """Existing ``lane-*`` identity dirs under this lane's key (#895).
+
+    A coordinator auditing a finished lane has no ``DREAMWORK_LANE_ID`` — the
+    token lives only in the dispatched process's env and is gone once the lane
+    exits. Its registry (if any) sits under one of these ``lane-*`` dirs.
+    Enumerating them is how the coordinator's audit finds a lane's evidence
+    instead of resolving an empty scratch and printing an all-clear over it
+    (#895: the misread that shipped this function).
+
+    Returns existing ``lane-*`` directories under
+    ``SCRATCH_ROOT/repo_key/lane_key/``, sorted by name. The legacy
+    (no-identity-segment) dir is deliberately NOT included: callers handle it
+    as the zero-identity case. Empty when the lane-key dir does not exist or
+    holds no identity dirs. Read-only — never creates.
+    """
+    base = SCRATCH_ROOT / repo_key(cwd) / lane_key(cwd)
+    if not base.is_dir():
+        return []
+    return sorted(
+        child for child in base.iterdir()
+        if child.is_dir() and child.name.startswith("lane-"))
+
+
 def lane_scratch_dir(cwd: Path | None = None, *, create: bool = True,
                      sub: str | None = None, role: str | None = None) -> Path:
     """This lane's private scratch directory (optionally a named subdir).
