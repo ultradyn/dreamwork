@@ -44,6 +44,16 @@ LINT_TRAILER = re.compile(r"^clean \((\d+) warning\(s\)\)$", re.MULTILINE)
 GATES = ("named-tests", "guard-selection", "repo-wide-guards", "lint-comparison")
 
 
+def _gate_coverage_line(passed: Sequence[str]) -> str:
+    """Report the lane gates without implying that they are the full suite."""
+    return (
+        f"gate-coverage: {len(passed)} of {len(GATES)} declared gates passed: "
+        f"{' '.join(passed)}; full repo suite NOT RUN "
+        "(test coverage was limited to lane-named tests plus "
+        "changed-file-derived repo-wide guards)"
+    )
+
+
 def _run(args: Sequence[str], repo: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         list(args), cwd=repo, env=env, capture_output=True, text=True
@@ -454,7 +464,7 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
             f"only {len(passed)} of {len(GATES)} declared gates ran, so a pass here would be vacuous",
             f"merge={merged_sha}; ran={passed!r}; declared={list(GATES)!r}; missing={list(missing)!r}",
         )
-    print(f"gate-coverage: {len(passed)} of {len(GATES)} declared gates passed: {' '.join(passed)}")
+    print(_gate_coverage_line(passed))
 
     back = _restore(repo, base, base_sha)
     if back is not None:
