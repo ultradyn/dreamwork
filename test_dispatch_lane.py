@@ -762,6 +762,25 @@ def test_no_runner_is_a_distinct_usage_fault(tmp_path):
     assert "runner command is missing" in result.stderr
 
 
+def test_prepare_persists_exact_brief_before_the_lane_branch_exists(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root, lane="not-created-yet")
+    subprocess.run(["git", "branch", "-D", "not-created-yet"], cwd=root, check=True,
+                   capture_output=True, text=True)
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+
+    prepared = subprocess.run(
+        [sys.executable, str(cli), "--prompt", str(prompt), "--prepare"],
+        capture_output=True, text=True, env=env,
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    assert "runner not attempted" in prepared.stdout
+    persisted = root / ".dreamwork" / "docs" / "briefs" / "900-not-created-yet.md"
+    assert persisted.read_bytes() == prompt.read_bytes()
+    assert persisted.with_suffix(".sha256").is_file()
+
+
 def test_just_recipe_is_the_documented_ccc_route():
     justfile = (ROOT / "justfile").read_text(encoding="utf-8")
     skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
