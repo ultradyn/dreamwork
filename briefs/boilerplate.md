@@ -86,7 +86,7 @@ that is a legitimate outcome, not a failure.
 - *Direction 1*: inject the real defect and watch your check go red **on the discriminating
   failure message** — not on a red count. A red for the wrong reason is indistinguishable
   from a right one in a `-q` summary. **Name the production seam you broke (path plus
-  symbol or branch), and inject there.** Editing a test's assertion or expected value proves
+  symbol or branch), and inject there.** **A direction-1 report states what its expectation is derived from** (a hardcoded literal, a symbol, an idiom, a computed value): an expectation drawn from the same source as the thing it checks is silent to every tool — #836's `role="img" aria-label=…` assertion had drifted onto two unrelated components, and `check_watch_citations` matched two of its 24 against a BLANK line — and naming the derivation at the moment it is answerable is the only instrument that reaches those cases (#906). Editing a test's assertion or expected value proves
   only that the test rejects its own sabotage, so it is not a direction-1 proof. A test file
   is a valid target only when test/guard tooling is itself the production subject; name that
   executable seam and why. The observed failure must also distinguish the broken seam from

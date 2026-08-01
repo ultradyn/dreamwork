@@ -9333,3 +9333,80 @@ class TestCommitCleanup:
         d = next(dd for lvl, dd in rows if lvl == lint.ERROR)
         assert value in d and "scissors" in d, \
             "must name the value and the fix"
+
+
+class TestBoilerplateExpectationDerivation:
+    """#906: the standing boilerplate must require a direction-1 report to state
+    what its expectation is derived from.
+
+    An expectation drawn from the same source as the thing it checks (a literal,
+    an idiom, a non-distinctive line) is silent to every static tool and to
+    redproof's expectation-pin; the required sentence asks the question at the
+    moment it is answerable — the only instrument that reaches the #836 /
+    check_watch_citations shapes. This binds the requirement with a check, the
+    way this repo binds every rule a brief carries."""
+
+    PHRASE = lint.EXPECTATION_DERIVATION_PHRASE
+
+    def _check(self, t, body=None):
+        (t / "SKILL.md").write_text("# skill\n", encoding="utf-8")
+        bp = t / "briefs" / "boilerplate.md"
+        bp.parent.mkdir(parents=True, exist_ok=True)
+        if body is not None:
+            bp.write_text(body, encoding="utf-8")
+        rep = lint.Report()
+        lint.check_boilerplate_expectation_derivation(t / ".dreamwork", rep)
+        return rep
+
+    def test_present_passes_with_coverage(self, tmp_path):
+        t = fresh(tmp_path)
+        (t / ".dreamwork").mkdir()
+        body = ("# Standing\n- *Direction 1*: inject the defect. "
+                f"**A direction-1 report states {self.PHRASE}** (a literal, "
+                "an idiom).\n")
+        assert self.PHRASE in body, "precondition: phrase present"
+        rep = self._check(t, body)
+        assert levels(rep, "briefs") == [lint.OK], rep.rows
+        assert "#906" in rep.rows[-1][2]
+
+    def test_absent_is_an_error_naming_the_phrase(self, tmp_path):
+        t = fresh(tmp_path)
+        (t / ".dreamwork").mkdir()
+        body = "# Standing\n- *Direction 1*: inject the defect.\n"
+        assert self.PHRASE not in body, "precondition: phrase absent"
+        rep = self._check(t, body)
+        assert levels(rep, "briefs") == [lint.ERROR], rep.rows
+        detail = rep.rows[-1][2]
+        assert self.PHRASE in detail, "ERROR must quote the missing phrase"
+        assert "#906" in detail
+        assert "briefs/boilerplate.md" in detail
+
+    def test_no_boilerplate_is_silent_not_a_vacuous_pass(self, tmp_path):
+        # A foreign target carrying no standing contract is not this check's
+        # subject; silence is correct, and distinct from an unexamined pass.
+        t = fresh(tmp_path)
+        (t / ".dreamwork").mkdir()
+        rep = self._check(t, body=None)
+        assert rep.rows == [], rep.rows
+
+    def test_real_boilerplate_carries_the_phrase(self):
+        # The actual standing contract the loop dispatches must bind the rule —
+        # without this, the check could pass vacuously over the real file the
+        # way a check that matches nothing passes forever (#655's shape).
+        bp = lint.SKILL_DIR / "briefs" / "boilerplate.md"
+        assert bp.is_file(), "precondition: real standing boilerplate exists"
+        assert self.PHRASE in bp.read_text(encoding="utf-8"), \
+            "the real briefs/boilerplate.md must carry the #906 requirement"
+
+    def test_it_is_wired_into_run_checks(self, tmp_path):
+        # A check absent from the one list is a check whose tests cannot fail.
+        t = fresh(tmp_path)
+        (t / ".dreamwork").mkdir()
+        (t / "SKILL.md").write_text("# skill\n", encoding="utf-8")
+        bp = t / "briefs" / "boilerplate.md"
+        bp.parent.mkdir(parents=True, exist_ok=True)
+        bp.write_text("# no phrase here\n", encoding="utf-8")
+        rep = lint.Report()
+        lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
+        assert any(self.PHRASE in d and l == lint.ERROR
+                   for l, _, d in rep.rows), rep.rows

@@ -5471,6 +5471,63 @@ def handoff_quote(field: str) -> str:
     return (cut[:space] if space > 0 else cut).rstrip() + "…"
 
 
+# #906 — the direction-1 report must name what its expectation is derived from.
+# Distinctive on purpose: not a blank line, not a generic word, so it cannot
+# agree with itself the way check_watch_citations's blank-line matches did.
+EXPECTATION_DERIVATION_PHRASE = "what its expectation is derived from"
+
+
+def check_boilerplate_expectation_derivation(dw: Path, rep: Report) -> None:
+    """The standing boilerplate requires a direction-1 report to state what its
+    expectation is derived from (#906).
+
+    An expectation drawn from the same source as the thing it checks — a
+    hardcoded literal, an idiom, a non-distinctive line — is silent to every
+    static tool and to ``redproof.py``'s expectation pin (which can only refuse
+    a file that is its own expectation source, not one that derives from a
+    sibling idiom). #836's ``role="img" aria-label=…`` assertion had drifted
+    onto two unrelated burndown components, and ``check_watch_citations``
+    certified citations by lines two of whose 24 matched a BLANK — both real,
+    both invisible to tooling, and both the kind a forced derivation sentence
+    surfaces at the moment it is answerable.
+
+    This binds the requirement the way this repo binds every rule a brief
+    carries: a check that the standing boilerplate actually contains the
+    distinctive phrase. ``#699`` measured that no string check can bind "a rule
+    is stated" — the residual false-green (phrase present, requirement not in
+    force, e.g. inside a fence) is the irreducible gap of binding prose with a
+    string, and it is the reason the report SENTENCE is the instrument, not
+    this check; this check only keeps the sentence from silently dropping out
+    of the standing contract every future lane is dispatched.
+
+    Scope: only the skill repo carries ``briefs/boilerplate.md`` at its root,
+    so a foreign dreamwork target is silent — correct, because this is a
+    contract about THIS loop's own briefs. The phrase is distinctive so the
+    check cannot match nothing on the repo it governs while looking clean.
+    """
+    root = dw.parent
+    boilerplate = root / "briefs" / "boilerplate.md"
+    if not boilerplate.is_file():
+        return
+    text = boilerplate.read_text(encoding="utf-8", errors="replace")
+    if EXPECTATION_DERIVATION_PHRASE not in text:
+        rep.add(
+            ERROR, "briefs",
+            "briefs/boilerplate.md dropped the direction-1 requirement to state "
+            f"what an expectation is derived from (phrase "
+            f"{EXPECTATION_DERIVATION_PHRASE!r}) — an expectation drawn from the "
+            "same source as the thing it checks is silent to every tool, and the "
+            "required sentence is the only instrument that asks the question at "
+            "the moment it is answerable; restore it (#906)",
+        )
+        return
+    rep.add(
+        OK, "briefs",
+        "boilerplate carries the direction-1 expectation-derivation requirement "
+        "(#906)",
+    )
+
+
 def check_handoffs(dw: Path, watch, rep: Report) -> None:
     """The delivery half of the single-writer rule (#381).
 
@@ -6515,6 +6572,10 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
             "this is concurrent dispatch input, not a merge verdict; rerun "
             "after the write settles (#773)",
         )
+    # The standing contract (briefs/boilerplate.md at the repo root), distinct
+    # from the dispatched corpus above: it is edited directly, not written by a
+    # dispatch, so it sits outside the corpus-fingerprint guard.
+    check_boilerplate_expectation_derivation(dw, rep)
     check_related_markers(dw, watch, rep)
     check_lesson_near_duplicates(dw, rep)
     check_review_decision_integrity(dw, rep)
