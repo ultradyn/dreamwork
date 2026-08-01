@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import stat
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -30,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 
 from dreamwork_db import Access, DatabaseError, StoreSpec, open_database  # noqa: E402
 from dreamwork_db.tasks import TaskRepository  # noqa: E402
+from lane_liveness import LivenessUnknown, pid_matches_lane  # noqa: E402
 
 
 CONTRACT_PATH = ROOT / "briefs" / "boilerplate.md"
@@ -39,6 +42,7 @@ _BRANCH_LINE = re.compile(
     r"^Branch:\s+`?([A-Za-z0-9][A-Za-z0-9._-]*)`?\s*$", re.MULTILINE
 )
 _BASE_SHA_LINE = re.compile(r"^Base sha: ([0-9a-f]{7,40})$", re.MULTILINE)
+_WORKTREE_LINE = re.compile(r"^Worktree:\s+(.+?)\s*$", re.MULTILINE)
 _RECEIPT = re.compile(r"([0-9a-f]{64})  ([^/\n]+\.md)\n?\Z")
 _LEDGER_GET = re.compile(r"\bledger\.py\s+get\s+(\d+)\b")
 _BARE_TASK_CITE = re.compile(r"(?<![\w])#(\d+)\b")
@@ -309,6 +313,86 @@ def _identity(prompt: str) -> tuple[int, str]:
     return int(task.group(1)), branches[0]
 
 
+def _worktree(prompt_head: str) -> Path:
+    matches = _WORKTREE_LINE.findall(prompt_head)
+    if len(matches) != 1:
+        raise DispatchFault("task-specific head must name exactly one 'Worktree: <path>'")
+    worktree = Path(matches[0])
+    if not worktree.is_absolute() or not worktree.is_dir():
+        raise DispatchFault(f"target worktree is not an existing absolute directory: {worktree}")
+    return worktree.resolve()
+
+
+def _lock_record(path: Path) -> tuple[dict, os.stat_result]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            inode = os.fstat(handle.fileno())
+            record = json.load(handle)
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise DispatchFault(f"cannot classify existing lane lock {path}: {exc}") from exc
+    required = {"pid", "task", "lane", "brief", "identity"}
+    if not isinstance(record, dict) or not required.issubset(record):
+        raise DispatchFault(f"cannot classify existing lane lock {path}: missing lane identity")
+    return record, inode
+
+
+def acquire_lane_lock(worktree: Path, task: int, lane: str, prompt_path: Path) -> Path:
+    """Atomically claim a worktree, replacing only a proven-stale claim."""
+    lock_dir = worktree / ".dreamwork"
+    try:
+        lock_dir.mkdir(exist_ok=True)
+    except OSError as exc:
+        raise DispatchFault(f"could not create lane lock directory {lock_dir}: {exc}") from exc
+    lock_path = lock_dir / "lane.lock"
+    identity = str(worktree / f".{lane}-lane-identity")
+    record = {
+        "pid": os.getpid(),
+        "task": task,
+        "lane": lane,
+        "brief": str(prompt_path.resolve()),
+        "identity": identity,
+    }
+
+    while True:
+        temp_name: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8", dir=lock_dir,
+                    prefix=".lane.lock.", delete=False) as handle:
+                temp_name = handle.name
+                json.dump(record, handle, sort_keys=True)
+                handle.write("\n")
+            os.link(temp_name, lock_path)
+            return lock_path
+        except FileExistsError:
+            existing, inode = _lock_record(lock_path)
+            try:
+                live = pid_matches_lane(existing["pid"], existing["identity"])
+            except LivenessUnknown as exc:
+                raise DispatchFault(f"cannot determine liveness of lane lock {lock_path}: {exc}") from exc
+            if live:
+                raise DispatchFault(
+                    f"worktree {worktree} already has live lane {existing['lane']!r}: "
+                    f"pid {existing['pid']}, task #{existing['task']}, brief {existing['brief']}"
+                )
+            try:
+                current = lock_path.stat()
+                if (current.st_dev, current.st_ino) == (inode.st_dev, inode.st_ino):
+                    lock_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise DispatchFault(f"could not retire stale lane lock {lock_path}: {exc}") from exc
+        except OSError as exc:
+            raise DispatchFault(f"could not acquire lane lock {lock_path}: {exc}") from exc
+        finally:
+            if temp_name is not None:
+                try:
+                    Path(temp_name).unlink()
+                except FileNotFoundError:
+                    pass
+
+
 def _write_exclusive(path: Path, content: str) -> None:
     try:
         with path.open("x", encoding="utf-8") as handle:
@@ -468,11 +552,14 @@ def main(argv: list[str] | None = None) -> int:
         coordinator_inbox = briefs_dir.parent.parent / "inbox.md"
         validate_prompt(prompt, contract, coordinator_inbox)
         prompt_head = prompt[:prompt.find(contract)]
-        _, branch = _identity(prompt)
+        task, branch = _identity(prompt)
+        worktree = _worktree(prompt_head)
         if not args.prepare:
             validate_base_sha(prompt_head, branch)
         for report in ledger_reference_reports(prompt_head, briefs_dir.parent.parent):
             print(report, file=sys.stderr)
+        if not args.prepare:
+            acquire_lane_lock(worktree, task, branch, args.prompt)
         try:
             persist_prompt(prompt, briefs_dir)
         except DispatchFault as exc:
