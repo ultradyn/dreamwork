@@ -7352,6 +7352,225 @@ class TestAppShell(unittest.TestCase):
             self.assertIn(token, watch.PAGE)
         self.assertNotIn('id="cmdkind"', watch.PAGE)   # the old <select>
 
+    def test_response_textarea_shift_tab_cycles_modes(self):
+        """#259 — inside a response textarea, Shift+Tab cycles answer/add-note.
+        The guard is RED-FIRST and keyboard-shaped, so it asserts the four
+        things a synthetic-event guard can lie about:
+
+          1. SCOPE, not a global hijack: the handler keys on `e.shiftKey`
+             AND a textarea target, so an ordinary Tab (and a Shift+Tab
+             anywhere else) falls through to browser focus. The scoping
+             guard string is asserted verbatim — it is the one token whose
+             removal is exactly the accessibility regression.
+          2. the ACTIVE MODE is driven, not the indicator: the cycle calls
+             `setCardMode(comp, <next>.dataset.mode, ...)`, and setCardMode
+             is the only writer of `comp.dataset.mode` — the field
+             `cardMode`/`submitCard` read to route the send. A handler that
+             toggled `.on` or moved `.sgind` directly would pass an
+             indicator-only guard and still send the wrong kind (#259's
+             named false-green).
+          3. DRAFT/FOCUS preserved: the handler never assigns `t.value` or
+             calls `.blur()`; setCardMode carries the #103 contract that the
+             text is the point.
+          4. ANNOUNCED: the cycle calls announceMode, so the change reaches
+             a screen reader (the sliding indicator is sight-only).
+        """
+        # precondition: a card offers two modes, or there is nothing to cycle.
+        self.assertIn("const QMODES = { answer: 'answer', note: 'add note' }",
+                      watch.PAGE, "the card must offer two modes to cycle")
+        # the scoping guard — its removal is precisely the global-Tab hijack.
+        self.assertIn("if (e.key !== 'Tab' || !e.shiftKey) return;",
+                      watch.PAGE)
+        # textarea-scoped to the card surface; a folded (note-only) card has
+        # no .qmodes group and the handler must let Shift+Tab through.
+        for token in ("t.tagName !== 'TEXTAREA'",
+                      "t.closest('.qcompose')",
+                      "comp.querySelector('.sgroup.qmodes')",
+                      "btns.length < 2",
+                      "e.preventDefault()",
+                      # the ACTIVE MODE setter (writes comp.dataset.mode), not
+                      # the indicator: this is the line that closes #259's
+                      # named false-green.
+                      "setCardMode(comp, next.dataset.mode, false)",
+                      "announceMode("):
+            self.assertIn(token, watch.PAGE, "#259 card cycle missing " + token)
+        # the cycle must not clear the draft or steal focus — the text is the
+        # point (#103). Absence is asserted on the HANDLER, located by its
+        # scoping guard, so the check cannot fire on unrelated prose elsewhere.
+        i = watch.PAGE.index(
+            "if (e.key !== 'Tab' || !e.shiftKey) return;\n  const t = e.target;")
+        handler = watch.PAGE[i:i + 700]
+        self.assertNotIn('.value =', handler,
+                         "a cycle that clears the textarea loses his draft")
+        self.assertNotIn('.blur()', handler,
+                         "a cycle that blurs loses his caret")
+
+    def test_composer_shift_tab_cycles_kinds_in_visible_order(self):
+        """#259 — inside the main composer textarea, Shift+Tab cycles the
+        command kinds in VISIBLE order, including eligible plugin commands.
+
+        VISIBLE order is the menu's DOM order (#cmdmenu .cmdmenuitem), which
+        renderMenu builds by iterating COMMANDS — so it is the one place an
+        uncommon or plugin kind appears, and cycling through it reaches every
+        eligible kind. Asserting the menu is the order source (not a
+        hardcoded list, and not COMMANDS directly) is what makes 'visible
+        order' falsifiable: if the handler switched to COMMANDS.map(...) the
+        order could diverge from the menu and this guard would not see it,
+        so the guard asserts the menu selector is the source instead.
+
+        Drives `setKind` (the activeKind setter the submit path reads), NOT
+        the indicator — the same false-green closure as the card guard. And
+        saveDraft after, so the new kind travels with the text (the click
+        path's rule, one surface over).
+        """
+        # precondition: more than one kind exists, else cycling proves nothing.
+        self.assertGreater(len(watch.COMMANDS), 1,
+                           "cycling needs at least two kinds")
+        # the menu is the visible-order source and lists every kind (#91/#86).
+        self.assertIn('id="cmdmenu"', watch.PAGE)
+        self.assertIn("renderMenu()", watch.PAGE)
+        # composer-textarea-scoped Shift+Tab; folds into the composer's keydown
+        # wiring (no second composer mount — #241's contract).
+        for token in ("t.id !== 'cmdtext'",
+                      "#cmdmenu .cmdmenuitem",
+                      ".map(n => n.dataset.kind)",
+                      "e.preventDefault()"):
+            self.assertIn(token, watch.PAGE, "#259 composer cycle missing " + token)
+        # The ACTIVE KIND setter and the draft save are asserted WITHIN the
+        # handler block, not anywhere in PAGE: `setKind(kind)` is also a
+        # substring of the function DECLARATION (`function setKind(kind) {`),
+        # so a bare PAGE membership test would pass with the call removed —
+        # the indicator driven instead of the active kind (#259's named
+        # false-green). Locating the handler by its unique menu anchor and
+        # asserting inside it closes that: the slice does not contain the
+        # declaration. `moveIndicator` must NOT appear here either — driving
+        # the indicator directly is precisely the defect.
+        h = watch.PAGE.index("'#cmdmenu .cmdmenuitem'")
+        handler = watch.PAGE[h:h + 480]
+        self.assertIn("setKind(kind);", handler,
+                      "the cycle must drive the active kind (setKind), not the "
+                      "indicator — the named false-green")
+        self.assertIn("saveDraft()", handler,
+                      "the new kind must travel with the draft (the click rule)")
+        self.assertNotIn("moveIndicator", handler,
+                         "the cycle drives the active kind; the indicator follows "
+                         "it through setKind, never directly")
+        # the cycle order must come from the MENU (visible), not from COMMANDS
+        # directly: a future reorder of the menu independent of COMMANDS would
+        # otherwise diverge silently. COMMANDS may appear only for the LABEL
+        # lookup, never as the order source.
+        order_block = watch.PAGE[h:h + 260]
+        self.assertNotIn('COMMANDS.map', order_block,
+                         "the cycle order must read the menu (visible order), "
+                         "not COMMANDS declaration order")
+        # announce is wired (asserted separately on the whole page, since the
+        # label lookup may sit just past the 480-char handler slice).
+        self.assertIn("announceMode(", watch.PAGE)
+
+    def test_mode_change_is_announced_accessibly(self):
+        """#259 — the sliding indicator is sight-only, so a mode cycle
+        announces through a visually-hidden live region. Both cycle handlers
+        route through the one announceMode helper into #modestatus, so a
+        screen reader hears the change instead of inferring it from a moving
+        outline. The region is static (no transition): nothing appears or
+        vanishes, so the transition contract is not engaged."""
+        for token in ('function announceMode(',
+                      "getElementById('modestatus')",
+                      'id="modestatus"', 'class="vh"',
+                      'aria-live="polite"', 'role="status"'):
+            self.assertIn(token, watch.PAGE, "#259 announce wiring missing " + token)
+        # the visually-hidden utility must actually hide (clip), not merely
+        # dim — a mis-written .vh that left text visible would spend the
+        # composer's chrome on every spoken word.
+        self.assertIn('.vh', watch.STYLE)
+        self.assertIn('clip-path:inset(50%)', watch.STYLE)
+
+    def test_shift_tab_does_not_hijack_browser_focus(self):
+        """#259 — the ONE way this task fails is a global Tab hijack. Both
+        Shift+Tab handlers share the identical scoping guard that returns
+        early unless the key is Tab AND shift is held; a plain Tab never
+        reaches preventDefault. Asserts that guard is present for BOTH the
+        card handler (router) and the composer handler (command)."""
+        card = watch.PAGE.count(
+            "if (e.key !== 'Tab' || !e.shiftKey) return;")
+        self.assertGreaterEqual(card, 2,
+                                "both the card and composer Shift+Tab handlers "
+                                "must carry the no-hijack scope guard")
+
+    def test_card_cycle_advances_and_wraps(self):
+        """#259 — direction-2 closure. A STATIC guard on the handler's tokens
+        passes while the cycle does nothing: if `next` were `btns[i]` (no
+        advance) every token is still present. This guard EXECUTES the real
+        advance expression lifted from the card handler, so a no-advance (or
+        no-wrap) defect reds it on the produced value, not on a token count.
+
+        NODE-EVAL, not a synthetic event: a real keypress and a dispatched
+        KeyboardEvent would both run this same expression, so the
+        wrong-node/shadowing failure mode (#259's red-proof note) cannot
+        hide here — the expression itself is judged."""
+        import subprocess, shutil
+        page = watch._get_page()
+        i = page.index("if (e.key !== 'Tab' || !e.shiftKey) return;\n"
+                       "  const t = e.target;\n  if (!t || t.tagName "
+       )
+        handler = page[i:i + 900]
+        m = re.search(r"const next = (btns\[[^\]]+\]);", handler)
+        self.assertTrue(m, "the card cycle's advance expression is missing")
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — card cycle gate did NOT run")
+        # two distinct modes so a no-advance defect (next === btns[i]) is
+        # caught: at i=0 advance must reach index 1, and at the last index
+        # it must WRAP to 0 (not run off the end).
+        script = ("const btns=['answer','note'];"
+                  "let out=[];"
+                  "for (let i=0;i<btns.length;i++){"
+                  + m.group(1).replace('btns', 'btns') + ";"
+                  "out.push(next);}"
+                  # re-declare per iteration would conflict; rebuild plainly
+                  )
+        # node scopes `next` per-iteration via a function, to avoid redeclare
+        script = ("const btns=['answer','note'];"
+                  "const adv=(i)=>{const next=" + m.group(1) + ";return next;};"
+                  "console.log(adv(0)+'|'+adv(1));")
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0,
+                         "card cycle node eval failed: " + proc.stderr)
+        a, b = proc.stdout.strip().split('|')
+        # precondition: the fixture has two distinct modes.
+        self.assertNotEqual(a, b, "two distinct modes so advance is owed to it")
+        self.assertEqual(a, 'note', "i=0 must advance to the second mode")
+        self.assertEqual(b, 'answer', "the last index must WRAP to the first")
+
+    def test_composer_cycle_advances_and_wraps(self):
+        """#259 — same direction-2 closure for the composer kind cycle. Lifts
+        the real advance expression and executes it, so `order[i]` (no
+        advance) or an off-by-one that fails to wrap reds on the value."""
+        import subprocess, shutil
+        page = watch._get_page()
+        i = page.index("'#cmdmenu .cmdmenuitem'")
+        block = page[i:i + 400]
+        m = re.search(r"const kind = (order\[[^\]]+\]);", block)
+        self.assertTrue(m, "the composer cycle's advance expression is missing")
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — composer cycle gate did NOT run")
+        # three kinds so wrap is provable and distinct from a 2-cycle stall
+        script = ("const order=['do-now','chat','add-idea'];"
+                  "const adv=(i)=>{const kind=" + m.group(1) + ";return kind;};"
+                  "console.log(adv(0)+'|'+adv(1)+'|'+adv(2));")
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0,
+                         "composer cycle node eval failed: " + proc.stderr)
+        vals = proc.stdout.strip().split('|')
+        self.assertEqual(len(vals), 3, "three advance results expected")
+        # precondition: three distinct kinds, so each result is owed to it.
+        self.assertEqual(len(set(vals)), 3, "advance must reach every kind")
+        self.assertEqual(vals[0], 'chat', "i=0 advances to the next kind")
+        self.assertEqual(vals[2], 'do-now', "the last index must WRAP to first")
+
     def test_shader_world_space_wiring(self):
         # Static guard: the shader anchors its domain to the window's screen
         # position and takes its phase from the wall clock (UTC-day-wrapped),
@@ -8442,12 +8661,108 @@ class TestAppShell(unittest.TestCase):
         i = watch.PAGE.index('clearDraft();')
         self.assertIn("getElementById('cmdtext').value = ''",
                       watch.PAGE[i - 200:i])
-        # saving hangs off HIS acts, never off setKind — which also runs at
-        # init and from restoreDraft, where it would erase the stored draft
-        # before it was ever read
-        self.assertNotIn('setKind(kind); saveDraft', watch.PAGE)
-        self.assertEqual(watch.PAGE.count('saveDraft();'), 3,
-                         "one input save, two explicit kind choices")
+        self.assertEqual(watch.PAGE.count('saveDraft();'), 4,
+                         "one input save, three explicit kind choices")
+
+    def test_draft_save_is_unreachable_from_composer_init_and_restore(self):
+        """#163/#259 — mounting and restoring are not draft-writing acts.
+
+        This executes the real mountComposer rather than pinning a spelling:
+        a reformatted call, or a helper that makes saveDraft reachable from
+        setKind, must still be observed through DraftStore.save.
+        """
+        import shutil
+        import subprocess
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node unavailable — draft reachability gate DID NOT run")
+        mount = _extract_js_fn(watch.PAGE, "function mountComposer(")
+        script = r'''
+const CORE_COMMANDS = [
+  {kind:'do-now', label:'now', desc:'now', common:true, default:true},
+  {kind:'chat', label:'chat', desc:'chat', common:true},
+];
+let COMMANDS = CORE_COMMANDS.slice();
+let data = {target:'/fixture/project', plugin_commands:[]};
+const rmr = true, CARD_MS = 0, REJECT_WHY = {}, QSEND_WHY = {};
+const esc = String;
+const slideIndicator = () => {};
+const fitText = () => {};
+const ages = () => {};
+const subsAll = async () => [];
+const requestPopout = () => {};
+const confirmationFor = () => ({claim(){}, clear(){}, begin(){
+  return {success(){return true;}, claim(){}};
+}});
+let saves = 0, reads = 0;
+const DraftStore = {
+  id: (kind, lid) => kind + ':' + lid,
+  save(){ saves++; },
+  clear(){},
+  get(){ reads++; return {text:'kept words', meta:{kindHint:'chat'}}; },
+  attemptId(){ return 'attempt'; },
+};
+class Elem {
+  constructor(id='') {
+    this.id=id; this.dataset={}; this.style={}; this.children=[];
+    this.classList={add(){},remove(){},toggle(){}};
+    this.value=''; this.offsetWidth=300; this.offsetHeight=30;
+  }
+  addEventListener(type, fn) { (this.listeners ||= {})[type] = fn; }
+  setAttribute() {}
+  focus() {}
+  remove() {}
+  closest(sel) { return sel === '#cmdplus' && this.id === 'cmdplus' ? this : null; }
+  getBoundingClientRect() { return {left:10,top:10,width:30,height:30}; }
+  querySelector() { return null; }
+  querySelectorAll(sel) {
+    if (this.id === 'cmdkinds' && sel === '.cmdkind')
+      return COMMANDS.map(c => Object.assign(new Elem(), {dataset:{kind:c.kind}}));
+    if (this.id === 'cmdmenu' && sel === '.cmdmenuitem') return this.children;
+    return [];
+  }
+  appendChild(child) {
+    if (child.isFragment) this.children.push(...child.children);
+    else this.children.push(child);
+    return child;
+  }
+}
+const els = Object.fromEntries(['cmdpalette','cmdkinds','cmdmenu','cmdtext',
+  'cmdform','cmdpop','cmdplus'].map(id => [id, new Elem(id)]));
+const listeners = {};
+const document = {
+  getElementById: id => els[id] || null,
+  querySelector: () => null,
+  querySelectorAll: () => [],
+  createElement: () => new Elem(),
+  createDocumentFragment: () => Object.assign(new Elem(), {isFragment:true}),
+  addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+};
+const window = {innerWidth:1000, innerHeight:800,
+  addEventListener(){}, getComputedStyle(){return {visibility:'hidden'};}};
+const target = {document, window, surface:'fixture'};
+mountComposer(target);
+const afterInit = saves;
+for (const fn of listeners.click)
+  fn({target:els.cmdplus, preventDefault(){}});
+process.stdout.write(JSON.stringify({afterInit, afterRestore:saves, reads,
+  restored:els.cmdtext.value}));
+'''
+        proc = subprocess.run(
+            [node, "-e", script + "\n" + mount], capture_output=True,
+            text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0,
+                         "composer draft reachability eval failed: " + proc.stderr)
+        got = json.loads(proc.stdout)
+        self.assertEqual(got["reads"], 1,
+                         "the restore path was not reached — this would prove nothing")
+        self.assertEqual(got["restored"], "kept words",
+                         "the stored draft was not restored — this would prove nothing")
+        self.assertEqual(got["afterInit"], 0,
+                         "saveDraft became reachable from composer init")
+        self.assertEqual(got["afterRestore"], 0,
+                         "saveDraft became reachable from restoreDraft")
 
     def test_draft_is_partitioned_by_target_path_not_name(self):
         # two checkouts can share a basename, and a draft surfacing under the

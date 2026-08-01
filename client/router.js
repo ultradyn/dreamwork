@@ -3469,6 +3469,32 @@ addEventListener('click', e => {
   // membership is fixed here, so the indicator slides rather than lands
   setCardMode(btn.closest('.qcompose'), btn.dataset.mode, false);
 });
+/* #259 — inside a response textarea, Shift+Tab cycles answer/add-note in the
+   order the mode buttons show. Ordinary Tab, and Shift+Tab anywhere else,
+   keep browser focus navigation: the guard is target-scoped to a textarea
+   inside a .qcompose that actually offers a choice, so a plain Tab or a
+   Shift+Tab on a button/link/folded-note box falls through to the browser.
+   The draft and the caret are untouched (#103's rule for the click, one
+   surface over): setCardMode moves only the mode, never the text. Reduced
+   motion snaps through the one slideIndicator setCardMode already calls.
+   Direction is forward-wrap: plain Tab is reserved for focus, so Shift+Tab
+   is the single cycling gesture. */
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab' || !e.shiftKey) return;
+  const t = e.target;
+  if (!t || t.tagName !== 'TEXTAREA') return;
+  const comp = t.closest('.qcompose');
+  const group = comp && comp.querySelector('.sgroup.qmodes');
+  if (!group) return;                     // note-only/folded: no cycle, focus nav
+  const btns = Array.from(group.querySelectorAll('.qmode'));
+  if (btns.length < 2) return;
+  e.preventDefault();
+  const cur = group.querySelector('.qmode.on') || btns[0];
+  let i = btns.indexOf(cur); if (i < 0) i = 0;
+  const next = btns[(i + 1) % btns.length];
+  setCardMode(comp, next.dataset.mode, false);
+  announceMode(next.textContent.trim());
+});
 /* #177 — a text box grows with what he types, to its own ceiling, then
    scrolls. The ceiling is a per-surface contract carried as `data-max-rows`
    (the composer 15, an answer/note box 6); the asymmetry is deliberate, so a

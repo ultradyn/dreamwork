@@ -2157,6 +2157,13 @@
      (nothing above it moves). */
   .cmdmsg:empty { display:none; }
   .cmdmsg.ok { color:var(--accent); }
+  /* #259 — the one visually-hidden channel: #modestatus carries the spoken
+     word for a Shift+Tab mode cycle (the sliding indicator is sight-only).
+     Standard clip pattern; no transition, so nothing on the page appears or
+     vanishes through it and the transition contract is not engaged. */
+  .vh { position:absolute !important; width:1px; height:1px; margin:-1px;
+    padding:0; border:0; overflow:hidden; clip:rect(0 0 0 0);
+    clip-path:inset(50%); white-space:nowrap; }
   /* dream ripple: a soft ring expanding from a received command / answer */
   .ripple { position:fixed; z-index:40; border-radius:50%; pointer-events:none;
     border:1px solid var(--accent); }
