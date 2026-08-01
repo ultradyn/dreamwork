@@ -10778,6 +10778,139 @@ class TestPosture(unittest.TestCase):
                 ["asking", "delegation", "delivery", "orchestration", "pace",
                  "source"])
 
+    # ── #646 the POST /subagent-policy route: save + reset + round-trip ──
+    def _policy_events(self, d):
+        path = os.path.join(d, ".dreamwork", "watch-events.log")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return [ln for ln in f if ln.strip()]
+
+    def test_save_route_persists_and_reads_back_byte_for_byte(self):
+        """Direction-2 discriminating red: the file on disk MUST change.
+
+        A 202 that leaves the file unchanged is the green-looking failure a
+        screenshot cannot distinguish from success (#671). This test reads
+        the file back through the SAME reader the dashboard uses, so a
+        writer that tidied the text would fail the byte-for-byte compare
+        (#632/#659). The fixture deliberately carries newlines, leading/
+        trailing whitespace, and a non-ASCII char so a normalising writer
+        cannot pass."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            policy = "  leading spaces\nno subagents — sonnet only\ntrailing newline\n"
+            status = self._post(base + "/subagent-policy", {"policy": policy})
+            self.assertEqual(status, 202)
+            # THE discriminating assertion: the file on disk changed.
+            self.assertEqual(watch.read_subagent_policy(d), policy)
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["subagent_policy"], policy)
+            self.assertEqual(r["subagent_policy_source"], "file")
+            # the file exists and is non-blank (not an inert stub)
+            self.assertTrue(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+
+    def test_save_route_emits_one_event_line_on_a_real_change(self):
+        """Production line: log_event + subagent_policy_line. The event
+        carries the TRANSITION ('set'), never the free text — so a policy
+        containing a newline cannot forge a second event (#126)."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            self._post(base + "/subagent-policy",
+                       {"policy": "mine\nwith a newline\n"})
+            ev = self._policy_events(d)
+            self.assertTrue(any("subagent policy via watch" in e for e in ev))
+            self.assertTrue(any(e.strip().endswith(": set") for e in ev))
+            # the text itself never appears in the log
+            self.assertFalse(any("with a newline" in e for e in ev))
+
+    def test_identical_save_is_silent_no_event(self):
+        """Idempotence: identical-final is 202 + no event, the ceremony
+        posture/run-mode use. Pre-seed the file, POST the same text, assert
+        no NEW event line fires."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            watch.write_subagent_policy(d, "same\n")
+            self._post(base + "/subagent-policy", {"policy": "same\n"})
+            ev = self._policy_events(d)
+            self.assertFalse(any("subagent policy via watch" in e for e in ev))
+
+    def test_reset_route_deletes_the_file_not_clears_to_empty(self):
+        """THE reset discriminating red: reset DELETES the file, returning
+        to the standing default. Clear-to-empty would leave an inert file
+        that lint then has to complain about — a green-looking failure.
+
+        Asserts BOTH that the field reads as default AND that no inert file
+        remains on disk, which is the half a screenshot cannot see."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            watch.write_subagent_policy(d, "an override\n")
+            status = self._post(base + "/subagent-policy", {"reset": True})
+            self.assertEqual(status, 202)
+            # the file is GONE, not blank
+            self.assertFalse(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["subagent_policy_source"], "default")
+            import lint
+            self.assertEqual(r["subagent_policy"], lint.SUBAGENT_POLICY_DEFAULT)
+
+    def test_reset_when_already_absent_is_idempotent(self):
+        """Reset to an already-default state is 202 + changed=False, the
+        same shape an identical posture chip press takes."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            status = self._post(base + "/subagent-policy", {"reset": True})
+            self.assertEqual(status, 202)
+            self.assertFalse(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+
+    def test_blank_save_is_rejected_not_written_as_inert(self):
+        """A blank save must be refused, not persisted as an inert file.
+        write_subagent_policy refuses blank; the route maps that to a
+        domain_invalid rejection."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            status = self._post(base + "/subagent-policy",
+                                {"policy": "   \n\n"})
+            self.assertEqual(status, 202)  # rejection is a 202 receipt
+            self.assertFalse(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+
+    def test_delete_helper_round_trips(self):
+        """Production line: delete_subagent_policy. Present→removed returns
+        True; absent→absent returns False (idempotent). Neither raises."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertFalse(watch.delete_subagent_policy(d))  # absent
+            watch.write_subagent_policy(d, "x\n")
+            self.assertTrue(watch.delete_subagent_policy(d))   # removed
+            self.assertIsNone(watch.read_subagent_policy(d))
+            self.assertFalse(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+
+    def test_save_does_not_touch_the_posture_axes(self):
+        """Sibling-file invariant: POST /subagent-policy must not disturb
+        the posture axes, and POST /posture must not disturb the policy.
+        Different files, so neither can — this is the storage choice made
+        explicit by a route that writes one and reads the other."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            watch.write_posture(d, "hot", "ask", 0)
+            self._post(base + "/subagent-policy", {"policy": "mine\n"})
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["pace"], "hot")
+            self.assertEqual(r["asking"], "ask")
+            self.assertEqual(r["delegation"], 0)
+            self.assertEqual(r["subagent_policy"], "mine\n")
+
     def test_policy_is_read_whole_not_through_the_bounded_reader(self):
         """#632: a durable value a control writes back must be read whole, or
         a later write persists a short copy over the full one.
