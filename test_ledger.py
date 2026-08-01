@@ -621,6 +621,9 @@ def test_sweep_report_calls_a_cited_open_landing_an_anomaly():
     assert "1 open id(s) excluded by sha-citation" in out, out
     assert "CITED-OPEN #11" in out and "`abc1234`" in out, (
         f"the cited open id and its evidence must remain reportable: {out!r}")
+    assert "  #11 —" not in out, (
+        f"a cited landing belongs only in the anomaly bucket, never also in "
+        f"the uncited findings: {out!r}")
     assert "cited-but-still-open id(s)" in out, out
     assert "nothing to review" not in out, (
         f"an open task citing its landing is not an all-clear: {out!r}")
