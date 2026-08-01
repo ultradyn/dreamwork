@@ -206,6 +206,23 @@ def _snap_dir(cwd: Path | None, role: str | None = None) -> Path:
                                 else _role(cwd))
 
 
+def _redproof_dir(cwd: Path | None, identity_seg: str, role: str) -> Path:
+    """The ``redproof`` dir for an EXPLICIT identity segment + role (no create).
+
+    Lets a coordinator audit a lane whose launch token is not in this process's
+    env (#895): pass the segment ``identity_segment(<token>)`` yields, or ``""``
+    for the legacy (no-identity) path. Never creates, so enumeration does not
+    manufacture phantom registries.
+    """
+    base = _ls.SCRATCH_ROOT / _ls.repo_key(cwd) / _ls.lane_key(cwd)
+    if identity_seg:
+        base = base / identity_seg
+    rseg = _ls.role_segment(role)
+    if rseg:
+        base = base / rseg
+    return base / SUB
+
+
 def _registry_path(cwd: Path | None) -> Path:
     return _snap_dir(cwd) / "registry.json"
 
@@ -241,6 +258,15 @@ class RedproofError(Exception):
 
 
 def _read_registry(cwd: Path | None) -> tuple[list[dict], str]:
+    """Return (entries, source_label) for THIS lane's own registry.
+
+    Delegates to :func:`_read_registry_at` at the env-resolved path, so begin/
+    restore/forget keep using the launch token's dir (#870 keying, unchanged).
+    """
+    return _read_registry_at(_registry_path(cwd))
+
+
+def _read_registry_at(rp: Path) -> tuple[list[dict], str]:
     """Return (entries, source_label). Distinguishes the three zero-states.
 
     source_label is one of:
@@ -249,7 +275,6 @@ def _read_registry(cwd: Path | None) -> tuple[list[dict], str]:
       "present"  — registry held ≥1 entry
     A present-but-unparseable registry raises RedproofError (#136 fault).
     """
-    rp = _registry_path(cwd)
     if not rp.exists():
         return [], "absent"
     try:
@@ -719,7 +744,8 @@ def forget(cwd: Path | None, path: str) -> int:
     return 0
 
 
-def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int:
+def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
+          lane: str | None = None) -> int:
     """Hand-off gate: refuse if a registered injection survives in tree OR history.
 
     Exit 0 = restoration clean, or no evidence when no injection is registered.
@@ -746,17 +772,87 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int
     """
     root = _ls.worktree_root(cwd)
     role = _role(cwd)
-    try:
-        entries, source = _read_registry(cwd)
-    except RedproofError as exc:
-        sys.stderr.write(f"check: FAULT — {exc}\n")
+    own_token = _ls.lane_identity()          # env DREAMWORK_LANE_ID, or None
+
+    # Resolution (#895). #870 keyed lane scratch on a dispatcher-generated
+    # DREAMWORK_LANE_ID that is UNSET in the coordinator's shell, so a
+    # coordinator's `check` used to resolve an empty scratch and print an
+    # all-clear over a lane that had registered and restored injections.
+    #
+    # MODE A — a launch identity is known (env set, or --lane names one): audit
+    #           that ONE registry exactly. This is the lane's own hand-off gate,
+    #           and #870's keying is correct and unchanged here.
+    # MODE B — no identity anywhere (the coordinator): ENUMERATE every identity
+    #           dir under this lane's key plus the legacy path, and aggregate, so
+    #           an armed injection a lane left on disk is FOUND rather than
+    #           missed — and so "I could not read this lane's registry" never
+    #           prints as "no injections registered" (#895, #863).
+    named_seg = _ls.identity_segment(lane) if lane else None
+    if own_token or named_seg:
+        seg = named_seg if lane else _ls.identity_segment()
+        audit_sources = [(f"--lane {lane}" if lane else "this lane",
+                          _redproof_dir(cwd, seg, role) / "registry.json")]
+        coordinator_mode = False
+    else:
+        audit_sources = [("legacy (no launch identity)",
+                          _redproof_dir(cwd, "", role) / "registry.json")]
+        for d in _ls.lane_identity_dirs(cwd):
+            audit_sources.append((d.name, _redproof_dir(cwd, d.name, role)
+                                  / "registry.json"))
+        coordinator_mode = True
+
+    entries: list[dict] = []
+    registries_found = 0
+    for label, rp in audit_sources:
+        try:
+            sub_entries, source = _read_registry_at(rp)
+        except RedproofError as exc:
+            sys.stderr.write(f"check: FAULT — {label}: {exc}\n")
+            return 2
+        if source != "absent":
+            registries_found += 1
+        for e in sub_entries:
+            e["_source"] = label      # provenance for refusal messages
+            entries.append(e)
+
+    identity_dirs = len(_ls.lane_identity_dirs(cwd)) if coordinator_mode else None
+
+    if coordinator_mode and not entries and registries_found == 0:
+        # THE BLIND CASE (#895): the coordinator could locate NO registry for
+        # this lane. This must not read as an all-clear: "no evidence" and "I
+        # could not read this lane's registry" are opposite facts, and a lane
+        # that ran under a launch identity this audit could not enumerate would
+        # be invisible. Fail closed (#671) rather than print calm zero.
+        if identity_dirs == 0:
+            sys.stderr.write(
+                "check: FAULT — could not locate ANY lane scratch for this "
+                f"worktree (0 launch-identity dirs, no legacy registry; "
+                f"role: {role}). This is NOT an all-clear: a lane that ran "
+                f"under a launch identity would be invisible to this audit, "
+                f"and an armed injection it left on disk would not be seen. "
+                f"If the lane ran, pass `--lane <DREAMWORK_LANE_ID>` or inspect "
+                f"its scratch by hand.\n")
+        else:
+            sys.stderr.write(
+                f"check: FAULT — found {identity_dirs} launch-identity dir(s) "
+                f"but no redproof registry in any of them (role: {role}). This "
+                f"is NOT an all-clear: the lane(s) ran but this audit could "
+                f"read no injection registry. If one was expected, pass "
+                f"`--lane <DREAMWORK_LANE_ID>`.\n")
         return 2
 
     if not entries:
         # Honest zero. "absent" (never used) and "empty" (ran, nothing live)
         # both provide no restoration evidence; an unparseable registry already
         # raised before we got here.
-        label = "no injections registered" if source == "absent" else "registry empty"
+        if coordinator_mode:
+            label = (f"audited {registries_found} registry/ies across "
+                     f"{identity_dirs} launch-identity dir(s); "
+                     f"no injections registered")
+        elif registries_found == 0:
+            label = "no injections registered"
+        else:
+            label = "registry empty"
         if require > 0:
             sys.stderr.write(
                 f"check: REFUSED — {label} (role: {role}), but --require "
@@ -788,7 +884,8 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int
         return 1
 
     if armed:
-        names = ", ".join(e["path"] for e in armed)
+        names = ", ".join(
+            f"{e['path']} (from {e.get('_source', 'this lane')})" for e in armed)
         sys.stderr.write(
             f"check: REFUSED — {len(armed)} begun-but-unrestored injection(s): "
             f"{names}. An armed entry means the red-proof never completed "
@@ -894,13 +991,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--base", default=None,
                     help=f"check: base ref for the history scan (default: first "
                          f"of {', '.join(DEFAULT_BASES)} that resolves)")
+    ap.add_argument("--lane", default=None,
+                    help="check: audit a NAMED lane's registry by its launch "
+                         "identity (DREAMWORK_LANE_ID). For a coordinator "
+                         "auditing a lane from outside it (#895); without it, "
+                         "check enumerates every identity dir under this lane's "
+                         "key.")
     ap.add_argument("--cwd", default=None, help="derive for this directory")
     args = ap.parse_args(argv)
     cwd = Path(args.cwd) if args.cwd else None
 
     try:
         if args.verb == "check":
-            return check(cwd, require=args.require, base=args.base)
+            return check(cwd, require=args.require, base=args.base, lane=args.lane)
         if args.path is None:
             ap.error(f"{args.verb} requires a path argument")
         if args.verb == "begin":
