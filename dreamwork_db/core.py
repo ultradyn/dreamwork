@@ -152,8 +152,7 @@ class DatabaseHandle:
         try:
             state.connection.execute(begin)
         except sqlite3.OperationalError as exc:
-            _raise_busy(exc, operation=begin)
-            raise
+            _raise_classified(exc, operation=begin)
         state.transaction_active = True
         try:
             yield self
@@ -165,8 +164,7 @@ class DatabaseHandle:
                 state.connection.commit()
             except sqlite3.OperationalError as exc:
                 state.connection.rollback()
-                _raise_busy(exc, operation="COMMIT")
-                raise
+                _raise_classified(exc, operation="COMMIT")
         finally:
             state.transaction_active = False
 
@@ -186,8 +184,7 @@ class _RepositorySession:
         try:
             return state.connection.execute(sql, parameters)
         except sqlite3.OperationalError as exc:
-            _raise_busy(exc, operation="SQL")
-            raise
+            _raise_classified(exc, operation="SQL")
 
     def executemany(
         self, sql: str, parameters: list[tuple[Any, ...]]
@@ -198,8 +195,7 @@ class _RepositorySession:
         try:
             return state.connection.executemany(sql, parameters)
         except sqlite3.OperationalError as exc:
-            _raise_busy(exc, operation="SQL")
-            raise
+            _raise_classified(exc, operation="SQL")
 
 
 _HANDLE_STATES: "weakref.WeakKeyDictionary[DatabaseHandle, _HandleState]" = (
@@ -247,11 +243,29 @@ def _ensure_parent_durable(path: Path) -> None:
         os.close(fd)
 
 
-def _raise_busy(exc: sqlite3.OperationalError, *, operation: str) -> None:
+def _raise_classified(
+    exc: sqlite3.OperationalError, *, operation: str
+) -> None:
+    """Translate one ``OperationalError`` into a named ladder outcome.
+
+    The ladder is total: a caller that reaches here never sees a raw
+    sqlite error escape unnamed (#702). Busy locks, schema-shaped errors,
+    and every remaining case each become a distinct, honest name (#651):
+    the unclassified case is a plain ``DatabaseError`` that carries the
+    original, never relabelled as something it was not proven to be.
+    """
+    text = str(exc).lower()
     busy_codes = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
     code = getattr(exc, "sqlite_errorcode", None)
-    if code in busy_codes or "locked" in str(exc).lower() or "busy" in str(exc).lower():
+    if code in busy_codes or "locked" in text or "busy" in text:
         raise Busy(f"database busy during {operation}: {exc}") from exc
+    if "no such column" in text or "no such table" in text:
+        raise SchemaMismatch(
+            f"store schema mismatch during {operation}: {exc}"
+        ) from exc
+    raise DatabaseError(
+        f"unclassified store error during {operation}: {exc}"
+    ) from exc
 
 
 def _connect(spec: StoreSpec, access: Access) -> sqlite3.Connection:
