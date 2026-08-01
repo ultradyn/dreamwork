@@ -143,10 +143,28 @@ agent consumes the cursor in batched mode").
             way back to a payload was a hand-written sqlite query that failed
             twice on schema guesses before it worked.
 
+  expedite  #864 — the EXPEDITED class's delivery verb, called by the repo's
+            Claude Code stop hook when the agent pauses.  It is a READER: it
+            reads the SAME ``(cursor, head]`` range ``pending`` reads and then
+            never advances the cursor and never writes the #658 marker, so the
+            tick keeps sole ownership and can neither double-consume nor lose
+            an event — everything delivered here is still pending and is still
+            drained normally ("it can also be drained like normal from the
+            event queue").  The DOUBLE DELIVERY is stopped by the #526/#527
+            proof instead: the marker lands at the pause, so the tick proves
+            APPLIED and the receipt never reaches consume's UNAPPLIED
+            act-list, while ``consume`` names it on an EXPEDITED line so a
+            hook whose output was never seen cannot swallow it silently.
+            ``--limit`` caps one pause's delivery, expedited first: a cursor
+            cannot express a non-contiguous drain, so the cap lives here (a
+            projection) and never on ``consume``.
+
 USAGE
   python3 dev/journal_consume.py pending [--journal PATH]
   python3 dev/journal_consume.py consume [--journal PATH] [--applied PATH] \
                                          [--through ORDINAL]
+  python3 dev/journal_consume.py expedite [--journal PATH] [--applied PATH] \
+                                          [--limit N]
   python3 dev/journal_consume.py show <receipt-id> [--journal PATH]
 """
 from __future__ import annotations
@@ -163,6 +181,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from user_events.sqlite import open_journal  # noqa: E402  — the public API
 from user_events import apply  # noqa: E402  — the exactly-once proof (lane D); wiring it into the drain (#526)
+from user_events import delivery  # noqa: E402  — the EXPEDITED class predicate (#864)
 
 # The single consumer this drain serves (delivery-modes.md).  A constant so the
 # tick command line never has to name it and two tools cannot drift on the
@@ -274,6 +293,32 @@ APPLIED_LEDGER_GENERATION = 1
 # committed-lineage proof path checks the marker, not the identity, so this
 # value does not affect the verdict; it names the drain as the applier.
 APPLIED_REF = "coordinator-drain"
+
+# --- #864: the EXPEDITED delivery class. ---
+#
+# `expedite` is the stop hook's verb: it delivers expedited receipts at the
+# agent's next natural pause.  It is a READER — it never calls advance_cursor
+# and never writes the #658 read-coverage marker — so the tick keeps sole
+# ownership of the cursor and neither double-consumes nor loses an event.  What
+# stops the DOUBLE DELIVERY is the #526/#527 proof this file already runs: the
+# marker lands at the pause, so the tick's drain proves APPLIED and the receipt
+# never reaches the UNAPPLIED list the coordinator acts on.
+#
+# Invariant, asserted rather than assumed: every expedited kind rides
+# `/command`, which HAS an adapter — so the proof always lands a marker and the
+# tick can recognise it.  Extending EXPEDITE_KINDS onto a route with no adapter
+# would deliver with no marker and double up on the tick, so that change must
+# fail here rather than in production.
+assert delivery.COMMAND_ROUTE in apply.ADAPTERS, (
+    "an expedited kind must ride a route with an application adapter, or the "
+    "hook's delivery leaves no marker and the tick delivers it a second time"
+)
+
+# The cap on one pause's delivery.  A pause is an interstitial moment, not a
+# tick: dumping an unbounded batch into it is the "overwhelmed" failure the
+# whole delivery ruling exists to avoid.  Whatever the cap excludes is not lost
+# — it is still in (cursor, head] and the tick drains it.
+EXPEDITE_LIMIT_DEFAULT = 10
 
 # Stable exit codes (asserted by the test).  pending's empty path and consume's
 # 0-event path return EX_OK; a verification refusal returns EX_SOFTWARE (a
@@ -730,6 +775,19 @@ def cmd_consume(args, out, err) -> int:
             out.write(
                 f"UNAPPLIED\t{ev.receipt_id}\t{EVENT_KIND}\t{ev.route}\n"
             )
+        # --- #864: name the receipts the stop hook already delivered.
+        # An expedited receipt proving APPLIED on its drain was handed to the
+        # agent at a pause, so it is correctly absent from the UNAPPLIED
+        # act-list above.  But if that hook output never reached the agent, a
+        # bare `applied N` would swallow one of his instructions in silence —
+        # #136: "nothing needs you" and "something is hiding" must not render
+        # identically.  So each one is named; the content is one `show` away.
+        for ev in applied:
+            if delivery.is_expedited(ev.route, ev.exact_payload_bytes):
+                out.write(
+                    f"EXPEDITED\t{ev.receipt_id}\t{ev.route}\t"
+                    f"already delivered at a pause — `show {ev.receipt_id}` for its text\n"
+                )
         # --- #504 remainder: drained chat receipts carry what the dreamer needs
         # to reply — the chat id (== receipt id), the text, and the exact reply
         # command. Presented for every drained chat receipt: the drain is the
@@ -745,6 +803,115 @@ def cmd_consume(args, out, err) -> int:
             out.write(f"CHAT\t{chat_id}\t{oneline}\n")
             out.write(f"  reply: {_reply_command(chat_id)}\n")
         return EX_OK
+
+
+def _expedited_record(ev, kind: str) -> str:
+    """One delivery block: a column-0 record line, then the payload indented.
+
+    The record line is tab-separated with the receipt id first, exactly like
+    ``pending``.  The FULL payload follows — this verb IS the delivery, not a
+    triage list, so the 80-character preview that sends the loop to hand-written
+    SQL (#855) would defeat the point.  Every payload line is indented by two
+    spaces so a newline in his text cannot forge a second column-0 record: the
+    lessons.md #126 surface, met by indentation rather than by collapsing,
+    because a multi-line instruction must stay readable here.
+    """
+    try:
+        text = ev.exact_payload_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        text = f"<{len(ev.exact_payload_bytes)}-byte binary>"
+    body = "\n".join("  " + line for line in text.splitlines()) or "  <empty>"
+    return (
+        f"EXPEDITED\t{ev.receipt_id}\t{ev.route}\tord={ev.ordinal}\t{kind}\n"
+        f"{body}\n"
+    )
+
+
+def cmd_expedite(args, out, err) -> int:
+    """Deliver EXPEDITED receipts at a natural pause, WITHOUT moving the cursor (#864).
+
+    THE CURSOR CONTRACT, which is the whole of this verb's safety.  It reads the
+    same ``(cursor, head]`` range ``pending`` reads, through the same
+    ``events_since_cursor`` projection, and then:
+
+      * it does NOT call ``advance_cursor`` — so the tick's ``consume --through
+        N`` finds the cursor exactly where its own ``pending`` left it (#531's
+        bound is untouched), and every receipt delivered here is STILL pending
+        and still drained normally.  Neither double-consume nor loss is
+        possible, because there is only ever one caller that advances.
+      * it does NOT write the ``.pending-read`` marker — deliberately.  A hook
+        firing between the coordinator's ``pending`` and its ``consume --through
+        N`` would otherwise rewrite that marker and #712's ``through ==
+        mark['through']`` guard would refuse the drain: a hook that silently
+        jams the tick.
+
+    WHAT STOPS THE DOUBLE DELIVERY is the proof, not the cursor.  Each receipt
+    delivered here is routed through the same ``apply.reconcile`` the drain
+    runs, so its marker lands at the pause; the tick then proves ``APPLIED``,
+    writes nothing, and the receipt never reaches ``consume``'s ``UNAPPLIED``
+    list — the list the coordinator acts on.  Delivered early, acted on once
+    (#519/#527).  A receipt whose proof is ``UNKNOWN`` (a torn applied-ledger)
+    is NOT delivered: no marker landed, so delivering it would double up on the
+    tick.  It degrades to BATCHED, and the count is reported (#702).
+
+    THE CAP AND WHAT "PRIORITISED" MEANS.  A cursor is a position, so a drain
+    cannot skip a receipt — ``consume`` therefore has no cap and must not get
+    one.  This verb is a projection, so its cap is real: the WHOLE pending range
+    is ordered ``(class, ordinal)`` with expedited first, the first ``--limit``
+    are taken, and the expedited members of that slice are delivered.  Ordinary
+    receipts are never delivered here — that is what keeps the flag meaningful —
+    so when they hold the lower ordinals they still do not take the cap's slots.
+    """
+    journal = Path(args.journal)
+    if not journal.exists():
+        # No journal → nothing to deliver.  Do not create it: this verb is a
+        # reader and an absent journal must stay absent (the #501 discipline).
+        return EX_OK
+    with open_journal(args.journal) as j:
+        events = j.events_since_cursor(CONSUMER)
+    classed = [
+        (delivery.is_expedited(ev.route, ev.exact_payload_bytes), ev)
+        for ev in events
+    ]
+    # Expedited first, then by ordinal.  Dropping the class term here is the
+    # #864 direction-1 red: with ordinary receipts on the lower ordinals a
+    # capped slice would then hold none of his expedited ones.
+    ordered = sorted(classed, key=lambda ce: (0 if ce[0] else 1, ce[1].ordinal))
+    capped = ordered[: args.limit]
+    candidates = [ev for expedited, ev in capped if expedited]
+    total_expedited = sum(1 for expedited, _ in classed if expedited)
+    ordinary = len(classed) - total_expedited
+
+    delivered, held = [], []
+    for ev in candidates:
+        verdict = _prove_drained(args.applied, ev)
+        if verdict is apply.Proof.NOT_APPLIED:
+            delivered.append(ev)
+        else:
+            # APPLIED  — already delivered (an earlier pause, or the tick).
+            # UNKNOWN  — the ledger is torn; no marker landed, so the tick must
+            #            be the one to deliver it.
+            held.append((ev, verdict))
+    for ev in delivered:
+        out.write(_expedited_record(
+            ev, delivery.command_kind(ev.route, ev.exact_payload_bytes) or "?"))
+
+    # The coverage statement, on stderr so it never mixes with the delivery the
+    # hook forwards.  #136: silence must mean "nothing was here", so anything
+    # withheld — by the cap, by an UNKNOWN proof, or because it is ordinary —
+    # is counted out loud rather than dropped.
+    if classed:
+        parts = [f"expedite: delivered {len(delivered)} of {total_expedited} expedited"]
+        withheld = total_expedited - len(candidates)
+        if withheld:
+            parts.append(f"{withheld} over the cap ({args.limit})")
+        if held:
+            parts.append(f"{len(held)} held ({', '.join(sorted({v.value for _, v in held}))})")
+        if ordinary:
+            parts.append(f"{ordinary} ordinary receipt(s) wait for the tick")
+        parts.append("cursor unmoved — all of these are still pending")
+        err.write("; ".join(parts) + "\n")
+    return EX_OK
 
 
 # The header keys shown above a show payload, in the order printed.  A constant
@@ -851,6 +1018,34 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
 
+    pe = sub.add_parser(
+        "expedite",
+        help=(
+            "deliver EXPEDITED receipts at a natural pause, without moving the "
+            "cursor (#864 — the stop hook's verb)"
+        ),
+    )
+    pe.add_argument(
+        "--journal", default=JOURNAL_DEFAULT,
+        help="journal db path (default: %(default)s)",
+    )
+    pe.add_argument(
+        "--applied", default=APPLIED_LEDGER_DEFAULT,
+        help=(
+            "applied-receipts proof ledger — the marker written here at the "
+            "pause is what makes the tick's drain recognise the receipt as "
+            "already delivered (default: %(default)s)"
+        ),
+    )
+    pe.add_argument(
+        "--limit", type=int, default=EXPEDITE_LIMIT_DEFAULT, metavar="N",
+        help=(
+            "cap one pause's delivery at N receipts, expedited first "
+            "(default: %(default)s). Whatever the cap excludes stays pending "
+            "and is drained by the tick."
+        ),
+    )
+
     ps = sub.add_parser(
         "show",
         help="print the full decoded payload of one receipt (read-only, #512)",
@@ -881,6 +1076,8 @@ def main(argv=None, out=None, err=None) -> int:
         return cmd_pending(args, out, err)
     if args.cmd == "consume":
         return cmd_consume(args, out, err)
+    if args.cmd == "expedite":
+        return cmd_expedite(args, out, err)
     if args.cmd == "show":
         return cmd_show(args, out, err)
     return EX_USAGE  # argparse(required=True) makes this unreachable

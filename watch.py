@@ -50,6 +50,9 @@ import webbrowser
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from user_events.sqlite import Envelope, open_journal
+# #864: the EXPEDITED class predicate has ONE home; a second copy of this tuple
+# here would drift from the drain's copy, which is the whole point of the module.
+from user_events.delivery import EXPEDITE_KINDS
 # #352: the ledger's entry/origin grammar is ONE module now, imported here
 # (and by lint.py and task_origins.py) rather than copied. These names stay
 # importable FROM watch — callers that read `watch.ledger_entries`,
@@ -4655,6 +4658,29 @@ def delivery_mode(target):
     return read_posture_file(target).get("delivery", DELIVERY_DEFAULT)
 
 
+# #864 — the EXPEDITED class's gate. One line `on` in `.dreamwork/expedite`;
+# ABSENT MEANS OFF (the watch-tint/run-mode family, SKILL.md Guardrails).
+# Machine-local and gitignored on purpose, deliberately against that
+# convention's word "tracked": the stop hook this gates is installed into
+# `.claude/settings.json`, which is itself gitignored and per-checkout, so a
+# travelling gate would strip `do next` of its wake on a machine where nothing
+# delivers it at a pause. `dev/expedite_hook.py install` writes both together.
+EXPEDITE_ON = "on"
+
+
+def expedite_enabled(target):
+    """Is the EXPEDITED delivery class enabled on this checkout? (#864)
+
+    Per-tick re-read of `.dreamwork/expedite` — the same on-disk contract
+    run-mode and posture use, so enabling it reaches a running loop without a
+    restart. Absent, empty, or anything but the single legal value `on` reads
+    as OFF: a gate must fail to the state that changes nothing, and `lint.py`
+    is what says an unknown value loudly rather than this guessing silently.
+    """
+    return (read_text(os.path.join(target, ".dreamwork", "expedite")) or
+            "").strip() == EXPEDITE_ON
+
+
 def emits_wake(kind, target):
     """Per-kind wake routing (#342): does this kind fire the wake line?
 
@@ -4662,7 +4688,17 @@ def emits_wake(kind, target):
     — add-idea, maintenance, plugin kinds — and the /answer, /comment, /ask
     ROUTES (passed as their path string, which is never a pre-empt kind) wake
     only in instant mode. The receipt always commits in do_POST; this is the
-    interrupt half only. Pure in `kind`; reads delivery posture from disk."""
+    interrupt half only. Pure in `kind`; reads delivery posture from disk.
+
+    #864 adds the third class ABOVE that table: an EXPEDITED kind never fires
+    the wake line in ANY mode — his words, "it doesn't interrupt the agent,
+    just gets delivered early if it's possible to do so". The stop hook
+    delivers it at the next natural pause; the tick's drain delivers it if the
+    hook never fires, so withholding the wake costs nothing. Gated, so a
+    checkout with no hook installed keeps today's pre-emption instead of losing
+    the promptness with nothing to replace it."""
+    if kind in EXPEDITE_KINDS and expedite_enabled(target):
+        return False
     if kind in PREEMPT_KINDS:
         return True
     return delivery_mode(target) == DELIVERY_DEFAULT

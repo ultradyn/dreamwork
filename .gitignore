@@ -30,6 +30,12 @@ __pycache__/
 # portable project default (unlike watch-tint). Migration
 # 2026-07-27-01-run-mode.md tells targets the same.
 .dreamwork/run-mode
+# #864: the EXPEDITED class's gate. Machine-local for a sharper reason than
+# run-mode's: the stop hook it gates is registered in .claude/settings.json,
+# which is gitignored and per-checkout (see the bottom of this file). A gate
+# that travelled would turn `do next`'s wake off on a machine where no hook
+# exists to deliver it at a pause. `dev/expedite_hook.py` writes both together.
+.dreamwork/expedite
 # #473: the dashboard's per-entry "when did this question last change" store.
 # Machine-local by the same argument as run-mode above -- it records what THIS
 # dashboard has seen, so committing it would assert another machine's history.

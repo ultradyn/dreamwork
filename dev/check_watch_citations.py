@@ -47,7 +47,13 @@ BASE_REV = "dc739001"
 # and +83/+227/+228/+262/+347/+348 (24 more) — so 82 equally stale citations
 # are invisible to this check by construction.  #845 replaces the constant with
 # a per-citation offset derived from the real diff against BASE_REV.
-DRIFT = 22
+# #864 added a three-line import at watch.py:53 — above every classified
+# citation — so the true offset from dc739001 is now 25.  This is the
+# maintenance #845 exists to abolish: the constant is global and exact,
+# so ANY net insertion above the region is a master-red until it is
+# re-measured by hand.  The certified multiset is unchanged by the bump,
+# which is what proves the re-measure correct rather than merely quiet.
+DRIFT = 25
 
 # Distinctiveness: a matched old line is evidence only when it is non-empty,
 # unique in the base revision, and long enough to be about something.  A blank

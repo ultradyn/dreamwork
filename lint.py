@@ -3102,6 +3102,33 @@ def check_run_mode(dw: Path, watch, rep: Report) -> None:
         rep.add(OK, "run-mode", raw)
 
 
+def check_expedite_gate(dw: Path, watch, rep: Report) -> None:
+    """The EXPEDITED class's gate (#864) — one line `on`, absent means off.
+
+    Same silent-fallback hazard as run-mode and watch-tint, and here it is
+    worse than a dropped colour: a gate that reads as OFF because of a typo
+    leaves `do next` pre-empting when he believes it is expedited, so the
+    mismatch is between what he thinks the loop does and what it does. Reads
+    EXPEDITE_ON from watch.py — never restated. Absent is normal and silent.
+    """
+    path = dw / "expedite"
+    if not path.exists():
+        return
+    raw = path.read_text().strip()
+    legal = getattr(watch, "EXPEDITE_ON", None) if watch else None
+    if not legal:
+        rep.add(WARN, "expedite", f"{raw!r} — unverified (watch.py unreadable)")
+    elif raw != legal:
+        rep.add(
+            ERROR,
+            "expedite",
+            f"{raw!r} is not {legal!r} — the gate reads as OFF and `do next` "
+            f"still pre-empts; delete the file to mean off, or write {legal!r}",
+        )
+    else:
+        rep.add(OK, "expedite", raw)
+
+
 def check_posture(dw: Path, watch, rep: Report) -> None:
     """Three-axis posture: pace × asking × delegation (#445, ratifies #443).
 
@@ -6395,6 +6422,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_watch_port(dw, rep)
     check_watch_tint(dw, watch, rep)
     check_run_mode(dw, watch, rep)
+    check_expedite_gate(dw, watch, rep)
     check_posture(dw, watch, rep)
     check_subagent_policy(dw, rep)
     check_plugin_commands(dw, watch, rep)
