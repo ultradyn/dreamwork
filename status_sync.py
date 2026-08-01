@@ -68,6 +68,7 @@ LEDGER_HEAD = re.compile(rf"^- \*\*({watch.IDS_ONLY_SPAN})\*\*", re.M)
 # one home is ledger_parse now.
 from ledger_parse import ENTRY_ID  # noqa: E402
 from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
+from worktree_paths import WORKTREE_DIR  # noqa: E402
 from worktree_paths import worktree_roots as _canonical_worktree_roots  # noqa: E402
 
 
