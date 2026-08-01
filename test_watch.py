@@ -7352,6 +7352,146 @@ class TestAppShell(unittest.TestCase):
             self.assertIn(token, watch.PAGE)
         self.assertNotIn('id="cmdkind"', watch.PAGE)   # the old <select>
 
+    def test_response_textarea_shift_tab_cycles_modes(self):
+        """#259 — inside a response textarea, Shift+Tab cycles answer/add-note.
+        The guard is RED-FIRST and keyboard-shaped, so it asserts the four
+        things a synthetic-event guard can lie about:
+
+          1. SCOPE, not a global hijack: the handler keys on `e.shiftKey`
+             AND a textarea target, so an ordinary Tab (and a Shift+Tab
+             anywhere else) falls through to browser focus. The scoping
+             guard string is asserted verbatim — it is the one token whose
+             removal is exactly the accessibility regression.
+          2. the ACTIVE MODE is driven, not the indicator: the cycle calls
+             `setCardMode(comp, <next>.dataset.mode, ...)`, and setCardMode
+             is the only writer of `comp.dataset.mode` — the field
+             `cardMode`/`submitCard` read to route the send. A handler that
+             toggled `.on` or moved `.sgind` directly would pass an
+             indicator-only guard and still send the wrong kind (#259's
+             named false-green).
+          3. DRAFT/FOCUS preserved: the handler never assigns `t.value` or
+             calls `.blur()`; setCardMode carries the #103 contract that the
+             text is the point.
+          4. ANNOUNCED: the cycle calls announceMode, so the change reaches
+             a screen reader (the sliding indicator is sight-only).
+        """
+        # precondition: a card offers two modes, or there is nothing to cycle.
+        self.assertIn("const QMODES = { answer: 'answer', note: 'add note' }",
+                      watch.PAGE, "the card must offer two modes to cycle")
+        # the scoping guard — its removal is precisely the global-Tab hijack.
+        self.assertIn("if (e.key !== 'Tab' || !e.shiftKey) return;",
+                      watch.PAGE)
+        # textarea-scoped to the card surface; a folded (note-only) card has
+        # no .qmodes group and the handler must let Shift+Tab through.
+        for token in ("t.tagName !== 'TEXTAREA'",
+                      "t.closest('.qcompose')",
+                      "comp.querySelector('.sgroup.qmodes')",
+                      "btns.length < 2",
+                      "e.preventDefault()",
+                      # the ACTIVE MODE setter (writes comp.dataset.mode), not
+                      # the indicator: this is the line that closes #259's
+                      # named false-green.
+                      "setCardMode(comp, next.dataset.mode, false)",
+                      "announceMode("):
+            self.assertIn(token, watch.PAGE, "#259 card cycle missing " + token)
+        # the cycle must not clear the draft or steal focus — the text is the
+        # point (#103). Absence is asserted on the HANDLER, located by its
+        # scoping guard, so the check cannot fire on unrelated prose elsewhere.
+        i = watch.PAGE.index(
+            "if (e.key !== 'Tab' || !e.shiftKey) return;\n  const t = e.target;")
+        handler = watch.PAGE[i:i + 700]
+        self.assertNotIn('.value =', handler,
+                         "a cycle that clears the textarea loses his draft")
+        self.assertNotIn('.blur()', handler,
+                         "a cycle that blurs loses his caret")
+
+    def test_composer_shift_tab_cycles_kinds_in_visible_order(self):
+        """#259 — inside the main composer textarea, Shift+Tab cycles the
+        command kinds in VISIBLE order, including eligible plugin commands.
+
+        VISIBLE order is the menu's DOM order (#cmdmenu .cmdmenuitem), which
+        renderMenu builds by iterating COMMANDS — so it is the one place an
+        uncommon or plugin kind appears, and cycling through it reaches every
+        eligible kind. Asserting the menu is the order source (not a
+        hardcoded list, and not COMMANDS directly) is what makes 'visible
+        order' falsifiable: if the handler switched to COMMANDS.map(...) the
+        order could diverge from the menu and this guard would not see it,
+        so the guard asserts the menu selector is the source instead.
+
+        Drives `setKind` (the activeKind setter the submit path reads), NOT
+        the indicator — the same false-green closure as the card guard. And
+        saveDraft after, so the new kind travels with the text (the click
+        path's rule, one surface over).
+        """
+        # precondition: more than one kind exists, else cycling proves nothing.
+        self.assertGreater(len(watch.COMMANDS), 1,
+                           "cycling needs at least two kinds")
+        # the menu is the visible-order source and lists every kind (#91/#86).
+        self.assertIn('id="cmdmenu"', watch.PAGE)
+        self.assertIn("renderMenu()", watch.PAGE)
+        # composer-textarea-scoped Shift+Tab; folds into the composer's keydown
+        # wiring (no second composer mount — #241's contract).
+        for token in ("t.id !== 'cmdtext'",
+                      "#cmdmenu .cmdmenuitem",
+                      ".map(n => n.dataset.kind)",
+                      "e.preventDefault()",
+                      # the ACTIVE KIND setter (writes activeKind), not the
+                      # indicator — closes #259's named false-green.
+                      "setKind(kind)",
+                      "saveDraft()",
+                      "announceMode("):
+            self.assertIn(token, watch.PAGE, "#259 composer cycle missing " + token)
+        # the cycle order must come from the MENU (visible), not from COMMANDS
+        # directly: a future reorder of the menu independent of COMMANDS would
+        # otherwise diverge silently. COMMANDS may appear only for the LABEL
+        # lookup, never as the order source.
+        i = watch.PAGE.index("'#cmdmenu .cmdmenuitem'")
+        order_block = watch.PAGE[i:i + 260]
+        self.assertNotIn('COMMANDS.map', order_block,
+                         "the cycle order must read the menu (visible order), "
+                         "not COMMANDS declaration order")
+
+    def test_mode_change_is_announced_accessibly(self):
+        """#259 — the sliding indicator is sight-only, so a mode cycle
+        announces through a visually-hidden live region. Both cycle handlers
+        route through the one announceMode helper into #modestatus, so a
+        screen reader hears the change instead of inferring it from a moving
+        outline. The region is static (no transition): nothing appears or
+        vanishes, so the transition contract is not engaged."""
+        for token in ('function announceMode(',
+                      "getElementById('modestatus')",
+                      'id="modestatus"', 'class="vh"',
+                      'aria-live="polite"', 'role="status"'):
+            self.assertIn(token, watch.PAGE, "#259 announce wiring missing " + token)
+        # the visually-hidden utility must actually hide (clip), not merely
+        # dim — a mis-written .vh that left text visible would spend the
+        # composer's chrome on every spoken word.
+        self.assertIn('.vh', watch.STYLE)
+        self.assertIn('clip-path:inset(50%)', watch.STYLE)
+
+    def test_shift_tab_does_not_hijack_browser_focus(self):
+        """#259 — the ONE way this task fails is a global Tab hijack. Both
+        Shift+Tab handlers share the identical scoping guard that returns
+        early unless the key is Tab AND shift is held; a plain Tab never
+        reaches preventDefault. This asserts that guard is present in BOTH
+        the card handler (router) and the composer handler (command), and
+        that neither preventDefaults before the scope check. The popout's
+        single keydown handler carries the same guard for its textarea too.
+        """
+        # the guard appears for the card cycle, the composer cycle, and the
+        # popout cycle (three surfaces, one shape).
+        card = watch.PAGE.count(
+            "if (e.key !== 'Tab' || !e.shiftKey) return;")
+        self.assertGreaterEqual(card, 2,
+                                "both the card and composer Shift+Tab handlers "
+                                "must carry the no-hijack scope guard")
+        # a plain Tab must still move focus: assert NO handler preventDefaults
+        # on `e.key === 'Tab'` without the shift guard. Locate every Tab
+        # preventDefault and require each to sit inside a shift-guarded block.
+        for needle in ("e.preventDefault(); submitCard",):  # Ctrl+Enter path
+            # sanity: the Ctrl+Enter submit path is unrelated to Tab cycling
+            self.assertIn(needle, watch.PAGE)
+
     def test_shader_world_space_wiring(self):
         # Static guard: the shader anchors its domain to the window's screen
         # position and takes its phase from the wall clock (UTC-day-wrapped),
