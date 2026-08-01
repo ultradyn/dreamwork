@@ -10,54 +10,6 @@ import ledger_store
 import task_origins
 
 
-CAPTURED_BEFORE_MOVE = {
-    "meta_value": "fixture-cutover",
-    "entries": [
-        ([1], "- **#1** — Alpha · P1 · task · origin: **human**\n  headed body"),
-        ([2], "- **#2** — Beta · origin: **unknown** ·\nheadless note"),
-        ([3], "- **#3** — Gamma · P2 · bug · origin: **loop** ·\nheadless third"),
-    ],
-    "records": [
-        {"id": 1, "state": "open", "title": "Alpha",
-         "body": "- **#1** — Alpha · P1 · task · origin: **human**\n  headed body",
-         "priority": "P1", "type": "task", "origin": "human",
-         "blocked_on": None, "date": "2026-01-01T00:00:00+00:00"},
-        {"id": 2, "state": "landed", "title": "Beta",
-         "body": "headless note", "priority": None, "type": None,
-         "origin": None, "blocked_on": "task #1",
-         "date": "2026-01-02T00:00:00+00:00"},
-        {"id": 3, "state": "open", "title": "Gamma",
-         "body": "headless third", "priority": "P2", "type": "bug",
-         "origin": "loop", "blocked_on": None, "date": "not-a-date"},
-    ],
-    "ids_by_state": (["1", "3"], ["2"]),
-    "review_decisions": [
-        {"artifact": "a.html", "question_title": "Question A",
-         "decision": "pending", "decided_at": "2026-01-01T00:00:00+00:00",
-         "actor": "fixture"},
-        {"artifact": "z.html", "question_title": "Question Z",
-         "decision": "accepted", "decided_at": "2026-01-04T00:00:00+00:00",
-         "actor": "fixture"},
-    ],
-    "series_raw": {
-        "arrived": {"1": 1767225600, "2": 1767312000},
-        "landed": {"2": 1767398400},
-        "first_sight": {"1": "human", "2": "unknown", "3": "loop"},
-        "latest_open": {"1", "3"},
-        "commit_times": [1767225600, 1767312000, 1767398400],
-    },
-    "origins": [
-        {"id": 1, "origin": "human", "first_commit": "abcdef1",
-         "first_seen": 1767225600, "title": ""},
-        {"id": 2, "origin": "unknown", "first_commit": "bbbbbbb",
-         "first_seen": 1767312000, "title": ""},
-        {"id": 3, "origin": "loop", "first_commit": "deadbee",
-         "first_seen": 0, "title": ""},
-    ],
-    "incomplete_counts": (1, 1),
-}
-
-
 def _fixture_store(tmp_path: Path) -> Path:
     dw = tmp_path / ".dreamwork"
     dw.mkdir()
@@ -93,6 +45,19 @@ def _fixture_store(tmp_path: Path) -> Path:
                 (task_id, at, "migration_git", from_state, to_state, "fixture",
                  detail, f"prev-{n}", f"hash-{n}"),
             )
+        next_up_events = [
+            (1, "next_up_set", "mark Alpha"),
+            (2, "next_up_set", "landed tasks cannot remain next-up"),
+            (3, "next_up_set", "mark Gamma"),
+            (3, "next_up_cleared", "start Gamma"),
+        ]
+        for n, (task_id, cause, detail) in enumerate(next_up_events, 5):
+            conn.execute(
+                "INSERT INTO task_event(task_id,at,cause,from_state,to_state,actor,"
+                "detail,prev_hash,hash) VALUES (?,?,?,?,?,?,?,?,?)",
+                (task_id, f"zz-next-up-{n}", cause, "open", "open",
+                 "fixture", detail, f"prev-{n}", f"hash-{n}"),
+            )
         conn.executemany(
             "INSERT INTO review_decision(artifact,question_title,decision,decided_at,actor)"
             " VALUES (?,?,?,?,?)",
@@ -123,12 +88,66 @@ def _read_all(dw: Path) -> dict:
     }
 
 
-def test_all_eight_task_store_reads_match_the_nontrivial_pre_move_capture(tmp_path):
+def test_all_eight_task_store_reads_preserve_their_behaviours(tmp_path):
     actual = _read_all(_fixture_store(tmp_path))
-    assert len(actual) == 8, f"read denominator changed: captured 8, got {len(actual)}"
-    for name, expected in CAPTURED_BEFORE_MOVE.items():
-        value = actual[name]
-        assert value not in (None, [], (), {}), f"{name} capture is vacuous: {value!r}"
-        assert value == expected, (
-            f"{name} parity differs:\nexpected rows={expected!r}\nactual rows={value!r}"
-        )
+    assert len(actual) == 8, f"read denominator changed: expected 8, got {len(actual)}"
+
+    assert actual["meta_value"] == "fixture-cutover"
+    assert actual["entries"] == [
+        ([1], "- **#1** — Alpha · P1 · task · origin: **human**\n  headed body"),
+        ([2], "- **#2** — Beta · origin: **unknown** ·\nheadless note"),
+        ([3], "- **#3** — Gamma · P2 · bug · origin: **loop** ·\nheadless third"),
+    ]
+
+    records = actual["records"]
+    assert len(records) == 3, f"record denominator changed: {records!r}"
+    stable_fields = [
+        (1, "open", "Alpha", "P1", "task", "human", None,
+         "2026-01-01T00:00:00+00:00"),
+        (2, "landed", "Beta", None, None, None, "task #1",
+         "2026-01-02T00:00:00+00:00"),
+        (3, "open", "Gamma", "P2", "bug", "loop", None, "not-a-date"),
+    ]
+    assert [
+        (r["id"], r["state"], r["title"], r["priority"], r["type"],
+         r["origin"], r["blocked_on"], r["date"])
+        for r in records
+    ] == stable_fields
+    assert [r["body"] for r in records] == [
+        "- **#1** — Alpha · P1 · task · origin: **human**\n  headed body",
+        "headless note",
+        "headless third",
+    ]
+    assert [r["next_up"] for r in records] == [5, None, None], (
+        "the latest next-up event marks open Alpha; landed Beta is excluded; "
+        "Gamma's later clear wins"
+    )
+
+    assert actual["ids_by_state"] == (["1", "3"], ["2"])
+    assert [
+        (d["artifact"], d["question_title"], d["decision"], d["decided_at"],
+         d["actor"])
+        for d in actual["review_decisions"]
+    ] == [
+        ("a.html", "Question A", "pending", "2026-01-01T00:00:00+00:00",
+         "fixture"),
+        ("z.html", "Question Z", "accepted", "2026-01-04T00:00:00+00:00",
+         "fixture"),
+    ]
+
+    series = actual["series_raw"]
+    assert series["arrived"] == {"1": 1767225600, "2": 1767312000}
+    assert series["landed"] == {"2": 1767398400}
+    assert series["first_sight"] == {"1": "human", "2": "unknown", "3": "loop"}
+    assert series["latest_open"] == {"1", "3"}
+    assert series["commit_times"] == [1767225600, 1767312000, 1767398400]
+
+    assert [
+        (r["id"], r["origin"], r["first_commit"], r["first_seen"], r["title"])
+        for r in actual["origins"]
+    ] == [
+        (1, "human", "abcdef1", 1767225600, ""),
+        (2, "unknown", "bbbbbbb", 1767312000, ""),
+        (3, "loop", "deadbee", 0, ""),
+    ]
+    assert actual["incomplete_counts"] == (1, 1)
