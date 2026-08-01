@@ -186,7 +186,13 @@ def test_completion_trigger_is_inert_until_group_completes(store_path):
 
 def test_unknown_group_kind_is_named_before_sql(store_path):
     with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
-        with pytest.raises(ValidationError, match=r"lane.*epic.*milestone"):
+        # #841 moved the vocabulary from an inline CHECK into
+        # `task_group_kind`, so the refusal quotes the DEFINED kinds (sorted)
+        # rather than a Python literal.
+        with pytest.raises(
+            ValidationError,
+            match=r"unknown group kind 'squad'.*epic.*lane.*milestone",
+        ):
             _create_group(store, kind="squad")
 
 

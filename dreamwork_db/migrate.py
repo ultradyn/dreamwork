@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .core import SchemaMismatch
-from .migrations import v001_legacy, v002_review, v003_questions, v004_groups
+from .migrations import (
+    v001_legacy, v002_review, v003_questions, v004_groups, v005_hierarchy,
+)
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 _COMPOSED_BASE_VERSION = 2
 
 
@@ -29,6 +31,7 @@ MIGRATIONS = (
     Migration(1, 2, v002_review.upgrade),
     Migration(2, 3, v003_questions.upgrade),
     Migration(3, 4, v004_groups.upgrade),
+    Migration(4, 5, v005_hierarchy.upgrade),
 )
 
 
