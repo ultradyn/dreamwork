@@ -3446,3 +3446,44 @@ this shape and convert opportunistically.)
   `bdcommit-copy`, unrelated burndown components that happen to share the idiom. It had stopped
   saying anything about provenance while reading perfectly green. A coordinate that rots does not
   always fail; sometimes it drifts onto a neighbour and keeps reassuring you.
+
+## One line's byte-identity is not evidence when the line is not distinctive (2026-08-01, #845)
+
+`dev/check_watch_citations.py` decides a `watch.py:N` citation is the reviewed, shifted one when
+`dc739001`'s line N is byte-identical to the current line `N+DRIFT`. It certified 24 citations and
+passed. Classifying those 24 by what they actually matched: **two matched a BLANK line**, two
+matched a line under 25 characters, and two matched lines that occur **27 and 30 times** in
+`watch.py`. Six of its twenty-four certifications rest on a coincidence. A blank line is
+byte-identical to every other blank line, so it can only ever confirm whatever offset you guessed.
+
+The same measurement killed the fix I was about to apply. `.dreamwork/questions.md` cites
+`watch.py:666` and quotes `.qaghost.gone { opacity:0;` as being there. `.qaghost.gone` has never
+been in `watch.py` — not at `dc739001`, not now; it is in `client/style.css:838`. The citation
+resolved as a clean `+10` shift because an unrelated comment at that line survived, and the
+mechanical fix would have rewritten it to a bare `watch.py` that is also wrong. **The check
+agreed with itself and was wrong about the world.**
+
+The general shape: when a check's matching unit is a single line, ask how many other lines in the
+corpus are identical to it before believing a match. Evidence requires that the thing matched be
+*distinctive* — unique, non-empty, long enough to be about something. Otherwise you are measuring
+the frequency of a common string and calling it a coordinate.
+
+And the class the design never contemplated was the largest one: **88 of 216 citations point past
+the end of the base revision** — authored against a later tree, so the base-revision premise does
+not hold for them at all and the oracle cannot see them by construction. It certified 24 and was
+blind to 88. Before trusting a check's population, ask what its premise excludes, not only what
+its assertions cover.
+
+## A negative observation constrains less than it looks like it does (2026-08-01, #832)
+
+Two dispatches died leaving a worktree, a branch, zero commits and **no brief-corpus file**. I
+inferred from the missing file that the dispatcher's persist-before-`execvp` does not hold, and I
+put that inference in a lane's brief as fact. Then I relaunched three lanes and watched all three
+corpus files appear within twenty seconds. Persistence works fine; the absence meant something
+else, and from the residue I still cannot tell a pre-launch refusal from a death just after exec —
+which is the actual finding, and a better one.
+
+The control was one dispatch away: **run the thing that should succeed and see whether the
+artifact appears.** An absence is consistent with many stories; only a positive control tells you
+which. This is the same shape as the `#646` note I had to publicly correct earlier the same day —
+asserting a conclusion from a check I had not thought through.
