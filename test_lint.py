@@ -9869,3 +9869,100 @@ class TestRetiredPhrasings:
         assert "cannot parse" in rows[0][2]
         assert rows[1][2].startswith(
             "registered 0 retired phrasing(s); scanned 1 tracked Markdown")
+
+
+class TestFrameRebaseRearm:
+    """#958 — the frame must tell lanes to re-arm redproof after the rebase.
+
+    The rebase rule stales redproof's expectation pin (#852); redproof's own
+    refusal names the remedy, but a lane reads its brief, and the frame is the
+    brief's spine. This test pins the check that pins the rule.
+    """
+
+    _REBASE_BULLET = (
+        "- **Rebase onto local `master` before you report**, and report the "
+        "sha *after* the rebase.\n"
+    )
+    # Carries all three markers the check requires: re-arm, stale, and the
+    # gate's refusal text ('expectation source').
+    _REARM_BULLET = (
+        "- **Re-arm the red-proof after the final rebase.** A rebase can "
+        "stale the expectation pin even after a clean restore, so re-run "
+        "`forget` then `begin --expectation` then `restore` then `check`, or "
+        'the gate refuses with "expectation source ... changed" (#958).\n'
+    )
+
+    def _check(self, tmp_path, frame_text):
+        (tmp_path / ".dreamwork").mkdir(exist_ok=True)
+        bp = tmp_path / "briefs"
+        bp.mkdir(exist_ok=True)
+        (bp / "frame.md").write_text(frame_text)
+        rep = lint.Report()
+        lint.check_frame_rebase_rearm(tmp_path / ".dreamwork", rep)
+        return rep
+
+    def _rows(self, rep):
+        return [(lvl, detail) for lvl, what, detail in rep.rows
+                if what == "frame rebase re-arm"]
+
+    def test_real_frame_carries_the_rearm_rule(self):
+        rep = lint.Report()
+        lint.check_frame_rebase_rearm(lint.SKILL_DIR / ".dreamwork", rep)
+        rows = self._rows(rep)
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "re-arm" in rows[0][1]
+        assert "examined" in rows[0][1] and "section(s)" in rows[0][1]
+
+    def test_rebase_section_without_rearm_is_an_error(self, tmp_path):
+        frame = (
+            "## Standing rules\n\n" + self._REBASE_BULLET + "\n"
+            "## What to report back\n\nThe sha.\n"
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "'re-arm'" in rows[0][1]
+        assert "'stale'" in rows[0][1]
+        assert "'expectation source'" in rows[0][1]
+
+    def test_rearm_in_the_wrong_section_does_not_satisfy(self, tmp_path):
+        # direction 2a: the re-arm bullet sits in 'What to report back', not in
+        # the rebase section where the lane reads it. The check must notice.
+        frame = (
+            "## Standing rules\n\n" + self._REBASE_BULLET + "\n"
+            "## What to report back\n\n" + self._REARM_BULLET
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "section '## Standing rules'" in rows[0][1]
+        assert "'re-arm'" in rows[0][1]
+
+    def test_a_loose_rebase_mention_does_not_satisfy(self, tmp_path):
+        # direction 2b: the section carries 'rebase' twice but none of the
+        # three re-arm markers. A substring grep for 'rebase' would pass here.
+        frame = (
+            "## Standing rules\n\n" + self._REBASE_BULLET
+            + "- The rebase outcome.\n"
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+
+    def test_empty_frame_fails_with_examined_zero(self, tmp_path):
+        # degrade-to-zero (#868): no `## ` sections is an ERROR naming
+        # 'examined 0', never a silent pass.
+        rep = self._check(tmp_path, "# Frame\n\nNo sections here.\n")
+        rows = self._rows(rep)
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "examined 0 section(s)" in rows[0][1]
+
+    def test_rearm_present_passes(self, tmp_path):
+        frame = (
+            "## Standing rules\n\n" + self._REBASE_BULLET + self._REARM_BULLET
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+
+    def test_absent_frame_is_silent_for_foreign_target(self, tmp_path):
+        (tmp_path / ".dreamwork").mkdir()
+        rep = lint.Report()
+        lint.check_frame_rebase_rearm(tmp_path / ".dreamwork", rep)
+        assert rep.rows == []
