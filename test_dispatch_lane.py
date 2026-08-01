@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import sqlite3
 import subprocess
@@ -133,7 +134,7 @@ def _healthy_prompt(
     return prompt
 
 
-def _start_live_dispatch(cli: Path, prompt: Path, worktree: Path) -> subprocess.Popen:
+def _start_live_dispatch(cli: Path, prompt: Path, worktree: Path) -> tuple[subprocess.Popen, int]:
     env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
     process = subprocess.Popen(
         [
@@ -149,19 +150,21 @@ def _start_live_dispatch(cli: Path, prompt: Path, worktree: Path) -> subprocess.
     for _ in range(250):
         if lock.is_file():
             break
-        if process.poll() is not None:
-            raise AssertionError(f"fixture dispatch exited before writing {lock}")
         time.sleep(0.02)
     else:
         raise AssertionError(f"fixture dispatch did not write {lock}")
 
-    # Independent truth, deliberately not derived through lane_liveness.
-    os.kill(process.pid, 0)
-    raw = Path(f"/proc/{process.pid}/cmdline").read_bytes()
+    # Under detach (#876) the lock records the CHILD's pid — the parent has
+    # already exited. Independent truth, deliberately not derived through
+    # lane_liveness.
+    record = json.loads(lock.read_text(encoding="utf-8"))
+    child_pid = record["pid"]
+    os.kill(child_pid, 0)
+    raw = Path(f"/proc/{child_pid}/cmdline").read_bytes()
     assert str(worktree).encode() in raw, (
-        f"precondition: live pid {process.pid} argv does not carry worktree {worktree}"
+        f"precondition: live child pid {child_pid} argv does not carry worktree {worktree}"
     )
-    return process
+    return process, child_pid
 
 
 def test_second_dispatch_refuses_independently_proven_live_worktree(tmp_path):
@@ -169,23 +172,34 @@ def test_second_dispatch_refuses_independently_proven_live_worktree(tmp_path):
     lane = "cx-live-lock"
     prompt = _healthy_prompt(tmp_path, root, task=900, lane=lane)
     worktree = root / ".worktrees" / lane
-    process = _start_live_dispatch(cli, prompt, worktree)
+    process, child_pid = _start_live_dispatch(cli, prompt, worktree)
     try:
         result = _run(cli, prompt, sys.executable, "-c", "pass")
         assert result.returncode == 2, (
-            f"dispatch into {worktree} allowed through live pid {process.pid} "
+            f"dispatch into {worktree} allowed through live pid {child_pid} "
             f"lane {lane}: rc={result.returncode}, stderr={result.stderr!r}"
         )
         expected = (
             f"dispatch refused: worktree {worktree} already has live lane {lane!r}: "
-            f"pid {process.pid}, task #900, brief {prompt.resolve()}"
+            f"pid {child_pid}, task #900, brief {prompt.resolve()}"
         )
         assert result.stderr.strip() == expected, (
             "dispatch failed for a reason other than the live-lane refusal: "
             f"rc={result.returncode}, stderr={result.stderr!r}"
         )
     finally:
-        process.terminate()
+        # Kill the live child by pid only — never pkill -f (#876 live-state rule).
+        # The child is reparented (its parent exited), so we cannot waitpid it.
+        try:
+            os.kill(child_pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        for _ in range(100):
+            try:
+                os.kill(child_pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.02)
         process.wait(timeout=5)
 
 
@@ -343,6 +357,16 @@ def test_explicit_pipe_override_launches_runner(tmp_path):
     assert result.stdout == "launched\n"
 
 
+def _wait_for_file(path: Path, timeout: float = 5.0) -> bool:
+    """Poll for a file's appearance — the detached runner may not finish instantly."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if path.is_file():
+            return True
+        time.sleep(0.02)
+    return path.is_file()
+
+
 def test_tty_stdout_launches_runner(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
     prompt = _healthy_prompt(tmp_path, root)
@@ -358,11 +382,11 @@ def test_tty_stdout_launches_runner(tmp_path):
         )
     finally:
         os.close(slave)
-    returncode = process.wait(timeout=5)
+    process.wait(timeout=5)
     os.close(master)
 
-    assert returncode == 0
-    assert launched.is_file()
+    assert process.returncode == 0
+    assert _wait_for_file(launched), "detached runner did not touch launched file"
 
 
 def test_regular_file_redirect_launches_runner(tmp_path):
@@ -381,7 +405,7 @@ def test_regular_file_redirect_launches_runner(tmp_path):
         )
 
     assert result.returncode == 0
-    assert launched.is_file()
+    assert _wait_for_file(launched), "detached runner did not touch launched file"
 
 
 def test_inherited_stdout_launches_runner(tmp_path):
@@ -398,7 +422,7 @@ def test_inherited_stdout_launches_runner(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    assert launched.is_file()
+    assert _wait_for_file(launched), "detached runner did not touch launched file"
 
 
 def test_dev_null_stdout_launches_runner(tmp_path):
@@ -416,7 +440,7 @@ def test_dev_null_stdout_launches_runner(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    assert launched.is_file()
+    assert _wait_for_file(launched), "detached runner did not touch launched file"
 
 
 def test_background_regular_file_redirect_launches_runner(tmp_path):
@@ -437,7 +461,7 @@ def test_background_regular_file_redirect_launches_runner(tmp_path):
     returncode = process.wait(timeout=5)
 
     assert returncode == 0
-    assert launched.is_file()
+    assert _wait_for_file(launched), "detached runner did not touch launched file"
 
 
 def test_unresolved_ledger_get_is_reported_but_does_not_block(tmp_path):
@@ -930,3 +954,82 @@ def test_dispatch_lane_recipe_is_at_prefixed_so_the_route_is_silent():
         "dispatch-lane recipe must be @-prefixed: without it just echoes the "
         "expanded command on every dispatch, so the route is not silent (#769)"
     )
+
+
+# --------------------------------------------------------------------------- #
+# #876: a lane must survive its launcher                                       #
+# --------------------------------------------------------------------------- #
+
+def test_detached_runner_survives_launcher_exit_in_distinct_session(tmp_path):
+    """The runner runs in its own session and is alive AFTER the launcher exits."""
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    # The runner writes its own pid + session id, then stays alive long enough
+    # to be observed after the launcher has exited.
+    witness = tmp_path / "session-witness.txt"
+    runner = tmp_path / "survivor.py"
+    runner.write_text(
+        "import os, pathlib, sys, time\n"
+        "pathlib.Path(sys.argv[1]).write_text("
+        "f\"{os.getpid()}\\n{os.getsid(0)}\\n\", encoding='utf-8')\n"
+        "time.sleep(30)\n",
+        encoding="utf-8",
+    )
+    parent_sid = os.getsid(os.getpid())
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    log = tmp_path / "dispatch.log"
+    with log.open("w", encoding="utf-8") as stream:
+        process = subprocess.Popen(
+            [sys.executable, str(cli), "--prompt", str(prompt), "--",
+             sys.executable, str(runner), str(witness)],
+            stdout=stream, stderr=subprocess.STDOUT, env=env,
+        )
+    # The launcher (parent) exits 0 — that is the precondition for "survives."
+    returncode = process.wait(timeout=5)
+    assert returncode == 0, (
+        f"launcher exited {returncode}, expected 0 (successful detached launch)"
+    )
+
+    assert _wait_for_file(witness), "detached runner never wrote its session witness"
+    lines = witness.read_text(encoding="utf-8").strip().split("\n")
+    runner_pid = int(lines[0])
+    runner_sid = int(lines[1])
+    assert runner_sid != parent_sid, (
+        f"runner session {runner_sid} == launcher session {parent_sid}; "
+        f"the lane was NOT detached — reaping the launcher would kill it"
+    )
+    # The runner IS alive AFTER the launcher exited (process.wait returned above).
+    os.kill(runner_pid, 0)
+    # Clean up: kill by pid only — never pkill -f (#876 live-state rule).
+    try:
+        os.kill(runner_pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    for _ in range(100):
+        try:
+            os.kill(runner_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.02)
+
+
+def test_detached_dispatch_still_refuses_bad_base_sha_before_fork(tmp_path):
+    """Early refusals (base-sha) still surface as exit 2 after detaching."""
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    prompt.write_text(
+        "\n".join(
+            line for line in prompt.read_text(encoding="utf-8").splitlines()
+            if not line.startswith("Base sha:")
+        ) + "\n",
+        encoding="utf-8",
+    )
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    result = subprocess.run(
+        [sys.executable, str(cli), "--prompt", str(prompt), "--", "true"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 2
+    assert "missing required 'Base sha: <git revision>' line" in result.stderr
+    # No lane.lock should exist — the refusal happened before fork.
+    assert not any(root.rglob("lane.lock"))
