@@ -3769,8 +3769,7 @@ def check_skill_version(dw: Path, rep: Report) -> None:
 
 
 def check_dreams(dw: Path, rep: Report) -> None:
-    """Filenames only. The contract here IS the filename — it carries the
-    date and time that ordering depends on."""
+    """Check ordering stamps against independent introducing-commit times."""
     d = dw / "dreams"
     if not d.is_dir():
         rep.add(WARN, "dreams/", "examined 0 dreams — directory absent, so timestamp correctness is UNKNOWN")
@@ -3797,7 +3796,7 @@ def check_dreams(dw: Path, rep: Report) -> None:
     for p in names:
         stamp = p.name[:15]  # YYYY-MM-DD-HHMM — 15 chars, not 16
         try:
-            committed_text = subprocess.run(
+            result = subprocess.run(
                 [
                     "git", "-C", str(dw.parent), "log", "--follow",
                     "--diff-filter=A", "-1", "--format=%cI", "--",
@@ -3806,13 +3805,19 @@ def check_dreams(dw: Path, rep: Report) -> None:
                 capture_output=True,
                 text=True,
                 check=False,
-            ).stdout.strip()
-            if not committed_text:
-                unknown.append(p.name)
-                continue
+            )
+        except OSError:
+            unknown.append(p.name)
+            continue
+        committed_text = result.stdout.strip()
+        if not committed_text:
+            unknown.append(p.name)
+            continue
+        try:
             committed = datetime.fromisoformat(committed_text)
             when = datetime.strptime(stamp, "%Y-%m-%d-%H%M").replace(tzinfo=committed.tzinfo)
         except ValueError:
+            unknown.append(p.name)
             continue
         delta = (when - committed).total_seconds()
         if abs(delta) > window_seconds:
@@ -3836,7 +3841,7 @@ def check_dreams(dw: Path, rep: Report) -> None:
         rep.add(
             WARN,
             "dreams/",
-            f"examined {len(names)} dream(s); {len(unknown)} timestamp(s) UNKNOWN because no introducing commit was found: {unknown[:3]}",
+            f"examined {len(names)} dream(s); {len(unknown)} timestamp(s) UNKNOWN because no valid introducing-commit comparison was available: {unknown[:3]}",
         )
     else:
         legacy_note = f"; {len(legacy)} known legacy mismatch retained: {legacy}" if legacy else ""
