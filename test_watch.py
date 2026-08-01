@@ -6373,6 +6373,66 @@ class TestTasksRoute(unittest.TestCase):
             projected["state"], "unknown",
             "task #999's unrecognised repository state did not fail closed")
 
+    def test_missing_detail_is_distinct_from_an_empty_task(self):
+        status, body = self._request("/tasksdata?t=9999")
+        self.assertEqual(status, 200)
+        payload = json.loads(body)
+        self.assertEqual(payload["health"], "ok")
+        self.assertIsNone(payload["task"],
+                          "a missing id must be explicit, never an empty record")
+
+    def test_task_reference_client_uses_one_context_aware_resolver(self):
+        src = watch.COMPONENTS_JS
+        self.assertIn("function resolveTaskRefs(root)", src)
+        self.assertIn("createTreeWalker(root, 4", src)
+        self.assertIn("parent.closest(TASK_REF_SKIP)", src)
+        self.assertIn("'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]'", src)
+        self.assertIn("!parent.closest('.md')", src)
+        self.assertNotIn("innerHTML.replace(/#", src)
+        self.assertIn("a.href = '/tasks?t=' + part.id", src)
+        self.assertIn("win.fetch('/tasksdata?t='", src)
+        self.assertIn("observeTaskRefs(frame.contentDocument, true)", src)
+
+        # Drive the production parser/emitter with a tiny DOM, including the
+        # three contexts a rendered-HTML regex cannot distinguish.
+        script = textwrap.dedent("""\
+            const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]';
+            const TASK_REF_RE = /(^|[^\\w])#(\\d+)\\b/g;
+            %s
+            %s
+            const doc = {
+              createDocumentFragment() { return {kids:[], appendChild(n){this.kids.push(n)}}; },
+              createTextNode(text) { return {kind:'text', text}; },
+              createElement() { return {kind:'a', dataset:{}, setAttribute(){}}; }
+            };
+            const node = (text, skipped) => ({
+              nodeValue:text, ownerDocument:doc,
+              parentElement:{closest(selector){
+                if (selector === TASK_REF_SKIP) return skipped ? {} : null;
+                return selector === '.md' ? {} : null;
+              }},
+              replaceWith(frag){this.result=frag.kids}
+            });
+            const prose=node('see #229 now', false), code=node('#229', true), link=node('#229', true);
+            linkTaskRefText(prose); linkTaskRefText(code); linkTaskRefText(link);
+            if (!prose.result || prose.result[1].href !== '/tasks?t=229') process.exit(11);
+            if (code.result || link.result) process.exit(12);
+            if (prose.result.map(x => x.text || x.textContent).join('') !== 'see #229 now') process.exit(13);
+        """) % (_extract_js_fn(src, "function taskRefParts("),
+                   _extract_js_fn(src, "function linkTaskRefText("))
+        subprocess.check_call(["node", "-e", script])
+
+    def test_task_reference_states_and_origin_fail_closed(self):
+        src = watch.COMPONENTS_JS
+        for state in ("No such task", "Task data unavailable", "Stale task data"):
+            self.assertIn(state, src)
+        self.assertIn("['human', 'loop', 'unknown'].includes(task.origin)", src)
+        self.assertIn(": 'unknown'", src)
+        self.assertIn("prefers-reduced-motion:reduce", src)
+        self.assertIn("Math.min(r.left, vw - p.width - 8)", src)
+        self.assertIn("e.key === 'Escape'", src)
+        self.assertIn("(pointer:coarse)", src)
+
 
 class TestGoalsRoute(unittest.TestCase):
     """#890: /goals is one denominator-bearing repository projection."""

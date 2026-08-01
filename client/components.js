@@ -522,6 +522,203 @@ function mdRender(text, inline, options = {}) {
     b.kind === 'table' ? mdTable(b)
                     : `<p>${renderInline(b.text)}</p>`).join('');
 }
+
+/* #282 — task references are resolved from DOM context, never by rewriting
+   rendered HTML.  A TreeWalker can see the ancestry a regex sweep cannot:
+   code, pre, existing links, scripts and the preview UI are rejected before
+   a text node is parsed.  The same resolver is installed in the app document
+   and same-origin review iframes, so Markdown and review HTML cannot drift. */
+const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]';
+const TASK_REF_RE = /(^|[^\w])#(\d+)\b/g;
+const TASK_REF_CACHE_MS = 60 * 1000;
+const taskRefCache = new Map();
+
+function taskRefParts(text) {
+  const out = [];
+  let last = 0, match;
+  TASK_REF_RE.lastIndex = 0;
+  while ((match = TASK_REF_RE.exec(text)) !== null) {
+    const hashAt = match.index + match[1].length;
+    if (hashAt > last) out.push({ text: text.slice(last, hashAt) });
+    out.push({ id: Number(match[2]), text: '#' + match[2] });
+    last = hashAt + match[2].length + 1;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
+function taskRefModel(task, stale) {
+  if (!task) return { kind: 'missing', title: 'No such task', stale: false };
+  const origin = ['human', 'loop', 'unknown'].includes(task.origin)
+    ? task.origin : 'unknown';
+  const body = String(task.body || '').replace(/\s+/g, ' ').trim();
+  return {
+    kind: 'task', stale: !!stale, id: task.id,
+    title: task.title || 'Untitled task', date: task.date || 'date unknown',
+    origin, state: task.state || 'unknown', priority: task.priority || null,
+    type: task.type || null, owner: task.owner || null,
+    dependencies: Array.isArray(task.dependencies) ? task.dependencies : [],
+    description: body.length > 240 ? body.slice(0, 237).trimEnd() + '…' : body,
+  };
+}
+
+function taskRefPanel(doc) {
+  let panel = doc.getElementById('task-ref-preview');
+  if (panel) return panel;
+  const style = doc.createElement('style');
+  style.dataset.taskRefUi = 'style';
+  style.textContent = `
+    .taskref{color:var(--accent,#7c8cff);text-decoration:underline;
+      text-decoration-style:dotted;text-underline-offset:.18em}
+    .taskref:focus-visible{outline:2px solid var(--accent,#7c8cff);outline-offset:3px}
+    .taskpreview{position:fixed;z-index:2147483647;width:min(360px,calc(100vw - 24px));
+      box-sizing:border-box;padding:14px 15px;border:1px solid rgba(140,150,190,.45);
+      border-radius:12px;background:#171923;color:#f4f5fa;box-shadow:0 16px 50px #0008;
+      font:13px/1.45 system-ui,sans-serif;opacity:0;transform:translateY(4px);
+      pointer-events:none;transition:opacity 140ms ease,transform 140ms ease}
+    .taskpreview.open{opacity:1;transform:none}.taskpreview .tp-title{font-weight:700;font-size:14px}
+    .taskpreview .tp-meta{color:#b8bece;margin-top:4px}.taskpreview .tp-body{margin-top:8px}
+    .taskpreview .tp-state{color:#ffd27a;margin-bottom:5px}
+    @media(prefers-reduced-motion:reduce){.taskpreview{transition:none;transform:none}}
+  `;
+  (doc.head || doc.documentElement).appendChild(style);
+  panel = doc.createElement('div');
+  panel.id = 'task-ref-preview';
+  panel.className = 'taskpreview';
+  panel.dataset.taskRefUi = 'panel';
+  panel.setAttribute('role', 'tooltip');
+  panel.setAttribute('aria-live', 'polite');
+  panel.hidden = true;
+  doc.body.appendChild(panel);
+  return panel;
+}
+
+function paintTaskRef(panel, model) {
+  panel.replaceChildren();
+  const add = (cls, text) => {
+    if (!text) return;
+    const node = panel.ownerDocument.createElement('div');
+    node.className = cls; node.textContent = text; panel.appendChild(node);
+  };
+  if (model.kind === 'loading') return add('tp-state', 'Loading task…');
+  if (model.kind === 'missing') return add('tp-state', 'No such task — this reference has no task data.');
+  if (model.kind === 'unavailable') return add('tp-state', 'Task data unavailable — try again.');
+  if (model.stale) add('tp-state', 'Stale task data — refresh failed.');
+  add('tp-title', `#${model.id} — ${model.title}`);
+  add('tp-meta', `${model.date} · origin ${model.origin} · ${model.state}`);
+  const useful = [model.priority, model.type, model.owner && `owner ${model.owner}`,
+    model.dependencies.length && `blocked on ${model.dependencies.map(n => '#' + n).join(', ')}`]
+    .filter(Boolean).join(' · ');
+  add('tp-meta', useful);
+  add('tp-body', model.description || 'No description recorded.');
+}
+
+function positionTaskRef(panel, anchor) {
+  panel.style.left = '0px'; panel.style.top = '0px'; panel.hidden = false;
+  const r = anchor.getBoundingClientRect(), p = panel.getBoundingClientRect();
+  const vw = panel.ownerDocument.documentElement.clientWidth;
+  const vh = panel.ownerDocument.documentElement.clientHeight;
+  const left = Math.max(8, Math.min(r.left, vw - p.width - 8));
+  let top = r.bottom + 8;
+  if (top + p.height > vh - 8) top = Math.max(8, r.top - p.height - 8);
+  panel.style.left = left + 'px'; panel.style.top = top + 'px';
+}
+
+async function showTaskRef(anchor) {
+  const doc = anchor.ownerDocument, panel = taskRefPanel(doc);
+  const id = Number(anchor.dataset.taskId), cached = taskRefCache.get(id);
+  const fresh = cached && Date.now() - cached.at < TASK_REF_CACHE_MS;
+  paintTaskRef(panel, fresh ? taskRefModel(cached.task, false) : {kind:'loading'});
+  panel.hidden = false; panel.classList.add('open');
+  positionTaskRef(panel, anchor);
+  if (fresh) return;
+  try {
+    const win = doc.defaultView && doc.defaultView.top || window;
+    const res = await win.fetch('/tasksdata?t=' + encodeURIComponent(id));
+    const payload = res.ok ? await res.json() : null;
+    if (!payload || payload.health !== 'ok') throw new Error('task data unhealthy');
+    taskRefCache.set(id, { task: payload.task || null, at: Date.now() });
+    paintTaskRef(panel, taskRefModel(payload.task || null, false));
+  } catch (e) {
+    paintTaskRef(panel, cached
+      ? taskRefModel(cached.task, true) : {kind:'unavailable'});
+  }
+  if (!panel.hidden) positionTaskRef(panel, anchor);
+}
+
+function hideTaskRef(doc) {
+  const panel = doc.getElementById('task-ref-preview');
+  if (!panel) return;
+  panel.classList.remove('open');
+  panel.hidden = true;
+  doc.querySelectorAll('a.taskref[data-touch-ready]').forEach(a =>
+    delete a.dataset.touchReady);
+}
+
+function linkTaskRefText(node) {
+  const parent = node.parentElement;
+  if (!parent || parent.closest(TASK_REF_SKIP)) return;
+  if (!node.ownerDocument.__dwTaskRefReview && !parent.closest('.md')) return;
+  const parts = taskRefParts(node.nodeValue || '');
+  if (!parts.some(part => part.id != null)) return;
+  const frag = node.ownerDocument.createDocumentFragment();
+  for (const part of parts) {
+    if (part.id == null) { frag.appendChild(node.ownerDocument.createTextNode(part.text)); continue; }
+    const a = node.ownerDocument.createElement('a');
+    a.className = 'taskref'; a.href = '/tasks?t=' + part.id;
+    a.dataset.taskId = String(part.id); a.textContent = part.text;
+    a.setAttribute('aria-describedby', 'task-ref-preview');
+    frag.appendChild(a);
+  }
+  node.replaceWith(frag);
+}
+
+function resolveTaskRefs(root) {
+  const doc = root.ownerDocument || root;
+  if (!doc.createTreeWalker) return;
+  const walker = doc.createTreeWalker(root, 4 /* SHOW_TEXT */);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(linkTaskRefText);
+}
+
+function observeTaskRefs(doc, reviewHtml = false) {
+  if (!doc || !doc.body || doc.__dwTaskRefs) return;
+  doc.__dwTaskRefs = true;
+  doc.__dwTaskRefReview = !!reviewHtml;
+  taskRefPanel(doc);
+  resolveTaskRefs(doc.body);
+  const bindFrame = frame => {
+    const load = () => { try { observeTaskRefs(frame.contentDocument, true); } catch (e) {} };
+    frame.addEventListener('load', load); load();
+  };
+  doc.querySelectorAll('iframe').forEach(bindFrame);
+  const observer = new doc.defaultView.MutationObserver(records => records.forEach(rec =>
+    rec.addedNodes.forEach(node => {
+      if (node.nodeType === 3) linkTaskRefText(node);
+      else if (node.nodeType === 1) {
+        if (node.tagName === 'IFRAME') bindFrame(node);
+        resolveTaskRefs(node);
+      }
+    })));
+  observer.observe(doc.body, {childList:true, subtree:true});
+  doc.addEventListener('mouseover', e => { const a = e.target.closest && e.target.closest('a.taskref'); if (a) showTaskRef(a); });
+  doc.addEventListener('mouseout', e => { const a = e.target.closest && e.target.closest('a.taskref'); if (a && !a.contains(e.relatedTarget)) hideTaskRef(doc); });
+  doc.addEventListener('focusin', e => { const a = e.target.closest && e.target.closest('a.taskref'); if (a) showTaskRef(a); });
+  doc.addEventListener('focusout', e => { const a = e.target.closest && e.target.closest('a.taskref'); if (a) hideTaskRef(doc); });
+  doc.addEventListener('keydown', e => { if (e.key === 'Escape') hideTaskRef(doc); });
+  doc.addEventListener('click', e => {
+    const a = e.target.closest && e.target.closest('a.taskref');
+    if (!a || !(doc.defaultView.matchMedia && doc.defaultView.matchMedia('(pointer:coarse)').matches)) return;
+    if (a.dataset.touchReady === '1') return;
+    e.preventDefault(); a.dataset.touchReady = '1'; showTaskRef(a);
+  });
+}
+
+if (document.readyState === 'loading')
+  document.addEventListener('DOMContentLoaded', () => observeTaskRefs(document), {once:true});
+else
+  observeTaskRefs(document);
 /* Inline markdown the loop actually writes: **bold**, *em*, `code`. Bold is
    rendered as LUMINANCE — the page already says "more important" with its
    text ramp, and a mono bold would change metrics to say no more. Order is
