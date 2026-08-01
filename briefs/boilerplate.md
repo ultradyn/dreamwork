@@ -98,7 +98,7 @@ that is a legitimate outcome, not a failure.
   explicitly **no evidence**, not a vacuous proof over zero injections.
   **Use `dev/redproof.py`; it owns the snapshot/restore protocol** (`#683`):
 
-      python3 dev/redproof.py begin <path>     # snapshot the file as-is, arm the entry
+      python3 dev/redproof.py begin <path> --expectation <expectation-source>
       …sabotage it, run your check, watch it go red…
       python3 dev/redproof.py restore <path>   # record the injected content, restore, verify
       python3 dev/redproof.py check --require 1 # mandated hand-off gate — run before you report, quote it
