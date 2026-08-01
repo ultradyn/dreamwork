@@ -5,12 +5,12 @@ context: task #862 · design only
 status: awaiting approval
 headline: Your goal tree already exists in the ledger. It is missing four things.
 tag: design only — no code lands until you approve
-sub: task #862 · 1 August 2026 · eight questions, one recommendation each
+sub: task #862 · 1 August 2026 · nine questions, one recommendation each
 skip: Skip to the questions
 skip_href: #questions
 -->
 <!--#nav-->
-<a class="full" href="#store">store</a><a href="#tick">tick</a><a href="#panel">panel</a><a href="#questions">questions</a>
+<a class="full" href="#store">store</a><a href="#tick">tick</a><a href="#panel">panel</a><a href="#prior">#95</a><a href="#questions">questions</a>
 <!--#lead-->
 <p class="lead">You asked for a current goal shown every tick, editable by you, completable
 only after subagents <em>fail</em> to refute it — and then for a tree of them, with blocked
@@ -25,7 +25,7 @@ happens — the design stays design-only, no migration runs, no route is added, 
 <code>#862</code> stays open. This is the same gate <code>#691</code> is sitting behind.</p>
 <div id="ask" class="ask-block">
   <div class="label">What approval decides</div>
-  <p class="ask-q">Eight questions, each with a recommendation, at the foot of this page.
+  <p class="ask-q">Nine questions, each with a recommendation, at the foot of this page.
   The three that change the shape rather than the detail: <strong>Q1</strong> does the goal
   tree <em>replace</em> the session goal; <strong>Q2</strong> does one refuter's refusal sink
   a completion, or does the panel vote; <strong>Q3</strong> when the panel cannot run at all,
@@ -83,7 +83,7 @@ failing closed when the panel cannot run.</div>
     <tr><th>already in the store</th><th>what it gives the goal tree</th></tr>
     <tr><td><code>task_group_kind</code> (FK lookup, seeds <code>lane epic milestone feature batch</code>)</td><td>one <code>INSERT</code> adds <code>goal</code>. No CHECK to rewrite — v005 removed the inline one for this reason</td></tr>
     <tr><td><code>task_group.parent_id</code> (adjacency, cycles refused at write time)</td><td>the tree. Depth is data; a subgoal is a child row</td></tr>
-    <tr><td><code>task_group_member</code></td><td>binds tasks to a leaf goal — the join where his hours meet the loop's minutes</td></tr>
+    <tr><td><code>task_group_member</code></td><td>binds tasks to a leaf goal — the join where your hours meet the loop's minutes</td></tr>
     <tr><td><code>task_group_dependency</code> (at least one group endpoint)</td><td>"this branch is blocked on that one", as an edge rather than prose</td></tr>
     <tr><td><code>GroupRepository.blockers()</code></td><td>every unmet prerequisite of a node <em>including inherited ones</em> — a subgoal inherits its parent's blocks free</td></tr>
     <tr><td><code>GroupRepository.ready_tasks()</code></td><td>open subtree tasks with nothing unmet. This is the branch-switching primitive, already written</td></tr>
@@ -125,7 +125,7 @@ CREATE TABLE goal_verdict (
 -- 3. Which goal is current. A pointer, not a column, so exactly one row can
 --    hold it and a stale second `current` is unrepresentable.
 INSERT INTO meta (key, value) VALUES ('current_goal_id', '');</code></pre>
-  <p>The <strong>details</strong> he edits are <code>task_group.description</code>, which
+  <p>The <strong>details</strong> you edit are <code>task_group.description</code>, which
   exists, is <code>TEXT NOT NULL DEFAULT ''</code>, and is empty on every current row. Adding
   a parallel <code>details</code> column would be a second body for one thing.</p>
   <div class="notice"><strong>What this does not do:</strong> it does not touch the 730 task
@@ -302,7 +302,7 @@ def emits_wake(kind, target):
     <code>redproof.py check</code> quoted, is any test hollow by this repo's three documented
     shapes (born hollow, become hollow, green red-run)? Catches a criterion that is met on
     paper by a check that could never fail.</div>
-    <div class="check"><strong>L3 · use</strong> — <em>does it actually work for him?</em>
+    <div class="check"><strong>L3 · use</strong> — <em>does it actually work for you?</em>
     Runs the thing on the real path: opens the route, invokes the verb, reads the pixels.
     Catches a feature that satisfies every criterion and is unusable.</div>
   </div>
@@ -489,8 +489,32 @@ def emits_wake(kind, target):
   </div>
 </section>
 
+<section id="prior" aria-labelledby="prior-t">
+  <div class="label" id="prior-t">This reopens two of #95's three decided recommendations</div>
+  <p class="read">You already ruled on goal hierarchies. <code>#95</code> was
+  <strong>decided 2026-07-25</strong>, all three recommendations taken, the skill side built
+  at <code>d2eeb69</code>. Silently contradicting it would be the worse failure here, so each
+  reversal is named with what changed since — and one of the three is not a reversal at
+  all.</p>
+  <div class="scroller">
+  <table>
+    <tr><th>#95 decided</th><th>this design</th><th>what changed</th></tr>
+    <tr><td><strong>D1</strong> session goals <em>don't</em> persist — <em>"a session goal that outlives its session was a durable sub-goal all along"</em></td><td class="unknown">reversed — goals persist in the store</td><td>#95's argument against durability was <em>"it accretes noise"</em>, aimed at its rejected alternative, an append-only session log. <strong>There was no store in July</strong>; #294 landed after. A queryable table with states does not accrete — a finished goal is <code>complete</code>, not a line you scroll past. And your leaf at 2–12 hours outlives many sessions by construction, since a session here ends at compaction, not at a wall clock</td></tr>
+    <tr><td><strong>D2</strong> selection <em>states</em> the chain but does not enforce branch focus — <em>"add preference weights only if drift actually shows up"</em></td><td class="unknown">reopened — blocked branches now steer selection</td><td><strong>You are the drift showing up.</strong> #95 named the trigger and left the door open (<em>"cheaper to add later than to unpick"</em>); your request — <em>"mark a branch as blocked on something, and transition over to other branches when blocked"</em> — is that trigger, in your words</td></tr>
+    <tr><td><strong>D3</strong> task <code>parent</code> is free text matching a DREAMWORK.md heading</td><td class="pass">kept</td><td>not a reversal. D3's argument against ids was specifically that they <em>"add an id space to a file you edit by hand"</em> — goal node ids live in the store, not in DREAMWORK.md, which keeps its free-text headings and its dangling-name check unchanged</td></tr>
+  </table>
+  </div>
+  <div class="notice"><strong>The character argument from D2 survives, and this design is
+  built to keep it.</strong> #95 rejected enforcement partly because it <em>"fights the
+  loop's character: the free-flowing 'potter productively' quality comes partly from being
+  allowed to pick up the adjacent thing."</em> So what lands here is <strong>not</strong> a
+  filter that forbids off-branch work. <code>ready_tasks</code> <em>names candidates</em>; it
+  excludes nothing. The only thing that actually steers is <strong>blocked-ness</strong> —
+  the loop leaves a branch it cannot progress. Pottering is untouched.</div>
+</section>
+
 <section id="questions" aria-labelledby="q-t">
-  <div class="label" id="q-t">The eight open questions</div>
+  <div class="label" id="q-t">The nine open questions</div>
   <p class="read">Each carries a recommendation. Ruling on none of them is the same as
   ruling on none of the page — nothing gets built either way.</p>
   <div class="choice"><b>Q1 · Does the goal tree replace the session goal?</b>
@@ -524,13 +548,17 @@ def emits_wake(kind, target):
   <span class="answer"><b>rec: yes.</b> It is one <code>QUIET_KINDS</code> membership test
   before the posture read. Your requirement was unconditional, and the ruled batched class is
   conditional on a posture you have not set.</span></div>
+  <div class="choice"><b>Q9 · Does blocked-ness reopen #95's D2?</b>
+  <span class="answer"><b>rec: yes, narrowly.</b> #95 deferred branch focus until drift
+  proved real and your request is that drift. But only <em>blocked-ness</em> steers — nothing
+  forbids off-branch work, so the pottering character D2 protected is intact.</span></div>
 </section>
 
 <section id="next" aria-labelledby="n-t">
   <div class="label" id="n-t">What approval means, and what it does not</div>
   <div class="approval">Approving accepts the storage decision, the tick-line budget, the
   quiet delivery class, the leaf band, the three-lens panel and its two divergences from grok,
-  and the eight recommendations you do not overrule. It <strong>does not</strong> authorise a
+  and the nine recommendations you do not overrule. It <strong>does not</strong> authorise a
   migration, a route, a client view, or a panel run — the first increment under this id is
   <code>v007_goals</code> plus its red-first fixtures, each naming the production line that
   must change for it to fail. This branch contains <strong>no implementation</strong>: one
