@@ -14,6 +14,7 @@ a shared directory, which is the hazard this file exists to close.
 """
 import importlib.machinery
 import importlib.util
+import hashlib
 import os
 import subprocess
 import sys
@@ -181,7 +182,8 @@ class TestScratchDir:
         assert ls.lane_identity(env={ls.IDENTITY_ENV: "a" * 32}) != \
             ls.lane_identity(env={ls.IDENTITY_ENV: "b" * 32})
         assert a != b, f"distinct launches share scratch: {a}"
-        expected_a_segment = f"lane-{'a' * 32}-{ls._digest('a' * 32)}"
+        independent_digest = hashlib.sha1(("a" * 32).encode()).hexdigest()[:12]
+        expected_a_segment = f"lane-{'a' * 32}-{independent_digest}"
         assert expected_a_segment in a.parts  # independently derived layout
 
     def test_absent_launch_identity_preserves_the_legacy_path(

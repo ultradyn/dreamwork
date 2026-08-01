@@ -14,6 +14,7 @@ Restore discipline while writing these (#349/#652): snapshots live in
 """
 import importlib.machinery
 import importlib.util
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -87,9 +88,9 @@ def test_two_lane_registries_in_one_worktree_restore_their_own_bytes(
 
     assert lane_a != lane_b  # non-zero denominator: two actual identities
     assert registry_a != registry_b
-    expected_a = (rp._ls.SCRATCH_ROOT / rp._ls.repo_key(repo) /
-                  rp._ls.lane_key(repo) /
-                  f"lane-{lane_a}-{rp._ls._digest(lane_a)}" /
+    independent_digest = hashlib.sha1(lane_a.encode()).hexdigest()[:12]
+    expected_a = (rp._ls.SCRATCH_ROOT / "repo" / "master" /
+                  f"lane-{lane_a}-{independent_digest}" /
                   rp.SUB / "registry.json")
     assert registry_a == expected_a  # actual registry location, independent layout
 
