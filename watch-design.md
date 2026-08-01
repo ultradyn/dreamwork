@@ -4266,6 +4266,14 @@ mirrored from JS because CSS cannot set it. Both the row and the menu render
 from `COMMANDS` at whatever length it has — plugin kinds (#86) appear with no
 redesign, which is the whole point of the shape.
 
+**Outline means “this acts”; fill means “this reveals”.** This is control
+vocabulary, not a one-off menu treatment: an action button promises an act,
+while a disclosure opens a surface that was already there. Disclosure fills
+use a surface token (`--panel` or `--panel2`), never `--accent`; the accent is
+reserved for live or actionable state. The command menu trigger is the first
+explicit application: a surface-filled, unstroked control whose dots share the
+button row's centreline and sit at its hard-right edge with breathing room.
+
 **The menu grows LEFT from the ⋯, and the page never scrolls sideways (#312).**
 The ⋯ sits at the right end of the kinds row, so the menu is anchored to its
 RIGHT edge (`right:0`) and opens leftward into the room the composer already

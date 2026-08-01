@@ -1879,12 +1879,15 @@
      is discoverable rather than hidden knowledge. Rendered from COMMANDS at
      any length, so plugin-contributed kinds (#86) just appear. */
   .cmdpick { display:flex; align-items:flex-start; gap:.1rem; }
-  .cmdmore { position:relative; display:inline-flex; align-items:center; }
-  .cmdmorebtn { background:none; border:1px solid transparent; font:inherit;
-    color:var(--dimmer); padding:.28rem .5rem; cursor:pointer; line-height:1;
+  .cmdmore { position:relative; display:inline-flex; align-items:center;
+    margin:.3rem 0 0 auto; }
+  .cmdmorebtn { display:inline-flex; align-items:center; justify-content:center;
+    box-sizing:border-box; width:1.5rem; height:1.75rem;
+    background:var(--panel2); border:0; font:inherit;
+    color:var(--dimmer); padding:0; cursor:pointer; line-height:1;
     border-radius:var(--radius); transition:color .3s ease; }
   .cmdmore:hover .cmdmorebtn, .cmdmore:focus-within .cmdmorebtn {
-    color:var(--accent); }
+    color:var(--muted); }
   /* no gap between icon and menu: the pointer must be able to travel from one
      to the other without ever leaving .cmdmore, or the menu closes en route.
      The menu is anchored to the ⋯'s RIGHT edge and grows left, because the ⋯
