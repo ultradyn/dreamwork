@@ -161,10 +161,24 @@ def test_each_reviewed_anchor_line_contains_the_named_evidence():
         ("watch.py", 1360, "serving_cached"),
         ("watch.py", 3553, "skill_identity"),
         ("watch.py", 6087, "_handle_posture"),
+        # increment 3 continued — 9 anchors added by review of the previous
+        # session's bulk apply: 2 wrong-referent corrections (reload-signal
+        # citations point at route handlers, not the functions they call),
+        # 3 ledger_write.py:190→38 (note_task moved during refactor), and
+        # 4 refusal resolutions by prose reading.
+        ("watch.py", 5205, "data.json"),
+        ("watch.py", 5235, "mtime"),
+        ("ledger_write.py", 38, "note_task"),
+        ("watch.py", 2485, "parse_open_answers"),
+        ("watch.py", 5312, "reviewraw"),
+        ("watch.py", 5199, "parsed.path"),
+        ("watch.py", 5574, "_handle_comment"),
+        ("client/router.js", 1638, "reconciliation"),
+        ("client/router.js", 1750, "morphdom"),
     ]
-    # Precondition: the anchor list grew by exactly 36 in increment 3.
+    # Precondition: the anchor list grew by exactly 45 across increments 2+3.
     # A literal count would rot; this asserts the size the check depends on.
-    assert len(anchors) == 64, f"expected 64 anchors (28 i2 + 36 i3), got {len(anchors)}"
+    assert len(anchors) == 73, f"expected 73 anchors (28 i2 + 45 i3), got {len(anchors)}"
     missing = [
         f"{path}:{line} lacks {symbol}"
         for path, line, symbol in anchors
@@ -203,9 +217,14 @@ def test_a_wrong_referent_passes_the_token_check(tmp_path: Path):
         "    data = read_bytes(full)  # wrong referent, token present\n"
     )
     assert cited_line_contains_symbol(tmp_path, "watch.py", 1, "_send_bytes")
-    # read_bytes appears as a CALL on this line — the token check passes even
+    # read_bytes appears as a CALL on line 2 — the token check passes even
     # though the citation's referent is the DEFINITION at a different line.
     # This is the open gap: review is the only defence, and this test says so.
+    assert cited_line_contains_symbol(tmp_path, "watch.py", 2, "read_bytes"), (
+        "false-green: read_bytes is a CALL on line 2, not the definition; "
+        "the token check passes because the substring is present, not because "
+        "the line IS the referent the prose intended (#651)"
+    )
 
 
 def test_shipped_render_plan_is_explicitly_historical():
