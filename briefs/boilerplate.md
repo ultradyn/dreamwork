@@ -259,6 +259,12 @@ WARNs because those artifacts do not travel. To inspect live data with the WORKT
 use `python3 lint.py --target /home/xertrov/.llm-general/skills/ud-dreamwork`; a stale interpreter
 need not reproduce current output.
 
+Materialise a baseline interpreter at a real file path beside the checkout's `SKILL.md` (for
+example, write `git show master:lint.py` to a temporary file beside `lint.py`), run it there, then
+remove it. Never use process substitution (`python3 <(git show master:lint.py)`): that makes
+`__file__` a detached `/dev/fd/...` path with no repo anchor, so lint must refuse instead of
+producing a false zero-row baseline.
+
 When a brief asks for real-path parity, freeze the subject (a read-only backup, copied fixture,
 or pinned revision) and pin the baseline interpreter revision; vary only the intended interpreter
 change. Report raw live readings as context, not as the proof. Otherwise concurrent movement can

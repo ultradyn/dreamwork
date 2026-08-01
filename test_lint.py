@@ -1355,6 +1355,33 @@ class TestOtherFiles:
 
 
 class TestExitCodes:
+    def test_detached_interpreter_refuses_and_names_its_root(self, tmp_path):
+        detached = tmp_path / "detached"
+        detached.mkdir()
+        script = detached / "lint.py"
+        script.write_bytes(Path(lint.__file__).read_bytes())
+        assert not (detached / "SKILL.md").exists()
+
+        proc = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=Path(lint.__file__).resolve().parent,
+            text=True,
+            capture_output=True,
+        )
+
+        assert proc.returncode == 2
+        assert (
+            f"lint: refusing detached corpus root {detached.resolve()} — "
+            "expected SKILL.md beside lint.py"
+        ) in proc.stderr
+
+    def test_empty_target_with_real_interpreter_is_not_detached(self, tmp_path, capsys):
+        anchor = Path(lint.__file__).resolve().with_name("SKILL.md")
+        assert anchor.is_file()
+
+        assert lint.main(["--target", str(target(tmp_path))]) == 0
+        assert "refusing detached corpus root" not in capsys.readouterr().err
+
     def test_clean_target_exits_zero(self, tmp_path, capsys):
         t = target(tmp_path, **{"questions.md": GOOD})
         assert lint.main(["--target", str(t)]) == 0

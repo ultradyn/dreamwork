@@ -39,6 +39,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+SKILL_DIR = Path(__file__).resolve().parent
+SKILL_ANCHOR = SKILL_DIR / "SKILL.md"
+if not SKILL_ANCHOR.is_file():
+    print(
+        f"lint: refusing detached corpus root {SKILL_DIR} — expected SKILL.md "
+        "beside lint.py; invoke a real checkout path, not process substitution",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
 # #331: the ids-only bold span has ONE definition, in watch.py. We import it
 # here rather than restating it, so this reader cannot drift from the parser's.
 # `check_ledger_sections` already did `import watch` at function scope; this
@@ -52,8 +62,6 @@ from dreamwork_db.question_parse import ResolutionKind, classify_resolution_mark
 # them was edited.
 import client_dist
 from settings import SETTINGS, validate_registry
-
-SKILL_DIR = Path(__file__).resolve().parent
 
 ERROR, WARN, OK = "ERROR", "WARN", "OK"
 
