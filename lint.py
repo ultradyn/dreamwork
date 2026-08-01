@@ -4043,6 +4043,13 @@ def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
         return
 
     target = dw.parent.resolve()
+    main_root = _main_checkout_for(target)
+    if main_root is None:
+        rep.add(ERROR, WORKTREE_DRAIN_STATE,
+                f"cannot resolve git common dir for {target}; refusing to turn "
+                "a wrong path into a permanent green")
+        return
+    old_root = main_root / ".worktrees"
     prior = _prior_drain_state(target, state)
     if prior is not None:
         prior_allowed = prior.get("allowed_worktrees")
@@ -4057,10 +4064,13 @@ def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
             return
         if (not set(state["allowed_worktrees"]).issubset(prior_allowed)
                 or state["high_water_count"] > prior_count):
+            added = sorted(set(state["allowed_worktrees"]) - set(prior_allowed))
+            paths = ", ".join(str(old_root / name) for name in added) or "<none>"
             rep.add(ERROR, WORKTREE_DRAIN_STATE,
-                    f"ratchet state increased from prior committed count "
-                    f"{prior_count} to {state['high_water_count']}; names/count "
-                    "may only be removed/lowered, and zero is absorbing")
+                    f"ratchet state increased at {old_root} from prior committed "
+                    f"count {prior_count} to {state['high_water_count']}; newly "
+                    f"allowed path(s): {paths}; names/count may only be "
+                    "removed/lowered, and zero is absorbing")
             return
         if prior_present is False and state["root_present"]:
             rep.add(ERROR, WORKTREE_DRAIN_STATE,
@@ -4074,13 +4084,6 @@ def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
                     f"{state['last_observed_size_bytes']} bytes; size may only "
                     "shrink")
             return
-    main_root = _main_checkout_for(target)
-    if main_root is None:
-        rep.add(ERROR, WORKTREE_DRAIN_STATE,
-                f"cannot resolve git common dir for {target}; refusing to turn "
-                "a wrong path into a permanent green")
-        return
-    old_root = main_root / ".worktrees"
     actual_present = old_root.exists()
     if actual_present != state["root_present"]:
         if actual_present:
