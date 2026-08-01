@@ -53,12 +53,33 @@ def _run(repo: Path, record: Path, env: dict[str, str]) -> subprocess.CompletedP
 
 
 def test_gate_coverage_names_the_full_suite_complement():
+    # This assertion is a PROSE PIN on land_lane._gate_coverage_line, and #949
+    # necessarily reworded it: the gate now runs tests derived from the diff, so
+    # the sentence naming what coverage the reader did NOT get had to say so.
+    #
+    # WHY THIS TEST IS WORTH THE BUMP COST, and it earned it the day it was
+    # rewritten: it is the ONLY thing standing between a reworded coverage claim
+    # and a reader who trusts it. #948 is the whole family — "4 of 4 declared
+    # gates passed" reads as completeness — and a line that describes coverage
+    # is exactly where a true statement becomes a stronger claim than it
+    # supports. Pinning the prose is the point, not an accident of the fixture.
+    #
+    # HOW IT WAS REACHED, recorded because it is #949's own blind spot. This
+    # test lives in test_suite_baseline.py, NOT in test_land_lane.py. #949's
+    # derivation rule is `foo.py` -> `test_foo.py`, so a change to
+    # dev/land_lane.py derives test_land_lane.py and CANNOT reach this file.
+    # The gate caught the break only because the coordinator grepped for what
+    # references land_lane and named this file by hand. The convention finds
+    # tests NAMED FOR a module; it cannot find tests that merely IMPORT it —
+    # which is the same shape of gap #948 was filed about, one step out.
+    # #953 owns closing it.
     passed = list(land_lane.GATES)
     assert land_lane._gate_coverage_line(passed) == (
         "gate-coverage: 4 of 4 declared gates passed: named-tests "
         "guard-selection repo-wide-guards lint-comparison; full repo suite "
-        "NOT RUN (test coverage was limited to lane-named tests plus "
-        "changed-file-derived repo-wide guards)"
+        "NOT RUN (test coverage was limited to lane-named tests, the tests "
+        "derived from the changed files by `foo.py`->`test_foo.py`, and the "
+        "repo-wide guards)"
     )
 
 

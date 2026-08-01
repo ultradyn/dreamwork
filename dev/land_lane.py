@@ -23,8 +23,9 @@ reads ``git log`` — so they run where HEAD *is* the merge commit, and
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
@@ -49,8 +50,180 @@ def _gate_coverage_line(passed: Sequence[str]) -> str:
     return (
         f"gate-coverage: {len(passed)} of {len(GATES)} declared gates passed: "
         f"{' '.join(passed)}; full repo suite NOT RUN "
-        "(test coverage was limited to lane-named tests plus "
-        "changed-file-derived repo-wide guards)"
+        "(test coverage was limited to lane-named tests, the tests derived from "
+        "the changed files by `foo.py`->`test_foo.py`, and the repo-wide guards)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# The gate classifies its own diff, once, here.
+#
+# It used to demand a red-proof injection (#949) and trust a hand-written test
+# selection (#948) without ever asking what the branch changed. Both demands
+# are DERIVED below, from the diff — never from a flag the coordinator passes,
+# which would be a bypass with extra steps.
+#
+# WHAT COUNTS AS INERT DOCUMENTATION, and why it is a narrow allowlist rather
+# than a suffix test: a `.md` in this repo is frequently a program.
+# `briefs/frame.md` is concatenated into every dispatched lane's prompt, so a
+# change to it changes the whole loop's behaviour; `SKILL.md`, `watch-design.md`
+# and `file-formats.md` are read by `lint.py`. None of those live under
+# `.dreamwork/`, so none of them are reachable by this rule. What does live
+# there is the loop's record OF ITSELF — analyses, plans, archived briefs, lane
+# reports, review evidence — plus a handful of files the loop's own tools
+# PARSE, which are named out below because a red-proof genuinely can bind them.
+#
+# ACCEPTED COST, stated rather than hidden: `.dreamwork/docs/*.md` holds
+# re-runnable census blocks that a lane is told to extract and run, so editing
+# one changes what a future lane executes while owing no injection here. That
+# is deliberate — there is no check to turn red, so demanding a red-proof would
+# force exactly the false-green #932 forbids. The other gates still run on the
+# merged tree; what the exemption removes is the demand for a LANE-AUTHORED
+# red-proof, not the gating itself.
+INERT_DOC_ROOT = ".dreamwork/"
+
+EXECUTABLE_DOCS = frozenset({
+    ".dreamwork/tasks.md",          # dev/ledger.py store; lint.py reads it
+    ".dreamwork/lessons.md",        # dev/lessons_index.py parses its heads
+    ".dreamwork/answers.md",        # dev/ledger.py
+    ".dreamwork/questions.md",      # dev/ledger.py, dev/check_watch_citations.py
+    ".dreamwork/handoffs.md",       # dev/brief.py, dev/check_watch_citations.py
+    ".dreamwork/applied.md",        # dev/journal_consume.py, dev/expedite_hook.py
+    ".dreamwork/docs/doc-map.md",   # lint.py check_doc_map_plans parses its rows
+})
+
+
+def _is_inert_doc(path: str) -> bool:
+    """True when no behavioural red-proof could bind this path.
+
+    Deliberately conservative in one direction only: anything this function
+    cannot place confidently is NOT inert, so the injection is still required.
+    """
+    return (
+        path.endswith(".md")
+        and path.startswith(INERT_DOC_ROOT)
+        and path not in EXECUTABLE_DOCS
+    )
+
+
+def _derived_test(path: str) -> str | None:
+    """This repo's test convention: ``foo.py`` → ``test_foo.py`` at the root.
+
+    A changed test file is its own required test. Non-Python paths derive
+    nothing — see ``_derived_tests_line`` for what that silence costs.
+    """
+    name = PurePosixPath(path)
+    if name.suffix != ".py":
+        return None
+    if name.name.startswith("test_"):
+        return name.name
+    return f"test_{name.stem}.py"
+
+
+def _named_files(tests: Sequence[str]) -> frozenset[str]:
+    """The files the named selection runs IN FULL.
+
+    A node id (``test_lint.py::TestOne``) runs part of a file, so it does NOT
+    count as naming it: #936's eleven failures spanned five classes, and a gate
+    satisfied by any one of them would have passed over the other ten. Adding
+    the whole file alongside the node id re-collects that class once, which is
+    much the cheaper of the two errors.
+    """
+    return frozenset(
+        PurePosixPath(selector).name for selector in tests if "::" not in selector
+    )
+
+
+@dataclass(frozen=True)
+class Diff:
+    """What the branch changed, and what that makes the gate demand of it."""
+
+    changed: tuple[str, ...]
+    inert: tuple[str, ...]
+    binding: tuple[str, ...]
+    tests: tuple[str, ...]
+
+    @property
+    def required_injections(self) -> int:
+        # An EMPTY diff is not an exemption: `changed` must be non-empty for
+        # the documentation rule to have examined anything at all (#868).
+        return 0 if self.changed and not self.binding else 1
+
+
+def _classify_diff(repo: Path, base_sha: str, branch_sha: str) -> Diff | None:
+    """Every path ``base_sha..branch_sha`` adds, changes or deletes.
+
+    ``--no-renames`` on purpose: a rename reported as one post-image name can
+    show a `.md` while hiding the `.py` it came from. Split as delete+add, both
+    sides are classified. Returns ``None`` when git could not answer — a diff
+    the gate cannot read is a refusal, never an exemption.
+    """
+    result = _git(repo, "diff", "--name-only", "--no-renames", "-z", base_sha, branch_sha)
+    if result.returncode:
+        _relay(result)
+        return None
+    changed = tuple(sorted(set(p for p in result.stdout.split("\0") if p)))
+    inert = tuple(p for p in changed if _is_inert_doc(p))
+    binding = tuple(p for p in changed if not _is_inert_doc(p))
+    tests = tuple(sorted(set(t for t in (_derived_test(p) for p in changed) if t)))
+    return Diff(changed=changed, inert=inert, binding=binding, tests=tests)
+
+
+def _requirement_line(diff: Diff) -> str:
+    """Why this branch owes the number of injections it owes.
+
+    Three facts that must not collapse into one (#868): *nothing was required*,
+    *nothing was found*, and *the registry could not be read*. This line owns
+    the first; ``dev/redproof.py`` owns the other two, and the refusal below
+    says which of them it is holding.
+    """
+    if diff.required_injections == 0:
+        return (
+            "red-proof requirement: 0 injections REQUIRED — all "
+            f"{len(diff.changed)} changed path(s) are inert documentation under "
+            f"{INERT_DOC_ROOT} (#932: an increment that built no check must not "
+            "manufacture a false-green): " + " ".join(diff.inert)
+        )
+    if not diff.changed:
+        return (
+            "red-proof requirement: 1 injection required — the diff is EMPTY, "
+            "and examining no path is not a documentation exemption"
+        )
+    return (
+        f"red-proof requirement: 1 injection required — {len(diff.binding)} of "
+        f"{len(diff.changed)} changed path(s) are NOT inert documentation, so a "
+        "behavioural red-proof could bind them: " + " ".join(diff.binding)
+    )
+
+
+def _derived_tests_line(diff: Diff, existing: Sequence[str], unnamed: Sequence[str]) -> str:
+    """What the convention derived, and — the #948 failure mode — what it did not.
+
+    "derived 0 required tests" is exactly how #936 hid: eleven failures sat on
+    master for two hours because ``lint.py`` changed and ``test_lint.py`` was
+    never named. So a zero here says WHY it is zero and what the branch's
+    coverage then rests on, rather than reading like a satisfied requirement.
+    """
+    reach = (
+        "this convention reaches root-level `test_<stem>.py` only: a changed "
+        "`client/*.js`, or a file whose tests live in a differently-named "
+        "module, derives NOTHING and is not covered by this line"
+    )
+    if not existing:
+        return (
+            f"derived-tests: 0 required tests from {len(diff.changed)} changed "
+            f"path(s) — {len(diff.tests)} name(s) derived, 0 present in the merged "
+            f"tree. This is NOT coverage: the branch rests entirely on the named "
+            f"selection. {reach}"
+        )
+    added = (
+        "all were already named"
+        if not unnamed
+        else f"{len(unnamed)} were NOT named and have been ADDED: " + " ".join(unnamed)
+    )
+    return (
+        f"derived-tests: {len(existing)} required test(s) from "
+        f"{len(diff.changed)} changed path(s): {' '.join(existing)}; {added}. {reach}"
     )
 
 
@@ -338,6 +511,24 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
             base_state=_base_state(repo, base, base_sha),
         )
 
+    diff = _classify_diff(repo, base_sha, branch_sha)
+    if diff is None:
+        return _refuse(
+            "diff-classification",
+            "could not read the branch diff, so neither the red-proof requirement "
+            "nor the required tests could be derived from it",
+            f"base={base_sha}; branch={branch_sha}",
+            retained,
+            base_state=_base_state(repo, base, base_sha),
+        )
+    print(
+        f"diff-classification: {len(diff.changed)} changed path(s); "
+        f"{len(diff.inert)} inert documentation; "
+        f"{len(diff.binding)} that a red-proof could bind"
+    )
+    print(_requirement_line(diff))
+    required = diff.required_injections
+
     redproof_env = os.environ.copy()
     redproof_env.pop("DREAMWORK_LANE_ID", None)
     redproof_env["DREAMWORK_LANE_ROLE"] = "author"
@@ -351,7 +542,7 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
             "--base",
             base_sha,
             "--require",
-            "1",
+            str(required),
         ],
         repo,
         env=redproof_env,
@@ -361,13 +552,27 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
     audited_branch_sha = _git_text(repo, "rev-parse", "--verify", f"refs/heads/{branch}")
     population = (
         f"commits examined={commits_examined}; registries audited=ALL DISCOVERABLE "
-        "by dev/redproof.py (zero is not accepted); injections registered>=1 required; "
+        f"by dev/redproof.py (zero is not accepted); injections registered>="
+        f"{required} required; {_requirement_line(diff)}; "
         f"audited tip={audited_lane_head or 'UNREADABLE'}"
     )
     if redproof.returncode:
+        # A FAULT stays a refusal at --require 0 — the exemption is about what
+        # was OWED, never about whether the audit could run. But #940: say
+        # which of the two this is, because a doc-only branch that owed nothing
+        # and a branch hiding an armed injection print the same exit code.
+        note = ""
+        if required == 0 and redproof.returncode == 2:
+            note = (
+                "; NOTE this FAULT is NOT the --require rule: 0 injections were "
+                "owed, and dev/redproof.py faults independently of --require when "
+                "it can locate no registry for this worktree. That fault is #949's "
+                "unfixed second half and lives in dev/redproof.py, not here"
+            )
         return _refuse(
             "red-proof-history",
-            f"dev/redproof.py check refused or faulted with exit {redproof.returncode}",
+            f"dev/redproof.py check refused or faulted with exit {redproof.returncode}"
+            + note,
             population,
             retained,
             base_state=_base_state(repo, base, base_sha),
@@ -448,13 +653,30 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
 
     passed: list[str] = []
 
-    named = _run(["just", "pytest", *tests], repo)
+    # #948: the named selection is the coordinator's guess, made when they are
+    # most eager to land. Three ways to use the derivation were weighed (IGC):
+    # REPORT the omission, REFUSE on it, or RUN it. REPORT is refuted — this
+    # gate already printed a true line saying the full suite had not run, and
+    # that line was read past while eleven test_lint.py failures sat on master
+    # for two hours after #936. REFUSE is refuted by cost: it spends a whole
+    # landing cycle to arrive at the test run it could simply have performed.
+    # So the derived tests are RUN, and the omission is reported alongside.
+    # Accepted cost: a branch touching `foo.py` is now blocked when
+    # `test_foo.py` is red for a reason the branch did not cause — which is
+    # #936's complaint, not a regression against it.
+    existing = tuple(t for t in diff.tests if (repo / t).is_file())
+    unnamed = tuple(t for t in existing if t not in _named_files(tests))
+    print(_derived_tests_line(diff, existing, unnamed))
+    selection = (*tests, *unnamed)
+
+    named = _run(["just", "pytest", *selection], repo)
     _relay(named)
     if named.returncode:
         return refuse_gated(
             "named-tests",
             f"named test selection failed with exit {named.returncode}",
-            f"merge={merged_sha}; tests={list(tests)!r}",
+            f"merge={merged_sha}; tests={list(tests)!r}; "
+            f"derived-and-added={list(unnamed)!r}",
         )
     passed.append("named-tests")
 
