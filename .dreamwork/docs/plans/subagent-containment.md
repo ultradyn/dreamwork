@@ -189,7 +189,7 @@ applies to the dashboard after a subagent touches it:
    older than the file on disk, whatever the file says.
 
 `#442`'s `GENERATION` idea and `#426`'s `skill_identity()` (the
-`{commit, skill_version}` pair at `watch.py:9051`) are the **existing
+`{commit, skill_version}` pair at `watch.py:3553`) are the **existing
 vocabulary** for these invariants. This design reuses them rather than
 inventing new signals: the invariant is *GENERATION ≥ snapshot mtime AND
 snapshot bytes == HEAD bytes*, sampled on a schedule, with a violation meaning

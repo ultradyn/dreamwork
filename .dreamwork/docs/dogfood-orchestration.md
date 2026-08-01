@@ -454,7 +454,7 @@ told the agent it was allowed to refute my premise, and **both did**:
   incomplete, say so plainly; that is a valuable result". It concluded exactly
   that — `Range` does not fix the filed bug, because an `<img>` GET carries no
   `Range` header, so streaming is the real fix and ranges are a separate second
-  capability. Verified: `read_bytes` at `watch.py:6752` is a bare `f.read()`.
+  capability. Verified: `read_bytes` at `watch.py:909` is a bare `f.read()`.
 - `#382`'s brief handed over my race hypothesis as *"the hypothesis to test"*
   rather than as fact. It was **wrong**, and the agent found the real cause.
 
@@ -493,7 +493,7 @@ the failure mode `justfile` already has a pre-flight comment about; and concurre
 mitigation for. Files are the obvious shared resource and the least dangerous one.
 
 **6. Delegation moves the labour, not the responsibility.** I still had to read
-`watch.py:6752` myself to confirm lane C's claim, and to check whether `draft.mjs`
+`watch.py:909` myself to confirm lane C's claim, and to check whether `draft.mjs`
 and `subslog.mjs` were hollow or merely mis-noted — they were mis-noted, which is a
 smaller finding than it first looked and only checking told me so. A coordinator who
 accepts reports is not coordinating, it is forwarding.

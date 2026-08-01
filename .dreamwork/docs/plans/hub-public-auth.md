@@ -525,7 +525,7 @@ writes nothing outside `~/.config/dreamwork/hub/`, and it has **no `do_POST`**.
 Exposing the *hub* behind auth carries only the data-leak risk this plan's §2
 inventories. `watch.py` is the other surface: it carries six human-authorised
 write routes (`WRITE_ROUTE_HANDLERS`, dispatched from `do_POST` at
-`watch.py:11651`) — `/answer`, `/ask`, `/comment`, `/command`, `/tint`,
+`watch.py:6077`) — `/answer`, `/ask`, `/comment`, `/command`, `/tint`,
 `/run-mode` — and every one of them appends to a durable file the loop reads
 back and acts on. **`/command` with `do-now` is remote steering of an
 autonomous coding agent**, and `/run-mode` changes how hard it runs.
@@ -552,7 +552,7 @@ Host+Origin check, and a human ruling — none of which this task authorises.
 ### 11.2 Q5 — may a redacted `/summary.json` ship before any public serve? → **yes, and it is the blocker**
 
 This plan's C2 says `/data.json` leaks full documents. **Verified against the
-live `collect()` (`watch.py:10756`)**, the payload is worse than "full
+live `collect()` (`watch.py:3797`)**, the payload is worse than "full
 documents": it is the loop's whole operating state, including the operator's
 unfinished thinking. The fields, classified by sensitivity:
 

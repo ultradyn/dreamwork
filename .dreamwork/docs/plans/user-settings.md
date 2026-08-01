@@ -86,7 +86,7 @@ boundary as the journal)"*; confirmed by #264's finding that every
 load-bearing store is machine-local per clone). It is WAL + `synchronous=FULL`
 (`ledger_store.py:344`–`352`), with a `meta` table holding
 `schema_version` and a forward-only migration ladder
-(`_MIGRATIONS`, `ledger_store.py:449`). **SQLite has no native jsonb type**
+(`MIGRATIONS`, `dreamwork_db/migrate.py:28`). **SQLite has no native jsonb type**
 — "jsonb" in his sketch means **TEXT + JSON validation in code** (Python's
 `json.loads` on read, and `CHECK` or app-level validation on write). A
 second sqlite store — `.dreamwork/user-events.sqlite3` — already lives
@@ -110,17 +110,17 @@ The doc says this plainly.
 
 Everything in `collect()` rides one invalidation signal: `watched_mtime`
 walks all of `.dreamwork/` (respecting `WATCHED_MTIME_IGNORED`,
-`watch.py:13859`), and the client polls `/mtime`, so any file under
+`watch.py:4164`), and the client polls `/mtime`, so any file under
 `.dreamwork/` that changes reaches every open dashboard on the next tick
-with **no new channel** (`watch.py:13688`–`13744`). Writes go through
-`WRITE_ROUTE_HANDLERS` (`watch.py:15460`) — a single dispatch table that
+with **no new channel** (`watch.py:6077`). Writes go through
+`WRITE_ROUTE_HANDLERS` (`watch.py:6077`) — a single dispatch table that
 E2 derives its route coverage from, where the journal commit/receipt
 (E2Shadow) runs before dispatch. The simplest precedent is
 `watch-tint`/`run-mode`/`posture`: a gitignored `.dreamwork/` file, a
 `read_X`/`write_X` pair with closed-set validation and silent-fallback
 on a bad value, one field in `collect()`, and one write route
-(`read_tint`/`write_tint` `watch.py:13903`; `resolve_posture`/`write_posture`
-`watch.py:14011`; `_handle_posture` `watch.py:15246`). A settings seam is
+(`read_tint`/`write_tint` `watch.py:4264`; `resolve_posture`/`write_posture`
+`watch.py:4394`; `_handle_posture` `watch.py:5863`). A settings seam is
 the same shape, generalised to N keys through a registry.
 
 ## The IGC — store shape, metadata location, posture relationship
@@ -304,16 +304,16 @@ overlaying them on the registry defaults — the amr-ui
 registry key. It rides the existing `/mtime` poll: `watched_mtime` walks
 all of `.dreamwork/`, so a settings write (which lands in the sqlite
 store under `.dreamwork/`) invalidates the cache and reaches open pages
-on the next tick with **no new channel** (`watch.py:13688`). No separate
+on the next tick with **no new channel** (`watch.py:6077`). No separate
 cache/mtime mechanism — the `#560` finding applies: the store files live
 under `.dreamwork/`, which `watched_mtime` walks, so there is no second
 cache.
 
 **Write.** A new `/settings` entry in `WRITE_ROUTE_HANDLERS`
-(`watch.py:15460`) — the single dispatch table, so E2's "every write route
+(`watch.py:6077`) — the single dispatch table, so E2's "every write route
 commits a receipt" coverage test picks it up for free. The journal
 commit/receipt (E2Shadow) runs before dispatch as it does for every write
-route (`watch.py:14936`); idempotency per `#274` (identical final →
+route (`watch.py:6077`); idempotency per `#274` (identical final →
 200/no-event, the ceremony posture already uses). Validation: the
 handler rejects an unknown key or an out-of-set value
 (`domain_invalid`), the same closed-set discipline posture uses. One
@@ -459,12 +459,12 @@ which line could be red.
 - **Factual claims checked:** amr-ui registry/store
   (`src/lib/settings.ts:62`–`90`, `:648`–`770`, `:828`; `SettingsPage.tsx`);
   ledger store SQLite+machine-local+gitignored C1+`_MIGRATIONS`
-  (`ledger_store.py:31`, `:344`–`352`, `:449`; `.gitignore` C1); co-resident
+  (`ledger_store.py:31`, `:344`–`352`; `dreamwork_db/migrate.py:28`; `.gitignore` C1); co-resident
   `user-events.sqlite3` (`user_events/sqlite.py:1`); the `/mtime`/`collect()`
-  seam (`watch.py:13688`–`13744`, `watched_mtime` `:13859`–`13900`);
-  write-route table + E2Shadow (`watch.py:14936`, `WRITE_ROUTE_HANDLERS`
-  `:15460`); tint/posture read-write precedent (`:13903`, `:14011`,
-  `:15246`); #228 server-side-persistence ruling
+  seam (`watch.py:6077`, `watched_mtime` `:4207`);
+  write-route table + E2Shadow (`watch.py:6077`, `WRITE_ROUTE_HANDLERS`
+  `:6077`); tint/posture read-write precedent (`:4264`, `:4394`,
+  `:5863`); #228 server-side-persistence ruling
   (`tasks.md.deprecated:2404`, `:2413`); #295 gfx-section→#228 routing
   (`questions.md:2092`, `:2107`); #570 un-persisted manual size
   (`handoffs.md`).

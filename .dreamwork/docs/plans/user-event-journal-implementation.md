@@ -143,11 +143,11 @@ that §"Red-first, per increment" states rather than assumes.
 
 ### `log_submission()` — the one existing witness, and it is best-effort by construction
 
-- `watch.py:8066` — `def log_submission(target, path, body, nbytes, truncated=False)`.
-- `watch.py:8389` — the single call site, in `do_POST`, before dispatch.
-- `watch.py:8128-8129` — `except OSError: pass`. This is #262's whole bug: the
+- `watch.py:4721` — `def log_submission(target, path, body, nbytes, truncated=False)`.
+- `watch.py:5380` — the single call site, in `do_POST`, before dispatch.
+- `watch.py:5380` — `except OSError: pass`. This is #262's whole bug: the
   witness can fail silently and the request is still dispatched and acknowledged.
-- `watch.py:8387` — `body = self.rfile.read(min(nbytes, MAX_BODY))`, and:
+- `watch.py:4639` — `body = self.rfile.read(min(nbytes, MAX_BODY))`, and:
 
 ```
 $ git grep -n 'len(body)\|len(self._body)' -- watch.py
@@ -176,13 +176,13 @@ assertions (`git grep -n 'submissions' -- test_watch.py` → lines 199, 209,
 
 ### `_handle_command` and the six write routes — no task state, no `202`
 
-- `watch.py:8398-8411` — six POST routes: `/answer`, `/ask`, `/comment`,
+- `watch.py:5380` — six POST routes: `/answer`, `/ask`, `/comment`,
   `/command`, `/tint`, `/run-mode`.
-- `watch.py:8505` — `_handle_command` validates `kind`, validates non-empty
+- `watch.py:5672` — `_handle_command` validates `kind`, validates non-empty
   `text` for everything but `do-next`, calls `log_event(...)`, returns `{"ok": true}`.
   **No task state is mutated at HTTP time**, which is #264's F3(a) and this
   measurement independently agrees with it.
-- `watch.py:8231-8233` — `_send` hardcodes `self.send_response(200)`.
+- `watch.py:5081` — `_send` hardcodes `self.send_response(200)`.
 
 ```
 $ git grep -n '202' -- watch.py
@@ -234,7 +234,7 @@ than a flag.
 
 ### `DomainFileStore` — the durable half exists, the lock and lineage halves do not
 
-- `watch.py:7423` — `atomic_write_text(path, text)`: temp in the same
+- `watch.py:2561` — `atomic_write_text(path, text)`: temp in the same
   directory, `fsync` the file, `os.replace`, best-effort parent-directory
   `fsync`. **This is law 3's durable-replace clause, already written.**
 - The lock clause has nothing:
@@ -244,19 +244,19 @@ $ git grep -c -E 'import fcntl|fcntl\.flock|O_EXCL' -- watch.py
 (exit 1 — zero hits)
 ```
 
-- `watch.py:8026` — `ANSWER_LOCK = threading.Lock()`, used at `8430`, `8453`,
+- `watch.py:4603` — `ANSWER_LOCK = threading.Lock()`, used at `8430`, `8453`,
   `8486`. **In-process only.** Two `watch.py` processes on one target serialise
   against nothing, which is the second half of #262.
 - And the writes are not even atomic:
 
 ```
 $ git grep -n 'open(qpath, "w"' -- watch.py
-watch.py:8462     # _handle_answer
-watch.py:8496     # _handle_comment
+watch.py:5533     # _handle_answer
+watch.py:5574     # _handle_comment
 ```
 
 `/answer` and `/comment` **truncate `questions.md` in place** — no temp, no
-rename, no `fsync` — while `/ask` (`watch.py:8433`) uses `atomic_write_text`.
+rename, no `fsync` — while `/ask` (`watch.py:2561`) uses `atomic_write_text`.
 A crash between truncate and write loses the whole file, on the two paths that
 carry his answers. This is pre-existing, it is not #263's to fix inside a plan,
 and it is the strongest single argument for scheduling lane C early. **Reported,
@@ -445,7 +445,7 @@ the bug, deleting one proves nothing — defence-in-depth and a discriminating r
 in direct tension**, and a plan written before the code cannot see which layer will
 end up carrying the property.
 *Must not fake:* **threads are not processes.** The existing code's only mutual
-exclusion is a `threading.Lock` (`watch.py:8026`), and a threaded version of
+exclusion is a `threading.Lock` (`watch.py:4603`), and a threaded version of
 this test passes with no database constraint at all — which is precisely #262's
 bug reproduced as a green test.
 
@@ -486,7 +486,7 @@ asserts the file is byte-identical to its pre-state and the temp file is gone or
 ignorable.
 *Red line:* the `os.replace(tmp, path)` ordering — specifically, replacing the
 temp-then-rename with a direct `open(path, "w")` (which is what
-`watch.py:8462` does today) must make this test fail.
+`watch.py:5533` does today) must make this test fail.
 *Must not fake:* an end-state-only assertion cannot fail on a crash-window bug.
 Kill the child, and snapshot the pre-state bytes *before* the run so the
 comparison is against a captured value.
@@ -596,7 +596,7 @@ red line in this plan (after `B1`'s pragma, `B7`'s `UNIQUE`, row 15's predicate)
 The real load-bearing line is the gate that *uses* `short` to skip receipt:
 `if short: self.send_error(400); return` in `do_POST`. Deleting that gate alone
 fails `test_an_interrupted_body_creates_no_receipt` (`1 != 0`, a receipt
-appears), verified by the lane. The plan measurement (`watch.py:8387`) and the
+appears), verified by the lane. The plan measurement (`watch.py:5380`) and the
 "does not exist today" claim were both true at measurement time and are stale
 now; `file-formats.md` already documents the `short`+`got` marker, so no
 `file-formats.md` change is needed for E1.
@@ -649,7 +649,7 @@ code, not a synchronous `400`. Unknown paths stay pre-receipt `404/405`.
 *Test:* `test_malformed_json_is_202_then_durably_rejected` and
 `test_an_unknown_post_path_is_404_and_creates_no_receipt` — the pair is the
 point; either alone is passable by a wrong implementation.
-*Red line:* the `self.send_error(400)` removal in `_read_json` (`watch.py:8354`)
+*Red line:* the `self.send_error(400)` removal in `_read_json` (`watch.py:5366`)
 — reinstating it must fail the first test and leave the second green.
 
 **25 · `E6 visible`.** `shadow_failed` on the dashboard, reusing the
@@ -986,7 +986,7 @@ This plan contradicts none of them, and two are load-bearing here:
   file, two tables. This plan takes no position on whether that name is right
   once tasks share the file; it only avoids making a second file inevitable.
 - **Zero task state is mutated at HTTP time** (its F3(a)). Independently
-  re-measured above at `watch.py:8505`. So increment 22's `202` promises
+  re-measured above at `watch.py:5672`. So increment 22's `202` promises
   reception only, and no increment in this plan needs to make a task change
   inside a request — which is what keeps the cutover small.
 
@@ -1027,17 +1027,17 @@ This plan contradicts none of them, and two are load-bearing here:
 
 ### Found while measuring, out of scope, reported not fixed
 
-- **`/answer` and `/comment` truncate `questions.md` in place** (`watch.py:8462`,
-  `8496`) — no temp, no rename, no `fsync`, while `/ask` next to them uses
+- **`/answer` and `/comment` truncate `questions.md` in place** (`watch.py:5533`,
+  `watch.py:5574`) — no temp, no rename, no `fsync`, while `/ask` next to them uses
   `atomic_write_text`. A crash mid-write loses the file, on the two routes that
   carry his answers. Wants its own task; lane C would subsume it, but lane C is
   a long way off and this is one function call.
-- **No short-read check in `do_POST`** (`watch.py:8387`, M22) — an interrupted
+- **No short-read check in `do_POST`** (`watch.py:5380`, M22) — an interrupted
   body is witnessed as complete. Increment 20 fixes it; worth its own id in case
   lane E is deferred.
 - **`log_submission` has zero direct unit tests** — the most durability-critical
   function in the file is covered only end-to-end.
-- **`_send` cannot express a status code** (`watch.py:8231`) — a small structural
+- **`_send` cannot express a status code** (`watch.py:5081`) — a small structural
   gap that any future non-200 write response hits.
 
 ---

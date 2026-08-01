@@ -51,7 +51,7 @@ happen, because the open-restore already prefers to miss.
 
 A scenario I specifically looked for and ruled out: a human re-asks the
 same question on the same day, and the loop treats the two as intentionally
-distinct threads. `append_human_question` (watch.py:6524) builds the title
+distinct threads. `append_human_question` (watch.py:2667) builds the title
 as `{stamp} — {first-sentence}` with `stamp = %Y-%m-%d`, so a same-day,
 same-text re-ask is the one realistic producer of an Open exact-content
 twin. Even in that case, the two entries render identical titles and
@@ -76,7 +76,7 @@ Every answered entry has a distinct title (each carries a distinct date and
 topic), a distinct body, and a distinct resolution stamp. There are no
 exact-content twins in the real file today.
 
-What the code does today when it meets twins (read at watch.py:6403–6490):
+What the code does today when it meets twins (read at watch.py:2485):
 
 - `parse_open_answers` keys the twin by `(title.strip(), body.strip())`.
 - `parse_answered_answers` keys the twin by `(title, when, body, follows)`,

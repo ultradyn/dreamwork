@@ -82,12 +82,12 @@ axes today, and the discipline that guards them is uniform:
   steers, never gates (WARN on nonsense, never on fleet size).
 - **`watch.py` imports those sets, never restates them.** `_posture_vocab()`
   (`watch.py:397`) lazily imports `lint`'s closed sets; `parse_posture_text`
-  (`watch.py:12967`) keeps only axes whose values are in the stops;
-  `resolve_posture` (`watch.py:13009`) overlays a present file on the
-  run-mode derivation; `write_posture` (`watch.py:13040`) writes the triple
+  (`watch.py:4313`) keeps only axes whose values are in the stops;
+  `resolve_posture` (`watch.py:4394`) overlays a present file on the
+  run-mode derivation; `write_posture` (`watch.py:4437`) writes the triple
   `pace: …\nasking: …\ndelegation: …\n`. The route is one entry,
-  `"/posture": _handle_posture` (`watch.py:14170`), behind the shared 10s arm,
-  emitting one `posture via watch: …` line (`posture_line`, `watch.py:13061`)
+  `"/posture": _handle_posture` (`watch.py:6087`), behind the shared 10s arm,
+  emitting one `posture via watch: …` line (`posture_line`, `watch.py:4505`)
   only on a real change.
 
 **A fourth axis `autonomy` is therefore an additive row through every one of
@@ -278,7 +278,7 @@ cursor drains it on the next tick), and `autonomy` never relaxes the chain.
 
 **A fourth axis `autonomy` in `.dreamwork/posture`**, closed set
 `off | maintenance | full`, absent → `off` → today. It reuses `POST /posture`
-(`watch.py:14170`), the shared 10s arm, and the one-`posture via watch`-line
+(`watch.py:6087`), the shared 10s arm, and the one-`posture via watch`-line
 ceremony — *not* a second route, *not* a sibling file. The sibling-vs-widen
 choice was already ruled for the other axes (#445: widen `posture`, reject a
 sibling), and the same arguments carry: a widening keeps one control surface
@@ -294,11 +294,11 @@ the same four touches `delivery` will take, in the same shape —
   axis-generic at `lint.py:2386-2398`); `derive_posture` (`lint.py:2276`) and
   `RUN_MODE_TO_POSTURE` (`lint.py:2269`) derive `autonomy: "off"` for every
   run-mode.
-- **`watch.py`** — `parse_posture_text` (`watch.py:12967`),
-  `read_posture_file`, `resolve_posture` (`watch.py:13009`),
-  `write_posture` (`watch.py:13040`) gain the axis; `write_posture` writes the
-  fourth line; `posture_line` (`watch.py:13061`) emits `autonomy=…`;
-  `_handle_posture` (`watch.py:14066`) validates against the imported closed
+- **`watch.py`** — `parse_posture_text` (`watch.py:4313`),
+  `read_posture_file`, `resolve_posture` (`watch.py:4394`),
+  `write_posture` (`watch.py:4437`) gain the axis; `write_posture` writes the
+  fourth line; `posture_line` (`watch.py:4505`) emits `autonomy=…`;
+  `_handle_posture` (`watch.py:5863`) validates against the imported closed
   set; the dashboard picker (`posturePicker`, `watch.py:3733`; controls at
   `watch.py:5558`) gains one control.
 - **`file-formats.md` §1124** — the posture section gains the fourth axis:
@@ -423,7 +423,7 @@ red.
   four-axis body; assert `.dreamwork/posture` holds all four lines and the
   events line carries `autonomy=…`. **Red:** drop the axis from `write_posture`
   and watch the file lose the line / the event omit it. (Production line:
-  `write_posture` at `watch.py:13040` and `posture_line` at `watch.py:13061`.)
+  `write_posture` at `watch.py:4437` and `posture_line` at `watch.py:4505`.)
 
 ---
 

@@ -45,7 +45,7 @@ survive as the *sole* fix for the 1GB buffer.
 
 ### Body production and send path
 
-`/filebytes` is handled in `do_GET` at `watch.py:9032-9046`. It resolves the
+`/filebytes` is handled in `do_GET` at `watch.py:5190`. It resolves the
 path, branches on `detect_file_kind`, and calls `_send_bytes`:
 
 ```
@@ -57,20 +57,20 @@ else:
     self._send_bytes(full, rel, inline=True)
 ```
 
-`_send_bytes` (`watch.py:8957-8984`):
+`_send_bytes` (`watch.py:5139`):
 
 1. `data = read_bytes(full)` at **:8968** — **entire file into one `bytes` object**.
 2. `send_response(200)` plus headers from the **length of that object** (`:8971-8983`).
 3. `self.wfile.write(data)` at **:8984** — one write of the whole buffer.
 
-`read_bytes` (`watch.py:7107-7117`):
+`read_bytes` (`watch.py:909`):
 
 ```python
 with open(path, "rb") as f:
     return f.read()   # no limit; deliberate, commented at :7108-7112
 ```
 
-Contrast `read_text` (`watch.py:7099-7104`): `f.read(limit)` with default
+Contrast `read_text` (`watch.py:804`): `f.read(limit)` with default
 `limit=200_000` characters. That idiom is for **text** that can be truncated
 honestly; the comment on `read_bytes` correctly refuses to transfer it.
 
@@ -91,7 +91,7 @@ not). The response is not chunked: `Content-Length` is set to `len(data)`
 before any write, so the handler already knows the size from the buffer, not
 from `stat`.
 
-`detect_file_kind` (`watch.py:7167-7186`) only reads **32 bytes** of head for
+`detect_file_kind` (`watch.py:974`) only reads **32 bytes** of head for
 magic, then closes. That path is fine; it is not the leak.
 
 ### Client paths that hit `/filebytes`
@@ -115,7 +115,7 @@ file.**
 ### Confinement — the claim is true, and here is the check
 
 Every file-serving route is supposed to go through `resolve_confined`
-(`watch.py:8737-8749`):
+(`watch.py:4606`):
 
 ```python
 def resolve_confined(target, rel):
@@ -165,7 +165,7 @@ not appear; the few `Range` hits are JS selection / scroll helpers, not HTTP).
 Inherited from #336 / `watch-design.md` (file view image and binary surfaces):
 
 - Inline MIME comes only from `INLINE_IMAGE_EXTS` / `_INLINE_IMAGE_MIME`
-  (`watch.py:7140-7144`) and matching magic — **never** from the client.
+  (`watch.py:947`) and matching magic — **never** from the client.
 - SVG/HTML/scriptable types stay out of the inline allowlist.
 - Non-inline is always `application/octet-stream` + `attachment` + `nosniff`.
 - `safe_attachment_filename` (`:7205-7215`) keeps `filename=` ASCII-safe.
@@ -278,7 +278,7 @@ After confinement + kind + headers:
 - reimplemented as a generator / left as a test-only footgun that production
   stops calling.
 
-**Client disconnect:** `_expected_disconnect` already exists (`watch.py:8898-8905`)
+**Client disconnect:** `_expected_disconnect` already exists (`watch.py:4860`)
 and `Handler.handle` already quiets pipe errors for the whole request
 (`:8912-8925`, #299). Streaming large bodies makes mid-stream navigations more
 visible; the existing wrapper should already cover `wfile.write` raises. Confirm
@@ -341,7 +341,7 @@ not `Accept-Ranges`.
 
 ### Cache-Control revisit (parked question from the ledger)
 
-Today: `private, max-age=0, must-revalidate` (`watch.py:8982`).
+Today: `private, max-age=0, must-revalidate` (`watch.py:5139`).
 
 | directive | why it was chosen | still right? |
 |---|---|---|
@@ -545,7 +545,7 @@ read as an oversight. Measured so nobody has to guess:
 ### What is there today
 
 ```python
-# watch.py:9047-9059
+# watch.py:5312 (the /reviewraw handler)
 name = parse_qs … p
 full = resolve_confined(target, os.path.join(".dreamwork", "review", name))
     if name and "/" not in name else None
@@ -675,7 +675,7 @@ or shipping any header behaviour.
 --- SUMMARY ---
 
 - **Primary fix is streaming, not Range.** A 1GB file is held today as one
-  full `bytes` from `read_bytes` (`watch.py:7107-7117`) inside `_send_bytes`
+  full `bytes` from `read_bytes` (`watch.py:909`) inside `_send_bytes`
   (`:8968-8984`). The common client is `<img src="/filebytes…">`
   (`buildFile` `:2939-2956`) with **no `Range` header**, so Range alone leaves
   that path buffering the whole file. The ledger recommendation is incomplete

@@ -88,7 +88,13 @@ def test_the_two_live_plans_have_no_past_eof_citations():
 
 
 def test_each_reviewed_anchor_line_contains_the_named_evidence():
+    """Every citation re-anchored by increments 2+3: the target line must
+    contain the named token.  This is necessary but NOT sufficient — it
+    proves the line holds the symbol, not that the symbol is the prose's
+    referent.  The wrong-referent defence is human review, named honestly
+    in test_a_wrong_referent_passes_the_token_check."""
     anchors = [
+        # increment 2 — 28 anchors
         ("watch.py", 342, "COMMANDS"),
         ("watch.py", 3683, "track_question_updates"),
         ("watch.py", 3717, "_store_algo"),
@@ -117,13 +123,109 @@ def test_each_reviewed_anchor_line_contains_the_named_evidence():
         ("watch.py", 5834, "_handle_run_mode"),
         ("watch.py", 5863, "_handle_posture"),
         ("watch.py", 6077, "WRITE_ROUTE_HANDLERS"),
+        # increment 3 — 36 anchors (8 rejected proposals corrected by review,
+        # 4 ambiguous refusals disambiguated, 24 accepted tool proposals)
+        ("watch.py", 2667, "append_human_question"),
+        ("watch.py", 909, "read_bytes"),
+        ("watch.py", 5139, "_send_bytes"),
+        ("watch.py", 804, "read_text"),
+        ("watch.py", 974, "detect_file_kind"),
+        ("watch.py", 4606, "resolve_confined"),
+        ("watch.py", 947, "INLINE_IMAGE_EXTS"),
+        ("watch.py", 4860, "_expected_disconnect"),
+        ("watch.py", 5190, "do_GET"),
+        ("watch.py", 5081, "_send"),
+        ("watch.py", 4313, "parse_posture_text"),
+        ("watch.py", 4394, "resolve_posture"),
+        ("watch.py", 4437, "write_posture"),
+        ("watch.py", 4505, "posture_line"),
+        ("watch.py", 5533, "_handle_answer"),
+        ("ledger_parse.py", 66, "ledger_entries"),
+        ("ledger_parse.py", 37, "ENTRY_HEAD"),
+        ("watch.py", 2042, "ledger_series"),
+        ("watch.py", 1619, "_LEDGER_SNAPS"),
+        ("watch.py", 1540, "LEDGER_ENTRY"),
+        ("watch.py", 1570, "LEDGER_COMBINED_MENTION"),
+        ("watch.py", 1623, "parse_ledger"),
+        ("watch.py", 1648, "_open_ids"),
+        ("watch.py", 4721, "log_submission"),
+        ("watch.py", 5380, "do_POST"),
+        ("watch.py", 4639, "MAX_BODY"),
+        ("watch.py", 2561, "atomic_write_text"),
+        ("watch.py", 4603, "ANSWER_LOCK"),
+        ("watch.py", 5366, "_read_json"),
+        ("watch.py", 4164, "WATCHED_MTIME_IGNORED"),
+        ("watch.py", 4264, "write_tint"),
+        ("watch.py", 4207, "watched_mtime"),
+        ("watch.py", 4280, "read_run_mode"),
+        ("watch.py", 1360, "serving_cached"),
+        ("watch.py", 3553, "skill_identity"),
+        ("watch.py", 6087, "_handle_posture"),
+        # increment 3 continued — 9 anchors added by review of the previous
+        # session's bulk apply: 2 wrong-referent corrections (reload-signal
+        # citations point at route handlers, not the functions they call),
+        # 3 ledger_write.py:190→38 (note_task moved during refactor), and
+        # 4 refusal resolutions by prose reading.
+        ("watch.py", 5205, "data.json"),
+        ("watch.py", 5235, "mtime"),
+        ("ledger_write.py", 38, "note_task"),
+        ("watch.py", 2485, "parse_open_answers"),
+        ("watch.py", 5312, "reviewraw"),
+        ("watch.py", 5199, "parsed.path"),
+        ("watch.py", 5574, "_handle_comment"),
+        ("client/router.js", 1638, "reconciliation"),
+        ("client/router.js", 1750, "morphdom"),
+        ("dreamwork_db/migrate.py", 28, "MIGRATIONS"),
     ]
+    # Precondition: the anchor list grew by exactly 46 across increments 2+3.
+    # A literal count would rot; this asserts the size the check depends on.
+    assert len(anchors) == 74, f"expected 74 anchors (28 i2 + 46 i3), got {len(anchors)}"
     missing = [
         f"{path}:{line} lacks {symbol}"
         for path, line, symbol in anchors
         if not cited_line_contains_symbol(Path.cwd(), path, line, symbol)
     ]
     assert missing == []
+
+
+def test_a_wrong_referent_passes_the_token_check(tmp_path: Path):
+    """Direction 2 false-green: cited_line_contains_symbol verifies the token
+    is on the line, NOT that the token is the prose's referent.  A citation
+    whose named symbol exists uniquely elsewhere and whose anchor is the
+    wrong referent still passes — review is the only defence (#651).
+
+    Constructed example: read_bytes is the referent the prose names, but
+    _send_bytes (whose definition line also contains the substring on a
+    nearby line) would pass the token check if mis-paired."""
+    (tmp_path / "watch.py").write_text(
+        "def _send_bytes(self, full, rel, *, inline):\n"
+        "    data = b'chunked'\n"
+        "    self.wfile.write(data)\n"
+        "\n"
+        "def read_bytes(path):\n"
+        "    return Path(path).read_bytes()\n"
+    )
+    # _send_bytes:1 contains the substring "send_bytes" — so a citation
+    # naming read_bytes at line 1 would still pass the TOKEN check.
+    assert cited_line_contains_symbol(tmp_path, "watch.py", 1, "_send_bytes")
+    # But the same line does NOT contain read_bytes — the token check
+    # catches a mis-pair where the anchor line names a DIFFERENT symbol.
+    assert not cited_line_contains_symbol(tmp_path, "watch.py", 1, "read_bytes")
+    # The honest gap: if the wrong-referent line coincidentally contains the
+    # token (e.g. a call to read_bytes inside _send_bytes), the check passes.
+    (tmp_path / "watch.py").write_text(
+        "def _send_bytes(self, full, rel, *, inline):\n"
+        "    data = read_bytes(full)  # wrong referent, token present\n"
+    )
+    assert cited_line_contains_symbol(tmp_path, "watch.py", 1, "_send_bytes")
+    # read_bytes appears as a CALL on line 2 — the token check passes even
+    # though the citation's referent is the DEFINITION at a different line.
+    # This is the open gap: review is the only defence, and this test says so.
+    assert cited_line_contains_symbol(tmp_path, "watch.py", 2, "read_bytes"), (
+        "false-green: read_bytes is a CALL on line 2, not the definition; "
+        "the token check passes because the substring is present, not because "
+        "the line IS the referent the prose intended (#651)"
+    )
 
 
 def test_shipped_render_plan_is_explicitly_historical():

@@ -57,7 +57,7 @@ repo's own documents. It is derivable, and the documents agree:
 - **#264's boundary** (`ledger-sqlite.md` §"Write verbs", `task-transition-
   boundary.md` §"Why a task changes with no user event"): *"one event per task
   **transition**."* `note_task` is explicit precedent — a body edit is **not a
-  transition** and writes **no** `task_event` row (`ledger_write.py:190-220`,
+  transition** and writes **no** `task_event` row (`ledger_write.py:38`),
   `file-formats.md:2218`). So even an "extend" that snapshotted entities at
   first sight would miss every subsequent body edit, priority change, and
   note — the entity mutates *without* the journal ever seeing it.
@@ -206,7 +206,7 @@ tamper-integrity it gives up.**
 
   3. **Full round-trip is UNACHIEVABLE without breaking #264's boundary.**
      An entity mutates without writing a `task_event` row: `note_task`
-     appends to `body` and writes no event (`ledger_write.py:190-220`,
+     appends to `body` and writes no event (`ledger_write.py:38`,
      `file-formats.md:2218`); a priority change, an origin reclassification, a
      `blocked_on` edit are all entity mutations that are not transitions. A
      snapshot at first sight reconstructs the *original* entity, not the
@@ -303,7 +303,7 @@ documents answer that — in his own words, already ruled:
 - **#264's design table**: entity and transitions are both AUTHORITATIVE —
   two facts, not one derived from the other. The journal reproducing the
   entity would be a second truth about a fact that already has a home.
-- **#264's boundary** (`file-formats.md:2218`, `ledger_write.py:190`): a body
+- **#264's boundary** (`file-formats.md:2218`, `ledger_write.py:38`): a body
   edit is not a transition. So "extend for full round-trip" is not a choice
   the human can make real by ruling yes — it is structurally unavailable
   without breaking the boundary.
