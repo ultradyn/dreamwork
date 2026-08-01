@@ -10,10 +10,8 @@ from pathlib import Path
 import pytest
 
 import ledger_store
-from dreamwork_db import Access, StoreSpec
-from dreamwork_db import core as db_core
 from dreamwork_db import SchemaMismatch
-from dreamwork_db.migrate import initialize_legacy_store
+from dreamwork_db.migrations import v006_event_genesis
 
 
 # Frozen independently from schema v1.  The older-schema fixture must never
@@ -80,9 +78,19 @@ def _frozen_v5_chain(path: Path) -> int:
 
 
 def _migrate_v5(path: Path) -> None:
-    spec = StoreSpec(path, initializer=initialize_legacy_store)
-    with db_core.open_database(spec, access=Access.WRITE):
-        pass
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute("BEGIN")
+        v006_event_genesis.upgrade(conn)
+        conn.execute(
+            "UPDATE meta SET value = '6' WHERE key = 'schema_version'"
+        )
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _store(tmp_path: Path) -> tuple[Path, int]:
