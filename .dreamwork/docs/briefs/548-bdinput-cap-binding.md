@@ -12,8 +12,8 @@ const CAP = Number(pre.max);   // the input's own max attribute
 ```
 
 — so the guard is self-consistent at ANY cap value. The production
-literal (`watch.py:3712 @ dc739001` `const BURN_LIMIT_CAP = 256;`, rendered into
-`max=` at watch.py:3931 @ dc739001) is bound by nothing.
+literal (`watch.py:3712 @ e2acedf5` `const BURN_LIMIT_CAP = 256;`, rendered into
+`max=` at watch.py:3931 @ e2acedf5) is bound by nothing.
 
 ## Scope
 
@@ -38,7 +38,7 @@ instead of trusting it:
 ## Hard contracts
 
 - **Red-first, and your red IS the finding's repro**: sabotage
-  `watch.py:3712 @ dc739001` (256→168 — a pre-existing line you did NOT inject),
+  `watch.py:3712 @ e2acedf5` (256→168 — a pre-existing line you did NOT inject),
   run the guard, watch the new binding check FAIL by name. cp-restore
   byte-identical (verify with `cmp`), never `git checkout`. Also prove
   the extraction precondition reds: temporarily rename the constant in

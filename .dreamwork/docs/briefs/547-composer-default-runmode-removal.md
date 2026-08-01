@@ -41,9 +41,9 @@ Bound checks that must move with the change (same commit):
 ## Part 2 — remove the run-mode picker from the dashboard
 
 Max: run mode is superseded by posture (the pace axis covers it; posturePicker is the
-sibling control at watch.py:4101 @ dc739001). Scope:
+sibling control at watch.py:4101 @ 6edcf95b). Scope:
 
-- Remove the `runModePicker(d)` call (watch.py:4100 @ dc739001) and the now-dead picker
+- Remove the `runModePicker(d)` call (watch.py:4100 @ 6edcf95b) and the now-dead picker
   template/JS/CSS (the #290 arm JS ~5363-5400+, the chips description surface :1975 —
   trace what is picker-only vs shared with posturePicker; posturePicker stays).
 - KEEP the `/run-mode` POST route and the `.dreamwork/run-mode` file: other readers exist
