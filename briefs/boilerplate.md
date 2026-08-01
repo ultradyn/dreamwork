@@ -265,6 +265,11 @@ RULES only — not a lane breaking an unrelated feature's behaviour, which is wh
 full merged-tree sweep is for and remains for (`#651`); nothing here makes that sweep optional.
 Adding a member needs the entry criterion argued (see the tool's docstring).
 
+**Client builds.** Touching anything under `client/` requires `just build-client`
+and committing the rebuilt `client/dist` in the same commit. During a rebase,
+never hand-merge `client/dist/manifest.json`: take one side, then rebuild,
+because it contains derived hashes.
+
 **Lane bars are command-, snapshot-, and interpreter-relative.** Run `python3 lint.py`: require
 NO ERRORs and compare the complete WARN row set against the measured baseline, not only the trailer
 count; the rows are indented, so `grep -c '^WARN'` returns a false `0`. A worktree may add
