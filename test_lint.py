@@ -8,6 +8,7 @@ passing on their own bug.
 
 import contextlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -1548,6 +1549,19 @@ class TestWatchTint:
 
 class TestOtherFiles:
 
+    @staticmethod
+    def _committed_dream(tmp_path, stamp, committed_at):
+        root = target(tmp_path, **{f"dreams__{stamp}-a-dream.md": "x"})
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "dream"],
+            cwd=root,
+            env={**os.environ, "GIT_AUTHOR_DATE": committed_at, "GIT_COMMITTER_DATE": committed_at},
+            check=True,
+        )
+        return run(root)
+
     def test_skill_version_naming_a_nonexistent_migration_is_an_error(self, tmp_path):
         rep = run(target(tmp_path, **{"skill-version": "2099-01-01-99-nope.md\n"}))
         assert ERRORS(rep, "skill-version")
@@ -1560,24 +1574,34 @@ class TestOtherFiles:
     def test_misnamed_dream_is_a_warning_only(self, tmp_path):
         rep = run(target(tmp_path, **{"dreams__notes.md": "x"}))
         assert levels(rep, "dreams/") == [lint.WARN]
-        assert not rep.failed
+        assert not ERRORS(rep, "dreams/")
 
-    def test_a_future_stamped_dream_is_an_error(self, tmp_path):
-        # Three different dreamers stamped a dream ahead of the clock on
-        # 2026-07-25, one by 65 minutes. The filename IS the ordering, so a
-        # future stamp sorts wrong permanently — unlike status.json's
-        # last_tick, which is merely wrong until the next write.
-        from datetime import datetime, timedelta
-        ahead = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d-%H%M")
-        rep = run(target(tmp_path, **{f"dreams__{ahead}-a-dream.md": "x"}))
+    def test_the_measured_four_hour_future_stamp_is_an_error(self, tmp_path):
+        rep = self._committed_dream(tmp_path, "2026-08-02-0945", "2026-08-02T05:59:00+10:00")
         assert ERRORS(rep, "dreams/")
-        assert "FUTURE" in next(d for _, w, d in rep.rows if w == "dreams/")
+        detail = next(d for level, where, d in rep.rows if level == lint.ERROR and where == "dreams/")
+        assert "3h 46m in the FUTURE of its introducing commit" in detail
 
-    def test_a_past_stamped_dream_is_fine(self, tmp_path):
-        from datetime import datetime, timedelta
-        past = (datetime.now() - timedelta(hours=2)).strftime("%Y-%m-%d-%H%M")
-        rep = run(target(tmp_path, **{f"dreams__{past}-a-dream.md": "x"}))
+    def test_the_measured_previous_day_utc_stamp_is_an_error(self, tmp_path):
+        rep = self._committed_dream(tmp_path, "2026-08-01-1947", "2026-08-02T05:47:00+10:00")
+        assert ERRORS(rep, "dreams/")
+        detail = next(d for level, where, d in rep.rows if level == lint.ERROR and where == "dreams/")
+        assert "10h 0m in the PAST of its introducing commit" in detail
+
+    def test_a_wrong_stamp_inside_the_two_hour_hole_is_admitted(self, tmp_path):
+        rep = self._committed_dream(tmp_path, "2026-08-02-0430", "2026-08-02T05:59:00+10:00")
         assert levels(rep, "dreams/") == [lint.OK]
+
+    def test_an_uncommitted_dream_is_unknown_not_fine(self, tmp_path):
+        rep = run(target(tmp_path, **{"dreams__2026-08-02-0559-a-dream.md": "x"}))
+        assert levels(rep, "dreams/") == [lint.WARN]
+        assert "1 timestamp(s) UNKNOWN" in next(d for _, w, d in rep.rows if w == "dreams/")
+
+    def test_zero_dreams_is_not_an_all_clear(self, tmp_path):
+        root = target(tmp_path, **{"dreams__.keep": ""})
+        rep = run(root)
+        assert levels(rep, "dreams/") == [lint.WARN]
+        assert "examined 0 dreams" in next(d for _, w, d in rep.rows if w == "dreams/")
 
 
 class TestExitCodes:
