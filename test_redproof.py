@@ -919,3 +919,191 @@ class TestRoleKeyedRegistries:
         assert (author_ev / snap_rel).exists(), (
             "reviewer must be able to read the author's evidence — "
             "a fix that isolates by hiding has broken the review")
+
+
+# ── #877: a restored source whose downstream bundle is stale ──────────
+
+def _build_bundle(root: Path) -> None:
+    """Simulate ``just build-client``: regenerate outputs from inputs, write
+    the manifest. Uses ``client_dist``'s own hash + path functions so the
+    test's idea of a build agrees with the checker's, not a second copy."""
+    import client_dist as _cd
+    inputs = _cd.expected_inputs(str(root))
+    in_hashes = {rel: _cd.sha256_file(str(root / rel)) for rel in inputs}
+    # ds/index.js concatenates the client assets — that is how the real build
+    # works, and it is what makes a source injection reach the bundle.
+    bundle = "".join((root / "client" / n).read_text()
+                     for n in _cd.asset_order(str(root)))
+    (root / "client" / "dist" / "ds" / "index.js").write_text(bundle)
+    (root / "client" / "dist" / "ds" / "styles.css").write_text("// styles\n")
+    (root / "client" / "dist" / "native.js").write_text("// native\n")
+    out_hashes = {rel: _cd.sha256_file(str(root / rel))
+                  for rel in _cd.OUTPUT_RELS}
+    manifest = {"asset_order": _cd.asset_order(str(root)),
+                "inputs": in_hashes, "outputs": out_hashes,
+                "schema": 1, "tool": {"test": "yes"}}
+    with open(str(root / _cd.MANIFEST_REL), "w") as f:
+        json.dump(manifest, f, indent=2)
+
+
+@pytest.fixture
+def bundle_repo(tmp_path: Path, monkeypatch) -> Path:
+    """A git repo with a minimal client/dist build tree for #877 tests.
+
+    Creates just enough for ``client_dist.expected_inputs`` and
+    ``client_dist.check`` to work: ``watch.py`` with ``_CLIENT_ASSETS``, one
+    client asset, one native source, the wrapper, and a committed dist. The
+    ``_client_dist_override`` hook points redproof at the real module so the
+    fixture does not need its own ``client_dist.py``."""
+    import client_dist as _cd
+    monkeypatch.setattr(rp, "_client_dist_override", _cd)
+    root = tmp_path / "bundle"
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "master", ".")
+    (root / "watch.py").write_text('_CLIENT_ASSETS = ("router.js",)\n')
+    (root / "client").mkdir()
+    (root / "client" / "router.js").write_text(
+        "export function route() { return true; }\n")
+    (root / "dev" / "build" / "src").mkdir(parents=True)
+    (root / "dev" / "build" / "src" / "native-entry.js").write_text("// native\n")
+    (root / "dev" / "build" / "wrapper-exports.js").write_text("// wrapper\n")
+    (root / "client" / "dist" / "ds").mkdir(parents=True)
+    _build_bundle(root)
+    # PRECONDITION: the fixture dist starts clean.
+    assert _cd.check(str(root))["state"] == _cd.OK, (
+        "fixture dist is not clean at setup — every #877 test below would "
+        "then be reading a defect the fixture introduced")
+    _git(root, "add", ".")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
+    monkeypatch.setattr(rp._ls, "SCRATCH_ROOT", tmp_path / "scratch")
+    return root
+
+
+class TestBundleStalenessIsRefused:
+    """THE #877 red run: inject → build → restore (NO rebuild) → check REFUSES.
+
+    The source is restored and the tree is clean, but the bundle a guard
+    serves was built from the injected bytes. ``check`` must refuse, naming
+    the source AND the stale bundle — a bare 'refused' is not discriminating."""
+
+    def test_restored_source_with_stale_bundle_is_refused(self, bundle_repo,
+                                                          capsys):
+        import client_dist
+        root = bundle_repo
+        target = "client/router.js"
+
+        _begin(root, target)
+        sabotage = "export function route() { return false; /* SABOTAGE */ }\n"
+        (root / target).write_text(sabotage)
+        _build_bundle(root)  # build with the injection baked in
+
+        # DIRECTION-2 CLOSURE — "green because the guard was never the
+        # consumer": the bundle must ACTUALLY hold the injection. Verified
+        # by reading bundle BYTES, not via client_dist.check (self-agreement:
+        # the check and the assertion must not share an implementation).
+        bundle_bytes = (root / "client" / "dist" / "ds" / "index.js").read_bytes()
+        assert b"SABOTAGE" in bundle_bytes, (
+            "precondition failed: the bundle does not hold the injection, "
+            "so the whole scenario evaporates — the guard would never serve it")
+
+        _restore(root, target)  # restore the SOURCE only — NO rebuild
+
+        # The bundle STILL holds the injection, independently verified.
+        assert b"SABOTAGE" in (root / "client/dist/ds/index.js").read_bytes(), (
+            "the bundle lost the injection without a rebuild — the defect "
+            "does not reproduce and the test proves nothing")
+
+        exit = _check(root)
+        _, err = capsys.readouterr()
+
+        assert exit == 1, (
+            "a restored source with a stale downstream bundle MUST be refused")
+        # DIRECTION-2 CLOSURE — "refused for the wrong reason": assert on the
+        # TEXT. The entry IS restored, so this is not an armed-entry or
+        # live-injection refusal.
+        assert "client/router.js" in err, "refusal must name the restored source"
+        assert "stale" in err.lower(), (
+            "refusal must name the stale bundle — a bare refusal is not "
+            "discriminating and could fire for any reason")
+        assert "#877" in err
+        assert "STILL MATCHES" not in err, (
+            "refused as a live injection, not as a stale bundle — the entry "
+            "was restored, so this is the wrong reason")
+        assert "armed" not in err, (
+            "refused as an armed entry, not as a stale bundle")
+
+    def test_rebuilt_bundle_after_restore_passes(self, bundle_repo):
+        """The rebuild-first companion: inject → build → restore → REBUILD.
+
+        This is the test that passes under BOTH the fixed and broken tool, so
+        it cannot be the ONLY test (the rebuild-first vacuum). It proves the
+        fix does not over-refuse when the lane correctly rebuilds."""
+        root = bundle_repo
+        target = "client/router.js"
+
+        _begin(root, target)
+        sabotage = "export function route() { return null; /* BUG */ }\n"
+        (root / target).write_text(sabotage)
+        _build_bundle(root)
+        _restore(root, target)
+        _build_bundle(root)  # REBUILD after restore — the correct sequence
+
+        # PRECONDITION: the bundle no longer holds the injection.
+        assert b"BUG" not in (root / "client/dist/ds/index.js").read_bytes()
+
+        assert _check(root) == 0, (
+            "a rebuilt bundle after restore must pass — over-refusing here "
+            "would teach lanes to route around the check")
+
+    def test_stale_on_a_different_input_does_not_refuse(self, bundle_repo):
+        """A restored build input whose own hash matches the manifest is not
+        refused, even when the dist is stale because of a DIFFERENT input.
+
+        This is the false-positive guard: a lane with a dirty dist for an
+        unrelated reason must not be blocked. The restored path is a build
+        input but is NOT in client_dist's stale list, so the check stays
+        silent."""
+        import client_dist
+        root = bundle_repo
+        target = "client/router.js"
+
+        # inject → restore WITHOUT building: manifest still records the
+        # original, so router.js matches after restore.
+        _begin(root, target)
+        (root / target).write_text("SABOTAGE\n")
+        _restore(root, target)
+
+        # make the dist stale by editing a DIFFERENT build input
+        (root / "dev" / "build" / "wrapper-exports.js").write_text("// changed\n")
+
+        reading = client_dist.check(str(root))
+        # PRECONDITIONS: the dist IS stale, but the restored path is NOT the
+        # stale one — derived at runtime, not a literal.
+        assert reading["state"] == client_dist.STALE
+        assert "client/router.js" not in reading.get("stale", []), (
+            "router.js is unexpectedly stale — the test's discriminating "
+            "precondition (stale on a DIFFERENT path) has collapsed")
+
+        assert _check(root) == 0, (
+            "a restored input whose own hash is current must not refuse, "
+            "even when the dist is stale for another reason")
+
+    def test_a_restored_non_build_input_passes_with_stale_dist(
+            self, bundle_repo):
+        """A restored path that is NOT a client_dist build input must not
+        trigger the bundle check at all, even when the dist is stale."""
+        import client_dist
+        root = bundle_repo
+
+        # a file that is NOT a build input
+        (root / "README.md").write_text("original readme\n")
+        _inject(root, "README.md", "SABOTAGE README\n")
+
+        # make the dist stale
+        (root / "client" / "router.js").write_text(
+            "export function route() { return 42; }\n")
+        assert client_dist.check(str(root))["state"] == client_dist.STALE
+
+        # README.md is restored and not a build input
+        assert _check(root) == 0, (
+            "a restored non-build-input must not trigger the bundle check")
