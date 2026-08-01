@@ -995,6 +995,7 @@ class TestCollector(unittest.TestCase):
         script = (
             "const esc = t => String(t==null?'':t)"
             ".replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');\n"
+            "const mdRender = t => esc(t), mdInline = t => esc(t);\n"
             "const label = t => `<div class=\"label\">${t}</div>`;\n"
             + fns + "\n"
             "const entries = " + json.dumps([
@@ -10889,19 +10890,27 @@ class TestPosture(unittest.TestCase):
 
     def test_save_route_emits_one_event_line_on_a_real_change(self):
         """Production line: log_event + subagent_policy_line. The event
-        carries the TRANSITION ('set'), never the free text — so a policy
-        containing a newline cannot forge a second event (#126)."""
+        carries the complete policy as one JSON-escaped log copy. The file
+        remains byte-exact while newlines cannot forge a second event (#126)."""
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
             base = self._serve(d)
-            self._post(base + "/subagent-policy",
-                       {"policy": "mine\nwith a newline\n"})
+            policy = "  mine\nwith a newline — and tab\t\ntrailing space  "
+            self._post(base + "/subagent-policy", {"policy": policy})
             ev = [e for e in self._policy_events(d)
                   if "subagent policy via watch" in e]
-            self.assertEqual(len(ev), 1)
-            self.assertTrue(ev[0].strip().endswith(": set"))
-            # the text itself never appears in the log
-            self.assertFalse(any("with a newline" in e for e in ev))
+            self.assertEqual(
+                len(ev), 1,
+                "one policy change must remain exactly one log event even "
+                "when the policy contains newlines")
+            self.assertEqual(
+                ev[0].rstrip("\n").split(" ", 1)[1],
+                "subagent policy via watch: set " +
+                json.dumps(policy, ensure_ascii=False),
+                "the one-line log copy must faithfully escape the whole policy")
+            self.assertEqual(
+                watch.read_subagent_policy(d), policy,
+                "escaping the log copy must not change the authoritative bytes")
 
     def test_identical_save_is_silent_no_event(self):
         """Idempotence: identical-final is 202 + no event, the ceremony
@@ -11735,8 +11744,29 @@ class TestDeliveryWakeRouting(unittest.TestCase):
         turns = watch._parse_chat_turns(block)
         self.assertEqual([t["role"] for t in turns], ["human"],
                          "one human turn, never a fabricated agent reply")
-        self.assertIn("fake reply", turns[0]["body"],
-                      "his words are kept — as HIS words")
+        self.assertEqual(turns[0]["body"], forged,
+                         "the forged markers remain his exact visible words, "
+                         "never structural turn delimiters")
+
+    def test_chat_turn_round_trips_paragraph_list_and_fence_structure(self):
+        """#827 — transcript bodies are documents, not log lines.
+
+        A contains-only assertion passes on the shipped defect, because every
+        word survives while every newline is destroyed. This binds the exact
+        paragraph/list/fence structure through the production writer+parser.
+        """
+        reply = ("## Result\n\n"
+                 "First paragraph.\n\n"
+                 "- one\n- two\n\n"
+                 "```python\nprint('kept')\n```\n")
+        block = watch._chat_turn_block(
+            "agent", reply, "2026-08-01T15:10:34")
+        turns = watch._parse_chat_turns(block)
+        self.assertEqual(len(turns), 1, turns)
+        self.assertEqual(
+            turns[0]["body"], reply,
+            "paragraph structure was lost: blank lines, bullet boundaries "
+            "and the fenced code block must round-trip unchanged")
 
     def test_chat_dedup_does_not_double_write_the_turn(self):
         """Live: #274 — a replayed chat UUID does not re-apply the turn.

@@ -791,11 +791,13 @@ function chatList(d) {
 function chatTurn(t) {
   const you = t.role === 'human';
   // his / the dreamer's: a dim who-label + age above the body, the same
-  // dim-row + .age annotation voice the list already uses.
+  // dim-row + .age annotation voice the list already uses. The shared
+  // markdown pipeline escapes authored text in mdInline BEFORE it introduces
+  // its own trusted tags; never interpolate transcript text as raw HTML.
   return `<div class="chaturn" data-role="${esc(t.role)}">` +
     `<div class="chatmeta"><span class="chatwho">${you ? 'you' : 'dreamer'}</span>` +
     ` <span class="age">${esc(t.at)}</span></div>` +
-    `<div class="chatbody">${esc(t.body)}</div></div>`;
+    `<div class="chatbody md">${mdRender(t.body, mdInline)}</div></div>`;
 }
 function buildChat(fetched) {
   // Unknown id degrades quietly, in the page's own voice — never a traceback,

@@ -2701,16 +2701,16 @@ def append_human_question(text, question, stamp):
 # replies by appending an agent turn through the dreamwork CLI to this same
 # transcript. Format (#229 `dw-turn` framing), each turn:
 #   <!-- dw-turn role=human|agent at=<iso>[ receipt=<id>] -->
-#   <one-lined text>
+#   <multi-line markdown text; structural marker lines backslash-escaped>
 #   <!-- /dw-turn -->
-# Two rules together make his text unforgeable as a turn (#504's measured fix, one
-# level into the chat store): the writer `one_line`s the body, so a pasted
-# newline cannot push a forged marker to column 0; and the parser anchors BOTH
-# markers at line start, so a marker typed INTO the body stays inline prose and
-# can never open or close a turn. Either rule alone is insufficient — measured
-# at the #504 salvage gate: `one_line` alone still parsed a fabricated
-# role=agent turn out of marker-bearing text (the binding test is
-# test_chat_turn_text_cannot_forge_an_agent_turn).
+# Two rules make his text unforgeable as a turn without destroying its shape:
+# the writer backslash-escapes any complete body line shaped like an open/close
+# marker, and the parser anchors both structural markers at line start. The
+# escape is reversible (including pre-existing backslashes), so the parsed body
+# is still his exact text. A transcript is a document, never one log event.
+# Only a complete marker-shaped line is escaped; an inline mention is prose.
+# Existing backslashes are doubled on disk and restored on read, so the escape
+# itself cannot erase user text.
 # Indexes (title, turn count, status) are DERIVED at read time — chat.json
 # carries identity only, never a second source of truth.
 CHAT_DIR = "chats-v1"
@@ -2733,14 +2733,14 @@ def _chat_turn_block(role, text, at, receipt_id=None):
     """One `dw-turn` block for the append-only transcript. Pure; testable."""
     rid = f" receipt={receipt_id}" if receipt_id else ""
     return (f"<!-- dw-turn role={role} at={at}{rid} -->\n"
-            f"{one_line(text)}\n"
+            f"{_chat_turn_text(text, encode=True)}\n"
             f"<!-- /dw-turn -->\n")
 
 
 _CHAT_TURN_RE = re.compile(
     r"^<!--\s*dw-turn\s+role=(?P<role>\w+)\s+at=(?P<at>\S+)"
-    r"(?:\s+receipt=(?P<rid>\S+))?\s*-->\s*"
-    r"(?P<body>.*?)^<!--\s*/dw-turn\s*-->", re.DOTALL | re.MULTILINE)
+    r"(?:\s+receipt=(?P<rid>\S+))?\s*-->\r?\n"
+    r"(?P<body>.*?)\r?\n^<!--\s*/dw-turn\s*-->", re.DOTALL | re.MULTILINE)
 
 
 def _parse_chat_turns(text):
@@ -2753,7 +2753,7 @@ def _parse_chat_turns(text):
             "role": m.group("role"),
             "at": m.group("at"),
             "receipt": m.group("rid") or "",
-            "body": one_line(m.group("body")),
+            "body": _chat_turn_text(m.group("body"), encode=False),
         })
     return out
 
@@ -4446,6 +4446,26 @@ def resolve_posture(target):
     return out
 
 
+_CHAT_BODY_MARKER_RE = re.compile(
+    r"^(?P<indent>[ \t]*)(?P<slashes>\\*)"
+    r"(?P<marker><!--\s*(?:dw-turn\b[^\r\n]*|/dw-turn\s*)-->)"
+    r"(?P<trail>[ \t]*)(?P<cr>\r?)$", re.MULTILINE)
+
+
+def _chat_turn_text(text, *, encode):
+    """Escape structural-looking lines reversibly; preserve everything else."""
+    def replace(match):
+        slashes = match.group("slashes")
+        slashes = ("\\" + slashes) if encode else slashes[1:]
+        return (match.group("indent") + slashes + match.group("marker") +
+                match.group("trail") + match.group("cr"))
+
+    if encode:
+        return _CHAT_BODY_MARKER_RE.sub(replace, text or "")
+    return _CHAT_BODY_MARKER_RE.sub(
+        lambda m: replace(m) if m.group("slashes") else m.group(0), text or "")
+
+
 def write_posture(target, pace, asking, delegation, delivery=None,
                   orchestration=None):
     """Persist a posture override. Returns False if refused.
@@ -4591,17 +4611,18 @@ def delivery_line(mode, source=""):
     return f"delivery via watch{from_hint(source)}: {one_line(str(mode))}"
 
 
-def subagent_policy_line(action, source=""):
+def subagent_policy_line(action, source="", policy=None):
     """Source-tagged watch-events.log line for a committed policy change (#646).
 
-    Pure. `action` is 'set' or 'reset' — the TRANSITION, never the policy text.
-    The policy is free text and the SUMMARY_DENIED class (his authored prose),
-    so it has no business in a line-oriented log an agent reads; and the log is
-    one event per line, so emitting free text would need one_line, which would
-    normalise it. The file IS the value; the line only says it changed. The
-    ceremony posture/run-mode/delivery already use (dual-write + one line on
-    real change), not a second one (#440)."""
-    return f"subagent policy via watch{from_hint(source)}: {one_line(str(action))}"
+    The authoritative file remains byte-exact. On `set`, its complete content
+    is copied into the line as a JSON string: leading/trailing whitespace and
+    non-ASCII stay faithful, while control characters are escaped so one
+    policy change remains one physical log event. Reset has no policy value.
+    """
+    line = f"subagent policy via watch{from_hint(source)}: {one_line(str(action))}"
+    if action == "set":
+        line += " " + json.dumps(policy or "", ensure_ascii=False)
+    return line
 
 
 # #342 — per-kind wake routing. The receipt commits UNCONDITIONALLY in do_POST
@@ -6034,10 +6055,10 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
 
             Dual-write, the same ceremony posture/run-mode/delivery use:
             authoritative gitignored `.dreamwork/subagent-policy` plus one
-            watch-events.log line only on a real change. The line carries the
-            TRANSITION ('set'/'reset'), never the text — the policy is his
-            authored prose (SUMMARY_DENIED) and a newline in it would forge a
-            second event (#126). Identical-final is 202 + no event.
+            watch-events.log line only on a real change. On set, that line
+            carries a faithful JSON-escaped copy of the whole policy, so a
+            newline cannot forge a second event (#126). Identical-final is
+            202 + no event.
 
             Reset = delete the file (delete_subagent_policy), returning to the
             standing default — NOT clear-to-empty, which would leave an inert
@@ -6097,7 +6118,8 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             if persisted != text:
                 self.send_error(500, "policy persistence mismatch")
                 return
-            log_event(target, subagent_policy_line("set", from_path))
+            log_event(target, subagent_policy_line(
+                "set", from_path, persisted))
             self._send_receipt(json.dumps({
                 "ok": True, "changed": True,
                 "subagent_policy": persisted,

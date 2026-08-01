@@ -3,9 +3,9 @@
 
 The main dreamer answers a topic chat by appending an AGENT turn to a
 chats-v1 transcript. This is the one supported way to reply: it goes through
-``watch.apply_chat_turn`` — the writer that one-lines the body and whose parser
-anchors both ``dw-turn`` markers at line start, so the two anti-forgery rules
-(load-bearing at 5cea6e0f) CANNOT be bypassed. Import it; never re-implement it.
+``watch.apply_chat_turn`` — the writer that preserves markdown while
+reversibly escaping structural-looking marker lines, and whose parser anchors
+both ``dw-turn`` markers at line start. Import it; never re-implement it.
 
 A chat id is the journal receipt id of the human's send (1:1 — a send creates a
 chat; ``watch._handle_command`` keys the transcript dir on the receipt id). So
@@ -111,8 +111,8 @@ def cmd_reply(args, out, err) -> int:
         return EX_USAGE
     # Text from argv (joined) OR stdin (the relay.py idiom). The dreamer's
     # reply words may carry shell-hostile bytes; a pipe never meets a shell
-    # metacharacter, and apply_chat_turn one-lines the body so a newline in the
-    # text can never forge a second turn.
+    # metacharacter. apply_chat_turn preserves those newlines and escapes only
+    # complete structural-looking marker lines, so they cannot forge a turn.
     if args.text:
         text = " ".join(args.text)
     elif not sys.stdin.isatty():
