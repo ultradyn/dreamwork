@@ -402,8 +402,8 @@ def test_a_duplicate_edge_is_idempotent_not_a_second_row(store_path):
 def _v004_store(path):
     """A genuine v4 store: built through the ladder, then rolled BACK to v4.
 
-    Setting `schema_version='4'` on a v5 file would not do — the tables would
-    still be v5-shaped, and the 4->5 step would fail on `already exists`
+    Setting `schema_version='4'` on a current file would not do — the tables
+    would still be v5-shaped, and the 4->5 step would fail on `already exists`
     rather than exercising the real upgrade.
     """
     with open_database(task_store_spec(path), access=Access.WRITE) as store:
@@ -450,7 +450,7 @@ def test_v005_preserves_tasks_members_triggers_and_the_id_sequence(tmp_path):
     before_tasks = conn.execute("SELECT * FROM task ORDER BY id").fetchall()
     conn.close()
 
-    # Re-open through the canonical path: the ladder runs 4 -> 5.
+    # Re-open through the canonical path: the ladder runs 4 -> 5 -> 6.
     with open_database(task_store_spec(path), access=Access.WRITE) as store:
         with store.transaction():
             pass
@@ -459,7 +459,7 @@ def test_v005_preserves_tasks_members_triggers_and_the_id_sequence(tmp_path):
     try:
         assert after.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone()[0] == "5"
+        ).fetchone()[0] == "6"
         assert after.execute("SELECT * FROM task ORDER BY id").fetchall() == \
             before_tasks, "v005 must not rewrite a single task row"
         assert after.execute(
@@ -495,7 +495,7 @@ def test_downgrade_refuses_to_discard_nesting_or_dependencies(tmp_path):
         conn.execute("ROLLBACK")
         assert conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone()[0] == "5", "a refused downgrade must not move the version"
+        ).fetchone()[0] == "6", "a refused downgrade must not move the version"
     finally:
         conn.close()
 

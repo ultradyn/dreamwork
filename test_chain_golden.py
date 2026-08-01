@@ -4,7 +4,7 @@ Filed from the #460 merge gate: the coordinator's independent red-run swapped
 ``from_state``/``to_state`` in ``ledger_store.canonical_event_bytes`` and ALL
 66 replay/store/writer tests PASSED, because every check hashes through the
 SAME shared construction (``canonical_event_bytes`` / ``hash_event`` /
-``genesis_hash``). A self-consistent corruption of the chain's byte format is
+the journal-local genesis). A self-consistent corruption of the chain's byte format is
 therefore invisible everywhere: the format is exercised everywhere and pinned
 nowhere. This file is the owed pin.
 
@@ -36,8 +36,8 @@ Named production line whose change must red this suite:
       -> test_canonical_event_bytes_matches_independently_built_contract_bytes
       -> test_canonical_sha256_matches_recorded_literal
       -> test_hash_event_matches_recorded_literal
-- genesis_hash seed string ("ud-dreamwork.task-ledger" + SCHEMA_VERSION)
-      -> test_genesis_hash_matches_recorded_literal
+- frozen v1 legacy genesis literal (new journals store their own random root)
+      -> test_legacy_genesis_hash_matches_recorded_literal
 
 A green red-run is a finding, never a relief. The exact-bytes test builds its
 expected bytes with the test's OWN framing helper (never _length_framed /
@@ -143,36 +143,27 @@ def test_canonical_event_bytes_matches_independently_built_contract_bytes():
 GOLDEN_CANON_SHA256 = (
     "747e81af02784d7c392cf61952b08558083b72ece4e0befeca9394dbfb85f5d2")
 
-# H_0 = SHA-256(journal_id || schema_version); journal_id="ud-dreamwork.task-ledger",
-# schema_version=3 (genesis_hash docstring). Bumped from v2 -> v3 by increment #645
-# (dreamwork_db/migrate.py SCHEMA_VERSION), which seeds genesis_hash; updated here ON
-# PURPOSE by hand from the contract one-liner below (not by calling genesis_hash — a
-# literal recomputed from the producer is x==x and cannot fail, #759).
-# Recompute: python3 -c "import hashlib;print(hashlib.sha256(b'ud-dreamwork.task-ledger3').hexdigest())"
+# Historical H_0 = SHA-256(journal_id || creation schema version).  The live
+# journal was created at v1, and v006 freezes that root as the legacy format
+# literal instead of moving it with SCHEMA_VERSION.  New journals persist a
+# journal-local root. New journals default to the same root so portable replay
+# remains deterministic; a future re-seed must be an explicit format change.
+# Recompute: python3 -c "import hashlib;print(hashlib.sha256(b'ud-dreamwork.task-ledger1').hexdigest())"
 GOLDEN_GENESIS = (
-    "2002431098ba893e189b703584228712bdc605a1128a2118b038d762958c159c")
+    "dbb5fcbf8ada5ef7945a7175b9f2c206145f148dc6e4e1afa7567d485096f51d")
 
 # H_i = SHA-256(domain_tag || H_(i-1) || length_framed(canonical_event_i));
 # domain_tag=b"ud-dreamwork.task-event.v1" (DOMAIN_TAG), prev=genesis.
 # prev_hash is GOLDEN_GENESIS above, so this literal MOVES IN LOCKSTEP with the
-# genesis pin: a schema-version bump changes genesis, which changes this digest.
-# That makes GOLDEN_HASH_EVENT a second pin of the same shape (it transitively
-# encodes schema_version through the genesis prev_hash). Recomputed here by hand
-# from the contract one-liner with the v3 genesis.
-# Recompute: python3 -c "import hashlib;p=['549','2026-07-30T10:11:12','started_from_backlog','pending','in_progress','loop','golden-vector-549'];c=b''.join((len(x.encode()).to_bytes(8,'big')+x.encode()) for x in p);g=hashlib.sha256(b'ud-dreamwork.task-ledger3').hexdigest();print(hashlib.sha256(b'ud-dreamwork.task-event.v1'+g.encode()+c).hexdigest())"
+# legacy genesis pin. Recomputed here by hand from the contract one-liner.
+# Recompute: python3 -c "import hashlib;p=['549','2026-07-30T10:11:12','started_from_backlog','pending','in_progress','loop','golden-vector-549'];c=b''.join((len(x.encode()).to_bytes(8,'big')+x.encode()) for x in p);g=hashlib.sha256(b'ud-dreamwork.task-ledger1').hexdigest();print(hashlib.sha256(b'ud-dreamwork.task-event.v1'+g.encode()+c).hexdigest())"
 GOLDEN_HASH_EVENT = (
-    "fd7a478b7cf927e4a2e0ab9ca933fe9454e7251252040d868a31ef78ff61acd7")
+    "a185495232c8d769890c253238e69330319ab87d53548538c4e0b967a1c5d6d0")
 
 
-def test_genesis_hash_matches_recorded_literal():
-    """Pin genesis_hash: the seed string and schema version are the contract.
-
-    Named production line: ``ledger_store.genesis_hash`` -> the
-    ``"ud-dreamwork.task-ledger" + SCHEMA_VERSION`` seed. Break by editing the
-    seed string or SCHEMA_VERSION -> the literal disagrees. Independent of the
-    canonical byte format (catches a different drift than the bytes test).
-    """
-    assert ledger_store.genesis_hash() == GOLDEN_GENESIS
+def test_legacy_genesis_hash_matches_recorded_literal():
+    """Pin the v1 root used by journals that predate stored genesis metadata."""
+    assert ledger_store.LEGACY_GENESIS_HASH == GOLDEN_GENESIS
 
 
 def test_canonical_sha256_matches_recorded_literal():

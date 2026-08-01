@@ -181,7 +181,7 @@ def test_chain_verifies_over_synthetic_and_live_events(module, tmp_path):
     row = conn.execute(
         "SELECT hash FROM task_event ORDER BY ordinal DESC LIMIT 1"
     ).fetchone()
-    prev_hash = row[0] if row else module.genesis_hash()
+    prev_hash = row[0] if row else module.genesis_hash(conn)
     conn.close()
 
     live = {"task_id": 8, "at": "2026-07-29T10:00:00Z",
