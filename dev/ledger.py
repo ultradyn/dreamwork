@@ -350,8 +350,36 @@ def _skip_shape(subject):
     return "non-id"
 
 
+def _sweep_classified(text, commits, cites=None):
+    """Classify OPEN ids named by git as uncited or cited-but-still-open."""
+    open_ids, _ = watch.parse_ledger(text)
+    bodies = {}
+    for ids, body in ledger_entries(open_section_text(text) or ""):
+        for tid in ids:
+            bodies[tid] = body
+    found = {}
+    cited_open = {}
+    n = 0
+    _cites = cites if cites is not None else (lambda sha, body: sha in body)
+    for sha, subject in commits:
+        n += 1
+        m = SWEEP_SUBJECT.match(subject)
+        if not m:
+            continue
+        # Exactly one alternative matched, so exactly one group is non-None.
+        id_text = next(g for g in m.groups() if g)
+        for tid in (int(x) for x in SWEEP_ID.findall(id_text)):
+            # parse_ledger's ids are strings; ledger_entries' are ints — the
+            # membership check is against the former, the body map the latter.
+            if str(tid) not in open_ids:
+                continue
+            bucket = cited_open if _cites(sha, bodies.get(tid, "")) else found
+            bucket.setdefault(tid, []).append((sha, subject))
+    return n, sorted(found.items()), sorted(cited_open.items())
+
+
 def sweep(text, commits, cites=None):
-    """Correlate id-bearing subjects against the OPEN ids; subtract cited shas.
+    """Correlate id-bearing subjects against OPEN ids; return uncited matches.
 
     `commits` is an iterable of (sha, subject) pairs, newest first. Returns
     (n_examined, findings) where findings is a list of (task_id, [(sha,
@@ -371,30 +399,8 @@ def sweep(text, commits, cites=None):
     in, so the four #404 pins keep binding the behaviour they were written
     for whether `cites` is substring or resolution-backed.
     """
-    open_ids, _ = watch.parse_ledger(text)
-    bodies = {}
-    for ids, body in ledger_entries(open_section_text(text) or ""):
-        for tid in ids:
-            bodies[tid] = body
-    found = {}
-    n = 0
-    _cites = cites if cites is not None else (lambda sha, body: sha in body)
-    for sha, subject in commits:
-        n += 1
-        m = SWEEP_SUBJECT.match(subject)
-        if not m:
-            continue
-        # Exactly one alternative matched, so exactly one group is non-None.
-        id_text = next(g for g in m.groups() if g)
-        for tid in (int(x) for x in SWEEP_ID.findall(id_text)):
-            # parse_ledger's ids are strings; ledger_entries' are ints — the
-            # membership check is against the former, the body map the latter.
-            if str(tid) not in open_ids:
-                continue
-            if _cites(sha, bodies.get(tid, "")):
-                continue  # a deliberate partial: it cites its commit (#323's rule)
-            found.setdefault(tid, []).append((sha, subject))
-    return n, sorted(found.items())
+    n, findings, _cited_open = _sweep_classified(text, commits, cites)
+    return n, findings
 
 
 # ---------------------------------------------------------------------------
@@ -854,11 +860,12 @@ def sweep_text(text, commits, since, source, repo="."):
         for tid in ids:
             bodies[tid] = body
     cites, degraded = _resolved_cites(commits, bodies, repo)
-    n, findings = sweep(text, commits, cites=cites)
+    n, findings, cited_open = _sweep_classified(text, commits, cites=cites)
     open_ids, landed_ids = watch.parse_ledger(text)
     expected_body_ids = {int(tid) for tid in open_ids}
     parsed_body_ids = set(bodies)
-    where = f"since {since[:12]}" if since else "across the whole history"
+    where = (f"window start: {since[:12]} (exclusive)" if since else
+             "window start: repository root (full history)")
     # #682: examined≠understood (#671 one layer deeper). The header carries the
     # id-bearing count (matched) beside the examined count, plus the dominant
     # skip shape, so a sweep that matched almost none of what it examined does
@@ -870,10 +877,11 @@ def sweep_text(text, commits, since, source, repo="."):
     shapes = collections.Counter(
         _skip_shape(s) for _, s in commits if not SWEEP_SUBJECT.match(s))
     dom = shapes.most_common(1)[0][0] if shapes else "n/a"
-    lines = [f"sweep: examined {n} commits {where} against "
+    lines = [f"sweep: examined {n} commits; {where}; against "
              f"{len(open_ids)} open ids ({source}) "
              f"/ {len(parsed_body_ids)} parsed body ids "
-             f"({idbearing} id-bearing, {skipped} skipped, mostly {dom})"]
+             f"({idbearing} id-bearing, {skipped} skipped, mostly {dom}); "
+             f"{len(cited_open)} open id(s) excluded by sha-citation"]
     if degraded:
         lines.append(
             "sweep: DEGRADED — git citation resolution was unavailable; "
@@ -923,7 +931,10 @@ def sweep_text(text, commits, since, source, repo="."):
     for tid, landings in verb_rows + widened_rows:
         ev = ", ".join(f"`{sha}` {subject}" for sha, subject in landings)
         lines.append(f"  #{tid} — {ev}")
-    if not verb_rows and not widened_rows:
+    for tid, landings in cited_open:
+        ev = ", ".join(f"`{sha}` {subject}" for sha, subject in landings)
+        lines.append(f"  CITED-OPEN #{tid} — {ev}")
+    if not verb_rows and not widened_rows and not cited_open:
         lines.append(
             "sweep: nothing to review (this ran — see the examined count above)")
     else:
@@ -936,6 +947,10 @@ def sweep_text(text, commits, since, source, repo="."):
                 f"sweep: {len(widened_rows)} more named in widened form "
                 f"(Merge/#N/wip — lower confidence, likely folded, "
                 f"ambiguous, or kill-recovery; #707)")
+        if cited_open:
+            lines.append(
+                f"sweep: {len(cited_open)} cited-but-still-open id(s) — "
+                f"sha-citation is evidence, not closure; review the open state")
     return "\n".join(lines) + "\n"
 
 
@@ -2320,8 +2335,14 @@ def main(argv=None):
         "sweep",
         help="open ids git names a landing for that the entry does not cite "
              "(advisory; exit 0 always)")
-    ps.add_argument("--since", default=None,
-                    help="ref to scan from (default: the most recent fold commit)")
+    ps_window = ps.add_mutually_exclusive_group()
+    ps_window.add_argument(
+        "--since", default=None,
+        help="ref to scan after (default: the most recent fold commit)")
+    ps_window.add_argument(
+        "--all-history", action="store_true",
+        help="scan from the repository root; run periodically to recover "
+             "landings missed by an earlier fold window")
     ps.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
     ps.add_argument("--repo", default=".", help="the git repo to scan (default %(default)s)")
 
@@ -2692,7 +2713,11 @@ def _dispatch(args):
         if text is None:
             sys.stdout.write(f"sweep: ledger not found: {ledger_path} (examined 0 commits)\n")
             return 0
-        since = args.since if args.since is not None else _default_since(args.repo)
+        if args.all_history:
+            since = None
+        else:
+            since = (args.since if args.since is not None else
+                     _default_since(args.repo))
         commits = _git_subjects(args.repo, since)
         if commits is None:
             sys.stdout.write("sweep: git could not answer (not a repo?) — did not run\n")

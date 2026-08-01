@@ -519,10 +519,12 @@ def test_sweep_resolves_citations_in_the_repo_it_was_given(
     out = capsys.readouterr().out
 
     assert rc == 0, "sweep remains advisory (#404)"
-    assert "#465 —" not in out, (
+    assert "  #465 —" not in out, (
         f"#465 cites {citation}, which resolves to {target_sha} under --repo; "
-        f"the resolver must not substitute the unrelated CWD repo: {out!r}")
-    assert "nothing to review" in out, out
+        f"it must not appear as an UNCITED finding: {out!r}")
+    assert "CITED-OPEN #465" in out, (
+        f"resolution-backed citation is evidence, but the entry is still open: "
+        f"{out!r}")
 
 
 @pytest.mark.parametrize(
@@ -568,6 +570,60 @@ def test_sweep_counts_every_commit_examined_even_with_no_findings():
     assert n == len(SWEEP_COMMITS)  # non-matching subjects are examined too
     n0, findings0 = ledger.sweep(SWEEP_LEDGER, SWEEP_COMMITS[4:])
     assert n0 == 1 and findings0 == []
+
+
+def test_sweep_report_distinguishes_an_empty_window_from_a_full_history_scan():
+    """The clean sentence must carry a denominator and its boundary.
+
+    These two inputs have the same finding set.  One examined nothing after a
+    fold boundary; the other examined a real, non-id commit from repository
+    root.  Their all-clear lines are intentionally identical, so the header is
+    the discriminating evidence rather than a reworded verdict.
+
+    PRODUCTION SEAM: ``sweep_text``'s header.  RED: remove the explicit window
+    start and both outputs again answer only "how many findings?".
+    """
+    looked_nowhere = ledger.sweep_text(
+        SWEEP_LEDGER, [], "fold-boundary-123", "markdown")
+    looked_from_root = ledger.sweep_text(
+        SWEEP_LEDGER, [("aaa0001", "docs: no task id")], None, "markdown")
+
+    assert "nothing to review" in looked_nowhere
+    assert "nothing to review" in looked_from_root
+    assert "examined 0 commits; window start: fold-boundar" in looked_nowhere, (
+        f"the zero-sized window must say both facts: {looked_nowhere!r}")
+    assert "examined 1 commits; window start: repository root" in looked_from_root, (
+        f"the non-empty full-history population must stay visible: "
+        f"{looked_from_root!r}")
+
+
+def test_sweep_report_calls_a_cited_open_landing_an_anomaly():
+    """Citation is evidence of a landing, not evidence of closure.
+
+    The fixture independently proves #11 is OPEN and cites abc1234.  The
+    report must therefore keep it visible in a distinct bucket while the
+    legacy pure ``sweep`` API may continue returning only uncited findings.
+
+    PRODUCTION SEAM: ``_sweep_classified``'s cited bucket plus the
+    ``CITED-OPEN`` rendering branch.  RED: route cited matches nowhere and the
+    discriminating id+sha assertion fails.
+    """
+    open_ids, landed_ids = watch.parse_ledger(SWEEP_LEDGER)
+    assert "11" in open_ids and "11" not in landed_ids, (
+        "precondition: #11 must genuinely remain open")
+    assert "abc1234" in _sweep_open_body(11), (
+        "precondition: #11 must genuinely cite its named commit")
+
+    out = ledger.sweep_text(
+        SWEEP_LEDGER, [("abc1234", "fix(#11): cited landing")],
+        "fold-boundary-123", "markdown")
+
+    assert "1 open id(s) excluded by sha-citation" in out, out
+    assert "CITED-OPEN #11" in out and "`abc1234`" in out, (
+        f"the cited open id and its evidence must remain reportable: {out!r}")
+    assert "cited-but-still-open id(s)" in out, out
+    assert "nothing to review" not in out, (
+        f"an open task citing its landing is not an all-clear: {out!r}")
 
 
 # ---------------------------------------------------------------------------
