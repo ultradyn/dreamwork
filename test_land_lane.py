@@ -213,6 +213,12 @@ def test_success_runs_real_reap_and_retains_branch_only(landing_repo):
     assert _git(root, "show-ref", "--verify", "refs/heads/lane")
 
 
+def test_land_tool_contains_no_second_worktree_removal_route():
+    source = TOOL.read_text(encoding="utf-8")
+    assert '"worktree", "remove"' not in source
+    assert 'Path(__file__).with_name("reap.py")' in source
+
+
 def test_just_recipe_requires_branch_but_leaves_empty_tests_for_named_refusal():
     result = subprocess.run(
         ["just", "--dry-run", "land-lane", "lane", "test_land_lane.py"],
