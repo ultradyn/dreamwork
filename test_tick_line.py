@@ -288,10 +288,12 @@ class TestLiveFleetDetector:
         actual = root / "cx-884nextup"
         raw = (
             "ccc\x00# Task #884\n"
-            "Compare /home/example/.worktrees/review before finishing.\n"
-            "Worktree: %s\n" % actual
+            f"Compare {root / 'review'} before finishing.\n"
+            f"Worktree: {actual}\n"
         ).encode()
-        assert lane_liveness._prompt_worktree(raw, (root,)) == actual
+        found = lane_liveness._prompt_worktree(raw, (root,))
+        assert found == actual, \
+            "incidental path invented lane 'review' and omitted cx-884nextup: %r" % found
 
 
 class TestTheContradictionIsAdjacent:
