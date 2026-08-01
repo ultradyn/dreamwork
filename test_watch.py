@@ -11331,7 +11331,7 @@ class TestDeliveryWakeRouting(unittest.TestCase):
     """#342 lane B surface 2 — per-kind wake routing.
 
     The receipt commits UNCONDITIONALLY in do_POST (E3); the watch-events.log
-    wake line's emission is conditional on (kind, mode). do-now/do-next
+    wake line's emission is conditional on (kind, mode). do-now/do-next/chat
     pre-empt even in batched mode; every other kind and the /answer, /comment,
     /ask routes wake only in instant mode. Withholding the wake line IS
     batching — the item rides the durable receipt and the tick's cursor read.
@@ -11398,12 +11398,10 @@ class TestDeliveryWakeRouting(unittest.TestCase):
         self.assertEqual(core,
                          {"chat", "add-idea", "do-next", "do-now",
                           "maintenance"}, core)
-        # #504 PRECONDITION: chat is the far-left default and NOT a pre-empt
-        # kind (it is batched under #342 — Q3). Asserted here so a future
-        # edit that makes chat pre-empt reds this matrix, not just the chat
-        # test that depends on it.
+        # #504 PRECONDITION: chat is the far-left command; #818 classifies it
+        # as conversational and therefore pre-emptive.
         self.assertEqual(watch.COMMANDS[0]["kind"], "chat")
-        self.assertNotIn("chat", watch.PREEMPT_KINDS)
+        self.assertIn("chat", watch.PREEMPT_KINDS)
         with tempfile.TemporaryDirectory() as d:
             os.makedirs(os.path.join(d, ".dreamwork"))
             instant = d
@@ -11415,11 +11413,10 @@ class TestDeliveryWakeRouting(unittest.TestCase):
             for kind in watch.PREEMPT_KINDS:
                 self.assertTrue(watch.emits_wake(kind, instant), kind)
                 self.assertTrue(watch.emits_wake(kind, batched), kind)
-            self.assertEqual(set(watch.PREEMPT_KINDS), {"do-now", "do-next"})
+            self.assertEqual(set(watch.PREEMPT_KINDS),
+                             {"chat", "do-now", "do-next"})
             # every other kind + plugin kinds + the routes wake only instant.
-            # #504: chat is in this batched family (Q3) — it withholds in
-            # batched, same as add-idea/maintenance and the /ask route.
-            for kind in ("chat", "add-idea", "maintenance", "some-plugin"):
+            for kind in ("add-idea", "maintenance", "some-plugin"):
                 self.assertTrue(watch.emits_wake(kind, instant), kind)
                 self.assertFalse(watch.emits_wake(kind, batched), kind)
             for route in ("/answer", "/comment", "/ask"):
@@ -11449,13 +11446,10 @@ class TestDeliveryWakeRouting(unittest.TestCase):
             self.assertEqual(self._witnessed(d).count("/command"), 2)
 
     def test_command_batched_kinds_withhold_wake_in_batched(self):
-        """Live: chat/add-idea/maintenance withhold the wake line in batched mode.
+        """Live: add-idea/maintenance withhold the wake line in batched mode.
 
         Production line: the `if emits_wake(kind, target):` gate. The receipt
         still commits — withholding the wake IS batching; the cursor drains it.
-        #504 adds `chat` to this batched family (Q3): a topic chat rides the
-        tick's cursor read rather than pre-empting, exactly his "get unread at
-        the start of a loop iteration".
         """
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
@@ -11463,17 +11457,14 @@ class TestDeliveryWakeRouting(unittest.TestCase):
                 watch.write_posture(d, "idle", "ask", 0, "batched"))
             base = self._serve(d)
             self.assertEqual(self._post(base + "/command",
-                                        {"kind": "chat", "text": "hi agent"}), 202)
-            self.assertEqual(self._post(base + "/command",
                                         {"kind": "add-idea", "text": "parked"}), 202)
             self.assertEqual(self._post(base + "/command",
                                         {"kind": "maintenance", "text": "groom"}), 202)
             wakes = self._wake_lines(d)
-            self.assertFalse(any("chat" in w for w in wakes), wakes)
             self.assertFalse(any("add-idea" in w for w in wakes), wakes)
             self.assertFalse(any("maintenance" in w for w in wakes), wakes)
-            # the receipt committed for all three even though no wake fired
-            self.assertEqual(self._witnessed(d).count("/command"), 3)
+            # the receipt committed for both even though no wake fired
+            self.assertEqual(self._witnessed(d).count("/command"), 2)
 
     def test_command_all_kinds_wake_in_instant(self):
         """Live: in instant mode (the default) every command kind wakes.
@@ -11663,38 +11654,36 @@ class TestDeliveryWakeRouting(unittest.TestCase):
         sticky = [c["kind"] for c in watch.COMMANDS if c.get("sticky")]
         self.assertEqual(set(sticky), {"chat", "add-idea"}, sticky)
 
-    def test_chat_withholds_wake_in_batched(self):
-        """Live: a `chat` send withholds the wake line under delivery: batched.
+    def test_chat_wakes_in_batched_after_receipt_commits(self):
+        """Live: a `chat` send wakes even under delivery: batched (#818).
 
-        Mirrors test_decide_withholds_wake_in_batched. Production line: the
-        `if emits_wake(kind, target):` gate in _handle_command — chat is not a
-        pre-empt kind, so in batched mode the wake line is withheld (Q3) and
-        the chat rides the tick's cursor read. The receipt still commits (E3)
-        and the application step still writes the transcript: withholding the
-        wake IS batching, not dropping the message.
+        Production seam: PREEMPT_KINDS -> emits_wake -> _handle_command's
+        log_event call. The receipt and wake are separate channels: this test
+        first proves the receipt committed, then requires watch-events.log to
+        carry that same receipt id. A receipt-only assertion is the defect's
+        false-green shape and cannot satisfy the wake assertion below.
         """
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
-            # PRECONDITION (hollow-check): the posture file really carries the
-            # batched axis, or delivery_mode reads instant and a withhold
-            # assertion is unmeaningful.
+            # PRECONDITION: exercise the mode that used to suppress chat.
             self.assertTrue(
                 watch.write_posture(d, "idle", "ask", 0, "batched"))
             self.assertEqual(watch.read_posture_file(d)["delivery"], "batched")
             base = self._serve(d)
             status, body = self._post_body(base + "/command",
                                            {"kind": "chat", "text": "hello"})
-            # PRECONDITION: the route ran end-to-end (202), or a withheld-line
-            # check is vacuous.
+            # PRECONDITION: the route ran and returned its durable receipt.
             self.assertEqual(status, 202, (status, body))
-            # the receipt committed (E3 — unconditional) despite no wake
+            receipt_id = json.loads(body)["receipt"]["receipt_id"]
+            self.assertTrue(receipt_id, body)
             self.assertEqual(self._witnessed(d).count("/command"), 1)
-            # NO chat wake line in batched mode (Q3)
+            # The receipt existed before #818 too. This is the discriminating
+            # assertion: the interrupt channel must contain the chat receipt.
             wakes = self._wake_lines(d)
-            self.assertFalse(any("chat" in w for w in wakes), wakes)
-            # the application step still wrote the human turn (the cursor
-            # drains it) — proved below in full, asserted here so a withheld
-            # wake never reads as a dropped message.
+            self.assertTrue(
+                any("chat" in w and receipt_id in w for w in wakes),
+                f"chat receipt {receipt_id} committed but did not wake the loop; "
+                f"watch-events.log={wakes!r}")
             self.assertEqual(len(watch.list_chats(d)), 1, watch.list_chats(d))
 
     def test_chat_send_applies_a_human_turn_to_the_transcript(self):
@@ -11893,39 +11882,35 @@ class TestDeliveryWakeRouting(unittest.TestCase):
             self.assertEqual(watch.list_chats(d)[0]["turns"], 1)
 
     def test_chat_reply_wakes_the_same_way_a_chat_send_does(self):
-        """#577 — a reply wakes the loop the same way a chat send does: a
-        watch-events.log line, gated on instant delivery (the #342 rule, one
-        kind over). In batched mode neither a chat send nor a reply writes a
-        wake line; in instant mode both do.
+        """#577/#818 — a reply wakes the loop the same way a chat send does.
 
         Production line: the `if emits_wake("chat", target):` gate + the
         `log_event(target, command_line("chat", ...))` call in
-        _handle_chat_reply. Remove the gate and a batched-mode reply writes a
-        wake line the chat send does not — the two would diverge.
+        _handle_chat_reply. The route deliberately passes the conversational
+        kind, not the `/chat-reply` path, so adding chat to PREEMPT_KINDS makes
+        both new messages and replies unconditional interrupts.
         """
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
             watch.apply_chat_turn(d, "chat-577", "human", "are we shipping?")
             watch.apply_chat_turn(d, "chat-577", "agent", "yes")
-            # PRECONDITION: batched delivery, under which a chat send withholds
-            # its wake line (asserted below) — so a withheld reply wake line is
-            # meaningful, not vacuous (the hollow-check).
+            # PRECONDITION: batched delivery is the discriminating mode.
             self.assertTrue(watch.write_posture(d, "idle", "ask", 0, "batched"))
             self.assertEqual(watch.read_posture_file(d)["delivery"], "batched")
             base = self._serve(d)
-            # a chat SEND in batched mode writes no chat wake line
-            ss, _ = self._post_body(base + "/command",
-                                    {"kind": "chat", "text": "a new chat"})
+            ss, send_body = self._post_body(
+                base + "/command", {"kind": "chat", "text": "a new chat"})
             self.assertEqual(ss, 202, "PRECONDITION: the send route ran")
-            sends = [w for w in self._wake_lines(d) if "chat" in w]
-            self.assertFalse(sends, "PRECONDITION: a batched send writes no wake")
-            # a reply in the same batched mode writes no wake line either
-            rs, _ = self._post_body(base + "/chat-reply",
-                                    {"id": "chat-577", "text": "a reply"})
+            send_id = json.loads(send_body)["receipt"]["receipt_id"]
+            self.assertTrue(any(send_id in w for w in self._wake_lines(d)),
+                            "a batched chat send did not wake")
+            rs, reply_body = self._post_body(
+                base + "/chat-reply", {"id": "chat-577", "text": "a reply"})
             self.assertEqual(rs, 202)
-            self.assertFalse(
-                [w for w in self._wake_lines(d) if "chat" in w],
-                "a batched reply wakes the same way a batched send does: not at all")
+            reply_id = json.loads(reply_body)["receipt"]["receipt_id"]
+            self.assertTrue(
+                any("chat" in w and reply_id in w for w in self._wake_lines(d)),
+                f"chat reply receipt {reply_id} committed but did not wake the loop")
 
     def test_chat_reply_composer_uses_a_chat_specific_draft_key(self):
         """#577 — the reply composer persists its draft under a CHAT-SPECIFIC
