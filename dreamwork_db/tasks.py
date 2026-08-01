@@ -12,7 +12,6 @@ from typing import Any
 from ledger_store import ORIGINS, REVIEW_DECISIONS, append_chained_event, last_event_hash
 
 from .core import StoreSpec
-from .migrate import initialize_legacy_store
 
 
 _KNOWN_ORIGINS = ("human", "loop")
@@ -349,7 +348,10 @@ class TaskRepository:
 
 
 def task_store_spec(path: str | Path) -> StoreSpec:
-    """Bind the task repository through the core's one factory seam."""
-    return StoreSpec(
-        path, repositories={"tasks": TaskRepository},
-        initializer=initialize_legacy_store)
+    """Compatibility facade for the canonical Dreamwork store spec."""
+
+    # Local import avoids a module cycle while ``store`` composes this
+    # repository with the question and review repositories.
+    from .store import dreamwork_store_spec
+
+    return dreamwork_store_spec(path)
