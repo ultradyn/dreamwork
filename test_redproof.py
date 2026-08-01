@@ -461,7 +461,7 @@ class TestExpectationSourcesArePinned:
 
         exit = _restore(repo, "router.js")
         _, err = capsys.readouterr()
-        assert exit == 2
+        assert exit == 2, "changed expectation must refuse during restore"
         assert "expectation source changed during the injection" in err
         assert "independent-expectation.txt" in err
 
@@ -480,7 +480,7 @@ class TestExpectationSourcesArePinned:
 
         exit = _check(repo)
         _, err = capsys.readouterr()
-        assert exit == 1
+        assert exit == 1, "check must refuse expectation drift at hand-off"
         assert "expectation source" in err
         assert "not stable across the injection" in err
 
