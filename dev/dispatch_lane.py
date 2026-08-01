@@ -405,6 +405,79 @@ def _write_exclusive(path: Path, content: str) -> None:
         raise DispatchFault(f"could not write {path}: {exc}") from exc
 
 
+def _launch_detached(
+        worktree: Path, task: int, lane: str, prompt_path: Path,
+        runner: list[str], prompt: str) -> int:
+    """Fork, setsid, acquire the lane lock, and exec the runner (#876).
+
+    All validation has already run in the parent; this is the LAST step. The
+    child becomes a new session leader (``setsid``) so anything that reaps the
+    launching process — the harness's background-command bookkeeping — cannot
+    reach the lane. That is the mechanism that killed six lanes in one sweep on
+    2026-08-01: ``os.execvp`` replaced the launcher WITH the runner, so the
+    harness-tracked background command WAS the lane.
+
+    The lane lock is acquired IN THE CHILD so its recorded pid is the runner's,
+    not the dispatcher's — the dispatcher exits immediately, and a lock holding
+    a dead pid would let a second dispatch through (#869, #876). A close-on-exec
+    pipe confirms every child-side step succeeded before the parent exits 0:
+    without it, a lock refusal or exec failure would read as a silent launch.
+    """
+    read_fd, write_fd = os.pipe()
+    os.set_inheritable(read_fd, False)
+    os.set_inheritable(write_fd, False)
+    pid = os.fork()
+    if pid == 0:
+        # Child: new session leader, then claim the worktree, then become the runner.
+        os.close(read_fd)
+        try:
+            os.setsid()
+        except OSError as exc:
+            _pipe_write(write_fd, f"setsid: {exc}\n")
+            os._exit(126)
+        try:
+            acquire_lane_lock(worktree, task, lane, prompt_path)
+        except DispatchFault as exc:
+            _pipe_write(write_fd, f"{exc}\n")
+            os._exit(2)
+        try:
+            os.execvp(runner[0], [*runner, prompt])
+        except OSError as exc:
+            _pipe_write(write_fd, f"exec {runner[0]!r}: {exc}\n")
+            os._exit(127)
+        os._exit(127)  # unreachable; exec replaced us or raised
+    # Parent: confirm the child launched, then exit. The child is detached and
+    # survives this exit — that is the whole point (#876).
+    os.close(write_fd)
+    failure = _pipe_drain(read_fd)
+    os.close(read_fd)
+    if failure:
+        os.waitpid(pid, 0)
+        print(f"dispatch refused: {failure}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _pipe_write(fd: int, message: str) -> None:
+    try:
+        os.write(fd, message.encode("utf-8", "replace"))
+    except OSError:
+        pass
+
+
+def _pipe_drain(fd: int) -> str:
+    chunks = bytearray()
+    while True:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        chunks.extend(chunk)
+    return chunks.decode("utf-8", "replace").strip()
+
+
 def _verify_pair(brief: Path, receipt: Path) -> None:
     if not brief.is_file():
         raise DispatchFault(
@@ -560,8 +633,6 @@ def main(argv: list[str] | None = None) -> int:
             validate_base_sha(prompt_head, branch)
         for report in ledger_reference_reports(prompt_head, briefs_dir.parent.parent):
             print(report, file=sys.stderr)
-        if not args.prepare:
-            acquire_lane_lock(worktree, task, branch, args.prompt)
         try:
             persist_prompt(prompt, briefs_dir)
         except DispatchFault as exc:
@@ -575,12 +646,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        # Fresh per dispatch, then stable because exec and lane subprocesses
-        # inherit it. Never reuse a coordinator's own lane identity.
+        # Fresh per dispatch, then stable because the detached child inherits
+        # it across exec. Never reuse a coordinator's own lane identity.
         os.environ[LANE_ID_ENV] = secrets.token_hex(16)
-        os.execvp(runner[0], [*runner, prompt])
+        return _launch_detached(worktree, task, branch, args.prompt, runner, prompt)
     except OSError as exc:
-        print(f"dispatch refused: could not exec runner {runner[0]!r}: {exc}", file=sys.stderr)
+        print(f"dispatch refused: could not launch detached runner {runner[0]!r}: {exc}",
+              file=sys.stderr)
         return 2
 
 
