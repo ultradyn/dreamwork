@@ -60,6 +60,7 @@ unknown id, id already in landed, id matching more than one open entry.
 """
 import argparse
 import collections
+import datetime
 import json
 import os
 import re
@@ -78,8 +79,10 @@ from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
 from ledger_parse import store_path  # noqa: E402
 from ledger_parse import classify_origin, store_records  # noqa: E402  — #497 read verbs
 from ledger_parse import store_review_decisions  # noqa: E402  — #497 reviews verbs
-from dreamwork_db import Access, open_database  # noqa: E402
+from dreamwork_db import Access, Conflict, NotFound, ValidationError, open_database  # noqa: E402
 from dreamwork_db.tasks import task_store_spec  # noqa: E402
+from dreamwork_db.questions import (  # noqa: E402  — #645 increment 9 CLI verbs
+    question_store_spec, questions_cut_over, QUESTIONS_WATERMARK_KEY)
 import lint  # noqa: E402 — NEXT_ID, the one header reader
 import ledger_store  # noqa: E402 — legacy groom compatibility
 import ledger_write  # noqa: E402 — file_task / land_task (#294 inc 9)
@@ -1623,6 +1626,242 @@ def _verb_reviews(args, dw_dir):
 
 
 # ---------------------------------------------------------------------------
+# #645 increment 9 — CLI verbs over the question/review repositories.
+#
+# The spec's real content is the pre-watermark refusal: "Before the watermark
+# mutating question verbs refuse with the cutover command, so no second writer
+# path exists" (design §446: no steady-state dual read or dual write for
+# questions).  A `questions post` that quietly wrote the DB before cutover
+# would create exactly the second writer path this design exists to prevent,
+# and it would look like a working feature — so the refusal is the increment.
+#
+# VERB CLASSIFICATION (the spec asked each verb to be decided explicitly):
+#   - questions post/answer/comment/fold/retitle: MUTATING question verbs →
+#     refuse pre-watermark.  Each writes the `question` or `question_message`
+#     table, and questions.md is still the live source before cutover, so a
+#     successful write here is a second writer the design forbids.
+#   - reviews register/link: ALLOWED pre-watermark.  These write
+#     review_file/issue/review_link — NOT the question tables.  Reviews have
+#     no legacy markdown writer to conflict with (the old review_decision
+#     table is a separate store concept with no markdown twin), so there is
+#     no second-writer path to prevent.  They operate on the store because
+#     the schema lives there, but they do not touch questions.
+# ---------------------------------------------------------------------------
+
+# The mutating question verbs: each must refuse before the watermark.  This
+# tuple IS the classification surface — adding a question-mutating verb means
+# adding it here, and the refusal gate below dispatches on it.  The names
+# MUST match the argparse subparser names exactly — a mismatch here is the
+# shape of bug direction 2 exists to catch (the verb refuses because the set
+# never matches, not because the guard fired).
+_QUESTION_MUTATING_CMDS = frozenset({
+    "questions-post", "questions-answer", "questions-comment",
+    "questions-fold", "questions-retitle",
+})
+
+
+def _question_refusal(cmd, dw_dir):
+    """The pre-watermark refusal message: names the cutover command (#440).
+
+    A bare "not supported" is worse than the bug — the reader does not know
+    what to run.  The refusal names the cutover command so the path forward
+    is in the message itself.
+    """
+    return (
+        f"questions: refusing `{cmd}` before the questions cutover "
+        f"(#645).\n"
+        f"  Questions are still served from `.dreamwork/questions.md`, so a\n"
+        f"  DB write here would create a second writer path the migration\n"
+        f"  exists to prevent (design §446: no steady-state dual write).\n"
+        f"  To cut questions over to the DB, run:\n"
+        f"      python3 dev/ledger.py db cutover --ledger {dw_dir}/tasks.md\n"
+        f"  then re-run this command.\n")
+
+
+def _read_body_file(file_arg):
+    """Read --body-file: '-' is stdin, else a path."""
+    if file_arg == "-":
+        return sys.stdin.read()
+    return Path(file_arg).read_text()
+
+
+def _verb_q_post(args, dw_dir):
+    if args.priority is not None:
+        bands = list(watch.PRIORITY_BANDS) if hasattr(watch, "PRIORITY_BANDS") else ["P0", "P1", "P2", "P3"]
+        if args.priority not in bands:
+            sys.stderr.write(
+                f"questions: priority: got {args.priority!r}, expected one of"
+                f" {', '.join(bands)}\n")
+            return 2
+    body = _read_body_file(args.body_file)
+    actor = args.actor or "coordinator"
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with open_database(
+                question_store_spec(store_path(dw_dir)),
+                access=Access.WRITE) as store:
+            with store.transaction() as tx:
+                qid = tx.questions.post(
+                    title=args.title, body_markdown=body,
+                    priority=args.priority, actor=actor, at=at)
+    except ValidationError as exc:
+        sys.stderr.write(f"questions: {exc}\n")
+        return 2
+    sys.stdout.write(f"posted question #{qid} (store)\n")
+    return 0
+
+
+def _verb_q_message(args, dw_dir, kind):
+    """Shared handler for answer and comment (both append a message)."""
+    body = _read_body_file(args.body_file)
+    actor = args.actor or ("watch" if kind == "answer" else "human")
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with open_database(
+                question_store_spec(store_path(dw_dir)),
+                access=Access.WRITE) as store:
+            with store.transaction() as tx:
+                if kind == "answer":
+                    tx.questions.answer(
+                        args.id, body_markdown=body, author=actor,
+                        at=at, action_id=getattr(args, "action_id", None))
+                else:
+                    tx.questions.comment(
+                        args.id, body_markdown=body, author=actor, at=at)
+    except NotFound as exc:
+        sys.stderr.write(f"questions: {exc}\n")
+        return 1
+    except ValidationError as exc:
+        sys.stderr.write(f"questions: {exc}\n")
+        return 2
+    sys.stdout.write(f"{kind}ed question #{args.id} (store)\n")
+    return 0
+
+
+def _verb_q_fold(args, dw_dir):
+    why = args.why
+    actor = args.actor or "coordinator"
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with open_database(
+                question_store_spec(store_path(dw_dir)),
+                access=Access.WRITE) as store:
+            with store.transaction() as tx:
+                tx.questions.fold(args.id, why=why, actor=actor, at=at)
+    except NotFound as exc:
+        sys.stderr.write(f"questions: {exc}\n")
+        return 1
+    except ValidationError as exc:
+        sys.stderr.write(f"questions: {exc}\n")
+        return 2
+    sys.stdout.write(f"folded question #{args.id} (store)\n")
+    return 0
+
+
+def _verb_q_retitle(args, dw_dir):
+    why = args.why
+    actor = args.actor or "coordinator"
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with open_database(
+                question_store_spec(store_path(dw_dir)),
+                access=Access.WRITE) as store:
+            with store.transaction() as tx:
+                tx.questions.retitle(
+                    args.id, title=args.title, why=why,
+                    expected_revision=args.revision, actor=actor, at=at)
+    except NotFound as exc:
+        sys.stderr.write(f"questions: {exc}\n")
+        return 1
+    except (Conflict, ValidationError) as exc:
+        sys.stderr.write(f"questions: {exc}\n")
+        return 2
+    sys.stdout.write(f"retitled question #{args.id} (store)\n")
+    return 0
+
+
+def _verb_reviews_register(args, dw_dir):
+    """Register or refresh a review file in review_file."""
+    from dreamwork_db.reviews import canonical_review_path
+    try:
+        canonical = canonical_review_path(args.artifact)
+    except ValidationError as exc:
+        sys.stderr.write(f"reviews: {exc}\n")
+        return 2
+    # Resolve the actual file to hash: review-relative name under review_dir.
+    review_dir = Path(dw_dir) / "review"
+    source = review_dir / canonical
+    if not source.exists():
+        sys.stderr.write(
+            f"reviews: {canonical!r} not found under {review_dir}\n")
+        return 1
+    content = source.read_bytes()
+    actor = args.actor or "coordinator"
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with open_database(
+                question_store_spec(store_path(dw_dir)),
+                access=Access.WRITE) as store:
+            with store.transaction() as tx:
+                rid, disposition = tx.reviews.register(
+                    canonical, content, actor=actor, at=at)
+    except ValidationError as exc:
+        sys.stderr.write(f"reviews: {exc}\n")
+        return 2
+    sys.stdout.write(
+        f"reviews: {canonical} {disposition} (id={rid})\n")
+    return 0
+
+
+def _verb_reviews_link(args, dw_dir):
+    """Create a typed review link from --task/--issue/--question + :kind."""
+    from dreamwork_db.reviews import split_link_target, canonical_review_path
+    try:
+        canonical = canonical_review_path(args.artifact)
+    except ValidationError as exc:
+        sys.stderr.write(f"reviews: {exc}\n")
+        return 2
+    if args.task:
+        ref, kind = split_link_target(args.task)
+        if not ref.lstrip("-").isdigit():
+            sys.stderr.write(
+                f"reviews: --task target must be a numeric id, got {ref!r}\n")
+            return 2
+        task_id = int(ref)
+        kwargs = {"kind": kind, "task_id": task_id}
+    elif args.issue:
+        ref, kind = split_link_target(args.issue)
+        kwargs = {"kind": kind, "issue_ref": ref}
+    elif args.question:
+        ref, kind = split_link_target(args.question)
+        if not ref.lstrip("-").isdigit():
+            sys.stderr.write(
+                f"reviews: --question target must be a numeric id, got {ref!r}\n")
+            return 2
+        kwargs = {"kind": kind, "question_id": int(ref)}
+    else:
+        sys.stderr.write(
+            "reviews: one of --task/--issue/--question is required\n")
+        return 2
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with open_database(
+                question_store_spec(store_path(dw_dir)),
+                access=Access.WRITE) as store:
+            with store.transaction() as tx:
+                link_id, disposition = tx.reviews.link(canonical, at=at, **kwargs)
+    except NotFound as exc:
+        sys.stderr.write(f"reviews: {exc}\n")
+        return 1
+    except ValidationError as exc:
+        sys.stderr.write(f"reviews: {exc}\n")
+        return 2
+    sys.stdout.write(
+        f"reviews: linked {canonical} ({disposition}, link_id={link_id})\n")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # #558 — groom: backfill NULL origins to 'unknown' (the truthful pre-contract
 # value), store-mode only. The audited surface for that backfill — never raw
 # SQL outside it.
@@ -1810,6 +2049,89 @@ def main(argv=None):
     pgroom.add_argument("--ledger", default=LEDGER_DEFAULT,
                         help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
 
+    # #645 increment 9 — questions CLI verbs over the DB API.  These write the
+    # question tables; before the cutover watermark they REFUSE with the
+    # cutover command so no second writer path exists.
+    pqpost = sub.add_parser(
+        "questions-post",
+        help="post a new question to the DB (refuses before questions cutover) [#645]")
+    pqpost.add_argument("title", help="the question title")
+    pqpost.add_argument("--body-file", default="-",
+                        help="file with the body; '-' for stdin (default %(default)s)")
+    pqpost.add_argument("--priority", default=None,
+                        help="P0-P3 priority band (default: none)")
+    pqpost.add_argument("--actor", default=None,
+                        help="who is posting (default: coordinator)")
+    pqpost.add_argument("--ledger", default=LEDGER_DEFAULT,
+                        help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
+    pqans = sub.add_parser(
+        "questions-answer",
+        help="answer a question (unanswered→answered_pending_fold) [#645]")
+    pqans.add_argument("id", type=int, help="the question id")
+    pqans.add_argument("--body-file", default="-",
+                       help="file with the answer; '-' for stdin (default %(default)s)")
+    pqans.add_argument("--actor", default=None, help="who is answering (default: watch)")
+    pqans.add_argument("--action-id", default=None, help="idempotency key for retries")
+    pqans.add_argument("--ledger", default=LEDGER_DEFAULT,
+                       help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
+    pqcmt = sub.add_parser(
+        "questions-comment",
+        help="append a note to a question (no status change) [#645]")
+    pqcmt.add_argument("id", type=int, help="the question id")
+    pqcmt.add_argument("--body-file", default="-",
+                       help="file with the comment; '-' for stdin (default %(default)s)")
+    pqcmt.add_argument("--actor", default=None, help="who is commenting (default: human)")
+    pqcmt.add_argument("--ledger", default=LEDGER_DEFAULT,
+                       help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
+    pqfold = sub.add_parser(
+        "questions-fold",
+        help="fold an answered question to 'answered' [#645]")
+    pqfold.add_argument("id", type=int, help="the question id")
+    pqfold.add_argument("--why", required=True,
+                        help="the reason for the fold (NOT optional)")
+    pqfold.add_argument("--actor", default=None, help="who is folding (default: coordinator)")
+    pqfold.add_argument("--ledger", default=LEDGER_DEFAULT,
+                        help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
+    pqret = sub.add_parser(
+        "questions-retitle",
+        help="compare-and-swap retitle of a question [#645]")
+    pqret.add_argument("id", type=int, help="the question id")
+    pqret.add_argument("title", help="the new title")
+    pqret.add_argument("--why", required=True,
+                       help="the reason for the retitle (NOT optional)")
+    pqret.add_argument("--revision", type=int, required=True,
+                       help="the expected current revision (CAS)")
+    pqret.add_argument("--actor", default=None, help="who is retitling (default: coordinator)")
+    pqret.add_argument("--ledger", default=LEDGER_DEFAULT,
+                       help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
+    # reviews register/link — ALLOWED pre-watermark (they write review tables,
+    # not question tables; no second question-writer path).
+    preg = sub.add_parser(
+        "reviews-register",
+        help="register or refresh a review file in the DB [#645]")
+    preg.add_argument("artifact", help="review-relative name (e.g. design.html)")
+    preg.add_argument("--actor", default=None, help="who is registering (default: coordinator)")
+    preg.add_argument("--ledger", default=LEDGER_DEFAULT,
+                      help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
+    plink = sub.add_parser(
+        "reviews-link",
+        help="link a review to a task/issue/question with a kind [#645]")
+    plink.add_argument("artifact", help="review-relative name (e.g. design.html)")
+    plink.add_argument("--task", default=None,
+                       help="target as '<id>:<related|blocking>'")
+    plink.add_argument("--issue", default=None,
+                       help="target as '<tracker:repo#N>:<related|blocking>'")
+    plink.add_argument("--question", default=None,
+                       help="target as '<id>:<related|blocking>'")
+    plink.add_argument("--ledger", default=LEDGER_DEFAULT,
+                       help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
     args = p.parse_args(argv)
     rc = _dispatch(args)
     # #357 — the warning footer tacks onto stderr on every verb's success
@@ -1989,6 +2311,48 @@ def _dispatch(args):
     # STORE only (never the markdown file).
     if args.cmd == "groom":
         return _verb_groom(dw_dir)
+
+    # #645 increment 9 — questions/reviews CLI verbs over the DB API.
+    # These operate on the question/review tables (v3 schema), which exist in
+    # any store opened through question_store_spec — they do NOT require the
+    # task ledger to be cut over (that is a separate, earlier cutover).  The
+    # store file itself is the precondition: a store that does not exist has
+    # no tables to write.
+    if args.cmd in ("questions-post", "questions-answer", "questions-comment",
+                    "questions-fold", "questions-retitle",
+                    "reviews-register", "reviews-link"):
+        db_path = store_path(dw_dir)
+        if not db_path.exists():
+            sys.stderr.write(
+                f"ledger: {args.cmd} requires a store at {db_path} —"
+                f" its tables live in the DB, not markdown\n")
+            return 1
+        # Pre-watermark refusal for MUTATING QUESTION verbs (design §446).
+        # reviews register/link are ALLOWED pre-watermark: they write the
+        # review tables, not the question tables, so they create no second
+        # writer path for questions.  A test that sets the watermark opts
+        # into the positive case (#671/#755).
+        if args.cmd in _QUESTION_MUTATING_CMDS:
+            with open_database(question_store_spec(db_path),
+                               access=Access.READ) as store:
+                cut_over = questions_cut_over(store)
+            if not cut_over:
+                sys.stderr.write(_question_refusal(args.cmd, dw_dir))
+                return 2
+        if args.cmd == "questions-post":
+            return _verb_q_post(args, dw_dir)
+        if args.cmd == "questions-answer":
+            return _verb_q_message(args, dw_dir, "answer")
+        if args.cmd == "questions-comment":
+            return _verb_q_message(args, dw_dir, "comment")
+        if args.cmd == "questions-fold":
+            return _verb_q_fold(args, dw_dir)
+        if args.cmd == "questions-retitle":
+            return _verb_q_retitle(args, dw_dir)
+        if args.cmd == "reviews-register":
+            return _verb_reviews_register(args, dw_dir)
+        if args.cmd == "reviews-link":
+            return _verb_reviews_link(args, dw_dir)
 
     # #627 — reprioritise / unblock are store-mode only (priority/blocked_on
     # are store columns, not markdown text — the same reasoning groom uses).

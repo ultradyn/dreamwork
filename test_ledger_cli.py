@@ -541,6 +541,20 @@ _VERB_ARGV = {
     "reprioritise": ["reprioritise", "10", "P3", "--why", "x"],
     "unblock": ["unblock", "10", "--why", "x"],
     "retitle": ["retitle", "10", "new title", "--why", "x"],
+    # #645 increment 9 — the questions/reviews verbs. They ride the #667
+    # gate like every other verb (it sits at the TOP of `_dispatch`, before
+    # the question/review dispatch block, so each refuses, exits 2, keeps the
+    # refusal off stdout and writes nothing against an absent store). The
+    # argv is minimal-but-valid for argparse: the gate returns before any
+    # handler runs, so the stdin-default `--body-file -` on the message verbs
+    # is never read.
+    "questions-post": ["questions-post", "a question title"],
+    "questions-answer": ["questions-answer", "1"],
+    "questions-comment": ["questions-comment", "1"],
+    "questions-fold": ["questions-fold", "1", "--why", "x"],
+    "questions-retitle": ["questions-retitle", "1", "new title", "--why", "x", "--revision", "1"],
+    "reviews-register": ["reviews-register", "design.html"],
+    "reviews-link": ["reviews-link", "design.html"],
 }
 
 
