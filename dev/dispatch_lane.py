@@ -190,6 +190,9 @@ def ledger_reference_reports(prompt_head: str, dreamwork_dir: Path) -> list[str]
         return []
     try:
         known_ids = _ledger_ids(dreamwork_dir)
+    # This advisory is the last step before exec.  Core names supported store
+    # failures, but an unknown/malformed schema can still raise outside that
+    # ladder; no probe failure is allowed to stop the dispatch route.
     except Exception as exc:
         return [
             "dispatch ledger reference check DID NOT RUN: "

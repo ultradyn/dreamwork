@@ -186,6 +186,23 @@ def test_locked_ledger_is_reported_and_does_not_block(tmp_path):
     assert "launch allowed" in result.stderr
 
 
+def test_unclassified_core_read_failure_is_reported_and_does_not_block(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    store = root / ".dreamwork" / "ledger.sqlite3"
+    connection = sqlite3.connect(store)
+    connection.execute("ALTER TABLE task RENAME COLUMN state TO unknown_state")
+    connection.commit()
+    connection.close()
+    prompt = _healthy_prompt(tmp_path, root)
+
+    result = _run(cli, prompt, "true")
+
+    assert result.returncode == 0
+    assert "ledger reference check DID NOT RUN" in result.stderr
+    assert "no such column: state" in result.stderr
+    assert "launch allowed" in result.stderr
+
+
 def test_dispatch_refuses_the_ambiguous_hand_off_wording(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
     prompt = _healthy_prompt(tmp_path, root)
