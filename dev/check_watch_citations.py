@@ -25,6 +25,7 @@ and the original number plus an explicit revision for historical evidence.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -47,9 +48,55 @@ BASE_REV = "dc739001"
 # are invisible to this check by construction.  #845 replaces the constant with
 # a per-citation offset derived from the real diff against BASE_REV.
 DRIFT = 22
+
+# Distinctiveness: a matched old line is evidence only when it is non-empty,
+# unique in the base revision, and long enough to be about something.  A blank
+# line (681 copies in dc739001:watch.py) is byte-identical to every other blank
+# line, so it can only ever confirm the offset you already guessed — #764 as a
+# measurement.  The length floor is the widest gap in the data: every certified
+# line is >=30 chars, every non-blank weak line is <=20, so any threshold in
+# [21,29] produces the same partition.  Uniqueness alone (non-empty ∧ unique)
+# admits one extra citation — `watch.py:4026-4036`, old line `    return entry`
+# (16 chars, unique) — but a four-token return statement is one future edit
+# away from a duplicate, so length is a stability proxy, not merely a
+# distinctiveness proxy.  See the 2026-08-01 lesson on this check.
+DISTINCTIVE_MIN_LEN = 25
+
 # Living citations were removed by #801, so the standing resolvable population
-# is the historical subset that remains deliberately line-pinned.
-EXPECTED_CLASSIFIED_CITATIONS = 24
+# is the historical subset that remains deliberately line-pinned.  Re-measured
+# at 19 after the distinctiveness rule excludes five weak +22 matches (two
+# blank lines, two short lines, one non-unique line).
+EXPECTED_CLASSIFIED_CITATIONS = 19
+
+# The exact multiset of citations the guard certifies (distinctive +DRIFT
+# byte-matches in AFFECTED_DOCS).  Binding the multiset — not a size — closes
+# the vacuity guard against wrong-member substitution and dropped duplicates
+# (#702; #841 produced a live case where a set() assertion passed over a
+# duplicated multiset).  A Counter comparison preserves duplicates; a set()
+# would silently drop one.  handoffs.md:395 legitimately carries two citations
+# on one line, and handoffs.md cites source line 3654 twice (doc lines 169 and
+# 225), so the 4-tuple (doc, doc_line, source_line, token) is the identity.
+EXPECTED_CERTIFIED_MULTISET: frozenset[tuple[str, int, int, str]] = frozenset({
+    (".dreamwork/docs/briefs/547-composer-default-runmode-removal.md", 44, 4101, "watch.py:4101"),
+    (".dreamwork/docs/briefs/547-composer-default-runmode-removal.md", 46, 4100, "watch.py:4100"),
+    (".dreamwork/docs/briefs/548-bdinput-cap-binding.md", 15, 3712, "watch.py:3712"),
+    (".dreamwork/docs/briefs/548-bdinput-cap-binding.md", 16, 3931, "watch.py:3931"),
+    (".dreamwork/docs/briefs/548-bdinput-cap-binding.md", 41, 3712, "watch.py:3712"),
+    (".dreamwork/docs/briefs/562-chat-surface.md", 25, 4037, "watch.py:4037-4040"),
+    (".dreamwork/docs/briefs/562-chat-surface.md", 74, 4020, "watch.py:4020-4027"),
+    (".dreamwork/docs/handoffs/2026-07-29-0810-claude-to-grok.md", 138, 4019, "watch.py:4019-4021"),
+    (".dreamwork/handoffs.md", 118, 4412, "watch.py:4412"),
+    (".dreamwork/handoffs.md", 123, 3942, "watch.py:3942"),
+    (".dreamwork/handoffs.md", 169, 3654, "watch.py:3654"),
+    (".dreamwork/handoffs.md", 225, 3654, "watch.py:3654"),
+    (".dreamwork/handoffs.md", 326, 4039, "watch.py:4039"),
+    (".dreamwork/handoffs.md", 395, 4050, "watch.py:4050"),
+    (".dreamwork/handoffs.md", 395, 4135, "watch.py:4135-4145"),
+    (".dreamwork/lane-641-report.md", 136, 4068, "watch.py:4068"),
+    (".dreamwork/lane-645i5-report.md", 65, 3476, "watch.py:3476"),
+    (".dreamwork/reviews-cx-session-2026-08-01.md", 49, 3999, "watch.py:3999-4006"),
+    (".dreamwork/reviews-cx-session-2026-08-01.md", 99, 3946, "watch.py:3946-3974"),
+})
 
 # Re-derived from the exact old-line/current-line comparison.  These are the
 # files outside the reviewed population that contained a positive match at the
@@ -163,6 +210,15 @@ def _is_shifted(old: list[str], current: list[str], line: int) -> bool:
     )
 
 
+def _is_distinctive(old_counts: Counter, line_text: str) -> bool:
+    """A matched line is evidence only when it could not match by coincidence."""
+    return (
+        bool(line_text.strip())
+        and old_counts[line_text] == 1
+        and len(line_text) >= DISTINCTIVE_MIN_LEN
+    )
+
+
 def stale_citations(root: Path) -> list[StaleCitation]:
     old = _old_lines(root)
     current = (root / "watch.py").read_text(encoding="utf-8").splitlines()
@@ -179,6 +235,52 @@ def stale_citations(root: Path) -> list[StaleCitation]:
                 suffix = text[match.end():]
                 pinned = re.match(rf"\s*@\s*{BASE_REV}\b", suffix) is not None
                 result.append(StaleCitation(rel, doc_line, line, match.group(), pinned))
+    return result
+
+
+def _scan_affected_citations(
+    root: Path, old: list[str], current: list[str], old_counts: Counter
+) -> list[tuple[str, int, int, str, str, bool]]:
+    """Classify every ``watch.py:N`` citation in AFFECTED_DOCS by adjudication class.
+
+    Returns ``(doc, doc_line, source_line, token, cls, pinned)`` tuples where
+    ``cls`` is one of:
+
+    * ``certified`` — a distinctive +DRIFT byte-match (evidence the citation is
+      the reviewed, shifted one).
+    * ``weak`` — a +DRIFT byte-match whose old line is blank, non-unique, or
+      too short to be distinctive.  Not certified: the match could be
+      coincidence.
+    * ``out_of_range`` — the cited line is beyond the base revision's end, so
+      the oracle cannot adjudicate it by construction.  Authored against a
+      later tree.
+    * ``non_surviving`` — in range, but the old line does not appear at +DRIFT
+      in the current file.  May survive at a different offset or be gone; the
+      single-offset oracle cannot tell.
+    """
+    result: list[tuple[str, int, int, str, str, bool]] = []
+    for rel in sorted(AFFECTED_DOCS):
+        if rel in REVIEWED_DOCS:
+            continue
+        path = root / rel
+        if not path.is_file():
+            continue
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        for doc_line, text in enumerate(lines, 1):
+            for match in CITATION.finditer(text):
+                line = int(match.group("line"))
+                token = match.group()
+                suffix = text[match.end():]
+                pinned = re.match(rf"\s*@\s*{BASE_REV}\b", suffix) is not None
+                if line > len(old):
+                    cls = "doubly_out_of_range" if line > len(current) else "out_of_range"
+                elif not _is_shifted(old, current, line):
+                    cls = "non_surviving"
+                elif not _is_distinctive(old_counts, old[line - 1]):
+                    cls = "weak"
+                else:
+                    cls = "certified"
+                result.append((rel, doc_line, line, token, cls, pinned))
     return result
 
 
@@ -215,28 +317,69 @@ def check(root: Path) -> int:
     if len(AFFECTED_DOCS) != 34:
         print(f"ERROR inventory: expected 34 affected docs, got {len(AFFECTED_DOCS)}")
         return 2
-    classified = [item for item in stale_citations(root) if item.doc in AFFECTED_DOCS]
-    if len(classified) != EXPECTED_CLASSIFIED_CITATIONS:
+    old = _old_lines(root)
+    current = (root / "watch.py").read_text(encoding="utf-8").splitlines()
+    old_counts = Counter(old)
+
+    scanned = _scan_affected_citations(root, old, current, old_counts)
+
+    # The corpus the oracle reads must be non-empty, or every class resolves to
+    # zero and the check is green over nothing (#671).  Name the size so a
+    # future change that empties the corpus cannot hide behind a count of 0.
+    n_old = len(old)
+    n_cur = len(current)
+    if n_old == 0:
+        print(f"ERROR vacuity: BASE_REV {BASE_REV} resolved to {n_old} watch.py lines; the oracle cannot see an empty base")
+        return 2
+
+    by_class: dict[str, list[tuple[str, int, int, str, bool]]] = {
+        "certified": [], "weak": [],
+        "out_of_range": [], "doubly_out_of_range": [],
+        "non_surviving": [],
+    }
+    for doc, doc_line, src, token, cls, pinned in scanned:
+        by_class.setdefault(cls, []).append((doc, doc_line, src, token, pinned))
+    certified = by_class["certified"]
+    weak = by_class["weak"]
+    oor = by_class["out_of_range"]
+    doubly_oor = by_class["doubly_out_of_range"]
+    nonsurv = by_class["non_surviving"]
+
+    # Bind the exact multiset, not a size.  A size-only expectation permits
+    # wrong-member substitution; a set() drops duplicates (#702; #841's live
+    # case).  Counter preserves duplicates and distinguishes members.
+    got = Counter((d, dl, s, t) for d, dl, s, t, _ in certified)
+    want = Counter(EXPECTED_CERTIFIED_MULTISET)
+    if got != want:
+        only_got = got - want
+        only_want = want - got
+        detail = []
+        for key in sorted(only_got):
+            detail.append(f"+{key}")
+        for key in sorted(only_want):
+            detail.append(f"-{key}")
         print(
-            "ERROR population: #801's classified inventory resolved "
-            f"{len(classified)} shifted citation(s), expected "
-            f"{EXPECTED_CLASSIFIED_CITATIONS} across {len(AFFECTED_DOCS)} document(s)"
+            "ERROR population: #801's certified inventory resolved "
+            f"{len(certified)} distinctive +{DRIFT} citation(s); the certified "
+            f"multiset differs from EXPECTED_CERTIFIED_MULTISET "
+            f"({' '.join(detail) if detail else 'size only'})"
         )
         return 2
-    findings = [item for item in classified if not item.pinned]
+
+    findings = [item for item in certified if not item[4]]
     laundering = [
-        item for item in classified
-        if item.pinned and item.doc not in HISTORICAL_DOCS
+        item for item in certified
+        if item[4] and item[0] not in HISTORICAL_DOCS
     ]
     if findings or laundering:
-        for item in findings:
+        for doc, doc_line, src, token, _ in findings:
             print(
-                f"STALE {item.doc}:{item.doc_line}: {item.token} is {DRIFT} lines behind "
-                f"its byte-identical evidence at watch.py:{item.source_line + DRIFT}"
+                f"STALE {doc}:{doc_line}: {token} is {DRIFT} lines behind "
+                f"its byte-identical evidence at watch.py:{src + DRIFT}"
             )
-        for item in laundering:
+        for doc, doc_line, src, token, _ in laundering:
             print(
-                f"STALE-LIVING {item.doc}:{item.doc_line}: {item.token} is revision-pinned "
+                f"STALE-LIVING {doc}:{doc_line}: {token} is revision-pinned "
                 "inside a living document; a pin must not launder current prose as historical"
             )
         print(
@@ -244,10 +387,24 @@ def check(root: Path) -> int:
             "misclassified shifted citation(s)"
         )
         return 1
-    pinned = sum(item.pinned for item in classified)
+    pinned = sum(1 for _, _, _, _, p in certified)
+    # Report every class, including the ones the oracle did NOT adjudicate.
+    # A check that says what it did not examine is worth more than one that
+    # certifies its survivors and is silent about the rest (#671).  The
+    # doubly-out-of-range class — citations past BOTH the base revision and
+    # the current file — is simply wrong: it cannot be adjudicated by any
+    # future tree because the line does not exist now, and it was never in the
+    # base.  It is reported as a count so the size of the blind spot is
+    # visible, and named distinctly from out-of-range (which a later tree
+    # could still adjudicate).
     print(
-        f"PASS: #801's {len(classified)} classified +{DRIFT} watch.py citation(s) "
-        f"resolved; {pinned} historical citation(s) explicitly pinned to {BASE_REV}"
+        f"PASS: #801's {len(certified)} certified +{DRIFT} watch.py citation(s) "
+        f"resolved ({pinned} pinned to {BASE_REV}); "
+        f"{len(weak)} weak not certified; "
+        f"{len(oor)} out-of-range; "
+        f"{len(doubly_oor)} doubly-out-of-range (past both ends); "
+        f"{len(nonsurv)} non-surviving; "
+        f"{n_old} base lines, {n_cur} current lines"
     )
     return 0
 
