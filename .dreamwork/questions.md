@@ -2,63 +2,6 @@
 
 ## Open
 
-- **P1 · 2026-07-31 21:45 — #691: cheap-model recap of the main agent — three design calls.**
-  Your steer (receipt 323d2ef1): *"Use cheap model to generate recap of current main agent actions …
-  Present the design for me to review first (gates implementation). Ask questions if unsure."* Design at
-  `.dreamwork/docs/plans/main-agent-recap.md` (design only; authorises no code). It is proven end to end:
-  a real `ccc -y @glm52` run over your live session tonight produced an accurate recap in 19 s from a
-  6.2 KB digest. Settled without asking: the input is the JSONL transcript (a 17 MB scan costs 0.36 s);
-  compaction cannot fool it, because the transcript is never truncated and the `isCompactSummary` blob is
-  dropped by exact field test while the boundary is marked; the cap is 24 KiB of prompt, head 1/3 + tail
-  2/3, middle elided with a marker naming count, span and volume; the store is `ledger.sqlite3` (the
-  journal is receipt-authority-only by its own design, and gitignoring does not discriminate — both are);
-  and the schedule is a `tee` leg on the existing heartbeat pipeline, because an independent timer can
-  hold an *offset* but not a *phase*. **One defect found that blocks the feature as specified:**
-  `status.json` has no `agent_session` key, so nothing says which transcript is yours — and deriving it
-  from the target directory points at a file two days stale, because your live session sits under a
-  *worktree* slug. The design refuses and says so rather than guessing; the missing key is a #665
-  regression worth its own task.
-
-  **`Q1` — where does the feature gate live?** **`rec: a tracked `.dreamwork/recap` file`** carrying
-  `enabled: no` / `runner: ccc -y @glm52` / `every: 1` in the existing knob grammar — gate and your
-  "configurable" runner in one place, closed key set so a misspelled key is a lint ERROR rather than a
-  silently-on feature, default off so a target that upgrades does not quietly gain a model call every
-  4.75 min. Turning it off is one word and takes effect on the next beat. **You should know the
-  convention you are being asked about does not exist:** `SKILL.md:913` says *"Experiments are
-  feature-gated"* and that is the entire text — no mechanism, no example, nothing in the codebase
-  implements it. The alternative is making the recap a real `ud-dreamwork-recap` plugin to borrow the one
-  proven consent gate (`- Load:` in DREAMWORK.md), which travels in git and is re-checked at runtime, but
-  is plugin machinery for one script. Honest limit either way: the ~11 MB consumer still reads the pipe
-  when off; the *runner* never starts.
-
-  **UPDATE 2026-07-31 23:1x — Q1 is now settled by convention, not by ruling, so this no longer
-  blocks.** `#700` (landed, lane-700gate) resolved the missing convention centrally, which is what
-  that task existed to do: *an experiment ships off by default behind its own tracked
-  `.dreamwork/<name>` file — the `watch-tint`/`run-mode` family, absent means off — with a
-  `file-formats.md` row and a `lint.py` check.* `SKILL.md`'s Guardrails now carries it and the lane
-  boilerplate points at it. **That is the `rec` above, arrived at independently**, so `#691` should
-  take the `.dreamwork/recap` file and drop the plugin alternative. Left open only because you may
-  want to overrule the convention itself; the design gate you set on `#691` is untouched by this.
-
-  **`Q2` — every beat, or every nth?** **`rec: every beat, with `every` as the knob`** — 303 runs/day at
-  ~8% duty cycle, ~20 MB time-averaged, ~0.5M cheap tokens/day. Memory is what is scarce here (swap 55 of
-  62 GB), and the thing that keeps it affordable is the 120 s timeout killing the process *group*: a
-  `ccc` run is 7 processes and ~240 MB, and without the timeout a hung one makes that permanent. `every:
-  2` lets you halve it without a code change; the wider window is absorbed by the cap.
-
-  **`Q3` — does it really animate?** **`rec: yes, reusing #559's cross-dissolve`** (`bdContentSwap`,
-  `.42s`, reduced motion snaps) gated on the recap's id and never on the tick — ungated the gesture would
-  replay ~142× per recap, which is exactly the motion-with-nothing-behind-it rule. Asking anyway because
-  the counter-evidence is strong: `transitions.md` is opt-in and its closed list ends *"Nothing else
-  animates"*, and the repo's precedent for a tick-re-rendered dashboard text block is **explicitly no
-  motion**, said in five code sites. Your *"transition when updated"* could mean the value changes rather
-  than that it moves.
-
-  **If you say nothing:** nothing is built — the design authorises no code, and the recs stand as
-  defaults when #691's implementation is planned. Build order if it proceeds: the digest builder alone
-  first (all the subtlety, no model, and useful by itself), then the table, then the gated runner.
-  Accepted answers: `rec` (takes all three) · per-question (`Q1: …`) · free text.
-
 - **P2 · 2026-07-31 07:30 — #584 (from #571): persistent user settings — four design calls.**
   Your steer (receipt 09a8897b): *"Add persistent user settings in the database, probably just store it as jsonb
   if you can. indexed by userid … check `~/src/refs/amr-ui/` for a good example."* Design at
@@ -178,6 +121,66 @@
   Nothing is blocked either way; the log half is live now.
 
 ## Answered
+
+- **P1 · 2026-07-31 21:45 — #691: cheap-model recap of the main agent — three design calls.**
+  Your steer (receipt 323d2ef1): *"Use cheap model to generate recap of current main agent actions …
+  Present the design for me to review first (gates implementation). Ask questions if unsure."* Design at
+  `.dreamwork/docs/plans/main-agent-recap.md` (design only; authorises no code). It is proven end to end:
+  a real `ccc -y @glm52` run over your live session tonight produced an accurate recap in 19 s from a
+  6.2 KB digest. Settled without asking: the input is the JSONL transcript (a 17 MB scan costs 0.36 s);
+  compaction cannot fool it, because the transcript is never truncated and the `isCompactSummary` blob is
+  dropped by exact field test while the boundary is marked; the cap is 24 KiB of prompt, head 1/3 + tail
+  2/3, middle elided with a marker naming count, span and volume; the store is `ledger.sqlite3` (the
+  journal is receipt-authority-only by its own design, and gitignoring does not discriminate — both are);
+  and the schedule is a `tee` leg on the existing heartbeat pipeline, because an independent timer can
+  hold an *offset* but not a *phase*. **One defect found that blocks the feature as specified:**
+  `status.json` has no `agent_session` key, so nothing says which transcript is yours — and deriving it
+  from the target directory points at a file two days stale, because your live session sits under a
+  *worktree* slug. The design refuses and says so rather than guessing; the missing key is a #665
+  regression worth its own task.
+
+  **`Q1` — where does the feature gate live?** **`rec: a tracked `.dreamwork/recap` file`** carrying
+  `enabled: no` / `runner: ccc -y @glm52` / `every: 1` in the existing knob grammar — gate and your
+  "configurable" runner in one place, closed key set so a misspelled key is a lint ERROR rather than a
+  silently-on feature, default off so a target that upgrades does not quietly gain a model call every
+  4.75 min. Turning it off is one word and takes effect on the next beat. **You should know the
+  convention you are being asked about does not exist:** `SKILL.md:913` says *"Experiments are
+  feature-gated"* and that is the entire text — no mechanism, no example, nothing in the codebase
+  implements it. The alternative is making the recap a real `ud-dreamwork-recap` plugin to borrow the one
+  proven consent gate (`- Load:` in DREAMWORK.md), which travels in git and is re-checked at runtime, but
+  is plugin machinery for one script. Honest limit either way: the ~11 MB consumer still reads the pipe
+  when off; the *runner* never starts.
+
+  **UPDATE 2026-07-31 23:1x — Q1 is now settled by convention, not by ruling, so this no longer
+  blocks.** `#700` (landed, lane-700gate) resolved the missing convention centrally, which is what
+  that task existed to do: *an experiment ships off by default behind its own tracked
+  `.dreamwork/<name>` file — the `watch-tint`/`run-mode` family, absent means off — with a
+  `file-formats.md` row and a `lint.py` check.* `SKILL.md`'s Guardrails now carries it and the lane
+  boilerplate points at it. **That is the `rec` above, arrived at independently**, so `#691` should
+  take the `.dreamwork/recap` file and drop the plugin alternative. Left open only because you may
+  want to overrule the convention itself; the design gate you set on `#691` is untouched by this.
+
+  **`Q2` — every beat, or every nth?** **`rec: every beat, with `every` as the knob`** — 303 runs/day at
+  ~8% duty cycle, ~20 MB time-averaged, ~0.5M cheap tokens/day. Memory is what is scarce here (swap 55 of
+  62 GB), and the thing that keeps it affordable is the 120 s timeout killing the process *group*: a
+  `ccc` run is 7 processes and ~240 MB, and without the timeout a hung one makes that permanent. `every:
+  2` lets you halve it without a code change; the wider window is absorbed by the cap.
+
+  **`Q3` — does it really animate?** **`rec: yes, reusing #559's cross-dissolve`** (`bdContentSwap`,
+  `.42s`, reduced motion snaps) gated on the recap's id and never on the tick — ungated the gesture would
+  replay ~142× per recap, which is exactly the motion-with-nothing-behind-it rule. Asking anyway because
+  the counter-evidence is strong: `transitions.md` is opt-in and its closed list ends *"Nothing else
+  animates"*, and the repo's precedent for a tick-re-rendered dashboard text block is **explicitly no
+  motion**, said in five code sites. Your *"transition when updated"* could mean the value changes rather
+  than that it moves.
+
+  **If you say nothing:** nothing is built — the design authorises no code, and the recs stand as
+  defaults when #691's implementation is planned. Build order if it proceeds: the digest builder alone
+  first (all the subtlety, no model, and useful by itself), then the table, then the gated runner.
+  Accepted answers: `rec` (takes all three) · per-question (`Q1: …`) · free text.
+  - **Answer (via watch, 2026-08-01 18:27):** q1: rec. q2: rec, but
+    don't worry about my system usage, it's not typical. q3: rec
+  - **FOLDED 2026-08-01 (receipt aabf15cd, ord 158).** All three recs taken. `Q1` → the tracked `.dreamwork/recap` file in `#700`'s convention; the plugin alternative is dropped. `Q2` → every beat, `every` as the knob. `Q3` → yes, reusing `#559`'s cross-dissolve, gated on the recap id and never on the tick. **His rider on `Q2` retires a premise of the design, not just the question:** *"don't worry about my system usage, it's not typical."* The design argued the duty cycle from swap-at-55-of-62-GB; that reasoning is withdrawn, so the `every` knob and the 120 s process-group timeout stay on their own merits (a hung `ccc` run is 7 processes that never exit) and NOT as memory rationing. **Implementation is still gated on the defect the design refused over:** `status.json` has no `agent_session` key, so nothing identifies his transcript, and deriving it from the target directory points two days stale because his live session sits under a worktree slug. That is filed separately and must land first.
 
 - **P1 · 2026-08-01 18:20 — #848: the ledger's tamper-evidence chain has been broken since SCHEMA_VERSION left 1. One ruling needed.**
   `ledger_store.genesis_hash()` is `SHA-256("ud-dreamwork.task-ledger" + SCHEMA_VERSION)`. The live journal
