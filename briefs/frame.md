@@ -73,6 +73,18 @@ instrument read normal).
   that no longer exists. Local `master`, not `origin/master`, which is behind.
 - **Do not use `attn`.** You report to the coordinator, who decides whether to
   ping the human. This is absolute.
+- **A change that adds a state to a registry the gate inspects is unlandable
+  until the gate's build catches up.** `dev/redproof.py check` classifies an
+  entry whose `state` it does not know as the dangerous case (refused), and the
+  pre-merge gate runs an OLDER build of the tool against the lane's POST-lane
+  data — so a lane that introduces a state and exercises it reads clean from
+  its own (newer) tool while the gate refuses, and the two refusals read
+  identically (#950). The fail-closed direction is correct and is not changed;
+  what the gate now does is NAME the format skew in its refusal rather than
+  report it as ordinary armed entries. If your branch adds a registry state,
+  expect the gate to refuse on those grounds until it runs a build carrying
+  your change; coordinate the merge, and do not work around it by defaulting
+  the unknown state to safe.
 
 ## What to report back
 
