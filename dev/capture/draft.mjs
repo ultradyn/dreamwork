@@ -30,19 +30,32 @@
 
    usage: node draft.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { resolveStoreKey } from './dom.mjs';
 import { outdir } from './outdir.mjs';
 const OUT = outdir(process.argv), PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
+const PLAN_ROOT = join(homedir(), '.claude-p/plans');
+mkdirSync(PLAN_ROOT, { recursive: true });
+const PLAN_DIR = mkdtempSync(join(PLAN_ROOT, 'draft-guard-'));
+const PLAN_PATH = join(PLAN_DIR, 'plan.md');
+const PLAN_TASK = 'draft guard ingest-plan decay proof';
+writeFileSync(PLAN_PATH,
+  `## Tasks for ingestion\n\n| # | Title | type | pri | blocked on |\n` +
+  `| --- | --- | --- | --- | --- |\n` +
+  `| A | ${PLAN_TASK} | task | P2 | — |\n`);
 
 const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 const notes = [];
 const errs = [];
 let finished = false;
 process.on('exit', () => {
+  rmSync(PLAN_DIR, { recursive: true, force: true });
   if (!finished) checks.push('FAIL the guard threw before finishing its checks');
   console.log(notes.join('\n'));
   console.log('----');
@@ -108,6 +121,11 @@ const stored = async () => {
   return { key, raw, v1, legacy, target: t, found: r.found, err: r.err };
 };
 
+await load();
+const FIXTURE_TARGET = await p.evaluate(
+  `typeof data !== 'undefined' && data && data.target`);
+writeFileSync(join(FIXTURE_TARGET, '.dreamwork', 'tasks.md'),
+  '# Task ledger\n\nNext id: **1**\n\n## Open\n\n## Recently landed\n\n');
 await load();
 
 /* ── against nothing, first ───────────────────────────────────────────── */
@@ -269,13 +287,40 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
      sets.target === 'add-idea' && sets.marked[0] === 'add-idea');
   ok('more than one kind decays — the pair is what proves the property',
      sets.decaying.length >= 2);
+  const ingestOffered = await p.evaluate(`
+    COMMANDS.some(c => c.kind === 'ingest-plan' && !c.common) &&
+    !!document.querySelector('.cmdmenuitem[data-kind="ingest-plan"]')`);
+  ok('ingest-plan remains offered in the extras menu', ingestOffered);
   for (const k of sets.decaying) {
     await openComposer();
     await p.evaluate(
       `document.querySelector('.cmdmenuitem[data-kind="${k}"]').click()`);
-    await type('via ' + k);
+    await type(k === 'ingest-plan' ? PLAN_PATH : 'via ' + k);
+    if (k === 'ingest-plan') {
+      const selected = await p.evaluate(
+        `document.querySelector('#cmdkinds .cmdkind.on').dataset.kind`);
+      ok('immediately before submit, the composer is in ingest-plan mode',
+         selected === 'ingest-plan');
+    }
+    const responseP = p.waitForResponse(r =>
+      new URL(r.url()).pathname === '/command' && r.request().method() === 'POST');
     await p.evaluate(`document.getElementById('cmdform').requestSubmit()`);
+    const response = await responseP;
+    const body = await response.json().catch(() => null);
     await sleep(600);
+    if (k === 'ingest-plan') {
+      const id = body && body.ids && body.ids[0];
+      const readback = spawnSync('python3', [
+        'dev/ledger.py', 'get', String(id), '--ledger',
+        join(FIXTURE_TARGET, '.dreamwork', 'tasks.md'),
+      ], { encoding: 'utf8' });
+      notes.push(`ingest-plan response ${response.status()} ${JSON.stringify(body)}; ` +
+                 `ledger readback ${readback.status}: ${JSON.stringify(readback.stdout)}`);
+      ok('the ingest-plan send genuinely succeeded and the plan was ingested',
+         response.status() === 202 && body && body.ok === true &&
+         body.filed === 1 && body.ids.length === 1 && readback.status === 0 &&
+         readback.stdout.includes(PLAN_TASK));
+    }
     const kind = await p.evaluate(
       `document.querySelector('#cmdkinds .cmdkind.on').dataset.kind`);
     ok(`after a successful ${k}, the composer returns to ${sets.target}`,
