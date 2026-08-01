@@ -18,7 +18,6 @@ import argparse
 import hashlib
 import os
 import re
-import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -32,9 +31,6 @@ _BRANCH_LINE = re.compile(
     r"^Branch:\s+`?([A-Za-z0-9][A-Za-z0-9._-]*)`?\s*$", re.MULTILINE
 )
 _RECEIPT = re.compile(r"([0-9a-f]{64})  ([^/\n]+\.md)\n?\Z")
-_LEDGER_GET = re.compile(r"\bledger\.py\s+get\s+(\d+)\b")
-_BARE_TASK_CITE = re.compile(r"(?<![\w])#(\d+)\b")
-_MARKDOWN_TASK = re.compile(r"^- \*\*#(\d+)\*\*", re.MULTILINE)
 COORDINATOR_INBOX_PREFIX = (
     "Coordinator inbox — ABSOLUTE path, append your completion summary here "
     "when you finish: "
@@ -149,61 +145,6 @@ def validate_prompt(prompt: str, contract: str, coordinator_inbox: Path) -> None
             "task-specific head must contain exactly this unambiguous coordinator "
             f"inbox instruction: {expected}"
         )
-
-
-def _ledger_ids(dreamwork_dir: Path) -> set[int]:
-    """Read all durable task ids in one query, without waiting on a lock."""
-    store = dreamwork_dir / "ledger.sqlite3"
-    if store.is_file():
-        try:
-            connection = sqlite3.connect(
-                f"file:{store}?mode=ro", uri=True, timeout=0
-            )
-            try:
-                return {row[0] for row in connection.execute("SELECT id FROM task")}
-            finally:
-                connection.close()
-        except sqlite3.Error as exc:
-            raise OSError(f"could not query ledger store {store}: {exc}") from exc
-
-    ledger = dreamwork_dir / "tasks.md"
-    try:
-        text = ledger.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
-        raise OSError(f"could not read ledger {ledger}: {exc}") from exc
-    if "## Open" not in text or "## Recently landed" not in text:
-        raise OSError(f"ledger {ledger} has no readable task sections")
-    return {int(match) for match in _MARKDOWN_TASK.findall(text)}
-
-
-def ledger_reference_reports(prompt_head: str, dreamwork_dir: Path) -> list[str]:
-    """Classify unresolved ledger references without blocking a dispatch."""
-    command_ids = {int(match) for match in _LEDGER_GET.findall(prompt_head)}
-    citation_ids = {int(match) for match in _BARE_TASK_CITE.findall(prompt_head)}
-    if not command_ids and not citation_ids:
-        return []
-    try:
-        known_ids = _ledger_ids(dreamwork_dir)
-    except OSError as exc:
-        return [
-            "dispatch ledger reference check DID NOT RUN: "
-            f"{exc}; launch allowed"
-        ]
-
-    reports = [
-        "dispatch ledger reference report: "
-        f"ledger.py get {task_id} names #{task_id}, which does not exist; "
-        "launch allowed because instruction and quotation are not reliably distinguishable"
-        for task_id in sorted(command_ids - known_ids)
-    ]
-    unresolved_cites = citation_ids - known_ids
-    if unresolved_cites:
-        names = ", ".join(f"#{task_id}" for task_id in sorted(unresolved_cites))
-        reports.append(
-            "dispatch ledger reference report: unresolved bare citation(s) "
-            f"{names}; launch allowed because prose may cite lessons or retired tasks"
-        )
-    return reports
 
 
 def _identity(prompt: str) -> tuple[int, str]:
@@ -369,9 +310,6 @@ def main(argv: list[str] | None = None) -> int:
         briefs_dir = _briefs_dir()
         coordinator_inbox = briefs_dir.parent.parent / "inbox.md"
         validate_prompt(prompt, contract, coordinator_inbox)
-        prompt_head = prompt[:prompt.find(contract)]
-        for report in ledger_reference_reports(prompt_head, briefs_dir.parent.parent):
-            print(report, file=sys.stderr)
         try:
             persist_prompt(prompt, briefs_dir)
         except DispatchFault as exc:
