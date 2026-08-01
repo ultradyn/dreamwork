@@ -18,8 +18,12 @@ from typing import Sequence
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from worktree_paths import lane_worktree_path  # noqa: E402
+
+from brief import substantive_lines  # noqa: E402
 
 
 LANE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
@@ -204,6 +208,18 @@ def _brief_faults(prompt: str, head: str, contract: str, task: int, lane: str,
         faults.append(
             "human-authored head has no substantive task content after its heading "
             f"(examined {len(substance.encode('utf-8'))} UTF-8 byte(s))"
+        )
+    # The word-count bar above passes on a placeholder: `TODO: describe the
+    # defect` is four words (#881, measured against this function).  A brief
+    # whose whole core is a fill-in dispatches a lane that looks briefed and is
+    # not, so require at least one line that is neither blank, nor a heading,
+    # nor fill-in.  Line-shaped on purpose — a SENTENCE mentioning TODO is a
+    # sentence, and the only such lines in 40 real brief heads were prose.
+    elif not substantive_lines(substance):
+        faults.append(
+            "human-authored head is entirely placeholder after its heading — every "
+            f"line of the {len(substance.encode('utf-8'))} UTF-8 byte(s) examined is "
+            "blank, a bare heading, or a fill-in (TODO, <describe …>, [fill in])"
         )
     return faults
 
