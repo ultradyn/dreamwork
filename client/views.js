@@ -1415,10 +1415,11 @@ function taskTriageSort(a, b) {
 }
 function taskViewsAgree(summary, detail) {
   if (!summary || !detail) return summary === detail;
+  const own = (record, key) => Object.prototype.hasOwnProperty.call(record, key);
   return ['id', 'state', 'title', 'priority', 'type', 'origin', 'date',
           'owner', 'blocked_on', 'dependencies'].every(key =>
-    JSON.stringify(summary[key] == null ? null : summary[key]) ===
-    JSON.stringify(detail[key] == null ? null : detail[key]));
+    own(summary, key) && own(detail, key) &&
+    JSON.stringify(summary[key]) === JSON.stringify(detail[key]));
 }
 function taskTriageRow(task, selected) {
   const facets = [task.state, task.type, task.origin,

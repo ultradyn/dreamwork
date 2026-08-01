@@ -6439,6 +6439,12 @@ class TestTasksRoute(unittest.TestCase):
         subprocess.check_call(["node", "-e", script])
 
     def test_tasks2_list_and_detail_are_bound_to_one_payload_reader(self):
+        reader_source = inspect.getsource(watch.tasks_payload)
+        self.assertIn("store.tasks.records()", reader_source)
+        for second_reader in ("parse_ledger", "ledger_entries", "open("):
+            self.assertNotIn(
+                second_reader, reader_source,
+                f"tasks_payload grew a second reader via {second_reader!r}")
         record = {
             "id": 41, "state": "open", "title": "one source",
             "body": "detail body", "priority": "P1", "type": "test",
@@ -6496,7 +6502,18 @@ class TestTasksRoute(unittest.TestCase):
             const refused = buildTasks2({list:{health:'ok',tasks:rows},
               detail:{health:'ok',task:broken},selected:7});
             if (!refused.includes('task data changed') ||
-                refused.includes('data-task-detail="7"')) process.exit(25);
+                refused.includes('data-task-detail="7"')) {
+              console.error('list/detail disagreement was rendered as one task');
+              process.exit(25);
+            }
+            const missing = Object.assign({}, detail);
+            delete missing.title;
+            const missingSummary = Object.assign({}, row);
+            delete missingSummary.title;
+            if (taskViewsAgree(missingSummary, missing)) {
+              console.error('two missing required fields passed as agreement');
+              process.exit(27);
+            }
             if (!healthy.includes('id="reviewwrap"') ||
                 !healthy.includes('id="reviewdoc"') ||
                 !healthy.includes('id="qdock"') ||

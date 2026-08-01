@@ -3390,6 +3390,7 @@ var DreamworkDesign = (() => {
   }
   function taskViewsAgree(summary, detail) {
     if (!summary || !detail) return summary === detail;
+    const own = (record, key) => Object.prototype.hasOwnProperty.call(record, key);
     return [
       "id",
       "state",
@@ -3401,7 +3402,7 @@ var DreamworkDesign = (() => {
       "owner",
       "blocked_on",
       "dependencies"
-    ].every((key) => JSON.stringify(summary[key] == null ? null : summary[key]) === JSON.stringify(detail[key] == null ? null : detail[key]));
+    ].every((key) => own(summary, key) && own(detail, key) && JSON.stringify(summary[key]) === JSON.stringify(detail[key]));
   }
   function taskTriageRow(task, selected) {
     const facets = [
