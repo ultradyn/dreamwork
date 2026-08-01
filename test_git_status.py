@@ -43,6 +43,7 @@ def _locking_git(tmp_path: Path, *, always: bool = False) -> Path:
         "  : > \"$repo/.git/index.lock\"\n"
         "  sleep 0.003\n"
         "  rm \"$repo/.git/index.lock\"\n"
+        "  [ -z \"$LOCK_DONE\" ] || : > \"$LOCK_DONE\"\n"
         "fi\n"
         "sleep 0.03\n"
         "printf '## main\\n'\n",
@@ -89,9 +90,17 @@ def test_explicit_flag_keeps_the_locking_positive_control_quiet(repo, tmp_path):
 def test_event_guard_catches_a_three_millisecond_lock_that_sampling_misses(repo, tmp_path):
     fake_git = _locking_git(tmp_path, always=True)
 
-    # Positive false-green: a 10ms sampling watcher misses this real 3ms lock.
-    proc = subprocess.Popen([str(fake_git), "-C", str(repo), "status"])
-    time.sleep(0.010)
+    # Positive false-green: the completion witness proves the 3ms lock existed
+    # and was removed, yet a path sampler checking now reports no lock.
+    done = tmp_path / "lock-was-removed"
+    proc = subprocess.Popen(
+        [str(fake_git), "-C", str(repo), "status"],
+        env={**os.environ, "LOCK_DONE": str(done)},
+    )
+    deadline = time.monotonic() + 1
+    while not done.exists() and time.monotonic() < deadline:
+        time.sleep(0.001)
+    assert done.exists(), "positive control never completed its lock/unlock cycle"
     assert not (repo / ".git/index.lock").exists()
     proc.wait(timeout=1)
 
