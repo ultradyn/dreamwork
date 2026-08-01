@@ -3456,6 +3456,65 @@ def file_created_ns(path):
     return _statx_birth_ns(path)
 
 
+def task_payload_record(record):
+    """Project one repository record into the honest /tasks vocabulary.
+
+    The store has two durable states.  A structured blocker refines an open
+    task to ``blocked``; every other value fails closed to ``unknown``.  Owner
+    is deliberately null: the store has no owner field, and prose in ``body``
+    is not a database column.
+    """
+    raw_state = record.get("state")
+    blocked_on = record.get("blocked_on")
+    if raw_state == "landed":
+        state = "landed"
+    elif raw_state == "open" and blocked_on:
+        state = "blocked"
+    elif raw_state == "open":
+        state = "open"
+    else:
+        state = "unknown"
+    dependencies = [int(value) for value in re.findall(
+        r"#(\d+)", blocked_on or "")]
+    return {
+        "id": int(record["id"]),
+        "state": state,
+        "title": record.get("title"),
+        "body": record.get("body"),
+        "priority": record.get("priority"),
+        "type": record.get("type"),
+        "origin": record.get("origin"),
+        "date": record.get("date"),
+        "owner": None,
+        "dependencies": dependencies,
+        "blocked_on": blocked_on,
+    }
+
+
+def tasks_payload(target):
+    """Read /tasks data through TaskRepository.records(), the one store seam."""
+    dw = os.path.join(target, ".dreamwork")
+    envelope = {
+        "health": "missing",
+        "unavailable_fields": ["owner"],
+        "tasks": [],
+    }
+    if source_of_truth(dw) != "store":
+        return envelope
+    from dreamwork_db import Access, open_database
+    from dreamwork_db.tasks import task_store_spec
+    try:
+        with open_database(
+                task_store_spec(store_path(dw)), access=Access.READ) as store:
+            records = store.tasks.records()
+    except Exception:
+        envelope["health"] = "unavailable"
+        return envelope
+    envelope["health"] = "ok"
+    envelope["tasks"] = [task_payload_record(record) for record in records]
+    return envelope
+
+
 def _review_decisions(dw_dir):
     """``{artifact_name: (decision, question_title)}`` from the ledger store,
     or ``{}`` when there is no decision data.
@@ -5271,7 +5330,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # segment, so it is matched by prefix rather than the fixed set.
             if (parsed.path in ("/", "/questions", "/answers", "/file",
                                "/review", "/question", "/research",
-                               "/reviews")
+                               "/reviews", "/tasks")
                     or parsed.path == "/chat"
                     or parsed.path.startswith("/chat/")):
                 self._send(page, "text/html")
@@ -5305,6 +5364,27 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 # ruling (#275/Q3) he has not given. Adding a read endpoint
                 # changes no bind address, host allowlist or flag.
                 self._send(json.dumps(summary(target)), "application/json")
+            elif parsed.path == "/tasksdata":
+                payload = tasks_payload(target)
+                raw_id = (urllib.parse.parse_qs(parsed.query).get("t")
+                          or [None])[0]
+                if raw_id is None:
+                    # The full list does not duplicate the potentially large
+                    # body; the canonical detail fetch below carries it.
+                    payload["tasks"] = [
+                        {k: v for k, v in task.items() if k != "body"}
+                        for task in payload["tasks"]
+                    ]
+                else:
+                    try:
+                        task_id = int(raw_id) if raw_id.isdigit() else None
+                    except (AttributeError, ValueError):
+                        task_id = None
+                    task = next((row for row in payload["tasks"]
+                                 if row["id"] == task_id), None)
+                    payload.pop("tasks")
+                    payload["task"] = task
+                self._send(json.dumps(payload), "application/json")
             elif parsed.path == "/mtime":
                 # "<generation> <watched-mtime>": generation gates a full
                 # reload (new server build), mtime gates a data re-render.
