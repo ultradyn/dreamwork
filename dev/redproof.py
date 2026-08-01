@@ -478,6 +478,11 @@ def begin(cwd: Path | None, path: str) -> int:
         return 2
 
     entries, _ = _read_registry(cwd)
+    if _find(entries, posix) is not None:
+        sys.stderr.write(
+            f"begin: REFUSED — {posix!r} already has an armed snapshot; "
+            "restore or forget it before beginning again\n")
+        return 2
     snap = _snapshot_path(cwd, posix)
     snap.parent.mkdir(parents=True, exist_ok=True)
     snap.write_bytes(original)
