@@ -374,17 +374,22 @@ def test_corpus_coverage_equal_when_no_git(tmp_path):
     assert cov.untracked == 0
 
 
-def test_report_names_split_when_corpus_truncated(tmp_path):
-    """format_report flags INCOMPLETE when untracked briefs exist (#671).
-
-    This is the half that survives even if the corpus gets committed: a
-    tool that names its own input boundary stays honest permanently.
-    """
+def test_report_names_untracked_but_audited_corpus(tmp_path):
+    """Untracked briefs are named without calling visible input invisible."""
     briefs = _git_corpus(tmp_path, tracked=3, untracked=1)
     report = audit_briefs(briefs, _fixture_entries())
     text = format_report(report)
-    assert "3 tracked / 4 on disk" in text
-    assert "INCOMPLETE" in text
+    assert "3 tracked / 4 on disk / 4 audited (1 untracked)" in text
+    assert "INCOMPLETE" not in text
+
+
+def test_report_names_actual_incomplete_audit(tmp_path):
+    """INCOMPLETE names the short audit count it can actually detect (#651)."""
+    briefs = _git_corpus(tmp_path, tracked=3, untracked=1)
+    report = audit_briefs(briefs, _fixture_entries())
+    report.briefs_examined -= 1
+    text = format_report(report)
+    assert "AUDIT IS INCOMPLETE — audited 3 of 4 on-disk briefs" in text
 
 
 def test_report_quiet_when_corpus_complete(tmp_path):
@@ -397,7 +402,7 @@ def test_report_quiet_when_corpus_complete(tmp_path):
 
 
 def test_default_corpus_reaches_main_checkout_from_linked_worktree(tmp_path):
-    """Default reaches main's untracked briefs; explicit --briefs stays exact."""
+    """Default reaches main's briefs and resolves citations through its store."""
     main = tmp_path / "main"
     lane = tmp_path / "lane"
     briefs = main / ".dreamwork" / "docs" / "briefs"
@@ -409,9 +414,15 @@ def test_default_corpus_reaches_main_checkout_from_linked_worktree(tmp_path):
     )
     (main / "ledger_parse.py").write_text(
         "from pathlib import Path\n"
+        f"MAIN_DW = Path({str(main / '.dreamwork')!r})\n"
         "def store_path(dreamwork_dir):\n"
         "    return Path(dreamwork_dir) / 'ledger.sqlite3'\n"
-        "def store_records(_dreamwork_dir):\n    return []\n"
+        "def store_records(dreamwork_dir):\n"
+        "    if Path(dreamwork_dir).resolve() != MAIN_DW.resolve():\n"
+        "        return []\n"
+        "    return [{'id': 671, 'state': 'landed', "
+        "'title': 'A check that examined nothing must not read as passing', "
+        "'body': ''}]\n"
     )
     (main / ".dreamwork" / "ledger.sqlite3").write_text("fixture store marker\n")
     (briefs / "tracked.md").write_text("tracked brief without citations\n")
@@ -425,26 +436,32 @@ def test_default_corpus_reaches_main_checkout_from_linked_worktree(tmp_path):
         check=True,
     )
     try:
-        (briefs / "untracked.md").write_text("untracked brief without citations\n")
+        (briefs / "untracked.md").write_text(
+            "#671 — a check that examined nothing must not read as passing.\n"
+        )
         command = [
             sys.executable, str(lane / "dev" / "citation_audit.py"),
             "--quiet",
         ]
-        default = subprocess.run(command, capture_output=True, text=True, check=True)
+        default = subprocess.run(command, capture_output=True, text=True)
         first = default.stdout.splitlines()[0]
-        assert first == (
-            "corpus: 1 tracked / 2 on disk "
-            "(AUDIT IS INCOMPLETE — untracked briefs not visible)"
-        ), (
-            "default brief corpus truncated in linked worktree: expected main "
-            f"checkout 1 tracked / 2 on disk (missing 1), got {first!r}"
+        assert first == "corpus: 1 tracked / 2 on disk / 2 audited (1 untracked)", (
+            "default audit did not examine every visible main-checkout brief: "
+            f"expected 2 audited from {briefs}, got {first!r}"
         )
+        assert "  UNRESOLVABLE:     0" in default.stdout, (
+            "default audit resolved nothing through the main-checkout store: "
+            f"known #671 was unresolvable\n{default.stdout}{default.stderr}"
+        )
+        assert default.returncode == 0
 
         explicit = subprocess.run(
             command + ["--briefs", str(lane / ".dreamwork" / "docs" / "briefs")],
             capture_output=True, text=True, check=True,
         )
-        assert explicit.stdout.splitlines()[0] == "corpus: 1 tracked / 1 on disk", (
+        assert explicit.stdout.splitlines()[0] == (
+            "corpus: 1 tracked / 1 on disk / 1 audited"
+        ), (
             "explicit --briefs must remain caller-selected even when it names the "
             "truncated worktree corpus"
         )
