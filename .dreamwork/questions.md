@@ -135,6 +135,48 @@
     as an open question that we'll revisit once dreamhub is stable and the
     primary way we access dreamworkers
 
+- **P2 · 2026-08-01 16:45 — #838 (from #825): are subagent briefs project history (git), or operator-local runtime data (not git)?**
+  You asked whether `.dreamwork/docs/briefs/` should be gitignored and whether briefs belong in the DB,
+  and told the lane to weigh the future where dreamhub launches subagents from `(role, prompt)`. Its
+  design landed at `dacb3d0a` (`.dreamwork/docs/plans/brief-record-storage.md`). It answered your
+  *second* question first, because that dissolves the first: a brief is a **record with an integrity
+  receipt**, and once that is settled, "should the directory be gitignored" follows rather than being
+  chosen separately and later contradicted.
+
+  **Its verdict:** keep the corpus tracked; do **not** gitignore it and do **not** copy full prompts
+  into the DB now. Make the future `(role, prompt)` API depend on a brief-store *interface*, and
+  strengthen the record envelope so its receipt binds task, role and exact prompt. Five falsifiers are
+  named that would flip this — shared transaction, multi-writer concurrency, privacy, scale, and one
+  more. Context worth having before you rule: the corpus was accidentally untracked for two days, and
+  that blindness produced `#786`'s false conclusion plus an "AUDIT IS INCOMPLETE" banner that stood two
+  days before anyone noticed. It is now fully tracked with dispatch-time integrity receipts, so the
+  tracked state is deliberate and recent, not merely inherited.
+
+  **`Q1` — the one call it cannot make for you.** **`rec: project history`.** Should the exact prompt
+  of every subagent launch remain durable project history, reviewable and recoverable from git — or is
+  it operator-local runtime data that must stay out of git? The recommendation carries a launch-time
+  refusal when a prompt would cross the repository's secret boundary. If you choose operator-local,
+  that is the decisive reason to move authority into a protected DB and stop tracking new briefs.
+
+  **`Q2` — smaller, schema.** **`rec: logical duty in the brief, resolved alias in the dispatch
+  attempt`.** Does `role` mean a logical duty (`reviewer`, `implementer`) or the concrete runner
+  alias/model used for that attempt?
+
+- **P3 · 2026-08-01 16:45 — #839 (from #826): should the tick line carry the subagent policy too, or is the log enough?**
+  You said: *"when the subagent policy is set, the whole thing should be printed in the log so that the
+  dreamwork agent does not need to read another file."* **Done and deployed** — `subagent_policy_line`
+  now carries a JSON-escaped copy of the whole policy on set (merged `32a34c5e`). The authoritative
+  gitignored file stays byte-exact, and one policy change still occupies exactly one log line.
+
+  I did the log as you said and deliberately did not substitute anything else. But the *goal* you gave
+  — that I should not need to read another file — is served slightly better by the `#673` **tick
+  line**, which repeats every ~4.75 minutes and so survives compaction, whereas a log line I read once
+  can fall out of context. It already reports `subagent-policy 6 lines (file)`, so this would make it
+  carry the text rather than the count.
+
+  **`Q1` — carry it on the tick line as well?** **`rec: yes`**, for the compaction-survival reason.
+  Nothing is blocked either way; the log half is live now.
+
 ## Answered
 
 - **P1 · 2026-08-01 — #738: should the draw-frequency setting persist server-side like tint?**
