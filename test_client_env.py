@@ -218,7 +218,7 @@ class TestTheRegistryIsTheOneHome:
                        "is_subagent": True,
                        "recorded_at": "2026-07-31T19:30:00+00:00"}
 
-    def test_the_real_registry_names_the_measured_claude_code_variables(self):
+    def test_the_real_registry_names_the_measured_client_variables(self):
         """The registry's content, pinned to what is measured.
 
         Separate from the behavioural tests on purpose: those all run against
@@ -233,6 +233,11 @@ class TestTheRegistryIsTheOneHome:
         assert cc.session_id_var == "CLAUDE_CODE_SESSION_ID"
         assert cc.subagent_var is None
         assert "CLAUDECODE" in cc.detect
+
+        codex = {c.name: c for c in client_env.CLIENTS}["codex"]
+        assert codex.detect == ("CODEX_THREAD_ID",)
+        assert codex.session_id_var == "CODEX_COMPANION_SESSION_ID"
+        assert codex.subagent_var is None
 
     def test_a_discriminating_client_still_reports_a_confident_boolean(self):
         """Direction 2 of #678's red-proof: the unknown is claude-code-specific.
