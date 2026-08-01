@@ -3577,3 +3577,31 @@ The same lane also reported a repo-wide guard as *"RED ON PRISTINE MASTER, not f
 verified it with `git archive` of the sha its brief named as base. That sha was the red merge. Its
 method was right, its inference was reasonable, and its conclusion was wrong — **the base sha in
 your brief is not a promise that the base was ever good.**
+
+## Backticks inside a double-quoted shell argument execute, so a ledger note can be silently edited by its own delivery (2026-08-01, #894, mine)
+
+I filed a task with `--note "...the coordinator cites what \`just land-lane\` prints..."`. Bash
+treated the backticked span as command substitution: **`just land-lane` actually ran**, errored
+harmlessly (*"got 0 positional arguments but takes at least 1"*), and its empty stdout was spliced
+into the note in place of the words. The stored record reads *"cites what  prints on success"* — a
+sentence with a hole where its subject was.
+
+Every instrument said normal. The filing printed `filed #894 (store)`; the only trace was a stray
+`just` usage error on stderr, which reads exactly like unrelated noise from a busy session. This is
+`lessons.md:3422` — *what a subprocess received is its argv, not the file you meant to hand it* —
+moved one level down: **what the ledger received was the shell's expansion of my note, not my note.**
+
+Two things made this cheap rather than expensive, and both are the habit, not luck:
+
+- **I checked the delivered artifact, not the intended one.** Reading `ledger.py get 894` back is
+  what found the hole; nothing else would have.
+- **I measured the blast radius instead of assuming it.** Scanned all seventeen of the night's
+  entries for the tell — a doubled space where a backticked span had been — and every other hit was
+  legitimate formatting (indented code blocks, aligned list items). Exactly one sentence in one entry
+  was damaged. Guessing "probably just that one" would have reached the same answer with none of the
+  warrant.
+
+**The fix: write long notes to a file and pass `--note "$(cat <file>)"`.** Command substitution of
+`cat` is evaluated once and its *output* is not re-evaluated, so backticks, `$`, and quotes survive
+intact. Do not reach for single quotes instead — these notes are full of apostrophes. Verified by
+re-reading the repaired note: the backticks are in the store.
