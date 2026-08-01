@@ -100,7 +100,10 @@ _PLACEHOLDER_BODY = re.compile(
     re.IGNORECASE,
 )
 _DIRECTION_2 = re.compile(r"direction[ ‑-]?2", re.IGNORECASE)
-_MARKDOWN_CLASS = re.compile(r"(?:\.md\b|markdown\s+(?:file|document)s?\b)", re.IGNORECASE)
+_MARKDOWN_CLASS = re.compile(
+    r"(?:\.md\s+(?:file|document)s?\b|markdown\s+(?:file|document)s?\b)",
+    re.IGNORECASE,
+)
 _BLANKET = re.compile(r"\b(?:any|all|every)\b", re.IGNORECASE)
 _PROHIBITION = re.compile(
     r"\b(?:do\s+not|don't|must\s+not|never|no)\b.*"
@@ -138,6 +141,7 @@ def blanket_markdown_prohibition(text: str) -> bool:
             current.append(line)
     for block in blocks:
         prose = re.sub(r"[`*_]", "", " ".join(block.split()))
+        prose = re.sub(r'["“][^"”]*["”]', "", prose)
         if (_MARKDOWN_CLASS.search(prose) and _BLANKET.search(prose)
                 and _PROHIBITION.search(prose)):
             return True

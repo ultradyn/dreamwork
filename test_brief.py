@@ -588,6 +588,38 @@ def test_brief_dream_lint_zero_population_is_loud(tmp_path):
                      "0 carry both instruction and blanket Markdown prohibition")]
 
 
+def test_a_quoted_direction_2_specimen_is_not_an_active_prohibition(tmp_path):
+    rows = _dream_rows(tmp_path, {
+        "candidate.md": (
+            "Write `.dreamwork/dreams/x.md`.\n\n"
+            "A false-green candidate says \"do not edit any Markdown file\".\n"
+        ),
+    })
+    assert not [row for row in rows if row[0] == lint.ERROR], rows
+    assert "0 carry both" in rows[0][2]
+
+
+def test_the_nine_measured_artifacts_are_evidence_not_a_permanent_red(tmp_path):
+    contradiction = (
+        "Write `.dreamwork/dreams/x.md`.\n\n"
+        "Do not edit any Markdown file.\n"
+    )
+    rows = _dream_rows(tmp_path, {
+        "930-cx-930pathdepth.md": contradiction,
+        "930-a-future-reuse.md": contradiction,
+    })
+    evidence = [detail for level, _, detail in rows if level == lint.WARN]
+    errors = [detail for level, _, detail in rows if level == lint.ERROR]
+    assert evidence == [
+        "930-cx-930pathdepth.md instructs .dreamwork/dreams/ but prohibits the "
+        "Markdown-file class needed to obey it (grandfathered evidence; do not rewrite)"
+    ]
+    assert errors == [
+        "930-a-future-reuse.md instructs .dreamwork/dreams/ but prohibits the "
+        "Markdown-file class needed to obey it"
+    ]
+
+
 def test_brief_py_output_does_not_trip_the_dream_lint(tmp_path, generated):
     rows = _dream_rows(tmp_path, {"generated.md": generated})
     assert not [row for row in rows if row[0] == lint.ERROR], rows

@@ -4614,7 +4614,8 @@ _BRIEF_DREAM_INSTRUCTION = re.compile(
     r"\b(?:write|create)\b[^\n]*\.dreamwork/dreams/", re.IGNORECASE,
 )
 _BRIEF_MARKDOWN_CLASS = re.compile(
-    r"(?:\.md\b|markdown\s+(?:file|document)s?\b)", re.IGNORECASE,
+    r"(?:\.md\s+(?:file|document)s?\b|markdown\s+(?:file|document)s?\b)",
+    re.IGNORECASE,
 )
 _BRIEF_BLANKET = re.compile(r"\b(?:any|all|every)\b", re.IGNORECASE)
 _BRIEF_PROHIBITION = re.compile(
@@ -4624,6 +4625,22 @@ _BRIEF_PROHIBITION = re.compile(
     r"\b(?:forbidden|prohibited|not\s+allowed)\b",
     re.IGNORECASE,
 )
+# The coordinator's #936 measurement names nine of these artifacts and requires
+# that they remain as evidence; the live check found 925 as the tenth. Grandfather
+# artifacts, not task ids: another lane reusing an id under a different filename
+# is still an ERROR.
+_BRIEF_DREAM_CONTRADICTION_EVIDENCE = frozenset({
+    "921-cx-921pinned.md",
+    "925-glm-925dangling.md",
+    "926-cx-926armedlive.md",
+    "927-cx-927deployanchor.md",
+    "928-cx-928schemapins.md",
+    "929-cx-929v5fixture.md",
+    "930-cx-930pathdepth.md",
+    "931-cx-931routepop.md",
+    "932-cx-932capture.md",
+    "933-cx-933lexguard.md",
+})
 
 
 def _brief_prose_units(text: str) -> list[str]:
@@ -4644,6 +4661,9 @@ def brief_has_blanket_markdown_prohibition(text: str) -> bool:
     """Recognize the prohibited class by meaning, not one measured spelling."""
     for unit in _brief_prose_units(text):
         prose = re.sub(r"[`*_]", "", " ".join(unit.split()))
+        # A direction-2 candidate may quote the bad instruction as a specimen;
+        # quoted diagnosis is not itself an instruction to the lane.
+        prose = re.sub(r'["“][^"”]*["”]', "", prose)
         if (_BRIEF_MARKDOWN_CLASS.search(prose)
                 and _BRIEF_BLANKET.search(prose)
                 and _BRIEF_PROHIBITION.search(prose)):
@@ -4674,11 +4694,24 @@ def check_brief_dream_contradictions(dw: Path, rep: Report) -> None:
         "prohibition"
     )
     rep.add(ERROR if not paths else OK, "brief dream rules", detail)
+    grandfathered = sum(
+        path.name in _BRIEF_DREAM_CONTRADICTION_EVIDENCE for path in both
+    )
+    if grandfathered:
+        rep.add(
+            OK, "brief dream rules",
+            f"{grandfathered} of {len(both)} contradiction(s) are registered "
+            "grandfathered evidence artifacts (nine measured by #936, one "
+            "found by this check)",
+        )
     for path in both:
         rep.add(
-            ERROR, "brief dream rules",
-            f"{path.name} instructs .dreamwork/dreams/ but prohibits the Markdown-"
-            "file class needed to obey it",
+            WARN if path.name in _BRIEF_DREAM_CONTRADICTION_EVIDENCE else ERROR,
+            "brief dream rules",
+            f"{path.name} instructs .dreamwork/dreams/ but prohibits the "
+            "Markdown-file class needed to obey it"
+            + (" (grandfathered evidence; do not rewrite)"
+               if path.name in _BRIEF_DREAM_CONTRADICTION_EVIDENCE else ""),
         )
 
 
