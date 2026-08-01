@@ -29,7 +29,7 @@
    usage: node chatsurface.mjs <outdir> [port]   (port ignored — own server) */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, cpSync } from 'node:fs';
+import { mkdirSync, rmSync, cpSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { serveVerified } from './serve.mjs';
@@ -60,6 +60,10 @@ declare({
 const DIR = join(OUT, 'target');
 rmSync(DIR, { recursive: true, force: true });
 cpSync('dev/capture/fixture', DIR, { recursive: true });
+const QUESTION_SOURCE = readFileSync(
+  join(DIR, '.dreamwork/questions.md'), 'utf8');
+ok('#857 precondition: the document fixture has hard-wrapped source prose',
+   /hard-wrapped across two\n\s+source lines/.test(QUESTION_SOURCE));
 const addTurn = (id, role, text, at = null) => execFileSync('python3', ['-c',
   `import watch; watch.apply_chat_turn(${JSON.stringify(DIR)}, ` +
   `${JSON.stringify(id)}, ${JSON.stringify(role)}, ${JSON.stringify(text)}, ` +
@@ -71,12 +75,15 @@ addTurn('chat-unread', 'human', 'a question that needs a reply',
 // replied + READ (human then agent — last turn is the dreamer's)
 addTurn('chat-read', 'human', 'an answered question',
         '2026-01-03T00:00:00');
-const MARKDOWN_REPLY = 'First paragraph.\n\nSecond paragraph.\n\n' +
+const MARKDOWN_REPLY = 'First line.\nSecond line.\n\nSecond paragraph.\n\n' +
+  '> Quoted first line.\n> Quoted second line.\n\n' +
   '## Rendered reply\n\n- first item\n- second item\n\n' +
   '```python\nprint("<unsafe>")\n```\n\n' +
   '<script id="chat-inject">window.chatInjected=1</script>';
 addTurn('chat-read', 'agent', MARKDOWN_REPLY,
         '2026-01-03T00:01:00');
+ok('#857 precondition: the production-writer fixture contains a single newline',
+   /[^\n]\n[^\n]/.test(MARKDOWN_REPLY));
 // replied + UNREAD (he followed up AFTER the reply — last turn is his again)
 addTurn('chat-followup', 'human', 'first message',
         '2026-01-02T00:00:00');
@@ -186,6 +193,8 @@ try {
       id: a.getAttribute('data-chat') || '',
       top: Math.round(a.getBoundingClientRect().top),
       turnText: ((a.querySelector('.age') || {}).textContent || '').trim(),
+      text: (a.textContent || '').trim(),
+      breaks: a.querySelectorAll('br').length,
     }));
     return { label: lab ? lab.textContent : null, rows };
   });
@@ -218,6 +227,10 @@ try {
   const followupRow = dash.rows.find(r => r.id === 'chat-followup');
   ok('the followup chat has a row linking to its page',
      !!followupRow && followupRow.href === '/chat/chat-followup');
+  const readRow = dash.rows.find(r => r.id === 'chat-read');
+  ok('#857 dashboard preview remains the escaped one-line preview (0 <br>)',
+     !!readRow && readRow.breaks === 0 &&
+     readRow.text.includes('First line. Second line.'));
 
   // #657: drive the transient state he reported, not the settled reload.
   // chat-read is deliberately newest before this submission and carries
@@ -308,6 +321,14 @@ try {
   await waitFor(p, '.chaturn[data-role="agent"] .chatbody');
   const markdown = await p.evaluate(() => {
     const body = document.querySelector('.chaturn[data-role="agent"] .chatbody');
+    const first = body && body.querySelector(':scope > p');
+    const quote = body && body.querySelector('blockquote.mdquote');
+    const lineHeight = first ? parseFloat(getComputedStyle(first).lineHeight) : 0;
+    const defaultProbe = document.createElement('div');
+    defaultProbe.innerHTML = mdRender('control first\ncontrol second', mdInline);
+    const chatProbe = document.createElement('div');
+    chatProbe.innerHTML = mdRender('control first\ncontrol second', mdInline,
+                                   { preserveSoftBreaks: true });
     return {
       paragraphs: body ? [...body.querySelectorAll(':scope > p')]
         .map(n => (n.textContent || '').trim()) : [],
@@ -317,15 +338,33 @@ try {
         .map(n => (n.textContent || '').trim()) : [],
       code: body && body.querySelector('pre.mdcode')
         ? body.querySelector('pre.mdcode').textContent : '',
+      paragraphBreaks: first ? first.querySelectorAll(':scope > br').length : 0,
+      paragraphLines: first ? first.innerText.split('\n').length : 0,
+      paragraphHeight: first ? first.getBoundingClientRect().height : 0,
+      lineHeight,
+      quoteBreaks: quote ? quote.querySelectorAll(':scope > br').length : 0,
+      quoteLines: quote ? quote.innerText.split('\n').length : 0,
+      fenceBreaks: body ? body.querySelectorAll('pre.mdcode br').length : 0,
+      defaultControlBreaks: defaultProbe.querySelectorAll('br').length,
+      chatControlBreaks: chatProbe.querySelectorAll('br').length,
       injectedNode: !!document.querySelector('#chat-inject'),
       injectedEffect: window.chatInjected === 1,
       literalScript: body ? body.textContent.includes('<script id="chat-inject">') : false,
     };
   });
   notes.push('markdown chat DOM: ' + JSON.stringify(markdown));
-  ok('#827 markdown DOM preserves two separate paragraphs',
-     JSON.stringify(markdown.paragraphs.slice(0, 2)) ===
-       JSON.stringify(['First paragraph.', 'Second paragraph.']));
+  ok('#857 rendered first paragraph has 2 lines / 1 <br> and measured height ' +
+     `(${markdown.paragraphLines} lines, ${markdown.paragraphBreaks} br, ` +
+     `${markdown.paragraphHeight.toFixed(1)}px / ${markdown.lineHeight.toFixed(1)}px line)`,
+     markdown.paragraphLines === 2 && markdown.paragraphBreaks === 1 &&
+     markdown.paragraphHeight >= markdown.lineHeight * 1.8);
+  ok('#857 consecutive quote source lines render as 2 lines / 1 <br>',
+     markdown.quoteLines === 2 && markdown.quoteBreaks === 1);
+  ok('#857 the opt-in chat rendering differs from the flowed document control',
+     markdown.defaultControlBreaks === 0 && markdown.chatControlBreaks === 1);
+  ok('#857 <br> is not emitted inside fenced code', markdown.fenceBreaks === 0);
+  ok('#827 markdown DOM preserves the blank-line paragraph boundary',
+     markdown.paragraphs[1] === 'Second paragraph.');
   ok('#827 markdown DOM renders the heading node',
      markdown.heading === 'Rendered reply');
   ok('#827 markdown DOM renders both bullet nodes',
@@ -335,6 +374,34 @@ try {
      markdown.code === 'print("<unsafe>")');
   ok('#827 raw HTML is escaped before markdown markup is introduced',
      !markdown.injectedNode && !markdown.injectedEffect && markdown.literalScript);
+
+  await sleep(2200); // pass through the normal 2s innerHTML/morph refresh
+  const afterMorph = await p.evaluate(() => {
+    const first = document.querySelector(
+      '.chaturn[data-role="agent"] .chatbody > p');
+    return {
+      breaks: first ? first.querySelectorAll(':scope > br').length : 0,
+      lines: first ? first.innerText.split('\n').length : 0,
+    };
+  });
+  notes.push('chat soft break after 2s morph: ' + JSON.stringify(afterMorph));
+  ok('#857 the settled 2s morph preserves 2 rendered lines / 1 <br>',
+     afterMorph.lines === 2 && afterMorph.breaks === 1);
+
+  // The same renderer is shared with document surfaces. Questions must keep
+  // their normal Markdown soft-break rule: hard-wrapped source prose flows.
+  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+  await waitFor(p, '.qbody .md');
+  const questionFlow = await p.evaluate(() => {
+    const md = document.querySelector('.qbody .md');
+    return {
+      paragraphs: md ? md.querySelectorAll('p').length : 0,
+      breaks: md ? md.querySelectorAll('p > br').length : -1,
+    };
+  });
+  notes.push('question document flow: ' + JSON.stringify(questionFlow));
+  ok('#857 question body wrapped prose still flows (paragraphs present, 0 <br>)',
+     questionFlow.paragraphs > 0 && questionFlow.breaks === 0);
 
   // ── Act 2: unknown id degrades in the page's own voice ──────────────────
   // A deep link to an id that is not a chat must render the not-found notice,
