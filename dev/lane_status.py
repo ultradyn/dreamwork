@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from lane_liveness import LivenessUnknown, pid_matches_lane  # noqa: E402
-from worktree_paths import WORKTREE_DIR  # noqa: E402
+from worktree_paths import worktree_roots  # noqa: E402
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -144,17 +144,60 @@ def _armed_injections(worktree: Path, repo: Path) -> tuple[str, str]:
 
 
 def sweep(repo: Path) -> int:
-    """Print a per-lane report. Exit 1 if any lane is ARMED, else 0."""
-    worktrees = _registered_worktrees(repo)
-    # The main checkout is always in the list; skip it (it is not a lane).
-    main = repo.resolve()
-    lanes = [(label, path) for label, path in worktrees if path != main]
+    """Print a per-lane report. Exit 1 if any lane is ARMED, else 0.
 
+    A registered worktree is a LANE only when its path exists AND sits under a
+    canonical fleet root (``worktree_roots`` — the same location notion
+    ``lane_liveness`` already uses). Anything else is EXCLUDED and named, never
+    silently dropped (#915): a pytest fixture that registered itself under a
+    tmp dir and was reaped (missing path) or regenerated (non-lane path) is not
+    a lane, and counting it re-inflated the fleet denominator three tasks were
+    spent to make truthful (#821/#837/#840). The exclusion count prints whatever
+    the verdict, so a sweep that excluded ten is distinguishable from one that
+    excluded none — same denominator discipline as #638's registry scan.
+    """
+    worktrees = _registered_worktrees(repo)
+    # The main checkout is always in the list; it is in the registered
+    # denominator only, never a lane. A lane must ALSO exist and live under a
+    # canonical fleet root — otherwise it is a corpse or a non-lane checkout
+    # (e.g. a pytest fixture) and is excluded by reason, not in silence.
+    main = repo.resolve()
+    roots = {root.resolve() for root in worktree_roots(repo.resolve())}
+    missing: list[tuple[str, Path]] = []
+    nonlane: list[tuple[str, Path]] = []
+    lanes: list[tuple[str, Path]] = []
+    for label, path in worktrees:
+        if path == main:
+            continue
+        if not path.exists():
+            missing.append((label, path))
+        elif path.parent not in roots:
+            nonlane.append((label, path))
+        else:
+            lanes.append((label, path))
+
+    excluded = len(missing) + len(nonlane)
+    parts = []
+    if missing:
+        parts.append(f"{len(missing)} missing path")
+    if nonlane:
+        parts.append(f"{len(nonlane)} non-lane path")
+    detail = ", ".join(parts) if parts else "0 missing path, 0 non-lane path"
     print(f"lane_status: examined {len(lanes)} lane worktree(s) "
-          f"(of {len(worktrees)} registered, including main)")
+          f"(of {len(worktrees)} registered, including main); "
+          f"excluded {excluded} ({detail})")
+
     if not lanes:
-        print("lane_status: EXAMINED NOTHING — this is not an all-clear (#868). "
-              "If lanes are running, their worktrees are not registered here.")
+        if not worktrees:
+            msg = ("the registry yielded no worktrees at all "
+                   "(git worktree list failed?)")
+        elif excluded:
+            msg = "every non-main worktree was excluded (see counts above)"
+        else:
+            msg = ("if lanes are running, their worktrees are not "
+                   "registered here")
+        print("lane_status: EXAMINED NOTHING — this is not an all-clear (#868); "
+              + msg + ".")
         return 0
 
     any_armed = False
