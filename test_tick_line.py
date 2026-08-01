@@ -49,6 +49,38 @@ def make_target(tmp_path, *, posture, open_ids=(1, 2, 3), dreamers=None,
     return str(tmp_path)
 
 
+def _add_goal_store(target, title, *, completed=0, total=0, current=True,
+                    description=""):
+    """Add a v008 goal store under an existing make_target dir.
+
+    Creates one goal, sets it open, and seeds progress() directly: ``total``
+    member tasks live in the STORE (progress joins the store's task table, not
+    tasks.md), ``completed`` of them landed. ``current=False`` leaves the
+    current-goal pointer empty. Returns the goal id.
+    """
+    from dreamwork_db import Access, open_database
+    from dreamwork_db.store import dreamwork_store_spec
+    dw = Path(target) / ".dreamwork"
+    db = dw / "ledger.sqlite3"
+    with open_database(dreamwork_store_spec(db), access=Access.WRITE) as store:
+        with store.transaction() as tx:
+            goal_id = tx.groups.create(
+                kind="goal", title=title, description=description, actor="test",
+                at="2026-08-01T00:00:00Z")
+            tx.goals.set_state(goal_id, "open")
+            for i in range(total):
+                tid = tx.tasks.file(
+                    "member task %d" % i, "body %d" % i, actor="test",
+                    at="2026-08-01T00:00:01Z")
+                tx.groups.add_task(
+                    goal_id, tid, actor="test", at="2026-08-01T00:00:02Z")
+                if i < completed:
+                    tx.tasks.land(tid, actor="test", at="2026-08-01T00:00:03Z")
+            if current:
+                tx.goals.set_current_goal_id(goal_id)
+    return goal_id
+
+
 HOT = textwrap.dedent("""\
     pace: hot
     asking: near-auto
@@ -607,8 +639,12 @@ class TestStaleFilterServesFreshCode:
 
     SENTINEL = "SENTINEL_840_TEST"
     # A unique, exactly-once substring of the facts() return to inject after.
-    NEEDLE = "] + posture_parts + [_stamp_fact()])"
-    REPLACEMENT = "] + posture_parts + [_stamp_fact(), \"%s\"])" % SENTINEL
+    # The anchor is the list close (`_stamp_fact()])`): #889 moved a goal fact
+    # in ahead of the stamp, so the stamp call is no longer the list's first
+    # element. The contract this guard binds (an edit reaches the next pulse)
+    # is unchanged; only the injection point moved with it.
+    NEEDLE = "_stamp_fact()])"
+    REPLACEMENT = "_stamp_fact(), \"%s\"])" % SENTINEL
 
     def test_edit_to_tick_line_appears_on_the_next_pulse(self, tmp_path):
         """Direction-1 red-proof, as a permanent guard. Holds ONE process across
@@ -681,3 +717,148 @@ class TestStaleFilterServesFreshCode:
             "two fresh children over the same disk disagreed on the stamp; "
             "the stamp must be a deterministic function of the closure: "
             "%s vs %s" % (m1.group(0), m2.group(0)))
+
+
+class TestGoalHandleOnTheTickLine:
+    """#889 (#862 increment 2): the current goal as a handle, in the trailing
+    slot before the src stamp.
+
+    The goal title WILL be long (he writes acceptance criteria into it), and
+    #612 is the failure being designed around: a long field pushing the fleet
+    count off the read. So the elision to a hard 48 is the feature, and the
+    binding assertion is the fleet count staying readable AT the longest title
+    the elision permits — not at a convenient short one.
+    """
+
+    def test_handle_carries_prefix_elided_title_and_progress(self, tmp_path):
+        title = "modular watch.py, React front end"
+        target = make_target(tmp_path, posture=HOT)
+        _add_goal_store(target, title, completed=2, total=5)
+        out = tick_line.facts(target)
+        assert 'goal #G1 "modular watch.py, React front end" 2/5' in out, out
+
+    def test_goal_handle_follows_the_current_goal(self, tmp_path):
+        """Differential: a hardcoded handle cannot survive two real goals."""
+        a = make_target(tmp_path / "a", posture=HOT)
+        _add_goal_store(a, "goal alpha", completed=1, total=4)
+        b = make_target(tmp_path / "b", posture=HOT)
+        _add_goal_store(b, "goal beta", completed=3, total=3)
+        fa, fb = tick_line.facts(a), tick_line.facts(b)
+        assert 'goal #G1 "goal alpha" 1/4' in fa
+        assert 'goal #G1 "goal beta" 3/3' in fb
+        assert "goal alpha" not in fb
+        assert "goal beta" not in fa
+
+    def test_goal_sits_in_the_trailing_slot_before_the_src_stamp(
+            self, tmp_path):
+        target = make_target(tmp_path, posture=HOT)
+        _add_goal_store(target, "ordered", completed=1, total=2)
+        out = tick_line.facts(target)
+        assert 'goal #G1 "ordered" 1/2 \u00b7 src ' in out, (
+            "goal handle is not in the trailing slot before the src stamp "
+            "(design call 2): %s" % out)
+
+    def test_long_title_is_elided_and_fleet_count_stays_readable(
+            self, tmp_path, monkeypatch):
+        """THE DIRECTION-2 FALSE-GREEN THIS INCREMENT EXISTS TO CLOSE.
+
+        The vacuous check is 'the line contains the goal' — which passes even
+        when an un-elided title has pushed the fleet count off the read. The
+        binding property is the fleet count staying readable AT the longest
+        title the elision permits, not at a convenient short one. The title
+        here is genuinely long (real acceptance criteria), and the fleet count
+        the loop dispatches on must still be a readable substring beside it.
+        """
+        long_title = (
+            "Ship modular watch.py with a React front end, goal panel "
+            "verdicts, the current-goal pointer, and a tick-line handle; "
+            "acceptance: the fleet count is never pushed off the read at any "
+            "title length, because elision to 48 is the feature")
+        assert len(long_title) > tick_line.GOAL_TITLE_LIMIT  # precondition
+        target = make_target(tmp_path, posture=HOT)
+        _add_goal_store(target, long_title, completed=7, total=19)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", lambda _t:
+            lane_liveness.LaneInspection(('cx-862', 'cx-864'), (), (), 41))
+        out = tick_line.facts(target)
+        # The fleet count the loop dispatches on is still a readable substring.
+        assert "lanes 2 live [cx-862, cx-864]" in out, (
+            "the long goal title pushed the fleet count out of view (#612): "
+            "%s" % out)
+        # The title was elided, never printed in full.
+        assert long_title not in out, (
+            "title longer than GOAL_TITLE_LIMIT was not elided: %s" % out)
+        assert "7/19" in out
+        # The quoted content is capped at exactly GOAL_TITLE_LIMIT chars.
+        shown = long_title[:tick_line.GOAL_TITLE_LIMIT - 1] + "\u2026"
+        assert len(shown) == tick_line.GOAL_TITLE_LIMIT
+        assert 'goal #G1 "%s" 7/19' % shown in out, (
+            "elided title was not the hard %d-char cut: %s"
+            % (tick_line.GOAL_TITLE_LIMIT, out))
+
+    def test_title_at_the_elision_boundary_is_full_and_keeps_fleet_readable(
+            self, tmp_path, monkeypatch):
+        """AT the longest title the elision permits to pass through un-elided."""
+        boundary = "x" * tick_line.GOAL_TITLE_LIMIT  # exactly 48: not elided
+        target = make_target(tmp_path, posture=HOT)
+        _add_goal_store(target, boundary, completed=0, total=3)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", lambda _t:
+            lane_liveness.LaneInspection(('cx-1',), (), (), 7))
+        out = tick_line.facts(target)
+        assert "lanes 1 live [cx-1]" in out
+        assert 'goal #G1 "%s" 0/3' % boundary in out, (
+            "a title of exactly GOAL_TITLE_LIMIT should pass through full, "
+            "not be elided: %s" % out)
+
+    def test_no_current_goal_is_distinct_from_a_store_that_will_not_answer(
+            self, tmp_path):
+        """Degrade-to-zero (#868/#875/#883/#867/#886/#888 shape): 'no goal is
+        set' and 'the goal store did not answer' must not render the same."""
+        # No store at all (markdown-mode target): the goal system is absent.
+        markdown = tick_line.facts(make_target(tmp_path / "md", posture=HOT))
+        assert "no current goal" in markdown
+        assert "GOAL UNKNOWN" not in markdown
+
+        # Store answered and the pointer is empty: genuinely no goal set.
+        empty_target = make_target(tmp_path / "empty", posture=HOT)
+        _add_goal_store(empty_target, "exists but unset", current=False)
+        empty = tick_line.facts(empty_target)
+        assert "no current goal" in empty
+        assert "GOAL UNKNOWN" not in empty
+
+        # Store exists but will not answer the goal question: the current-goal
+        # pointer row is gone (the shape a pre-v008 or damaged store produces).
+        import sqlite3
+        damaged = make_target(tmp_path / "damaged", posture=HOT)
+        _add_goal_store(damaged, "was current", current=True)
+        conn = sqlite3.connect(
+            str(Path(damaged) / ".dreamwork" / "ledger.sqlite3"))
+        conn.execute("DELETE FROM meta WHERE key = 'current_goal_id'")
+        conn.commit()
+        conn.close()
+        unreadable = tick_line.facts(damaged)
+        assert "GOAL UNKNOWN" in unreadable, (
+            "a store that would not answer rendered as 'no current goal' "
+            "(the degrade-to-zero false green): %s" % unreadable)
+        assert "no current goal" not in unreadable
+        assert "current_goal_id" in unreadable  # the reason is named
+
+    def test_corrupt_store_is_not_rendered_as_no_goal(self, tmp_path):
+        """The unreadable arm: a store file that is not a database at all."""
+        broken = make_target(tmp_path / "broken", posture=HOT)
+        _add_goal_store(broken, "was current", current=True)
+        (Path(broken) / ".dreamwork" / "ledger.sqlite3").write_bytes(
+            b"this is not a sqlite database\x00")
+        out = tick_line.facts(broken)
+        assert "GOAL UNKNOWN" in out, (
+            "a corrupt store rendered as 'no current goal': %s" % out)
+        assert "no current goal" not in out
+
+    def test_no_details_from_the_goal_leak_onto_the_line(self, tmp_path):
+        """#862: the line is a handle. The goal description is never quoted."""
+        target = make_target(tmp_path, posture=HOT)
+        _add_goal_store(target, "titled goal", completed=0, total=1,
+                        description="SECRET-ACCEPTANCE-CRITERIA-NEVER-ON-LINE")
+        out = tick_line.facts(target)
+        assert "SECRET-ACCEPTANCE-CRITERIA" not in out
+        assert 'goal #G' in out
+

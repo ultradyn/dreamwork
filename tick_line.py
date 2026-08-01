@@ -71,10 +71,21 @@ from pathlib import Path
 import status_sync
 import lane_liveness
 import watch
+from dreamwork_db import Access, open_database
+from dreamwork_db.tasks import task_store_spec
+from ledger_parse import store_path
 
 # The separator between the pulse and the facts, and between facts. Matches the
 # ` · ` the ledger and hand-off rows already use for co-ordinate lists.
 SEP = " · "
+
+# The current goal's title is elided to a HARD 48 characters (#862 design call
+# 2). He writes real acceptance criteria into the title, so it WILL be long,
+# and #612 is the failure being designed around: a long field pushing the fleet
+# count off the read. The elision is the feature, not a cosmetic. Beyond this
+# width the title is cut to LIMIT-1 and an ellipsis is appended, so the quoted
+# content is at most exactly LIMIT characters in every case.
+GOAL_TITLE_LIMIT = 48
 
 
 def _resident_sources_sha() -> str:
@@ -263,6 +274,59 @@ def _fleet_fact(target: str) -> str:
     return fact
 
 
+def _goal_fact(target: str) -> str:
+    """The current goal as a HANDLE: id, elided title, progress — nothing else.
+
+    Design call 2 of the #862 goal tree puts this in the trailing slot (the one
+    _stamp_fact's docstring reserves for things that must not push the fleet
+    count out of view), AFTER the fleet/delegation pair because that adjacency
+    is the contradiction #673 exists to surface. #612 is the failure being
+    designed around: a long field pushing the fleet count off the read. The
+    goal title WILL be long, because he writes real acceptance criteria into
+    it — so the title is elided to a HARD GOAL_TITLE_LIMIT characters and that
+    elision is the feature, not a cosmetic.
+
+    NO DETAILS, EVER (#862). The loop reads details from the store when it
+    selects work, once per tick at most; that is the whole reason the line
+    stays a handle. progress() supplies the ratio; the id and title supply the
+    identity. The id carries a ``G`` prefix so a goal number is never read as a
+    task number on the same line.
+
+    Degrade-to-zero — the shape that bit six times tonight (#868/#875/#883/
+    #867/#886/#888): "no goal is set" and "the goal store did not answer" must
+    not render the same. This mirrors _open_fact, which returns OPEN UNKNOWN
+    rather than 0 because "an unreadable ledger and an empty one look
+    identical to a parser":
+
+      - the store answered and the pointer is empty -> "no current goal"
+        (lowercase, no capitals: a genuine, healthy state, not a fault);
+      - the store exists but would not answer (unreadable, pre-v008, or a
+        pointer to a row that is missing or not a goal) -> GOAL UNKNOWN
+        (<reason>) in capitals, which in this file always means "a number here
+        is missing";
+      - no store file at all (markdown-mode target) -> "no current goal": the
+        goal system is absent, not a broken store claiming an answer it never
+        gave. source_of_truth agrees: an absent store reads as markdown.
+    """
+    dw = Path(target) / ".dreamwork"
+    db = store_path(dw)
+    if not db.exists():
+        return "no current goal"
+    try:
+        with open_database(task_store_spec(db), access=Access.READ) as store:
+            goal_id = store.goals.current_goal_id()
+            if goal_id is None:
+                return "no current goal"
+            title = store.groups.get(goal_id).title
+            progress = store.groups.progress(goal_id)
+    except Exception as exc:                                  # noqa: BLE001
+        return "GOAL UNKNOWN (%s: %s)" % (exc.__class__.__name__, exc)
+    shown = (title if len(title) <= GOAL_TITLE_LIMIT
+             else title[:GOAL_TITLE_LIMIT - 1] + "\u2026")
+    return 'goal #G%d "%s" %d/%d' % (
+        goal_id, shown, progress.completed_count, progress.total_count)
+
+
 def _unresolved(label: str, exc: BaseException) -> str:
     """The one rendering of a fact that could not be measured.
 
@@ -327,7 +391,8 @@ def facts(target: str) -> str:
         _guarded(lambda: _fleet_fact(target), "fleet"),
         delegation,
         _guarded(lambda: _open_fact(target), "open"),
-    ] + posture_parts + [_stamp_fact()])
+    ] + posture_parts + [_guarded(lambda: _goal_fact(target), "goal"),
+                         _stamp_fact()])
 
 
 def decorate(pulse: str, target: str) -> str:
