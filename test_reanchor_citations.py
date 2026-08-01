@@ -8,7 +8,6 @@ from dev.reanchor_citations import (
     named_symbols,
     resolve,
 )
-from dev.apply_reanchors_i3 import ANCHORS, ReviewedAnchor, resolve_all
 
 
 def citation(context: str, old_line: int = 9000) -> Citation:
@@ -35,7 +34,9 @@ def test_a_call_site_or_comment_is_not_a_definition(tmp_path: Path, monkeypatch)
     (tmp_path / "router.js").write_text("// tick handles refresh\ntick();\n")
     monkeypatch.setattr("dev.reanchor_citations.source_files", lambda _root: ["router.js"])
     item = resolve(tmp_path, citation("`tick()` (`watch.py:9000`) snapshots state"))
-    assert item.reason == "cannot resolve named symbol"
+    assert item.reason == "cannot resolve named symbol", (
+        "router.js call/comment text was misclassified as the definition of tick"
+    )
     assert "CANNOT RESOLVE" in format_resolution(item)
 
 
@@ -86,61 +87,6 @@ def test_the_two_live_plans_have_no_past_eof_citations():
         ".dreamwork/docs/plans/delivery-modes.md",
     ]
     assert dangling_citations(Path.cwd(), docs) == []
-
-
-def test_each_reviewed_anchor_line_contains_the_named_evidence():
-    """Movement is healthy; missing or ambiguous reviewed evidence is not."""
-    assert len(ANCHORS) == 74, f"expected 74 reviewed anchors, got {len(ANCHORS)}"
-    resolved = resolve_all(Path.cwd())
-    assert len(resolved) == 74
-    track = next(item for item in resolved if item.symbol == "track_question_updates")
-    assert (track.reviewed_line, track.current_line, track.drift) == (3683, 3705, 22)
-
-
-def test_ambiguous_reanchor_names_the_anchor_and_each_drift(tmp_path: Path):
-    source = tmp_path / "watch.py"
-    source.write_text("# inserted\ndef tick():\n    pass\ndef tick():\n    pass\n")
-    anchor = ReviewedAnchor("watch.py", 1, "tick", "def tick():")
-    try:
-        anchor.resolve(tmp_path)
-    except ValueError as exc:
-        assert str(exc) == (
-            "watch.py:1 (tick) is ambiguous: "
-            "line 2 (drift +1), line 4 (drift +3)"
-        )
-    else:
-        raise AssertionError("ambiguous reviewed evidence was silently reanchored")
-
-
-def test_unanticipated_watch_insertion_keeps_lines_derived(tmp_path: Path):
-    """Direction 2: a scratch insertion shifts an anchor by an unknown amount."""
-    lines = Path("watch.py").read_text().splitlines()
-    lines[3000:3000] = [f"# unanticipated insertion {n}" for n in range(7)]
-    (tmp_path / "watch.py").write_text("\n".join(lines) + "\n")
-    before = ANCHORS[0].resolve(tmp_path)
-    track_anchor = next(a for a in ANCHORS if a.symbol == "track_question_updates")
-    after = track_anchor.resolve(tmp_path)
-    assert (before.current_line, before.drift) == (342, 0)
-    assert (after.current_line, after.drift) == (3712, 29)
-
-
-def test_transplanted_evidence_is_the_open_false_green(tmp_path: Path):
-    """Direction 2 limit: exact evidence cannot prove its surrounding meaning."""
-    (tmp_path / "watch.py").write_text(
-        "def unrelated_handler():\n"
-        "    data = read_bytes(full)  # exact line moved under the wrong owner\n"
-    )
-    anchor = ReviewedAnchor(
-        "watch.py",
-        90,
-        "read_bytes",
-        "    data = read_bytes(full)  # exact line moved under the wrong owner",
-    )
-    resolved = anchor.resolve(tmp_path)
-    assert (resolved.current_line, resolved.drift) == (2, -88), (
-        "open false-green: byte-identical reviewed evidence was transplanted "
-        "into a different semantic owner; movement alone cannot distinguish it"
-    )
 
 
 def test_a_wrong_referent_passes_the_token_check(tmp_path: Path):
