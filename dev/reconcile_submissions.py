@@ -16,7 +16,8 @@ pending | consume --through <ord>`` drains ``(coordinator_cursor, head]`` with
 an exactly-once proof (#526) and a bounded advance (#531).  The registered
 routes are ``WRITE_ROUTE_HANDLERS`` (``watch.py``):
 
-    /answer  /ask  /comment  /command  /decide  /tint  /run-mode  /posture  /deploy
+    /answer  /ask  /comment  /command  /decide  /tint  /run-mode  /posture
+    /subagent-policy  /deploy
 
 — so answer/ask/comment/command/tint (the kinds the filing names) plus
 decide/run-mode/posture/deploy are ALL journaled.  ``journal_shadow=True`` is
@@ -109,7 +110,8 @@ SUBMISSIONS_DEFAULT = ".dreamwork/submissions.log"
 # route added to watch fails that test here until this constant is updated.
 SUBMISSION_ROUTES = frozenset({
     "/answer", "/ask", "/comment", "/command", "/decide",
-    "/tint", "/run-mode", "/posture", "/deploy", "/remind",
+    "/tint", "/run-mode", "/posture", "/subagent-policy",
+    "/deploy", "/remind",
     "/chat-reply", "/chat-archive",
 })
 
