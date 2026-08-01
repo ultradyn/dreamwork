@@ -270,27 +270,39 @@ def test_the_cli_delivers_the_whole_brief_on_stdout(tmp_path, lane):
         dispatch_lane.CONTRACT_PATH.read_text(encoding="utf-8").rstrip("\n") + "\n")
 
 
-def _sandbox_dispatch(tmp_path: Path) -> tuple[Path, Path]:
+def _sandbox_dispatch(tmp_path: Path, lane: str) -> tuple[Path, Path, str]:
     """A throwaway repo holding dispatch_lane, so nothing touches the live corpus."""
     root = tmp_path / "repo"
+    base_branch = f"{lane}-brief-test-base"
     (root / "dev").mkdir(parents=True)
     (root / "briefs").mkdir()
-    shutil.copy2(ROOT / "dev" / "dispatch_lane.py", root / "dev" / "dispatch_lane.py")
+    dispatch_copy = root / "dev" / "dispatch_lane.py"
+    shutil.copy2(ROOT / "dev" / "dispatch_lane.py", dispatch_copy)
+    source = dispatch_copy.read_text(encoding="utf-8")
+    source, changed = source.replace(
+        '"merge-base", "master", branch_commit',
+        f'"merge-base", {base_branch!r}, branch_commit'), source.count(
+            '"merge-base", "master", branch_commit')
+    assert changed == 1, (
+        f"sandbox base adaptation found {changed} dispatch merge-base calls, expected 1"
+    )
+    dispatch_copy.write_text(source, encoding="utf-8")
     for name in ("lane_liveness.py", "worktree_paths.py", "ledger_store.py"):
         shutil.copy2(ROOT / name, root / name)
     shutil.copytree(ROOT / "dreamwork_db", root / "dreamwork_db")
     shutil.copy2(ROOT / "briefs" / "boilerplate.md", root / "briefs" / "boilerplate.md")
-    subprocess.run(["git", "init", "-q", "-b", "master", str(root)], check=True)
+    subprocess.run(["git", "init", "-q", "-b", base_branch, str(root)], check=True)
     subprocess.run(
         ["git", "-c", "user.name=T", "-c", "user.email=t@e.invalid",
          "commit", "--allow-empty", "-qm", "base"], cwd=root, check=True)
     (root / ".dreamwork").mkdir()
     (root / ".dreamwork" / "tasks.md").write_text(
         "# Tasks\n\n## Open\n\n- **#881** generated\n\n## Recently landed\n", encoding="utf-8")
-    return root / "dev" / "dispatch_lane.py", root
+    return root / "dev" / "dispatch_lane.py", root, base_branch
 
 
-def _reanchor(generated: str, root: Path, lane: str) -> tuple[str, Path]:
+def _reanchor(
+        generated: str, root: Path, lane: str, base_branch: str) -> tuple[str, Path]:
     """Point a generated brief at the sandbox, changing ONLY the identity lines.
 
     Everything this test reads — the frame sections and the appended contract —
@@ -298,8 +310,12 @@ def _reanchor(generated: str, root: Path, lane: str) -> tuple[str, Path]:
     against the real validator by
     ``test_generated_brief_passes_every_dispatch_lane_refusal``.
     """
-    subprocess.run(["git", "branch", lane, "master"], cwd=root, check=True)
-    base = subprocess.run(["git", "merge-base", "master", lane], cwd=root,
+    assert base_branch != lane, (
+        f"sandbox branch collision: base and lane both name {lane!r}; "
+        "the sandbox base must be distinct from the real lane name"
+    )
+    subprocess.run(["git", "branch", lane, base_branch], cwd=root, check=True)
+    base = subprocess.run(["git", "merge-base", base_branch, lane], cwd=root,
                           check=True, capture_output=True, text=True).stdout.strip()
     worktree = root / ".worktrees" / lane
     worktree.mkdir(parents=True)
@@ -329,11 +345,17 @@ def test_the_delivered_argv_carries_the_standing_rules(tmp_path, lane):
 
     No real lane is dispatched: the runner is `sleep`, in a throwaway repo.
     """
-    cli, root = _sandbox_dispatch(tmp_path)
+    cli, root, base_branch = _sandbox_dispatch(tmp_path, lane)
     generated = brief.build(881, lane, ["dev/brief.py"], GOOD_CORE)
     # Same branch NAME in the sandbox, so the generator's own `Branch:` line
     # survives re-anchoring untouched and stays part of what is measured.
-    anchored, worktree = _reanchor(generated, root, lane)
+    anchored, worktree = _reanchor(generated, root, lane, base_branch)
+    generated_branch = re.search(r"^Branch: .+$", generated, re.MULTILINE)
+    anchored_branch = re.search(r"^Branch: .+$", anchored, re.MULTILINE)
+    assert generated_branch and anchored_branch
+    assert anchored_branch.group(0) == generated_branch.group(0) == f"Branch: {lane}", (
+        "re-anchoring must preserve the generator's real Branch: output verbatim"
+    )
     prompt = tmp_path / "prompt.md"
     prompt.write_text(anchored, encoding="utf-8")
 
