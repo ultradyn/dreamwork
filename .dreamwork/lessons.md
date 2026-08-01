@@ -3628,3 +3628,41 @@ does **not** bind where each gate subprocess actually runs. Pointing one gate's 
 worktree passes it. What catches that is a fixture whose named test writes its verdict to a file in
 its own cwd — the file's *location* is the evidence, and its absence must be an assertion with a
 sentence on it, not a `FileNotFoundError`.
+
+## Concluding a lane died from an absence in my own instrument (2026-08-01, #895, mine, twice in one night)
+
+Twice tonight I read an instrument's silence as the subject's death. Once a `grep '^## #NNN'` narrower
+than the three heading conventions the inbox actually uses; once `dev/redproof.py check` run from the
+coordinator's shell, where `DREAMWORK_LANE_ID` is unset, so it resolved an empty scratch and printed
+
+    check: no evidence — no injections registered (role: author); injection restoration was not
+    evaluated; production reach was not evaluated.
+
+for a lane that had in fact registered two injections and restored them. I dispatched a continuation
+on that false premise. The lane had done everything it was asked.
+
+This is the fourth time this loop has asserted from an absence, and the first where I built the
+absence myself rather than inheriting it. The generalisation is not "check twice" — it is that **a
+blind instrument and a clean instrument must not print the same sentence.** `#895` exists because
+"no evidence" and "I could not read this lane's registry" are opposite facts wearing one wording, and
+the check where that costs most is the one that looks for ARMED injections in a finished worktree —
+already the sole reason `#863`'s two armed injections were caught.
+
+Corollary for me specifically: when a probe says a lane is gone, the worktree, the lane lock, and the
+lane's own log are three independent readings. Take one of them before believing the first.
+
+## A task whose precondition is an idle fleet cannot be dispatched as one of six (2026-08-01, #893, mine)
+
+I briefed `#893` to re-measure the `reviewsplit` guard on a drained fleet — correctly, since its
+original failure was three vacuity preconditions under load 22.51->27.62 and this repo's own
+`#606`/`#666` finding is that a browser guard under load returns a WRONG ANSWER rather than a slow
+one. I told the lane to acquire the quiet window itself. Then I dispatched it in the same batch as
+five siblings, and its first act was:
+
+    guard preflight: WRONG-ANSWER-RISK [load 42.07 (2.6x cores) on 16 cores, 6 ccc lane(s)]
+
+I had made the precondition unsatisfiable in the act of asking for it. Delegating the acquisition of
+a condition does not delegate responsibility for whether it is achievable — the scheduler owns that,
+and the scheduler was me. A measurement task carries a **fleet precondition** the way a test carries
+a fixture: it belongs in the dispatch decision, not only in the brief. Either dispatch it alone, or
+dispatch it knowing it will wait, and say which.
