@@ -9,7 +9,8 @@ mechanism with a shorter observation window.
 
 The corpus copy and its hash receipt are intentionally uncommitted.  They make
 the validated input available at the merge gate; they do not guarantee that a
-coordinator will preserve or commit it.
+coordinator will preserve or commit it.  Every receipt governs its brief; the
+task cutoff only grandfathers historical briefs that predate receipts.
 """
 
 from __future__ import annotations
@@ -394,6 +395,10 @@ def verify_pending(briefs_dir: Path | None = None) -> int:
         and int(match.group(1)) >= INTEGRITY_START_TASK
     }
     receipts = set(briefs_dir.glob("*.sha256"))
+    governed.update(
+        brief for receipt in receipts
+        if (brief := receipt.with_suffix(".md")).is_file()
+    )
     if not governed and not receipts:
         raise DispatchFault(
             "DID NOT VERIFY: no governed brief artifacts or integrity receipts were found"
@@ -407,9 +412,9 @@ def verify_pending(briefs_dir: Path | None = None) -> int:
             faults.append(str(exc))
     for receipt in sorted(receipts):
         brief = receipt.with_suffix(".md")
-        if brief not in governed:
+        if not brief.is_file():
             faults.append(
-                f"integrity receipt {receipt.name} has no governed brief artifact "
+                f"integrity receipt {receipt.name} has no brief artifact "
                 f"{brief.name}"
             )
     if faults:
