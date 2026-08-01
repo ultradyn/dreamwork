@@ -1,4 +1,4 @@
-"""One canonical store composition serves tasks, questions, and reviews."""
+"""One canonical store composition serves tasks, questions, reviews, groups."""
 
 from __future__ import annotations
 
@@ -20,7 +20,13 @@ def test_domain_named_specs_delegate_to_one_complete_store_definition(tmp_path):
         ("task compatibility facade", task_compat),
         ("question compatibility facade", question_compat),
     ):
-        assert tuple(spec.repositories) == ("tasks", "questions", "reviews"), (
+        # `groups` joined in #824 (v004). The tuple is exhaustive and ordered on
+        # purpose: it is what makes a facade that quietly serves a PARTIAL store
+        # fail, so a new repository must be added here deliberately rather than
+        # passing by default. Red on master since #824 merged, because the
+        # repository was registered and this expectation was not.
+        assert tuple(spec.repositories) == (
+            "tasks", "questions", "reviews", "groups"), (
             f"{label} describes a partial or differently ordered store: "
             f"{tuple(spec.repositories)!r}"
         )
