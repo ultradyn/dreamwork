@@ -6895,7 +6895,7 @@ def check_retired_phrasings(dw: Path, rep: Report) -> None:
             zeros.append("document set is empty")
         rep.add(WARN, RETIRED_PHRASINGS_REGISTRY,
                 f"{count_detail} — {' and '.join(zeros)}; this is not an all-clear")
-    elif not findings:
+    else:
         rep.add(OK, RETIRED_PHRASINGS_REGISTRY, count_detail)
 
 
