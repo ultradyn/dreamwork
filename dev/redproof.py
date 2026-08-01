@@ -474,6 +474,84 @@ def history_line(rep: dict) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# bundle staleness (#877)                                                      #
+# --------------------------------------------------------------------------- #
+
+# Testability hook: tests in fixtures without client_dist.py set this to the
+# real module. Unset in production; the worktree's own copy is loaded by path.
+_client_dist_override = None
+
+
+def _load_client_dist(root: Path):
+    """The ``client_dist`` module for this worktree, or None when absent.
+
+    ``client_dist.py`` lives at the repo root (beside ``watch.py``), not in
+    ``dev/``, so a bare ``import`` from this file's location would miss it.
+    Loading by path from the worktree root keeps redproof decoupled from
+    ``sys.path`` and lets a tree without a build pass through unchecked.
+    """
+    if _client_dist_override is not None:
+        return _client_dist_override
+    cd = root / "client_dist.py"
+    if not cd.exists():
+        return None
+    import importlib.util
+    try:
+        spec = importlib.util.spec_from_file_location("_rp_client_dist", str(cd))
+        if spec is None or spec.loader is None:
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except Exception:
+        return None
+    return mod
+
+
+def bundle_stale_findings(root: Path, entries: list[dict]) -> list[dict]:
+    """Restored build-input sources whose downstream bundle is stale (#877).
+
+    A source restored after a sabotaged build leaves the BUNDLE holding the
+    injection: the bundle was compiled from the injected bytes, and the
+    restore only touched the source. ``redproof check`` certified the source
+    and read clean — while a guard serving the bundle still held the defect.
+
+    The signal reuses ``client_dist.check`` — the single staleness
+    implementation, already shared by ``lint.py`` — rather than a second hash
+    comparison. After a sabotaged build + source restore,
+    ``client_dist.check`` reports the SOURCE as stale (the manifest was
+    rebuilt against the injected source, so it disagrees with the restored
+    original). The combination — a restored entry whose path is a build input
+    AND appears in that stale list — is the precise condition: the bundle was
+    built from bytes that disagree with the restored source.
+
+    Returns ``[]`` when ``client_dist`` is absent (a tree without a build),
+    when the dist is current, or when the staleness is on a path that is not
+    a restored injection. A dist stale for an UNRELATED reason (a real edit
+    to a different input) does not fire, because the restored path is not in
+    the stale list.
+    """
+    cd = _load_client_dist(root)
+    if cd is None:
+        return []
+    expected = cd.expected_inputs(str(root))
+    if not expected:
+        return []
+    reading = cd.check(str(root))
+    if reading.get("state") != cd.STALE:
+        return []
+    stale = set(reading.get("stale") or [])
+    findings = []
+    for e in entries:
+        if e.get("state") != RESTORED:
+            continue
+        path = e.get("path")
+        if path and path in expected and path in stale:
+            findings.append({"path": path, "note": reading.get("note"),
+                             "fix": reading.get("fix")})
+    return findings
+
+
+# --------------------------------------------------------------------------- #
 # verbs                                                                        #
 # --------------------------------------------------------------------------- #
 
@@ -656,6 +734,15 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int
 
     Then the same comparison against every commit this branch adds to its base,
     because a clean tree says nothing about what the branch will merge (#710).
+
+    Then a build-awareness check (#877): for surfaces served out of a built
+    bundle, restoring the SOURCE is not enough — the bundle must be rebuilt.
+    ``check`` refuses when a restored source is a ``client_dist`` build input
+    and the downstream bundle is stale (the manifest was rebuilt against the
+    injected source), because the bundle a guard serves may still hold the
+    injection. Reuses ``client_dist.check`` — the single staleness answer —
+    and only fires when the restored path itself is stale, so a dist dirty for
+    an unrelated reason does not trigger a false refusal.
     """
     root = _ls.worktree_root(cwd)
     role = _role(cwd)
@@ -729,6 +816,26 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None) -> int
             "still present in the working tree:\n" + "\n".join(lines) +
             "\nRestore it (cp from the lane-private snapshot) before committing.\n")
         return 1
+
+    # #877: a restored source whose downstream bundle is stale. The bundle a
+    # guard serves was built from the injected bytes; restoring only the
+    # source leaves the bundle holding the defect while check read clean.
+    stale_bundles = bundle_stale_findings(root, entries)
+    if stale_bundles:
+        lines = []
+        for f in stale_bundles:
+            lines.append(
+                f"  {f['path']}: restored, but client/dist is STALE "
+                f"({f['note']}). The bundle a guard serves was built from "
+                f"bytes that disagree with the restored source, so it may "
+                f"still hold the injection.")
+        fix = stale_bundles[0].get("fix") or "run `just build-client`"
+        sys.stderr.write(
+            "check: REFUSED — restored source(s) with a stale downstream "
+            "bundle:\n" + "\n".join(lines) +
+            f"\nRebuild after restore ({fix}), then check again. #877\n")
+        return 1
+
     if rep["hits"]:
         lines = [f"  {h['commit'][:12]} {h['path']} — {h['subject']!r} "
                  f"(hint: {h['hint']!r})" for h in rep["hits"]]
