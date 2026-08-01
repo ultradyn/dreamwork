@@ -113,15 +113,16 @@ def _derived_test(path: str) -> str | None:
 
 
 def _named_files(tests: Sequence[str]) -> frozenset[str]:
-    """The file each named selector runs, so a node id counts as naming its file.
+    """The files the named selection runs IN FULL.
 
-    ``test_lint.py::TestX`` runs only part of the file, so counting it as
-    coverage of the whole file is a real limit — but adding the file alongside
-    the node id would collect it twice, and the coordinator who wrote a node id
-    chose it. The limit is stated in the derivation line rather than hidden.
+    A node id (``test_lint.py::TestOne``) runs part of a file, so it does NOT
+    count as naming it: #936's eleven failures spanned five classes, and a gate
+    satisfied by any one of them would have passed over the other ten. Adding
+    the whole file alongside the node id re-collects that class once, which is
+    much the cheaper of the two errors.
     """
     return frozenset(
-        PurePosixPath(selector.partition("::")[0]).name for selector in tests
+        PurePosixPath(selector).name for selector in tests if "::" not in selector
     )
 
 

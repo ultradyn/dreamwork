@@ -15,9 +15,16 @@ REDPROOF = REPO / "dev" / "redproof.py"
 
 
 def _load_tool():
-    """Import the worktree's own copy, for the checks that need its roster."""
+    """Import the worktree's own copy, for the checks that need its roster.
+
+    Registered in ``sys.modules`` before execution because ``@dataclass``
+    resolves ``cls.__module__`` through it: an unregistered module makes any
+    tool that adopts a dataclass fail to import with a bare AttributeError
+    from inside ``dataclasses``, which names neither this loader nor the tool.
+    """
     spec = importlib.util.spec_from_file_location("land_lane_under_test", TOOL)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -45,8 +52,13 @@ def _redproof(lane: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.fixture
-def landing_repo(tmp_path: Path):
+def _make_repo(tmp_path: Path) -> tuple[Path, Path]:
+    """A base checkout plus an empty lane worktree, with nothing committed on it.
+
+    Split out of ``landing_repo`` so a lane whose whole diff is documentation
+    can be built without the ``feature.txt`` commit that makes the default
+    fixture's diff code-shaped (#949).
+    """
     # lane_scratch keys repositories by checkout-directory name; keep the
     # fixture's red-proof registry isolated across pytest cases.
     root = tmp_path / f"repo-{tmp_path.parent.name}-{tmp_path.name}"
@@ -71,10 +83,24 @@ def landing_repo(tmp_path: Path):
     _write(root / "lint-rows.txt", "old warning\n")
     _write(root / "dev" / "repo_wide_guards.py", "print('test_guard.py')\n")
     _write(root / "test_named.py", "def test_named(): assert True\n")
-    _write(root / "test_guard.py", "def test_guard(): assert True\n")
+    # The guard reads a data file rather than asserting a literal, so a lane can
+    # break the GENERATED GUARD SET without also changing a test file — which
+    # the derived-test union would otherwise catch one phase earlier (#948).
+    _write(
+        root / "test_guard.py",
+        "from pathlib import Path\n"
+        "def test_guard(): assert Path('guard-data.txt').read_text().strip() == 'ok'\n",
+    )
+    _write(root / "guard-data.txt", "ok\n")
     _git(root, "add", ".")
     _git(root, "commit", "-m", "base")
     _git(root, "worktree", "add", "-b", "lane", str(lane), "master")
+    return root, lane
+
+
+@pytest.fixture
+def landing_repo(tmp_path: Path):
+    root, lane = _make_repo(tmp_path)
     _write(lane / "feature.txt", "lane\n")
     _git(lane, "add", "feature.txt")
     _git(lane, "commit", "-m", "lane change")
@@ -325,8 +351,8 @@ def test_failing_named_test_names_phase_and_retains_lane(landing_repo):
 
 def test_failing_generated_guard_names_phase_and_retains_lane(landing_repo):
     root, lane = landing_repo
-    _write(lane / "test_guard.py", "def test_guard(): assert False\n")
-    _git(lane, "add", "test_guard.py")
+    _write(lane / "guard-data.txt", "broken\n")
+    _git(lane, "add", "guard-data.txt")
     _git(lane, "commit", "-m", "break generated guard")
     before = _git(root, "rev-parse", "HEAD")
 
@@ -628,6 +654,203 @@ def test_a_gate_roster_that_does_not_match_what_ran_refuses(
 
     err = capsys.readouterr().err
     assert f"REFUSE phase=gate-coverage: {reason}" in err
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def _empty_registry(lane: Path, path: str) -> None:
+    """Leave a READABLE but empty red-proof registry for this lane.
+
+    `redproof.py check` FAULTs at exit 2 — independently of `--require` — when
+    it can locate no registry at all for a worktree (#949's unfixed second
+    half, in `dev/redproof.py`, which this lane is scoped out of). Arming and
+    immediately forgetting isolates the variable under test: with the registry
+    readable, does the DERIVED `--require 0` let a documentation-only branch
+    land where `--require 1` refused it?
+    """
+    armed = _redproof(lane, "begin", path, "--expectation", "test_named.py")
+    assert armed.returncode == 0, armed.stdout + armed.stderr
+    forgotten = _redproof(lane, "forget", path)
+    assert forgotten.returncode == 0, forgotten.stdout + forgotten.stderr
+
+
+@pytest.fixture
+def doc_only_repo(tmp_path: Path):
+    """A lane whose entire diff is one inert document — cx-944corpus's shape."""
+    root, lane = _make_repo(tmp_path)
+    _write(lane / ".dreamwork" / "docs" / "census.md", "a re-runnable census\n")
+    _git(lane, "add", ".dreamwork/docs/census.md")
+    _git(lane, "commit", "-m", "one inert document")
+    return root, lane
+
+
+def test_documentation_only_branch_requires_no_injection_and_lands(doc_only_repo):
+    """#932 forbids manufacturing a false-green; the gate used to demand one.
+
+    `--require 1` was unconditional, so the only route through for a lane that
+    obeyed its brief was to fake an injection into a file it had no reason to
+    touch — the exact act #932 exists to forbid.
+    """
+    root, lane = doc_only_repo
+    _empty_registry(lane, ".dreamwork/docs/census.md")
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    # The precondition this test's meaning depends on, read BEFORE the gate
+    # because a successful landing reaps the lane worktree: the diff really is
+    # one documentation path. A fixture that changed code too would make the
+    # requirement line below unreachable while the assertion still read well.
+    assert _git(lane, "diff", "--name-only", "master", "lane").split() == [
+        ".dreamwork/docs/census.md"
+    ]
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "diff-classification: 1 changed path(s); 1 inert documentation; "
+        "0 that a red-proof could bind"
+    ) in result.stdout
+    assert "red-proof requirement: 0 injections REQUIRED" in result.stdout
+    assert "injections registered>=0 required" in result.stdout
+    assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before
+
+
+@pytest.mark.parametrize("beside", ["feature.txt", "briefs/frame.md"])
+def test_one_document_does_not_lower_the_bar_for_what_is_beside_it(doc_only_repo, beside):
+    """`briefs/frame.md` is the sharp case: a `.md` compiled into every dispatch.
+
+    A change to it is a behavioural change to the whole loop, so a classifier
+    that reads it as documentation would exempt the loudest thing on the page.
+    """
+    root, lane = doc_only_repo
+    _write(lane / beside, "not documentation\n")
+    _git(lane, "add", beside)
+    _git(lane, "commit", "-m", f"add {beside} beside the doc")
+    _empty_registry(lane, beside)
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    changed = _git(lane, "diff", "--name-only", "master", "lane").split()
+    assert changed == sorted([".dreamwork/docs/census.md", beside]), changed
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert (
+        "red-proof requirement: 1 injection required — 1 of 2 changed path(s) "
+        "are NOT inert documentation, so a behavioural red-proof could bind "
+        f"them: {beside}"
+    ) in result.stdout
+    assert "--require 1 was set" in result.stderr
+    _assert_base_unmoved(root, before)
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        "briefs/frame.md",             # concatenated into every dispatched prompt
+        "SKILL.md",                    # the loop's own instructions
+        "watch-design.md",             # lint.py audits it
+        ".dreamwork/lessons.md",       # dev/lessons_index.py parses its heads
+        ".dreamwork/tasks.md",         # dev/ledger.py's store
+        ".dreamwork/docs/doc-map.md",  # lint.py check_doc_map_plans parses its rows
+    ],
+)
+def test_a_markdown_file_that_is_a_program_is_not_inert(doc):
+    assert land_lane._is_inert_doc(".dreamwork/docs/census-2026-08-02.md"), (
+        "the positive case must hold at runtime, or every row below passes "
+        "vacuously against a classifier that calls nothing inert"
+    )
+    assert not land_lane._is_inert_doc(doc), (
+        f"{doc} is executable input, so exempting it would let a behavioural "
+        "change land with no red-proof owed at all"
+    )
+
+
+def test_an_empty_diff_is_not_a_documentation_exemption():
+    """#868: zero changed paths must not read as "zero required"."""
+    empty = land_lane.Diff(changed=(), inert=(), binding=(), tests=())
+    assert empty.required_injections == 1
+    assert "the diff is EMPTY" in land_lane._requirement_line(empty)
+
+
+def test_a_node_id_does_not_count_as_naming_the_whole_file():
+    """#936's eleven failures spanned five classes; naming one is not coverage."""
+    assert land_lane._named_files(["./test_lint.py"]) == {"test_lint.py"}
+    assert land_lane._named_files(["test_lint.py::TestOne"]) == frozenset()
+
+
+def test_a_derived_test_the_coordinator_did_not_name_is_run_anyway(landing_repo):
+    """#936's exact shape: `lint.py` changed, `test_lint.py` existed, unnamed.
+
+    Eleven failures then sat on master for about two hours. Reporting the
+    omission would not have caught it — the gate's honest `full repo suite NOT
+    RUN` line was already there to be read past — so the derived test is RUN.
+    """
+    root, lane = landing_repo
+    _write(root / "test_lint.py", "def test_lint(): assert False\n")
+    _git(root, "add", "test_lint.py")
+    _git(root, "commit", "-m", "a red test_lint.py, unnamed by the coordinator")
+    _git(lane, "rebase", "master")
+    _write(
+        lane / "lint.py",
+        "# a change to lint.py whose test nobody named\n"
+        "from pathlib import Path\n"
+        "p = Path('lint-rows.txt')\n"
+        "rows = p.read_text().splitlines() if p.exists() else []\n"
+        "for row in rows: print('  WARN  ' + row)\n"
+        "print(f'clean ({len(rows)} warning(s))')\n",
+    )
+    _git(lane, "add", "lint.py")
+    _git(lane, "commit", "-m", "change lint.py")
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1, (
+        "master ADVANCED with a red test_lint.py that covers a file this branch "
+        "changed: the derived test was reported but never run, which is #936 exactly"
+    )
+    assert "derived-tests: 1 required test(s) from 2 changed path(s): test_lint.py" in result.stdout
+    assert "1 were NOT named and have been ADDED: test_lint.py" in result.stdout
+    assert "REFUSE phase=named-tests: named test selection failed" in result.stderr
+    assert "derived-and-added=['test_lint.py']" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_zero_derived_tests_says_why_rather_than_reading_as_coverage(doc_only_repo):
+    """#948's trap: "derived 0 required tests" is exactly how the defect hides."""
+    root, lane = doc_only_repo
+    _empty_registry(lane, ".dreamwork/docs/census.md")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "derived-tests: 0 required tests from 1 changed path(s)" in result.stdout
+    assert "This is NOT coverage" in result.stdout
+    assert "rests entirely on the named selection" in result.stdout
+
+
+def test_a_doc_only_lane_with_no_registry_faults_and_says_it_is_not_the_require_rule(
+    doc_only_repo,
+):
+    """#949's unfixed second half, pinned where the next reader will meet it.
+
+    `dev/redproof.py check` FAULTs at exit 2 when it can locate no registry for
+    a worktree, and that fault is `--require`-INDEPENDENT: deriving 0 does not
+    reach it, so this is still the state cx-944corpus is blocked in. The fault
+    lives in `dev/redproof.py`, which this lane is scoped out of. What
+    `land_lane.py` owes is #940's ruling — a refusal that says which of the
+    three facts it holds, rather than one message covering all of them.
+    """
+    root, lane = doc_only_repo
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "red-proof requirement: 0 injections REQUIRED" in result.stdout
+    assert "could not locate ANY lane scratch" in result.stderr
+    assert "NOTE this FAULT is NOT the --require rule" in result.stderr
+    assert "injections registered>=0 required" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
 
