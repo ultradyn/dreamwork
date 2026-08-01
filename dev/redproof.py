@@ -169,6 +169,17 @@ ARMED = "armed"        # begun (original snapshotted), not yet restored
 RESTORED = "restored"  # restore ran; injected_sha recorded
 RETIRED = "retired"    # forgotten as live evidence; still in HISTORY scope (#942)
 
+# The states THIS build knows how to classify. An entry whose ``state`` is not
+# in this set is UNKNOWN to this build of redproof.py — fail-closed as the
+# dangerous case, but named distinctly (#950): a lane that adds a state and
+# exercises it leaves the post-lane registry holding it, and the pre-merge
+# gate runs an OLDER build that classifies every unknown entry as armed, so
+# the lane's own check (newer tool) reads clean while the gate (older tool)
+# refuses. The fail-closed direction is right and is not changed: unknown is
+# still refused. What changes is that the refusal NAMES the format-skew
+# possibility rather than reading identically to four genuinely-armed entries.
+KNOWN_STATES = (ARMED, RESTORED, RETIRED)
+
 # Re-arm guidance appended to every expectation-drift refusal (#910). The
 # natural lane rhythm — inject, observe red, add a test, restore — edits an
 # expectation file mid-injection, and that breaks the byte pin on purpose
@@ -1151,10 +1162,20 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
         # recorded bytes to look for in history. Fall through to the scan.
 
     armed: list[dict] = []
+    unknown: list[dict] = []   # entries whose state THIS build cannot read (#950)
     live: list[dict] = []
     expectation_drift: list[str] = []
     for e in active:
-        if e.get("state") != RESTORED:
+        st = e.get("state")
+        if st not in KNOWN_STATES:
+            # Fail-closed AND named (#950). An old gate meeting a state a newer
+            # lane wrote must refuse — never default unknown to RESTORED, which
+            # would land a genuinely-armed future entry silently. It refuses as
+            # the dangerous case, but its refusal is DISTINCT from a real armed
+            # entry so the two never wear each other's words.
+            unknown.append(e)
+            continue
+        if st != RESTORED:
             armed.append(e)
             continue
         try:
@@ -1174,14 +1195,40 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                f"but are not live evidence.)" if retired else "") + "\n")
         return 1
 
+    # Unknown states are refused FIRST and distinctly (#950). They are the
+    # dangerous case — fail-closed is right and unchanged — but their refusal
+    # names the format-skew possibility, because that is the one the next
+    # reader spends twenty minutes diagnosing. The remedy text never reads as
+    # permission: an unknown entry is treated as armed and MUST be resolved.
+    if unknown:
+        # Distinct states first (order-stable for a deterministic message).
+        states = sorted({str(e.get("state")) for e in unknown})
+        st_list = ", ".join(repr(s) for s in states)
+        names = ", ".join(
+            f"{e['path']} (state {str(e.get('state'))!r}, from "
+            f"{e.get('_source', 'this lane')})" for e in unknown)
+        sys.stderr.write(
+            f"check: REFUSED — {len(unknown)} of {len(active)} active "
+            f"registration(s) are in a state this build of redproof.py cannot "
+            f"read ({st_list}): {names}. This build knows only "
+            f"{', '.join(repr(s) for s in KNOWN_STATES)}. An entry in an "
+            f"unknown state is treated as armed (begun-but-unrestored) and "
+            f"REFUSED — never as restored — so an injection written by a "
+            f"future format cannot land silently. If this branch changed the "
+            f"registry format, the pre-merge tool is reading post-lane data it "
+            f"cannot classify: re-run the gate from a build that carries the "
+            f"branch's change, or resolve the entries by hand. This message is "
+            f"not permission to merge.\n")
+        return 1
+
     if armed:
         names = ", ".join(
             f"{e['path']} (from {e.get('_source', 'this lane')})" for e in armed)
         sys.stderr.write(
-            f"check: REFUSED — {len(armed)} begun-but-unrestored injection(s): "
-            f"{names}. An armed entry means the red-proof never completed "
-            f"(begin without restore). Run `restore` on each or `forget` a "
-            f"spurious begin.\n")
+            f"check: REFUSED — {len(armed)} of {len(active)} begun-but-"
+            f"unrestored injection(s): {names}. An armed entry means the "
+            f"red-proof never completed (begin without restore). Run `restore` "
+            f"on each or `forget` a spurious begin.\n")
         return 1
 
     if expectation_drift:
