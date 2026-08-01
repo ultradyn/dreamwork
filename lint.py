@@ -3716,11 +3716,10 @@ def check_doc_map_plans(dw: Path, rep: Report) -> None:
 def check_review_artifacts(dw: Path, rep: Report) -> None:
     """#329 — review artifacts whose frame has drifted behind the template.
 
-    `review_artifact.py check` already answers current / stale / untemplated
-    per artifact and exits 1 on any stale, but nothing ran it — so an artifact
-    silently kept an old frame after the template improved, which is exactly
-    the drift #325 exists to end, returning by a different door. This wires
-    that answer into the per-target lint pass.
+    `review_artifact.py check` answers current / stale / untemplated and checks
+    the BUILT tag tree (#887). This wires that answer into the per-target lint
+    pass; source-only validation cannot see a malformed tag emitted by the
+    builder's own rewrites.
 
     **WARN on stale, never ERROR.** A stale frame is legible and recoverable:
     the words are still there, the page still renders, and the fix is one
@@ -3736,9 +3735,9 @@ def check_review_artifacts(dw: Path, rep: Report) -> None:
 
     **Degrades silently** when the pieces are absent, following the idiom
     `check_landed_still_open` set for a non-repo target: no `.dreamwork/review/`
-    directory, no `.html` in it, `review_artifact.py` missing or unrunnable, or
-    a non-zero exit with no stale verdict parsed all return without a row.
-    "Cannot check" must not read as "nothing to fix".
+    directory, no `.html` in it, or `review_artifact.py` missing/unrunnable all
+    return without a row. Once the checker runs, though, a missing or zero
+    denominator is an ERROR: "parsed nothing" must not read as "nothing wrong".
 
     Shells out to the real CLI rather than importing, the same move
     `check_landed_still_open` makes for git — and two traps come with that
@@ -3766,12 +3765,40 @@ def check_review_artifacts(dw: Path, rep: Report) -> None:
     # `check` prints one line per file: `  <verdict> <path>`, with a
     # `  (built from <stamp>)` suffix on stale ones. Only stale is a finding.
     stale: list[tuple[str, str]] = []
+    structural: list[tuple[str, str]] = []
+    denominator: tuple[int, int] | None = None
     for line in out.stdout.splitlines():
+        bad = re.match(r"\s*ERROR\s+(.+?)\s+\((.*)\)\s*$", line)
+        if bad:
+            structural.append((bad.group(1), bad.group(2)))
+            continue
+        counted = re.match(
+            r"\s*CHECKED\s+(\d+) built artifact\(s\), (\d+) element\(s\)\s*$",
+            line)
+        if counted:
+            denominator = (int(counted.group(1)), int(counted.group(2)))
+            continue
         parts = line.strip().split(None, 1)
         if len(parts) < 2 or parts[0] != "stale":
             continue
         m = re.match(r"(.+?)\s+\(built from\s+(.+?)\)\s*$", parts[1])
         stale.append((m.group(1), m.group(2)) if m else (parts[1], "?"))
+
+    for path, finding in structural:
+        rep.add(
+            ERROR,
+            "review/",
+            f"{Path(path).name}: built HTML defect — {finding}",
+        )
+
+    if denominator is None or denominator[0] != len(files) or denominator[1] == 0:
+        rep.add(
+            ERROR,
+            "review/",
+            "built-artifact check supplied no trustworthy denominator "
+            f"(expected {len(files)} artifact(s), got {denominator or 'none'}) — "
+            "refusing to report an empty or partial parse as clean",
+        )
 
     if stale:
         for path, stamp in stale:
@@ -3782,8 +3809,12 @@ def check_review_artifacts(dw: Path, rep: Report) -> None:
                 f"from its source under `.dreamwork/review/src/` so the frame "
                 f"tracks the current template (`review_artifact.py build`) (#329)",
             )
-    elif out.returncode == 0:
-        rep.add(OK, "review/", f"{len(files)} artifact(s), none stale")
+    elif (not structural and denominator is not None and denominator[1] > 0
+          and denominator[0] == len(files)):
+        rep.add(
+            OK, "review/",
+            f"{len(files)} artifact(s), {denominator[1]} element(s), none stale "
+            "or structurally invalid")
     # else: non-zero exit with no stale verdict (a read error, or check itself
     # unhappy) — degrade silently rather than claim all is well.
 
