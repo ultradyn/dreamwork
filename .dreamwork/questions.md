@@ -42,6 +42,31 @@
   failing rows. The cutoff is not a weakening — it is the same statement the other three cutoffs make.
   And deletion stays available later; it cannot be undone if taken now.
 
+
+  - **Update (2026-08-02 00:30, coordinator):** the stakes changed, and the honest answer is now
+    narrower than when I asked. The cutoff lane delivered and is correct — but it lands with an honest
+    residual of **4 errors**, and `land-lane` captures its WARN baseline only when lint emits a
+    `clean (N warning(s))` trailer. With any errors it refuses at `lint-baseline`. **So merging that
+    branch would make every subsequent gate refuse** — a deadlock, not a red. I am holding it.
+
+    The residual is exactly four briefs, all written by me in the hours before I started putting
+    `Lane-owns:` in every head: `867-cx-867cut2.md`, `867-cx-867cutoff.md`, `890-cx-890classify.md`,
+    `899-cx-899relpath.md`.
+
+    **I considered clearing them myself and decided not to.** I know their real ownership paths, so I
+    could add the line — but each brief has a `.sha256` receipt whose whole purpose is to prove the
+    brief is what was *actually dispatched*. Editing the brief and regenerating the receipt would make
+    that record assert something false about a dispatch that already happened. That is the same move as
+    editing a live artifact to make a new check pass, which is the thing this task exists to refuse.
+
+    **What is NOT waiting on you:** the protection itself is already restored. `#468`'s containment
+    guard needs `Lane-owns:` declarations, and every brief since 00:15 has one — measured, five
+    dispatches moved the count 53 → 54 rather than 53 → 58. What `#867` adds is *visibility* of the
+    historical gap. Real, and why it is P1, but not the guard.
+
+    So the order is: clear those four, then land. Deleting them is still the cleanest path and is still
+    your call. The branch is preserved and rebased; nothing is lost by waiting.
+
   **What I need from you, if anything:** only a veto or a redirect. If you want the 44 gone, say so and
   I will do it — that is the one branch I will not take on my own judgement, because it is irreversible
   and the briefs are your project's history, not mine.
