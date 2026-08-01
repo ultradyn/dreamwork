@@ -442,6 +442,56 @@ class TestInRepoWorktreeDrain:
         assert "root presence increased from absent to present" in rep.rows[-1][2]
 
 
+def _registered_worktree_paths():
+    """Resolved paths of every worktree in the live repo's registry.
+
+    ``git worktree list --porcelain`` is the authoritative registry
+    ``lane_status`` reads; resolving the paths makes the membership test
+    robust to tmpdir-vs-worktree spelling differences.
+    """
+    result = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        capture_output=True, text=True,
+    )
+    return {Path(line.removeprefix("worktree ")).resolve()
+            for line in result.stdout.splitlines()
+            if line.startswith("worktree ")}
+
+
+def _retire_frozen_worktree(snap):
+    """Remove a frozen_tree worktree's REGISTRATION, not just its directory (#922).
+
+    pytest reaps its tmpdir without knowing about git, so a ``git worktree
+    remove`` whose failure was swallowed (no ``check``) left a *prunable corpse*
+    in ``.git/worktrees`` — a row for a path that no longer exists, which
+    lane_status counted as a ``frozen-head … FAULT`` and which inflated the
+    fleet denominator three tasks (#821/#837/#840) were spent making truthful.
+    #915(b) taught lane_status to EXCLUDE such rows; this stops them being
+    created — the leak half of the family.
+
+    ``git worktree remove --force`` clears the registration even after the
+    directory has been reaped (verified git 2.55), so a corpse cannot survive a
+    remove that actually ran. The leak was the remove that did NOT clear it: a
+    nonzero exit swallowed by ``capture_output=True`` with no ``check``. This
+    helper verifies the registration is gone afterwards, because a survivor is
+    the one failure mode nothing else catches — a green test that left
+    repo-level git state behind. The transferable rule: a test that mutates
+    repo-level git state must RESTORE it, and pytest's tmpdir reaping is not a
+    substitute, because pytest does not know about git.
+    """
+    subprocess.run(
+        ["git", "worktree", "remove", "--force", str(snap)],
+        capture_output=True,
+    )
+    leftover = [p for p in _registered_worktree_paths()
+                if p == snap.resolve()]
+    if leftover:
+        raise AssertionError(
+            f"frozen_tree teardown did not clear the worktree registration "
+            f"for {snap}; a survivor is a leak lane_status would count as a "
+            f"frozen-head corpse (#922): {leftover}")
+
+
 @pytest.fixture
 def frozen_tree(tmp_path):
     """A detached worktree at HEAD — a fixed tree no concurrent lane can move.
@@ -451,10 +501,12 @@ def frozen_tree(tmp_path):
     44 briefs mid-run, so the tree the assertion was about changed underneath
     it. A snapshot at HEAD is immutable for the test's duration, so the
     assertion is about one SHA rather than about whatever the machine happens to
-    be doing. ~94ms to create (measured); cleaned up in a `finally` so a crash
-    cannot orphan a worktree the lane-containment backstop or reaper would
-    later trip on. If git cannot make the snapshot, the failure surfaces rather
-    than silently falling back to the live tree — that fallback would reintroduce
+    be doing. ~94ms to create (measured). Teardown clears the REGISTRATION in
+    a `finally` and verifies it is gone (#922): pytest's tmpdir reap deletes
+    the directory but knows nothing of git, so a remove whose failure was
+    swallowed left a prunable corpse lane_status counted — the verification
+    makes that survivor a test failure instead of a silent leak. If git cannot
+    make the snapshot, the failure surfaces rather than silently falling back to the live tree — that fallback would reintroduce
     the exact false red this exists to fix.
     """
     snap = tmp_path / "frozen-head"
@@ -465,10 +517,7 @@ def frozen_tree(tmp_path):
     try:
         yield snap
     finally:
-        subprocess.run(
-            ["git", "worktree", "remove", "--force", str(snap)],
-            capture_output=True,
-        )
+        _retire_frozen_worktree(snap)
 
 
 def _materialize_store(dw, ledger_text, tmp_path):
@@ -500,6 +549,58 @@ def _materialize_store(dw, ledger_text, tmp_path):
     mod.perform_cutover(str(scratch), out=io.StringIO())
     shutil.copy2(ledger_parse.store_path(scratch),
                  ledger_parse.store_path(dw))
+
+
+def test_frozen_tree_teardown_runs_on_failure_not_just_success(tmp_path):
+    """#922 direction 2: teardown must clear the registration on EVERY path.
+
+    A failing guard is exactly when someone is looking, so the worktree
+    registration must be cleared even when the body raises — which is what a
+    `finally` buys and a success-path-only teardown does not. This names the
+    false green (a guard that fails for its own reason while silently leaving a
+    corpse behind) and proves the fix closes it. The expectation is derived from
+    the git registry itself (``git worktree list``), the same authority
+    lane_status reads — not from the fixture's own remove call.
+    """
+    def registered():
+        return _registered_worktree_paths()
+
+    snap = tmp_path / "proof-head"
+    subprocess.run(["git", "worktree", "add", "--detach", str(snap), "HEAD"],
+                   check=True, capture_output=True)
+    try:
+        assert snap.resolve() in registered(), \
+            "precondition: the worktree is registered"
+
+        # The false green: a success-path-only remove. The body raises, the
+        # remove (written after the body) is unreachable, and the corpse
+        # survives — while the guard reads as failed for an unrelated reason
+        # and nobody inspects the registry.
+        try:
+            raise RuntimeError("a guard that fails")
+            subprocess.run(["git", "worktree", "remove", "--force", str(snap)],
+                           capture_output=True)  # unreachable on failure
+        except RuntimeError:
+            pass
+        assert snap.resolve() in registered(), \
+            "success-path-only teardown must leak here — the body raised and " \
+            "the remove never ran, leaving the corpse lane_status would count"
+
+        # The fix: the remove runs in a finally, so it clears the registration
+        # even though the body raises.
+        with pytest.raises(RuntimeError):
+            try:
+                raise RuntimeError("a guard that fails")
+            finally:
+                _retire_frozen_worktree(snap)
+        assert snap.resolve() not in registered(), \
+            "the finally teardown did not clear the registration on the " \
+            "failure path — a guard that fails must not leak repo-level state"
+    finally:
+        # Safety net: this test demonstrates a leak on purpose, so guarantee no
+        # corpse survives a failed assertion either (#922's own principle).
+        subprocess.run(["git", "worktree", "remove", "--force", str(snap)],
+                       capture_output=True)
 
 
 class TestTheBugItWasBuiltFor:
