@@ -126,7 +126,7 @@ def test_comment_magic_and_echo_cannot_manufacture_a_judged_pass(revision_tree):
     repo, _sha = revision_tree
     (repo / "justfile").write_text(
         "# guard-execution; already held; is serving\n"
-        "guards:\n"
+        'guards port="39899":\n'
         "    echo '  PASS qroll'\n")
     git(repo, "add", "justfile")
     git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "fake gate")
