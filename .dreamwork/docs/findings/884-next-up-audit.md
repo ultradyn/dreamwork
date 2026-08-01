@@ -93,3 +93,28 @@ self-heal at land instead of hoisting a finished task forever.
   vocabularies for one concept.
 - **Backfilling the 3 open prose-marked tasks** (`#254`, `#269`) needs a write
   to the live store, which this lane is forbidden. The coordinator owns it.
+
+## Direction-2: inputs where the mark is broken and the checks still pass
+
+Both constructed and confirmed by running them, not reasoned about.
+
+- **A marked task that is BLOCKED — CLOSED.** `list` shows no blocker for any
+  task, so a steer onto blocked work was hoisted to the top reading exactly
+  like ready work; every test above passes because none used a blocked
+  fixture. Closed by naming it on the line (`BLOCKED:<on>`) rather than
+  suppressing the mark — hiding a marked task because the loop thinks it is
+  blocked is the failure #884 is about.
+- **Markdown mode silently unranks every mark — OPEN.** With the cutover
+  watermark absent the CLI falls back to the markdown reader, where
+  `next_up` is `None` for every row and no warning is printed. The *write*
+  verb refuses markdown with a named reason; the *read* side just goes quiet.
+  This matches how `priority` and `type` already behave off-store (#497), so
+  it is the established dispatch rather than a new defect — but a project
+  that has not cut over gets a `do next` that stores nothing and says
+  nothing. Left open and named.
+- **Nothing binds SKILL.md's step 0 to this tool — OPEN.** The mark ranks
+  `dev/ledger.py list`; selection is prose an agent executes. If a future
+  selector reads the store directly, or the dashboard grows the open queue
+  (#98), the mark is invisible there and every test here still passes. This
+  is #879's territory (nothing checks code against a ruling doc) and is the
+  honest limit of what a CLI test can prove.

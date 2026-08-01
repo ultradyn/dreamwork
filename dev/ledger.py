@@ -1562,6 +1562,13 @@ def _list_line(r):
         # #884 — the hoist alone is ambiguous (a marked task at the top looks
         # like the lowest id), so the rank says its own name.
         parts.append("NEXT-UP")
+        # A marked task is the one selection will take, so if it cannot be
+        # taken that has to be visible HERE — `list` shows no blocker
+        # otherwise, and a steer onto blocked work would be picked and only
+        # then discovered. Named, never suppressed: hiding a marked task
+        # because the loop thinks it is blocked is the failure #884 is about.
+        if r.get("blocked_on"):
+            parts.append(f"BLOCKED:{r['blocked_on']}")
     return f"{'  '.join(parts)}  — {r['title']}"
 
 

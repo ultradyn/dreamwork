@@ -233,7 +233,8 @@ def test_count_human_shape(migrate, dev_ledger, tmp_path):
 # list
 # ===========================================================================
 
-_CONTRACT_KEYS = {"id", "state", "title", "priority", "type", "origin"}
+_CONTRACT_KEYS = {"id", "state", "title", "priority", "type", "origin",
+                  "next_up"}  # #884 — the mark rides the same contract
 
 
 def test_list_json_store_ids_match_fixture(migrate, dev_ledger, tmp_path):
@@ -1532,3 +1533,34 @@ def test_next_up_refuses_markdown_mode(migrate, dev_ledger, tmp_path):
                                      "--ledger", str(dw / "tasks.md")])
     assert rc == 1, (rc, out, err)
     assert "next-up is store-mode only" in err, err
+
+
+def test_a_marked_task_that_is_blocked_says_so_on_the_hoisted_line(
+        migrate, dev_ledger, tmp_path):
+    """The hoist makes blockedness urgent to know: `list` shows no blocker
+    otherwise, so a steer onto blocked work is picked and only then found.
+
+    PRODUCTION LINE: the ``BLOCKED:`` branch in ``dev/ledger.py::_list_line``.
+    RED: drop it and the marked blocked task sits at the top of the list
+    reading exactly like ready work.
+    """
+    dw = tmp_path / ".dreamwork"
+    dw.mkdir()
+    (dw / "tasks.md").write_text(LEDGER)
+    db_path = dw / ledger_parse.STORE_FILENAME
+    ledger_store.open_store(str(db_path), seed_next_id=1).close()
+    _write_watermark(db_path)
+    with open_database(task_store_spec(db_path), access=Access.WRITE) as store:
+        stuck = ledger_write.file_task(
+            store, "steered onto blocked work", "body", priority="P3",
+            origin="human", blocked_on="a ruling from him")
+        ledger_write.file_task(store, "ready work", "body", priority="P1")
+        ledger_write.set_next_up(store, stuck, why="do this one")
+
+    rc, out, err = _run(dev_ledger, ["list", "--state", "open",
+                                     "--ledger", str(dw / "tasks.md")])
+    assert rc == 0, (rc, err)
+    top = [ln for ln in out.splitlines() if ln.startswith("#")][0]
+    assert top.startswith(f"#{stuck}  "), f"precondition: the mark hoists: {out}"
+    assert "NEXT-UP" in top and "BLOCKED:a ruling from him" in top, (
+        f"a hoisted task that cannot be taken must say so: {top!r}")
