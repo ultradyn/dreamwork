@@ -54,7 +54,9 @@ dreamwork-version: 5853e1789929
   that is built and served by watch.py/dreamhub + compatible with claude design.
   goal is to have good structure for long term maintenance and principled
   structured dev."* `#397` did the first half — the eight UI constants are real
-  files under `client/` now — and the bundle step (`#505`) is what follows.
+  files under `client/` now — and `just build-client` plus committed
+  `client/dist/` have since landed. The bundle is derived from those sources;
+  it does not create a second independent render authority for a route.
   **Not exclusive:** *"current focus does not imply exclusivity, but we should
   prioritize related tasks within orchestration budgets + make sure we stay
   consistent with the goal."* Unrelated work still lands; it just does not
