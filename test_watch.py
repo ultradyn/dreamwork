@@ -11727,9 +11727,16 @@ class TestDeliveryWakeRouting(unittest.TestCase):
         instead of slipping past a hand-copied list.
         """
         core = set(watch.COMMAND_KINDS)
+        # `ingest-plan` (#843) joins as NON-pre-emptive, and that is the
+        # decision this precondition exists to force rather than default.
+        # It files a plan's tasks into the ledger: it is bulk filing, not an
+        # instruction addressed to *now*, so it belongs with add-idea and
+        # maintenance rather than with do-now/do-next. The coordinator learns
+        # of it on the next journal drain, which is the correct latency for
+        # work that is already durably recorded by the time it is read.
         self.assertEqual(core,
                          {"chat", "add-idea", "do-next", "do-now",
-                          "maintenance"}, core)
+                          "maintenance", "ingest-plan"}, core)
         # #504 PRECONDITION: chat is the far-left command; #818 classifies it
         # as conversational and therefore pre-emptive.
         self.assertEqual(watch.COMMANDS[0]["kind"], "chat")

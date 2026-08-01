@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Check the #689-shifted ``watch.py`` citations classified by #801.
 
-The twelve-line insertion after ``dc739001`` gives this check a deliberately
-narrow, high-confidence oracle: an unqualified citation to N is stale when the
-old text at N is byte-for-byte the current text at N+12.  Living prose must not
-keep that unstable number.  Historical records may keep it only when the
-citation names the source revision it describes.
+The insertion after ``dc739001`` gives this check a deliberately narrow,
+high-confidence oracle: an unqualified citation to N is stale when the old text
+at N is byte-for-byte the current text at N+DRIFT.  Living prose must not keep
+that unstable number.  Historical records may keep it only when the citation
+names the source revision it describes.  DRIFT is a hand-measured constant and
+that is the defect #845 exists to fix — see the note at its definition.
 
 This is not a general semantic citation verifier.  Four documents whose
 shift-shaped matches were wholly attributed to the pre-existing reviewed
@@ -15,7 +16,7 @@ a document is living or historical is judgement, not a path heuristic.
 
 IGC, in the context of a frequently edited source file: G1 is survival across
 future line movement; G2 is honest current evidence; G3 is preservation of a
-historical record.  Adding 12 fails G1.  Pinning every citation fails G2 for
+historical record.  Adding the drift fails G1.  Pinning every citation fails G2 for
 living prose.  Removing decorative numbers fails G3 for records.  The surviving
 classification is therefore symbol/context without a number for living prose,
 and the original number plus an explicit revision for historical evidence.
@@ -33,7 +34,19 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_REV = "dc739001"
-DRIFT = 12
+# A HAND-MEASURED CONSTANT, and #845 is open because that is the wrong shape.
+# It was 12 when #801 classified the population; #843's ten-line hunk at
+# watch.py:366 sits above every classified citation and moved all 24 to +22 in
+# one step, turning a lane's ordinary insertion into a master-red.  Any net
+# insertion above the cited region breaks this identically whether it is +1 or
+# +150 — it is exact-match, not a threshold.  Worse than fragile: because the
+# constant is global, the guard only ever sees the cluster that happens to sit
+# at this offset.  Measured today, citations into surviving watch.py lines sit
+# at +0 (16, genuinely unshifted), +10 (62), +22 (24, the population below),
+# and +83/+227/+228/+262/+347/+348 (24 more) — so 82 equally stale citations
+# are invisible to this check by construction.  #845 replaces the constant with
+# a per-citation offset derived from the real diff against BASE_REV.
+DRIFT = 22
 # Living citations were removed by #801, so the standing resolvable population
 # is the historical subset that remains deliberately line-pinned.
 EXPECTED_CLASSIFIED_CITATIONS = 24
