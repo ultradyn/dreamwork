@@ -160,7 +160,10 @@ def test_atomic_claim_refuses_even_if_a_racing_registry_read_was_empty(
     assert _begin(repo, "router.js") == 0
     rp._registry_path(repo).unlink()  # model B's earlier empty registry read
 
-    assert _begin(repo, "router.js") == 2
+    second = _begin(repo, "router.js")
+    assert second == 2, (
+        "second begin replaced the crossed snapshot after both lanes observed "
+        "an empty registry")
     _, err = capsys.readouterr()
     assert "snapshot name" in err and "already armed" in err
 
