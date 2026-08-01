@@ -156,8 +156,10 @@ def poll(repo: str | Path, *, git: str = "git", timeout: float = 5.0) -> GitStat
     """Run one read-only status poll, guarded against even transient index.lock."""
 
     root = Path(repo).resolve()
+    # This process may be the long-lived server.  Set its environment, not
+    # only a one-off child's, so every descendant inherits the mitigation.
+    os.environ["GIT_OPTIONAL_LOCKS"] = "0"
     env = os.environ.copy()
-    env["GIT_OPTIONAL_LOCKS"] = "0"
     with _IndexLockGuard(_git_dir(root)) as guard:
         try:
             result = subprocess.run(

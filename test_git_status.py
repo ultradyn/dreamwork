@@ -53,6 +53,7 @@ def _locking_git(tmp_path: Path, *, always: bool = False) -> Path:
 
 
 def test_healthy_poll_is_quiet_and_uses_both_lock_defences(repo, monkeypatch):
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "1")
     seen = []
     real_run = subprocess.run
 
@@ -63,6 +64,7 @@ def test_healthy_poll_is_quiet_and_uses_both_lock_defences(repo, monkeypatch):
     monkeypatch.setattr(git_status.subprocess, "run", spy)
     status_result = git_status.poll(repo)
     assert status_result.dirty is False
+    assert os.environ["GIT_OPTIONAL_LOCKS"] == "0"
     assert seen, "the poll never ran, so its lock discipline was not examined"
     assert all("--no-optional-locks" in argv for argv, _ in seen)
     assert all(env.get("GIT_OPTIONAL_LOCKS") == "0" for _, env in seen)
