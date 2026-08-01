@@ -19,7 +19,10 @@ mechanically, and says so for everything else:
 
 A check that examined nothing must not read as passing (#671): the summary
 always names how many citations it examined, how many it could not resolve,
-and how many it declined to classify.
+and how many it declined to classify.  And a check that examined a TRUNCATED
+corpus must not read as a complete one — the summary also prints the
+tracked-vs-on-disk split, and flags it prominently when the audit is
+incomplete (#788).
 
 Usage:
     python3 dev/citation_audit.py [--briefs DIR] [--ledger PATH] [--quiet]
@@ -36,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -107,10 +111,49 @@ class Citation:
 
 
 @dataclass
+class CorpusCoverage:
+    """The tracked-vs-on-disk split of a brief corpus (#671, #651).
+
+    A worktree sees only the tracked subset of the main checkout's corpus
+    (#611/#685: untracked state cannot travel), so the audit can examine a
+    fraction of what exists without saying so.  This pair lets the report
+    name its own input boundary so a truncated audit cannot read as a
+    complete one.
+    """
+
+    on_disk: int = 0
+    tracked: int = 0
+
+    @property
+    def untracked(self) -> int:
+        return self.on_disk - self.tracked
+
+
+def corpus_coverage(briefs_dir: Path) -> CorpusCoverage:
+    """Count ``.md`` briefs on disk vs tracked by git.
+
+    Returns equal counts when the dir is not under git (the common test and
+    fixture case), so the coverage line prints harmlessly rather than
+    alarming about a corpus that is complete.  The divergence it exists to
+    surface is the worktree case, where the two counts differ.
+    """
+    on_disk = sum(1 for _ in briefs_dir.glob("*.md"))
+    result = subprocess.run(
+        ["git", "-C", str(briefs_dir), "ls-files", "--", "*.md"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        return CorpusCoverage(on_disk=on_disk, tracked=on_disk)
+    tracked = sum(1 for line in result.stdout.splitlines() if line.strip())
+    return CorpusCoverage(on_disk=on_disk, tracked=tracked)
+
+
+@dataclass
 class AuditReport:
     """Aggregate result of auditing one or more briefs."""
 
     examined: int = 0
+    coverage: CorpusCoverage = field(default_factory=CorpusCoverage)
     unresolvable: list[Citation] = field(default_factory=list)
     no_relationship: list[Citation] = field(default_factory=list)
     unclassifiable: list[Citation] = field(default_factory=list)
@@ -190,6 +233,7 @@ def audit_briefs(
     concern) and makes the function testable without a live store.
     """
     report = AuditReport()
+    report.coverage = corpus_coverage(briefs_dir)
 
     for brief in sorted(briefs_dir.glob("*.md")):
         text = brief.read_text()
@@ -217,7 +261,11 @@ def _default_dw_dir() -> Path:
 
 def format_report(report: AuditReport, quiet: bool = False) -> str:
     """Human-readable summary.  Always names coverage (#671)."""
+    cov = report.coverage
     lines = [
+        f"corpus: {cov.tracked} tracked / {cov.on_disk} on disk"
+        + (" (AUDIT IS INCOMPLETE — untracked briefs not visible)"
+           if cov.untracked > 0 else ""),
         f"citation_audit: examined {report.examined} citation(s)",
         f"  UNRESOLVABLE:     {len(report.unresolvable)}",
         f"  NO_RELATIONSHIP:  {len(report.no_relationship)}",
