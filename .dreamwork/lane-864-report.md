@@ -4,9 +4,9 @@
 ## #864 — EXPEDITED delivery class + stop hook — lane `opus-864expedite` (Opus 5)
 
 **VERDICT: complete and verified.** Base `b91bb4a212e932c06d8106a2831920b0d6643df4`;
-rebased onto local master **`fa93d18eb889e05125a8f7a5369e99dc74a2f284`** (clean, no
-conflicts; `origin/master` was `a7a88df9`, behind — I used the local branch as the
-boilerplate requires). Branch head `2fb66dd5`. Worktree is *outside* the repo, as briefed.
+rebased onto local master **`e25bc236c6d5252ea6cf8603cfc1fde5ebdd2d68`** (clean, no
+conflicts; master moved twice while I worked — `fa93d18e`, then `e25bc236`; `origin/master`
+was `a7a88df9`, behind, so I used the local branch as the boilerplate requires). Worktree is *outside* the repo, as briefed.
 
 ### The deliverable: how the hook and the tick share ONE cursor
 
