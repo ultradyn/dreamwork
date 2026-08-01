@@ -299,8 +299,10 @@ const forceTick = async () => {
     } catch (e) {}
     holdRerenderUntil = Date.now() + 8000;
 
-    setData(await (await fetch(typeof dataJsonUrl === 'function'
-      ? dataJsonUrl() : '/data.json')).json());
+    // Use the production delta seam. Calling dataJsonUrl() directly can
+    // return a {changed, removed} envelope, which is not a data document.
+    const next = await fetchDataResponse();
+    if (next) setData(next);
     const html = await buildCurrent();
     setLiveContent(html);
     restoreBdHover(bdHover);
@@ -650,8 +652,8 @@ const forceTick = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'add-idea', text: 'bdinput hold-tick ' + Date.now() }),
     });
-    setData(await (await fetch(typeof dataJsonUrl === 'function'
-      ? dataJsonUrl() : '/data.json')).json());
+    const next = await fetchDataResponse();
+    if (next) setData(next);
     const bdHover = snapshotBdHover();
     const html = await buildCurrent();
     setLiveContent(html);
