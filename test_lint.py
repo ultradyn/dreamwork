@@ -9684,6 +9684,15 @@ class TestRetiredPhrasings:
                          "Markdown document(s) — registry is empty; this is "
                          "not an all-clear")]
 
+    def test_absent_registry_is_a_loud_warning_not_an_error(self, tmp_path):
+        dw = self._repo(tmp_path, {"docs/one.md": "# one\n"})
+        (dw / "docs" / lint.RETIRED_PHRASINGS_REGISTRY).unlink()
+        rows = self._rows(dw)
+        assert rows == [(lint.WARN, lint.RETIRED_PHRASINGS_REGISTRY,
+                         "registered 0 retired phrasing(s); scanned 1 tracked "
+                         "Markdown document(s) — registry is empty; this is "
+                         "not an all-clear")]
+
     def test_empty_tracked_doc_set_is_loud(self, tmp_path):
         dw = self._repo(tmp_path)
         rows = self._rows(dw)

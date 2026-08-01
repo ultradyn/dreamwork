@@ -6819,7 +6819,10 @@ def _retirement_marker_near(
 
 def _load_retired_phrasings(path: Path) -> tuple[list[tuple[str, str]], str | None]:
     if not path.is_file():
-        return [], f"{path.name} is absent"
+        # A fresh/foreign target predates the registry. The zero denominator
+        # below is the loud advisory; absence is not malformed data and must
+        # not turn every otherwise-valid target into an ERROR.
+        return [], None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
