@@ -17,7 +17,7 @@ from typing import Sequence
 
 LANE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 ATTEMPT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
-TASK_HEAD_RE = re.compile(r"^#(?:\s+Task)?\s+#?(\d+)\b", re.MULTILINE)
+TASK_HEAD_RE = re.compile(r"^# [^\n]*?#(\d+)\b", re.MULTILINE)
 BRANCH_RE = re.compile(r"^Branch:\s+(\S+)\s*$", re.MULTILINE)
 BASE_RE = re.compile(r"^Base sha:\s+([0-9a-f]{40})\s*$", re.MULTILINE)
 INBOX_PREFIX = (
@@ -161,6 +161,15 @@ def _brief_faults(prompt: str, head: str, contract: str, task: int, lane: str,
     bases = BASE_RE.findall(prompt)
     inbox_lines = [line for line in prompt.splitlines() if line.startswith("Coordinator inbox")]
     expected_inbox = f"{INBOX_PREFIX}{inbox}"
+    launcher_metadata = [
+        line for line in head.splitlines()
+        if line.startswith(("Worktree:", "Branch:", "Base sha:", "Coordinator inbox"))
+    ]
+    if launcher_metadata:
+        faults.append(
+            "human-authored head must not supply launcher-owned Worktree/Branch/Base sha/"
+            f"Coordinator inbox metadata; found {launcher_metadata!r}"
+        )
     if task_heads != [str(task)]:
         faults.append(f"final brief must contain one first-level task heading for #{task}; found {task_heads!r}")
     if branches != [lane]:

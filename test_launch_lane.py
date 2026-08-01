@@ -94,7 +94,8 @@ def test_brief_validation_reports_every_violation_before_worktree_creation(launc
     result = _run(launch_repo, head)
 
     assert result.returncode == 1
-    assert "REFUSE phase=brief-validation: 4 violation(s)" in result.stderr
+    assert "REFUSE phase=brief-validation: 5 violation(s)" in result.stderr
+    assert "must not supply launcher-owned" in result.stderr
     assert "one first-level task heading for #832" in result.stderr
     assert "one bare 'Branch: lane-832' line" in result.stderr
     assert "exactly this coordinator inbox line" in result.stderr
