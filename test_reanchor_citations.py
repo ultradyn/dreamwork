@@ -8,6 +8,7 @@ from dev.reanchor_citations import (
     named_symbols,
     resolve,
 )
+from dev.apply_reanchors_i3 import ANCHORS, ReviewedAnchor, resolve_all
 
 
 def citation(context: str, old_line: int = 9000) -> Citation:
@@ -88,104 +89,39 @@ def test_the_two_live_plans_have_no_past_eof_citations():
 
 
 def test_each_reviewed_anchor_line_contains_the_named_evidence():
-    """Every citation re-anchored by increments 2+3: the target line must
-    contain the named token.  This is necessary but NOT sufficient — it
-    proves the line holds the symbol, not that the symbol is the prose's
-    referent.  The wrong-referent defence is human review, named honestly
-    in test_a_wrong_referent_passes_the_token_check."""
-    anchors = [
-        # increment 2 — 28 anchors
-        ("watch.py", 342, "COMMANDS"),
-        ("watch.py", 3683, "track_question_updates"),
-        ("watch.py", 3717, "_store_algo"),
-        ("watch.py", 3726, "seen_at"),
-        ("watch.py", 3728, "digest"),
-        ("watch.py", 3735, "return"),
-        ("watch.py", 3737, "dirty"),
-        ("watch.py", 3752, "digest"),
-        ("watch.py", 3765, "emits_wake"),
-        ("watch.py", 3792, "os.replace"),
-        ("watch.py", 3797, "collect"),
-        ("watch.py", 3812, "track_question_updates"),
-        ("watch.py", 4538, "DELIVERY_DEFAULT"),
-        ("watch.py", 4563, "PREEMPT_KINDS"),
-        ("watch.py", 4566, "delivery_mode"),
-        ("watch.py", 4575, "emits_wake"),
-        ("watch.py", 4585, "DELIVERY_DEFAULT"),
-        ("watch.py", 4621, "log_event"),
-        ("watch.py", 4632, "OSError"),
-        ("watch.py", 4668, "_journal_receive"),
-        ("watch.py", 4685, "_journal_record_health"),
-        ("watch.py", 4847, "command_line"),
-        ("watch.py", 4963, "_journal_receive"),
-        ("watch.py", 5457, "_journal_receive"),
-        ("watch.py", 5672, "_handle_command"),
-        ("watch.py", 5834, "_handle_run_mode"),
-        ("watch.py", 5863, "_handle_posture"),
-        ("watch.py", 6077, "WRITE_ROUTE_HANDLERS"),
-        # increment 3 — 36 anchors (8 rejected proposals corrected by review,
-        # 4 ambiguous refusals disambiguated, 24 accepted tool proposals)
-        ("watch.py", 2667, "append_human_question"),
-        ("watch.py", 909, "read_bytes"),
-        ("watch.py", 5139, "_send_bytes"),
-        ("watch.py", 804, "read_text"),
-        ("watch.py", 974, "detect_file_kind"),
-        ("watch.py", 4606, "resolve_confined"),
-        ("watch.py", 947, "INLINE_IMAGE_EXTS"),
-        ("watch.py", 4860, "_expected_disconnect"),
-        ("watch.py", 5190, "do_GET"),
-        ("watch.py", 5081, "_send"),
-        ("watch.py", 4313, "parse_posture_text"),
-        ("watch.py", 4394, "resolve_posture"),
-        ("watch.py", 4437, "write_posture"),
-        ("watch.py", 4505, "posture_line"),
-        ("watch.py", 5533, "_handle_answer"),
-        ("ledger_parse.py", 66, "ledger_entries"),
-        ("ledger_parse.py", 37, "ENTRY_HEAD"),
-        ("watch.py", 2042, "ledger_series"),
-        ("watch.py", 1619, "_LEDGER_SNAPS"),
-        ("watch.py", 1540, "LEDGER_ENTRY"),
-        ("watch.py", 1570, "LEDGER_COMBINED_MENTION"),
-        ("watch.py", 1623, "parse_ledger"),
-        ("watch.py", 1648, "_open_ids"),
-        ("watch.py", 4721, "log_submission"),
-        ("watch.py", 5380, "do_POST"),
-        ("watch.py", 4639, "MAX_BODY"),
-        ("watch.py", 2561, "atomic_write_text"),
-        ("watch.py", 4603, "ANSWER_LOCK"),
-        ("watch.py", 5366, "_read_json"),
-        ("watch.py", 4164, "WATCHED_MTIME_IGNORED"),
-        ("watch.py", 4264, "write_tint"),
-        ("watch.py", 4207, "watched_mtime"),
-        ("watch.py", 4280, "read_run_mode"),
-        ("watch.py", 1360, "serving_cached"),
-        ("watch.py", 3553, "skill_identity"),
-        ("watch.py", 6087, "_handle_posture"),
-        # increment 3 continued — 9 anchors added by review of the previous
-        # session's bulk apply: 2 wrong-referent corrections (reload-signal
-        # citations point at route handlers, not the functions they call),
-        # 3 ledger_write.py:190→38 (note_task moved during refactor), and
-        # 4 refusal resolutions by prose reading.
-        ("watch.py", 5205, "data.json"),
-        ("watch.py", 5235, "mtime"),
-        ("ledger_write.py", 38, "note_task"),
-        ("watch.py", 2485, "parse_open_answers"),
-        ("watch.py", 5312, "reviewraw"),
-        ("watch.py", 5199, "parsed.path"),
-        ("watch.py", 5574, "_handle_comment"),
-        ("client/router.js", 1638, "reconciliation"),
-        ("client/router.js", 1750, "morphdom"),
-        ("dreamwork_db/migrate.py", 28, "MIGRATIONS"),
-    ]
-    # Precondition: the anchor list grew by exactly 46 across increments 2+3.
-    # A literal count would rot; this asserts the size the check depends on.
-    assert len(anchors) == 74, f"expected 74 anchors (28 i2 + 46 i3), got {len(anchors)}"
-    missing = [
-        f"{path}:{line} lacks {symbol}"
-        for path, line, symbol in anchors
-        if not cited_line_contains_symbol(Path.cwd(), path, line, symbol)
-    ]
-    assert missing == []
+    """Movement is healthy; missing or ambiguous reviewed evidence is not."""
+    assert len(ANCHORS) == 74, f"expected 74 reviewed anchors, got {len(ANCHORS)}"
+    resolved = resolve_all(Path.cwd())
+    assert len(resolved) == 74
+    track = next(item for item in resolved if item.symbol == "track_question_updates")
+    assert (track.reviewed_line, track.current_line, track.drift) == (3683, 3695, 12)
+
+
+def test_ambiguous_reanchor_names_the_anchor_and_each_drift(tmp_path: Path):
+    source = tmp_path / "watch.py"
+    source.write_text("# inserted\ndef tick():\n    pass\ndef tick():\n    pass\n")
+    anchor = ReviewedAnchor("watch.py", 1, "tick", "def tick():")
+    try:
+        anchor.resolve(tmp_path)
+    except ValueError as exc:
+        assert str(exc) == (
+            "watch.py:1 (tick) is ambiguous: "
+            "line 2 (drift +1), line 4 (drift +3)"
+        )
+    else:
+        raise AssertionError("ambiguous reviewed evidence was silently reanchored")
+
+
+def test_unanticipated_watch_insertion_keeps_lines_derived(tmp_path: Path):
+    """Direction 2: a scratch insertion shifts an anchor by an unknown amount."""
+    lines = Path("watch.py").read_text().splitlines()
+    lines[3000:3000] = [f"# unanticipated insertion {n}" for n in range(7)]
+    (tmp_path / "watch.py").write_text("\n".join(lines) + "\n")
+    before = ANCHORS[0].resolve(tmp_path)
+    track_anchor = next(a for a in ANCHORS if a.symbol == "track_question_updates")
+    after = track_anchor.resolve(tmp_path)
+    assert (before.current_line, before.drift) == (342, 0)
+    assert (after.current_line, after.drift) == (3702, 19)
 
 
 def test_a_wrong_referent_passes_the_token_check(tmp_path: Path):
