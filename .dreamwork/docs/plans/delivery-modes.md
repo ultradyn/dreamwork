@@ -144,8 +144,10 @@ line on real change) rather than a new route.
 The alternative shape, offered because the brief told me to check how posture is
 persisted and not to assume: a **sibling file** `.dreamwork/delivery` (one line,
 closed set, no migration, no `posture` widening). That is the same
-sibling-vs-widen choice #445 already ruled on for the other axes, and the same
-arguments apply (a sibling touches no closed set; a widening keeps one control).
+sibling-vs-widen choice #445 already ruled on for the other closed-set axes, and
+the same arguments apply (a sibling touches no closed set; a widening keeps one
+control). `#650` found the boundary: a free-text field inherits no closed-set
+guard, so the ruling does not decide its storage shape.
 **Which shape is HIS to rule (Q2).** This design proposes the posture axis,
 because delivery is posture by definition and the closed-set discipline that
 already guards `pace`/`asking` guards it for free.
