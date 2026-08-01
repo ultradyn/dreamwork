@@ -154,6 +154,17 @@ def test_begin_refuses_to_replace_an_armed_snapshot(repo, capsys):
     assert rp._snapshot_path(repo, "router.js").read_bytes() == original_snapshot
 
 
+def test_atomic_claim_refuses_even_if_a_racing_registry_read_was_empty(
+        repo, capsys):
+    """The filesystem claim closes read-empty/read-empty begin interleaving."""
+    assert _begin(repo, "router.js") == 0
+    rp._registry_path(repo).unlink()  # model B's earlier empty registry read
+
+    assert _begin(repo, "router.js") == 2
+    _, err = capsys.readouterr()
+    assert "snapshot name" in err and "already armed" in err
+
+
 # ── direction 1: the defect, and the refusal that names it ────────────
 
 class TestUnrestoredInjectionIsRefused:
