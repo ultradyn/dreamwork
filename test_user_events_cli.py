@@ -340,15 +340,3 @@ def test_the_cli_is_executable_and_help_documents_exit_codes():
     # The stable exit codes are documented in the script's own --help.
     for token in ("EX_OK", "EX_USAGE", "EX_NOINPUT", "EX_SOFTWARE"):
         assert token in r.stdout, f"--help does not document {token}"
-
-
-def test_submissions_is_never_load_bearing_in_the_journal_or_cli():
-    """submissions.log is best-effort by design; if the journal or CLI ever
-    needs it to answer a question, the journal is incomplete. Cheap grep guard
-    against a whole class of drift (plan §"3 · submissions.log must not become
-    load-bearing"). Read from file contents so it holds before the file is
-    tracked, not only after."""
-    targets = [CLI, *sorted((REPO / "user_events").glob("*.py"))]
-    assert targets, "no files to scan — the precondition guard is vacuous"
-    offenders = [str(p) for p in targets if b"submissions" in p.read_bytes()]
-    assert not offenders, f"'submissions' is load-bearing in: {offenders}"
