@@ -3423,3 +3423,26 @@ this shape and convert opportunistically.)
 
 - **A check that fires on a healthy input is worse than no check — its message names a failure on every run, so the reader learns to dismiss the failure it exists to catch** (2026-08-01, `#786`). This principle has been applied correctly all session — #763's first refusal rested on it, and every dispatch-time check candidate that would red on ordinary brief prose was rejected on exactly these grounds. It was UNHOMED: I had been citing it as "#755 — a check that fires on a healthy input" in 19 persisted-but-uncommitted briefs (the corpus write landed in #766 but nothing committed it; #788 measured 35 .md/.sha256 pairs untracked, so a lane auditing from a worktree could not see them), but #755's real subject is queued_dispatches rot, and the phrase appears nowhere in the ledger or this file. A lane (`cx-783cover`) checked the citation instead of taking it, reported the mismatch, and #786 was filed. **This entry is its HOME** (option 2 of #786's remedy: write the lesson so the citation becomes true). The evidence: #763 measured that a broad conditional-word proxy names all 218 briefs and an imperative-word proxy names 211 — a check noisy on nearly every healthy brief teaches the coordinator to ignore it, and `lint.py`'s `check_placeholder_citations` (which fires two WARNs on the healthy live file) is the documented instance. The companion is the entry below: a signal that always fires is one nobody reads.
 - **A signal that always fires is one nobody reads — a WARN that appears on every healthy run is decoration, not a warning** (2026-08-01, `#786`, companion to the entry above). This principle was cited as "#136 — a signal that always fires is one nobody reads" in 30 persisted-but-uncommitted briefs (the corpus write landed in #766 but nothing committed it; #788 measured the untracked set, so these were invisible to a worktree audit), but #136's real subject is *"A questions.md that parses to nothing must say so"*. #136's entry does carry a RELATED idea (an exemption that blesses the morning failure), but the specific "always fires → nobody reads" wording is the broader principle and had no home. **This entry is its HOME.** The evidence is `#766`'s finding (`untracked=1` printed on every reap, read as routine every time, never as the warning it was) and `#755`'s instance (a check that fires two warnings on the healthy file). The durable form: a warning that cannot be quieted by compliance is a warning that will be muted, and a muted warning is worse than none — so design the check to be SILENT on the healthy path and LOUD only on the fault, or it trains the reader to skip the row that matters.
+
+- **A NAMED test selection is a guess about blast radius, and mine was wrong within the hour.**
+  Merging `#836` (group progress bars) I ran `just pytest test_watch.py -k group` — five passed —
+  plus `test_client_assets.py` and the generated repo-wide guards, and called the gate green. The
+  full `test_watch.py` was **red in two tests**, and both were caused by that very merge:
+  `collect()` grew a `groups` key that `/summary.json`'s deliberately-exhaustive partition test
+  refuses until it is classified, and the provenance render assertions still pinned markup that
+  `#836` had moved into a shared `splitBar()`. **Neither test has "group" in its name**, which is
+  precisely why `-k group` could not see them — the selection matched my mental model of the change,
+  and the breakage was in what the change *touched*, not in what it was *about*.
+  I did not find this. **Two lanes did, independently**, when they rebased onto master and ran the
+  whole file; both correctly reported the failures as reproducing on master and NOT belonging to
+  their diffs, which is the only reason the attribution was instant instead of a hunt.
+  The generalisation, and it is uncomfortable: **the repo-wide guard set exists because "run the
+  tests you think are relevant" is known to be unsafe, and a narrow `-k` re-introduces exactly the
+  hole the guard set closes.** A named selection is legitimate for a fast inner loop; it is not a
+  merge gate. At the gate, run the whole file that the change touches — and prefer the tool over the
+  memory, which is what `#833`'s `land-lane` is for.
+  One more thing fell out of the repair worth keeping: one of the stale assertions,
+  `role="img" aria-label="${esc(aria)}"`, **still passed after the code moved** — on `bdmed` and
+  `bdcommit-copy`, unrelated burndown components that happen to share the idiom. It had stopped
+  saying anything about provenance while reading perfectly green. A coordinate that rots does not
+  always fail; sometimes it drifts onto a neighbour and keeps reassuring you.
