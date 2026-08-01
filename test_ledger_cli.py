@@ -1203,6 +1203,38 @@ def test_sweep_reports_a_cited_open_sha_read_from_the_store_body(
     assert "1 open id(s) excluded by sha-citation" in out, out
 
 
+def test_sweep_cli_resolves_store_merge_citation_to_lane_commits(
+        migrate, dev_ledger, tmp_path):
+    """The real CLI/store path accepts the merge sha ``land-lane`` prints."""
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    cited = min(int(i) for i in _fixture_ids()[0])
+    trunk = _git(root, "symbolic-ref", "--short", "HEAD").stdout.strip()
+    _git(root, "checkout", "-q", "-b", "lane-merge-citation")
+    first = _plant(root, f"test(#{cited}): first lane commit")
+    second = _plant(root, f"feat(#{cited}): second lane commit")
+    _git(root, "checkout", "-q", trunk)
+    _git(root, "merge", "-q", "--no-ff", "lane-merge-citation", "-m",
+         "Merge lane-merge-citation")
+    merge = _git(root, "rev-parse", "--short", "HEAD").stdout.strip()
+
+    rc, _, err = _run(dev_ledger, [
+        "note", str(cited), "--note", f"partial landing merged as {merge}",
+        "--ledger", str(dw / "tasks.md")])
+    assert rc == 0, f"fixture-only note must record the merge citation: {err!r}"
+
+    out = _sweep(dev_ledger, root, dw)
+
+    assert cited not in _named_ids(out), (
+        f"store entry #{cited} cites merge {merge}, whose explicitly planted "
+        f"commits are {first} and {second}; CLI sweep must not call them "
+        f"uncited: {out!r}")
+    assert f"CITED-OPEN #{cited}" in out, out
+    assert "citation resolution: 1/1 cited sha(s) resolved" in out, out
+    assert f"`{merge}`:2" in out, (
+        f"the CLI receipt must expose that merge {merge} yielded the two "
+        f"explicitly planted lane commits: {out!r}")
+
+
 def test_sweep_all_history_recovers_a_landing_before_the_fold_window(
         migrate, dev_ledger, tmp_path):
     """A bounded sweep cannot self-heal; the periodic mode can.
