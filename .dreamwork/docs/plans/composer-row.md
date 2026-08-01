@@ -57,6 +57,16 @@ What makes it buildable rather than a mood:
    or the conveyor is built against a moving target. Two things land
    here: centre the dots (**measure first** — #123 was the same shape and
    took two wrong diagnoses), and hard right in the row with a gap.
+
+   **Measured 2026-08-01:** the glyph was already horizontally centred in
+   its own button (`0.00px`), and its remaining `0.90px` ink asymmetry is the
+   font metric #123 says not to chase. The visible error was box alignment:
+   `.cmdpick` aligns its children at flex-start while `.cmdmorebtn` has a
+   shorter line box than `.cmdkind`, putting the dots' centre `7.80px` above
+   the command labels. `.cmdmore` therefore shares `.cmdkinds`' measured top
+   inset and button height; its auto start margin pins it right, and the narrow
+   filled control leaves the separating gap without widening or wrapping the
+   command group.
 2. **#164** — the conveyor, **as a component**.
 3. **#99** — the popout mounts that component. Should be nearly free by
    this point; if it is not, step 2 built a layout rather than a
