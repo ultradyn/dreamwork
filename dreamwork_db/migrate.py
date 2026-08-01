@@ -9,11 +9,11 @@ from typing import Callable
 from .core import SchemaMismatch
 from .migrations import (
     v001_legacy, v002_review, v003_questions, v004_groups, v005_hierarchy,
-    v006_event_genesis, v007_user_settings,
+    v006_event_genesis, v007_user_settings, v008_goals,
 )
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 _COMPOSED_BASE_VERSION = 2
 
 
@@ -35,6 +35,7 @@ MIGRATIONS = (
     Migration(4, 5, v005_hierarchy.upgrade),
     Migration(5, 6, v006_event_genesis.upgrade),
     Migration(6, 7, v007_user_settings.upgrade),
+    Migration(7, 8, v008_goals.upgrade),
 )
 
 
