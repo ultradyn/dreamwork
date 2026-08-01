@@ -310,8 +310,8 @@ differed from the candidate list:**
 
 - **The `#505` reconciler is the seam that landed.** A vendored morphdom was
   extracted as a keyed-reconciliation diff over `#view`
-  (`watch.py:7178` keyed reconciliation, `:7223` `morphdom(viewEl, …)`,
-  `:11074` vendored source) — generalising the keyed diff the chrome already
+  (`client/router.js:1638` keyed reconciliation, `client/router.js:1750`
+  `morphdom(viewEl, …)`, vendored source in `client/`) — generalising the keyed diff the chrome already
   used, subsuming the ~11 hand-maintained snapshot/restore pairs. **It did
   not split the file**; it split a *responsibility* out into a vendored
   dependency. This is the existence proof that a demand-driven seam can be

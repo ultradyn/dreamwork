@@ -341,7 +341,7 @@ not `Accept-Ranges`.
 
 ### Cache-Control revisit (parked question from the ledger)
 
-Today: `private, max-age=0, must-revalidate` (`watch.py:8982`).
+Today: `private, max-age=0, must-revalidate` (`watch.py:5139`).
 
 | directive | why it was chosen | still right? |
 |---|---|---|
@@ -545,7 +545,7 @@ read as an oversight. Measured so nobody has to guess:
 ### What is there today
 
 ```python
-# watch.py:9047-9059
+# watch.py:5312 (the /reviewraw handler)
 name = parse_qs … p
 full = resolve_confined(target, os.path.join(".dreamwork", "review", name))
     if name and "/" not in name else None

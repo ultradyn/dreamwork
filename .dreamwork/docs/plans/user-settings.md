@@ -112,7 +112,7 @@ Everything in `collect()` rides one invalidation signal: `watched_mtime`
 walks all of `.dreamwork/` (respecting `WATCHED_MTIME_IGNORED`,
 `watch.py:4164`), and the client polls `/mtime`, so any file under
 `.dreamwork/` that changes reaches every open dashboard on the next tick
-with **no new channel** (`watch.py:6077`–`13744`). Writes go through
+with **no new channel** (`watch.py:6077`). Writes go through
 `WRITE_ROUTE_HANDLERS` (`watch.py:6077`) — a single dispatch table that
 E2 derives its route coverage from, where the journal commit/receipt
 (E2Shadow) runs before dispatch. The simplest precedent is
@@ -461,7 +461,7 @@ which line could be red.
   ledger store SQLite+machine-local+gitignored C1+`_MIGRATIONS`
   (`ledger_store.py:31`, `:344`–`352`, `:449`; `.gitignore` C1); co-resident
   `user-events.sqlite3` (`user_events/sqlite.py:1`); the `/mtime`/`collect()`
-  seam (`watch.py:6077`–`13744`, `watched_mtime` `:13859`–`13900`);
+  seam (`watch.py:6077`, `watched_mtime` `:4207`);
   write-route table + E2Shadow (`watch.py:6077`, `WRITE_ROUTE_HANDLERS`
   `:15460`); tint/posture read-write precedent (`:13903`, `:14011`,
   `:15246`); #228 server-side-persistence ruling

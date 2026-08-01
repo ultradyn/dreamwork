@@ -76,7 +76,7 @@ Every answered entry has a distinct title (each carries a distinct date and
 topic), a distinct body, and a distinct resolution stamp. There are no
 exact-content twins in the real file today.
 
-What the code does today when it meets twins (read at watch.py:6403–6490):
+What the code does today when it meets twins (read at watch.py:2485):
 
 - `parse_open_answers` keys the twin by `(title.strip(), body.strip())`.
 - `parse_answered_answers` keys the twin by `(title, when, body, follows)`,

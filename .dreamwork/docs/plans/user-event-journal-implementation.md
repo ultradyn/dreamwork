@@ -176,7 +176,7 @@ assertions (`git grep -n 'submissions' -- test_watch.py` → lines 199, 209,
 
 ### `_handle_command` and the six write routes — no task state, no `202`
 
-- `watch.py:8398-8411` — six POST routes: `/answer`, `/ask`, `/comment`,
+- `watch.py:5380` — six POST routes: `/answer`, `/ask`, `/comment`,
   `/command`, `/tint`, `/run-mode`.
 - `watch.py:5672` — `_handle_command` validates `kind`, validates non-empty
   `text` for everything but `do-next`, calls `log_event(...)`, returns `{"ok": true}`.
@@ -251,8 +251,8 @@ $ git grep -c -E 'import fcntl|fcntl\.flock|O_EXCL' -- watch.py
 
 ```
 $ git grep -n 'open(qpath, "w"' -- watch.py
-watch.py:8462     # _handle_answer
-watch.py:8496     # _handle_comment
+watch.py:5533     # _handle_answer
+watch.py:5574     # _handle_comment
 ```
 
 `/answer` and `/comment` **truncate `questions.md` in place** — no temp, no
@@ -486,7 +486,7 @@ asserts the file is byte-identical to its pre-state and the temp file is gone or
 ignorable.
 *Red line:* the `os.replace(tmp, path)` ordering — specifically, replacing the
 temp-then-rename with a direct `open(path, "w")` (which is what
-`watch.py:8462` does today) must make this test fail.
+`watch.py:5533` does today) must make this test fail.
 *Must not fake:* an end-state-only assertion cannot fail on a crash-window bug.
 Kill the child, and snapshot the pre-state bytes *before* the run so the
 comparison is against a captured value.
@@ -1027,8 +1027,8 @@ This plan contradicts none of them, and two are load-bearing here:
 
 ### Found while measuring, out of scope, reported not fixed
 
-- **`/answer` and `/comment` truncate `questions.md` in place** (`watch.py:8462`,
-  `8496`) — no temp, no rename, no `fsync`, while `/ask` next to them uses
+- **`/answer` and `/comment` truncate `questions.md` in place** (`watch.py:5533`,
+  `watch.py:5574`) — no temp, no rename, no `fsync`, while `/ask` next to them uses
   `atomic_write_text`. A crash mid-write loses the file, on the two routes that
   carry his answers. Wants its own task; lane C would subsume it, but lane C is
   a long way off and this is one function call.

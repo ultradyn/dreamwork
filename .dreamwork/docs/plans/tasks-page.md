@@ -59,7 +59,7 @@ Defended against the three alternatives, because `#282` will hardcode it and
 `#133` may later prefix it:
 
 - **`/tasks/281` (path segment)** — rejected. The server allowlist is an exact
-  `parsed.path in (…)` membership test (`watch.py:7766` — `("/", "/questions", "/answers", "/file", "/review")`). A path segment turns
+  `parsed.path in (…)` membership test (`watch.py:5199` — `("/", "/questions", "/answers", "/file", "/review")`). A path segment turns
   that into prefix matching, which is a change in *kind* to the one place that
   decides what this server will serve, and it lands in the same seam `#133`
   will rewrite. Query params keep the allowlist exact and get the prefix for
@@ -173,9 +173,9 @@ ledger_index(target)    → {tasks, health, note, history_complete}
   hostile input with no repository at all.
 - `ledger_history` does **not** add a walk. `ledger_series` already builds
   `arrived`, `landed` and `first_sight` per id and discards them at the end
-  (which `#218` names in its own entry) — `watch.py:6545-6578`. It returns them
+  (which `#218` names in its own entry) — `watch.py:2042`. It returns them
   instead, memoised on the same immutable `(rev, rel)` snapshot key
-  (`watch.py:6553`, which carries the tree-relative path for #217's reason and
+  (`watch.py:1619`, which carries the tree-relative path for #217's reason and
   not the rev alone), and additionally keeps each entry's **title** per
   snapshot so a pruned task still has one. Cost: one extra dict per revision,
   at **288** ledger commits today and growing, and **no extra `git show`** —
