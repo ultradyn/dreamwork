@@ -33,6 +33,7 @@ import difflib
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -3853,6 +3854,185 @@ def check_placeholder_citations(dw: Path, rep: Report) -> None:
         )
 
 
+# ── past-EOF line citations in living docs (#777) ─────────────────────
+# A `<file>:<line>` citation can outlive the file it names: #397's client
+# extraction moved ~9,300 lines out of watch.py into client/, and 335
+# `watch.py:N` citations across 48 docs now point past EOF. A lane sent to read
+# the cited line lands nowhere, or reconstructs what it thinks was meant. The
+# bug is "a citation outlived the file", and any tracked file can shrink, so
+# this resolves every `<file>:<line>` token — not only watch.py — against the
+# tracked file it names.
+#
+# Resolution against the TRACKED-file set is the gate: a token that names no
+# tracked file is skipped, not guessed at (#707), and a gitignored stub
+# (`.dreamwork/tasks.md` does not travel) can never be a target whose worktree
+# line count is meaningless. A bare basename resolves only when it is unique;
+# an ambiguous basename (several `tasks.md`) is left unresolved rather than
+# attributed to the wrong file.
+
+# A citation token: a path-like span ending in an extension, then :digits. The
+# path body allows `/`, `.`, `-`, `_`; the lookbehind starts the match at the
+# token's first char so `dev/redproof.py:160` is taken whole, not as
+# `redproof.py:160`. The `(?!\d)` tail rejects a 7th+ digit (overflow).
+CITE_LINE = re.compile(r"(?<![\w/])([A-Za-z0-9_][\w./-]*\.[A-Za-z]\w*):(\d+)(?!\d)")
+
+# Explicit allowlist of HISTORICAL (append-only, correct-when-written) source
+# paths. A doc under one of these is NOT scanned, because its citations were
+# right on the day written and "fixing" them falsifies a record (#755). A
+# heuristic would misclassify exactly where judgement is needed; this list is
+# the judgement, made once. `findings/*` is uniform: each of its ten members
+# opens by citing a past HEAD it verified against ("verified at HEAD
+# `2cc00174`", "describes `master` at `50d4ac42`"), so the directory is
+# historical as a whole — the evidence is the doc headers, not a run-time guess.
+# `briefs/` and `measurements/` are snapshots by the same token; `handoffs/`
+# and `lane-*-report.md` are append-only records of completed work.
+HISTORICAL_DOC_PATHS = {
+    ".dreamwork/handoffs.md",
+    ".dreamwork/lessons.md",
+}
+HISTORICAL_DOC_PREFIXES = (
+    ".dreamwork/docs/briefs/",
+    ".dreamwork/docs/findings/",
+    ".dreamwork/docs/handoffs/",
+    ".dreamwork/docs/measurements/",
+    ".dreamwork/review/evidence/",
+    ".dreamwork/lane-",
+)
+
+_WALK_SKIP_DIRS = frozenset({
+    ".git", ".worktrees", "node_modules", "__pycache__",
+    ".pytest_cache", ".ruff_cache", ".mypy_cache",
+})
+
+
+def _git_tracked_rels(root: Path) -> list[str] | None:
+    """Paths `git ls-files` reports under `root`, or None when there is no repo.
+
+    None (not []) distinguishes "no git" from "empty repo" so the caller falls
+    back to a filesystem walk for tests that build a tree with no git.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "ls-files"],
+            capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    rels = [ln for ln in out.stdout.splitlines() if ln]
+    return rels if rels else None
+
+
+def _walk_rels(root: Path) -> list[str]:
+    """Every file under root minus VCS/build dirs — the no-git fallback."""
+    rels = []
+    for dp, dns, fns in os.walk(root):
+        dns[:] = [d for d in dns if d not in _WALK_SKIP_DIRS]
+        for fn in fns:
+            rels.append(str((Path(dp) / fn).relative_to(root)))
+    return rels
+
+
+def check_citation_range(dw: Path, rep: Report) -> None:
+    """A line citation in a LIVING doc must name a line that exists (#777).
+
+    Resolves every `<file>:<line>` token in a living doc against the tracked
+    file it names and warns when the cited line exceeds the file's line count.
+    The defect is real only in LIVING docs still consulted; HISTORICAL
+    append-only records (handoffs, lessons, briefs, findings, measurements)
+    were correct when written and stay silent via an explicit allowlist, so the
+    check never invites the only "fix" available for them — falsifying a
+    record (#755).
+
+    WARN, never ERROR, and the reason is the repo it lands into: 335 dangling
+    citations exist today, so an ERROR would block the gate until increment 2
+    (the re-anchor) completes. A recurrence-prevention check must not wait on
+    the very cleanup it oversees. WARN lands now; increment 2 drives the count
+    down, and each cleared file drops one row from the bar. One WARN per
+    affected source file — granular enough that a regression in a clean file
+    raises the count, bounded enough not to bury the rest of the report.
+
+    Catches PAST-EOF ONLY. A citation that still lands inside the file but on
+    the wrong line (which the extraction also produced in bulk) is invisible to
+    a line-count check, so the message and the OK row say "in range", never
+    "verified" or "correct" (#651). Naming it for more than it proves would
+    stop anyone looking harder at the wrong-line class.
+    """
+    root = dw.parent
+    rels = _git_tracked_rels(root)
+    if rels is None:
+        rels = _walk_rels(root)
+    tracked = set(rels)
+    by_base: dict[str, list[str]] = {}
+    for rel in rels:
+        by_base.setdefault(Path(rel).name, []).append(rel)
+
+    def _resolve(pathpart: str) -> str | None:
+        if pathpart in tracked:
+            return pathpart
+        base = pathpart.rsplit("/", 1)[-1]
+        cands = by_base.get(base)
+        return cands[0] if cands and len(cands) == 1 else None
+
+    line_cache: dict[str, int] = {}
+
+    def _line_count(rel: str) -> int:
+        if rel not in line_cache:
+            try:
+                line_cache[rel] = len(
+                    (root / rel).read_text(encoding="utf-8",
+                                           errors="replace").splitlines())
+            except OSError:
+                line_cache[rel] = 0
+        return line_cache[rel]
+
+    examined = 0
+    n_sources = 0
+    # rel -> [dangling_count, worst_target, worst_cited, worst_actual]
+    per_file: dict[str, list] = {}
+    for rel in rels:
+        if not rel.endswith(".md"):
+            continue
+        if rel in HISTORICAL_DOC_PATHS:
+            continue
+        if any(rel.startswith(p) for p in HISTORICAL_DOC_PREFIXES):
+            continue
+        n_sources += 1
+        try:
+            lines = (root / rel).read_text(encoding="utf-8",
+                                           errors="replace").splitlines()
+        except OSError:
+            continue
+        for text in lines:
+            for m in CITE_LINE.finditer(text):
+                tgt = _resolve(m.group(1))
+                if tgt is None:
+                    continue
+                examined += 1
+                cited = int(m.group(2))
+                if cited > _line_count(tgt):
+                    ent = per_file.get(rel)
+                    if ent is None:
+                        per_file[rel] = [1, tgt, cited, _line_count(tgt)]
+                    else:
+                        ent[0] += 1
+                        if cited > ent[2]:
+                            ent[1], ent[2], ent[3] = tgt, cited, _line_count(tgt)
+    for rel in sorted(per_file):
+        n, tgt, cited, actual = per_file[rel]
+        rep.add(
+            WARN, "citation range",
+            f"{rel}: {n} citation(s) past EOF — e.g. {tgt}:{cited} exceeds "
+            f"{tgt}'s {actual} line(s) (#777)",
+        )
+    if examined and not per_file:
+        rep.add(
+            OK, "citation range",
+            f"{examined} citation(s) in range across {n_sources} living "
+            f"doc(s) (past-EOF only; wrong-line citations are undetectable)",
+        )
+
+
 # ── brief hand-off obligation (#398) ──────────────────────────────────
 # Distinctive phrase from the SKILL.md paragraph that introduced the
 # dispatch-time hand-off obligation (#394). Resolved via `git log -S`, never a
@@ -5989,6 +6169,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_lesson_line_citations(dw, rep)
     check_cited_shas(dw, rep)
     check_placeholder_citations(dw, rep)
+    check_citation_range(dw, rep)
     check_handoffs(dw, watch, rep)
     # These five checks all read the dispatcher's corpus. Since #770 the
     # correct dispatch route writes that corpus in the main checkout while a

@@ -2712,6 +2712,147 @@ Next id: **9**
             inspect.getsource(lint.run_checks)
 
 
+class TestCitationRange:
+    """#777 — a line citation in a living doc must name a line that exists.
+
+    The client extraction (#397) moved ~9,300 lines out of watch.py and 335
+    `watch.py:N` citations across 48 docs now point past EOF. This check
+    catches past-EOF citations in LIVING docs only; HISTORICAL append-only
+    records stay silent because their citations were correct when written
+    and "fixing" them falsifies a record (#755). The check is general — any
+    tracked file can shrink — and resolves every `<file>:<line>` token, not
+    only watch.py.
+    """
+
+    def _run(self, root):
+        rep = lint.Report()
+        lint.check_citation_range(root / ".dreamwork", rep)
+        return [(lvl, detail) for lvl, what, detail in rep.rows
+                if what == "citation range"]
+
+    def _target(self, tmp_path, *, files):
+        """A root with .dreamwork/ and arbitrary sibling files (no git)."""
+        root = fresh(tmp_path)
+        dw = root / ".dreamwork"
+        dw.mkdir()
+        for rel, text in files.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding="utf-8")
+        return root
+
+    def test_a_past_eof_citation_in_a_living_doc_warns_with_counts(self, tmp_path):
+        """The headline case: a citation past EOF names the file, the cited
+        line, and the actual line count — the three facts a fix needs."""
+        root = self._target(tmp_path, files={
+            "watch.py": "a\nb\nc\n",  # 3 lines
+            ".dreamwork/docs/plans/living.md": "See `watch.py:99`.\n",
+        })
+        rows = self._run(root)
+        assert len(rows) == 1 and rows[0][0] == lint.WARN, rows
+        msg = rows[0][1]
+        assert "watch.py:99" in msg, msg
+        assert "watch.py's 3 line" in msg, msg
+        assert "#777" in msg, msg
+
+    def test_an_in_range_citation_is_silent(self, tmp_path):
+        """A healthy living doc whose citations resolve produces an OK row, not
+        silence — the row says 'in range', never 'verified' (#651)."""
+        root = self._target(tmp_path, files={
+            "watch.py": "a\nb\nc\n",
+            ".dreamwork/docs/plans/living.md": "See `watch.py:2`.\n",
+        })
+        rows = self._run(root)
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "in range" in rows[0][1], rows[0][1]
+        assert "verified" not in rows[0][1].lower(), rows[0][1]
+        assert "undetectable" in rows[0][1], rows[0][1]
+
+    def test_a_citation_to_an_untracked_file_is_silent_not_guessed(self, tmp_path):
+        """A token naming no tracked file is skipped, not guessed at (#707).
+        Without this, the check would attribute a citation to the wrong file."""
+        root = self._target(tmp_path, files={
+            ".dreamwork/docs/plans/living.md": "See `nonexistent.py:99`.\n",
+        })
+        assert self._run(root) == []
+
+    def test_an_ambiguous_basename_is_left_unresolved(self, tmp_path):
+        """Two files share a basename; the citation must not be attributed to
+        either, because a wrong attribution is worse than no check (#707)."""
+        root = self._target(tmp_path, files={
+            "a/mod.py": "x\n",
+            "b/mod.py": "x\n",
+            ".dreamwork/docs/plans/living.md": "See `mod.py:99`.\n",
+        })
+        assert self._run(root) == []
+
+    def test_historical_handoffs_stays_silent_on_many_dangling(self, tmp_path):
+        """Direction 2, the deciding one: 35 dangling citations in handoffs.md
+        must produce zero output. A check that flags an append-only record has
+        made the repo worse (#755)."""
+        root = self._target(tmp_path, files={
+            "watch.py": "a\n",
+            ".dreamwork/handoffs.md":
+                "".join(f"see watch.py:{n}\n" for n in range(100, 135)),
+        })
+        assert self._run(root) == [], "handoffs.md is historical and must stay silent"
+
+    def test_historical_findings_directory_stays_silent(self, tmp_path):
+        root = self._target(tmp_path, files={
+            "watch.py": "a\n",
+            ".dreamwork/docs/findings/500-audit.md": "see `watch.py:99`\n",
+        })
+        assert self._run(root) == []
+
+    def test_historical_briefs_and_lane_reports_stay_silent(self, tmp_path):
+        root = self._target(tmp_path, files={
+            "watch.py": "a\n",
+            ".dreamwork/docs/briefs/500-brief.md": "see `watch.py:99`\n",
+            ".dreamwork/lane-500-report.md": "see `watch.py:99`\n",
+        })
+        assert self._run(root) == []
+
+    def test_the_check_catches_any_shrunk_file_not_just_watch_py(self, tmp_path):
+        """The bug is 'a citation outlived the file', and any tracked file can
+        shrink. ledger_store.py shrank during the sqlite migration too."""
+        root = self._target(tmp_path, files={
+            "ledger_store.py": "x\n",  # 1 line
+            ".dreamwork/docs/plans/living.md": "see `ledger_store.py:500`\n",
+        })
+        rows = self._run(root)
+        assert len(rows) == 1, rows
+        assert "ledger_store.py:500" in rows[0][1], rows[0][1]
+        assert "ledger_store.py's 1 line" in rows[0][1], rows[0][1]
+
+    def test_one_warn_per_source_file_not_per_citation(self, tmp_path):
+        """Granular enough that a regression in a clean file raises the count,
+        bounded enough not to bury the rest of the report."""
+        root = self._target(tmp_path, files={
+            "watch.py": "a\n",
+            ".dreamwork/docs/plans/one.md": "see `watch.py:10` and `watch.py:20`\n",
+            ".dreamwork/docs/plans/two.md": "see `watch.py:30`\n",
+        })
+        rows = [r for r in self._run(root) if r[0] == lint.WARN]
+        assert len(rows) == 2, rows
+
+    def test_the_live_repo_historical_docs_produce_zero_rows(self):
+        """Held to the real repo: every allowlisted historical path must stay
+        silent. This is the bar that decides whether the check ships."""
+        rep = lint.Report()
+        lint.check_citation_range(lint.SKILL_DIR / ".dreamwork", rep)
+        hist = lint.HISTORICAL_DOC_PATHS
+        hpre = lint.HISTORICAL_DOC_PREFIXES
+        flagged = [d for lvl, w, d in rep.rows if w == "citation range"
+                   and (d.split(":")[0] in hist
+                        or any(d.split(":")[0].startswith(p) for p in hpre))]
+        assert flagged == [], f"check flagged historical docs: {flagged}"
+
+    def test_the_check_is_registered_in_run_checks(self):
+        import inspect
+        assert "check_citation_range(dw, rep)" in \
+            inspect.getsource(lint.run_checks)
+
+
 class TestHandoffs:
     """#381's delivery half: a landing the ledger writer has not folded yet.
 
