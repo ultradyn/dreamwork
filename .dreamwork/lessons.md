@@ -4062,3 +4062,37 @@ is the entire mechanism by which judgement reaches a lane. A defect in the
 boilerplate is therefore not a clerical error — it is a defect in the only
 thing the coordinator actually ships, and it is multiplied by the fleet size on
 every tick.
+
+## A lesson that recurs twice in one hour needs a check, not another paragraph (2026-08-02, #937/#938/#919, mine, measured)
+
+I wrote the entry *"A true statement, read as a stronger claim than it supports"* at `681f39cb`
+tonight. **Within the hour it produced two fresh defects, both mine, both found by accident.**
+
+- **#937.** `.dreamwork/docs/citation-repair-2026-08-02.md` reports `examined=19` and defends that
+  number well — it *"always prints its fixed denominator and faults if an occurrence disappears."*
+  That protects against **shrinkage**. It gives nothing against **omission at construction**. The
+  corpus holds **52** pinned occurrences across 20 documents; the census enrolled **19** across 8.
+  I read "19 of 19 are false" as a statement about the corpus twice — once folding #920, once
+  dispatching a lane to "apply all 19".
+- **#938.** `gate-coverage: 4 of 4 declared gates passed … full repo suite NOT RUN` is exactly true.
+  The tests it did not run included `test_client_assets.py`, which exists to check the very tuple
+  the landing changed. I read the true sentence as reassurance and landed a page that embeds
+  markdown as its DOM reconciler.
+
+**The rate is the finding.** A lesson I had just written, in a file I maintain, about a failure I
+had just measured, did not survive sixty minutes of my own practice. That is not a memory problem —
+`lessons.md` worked, the entry was there, I could have quoted it. **Prose I agree with does not
+change what I do at the moment of the act.**
+
+**The two shapes of denominator failure are now a matched pair, and only one had a name.** #868 is a
+denominator that can silently reach **zero**. #937 is a denominator that can never notice it is
+**too small** — and it is the more dangerous of the two, because a fixed literal *looks* like the
+disciplined choice. A zero is at least suspicious. `examined=19` is not.
+
+**So the remedy is mechanical, and both are filed as such:** #937 makes the census print
+`enrolled / detected / unenrolled` and treat a non-zero unenrolled count as a finding; #938 asks why
+changed-file guard derivation could not reach a test named for the file that changed. **Neither is a
+new insight. Both are the existing insight, moved out of prose and into something that runs.**
+
+**The tell:** *when the same lesson catches you twice in an hour, stop writing it down — the next
+edit belongs in a check, not in this file.*
