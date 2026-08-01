@@ -3755,3 +3755,51 @@ validator read task ids `['905', '596']`, and it refused the dispatch outright. 
 heading is structurally detectable; a missing list is not.** One authoring fault was caught by a
 tool and one reached a lane, and the difference was not care — it was whether the damage had a
 shape a checker could see.
+
+## A pathspec that matched nothing told me a worktree was safe to delete (2026-08-02, mine, measured)
+
+I was about to force-remove `glm-259shifttab`'s worktree. `dev/reap.py` had refused it, correctly:
+one unmerged commit, `feat(#259): Shift+Tab cycles composer modes`. The refusal is fail-closed and
+right, so the burden was on me to prove the content was already on master under a different sha —
+cx-259guard had rebased that exact branch, which changes a commit's patch-id without changing what
+it does.
+
+So I wrote the obvious check: list the files the branch touched, then diff each one against master.
+
+```
+files=$(git diff --name-only $mb glm-259shifttab)
+for f in $files; do
+  if git diff --quiet master glm-259shifttab -- "$f"; then echo "  SAME as master: $f"; ...
+```
+
+It printed `SAME as master: client/app_body.html` and then dumped the remaining eight filenames as
+raw text. The shell was zsh, which does **not** word-split an unquoted parameter by default, so the
+loop ran **once** with `$f` bound to all nine newline-joined paths. `git diff` received that as a
+single pathspec, **matched no file at all**, found no differences in the empty set, and exited 0.
+
+**`--quiet` over an empty pathspec and `--quiet` over a genuinely identical file are the same exit
+code.** The check reported the all-clear because it had examined nothing, and its output was
+*shaped exactly like* an all-clear that had examined everything. I noticed only because the stray
+filenames looked wrong — not because the check said anything was wrong. Had the file list been one
+path instead of nine, there would have been no visual tell at all.
+
+Re-run with `while IFS= read -r f`, the real answer was four files differing, and settling it took
+two further instruments: `git cherry -v` (which reported `+` for the feat commit — a rebase
+artifact, not a verdict, per #676) and finally grepping master's `client/command.js` for the feature
+itself, which found it at two `#259`-commented sites. **Only the last one looked at the thing rather
+than at metadata about the thing.**
+
+This is the degrade-to-zero shape (#868/#875/#883/#886/#888/#889) in my own hands, and it landed on
+the one class of act where a false green is unrecoverable: **I was using it to authorise a
+destructive command.** The repo-wide rule I keep writing for lanes — *print the denominator; a zero
+must be loud* — I did not apply to a five-line shell loop I wrote for myself, because it was small
+and I was in a hurry. Small and disposable is not the same as low-stakes; this one's output was the
+sole gate on deleting work.
+
+**The habit that generalises:** before a destructive act, the check that authorises it must report
+**how many things it examined**, and I must read that number — not just its verdict. `git`'s
+pathspec-matched-nothing and `grep`'s no-lines-matched both exit in ways that read as agreement.
+CLAUDE.md already says to chain a destructive command to its check; that is necessary and not
+sufficient, because a check chained to `&&` still passes when it checked nothing. I did chain it —
+the second time, gated on a real count (`[ "$n" -ge 2 ]`) — and that is the form that was actually
+worth anything.
