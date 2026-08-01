@@ -3382,6 +3382,66 @@ var DreamworkDesign = (() => {
     const body = isMarkdownFile(param) && mode !== "source" ? mdB(text, param) : src;
     return `<div id="filebody">${body}</div>`;
   }
+  function taskTriageSort(a, b) {
+    const rank = { P0: 0, P1: 1, P2: 2, P3: 3 };
+    const ar = rank[a.priority] == null ? 4 : rank[a.priority];
+    const br = rank[b.priority] == null ? 4 : rank[b.priority];
+    return ar - br || Number(b.id) - Number(a.id);
+  }
+  function taskViewsAgree(summary, detail) {
+    if (!summary || !detail) return summary === detail;
+    const own = (record, key) => Object.prototype.hasOwnProperty.call(record, key);
+    return [
+      "id",
+      "state",
+      "title",
+      "priority",
+      "type",
+      "origin",
+      "date",
+      "owner",
+      "blocked_on",
+      "dependencies"
+    ].every((key) => own(summary, key) && own(detail, key) && JSON.stringify(summary[key]) === JSON.stringify(detail[key]));
+  }
+  function taskTriageRow(task, selected) {
+    const facets = [
+      task.state,
+      task.type,
+      task.origin,
+      task.date ? task.date.slice(0, 10) : null
+    ].filter(Boolean).join(" · ");
+    const current = task.id === selected;
+    return `<a class="goalhandle" data-task-row="${task.id}" href="/tasks2?t=${task.id}"${current ? ' aria-current="page"' : ""}` + (current ? ` style="border-left:2px solid var(--accent);padding-left:.7rem"` : "") + `><span class="goalstate ${escA(task.state || "unknown")}">#${task.id}</span><span class="goaltitle">${esc(task.title || "untitled task")}</span><span class="goalprogress">${esc(task.priority || "priority unknown")}</span><span class="goalmeta">${esc(facets || "details unknown")}</span></a>`;
+  }
+  function taskTriageFact(key, value) {
+    const shown = value == null || value === "" ? "unknown" : String(value);
+    return `<div class="filebin-row"><span class="filebin-k">${esc(key)}</span><span class="filebin-v">${esc(shown)}</span></div>`;
+  }
+  function taskTriageDetail(summary, envelope, selected) {
+    if (!envelope || envelope.health !== "ok")
+      return `<div class="qhealth unreadable"><div class="qhlabel">task data unavailable</div><div class="qhbody">the task reader did not return a usable detail record.</div></div>`;
+    const task = envelope.task;
+    if (!task)
+      return `<div class="qmissing"><div class="qmisshead">task not found</div><div class="qmissbody">No task #${esc(selected)} exists in the shared task source. No other task has been substituted for it.</div></div>`;
+    if (!taskViewsAgree(summary, task))
+      return `<div class="qhealth unreadable"><div class="qhlabel">task data changed</div><div class="qhbody">The list and detail snapshots disagree. The page refuses to present them as one task.</div></div>`;
+    const deps = (task.dependencies || []).length ? task.dependencies.map((id) => `<a href="/tasks2?t=${id}">#${id}</a>`).join(" · ") : "none";
+    return `<article class="qa" data-task-detail="${task.id}"><div class="qbody"><div class="qt">#${task.id} · ${esc(task.title || "untitled task")}</div>` + taskTriageFact("state", task.state) + taskTriageFact("priority", task.priority) + taskTriageFact("kind", task.type) + taskTriageFact("origin", task.origin) + taskTriageFact("filed", task.date) + taskTriageFact("owner", task.owner) + `<div class="filebin-row"><span class="filebin-k">blocked</span><span class="filebin-v">${deps}</span></div><div class="md">${mdB(task.body || "")}</div><div class="qmissback"><a href="/tasks?t=${task.id}">open the one-column task view</a></div></div></article>`;
+  }
+  function buildTasks2(bundle) {
+    const list = bundle && bundle.list;
+    const rows = list && Array.isArray(list.tasks) ? list.tasks.slice() : [];
+    if (!list || list.health !== "ok")
+      return `<div data-task-failed class="qhealth unreadable"><div class="qhlabel">task data unavailable</div><div class="qhbody">The shared task reader failed; this is not an empty task set.</div></div>`;
+    if (!rows.length)
+      return `<div data-task-empty class="qmissing"><div class="qmisshead">no tasks recorded</div><div class="qmissbody">The shared task source was read successfully and contains no tasks.</div></div>`;
+    rows.sort(taskTriageSort);
+    const selected = bundle.selected;
+    const summary = rows.find((task) => task.id === selected) || null;
+    const pct = readSplit();
+    return `<div id="reviewwrap" data-split-first="task list" data-split-second="task detail" style="--rsplit:${pct.toFixed(1)}%"><div id="reviewdoc"><section class="qdock" style="flex:1" aria-label="task list">` + label(`${rows.length} tasks`) + `<div class="qa"><div class="qbody">` + rows.map((task) => taskTriageRow(task, selected)).join("") + `</div></div></section></div>` + reviewSplitBar(pct, "task list", "task detail") + `<aside class="qdock" id="qdock" aria-label="task detail">` + label("details") + taskTriageDetail(summary, bundle.detail, selected) + `</aside></div>`;
+  }
   function buildReview(name, q, d) {
     const src = "/reviewraw?p=" + encodeURIComponent(name || "");
     let dock = "";
@@ -3513,7 +3573,7 @@ var DreamworkDesign = (() => {
     }
     return clampSplit(v);
   }
-  var reviewSplitBar = (pct) => `<div id="rsplit" class="rsplit" role="separator" tabindex="0" aria-orientation="vertical" aria-label="review and question widths" aria-valuemin="${RSPLIT_MIN}" aria-valuemax="${RSPLIT_MAX}" aria-valuenow="${Math.round(pct)}" aria-valuetext="${Math.round(pct)}% review, ${100 - Math.round(pct)}% question" title="drag to set the widths · arrow keys step, enter resets" onpointerdown="beginSplit(event)" onkeydown="splitKey(event)" ondblclick="applySplit(${RSPLIT_DEF}, true)"></div>`;
+  var reviewSplitBar = (pct, first = "review", second = "question") => `<div id="rsplit" class="rsplit" role="separator" tabindex="0" aria-orientation="vertical" aria-label="${escA(first)} and ${escA(second)} widths" aria-valuemin="${RSPLIT_MIN}" aria-valuemax="${RSPLIT_MAX}" aria-valuenow="${Math.round(pct)}" aria-valuetext="${Math.round(pct)}% ${escA(first)}, ${100 - Math.round(pct)}% ${escA(second)}" title="drag to set the widths · arrow keys step, enter resets" onpointerdown="beginSplit(event)" onkeydown="splitKey(event)" ondblclick="applySplit(${RSPLIT_DEF}, true)"></div>`;
   function fitReview() {
     const wrap = document.getElementById("reviewwrap");
     if (!wrap) return;
@@ -3931,8 +3991,9 @@ var DreamworkDesign = (() => {
   };
   var view = { name: null, param: null, q: null };
   var fileCache = { param: null, fetched: void 0 };
-  var TINT = { dashboard: 0, questions: 0.14, answers: 0.08, settings: -0.04, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19, goals: 0.11, chat: 0.05 };
-  var SEED = { dashboard: 7, questions: 23, answers: 29, settings: 37, file: 41, review: 61, question: 67, research: 71, reviews: 73, goals: 79, chat: 89 };
+  var taskTriageCache = { mtime: null, list: null, details: /* @__PURE__ */ new Map() };
+  var TINT = { dashboard: 0, questions: 0.14, answers: 0.08, settings: -0.04, file: -0.14, review: 0.22, tasks2: 0.16, question: 0.18, research: -0.08, reviews: 0.19, goals: 0.11, chat: 0.05 };
+  var SEED = { dashboard: 7, questions: 23, answers: 29, settings: 37, file: 41, review: 61, tasks2: 83, question: 67, research: 71, reviews: 73, goals: 79, chat: 89 };
   var TITLE_ROUTE = {
     dashboard: () => "",
     questions: () => "questions",
@@ -3940,6 +4001,7 @@ var DreamworkDesign = (() => {
     settings: () => "settings",
     file: (p) => p || "file",
     review: (p) => "review " + (p || ""),
+    tasks2: () => "task triage",
     question: () => "question",
     research: (p) => "research" + (p ? " " + p : ""),
     reviews: () => "reviews",
@@ -4665,6 +4727,11 @@ var DreamworkDesign = (() => {
       const sp = new URLSearchParams(loc.search);
       return { name: "review", param: sp.get("p"), q: sp.get("q") };
     }
+    if (loc.pathname === "/tasks2") {
+      const sp = new URLSearchParams(loc.search);
+      const raw = sp.get("t");
+      return { name: "tasks2", param: raw && /^\d+$/.test(raw) ? raw : null };
+    }
     if (loc.pathname === "/question") {
       const sp = new URLSearchParams(loc.search);
       return { name: "question", param: sp.get("qid") };
@@ -4727,6 +4794,44 @@ var DreamworkDesign = (() => {
     fileCache = { param, fetched };
     return fetched;
   }
+  async function fetchTaskTriage(rawId) {
+    if (taskTriageCache.mtime !== lastMtime) {
+      taskTriageCache = { mtime: lastMtime, list: null, details: /* @__PURE__ */ new Map() };
+    }
+    if (!taskTriageCache.list) {
+      try {
+        const res = await fetch("/tasksdata");
+        taskTriageCache.list = res.ok ? await res.json() : { health: "unavailable", unavailable_fields: [], tasks: [] };
+      } catch (e) {
+        taskTriageCache.list = {
+          health: "unavailable",
+          unavailable_fields: [],
+          tasks: []
+        };
+      }
+    }
+    const list = taskTriageCache.list;
+    const rows = Array.isArray(list.tasks) ? list.tasks : [];
+    const requested = rawId == null ? null : Number(rawId);
+    const selected = Number.isInteger(requested) ? requested : rows.length ? rows.slice().sort(taskTriageSort)[0].id : null;
+    let detail = null;
+    if (selected != null) {
+      if (!taskTriageCache.details.has(selected)) {
+        try {
+          const res = await fetch("/tasksdata?t=" + encodeURIComponent(selected));
+          taskTriageCache.details.set(selected, res.ok ? await res.json() : { health: "unavailable", unavailable_fields: [], task: null });
+        } catch (e) {
+          taskTriageCache.details.set(selected, {
+            health: "unavailable",
+            unavailable_fields: [],
+            task: null
+          });
+        }
+      }
+      detail = taskTriageCache.details.get(selected);
+    }
+    return { list, detail, selected };
+  }
   async function buildCurrent() {
     if (view.name === "file") {
       await ensureData();
@@ -4735,6 +4840,10 @@ var DreamworkDesign = (() => {
     if (view.name === "chat") {
       await ensureData();
       return buildChat(await fetchChat(view.param));
+    }
+    if (view.name === "tasks2") {
+      await ensureData();
+      return buildTasks2(await fetchTaskTriage(view.param));
     }
     const d = await ensureData();
     if (isNativeRoute(view.name)) return null;
@@ -6408,6 +6517,7 @@ var DreamworkDesign = (() => {
        one line down, in the crumb row (`crumbsFor`). */
     file: (v) => esc(fileBase(v.param || "")),
     review: (v) => `review<span class="revname">${esc(v.param || "")}</span>`,
+    tasks2: () => "task triage",
     /* #452: the heading names the SURFACE, not the question — a title can run
        to a line and a half, and it is rendered in full by the card directly
        below. When the key resolves nowhere the missing notice says so. */
@@ -7047,8 +7157,8 @@ var DreamworkDesign = (() => {
     view = { name, param, q: opts.q || null, mode };
     applyTitle();
     if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
-    const url = name === "questions" ? "/questions" : name === "answers" ? "/answers" : name === "settings" ? "/settings" : name === "file" ? "/file?p=" + encodeURIComponent(param || "") + (mode === "source" ? "&view=source" : "") : name === "review" ? "/review?p=" + encodeURIComponent(param || "") + (opts.q ? "&q=" + encodeURIComponent(opts.q) : "") : name === "question" ? "/question?qid=" + encodeURIComponent(param || "") : name === "research" ? "/research" + (param ? "?p=" + encodeURIComponent(param) : "") : name === "reviews" ? "/reviews" : name === "goals" ? "/goals" : name === "chat" ? "/chat/" + encodeURIComponent(param || "") : "/";
-    const artifactDoc = name === "review" || name === "research" && !!param;
+    const url = name === "questions" ? "/questions" : name === "answers" ? "/answers" : name === "settings" ? "/settings" : name === "file" ? "/file?p=" + encodeURIComponent(param || "") + (mode === "source" ? "&view=source" : "") : name === "review" ? "/review?p=" + encodeURIComponent(param || "") + (opts.q ? "&q=" + encodeURIComponent(opts.q) : "") : name === "tasks2" ? "/tasks2" + (param ? "?t=" + encodeURIComponent(param) : "") : name === "question" ? "/question?qid=" + encodeURIComponent(param || "") : name === "research" ? "/research" + (param ? "?p=" + encodeURIComponent(param) : "") : name === "reviews" ? "/reviews" : name === "goals" ? "/goals" : name === "chat" ? "/chat/" + encodeURIComponent(param || "") : "/";
+    const artifactDoc = name === "review" || name === "tasks2" || name === "research" && !!param;
     if (opts.push) history.pushState({ name, param, q: opts.q || null }, "", url);
     const html = await buildCurrent();
     if (opts.transition === false) {
@@ -7070,7 +7180,7 @@ var DreamworkDesign = (() => {
   function isInternal(a) {
     if (!a || a.target === "_blank" || a.hasAttribute("download")) return false;
     if (a.origin !== location.origin) return false;
-    return a.pathname === "/" || a.pathname === "/questions" || a.pathname === "/answers" || a.pathname === "/settings" || a.pathname === "/file" || a.pathname === "/review" || a.pathname === "/question" || a.pathname === "/research" || a.pathname === "/reviews" || a.pathname === "/goals" || a.pathname.startsWith("/chat/");
+    return a.pathname === "/" || a.pathname === "/questions" || a.pathname === "/answers" || a.pathname === "/settings" || a.pathname === "/file" || a.pathname === "/review" || a.pathname === "/tasks2" || a.pathname === "/question" || a.pathname === "/research" || a.pathname === "/reviews" || a.pathname === "/goals" || a.pathname.startsWith("/chat/");
   }
   addEventListener("click", (e) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

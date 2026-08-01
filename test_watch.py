@@ -6417,6 +6417,110 @@ class TestTasksRoute(unittest.TestCase):
         self.assertIsNone(detail["owner"])
         self.assertEqual(detail["body"], "body 281")
 
+    def test_tasks2_is_a_second_shell_and_tasks_route_is_unchanged(self):
+        status, tasks_shell = self._request("/tasks?t=281")
+        self.assertEqual(status, 200)
+        status, triage_shell = self._request("/tasks2?t=281")
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            triage_shell, tasks_shell,
+            "both routes must receive the same app shell; the client chooses "
+            "the second layout without replacing /tasks")
+
+        route = _extract_js_fn(watch.ROUTER_JS, "function routeOf(")
+        script = route + textwrap.dedent("""
+            const oldRoute = routeOf(new URL('http://watch/tasks?t=281'));
+            const wideRoute = routeOf(new URL('http://watch/tasks2?t=281'));
+            if (oldRoute.name !== 'dashboard') process.exit(11);
+            if (wideRoute.name !== 'tasks2' || wideRoute.param !== '281') process.exit(12);
+            if (routeOf(new URL('http://watch/tasks2?t=not-an-id')).param !== null)
+              process.exit(13);
+        """)
+        subprocess.check_call(["node", "-e", script])
+
+    def test_tasks2_list_and_detail_are_bound_to_one_payload_reader(self):
+        reader_source = inspect.getsource(watch.tasks_payload)
+        self.assertIn("store.tasks.records()", reader_source)
+        for second_reader in ("parse_ledger", "ledger_entries", "open("):
+            self.assertNotIn(
+                second_reader, reader_source,
+                f"tasks_payload grew a second reader via {second_reader!r}")
+        record = {
+            "id": 41, "state": "open", "title": "one source",
+            "body": "detail body", "priority": "P1", "type": "test",
+            "origin": "human", "date": "2026-08-02T00:00:00Z",
+            "owner": None, "dependencies": [], "blocked_on": None,
+        }
+        envelope = {
+            "health": "ok", "unavailable_fields": ["owner"],
+            "tasks": [record],
+        }
+        with unittest.mock.patch.object(
+                watch, "tasks_payload",
+                side_effect=lambda target: json.loads(json.dumps(envelope))) as reader:
+            listed = watch.tasks_response(self.target, "")
+            detailed = watch.tasks_response(self.target, "t=41")
+        self.assertEqual(reader.call_count, 2)
+        self.assertNotIn("body", listed["tasks"][0])
+        self.assertEqual(detailed["task"]["body"], "detail body")
+        for field in ("id", "state", "title", "priority", "type", "origin",
+                      "date", "owner", "dependencies", "blocked_on"):
+            self.assertEqual(listed["tasks"][0][field], detailed["task"][field],
+                             f"list/detail drifted at the shared {field!r} field")
+
+    def test_tasks2_renders_empty_failure_and_disagreement_distinctly(self):
+        src = watch.VIEWS_JS
+        functions = "\n".join(_extract_js_fn(src, sig) for sig in (
+            "function taskTriageSort(", "function taskViewsAgree(",
+            "function taskTriageRow(", "function taskTriageFact(",
+            "function taskTriageDetail(", "function buildTasks2("))
+        script = textwrap.dedent("""
+            const esc = x => String(x == null ? '' : x);
+            const escA = esc;
+            const label = x => '<b>' + x + '</b>';
+            const mdB = x => esc(x);
+            const readSplit = () => 70;
+            const reviewSplitBar = () => '<i id="rsplit"></i>';
+        """) + functions + textwrap.dedent("""
+            const empty = buildTasks2({list:{health:'ok',tasks:[]}});
+            const failed = buildTasks2({list:{health:'unavailable',tasks:[]}});
+            if (!empty.includes('data-task-empty') || empty.includes('data-task-failed'))
+              process.exit(21);
+            if (!failed.includes('data-task-failed') || failed.includes('data-task-empty'))
+              process.exit(22);
+            const row = {id:7,state:'open',title:'shared',priority:'P1',type:'test',
+              origin:'human',date:'2026-08-02T00:00:00Z',owner:null,
+              dependencies:[],blocked_on:null};
+            const detail = Object.assign({body:'whole body'}, row);
+            const rows = [row];
+            if (rows.length === 0) process.exit(23); // anti-vacuity: agreement has a subject
+            const healthy = buildTasks2({list:{health:'ok',tasks:rows},
+              detail:{health:'ok',task:detail},selected:7});
+            if (!healthy.includes('data-task-row="7"') ||
+                !healthy.includes('data-task-detail="7"')) process.exit(24);
+            const broken = Object.assign({}, detail, {title:'different reader'});
+            const refused = buildTasks2({list:{health:'ok',tasks:rows},
+              detail:{health:'ok',task:broken},selected:7});
+            if (!refused.includes('task data changed') ||
+                refused.includes('data-task-detail="7"')) {
+              console.error('list/detail disagreement was rendered as one task');
+              process.exit(25);
+            }
+            const missing = Object.assign({}, detail);
+            delete missing.title;
+            const missingSummary = Object.assign({}, row);
+            delete missingSummary.title;
+            if (taskViewsAgree(missingSummary, missing)) {
+              console.error('two missing required fields passed as agreement');
+              process.exit(27);
+            }
+            if (!healthy.includes('id="reviewwrap"') ||
+                !healthy.includes('id="reviewdoc"') ||
+                !healthy.includes('id="qdock"') ||
+                !healthy.includes('id="rsplit"')) process.exit(26);
+        """)
+        subprocess.check_call(["node", "-e", script])
+
     def test_unknown_state_is_reachable_and_fail_closed(self):
         record = {
             "id": 999, "state": "future-state", "title": "future",

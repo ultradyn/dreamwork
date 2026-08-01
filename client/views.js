@@ -1401,6 +1401,99 @@ function imgFailed(img) {
     `<a class="filebin-dl" href="${esc(dl)}" download>download the bytes</a>` +
     '</div>';
 }
+
+/* /tasks2 is the wide triage bench over /tasksdata, not a second task
+   reader. Its two columns deliberately emit the review pane's exact node
+   contract (#reviewwrap/#reviewdoc/#qdock/#rsplit), so fitReview, the drag,
+   keyed steps, persistence, narrow stack and reduced-motion path are shared
+   code rather than a lookalike implementation. */
+function taskTriageSort(a, b) {
+  const rank = {P0: 0, P1: 1, P2: 2, P3: 3};
+  const ar = rank[a.priority] == null ? 4 : rank[a.priority];
+  const br = rank[b.priority] == null ? 4 : rank[b.priority];
+  return ar - br || Number(b.id) - Number(a.id);
+}
+function taskViewsAgree(summary, detail) {
+  if (!summary || !detail) return summary === detail;
+  const own = (record, key) => Object.prototype.hasOwnProperty.call(record, key);
+  return ['id', 'state', 'title', 'priority', 'type', 'origin', 'date',
+          'owner', 'blocked_on', 'dependencies'].every(key =>
+    own(summary, key) && own(detail, key) &&
+    JSON.stringify(summary[key]) === JSON.stringify(detail[key]));
+}
+function taskTriageRow(task, selected) {
+  const facets = [task.state, task.type, task.origin,
+                  task.date ? task.date.slice(0, 10) : null]
+    .filter(Boolean).join(' · ');
+  const current = task.id === selected;
+  return `<a class="goalhandle" data-task-row="${task.id}"` +
+    ` href="/tasks2?t=${task.id}"${current ? ' aria-current="page"' : ''}` +
+    (current ? ` style="border-left:2px solid var(--accent);padding-left:.7rem"` : '') +
+    `><span class="goalstate ${escA(task.state || 'unknown')}">#${task.id}</span>` +
+    `<span class="goaltitle">${esc(task.title || 'untitled task')}</span>` +
+    `<span class="goalprogress">${esc(task.priority || 'priority unknown')}</span>` +
+    `<span class="goalmeta">${esc(facets || 'details unknown')}</span></a>`;
+}
+function taskTriageFact(key, value) {
+  const shown = value == null || value === '' ? 'unknown' : String(value);
+  return `<div class="filebin-row"><span class="filebin-k">${esc(key)}</span>` +
+    `<span class="filebin-v">${esc(shown)}</span></div>`;
+}
+function taskTriageDetail(summary, envelope, selected) {
+  if (!envelope || envelope.health !== 'ok')
+    return `<div class="qhealth unreadable"><div class="qhlabel">task data unavailable</div>` +
+      `<div class="qhbody">the task reader did not return a usable detail record.</div></div>`;
+  const task = envelope.task;
+  if (!task)
+    return `<div class="qmissing"><div class="qmisshead">task not found</div>` +
+      `<div class="qmissbody">No task #${esc(selected)} exists in the shared task source. ` +
+      `No other task has been substituted for it.</div></div>`;
+  if (!taskViewsAgree(summary, task))
+    return `<div class="qhealth unreadable"><div class="qhlabel">task data changed</div>` +
+      `<div class="qhbody">The list and detail snapshots disagree. The page refuses ` +
+      `to present them as one task.</div></div>`;
+  const deps = (task.dependencies || []).length
+    ? task.dependencies.map(id => `<a href="/tasks2?t=${id}">#${id}</a>`).join(' · ')
+    : 'none';
+  return `<article class="qa" data-task-detail="${task.id}"><div class="qbody">` +
+    `<div class="qt">#${task.id} · ${esc(task.title || 'untitled task')}</div>` +
+    taskTriageFact('state', task.state) +
+    taskTriageFact('priority', task.priority) +
+    taskTriageFact('kind', task.type) +
+    taskTriageFact('origin', task.origin) +
+    taskTriageFact('filed', task.date) +
+    taskTriageFact('owner', task.owner) +
+    `<div class="filebin-row"><span class="filebin-k">blocked</span>` +
+      `<span class="filebin-v">${deps}</span></div>` +
+    `<div class="md">${mdB(task.body || '')}</div>` +
+    `<div class="qmissback"><a href="/tasks?t=${task.id}">open the one-column task view</a></div>` +
+    `</div></article>`;
+}
+function buildTasks2(bundle) {
+  const list = bundle && bundle.list;
+  const rows = list && Array.isArray(list.tasks) ? list.tasks.slice() : [];
+  if (!list || list.health !== 'ok')
+    return `<div data-task-failed class="qhealth unreadable">` +
+      `<div class="qhlabel">task data unavailable</div>` +
+      `<div class="qhbody">The shared task reader failed; this is not an empty task set.</div></div>`;
+  if (!rows.length)
+    return `<div data-task-empty class="qmissing"><div class="qmisshead">no tasks recorded</div>` +
+      `<div class="qmissbody">The shared task source was read successfully and contains no tasks.</div></div>`;
+  rows.sort(taskTriageSort);
+  const selected = bundle.selected;
+  const summary = rows.find(task => task.id === selected) || null;
+  const pct = readSplit();
+  return `<div id="reviewwrap" data-split-first="task list"` +
+      ` data-split-second="task detail" style="--rsplit:${pct.toFixed(1)}%">` +
+    `<div id="reviewdoc"><section class="qdock" style="flex:1" aria-label="task list">` +
+      label(`${rows.length} tasks`) + `<div class="qa"><div class="qbody">` +
+      rows.map(task => taskTriageRow(task, selected)).join('') +
+      `</div></div></section></div>` +
+    reviewSplitBar(pct, 'task list', 'task detail') +
+    `<aside class="qdock" id="qdock" aria-label="task detail">` +
+      label('details') + taskTriageDetail(summary, bundle.detail, selected) +
+      `</aside></div>`;
+}
 /* review view: the raw artifact in an iframe (style-isolated) with the
    originating question docked beside it (answer box included), so it can
    be answered with the review in front of you. Deep-loads without a
@@ -1639,12 +1732,13 @@ function readSplit() {
   try { v = parseFloat(localStorage.getItem(RSPLIT_KEY)); } catch (e) {}
   return clampSplit(v);
 }
-const reviewSplitBar = pct =>
+const reviewSplitBar = (pct, first = 'review', second = 'question') =>
   `<div id="rsplit" class="rsplit" role="separator" tabindex="0"` +
-  ` aria-orientation="vertical" aria-label="review and question widths"` +
+  ` aria-orientation="vertical" aria-label="${escA(first)} and ${escA(second)} widths"` +
   ` aria-valuemin="${RSPLIT_MIN}" aria-valuemax="${RSPLIT_MAX}"` +
   ` aria-valuenow="${Math.round(pct)}"` +
-  ` aria-valuetext="${Math.round(pct)}% review, ${100 - Math.round(pct)}% question"` +
+  ` aria-valuetext="${Math.round(pct)}% ${escA(first)}, ` +
+  `${100 - Math.round(pct)}% ${escA(second)}"` +
   ` title="drag to set the widths · arrow keys step, enter resets"` +
   ` onpointerdown="beginSplit(event)" onkeydown="splitKey(event)"` +
   ` ondblclick="applySplit(${RSPLIT_DEF}, true)"></div>`;
@@ -1663,9 +1757,11 @@ function applySplit(pct, keyed) {
   wrap.style.setProperty('--rsplit', v.toFixed(1) + '%');
   const bar = document.getElementById('rsplit');
   if (bar) {
+    const first = wrap.dataset.splitFirst || 'review';
+    const second = wrap.dataset.splitSecond || 'question';
     bar.setAttribute('aria-valuenow', String(Math.round(v)));
     bar.setAttribute('aria-valuetext',
-      `${Math.round(v)}% review, ${100 - Math.round(v)}% question`);
+      `${Math.round(v)}% ${first}, ${100 - Math.round(v)}% ${second}`);
   }
   try { localStorage.setItem(RSPLIT_KEY, v.toFixed(1)); } catch (e) {}
 }

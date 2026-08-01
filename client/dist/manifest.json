@@ -14,10 +14,10 @@
     "client/command.js": "38062157efb11b38c84aafe3ef5b68c8a746f3ce356213e74c615a6dec929367",
     "client/components.js": "5a18d438a3d2e7dfadc0f4290b8ecd854873afa574fb296ce70d282e92471c20",
     "client/favicon.js": "746a512fb2d23b6ac1294f4d5fdbb4bcc5809a93cae1fe6e78dbbe70882ba901",
-    "client/router.js": "b96daafe8b63a8f93b98f13c1d61c27bbb001fcafe86037cf971c88d5f9efae5",
+    "client/router.js": "74cb54eb8dbbef1b185f3d6a7a53a228859039a83627751a83465eca2158e982",
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
     "client/style.css": "172db189134d0503bc4b0c209ecb0ea8cf376eca2a321456d094f752efab26d8",
-    "client/views.js": "d948159c419ad1234e5a162a599f9880a630844aad3b085edcd3e4d238039b2f",
+    "client/views.js": "ce66c9e9e514cf239a31d15953c767156d2c169645ed1f9954daedeeb8f05477",
     "dev/build/src/delegate.js": "8cbeb4bce8ccaee70c8dc6ae76160eeb8dd9f8f3a92ca51e28712747ee28b293",
     "dev/build/src/goals.js": "4483640771c70cafa477c665ab9f75efb6b9bb2db269205ebb42bbf3a4c40ce1",
     "dev/build/src/native-entry.js": "42c071b11224dd1be63aa3065ae59c45cc6dafb5bb3f1200b8fa30821b10f9d4",
@@ -27,7 +27,7 @@
     "dev/build/wrapper-exports.js": "9ea5838ef66144742cb10ec8d35cea04d92ca35ea2e11060c26510cd05b6b53b"
   },
   "outputs": {
-    "client/dist/ds/index.js": "3cce3b4c227075714e404e368cb3c5f1a11038c549928261144c545c6e53b9f3",
+    "client/dist/ds/index.js": "4f3d673cb7f6b249855a057f1f4eb95dafa9a9331f6b9ad6b34c68b779ca5744",
     "client/dist/ds/styles.css": "172db189134d0503bc4b0c209ecb0ea8cf376eca2a321456d094f752efab26d8",
     "client/dist/native.js": "72b5dadd94bdbd0339df6add61d330f759c0a1a451f6c06b8368f17f17d5a6c7"
   },

@@ -5511,7 +5511,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # segment, so it is matched by prefix rather than the fixed set.
             if (parsed.path in ("/", "/questions", "/answers", "/settings", "/file",
                                "/review", "/question", "/research",
-                               "/reviews", "/tasks", "/goals")
+                               "/reviews", "/tasks", "/tasks2", "/goals")
                     or parsed.path == "/chat"
                     or parsed.path.startswith("/chat/")):
                 self._send(page, "text/html")
