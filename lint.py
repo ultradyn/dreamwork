@@ -4697,21 +4697,28 @@ def check_brief_dream_contradictions(dw: Path, rep: Report) -> None:
     grandfathered = sum(
         path.name in _BRIEF_DREAM_CONTRADICTION_EVIDENCE for path in both
     )
-    if grandfathered:
+    known = sorted(
+        path.name for path in both
+        if path.name in _BRIEF_DREAM_CONTRADICTION_EVIDENCE
+    )
+    if known:
+        # Named here rather than one WARN row per file: these briefs are
+        # evidence and never get rewritten, so a per-file WARN would be
+        # permanent, and `land_lane.py`'s lint-comparison refuses any ADDED
+        # WARN row — which would make this check unlandable by construction.
         rep.add(
             OK, "brief dream rules",
-            f"{grandfathered} of {len(both)} contradiction(s) are registered "
-            "grandfathered evidence artifacts (nine measured by #936, one "
-            "found by this check)",
+            f"{len(known)} of {len(both)} contradiction(s) are registered "
+            f"grandfathered evidence artifacts, do not rewrite: "
+            + " ".join(known),
         )
     for path in both:
+        if path.name in _BRIEF_DREAM_CONTRADICTION_EVIDENCE:
+            continue
         rep.add(
-            WARN if path.name in _BRIEF_DREAM_CONTRADICTION_EVIDENCE else ERROR,
-            "brief dream rules",
+            ERROR, "brief dream rules",
             f"{path.name} instructs .dreamwork/dreams/ but prohibits the "
-            "Markdown-file class needed to obey it"
-            + (" (grandfathered evidence; do not rewrite)"
-               if path.name in _BRIEF_DREAM_CONTRADICTION_EVIDENCE else ""),
+            "Markdown-file class needed to obey it",
         )
 
 

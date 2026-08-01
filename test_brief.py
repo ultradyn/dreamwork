@@ -608,12 +608,16 @@ def test_the_nine_measured_artifacts_are_evidence_not_a_permanent_red(tmp_path):
         "930-cx-930pathdepth.md": contradiction,
         "930-a-future-reuse.md": contradiction,
     })
-    evidence = [detail for level, _, detail in rows if level == lint.WARN]
+    warns = [detail for level, _, detail in rows if level == lint.WARN]
     errors = [detail for level, _, detail in rows if level == lint.ERROR]
-    assert evidence == [
-        "930-cx-930pathdepth.md instructs .dreamwork/dreams/ but prohibits the "
-        "Markdown-file class needed to obey it (grandfathered evidence; do not rewrite)"
-    ]
+    oks = [detail for level, _, detail in rows if level == lint.OK]
+    # Not a permanent RED, and not a permanent WARN either: `land_lane.py`'s
+    # lint-comparison phase refuses any ADDED WARN row, and these briefs are
+    # evidence that never gets rewritten — so a per-file WARN would make this
+    # check unlandable by construction. The names still have to be reported.
+    assert warns == [], warns
+    assert any("930-cx-930pathdepth.md" in detail
+               and "do not rewrite" in detail for detail in oks), oks
     assert errors == [
         "930-a-future-reuse.md instructs .dreamwork/dreams/ but prohibits the "
         "Markdown-file class needed to obey it"
