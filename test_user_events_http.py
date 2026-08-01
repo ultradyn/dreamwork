@@ -298,7 +298,33 @@ class E2Shadow(HttpHarness):
         statuses.append(self.post(
             "/posture", {"pace": "steady", "asking": "inform",
                          "delegation": 1})[0])
-        # 8. /decide — review decision (#289). The fixture is markdown-mode
+        # 8. /subagent-policy — authored prose whose event-log line is
+        #    deliberately transition-only. The structured receipt must still
+        #    retain the exact request bytes: exercise newlines, edge whitespace
+        #    and non-ASCII so a normalising receipt cannot pass.
+        policy = "  leading policy\nuse sonnet — only\ntrailing policy  \n"
+        policy_req = {"policy": policy}
+        policy_status, _, policy_body = self.post(
+            "/subagent-policy", policy_req)
+        statuses.append(policy_status)
+        self.assertEqual(watch.read_subagent_policy(self.target), policy)
+        if self.journal_shadow:
+            with open_journal(self._journal_path()) as journal:
+                receipts = [event for event in
+                            journal.events_since_cursor("e2-policy-proof")
+                            if event.route == "/subagent-policy"]
+            self.assertEqual(
+                len(receipts), 1,
+                "/subagent-policy committed no receipt before dispatch")
+            self.assertEqual(
+                receipts[0].exact_payload_bytes,
+                json.dumps(policy_req).encode(),
+                "/subagent-policy receipt did not preserve exact payload bytes")
+            self.assertEqual(
+                json.loads(receipts[0].exact_payload_bytes)["policy"], policy,
+                "/subagent-policy text changed in the receipt path")
+            self.assertIn("receipt", json.loads(policy_body))
+        # 9. /decide — review decision (#289). The fixture is markdown-mode
         #    (no store), so this reaches the domain_invalid refusal — which is
         #    still a durable receipt (202 on / 200 off, same as every other
         #    route). The payload passes schema so the refusal is the honest
@@ -311,13 +337,13 @@ class E2Shadow(HttpHarness):
             "/decide", {"artifact": f"artifact-{marker}",
                         "question_title": "A real open question?",
                         "decision": "accepted"})[0])
-        # 9. /deploy — page-triggered just deploy (#462); runner faked.
+        # 10. /deploy — page-triggered just deploy (#462); runner faked.
         statuses.append(self.post("/deploy", {})[0])
-        # 10. /remind — send the resolved posture to the coordinator inbox
+        # 11. /remind — send the resolved posture to the coordinator inbox
         #     (#551); relay redirected to a temp dir in setUp. Empty {} body
         #     is the normal press.
         statuses.append(self.post("/remind", {})[0])
-        # 11. /chat-reply — continue an EXISTING chat (#577). Its existence
+        # 12. /chat-reply — continue an EXISTING chat (#577). Its existence
         #     guard runs BEFORE apply, so an unknown id is a domain_invalid
         #     refusal — and a refusal still commits a receipt and answers
         #     202 on / 200 off, exactly like the write path. So a bogus id
@@ -342,7 +368,7 @@ class E2Shadow(HttpHarness):
         self.assertIn(reply, watch.read_text(os.path.join(
             self.target, ".dreamwork", watch.CHAT_DIR, cid,
             "transcript.md")))
-        # 12. /chat-archive — archive an EXISTING chat (#709). Its existence
+        # 13. /chat-archive — archive an EXISTING chat (#709). Its existence
         #     guard runs BEFORE the write, so an unknown id is a
         #     domain_invalid refusal — and a refusal still commits a receipt
         #     and answers 202-on/200-off, exactly like every route (#586's
@@ -387,7 +413,10 @@ class E2Shadow(HttpHarness):
         # is {"id", "archive"} against a chat run_all seeds first via
         # apply_chat_turn, with a behavioural post-condition (the marker file)
         # because a refusal answers 202-on/200-off identically (#586).
-        self.assertEqual(len(WRITE_ROUTES), 12, WRITE_ROUTES)
+        # 2026-08-01 #814: 12→13 — /subagent-policy joined run_all with a
+        # receipt-path assertion over exact payload bytes; its authored prose
+        # remains absent from the transition-only watch-events.log line.
+        self.assertEqual(len(WRITE_ROUTES), 13, WRITE_ROUTES)
         # Every route returned 202 with the journal ON (E3 cutover moved the
         # write-route status) and 200 with the journal OFF (the pre-cutover
         # baseline, which still uses _send). The shadow must change only the
@@ -414,8 +443,9 @@ class E2Shadow(HttpHarness):
         # count assertion above (len(WRITE_ROUTES)) would still pass while a
         # route went unshadowed — UNLESS this guard fails first. This is the
         # plan's "derive the route list" discipline made executable.
-        exercised = 12  # ask, comment, answer, command, tint, run-mode,
-        #              posture, decide, deploy, remind, chat-reply, chat-archive
+        exercised = 13  # ask, comment, answer, command, tint, run-mode,
+        # posture, subagent-policy, decide, deploy, remind, chat-reply,
+        # chat-archive
         self.assertEqual(len(WRITE_ROUTES), exercised, WRITE_ROUTES)
 
     @contextlib.contextmanager
