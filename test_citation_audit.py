@@ -117,7 +117,7 @@ def test_missing_store_is_named_and_never_reported_unresolvable(tmp_path, capsys
     store.unlink()
     assert _run_real_audit(dw_dir, briefs) == 2
     missing = capsys.readouterr()
-    assert "store missing" in missing.err.lower()
+    assert missing.err.lower().startswith("citation_audit: store missing:")
     assert "UNRESOLVABLE" not in missing.out
 
 
@@ -132,7 +132,7 @@ def test_exclusive_lock_is_named_store_busy(tmp_path, capsys):
         lock.rollback()
         lock.close()
     captured = capsys.readouterr()
-    assert "store busy" in captured.err.lower()
+    assert captured.err.lower().startswith("citation_audit: store busy:")
     assert "database is locked" in captured.err.lower()
 
 
@@ -145,7 +145,7 @@ def test_half_migrated_schema_is_named_schema_mismatch(tmp_path, capsys):
 
     assert _run_real_audit(dw_dir, briefs) == 2
     captured = capsys.readouterr()
-    assert "store schema mismatch" in captured.err.lower()
+    assert captured.err.lower().startswith("citation_audit: store schema mismatch:")
     assert "no such column: title" in captured.err.lower()
 
 
