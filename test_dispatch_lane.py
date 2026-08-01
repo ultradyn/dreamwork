@@ -242,6 +242,27 @@ def test_healthy_dispatch_is_silent_and_passes_prompt_as_one_argument(tmp_path):
     assert persisted.with_suffix(".sha256").is_file()
 
 
+def test_dispatch_gives_each_lane_a_fresh_rediscoverable_identity(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    capture = tmp_path / "capture.py"
+    capture.write_text(
+        "import os, pathlib, sys\n"
+        "pathlib.Path(sys.argv[1]).write_text(os.environ['DREAMWORK_LANE_ID'])\n",
+        encoding="utf-8",
+    )
+    identities = []
+    for number in (901, 902):
+        prompt = _healthy_prompt(tmp_path, root, task=number,
+                                 lane=f"cx-{number}")
+        delivered = tmp_path / f"identity-{number}"
+        result = _run(cli, prompt, sys.executable, str(capture), str(delivered))
+        assert result.returncode == 0, result.stderr
+        identities.append(delivered.read_text())
+
+    assert all(len(value) == 32 for value in identities)
+    assert identities[0] != identities[1]
+
+
 def test_dispatch_refuses_pipe_before_short_reader_can_kill_runner(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
     prompt = _healthy_prompt(tmp_path, root)

@@ -19,18 +19,18 @@ name means one lane's restore writes the *other* lane's bytes over its file, and
 **both** lanes' ``cmp`` checks still pass, against the wrong baseline. The safety
 protocol becomes a silent corruption vector.
 
-The fix is a path the lane does not get to pick. ``lane_key()`` derives a key
-from the worktree's own identity, so two concurrent lanes cannot land on one
-directory even if both use the generic filename ``snap/router.js.orig``.
+The fix is a path the lane does not get to pick. The dispatcher gives each
+launch a random ``DREAMWORK_LANE_ID`` which every later process in that lane
+inherits. The worktree key remains as a readable grouping, but it is not the
+privacy boundary: two launches in one worktree get different directories.
 
 Two properties, both load-bearing
 ---------------------------------
-1. **Unique by construction.** Measured: ``git worktree add`` refuses a branch
-   already checked out elsewhere ("fatal: 'x' is already used by worktree at
-   ..."), so a branch name is unique among branch-checked-out worktrees. Detached
-   worktrees all report the branch ``HEAD`` (two were live when this was written),
-   so those fall back to a hash of the absolute worktree path, which the
-   filesystem itself keeps unique.
+1. **One stable launch identity.** ``dispatch_lane.py`` creates 128 random bits
+   for every dispatch and exports them through ``DREAMWORK_LANE_ID`` before it
+   execs the runner. Exec and child processes inherit that value, so separate
+   ``redproof.py begin`` and ``restore`` invocations rediscover the same path;
+   neither PID reuse nor a shared worktree/brief can alias two launches.
 2. **A named measurement location plus a positive control.** ``measure`` lives
    under the same lane-private ``~/.cache`` root. Its path does not promise a
    filesystem capability: real disk can still have coarse timestamps, disabled
@@ -56,11 +56,9 @@ Usage
     dev/lane_scratch.py require-mtime-change "$M/probe" -- <positive-control command>
     # exit 0 is silent; 1 = UNSUPPORTED; 2 = UNDETERMINED
 
-Residual, stated rather than hidden: this is per-*lane*, not per-*agent*. A lane
-and the subagents it dispatches share one directory, because they share one
-worktree. That is a sequenced, single-owner directory rather than a race between
-strangers, but a lane that fans out parallel subagents onto the same file still
-has to give them distinct names.
+Residual, stated rather than hidden: processes descended from one launch share
+one directory because they inherit one launch token. Parallel subagents within
+that launch still need distinct names when operating on the same file.
 """
 from __future__ import annotations
 
@@ -100,6 +98,7 @@ _DIGEST_LEN = 12
 # layout, so the four live lanes' snapshots do not move mid-flight. A role that
 # is anything else gets a `role-<slug>` segment.
 ROLE_ENV = "DREAMWORK_LANE_ROLE"
+IDENTITY_ENV = "DREAMWORK_LANE_ID"
 ROLE_AUTHOR = "author"
 ROLE_REVIEWER = "reviewer"
 _KNOWN_ROLES = (ROLE_AUTHOR, ROLE_REVIEWER)
@@ -179,6 +178,26 @@ def lane_role(*, env: dict | None = None) -> str:
     return role if role in _KNOWN_ROLES else _slug(role) or ROLE_AUTHOR
 
 
+def lane_identity(*, env: dict | None = None) -> str | None:
+    """The stable launch token inherited by every invocation in this lane.
+
+    Absence deliberately means the legacy layout. Lanes already alive when
+    launch identity was introduced therefore keep finding their snapshots;
+    newly dispatched lanes receive a cryptographically random token.
+    """
+    source = os.environ if env is None else env
+    value = source.get(IDENTITY_ENV, "").strip()
+    return value or None
+
+
+def identity_segment(identity: str | None = None) -> str:
+    """One collision-resistant path component for a launch identity."""
+    value = identity if identity is not None else lane_identity()
+    if not value:
+        return ""
+    return f"lane-{_slug(value)}-{_digest(value)}"
+
+
 def role_segment(role: str | None = None) -> str:
     """The path segment a role adds under the lane key, or ``""`` for author.
 
@@ -214,12 +233,14 @@ def lane_scratch_dir(cwd: Path | None = None, *, create: bool = True,
                      sub: str | None = None, role: str | None = None) -> Path:
     """This lane's private scratch directory (optionally a named subdir).
 
-    The path is keyed on repo + lane + **role** (#694): an author and a reviewer
-    who share one worktree get separate private directories so the reviewer's
-    snapshots cannot overwrite the author's evidence. The author role maps to
-    the pre-#694 path (no role segment), so live lanes do not move.
+    The path is keyed on repo + worktree + launch identity + **role** (#694).
+    A missing launch identity maps to the legacy path, so live lanes do not
+    move when this mechanism is deployed.
     """
     path = SCRATCH_ROOT / repo_key(cwd) / lane_key(cwd)
+    identity = identity_segment()
+    if identity:
+        path = path / identity
     seg = role_segment(role)
     if seg:
         path = path / seg

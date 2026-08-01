@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import stat
 import subprocess
 import sys
@@ -52,6 +53,7 @@ COORDINATOR_INBOX_PREFIX = (
     "when you finish: "
 )
 ALLOW_PIPED_STDOUT_ENV = "DREAMWORK_ALLOW_PIPED_STDOUT"
+LANE_ID_ENV = "DREAMWORK_LANE_ID"
 
 
 class DispatchFault(Exception):
@@ -573,6 +575,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
+        # Fresh per dispatch, then stable because exec and lane subprocesses
+        # inherit it. Never reuse a coordinator's own lane identity.
+        os.environ[LANE_ID_ENV] = secrets.token_hex(16)
         os.execvp(runner[0], [*runner, prompt])
     except OSError as exc:
         print(f"dispatch refused: could not exec runner {runner[0]!r}: {exc}", file=sys.stderr)

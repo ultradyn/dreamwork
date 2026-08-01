@@ -14,6 +14,7 @@ a shared directory, which is the hazard this file exists to close.
 """
 import importlib.machinery
 import importlib.util
+import hashlib
 import os
 import subprocess
 import sys
@@ -169,6 +170,29 @@ class TestLaneKeyIsDerivedAndUnique:
 
 
 class TestScratchDir:
+    def test_two_launches_in_one_worktree_get_distinct_dirs(
+            self, repo, monkeypatch, tmp_path):
+        """#870: worktree identity is grouping, not the privacy boundary."""
+        monkeypatch.setattr(ls, "SCRATCH_ROOT", tmp_path / "scratch")
+        monkeypatch.setenv(ls.IDENTITY_ENV, "a" * 32)
+        a = ls.lane_scratch_dir(repo, sub="snap", create=False)
+        monkeypatch.setenv(ls.IDENTITY_ENV, "b" * 32)
+        b = ls.lane_scratch_dir(repo, sub="snap", create=False)
+
+        assert ls.lane_identity(env={ls.IDENTITY_ENV: "a" * 32}) != \
+            ls.lane_identity(env={ls.IDENTITY_ENV: "b" * 32})
+        assert a != b, f"distinct launches share scratch: {a}"
+        independent_digest = hashlib.sha1(("a" * 32).encode()).hexdigest()[:12]
+        expected_a_segment = f"lane-{'a' * 32}-{independent_digest}"
+        assert expected_a_segment in a.parts  # independently derived layout
+
+    def test_absent_launch_identity_preserves_the_legacy_path(
+            self, repo, monkeypatch):
+        """A live pre-#870 lane must keep finding its existing snapshots."""
+        monkeypatch.delenv(ls.IDENTITY_ENV, raising=False)
+        legacy = ls.SCRATCH_ROOT / ls.repo_key(repo) / ls.lane_key(repo) / "snap"
+        assert ls.lane_scratch_dir(repo, sub="snap", create=False) == legacy
+
     def test_subdir_is_created_and_nested_under_the_lane(self, repo):
         d = ls.lane_scratch_dir(repo, sub="snap")
         assert d.is_dir()

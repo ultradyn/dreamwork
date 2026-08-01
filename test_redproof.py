@@ -14,6 +14,7 @@ Restore discipline while writing these (#349/#652): snapshots live in
 """
 import importlib.machinery
 import importlib.util
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -66,6 +67,105 @@ def _restore(repo: Path, path: str) -> int:
 
 def _check(repo: Path, **kw) -> int:
     return rp.check(repo, **kw)
+
+
+def test_two_lane_registries_in_one_worktree_restore_their_own_bytes(
+        repo, monkeypatch):
+    """#870: same target/name, distinct lane identities, no crossed restore."""
+    target = repo / "router.js"
+    lane_a = "a" * 32
+    lane_b = "b" * 32
+
+    monkeypatch.setenv(rp._ls.IDENTITY_ENV, lane_a)
+    target.write_bytes(b"ONLY LANE A COULD HAVE SNAPSHOTTED\n")
+    assert _begin(repo, "router.js") == 0
+    registry_a = rp._registry_path(repo)
+
+    monkeypatch.setenv(rp._ls.IDENTITY_ENV, lane_b)
+    target.write_bytes(b"ONLY LANE B COULD HAVE SNAPSHOTTED\n")
+    assert _begin(repo, "router.js") == 0  # force the same registry name
+    registry_b = rp._registry_path(repo)
+
+    assert lane_a != lane_b  # non-zero denominator: two actual identities
+    assert registry_a != registry_b
+    independent_digest = hashlib.sha1(lane_a.encode()).hexdigest()[:12]
+    expected_a = (rp._ls.SCRATCH_ROOT / "repo" / "master" /
+                  f"lane-{lane_a}-{independent_digest}" /
+                  rp.SUB / "registry.json")
+    assert registry_a == expected_a  # actual registry location, independent layout
+
+    target.write_bytes(b"LANE A SABOTAGE\n")
+    monkeypatch.setenv(rp._ls.IDENTITY_ENV, lane_a)
+    assert _restore(repo, "router.js") == 0
+    assert target.read_bytes() == b"ONLY LANE A COULD HAVE SNAPSHOTTED\n", (
+        "crossed snapshot: lane A restore produced lane B bytes")
+
+    target.write_bytes(b"LANE B SABOTAGE\n")
+    monkeypatch.setenv(rp._ls.IDENTITY_ENV, lane_b)
+    assert _restore(repo, "router.js") == 0
+    assert target.read_bytes() == b"ONLY LANE B COULD HAVE SNAPSHOTTED\n"
+
+
+def test_crossed_registry_would_restore_lane_b_bytes_into_lane_a(
+        repo, monkeypatch):
+    """The collision consequence, isolated from the armed-entry refusal.
+
+    This models the state after two concurrent begins both observed no armed
+    entry, then persisted. With broken identity keying, B overwrites A's
+    registry and snapshot before A restores.
+    """
+    target = repo / "router.js"
+
+    def persist_arm(identity: str, original: bytes) -> None:
+        monkeypatch.setenv(rp._ls.IDENTITY_ENV, identity)
+        snap = rp._snapshot_path(repo, "router.js")
+        snap.parent.mkdir(parents=True, exist_ok=True)
+        snap.write_bytes(original)
+        rp._write_registry(repo, [{
+            "path": "router.js",
+            "original_sha": rp._sha(original),
+            "snapshot": str(snap),
+            "state": rp.ARMED,
+            "begun_at": rp._now(),
+            "injected_sha": None,
+            "injected_hint": None,
+            "restored_at": None,
+        }])
+
+    persist_arm("a" * 32, b"ONLY LANE A COULD HAVE SNAPSHOTTED\n")
+    persist_arm("b" * 32, b"ONLY LANE B COULD HAVE SNAPSHOTTED\n")
+    target.write_bytes(b"LANE A SABOTAGE\n")
+
+    monkeypatch.setenv(rp._ls.IDENTITY_ENV, "a" * 32)
+    assert _restore(repo, "router.js") == 0
+    assert target.read_bytes() == b"ONLY LANE A COULD HAVE SNAPSHOTTED\n", (
+        "crossed snapshot: lane A restore produced lane B bytes: "
+        f"{target.read_bytes()!r}")
+
+
+def test_begin_refuses_to_replace_an_armed_snapshot(repo, capsys):
+    assert _begin(repo, "router.js") == 0
+    original_snapshot = rp._snapshot_path(repo, "router.js").read_bytes()
+    (repo / "router.js").write_bytes(b"OTHER BYTES\n")
+
+    assert _begin(repo, "router.js") == 2
+    _, err = capsys.readouterr()
+    assert "already has an armed snapshot" in err
+    assert rp._snapshot_path(repo, "router.js").read_bytes() == original_snapshot
+
+
+def test_atomic_claim_refuses_even_if_a_racing_registry_read_was_empty(
+        repo, capsys):
+    """The filesystem claim closes read-empty/read-empty begin interleaving."""
+    assert _begin(repo, "router.js") == 0
+    rp._registry_path(repo).unlink()  # model B's earlier empty registry read
+
+    second = _begin(repo, "router.js")
+    assert second == 2, (
+        "second begin replaced the crossed snapshot after both lanes observed "
+        "an empty registry")
+    _, err = capsys.readouterr()
+    assert "snapshot name" in err and "already armed" in err
 
 
 # ── direction 1: the defect, and the refusal that names it ────────────

@@ -216,6 +216,26 @@ def _snapshot_path(cwd: Path | None, posix_path: str) -> Path:
     return _snap_dir(cwd) / (hashlib.sha1(posix_path.encode()).hexdigest() + ".orig")
 
 
+def _claim_path(snapshot: Path) -> Path:
+    return Path(f"{snapshot}.armed")
+
+
+def _claim_snapshot(snapshot: Path, posix_path: str) -> None:
+    """Atomically claim a name so concurrent begins cannot both overwrite it."""
+    claim = _claim_path(snapshot)
+    try:
+        fd = os.open(claim, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError as exc:
+        raise RedproofError(
+            f"snapshot name for {posix_path!r} is already armed ({claim}); "
+            "restore or forget it before beginning again") from exc
+    os.close(fd)
+
+
+def _release_snapshot(snapshot: Path) -> None:
+    _claim_path(snapshot).unlink(missing_ok=True)
+
+
 class RedproofError(Exception):
     """A fault the tool cannot evaluate — callers print and exit 2 (#671)."""
 
@@ -478,8 +498,18 @@ def begin(cwd: Path | None, path: str) -> int:
         return 2
 
     entries, _ = _read_registry(cwd)
+    if _find(entries, posix) is not None:
+        sys.stderr.write(
+            f"begin: REFUSED — {posix!r} already has an armed snapshot; "
+            "restore or forget it before beginning again\n")
+        return 2
     snap = _snapshot_path(cwd, posix)
     snap.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _claim_snapshot(snap, posix)
+    except RedproofError as exc:
+        sys.stderr.write(f"begin: REFUSED — {exc}\n")
+        return 2
     snap.write_bytes(original)
     entry = _find(entries, posix)
     if entry is None:
@@ -548,6 +578,7 @@ def restore(cwd: Path | None, path: str) -> int:
             # a no-op.
             entries = [e for e in entries if e is not armed]
             _write_registry(cwd, entries)
+            _release_snapshot(snap)
             print(f"restore: {posix!r} unchanged since begin — no injection recorded; "
                   f"entry dropped.")
             return 0
@@ -581,6 +612,7 @@ def restore(cwd: Path | None, path: str) -> int:
                 f"restore of {posix!r} did not reproduce the snapshot byte-for-byte "
                 f"after cp — investigate before continuing")
         _write_registry(cwd, entries)
+        _release_snapshot(snap)
     except RedproofError as exc:
         sys.stderr.write(f"restore: FAULT — {exc}\n")
         return 2
@@ -604,6 +636,7 @@ def forget(cwd: Path | None, path: str) -> int:
         sys.stderr.write(f"forget: nothing registered for {posix!r}\n")
         return 1
     _write_registry(cwd, entries)
+    _release_snapshot(_snapshot_path(cwd, posix))
     print(f"forget: dropped entry for {posix!r} (working tree untouched)")
     return 0
 
