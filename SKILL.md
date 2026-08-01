@@ -267,6 +267,14 @@ delivery for the ambiguous class (ideas, notes, anything not addressed to
    when there was no prior read to bound against, which the rule below
    forbids in a tick anyway.
 
+**An `EXPEDITED` line in `consume`'s output is not an act-list entry** (#864).
+It names a receipt the stop hook already handed you at a pause, so it is
+correctly absent from `UNAPPLIED` — acted on once, per #519/#527. It is
+printed rather than left to the `applied` count precisely so a hook whose
+output you never saw cannot swallow one of his instructions in silence: if you
+do not recognise it, `show <id>` has the text. The hook never moves the cursor,
+so nothing it delivers escapes this drain.
+
 **Never consume without a prior `pending` read in the same tick — and the
 consume is bounded to what that read reported.** The coordinator ran
 `consume` blind once and discarded two events' content
