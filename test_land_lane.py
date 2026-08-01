@@ -661,12 +661,15 @@ def test_a_gate_roster_that_does_not_match_what_ran_refuses(
 def _empty_registry(lane: Path, path: str) -> None:
     """Leave a READABLE but empty red-proof registry for this lane.
 
-    `redproof.py check` FAULTs at exit 2 — independently of `--require` — when
-    it can locate no registry at all for a worktree (#949's unfixed second
-    half, in `dev/redproof.py`, which this lane is scoped out of). Arming and
-    immediately forgetting isolates the variable under test: with the registry
-    readable, does the DERIVED `--require 0` let a documentation-only branch
-    land where `--require 1` refused it?
+    Historically this armed-then-forgot workaround kept a registry on disk so
+    that `redproof.py check` did not FAULT on the no-registry blind case while
+    that case was still #949's unfixed second half. #955 made an absent
+    registry the EXPECTED state when nothing was required, so the workaround is
+    no longer load-bearing for correctness — but it keeps this lane's audit
+    path in MODE A (a registry exists) rather than the blind case, which is the
+    variable this test isolates: with the registry readable, does the DERIVED
+    `--require 0` let a documentation-only branch land where `--require 1`
+    refused it?
     """
     armed = _redproof(lane, "begin", path, "--expectation", "test_named.py")
     assert armed.returncode == 0, armed.stdout + armed.stderr
@@ -829,30 +832,38 @@ def test_zero_derived_tests_says_why_rather_than_reading_as_coverage(doc_only_re
     assert "rests entirely on the named selection" in result.stdout
 
 
-def test_a_doc_only_lane_with_no_registry_faults_and_says_it_is_not_the_require_rule(
+def test_a_doc_only_lane_with_no_registry_lands_because_none_was_required(
     doc_only_repo,
 ):
-    """#949's unfixed second half, pinned where the next reader will meet it.
+    """#955: the fix to #949's unfixed second half, pinned where the next reader
+    will meet it.
 
-    `dev/redproof.py check` FAULTs at exit 2 when it can locate no registry for
-    a worktree, and that fault is `--require`-INDEPENDENT: deriving 0 does not
-    reach it, so this is still the state cx-944corpus is blocked in. The fault
-    lives in `dev/redproof.py`, which this lane is scoped out of. What
-    `land_lane.py` owes is #940's ruling — a refusal that says which of the
-    three facts it holds, rather than one message covering all of them.
+    A doc-only lane (0 injections required) that registered NOTHING — so there
+    is no registry at all — used to be refused by the gate, because
+    `dev/redproof.py check` FAULTed on an absent registry independently of
+    `--require`. That was the state cx-944corpus was blocked in. After #955, an
+    absent registry is the EXPECTED state when nothing was required and no
+    launch identity ran, so the lane LANDS. What `land_lane.py` now relays is
+    redproof's own pass line ("no injection required and none registered") —
+    #940's ruling preserved: a pass that says WHY (0 required) and carries the
+    denominator, not an all-clear.
     """
     root, lane = doc_only_repo
     before = _git(root, "rev-parse", "--verify", "refs/heads/master")
 
     result = _run(root, "test_named.py")
 
-    assert result.returncode == 1
+    assert result.returncode == 0, result.stdout + result.stderr
     assert "red-proof requirement: 0 injections REQUIRED" in result.stdout
-    assert "could not locate ANY lane scratch" in result.stderr
-    assert "NOTE this FAULT is NOT the --require rule" in result.stderr
-    assert "injections registered>=0 required" in result.stderr
-    _assert_base_unmoved(root, before)
-    _assert_retained(root, lane)
+    # redproof's blind-case pass line reaches the gate's stdout via _relay
+    # (redproof prints it; land_lane._relay maps subprocess stdout -> stdout).
+    assert "no injection required and none registered" in result.stdout
+    assert "audited 0 registry/ies across 0 launch-identity dir(s)" in result.stdout
+    assert "could not locate ANY lane scratch" not in result.stdout + result.stderr
+    assert "NOTE this FAULT" not in result.stdout + result.stderr
+    # The lane LANDS, so master advances by design (the old test asserted base
+    # unmoved because the gate refused; that inversion is the whole point).
+    assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before
 
 
 def test_land_tool_contains_no_second_worktree_removal_route():
