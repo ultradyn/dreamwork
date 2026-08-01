@@ -2,6 +2,46 @@
 
 ## Open
 
+- **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
+  **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
+  instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
+  file. `#465` is the guard that refuses such a commit — it reads which paths each lane declared and blocks
+  anyone else touching them.
+
+  **You also asked why it needs the global hook path. It does not — I framed that badly.** Your
+  `core.hooksPath` is global (`~/.config/git/hooks`, holding c2c's `pre-commit`/`pre-push` plus a
+  `commit-msg`), and because that setting exists git ignores `.git/hooks` entirely, which is the only reason
+  the global dir came up at all. Setting `core.hooksPath` **repo-locally** overrides it for this repo alone.
+
+  **`Q1` — which install?** New **`rec`: repo-local**, a tracked `.githooks/` here whose `pre-commit` runs
+  c2c's hook first and then the guard. Blast radius is this repo; c2c keeps working here. The honest cost:
+  a repo-local path also shadows `commit-msg` and `pre-push`, so the dir must forward all three or they
+  silently stop applying — that is the work, and it is why the global install looked simpler.
+  Global-and-chained is still available if you would rather have it everywhere.
+
+  **Since you last read this, `#468` R2 landed** and needs no hook at all: `lane_guard.py pre-merge <branch>`
+  checks the same preconditions before a merge. So some protection now exists either way.
+
+  **If you say nothing:** the guard stays committed and inert, and the stray-edit protection does not exist —
+  the status quo that cost the held merge. `DREAMWORK_LANE_GUARD_BYPASS=1` remains the escape.
+  - **Note (human, via watch, 2026-07-29 05:51):** why can't we enable #465
+    without this? And also, what is 465?
+    → answered above (2026-07-29): the entry was rewritten for exactly these two
+    questions — "What `#465` is" says what it is, and "You also asked why it needs
+    the global hook path. It does not" retracts the framing. Only `Q1` (repo-local
+    vs global install) is still yours. Left unmarked, this note made the whole entry
+    read as awaiting a reply the loop had already written.
+
+- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
+  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
+  then, nothing blocks and nothing is delivered by hand.
+  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
+    as an open question that we'll revisit once dreamhub is stable and the
+    primary way we access dreamworkers
+
+## Answered
+
+
 - **P1 · 2026-08-01 20:20 — #862: the goal-tree design is ready for review — 9 calls, each with a rec.**
   You asked for a design presented as an HTML artifact with your approval gating implementation. It is
   built and on the dashboard: **`.dreamwork/review/862-goal-tree.html`** (the `/reviews` list, or
@@ -79,45 +119,29 @@
 
   **If you say nothing:** nothing is implemented — the design authorises no code, and the recs stand.
   Accepted answers: `rec` (takes all nine) · per-question (`Q1: …`) · free text.
-
-- **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
-  **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
-  instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
-  file. `#465` is the guard that refuses such a commit — it reads which paths each lane declared and blocks
-  anyone else touching them.
-
-  **You also asked why it needs the global hook path. It does not — I framed that badly.** Your
-  `core.hooksPath` is global (`~/.config/git/hooks`, holding c2c's `pre-commit`/`pre-push` plus a
-  `commit-msg`), and because that setting exists git ignores `.git/hooks` entirely, which is the only reason
-  the global dir came up at all. Setting `core.hooksPath` **repo-locally** overrides it for this repo alone.
-
-  **`Q1` — which install?** New **`rec`: repo-local**, a tracked `.githooks/` here whose `pre-commit` runs
-  c2c's hook first and then the guard. Blast radius is this repo; c2c keeps working here. The honest cost:
-  a repo-local path also shadows `commit-msg` and `pre-push`, so the dir must forward all three or they
-  silently stop applying — that is the work, and it is why the global install looked simpler.
-  Global-and-chained is still available if you would rather have it everywhere.
-
-  **Since you last read this, `#468` R2 landed** and needs no hook at all: `lane_guard.py pre-merge <branch>`
-  checks the same preconditions before a merge. So some protection now exists either way.
-
-  **If you say nothing:** the guard stays committed and inert, and the stray-edit protection does not exist —
-  the status quo that cost the held merge. `DREAMWORK_LANE_GUARD_BYPASS=1` remains the escape.
-  - **Note (human, via watch, 2026-07-29 05:51):** why can't we enable #465
-    without this? And also, what is 465?
-    → answered above (2026-07-29): the entry was rewritten for exactly these two
-    questions — "What `#465` is" says what it is, and "You also asked why it needs
-    the global hook path. It does not" retracts the framing. Only `Q1` (repo-local
-    vs global install) is still yours. Left unmarked, this note made the whole entry
-    read as awaiting a reply the loop had already written.
-
-- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
-  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
-  then, nothing blocks and nothing is delivered by hand.
-  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
-    as an open question that we'll revisit once dreamhub is stable and the
-    primary way we access dreamworkers
-
-## Answered
+  - **Answer (via watch, 2026-08-01 20:40):** 1. rec 2. rec (evaluate
+    the claimed refutation and then address it by fixing all issues
+    identified; also note that these subagents should told to come up
+    with all the refutations they can, not just one or two. we want to
+    get a good list to fix as much as possible at once.) 3. rec + ask a
+    human (may or may not block depending on context) 4. the 15-20 min
+    cap is to keep the main agent able to effectively process new
+    events. when using subagents we don't care so much. the leaf goal
+    should have as many tasks as needed for sensible decomposition, and
+    probably all tasks can be handled by one subagent at once unless
+    there's a reason to break them up or doing so allows them to be
+    parallelized (which is good where possible). 5. /goals is fine, i
+    just wanted to make it clear that it was dreamwork goals for the
+    project rather that user goals, but it's kinda both i guess, the
+    user should be able to add goals or conditions/details on goals. 6.
+    rec 7. rec, though we should have a prioritization order of them so
+    we can keep work parallelized. on that note: having subagent prompts
+    pre-written alongside tasks might speed things up a lot, like
+    instead of writing the task then writing a new subagent prompt, if
+    we could just use a template to generate the prompt automatically
+    that would make it quicker to start subagents. 8. rec 9. rec, and we
+    can update the protocol from 95 however we like to fit our current
+    and future needs.
 
 - **P2 · 2026-07-31 07:30 — #584 (from #571): persistent user settings — four design calls.**
   Your steer (receipt 09a8897b): *"Add persistent user settings in the database, probably just store it as jsonb
