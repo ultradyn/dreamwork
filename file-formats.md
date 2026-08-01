@@ -1573,14 +1573,15 @@ entry-level half is the paragraph above.
 apart from task-id normalisation, so ownership, agent, and any other field
 the coordinator wrote are preserved.
 
-**Discovery (#716).** The array is advertised under `coverage: derived`,
+**Discovery (#716, #846).** The array is advertised under `coverage: derived`,
 but for its whole life the derivation only ever SUBTRACTED (a dead pid or a
 landed task). Nothing added a lane, so a freshly-dispatched fleet read as
 zero while it ran — five `ccc` lanes were live and `status-sync` reported
 `already in sync (… 1 live)`. The missing half is discovery: a `ccc` lane's
-cwd is its worktree (`.worktrees/<lane>`), so `readlink /proc/<pid>/cwd`
-recovers it cheaply and exactly. `status_sync.discover_lanes` walks `/proc`
-for paths under `<target>/.worktrees/` whose process is a `ccc` dispatch
+cwd is its worktree (`../.worktrees/<lane>` for new lanes, or the draining
+`.worktrees/<lane>`), so `readlink /proc/<pid>/cwd` recovers it cheaply and
+exactly. `status_sync.discover_lanes` walks `/proc` for paths under BOTH
+`<target>/../.worktrees/` and `<target>/.worktrees/` whose process is a `ccc` dispatch
 (argv[0] basename `ccc`, the one form the liveness probe already reasons
 about — a worktree cwd is also held by the zsh wrapper, an editor, or a
 pytest run from the worktree, so the argv check keeps discovery to lanes).
@@ -1601,6 +1602,32 @@ associated with an open task.
 dispatch. `lint.py` does not check the array's contents (it is gitignored
 ephemera describing a running process), so the contract is enforced by the
 reaper itself plus the id-vocabulary check on `current_task_ids`.
+
+## `.dreamwork/worktree-drain.json` — legacy in-repo worktree ratchet (#846)
+
+A tracked JSON object binds the drain to literal `<main-checkout>/.worktrees`
+even when lint runs from a linked worktree:
+
+```json
+{
+  "version": 1,
+  "root": ".worktrees",
+  "high_water_count": 4,
+  "allowed_worktrees": ["lane-a", "lane-b", "lane-c", "lane-d"],
+  "last_observed_size_bytes": 127486064
+}
+```
+
+`high_water_count` equals the unique `allowed_worktrees` population. A current
+registered worktree must be a member of that set, so replacing a reaped lane
+without increasing the count still fails. As lanes are reaped, a deliberate
+commit may only remove names and lower the count; lint never rewrites or
+re-baselines this file. `last_observed_size_bytes` is a committed evidence
+checkpoint, while every lint run reports the current apparent byte size. Size
+is not the hard gate: a build may grow a live lane without creating a worktree.
+When the root is absent, lint reports its exact resolved path and passes as the
+intended end state; any other `root` token is an error, closing the typo-is-green
+case.
 
 ## `.dreamwork/.status-keys` — the only file `lint.py` writes (#303)
 
@@ -2071,7 +2098,8 @@ python3 <skill-dir>/migration_notice.py parse  --path <file>
 
 ## `.dreamwork/docs/briefs/*.md` — a worktree brief declares its owned paths (#465)
 
-A lane dispatched into a worktree (``.worktrees/<name>`` on ``wt/<name>``) can
+A lane dispatched into a worktree (normally ``../.worktrees/<name>`` on
+``wt/<name>``) can
 edit the **main checkout** instead of its worktree, and nothing notices until a
 merge fails — or worse, a coordinator commit sweeps the lane's half-finished
 edits into a ledger commit under the wrong message (``12f47e3``). The

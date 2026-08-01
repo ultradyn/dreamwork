@@ -11,7 +11,7 @@ co-agent merge.
 - **task:** #N — title
 - **claim_id:** c-… (co-agent) or n/a (subagent)
 - **branch:** fix/N-slug
-- **worktree:** /abs/path/.worktrees/N-slug
+- **worktree:** /abs/parent/.worktrees/N-slug
 - **commit hash:** <sha>  (required if landed)
 - **files owned:** paths actually touched under the grant
 - **worktree attestation:** `git status` / diff summary **for this

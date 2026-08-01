@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -156,6 +158,28 @@ class TestProtocolAndSafety(unittest.TestCase):
         self.assertIn("git worktree add -b", blob)
         self.assertNotIn("fix/#N", blob)
         self.assertNotIn("git branch fix/", sub)
+
+    def test_documented_command_creates_outside_repo(self):
+        documented = "git worktree add -b fix/N-slug ../.worktrees/N-slug master"
+        self.assertIn(documented, _read(REFS / "lifecycle.md"))
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "target"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q", "-b", "master"], cwd=repo,
+                           check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"],
+                           cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=repo,
+                           check=True)
+            (repo / "seed").write_text("seed\n")
+            subprocess.run(["git", "add", "seed"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+            lane = repo.parent / ".worktrees" / "1-test"
+            subprocess.run(
+                ["git", "worktree", "add", "-b", "fix/1-test", str(lane), "master"],
+                cwd=repo, check=True, capture_output=True)
+            self.assertTrue((lane / ".git").is_file())
+            self.assertFalse(str(lane).startswith(str(repo) + "/"))
 
     def test_no_claim_file_language(self):
         co = _read(REFS / "co-agent-mode.md").lower()

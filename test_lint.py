@@ -91,6 +91,72 @@ def levels(rep, what):
     return [lvl for lvl, w, _ in rep.rows if w == what]
 
 
+def _drain_state(dw: Path, allowed=("cx-846wtmove",), root=".worktrees") -> Path:
+    path = dw / lint.WORKTREE_DRAIN_STATE
+    path.write_text(json.dumps({
+        "version": 1,
+        "root": root,
+        "high_water_count": len(allowed),
+        "allowed_worktrees": list(allowed),
+        "last_observed_size_bytes": 123,
+    }) + "\n")
+    return path
+
+
+class TestInRepoWorktreeDrain:
+    def test_old_root_absent_passes_explicitly_at_bound_path(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        state = _drain_state(t / ".dreamwork", allowed=())
+        before = state.read_bytes()
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        rows = [msg for level, what, msg in rep.rows
+                if what == lint.WORKTREE_DRAIN_STATE]
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.OK]
+        assert "in-repo worktree root absent at" in rows[0]
+        assert rows[0].endswith("path is bound to literal `.worktrees`)")
+        assert state.read_bytes() == before, "the check must never rebaseline itself"
+
+    def test_absent_root_with_stale_allowance_refuses_until_locked_at_zero(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        _drain_state(t / ".dreamwork")
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "lower the committed state to zero" in rep.rows[-1][2]
+
+    def test_wrong_root_cannot_impersonate_absent_end_state(self, tmp_path):
+        t = target(tmp_path)
+        _drain_state(t / ".dreamwork", root=".worktreez")
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "root must be literal `.worktrees`" in rep.rows[-1][2]
+
+    def test_new_registered_path_is_named_and_does_not_raise_baseline(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        old_root = t / ".worktrees"
+        (old_root / "cx-846wtmove").mkdir(parents=True)
+        offender = old_root / "regression"
+        offender.mkdir()
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        monkeypatch.setattr(lint, "_registered_in_repo_worktrees",
+                            lambda main, old: [old / "cx-846wtmove", offender])
+        state = _drain_state(t / ".dreamwork")
+        before = state.read_bytes()
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert str(offender) in rep.rows[-1][2]
+        assert "count 2" in rep.rows[-1][2]
+        assert state.read_bytes() == before, "a red run must not bless its count"
+
+
 @pytest.fixture
 def frozen_tree(tmp_path):
     """A detached worktree at HEAD — a fixed tree no concurrent lane can move.

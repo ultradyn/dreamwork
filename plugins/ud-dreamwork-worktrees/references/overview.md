@@ -3,7 +3,7 @@
 ## Why
 
 When disjoint file ownership cannot be arranged in one tree, isolate with
-a **git worktree** under `.worktrees/` (gitignored). Workers never write
+a **git worktree** under `../.worktrees/` (outside the target). Workers never write
 the main checkout.
 
 ## Roles
@@ -31,8 +31,10 @@ the main checkout.
 
 ```
 <target>/
-  .worktrees/                      # gitignored
+  .worktrees/                      # legacy drain only; create nothing here
   .dreamwork/worktrees-version     # optional migration stamp only
+
+<target>/../.worktrees/            # all new worktrees
 
 ~/.config/dreamwork/worktrees/<slug>/
   claims.json                      # coordinator claim ledger (not git)
@@ -41,7 +43,11 @@ the main checkout.
 
 Branch names: `fix/N-short-slug`, `feat/N-short-slug` — ledger id
 **without** `#` (e.g. `fix/238-answers-open`). Prefer
-`git worktree add -b <branch> .worktrees/<slug> <base>`.
+`git worktree add -b <branch> ../.worktrees/<slug> <base>`.
+
+Discovery unions both roots until `<target>/.worktrees/` disappears. The old
+root's registered-worktree count may only decrease; its byte size is reported
+as evidence because builds may grow a live lane without creating one.
 
 ## Packaging
 

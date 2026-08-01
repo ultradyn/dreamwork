@@ -12,8 +12,8 @@ context; no multi-day career in one worktree.
 
 ```bash
 git fetch origin   # if remote tracking matters
-git worktree add -b fix/N-slug .worktrees/N-slug origin/master
-# or: git worktree add -b fix/N-slug .worktrees/N-slug master
+git worktree add -b fix/N-slug ../.worktrees/N-slug origin/master
+# or: git worktree add -b fix/N-slug ../.worktrees/N-slug master
 ```
 
 Branch names: `fix/N-slug`, `feat/N-slug` (ledger id **without** `#` —

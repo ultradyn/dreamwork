@@ -4,8 +4,8 @@
 
 - [ ] Task eligible; paths disjoint from active claims
 - [ ] Ports assigned if needed
-- [ ] `.worktrees/` gitignored; claims ledger exists (co-agent)
-- [ ] Atomic `git worktree add -b fix/N-slug .worktrees/N-slug <base>`
+- [ ] New root `../.worktrees/` exists; legacy `.worktrees/` remains drain-only
+- [ ] Atomic `git worktree add -b fix/N-slug ../.worktrees/N-slug <base>`
 - [ ] Claim recorded (ledger for co-agent; status projection)
 - [ ] Prompt: ownership, forbids, red-first, evidence template
 - [ ] Wake channel delivers

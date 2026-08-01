@@ -2,16 +2,17 @@
 
 ## Preflight
 
-1. Target is a git repo; `.gitignore` lists `.worktrees/`.
+1. Target is a git repo; new lanes go under `../.worktrees/`. Keep the old
+   `.worktrees/` ignore only while that root drains.
 2. Co-agent: claims ledger present (empty ok).
 3. Branch name free: `fix/N-slug` (no `#`).
 
 ## Create
 
 ```bash
-git worktree add -b fix/N-slug .worktrees/N-slug master
+git worktree add -b fix/N-slug ../.worktrees/N-slug master
 # attach existing branch only when it already exists:
-# git worktree add .worktrees/N-slug fix/N-slug
+# git worktree add ../.worktrees/N-slug fix/N-slug
 ```
 
 Confirm clean baseline on the expected branch.
@@ -33,7 +34,7 @@ unless Max authorized.
 **Never** first:
 
 - `git worktree remove --force`
-- `rm -rf .worktrees/<slug>`
+- `rm -rf ../.worktrees/<slug>`
 
 `--force` declines to ask whether anyone is still in the tree. It does
 **not** answer that question, and must not be read as answering it. The
@@ -49,7 +50,7 @@ commit. Do not build a fix that relies on that luck.)
 1. **Process check — first, always.** Before reading any file state, run
    the plugin's liveness check against the worktree path:
    ```
-   python3 plugins/ud-dreamwork-worktrees/occupied.py .worktrees/N-slug
+   python3 plugins/ud-dreamwork-worktrees/occupied.py ../.worktrees/N-slug
    ```
    (the script lives at `plugins/ud-dreamwork-worktrees/occupied.py`
    relative to this skill's checkout; resolve it through `plugin_resolver`
@@ -89,7 +90,7 @@ commit. Do not build a fix that relies on that luck.)
      receipt `cleanup decision` field or claim `notes`. Move valuable
      scratch out **before** remove.
 6. If clean / disposable-only, remove worktree then merged branch:
-   `git worktree remove .worktrees/N-slug`
+   `git worktree remove ../.worktrees/N-slug`
    then `git branch -d fix/N-slug` when merged.
 7. Clear claim ledger entry / status projection.
 

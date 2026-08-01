@@ -341,7 +341,8 @@ def _observable(d: dict) -> bool:
 # while they run — the probe sees only the `ccc` dispatch path, and the field
 # it derives (`dreamers`) is advertised as `coverage: derived` but only ever
 # SUBTRACTED. Discovery is the missing ADD: a `ccc` lane's cwd is its worktree
-# (`.worktrees/<lane>`), so `readlink /proc/<pid>/cwd` recovers it. The pid a
+# (new sibling or draining in-repo `.worktrees/<lane>`), so `readlink`
+# `/proc/<pid>/cwd` recovers it. The pid a
 # lane is recorded under is the `ccc` process itself (measured: cmdline begins
 # `ccc -y @glm52 …`, and its ppid is the zsh wrapper — both share the worktree
 # as cwd, so the probe is indifferent to which is recorded; #402a already
@@ -350,6 +351,12 @@ def _observable(d: dict) -> bool:
 # silently added — the mirror of #702's "cannot compare must not read as
 # landed" applied to discovery rather than reap.
 WORKTREE_DIR = ".worktrees"
+
+
+def worktree_roots(target: Path) -> tuple[str, str]:
+    """New-worktree root first, then the draining in-repo root (#846)."""
+    root = target.resolve()
+    return (str(root.parent / WORKTREE_DIR), str(root / WORKTREE_DIR))
 
 
 def _read_proc_cwd(pid: int) -> str | None:
@@ -541,8 +548,9 @@ def _ancestor_pids() -> set[int]:
 def discover_lanes(target: Path, *, stats: dict | None = None):
     """Live lanes the cwd probe can see, as ``(found, phantoms, agent_tool)``.
 
-    Walks ``/proc/*/cwd`` for paths under ``<target>/.worktrees/`` (#716),
-    and ALSO scans each process's argv for the same prefix (#775). The cwd
+    Walks ``/proc/*/cwd`` for paths under both ``<target>/../.worktrees/`` and
+    the draining ``<target>/.worktrees/`` (#716/#846), and ALSO scans each
+    process's argv for both prefixes (#775). The cwd
     walk is the primary channel; the argv walk is the recovery channel for
     the case that bit: a live ``ccc`` lane's cwd is the MAIN checkout
     (``os.execvp`` runs the runner there, not in the worktree), so a
@@ -564,8 +572,8 @@ def discover_lanes(target: Path, *, stats: dict | None = None):
     see (another machine, a harness that strips argv) is carried verbatim
     rather than erased by a narrower automatic view (#537).
 
-    ``target`` is the project root (the dir whose ``.worktrees/`` holds
-    lanes). It is RESOLVED before building ``wt_root`` (#720): the default
+    ``target`` is the project root. It is RESOLVED before building the sibling
+    and draining worktree roots (#720): the default
     ``--target="."`` produced ``"./.worktrees"``, tested with ``startswith``
     against the ABSOLUTE path ``readlink`` returns — it never matched, so
     discovery was INERT under the invocation the loop actually uses.
@@ -574,7 +582,7 @@ def discover_lanes(target: Path, *, stats: dict | None = None):
     lane cwds carry ``~/.llm-general/skills/…``, and ``abspath`` keeps the
     symlink while ``resolve()`` normalises to the real path the cwds share).
     """
-    wt_root = str(target.resolve()) + "/" + WORKTREE_DIR
+    wt_roots = worktree_roots(target)
     found = []
     phantoms = []
     # #675: a non-ccc process whose cwd is a lane worktree is an Agent-tool
@@ -595,8 +603,9 @@ def discover_lanes(target: Path, *, stats: dict | None = None):
         process_candidates += 1
         pid = int(entry)
         cwd = _read_proc_cwd(pid)
-        cwd_lane = (cwd is not None
-                    and cwd.startswith(wt_root + "/")
+        cwd_root = next((root for root in wt_roots
+                         if cwd is not None and cwd.startswith(root + "/")), None)
+        cwd_lane = (cwd_root is not None
                     and os.path.basename(cwd.rstrip("/")))
         # #775: a live ccc lane's cwd is the MAIN checkout (os.execvp runs
         # the runner there), so the cwd-walk above misses it. The dispatch
@@ -608,7 +617,14 @@ def discover_lanes(target: Path, *, stats: dict | None = None):
         # bug one level down (a new runner is added, nothing matches, the
         # fleet silently reads zero again). The worktree path in argv is
         # controlled by dispatch_lane.py and survives the exec chain.
-        argv_lane = None if cwd_lane else _argv_lane(pid, wt_root)
+        argv_root = None
+        argv_lane = None
+        if not cwd_lane:
+            for root in wt_roots:
+                argv_lane = _argv_lane(pid, root)
+                if argv_lane:
+                    argv_root = root
+                    break
         lane = cwd_lane or argv_lane
         if not lane or lane == target.name:
             continue
@@ -617,7 +633,7 @@ def discover_lanes(target: Path, *, stats: dict | None = None):
         # argv-discovered lane's worktree is reconstructed from wt_root +
         # the lane name (its cwd is elsewhere, so cwd existence says
         # nothing about whether the worktree still exists).
-        wt_path = cwd if cwd_lane else wt_root + "/" + lane
+        wt_path = cwd if cwd_lane else argv_root + "/" + lane
         # #719: a lane whose worktree has been removed is a phantom.
         # readlink still resolves (Linux appends " (deleted)"), the prefix
         # filter still passes, but the cwd is no longer a directory — the
@@ -1005,7 +1021,7 @@ def main(argv: list[str] | None = None) -> int:
         existing_lanes.add(lane)
     if added:
         print("status_sync: discovered %d live ccc lane(s) the field did not "
-              "carry (cwd under .worktrees/; merged, not replaced): %s"
+              "carry (cwd under either worktree root; merged, not replaced): %s"
               % (len(added), [(a["lane"], a["pid"]) for a in added]),
               file=sys.stderr)
     # #675: Agent-tool lanes — non-ccc processes with a lane cwd. Merged into

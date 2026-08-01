@@ -2286,6 +2286,27 @@ def test_discovery_accounts_for_the_candidate_population(tmp_path, monkeypatch):
         "lane detector examined no plausible process candidates: %r" % stats
 
 
+def test_discovery_unions_new_and_draining_roots_as_lane_name_set(
+        tmp_path, monkeypatch):
+    """#846: drain discovery is membership across BOTH roots, not a count."""
+    target = tmp_path / "skill"
+    old_lane = target / ".worktrees" / "lane-old"
+    new_lane = tmp_path / ".worktrees" / "lane-new"
+    old_lane.mkdir(parents=True)
+    new_lane.mkdir(parents=True)
+    cwds = {101: str(old_lane), 202: str(new_lane)}
+    monkeypatch.setattr(status_sync.os, "listdir", lambda path: ["101", "202"])
+    monkeypatch.setattr(status_sync, "_read_proc_cwd", lambda pid: cwds[pid])
+    monkeypatch.setattr(status_sync, "_is_ccc_proc", lambda pid: True)
+    monkeypatch.setattr(status_sync, "_ccc_model", lambda pid: "fixture")
+
+    found, phantoms, agent = status_sync.discover_lanes(target)
+
+    assert {lane for lane, _pid, _model in found} == {"lane-old", "lane-new"}, \
+        "drain discovery dropped a root: %r" % (found,)
+    assert phantoms == agent == []
+
+
 # ── 18. #775: a lane whose cwd is NOT its worktree is found via argv ────
 #
 # THE BUG: status_sync.py's discover_lanes walked /proc/*/cwd for paths

@@ -466,7 +466,7 @@ own instruction comments; `lint.py` fails unless the value is one that
 preserves them.
 
 **Worktree is the default for any dreamer that writes files** (#405).
-Dispatch into a git worktree under `.worktrees/` (gitignored) or the
+Dispatch into a git worktree under `../.worktrees/` (outside the repo) or the
 harness's worktree isolation — not only when disjointness fails, and not
 only for large or risky work. Shared-tree dispatch is the exception and
 needs a reason; a read-only lane is the obvious legitimate one. Lifecycle
@@ -572,7 +572,7 @@ the coordinator verifies guards once on the merged tree before folding. This
 matches who actually merges.
 
 **Inbox paths given to a worktree lane are absolute.** A lane
-in `.worktrees/x` told to append to `.dreamwork/inbox.md` writes its own
+in `../.worktrees/x` told to append to `.dreamwork/inbox.md` writes its own
 copy, and the coordinator never sees it (`inbox.md` is often untracked, so
 the path does not even exist at branch point). Give it as an absolute path
 into the main checkout — repo-relative paths are silently wrong in a

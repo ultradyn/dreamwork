@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "root": ".worktrees",
+  "high_water_count": 4,
+  "allowed_worktrees": [
+    "cx-844btnguard",
+    "cx-846wtmove",
+    "glm-840tickline",
+    "glm-843ingest"
+  ],
+  "last_observed_size_bytes": 127486064
+}
