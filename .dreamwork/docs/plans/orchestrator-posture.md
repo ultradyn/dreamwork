@@ -231,12 +231,15 @@ four axes and the planned `hierarchical` run-mode, and not duplicate `delegation
   posture is what tonight's *"lackadaisical but delegating"* was forced into and
   what the posture file exists to end. With no file there is also no lint
   closed-set and no events line (G3).
-- **I5 refuted on G3, by standing ruling.** The sibling-vs-widen choice was
-  **already ruled for the other four axes**: `#445` widened posture and rejected
+- **I5 refuted on G3, by the closed-set-axis ruling.** The sibling-vs-widen
+  choice was **already ruled for the other closed-set axes**: `#445` widened posture and rejected
   a sibling for asking; `#342` widened posture and rejected a sibling for
-  delivery; `attention-modes.md` records the same arguments. A sibling touches
+  delivery; `attention-modes.md` records the same arguments. For a closed-set
+  axis, a sibling touches
   no closed set but **splits one dial across two files** and fragments the
-  control surface. The sibling is refuted by that ruling, not re-litigated here.
+  control surface. The sibling is refuted within that scope, not re-litigated
+  here. `#650` found the boundary: free text inherits no closed-set guard, so
+  the ruling does not decide its storage shape.
 
 ### Survivor
 
@@ -441,9 +444,10 @@ be red.
 - **The IGC headline:** **one survivor — a fifth posture axis.** Fold-onto-
   delegation (I2) is refuted on independence + overload; the `hierarchical`
   run-mode value (I3) is refuted on re-bundling (`#443`) + preemption; control-
-  only (I4) on no restart-survival; sibling file (I5) by the standing #445/#342
-  widen-not-sibling ruling. The integration shape is settled; the referent, the
-  closed set/name, and the `hierarchical` relationship are genuine forks.
+  only (I4) on no restart-survival; sibling file (I5) by #445/#342's closed-set-
+  axis widen-not-sibling ruling, whose boundary `#650` exposed. The integration
+  shape is settled; the referent, closed set/name, and the `hierarchical`
+  relationship are genuine forks.
 
 - **Open calls (recs):** Q1 mode over identity · Q2 binary `hands-on` |
   `orchestrator`, absent → `hands-on` · Q3 land the axis, do not enable
