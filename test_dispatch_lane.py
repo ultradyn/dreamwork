@@ -83,10 +83,12 @@ def _linked_worktree_cli(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 def _run(cli: Path, prompt: Path | None = None, *runner: str) -> subprocess.CompletedProcess[str]:
     mode = ["--verify-pending"] if prompt is None else ["--prompt", str(prompt), "--"]
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
     return subprocess.run(
         [sys.executable, str(cli), *mode, *runner],
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
@@ -142,6 +144,111 @@ def test_healthy_dispatch_is_silent_and_passes_prompt_as_one_argument(tmp_path):
     persisted = root / ".dreamwork" / "docs" / "briefs" / "900-cx-test.md"
     assert persisted.read_text(encoding="utf-8") == prompt.read_text(encoding="utf-8")
     assert persisted.with_suffix(".sha256").is_file()
+
+
+def test_dispatch_refuses_pipe_before_short_reader_can_kill_runner(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    started = tmp_path / "runner-started"
+    writer = (
+        "import pathlib,signal,sys,time; "
+        "pathlib.Path(sys.argv[1]).touch(); "
+        "signal.signal(signal.SIGPIPE,signal.SIG_DFL); "
+        "[(print(i,flush=True),time.sleep(.01)) for i in range(10000)]"
+    )
+    process = subprocess.Popen(
+        [sys.executable, str(cli), "--prompt", str(prompt), "--",
+         sys.executable, "-c", writer, str(started)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert process.stdout is not None
+    lines = [process.stdout.readline() for _ in range(3)]
+    process.stdout.close()
+    returncode = process.wait(timeout=5)
+    assert process.stderr is not None
+    stderr = process.stderr.read()
+
+    assert returncode == 2, (
+        f"dispatcher reached the runner and died from SIGPIPE ({returncode})"
+    )
+    assert lines == ["", "", ""]
+    assert "stdout is a pipe whose reader can close early" in stderr
+    assert "DREAMWORK_ALLOW_PIPED_STDOUT=1" in stderr
+    assert not started.exists(), "runner launched before the pipe refusal"
+
+
+def test_explicit_pipe_override_launches_runner(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+
+    result = _run(cli, prompt, sys.executable, "-c", "print('launched')")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "launched\n"
+
+
+def test_tty_stdout_launches_runner(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    launched = tmp_path / "tty-launched"
+    master, slave = os.openpty()
+    try:
+        process = subprocess.Popen(
+            [sys.executable, str(cli), "--prompt", str(prompt), "--",
+             sys.executable, "-c", "import pathlib,sys; pathlib.Path(sys.argv[1]).touch()",
+             str(launched)],
+            stdout=slave,
+            stderr=slave,
+        )
+    finally:
+        os.close(slave)
+    returncode = process.wait(timeout=5)
+    os.close(master)
+
+    assert returncode == 0
+    assert launched.is_file()
+
+
+def test_regular_file_redirect_launches_runner(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    launched = tmp_path / "file-launched"
+    output = tmp_path / "dispatch.log"
+    with output.open("w", encoding="utf-8") as stream:
+        result = subprocess.run(
+            [sys.executable, str(cli), "--prompt", str(prompt), "--",
+             sys.executable, "-c", "import pathlib,sys; pathlib.Path(sys.argv[1]).touch()",
+             str(launched)],
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+    assert result.returncode == 0
+    assert launched.is_file()
+
+
+def test_background_regular_file_redirect_launches_runner(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    launched = tmp_path / "background-launched"
+    output = tmp_path / "background.log"
+    with output.open("w", encoding="utf-8") as stream:
+        process = subprocess.Popen(
+            [sys.executable, str(cli), "--prompt", str(prompt), "--",
+             sys.executable, "-c",
+             "import pathlib,sys,time; time.sleep(.1); pathlib.Path(sys.argv[1]).touch()",
+             str(launched)],
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    returncode = process.wait(timeout=5)
+
+    assert returncode == 0
+    assert launched.is_file()
 
 
 def test_unresolved_ledger_get_is_reported_but_does_not_block(tmp_path):
