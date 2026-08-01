@@ -25,7 +25,6 @@ RED-PROOF DIRECTION 2: if the fixture made lane cwd equal server cwd, that same
 broken resolver would pass. The fixture makes them differ, closing that
 false-green.
 """
-import subprocess
 import sys
 from pathlib import Path
 
