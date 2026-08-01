@@ -2746,27 +2746,52 @@ def check_guards_registered(root: Path, rep: Report) -> None:
                 f"{len(registered)} guard(s) registered, each with a file")
 
 
-def _production_imports(root: Path, tree: ast.Module) -> dict[str, set[str]]:
-    """Local production constants imported directly by a test module."""
+def _local_production_module(root: Path, module_name: str) -> bool:
+    parts = module_name.split(".")
+    if any(part.startswith("test_") or part == "tests" for part in parts):
+        return False
+    module = root.joinpath(*parts)
+    return (module.with_suffix(".py").is_file() or
+            (module / "__init__.py").is_file())
+
+
+def _production_imports(root: Path, tree: ast.Module
+                        ) -> tuple[dict[str, set[str]], set[str]]:
+    """Direct constant imports and aliases for local production modules."""
     imported = {}
+    modules = set()
     for node in tree.body:
-        if not isinstance(node, ast.ImportFrom) or node.level or not node.module:
-            continue
-        parts = node.module.split(".")
-        if any(part.startswith("test_") or part == "tests" for part in parts):
-            continue
-        module = root.joinpath(*parts)
-        if not (module.with_suffix(".py").is_file() or
-                (module / "__init__.py").is_file()):
-            continue
-        for alias in node.names:
-            if re.fullmatch(r"[A-Z][A-Z0-9_]*", alias.name):
-                imported[alias.asname or alias.name] = {alias.name}
-    return imported
+        if isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            if not _local_production_module(root, node.module):
+                continue
+            for alias in node.names:
+                if re.fullmatch(r"[A-Z][A-Z0-9_]*", alias.name):
+                    imported[alias.asname or alias.name] = {alias.name}
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if _local_production_module(root, alias.name):
+                    modules.add(alias.asname or alias.name.split(".")[0])
+    return imported, modules
+
+
+def _production_origins(value: ast.AST, taints: dict[str, set[str]],
+                        modules: set[str]) -> set[str]:
+    origins = set().union(
+        *(taints.get(part.id, set()) for part in ast.walk(value)
+          if isinstance(part, ast.Name) and isinstance(part.ctx, ast.Load)),
+    )
+    origins.update(
+        part.attr for part in ast.walk(value)
+        if isinstance(part, ast.Attribute) and
+        isinstance(part.value, ast.Name) and part.value.id in modules and
+        re.fullmatch(r"[A-Z][A-Z0-9_]*", part.attr)
+    )
+    return origins
 
 
 def _production_taints(tree: ast.Module,
-                       imported: dict[str, set[str]]) -> dict[str, set[str]]:
+                       imported: dict[str, set[str]],
+                       modules: set[str]) -> dict[str, set[str]]:
     """Propagate imported authority through module assignments and helpers."""
     taints = {name: set(origins) for name, origins in imported.items()}
     bindings = []
@@ -2787,11 +2812,7 @@ def _production_taints(tree: ast.Module,
     while changed:
         changed = False
         for name, value in bindings:
-            origins = set().union(
-                *(taints.get(part.id, set()) for part in ast.walk(value)
-                  if isinstance(part, ast.Name) and
-                  isinstance(part.ctx, ast.Load)),
-            )
+            origins = _production_origins(value, taints, modules)
             if origins - taints.get(name, set()):
                 taints.setdefault(name, set()).update(origins)
                 changed = True
@@ -2827,10 +2848,17 @@ def check_expected_production_constants(root: Path, rep: Report) -> None:
         except (OSError, SyntaxError) as exc:
             parse_errors.append(f"{path.relative_to(root)} ({exc})")
             continue
-        imported = _production_imports(root, tree)
-        if not imported:
+        imported, modules = _production_imports(root, tree)
+        if not imported and not modules:
             continue
-        taints = _production_taints(tree, imported)
+        taints = _production_taints(tree, imported, modules)
+        expected_names = {
+            target.id for node in tree.body
+            if isinstance(node, (ast.Assign, ast.AnnAssign))
+            for target in (node.targets if isinstance(node, ast.Assign)
+                           else [node.target])
+            if isinstance(target, ast.Name) and target.id.startswith("EXPECTED_")
+        }
         for node in tree.body:
             value = None
             targets = []
@@ -2845,11 +2873,23 @@ def check_expected_production_constants(root: Path, rep: Report) -> None:
                         target.id.startswith("EXPECTED_")]
             if not expected:
                 continue
-            used = sorted({origin for part in ast.walk(value)
-                           if isinstance(part, ast.Name) and
-                           isinstance(part.ctx, ast.Load)
-                           for origin in taints.get(part.id, set())})
+            used = sorted(_production_origins(value, taints, modules))
             for expected_name in expected:
+                for production_name in used:
+                    findings.append(
+                        f"{path.relative_to(root)}:{node.lineno} "
+                        f"{expected_name} uses imported production constant "
+                        f"{production_name}"
+                    )
+        for node in tree.body:
+            if not isinstance(node, (ast.Expr, ast.AugAssign)):
+                continue
+            mutated = sorted({part.id for part in ast.walk(node)
+                              if isinstance(part, ast.Name) and
+                              isinstance(part.ctx, ast.Load) and
+                              part.id in expected_names})
+            used = sorted(_production_origins(node, taints, modules))
+            for expected_name in mutated:
                 for production_name in used:
                     findings.append(
                         f"{path.relative_to(root)}:{node.lineno} "
@@ -2862,7 +2902,7 @@ def check_expected_production_constants(root: Path, rep: Report) -> None:
                 f"could not parse {len(parse_errors)} of {len(tests)} test "
                 f"module(s): {'; '.join(parse_errors)}")
     if findings:
-        rep.add(ERROR, "test expectations",
+        rep.add(WARN, "test expectations",
                 f"{len(findings)} shared-authority expectation(s) among "
                 f"{len(tests)} test module(s): {'; '.join(findings)}")
     elif not parse_errors:

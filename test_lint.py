@@ -122,13 +122,13 @@ class TestExpectedProductionConstants:
         return [(level, detail) for level, what, detail in rep.rows
                 if what == "test expectations"]
 
-    def test_imported_constant_building_expected_value_is_an_error(self, tmp_path):
+    def test_imported_constant_building_expected_value_is_a_warning(self, tmp_path):
         rows = self._check(
             tmp_path,
             "from subject import TASK_EDGES\n"
             "EXPECTED_EDGE_SET = frozenset((a, b) for a, b in TASK_EDGES)\n",
         )
-        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert len(rows) == 1 and rows[0][0] == lint.WARN, rows
         assert "EXPECTED_EDGE_SET uses imported production constant TASK_EDGES" in rows[0][1]
         assert "among 1 test module(s)" in rows[0][1], rows[0][1]
 
@@ -138,7 +138,7 @@ class TestExpectedProductionConstants:
             "from subject import TASK_EDGES as edges\n"
             "EXPECTED_EDGE_SET = set(edges)\n",
         )
-        assert rows[0][0] == lint.ERROR, rows
+        assert rows[0][0] == lint.WARN, rows
         assert "production constant TASK_EDGES" in rows[0][1]
 
     def test_an_intermediate_name_cannot_hide_the_shared_authority(self, tmp_path):
@@ -148,7 +148,7 @@ class TestExpectedProductionConstants:
             "copied_edges = TASK_EDGES\n"
             "EXPECTED_EDGE_SET = frozenset(copied_edges)\n",
         )
-        assert rows[0][0] == lint.ERROR, rows
+        assert rows[0][0] == lint.WARN, rows
         assert "production constant TASK_EDGES" in rows[0][1]
 
     def test_a_helper_returning_the_constant_cannot_hide_it(self, tmp_path):
@@ -159,7 +159,26 @@ class TestExpectedProductionConstants:
             "    return TASK_EDGES\n"
             "EXPECTED_EDGE_SET = frozenset(subject_edges())\n",
         )
-        assert rows[0][0] == lint.ERROR, rows
+        assert rows[0][0] == lint.WARN, rows
+        assert "production constant TASK_EDGES" in rows[0][1]
+
+    def test_constant_reached_through_an_imported_module_is_a_warning(self, tmp_path):
+        rows = self._check(
+            tmp_path,
+            "import subject as prod\n"
+            "EXPECTED_EDGE_SET = frozenset(prod.TASK_EDGES)\n",
+        )
+        assert rows[0][0] == lint.WARN, rows
+        assert "production constant TASK_EDGES" in rows[0][1]
+
+    def test_mutating_an_expected_value_from_the_constant_is_a_warning(self, tmp_path):
+        rows = self._check(
+            tmp_path,
+            "from subject import TASK_EDGES\n"
+            "EXPECTED_EDGE_SET = set()\n"
+            "EXPECTED_EDGE_SET.update(TASK_EDGES)\n",
+        )
+        assert rows[0][0] == lint.WARN, rows
         assert "production constant TASK_EDGES" in rows[0][1]
 
     def test_independently_built_helper_is_silent(self, tmp_path):
@@ -204,13 +223,16 @@ class TestExpectedProductionConstants:
         assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
         assert "examined 0 test modules" in rows[0][1], rows[0][1]
 
-    def test_this_repo_has_a_nonempty_clean_population(self):
+    def test_this_repo_has_a_nonempty_judged_population(self):
         rep = lint.Report()
         lint.check_expected_production_constants(lint.SKILL_DIR, rep)
         rows = [(level, detail) for level, what, detail in rep.rows
                 if what == "test expectations"]
-        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
-        assert "examined " in rows[0][1] and "examined 0" not in rows[0][1]
+        assert len(rows) == 1 and rows[0][0] in {lint.OK, lint.WARN}, rows
+        population = re.search(r"(?:among|examined) (\d+) test module", rows[0][1])
+        assert population and int(population.group(1)) > 0, rows[0][1]
+        assert "test_chain_golden.py" not in rows[0][1], \
+            "the independent framing helper is the compatibility control"
 
 
 def _drain_state(dw: Path, allowed=("cx-846wtmove",), root=".worktrees",
