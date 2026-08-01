@@ -277,17 +277,24 @@ def test_a_real_ATX_heading_inside_a_code_fence_is_not_a_section(lane):
     """Direction 1, false-positive, the third measured instance. A fenced
     quotation of Markdown (``## Read ...``) was counted as a section of the
     brief and refused. The fence was ignored and the real heading inside it
-    was honoured; fenced blocks are content, never section openers."""
+    was honoured; fenced blocks are content, never section openers.
+
+    The fixture is shaped to discriminate fence handling from the heading-space
+    rule: the fence holds TWO consecutive ATX headings with no prose between.
+    Heading-space alone cannot save this — only fence tracking does, because a
+    heading followed immediately by a heading is exactly the empty-section shape
+    the refusal keys on. A fence-disabled build flags `## Inside` as empty."""
     core = GOOD_CORE + (
         "\n## What happens, measured\n\n"
         "Two instances tonight. The verbatim failing example:\n\n"
         "```markdown\n"
-        "## Read the ledger entry for #847 first\n\n"
-        "#847 is the whole campaign and it is long.\n"
+        "## Inside a fence\n\n"
+        "## After, still fenced\n\n"
+        "Both are quotation, never sections of the brief.\n"
         "```\n\n"
         "The first was a genuine defect; the second was this misparse.\n")
     out = brief.build(881, lane, ["dev/brief.py"], core)
-    assert "## Read the ledger entry for #847 first" in out
+    assert "## Inside a fence" in out
 
 
 def test_a_genuinely_empty_section_is_still_refused_and_names_what_it_saw(lane):
