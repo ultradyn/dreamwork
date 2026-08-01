@@ -28,6 +28,29 @@ def test_domain_named_specs_delegate_to_one_complete_store_definition(tmp_path):
         )
 
 
+def test_domain_named_builders_call_the_canonical_composer(monkeypatch, tmp_path):
+    """Equal duplicate specs are still two truths; bind actual delegation."""
+
+    from dreamwork_db import store
+
+    sentinel = object()
+    calls = []
+
+    def canonical(path):
+        calls.append(path)
+        return sentinel
+
+    monkeypatch.setattr(store, "dreamwork_store_spec", canonical)
+    path = tmp_path / "ledger.sqlite3"
+
+    assert task_store_spec(path) is sentinel
+    assert question_store_spec(path) is sentinel
+    assert calls == [path, path], (
+        "domain builders reproduced an equal-looking StoreSpec instead of "
+        "delegating to the canonical store composer"
+    )
+
+
 def test_task_and_question_paths_share_one_handle_and_transaction(tmp_path):
     path = tmp_path / "ledger.sqlite3"
     spec = dreamwork_store_spec(path)
