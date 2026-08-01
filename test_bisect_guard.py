@@ -1,4 +1,5 @@
 import importlib.util
+import shutil
 import socket
 import subprocess
 import sys
@@ -142,6 +143,37 @@ def test_structural_recipe_check_does_not_claim_to_interpret_shell_semantics(rev
 
     # audit_shape is never called: this is the explicit remaining false-green.
     assert bg.inspect_revision_tree(repo, sha, "qroll") is None
+
+
+def test_locked_temporary_worktree_is_reported_and_preserved(revision_tree, tmp_path,
+                                                              monkeypatch):
+    repo, _sha = revision_tree
+    (repo / "justfile").write_text(valid_recipe(
+        '    git worktree lock . --reason probe-lock',
+        '    echo "  PASS qroll"',
+    ))
+    git(repo, "add", "justfile")
+    git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "lock tree")
+    sha = git(repo, "rev-parse", "HEAD")
+    real_mkdtemp = bg.tempfile.mkdtemp
+    monkeypatch.setattr(bg.tempfile, "mkdtemp",
+                        lambda *, prefix: real_mkdtemp(prefix=prefix, dir=tmp_path))
+
+    result = bg.judge_revision(repo, sha, "qroll", free_port(), "guard preflight: OK [test]")
+    listing = git(repo, "worktree", "list", "--porcelain")
+    leaked = next(Path(line.removeprefix("worktree ")) for line in listing.splitlines()
+                  if line.startswith("worktree ") and "dreamwork-bisect-" in line)
+    try:
+        assert result.verdict is bg.Verdict.DID_NOT_JUDGE, (
+            f"registry entry survived but verdict was {result.verdict.value}")
+        assert "temporary worktree cleanup failed; registry entry survived" in result.reason
+        assert "locked probe-lock" in listing
+        assert leaked.exists(), "cleanup failure must not delete the evidence"
+    finally:
+        git(repo, "worktree", "unlock", str(leaked))
+        git(repo, "worktree", "remove", "--force", str(leaked))
+        shutil.rmtree(leaked.parent, ignore_errors=True)
+    assert str(leaked) not in git(repo, "worktree", "list", "--porcelain")
 
 
 def test_any_did_not_judge_forces_bisect_skip_exit():

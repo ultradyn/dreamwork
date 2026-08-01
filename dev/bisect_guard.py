@@ -174,6 +174,18 @@ def read_preflight(repo: Path) -> str:
     return lines[-1] if lines else "guard preflight: UNAVAILABLE — did not produce a verdict"
 
 
+def _remove_worktree(repo: Path, tree: Path) -> str | None:
+    """Remove one private worktree, reporting registry evidence on failure."""
+    removal = _run(["git", "worktree", "remove", "--force", str(tree)], cwd=repo)
+    if removal.returncode == 0:
+        return None
+    listing = _run(["git", "worktree", "list", "--porcelain"], cwd=repo)
+    registered = listing.returncode == 0 and f"worktree {tree}" in listing.stdout.splitlines()
+    state = "registry entry survived" if registered else "registry survival could not be confirmed"
+    detail = removal.stdout.strip() or f"git worktree remove exited {removal.returncode}"
+    return f"temporary worktree cleanup failed; {state} for {tree}: {detail}"
+
+
 def judge_revision(repo: Path, revision: str, guard: str, port: int,
                    preflight: str, *, timeout: int = 180) -> Result:
     sha = resolve_commit(repo, revision)
@@ -187,6 +199,8 @@ def judge_revision(repo: Path, revision: str, guard: str, port: int,
     parent = Path(tempfile.mkdtemp(prefix="dreamwork-bisect-"))
     tree = parent / "tree"
     added = False
+    result: Result | None = None
+    cleanup_reason: str | None = None
     try:
         add = _run(["git", "worktree", "add", "--detach", str(tree), sha], cwd=repo)
         if add.returncode != 0:
@@ -195,28 +209,35 @@ def judge_revision(repo: Path, revision: str, guard: str, port: int,
         added = True
         reason = inspect_revision_tree(tree, sha, guard)
         if reason:
-            return Result(revision, sha, Verdict.DID_NOT_JUDGE, reason, preflight)
-
-        env = os.environ.copy()
-        env["DREAMWORK_GUARDS"] = guard
-        env["DREAMWORK_HUB_GUARDS"] = ""
-        env["DREAMWORK_GUARD_TIMEOUT"] = str(timeout)
-        try:
-            cp = _run(["just", "guards", str(port)], cwd=tree, env=env,
-                      timeout=timeout + 30)
-        except subprocess.TimeoutExpired as exc:
-            output = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
-            return Result(revision, sha, Verdict.DID_NOT_JUDGE,
-                          "outer runner timed out before a judgement", preflight, output)
-        verdict, why = classify_output(cp.stdout, cp.returncode, guard)
-        return Result(revision, sha, verdict, why, preflight, cp.stdout)
+            result = Result(revision, sha, Verdict.DID_NOT_JUDGE, reason, preflight)
+        else:
+            env = os.environ.copy()
+            env["DREAMWORK_GUARDS"] = guard
+            env["DREAMWORK_HUB_GUARDS"] = ""
+            env["DREAMWORK_GUARD_TIMEOUT"] = str(timeout)
+            try:
+                cp = _run(["just", "guards", str(port)], cwd=tree, env=env,
+                          timeout=timeout + 30)
+            except subprocess.TimeoutExpired as exc:
+                output = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
+                result = Result(revision, sha, Verdict.DID_NOT_JUDGE,
+                                "outer runner timed out before a judgement",
+                                preflight, output)
+            else:
+                verdict, why = classify_output(cp.stdout, cp.returncode, guard)
+                result = Result(revision, sha, verdict, why, preflight, cp.stdout)
     finally:
         if added:
-            # The path is a private mkdtemp made above.  Inspect first; forced
-            # removal is needed for ignored __pycache__ files a historical run
-            # may create, and can touch no caller-owned worktree.
-            _run(["git", "worktree", "remove", "--force", str(tree)], cwd=repo)
-        shutil.rmtree(parent, ignore_errors=True)
+            cleanup_reason = _remove_worktree(repo, tree)
+        if not added or cleanup_reason is None:
+            shutil.rmtree(parent, ignore_errors=True)
+
+    if cleanup_reason:
+        output = result.output if result else ""
+        return Result(revision, sha, Verdict.DID_NOT_JUDGE,
+                      cleanup_reason, preflight, output)
+    assert result is not None
+    return result
 
 
 def _exit_for(results: list[Result], preflight: str) -> int:
