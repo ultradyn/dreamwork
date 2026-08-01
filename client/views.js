@@ -1049,6 +1049,7 @@ function buildDashboard(d) {
   // #547: the run-mode picker was removed (superseded by posture below);
   // the /run-mode route and .dreamwork/run-mode file stay — other readers.
   h += posturePicker(d);   // #445 three-axis override of run-mode's posture
+  h += subagentPolicyPicker(d);  // #646+#580 free-text policy, sibling under posture
   h += tintPicker(d);      // last, and dim: a preference, not status
   h += drawModePicker();   // #733: shader draw frequency, sibling of tint
   return h + `</div>`;

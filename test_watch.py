@@ -12,6 +12,7 @@ import io
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import struct
@@ -9857,6 +9858,16 @@ class TestPosture(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code
 
+    def _post_json(self, url, obj):
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            return e.code, None
+
     def _lines(self, d):
         path = os.path.join(d, ".dreamwork", "submissions.log")
         if not os.path.exists(path):
@@ -10777,6 +10788,339 @@ class TestPosture(unittest.TestCase):
                 sorted(s),
                 ["asking", "delegation", "delivery", "orchestration", "pace",
                  "source"])
+
+    # ── #646 the POST /subagent-policy route: save + reset + round-trip ──
+    def _policy_events(self, d):
+        path = os.path.join(d, ".dreamwork", "watch-events.log")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return [ln for ln in f if ln.strip()]
+
+    def test_save_route_persists_and_reads_back_byte_for_byte(self):
+        """Direction-2 discriminating red: the file on disk MUST change.
+
+        A 202 that leaves the file unchanged is the green-looking failure a
+        screenshot cannot distinguish from success (#671). This test reads
+        the file back through the SAME reader the dashboard uses, so a
+        writer that tidied the text would fail the byte-for-byte compare
+        (#632/#659). The fixture deliberately carries newlines, leading/
+        trailing whitespace, and a non-ASCII char so a normalising writer
+        cannot pass."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            policy = "  leading spaces\nno subagents — sonnet only\ntrailing newline\n"
+            status = self._post(base + "/subagent-policy", {"policy": policy})
+            self.assertEqual(status, 202)
+            # THE discriminating assertion: the file on disk changed.
+            self.assertEqual(watch.read_subagent_policy(d), policy)
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["subagent_policy"], policy)
+            self.assertEqual(r["subagent_policy_source"], "file")
+            # the file exists and is non-blank (not an inert stub)
+            self.assertTrue(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+
+    def test_save_route_refuses_success_when_writer_changes_nothing(self):
+        """A helper success cannot mint a success receipt without read-back.
+
+        This is the brief's false-green exactly: the POST reaches the handler,
+        the writer claims success, but the old bytes remain on disk.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            self.assertTrue(watch.write_subagent_policy(d, "old policy\n"))
+            with unittest.mock.patch.object(watch, "atomic_write_text",
+                                            return_value=None):
+                status, body = self._post_json(
+                    base + "/subagent-policy", {"policy": "new policy\n"})
+            self.assertEqual(status, 500, "unchanged disk bytes read as saved")
+            self.assertIsNone(body)
+            self.assertEqual(watch.read_subagent_policy(d), "old policy\n")
+            self.assertFalse(any("subagent policy via watch" in e
+                                 for e in self._policy_events(d)))
+
+    def test_save_route_emits_one_event_line_on_a_real_change(self):
+        """Production line: log_event + subagent_policy_line. The event
+        carries the TRANSITION ('set'), never the free text — so a policy
+        containing a newline cannot forge a second event (#126)."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            self._post(base + "/subagent-policy",
+                       {"policy": "mine\nwith a newline\n"})
+            ev = [e for e in self._policy_events(d)
+                  if "subagent policy via watch" in e]
+            self.assertEqual(len(ev), 1)
+            self.assertTrue(ev[0].strip().endswith(": set"))
+            # the text itself never appears in the log
+            self.assertFalse(any("with a newline" in e for e in ev))
+
+    def test_identical_save_is_silent_no_event(self):
+        """Idempotence: identical-final is 202 + no event, the ceremony
+        posture/run-mode use. Pre-seed the file, POST the same text, assert
+        no NEW event line fires."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            watch.write_subagent_policy(d, "same\n")
+            self._post(base + "/subagent-policy", {"policy": "same\n"})
+            ev = self._policy_events(d)
+            self.assertFalse(any("subagent policy via watch" in e for e in ev))
+
+    def test_reset_route_deletes_the_file_not_clears_to_empty(self):
+        """THE reset discriminating red: reset DELETES the file, returning
+        to the standing default. Clear-to-empty would leave an inert file
+        that lint then has to complain about — a green-looking failure.
+
+        Asserts BOTH that the field reads as default AND that no inert file
+        remains on disk, which is the half a screenshot cannot see."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            watch.write_subagent_policy(d, "an override\n")
+            status, body = self._post_json(
+                base + "/subagent-policy", {"reset": True})
+            self.assertEqual(status, 202)
+            self.assertTrue(body["changed"])
+            # the file is GONE, not blank
+            self.assertFalse(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["subagent_policy_source"], "default")
+            import lint
+            self.assertEqual(r["subagent_policy"], lint.SUBAGENT_POLICY_DEFAULT)
+
+    def test_reset_when_already_absent_is_idempotent(self):
+        """Reset to an already-default state is 202 + changed=False, the
+        same shape an identical posture chip press takes."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            status, body = self._post_json(
+                base + "/subagent-policy", {"reset": True})
+            self.assertEqual(status, 202)
+            self.assertFalse(body["changed"])
+            self.assertFalse(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+
+    def test_reset_route_refuses_success_when_unlink_fails(self):
+        """An unlink failure is not the same state as an absent override."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            self.assertTrue(watch.write_subagent_policy(d, "keep me\n"))
+            with unittest.mock.patch.object(
+                    watch.os, "unlink", side_effect=PermissionError("denied")):
+                status, body = self._post_json(
+                    base + "/subagent-policy", {"reset": True})
+            self.assertEqual(status, 500,
+                             "remaining override read as already default")
+            self.assertIsNone(body)
+            self.assertEqual(watch.read_subagent_policy(d), "keep me\n")
+            self.assertTrue(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+            self.assertFalse(any("subagent policy via watch" in e
+                                 for e in self._policy_events(d)))
+
+    def test_subagent_policy_control_is_explicit_and_cycles_every_example(self):
+        """The union spec's UI halves are executable, not comment claims."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node unavailable")
+        start = watch.PAGE.index("const SUBAGENT_POLICY_PLACEHOLDERS")
+        end = watch.PAGE.index("/* The textarea value", start)
+        block = watch.PAGE[start:end]
+        self.assertEqual(block.count('onclick="commitSubagentPolicy()"'), 1)
+        self.assertEqual(block.count('onclick="resetSubagentPolicy()"'), 1)
+        textarea = block[block.index("<textarea"):block.index("</textarea>")]
+        for implicit in ("onchange=", "onblur="):
+            self.assertNotIn(implicit, textarea)
+        self.assertIn('oninput="rememberSubagentPolicyDraft(this.value)"',
+                      textarea)
+        self.assertIn('aria-labelledby="spolicy-lab"', textarea)
+        self.assertIn('id="spolicy-lab"', block)
+        self.assertIn("scheduleSubagentPolicyPlaceholder();", watch.PAGE)
+        script = block + r"""
+function esc(s) { return String(s); }
+function placeholderAt(t) {
+  Date.now = () => t;
+  const html = subagentPolicyPicker({posture: {}});
+  return html.match(/placeholder="([^"]+)"/)[1];
+}
+const step = SUBAGENT_POLICY_PLACEHOLDER_MS;
+const got = SUBAGENT_POLICY_PLACEHOLDERS.map((_, i) => placeholderAt(i * step));
+process.stdout.write(JSON.stringify({got, all: SUBAGENT_POLICY_PLACEHOLDERS,
+  wraps: placeholderAt(SUBAGENT_POLICY_PLACEHOLDERS.length * step)}));
+"""
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=5)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        got = json.loads(proc.stdout)
+        self.assertEqual(got["got"], got["all"])
+        self.assertEqual(got["wraps"], got["all"][0])
+        self.assertEqual(len(set(got["all"])), 6)
+        diversity = " ".join(got["all"])
+        for example in ("no subagents", "models", "worktree", "roles",
+                        "build boxes", "deploy auth"):
+            self.assertIn(example, diversity)
+
+    def test_subagent_policy_client_keeps_verdict_and_readback_bodies(self):
+        """The verdict may consume JSON without starving the UI read-back."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node unavailable")
+        verdict = _extract_js_fn(watch.PAGE, "async function writeVerdict(")
+        start = watch.PAGE.index("let subagentPolicyDraft = null;")
+        end = watch.PAGE.index("/* Shared description", start)
+        handlers = watch.PAGE[start:end]
+        script = verdict + handlers + r"""
+const els = {
+  "spolicy-field": {value: "typed policy\n"},
+  "spolicy-msg": {textContent: ""},
+  "spolicy-save": {disabled: false},
+  "spolicy-reset": {disabled: true},
+  "spolicy-src": {textContent: "standing default", className: "spolicy-src"},
+};
+globalThis.document = {getElementById: id => els[id] || null};
+globalThis.location = {pathname: "/", search: ""};
+globalThis.data = {posture: {}};
+let reset = false;
+const calls = [];
+globalThis.fetch = async (url, opts) => {
+  const requestBody = JSON.parse(opts.body);
+  calls.push({url, method: opts.method, body: requestBody});
+  reset = requestBody.reset === true;
+  const body = reset
+    ? {ok: true, changed: true, subagent_policy: "default policy\n",
+       subagent_policy_source: "default"}
+    : {ok: true, changed: true, subagent_policy: "typed policy\n",
+       subagent_policy_source: "file"};
+  return new Response(JSON.stringify(body), {status: 202,
+    headers: {"Content-Type": "application/json"}});
+};
+await commitSubagentPolicy();
+const saved = {msg: els["spolicy-msg"].textContent,
+  field: els["spolicy-field"].value, src: els["spolicy-src"].textContent,
+  resetDisabled: els["spolicy-reset"].disabled,
+  policy: data.posture.subagent_policy,
+  source: data.posture.subagent_policy_source};
+await resetSubagentPolicy();
+const cleared = {msg: els["spolicy-msg"].textContent,
+  field: els["spolicy-field"].value, src: els["spolicy-src"].textContent,
+  resetDisabled: els["spolicy-reset"].disabled,
+  policy: data.posture.subagent_policy,
+  source: data.posture.subagent_policy_source};
+let deliverSave;
+globalThis.fetch = async () => await new Promise(resolve => { deliverSave = resolve; });
+els["spolicy-field"].value = "first edit\n";
+const pendingSave = commitSubagentPolicy();
+els["spolicy-field"].value = "newer edit\n";
+rememberSubagentPolicyDraft(els["spolicy-field"].value);
+deliverSave(new Response(JSON.stringify({ok: true, changed: true,
+  subagent_policy: "first edit\n", subagent_policy_source: "file"}),
+  {status: 202, headers: {"Content-Type": "application/json"}}));
+await pendingSave;
+const saveRace = {msg: els["spolicy-msg"].textContent,
+  field: els["spolicy-field"].value, source: data.posture.subagent_policy_source};
+let deliverReset;
+globalThis.fetch = async () => await new Promise(resolve => { deliverReset = resolve; });
+const pendingReset = resetSubagentPolicy();
+els["spolicy-field"].value = "after reset click\n";
+rememberSubagentPolicyDraft(els["spolicy-field"].value);
+deliverReset(new Response(JSON.stringify({ok: true, changed: true,
+  subagent_policy: "default policy\n", subagent_policy_source: "default"}),
+  {status: 202, headers: {"Content-Type": "application/json"}}));
+await pendingReset;
+const resetRace = {msg: els["spolicy-msg"].textContent,
+  field: els["spolicy-field"].value, source: data.posture.subagent_policy_source};
+process.stdout.write(JSON.stringify({saved, cleared, calls, saveRace, resetRace}));
+"""
+        proc = subprocess.run([node, "--input-type=module", "-e", script],
+                              capture_output=True, text=True, timeout=5)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        got = json.loads(proc.stdout)
+        self.assertEqual(got["saved"], {
+            "msg": "policy saved", "field": "typed policy\n",
+            "src": "override", "resetDisabled": False,
+            "policy": "typed policy\n", "source": "file"})
+        self.assertEqual(got["cleared"], {
+            "msg": "policy reset to default", "field": "",
+            "src": "standing default", "resetDisabled": True,
+            "policy": "default policy\n", "source": "default"})
+        self.assertEqual(got["calls"], [
+            {"url": "/subagent-policy", "method": "POST",
+             "body": {"policy": "typed policy\n", "from": "/"}},
+            {"url": "/subagent-policy", "method": "POST",
+             "body": {"reset": True, "from": "/"}},
+        ])
+        self.assertEqual(got["saveRace"], {
+            "msg": "policy saved — newer edit not saved",
+            "field": "newer edit\n", "source": "file"})
+        self.assertEqual(got["resetRace"], {
+            "msg": "policy reset to default — newer edit not saved",
+            "field": "after reset click\n", "source": "default"})
+
+    def test_reset_requires_the_literal_true_and_no_policy_field(self):
+        """Reset is a destructive closed-shape command, not truthiness."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            self.assertTrue(watch.write_subagent_policy(d, "keep me\n"))
+            for bad in ({"reset": "false"}, {"reset": 1},
+                        {"reset": False},
+                        {"reset": True, "policy": "replacement\n"},
+                        ["reset"]):
+                status, body = self._post_json(
+                    base + "/subagent-policy", bad)
+                self.assertEqual(status, 202)
+                self.assertTrue(body.get("rejected"), bad)
+                self.assertEqual(watch.read_subagent_policy(d), "keep me\n")
+
+    def test_blank_save_is_rejected_not_written_as_inert(self):
+        """A blank save must be refused, not persisted as an inert file.
+        write_subagent_policy refuses blank; the route maps that to a
+        domain_invalid rejection."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            status, body = self._post_json(
+                base + "/subagent-policy", {"policy": "   \n\n"})
+            self.assertEqual(status, 202)  # rejection is a 202 receipt
+            self.assertTrue(body["rejected"])
+            self.assertEqual(body["reason"], "domain_invalid")
+            self.assertFalse(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+
+    def test_delete_helper_round_trips(self):
+        """Production line: delete_subagent_policy. Present→removed returns
+        True; absent→absent returns False (idempotent). Neither raises."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertFalse(watch.delete_subagent_policy(d))  # absent
+            watch.write_subagent_policy(d, "x\n")
+            self.assertTrue(watch.delete_subagent_policy(d))   # removed
+            self.assertIsNone(watch.read_subagent_policy(d))
+            self.assertFalse(os.path.exists(
+                os.path.join(d, ".dreamwork", "subagent-policy")))
+
+    def test_save_does_not_touch_the_posture_axes(self):
+        """Sibling-file invariant: POST /subagent-policy must not disturb
+        the posture axes, and POST /posture must not disturb the policy.
+        Different files, so neither can — this is the storage choice made
+        explicit by a route that writes one and reads the other."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            watch.write_posture(d, "hot", "ask", 0)
+            self._post(base + "/subagent-policy", {"policy": "mine\n"})
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["pace"], "hot")
+            self.assertEqual(r["asking"], "ask")
+            self.assertEqual(r["delegation"], 0)
+            self.assertEqual(r["subagent_policy"], "mine\n")
 
     def test_policy_is_read_whole_not_through_the_bounded_reader(self):
         """#632: a durable value a control writes back must be read whole, or
