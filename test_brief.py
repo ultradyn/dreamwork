@@ -62,12 +62,24 @@ def lane_checkout(tmp_path_factory) -> tuple[str, Path]:
     """A real, fixture-owned lane, independent of the ambient checkout state."""
     name = f"brief-fixture-{os.getpid()}-{time.time_ns()}"
     path = tmp_path_factory.mktemp("brief-lane") / "worktree"
+    ambient = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
     subprocess.run(
         ["git", "-C", str(ROOT), "worktree", "add", "-q", "-b", name, str(path), "HEAD"],
         check=True,
     )
     try:
         actual = brief.worktree_for(name)
+        still_ambient = subprocess.run(
+            ["git", "-C", str(ROOT), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert path.resolve() != ROOT.resolve() and still_ambient == ambient, (
+            "ambient checkout branch coupling: the fixture must not attach or reuse "
+            "the checkout running pytest"
+        )
         assert actual == path.resolve(), (
             "ambient checkout branch coupling: the brief-test lane must be the "
             f"fixture-created worktree {path.resolve()}, got {actual}"
