@@ -133,3 +133,13 @@ test harness's HTTP request method, while the subject remains watch's production
 dispatch table.  Those are independent sources.  A route added only to the
 dispatch therefore appears as missing coverage; a route merely named in a test
 without a real POST cannot enter the observed set.
+
+## Post-fix, post-rebase recount
+
+After rebasing onto master `681f39cb479e12b2e14d715538ba12953aedd437`,
+branch `eeb8fafdffcd2629c2e260abf451bb13738d5e6c` ran the same 12-file set:
+**17 failed / 177 passed**, 194 collected.  The two owned
+`test_user_events_http.py` failures are green; all 17 failures in the other
+owned-nothing test files remain.  The seven-cause classification therefore
+still describes the current tree: cause 5 now has one remaining failure in
+`test_reconcile_submissions.py`, while causes 1–4, 6, and 7 are unchanged.
