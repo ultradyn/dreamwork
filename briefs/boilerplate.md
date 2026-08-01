@@ -161,6 +161,14 @@ one legitimate use of the skill-dir path is the pre-fix BASELINE — running the
 deliberately to capture the before state (`#592`, `#607`). That is a technique, not a
 mistake; a rule that bans the skill-dir path would forbid it.
 
+**File-edit tools resolve relative paths against the coordinator's CWD, not your worktree.**
+Pass an ABSOLUTE worktree path to every file-edit tool. A relative `file_path` lands in the
+main checkout, invisible from your worktree — `#465`'s exact shape; `#889`'s lane caught it
+only because its next act was an import that could not see the change (`#899`). The trap is
+invisible because BOTH defaults point at the main checkout: file-edit paths resolve there,
+and shell commands ALSO reset cwd there on every call (`#882`). You are the only thing that
+knows you should not be there.
+
 **Volume**: land your change as the fewest lines that carry the meaning. A correct
 change that triples a doc's length gets reverted by the next reader.
 
