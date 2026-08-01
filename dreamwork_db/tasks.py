@@ -86,13 +86,15 @@ class TaskRepository:
 
     def records(self) -> list[dict]:
         rows = self._session.execute(
-            "SELECT id, state, title, body, priority, type, origin, blocked_on"
-            " FROM task ORDER BY id"
+            "SELECT t.id, t.state, t.title, t.body, t.priority, t.type,"
+            " t.origin, t.blocked_on, MIN(e.at)"
+            " FROM task AS t LEFT JOIN task_event AS e ON e.task_id = t.id"
+            " GROUP BY t.id ORDER BY t.id"
         ).fetchall()
         return [
             {"id": int(r[0]), "state": r[1], "title": r[2], "body": r[3],
              "priority": r[4], "type": r[5], "origin": r[6],
-             "blocked_on": r[7]}
+             "blocked_on": r[7], "date": r[8]}
             for r in rows
         ]
 

@@ -6281,6 +6281,99 @@ class TestQuestionRoute(unittest.TestCase):
             self._request("/question?qid=" + qid, host="evil.test")[0], 421)
 
 
+class TestTasksRoute(unittest.TestCase):
+    """The /tasks shell and /tasksdata repository projection (#281)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.target = self.tmp.name
+        dw = _store_target(self.target)
+        from dreamwork_db import Access, open_database
+        from dreamwork_db.tasks import task_store_spec
+        with open_database(
+                task_store_spec(watch.store_path(dw)),
+                access=Access.WRITE) as store:
+            with store.transaction():
+                for task_id in range(1, 729):
+                    blocked = "blocked on #17 and #23" if task_id == 282 else None
+                    actual = store.tasks.file(
+                        f"task {task_id}", f"body {task_id}",
+                        priority="P1" if task_id == 281 else "P2",
+                        type="test", origin="human", blocked_on=blocked,
+                        actor="test", at="2026-07-26T08:29:15+00:00")
+                    self.assertEqual(actual, task_id)
+                store.tasks.land(
+                    283, actor="test", at="2026-07-27T08:29:15+00:00")
+        probe = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+        port = probe.server_address[1]
+        probe.server_close()
+        self.authority = watch.RequestAuthority(
+            ["allowed.test", "127.0.0.1"], port)
+        self.server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", port),
+            watch.make_handler(self.target, authority=self.authority))
+        threading.Thread(target=self.server.serve_forever,
+                         daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{port}"
+        self.host = f"allowed.test:{port}"
+
+    def _request(self, path):
+        request = urllib.request.Request(
+            self.base + path, headers={"Host": self.host})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status, response.read()
+
+    def test_tasks_route_serves_shell_and_repository_population(self):
+        status, shell = self._request("/tasks?t=281")
+        self.assertEqual(status, 200)
+        self.assertIn(b'id="view"', shell)
+
+        status, body = self._request("/tasksdata")
+        self.assertEqual(status, 200)
+        self.assertGreater(len(body), 0)
+        payload = json.loads(body)
+        self.assertEqual(payload["health"], "ok")
+        tasks = payload["tasks"]
+        self.assertEqual(
+            {task["id"] for task in tasks}, set(range(1, 729)),
+            "the /tasksdata population was empty, truncated, or substituted")
+        by_id = {task["id"]: task for task in tasks}
+        self.assertEqual(
+            by_id[281]["state"], "open",
+            f"task #281 state was {by_id[281]['state']!r}, expected 'open'")
+        self.assertEqual(
+            {task["id"] for task in tasks if task["state"] == "blocked"},
+            {282}, "blocked membership did not contain exactly task #282")
+        self.assertEqual(
+            {task["id"] for task in tasks if task["state"] == "landed"},
+            {283}, "landed membership did not contain exactly task #283")
+        self.assertNotIn("body", by_id[281])
+        self.assertEqual(payload["unavailable_fields"], ["owner"])
+
+        status, detail_body = self._request("/tasksdata?t=281")
+        self.assertEqual(status, 200)
+        detail = json.loads(detail_body)["task"]
+        self.assertEqual(detail["id"], 281)
+        self.assertEqual(detail["date"], "2026-07-26T08:29:15+00:00")
+        self.assertIsNone(detail["owner"])
+        self.assertEqual(detail["body"], "body 281")
+
+    def test_unknown_state_is_reachable_and_fail_closed(self):
+        record = {
+            "id": 999, "state": "future-state", "title": "future",
+            "body": "body", "priority": None, "type": None,
+            "origin": None, "blocked_on": None, "date": None,
+        }
+        projected = watch.task_payload_record(record)
+        self.assertEqual(
+            projected["state"], "unknown",
+            "task #999's unrecognised repository state did not fail closed")
+
+
 class TestAppShell(unittest.TestCase):
     """The single-document router: /, /questions and /file all serve the
     one shell (deep links render client-side), and /filedata backs the
@@ -8761,8 +8854,7 @@ class TestAppShell(unittest.TestCase):
     # sites left out are the race arms — `getsize` raising between the confine
     # check and the stat — which no request can schedule.)
     _NOTFOUND_GETS = (
-        "/tasks",                       # do_GET fall-through: THE defect
-        "/nope/deeper?x=1",             # …and one that is not a near-miss
+        "/nope/deeper?x=1",             # do_GET fall-through: THE defect
         "/filedata?p=no-such-file.txt",
         "/filebytes?p=no-such-image.png",
         "/chatdata?id=no-such-chat",

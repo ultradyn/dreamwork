@@ -2181,6 +2181,23 @@ which does not exist at lint time, while a brief check would inspect the brief
 is the writer (``#400``: a lane reads what is physically in front of it), so
 that is where the obligation lives.
 
+## `/tasksdata` — task-list data (#281)
+
+`GET /tasksdata` reads the canonical SQLite ledger through
+`dreamwork_db.tasks.TaskRepository.records()` and returns
+`{health, unavailable_fields, tasks}`. Each task carries `id`, the closed
+display state `open | landed | blocked | unknown`, `title`, `priority`, `type`,
+`origin`, first task-event `date`, `owner`, `dependencies`, and the original
+`blocked_on` value. `owner` is currently `null` and is named in
+`unavailable_fields`: the store has no owner column, and prose is never parsed
+to manufacture one. `blocked` means a durable `open` task has a non-empty
+`blocked_on`; any unrecognised stored state fails closed to `unknown`.
+
+The list form omits `body`. `GET /tasksdata?t=<digits>` returns the same
+envelope with one `task` (including `body`) or `null`; a missing or non-digit
+id also returns `task: null`. `/tasks` and `/tasks?t=<digits>` serve the shared
+application shell; `?t=` is interpreted by the client lane, not by the server.
+
 ## `/data.json?since=<v>` — the derived delta payload (#641 phase 1)
 
 `GET /data.json` accepts an optional `since=<v>` query parameter, where `<v>`
