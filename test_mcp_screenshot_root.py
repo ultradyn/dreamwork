@@ -36,6 +36,7 @@ if str(DEV) not in sys.path:
     sys.path.insert(0, str(DEV))
 
 import mcp_screenshot_root as msr  # noqa: E402
+import client_env  # noqa: E402
 
 
 def _fake_server(proc: Path, pid: int, cwd: Path, session: str = "session-a"):
@@ -46,6 +47,33 @@ def _fake_server(proc: Path, pid: int, cwd: Path, session: str = "session-a"):
         f"CLAUDE_CODE_SESSION_ID={session}\0".encode()
     )
     (process / "cwd").symlink_to(cwd, target_is_directory=True)
+
+
+def test_session_id_follows_each_clients_registered_variable(monkeypatch):
+    """The resolver reads the registry; it does not imitate today's names."""
+    clients = (
+        client_env.Client("first", ("FIRST",), "FIRST_SESSION", None),
+        client_env.Client("codex", ("CODEX",), "RENAMED_CODEX_SESSION", None),
+    )
+    monkeypatch.setattr(client_env, "CLIENTS", clients)
+    for client in clients:
+        expected = f"{client.name}-session"
+        actual = msr._session_id({client.session_id_var: expected})
+        assert actual == expected, (
+            f"{client.name}'s registered session variable "
+            f"{client.session_id_var} was not read; got {actual!r}"
+        )
+
+
+def test_session_id_supports_a_codex_only_environment():
+    """A Claude-only fixture cannot prove Codex fleet support survives."""
+    codex = {c.name: c for c in client_env.CLIENTS}["codex"]
+    expected = "codex-only-session"
+    actual = msr._session_id({codex.session_id_var: expected})
+    assert actual == expected, (
+        f"codex-only environment using {codex.session_id_var} was not read; "
+        f"got {actual!r}"
+    )
 
 
 # ─── the default output root mirrors the server's own logic ───────────────

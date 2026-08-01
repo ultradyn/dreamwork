@@ -72,6 +72,12 @@ import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
+# The registry lives at the repo root while this executable lives under dev/.
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+import client_env  # noqa: E402
+
 
 def _git(root: Path, *args: str) -> str | None:
     try:
@@ -111,7 +117,8 @@ def _nul_fields(path: Path) -> list[str]:
 
 def _session_id(environ: Mapping[str, str]) -> str | None:
     ids = {
-        value for key in ("CLAUDE_CODE_SESSION_ID", "CODEX_COMPANION_SESSION_ID")
+        value for client in client_env.CLIENTS
+        if (key := client.session_id_var)
         if (value := environ.get(key))
     }
     if len(ids) > 1:

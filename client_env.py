@@ -194,6 +194,18 @@ CLIENTS: tuple[Client, ...] = (
         session_id_var="CLAUDE_CODE_SESSION_ID",
         subagent_var=None,
     ),
+    # Codex under the ccc harness, measured in #810 (2026-08-01):
+    # `CODEX_THREAD_ID` is present in the Codex runner and absent from its ccc
+    # parent; `CODEX_COMPANION_SESSION_ID` is present in both and matches the
+    # harness session used by the shared MCP server. No reliable variable was
+    # established that distinguishes a Codex subagent from a main Codex agent;
+    # `CODEX_CI=1` in this lane is a launch-mode observation, not role proof.
+    Client(
+        name="codex",
+        detect=("CODEX_THREAD_ID",),
+        session_id_var="CODEX_COMPANION_SESSION_ID",
+        subagent_var=None,
+    ),
 )
 
 
