@@ -91,6 +91,25 @@ def levels(rep, what):
     return [lvl for lvl, w, _ in rep.rows if w == what]
 
 
+class TestSettingsRegistry:
+    def test_real_registry_is_nonempty_known_and_valid(self):
+        rep = lint.Report()
+        lint.check_settings_registry(rep)
+        assert levels(rep, "settings registry") == [lint.OK]
+        assert len(lint.SETTINGS) > 0
+        assert "gfx.dither" in lint.SETTINGS
+
+    def test_empty_registry_fails_instead_of_passing_vacuously(self, monkeypatch):
+        monkeypatch.setattr(lint, "SETTINGS", {})
+        rep = lint.Report()
+        lint.check_settings_registry(rep)
+        assert levels(rep, "settings registry") == [lint.ERROR]
+        assert "empty" in rep.rows[-1][2]
+
+    def test_known_default_is_pinned_to_a_literal(self):
+        assert lint.SETTINGS["gfx.dither"].default == "ign"
+
+
 def _drain_state(dw: Path, allowed=("cx-846wtmove",), root=".worktrees",
                  *, root_present=True, size=123) -> Path:
     path = dw / lint.WORKTREE_DRAIN_STATE
