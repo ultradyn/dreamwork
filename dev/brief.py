@@ -277,11 +277,15 @@ def substantive_lines(text: str) -> list[str]:
     return [line for line in text.splitlines() if _substantive(line)]
 
 
-def validate_core(core: str) -> None:
+def validate_core(core: str) -> int:
     """Refuse an authored core that is absent, placeholder, or has no direction 2.
 
     Each refusal names a mode this function can actually detect.  It cannot
-    detect a direction-2 list that is present, substantive and wrong.
+    detect a direction-2 list that is present, substantive and wrong.  On the
+    happy path it returns how many ATX sections the walk examined, so a caller
+    can print the denominator on every path (#868: a run that examined zero
+    sections must not read the same as one that examined forty and found them
+    all written).
     """
     if not core.strip():
         raise BriefFault(
@@ -324,6 +328,7 @@ def validate_core(core: str) -> None:
     in_fence = False
     fence_char = ""
     fence_len = 0
+    fence_opened_at = 0
     sections_seen = 0
     empties: list[tuple[str, str]] = []  # (heading line, the line that closed it)
 
@@ -332,7 +337,7 @@ def validate_core(core: str) -> None:
             rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
         ) is not None
 
-    for line in lines:
+    for line_no, line in enumerate(lines, 1):
         if in_fence:
             if closes_fence(line):
                 in_fence = False
@@ -344,6 +349,7 @@ def validate_core(core: str) -> None:
             in_fence = True
             fence_char = opened.group(2)[0]
             fence_len = len(opened.group(2))
+            fence_opened_at = line_no
             body_seen = True
             continue
         if _is_atx_heading(line):
@@ -353,6 +359,24 @@ def validate_core(core: str) -> None:
             heading, body_seen = line, False
         elif _substantive(line):
             body_seen = True
+    # An unterminated fence leaves the rest of the core unchecked: every line
+    # after the opener was skipped, so `empties` and `sections_seen` describe
+    # only the part walked before it.  Master before #947 had no fence tracking
+    # and LOUDLY false-positived on quoted headings; #947 made that quiet by
+    # swallowing the rest of the core, turning loud-and-wrong into quiet-and-
+    # wrong (#952).  Refusing here restores the loud direction without the
+    # false positive — the author closes the fence and re-runs — and names the
+    # remedy (#940): the line that opened it and the closing delimiter.
+    if in_fence:
+        kind = "backtick" if fence_char == "`" else "tilde"
+        raise BriefFault(
+            f"the authored core opens a fenced code block on line "
+            f"{fence_opened_at} ({fence_char * fence_len!r}) and never closes "
+            f"it — every line after that was skipped, so the section walk "
+            f"examined only {sections_seen} section(s) and the rest of the "
+            f"core is unchecked. Close it with a line of at least "
+            f"{fence_len} {kind}(s) and nothing else."
+        )
     # Flush the final section: a heading left open at end-of-core.
     if heading is not None and not body_seen:
         empties.append((heading, "end of the core"))
@@ -361,12 +385,16 @@ def validate_core(core: str) -> None:
 
     for index, line in enumerate(lines):
         if _DIRECTION_2.search(line) and any(_substantive(rest) for rest in lines[index + 1:]):
-            return
+            return sections_seen
+    # Reaching here proves `empties` came back empty (it raises above), so the
+    # denominator is the one signal left that the walk ran on thin data: a core
+    # that examined zero sections reads like a core that examined twelve.
     raise BriefFault(
-        "the authored core names no direction-2 construction with a body — "
-        "\"here is how a test of this could pass while the thing is broken\" is "
-        "task-specific and carries this loop's quality; 40 of the 40 most recent "
-        "briefs carry one (dev/brief_corpus_stats.py)"
+        f"the authored core names no direction-2 construction with a body — "
+        f"the section walk examined {sections_seen} section(s) before this "
+        f"refusal. \"here is how a test of this could pass while the thing is "
+        f"broken\" is task-specific and carries this loop's quality; 40 of the "
+        f"40 most recent briefs carry one (dev/brief_corpus_stats.py)"
     )
 
 
@@ -390,7 +418,8 @@ def _no_body_message(empties: list[tuple[str, str]], sections_seen: int) -> str:
         head, closer = empties[0]
         return (
             f"the authored core section {head.strip()!r} has no body — {single}; "
-            f"the line that ended it with no prose between was {closer_phrase(closer)}"
+            f"the line that ended it with no prose between was {closer_phrase(closer)} "
+            f"(1 of {sections_seen} sections examined)"
         )
     parts = [
         f"{head.strip()!r} (closed by {closer_phrase(closer)})"
@@ -570,6 +599,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             core = _read(args.core, "authored core")
         owns = [token.strip().strip("`") for token in args.owns.split(",") if token.strip().strip("`")]
+        # validate_core is pure, so main reads the section count directly for
+        # the success-path denominator (#868); build re-validates internally to
+        # keep its self-validating API for direct callers. Same function, no
+        # drift (#852/#905), one extra O(n) pass over a small core.
+        sections = validate_core(core)
         brief = build(args.task, args.lane or f"cx-{args.task}", owns, core,
                       ledger=args.ledger, frame_path=args.frame)
     except BriefFault as exc:
@@ -582,7 +616,8 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, UnicodeError) as exc:
             print(f"brief refused: could not write {args.out}: {exc}", file=sys.stderr)
             return 2
-        print(f"brief written: {args.out} ({len(brief)} bytes)", file=sys.stderr)
+        print(f"brief written: {args.out} ({len(brief)} bytes; "
+              f"core sections examined={sections})", file=sys.stderr)
     else:
         sys.stdout.write(brief)
     return 0

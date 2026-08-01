@@ -95,6 +95,11 @@ instrument read normal).
   false-green you constructed and ran, closed or open — and if you could not
   construct one, why not.
 - Quote `python3 dev/redproof.py check --require 1` if an injection was owed.
+- Quote the **final line** of every named test run verbatim, with the sha and
+  cwd it was produced under — `just pytest <files>` is the one instrument whose
+  verdict this frame accepts as a paraphrase, and a paraphrase of `28 passed, 1
+  failed` reads as the green it does not have. An omitted pass/fail line is
+  indistinguishable from a lane that never ran the suite.
 - Every issue number you cite, with the line you relied on quoted.
 - The rebase outcome.
 - Anything out of scope that you found: name it, do not fix it.

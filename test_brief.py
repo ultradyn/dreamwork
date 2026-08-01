@@ -311,6 +311,100 @@ def test_a_genuinely_empty_section_is_still_refused_and_names_what_it_saw(lane):
     assert "## Verification" in message, message
 
 
+# --- #952: an unclosed fence must not silently end the section walk ---------
+#
+# #947 made the walk track fences so a quoted heading is not read as a section.
+# The tracking keys on an opener setting in_fence and a closer clearing it; a
+# fence that opens and never closes left in_fence true to end-of-core, so every
+# later line was skipped and any empty sections after it passed UNNOTICED.
+# Master before #947 LOUDLY false-positived on quoted headings; #947 converted
+# that into a SILENT acceptance for the rest of the core. Loud-and-wrong became
+# quiet-and-wrong (#952). The walk must now refuse, naming the opening line and
+# the closing delimiter (#940).
+
+
+def test_an_unclosed_code_fence_is_refused_and_names_the_line_and_remedy(lane):
+    """Direction 1, the hole #947 opened. The discriminating pair from #952:
+    two cores identical except whether the fence closes. The unclosed one must
+    REFUSE, and the refusal must name the line the fence opened on plus the
+    remedy (a line of N backticks/tildes), not only the condition (#940).
+
+    The opening line is derived from the fixture, not pinned: a literal tuned
+    to today's fixture is a check with an expiry date, and the line number is
+    exactly the load-bearing detail this refusal exists to report."""
+    tail = (
+        "\n## What happens, measured\n\n"
+        "Prose before the fence, so the section carries a body.\n\n"
+        "```markdown\n"
+        "## quoted, not a section\n"
+        "\n"
+        "## Empty after the open fence\n"
+        "\n"
+        "## Also empty\n")
+    core = GOOD_CORE + tail
+    fence_line = core.splitlines().index("```markdown") + 1  # 1-based, as the walk numbers
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief.build(881, lane, ["dev/brief.py"], core)
+    message = str(excinfo.value)
+    assert "opens a fenced code block" in message, message
+    assert f"line {fence_line}" in message, message
+    assert "never closes it" in message, message
+    assert "3 backtick" in message, message          # the remedy names the delimiter
+
+
+def test_unclosed_and_closed_fences_refuse_for_different_reasons(lane):
+    """The two refusals must READ differently. A red for the wrong reason is
+    indistinguishable from the right one in a -q summary. The closed fence is
+    refused for the ordinary empty-section reason (it swallowed nothing); the
+    unclosed fence is refused for the fence itself, and neither message is the
+    other's."""
+    head = GOOD_CORE + "\n## Around the fence\n\nProse before it.\n\n"
+    empties = "## Empty A\n\n## Empty B\n\n## Closer\n\nProse after.\n"
+    closed = head + "```markdown\n## quoted\n```\n\n" + empties
+    unclosed = head + "```markdown\n## quoted\n" + empties
+    with pytest.raises(brief.BriefFault) as closed_exc:
+        brief.build(881, lane, ["dev/brief.py"], closed)
+    with pytest.raises(brief.BriefFault) as open_exc:
+        brief.build(881, lane, ["dev/brief.py"], unclosed)
+    closed_msg, open_msg = str(closed_exc.value), str(open_exc.value)
+    assert "sections with no body" in closed_msg and "## Empty A" in closed_msg, closed_msg
+    assert "opens a fenced code block" in open_msg and "never closes it" in open_msg, open_msg
+    assert closed_msg != open_msg
+
+
+def test_a_closed_fence_quoting_headings_still_passes():
+    """#947's coverage must survive. A properly closed fence that quotes real
+    ATX headings (with no prose between them) is content, not structure, and a
+    core that quotes it still validates. Losing this would be the worst outcome
+    here — it is the false positive #947 exists to fix. validate_core is the
+    production seam; calling it directly is the real function, not a double."""
+    core = (
+        "## The defect, measured\n\n"
+        "Real prose so the section has substance.\n\n"
+        "## Direction 2 - construct these and run them\n\n"
+        "```markdown\n"
+        "## Inside a fence\n\n"
+        "## After, still fenced\n"
+        "```\n\n"
+        "1. A closed fence quotes headings without opening sections.\n")
+    # The two fenced headings are NOT counted: they are quotation, not sections
+    # (#947). Only the two real headings outside the fence are examined.
+    assert brief.validate_core(core) == 2
+
+
+def test_validate_core_returns_the_section_count_on_success():
+    """#868: the denominator must be visible on every path, including the happy
+    one. validate_core returns how many ATX sections it examined so a caller
+    can print it; a run that examined zero must not read like one that examined
+    forty and found them all written."""
+    core = (
+        "## One\n\nBody.\n\n"
+        "## Direction 2 - construct these\n\n"
+        "1. a case.\n\n"
+        "## Two\n\nBody.\n")
+    assert brief.validate_core(core) == 3
+
+
 def test_all_empty_sections_are_reported_not_just_the_first(lane):
     """Direction 1, enumerate. core-847b cost two launch cycles because the
     refusal named one empty section; the author fixed it, relaunched, and hit
