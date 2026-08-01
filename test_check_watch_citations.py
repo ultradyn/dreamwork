@@ -46,15 +46,14 @@ REVIEWED_PIN_COUNTS = Counter({
     (".dreamwork/docs/briefs/548-bdinput-cap-binding.md", "watch.py:3931"): 1,
     (".dreamwork/docs/briefs/562-chat-surface.md", "watch.py:4020-4027"): 1,
     (".dreamwork/docs/briefs/562-chat-surface.md", "watch.py:4037-4040"): 1,
-    (".dreamwork/docs/handoffs/2026-07-29-0810-claude-to-grok.md", "watch.py:4019-4021"): 1,
+    (".dreamwork/docs/handoffs/2026-07-29-0810-claude-to-grok.md", "watch.py:4016-4021"): 1,
     (".dreamwork/handoffs.md", "watch.py:3654"): 2,
     (".dreamwork/handoffs.md", "watch.py:3942"): 1,
     (".dreamwork/handoffs.md", "watch.py:4056"): 1,
     (".dreamwork/handoffs.md", "watch.py:4074-4082"): 1,
     (".dreamwork/handoffs.md", "watch.py:4135-4145"): 1,
     (".dreamwork/handoffs.md", "watch.py:4412"): 1,
-    (".dreamwork/lane-641-report.md", "watch.py:4068"): 1,
-    (".dreamwork/lane-645i5-report.md", "watch.py:3476"): 1,
+    (".dreamwork/lane-641-report.md", "watch.py:4174"): 1,
     (".dreamwork/reviews-cx-session-2026-08-01.md", "watch.py:3946-3974"): 1,
     (".dreamwork/reviews-cx-session-2026-08-01.md", "watch.py:3999-4006"): 1,
 })
@@ -63,11 +62,11 @@ REVIEWED_PIN_COUNTS = Counter({
 # repo-wide-guard: checks every citation in the explicit multi-document #801 population
 def test_reviewed_watch_citation_population_is_still_resolved(capsys):
     assert citations.PINNED_CITATIONS == REVIEWED_PIN_COUNTS
-    assert REVIEWED_PIN_COUNTS.total() == 19
+    assert REVIEWED_PIN_COUNTS.total() == 18
     assert citations.check(ROOT) == 0
     output = capsys.readouterr().out
     assert (
-        "PASS: 19 of 19 pinned across 34 document(s); 216 citation(s) seen — "
+        "PASS: 18 of 18 pinned across 34 document(s); 216 citation(s) seen — "
         "pinned, not verified against the pinned revision"
     ) in output
 
