@@ -516,12 +516,13 @@ def test_success_runs_real_reap_and_retains_branch_only(landing_repo):
 
     assert result.returncode == 0, result.stderr
     assert (
-        "gate-coverage: 4 of 4 declared gates passed: "
-        "named-tests guard-selection repo-wide-guards lint-comparison"
+        "gate-coverage: 5 of 5 declared gates passed: "
+        "red-proof-history named-tests guard-selection repo-wide-guards "
+        "lint-comparison"
     ) in result.stdout
     merged = _git(root, "rev-parse", "--verify", "refs/heads/master")
     assert merged != before
-    assert f"advance: master {before} -> {merged} after 4 gate(s)" in result.stdout
+    assert f"advance: master {before} -> {merged} after 5 gate(s)" in result.stdout
     assert _git(root, "branch", "--show-current") == "master"
     assert (
         f"reap examined path={lane.resolve()} tracked-dirty=0 untracked=0 ignored=0 "
@@ -630,8 +631,11 @@ def test_a_restore_that_cannot_land_is_loud_and_master_is_still_correct(landing_
 @pytest.mark.parametrize(
     ("roster", "reason"),
     [
-        ((), "only 4 of 0 declared gates ran"),
-        (land_lane.GATES + ("phantom-gate",), "only 4 of 5 declared gates ran"),
+        # Both counts are len(passed)=5 over len(roster): red-proof-history now
+        # appends too (#951), so the empty-roster case reads "5 of 0" and the
+        # phantom case (GATES is 5 real + 1 phantom = 6) reads "5 of 6".
+        ((), "only 5 of 0 declared gates ran"),
+        (land_lane.GATES + ("phantom-gate",), "only 5 of 6 declared gates ran"),
     ],
 )
 def test_a_gate_roster_that_does_not_match_what_ran_refuses(
@@ -656,6 +660,38 @@ def test_a_gate_roster_that_does_not_match_what_ran_refuses(
     assert f"REFUSE phase=gate-coverage: {reason}" in err
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
+
+
+def test_every_phase_appended_to_passed_is_declared_in_gates():
+    """#951: red-proof-history ran and blocked but was absent from GATES.
+
+    Deleting its block from the running code printed ``N of N declared gates
+    passed`` UNCHANGED, because a phase absent from GATES is invisible to the
+    denominator — and this was the phase that enforces every red-proof. The
+    GATES tuple exists (see its comment in land_lane.py) so a deleted phase is
+    a REFUSAL rather than a shorter, quieter green run; that protection
+    reaches ONLY phases that are declared. So any phase that appends itself to
+    ``passed`` MUST appear in GATES, or its deletion is undetectable.
+
+    Read from the tool's own source rather than naming red-proof-history by
+    hand, so this catches the NEXT undeclared phase too, not just tonight's.
+    The production line it binds: ``GATES = (...)`` in dev/land_lane.py — drop
+    a phase from that tuple while its ``passed.append`` remains and this fails.
+    """
+    source = TOOL.read_text(encoding="utf-8")
+    appended = set(re.findall(r'passed\.append\("([^"]+)"\)', source))
+    # Precondition the check depends on (#685): a regex that matched nothing
+    # would pass vacuously. Assert the parse found the phases we know append.
+    assert appended, (
+        "no passed.append(\"...\") calls found in dev/land_lane.py; the source "
+        "parse is stale and this check is examining nothing"
+    )
+    undeclared = {phase for phase in appended if phase not in land_lane.GATES}
+    assert not undeclared, (
+        f"phases append to `passed` but are not declared in GATES: "
+        f"{sorted(undeclared)}; a phase not in GATES can be deleted without "
+        "changing the gate-coverage denominator, which is #951's defect"
+    )
 
 
 def _empty_registry(lane: Path, path: str) -> None:
@@ -780,6 +816,155 @@ def test_a_node_id_does_not_count_as_naming_the_whole_file():
     assert land_lane._named_files(["test_lint.py::TestOne"]) == frozenset()
 
 
+# ── #953: import-graph and directory-map derivation ────────────────────
+# The name convention finds tests NAMED FOR a module. It missed #949's own
+# breakage: dev/land_lane.py changed, the convention derived test_land_lane.py,
+# but the break was in test_suite_baseline.py, which does `from dev import
+# land_lane`. Two mechanisms close the two cases the convention cannot reach.
+
+
+def test_dotted_module_maps_a_py_path_to_its_import_name():
+    """The bridge between a changed path and the AST import that references it."""
+    assert land_lane._dotted_module("dev/land_lane.py") == "dev.land_lane"
+    assert land_lane._dotted_module("lint.py") == "lint"
+    assert land_lane._dotted_module("dev/capture/gitrow.mjs") is None  # not Python
+    assert land_lane._dotted_module("dev/__init__.py") is None  # package marker
+
+
+def test_import_targets_catches_from_import_not_prose_mention():
+    """The guardrail that keeps this from becoming the full-suite run.
+
+    `from dev import land_lane` is an import and MUST match. A bare mention of
+    the module name in a docstring or comment MUST NOT — that is how
+    test_brief.py would be dragged in for nothing, which is #949's ACCEPTED
+    COST paragraph in the other direction.
+    """
+    targets = land_lane._import_targets(
+        "from dev import land_lane, suite_baseline\n"
+        "import dev.land_lane as ll\n"
+        "from dev.land_lane import GATES\n"
+        "# land_lane is mentioned here in prose only\n"
+        "import os\n"
+    )
+    assert "dev.land_lane" in targets
+    assert "dev" in targets
+    assert "os" in targets
+    # A relative import carries no absolute module name and is excluded.
+    assert land_lane._import_targets("from . import x\n") == frozenset()
+    assert land_lane._import_targets("this is not python\n") == frozenset()
+
+
+def test_import_derived_finds_a_test_that_imports_the_changed_module(tmp_path):
+    """#949's blind spot, reproduced: the cross-named test is now derived.
+
+    A changed dev/land_lane.py is covered by a test that does `from dev import
+    land_lane` under a different filename. The name convention yields
+    test_land_lane.py; the import graph yields the cross-named test too.
+    Production line this binds: the membership check in _import_derived — drop
+    the `from dev import land_lane` target and this test goes red naming it.
+    """
+    (tmp_path / "test_cross.py").write_text("from dev import land_lane\n")
+    (tmp_path / "test_other.py").write_text("import os\n")
+    found = land_lane._import_derived(tmp_path, ["dev.land_lane"])
+    assert found == ("test_cross.py",), (
+        f"expected the cross-named importer test_cross.py, got {found!r}"
+    )
+
+
+def test_directory_map_matches_a_changed_file_under_it():
+    """The gitrow.mjs case: no test names or imports it; a directory map does."""
+    targets, dirs = land_lane._map_derived(["dev/capture/gitrow.mjs", "README.md"])
+    assert dirs == ("dev/capture/",)
+    assert "test_guard_evidence.py" in targets
+    assert "test_guard_argv.py" in targets
+    # A path that touches nothing under a mapped dir contributes no targets, so
+    # an unrelated landing is never blocked by that dir's entry.
+    empty_targets, empty_dirs = land_lane._map_derived(["watch.py"])
+    assert empty_targets == () and empty_dirs == ()
+
+
+def test_a_test_importing_a_changed_module_is_run_even_unnamed(landing_repo):
+    """Direction 1 for #953: the widened derivation names the import case.
+
+    The real land_lane/test_suite_baseline pair is the fixture, made concrete:
+    the lane changes a module, and a test that IMPORTS it (under a name the
+    convention cannot derive) is added to the selection and RUN. Before #953 the
+    convention derived only the name-shaped test and this one ran only if the
+    coordinator happened to name it.
+    """
+    root, lane = landing_repo
+    # A module on master that a cross-named test will import.
+    _write(root / "dev" / "thingmod.py", "VALUE = 1\n")
+    _git(root, "add", "dev/thingmod.py")
+    _git(root, "commit", "-m", "add thingmod")
+    # A test that imports thingmod under a different name and asserts the value
+    # the lane is about to flip — so if it is NOT run, master advances red.
+    _write(
+        root / "test_covers_thingmod.py",
+        "from dev import thingmod\n"
+        "def test_covers_thingmod():\n"
+        "    assert thingmod.VALUE == 1, 'lane flipped VALUE and this ran'\n",
+    )
+    _git(root, "add", "test_covers_thingmod.py")
+    _git(root, "commit", "-m", "cross-named test imports thingmod")
+    _git(lane, "rebase", "master")
+    # The lane flips the value the cross-named test pins.
+    _write(lane / "dev" / "thingmod.py", "VALUE = 2\n")
+    _git(lane, "add", "dev/thingmod.py")
+    _git(lane, "commit", "-m", "flip VALUE")
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1, (
+        "master ADVANCED though the only test covering the changed module was a "
+        "cross-named importer the coordinator did not name: the import graph "
+        "should have derived and RUN it, which is #953's whole point"
+    )
+    assert "import=1" in result.stdout, (
+        "the import-graph rule should report one derived test for a changed "
+        "module a cross-named test imports"
+    )
+    assert "test_covers_thingmod.py" in result.stdout
+    assert "derived-and-added=['test_covers_thingmod.py']" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_a_stale_directory_map_target_refuses_rather_than_running_silent(landing_repo):
+    """Direction 2 for #953: the map's own weakness, closed where it can be.
+
+    The map's whole weakness is that a target can exist but stop scanning the
+    directory — not cheaply machine-checkable, left open. But the SHARPER stale
+    case, a target that no longer exists AT ALL, IS checkable, and landing
+    through a map pointing at nothing would be 'named a file that exists but is
+    irrelevant → GREEN' one level meta. So when a changed path matches a mapped
+    dir and a target is absent, the gate refuses naming the stale entry.
+    """
+    root, lane = landing_repo
+    # dev/capture/ is mapped to two tests this minimal fixture does not hold —
+    # so a change under it makes the map point at targets absent from the tree,
+    # which is the stale-map shape (a real repo reaches it by deleting a target).
+    _write(lane / "dev" / "capture" / "touched.mjs", "// change\n")
+    _git(lane, "add", "dev/capture/touched.mjs")
+    _git(lane, "commit", "-m", "touch a file under a mapped directory")
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1, (
+        "master ADVANCED though the directory map targeted a test absent from "
+        "the merged tree: a stale map must refuse, not run silent"
+    )
+    assert "REFUSE phase=named-tests" in result.stderr
+    assert "directory" in result.stderr and "testset map" in result.stderr
+    assert "absent" in result.stderr.lower()
+    assert "test_guard_evidence.py" in result.stderr
+    assert "update DIR_TESTSET_MAP" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
 def test_a_derived_test_the_coordinator_did_not_name_is_run_anyway(landing_repo):
     """#936's exact shape: `lint.py` changed, `test_lint.py` existed, unnamed.
 
@@ -811,7 +996,10 @@ def test_a_derived_test_the_coordinator_did_not_name_is_run_anyway(landing_repo)
         "master ADVANCED with a red test_lint.py that covers a file this branch "
         "changed: the derived test was reported but never run, which is #936 exactly"
     )
-    assert "derived-tests: 1 required test(s) from 2 changed path(s): test_lint.py" in result.stdout
+    assert (
+        "derived-tests: 1 required test(s) from 2 changed path(s) by 3 rules "
+        "[name=1 import=0 map=0]: test_lint.py"
+    ) in result.stdout
     assert "1 were NOT named and have been ADDED: test_lint.py" in result.stdout
     assert "REFUSE phase=named-tests: named test selection failed" in result.stderr
     assert "derived-and-added=['test_lint.py']" in result.stderr
