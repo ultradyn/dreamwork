@@ -935,6 +935,41 @@ class TestCollector(unittest.TestCase):
         self.assertNotIn('<div class="dim"', row,
                          "the row is no longer an inert <div>")
 
+    def test_chatlist_keeps_two_rows_in_separate_block_containers(self):
+        """#657 — adjacent chat rows cannot concatenate as ``2 turnsreplied``.
+
+        A one-row fixture cannot see the missing boundary.  This evaluates the
+        production chatList/chatRow pair with two rows and requires one
+        block-level container per row; joining two bare inline anchors is the
+        reported defect and fails with a message that names that mechanism.
+        """
+        import shutil
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — two-row chat boundary gate DID NOT run")
+        page = watch._get_page()
+        fns = (_extract_js_fn(page, "function chatRow(") + "\n" +
+               _extract_js_fn(page, "function chatList("))
+        script = (
+            "const esc = t => String(t==null?'':t)"
+            ".replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');\n"
+            "const label = t => `<div class=\"label\">${t}</div>`;\n" +
+            fns + "\n" +
+            "console.log(JSON.stringify(chatList({chats:["
+            "{id:'first',status:'pending',preview:'waiting',turns:2},"
+            "{id:'second',status:'replied',preview:'answered',turns:2}]})));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=10)
+        if proc.returncode != 0:
+            self.fail("node eval failed: " + proc.stderr)
+        rendered = json.loads(proc.stdout)
+        self.assertEqual(
+            rendered.count('<div class="chatrow" id="chat-'), 2,
+            "two chat rows need two block containers; bare inline anchors "
+            "concatenate as '2 turnsreplied'",
+        )
+
     def test_buildchat_renders_transcript_turns_newest_last(self):
         """#562 — /chat/<id> renders the conversation: the dw-turn frames read
         as turns (his / the dreamer's), newest last, and an unknown id degrades
