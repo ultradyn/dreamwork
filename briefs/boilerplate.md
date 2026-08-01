@@ -93,12 +93,15 @@ that is a legitimate outcome, not a failure.
   an environmental precondition — if either condition produces the same message, it proves
   neither. `redproof.py check` certifies snapshot restoration and branch absence, **not** that
   the test reached the named seam; a production edit in an unvisited branch still passes it.
+  Its successful verdict is restoration evidence only: quote its resolved target classes, and
+  never report that verdict as the direction-1 evidence. A zero-registration verdict is
+  explicitly **no evidence**, not a vacuous proof over zero injections.
   **Use `dev/redproof.py`; it owns the snapshot/restore protocol** (`#683`):
 
       python3 dev/redproof.py begin <path>     # snapshot the file as-is, arm the entry
       …sabotage it, run your check, watch it go red…
       python3 dev/redproof.py restore <path>   # record the injected content, restore, verify
-      python3 dev/redproof.py check            # hand-off gate — run before you report, quote it
+      python3 dev/redproof.py check --require 1 # mandated hand-off gate — run before you report, quote it
 
   **Snapshot the FIXED file immediately before sabotage.** `restore` then returns
   that fixed state byte-for-byte. A baseline reproduction done before building is a
@@ -106,7 +109,10 @@ that is a legitimate outcome, not a failure.
   proof. Otherwise a pre-fix snapshot can silently undo the work while `cmp` certifies
   the wrong file (`#608`).
 
-  **Run `check` before reporting and quote its output.** It REFUSES if any injection is left
+  **Run `check --require 1` before reporting and quote its output.** The minimum closes the
+  zero-registration case for a brief that mandates red-proofing; bare `check` still reports
+  **no evidence** without faulting for callers where the discipline is genuinely optional. It
+  REFUSES if any injection is left
   unrestored, which is the failure nothing could previously detect: an injection is by
   construction a small plausible edit to real code, so a lane that gets absorbed in writing its
   report and commits has shipped a deliberate defect with a green-looking report attached.

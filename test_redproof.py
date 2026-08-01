@@ -136,22 +136,23 @@ class TestZeroStatesAreDistinct:
     """#136: a calm zero and a broken channel must not render identically."""
 
     def test_no_registry_is_calm_zero(self, repo, capsys):
-        """Never used → calm, exit 0, distinct message."""
+        """Never used → no evidence, exit 0, distinct from a verified restore."""
         exit = _check(repo)
         out, _ = capsys.readouterr()
         assert exit == 0
-        assert "calm" in out
+        assert "no evidence" in out
         assert "no injections registered" in out
+        assert "production reach was not evaluated" in out
 
     def test_empty_registry_is_calm_zero(self, repo, capsys):
-        """Ran but nothing live → calm, exit 0."""
+        """Ran but nothing live → no evidence, exit 0."""
         _begin(repo, "router.js")
         # never sabotaged → restore drops the no-op entry → registry empties
         _restore(repo, "router.js")
         exit = _check(repo)
         out, _ = capsys.readouterr()
         assert exit == 0
-        assert "calm" in out
+        assert "no evidence" in out
 
     def test_unparseable_registry_is_a_fault_not_calm(self, repo, capsys):
         """A broken channel must read as a FAULT, never a calm zero (#671/#136)."""
@@ -163,6 +164,76 @@ class TestZeroStatesAreDistinct:
         assert exit == 2, "an unparseable registry must FAULT (exit 2), not pass"
         assert "unparseable" in err or "FAULT" in err
 
+
+class TestCheckDoesNotClaimProductionEvidence:
+    """#795: restoration evidence must not masquerade as production reach."""
+
+    def test_a_non_test_target_is_other_not_claimed_as_production(
+            self, repo, capsys):
+        _inject(repo, "router.js", "SABOTAGE\n")
+
+        exit = _check(repo)
+        out, _ = capsys.readouterr()
+
+        assert exit == 0
+        assert "check: restoration clean" in out
+        assert "1 injection(s) registered" in out
+        assert "1 other target(s), 0 test-like target(s)" in out
+        assert "red-proof semantics and production reach were NOT verified" in out
+        assert "check: clean" not in out
+
+    def test_a_test_file_is_visible_but_not_refused(self, repo, capsys):
+        target = repo / "test_route.py"
+        target.write_text("EXPECTED = True\n")
+        _inject(repo, "test_route.py", "EXPECTED = False\n")
+
+        exit = _check(repo)
+        out, _ = capsys.readouterr()
+
+        assert exit == 0, out
+        assert "0 other target(s), 1 test-like target(s)" in out
+        assert "[test-like] test_route.py" in out
+        assert "WARNING: test-like target" in out
+        assert "does not establish a production injection" in out
+
+    def test_classification_uses_the_resolved_target(self, repo, capsys):
+        target = repo / "test_route.py"
+        target.write_text("EXPECTED = True\n")
+        (repo / "production_alias.py").symlink_to(target)
+
+        _begin(repo, "./production_alias.py")
+        target.write_text("EXPECTED = False\n")
+        _restore(repo, "production_alias.py")
+        entries, _ = rp._read_registry(repo)
+        assert entries[0]["path"] == "test_route.py"
+
+        assert _check(repo) == 0
+        out, _ = capsys.readouterr()
+        assert "[test-like] test_route.py" in out
+        assert "production_alias.py" not in out
+
+    def test_a_nonmatching_test_name_is_other_but_the_disclaimer_still_holds(
+            self, repo, capsys):
+        target = repo / "expectations.py"
+        target.write_text("EXPECTED = True\n")
+        _inject(repo, "expectations.py", "EXPECTED = False\n")
+
+        assert _check(repo) == 0
+        out, _ = capsys.readouterr()
+        assert "[other] expectations.py" in out
+        assert "production reach were NOT verified" in out
+
+    def test_a_guard_fixture_target_remains_allowed(self, repo, capsys):
+        target = repo / "dev" / "capture" / "fixture.mjs"
+        target.parent.mkdir(parents=True)
+        target.write_text("export const expected = true;\n")
+        _inject(repo, "dev/capture/fixture.mjs",
+                "export const expected = false;\n")
+
+        assert _check(repo) == 0
+        out, _ = capsys.readouterr()
+        assert "[test-like] dev/capture/fixture.mjs" in out
+        assert "valid when test/guard tooling is the named production subject" in out
 
 # ── fail closed (#671) ─────────────────────────────────────────────────
 
