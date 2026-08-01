@@ -126,34 +126,70 @@ class TestAdvisoryNotVerdict:
         assert "1 browser/guard process" in msg
 
 
-# ── the third note's scarce resource: memory pressure with 0 suites ────
+# ── the scarce resource: AVAILABLE memory, not swap-used (#785) ─────────
+
 
 class TestMemoryPressure:
-    """Memory pressure + zero suites is the condition a pytest count cannot see;
-    the advisory surfaces it so it does not read as 'fine'."""
+    """The advisory surfaces memory pressure a pytest count cannot see. But the
+    signal must be AVAILABLE memory (what a new process can actually get), not
+    swap-used: on a long-lived desktop swap-used is high whenever uptime is high,
+    independent of current pressure, so keying on it fired "memory-bound" on a
+    healthy 28G-available machine and sent the reader chasing a leak that was
+    not there (#785). The wording must report the reading, never name a cause
+    the number beside it did not prove."""
 
-    def test_swap_heavy_clause_appears_with_zero_suites(self):
-        # >50% swap used. The pytest count is 0, but the line must NOT read as a
-        # calm all-clear — it carries the memory clause. This is the red-proof
-        # for brief direction-2 candidate 3.
-        mem = {"SwapTotal": 60 * 1024 * 1024, "SwapFree": 8 * 1024 * 1024,
-               "MemAvailable": 0, "MemTotal": 60 * 1024 * 1024}
+    def test_low_available_fires_clause(self):
+        # Direction 1 anchor: genuinely scarce available memory surfaces the
+        # clause with HONEST wording. The swap here is calm (0 used), so this
+        # fails if the trigger reverts to swap-used; "memory-bound" assertion
+        # fails if the old diagnosis returns.
+        avail = 2 * 1024 * 1024
+        assert avail < ct._LOW_AVAIL_KIB  # precondition: value sits below the floor
+        mem = {"MemAvailable": avail, "MemTotal": 60 * 1024 * 1024,
+               "SwapTotal": 4 * 1024 * 1024, "SwapFree": 4 * 1024 * 1024}
         msg = ct.render(_scan([]), mem)
         assert "no other pytest suites" in msg
-        assert "mem: swap" in msg
-        assert "memory-bound" in msg
+        assert "mem:" in msg
+        assert "available" in msg
+        assert "memory-bound" not in msg
+        assert "swap" not in msg  # swap is no longer the headline number
+
+    def test_high_swap_healthy_available_is_calm(self):
+        # Direction 2 anchor — THE #785 state: 50G swap used from long uptime,
+        # but 28G available. MUST NOT fire, MUST NOT say "memory-bound". This is
+        # the exact defect that sent the reader chasing a memory leak on a
+        # healthy machine. Fails if the trigger keys on swap-used.
+        avail = 28 * 1024 * 1024
+        assert avail >= ct._LOW_AVAIL_KIB  # precondition: healthy available
+        mem = {"SwapTotal": 60 * 1024 * 1024, "SwapFree": 10 * 1024 * 1024,
+               "MemAvailable": avail, "MemTotal": 60 * 1024 * 1024}
+        msg = ct.render(_scan([]), mem)
+        assert "memory-bound" not in msg
+        assert "mem:" not in msg  # no clause at all on a healthy machine
 
     def test_calm_machine_has_no_memory_clause(self):
-        # Low swap use omits the clause — #612: fewest tokens that carry meaning.
-        mem = {"SwapTotal": 60 * 1024 * 1024, "SwapFree": 55 * 1024 * 1024,
-               "MemAvailable": 0, "MemTotal": 60 * 1024 * 1024}
+        # #612: a calm machine omits the clause entirely (fewest tokens). Healthy
+        # available memory, calm swap — neither pressures, so silence.
+        mem = {"MemAvailable": 30 * 1024 * 1024, "MemTotal": 60 * 1024 * 1024,
+               "SwapTotal": 4 * 1024 * 1024, "SwapFree": 4 * 1024 * 1024}
         msg = ct.render(_scan([]), mem)
-        assert "mem: swap" not in msg
+        assert "mem:" not in msg
 
-    def test_no_swap_present_is_calm(self):
-        # SwapTotal 0 (swap disabled): the clause cannot apply, must not render.
-        msg = ct.render(_scan([]), {"SwapTotal": 0, "SwapFree": 0})
-        assert "mem: swap" not in msg
+    def test_no_meminfo_is_calm(self):
+        # mem=None (/proc/meminfo unreadable): no clause is fabricated. The
+        # process-count instrument still names its own failures (#671/#136); the
+        # memory token is secondary context and stays silent rather than guess.
+        msg = ct.render(_scan([]), None)
+        assert "mem:" not in msg
+
+    def test_missing_memavailable_is_calm(self):
+        # MemTotal present but MemAvailable key absent (old kernel): the one
+        # number the trigger needs is missing, so it cannot classify pressure
+        # and stays silent instead of fabricating a verdict.
+        mem = {"MemTotal": 60 * 1024 * 1024, "SwapTotal": 60 * 1024 * 1024,
+               "SwapFree": 0}
+        msg = ct.render(_scan([]), mem)
+        assert "mem:" not in msg
 
 
 # ── argv-token classification edge cases (brief direction 2 candidate 2) ──
