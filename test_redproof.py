@@ -530,6 +530,8 @@ class TestExpectationDriftNamesTheRearm:
         assert "re-arm" in err.lower(), err
         assert "forget" in err, err
         assert "begin" in err, err
+        assert "A rebase can stale the pin even after a clean restore" in err
+        assert "repeat that cycle after the final rebase" in err
 
         # drop the armed entry so it does not leak into sibling tests
         assert rp.forget(repo, "router.js") == 0
@@ -558,6 +560,8 @@ class TestExpectationDriftNamesTheRearm:
         assert "re-arm" in err.lower(), err
         assert "forget" in err, err
         assert "begin" in err, err
+        assert "A rebase can stale the pin even after a clean restore" in err
+        assert "repeat that cycle after the final rebase" in err
 
 
 # ── CLI smoke ──────────────────────────────────────────────────────────

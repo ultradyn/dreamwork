@@ -160,7 +160,8 @@ _EXPECTATION_DRIFT_REARM = (
     "byte pin on purpose: an expectation must not move with its subject "
     "(#852). To re-arm deliberately, `forget <path>`, then `begin <path> "
     "--expectation <source>` against the new bytes, re-sabotage, and "
-    "`restore`, then re-run `check`."
+    "`restore`, then re-run `check`. A rebase can stale the pin even after "
+    "a clean restore, so repeat that cycle after the final rebase."
 )
 
 
