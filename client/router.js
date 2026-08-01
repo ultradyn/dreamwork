@@ -45,12 +45,16 @@ let view = { name: null, param: null, q: null };
      'image') or a binary-info panel with a download affordance (else).
    The /filedata response carries one of those shapes; never the bytes. */
 let fileCache = { param: null, fetched: undefined };
+/* /tasks2 reads the exact /tasksdata contract /tasks already exposes. The
+   cache follows the watched mtime, so a quiet tick does not re-read hundreds
+   of rows and a real task change cannot leave this route on an old snapshot. */
+let taskTriageCache = { mtime: null, list: null, details: new Map() };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
-const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, settings: -0.04, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19, goals: 0.11, chat: 0.05 };
+const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, settings: -0.04, file: -0.14, review: 0.22, tasks2: 0.16, question: 0.18, research: -0.08, reviews: 0.19, goals: 0.11, chat: 0.05 };
 /* per-route dissolve signature: each destination swirls from its own
    turbulence seed, so arriving somewhere has a consistent feel (pairs with
    the per-route tint). Distinct small integers give distinct fields. */
-const SEED = { dashboard: 7, questions: 23, answers: 29, settings: 37, file: 41, review: 61, question: 67, research: 71, reviews: 73, goals: 79, chat: 89 };
+const SEED = { dashboard: 7, questions: 23, answers: 29, settings: 37, file: 41, review: 61, tasks2: 83, question: 67, research: 71, reviews: 73, goals: 79, chat: 89 };
 /* ── the tab title (#153) ─────────────────────────────────────────────────
    The title is the ONLY part of this dashboard that exists while the tab is
    backgrounded, which is most of its life — so it answers the page's whole
@@ -88,6 +92,7 @@ const TITLE_ROUTE = { dashboard: () => '', questions: () => 'questions',
                       settings: () => 'settings',
                       file: p => p || 'file',
                       review: p => 'review ' + (p || ''),
+                      tasks2: () => 'task triage',
                       question: () => 'question',
                       research: p => 'research' + (p ? ' ' + p : ''),
                       reviews: () => 'reviews',
@@ -1302,6 +1307,11 @@ function routeOf(loc) {
     const sp = new URLSearchParams(loc.search);
     return { name: 'review', param: sp.get('p'), q: sp.get('q') };
   }
+  if (loc.pathname === '/tasks2') {
+    const sp = new URLSearchParams(loc.search);
+    const raw = sp.get('t');
+    return { name: 'tasks2', param: raw && /^\d+$/.test(raw) ? raw : null };
+  }
   if (loc.pathname === '/question') {
     const sp = new URLSearchParams(loc.search);
     // the key is the question's TITLE identity — the same string data-qid
@@ -1387,6 +1397,43 @@ async function fetchFile(param) {
   fileCache = { param, fetched };
   return fetched;
 }
+async function fetchTaskTriage(rawId) {
+  if (taskTriageCache.mtime !== lastMtime) {
+    taskTriageCache = { mtime: lastMtime, list: null, details: new Map() };
+  }
+  if (!taskTriageCache.list) {
+    try {
+      const res = await fetch('/tasksdata');
+      taskTriageCache.list = res.ok ? await res.json()
+        : { health: 'unavailable', unavailable_fields: [], tasks: [] };
+    } catch (e) {
+      taskTriageCache.list = {
+        health: 'unavailable', unavailable_fields: [], tasks: []
+      };
+    }
+  }
+  const list = taskTriageCache.list;
+  const rows = Array.isArray(list.tasks) ? list.tasks : [];
+  const requested = rawId == null ? null : Number(rawId);
+  const selected = Number.isInteger(requested) ? requested
+    : (rows.length ? rows.slice().sort(taskTriageSort)[0].id : null);
+  let detail = null;
+  if (selected != null) {
+    if (!taskTriageCache.details.has(selected)) {
+      try {
+        const res = await fetch('/tasksdata?t=' + encodeURIComponent(selected));
+        taskTriageCache.details.set(selected, res.ok ? await res.json()
+          : { health: 'unavailable', unavailable_fields: [], task: null });
+      } catch (e) {
+        taskTriageCache.details.set(selected, {
+          health: 'unavailable', unavailable_fields: [], task: null
+        });
+      }
+    }
+    detail = taskTriageCache.details.get(selected);
+  }
+  return { list, detail, selected };
+}
 async function buildCurrent() {
   /* #522: the file view also needs `data` — linkify / linkifyMd consult
      `data.linkable_paths` to decide which targets to promote. Skipping
@@ -1402,6 +1449,10 @@ async function buildCurrent() {
   if (view.name === 'chat') {
     await ensureData();
     return buildChat(await fetchChat(view.param));
+  }
+  if (view.name === 'tasks2') {
+    await ensureData();
+    return buildTasks2(await fetchTaskTriage(view.param));
   }
   const d = await ensureData();
   if (isNativeRoute(view.name)) return null;
@@ -3775,6 +3826,7 @@ const TITLES = {
      one line down, in the crumb row (`crumbsFor`). */
   file: v => esc(fileBase(v.param || '')),
   review: v => `review<span class="revname">${esc(v.param || '')}</span>`,
+  tasks2: () => 'task triage',
   /* #452: the heading names the SURFACE, not the question — a title can run
      to a line and a half, and it is rendered in full by the card directly
      below. When the key resolves nowhere the missing notice says so. */
@@ -4693,6 +4745,8 @@ async function navigate(name, param, opts) {
         (mode === 'source' ? '&view=source' : '')
     : name === 'review' ? '/review?p=' + encodeURIComponent(param || '') +
         (opts.q ? '&q=' + encodeURIComponent(opts.q) : '')
+    : name === 'tasks2' ? '/tasks2' +
+        (param ? '?t=' + encodeURIComponent(param) : '')
     : name === 'question' ? '/question?qid=' + encodeURIComponent(param || '')
     : name === 'research' ? '/research' +
         (param ? '?p=' + encodeURIComponent(param) : '')
@@ -4704,7 +4758,8 @@ async function navigate(name, param, opts) {
      (#484, /research?p=…) is the same reading gesture over the same
      #reviewwrap nodes — so it borrows body.review rather than growing a
      second wide-column rule. The research LISTING stays the normal column. */
-  const artifactDoc = name === 'review' || (name === 'research' && !!param);
+  const artifactDoc = name === 'review' || name === 'tasks2' ||
+                      (name === 'research' && !!param);
   if (opts.push) history.pushState({ name, param, q: opts.q || null }, '', url);
   const html = await buildCurrent();
   if (opts.transition === false) {
@@ -4730,6 +4785,7 @@ function isInternal(a) {
       || a.pathname === '/answers'
       || a.pathname === '/settings'
       || a.pathname === '/file' || a.pathname === '/review'
+      || a.pathname === '/tasks2'
       || a.pathname === '/question' || a.pathname === '/research'
       || a.pathname === '/reviews'
       || a.pathname === '/goals'
