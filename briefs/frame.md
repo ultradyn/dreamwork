@@ -62,6 +62,12 @@ instrument read normal).
   SET** against your baseline, not the trailer count. Rows are indented, so
   `grep -c '^WARN'` returns a false `0` (`#794`). Take the baseline from a real
   file path, never process substitution, which silently reports zero rows.
+- In this repo **`WARN` means "a transient condition someone will clear"**,
+  not a standing fact worth stating: a standing fact belongs in an **OK row
+  that names it**. `dev/land_lane.py`'s lint-comparison refuses any added WARN
+  row (the row-set rule, `#794`), so a check that emits a permanent WARN makes
+  the branch unlandable by construction — state the standing fact as an OK row
+  that names it instead.
 - **Rebase onto local `master` before you report**, and report the sha *after*
   the rebase — a rebase rewrites shas, so a sha captured first names a commit
   that no longer exists. Local `master`, not `origin/master`, which is behind.

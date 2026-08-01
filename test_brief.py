@@ -314,6 +314,57 @@ def test_the_frame_actually_carries_the_measured_rules():
         assert measured.replace("\n", " ") in " ".join(rules.split()), measured
 
 
+def test_the_frame_tells_a_lane_what_warn_means_before_the_gate_refuses_it():
+    """#945 — a check that emits a PERMANENT WARN row cannot land: the merge
+    gate's lint-comparison refuses any added WARN row (the row-set rule, #794),
+    and a lane had no way to learn that until the gate refused its finished work
+    — #936 hit exactly this, and the repair was to move the names into an OK
+    row. The frame reaches every dispatched lane (`dev/launch_lane.py` calls
+    `brief.build()`), so the rule belongs there.
+
+    Deleting the sentences this pins must fail this test by name, not silently:
+    this frame already lost a load-bearing instruction that way (#936, where a
+    badly-scoped prohibition suppressed ten lanes' dreams). The check pins
+    CO-OCCURRENCE in one bullet rather than scattered mentions — a containment
+    check over mentions spread across the frame is exactly the #836 false-green.
+    """
+    frame = brief.FRAME_PATH.read_text(encoding="utf-8")
+    # Group each `- ` bullet with its 2-space-indented continuation lines, so a
+    # multi-line rule reads as one unit a co-occurrence check can judge whole.
+    bullets: list[str] = []
+    current: list[str] | None = None
+    for line in [*frame.splitlines(), ""]:
+        if line.startswith("- "):
+            if current is not None:
+                bullets.append(" ".join(current))
+            current = [line]
+        elif current is not None and line.startswith("  ") and line.strip():
+            current.append(line)
+        elif current is not None:
+            bullets.append(" ".join(current))
+            current = None
+    flat_bullets = [" ".join(b.split()) for b in bullets]
+    assert len(flat_bullets) >= 20, (
+        f"denominator: the frame must carry its standing-rule bullets, not "
+        f"{len(flat_bullets)} — a co-occurrence check over an empty frame "
+        f"reads the same as one over a complete frame (#868)"
+    )
+    warn_rule = [b for b in flat_bullets
+                 if "transient condition someone will clear" in b]
+    assert len(warn_rule) == 1, (
+        f"expected exactly one standing-rule bullet stating WARN means a "
+        f"transient condition; found {len(warn_rule)} — the rule must be one "
+        f"coherent instruction, not mentions scattered across bullets that a "
+        f"containment check would pass on (#836/#945)"
+    )
+    for needle in ("OK row that names it", "added WARN row", "unlandable"):
+        assert needle in warn_rule[0], (
+            f"the WARN-meaning bullet lost '{needle}' — deleting this sentence "
+            f"must fail this test by name, not silently (#936/#945). The bullet "
+            f"is:\n{warn_rule[0]}"
+        )
+
+
 # --- the delivered prompt, not the intended one ----------------------------
 
 def test_the_cli_delivers_the_whole_brief_on_stdout(tmp_path, lane):
