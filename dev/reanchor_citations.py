@@ -29,7 +29,11 @@ IGNORED_SOURCE_PARTS = {"dist", "vendor", "migrations", "__pycache__", "capture"
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
 IDENTIFIER = re.compile(
     r"^(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*(?:\(\))?$"
-    r"|^[_A-Za-z][\w-]*$"
+    r"|^[_A-Za-z][\w-]*$|^[.#][_A-Za-z][\w-]*$|^--[\w-]+$"
+)
+PLAIN_SYMBOL = re.compile(
+    r"(?<![\w.])(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*\(\)"
+    r"|\b[A-Z][A-Z0-9_]{2,}\b|\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b"
 )
 PATHISH = re.compile(r"(?:^|/)[\w.-]+\.(?:py|js|mjs|css|md)(?::\d+)?$")
 NON_SYMBOL_CODE = {"if", "return", "for", "while", "true", "false", "none", "null"}
@@ -135,6 +139,12 @@ def named_symbols(citation: Citation) -> list[str]:
     # nothing.  Mixing paragraphs eagerly pairs a neighbour's symbol with the
     # wrong citation.
     if not ranked:
+        for match in PLAIN_SYMBOL.finditer(line):
+            symbol = _normalise_symbol(match.group())
+            if symbol is not None:
+                distance = min(abs(match.start() - citation.start), abs(match.end() - citation.end))
+                ranked.append((100 + distance, symbol))
+    if not ranked:
         for match in CODE_SPAN.finditer(citation.context):
             symbol = _normalise_symbol(match.group(1))
             if symbol is not None:
@@ -151,14 +161,18 @@ def named_symbols(citation: Citation) -> list[str]:
 def _definition_patterns(symbol: str) -> tuple[re.Pattern[str], ...]:
     leaf = symbol.rsplit(".", 1)[-1]
     q = re.escape(leaf)
-    return (
+    patterns = [
         re.compile(rf"^\s*(?:async\s+)?def\s+{q}\b"),
         re.compile(rf"^\s*class\s+{q}\b"),
         re.compile(rf"^\s*(?:export\s+)?(?:async\s+)?function\s+{q}\b"),
         re.compile(rf"^\s*(?:export\s+)?(?:const|let|var)\s+{q}\s*="),
         re.compile(rf"^\s*(?:async\s+)?{q}\s*\([^;]*\)\s*\{{"),
         re.compile(rf"^\s*{q}\s*=\s*(?![=])"),
-    )
+    ]
+    if symbol.startswith((".", "#", "--")):
+        token = re.escape(symbol)
+        patterns.append(re.compile(rf"^\s*[^{{]*{token}(?![\w-])[^{{]*\{{"))
+    return tuple(patterns)
 
 
 def source_files(root: Path) -> list[str]:
@@ -188,7 +202,9 @@ def resolve(root: Path, citation: Citation) -> Resolution:
     for rank, symbol in enumerate(symbols):
         definitions = find_definitions(root, symbol)
         if len(definitions) == 1:
-            confidence = "high" if rank == 0 else "medium"
+            line = citation.context.splitlines()[1 if citation.context.count("\n") == 2 else 0]
+            explicit = any(_normalise_symbol(m.group(1)) == symbol for m in CODE_SPAN.finditer(line))
+            confidence = "high" if rank == 0 and explicit else "medium"
             return Resolution(citation, symbol, tuple(definitions), confidence, "unique definition")
         if definitions:
             ambiguous.extend(definitions)
