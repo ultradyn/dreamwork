@@ -161,7 +161,13 @@ def test_half_migrated_schema_is_named_schema_mismatch(tmp_path, capsys):
     assert _run_real_audit(dw_dir, briefs) == 2
     captured = capsys.readouterr()
     assert captured.err.lower().startswith("citation_audit: store schema mismatch:")
-    assert "store schema mismatch during sql:" in captured.err.lower()
+    # Gate repair (#849). The lane de-staled this by replacing the column check
+    # with "store schema mismatch during sql:", which the line above already
+    # proves — so a mismatch on ANY other column would have passed. The message
+    # went stale only because the query gained a table alias, so keep naming the
+    # column and follow the alias: this test exists to prove the audit reports
+    # WHICH column a half-migrated store is missing, not merely that it failed.
+    assert "no such column: t.title" in captured.err.lower()
 
 
 # -- extract_citations --------------------------------------------------------
