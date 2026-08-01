@@ -13,15 +13,18 @@ CLOSES #260 for every submission *kind* the filing names.  Every registered
 write route commits a durable receipt BEFORE dispatch (``watch.py`` E3 cutover,
 ``if not truncated and self.journal_shadow``), and ``dev/journal_consume.py
 pending | consume --through <ord>`` drains ``(coordinator_cursor, head]`` with
-an exactly-once proof (#526) and a bounded advance (#531).  The registered
-routes are ``WRITE_ROUTE_HANDLERS`` (``watch.py``):
+an exactly-once proof (#526) and a bounded advance (#531).  The reconciliation
+classifier uses the pinned ``SUBMISSION_ROUTES`` contract:
 
     /answer  /ask  /comment  /command  /decide  /tint  /run-mode  /posture
-    /subagent-policy  /deploy
+    /subagent-policy  /deploy  /remind  /goals  /settings  /chat-reply
+    /chat-archive
 
-— so answer/ask/comment/command/tint (the kinds the filing names) plus
-decide/run-mode/posture/deploy are ALL journaled.  ``journal_shadow=True`` is
-the production default, so this is live.
+This tool deliberately does not import or derive that population from
+``watch.py``: doing so would make its classifier and the dispatch share a
+source of truth.  The CLI therefore reports the population as ``pinned, not
+verified`` on every run.  ``test_reconcile_submissions.py`` independently
+checks the pin against routes observed at the HTTP request seam.
 
 THE GAP THE CURSOR CANNOT SEE (and this tool exists to name).  The cursor
 drains receipts; it can say nothing about submissions that LEFT NO RECEIPT.
@@ -102,16 +105,15 @@ AUDIT_CONSUMER = "reconcile-audit"
 JOURNAL_DEFAULT = ".dreamwork/user-events.sqlite3"
 SUBMISSIONS_DEFAULT = ".dreamwork/submissions.log"
 
-# The registered write routes — every one commits a receipt before dispatch
-# (the E3 cutover).  Sourced from ``watch.WRITE_ROUTE_HANDLERS`` (a class
-# attribute, so not importable at module level without constructing the
-# handler).  A drift-guard test (``test_submission_routes_match_watch``) builds
-# the handler and asserts this set equals ``WRITE_ROUTE_HANDLERS`` exactly, so a
-# route added to watch fails that test here until this constant is updated.
+# Coverage contract for unmatched-record classification.  This population is
+# intentionally pinned: the standalone tool does not import the dispatch and
+# cannot claim to verify that its allowlist is current.  Its PASS line says so.
+# The test suite compares this pin with paths an independent HTTP harness really
+# POSTed, while separately comparing those observations with the dispatch.
 SUBMISSION_ROUTES = frozenset({
     "/answer", "/ask", "/comment", "/command", "/decide",
     "/tint", "/run-mode", "/posture", "/subagent-policy",
-    "/deploy", "/remind",
+    "/deploy", "/remind", "/goals", "/settings",
     "/chat-reply", "/chat-archive",
 })
 
@@ -235,10 +237,18 @@ def cmd_reconcile(args, out, err) -> int:
     """
     journal_path = Path(args.journal)
     subs_path = Path(args.submissions)
+    route_count = len(SUBMISSION_ROUTES)
+    route_contract = f"{route_count} classification route(s) pinned, not verified"
+    if route_count == 0:
+        out.write(
+            "reconcile: FAULT — 0 classification routes pinned; "
+            "the coverage contract examined nothing\n"
+        )
+        return EX_SOFTWARE
 
     # No witness → nothing to prove: trivially covered.
     if not subs_path.exists():
-        out.write("reconcile: no submissions to reconcile\n")
+        out.write(f"reconcile: no submissions to reconcile; {route_contract}\n")
         return EX_OK
 
     # Build the full receipt index.  An absent journal means the cursor can
@@ -248,7 +258,7 @@ def cmd_reconcile(args, out, err) -> int:
         records = list(_iter_submissions(subs_path))
         out.write(
             f"reconcile: {len(records)} submission(s), 0 covered, "
-            f"{len(records)} unjournaled (journal absent)\n"
+            f"{len(records)} unjournaled (journal absent); {route_contract}\n"
         )
         for lineno, rec in records:
             path = rec.get("path", "?") if rec else "?"
@@ -315,7 +325,7 @@ def cmd_reconcile(args, out, err) -> int:
     out.write(
         f"reconcile: {total} submission(s), {covered} covered "
         f"({drained} drained, {pending} pending), {unjournaled} unjournaled, "
-        f"{unmatched} unmatched\n"
+        f"{unmatched} unmatched; {route_contract}\n"
     )
     for verb, cause_or_rid, path, preview in rows:
         if verb == "DRAINED":
