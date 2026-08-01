@@ -4546,6 +4546,26 @@ def read_settings(target):
     }
 
 
+def read_settings_batch(target, keys):
+    """Return one HTTP-ready, registry-validated settings subset."""
+    from dreamwork_db import Access, ValidationError, open_database
+    from dreamwork_db.settings import BatchSettingValidationError
+    from dreamwork_db.tasks import task_store_spec
+    dw = os.path.join(target, ".dreamwork")
+    if source_of_truth(dw) != "store":
+        error = "settings require the ledger store"
+        return {"ok": False, "errors": {"$batch": error}}, 400
+    try:
+        with open_database(
+                task_store_spec(store_path(dw)), access=Access.READ) as db:
+            values = db.settings.get_many(keys)
+    except BatchSettingValidationError as exc:
+        return {"ok": False, "errors": exc.errors}, 400
+    except ValidationError as exc:
+        return {"ok": False, "errors": {"$batch": str(exc)}}, 400
+    return {"ok": True, "values": values}, 200
+
+
 def write_subagent_policy(target, text):
     """Persist a subagent-policy override (#650). False if refused.
 
@@ -5369,9 +5389,9 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             obj["receipt"] = receipt
             return obj
 
-        def _send(self, body, ctype):
+        def _send(self, body, ctype, status=200):
             data = body.encode("utf-8")
-            self.send_response(200)
+            self.send_response(status)
             self.send_header("Content-Type", ctype + "; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
@@ -5401,7 +5421,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                             f"the write would have dropped: "
                             f"{one_line(line)[:200]}")
 
-        def _reject(self, reason_code, detail=None):
+        def _reject(self, reason_code, detail=None, extra=None):
             """Record a durable rejection and respond 202 (E5).
 
             `detail` is an OPTIONAL free-form discriminator for copy, and it is
@@ -5425,6 +5445,8 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             body = {"ok": False, "rejected": True, "reason": reason_code}
             if detail:
                 body["detail"] = detail
+            if extra:
+                body.update(extra)
             self._send_receipt(json.dumps(body), "application/json")
 
         def _send_bytes(self, full, rel, *, inline):
@@ -5524,6 +5546,10 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             elif parsed.path == "/tasksdata":
                 self._send(json.dumps(tasks_response(target, parsed.query)),
                            "application/json")
+            elif parsed.path == "/settingsdata":
+                payload, status = read_settings_batch(
+                    target, urllib.parse.parse_qs(parsed.query).get("key", []))
+                self._send(json.dumps(payload), "application/json", status)
             elif parsed.path == "/mtime":
                 # "<generation> <watched-mtime>": generation gates a full
                 # reload (new server build), mtime gates a data re-render.
@@ -5962,17 +5988,23 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                                "application/json")
 
         def _handle_settings(self):
-            """Persist one validated setting through the canonical store."""
+            """Atomically persist one or many settings through the canonical store."""
             import settings as user_settings
             from dreamwork_db import Access, ValidationError, open_database
+            from dreamwork_db.settings import BatchSettingValidationError
             from dreamwork_db.tasks import task_store_spec
             req = self._read_json()
             if req is None:
                 self._reject("malformed_json"); return
-            if not isinstance(req, dict) or "key" not in req or "value" not in req:
+            if not isinstance(req, dict):
                 self._reject("schema_invalid"); return
-            key = req.get("key")
-            if not isinstance(key, str):
+            if "values" in req:
+                values = req["values"]
+                if not isinstance(values, dict) or not values:
+                    self._reject("schema_invalid"); return
+            elif "key" in req and "value" in req and isinstance(req["key"], str):
+                values = {req["key"]: req["value"]}
+            else:
                 self._reject("schema_invalid"); return
             dw = os.path.join(target, ".dreamwork")
             if source_of_truth(dw) != "store":
@@ -5982,17 +6014,22 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                         task_store_spec(store_path(dw)),
                         access=Access.WRITE) as db:
                     with db.transaction():
-                        changed = db.settings.set(
-                            key, req["value"], user_settings.LOCAL_USER_ID)
+                        changed = db.settings.set_many(
+                            values, user_settings.LOCAL_USER_ID)
+                        result = db.settings.get_many(
+                            list(values), user_settings.LOCAL_USER_ID)
+            except BatchSettingValidationError as exc:
+                self._reject("domain_invalid", detail="invalid_settings",
+                             extra={"errors": exc.errors}); return
             except ValidationError as exc:
                 self._reject("domain_invalid", detail=str(exc)); return
             except Exception:
                 self.send_error(500); return
             if changed:
-                log_event(target, f'settings via watch: "{one_line(key)}" '
+                log_event(target, f'settings via watch: "{one_line(", ".join(changed))}" '
                           '-> .dreamwork/ledger.sqlite3')
             self._send_receipt(json.dumps({
-                "ok": True, "changed": changed, "key": key,
+                "ok": True, "changed": changed, "values": result,
             }), "application/json")
 
         def _handle_command(self):

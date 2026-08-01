@@ -7,6 +7,7 @@ import sqlite3
 import pytest
 
 from dreamwork_db import Access, ValidationError, open_database
+from dreamwork_db.settings import BatchSettingValidationError
 from dreamwork_db.store import dreamwork_store_spec
 from settings import SETTINGS, SettingValidationError, validate_registry, validate_value
 
@@ -80,3 +81,59 @@ def test_repository_refuses_invalid_and_unknown_writes(tmp_path):
         with pytest.raises(ValidationError, match="local-only"):
             with db.transaction():
                 db.settings.set(KNOWN_KEY, "bayer", userid="someone-else")
+
+
+def test_batch_get_resolves_two_unset_defaults_and_refuses_unknown(tmp_path):
+    spec = dreamwork_store_spec(tmp_path / "ledger.sqlite3")
+    keys = ["gfx.dither", "composer.rememberManualResize"]
+    assert len(keys) == 2
+    with open_database(spec, access=Access.WRITE):
+        pass
+    with open_database(spec, access=Access.READ) as db:
+        assert db.settings.get_many(keys) == {
+            "gfx.dither": "ign", "composer.rememberManualResize": False,
+        }
+        with pytest.raises(BatchSettingValidationError) as caught:
+            db.settings.get_many(["gfx.dither", "unregistered.dump"])
+    assert caught.value.errors == {
+        "unregistered.dump": "unknown setting key 'unregistered.dump'",
+    }
+
+
+def test_batch_set_validates_all_before_applying_any(tmp_path):
+    spec = dreamwork_store_spec(tmp_path / "ledger.sqlite3")
+    values = {"composer.rememberManualResize": True, "gfx.dither": "invalid"}
+    assert len(values) == 2
+    with open_database(spec, access=Access.WRITE) as db:
+        with pytest.raises(BatchSettingValidationError) as caught:
+            with db.transaction():
+                db.settings.set_many(values)
+        assert caught.value.errors == {
+            "gfx.dither": "expected one of 'ign', 'white-noise', 'bayer'",
+        }
+    with open_database(spec, access=Access.READ) as db:
+        assert db.settings.get_many(list(values)) == {
+            "composer.rememberManualResize": False, "gfx.dither": "ign",
+        }
+
+
+def test_batch_set_reports_every_invalid_key_and_default_deletes(tmp_path):
+    spec = dreamwork_store_spec(tmp_path / "ledger.sqlite3")
+    with open_database(spec, access=Access.WRITE) as db:
+        with pytest.raises(BatchSettingValidationError) as caught:
+            with db.transaction():
+                db.settings.set_many({"arbitrary.dump": True, "gfx.dither": "invalid"})
+        assert list(caught.value.errors) == ["arbitrary.dump", "gfx.dither"]
+        with db.transaction():
+            assert db.settings.set_many({
+                "gfx.dither": "bayer", "composer.rememberManualResize": True,
+            }) == ["gfx.dither", "composer.rememberManualResize"]
+        with db.transaction():
+            assert db.settings.set_many({
+                "gfx.dither": "ign", "composer.rememberManualResize": False,
+            }) == ["gfx.dither", "composer.rememberManualResize"]
+    conn = sqlite3.connect(spec.path)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM user_setting").fetchone()[0] == 0
+    finally:
+        conn.close()
