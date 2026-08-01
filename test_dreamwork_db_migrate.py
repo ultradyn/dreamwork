@@ -206,8 +206,8 @@ def test_frozen_v2_store_migrates_through_current_and_reports_zero_legacy_rows(
         assert _columns(after, "goal_state_kind") == {"state"}
         assert _columns(after, "goal_claim") == {
             "id", "group_id", "claimed_by", "claimed_at", "summary",
-            "base_sha", "details_sha", "outcome", "round",
-        }
+            "base_sha", "details_sha", "outcome", "round", "bypassed_by",
+        }, "goal_claim columns are an explicit public schema contract"
         assert _columns(after, "goal_verdict") == {
             "id", "claim_id", "lens", "refuted", "blocking", "findings",
             "corroborated", "examined",
@@ -425,11 +425,36 @@ def test_ladder_declares_the_single_ordered_path_to_current():
     versions = [
         (step.source_version, step.target_version) for step in MIGRATIONS
     ]
-    assert versions == [
-        (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8)
-    ], (
-        "migration ladder must retain exactly one ordered path through current, "
-        f"got {versions!r}"
+    step_count = len(versions)
+    assert step_count > 0, "migration ladder examined 0 steps; no path exists"
+    assert versions[0][0] == 1, (
+        f"migration ladder must start at oldest supported schema v1; got {versions!r}"
+    )
+    sources = [source for source, _target in versions]
+    duplicate_sources = sorted({source for source in sources
+                                if sources.count(source) > 1})
+    assert not duplicate_sources, (
+        "migration ladder forks from source version(s) "
+        f"{duplicate_sources}; examined {step_count} steps: {versions!r}"
+    )
+    for index, (source, target) in enumerate(versions, start=1):
+        assert target == source + 1, (
+            f"migration ladder step {index}/{step_count} is not unit-sized: "
+            f"{source}->{target}"
+        )
+    for index, (previous, following) in enumerate(
+            zip(versions, versions[1:]), start=1):
+        assert previous[1] == following[0], (
+            f"migration ladder has a gap or is out of order after step "
+            f"{index}/{step_count}: {previous!r} then {following!r}"
+        )
+    assert versions[-1][1] == SCHEMA_VERSION, (
+        "migration ladder does not terminate at the schema authority's current "
+        f"version {SCHEMA_VERSION}; examined {step_count} steps: {versions!r}"
+    )
+    assert step_count == SCHEMA_VERSION - versions[0][0], (
+        f"migration ladder examined {step_count} steps from v{versions[0][0]} "
+        f"to v{SCHEMA_VERSION}; expected one step per version"
     )
 
 

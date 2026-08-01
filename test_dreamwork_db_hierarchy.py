@@ -16,6 +16,7 @@ import pytest
 from dreamwork_db import Access, ValidationError, open_database
 from dreamwork_db.core import SchemaMismatch
 from dreamwork_db.groups import DependencyCycle, EmptyGroup
+from dreamwork_db.migrate import SCHEMA_VERSION
 from dreamwork_db.migrations import v005_hierarchy, v008_goals
 from dreamwork_db.tasks import task_store_spec
 from dev import ledger as ledger_cli
@@ -515,7 +516,10 @@ def test_v005_preserves_tasks_members_triggers_and_the_id_sequence(tmp_path):
     try:
         assert after.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone()[0] == "8"
+        ).fetchone()[0] == str(SCHEMA_VERSION), (
+            "the v4 fixture must migrate through the schema authority's current "
+            f"version {SCHEMA_VERSION}"
+        )
         assert after.execute("SELECT * FROM task ORDER BY id").fetchall() == \
             before_tasks, "v005 must not rewrite a single task row"
         assert after.execute(
@@ -545,13 +549,20 @@ def test_downgrade_refuses_to_discard_nesting_or_dependencies(tmp_path):
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("BEGIN")
     try:
+        version_before = conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone()[0]
         with pytest.raises(SchemaMismatch) as caught:
             v005_hierarchy.downgrade(conn)
         assert "nested task_group rows=1" in str(caught.value), caught.value
         conn.execute("ROLLBACK")
-        assert conn.execute(
+        version_after = conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
-            ).fetchone()[0] == "8", "a refused downgrade must not move the version"
+        ).fetchone()[0]
+        assert version_after == version_before, (
+            "a refused downgrade must not move the version: "
+            f"before={version_before!r}, after={version_after!r}"
+        )
     finally:
         conn.close()
 
