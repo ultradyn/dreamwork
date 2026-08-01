@@ -129,6 +129,17 @@ class TestInRepoWorktreeDrain:
         assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
         assert "lower the committed state to zero" in rep.rows[-1][2]
 
+    def test_root_cannot_reappear_after_ratchet_reaches_zero(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        (t / ".worktrees").mkdir()
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        _drain_state(t / ".dreamwork", allowed=())
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.ERROR]
+        assert "root reappeared after reaching zero" in rep.rows[-1][2]
+
     def test_wrong_root_cannot_impersonate_absent_end_state(self, tmp_path):
         t = target(tmp_path)
         _drain_state(t / ".dreamwork", root=".worktreez")
@@ -155,6 +166,22 @@ class TestInRepoWorktreeDrain:
         assert str(offender) in rep.rows[-1][2]
         assert "count 2" in rep.rows[-1][2]
         assert state.read_bytes() == before, "a red run must not bless its count"
+
+    def test_size_growth_is_reported_but_does_not_trip_count_gate(
+            self, tmp_path, monkeypatch):
+        t = target(tmp_path)
+        lane = t / ".worktrees" / "cx-846wtmove"
+        lane.mkdir(parents=True)
+        (lane / "large-build-output").write_bytes(b"x" * 4096)
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: target)
+        monkeypatch.setattr(lint, "_registered_in_repo_worktrees",
+                            lambda main, old: [lane])
+        _drain_state(t / ".dreamwork")
+        rep = lint.Report()
+        lint.check_in_repo_worktree_drain(t / ".dreamwork", rep)
+        assert levels(rep, lint.WORKTREE_DRAIN_STATE) == [lint.OK]
+        assert "size evidence" in rep.rows[-1][2]
+        assert "last recorded 123" in rep.rows[-1][2]
 
 
 @pytest.fixture
@@ -230,7 +257,8 @@ class TestTheBugItWasBuiltFor:
         detail = next(d for _, w, d in rep.rows if w == "questions.md")
         assert "1 open" in detail and "1 answered" in detail
 
-    def test_this_repo_passes_its_own_linter(self, frozen_tree, tmp_path):
+    def test_this_repo_passes_its_own_linter(
+            self, frozen_tree, tmp_path, monkeypatch):
         # Dogfood: the file the whole bug was about, checked by the tool
         # written because of it.
         #
@@ -280,6 +308,12 @@ class TestTheBugItWasBuiltFor:
         assert lint.source_of_truth(dw) == "store", \
             "store did not materialize — the dogfood would pass on the #592 " \
             "worktree excuse rather than on the real ledger"
+        # #846's ratchet deliberately reads the LIVE git worktree registry,
+        # which cannot be frozen with this content snapshot. Dedicated tests
+        # above bind that check in both directions; exclude the moving external
+        # subject here so #428's fixed-tree dogfood remains a fixed-tree claim.
+        monkeypatch.setattr(lint, "check_in_repo_worktree_drain",
+                            lambda dw, rep: None)
         rep = run(frozen_tree)
         assert not rep.failed, rep.render()
 
