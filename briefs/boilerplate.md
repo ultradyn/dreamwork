@@ -292,6 +292,19 @@ motion, no server fleet. It is load-invariant and is NOT what the paragraph abov
 If the real guard is genuinely out of reach, reproducing its exact assertion in a one-process
 probe is a legitimate and useful substitute; say that is what you did.
 
+**The MCP playwright browser's screenshot output root is the session cwd, not lane-private
+(#670).** The `@playwright/mcp` server (v0.0.78) derives its output dir from `process.cwd()`
+when no `--output-dir` flag is set — and that cwd is the coordinator's, because the server is
+one per session and shared by all lane subagents. `browser_take_screenshot` accepts only a
+`fileName` (a basename resolved against the output dir), so you cannot redirect per-call. A
+default-named screenshot lands in `<cwd>/.playwright-mcp/` inside a git tree that is not yours.
+The harm is mitigated today by `.gitignore` (`.playwright-mcp/` is ignored), but do not rely on
+that. Run `python3 dev/mcp_screenshot_root.py` to see where screenshots will land and whether
+that is inside a worktree; `--safe` prints a lane-private staging dir (same identity derivation
+as `dev/lane_scratch.py`) to copy screenshots into after taking them. The MCP browser also
+**blocks `file://` URLs** by default — to verify a built HTML artifact, bind an ephemeral port
+(outside 39890–39899 and 35110/35113) and navigate to `http://localhost:<port>/<file>`.
+
 ## Deliverable
 
 Report to the coordinator with: the verdict; what you changed and why; **both directions of
