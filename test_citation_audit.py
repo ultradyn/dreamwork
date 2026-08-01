@@ -280,3 +280,58 @@ def test_report_quiet_when_corpus_complete(tmp_path):
     text = format_report(report)
     assert "2 tracked / 2 on disk" in text
     assert "INCOMPLETE" not in text
+
+
+def test_default_corpus_reaches_main_checkout_from_linked_worktree(tmp_path):
+    """Default reaches main's untracked briefs; explicit --briefs stays exact."""
+    main = tmp_path / "main"
+    lane = tmp_path / "lane"
+    briefs = main / ".dreamwork" / "docs" / "briefs"
+    (main / "dev").mkdir(parents=True)
+    briefs.mkdir(parents=True)
+    source = Path(__file__).resolve().parent
+    (main / "dev" / "citation_audit.py").write_text(
+        (source / "dev" / "citation_audit.py").read_text()
+    )
+    (main / "ledger_parse.py").write_text(
+        "def store_records(_dreamwork_dir):\n    return []\n"
+    )
+    (briefs / "tracked.md").write_text("tracked brief without citations\n")
+    subprocess.run(["git", "init", "-q", str(main)], check=True)
+    subprocess.run(["git", "-C", str(main), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(main), "config", "user.name", "test"], check=True)
+    subprocess.run(["git", "-C", str(main), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(main), "commit", "-qm", "seed"], check=True)
+    subprocess.run(
+        ["git", "-C", str(main), "worktree", "add", "-qb", "lane", str(lane)],
+        check=True,
+    )
+    try:
+        (briefs / "untracked.md").write_text("untracked brief without citations\n")
+        command = [
+            sys.executable, str(lane / "dev" / "citation_audit.py"),
+            "--quiet",
+        ]
+        default = subprocess.run(command, capture_output=True, text=True, check=True)
+        first = default.stdout.splitlines()[0]
+        assert first == (
+            "corpus: 1 tracked / 2 on disk "
+            "(AUDIT IS INCOMPLETE — untracked briefs not visible)"
+        ), (
+            "default brief corpus truncated in linked worktree: expected main "
+            f"checkout 1 tracked / 2 on disk (missing 1), got {first!r}"
+        )
+
+        explicit = subprocess.run(
+            command + ["--briefs", str(lane / ".dreamwork" / "docs" / "briefs")],
+            capture_output=True, text=True, check=True,
+        )
+        assert explicit.stdout.splitlines()[0] == "corpus: 1 tracked / 1 on disk", (
+            "explicit --briefs must remain caller-selected even when it names the "
+            "truncated worktree corpus"
+        )
+    finally:
+        subprocess.run(
+            ["git", "-C", str(main), "worktree", "remove", "--force", str(lane)],
+            check=True,
+        )
