@@ -15,9 +15,12 @@ asserts the discriminating phrase, not merely a non-zero exit — a refusal for
 the wrong reason is indistinguishable from the right one in an exit code.
 """
 
+import os
 import re
+import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -255,6 +258,110 @@ def test_the_cli_delivers_the_whole_brief_on_stdout(tmp_path, lane):
     assert len(result.stdout) > 20_000, len(result.stdout)
     assert result.stdout.endswith(
         dispatch_lane.CONTRACT_PATH.read_text(encoding="utf-8").rstrip("\n") + "\n")
+
+
+def _sandbox_dispatch(tmp_path: Path) -> tuple[Path, Path]:
+    """A throwaway repo holding dispatch_lane, so nothing touches the live corpus."""
+    root = tmp_path / "repo"
+    (root / "dev").mkdir(parents=True)
+    (root / "briefs").mkdir()
+    shutil.copy2(ROOT / "dev" / "dispatch_lane.py", root / "dev" / "dispatch_lane.py")
+    for name in ("lane_liveness.py", "worktree_paths.py", "ledger_store.py"):
+        shutil.copy2(ROOT / name, root / name)
+    shutil.copytree(ROOT / "dreamwork_db", root / "dreamwork_db")
+    shutil.copy2(ROOT / "briefs" / "boilerplate.md", root / "briefs" / "boilerplate.md")
+    subprocess.run(["git", "init", "-q", "-b", "master", str(root)], check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=T", "-c", "user.email=t@e.invalid",
+         "commit", "--allow-empty", "-qm", "base"], cwd=root, check=True)
+    (root / ".dreamwork").mkdir()
+    (root / ".dreamwork" / "tasks.md").write_text(
+        "# Tasks\n\n## Open\n\n- **#881** generated\n\n## Recently landed\n", encoding="utf-8")
+    return root / "dev" / "dispatch_lane.py", root
+
+
+def _reanchor(generated: str, root: Path, lane: str) -> tuple[str, Path]:
+    """Point a generated brief at the sandbox, changing ONLY the identity lines.
+
+    Everything this test reads — the frame sections and the appended contract —
+    is the generator's output untouched. The identity lines are already bound
+    against the real validator by
+    ``test_generated_brief_passes_every_dispatch_lane_refusal``.
+    """
+    subprocess.run(["git", "branch", lane, "master"], cwd=root, check=True)
+    base = subprocess.run(["git", "merge-base", "master", lane], cwd=root,
+                          check=True, capture_output=True, text=True).stdout.strip()
+    worktree = root / ".worktrees" / lane
+    worktree.mkdir(parents=True)
+    text, changed = generated, 0
+    for pattern, replacement in (
+        (r"^Worktree: .*$", f"Worktree: {worktree}"),
+        (r"^Base sha: .*$", f"Base sha: {base}"),
+        (r"^Coordinator inbox — ABSOLUTE path.*$",
+         f"{brief.COORDINATOR_INBOX_PREFIX}{root / '.dreamwork' / 'inbox.md'}"),
+    ):
+        text, count = re.subn(pattern, replacement, text, flags=re.MULTILINE)
+        changed += count
+    assert changed == 3, f"re-anchoring rewrote {changed} identity lines, expected 3"
+    assert re.search(r"^## Standing rules$", text, re.MULTILINE), (
+        "precondition: re-anchoring must leave the generated frame intact"
+    )
+    return text, worktree
+
+
+def test_the_delivered_argv_carries_the_standing_rules(tmp_path, lane):
+    """Direction 2, construction 3 — verify what the runner GOT, not what we sent.
+
+    `lessons.md`: *"a dispatch carrying no rules at all looks exactly like a
+    healthy one"* — a shell-quoting bug once delivered a 24-character prompt and
+    every instrument read normal. `dispatch_lane` appends the brief as one argv
+    item, so `/proc/<pid>/cmdline` is the only authoritative record of it.
+
+    No real lane is dispatched: the runner is `sleep`, in a throwaway repo.
+    """
+    cli, root = _sandbox_dispatch(tmp_path)
+    generated = brief.build(881, lane, ["dev/brief.py"], GOOD_CORE)
+    # Same branch NAME in the sandbox, so the generator's own `Branch:` line
+    # survives re-anchoring untouched and stays part of what is measured.
+    anchored, worktree = _reanchor(generated, root, lane)
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text(anchored, encoding="utf-8")
+
+    process = subprocess.Popen(
+        [sys.executable, str(cli), "--prompt", str(prompt), "--",
+         sys.executable, "-c", "import time; time.sleep(60)"],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        text=True, env={**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"})
+    try:
+        lock = worktree / ".dreamwork" / "lane.lock"
+        for _ in range(250):
+            if lock.is_file():
+                break
+            time.sleep(0.02)
+        else:
+            raise AssertionError(f"dispatch never wrote {lock}: {process.stderr.read()}")
+        import json  # noqa: PLC0415
+        child = json.loads(lock.read_text(encoding="utf-8"))["pid"]
+        os.kill(child, 0)
+        delivered = Path(f"/proc/{child}/cmdline").read_bytes().split(b"\0")
+    finally:
+        process.wait(timeout=30)
+
+    payload = [item for item in delivered if item.startswith(b"# Task #881")]
+    assert len(payload) == 1, f"argv carried {len(payload)} brief items: {delivered!r}"
+    text = payload[0].decode("utf-8")
+    try:
+        assert text == anchored, (
+            f"delivered {len(text)} bytes, sent {len(anchored)} — the runner did "
+            "not receive the brief that was validated"
+        )
+        assert re.search(r"^## Standing rules$", text, re.MULTILINE)
+        assert re.search(r"^## Live-state prohibitions — absolute$", text, re.MULTILINE)
+        assert "You never merge and you never push" in text
+        assert text.rstrip("\n").endswith(
+            dispatch_lane.CONTRACT_PATH.read_text(encoding="utf-8").rstrip("\n"))
+    finally:
+        os.kill(child, 9)
 
 
 def test_the_cli_refuses_with_a_named_reason_and_writes_no_file(tmp_path, lane):
