@@ -40,6 +40,10 @@ _HANDLER_CLS = watch.make_handler("/unused-e2e-route-derivation",
                                    authority=watch.RequestAuthority(
                                        ["127.0.0.1"], 9))
 WRITE_ROUTES = tuple(_HANDLER_CLS.WRITE_ROUTE_HANDLERS.keys())
+# This is the route-coverage denominator, not a derived mirror.  Deriving both
+# sides from WRITE_ROUTE_HANDLERS would let a route disappear from the registry
+# and make "exercised zero of zero" look exactly like complete coverage.
+EXPECTED_WRITE_ROUTE_COUNT = 15
 
 QUESTIONS = """# Questions for the human
 
@@ -84,7 +88,8 @@ class HttpHarness(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.target = _make_target(self.tmp.name)
         # #462 /deploy must never run the real recipe in a unit check.
-        watch._deploy_runner = lambda _t: None
+        self.deploy_called = threading.Event()
+        watch._deploy_runner = lambda _t: self.deploy_called.set()
         watch._deploy_inflight = False
         self.addCleanup(lambda: setattr(watch, "_deploy_runner", None))
         self.addCleanup(lambda: setattr(watch, "_deploy_inflight", False))
@@ -252,7 +257,7 @@ class E2Shadow(HttpHarness):
     # default is lackadaisical), so it returns changed=True.
     # /deploy's runner is faked in HttpHarness.setUp — never `just deploy`.
     # /chat-reply needs an EXISTING chat, so run_all seeds one through the ONE
-    # production writer before it posts (see step 11 for why a bogus id would
+    # production writer before it posts (see step 14 for why a bogus id would
     # slip past every assertion in this class).
     def run_all_routes(self):
         """POST every write route once; return (statuses, submissions_rows).
@@ -268,26 +273,52 @@ class E2Shadow(HttpHarness):
         self.posted_routes = []
         statuses = []
         # 1. /ask — records a new question for the dreamer (answers.md).
+        asked = f"E2 shadow question {marker}"
+        answers_path = os.path.join(self.target, ".dreamwork", "answers.md")
+        self.assertFalse(os.path.exists(answers_path))
         statuses.append(self.post(
-            "/ask", {"question": f"E2 shadow question {marker}"})[0])
-        # 2. /comment — note on the fixture's OPEN question (before /answer
-        #    moves it to Answered, so the Open-section match still finds it).
+            "/ask", {"question": asked})[0])
+        self.assertIn(asked, watch.read_text(answers_path),
+                      "/ask did not append the submitted question")
+        # 2. /comment — note on the fixture's OPEN question.
+        note = f"note {marker}"
+        questions_path = os.path.join(self.target, ".dreamwork", "questions.md")
+        self.assertNotIn(note, watch.read_text(questions_path))
         statuses.append(self.post(
             "/comment", {"question": "A real open question?",
-                         "comment": f"note {marker}",
+                         "comment": note,
                          "section": "Open"})[0])
-        # 3. /answer — fold the fixture's open question (moves to Answered).
+        self.assertIn(note, watch.read_text(questions_path),
+                      "/comment did not append the submitted note")
+        # 3. /answer — append an answer to the fixture's open question.
+        answer = f"ans {marker}"
+        self.assertNotIn(answer, watch.read_text(questions_path))
         statuses.append(self.post(
             "/answer",
             {"question": "A real open question?",
-             "answer": f"ans {marker}"})[0])
+             "answer": answer})[0])
+        self.assertIn(answer, watch.read_text(questions_path),
+                      "/answer did not append the submitted answer")
         # 4. /command — a valid command kind.
+        idea = f"idea {marker}"
+        events_path = os.path.join(self.target, ".dreamwork", "watch-events.log")
+        self.assertNotIn(idea, watch.read_text(events_path) or "")
         statuses.append(self.post(
-            "/command", {"kind": "add-idea", "text": f"idea {marker}"})[0])
+            "/command", {"kind": "add-idea", "text": idea})[0])
+        self.assertIn(idea, watch.read_text(events_path),
+                      "/command did not emit the submitted instruction")
         # 5. /tint — a valid tint name.
+        tint_path = os.path.join(self.target, ".dreamwork", "watch-tint")
+        self.assertFalse(os.path.exists(tint_path))
         statuses.append(self.post("/tint", {"tint": "indigo"})[0])
+        self.assertEqual(watch.read_text(tint_path), "indigo\n",
+                         "/tint did not persist the selected tint")
         # 6. /run-mode — a different mode than the default.
+        run_mode_path = os.path.join(self.target, ".dreamwork", "run-mode")
+        self.assertFalse(os.path.exists(run_mode_path))
         statuses.append(self.post("/run-mode", {"mode": "hot"})[0])
+        self.assertEqual(watch.read_text(run_mode_path), "hot\n",
+                         "/run-mode did not persist the selected mode")
         # 7. /posture — a three-axis triple (#445). Deliberately a pace other
         #    than the one step 6 just derived from run-mode `hot`, so the
         #    changed branch (the one that writes and emits) is what gets
@@ -299,15 +330,22 @@ class E2Shadow(HttpHarness):
         #    the rejection path wearing the name of the write path.
         self.assertIn("steady", lint.POSTURE_STOPS_PACE)
         self.assertIn("inform", lint.POSTURE_STOPS_ASKING)
+        posture_path = os.path.join(self.target, ".dreamwork", "posture")
+        self.assertFalse(os.path.exists(posture_path))
         statuses.append(self.post(
             "/posture", {"pace": "steady", "asking": "inform",
                          "delegation": 1})[0])
+        self.assertEqual(watch.read_posture_file(self.target), {
+            "pace": "steady", "asking": "inform", "delegation": 1,
+            "delivery": "instant", "orchestration": "hands-on",
+        }, "/posture did not persist the submitted posture")
         # 8. /subagent-policy — authored prose whose event-log line is
         #    deliberately transition-only. The structured receipt must still
         #    retain the exact request bytes: exercise newlines, edge whitespace
         #    and non-ASCII so a normalising receipt cannot pass.
         policy = "  leading policy\nuse sonnet — only\ntrailing policy  \n"
         policy_req = {"policy": policy}
+        self.assertIsNone(watch.read_subagent_policy(self.target))
         policy_status, _, policy_body = self.post(
             "/subagent-policy", policy_req)
         statuses.append(policy_status)
@@ -344,15 +382,31 @@ class E2Shadow(HttpHarness):
         #    decision cannot turn this into a schema rejection wearing the
         #    write path's name.
         self.assertIn("accepted", ledger_store.REVIEW_DECISIONS)
+        artifact = f"artifact-{marker}"
+        store = ledger_store.open_store(watch.store_path(dw))
+        self.assertIsNone(store.conn.execute(
+            "SELECT decision FROM review_decision WHERE artifact = ?",
+            (artifact,)).fetchone())
+        store.close()
         statuses.append(self.post(
-            "/decide", {"artifact": f"artifact-{marker}",
+            "/decide", {"artifact": artifact,
                         "question_title": "A real open question?",
                         "decision": "accepted"})[0])
+        store = ledger_store.open_store(watch.store_path(dw))
+        decision_row = store.conn.execute(
+            "SELECT question_title, decision, actor FROM review_decision "
+            "WHERE artifact = ?", (artifact,)).fetchone()
+        store.close()
+        self.assertEqual(
+            decision_row, ("A real open question?", "accepted", "watch"),
+            "/decide did not persist the submitted review decision")
 
         # 10. /goals — add a real goal and observe it through the independent
         #     repository projection. A 202 receipt alone would also describe a
         #     durable refusal, so the stored node is the write-path proof.
         goal_title = f"E2 goal {marker}"
+        self.assertNotIn(goal_title, {
+            node["title"] for node in watch.goal_tree_payload(self.target)["nodes"]})
         goal_status, _, goal_body = self.post(
             "/goals", {"action": "add-goal", "title": goal_title,
                        "details": "## Done when\n- Persisted\n",
@@ -367,6 +421,10 @@ class E2Shadow(HttpHarness):
         # 11. /settings — persist a non-default registered value and read it
         #     back through the dashboard's independent settings projection.
         setting_key, setting_value = "gfx.dither", "white-noise"
+        self.assertNotEqual(
+            watch.read_settings(self.target)["values"].get(setting_key),
+            setting_value,
+            "settings fixture already supplied the value the route must write")
         settings_status, _, settings_body = self.post(
             "/settings", {"key": setting_key, "value": setting_value})
         statuses.append(settings_status)
@@ -376,11 +434,21 @@ class E2Shadow(HttpHarness):
                          setting_value)
 
         # 12. /deploy — page-triggered just deploy (#462); runner faked.
+        self.assertFalse(self.deploy_called.is_set())
         statuses.append(self.post("/deploy", {})[0])
+        self.assertTrue(
+            self.deploy_called.wait(1),
+            "/deploy did not schedule the configured deploy runner")
         # 13. /remind — send the resolved posture to the coordinator inbox
         #     (#551); relay redirected to a temp dir in setUp. Empty {} body
         #     is the normal press.
+        remind_path = os.path.join(watch._remind_inbox_dir, "coord-inbox.md")
+        self.assertFalse(os.path.exists(remind_path))
         statuses.append(self.post("/remind", {})[0])
+        remind = watch.read_text(remind_path)
+        self.assertIn("posture remind", remind,
+                      "/remind did not append a coordinator reminder")
+        self.assertIn(watch._target_id(self.target), remind)
         # 14. /chat-reply — continue an EXISTING chat (#577). Its existence
         #     guard runs BEFORE apply, so an unknown id is a domain_invalid
         #     refusal — and a refusal still commits a receipt and answers
@@ -401,11 +469,13 @@ class E2Shadow(HttpHarness):
             watch.apply_chat_turn(self.target, cid, "human", f"seed {marker}"))
         self.assertTrue(watch._chat_exists(self.target, cid))
         reply = f"reply {marker}"
+        transcript_path = os.path.join(
+            self.target, ".dreamwork", watch.CHAT_DIR, cid, "transcript.md")
+        self.assertNotIn(reply, watch.read_text(transcript_path))
         statuses.append(self.post("/chat-reply", {"id": cid,
                                                   "text": reply})[0])
-        self.assertIn(reply, watch.read_text(os.path.join(
-            self.target, ".dreamwork", watch.CHAT_DIR, cid,
-            "transcript.md")))
+        self.assertIn(reply, watch.read_text(transcript_path),
+                      "/chat-reply did not append the submitted reply")
         # 15. /chat-archive — archive an EXISTING chat (#709). Its existence
         #     guard runs BEFORE the write, so an unknown id is a
         #     domain_invalid refusal — and a refusal still commits a receipt
@@ -421,6 +491,7 @@ class E2Shadow(HttpHarness):
         ac = f"e2-archive-{marker}"
         self.assertTrue(
             watch.apply_chat_turn(self.target, ac, "human", f"to archive {marker}"))
+        self.assertFalse(watch.is_chat_archived(self.target, ac))
         statuses.append(self.post("/chat-archive", {"id": ac, "archive": True})[0])
         self.assertTrue(watch.is_chat_archived(self.target, ac),
             "the archive marker must exist after /chat-archive on a real chat")
@@ -428,6 +499,10 @@ class E2Shadow(HttpHarness):
 
     def assert_all_write_routes_exercised(self, exercised):
         """The production dispatch equals the paths this harness really POSTed."""
+        self.assertEqual(
+            len(WRITE_ROUTES), EXPECTED_WRITE_ROUTE_COUNT,
+            "write-route registry denominator changed; audit run_all_routes "
+            "before updating EXPECTED_WRITE_ROUTE_COUNT")
         expected = set(WRITE_ROUTES)
         actual = set(exercised)
         missing = sorted(expected - actual)
