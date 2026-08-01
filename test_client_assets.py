@@ -163,16 +163,26 @@ def test_data_siblings_ships_every_client_asset():
         "read — dev/deploy_state.py would find nothing and deploy would ship "
         "no client assets at all"
     )
-    want = {"client/" + n for n in _assets()}
+    assets = _assets()
+    assert assets, (
+        "_assets() returned %r; examined 0 client assets, so this deploy "
+        "check would pass without checking anything" % (assets,)
+    )
+    want = {"client/" + n for n in assets}
     missing = sorted(want - set(declared))
     assert not missing, (
         "DATA_SIBLINGS does not declare %r — `just deploy` would not ship "
         "them and the deployed dashboard would serve a broken page" % missing
     )
-    # the vendored reconciler must stay first: _load_morphdom_js indexes [0]
-    assert declared[0] == "vendor/morphdom.min.js", (
-        "DATA_SIBLINGS[0] is %r, but _load_morphdom_js reads index 0"
-        % (declared[0],)
+
+
+def test_morphdom_loader_reads_the_vendored_reconciler():
+    """A different valid script must not masquerade as morphdom."""
+    expected = (ROOT / "vendor/morphdom.min.js").read_text(encoding="utf-8")
+    assert expected, "vendor/morphdom.min.js is empty; examined 0 bytes"
+    assert watch._load_morphdom_js() == expected, (
+        "_load_morphdom_js did not read vendor/morphdom.min.js; valid but "
+        "unrelated JavaScript would parse while leaving morphdom undefined"
     )
 
 
