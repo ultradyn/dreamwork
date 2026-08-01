@@ -2,6 +2,50 @@
 
 ## Open
 
+- **P2 · 2026-08-01 23:10 — #867: 44 old briefs omit `Lane-owns:` — content-resolved cutoff (my rec), or delete them?**
+  **Short version:** #867's lane finished the mechanism and then found that fixing the blindness turns
+  lint red on 44 old briefs. It refused to resolve that by weakening anything and handed the choice
+  back. I have a recommendation and I am proceeding on it — but the destructive option is yours alone,
+  so this is here for you to overrule me.
+
+  **What happened.** `#867` removed the git-add-date blindness from the four brief checks. One of them,
+  `#465`'s `Lane-owns:` check, was worse than blind: when git had no answer for a brief it treated that
+  as **grandfathered** — not "skipped" like its three siblings. So an uncommitted brief was silently
+  declared *old*. The corpus stopped being committed promptly and the check went blind in exactly that
+  direction.
+
+  Un-blinded, **44 briefs declare no `Lane-owns:` at all** — `#584` and every one from `#795` to `#888`
+  — and lint reports `44 error(s)`. One test fails as the same consequence. The branch is otherwise
+  complete and verified.
+
+  **This is a true red, not a false one.** Those briefs really do omit a line `SKILL.md` makes
+  mandatory. The question is only what to do about a true red on a closed historical set.
+
+  **The set is already closed going forward.** `#881` (landing tonight) built `dev/brief.py`, which
+  independently measured the same decay — `Lane-owns:` reached **2 of 40** — and now REFUSES to render
+  a brief without `--owns`.
+
+  **The three options the lane named:**
+
+  1. **Delete the 44 stale local briefs.** They are operator-local scratch now (untracked, gitignored
+     since `#867`). Clears the red completely. **Irreversible, and it deletes the record of what was
+     dispatched and why.**
+  2. **Add a second content-resolved cutoff at `dev/brief.py`'s introduction** — ~15 lines, the same
+     idiom as the three cutoffs already there. Says honestly: *the rule became mechanically enforceable
+     here*. **Does not fully clear** — several briefs written after `#881` still omit the line, because
+     I dispatched them by hand rather than through the tool.
+  3. **Accept red until (1).**
+
+  **My recommendation: (2), plus route dispatch through `dev/brief.py` so the residual set closes by
+  construction rather than by grandfathering.** The reasoning: the brief corpus is our only audit of
+  dispatch discipline, and deleting 44 records to make the audit green is the same move as deleting
+  failing rows. The cutoff is not a weakening — it is the same statement the other three cutoffs make.
+  And deletion stays available later; it cannot be undone if taken now.
+
+  **What I need from you, if anything:** only a veto or a redirect. If you want the 44 gone, say so and
+  I will do it — that is the one branch I will not take on my own judgement, because it is irreversible
+  and the briefs are your project's history, not mine.
+
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
