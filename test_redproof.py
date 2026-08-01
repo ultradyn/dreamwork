@@ -381,6 +381,145 @@ class TestFailClosed:
         assert "absent" in err or "FAULT" in err
 
 
+# ─#950: a state this build cannot read ────────────────────────────────
+
+class TestUnknownStateIsNamedNotCollapsed:
+    """#950: an entry whose state this build does not know is refused as the
+    dangerous case — fail-closed is right and is NOT changed — but its refusal
+    names the format-skew possibility and reads distinctly from a genuinely
+    armed entry. The class, not the instance: this models the next format
+    change (whatever its string), not RETIRED specifically.
+
+    A registry that adds a state and leaves entries in it is unlandable when
+    the pre-merge gate runs an older build: the lane's own check (newer tool)
+    reads clean while the gate (older tool) refuses. Naming the skew turns a
+    twenty-minute diagnosis into a two-minute one (#940 applied here)."""
+
+    # A state string this build does not know. Deliberately not RETIRED: the
+    # fix must address the CLASS, not the instance, and a fixture that names
+    # the current known-but-new state would pass for the wrong reason once the
+    # gate build catches up to it.
+    FUTURE_STATE = "quarantined"
+
+    def _seed_unknown(self, repo: Path, *, state: str = FUTURE_STATE) -> dict:
+        """Write a registry holding one entry in an unknown state.
+
+        Mirrors the lane-state that caused #950: a state a newer build wrote
+        and an older gate cannot classify."""
+        rp._write_registry(repo, [{
+            "path": "router.js", "state": state,
+            "injected_sha": "0" * 40, "injected_hint": "future-format",
+            "begun_head": _git(repo, "rev-parse", "HEAD"),
+        }])
+        return {"state": state}
+
+    def test_an_unknown_state_refuses_and_names_the_skew(self, repo, capsys):
+        """Direction 1: the production seam broken is check's classification
+        loop (dev/redproof.py: the `st not in KNOWN_STATES` branch). An entry
+        in an unknown state MUST refuse AND name the format-skew possibility —
+        a bare 'refused' is not discriminating and is exactly the #950 bug
+        (it reads identical to four genuinely-armed entries)."""
+        seeded = self._seed_unknown(repo)
+        # Precondition the check depends on: the state really is unknown to
+        # this build. A check built on KNOWN_STATES cannot pass this assertion
+        # while also classifying the entry — the two are mutually exclusive.
+        assert seeded["state"] not in rp.KNOWN_STATES, (
+            "fixture precondition: the seeded state must be outside "
+            f"KNOWN_STATES={rp.KNOWN_STATES}, or the test proves nothing")
+        exit = _check(repo)
+        _, err = capsys.readouterr()
+        assert exit == 1, "an unknown state MUST be refused (fail-closed, #950)"
+        # discriminating referent 1: the unknown state string is named
+        assert repr(self.FUTURE_STATE) in err, (
+            "the refusal must name the unknown state value, so the next "
+            "reader diagnoses the format skew in two minutes, not twenty")
+        # discriminating referent 2: the format-skew possibility is named
+        assert "cannot read" in err or "cannot classify" in err, (
+            "the refusal must name that the tool cannot read the state — "
+            "the remedy — not merely the condition (#940)")
+        assert "pre-merge tool is reading post-lane data" in err or (
+            "pre-merge" in err), err
+
+    def test_the_unknown_refusal_prints_the_denominator(self, repo, capsys):
+        """#868: a check that classified N entries and one that classified 0
+        must not report alike. The refusal carries 'of <active>' so a reader
+        can tell one unknown entry in a one-entry registry from one in forty."""
+        self._seed_unknown(repo)
+        exit = _check(repo)
+        _, err = capsys.readouterr()
+        assert exit == 1
+        # denominator present: "1 of 1 active" — not a bare "1 ... injection(s)"
+        assert "1 of 1 active" in err, err
+
+    def test_the_two_refusals_read_differently(self, repo, capsys):
+        """THE discriminating detail (#950): an unknown-state refusal and a
+        genuine armed refusal must NOT print alike. Today they do — four
+        unknown entries and four genuinely-armed entries produce the identical
+        'begun-but-unrestored' message. Flip one byte (unknown → armed) and
+        the message must change."""
+        # Unknown state first.
+        self._seed_unknown(repo)
+        exit_unk = _check(repo)
+        _, err_unk = capsys.readouterr()
+        assert exit_unk == 1
+        # Now flip one byte: the SAME entry, state ARMED (genuinely begun but
+        # unrestored). This is the production contrast: unknown vs armed.
+        entries, _ = rp._read_registry(repo)
+        entries[0]["state"] = rp.ARMED
+        rp._write_registry(repo, entries)
+        exit_arm = _check(repo)
+        _, err_arm = capsys.readouterr()
+        assert exit_arm == 1
+        # Both refuse (fail-closed holds for both), but they differ in wording.
+        assert err_unk != err_arm, (
+            "the two refusals MUST read differently — the #950 bug is that "
+            "an unknown state and a genuine armed entry wear the same words")
+        # The discriminating content: the unknown message names the state
+        # value and the format-skew possibility; the armed message does
+        # neither (it names the path and begun-but-unrestored as the cause).
+        assert repr(self.FUTURE_STATE) in err_unk
+        assert repr(self.FUTURE_STATE) not in err_arm
+        assert "cannot read" in err_unk
+        assert "cannot read" not in err_arm
+
+    def test_unknown_is_not_treated_as_restored(self, repo, capsys):
+        """Direction 2, the fail-closed invariant: the fix must NOT make an
+        unknown state read as RESTORED. If it did, a genuinely-armed entry
+        written by a future format would land silently. An unknown entry MUST
+        refuse, never pass."""
+        self._seed_unknown(repo)
+        exit = _check(repo)
+        out, err = capsys.readouterr()
+        assert exit != 0, (
+            "an unknown state must NEVER pass — defaulting unknown to restored "
+            "converts a refusal into a silent hole (#950's prohibition)")
+
+    def test_a_near_miss_state_is_also_unknown_not_restored(self, repo, capsys):
+        """Direction 2, the attacker-shaped case: a lane writes 'restored '
+        (trailing space) or 'Restored' (wrong case). The unknown-state path
+        must NOT excuse a real armed entry as a format problem by passing it
+        — it refuses. (Whether such an entry SHOULD be refused as unknown vs
+        armed is a separate question; the invariant is that it does not PASS.)"""
+        for near in ["restored ", "Restored", "RESTORED!", ""]:
+            self._seed_unknown(repo, state=near)
+            exit = _check(repo)
+            capsys.readouterr()  # drain
+            assert exit == 1, (
+                f"a near-miss state {near!r} must not pass — only an exact "
+                f"member of KNOWN_STATES may be classified as restored/armed")
+
+    def test_the_remedy_text_does_not_read_as_permission(self, repo, capsys):
+        """Direction 2: the format-skew remedy must never read as permission
+        to merge. An attacker who writes an unknown state must not be able to
+        quote the message as cover. The refusal states it is not permission."""
+        self._seed_unknown(repo)
+        exit = _check(repo)
+        _, err = capsys.readouterr()
+        assert exit == 1
+        assert "not permission to merge" in err, (
+            "the remedy text must explicitly disclaim being permission")
+
+
 # ─# restore records the injected state correctly ──────────────────────
 
 class TestRestoreRecordsInjected:
