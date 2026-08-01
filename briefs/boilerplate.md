@@ -224,6 +224,23 @@ names this rule and says why it is overriding it.**
 The recipe first prints how many other suites and browser processes are live, so you can see
 which situation you are in before adding your own load.
 
+**Also run the always-run repo-wide guard set — additive to the targeted subset above, not a
+replacement for it.** A repo-wide guard asserts a property over a population your diff cannot
+enumerate (every production source, every parser verb), so "the tests for the files you touched"
+cannot reach it — two merges were reverted in one hour for exactly this (`#776`'s lane added a raw
+`sqlite3.connect`; `#645` i9 added verbs with no `_VERB_ARGV` rows). The ruling above stands
+unchanged: this is a small, deliberate ~1%-of-the-tree set ON TOP of your targeted subset, not the
+whole tree. Run it alongside your subset:
+
+    just pytest $(python3 dev/repo_wide_guards.py list)
+
+`python3 dev/repo_wide_guards.py list` is the single source for the set (`#440`); today it holds
+`test_no_raw_connect.py::test_no_raw_sqlite_connect_in_production_sources` and
+`test_ledger_cli.py::test_the_map_covers_every_verb` (37 tests, ~0.4s). This catches cross-cutting
+RULES only — not a lane breaking an unrelated feature's behaviour, which is what the coordinator's
+full merged-tree sweep is for and remains for (`#651`); nothing here makes that sweep optional.
+Adding a member needs the entry criterion argued (see the tool's docstring).
+
 **Lane bars are command-, snapshot-, and interpreter-relative.** Run `python3 lint.py`: require
 NO ERRORs and inspect every WARN message against the measured baseline. A worktree may add
 `tasks.md` ledger-absent/zero-entry, `status.json`-absent, and `ledger checks`-examined-nothing
