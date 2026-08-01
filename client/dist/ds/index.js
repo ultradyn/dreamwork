@@ -5044,7 +5044,6 @@ var DreamworkDesign = (() => {
     });
     restoreRolls();
   }
-  loadRolls();
   function snapshotBars() {
     const m = /* @__PURE__ */ new Map();
     document.querySelectorAll(".bd .bdbar[data-bk]").forEach((el) => m.set(el.dataset.bk + "/" + el.dataset.series, {
@@ -6619,7 +6618,7 @@ var DreamworkDesign = (() => {
       r.name,
       r.param,
       { push: false, transition: false, q: r.q, mode: r.mode }
-    );
+    ).then(loadRolls);
     tick();
   })();
   function ripple(x, y) {

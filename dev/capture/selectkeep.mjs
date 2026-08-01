@@ -165,8 +165,10 @@ async function forceTickSample() {
     const beforeCards = snapshotCards();
     // #523 rides reconciliation now (snapshotViewInputs retired in #505 p2):
     // a focused input is kept by id and value-stamped in the morph.
-    setData(await (await fetch(typeof dataJsonUrl === 'function'
-      ? dataJsonUrl() : '/data.json')).json());
+    // Use the production delta seam. Calling dataJsonUrl() directly can
+    // return a {changed, removed} envelope, which is not a data document.
+    const next = await fetchDataResponse();
+    if (next) setData(next);
     const html = await buildCurrent();
     setLiveContent(html);
     restoreCardState(kept);

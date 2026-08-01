@@ -2425,7 +2425,6 @@ async function loadRolls() {
   });
   restoreRolls();
 }
-loadRolls();
 /* the burndown's bars (#142), on #151's gate and for #151's reason.
 
    A bar is a VALUE re-rendered, not an element that moved, so the opt-in
@@ -4581,6 +4580,7 @@ if (!MIST_ON) document.body.classList.add('mistoff');   // #449: see crossfade
 (function () {                              // initial view from the URL
   const r = routeOf(location);
   navigate(r.name, r.param,
-           { push: false, transition: false, q: r.q, mode: r.mode });
+           { push: false, transition: false, q: r.q, mode: r.mode })
+    .then(loadRolls);
   tick();
 })();
