@@ -303,9 +303,10 @@ def test_safe_staging_root_two_lanes_differ():
         f"two different worktrees derived the same lane key ({key_a}) — "
         f"the identity derivation is broken"
     )
-    assert safe_a.parent.parent.parent == lane_scratch.SCRATCH_ROOT, (
-        f"safe staging root {safe_a} is not under the expected scratch root"
+    assert safe_a.is_relative_to(lane_scratch.SCRATCH_ROOT), (
+        f"safe staging root escaped SCRATCH_ROOT: {safe_a}"
     )
+    assert safe_a.name == "mcp-shots"
 
 
 # ─── the finding: the default is NOT lane-private ─────────────────────────
