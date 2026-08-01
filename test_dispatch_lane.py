@@ -21,7 +21,9 @@ def _ledger_fixture(root: Path) -> None:
     dreamwork = root / ".dreamwork"
     dreamwork.mkdir()
     connection = sqlite3.connect(dreamwork / "ledger.sqlite3")
-    connection.execute("CREATE TABLE task (id INTEGER PRIMARY KEY)")
+    connection.execute(
+        "CREATE TABLE task (id INTEGER PRIMARY KEY, state TEXT NOT NULL DEFAULT 'open')"
+    )
     connection.executemany(
         "INSERT INTO task(id) VALUES (?)",
         [(task_id,) for task_id in (136, 349, 440, 671, 755, 776, 900, 901, 902, 903, 904)],
@@ -36,6 +38,8 @@ def _sandbox_cli(tmp_path: Path) -> tuple[Path, Path]:
     (root / "briefs").mkdir()
     cli = root / "dev" / "dispatch_lane.py"
     shutil.copy2(CLI, cli)
+    shutil.copytree(ROOT / "dreamwork_db", root / "dreamwork_db")
+    shutil.copy2(ROOT / "ledger_store.py", root / "ledger_store.py")
     (root / "briefs" / "boilerplate.md").write_text(CONTRACT, encoding="utf-8")
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     _ledger_fixture(root)
@@ -63,6 +67,8 @@ def _linked_worktree_cli(tmp_path: Path) -> tuple[Path, Path, Path]:
     (lane / "briefs").mkdir()
     cli = lane / "dev" / "dispatch_lane.py"
     shutil.copy2(CLI, cli)
+    shutil.copytree(ROOT / "dreamwork_db", lane / "dreamwork_db")
+    shutil.copy2(ROOT / "ledger_store.py", lane / "ledger_store.py")
     (lane / "briefs" / "boilerplate.md").write_text(CONTRACT, encoding="utf-8")
     return cli, main, lane
 

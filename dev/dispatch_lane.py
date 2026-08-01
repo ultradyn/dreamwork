@@ -18,13 +18,18 @@ import argparse
 import hashlib
 import os
 import re
-import sqlite3
 import subprocess
 import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from dreamwork_db import Access, DatabaseError, StoreSpec, open_database  # noqa: E402
+from dreamwork_db.tasks import TaskRepository  # noqa: E402
+
+
 CONTRACT_PATH = ROOT / "briefs" / "boilerplate.md"
 INTEGRITY_START_TASK = 766
 _TASK_HEAD = re.compile(r"^# [^\n]*?#(\d+)\b", re.MULTILINE)
@@ -156,14 +161,15 @@ def _ledger_ids(dreamwork_dir: Path) -> set[int]:
     store = dreamwork_dir / "ledger.sqlite3"
     if store.is_file():
         try:
-            connection = sqlite3.connect(
-                f"file:{store}?mode=ro", uri=True, timeout=0
+            spec = StoreSpec(
+                store,
+                repositories={"tasks": TaskRepository},
+                busy_timeout_ms=0,
             )
-            try:
-                return {row[0] for row in connection.execute("SELECT id FROM task")}
-            finally:
-                connection.close()
-        except sqlite3.Error as exc:
+            with open_database(spec, access=Access.READ) as database:
+                open_ids, landed_ids = database.tasks.ids_by_state()
+            return {int(task_id) for task_id in open_ids + landed_ids}
+        except DatabaseError as exc:
             raise OSError(f"could not query ledger store {store}: {exc}") from exc
 
     ledger = dreamwork_dir / "tasks.md"
@@ -184,7 +190,7 @@ def ledger_reference_reports(prompt_head: str, dreamwork_dir: Path) -> list[str]
         return []
     try:
         known_ids = _ledger_ids(dreamwork_dir)
-    except OSError as exc:
+    except Exception as exc:
         return [
             "dispatch ledger reference check DID NOT RUN: "
             f"{exc}; launch allowed"
