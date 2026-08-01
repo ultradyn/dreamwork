@@ -5,6 +5,7 @@ import hashlib
 import os
 import re
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -179,6 +180,43 @@ def test_dispatch_refuses_pipe_before_short_reader_can_kill_runner(tmp_path):
     assert not started.exists(), "runner launched before the pipe refusal"
 
 
+def test_dispatch_refuses_socket_before_peer_can_kill_runner(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    started = tmp_path / "runner-started"
+    writer = (
+        "import pathlib,signal,sys,time; "
+        "pathlib.Path(sys.argv[1]).touch(); "
+        "signal.signal(signal.SIGPIPE,signal.SIG_DFL); "
+        "[(print(i,flush=True),time.sleep(.01)) for i in range(10000)]"
+    )
+    reader, child_stdout = socket.socketpair()
+    try:
+        process = subprocess.Popen(
+            [sys.executable, str(cli), "--prompt", str(prompt), "--",
+             sys.executable, "-c", writer, str(started)],
+            stdout=child_stdout,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    finally:
+        child_stdout.close()
+    with reader.makefile("r", encoding="utf-8") as stream:
+        lines = [stream.readline() for _ in range(3)]
+    reader.close()
+    returncode = process.wait(timeout=5)
+    assert process.stderr is not None
+    stderr = process.stderr.read()
+
+    assert returncode == 2, (
+        f"dispatcher reached the runner and died from SIGPIPE ({returncode})"
+    )
+    assert lines == ["", "", ""]
+    assert "stdout is a socket whose peer can close early" in stderr
+    assert "DREAMWORK_ALLOW_PIPED_STDOUT=1" in stderr
+    assert not started.exists(), "runner launched before the socket refusal"
+
+
 def test_explicit_pipe_override_launches_runner(tmp_path):
     cli, root = _sandbox_cli(tmp_path)
     prompt = _healthy_prompt(tmp_path, root)
@@ -227,6 +265,41 @@ def test_regular_file_redirect_launches_runner(tmp_path):
         )
 
     assert result.returncode == 0
+    assert launched.is_file()
+
+
+def test_inherited_stdout_launches_runner(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    launched = tmp_path / "inherited-stdout-launched"
+
+    result = subprocess.run(
+        [sys.executable, str(cli), "--prompt", str(prompt), "--",
+         sys.executable, "-c", "import pathlib,sys; pathlib.Path(sys.argv[1]).touch()",
+         str(launched)],
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert launched.is_file()
+
+
+def test_dev_null_stdout_launches_runner(tmp_path):
+    cli, root = _sandbox_cli(tmp_path)
+    prompt = _healthy_prompt(tmp_path, root)
+    launched = tmp_path / "dev-null-launched"
+
+    result = subprocess.run(
+        [sys.executable, str(cli), "--prompt", str(prompt), "--",
+         sys.executable, "-c", "import pathlib,sys; pathlib.Path(sys.argv[1]).touch()",
+         str(launched)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
     assert launched.is_file()
 
 

@@ -54,15 +54,23 @@ class DispatchFault(Exception):
 
 
 def validate_stdout() -> None:
-    """Refuse a pipe whose reader could silently kill the exec'd runner."""
+    """Refuse peer-backed stdout that could silently kill the exec'd runner."""
     try:
         mode = os.fstat(sys.stdout.fileno()).st_mode
     except (OSError, ValueError) as exc:
         raise DispatchFault(f"could not classify stdout: {exc}") from exc
-    if stat.S_ISFIFO(mode) and os.environ.get(ALLOW_PIPED_STDOUT_ENV) != "1":
+    if os.environ.get(ALLOW_PIPED_STDOUT_ENV) == "1":
+        return
+    if stat.S_ISFIFO(mode):
         raise DispatchFault(
             "stdout is a pipe whose reader can close early and kill the runner with SIGPIPE; "
             "redirect to a regular file, or explicitly allow the pipe with "
+            f"{ALLOW_PIPED_STDOUT_ENV}=1"
+        )
+    if stat.S_ISSOCK(mode):
+        raise DispatchFault(
+            "stdout is a socket whose peer can close early and kill the runner with SIGPIPE; "
+            "redirect to a regular file, or explicitly allow the socket with "
             f"{ALLOW_PIPED_STDOUT_ENV}=1"
         )
 
