@@ -46,11 +46,11 @@ let view = { name: null, param: null, q: null };
    The /filedata response carries one of those shapes; never the bytes. */
 let fileCache = { param: null, fetched: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
-const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, settings: -0.04, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19, chat: 0.05 };
+const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, settings: -0.04, file: -0.14, review: 0.22, question: 0.18, research: -0.08, reviews: 0.19, goals: 0.11, chat: 0.05 };
 /* per-route dissolve signature: each destination swirls from its own
    turbulence seed, so arriving somewhere has a consistent feel (pairs with
    the per-route tint). Distinct small integers give distinct fields. */
-const SEED = { dashboard: 7, questions: 23, answers: 29, settings: 37, file: 41, review: 61, question: 67, research: 71, reviews: 73, chat: 89 };
+const SEED = { dashboard: 7, questions: 23, answers: 29, settings: 37, file: 41, review: 61, question: 67, research: 71, reviews: 73, goals: 79, chat: 89 };
 /* ── the tab title (#153) ─────────────────────────────────────────────────
    The title is the ONLY part of this dashboard that exists while the tab is
    backgrounded, which is most of its life — so it answers the page's whole
@@ -91,6 +91,7 @@ const TITLE_ROUTE = { dashboard: () => '', questions: () => 'questions',
                       question: () => 'question',
                       research: p => 'research' + (p ? ' ' + p : ''),
                       reviews: () => 'reviews',
+                      goals: () => 'goals',
                       chat: () => 'chat' };
 /* two missed heartbeats (4.75m each) — one late beat is a busy machine, two
    is a loop that stopped. */
@@ -1312,6 +1313,7 @@ function routeOf(loc) {
   }
   // #545 — the full reviews listing the dashboard's cap points at.
   if (loc.pathname === '/reviews') return { name: 'reviews', param: null };
+  if (loc.pathname === '/goals') return { name: 'goals', param: null };
   // #562 — /chat/<id>: one topic chat's conversation. The id is the path
   // segment after /chat/; /chat with no id degrades to the page's not-found
   // voice (a chat is its own subject — the navigate principle).
@@ -3756,6 +3758,7 @@ const TITLES = {
   /* #545 — the listing surface; the heading names it like the research
      listing does. */
   reviews: () => 'reviews',
+  goals: () => 'goals',
   /* #562 — the chat page's heading is the chat's DERIVED title (from d.chats,
      the same derivation the list shows), not the bare word "chat": a chat is
      its own subject, so its name heads the page. Falls back to 'chat' while
@@ -3866,6 +3869,8 @@ function crumbsFor(v, d) {
   // #545: the reviews listing's way back is the dashboard, the same single
   // home crumb the research listing carries (no artifact here, just the list).
   if (v.name === 'reviews')
+    return [{ k:'home', html:'<a href="/">&larr; dashboard</a>' }];
+  if (v.name === 'goals')
     return [{ k:'home', html:'<a href="/">&larr; dashboard</a>' }];
   // #562: the chat page's way back is the dashboard — the chat list lives
   // there. Same single home crumb the listings carry.
@@ -4662,6 +4667,7 @@ async function navigate(name, param, opts) {
     : name === 'research' ? '/research' +
         (param ? '?p=' + encodeURIComponent(param) : '')
     : name === 'reviews' ? '/reviews'
+    : name === 'goals' ? '/goals'
     : name === 'chat' ? '/chat/' + encodeURIComponent(param || '')
     : '/';
   /* The wide artifact column is the review idiom's, and a research DOC
@@ -4696,6 +4702,7 @@ function isInternal(a) {
       || a.pathname === '/file' || a.pathname === '/review'
       || a.pathname === '/question' || a.pathname === '/research'
       || a.pathname === '/reviews'
+      || a.pathname === '/goals'
       || a.pathname.startsWith('/chat/');
 }
 addEventListener('click', e => {

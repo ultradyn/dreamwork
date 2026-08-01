@@ -691,7 +691,7 @@ DATA_SIBLINGS = ("vendor/morphdom.min.js", "vendor/LICENSE.morphdom",
                  "dev/build/src/delegate.js",
                  "dev/build/src/native-entry.js",
                  "dev/build/src/probe.js",
-                 "dev/build/src/research.js",
+                 "dev/build/src/research.js", "dev/build/src/goals.js",
                  "dev/build/src/registry.js",
                  "client/dist/manifest.json",
                  "client/dist/ds/index.js",
@@ -3918,7 +3918,7 @@ def collect(target, burn_step=None):
         # instrumentation, because tasks.md is versioned and its ids are
         # permanent. burn_step (#487) forces granularity; None keeps auto.
         "burndown": ledger_stats(target, step=burn_step),
-        "groups": group_progress(target),  # #836: #824's durable membership
+        "groups": group_progress(target), "goals": goal_tree_payload(target),
         # his colour for this project (#143). It rides /data.json rather than
         # the shell so the EXISTING mtime poll carries it: he picks a tint in
         # one window and every other window on this project follows within a
@@ -4110,7 +4110,7 @@ SUMMARY_DENIED = frozenset({
     "plugin_commands",   # machine UI vocabulary (prose desc/label), not a
                          #   project-status summary, and reveals the plugin set
     "chats",             # #504 topic-chat transcripts — his words + the
-    "groups", "settings",  # replies/group prose; local preference metadata
+    "groups", "goals", "settings",  # replies/group prose; local preference metadata
 })                       #   descriptions — authored prose, plus member ids
 
 
@@ -5511,7 +5511,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # segment, so it is matched by prefix rather than the fixed set.
             if (parsed.path in ("/", "/questions", "/answers", "/settings", "/file",
                                "/review", "/question", "/research",
-                               "/reviews", "/tasks")
+                               "/reviews", "/tasks", "/goals")
                     or parsed.path == "/chat"
                     or parsed.path.startswith("/chat/")):
                 self._send(page, "text/html")
@@ -5545,6 +5545,9 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 self._send(json.dumps(summary(target)), "application/json")
             elif parsed.path == "/tasksdata":
                 self._send(json.dumps(tasks_response(target, parsed.query)),
+                           "application/json")
+            elif parsed.path == "/goalsdata":
+                self._send(json.dumps(goal_tree_payload(target)),
                            "application/json")
             elif parsed.path == "/settingsdata":
                 payload, status = read_settings_batch(
@@ -6855,6 +6858,149 @@ def tasks_response(target, query):
     payload.pop("tasks")
     payload["task"] = task
     return payload
+
+
+def _goal_criteria(details):
+    """Numbered/list criteria under the exact ``## Done when`` heading."""
+    criteria = []
+    active = False
+    for line in details.splitlines():
+        if line.startswith("## "):
+            active = line.strip().casefold() == "## done when"
+            continue
+        if not active:
+            continue
+        match = re.match(r"\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)(.+)", line)
+        if match:
+            criteria.append(match.group(1).strip())
+    return criteria
+
+
+def goal_tree_payload(target):
+    """The one read projection for the dashboard handle and ``/goals``.
+
+    ``expected_count`` is derived independently from ``preorder`` so a walk
+    that drops a subtree fails closed instead of rendering a plausible partial
+    tree. Empty and unreadable therefore cannot share an envelope.
+    """
+    dw = os.path.join(target, ".dreamwork")
+    envelope = {
+        "health": "missing", "examined_count": 0, "expected_count": 0,
+        "current_goal_id": None, "nodes": [],
+    }
+    if source_of_truth(dw) != "store":
+        return envelope
+    from dreamwork_db import Access, DatabaseError, open_database
+    from dreamwork_db.groups import EmptyGroup
+    from dreamwork_db.tasks import task_store_spec
+    try:
+        with open_database(
+                task_store_spec(store_path(dw)), access=Access.READ) as store:
+            all_goals = tuple(group for group in store.groups.list()
+                              if group.kind == "goal")
+            expected = tuple(group.id for group in all_goals)
+            ordered = store.goals.preorder()
+            envelope["expected_count"] = len(expected)
+            envelope["examined_count"] = len(ordered)
+            if (len(ordered) != len(expected) or
+                    set(ordered) != set(expected)):
+                envelope.update({
+                    "health": "incomplete",
+                    "error": (
+                        "goal tree incomplete: examined %d of %d goal nodes; "
+                        "refusing to render a partial tree"
+                        % (len(ordered), len(expected))),
+                })
+                return envelope
+
+            task_records = {
+                record["id"]: task_payload_record(record)
+                for record in store.tasks.records()
+            }
+            groups = {group.id: group for group in all_goals}
+            nodes = []
+            for group_id in ordered:
+                group = groups[group_id]
+                blockers = []
+                blocker_keys = set()
+
+                def add_blocker(blocker):
+                    key = (blocker.needs_kind, blocker.needs_id)
+                    if key in blocker_keys:
+                        return
+                    blocker_keys.add(key)
+                    if blocker.needs_kind == "group":
+                        needed = store.groups.get(blocker.needs_id)
+                        title = needed.title
+                    else:
+                        title = task_records.get(
+                            blocker.needs_id, {}).get("title", "unknown task")
+                    blockers.append({
+                        "kind": blocker.needs_kind,
+                        "id": blocker.needs_id,
+                        "title": title,
+                        "reason": blocker.reason,
+                    })
+
+                for blocker in store.groups.blockers(group_id=group_id):
+                    add_blocker(blocker)
+                node = {
+                    "id": group.id,
+                    "title": group.title,
+                    "details": group.description,
+                    "criteria": _goal_criteria(group.description),
+                    "parent_id": group.parent_id,
+                    "rank": store.goals.rank(group.id),
+                    "state": store.goals.state(group.id),
+                    "blockers": blockers,
+                    "member_tasks": [],
+                    "verdicts": [],
+                }
+                try:
+                    progress = store.groups.progress(group.id)
+                except EmptyGroup as exc:
+                    node["progress_error"] = str(exc)
+                else:
+                    # blockers(task_id=...) is the repository seam that adds
+                    # every governing group, including ancestor goals. Do not
+                    # reproduce that hierarchy walk here.
+                    for task_id in progress.member_task_ids:
+                        for blocker in store.groups.blockers(task_id=task_id):
+                            add_blocker(blocker)
+                    node.update({
+                        "completed_count": progress.completed_count,
+                        "total_count": progress.total_count,
+                        "member_tasks": [
+                            task_records[task_id]
+                            for task_id in progress.member_task_ids
+                            if task_id in task_records
+                        ],
+                    })
+                claims = store.goals.claims(group.id)
+                if claims:
+                    node["verdicts"] = [{
+                        "lens": verdict.lens,
+                        "refuted": verdict.refuted,
+                        "blocking": verdict.blocking,
+                        "findings": list(verdict.findings),
+                        "corroborated": list(verdict.corroborated),
+                        "examined": dict(verdict.examined),
+                    } for verdict in store.goals.verdicts(claims[-1].id)]
+                nodes.append(node)
+            envelope.update({
+                "health": "ok",
+                "current_goal_id": store.goals.current_goal_id(),
+                "nodes": nodes,
+            })
+            return envelope
+    except (DatabaseError, OSError, ValueError) as exc:
+        envelope.update({
+            "health": "unavailable",
+            "error": (
+                "goal tree unavailable after examining %d of %d goal nodes: %s"
+                % (envelope["examined_count"], envelope["expected_count"], exc)),
+        })
+        return envelope
 
 
 if __name__ == "__main__":

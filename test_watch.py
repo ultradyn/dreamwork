@@ -6374,6 +6374,162 @@ class TestTasksRoute(unittest.TestCase):
             "task #999's unrecognised repository state did not fail closed")
 
 
+class TestGoalsRoute(unittest.TestCase):
+    """#890: /goals is one denominator-bearing repository projection."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.target = self.tmp.name
+        dw = _store_target(self.target)
+        with open_database(
+                task_store_spec(watch.store_path(dw)),
+                access=Access.WRITE) as store:
+            with store.transaction():
+                for title in ("prerequisite task", "root task", "child task"):
+                    store.tasks.file(
+                        title, title + " body", priority="P2", type="test",
+                        origin="human", blocked_on=None, actor="test",
+                        at="2026-08-01T01:00:00Z")
+                prerequisite = store.groups.create(
+                    kind="goal", title="Prerequisite", actor="test",
+                    at="2026-08-01T01:00:01Z")
+                root = store.groups.create(
+                    kind="goal", title="Current root",
+                    description=("## Why now\nBecause.\n\n## Done when\n"
+                                 "1. First criterion\n2. Second criterion\n"
+                                 "3. Third criterion\n"),
+                    actor="test", at="2026-08-01T01:00:02Z")
+                child = store.groups.create(
+                    kind="goal", title="Ranked child", parent_id=root,
+                    actor="test", at="2026-08-01T01:00:03Z")
+                store.groups.add_task(
+                    prerequisite, 1, actor="test", at="2026-08-01T01:00:04Z")
+                store.groups.add_task(
+                    root, 2, actor="test", at="2026-08-01T01:00:05Z")
+                store.groups.add_task(
+                    child, 3, actor="test", at="2026-08-01T01:00:06Z")
+                store.tasks.land(2, actor="test", at="2026-08-01T01:00:07Z")
+                for goal_id in (prerequisite, root, child):
+                    store.goals.set_state(goal_id, "open")
+                store.goals.set_rank(prerequisite, 1)
+                store.goals.set_rank(root, 2)
+                store.goals.set_current_goal_id(root)
+                store.groups.add_dependency(
+                    dependent_group_id=root, needs_group_id=prerequisite,
+                    actor="test", at="2026-08-01T01:00:08Z")
+        self.ids = prerequisite, root, child
+
+    def _serve(self):
+        probe = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+        port = probe.server_address[1]
+        probe.server_close()
+        authority = watch.RequestAuthority(
+            ["allowed.test", "127.0.0.1"], port)
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", port),
+            watch.make_handler(self.target, authority=authority))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return port
+
+    def test_payload_reads_rank_state_progress_and_inherited_blockers(self):
+        prerequisite, root, child = self.ids
+        payload = watch.goal_tree_payload(self.target)
+        self.assertEqual(payload["health"], "ok")
+        self.assertEqual(payload["examined_count"], 3)
+        self.assertEqual(payload["expected_count"], 3)
+        self.assertEqual(payload["current_goal_id"], root)
+        self.assertEqual([node["id"] for node in payload["nodes"]],
+                         [prerequisite, root, child])
+        by_id = {node["id"]: node for node in payload["nodes"]}
+        self.assertEqual(by_id[root]["criteria"],
+                         ["First criterion", "Second criterion", "Third criterion"])
+        self.assertEqual((by_id[root]["completed_count"],
+                          by_id[root]["total_count"]), (1, 2))
+        self.assertEqual(by_id[child]["rank"], None)
+        self.assertEqual(
+            [(b["kind"], b["id"], b["title"])
+             for b in by_id[child]["blockers"]],
+            [("group", prerequisite, "Prerequisite")],
+            "the child did not receive its parent's inherited blocker")
+
+    def test_partial_walk_fails_closed_instead_of_rendering_a_plausible_tree(self):
+        from dreamwork_db.goals import GoalRepository
+        original = GoalRepository.preorder
+
+        def drop_child(repo, root_id=None):
+            return original(repo, root_id)[:-1]
+
+        with unittest.mock.patch.object(GoalRepository, "preorder", drop_child):
+            payload = watch.goal_tree_payload(self.target)
+        self.assertEqual(
+            payload["health"], "incomplete",
+            "partial walk rendered as healthy: examined 2 of 3 goal nodes")
+        self.assertEqual(payload["examined_count"], 2)
+        self.assertEqual(payload["expected_count"], 3)
+        self.assertEqual(payload["nodes"], [])
+        self.assertEqual(
+            payload["error"],
+            "goal tree incomplete: examined 2 of 3 goal nodes; refusing to "
+            "render a partial tree")
+
+    def test_genuine_empty_tree_has_a_distinct_healthy_envelope(self):
+        empty = tempfile.TemporaryDirectory()
+        self.addCleanup(empty.cleanup)
+        dw = _store_target(empty.name)
+        with open_database(
+                task_store_spec(watch.store_path(dw)),
+                access=Access.WRITE) as store:
+            with store.transaction():
+                pass
+        payload = watch.goal_tree_payload(empty.name)
+        self.assertEqual(
+            (payload["health"], payload["examined_count"],
+             payload["expected_count"], payload["nodes"]),
+            ("ok", 0, 0, []))
+        self.assertNotIn("error", payload)
+
+    def test_goals_shell_and_data_route_are_read_only(self):
+        port = self._serve()
+        headers = {"Host": f"allowed.test:{port}"}
+        for path in ("/goals", "/goalsdata"):
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{port}{path}", headers=headers)
+            with urllib.request.urlopen(request, timeout=5) as response:
+                self.assertEqual(response.status, 200)
+                body = response.read()
+                if path == "/goals":
+                    self.assertIn(b'id="view"', body)
+                else:
+                    payload = json.loads(body)
+                    self.assertEqual(payload["examined_count"], 3)
+        self.assertNotIn('self.path == "/goals"', inspect.getsource(
+            watch.make_handler), "#890 must not add a POST /goals branch")
+
+    def test_page_wires_one_native_goals_authority(self):
+        self.assertIn(
+            "loc.pathname === '/goals'", watch.PAGE,
+            "client routeOf no longer claims /goals")
+        self.assertIn(
+            "a.pathname === '/goals'", watch.PAGE,
+            "same-document links no longer claim /goals")
+        self.assertNotIn("function buildGoals(", watch.PAGE)
+        self.assertIn(
+            "Native /goals read surface; sole full-page renderer.",
+            watch.NATIVE_JS)
+        self.assertIn(
+            "no goals yet — the examined tree is genuinely empty",
+            watch.NATIVE_JS,
+            "native /goals empty copy no longer distinguishes a healthy 0/0 tree")
+        self.assertIn(
+            "goal tree unavailable: examined 0 nodes; no canonical goal store",
+            watch.NATIVE_JS,
+            "native /goals failure copy no longer names the unreadable zero")
+
+
 class TestAppShell(unittest.TestCase):
     """The single-document router: /, /questions and /file all serve the
     one shell (deep links render client-side), and /filedata backs the
