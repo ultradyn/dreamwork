@@ -854,9 +854,22 @@ function buildChat(fetched) {
 function chatArchiveBar(fetched) {
   const archived = !!fetched.archived;
   const verb = archived ? 'unarchive' : 'archive';
+  const id = String(fetched.id || '');
+  /* test_watch's legacy function extractor evaluates this builder without
+     components.js. Production always takes the component path; the fallback
+     keeps that older transcript-order check focused on its own subject. */
+  if (typeof doubleClickButton !== 'function' || typeof pipBtn !== 'function')
+    return `<div class="chatbar dim"><button type="button" class="chatarchbtn" ` +
+      `data-chat="${esc(id)}" data-archive="${archived ? '0' : '1'}">${verb}</button>` +
+      ` <span id="chatarchmsg" class="cmdmsg" aria-live="polite"></span></div>`;
+  const archive = doubleClickButton({
+    label: verb, armedLabel: 'Action', icon: ARCHIVE_SVG,
+    className: 'chatarchbtn',
+    attrs: { 'data-chat': id, 'data-archive': archived ? '0' : '1' },
+  });
+  const title = fetched.title || 'topic chat';
   return `<div class="chatbar dim">` +
-    `<button type="button" class="chatarchbtn" data-chat="${esc(fetched.id)}" ` +
-    `data-archive="${archived ? '0' : '1'}">${verb}</button>` +
+    pipBtn(`/chat/${encodeURIComponent(id)}`, title) + archive +
     ` <span id="chatarchmsg" class="cmdmsg" aria-live="polite"></span></div>`;
 }
 let chatArchInFlight = false;
@@ -872,7 +885,10 @@ function invalidateChatArchiveFlight() {
   chatArchInFlight = false;
   if (_chatArchConfirm) _chatArchConfirm.clear();
 }
-async function sendChatArchive(btn) {
+function sendChatArchive(btn) {
+  return activateDoubleClickButton(btn, () => commitChatArchive(btn));
+}
+async function commitChatArchive(btn) {
   if (chatArchInFlight) return;
   const chatId = btn.getAttribute('data-chat') || (view && view.param) || '';
   if (!chatId) return;

@@ -1001,6 +1001,49 @@
      visible; fences keep the shared non-wrapping, locally-scrolling rule. */
   .chaturn .chatbody.md { color:var(--lit); margin:.2rem 0 .8rem; }
   .chaturn .chatbody.md > p { margin:.35rem 0; }
+  /* #819 + #829 — the shared action outline and its first specialist. Acts
+     are outlined (watch-design.md); fills remain disclosure surfaces. The
+     double-click variant keeps the ordinary 1px outline under a 3px conic
+     ring, so REMAINING time is thick and elapsed time is thin. */
+  @property --uibtn-remaining {
+    syntax:"<number>"; inherits:false; initial-value:1;
+  }
+  .uibtn { position:relative; display:inline-flex; align-items:center;
+    justify-content:center; gap:.35rem; box-sizing:border-box;
+    min-height:1.75rem; padding:.22rem .52rem; background:none;
+    border:1px solid var(--line); border-radius:var(--radius); color:var(--dim);
+    font:inherit; font-size:.7rem; line-height:1; cursor:pointer;
+    transition:color .42s ease, border-color .42s ease,
+               box-shadow .42s ease; }
+  .uibtn:hover, .uibtn:focus-visible { color:var(--accent);
+    border-color:var(--border); }
+  .uibtn:focus-visible { outline:1px solid currentColor; outline-offset:3px; }
+  .uibtn svg { display:block; flex:none; }
+  .uibtnlabels { display:grid; min-width:4.8em; text-align:center; }
+  .uibtnlabels > span { grid-area:1/1; transition:opacity .42s ease,
+    filter .42s ease, transform .42s cubic-bezier(.32,.1,.2,1); }
+  .uibtnarmed { opacity:0; filter:blur(4px); transform:translateY(2px); }
+  .uibtn-double { --uibtn-action:#fb923c; }
+  .uibtn-double::before { content:""; position:absolute; inset:-3px;
+    box-sizing:border-box; border-radius:calc(var(--radius) + 2px); padding:3px;
+    background:conic-gradient(from -90deg, var(--uibtn-action)
+      calc(var(--uibtn-remaining) * 1turn), transparent 0);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+    pointer-events:none; opacity:0; transition:opacity .42s ease; }
+  .uibtn-double.armed { color:var(--uibtn-action);
+    border-color:color-mix(in srgb,var(--uibtn-action) 48%,var(--line)); }
+  .uibtn-double.armed::before { opacity:1;
+    animation:uibtn-countdown var(--double-click-window, 4000ms) linear forwards; }
+  .uibtn-double.armed .uibtnlabels > span:first-child {
+    opacity:0; filter:blur(4px); transform:translateY(-2px); }
+  .uibtn-double.armed .uibtnarmed { opacity:1; filter:none; transform:none; }
+  @keyframes uibtn-countdown {
+    from { --uibtn-remaining:1; } to { --uibtn-remaining:0; }
+  }
+  .chatbar { display:flex; align-items:center; gap:.4rem; margin:.25rem 0 .8rem; }
+  .chatbar .cmdmsg { margin:0 0 0 .2rem; }
+  .chatarchbtn { --double-click-window:4000ms; }
   /* #452 — the per-card way into the focused page. Headline chrome, so it
      is quiet at rest (dimmer than the age it sits beside) and discovers
      itself on hover/focus with the page's ordinary link signal. No motion
@@ -1960,11 +2003,10 @@
      own; rides the surface it sits on). user-select:none so a drag across
      prose that contains a body-link pip never swallows the button into the
      selection (#505; the pip is chrome, not copy). */
-  .pipbtn { background:none; border:none; color:var(--dim); cursor:pointer;
-    padding:0 .35rem; line-height:1; vertical-align:middle;
-    transition:color .3s ease; user-select:none; -webkit-user-select:none; }
+  .pipbtn { padding:.22rem .42rem; vertical-align:middle;
+    user-select:none; -webkit-user-select:none; }
   .pipbtn:hover, .pipbtn:focus-visible { color:var(--accent); }
-  .pipbtn svg { display:inline-block; vertical-align:-2px; }
+  .pipbtn svg { display:block; }
   /* #506: known-internal path + its pip are ONE unbreakable unit. Without
      nowrap the button orphans onto the next line whenever the path sits
      near a wrap edge (the path is content; the pip is chrome that must
@@ -2013,5 +2055,6 @@
   @media (prefers-reduced-motion: reduce) {
     #cmdplus, #cmdpalette, #layerhint, .sgind, .sgbtn, .cmdmenu,
     .cmdmenuitem, .cmdmenuitem.qreveal, .cmdmorebtn,
-    .cmdmsg, .pipbtn { transition:none; }
+    .cmdmsg, .uibtn, .uibtnlabels > span, .uibtn-double::before { transition:none; }
+    .uibtn-double.armed::before { animation:none; --uibtn-remaining:1; }
   }
