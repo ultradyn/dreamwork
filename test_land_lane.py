@@ -211,16 +211,55 @@ def test_missing_warn_baseline_refuses_before_merge(landing_repo, lint_body):
 
 def test_new_warn_row_refuses_and_retains_lane(landing_repo):
     root, lane = landing_repo
+    _write(
+        lane / "test_expensive.py",
+        "from pathlib import Path\n"
+        "def test_expensive(): Path('named-test-ran.txt').write_text('ran\\n')\n",
+    )
     _write(lane / "lint-rows.txt", "old warning\nnew warning\n")
-    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "add", "lint-rows.txt", "test_expensive.py")
     _git(lane, "commit", "-m", "add warning")
     before = _git(root, "rev-parse", "HEAD")
 
-    result = _run(root, "test_named.py")
+    result = _run(root, "test_expensive.py")
 
     assert result.returncode == 1
-    assert "lint WARN row-set comparison: added=1 removed=0" in result.stdout
+    assert "lint-precheck WARN row-set comparison: added=1 removed=0" in result.stdout
     assert "+   WARN  new warning" in result.stdout
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
+    assert not (root / "named-test-ran.txt").exists(), (
+        "lint-precheck spoke only after the named test had already run"
+    )
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_warn_created_by_named_test_is_caught_by_authoritative_comparison(landing_repo):
+    """The early check must not replace the reading after mutable gates run."""
+    root, lane = landing_repo
+    _write(
+        lane / "lint.py",
+        "from pathlib import Path\n"
+        "rows = Path('lint-rows.txt').read_text().splitlines()\n"
+        "if Path('named-test-warn.txt').exists(): rows.append('named-test warning')\n"
+        "for row in rows: print('  WARN  ' + row)\n"
+        "print(f'clean ({len(rows)} warning(s))')\n",
+    )
+    _write(
+        lane / "test_refresh.py",
+        "from pathlib import Path\n"
+        "def test_refresh(): Path('named-test-warn.txt').write_text('warn\\n')\n",
+    )
+    _git(lane, "add", "lint.py", "test_refresh.py")
+    _git(lane, "commit", "-m", "make named test refresh a lint input")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_refresh.py")
+
+    assert result.returncode == 1
+    assert "lint-precheck WARN row-set comparison: added=0 removed=0" in result.stdout
+    assert "lint-comparison WARN row-set comparison: added=1 removed=0" in result.stdout
+    assert "+   WARN  named-test warning" in result.stdout
     assert "REFUSE phase=lint-comparison: WARN row set changed" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
@@ -236,10 +275,10 @@ def test_same_warn_count_with_different_rows_refuses(landing_repo):
     result = _run(root, "test_named.py")
 
     assert result.returncode == 1
-    assert "lint WARN row-set comparison: added=1 removed=1" in result.stdout
+    assert "lint-precheck WARN row-set comparison: added=1 removed=1" in result.stdout
     assert "+   WARN  new warning" in result.stdout
     assert "-   WARN  old warning" in result.stdout
-    assert "REFUSE phase=lint-comparison: WARN row set changed" in result.stderr
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
 
@@ -300,10 +339,10 @@ def test_meaningful_detail_whitespace_swap_refuses_and_names_both_rows(landing_r
     result = _run(root, "test_named.py")
 
     assert result.returncode == 1
-    assert "lint WARN row-set comparison: added=1 removed=1" in result.stdout
+    assert "lint-precheck WARN row-set comparison: added=1 removed=1" in result.stdout
     assert "+   WARN  lessons.md  merging  is his call" in result.stdout
     assert "-   WARN  lessons.md  merging is his call" in result.stdout
-    assert "REFUSE phase=lint-comparison: WARN row set changed" in result.stderr
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
 
@@ -335,8 +374,10 @@ def test_empty_post_merge_warn_population_refuses(landing_repo):
     result = _run(root, "test_named.py")
 
     assert result.returncode == 1
-    assert "REFUSE phase=lint-comparison: post-merge WARN population is empty" in result.stderr
-    assert "baseline=1 rows; post-merge=0 rows examined" in result.stderr
+    assert (
+        "REFUSE phase=lint-precheck: post-merge precheck WARN population is empty"
+    ) in result.stderr
+    assert "baseline=1 rows; post-merge precheck=0 rows examined" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
 
@@ -545,13 +586,13 @@ def test_success_runs_real_reap_and_retains_branch_only(landing_repo):
 
     assert result.returncode == 0, result.stderr
     assert (
-        "gate-coverage: 5 of 5 declared gates passed: "
-        "red-proof-history named-tests guard-selection repo-wide-guards "
+        "gate-coverage: 6 of 6 declared gates passed: "
+        "red-proof-history lint-precheck named-tests guard-selection repo-wide-guards "
         "lint-comparison"
     ) in result.stdout
     merged = _git(root, "rev-parse", "--verify", "refs/heads/master")
     assert merged != before
-    assert f"advance: master {before} -> {merged} after 5 gate(s)" in result.stdout
+    assert f"advance: master {before} -> {merged} after 6 gate(s)" in result.stdout
     assert _git(root, "branch", "--show-current") == "master"
     assert (
         f"reap examined path={lane.resolve()} tracked-dirty=0 untracked=0 ignored=0 "
@@ -660,11 +701,11 @@ def test_a_restore_that_cannot_land_is_loud_and_master_is_still_correct(landing_
 @pytest.mark.parametrize(
     ("roster", "reason"),
     [
-        # Both counts are len(passed)=5 over len(roster): red-proof-history now
-        # appends too (#951), so the empty-roster case reads "5 of 0" and the
-        # phantom case (GATES is 5 real + 1 phantom = 6) reads "5 of 6".
-        ((), "only 5 of 0 declared gates ran"),
-        (land_lane.GATES + ("phantom-gate",), "only 5 of 6 declared gates ran"),
+        # Both counts are len(passed)=6 over len(roster): red-proof-history now
+        # appends too (#951), so the empty-roster case reads "6 of 0" and the
+        # phantom case (GATES is 6 real + 1 phantom = 7) reads "6 of 7".
+        ((), "only 6 of 0 declared gates ran"),
+        (land_lane.GATES + ("phantom-gate",), "only 6 of 7 declared gates ran"),
     ],
 )
 def test_a_gate_roster_that_does_not_match_what_ran_refuses(
@@ -720,6 +761,23 @@ def test_every_phase_appended_to_passed_is_declared_in_gates():
         f"phases append to `passed` but are not declared in GATES: "
         f"{sorted(undeclared)}; a phase not in GATES can be deleted without "
         "changing the gate-coverage denominator, which is #951's defect"
+    )
+
+
+def test_gate_order_prechecks_lint_before_pytest_and_rechecks_after():
+    expected = (
+        "red-proof-history",
+        "lint-precheck",
+        "named-tests",
+        "guard-selection",
+        "repo-wide-guards",
+        "lint-comparison",
+    )
+
+    assert land_lane.GATES == expected, (
+        "phase order drifted: lint-precheck must precede named-tests and the "
+        "authoritative lint-comparison must remain last; "
+        f"got {land_lane.GATES!r}"
     )
 
 
@@ -779,6 +837,7 @@ def test_documentation_only_branch_requires_no_injection_and_lands(doc_only_repo
     ) in result.stdout
     assert "red-proof requirement: 0 injections REQUIRED" in result.stdout
     assert "injections registered and causally caught>=0 required" in result.stdout
+    assert "gate-coverage: 6 of 6 declared gates passed" in result.stdout
     assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before
 
 

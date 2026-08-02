@@ -44,13 +44,14 @@ LINT_TRAILER = re.compile(r"^clean \((\d+) warning\(s\)\)$", re.MULTILINE)
 # from the sequence is a REFUSAL rather than a shorter, quieter, green run:
 # an empty phase list otherwise reports "all passed" and "none ran" alike.
 # red-proof-history runs BEFORE the merge (it gates whether the merge may be
-# built at all); the four below run on the merged tree. It is declared first
+# built at all); the five below run on the merged tree. It is declared first
 # because it is first to run, and it MUST be here — #951: the phase genuinely
 # ran and blocked, but its absence from this tuple meant deleting its block
 # left `gate-coverage: 4 of 4` UNCHANGED. The one phase with no protection
 # against silent removal was the one phase that enforces every red-proof.
 GATES = (
     "red-proof-history",
+    "lint-precheck",
     "named-tests",
     "guard-selection",
     "repo-wide-guards",
@@ -897,6 +898,59 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
         )
     print(f"merge-identity: {merged_sha} has parents {base}@{base_sha} and {branch}@{branch_sha}")
 
+    def compare_lint(phase: str, reading: str) -> int | None:
+        """Compare one merged-tree lint reading with the pre-merge baseline."""
+        _, after = _lint(repo)
+        if after is None:
+            return refuse_gated(
+                phase,
+                f"{reading} WARN rows were unavailable (lint failed or emitted no clean trailer)",
+                f"merge={merged_sha}; baseline rows={len(baseline)}",
+            )
+        _print_rows(reading, after)
+        if not after:
+            return refuse_gated(
+                phase,
+                f"{reading} WARN population is empty; zero rows examined is not a match",
+                f"merge={merged_sha}; baseline={len(baseline)} rows; {reading}=0 rows examined",
+            )
+        try:
+            baseline_index = _warn_row_index(baseline)
+            after_index = _warn_row_index(after)
+        except ValueError as exc:
+            return refuse_gated(
+                phase,
+                f"WARN identity normalisation is ambiguous: {exc}",
+                f"merge={merged_sha}; baseline={len(baseline)} rows; {reading}={len(after)} rows",
+            )
+        added_ids = set(after_index) - set(baseline_index)
+        removed_ids = set(baseline_index) - set(after_index)
+        added = tuple(sorted(after_index[identity] for identity in added_ids))
+        removed = tuple(sorted(baseline_index[identity] for identity in removed_ids))
+        print(f"{phase} WARN row-set comparison: added={len(added)} removed={len(removed)}")
+        print(f"lint WARN populations: baseline={len(baseline)} rows; {reading}={len(after)} rows")
+        for row in added:
+            print(f"+ {row}")
+        for row in removed:
+            print(f"- {row}")
+        if added or removed:
+            return refuse_gated(
+                phase,
+                "WARN row set changed from the pre-merge baseline",
+                f"merge={merged_sha}; baseline={len(baseline)} rows; {reading}={len(after)} rows",
+            )
+        return None
+
+    # This is deliberately a pre-check, not a move of the authoritative
+    # comparison below. Named tests are arbitrary repo code and can refresh a
+    # live or derived artifact that lint.py reads; only the post-gate reading
+    # can catch a WARN introduced by that refresh. The cheap duplicate closes
+    # the common case before either pytest invocation spends the lane's budget.
+    lint_precheck = compare_lint("lint-precheck", "post-merge precheck")
+    if lint_precheck is not None:
+        return lint_precheck
+    passed.append("lint-precheck")
+
     # #948: the named selection is the coordinator's guess, made when they are
     # most eager to land. Three ways to use the derivation were weighed (IGC):
     # REPORT the omission, REFUSE on it, or RUN it. REPORT is refuted — this
@@ -990,45 +1044,9 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
         )
     passed.append("repo-wide-guards")
 
-    _, after = _lint(repo)
-    if after is None:
-        return refuse_gated(
-            "lint-comparison",
-            "post-merge WARN rows were unavailable (lint failed or emitted no clean trailer)",
-            f"merge={merged_sha}; baseline rows={len(baseline)}",
-        )
-    _print_rows("post-merge", after)
-    if not after:
-        return refuse_gated(
-            "lint-comparison",
-            "post-merge WARN population is empty; zero rows examined is not a match",
-            f"merge={merged_sha}; baseline={len(baseline)} rows; post-merge=0 rows examined",
-        )
-    try:
-        baseline_index = _warn_row_index(baseline)
-        after_index = _warn_row_index(after)
-    except ValueError as exc:
-        return refuse_gated(
-            "lint-comparison",
-            f"WARN identity normalisation is ambiguous: {exc}",
-            f"merge={merged_sha}; baseline={len(baseline)} rows; post-merge={len(after)} rows",
-        )
-    added_ids = set(after_index) - set(baseline_index)
-    removed_ids = set(baseline_index) - set(after_index)
-    added = tuple(sorted(after_index[identity] for identity in added_ids))
-    removed = tuple(sorted(baseline_index[identity] for identity in removed_ids))
-    print(f"lint WARN row-set comparison: added={len(added)} removed={len(removed)}")
-    print(f"lint WARN populations: baseline={len(baseline)} rows; post-merge={len(after)} rows")
-    for row in added:
-        print(f"+ {row}")
-    for row in removed:
-        print(f"- {row}")
-    if added or removed:
-        return refuse_gated(
-            "lint-comparison",
-            "WARN row set changed from the pre-merge baseline",
-            f"merge={merged_sha}; baseline={len(baseline)} rows; post-merge={len(after)} rows",
-        )
+    lint_comparison = compare_lint("lint-comparison", "post-gates")
+    if lint_comparison is not None:
+        return lint_comparison
     passed.append("lint-comparison")
 
     missing = tuple(gate for gate in GATES if gate not in passed)
