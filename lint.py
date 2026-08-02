@@ -6135,6 +6135,109 @@ def check_frame_rebase_rearm(dw: Path, rep: Report) -> None:
             f"{len(rebase_secs)} carrying the rebase rule (#958)")
 
 
+def check_frame_evidence_persisted(dw: Path, rep: Report) -> None:
+    """A red-proof's discriminating output must be persisted to a lane-private
+    file at the moment of the run and quoted from that file, not from memory
+    (#878).
+
+    Compaction preserves the FORM of measured evidence while silently losing its
+    provenance (#878): the #860 lane's own pre-compaction summary quoted a
+    direction-1 failure ("froze at H+1=623px") that corresponded to no injection
+    it had run — caught only by re-running both proofs from scratch. Prose
+    survives compaction well; a number survives looking equally confident whether
+    or not it came from a run. The frame's report-back section is where a lane
+    reads what evidence to carry, so the persistence rule belongs there, beside
+    the verbatim-test-line rule it extends.
+
+    Section-aware (direction 2a): the three markers must sit in the SAME ``## ``
+    section as the evidence-reporting rule — a bullet stranded in 'Standing
+    rules' is invisible at the moment the lane is deciding what to quote.
+    Direction 2b (the likely real bug): the markers are distinctive on purpose —
+    `lane_scratch`, `compaction`, `from memory` are all ABSENT from the frame
+    outside this rule, so deleting the bullet removes all three and the check
+    fails. A looser substring (`verbatim`, `quote`) would be satisfied by the
+    pre-existing test-line rule and could never go red. Degrade-to-zero (#868):
+    an empty or rule-less frame is an ERROR naming what was examined (how many
+    sections, how many carried the report-back rule), never a silent pass. Scope:
+    only the skill repo carries ``briefs/frame.md`` at its root, so a foreign
+    dreamwork target is silent.
+    """
+    root = dw.parent
+    frame = root / "briefs" / "frame.md"
+    if not frame.is_file():
+        return
+    text = frame.read_text(encoding="utf-8", errors="replace")
+    # Reuse the same `## ` section split as check_frame_rebase_rearm and
+    # dev/brief.py's frame_sections: content before the first heading is preamble
+    # and is NOT emitted into a brief, so it cannot satisfy the rule.
+    sections: list[tuple[str, str]] = []
+    cur_head: str | None = None
+    cur_body: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if cur_head is not None:
+                sections.append((cur_head, "\n".join(cur_body)))
+            cur_head, cur_body = line.strip(), []
+        elif cur_head is not None:
+            cur_body.append(line)
+    if cur_head is not None:
+        sections.append((cur_head, "\n".join(cur_body)))
+    n_sections = len(sections)
+
+    # Anchor: the evidence-reporting section (carries the 'discriminating failure
+    # message' and 'final line verbatim' rules). The persistence rule is a
+    # corollary of these, so it must sit in the same section a lane reads while
+    # deciding what to quote.
+    _REPORT = re.compile(
+        r"discriminating.*failure message|final line.*verbatim", re.I)
+    report_secs = [(h, b) for h, b in sections if _REPORT.search(b)]
+    if not report_secs:
+        rep.add(
+            ERROR, "frame evidence persisted",
+            f"examined {n_sections} section(s); 0 carry the evidence-reporting "
+            "rule (the 'discriminating failure message' / 'final line verbatim' "
+            "guidance) — the persistence rule has nowhere to anchor, so a lane "
+            "has no instruction to persist red-proof output at all (#878)")
+        return
+
+    # Three markers, each load-bearing: the supported location (lane_scratch —
+    # #652 forbids the harness scratchpad and the task names lane_scratch as the
+    # supported place), the reason the rule exists (compaction preserves form
+    # while losing provenance), and the quoting half (from memory — the rule is
+    # two acts: WRITE the file AND QUOTE it, never recall). All three must be in
+    # the report-back section: a loose file-wide grep for 'verbatim'/'quote'
+    # would pass on the pre-existing test-line rule and stay green after the
+    # bullet is deleted (#878 direction 2b).
+    _LANE_SCRATCH = re.compile(r"lane[_ -]?scratch", re.I)
+    _COMPACTION = re.compile(r"compaction", re.I)
+    _FROM_MEMORY = re.compile(r"from memory", re.I)
+    all_armed = True
+    for h, b in report_secs:
+        gaps = []
+        if not _LANE_SCRATCH.search(b):
+            gaps.append("'lane_scratch' (the supported location, #652)")
+        if not _COMPACTION.search(b):
+            gaps.append("'compaction' (the reason: form survives, provenance does not)")
+        if not _FROM_MEMORY.search(b):
+            gaps.append("'from memory' (quote the file, never recall)")
+        if gaps:
+            all_armed = False
+            rep.add(
+                ERROR, "frame evidence persisted",
+                f"section '{h}' carries the evidence-reporting rule but is "
+                f"missing {', '.join(gaps)} — a lane that quotes red-proof "
+                f"output from memory can report a number compaction fabricated "
+                f"and nothing downstream can tell (#878); examined "
+                f"{n_sections} section(s)")
+    if all_armed:
+        rep.add(
+            OK, "frame evidence persisted",
+            "the evidence-reporting section carries the persistence rule "
+            "(lane_scratch, compaction, 'from memory'); examined "
+            f"{n_sections} section(s), {len(report_secs)} carrying the "
+            "evidence-reporting rule (#878)")
+
+
 def check_handoffs(dw: Path, watch, rep: Report) -> None:
     """The delivery half of the single-writer rule (#381).
 
@@ -7337,6 +7440,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     # dispatch, so it sits outside the corpus-fingerprint guard.
     check_boilerplate_expectation_derivation(dw, rep)
     check_frame_rebase_rearm(dw, rep)
+    check_frame_evidence_persisted(dw, rep)
     check_related_markers(dw, watch, rep)
     check_lesson_near_duplicates(dw, rep)
     check_review_decision_integrity(dw, rep)

@@ -10071,3 +10071,107 @@ class TestFrameRebaseRearm:
         rep = lint.Report()
         lint.check_frame_rebase_rearm(tmp_path / ".dreamwork", rep)
         assert rep.rows == []
+
+
+class TestFrameEvidencePersisted:
+    """#878 — the frame must tell lanes to persist red-proof output to a
+    lane-private file at the moment of the run and quote it, not memory.
+
+    Compaction preserves the form of a measurement while losing its provenance
+    (#878): the #860 lane's own summary quoted a failure number no injection had
+    produced. This test pins the check that pins the rule.
+    """
+
+    # The evidence-reporting anchor the check requires (already in the frame):
+    # 'discriminating failure message' and 'final line verbatim'.
+    _REPORT_BULLET = (
+        "- Quote the **final line** of every named test run verbatim, with the "
+        "sha and cwd it was produced under.\n"
+    )
+    # Carries all three markers: lane_scratch, compaction, 'from memory'.
+    _PERSIST_BULLET = (
+        "- **Persist a red-proof's discriminating output to a lane-private "
+        "file at the moment of the run, and quote from that file — never from "
+        "memory.** Compaction preserves the form of a measurement while losing "
+        "its provenance (#878). `dev/lane_scratch.py` is the supported place "
+        "(#652); write the FAIL line there as the run happens.\n"
+    )
+
+    def _check(self, tmp_path, frame_text):
+        (tmp_path / ".dreamwork").mkdir(exist_ok=True)
+        bp = tmp_path / "briefs"
+        bp.mkdir(exist_ok=True)
+        (bp / "frame.md").write_text(frame_text)
+        rep = lint.Report()
+        lint.check_frame_evidence_persisted(tmp_path / ".dreamwork", rep)
+        return rep
+
+    def _rows(self, rep):
+        return [(lvl, detail) for lvl, what, detail in rep.rows
+                if what == "frame evidence persisted"]
+
+    def test_real_frame_carries_the_persistence_rule(self):
+        rep = lint.Report()
+        lint.check_frame_evidence_persisted(lint.SKILL_DIR / ".dreamwork", rep)
+        rows = self._rows(rep)
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "lane_scratch" in rows[0][1]
+        assert "examined" in rows[0][1] and "section(s)" in rows[0][1]
+
+    def test_report_section_without_markers_is_an_error(self, tmp_path):
+        frame = (
+            "## What to report back\n\n" + self._REPORT_BULLET + "\n"
+            "## Standing rules\n\nThe sha.\n"
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "'lane_scratch'" in rows[0][1]
+        assert "'compaction'" in rows[0][1]
+        assert "'from memory'" in rows[0][1]
+
+    def test_persistence_in_the_wrong_section_does_not_satisfy(self, tmp_path):
+        # direction 2a: the persistence bullet sits in 'Standing rules', not in
+        # the report-back section where the lane reads what to quote. The check
+        # must notice the report-back section is missing its markers.
+        frame = (
+            "## What to report back\n\n" + self._REPORT_BULLET + "\n"
+            "## Standing rules\n\n" + self._PERSIST_BULLET
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "section '## What to report back'" in rows[0][1]
+        assert "'lane_scratch'" in rows[0][1]
+
+    def test_a_loose_substring_does_not_satisfy(self, tmp_path):
+        # direction 2b (the likely real bug): the report-back section carries
+        # 'verbatim'/'quote' from the existing test-line rule but NONE of the
+        # three distinctive markers. A substring grep for 'verbatim' would pass
+        # here; the check must require the distinctive markers instead.
+        frame = (
+            "## What to report back\n\n" + self._REPORT_BULLET
+            + "- Quote your output verbatim.\n"
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+
+    def test_empty_frame_fails_with_examined_zero(self, tmp_path):
+        # degrade-to-zero (#868): no `## ` sections is an ERROR naming
+        # 'examined 0', never a silent pass.
+        rep = self._check(tmp_path, "# Frame\n\nNo sections here.\n")
+        rows = self._rows(rep)
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "examined 0 section(s)" in rows[0][1]
+
+    def test_persistence_present_passes(self, tmp_path):
+        frame = (
+            "## What to report back\n\n" + self._REPORT_BULLET
+            + self._PERSIST_BULLET
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+
+    def test_absent_frame_is_silent_for_foreign_target(self, tmp_path):
+        (tmp_path / ".dreamwork").mkdir()
+        rep = lint.Report()
+        lint.check_frame_evidence_persisted(tmp_path / ".dreamwork", rep)
+        assert rep.rows == []
