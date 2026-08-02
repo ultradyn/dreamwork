@@ -179,6 +179,13 @@ def test_frozen_v2_store_migrates_through_current_and_reports_zero_legacy_rows(
         )
         assert _columns(after, "user_setting") == {"userid", "key", "value"}
         assert after.execute("SELECT COUNT(*) FROM user_setting").fetchone()[0] == 0
+        assert _columns(after, "posture_change") == {
+            "ordinal", "at", "axis", "old_value", "new_value", "actor",
+            "receipt_id",
+        }
+        assert after.execute(
+            "SELECT COUNT(*) FROM posture_change"
+        ).fetchone()[0] == 0
         assert _columns(after, "question") == {
             "id", "status", "title", "body_markdown", "priority",
             "asked_at", "asked_precision", "created_by", "created_at",

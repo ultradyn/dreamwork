@@ -11447,6 +11447,133 @@ class TestPosture(unittest.TestCase):
                 lines = [ln for ln in f if "posture" in ln]
             self.assertEqual(len(lines), 1)
 
+    def test_real_axis_change_logs_once_and_identical_repost_logs_none(self):
+        """The store history names only axes whose effective value changed."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            with open_database(
+                    task_store_spec(watch.store_path(dw)),
+                    access=Access.WRITE) as store:
+                with store.transaction():
+                    pass
+            self.assertTrue(watch.write_posture(
+                d, "idle", "ask", 0, "instant", "hands-on"))
+            base = self._serve(d)
+            payload = {"pace": "steady", "asking": "ask", "delegation": 0}
+            status, body = self._post_json(base + "/posture", payload)
+            self.assertEqual(status, 202)
+            self.assertTrue(body["store_logged"])
+            conn = sqlite3.connect(str(watch.store_path(dw)))
+            try:
+                rows = conn.execute(
+                    "SELECT axis,old_value,new_value FROM posture_change"
+                    " ORDER BY ordinal"
+                ).fetchall()
+            finally:
+                conn.close()
+            self.assertEqual(rows, [("pace", "idle", "steady")], (
+                "one real pace change must append exactly its axis, old value, "
+                "and new value"))
+
+            status, body = self._post_json(base + "/posture", payload)
+            self.assertEqual(status, 202)
+            self.assertFalse(body["changed"])
+            self.assertTrue(body["store_logged"])
+            conn = sqlite3.connect(str(watch.store_path(dw)))
+            try:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM posture_change"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+            self.assertEqual(count, 1, (
+                "an identical final must append no posture history row"))
+
+    def test_absent_axes_are_preserved_and_not_logged_as_changes(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            with open_database(
+                    task_store_spec(watch.store_path(dw)),
+                    access=Access.WRITE) as store:
+                with store.transaction():
+                    pass
+            self.assertTrue(watch.write_posture(
+                d, "idle", "ask", 0, "batched", "orchestrator"))
+            base = self._serve(d)
+            self._post(base + "/posture", {
+                "pace": "hot", "asking": "ask", "delegation": 0,
+            })
+            conn = sqlite3.connect(str(watch.store_path(dw)))
+            try:
+                rows = conn.execute(
+                    "SELECT axis FROM posture_change ORDER BY ordinal"
+                ).fetchall()
+            finally:
+                conn.close()
+            self.assertEqual(rows, [("pace",)], (
+                "omitted delivery/orchestration are preserved, not changes"))
+
+    def test_rejected_request_does_not_log_posture_history(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            with open_database(
+                    task_store_spec(watch.store_path(dw)),
+                    access=Access.WRITE) as store:
+                with store.transaction():
+                    pass
+            base = self._serve(d)
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "not-a-stop", "asking": "ask", "delegation": 0,
+            }), 202)
+            conn = sqlite3.connect(str(watch.store_path(dw)))
+            try:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM posture_change"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+            self.assertEqual(count, 0, (
+                "a request rejected before the file write must append no history"))
+
+    def test_store_failure_keeps_file_change_and_is_not_silent(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            with open_database(
+                    task_store_spec(watch.store_path(dw)),
+                    access=Access.WRITE) as store:
+                with store.transaction():
+                    pass
+            self.assertTrue(watch.write_posture(
+                d, "idle", "ask", 0, "instant", "hands-on"))
+            base = self._serve(d)
+            with unittest.mock.patch(
+                    "dreamwork_db.open_database",
+                    side_effect=RuntimeError("injected locked store")):
+                status, body = self._post_json(base + "/posture", {
+                    "pace": "hot", "asking": "ask", "delegation": 0,
+                })
+            self.assertEqual(status, 202, (
+                "store history is write-through, not the increment-1 authority"))
+            self.assertFalse(body["store_logged"])
+            self.assertEqual(watch.read_posture_file(d)["pace"], "hot")
+            conn = sqlite3.connect(str(watch.store_path(dw)))
+            try:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM posture_change"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+            self.assertEqual(count, 0)
+            with open(os.path.join(dw, "watch-events.log"), encoding="utf-8") as f:
+                events = f.read()
+            self.assertIn(
+                "POSTURE STORE WRITE FAILED: injected locked store", events,
+                "a failed write must not resemble a zero-change period")
+
     def test_post_rejects_unknown_pace_asking_and_negative(self):
         """Production line: domain_invalid branches in _handle_posture."""
         with tempfile.TemporaryDirectory() as d:
