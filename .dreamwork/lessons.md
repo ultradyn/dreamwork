@@ -4718,3 +4718,41 @@ because the probe examined all of them and then compared against a pid list that
 number retires exactly one hypothesis — that it didn't look. It leaves untouched every hypothesis about
 what it was looking *for*. Under `delegation=6` this one reported the precise reading that says
 *dispatch more*, which is how a monitoring defect becomes an action defect.
+
+## The field that reports what you asked for is not the field that reports what will happen
+
+Gate window 7 printed its classification and I read it as the plan:
+
+```
+changed=('test_watch.py', 'watch.py')
+tests=('test_watch.py',)
+```
+
+`tests=` names the tests the **coordinator passed positionally**. Derivation unions in the rest at run
+time, and it never prints the union. What actually ran was 31 of the repo's 100 root suites:
+
+```
+python3 -m pytest -q test_watch.py test_brief.py test_client_assets.py … test_lint.py … test_tick_line.py
+2 failed, 1967 passed, 65 subtests passed in 421.55s
+```
+
+I had spent the preceding minutes building a case that the import rule was broken — that a change to
+`watch.py` failed to select `test_lint.py` despite `lint.py:59` carrying a module-level `import watch`.
+The case was constructed entirely from the `tests=` line. The rule follows that edge correctly. I was
+auditing a tool using a field that answers a different question, and every step of the reasoning after
+that first misreading was sound, which is exactly what made it durable.
+
+The misreading had a second, worse consequence than a wrong conclusion. It made me confident that
+master's reds were *outside* the selection, so I ran a gate expecting the derived scope to route around
+them. The refusal was correct and my prediction was wrong in the direction that wastes seven minutes of
+main-checkout detachment.
+
+What the correct reading buys is a real reordering. `test_brief.py` **is** in the union;
+`test_launch_lane.py` is **not**. So of the two master-reds discovered tonight, one refuses every gate
+whose union includes it and the other refuses nothing — and I had been treating them as
+interchangeable, "either order."
+
+**A tool's echo of your input is not its report of its behaviour.** When a field's value equals
+something you supplied, that is the tell: it is confirming receipt, not predicting execution. The
+question to ask of any such line is *could this have said something I did not already know?* — and if
+it could not, it is not evidence about what the tool will do.
