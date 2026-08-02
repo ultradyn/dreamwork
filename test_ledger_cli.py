@@ -2143,6 +2143,77 @@ def test_groups_remove_task_requires_reason(dev_ledger, tmp_path):
     assert "--why" in err.getvalue()
 
 
+def test_groups_remove_task_auditable_via_supported_reader(
+        dev_ledger, tmp_path):
+    """#1037 Finding 1 — the audit trail has a supported reader. After a
+    removal, 'groups get --json' must surface removed_members with the actor
+    and reason, so an operator never reaches past the product to raw SQL.
+    Asserts the JSON output the reader produces, not the database row."""
+    _, group_id, existing_id, _fresh_id, ledger, db = _membership_target(tmp_path)
+    rc, out, err = _run(dev_ledger, [
+        "groups", "remove-task", str(group_id), str(existing_id),
+        "--why", "narrow goal scope", "--ledger", ledger,
+    ])
+    assert rc == 0, err
+    # Read it back through the SUPPORTED reader. rc=2 is correct when the
+    # group becomes empty after its last member is removed — progress cannot
+    # judge, but removed_members must still surface.
+    rc, out, _ = _run(dev_ledger, [
+        "groups", "get", str(group_id), "--json", "--ledger", ledger,
+    ])
+    assert rc in (0, 2), out
+    rec = json.loads(out.splitlines()[0])
+    removed = rec.get("removed_members", [])
+    assert removed, (
+        f"removed_members must appear in groups get; got {rec!r}")
+    matched = [m for m in removed if m["task_id"] == existing_id]
+    assert matched, (
+        f"removed_members must name the removed task #{existing_id}: {removed}")
+    entry = matched[-1]
+    assert entry["actor"], (
+        f"removed_members must carry the actor: {entry}")
+    assert "narrow goal scope" in entry["detail"], (
+        f"removed_members must carry the reason: {entry['detail']!r}")
+
+
+def test_groups_remove_task_reports_descendant_retention(dev_ledger, tmp_path):
+    """#1037 Finding 2 — a task in a parent AND a descendant keeps the
+    denominator unchanged after a direct-edge removal. The disposition must
+    NAME the retaining descendant so the operator sees the task is still
+    counted, rather than a silent success. Hierarchical fixture: a flat
+    fixture cannot see this class at all."""
+    target, parent_id, ledger = _goal_target(
+        tmp_path, title="hierarchical parent", total=1)
+    db = Path(ledger).parent / ledger_parse.STORE_FILENAME
+    existing_id = 1  # _goal_target(total=1) files task #1
+    # Create a child epic under the parent and add the same task to it.
+    with open_database(task_store_spec(db), access=Access.WRITE) as store:
+        with store.transaction() as tx:
+            child_id = tx.groups.create(
+                kind="epic", title="child epic", actor="test",
+                at="2026-08-01T00:00:00Z", parent_id=parent_id)
+            tx.groups.add_task(
+                child_id, existing_id, actor="test",
+                at="2026-08-01T00:00:01Z")
+    before = _cli_progress_total(dev_ledger, ledger, parent_id)
+    # Remove the direct edge from the parent — the task is still in the child.
+    rc, out, err = _run(dev_ledger, [
+        "groups", "remove-task", str(parent_id), str(existing_id),
+        "--why", "narrow the goal", "--ledger", ledger,
+    ])
+    assert rc == 0, err
+    # The hazard: denominator UNCHANGED — the task is still counted via child.
+    after = _cli_progress_total(dev_ledger, ledger, parent_id)
+    assert before == after, (
+        f"precondition: denominator must be unchanged (task retained by"
+        f" child); before={before} after={after}")
+    # The guard: the disposition names the retaining descendant.
+    assert "still counted via descendant" in out, (
+        f"disposition must name the retaining descendant: {out!r}")
+    assert f"#{child_id}" in out, (
+        f"disposition must name the child #{child_id}: {out!r}")
+
+
 def test_set_current_moves_the_rendered_tick_line(dev_ledger, tmp_path):
     """THE DEFECT (#962): no supported interface could move the current-goal
     pointer, so the tick rendered 'no current goal' forever. Direction 1

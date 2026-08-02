@@ -239,21 +239,6 @@ def _member_rows(path, group_id):
         conn.close()
 
 
-def _audit_events(path, task_id):
-    """Read the chained task_event log for one task — the audit home."""
-    conn = sqlite3.connect(path)
-    try:
-        return [
-            {"cause": row[0], "actor": row[1], "detail": row[2]}
-            for row in conn.execute(
-                "SELECT cause, actor, detail FROM task_event"
-                " WHERE task_id = ? ORDER BY ordinal", (task_id,)
-            ).fetchall()
-        ]
-    finally:
-        conn.close()
-
-
 def test_remove_task_drops_membership_and_reduces_denominator(store_path):
     """#1037: removing a member shrinks both the membership set and the
     progress denominator. Asserts the actual consequence (total_count) rather
@@ -288,8 +273,9 @@ def test_remove_task_drops_membership_and_reduces_denominator(store_path):
 
 def test_remove_task_records_auditable_event_readable_back(store_path):
     """#1037 auditability: after a removal a reader can still discover the
-    task was once a member and on whose judgement it left. Reads the chained
-    event log back — an audit trail nobody can read is not an audit trail."""
+    task was once a member and on whose judgement it left. Reads the
+    SUPPORTED reader (groups.removed_members), not raw SQL — an audit trail
+    nobody can reach through the product is documentation, not machinery."""
     _insert_tasks(store_path, [(611, "open")])
     with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
         group_id = _create_group(store, kind="epic", title="Audited epic")
@@ -299,18 +285,46 @@ def test_remove_task_records_auditable_event_readable_back(store_path):
         )
 
     assert status == "removed"
-    # Read the audit trail back directly from the chained event log.
-    events = _audit_events(store_path, 611)
-    assert len(events) >= 1, (
-        f"removal must append an audit event, found {len(events)}")
-    detail = events[-1]
-    assert detail["cause"] == "reconciled"
-    assert detail["actor"] == "test", (
-        f"audit event must name who removed it; got actor={detail['actor']!r}")
-    assert str(group_id) in detail["detail"], (
-        f"audit event must name which group: {detail['detail']!r}")
-    assert "dependency not membership" in detail["detail"], (
-        f"audit event must carry the stated reason: {detail['detail']!r}")
+    # Read the audit trail back through the SUPPORTED reader. A test that
+    # reaches past the product to the database proves the row exists; it does
+    # not prove anyone can find it. Read handles own a deferred snapshot
+    # transaction, so no explicit transaction wrapper is needed.
+    with open_database(task_store_spec(store_path), access=Access.READ) as store:
+        removed = store.groups.removed_members(group_id)
+    assert len(removed) >= 1, (
+        f"removed_members() must surface the removal, found {len(removed)}")
+    entry = removed[-1]
+    assert entry.task_id == 611, (
+        f"removed_members() must name the task: {entry}")
+    assert entry.actor == "test", (
+        f"removed_members() must name who removed it; got {entry.actor!r}")
+    assert str(group_id) in entry.detail, (
+        f"removed_members() must name which group: {entry.detail!r}")
+    assert "dependency not membership" in entry.detail, (
+        f"removed_members() must carry the stated reason: {entry.detail!r}")
+
+
+def test_removed_members_survives_unrelated_mutation(store_path):
+    """#1037 Finding 1 direction-2 guard: a history projection that renders
+    only for the current state passes a test that removes-and-immediately-
+    reads but fails the case that matters — reading months later, after
+    other changes. Assert the removal event survives an unrelated task
+    landing in the SAME group, which is exactly the churn that would bury it."""
+    _insert_tasks(store_path, [(612, "open"), (613, "open")])
+    with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
+        group_id = _create_group(store, kind="goal", title="Durable audit")
+        _add(store, group_id, 612, 613)
+        _remove(store, group_id, 612, why="out of scope")
+        # An UNRELATED mutation after the removal — task 613 lands.
+        with store.transaction() as tx:
+            tx.tasks.land(613, actor="test", at="2026-08-02T00:00:03Z")
+    # The removal must still be readable after the unrelated change.
+    with open_database(task_store_spec(store_path), access=Access.READ) as store:
+        removed = store.groups.removed_members(group_id)
+    matched = [m for m in removed if m.task_id == 612]
+    assert matched, (
+        f"removal of 612 must survive the unrelated landing; "
+        f"removed_members()={removed}")
 
 
 def test_remove_task_refuses_non_member_not_silent_noop(store_path):
@@ -358,6 +372,55 @@ def test_remove_task_dry_run_resolves_without_writing(store_path):
     assert status == "removed"
     assert _member_rows(store_path, group_id) == [641], (
         "a dry-run removal must not delete the membership row")
+
+
+def test_remove_from_parent_leaves_denominator_unchanged_via_descendant(
+        store_path):
+    """#1037 Finding 2 — progress rolls the WHOLE SUBTREE up by de-duplicated
+    task id, and the hierarchy explicitly permits the same task in a group
+    and its ancestor. So removing a task from a parent directly while it
+    remains in a child leaves the parent's denominator unchanged. This is
+    the class the flat fixture cannot see at all.
+
+    This test asserts BOTH consequences: the denominator stays unchanged
+    (the hazard) AND descendant_membership() names the retaining child
+    (option (a) — the operator sees the task is still counted and why).
+    """
+    _insert_tasks(store_path, [(651, "landed"), (652, "open")])
+    with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
+        parent_id = _create_group(store, kind="goal", title="Parent goal")
+        # Child epic under the parent, so the parent's subtree includes it.
+        with store.transaction() as tx:
+            child_id = tx.groups.create(
+                kind="epic", title="Child epic", description="",
+                actor="test", at="2026-08-01T00:00:00Z", parent_id=parent_id,
+            )
+        # Task 651 in BOTH parent and child (the overlap the hierarchy permits).
+        _add(store, parent_id, 651, 652)
+        _add(store, child_id, 651)
+        with store.transaction() as tx:
+            before = tx.groups.progress(parent_id)
+        _remove(store, parent_id, 651, why="narrow the goal")
+        with store.transaction() as tx:
+            after = tx.groups.progress(parent_id)
+            retaining = tx.groups.descendant_membership(parent_id, 651)
+
+    # Precondition: 651 was a member (the direct edge that will be removed).
+    assert before.total_count == 2, (
+        f"precondition broken: expected 2 parent members, "
+        f"got {before.total_count}")
+    # The hazard: the denominator is UNCHANGED — 651 is still counted via
+    # the child. This is the exact failure the brief named.
+    assert after.total_count == 2, (
+        f"expected denominator unchanged (651 retained by child), "
+        f"got {after.total_count}")
+    assert 651 in after.member_task_ids, (
+        f"651 should still be counted via the child: {after.member_task_ids}")
+    # The named guard: descendant_membership() reports the retaining child,
+    # so the operator SEES that the removal did not narrow the goal.
+    assert [g.id for g in retaining] == [child_id], (
+        f"descendant_membership() must name the retaining child #{child_id}, "
+        f"got {[g.id for g in retaining]}")
 
 
 def _cli(store_path, capsys, *argv):
