@@ -10923,3 +10923,41 @@ class TestBuilderDelegation:
         assert len(rows) == 1 and rows[0][0] == lint.OK, rows
         # Exactly one delegate — the mechanism lines did not add a second.
         assert "1 delegate reference(s)" in rows[0][1]
+
+    def test_delegate_outside_scanned_dirs_is_invisible(self, tmp_path):
+        # Boundary: the scan covers dev/build/ + client/ source. A delegate in
+        # a file OUTSIDE those dirs is not enumerated, so deleting its builder
+        # reads as clean — this is the scan's real edge, reported not widened.
+        rows = self._check(
+            tmp_path,
+            extra={"standalone.js": (
+                "const X = fromBuilder('onlyHere', function (p) {\n"
+                "  return onlyHere(p);\n"
+                "});\n")},
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('artifactRow', function (p) {\n"
+                "  return artifactRow(p.row);\n"
+                "});\n")},
+            client={"views.js": "function artifactRow(r) { return ''; }\n"})
+        # The standalone delegate is invisible; only the scanned one counts.
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1]
+
+    def test_column0_namesake_masks_a_client_deletion(self, tmp_path):
+        # KNOWN BOUNDARY (direction 2, open): a column-0 definition of a builder
+        # name anywhere in scanned source counts as "defined". A namesake outside
+        # the builder's home (client/) masks a deletion there — the guard PASSES
+        # (false green). It cannot distinguish a real builder from a column-0
+        # namesake without path-keying, which the brief's point 4 forbids ("key
+        # on the references themselves"). Builder names are distinctive and the
+        # architecture keeps builders in client/, so this is narrow and
+        # implausible; reported, not silently accepted as closed.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Label = fromBuilder('label', function (p) {\n"
+                "  return label(p.text);\n"
+                "});\n"
+                "const label = () => 'namesake';\n")},
+            client={"components.js": "const other = 1;\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
