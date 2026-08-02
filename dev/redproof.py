@@ -1036,14 +1036,41 @@ def begin(cwd: Path | None, path: str,
     return 0
 
 
+def _is_env_assignment(token: str) -> bool:
+    """True when *token* is a leading ``VAR=value`` shell env assignment.
+
+    Matches the shell convention ``[A-Za-z_][A-Za-z0-9_]*=`` via
+    ``str.isidentifier`` (the Python-native form; marginally broader for
+    Unicode identifiers, which are valid env names).
+    """
+    name, sep, _ = token.partition("=")
+    return bool(sep) and name.isidentifier()
+
+
 def _reach_run(root: Path, command: list[str]) -> tuple[int, str]:
-    """Run one exact check command, retaining its combined diagnostic stream."""
+    """Run one exact check command, retaining its combined diagnostic stream.
+
+    Leading ``VAR=value`` tokens are parsed as environment assignments (the
+    shell convention a lane types from memory) and merged into the child
+    environment, so ``CI= python3 -m pytest …`` runs instead of failing with a
+    confusing ``could not execute 'CI='`` (#1119).  ``subprocess.run`` with a
+    list does not invoke a shell, so without this a leading env-prefix is
+    treated as the executable name.
+    """
+    env = dict(os.environ)
+    rest = list(command)
+    while rest and _is_env_assignment(rest[0]):
+        key, _, val = rest.pop(0).partition("=")
+        env[key] = val
+    if not rest:
+        return 127, ("could not execute: --command has no executable after "
+                     f"environment assignments {command!r}\n")
     try:
         proc = subprocess.run(
-            command, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, errors="replace", check=False)
+            rest, cwd=root, env=env, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, errors="replace", check=False)
     except OSError as exc:
-        return 127, f"could not execute {command[0]!r}: {exc}\n"
+        return 127, f"could not execute {rest[0]!r}: {exc}\n"
     return proc.returncode, proc.stdout
 
 
