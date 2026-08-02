@@ -2077,8 +2077,24 @@ def _cli_progress_total(dev_ledger, ledger, group_id):
 def test_groups_remove_task_shrinks_rendered_denominator(dev_ledger, tmp_path):
     """Direction 1: removing a member must reduce the progress denominator.
     Asserts total_count before and after with concrete numbers — a test that
-    never re-reads progress misses the whole point (#1037)."""
+    never re-reads progress misses the whole point (#1037).
+
+    Also the NEGATIVE half of the descendant-retention guard (#1037 Finding
+    2): a leaf removal — no descendants retain the task — must NOT carry the
+    'still counted via descendant' clause. An unconditional warning there is
+    the exact false alarm that would stop the coordinator mid-narrowing, and
+    the success-prefix match alone proved unable to catch it. The leaf case
+    is asserted BY CONSTRUCTION here (the goal has no child groups), not left
+    to accident — a group with no children by accident passes vacuously."""
     _, group_id, existing_id, fresh_id, ledger, db = _membership_target(tmp_path)
+    # Deliberate leaf: the membership fixture is one flat goal with no child
+    # groups, so descendant_membership() must be empty. Asserted at runtime
+    # rather than assumed, so the negative assertion below is not vacuous.
+    with open_database(task_store_spec(db), access=Access.READ) as store:
+        assert store.groups.descendants(group_id) == (), (
+            f"precondition broken: goal #{group_id} must be a leaf (no"
+            f" descendants) for the no-retention-clause assertion; got"
+            f" {[g.id for g in store.groups.descendants(group_id)]}")
     # add the fresh member so the goal has TWO members (precondition, derived).
     rc, out, err = _run(dev_ledger, [
         "groups", "add-task", str(group_id), str(fresh_id),
@@ -2098,6 +2114,13 @@ def test_groups_remove_task_shrinks_rendered_denominator(dev_ledger, tmp_path):
     after = _cli_progress_total(dev_ledger, ledger, group_id)
     assert after == 1, (
         f"denominator did not shrink: expected 1 after removal, got {after}")
+    # #1037 Finding 2 — the negative half. A leaf removal has no retaining
+    # descendant, so the clause that names one must be ABSENT. Asserting the
+    # specific clause (not the whole string) so an unrelated wording change
+    # cannot make this pass for the wrong reason.
+    assert "still counted via descendant" not in out, (
+        f"a leaf removal must not report descendant retention, but the"
+        f" disposition did: {out!r}")
 
 
 def test_groups_remove_task_refuses_non_member_and_missing_group(
