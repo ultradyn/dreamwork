@@ -4458,3 +4458,40 @@ Corollary for reviews: this was caught because a reviewer was told **"if your me
 anything stated above, YOUR MEASUREMENT WINS"**. That line is not politeness. It is what makes a
 reviewer willing to contradict the coordinator's premise instead of working around it, and it is
 worth putting in every review prompt for that reason alone.
+
+## When told "your check faults in a clean checkout", the cheap fix converts a false red into a false green (2026-08-02, #1034/#1038/#136, mine, measured)
+
+`#1034`'s guard was correct and catching the real miscitation, but it **faulted** in a clean checkout
+because the ledger store is gitignored. I dispatched that as the defect. The fix made the test
+`pytest.skip` when the store is absent. Measured, on the exact generated guard invocation in a clean
+clone:
+
+    3 passed, 1 skipped in 1.21s
+
+The standalone checker gets it right — it prints `NOT CHECKED: ledger store not found ... title
+resolution could not run, attribution review did not happen (#136)`. But **that reader is not what
+the registered guard runs**, so the gate's own output says green, and the one line saying the review
+did not happen is printed by a program nobody invoked.
+
+**A skip is worse than the fault it replaced.** A fault stops the gate and gets looked at. A skip is
+indistinguishable from a pass in the output the gate actually prints, so nobody ever looks. Trading
+a false red for a false green is a downgrade dressed as a fix, and it will read as progress in the
+lane's report — "the clean-checkout fault is gone" is perfectly true.
+
+Same shape, same night, one layer up: `#1038` taught `redproof` to distinguish an unreadable registry
+from an absent one, correctly — and left `land_lane.py:1154` appending *"it can locate no registry"*
+to **every** require-0 fault. The tool now knows the difference; the product still does not, because
+nobody reads the tool's stdout directly. **Fixing the library and leaving the caller asserting the
+old collapse means the collapse still ships.**
+
+The rule: **when a check is reported as failing in some environment, the fix must keep three states
+distinguishable — passed, failed, could-not-run — and must do so in the output the operator actually
+reads.** `#136` has said this for months; what is new is that both violations arrived *inside fixes
+for #136 violations*, written by lanes that had `#136` quoted in their briefs. Knowing the rule is
+not the failing half. Applying it to your own remedy is.
+
+Two questions that would have caught both, cheaply:
+- After this fix, what does the gate PRINT in the broken environment — and can I tell that apart from
+  a successful run by reading only that?
+- Did I fix the thing the operator reads, or a thing it calls?
+
