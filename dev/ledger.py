@@ -98,6 +98,9 @@ NOTE_PREFIX = "  · "  # two-space indent, U+00B7, space — the ledger's contin
 _BLOCKER_ID = re.compile(r"(?<![\w#])#([1-9]\d*)\b")
 _FOLD_SHA_TOKEN = re.compile(
     r"(?<![0-9A-Za-z])[0-9A-Fa-f]{7,}(?![0-9A-Za-z])")
+_FOLD_PAST_REFUSAL = re.compile(
+    r"\bREFUSE\s+[0-9A-Fa-f]{7,}\s+resolves as commit\s+"
+    r"[0-9A-Fa-f]{7,}.*?\bNOT an ancestor of\s+\S+")
 
 
 class LedgerError(Exception):
@@ -1452,6 +1455,25 @@ def _git_is_ancestor(repo, commit, base_commit):
     return None
 
 
+def _fold_citation_tokens(note):
+    """Return prose citation candidates, excluding quoted tool output."""
+    tokens, fence = [], None
+    for line in note.splitlines():
+        marker = re.match(r"\s*(`{3,}|~{3,})", line)
+        if marker:
+            run = marker.group(1)
+            if fence is None:
+                fence = (run[0], len(run))
+            elif run[0] == fence[0] and len(run) >= fence[1]:
+                fence = None
+            continue
+        if fence is not None:
+            continue
+        line = _FOLD_PAST_REFUSAL.sub("", line)
+        tokens.extend(_FOLD_SHA_TOKEN.findall(line))
+    return tuple(dict.fromkeys(tokens))
+
+
 def _fold_citation_check(repo, note, base):
     """Classify 7+ hex note tokens against ``base`` before fold can write.
 
@@ -1459,21 +1481,23 @@ def _fold_citation_check(repo, note, base):
     alphanumeric boundary, not merely a hex boundary: ``deadbeefish`` in a
     prose/path word is not silently promoted into a purported citation.
     """
-    tokens = tuple(dict.fromkeys(_FOLD_SHA_TOKEN.findall(note)))
+    tokens = _fold_citation_tokens(note)
     if not tokens:
         return (
             "OK  fold citations  examined 0 7+ hex token(s) in --note; "
+            "could not judge 0 token(s); "
             "population is zero, not a clean citation sweep; landing sha "
             "reachability is NOT verified\n", [], [])
 
     lines = [
         f"CHECK  fold citations  examined {len(tokens)} 7+ hex token(s) "
         f"in --note against base {base}\n"]
-    unreachable, cannot_judge = [], []
+    unreachable, cannot_judge, unjudged = [], [], 0
     base_commit = None
     for token in tokens:
         commit = _git_resolve_commit(repo, token)
         if commit is None:
+            unjudged += 1
             lines.append(
                 f"  CHECK {token} does not resolve to a commit in {repo}; "
                 "it may be a typo or a foreign commit, and ancestry is NOT "
@@ -1483,6 +1507,7 @@ def _fold_citation_check(repo, note, base):
             base_commit = _git_resolve_commit(repo, base)
         if base_commit is None:
             cannot_judge.append((token, commit))
+            unjudged += 1
             lines.append(
                 f"  REFUSE {token} resolves as commit {commit}, but base "
                 f"{base} does not resolve to a commit; ancestry cannot be "
@@ -1497,12 +1522,18 @@ def _fold_citation_check(repo, note, base):
             unreachable.append((token, commit))
             lines.append(
                 f"  REFUSE {token} resolves as commit {commit}: it exists "
-                f"but is NOT an ancestor of {base}\n")
+                f"but is NOT an ancestor of {base}. If this is pre-squash "
+                "history, cite the preservation tag <branch>-presquash "
+                "instead; it is a ref and will not be collected\n")
         else:
             cannot_judge.append((token, commit))
+            unjudged += 1
             lines.append(
                 f"  REFUSE {token} resolves as commit {commit}, but git "
                 f"could not judge ancestry against {base}\n")
+    lines.append(
+        f"CHECK  fold citation judgement  examined {len(tokens)} token(s); "
+        f"could not judge {unjudged} token(s)\n")
     return "".join(lines), unreachable, cannot_judge
 
 
@@ -3147,8 +3178,11 @@ def _dispatch(args):
             cited = ", ".join(token for token, _ in unreachable)
             sys.stderr.write(
                 "ledger: refusing irreversible landed write: " + cited
-                + f" exists but is NOT an ancestor of {args.base}. Land it "
-                "on that base, name the intended --base, or use "
+                + f" exists but is NOT an ancestor of {args.base}. If it is "
+                "pre-squash history, cite the preservation tag "
+                "<branch>-presquash instead; it is a ref and will not be "
+                "collected. Otherwise land it on that base, name the "
+                "intended --base, or use "
                 "--allow-unreachable-citations; an override is recorded in "
                 "the task note.\n")
             return 2
