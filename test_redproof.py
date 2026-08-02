@@ -1983,6 +1983,7 @@ class TestObserveRemainderOptionGuard:
             self, repo, tmp_path, monkeypatch):
         scratch = tmp_path / "scratch-989"
         monkeypatch.setenv("REDPROOF_SCRATCH_ROOT", str(scratch))
+        monkeypatch.setattr(rp._ls, "SCRATCH_ROOT", scratch)
         env = dict(__import__("os").environ)
         lane = "empty-lane-989"
         expected_registry = rp._registry_path(repo, lane)
