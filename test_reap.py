@@ -46,7 +46,10 @@ def lane(tmp_path: Path) -> tuple[Path, Path]:
     _git(root, "init", "-q", "-b", "master")
     _git(root, "config", "user.email", "t@t")
     _git(root, "config", "user.name", "t")
-    (root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    (root / ".gitignore").write_text(
+        "__pycache__/\n.dreamwork/applied.md\n*.tmp.*\nnode_modules/\n",
+        encoding="utf-8",
+    )
     (root / "tracked.txt").write_text("base\n", encoding="utf-8")
     _git(root, "add", ".gitignore", "tracked.txt")
     _git(root, "commit", "-qm", "base")
@@ -97,8 +100,60 @@ def test_brief_and_ignored_cache_do_not_fire_the_gate(lane):
     # expected untracked scratch, so it is not named; the cache is ignored.
     assert "untracked=1" in result.stdout
     assert "ignored=1" in result.stdout
+    assert "ignored: examined 1 file; 1 disposable, 0 NOT disposable" in result.stdout
     assert "unmerged-commits=0" in result.stdout
     assert "NOTE:" not in result.stderr
+
+
+def test_ignored_evidence_is_named_without_changing_the_gate(lane):
+    _, worktree = lane
+    evidence = worktree / ".dreamwork" / "applied.md"
+    evidence.parent.mkdir()
+    evidence.write_text("actor=coordinator-drain\n", encoding="utf-8")
+
+    result = _run("--check", worktree)
+
+    assert result.returncode == 0, result.stderr
+    assert "ignored=1" in result.stdout
+    assert "ignored: examined 1 file; 0 disposable, 1 NOT disposable" in result.stdout
+    assert ".dreamwork/applied.md" in result.stdout
+
+
+def test_unforeseen_ignored_file_type_falls_through_allowlist(lane):
+    _, worktree = lane
+    (worktree / "red-proof.tmp.unforeseen").write_text("unknown kind\n", encoding="utf-8")
+
+    result = _run("--check", worktree)
+
+    assert result.returncode == 0, result.stderr
+    assert "1 NOT disposable: red-proof.tmp.unforeseen" in result.stdout
+
+
+def test_handwritten_note_inside_pycache_is_not_hidden_by_directory_name(lane):
+    _, worktree = lane
+    cache = worktree / "__pycache__"
+    cache.mkdir()
+    (cache / "handwritten-note.md").write_text("keep me\n", encoding="utf-8")
+
+    result = _run("--check", worktree)
+
+    assert result.returncode == 0, result.stderr
+    assert "1 NOT disposable: __pycache__/handwritten-note.md" in result.stdout
+
+
+def test_ignored_symlink_does_not_report_files_beyond_the_worktree(lane, tmp_path):
+    _, worktree = lane
+    outside = tmp_path / "coordinator-secret-report.md"
+    outside.write_text("not in the lane\n", encoding="utf-8")
+    dependencies = worktree / "node_modules"
+    dependencies.mkdir()
+    (dependencies / "external-report").symlink_to(outside)
+
+    result = _run("--check", worktree)
+
+    assert result.returncode == 0, result.stderr
+    assert "ignored: examined 1 file; 1 disposable, 0 NOT disposable" in result.stdout
+    assert "coordinator-secret-report.md" not in result.stdout
 
 
 def test_untracked_deliverable_is_named_and_distinguishable_from_cache_only(lane):
@@ -160,6 +215,16 @@ def test_non_worktree_is_unknown_not_clean(tmp_path):
     assert "untracked=unknown" in result.stderr
     assert "ignored=unknown" in result.stderr
     assert "not a registered linked worktree" in result.stderr
+
+
+def test_zero_ignored_population_is_visibly_not_an_all_clear(lane):
+    _, worktree = lane
+
+    result = _run("--check", worktree)
+
+    assert result.returncode == 0, result.stderr
+    assert "ignored=0" in result.stdout
+    assert "ignored: examined 0 files; NOT an all-clear" in result.stdout
 
 
 def test_git_status_failure_is_unknown_not_clean(tmp_path, monkeypatch, capsys):

@@ -7,7 +7,7 @@ import argparse
 import subprocess
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 @dataclass(frozen=True)
@@ -103,6 +103,36 @@ def _unmerged_commits(target: Path, base: str) -> list[tuple[str, str]] | None:
 # from scratch beyond this literal (#702), and the path name speaks for itself.
 EXPECTED_UNTRACKED = frozenset({"BRIEF.md"})
 
+# This is deliberately an allowlist of things known to be reproducible. Any
+# unfamiliar ignored path falls through and is named. ``__pycache__`` is not a
+# directory-prefix rule: normal contents are already covered by ``*.pyc``, and
+# a hand-written note hidden inside that directory is still evidence.
+DISPOSABLE_IGNORED_DIRS = frozenset({".pytest_cache", ".ruff_cache", "node_modules"})
+
+
+def _is_disposable_ignored(path: str) -> bool:
+    parts = PurePosixPath(path).parts
+    return (
+        path.endswith((".pyc", ".lock"))
+        or any(part in DISPOSABLE_IGNORED_DIRS for part in parts)
+    )
+
+
+def _ignored_detail(rows: list[StatusPath]) -> str:
+    total = len(rows)
+    if total == 0:
+        return "ignored: examined 0 files; NOT an all-clear"
+    notable = [row.path for row in rows if not _is_disposable_ignored(row.path)]
+    disposable = total - len(notable)
+    noun = "file" if total == 1 else "files"
+    detail = (
+        f"ignored: examined {total} {noun}; {disposable} disposable, "
+        f"{len(notable)} NOT disposable"
+    )
+    if notable:
+        detail += ": " + ", ".join(notable)
+    return detail
+
 
 def _summary(
     target: Path,
@@ -110,14 +140,16 @@ def _summary(
     untracked: int | str,
     ignored: int | str,
     unmerged: int | str,
+    ignored_detail: str | None = None,
 ) -> str:
     # `untracked` and `ignored` are reported separately, never collapsed: an
     # uncommitted deliverable and a cache directory read identically under one
     # merged counter, and that is the loss this tool exists to prevent (#760).
-    return (
+    summary = (
         f"reap examined path={target} tracked-dirty={tracked} "
         f"untracked={untracked} ignored={ignored} unmerged-commits={unmerged}"
     )
+    return summary if ignored_detail is None else f"{summary} ({ignored_detail})"
 
 
 def _note_unexpected(unexpected: list[StatusPath]) -> None:
@@ -175,7 +207,12 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
         )
 
     summary = _summary(
-        target, len(tracked), len(untracked), len(ignored), len(commits)
+        target,
+        len(tracked),
+        len(untracked),
+        len(ignored),
+        len(commits),
+        _ignored_detail(ignored),
     )
     unsafe = bool(tracked or commits)
     stream = sys.stderr if unsafe and not force else sys.stdout
