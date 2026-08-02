@@ -3543,6 +3543,51 @@ class TestDevTaskCitations:
         rows = [(lvl, d) for lvl, what, d in rep.rows if what == "dev task citations"]
         assert len(rows) == 1 and rows[0][0] == lint.OK, rep.rows
 
+    def test_an_unreadable_frozen_history_warns_not_false_errors(self, tmp_path):
+        """A present-but-unreadable frozen history is a distinct state, not an
+        empty one (#1094 round 2, #136). A frozen-only citation must read
+        "could not check" (WARN), never "cites unresolved" (ERROR) — the latter
+        blames valid code for the checker's own read failure."""
+        dw = self._fixture(tmp_path, self._LIVE)  # live store only
+        # PRESENT but UNREADABLE: invalid UTF-8 makes read_text raise before
+        # parse_ledger is ever reached — the real failure path, not a tolerated
+        # input (parse_ledger returns empty for almost anything, so garbage text
+        # would exercise the SUCCESS path and prove nothing). Assert the
+        # precondition at runtime: the bytes really do not decode.
+        dep = dw / "tasks.md.deprecated"
+        dep.write_bytes(b"\xff\xfe not valid utf-8 \x80\x81")
+        with pytest.raises(UnicodeDecodeError):
+            dep.read_text(encoding="utf-8")
+        # #200 is frozen-only in _DEP, but the frozen history cannot be read, so
+        # the checker cannot tell resolves-frozen from resolves-nowhere.
+        rep = lint.Report()
+        lint.check_dev_task_citations(
+            dw, rep, diff_text=self._diff("# see (#200)"))
+        rows = [(lvl, d) for lvl, what, d in rep.rows if what == "dev task citations"]
+        assert not rep.failed, rows  # WARN, not ERROR — must not fail the run
+        assert len(rows) == 1 and rows[0][0] == lint.WARN, rows
+        assert "#200" in rows[0][1]
+        assert "unreadable" in rows[0][1]
+        assert "could not be checked" in rows[0][1]
+        assert "unresolved" not in rows[0][1]  # the false-ERROR wording is gone
+
+    def test_an_unreadable_frozen_history_notes_it_when_all_resolve_live(self, tmp_path):
+        """Even with nothing to flag, a reader can tell the frozen half was
+        NOT checked (the OK row says so) — the "I could not check your
+        citation" state is surfaced, not swallowed (#1094 round 2)."""
+        dw = self._fixture(tmp_path, self._LIVE)
+        dep = dw / "tasks.md.deprecated"
+        dep.write_bytes(b"\xff\xfe not valid utf-8 \x80\x81")
+        rep = lint.Report()
+        # #500 resolves LIVE, so it is fine — but the OK row must disclose the
+        # unreadable frozen half.
+        lint.check_dev_task_citations(
+            dw, rep, diff_text=self._diff("# see (#500)"))
+        rows = [(lvl, d) for lvl, what, d in rep.rows if what == "dev task citations"]
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "unreadable" in rows[0][1]
+        assert "NOT checked" in rows[0][1]
+
 
 class TestHandoffs:
     """#381's delivery half: a landing the ledger writer has not folded yet.
