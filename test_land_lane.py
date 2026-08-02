@@ -45,7 +45,7 @@ def _write(path: Path, text: str) -> None:
 
 def _redproof(lane: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(REDPROOF), *args, "--cwd", str(lane)],
+        [sys.executable, str(REDPROOF), "--cwd", str(lane), *args],
         cwd=lane,
         capture_output=True,
         text=True,
@@ -107,6 +107,13 @@ def landing_repo(tmp_path: Path):
     armed = _redproof(lane, "begin", "feature.txt", "--expectation", "test_named.py")
     assert armed.returncode == 0, armed.stdout + armed.stderr
     _write(lane / "feature.txt", "recorded red-proof injection\n")
+    observed = _redproof(
+        lane, "observe", "feature.txt", "--failure", "feature injection reached",
+        "--command", sys.executable, "-c",
+        "from pathlib import Path; assert Path('feature.txt').read_text() == "
+        "'lane\\n', 'feature injection reached'",
+    )
+    assert observed.returncode == 0, observed.stdout + observed.stderr
     restored = _redproof(lane, "restore", "feature.txt")
     assert restored.returncode == 0, restored.stdout + restored.stderr
     return root, lane
@@ -1040,6 +1047,13 @@ def test_relevance_warns_when_test_brief_cannot_relate_to_redproof(tmp_path):
     armed = _redproof(lane, "begin", "dev/redproof.py", "--expectation", "test_brief.py")
     assert armed.returncode == 0, armed.stdout + armed.stderr
     _write(lane / "dev" / "redproof.py", "VALUE = 999\n")
+    observed = _redproof(
+        lane, "observe", "dev/redproof.py", "--failure", "redproof injection reached",
+        "--command", sys.executable, "-c",
+        "from pathlib import Path; assert Path('dev/redproof.py').read_text() == "
+        "'VALUE = 2\\n', 'redproof injection reached'",
+    )
+    assert observed.returncode == 0, observed.stdout + observed.stderr
     restored = _redproof(lane, "restore", "dev/redproof.py")
     assert restored.returncode == 0, restored.stdout + restored.stderr
 

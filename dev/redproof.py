@@ -899,6 +899,83 @@ def begin(cwd: Path | None, path: str,
     return 0
 
 
+def _reach_run(root: Path, command: list[str]) -> tuple[int, str]:
+    """Run one exact check command, retaining its combined diagnostic stream."""
+    try:
+        proc = subprocess.run(
+            command, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, errors="replace", check=False)
+    except OSError as exc:
+        return 127, f"could not execute {command[0]!r}: {exc}\n"
+    return proc.returncode, proc.stdout
+
+
+def _reach_section(label: str, command: list[str], exit_code: int, output: str) -> str:
+    return (f"=== {label} ===\n$ {shlex.join(command)}\nexit: {exit_code}\n"
+            f"{output.rstrip()}\n")
+
+
+def observe(cwd: Path | None, path: str, *, failure: str,
+            command: list[str], lane: str | None = None) -> int:
+    """Observe the armed injection making an exact command fail discriminatingly.
+
+    The output is written at run time under the same lane-private scratch root
+    as the registry. ``restore`` reruns this exact command against the restored
+    bytes; only injected-red plus restored-green is causal reach evidence.
+    """
+    root = _ls.worktree_root(cwd)
+    try:
+        identity_dir = _snap_dir(cwd, lane=lane)
+        posix, _ = _worktree_path(root, path)
+        if not failure:
+            raise RedproofError("--failure must name a non-empty discriminating message")
+        if not command:
+            raise RedproofError("--command must name the check that caught the injection")
+        entries, _ = _read_registry(cwd, lane)
+        armed = _find(entries, posix)
+        if armed is None:
+            raise RedproofError(
+                f"{posix!r} has no armed injection; run `begin {posix}` before observe")
+        injected = _read_wt(root, posix)
+        injected_sha = _sha(injected)
+        exit_code, output = _reach_run(root, command)
+        evidence = identity_dir / f"{hashlib.sha256(posix.encode()).hexdigest()[:12]}-{injected_sha[:12]}.reach.txt"
+        evidence_text = _reach_section("INJECTED RUN", command, exit_code, output)
+        evidence.write_text(evidence_text)
+        if exit_code == 0:
+            status = "not_caught"
+            reason = "check exited 0 while the injection was present"
+        elif failure not in output:
+            status = "not_caught"
+            reason = "check failed, but did not emit the declared discriminating failure"
+        else:
+            status = "pending_control"
+            reason = "injected run failed discriminatingly; restored control still required"
+        armed["reach"] = {
+            "status": status,
+            "reason": reason,
+            "command": command,
+            "failure": failure,
+            "observed_injected_sha": injected_sha,
+            "injected_exit": exit_code,
+            "evidence": str(evidence),
+            "evidence_sha": _sha(evidence_text.encode()),
+        }
+        _write_registry(cwd, entries, lane)
+    except (OSError, RedproofError) as exc:
+        sys.stderr.write(f"observe: FAULT — {exc}\n")
+        return 2
+    if status == "pending_control":
+        print(f"observe: OK — {posix!r} emitted {failure!r} under "
+              f"`{shlex.join(command)}` (exit {exit_code}); evidence -> {evidence}. "
+              "Run restore to execute the causal control.")
+        return 0
+    sys.stderr.write(
+        f"observe: NOT CAUGHT — {posix!r}: {reason}; evidence -> {evidence}. "
+        "Restore is still required.\n")
+    return 1
+
+
 def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
     """Record the INJECTED state, restore the ORIGINAL, verify byte-identity.
 
@@ -1005,6 +1082,9 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
             "injected_hint": injected_hint,
             "state": RESTORED,
             "restored_at": _now(),
+            # Set even when absent so a later registration of the same path
+            # cannot inherit an earlier injection's reach receipt.
+            "reach": armed.get("reach"),
         })
         # The armed entry is consumed: its snapshot served this restore. Drop
         # it so check does not see a begun-but-unrestored entry for a path that
@@ -1025,6 +1105,39 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
             raise RedproofError(
                 f"restore of {posix!r} did not reproduce the snapshot byte-for-byte "
                 f"after cp — investigate before continuing")
+        reach = entry.get("reach")
+        if reach and reach.get("status") == "pending_control":
+            command = reach.get("command")
+            failure = reach.get("failure")
+            evidence = Path(str(reach.get("evidence", "")))
+            if reach.get("observed_injected_sha") != injected_sha:
+                reach["status"] = "not_caught"
+                reach["reason"] = "injected bytes changed after the observed failure"
+            elif not isinstance(command, list) or not command or not isinstance(failure, str):
+                reach["status"] = "not_caught"
+                reach["reason"] = "recorded observation is incomplete"
+            else:
+                control_exit, control_output = _reach_run(root, command)
+                control = _reach_section(
+                    "RESTORED CONTROL RUN", command, control_exit, control_output)
+                try:
+                    prior = evidence.read_text()
+                    evidence.write_text(prior + control)
+                    reach["evidence_sha"] = _sha((prior + control).encode())
+                except OSError as exc:
+                    reach["status"] = "not_caught"
+                    reach["reason"] = f"could not preserve restored control output: {exc}"
+                else:
+                    reach["control_exit"] = control_exit
+                    if control_exit == 0 and failure not in control_output:
+                        reach["status"] = "caught"
+                        reach["reason"] = "injected run failed discriminatingly and restored control passed"
+                    else:
+                        reach["status"] = "not_caught"
+                        reach["reason"] = (
+                            "restored control still failed"
+                            if control_exit else
+                            "declared failure remained in restored control output")
         _write_registry(cwd, entries, lane)
         _release_snapshot(snap)
     except RedproofError as exc:
@@ -1034,6 +1147,13 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
                    f"sha {entry['injected_sha'][:12]}")
     print(f"restore: {posix!r} injected state recorded ({observation}, "
           f"hint: {entry['injected_hint']!r}); original restored & verified.")
+    reach = entry.get("reach")
+    if reach:
+        print(f"reach: {str(reach.get('status', 'not_checked')).upper()} — "
+              f"{reach.get('reason', 'no result')}; evidence: {reach.get('evidence', 'absent')}")
+    else:
+        print("reach: NOT CHECKED — no injected-run observation was recorded; "
+              "absence is not evidence that anything caught the injection.")
     return 0
 
 
@@ -1119,6 +1239,67 @@ def _check_scope_line(audit_sources: list[tuple[str, Path, bool]]) -> str:
 def _check_error(scope: str, message: str) -> None:
     """Keep the discriminating error first; append the identity evidence."""
     sys.stderr.write(message.rstrip("\n") + "\n" + scope + "\n")
+
+
+def _reach_report(restored: list[dict]) -> tuple[str, list[str], bool]:
+    """Classify causal reach receipts without collapsing absent into caught."""
+    caught = not_caught = not_checked = examined = 0
+    details: list[str] = []
+    for entry in restored:
+        reach = entry.get("reach")
+        path = entry.get("path", "?")
+        if not isinstance(reach, dict):
+            not_checked += 1
+            details.append(f"  {path}: NOT CHECKED — no observation was recorded")
+            continue
+        evidence = Path(str(reach.get("evidence", "")))
+        try:
+            evidence_bytes = evidence.read_bytes()
+        except OSError:
+            not_checked += 1
+            details.append(
+                f"  {path}: NOT CHECKED — evidence artifact absent/unreadable: {evidence}")
+            continue
+        if _sha(evidence_bytes) != reach.get("evidence_sha"):
+            not_checked += 1
+            details.append(
+                f"  {path}: NOT CHECKED — evidence artifact changed after observation: {evidence}")
+            continue
+        examined += 1
+        status = reach.get("status")
+        command = reach.get("command")
+        command_text = shlex.join(command) if isinstance(command, list) else "UNKNOWN"
+        failure = reach.get("failure", "UNKNOWN")
+        if status == "caught":
+            caught += 1
+            details.append(
+                f"  {path}: CAUGHT by `{command_text}`; discriminating failure {failure!r}; "
+                f"evidence: {evidence}")
+        elif status == "not_caught":
+            not_caught += 1
+            details.append(
+                f"  {path}: NOT CAUGHT by `{command_text}` — "
+                f"{reach.get('reason', 'no reason recorded')}; declared failure {failure!r}; "
+                f"evidence: {evidence}")
+        else:
+            not_checked += 1
+            details.append(
+                f"  {path}: NOT CHECKED — observation has no restored causal control "
+                f"(status {status!r}); evidence: {evidence}")
+    total = len(restored)
+    prefix = (f"caught {caught} of {total} registered injection(s); examined "
+              f"{examined} evidence artifact(s) for {total} registered injection(s)")
+    if total and caught == total:
+        return f"red-proof reach: OK — {prefix}.", details, True
+    counts = f"{not_caught} not caught, {not_checked} not checked"
+    if not_caught:
+        return f"red-proof reach: WARN — {prefix}; {counts}.", details, False
+    return (
+        f"red-proof reach: DID NOT CHECK — {prefix}; {counts}; absence or a zero "
+        "population is not evidence that anything caught an injection.",
+        details,
+        False,
+    )
 
 
 def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
@@ -1307,6 +1488,9 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             print(f"check: no evidence — {label} (role: {role}); injection "
                   f"restoration was not evaluated; production reach was not "
                   f"evaluated.")
+            print("red-proof reach: DID NOT CHECK — caught 0 of 0 registered "
+                  "injection(s); examined 0 evidence artifact(s) for 0 registered "
+                  "injection(s); population is zero, not a clean reach sweep.")
             print(identity_scope)
             return 0
         # Retired-only: there is no restoration to certify, but there ARE
@@ -1491,7 +1675,17 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
     if retired:
         print(f"retired: {len(retired)} withdrawn registration(s) were also "
               f"searched for in history and found in no commit (#942).")
-    print("tool scope: red-proof semantics and production reach were NOT verified.")
+    reach_line, reach_details, reach_ok = _reach_report(restored)
+    if reach_ok or require == 0:
+        print(reach_line)
+        if reach_details:
+            print("\n".join(reach_details))
+    else:
+        _check_error(identity_scope, reach_line + "\n" + "\n".join(reach_details)
+                     + "\nA required red-proof must show which exact command "
+                     "failed because of each injection and passed after restore. "
+                     "Run `observe PATH --failure TEXT --command ...` while the "
+                     "injection is armed, then restore it.")
     if test_like:
         print("WARNING: test-like targets are valid when test/guard tooling is "
               "the named production subject; otherwise this does not establish "
@@ -1499,7 +1693,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
     if listed:
         print(listed)
     print(identity_scope)
-    return 0
+    return 0 if reach_ok or require == 0 else 1
 
 
 # --------------------------------------------------------------------------- #
@@ -1511,8 +1705,9 @@ def main(argv: list[str] | None = None) -> int:
         prog="redproof.py",
         description="Red-proof injection registry + hand-off gate (#683). "
                     "Turns the red-proof restore discipline into a check.")
-    ap.add_argument("verb", choices=["begin", "restore", "forget", "check"],
+    ap.add_argument("verb", choices=["begin", "observe", "restore", "forget", "check"],
                     help="begin PATH = snapshot original; "
+                         "observe PATH = run and persist the injected-red check; "
                          "restore PATH = record injected + restore original; "
                          "forget PATH = drop an entry; "
                          "check = hand-off gate")
@@ -1521,6 +1716,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--expectation", action="append", default=[], metavar="PATH",
                     help="begin: independent repo-relative file holding the "
                     "expectation; repeat for multiple files")
+    ap.add_argument("--failure", default="", metavar="TEXT",
+                    help="observe: exact discriminating failure text expected")
+    ap.add_argument("--command", nargs=argparse.REMAINDER, default=[], metavar="ARGV",
+                    help="observe: exact check argv (must be the final option)")
     ap.add_argument("--require", type=int, default=0,
                     help="check: refuse if fewer than N injections are registered")
     ap.add_argument("--base", default=None,
@@ -1543,6 +1742,9 @@ def main(argv: list[str] | None = None) -> int:
             ap.error(f"{args.verb} requires a path argument")
         if args.verb == "begin":
             return begin(cwd, args.path, args.expectation, lane=args.lane)
+        if args.verb == "observe":
+            return observe(cwd, args.path, failure=args.failure,
+                           command=args.command, lane=args.lane)
         if args.verb == "restore":
             return restore(cwd, args.path, lane=args.lane)
         if args.verb == "forget":

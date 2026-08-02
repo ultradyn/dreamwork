@@ -635,9 +635,9 @@ class TestInjectionReachEvidence:
         assert _restore(repo, "router.js") == 0
         assert _check(repo, require=1) == 1
         _, err = capsys.readouterr()
-        assert "red-proof reach: WARN" in err
-        assert "caught 0 of 2 registered injection(s)" in err
-        assert "1 not caught, 1 not checked" in err
+        assert "red-proof reach: DID NOT CHECK" in err
+        assert "caught 1 of 2 registered injection(s)" in err
+        assert "0 not caught, 1 not checked" in err
 
 
 class TestDeletedInjectionIsRestored:
