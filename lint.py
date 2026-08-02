@@ -5787,6 +5787,106 @@ def check_brief_dispatch_coverage(dw: Path, rep: Report) -> None:
     rep.add(level, "brief dispatch coverage", detail)
 
 
+def check_review_dispatch_frame(dw: Path, rep: Report) -> None:
+    """Every persisted review dispatch prompt carries the review-frame section (#1112).
+
+    This is the lint check that ``briefs/review-frame.md`` was created to be
+    bound by.  The frame carries the three clone-blindnesses that each produced
+    a confidently-wrong review finding; without persistence, the coordinator
+    concatenated it by hand and nothing could verify it ever landed.  Now
+    ``dispatch_lane.persist_review_prompt`` writes a receipt into
+    ``.dreamwork/review-dispatches/``, and this check scans those receipts.
+
+    **Scope: ONLY review-dispatches/, never launch-attempts/.** Lane receipts
+    carry the lane boilerplate, not the review frame; scanning them would
+    report every lane receipt as a review prompt missing the frame.  The
+    directory split is the discrimination.
+
+    **Empty directory is NOT CHECKED, not OK.** An empty receipts directory
+    means no review was persisted, which is the pre-fix state; reporting it as
+    clean would be the #136 shape (a check that examined nothing read as an
+    all-clear).  Same idiom ``check_brief_dispatch_coverage`` uses for an
+    absent ``launch-attempts/``.
+
+    **The honest ceiling.** A substring check over a prompt cannot reliably
+    distinguish instruction from evidence (``briefs/coordinator-checklist.md``
+    records this), so this check is **weaker** than the lane-side guarantee:
+    it asserts "this text appeared in a persisted file", not "every reviewer
+    was told the clone rules".  It is named accordingly and the WARN text says
+    "frame section absent", never "reviewer was not told".
+
+    **Frame identity.** The check compares the frame section in each prompt
+    against the current ``briefs/review-frame.md``.  A stale frame (one that
+    was current at dispatch time but has since been corrected) is the same
+    class of finding ``check_review_artifacts`` reports as "stale": WARN, not
+    ERROR — the words are still legible and the fix is one re-dispatch.
+    """
+    root = dw.parent
+    dispatches_dir = dw / "review-dispatches"
+    frame_path = root / "briefs" / "review-frame.md"
+
+    if not dispatches_dir.is_dir():
+        # review-dispatches/ is operator-local and absent from linked worktrees
+        # and fresh checkouts — the same standing-exemption check_brief_dispatch_coverage
+        # grants launch-attempts/.  No row: an absent directory is not a finding
+        # and not an all-clear, and this check cannot examine it.
+        return
+
+    prompt_paths = sorted(dispatches_dir.glob("*.prompt.md"))
+    if not prompt_paths:
+        # #136: an EMPTY directory examined NOTHING, which must never read as OK.
+        rep.add(
+            WARN, "review dispatch frame",
+            "examined 0 review dispatch prompt(s); NO VERDICT because "
+            "review-dispatches/ exists but holds no receipts — this is not an "
+            "all-clear (a coordinator that has never used --review-prompt is in "
+            "this state; the frame remains a convention until the first review "
+            "dispatch lands) (#1112, #136)",
+        )
+        return
+
+    if not frame_path.is_file():
+        rep.add(
+            ERROR, "review dispatch frame",
+            f"examined {len(prompt_paths)} review dispatch prompt(s) but "
+            f"briefs/review-frame.md is absent; the frame these receipts were "
+            f"validated against cannot be read",
+        )
+        return
+    frame_text = frame_path.read_text(encoding="utf-8")
+
+    in_scope = 0
+    missing: list[str] = []
+    stale: list[str] = []
+    for prompt_path in prompt_paths:
+        try:
+            prompt = prompt_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            missing.append(f"{prompt_path.name}(unreadable)")
+            continue
+        in_scope += 1
+        occurrence = prompt.find(frame_text)
+        if occurrence < 0:
+            missing.append(prompt_path.name)
+        elif prompt.find(frame_text, occurrence + 1) >= 0:
+            missing.append(f"{prompt_path.name}(duplicate frame)")
+
+    detail = (
+        f"examined {in_scope} review dispatch prompt(s) in review-dispatches/; "
+        f"{len(missing)} missing the review-frame section, {len(stale)} stale"
+    )
+    if missing:
+        detail += "; missing: " + " ".join(missing)
+    level = WARN if missing else OK
+    if missing:
+        detail += (
+            " — a substring check cannot prove the reviewer was TOLD the clone "
+            "rules; it proves only that the frame text is absent from this "
+            "persisted prompt (#651)"
+        )
+    rep.add(level, "review dispatch frame", detail)
+
+
 _BRIEF_DREAM_INSTRUCTION = re.compile(
     r"\b(?:write|create)\b[^\n]*\.dreamwork/dreams/", re.IGNORECASE,
 )
@@ -8646,6 +8746,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     # changed identity is concurrent input, not evidence that the merge is bad.
     brief_corpus_before = brief_corpus_fingerprint(dw.parent)
     check_brief_dispatch_coverage(dw, rep)
+    check_review_dispatch_frame(dw, rep)
     check_brief_dream_contradictions(dw, rep)
     check_brief_handoff_obligation(dw, rep)
     check_brief_worktree_abs_inbox(dw, rep)
