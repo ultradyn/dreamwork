@@ -724,11 +724,11 @@ def doc_only_repo(tmp_path: Path):
 
 
 def test_documentation_only_branch_requires_no_injection_and_lands(doc_only_repo):
-    """#932 forbids manufacturing a false-green; the gate used to demand one.
+    """A documentation-only gate must not manufacture a false-green.
 
     `--require 1` was unconditional, so the only route through for a lane that
     obeyed its brief was to fake an injection into a file it had no reason to
-    touch — the exact act #932 exists to forbid.
+    touch — the exact act this exemption exists to prevent.
     """
     root, lane = doc_only_repo
     _empty_registry(lane, ".dreamwork/docs/census.md")

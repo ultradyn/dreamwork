@@ -91,9 +91,9 @@ def _gate_coverage_line(passed: Sequence[str]) -> str:
 # re-runnable census blocks that a lane is told to extract and run, so editing
 # one changes what a future lane executes while owing no injection here. That
 # is deliberate — there is no check to turn red, so demanding a red-proof would
-# force exactly the false-green #932 forbids. The other gates still run on the
-# merged tree; what the exemption removes is the demand for a LANE-AUTHORED
-# red-proof, not the gating itself.
+# force exactly the false-green this exemption avoids. The other gates still
+# run on the merged tree; what the exemption removes is the demand for a
+# LANE-AUTHORED red-proof, not the gating itself.
 INERT_DOC_ROOT = ".dreamwork/"
 
 EXECUTABLE_DOCS = frozenset({
@@ -388,8 +388,8 @@ def _requirement_line(diff: Diff) -> str:
         return (
             "red-proof requirement: 0 injections REQUIRED — all "
             f"{len(diff.changed)} changed path(s) are inert documentation under "
-            f"{INERT_DOC_ROOT} (#932: an increment that built no check must not "
-            "manufacture a false-green): " + " ".join(diff.inert)
+            f"{INERT_DOC_ROOT}; an increment that built no check must not "
+            "manufacture a false-green: " + " ".join(diff.inert)
         )
     if not diff.changed:
         return (
