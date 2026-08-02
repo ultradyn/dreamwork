@@ -2,6 +2,16 @@
 
 ## Open
 
+- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
+  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
+  then, nothing blocks and nothing is delivered by hand.
+  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
+    as an open question that we'll revisit once dreamhub is stable and the
+    primary way we access dreamworkers
+
+## Answered
+
+
 - **P1 · 2026-08-02 12:22 — I leaked three of your API keys into this session's transcript. Do you want them rotated?**
   **What happened, and it was my mistake, not a tool's.** I wrote a shell command with backticks
   inside a double-quoted string. Zsh command-substituted them, ran `set`, and printed the entire
@@ -28,6 +38,9 @@
   nothing for it — it was operator error, not a defect in the repo.
   - **Answer (via watch, 2026-08-02 17:35):** no, though you can have a
     subagent redact them from the transcript after your next compaction.
+  - **Folded 2026-08-02:** no rotation, per your call. Redaction filed as **#1003** — a subagent
+    redacts the three values from the on-disk transcript after the next compaction; the values are
+    never reprinted in any report on the way there.
 
 - **P2 · 2026-08-02 10:35 — #939/#862: the goal tree is complete and completely empty. Here is a proposed root and first children, in your own words. Approve, edit, or tell me to leave it empty.**
   **Short version:** every heartbeat tick all night has ended `· no current goal ·`. It was telling
@@ -73,6 +86,12 @@
   - **Answer (via watch, 2026-08-02 17:37):** Yeah you can autogenerate
     a goal tree. integrate the goal i added. you should consider that
     the project is more ambitious but we can add more goals as we go.
+  - **Folded 2026-08-02:** approved, and taken with the widening you gave it. **#939** is dispatched to
+    AUTHOR the tree as a proposal — a lane proposes, the coordinator applies, because the ledger has one
+    writer. Your added goal (*"convert webui to fully run via built react webui and migrate watch server
+    over"*) goes in as a first-class child rather than an afterthought, and the brief carries your framing
+    that the project is more ambitious than today's tree: the root is authored to be **grown**, so a child
+    added next week is the design working, not the design being wrong.
 
 - **P2 · 2026-08-01 23:10 — #867: 44 old briefs omit `Lane-owns:` — content-resolved cutoff (my rec), or delete them?**
   **Short version:** #867's lane finished the mechanism and then found that fixing the blindness turns
@@ -143,6 +162,10 @@
   I will do it — that is the one branch I will not take on my own judgement, because it is irreversible
   and the briefs are your project's history, not mine.
   - **Answer (via watch, 2026-08-02 17:38):** rec
+  - **Folded 2026-08-02:** `rec` taken — **content-resolved cutoff; nothing is deleted.** The 44 briefs stay
+    as project history. The remaining work is making the cutoff expressible without 44 ERROR rows wedging
+    `land_lane` at lint-baseline, which is #867's next increment and is measured from a real gate baseline
+    rather than from my claim about one.
 
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
@@ -174,16 +197,20 @@
     vs global install) is still yours. Left unmarked, this note made the whole entry
     read as awaiting a reply the loop had already written.
   - **Answer (via watch, 2026-08-02 17:39):** still needed? rec
-
-- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
-  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
-  then, nothing blocks and nothing is delivered by hand.
-  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
-    as an open question that we'll revisit once dreamhub is stable and the
-    primary way we access dreamworkers
-
-## Answered
-
+  - **Folded 2026-08-02 — your "still needed?" answered: YES, and it recurred tonight with ME as the
+    culprit.** I edited `watch.py:4416` while `cx-995wake` held that file under its `Lane-owns:` line, and
+    reverted only because I happened to notice. So this is not a guard for a historical incident; it is a
+    guard for a live one, and the culprit class now includes the coordinator, not just lanes. What landed
+    since narrows it without closing it: `lane_guard.py pre-merge <branch>` (#468 R2) catches the same
+    condition at **merge** time — which is exactly where the original incident was already caught, at the
+    cost of the held merge — and #992's containment derivation makes ownership answerable. Neither fails at
+    **commit**, which is the gap #465 has always named.
+    **Taking `rec`: repo-local.** A tracked `.githooks/` that forwards your global `pre-commit`,
+    `commit-msg` and `pre-push` first and then runs the guard, enabled by
+    `git config --local core.hooksPath .githooks` — blast radius this repo, c2c's hooks keep working here.
+    Dispatched as a lane. **Enabling is a separate step after it proves both directions**, because a
+    misfiring pre-commit hook wedges every commit in this repo including the merge-gate's own, and
+    `DREAMWORK_LANE_GUARD_BYPASS=1` is the escape either way.
 
 - **P1 · 2026-08-01 20:20 — #862: the goal-tree design is ready for review — 9 calls, each with a rec.**
   You asked for a design presented as an HTML artifact with your approval gating implementation. It is
