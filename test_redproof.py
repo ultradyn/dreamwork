@@ -860,7 +860,8 @@ class TestEphemeralRestoredSubject:
         exit_code = _check(repo, require=1)
         out, err = capsys.readouterr()
 
-        assert exit_code == 0
+        assert exit_code == 0, (
+            "verified ephemeral disappearance must be restoration clean")
         assert err == ""
         assert "check: restoration clean" in out
         assert "1 injection(s) registered" in out
