@@ -5435,11 +5435,13 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             obj["receipt"] = receipt
             return obj
 
-        def _send(self, body, ctype, status=200):
+        def _send(self, body, ctype, status=200, headers=None):
             data = body.encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", ctype + "; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(data)
 
@@ -6039,7 +6041,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
         def _handle_settings(self):
             """Atomically persist one or many settings through the canonical store."""
             import settings as user_settings
-            from dreamwork_db import Access, ValidationError, open_database
+            from dreamwork_db import Access, Busy, ValidationError, open_database
             from dreamwork_db.settings import BatchSettingValidationError
             from dreamwork_db.tasks import task_store_spec
             req = self._read_json()
@@ -6059,21 +6061,43 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             if source_of_truth(dw) != "store":
                 self._reject("domain_invalid", detail="no_store"); return
             try:
-                with open_database(
-                        task_store_spec(store_path(dw)),
-                        access=Access.WRITE) as db:
-                    with db.transaction():
-                        changed = db.settings.set_many(
-                            values, user_settings.LOCAL_USER_ID)
-                        result = db.settings.get_many(
-                            list(values), user_settings.LOCAL_USER_ID)
+                for attempt in range(2):
+                    try:
+                        with open_database(
+                                task_store_spec(store_path(dw)),
+                                access=Access.WRITE) as db:
+                            with db.transaction():
+                                changed = db.settings.set_many(
+                                    values, user_settings.LOCAL_USER_ID)
+                                result = db.settings.get_many(
+                                    list(values), user_settings.LOCAL_USER_ID)
+                        break
+                    except Busy:
+                        if attempt:
+                            raise
+                        time.sleep(0.1)
             except BatchSettingValidationError as exc:
                 self._reject("domain_invalid", detail="invalid_settings",
                              extra={"errors": exc.errors}); return
             except ValidationError as exc:
                 self._reject("domain_invalid", detail=str(exc)); return
-            except Exception:
-                self.send_error(500); return
+            except Busy as exc:
+                log_event(target, "SETTINGS STORE BUSY: " + one_line(str(exc)))
+                self._send(json.dumps({
+                    "ok": False, "retryable": True,
+                    "reason": "settings_store_busy",
+                    "detail": "the settings store is locked; retry the write",
+                }), "application/json", status=503,
+                    headers={"Retry-After": "1"})
+                return
+            except Exception as exc:
+                log_event(
+                    target,
+                    "SETTINGS WRITE FAILED: " + type(exc).__name__ + ": "
+                    + one_line(str(exc)),
+                )
+                self.send_error(500, "settings write failed; see dashboard event log")
+                return
             if changed:
                 log_event(target, f'settings via watch: "{one_line(", ".join(changed))}" '
                           '-> .dreamwork/ledger.sqlite3')
