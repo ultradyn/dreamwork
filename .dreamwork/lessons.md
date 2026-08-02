@@ -4275,3 +4275,11 @@ an invariant.
 Both stops were successful deliveries and cost one dispatch each. The rule that produced them —
 refuse a brief whose premise does not reproduce — is correct and stays; what needed fixing was the
 premise I chose to make blocking.
+
+**THIS ENTRY IS NOT THE REMEDY, and writing it as though it were was a third mistake.**
+DREAMWORK.md's human-set norm (2026-08-01, `d62d7320`) is *"a recurring failure mode gets a tool,
+not another lesson"*, set precisely because `lessons.md` already carried a lesson and the defect
+landed anyway. This failure had ALREADY RECURRED TWICE in about two hours when I wrote the entry
+above, so by his own standing instruction it owed a tool on sight. Filed as **`#994`**: report a
+brief's blocking numbers at generation and make the author say which of them the act of dispatching
+could change. Keep reading this entry for the reasoning; do not rely on it to stop the failure.
