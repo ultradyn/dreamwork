@@ -10965,15 +10965,17 @@ class TestBuilderDelegation:
         assert len(rows) == 1 and rows[0][0] == lint.OK, rows
         assert "1 delegate reference(s)" in rows[0][1]
 
-    def test_column0_namesake_masks_a_client_deletion(self, tmp_path):
-        # KNOWN BOUNDARY (direction 2, open): a column-0 definition of a builder
-        # name anywhere in scanned source counts as "defined". A namesake outside
-        # the builder's home (client/) masks a deletion there — the guard PASSES
-        # (false green). It cannot distinguish a real builder from a column-0
-        # namesake without path-keying, which the brief's point 4 forbids ("key
-        # on the references themselves"). Builder names are distinctive and the
-        # architecture keeps builders in client/, so this is narrow and
-        # implausible; reported, not silently accepted as closed.
+    def test_dev_build_namesake_does_not_mask_a_client_deletion(self, tmp_path):
+        # P1-a (round 5): this test USED TO assert lint.OK and document a
+        # column-0 namesake in dev/build/ as a "known boundary" that masked a
+        # client/ deletion. That was the exact breakage the guard exists to
+        # prevent, arriving green: a builder deleted from client/ was hidden
+        # by an unrelated dev/build/ namesake (same name, column 0, different
+        # role). Round 5 collects builder DEFINITIONS from client/ only —
+        # dev/build/ stays a delegate SITE — so the dev/build namesake no
+        # longer counts as a definition and the deletion is an ERROR. The old
+        # OK assertion is inverted here so the record of the change survives
+        # in the test that replaced it.
         rows = self._check(
             tmp_path,
             dev_build={"src/research.js": (
@@ -10982,7 +10984,28 @@ class TestBuilderDelegation:
                 "});\n"
                 "const label = () => 'namesake';\n")},
             client={"components.js": "const other = 1;\n"})
-        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert rows and rows[0][0] == lint.ERROR, rows
+        assert "label" in rows[0][1], rows
+
+    def test_cross_module_dev_build_namesake_does_not_mask(self, tmp_path):
+        # P1-a cross-module form: the namesake lives in a DIFFERENT dev/build/
+        # file than the delegate. The reviewer's fixture — fromBuilder('gone')
+        # in research.js, no client definition, and an unrelated `const gone`
+        # in dev/build/src/unrelated.js — returned OK before round 5. Round 5
+        # keys definitions on client/ source, so 'gone' has no live definition
+        # and the deletion is an ERROR even with a namesake elsewhere in
+        # dev/build/.
+        rows = self._check(
+            tmp_path,
+            dev_build={
+                "src/research.js": (
+                    "const Row = fromBuilder('gone', function (p) {\n"
+                    "  return gone(p.row);\n"
+                    "});\n"),
+                "src/unrelated.js": "const gone = () => null;\n"},
+            client={"views.js": "// builder was deleted in this flip\n"})
+        assert rows and rows[0][0] == lint.ERROR, rows
+        assert "gone" in rows[0][1], rows
 
     def test_data_dw_delegate_object_literal_is_a_delegate_site(self, tmp_path):
         # The third source shape: a static `'data-dw-delegate': 'NAME'` in
@@ -11276,6 +11299,120 @@ class TestBuilderDelegation:
             client={"views.js": "function known(r) { return ''; }\n"})
         assert len(rows) == 1 and rows[0][0] == lint.OK, rows
         assert "1 delegate reference(s)" in rows[0][1], rows
+
+    # ---- P1 (round 5): comments-as-trivia, token boundaries, keyword regex ----
+
+    def test_comment_between_identifier_and_paren_is_a_real_delegate(
+            self, tmp_path):
+        # P1-b (round 5): ``fromBuilder /* comment */ ('gone', …)`` is valid
+        # JS (verified via new Function). A comment between the identifier and
+        # the paren is TRIVIA, not a token boundary. Round 4's regex required
+        # ``fromBuilder\s*\(`` and the comment broke the match, so the
+        # deletion sailed through (false GREEN). Round 5 treats comments as
+        # trivia while recognising the call shape — without treating comment
+        # CONTENTS as code (that would swap this false-negative for the
+        # opposite false-positive).
+        #
+        # This pulls in the OPPOSITE direction from P1-c's boundary tightening:
+        # token boundaries and comments-as-trivia are in tension in a
+        # hand-written scanner, and both fixtures live together so a fix to
+        # one that regresses the other is visible.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder /* valid comment */ ('gone',\n"
+                "  function (p) { return gone(p.row); });\n")},
+            client={"views.js": "// builder was deleted in this flip\n"})
+        assert rows and rows[0][0] == lint.ERROR, rows
+        assert "gone" in rows[0][1], rows
+
+    def test_identifier_prefix_does_not_match_frombuilder(self, tmp_path):
+        # P1-c (round 5): ``notfromBuilder('gone')`` is a DIFFERENT identifier
+        # (a prefix collision), not a fromBuilder call. Round 4 matched
+        # identifier substrings, so 'gone' read as a missing delegate (false
+        # RED). Round 5 requires an identifier token boundary before
+        # fromBuilder. There IS a real delegate ('known') so the tree is not
+        # the zero-delegate ERROR; 'gone' simply never becomes a delegate.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "const gone = notfromBuilder('gone');\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
+
+    def test_attribute_prefix_does_not_match_data_dw_delegate(self, tmp_path):
+        # P1-c (round 5): ``<Host not-data-dw-delegate='gone'>`` is a
+        # DIFFERENT attribute name (a prefix collision via a leading
+        # hyphen-word), not a data-dw-delegate site. Round 4 matched
+        # attribute-name substrings, so 'gone' read as a missing delegate
+        # (false RED). Round 5 requires a name boundary before
+        # data-dw-delegate. This fails for a different reason than the
+        # identifier-prefix case (one is an identifier prefix, one is an
+        # attribute-name prefix) and one test does not cover the other.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "<Host not-data-dw-delegate='gone'></Host>\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
+
+    def test_regex_after_return_is_not_a_delegate(self, tmp_path):
+        # P1-d (round 5): ``function f() { return /fromBuilder('gone')/; }``
+        # is valid JS (verified via new Function). Round 4's regex/division
+        # heuristic saw the last char of ``return`` as an identifier and read
+        # the following ``/`` as DIVISION, so the regex body was treated as
+        # code and 'gone' read as a missing delegate (false RED). Round 5
+        # makes the heuristic token-aware: ``return`` is an
+        # expression-introducing keyword, so ``/`` opens a regex.
+        #
+        # Regex-vs-division is genuinely undecidable without a parser; this
+        # covers the two keywords named in the brief (return/typeof) and the
+        # residual limit is stated in the lexer, not implied away.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "function f() { return /fromBuilder('gone')/; }\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
+
+    # ---- P2 (round 5): the rendered line is the deliverable ----
+
+    def test_the_rendered_delegation_row_carries_its_message(self, tmp_path):
+        # P2 (round 5): the deliverable is the RENDERED line a human reads,
+        # not the internal Report row. run_checks builds a real report; its
+        # render() must carry the level (ERROR), the source location, the
+        # builder name, and the remediation text. A guard whose message is
+        # wrong is a guard nobody can act on.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (tmp_path / "dev/build/src").mkdir(parents=True)
+        (tmp_path / "dev/build/src/research.js").write_text(
+            "const Row = fromBuilder('artifactRow', function (p) {\n"
+            "  return artifactRow(p.row);\n"
+            "});\n")
+        rep = lint.Report()
+        lint.run_checks(dw, lint.load_watch(), rep)
+        rendered = rep.render()
+        line = [ln for ln in rendered.splitlines()
+                if "builder delegation" in ln]
+        assert line, rendered
+        row = line[0]
+        assert "ERROR" in row, row               # level
+        assert "research.js:1" in row, row        # source location
+        assert "artifactRow" in row, row          # builder name
+        assert "remove or retarget" in row, row   # remediation text
 
     # ---- P1 (#994 r4): empty dev/build/ must not bypass ----
 

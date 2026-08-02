@@ -3165,11 +3165,25 @@ def _builder_delegation_js_sources(root: Path) -> list[Path]:
 # literal form, and a JSX build (forbidden here but live in a fork) uses the
 # attribute form. A brace-expression value (`data-dw-delegate={name}`) is NOT
 # covered and should not be — it is the mechanism's own parameter form.
+#
+# Token boundaries (round 5): each arm carries a fixed-width NEGATIVE
+# LOOKBEHIND so it matches only at a token boundary, not as a substring of a
+# longer identifier or attribute name. `fromBuilder` rejects
+# `notfromBuilder('x')` (identifier prefix); `data-dw-delegate` rejects
+# `not-data-dw-delegate='x'` (attribute-name prefix, where `-` is a name
+# continuation char). The two prefix cases fail for different reasons (one is
+# an identifier-prefix collision, one an attribute-name-prefix collision) and
+# a single boundary class covers neither, so the identifier arm uses
+# ``[A-Za-z0-9_$]`` and the attribute arms use ``[A-Za-z0-9-]``. ``.dwBuilder``
+# needs no lookbehind: the literal ``.`` is itself the boundary. Comments
+# between the identifier and the paren (``fromBuilder /* c */ (``) are handled
+# by blanking comments to trivia before this regex runs, not here — the regex
+# only sees code-and-string text with comments replaced by spaces.
 _BUILDER_DELEGATE_RE = re.compile(
-    r"fromBuilder\s*\(\s*['\"]([A-Za-z_$][\w$]*)['\"]"
+    r"(?<![A-Za-z0-9_$])fromBuilder\s*\(\s*['\"]([A-Za-z_$][\w$]*)['\"]"
     r"|\.dwBuilder\s*=\s*['\"]([A-Za-z_$][\w$]*)['\"]"
-    r"|['\"]data-dw-delegate['\"]\s*:\s*['\"]([A-Za-z_$][\w$]*)['\"]"
-    r"|data-dw-delegate\s*=\s*['\"]([A-Za-z_$][\w$]*)['\"]"
+    r"|(?<![A-Za-z0-9\-])['\"]data-dw-delegate['\"]\s*:\s*['\"]([A-Za-z_$][\w$]*)['\"]"
+    r"|(?<![A-Za-z0-9\-])data-dw-delegate\s*=\s*['\"]([A-Za-z_$][\w$]*)['\"]"
 )
 # A builder definition: a column-0 (top-level) function/const/let/var binding.
 # Column-0 is load-bearing — client/router.js:553 has a LOCAL `const label`
@@ -3183,10 +3197,21 @@ _BUILDER_DEF_RE = re.compile(
 )
 
 
-_REGEX_AFTER_OP = set("!%&(*+,-/:;<=>?[^{|}~")
+# Keywords after which ``/`` opens a REGEX (not division). These are the
+# expression-introducing / unary-operator keywords: each is followed by an
+# operand, never by a division's right-hand side, so ``return /re/``,
+# ``typeof /re/``, ``case /re/:`` etc. are regexes. The lexer tracks the last
+# complete identifier token and passes it here so the keyword TAIL is not
+# mistaken for an identifier (``return`` ends in ``n`` → ``n`` alone reads as
+# an identifier → division; the whole word ``return`` reads as a keyword →
+# regex). This is the residual-limit fix; the limit itself is named below.
+_REGEX_AFTER_KEYWORD = frozenset({
+    "return", "typeof", "case", "do", "else", "void", "delete", "throw",
+    "yield", "await", "new", "in", "instanceof", "of",
+})
 
 
-def _regex_after(prev_sig: str) -> bool:
+def _regex_after(prev_sig: str, prev_word: str) -> bool:
     """Heuristic: is ``/`` a regex opener or a division operator?
 
     After expression-ending tokens (identifier chars, digits, ``)``, ``]``,
@@ -3196,12 +3221,27 @@ def _regex_after(prev_sig: str) -> bool:
     by every lightweight JS lexer; it is correct for ``a / b / c`` (division)
     and ``= /pattern/`` (regex).
 
-    Known limitation: keyword tails (``return``, ``typeof``) look like
-    identifiers to a per-character check, so ``return /re/`` is mis-read as
-    division. The real sources have no regex literals and the test fixtures
-    use ``const x = /re/`` (operator context), so this does not arise.
+    Token-aware keyword rule (round 5): the lexer accumulates the last
+    complete identifier as ``prev_word``. When that word is an
+    expression-introducing keyword (``return``, ``typeof``, …) the next ``/``
+    opens a REGEX, because the keyword expects an operand and a division has
+    no left-hand side there. This closes the ``return /re/`` hole round 4 left
+    open (``return`` ended in ``n``, which read as an identifier → division).
+
+    Residual limit: regex-vs-division is genuinely undecidable without a full
+    parser, and this heuristic is not one. Cases it still misses: an automatic
+    semicolon insertion (ASI) line break before ``return /re/`` where the
+    preceding statement already terminated; a regex after a closing ``)``
+    whose call is itself an expression-position division target
+    (``f(x) / g(y)``); numeric literals with exotic suffixes; and any keyword
+    not listed in ``_REGEX_AFTER_KEYWORD``. The guard names these rather than
+    implying total coverage (#651). The real sources carry no regex literals,
+    so the practical risk is a false POSITIVE (a regex body read as code),
+    never a silent deletion.
     """
     if not prev_sig:
+        return True
+    if prev_word in _REGEX_AFTER_KEYWORD:
         return True
     if prev_sig in ")]}":
         return False
@@ -3212,19 +3252,30 @@ def _regex_after(prev_sig: str) -> bool:
     return True
 
 
-def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
-    """Non-code character intervals in JavaScript source.
+def _js_noncode_spans(text: str) -> list[tuple[int, int, str]]:
+    """Non-code character intervals in JavaScript source, each tagged by kind.
 
-    Returns ``(start, end)`` spans for positions that are NOT executable code:
-    comment bodies (including delimiters), string-literal CONTENTS (the bytes
-    between quotes, not the delimiters), template-literal TEXT runs (the bytes
-    between a backtick and ``${`` or ``}``, not the interpolation interior),
-    and regex-literal bodies (including delimiters and flags).
+    Returns ``(start, end, kind)`` spans for positions that are NOT executable
+    code, where kind is one of:
+
+      - ``'comment'``  — line/block comment bodies INCLUDING delimiters
+      - ``'string'``   — single/double-quoted literal CONTENTS (between quotes,
+                         not the delimiters)
+      - ``'template'`` — template-literal TEXT runs (between a backtick and
+                         ``${`` or ``}``, not the interpolation interior)
+      - ``'regex'``    — regex-literal bodies INCLUDING delimiters and flags
 
     Quote/backtick delimiters and ``${}`` interpolation interiors are CODE —
     they are structural positions where a delegate pattern legitimately begins.
     A delegate-site regex match whose START offset falls inside any returned
     span is a mention inside a comment/string/regex, not a real code site.
+
+    The ``kind`` tag lets callers treat comments as TRIVIA (blank them to
+    spaces before the delegate regex runs) while leaving string contents
+    intact — string literals carry the builder NAME the regex must read, so
+    they cannot be blanked. Blanking only comments fixes the
+    ``fromBuilder /* c */ (`` false-negative without swapping it for the
+    opposite false-positive (comment contents becoming code).
 
     This is a CHARACTER-STREAM lexer, not a line-oriented scanner. Round 3
     split the input into lines and applied the regex per line, which made
@@ -3240,9 +3291,15 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
     pushes an interpolation frame that tracks ``{}`` depth, so object/function
     braces inside the interpolation do not prematurely close it, and a nested
     template unwinds correctly through the stack.
+
+    The lexer also accumulates ``prev_word`` — the last complete identifier
+    token in a code context — so ``_regex_after`` can recognise
+    expression-introducing keywords (``return``, ``typeof``, …) whose final
+    character alone would read as an identifier and mis-classify a following
+    ``/`` as division.
     """
     n = len(text)
-    spans: list[tuple[int, int]] = []
+    spans: list[tuple[int, int, str]] = []
     i = 0
     # Context stack for template/interpolation nesting.
     #   ('code',)           — top-level code (always at bottom)
@@ -3250,6 +3307,7 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
     #   ('interp', depth)   — inside ${...}; depth counts nested {}
     ctx: list[tuple] = [('code',)]
     prev_sig = ""   # last significant (non-space) char in a code context
+    prev_word = ""  # last complete identifier token in a code context
 
     while i < n:
         kind = ctx[-1][0]
@@ -3260,6 +3318,7 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
                 ctx.pop()
                 i += 1
                 prev_sig = '`'
+                prev_word = ""
                 continue
             if c == '\\' and i + 1 < n:
                 i += 2
@@ -3268,6 +3327,7 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
                 ctx.append(('interp', 0))
                 i += 2
                 prev_sig = ""
+                prev_word = ""
                 continue
             # Accumulate a template text run (non-code) until ` or ${
             start = i
@@ -3281,7 +3341,7 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
                 if ch == '$' and i + 1 < n and text[i + 1] == '{':
                     break
                 i += 1
-            spans.append((start, i))
+            spans.append((start, i, 'template'))
             continue
 
         # ---- 'code' or 'interp' (shared code-handling) ----
@@ -3310,7 +3370,7 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
             i += 2
             while i < n and text[i] != '\n':
                 i += 1
-            spans.append((start, i))
+            spans.append((start, i, 'comment'))
             continue
         if c == '/' and i + 1 < n and text[i + 1] == '*':
             start = i
@@ -3318,7 +3378,7 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
             while i + 1 < n and not (text[i] == '*' and text[i + 1] == '/'):
                 i += 1
             i = min(i + 2, n)
-            spans.append((start, i))
+            spans.append((start, i, 'comment'))
             continue
 
         # ---- Single-quoted string ----
@@ -3333,9 +3393,10 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
                 if text[j] == '\n':
                     break
                 j += 1
-            spans.append((i + 1, j))
+            spans.append((i + 1, j, 'string'))
             i = j + 1 if (j < n and text[j] == "'") else j
             prev_sig = "'"
+            prev_word = ""
             continue
 
         # ---- Double-quoted string ----
@@ -3350,9 +3411,10 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
                 if text[j] == '\n':
                     break
                 j += 1
-            spans.append((i + 1, j))
+            spans.append((i + 1, j, 'string'))
             i = j + 1 if (j < n and text[j] == '"') else j
             prev_sig = '"'
+            prev_word = ""
             continue
 
         # ---- Template literal ----
@@ -3360,11 +3422,12 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
             ctx.append(('tmpl',))
             i += 1
             prev_sig = '`'
+            prev_word = ""
             continue
 
         # ---- Regex literal vs division ----
         if c == '/':
-            if _regex_after(prev_sig):
+            if _regex_after(prev_sig, prev_word):
                 start = i
                 i += 1
                 in_class = False
@@ -3384,27 +3447,50 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
                     i += 1
                 while i < n and text[i].isalpha():
                     i += 1          # flags
-                spans.append((start, i))
+                spans.append((start, i, 'regex'))
                 prev_sig = "1"       # regex is an expression → next / is division
+                prev_word = ""
                 continue
             prev_sig = '/'
+            prev_word = ""
             i += 1
+            continue
+
+        # ---- Identifier / keyword (accumulate for the keyword regex rule) ----
+        # A whole identifier is consumed so _regex_after can see keywords
+        # (return/typeof/…): `return` ends in `n`, which alone reads as an
+        # identifier (→ division), but the complete word reads as a keyword
+        # (→ regex). Digits are not identifier-START chars, so a leading digit
+        # falls through to the regular-character branch below.
+        if c.isalpha() or c in "_$":
+            start = i
+            i += 1
+            while i < n and (text[i].isalnum() or text[i] in "_$"):
+                i += 1
+            prev_word = text[start:i]
+            prev_sig = prev_word[-1]
             continue
 
         # ---- Regular code character ----
         if not c.isspace():
             prev_sig = c
+            prev_word = ""
         i += 1
 
     return spans
 
 
-def _in_spans(pos: int, spans: list[tuple[int, int]]) -> bool:
-    """Binary search: is ``pos`` inside any sorted ``(start, end)`` interval?"""
+def _in_spans(pos: int, spans: list[tuple]) -> bool:
+    """Binary search: is ``pos`` inside any sorted ``(start, end[, kind])`` span?
+
+    Accepts either untagged ``(start, end)`` or tagged ``(start, end, kind)``
+    tuples — the kind is ignored, only the interval matters. The spans must be
+    sorted by start (the lexer emits them in increasing-offset order).
+    """
     lo, hi = 0, len(spans)
     while lo < hi:
         mid = (lo + hi) // 2
-        s, e = spans[mid]
+        s, e = spans[mid][0], spans[mid][1]
         if pos < s:
             hi = mid
         elif pos >= e:
@@ -3412,6 +3498,28 @@ def _in_spans(pos: int, spans: list[tuple[int, int]]) -> bool:
         else:
             return True
     return False
+
+
+def _blank_kinds(text: str, spans: list[tuple[int, int, str]],
+                 kinds) -> str:
+    """Return ``text`` with the characters of ``kinds`` spans replaced by spaces.
+
+    Length-preserving: every replaced byte becomes a space, so offsets in the
+    result line up with offsets in the original. Used to treat COMMENT spans
+    as trivia before the delegate regex runs — ``fromBuilder /* c */ (`` has
+    its comment blanked so the call shape is visible, WITHOUT turning comment
+    CONTENTS into code (they become spaces, which cannot match). String,
+    regex, and template spans are left intact: strings carry the builder NAME
+    the regex must read, and regex/template bodies are still filtered by the
+    span check separately.
+    """
+    want = set(kinds)
+    chars = list(text)
+    for s, e, kind in spans:
+        if kind in want:
+            for k in range(s, e):
+                chars[k] = " "
+    return "".join(chars)
 
 def check_builder_delegation(root: Path, rep: Report) -> None:
     """#1057 — refuse a builder deletion a live delegate still calls.
@@ -3473,6 +3581,21 @@ def check_builder_delegation(root: Path, rep: Report) -> None:
     match is accepted only when its START offset is in code position. A
     construct that spans lines is visible iff every character of it is in
     code position — by construction, not by adding per-context cases.
+
+    Round 5 closes four lexer holes without a special case per form:
+
+      - comments-as-trivia: comments are blanked to spaces (length-preserving)
+        before the regex runs, so ``fromBuilder /* c */ (`` is visible without
+        turning comment CONTENTS into code;
+      - token boundaries: each delegate arm carries a fixed-width negative
+        lookbehind, so ``notfromBuilder('x')`` (identifier prefix) and
+        ``not-data-dw-delegate='x'`` (attribute-name prefix) do not match;
+      - keyword-aware regex: the lexer tracks the last complete identifier, so
+        ``return /re/`` opens a regex (``return`` is a keyword, not an
+        identifier tail) — the residual undecidable cases are named in
+        ``_regex_after``, not implied away;
+      - client-only definitions: builders are DEFINED in client/ source, so a
+        dev/build/ namesake no longer masks a client/ deletion.
     """
     # Applicability is gated on the native-runtime HOME (dev/build/), not on
     # a single marker file. A directory is structural — it cannot be forged
@@ -3498,28 +3621,42 @@ def check_builder_delegation(root: Path, rep: Report) -> None:
     defined: set[str] = set()
     for path in sources:
         rel = path.relative_to(root)
+        parts = rel.parts
+        # P1-a (round 5): builders are DEFINED in client/ source. dev/build/
+        # is the native-runtime HOME and a delegate SITE, not a definition
+        # source — a column-0 namesake there masked a client/ deletion (the
+        # exact breakage this guard exists to prevent). Delegates are still
+        # collected from every scanned source (dev/build + client); only the
+        # DEFINITION population is keyed on client/.
+        is_client_source = parts[0] == "client"
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
         # Character-stream lexer: one pass over the whole text produces the
         # non-code spans (comments, string contents, template text, regex
-        # bodies). The delegate regex then runs over the RAW text — not
-        # line-by-line, not comment-stripped — and a match is accepted only
-        # when its START offset is in code position. Line-crossing constructs
-        # are visible by construction: the regex sees the whole file.
+        # bodies), each tagged by kind. Comments are then blanked to trivia
+        # (spaces, length-preserving) so ``fromBuilder /* c */ (`` is visible
+        # to the regex WITHOUT turning comment contents into code — string,
+        # regex, and template spans are left intact (strings carry the builder
+        # NAME). The delegate and definition regexes run over the MASKED text;
+        # a match is accepted only when its START offset is in code position
+        # in the original. Line-crossing constructs are visible by
+        # construction: the regex sees the whole file.
         noncode = _js_noncode_spans(text)
-        for m in _BUILDER_DELEGATE_RE.finditer(text):
+        masked = _blank_kinds(text, noncode, {'comment'})
+        for m in _BUILDER_DELEGATE_RE.finditer(masked):
             if _in_spans(m.start(), noncode):
                 continue
             name = m.group(1) or m.group(2) or m.group(3) or m.group(4)
             lineno = text.count('\n', 0, m.start()) + 1
             delegates.append((name, "%s:%d" % (rel, lineno)))
             delegate_files.add(str(rel))
-        for m in _BUILDER_DEF_RE.finditer(text):
-            if _in_spans(m.start(), noncode):
-                continue
-            defined.add(m.group(1))
+        if is_client_source:
+            for m in _BUILDER_DEF_RE.finditer(masked):
+                if _in_spans(m.start(), noncode):
+                    continue
+                defined.add(m.group(1))
     if not delegates:
         rep.add(
             ERROR, "builder delegation",
