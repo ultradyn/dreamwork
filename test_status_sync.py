@@ -2676,3 +2676,120 @@ class TestArgvDiscoveryInjectedTable:
             "prose invented a phantom lane name: phantoms=%s" % phantoms
         assert agent_tool == [], \
             "prose invented an agent-tool lane name: %s" % agent_tool
+
+
+# ── #969 — `lanes` had no deriver; a finished dispatch survived because the ──
+# #702 lint check only fires on lanes/dreamers DISAGREEMENT, and `dreamers`
+# was stale in the same direction. The fix gives `lanes` the same task-open
+# reaper `dreamers` already has: the ledger is the third party that breaks the
+# tie, so the two fields can no longer be stale together.
+
+class TestReapFinishedLanes:
+    """A `lanes` entry naming a task no longer under `## Open` is reaped.
+
+    Production seam whose reversion reds these tests: ``reap_finished_lanes``
+    and its call site in ``main``. Remove the call (or make the helper return
+    its input unchanged) and a finished dispatch survives in the written
+    ``lanes`` — the exact both-stale-in-the-same-direction state that was
+    silent for hours.
+    """
+
+    def test_finished_dispatch_is_reaped_population_named(self, tmp_path):
+        # A lane naming task 999, which is NOT under `## Open` (7, 8 are).
+        lanes = ["cx-999stale — #999 P2: landed long ago. ccc @cx-coder"]
+        status = {"lanes": lanes, "dreamers": [], "task": "t"}
+        ledger = _ledger(7, 8)              # open: 7, 8 — NOT 999
+        # Precondition: 999 is not open, so the entry is stale.
+        assert 999 not in status_sync.open_ids(ledger), \
+            "precondition: 999 must not be open"
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        # The finished dispatch is gone from lanes.
+        assert result["lanes"] == [], result["lanes"]
+        # DISCRIMINATING: the reap named its population — not a silent drop.
+        assert "lanes reap" in err.lower(), err
+        assert "pruned 1" in err, err
+
+    def test_open_dispatch_survives_the_open_false_green(self, tmp_path):
+        # Direction 2: a lane whose task is STILL OPEN survives the reap even
+        # if its agent died hours ago. Liveness and task-openness are
+        # different facts; the judgement text stays relevant while the task
+        # is open. This is the case the reap CANNOT close — named here, not
+        # hidden.
+        lanes = ["cx-7active — #7 P2: in flight. ccc @cx-coder"]
+        status = {"lanes": lanes, "dreamers": [], "task": "t"}
+        ledger = _ledger(7, 8)              # 7 IS open
+        assert 7 in status_sync.open_ids(ledger), \
+            "precondition: 7 must be open"
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        assert len(result["lanes"]) == 1, result["lanes"]
+        assert "cx-7active" in result["lanes"][0]
+
+    def test_unparseable_entry_kept_not_landed(self, tmp_path):
+        # An entry whose prefix yields no task id is KEPT — #702/#136:
+        # cannot compare must not read as landed.
+        lanes = ["manual note with no lane prefix",
+                 "cx-7active — #7 P2: in flight"]
+        status = {"lanes": lanes, "dreamers": [], "task": "t"}
+        ledger = _ledger(7, 8)
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        # Both survive: the unparseable note (kept) and the open one.
+        assert len(result["lanes"]) == 2, result["lanes"]
+
+    def test_empty_lanes_examined_zero_not_all_clear(self, tmp_path):
+        # Degrade-to-zero (#868): `lanes: []` is both the correct idle state
+        # and what a broken deriver produces. The reap must report
+        # `examined 0` so it is visibly not an all-clear.
+        status = {"lanes": [], "dreamers": [], "task": "t"}
+        ledger = _ledger(7, 8)
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        assert result["lanes"] == []
+        # The population line names `examined 0` — not silence.
+        assert "examined 0" in err, err
+
+    def test_mixed_only_finished_reaped(self, tmp_path):
+        lanes = ["cx-7active — #7 P2: in flight",
+                 "cx-999stale — #999 P2: landed",
+                 "cx-8alsolive — #8 P1: working"]
+        status = {"lanes": lanes, "dreamers": [], "task": "t"}
+        ledger = _ledger(7, 8)              # 999 is NOT open
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        assert len(result["lanes"]) == 2, result["lanes"]
+        remaining = " ".join(result["lanes"])
+        assert "cx-7active" in remaining
+        assert "cx-8alsolive" in remaining
+        assert "cx-999stale" not in remaining
+        assert "pruned 1" in err, err
+
+    def test_reap_pure_function_classifies_each(self):
+        # The pure seam: examined / kept / reaped / unparseable all named.
+        lanes = ["cx-7open — #7", "cx-999done — #999", "no-prefix-note"]
+        kept, reaped, examined, unparseable = status_sync.reap_finished_lanes(
+            lanes, [7, 8])
+        assert examined == 3
+        assert len(kept) == 2              # open + unparseable survive
+        assert len(reaped) == 1            # finished
+        assert unparseable == 1
+        assert "cx-999done" in reaped[0]
+
+    def test_reap_pure_function_empty_is_examined_zero(self):
+        kept, reaped, examined, unparseable = status_sync.reap_finished_lanes(
+            [], [7, 8])
+        assert examined == 0
+        assert reaped == []
+        assert kept == []
+        assert unparseable == 0
