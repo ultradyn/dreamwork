@@ -4121,3 +4121,33 @@ this repo's oldest trap wearing operational clothes.
 population), ask whether that referent is the right one for *this* act before asking whether the
 refusal is wrong. A refusal computed against the wrong referent is not a false positive; it is a
 correct answer to a question nobody meant to ask.
+
+**The failure was real; the diagnosis was invented.** A gate refused with
+`check: FAULT — registered path 'd1_fixture/justfile' is absent from the working tree`. I read that
+message, reasoned backwards to a cause — *the path is relative, and `check` runs from the main
+checkout, so it resolves nowhere* — and wrote the cause into a brief as a measured premise. It was
+the FIRST of a pair the brief ordered fixed together. The lane (`cx-982registry`) stopped with zero
+commits and quoted `dev/land_lane.py:784-785`: `"--cwd", str(lane)`. The interpreter is the main
+checkout's; the **subject root is the lane worktree**. A relative path resolves exactly where the
+lane wrote it. The file was not unresolvable — it was *gone*, tidied away after a clean restore, and
+that was the whole defect all along.
+
+**The observed symptom was evidence that something was wrong. It was not evidence of what.** I
+treated one as the other, and the resulting premise had the full authority of a quoted error
+message behind it — which is why nobody, including me, was going to question it. This is the
+session's theme wearing its most convincing disguise yet: not a true statement read as a stronger
+claim, but a true *observation* with a false explanation stapled to it, inheriting the
+observation's credibility.
+
+**Two aggravating details worth keeping, because they say the fix is not "be more careful".** First,
+the distinction I fumbled — interpreter versus subject — is `#607`'s, is written in `lessons.md`
+above (`:3346`), and is stated in the boilerplate the lane was reading *while it refuted me*. Prose
+I agree with, again, did not change what I did at the moment of the act. Second, I had a cheap
+check available and did not run it: `grep -n 'cwd' dev/land_lane.py` would have ended the question
+in seconds.
+
+**The habit that would have caught it:** when a brief's premise is *"X fails because Y"*, the
+citation must be for **Y**, not for the failure. A quoted error message is a citation for the
+failure only. That is the fifth premise of mine a lane has had to refute (`#978`) — and every lane
+that stopped on one has been right, which is now a large enough population to be a finding about
+the briefs rather than about the lanes.
