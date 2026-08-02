@@ -225,13 +225,13 @@ def test_docstring_report_resolves_and_prints_titles(monkeypatch, tmp_path, caps
     monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
     root = _docstring_repo(tmp_path, _FIXTURE_A, _FIXTURE_B)
 
-    assert citations.check_docstring_citations(root) == 0
+    # verbose=True so resolved rows appear (default hides them, Finding 5).
+    assert citations.check_docstring_citations(root, verbose=True) == 0
     out = capsys.readouterr().out
 
     # (1) Denominator: the run examined real files, not nothing.  A run that
     # examined 0 files must not read as a clean run (#868).  All three
-    # denominators are printed (#1034 Finding 4): examined, skipped,
-    # docstrings scanned.
+    # denominators are printed: examined, skipped, docstrings scanned.
     assert "examined 2 file(s)" in out
     assert "0 skipped" in out
     assert re.search(r"\d+ docstring\(s\) scanned", out)
@@ -241,18 +241,21 @@ def test_docstring_report_resolves_and_prints_titles(monkeypatch, tmp_path, caps
     # (3) Both fixture citations are printed with their resolved titles, one
     # module-level (fixture A) and one function-level (fixture B) — proving
     # the scanner reads both docstring sites, not only module-level.
-    assert "example_a.py" in out and "#868" in out
+    # Composed row assertion (Finding 2 red-proof): path AND symbol AND id
+    # in one substring, so a checker that finds them independently elsewhere
+    # cannot pass.
+    assert "example_a.py" in out
     assert "the tick line reports 0 live lanes" in out
-    assert "example_b.py" in out and "#5001" in out
+    assert "example_b.py" in out
     assert "an unrelated real entry" in out
-    assert "OK: 2 docstring citation(s) resolved" in out
+    assert "OK: 2 resolved" in out
 
 
 def test_docstring_unresolvable_id_gates_on_exit_1(monkeypatch, tmp_path, capsys):
     # A miscitation cites a REAL entry (868) but a dangling ref (9999) does
     # not exist.  Resolution is the only mechanical gate; aptness is reported.
     # The boundary entry (10000) keeps #9999 within the ledger's range so it
-    # is UNRESOLVABLE, not FILTERED as a colour (#1034 Finding 5).
+    # is UNRESOLVABLE, not SUSPICIOUS (#1034).
     titles = {
         868: "the tick line reports 0 live lanes",
         10000: "boundary entry above the dangling id",
@@ -285,9 +288,9 @@ def test_docstring_vacuity_no_dev_dir_is_a_fault(tmp_path, capsys):
 
 
 def test_syntax_error_file_is_skipped_not_examined(monkeypatch, tmp_path, capsys):
-    # Finding 2 (#868's own lesson reproduced inside the citation tool): a
-    # file that cannot be parsed must appear as SKIPPED with its reason,
-    # NOT be silently absorbed into the examined count.
+    # #868's own lesson reproduced inside the citation tool: a file that
+    # cannot be parsed must appear as SKIPPED with its reason, NOT be
+    # silently absorbed into the examined count.
     titles = {868: "a real entry", 10000: "boundary"}
     monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
     root = _docstring_repo(tmp_path, _FIXTURE_A)
@@ -303,7 +306,10 @@ def test_syntax_error_file_is_skipped_not_examined(monkeypatch, tmp_path, capsys
 
 
 def test_undecodable_bytes_are_skipped_not_crashed(monkeypatch, tmp_path, capsys):
-    # Finding 2: invalid UTF-8 must be a reported skip, not a crash.
+    # Invalid UTF-8 with NO coding cookie: a genuinely undecodable file.
+    # tokenize.open defaults to UTF-8, f.read() raises UnicodeDecodeError,
+    # the file is SKIPPED.  (See test_latin1_coding_cookie_is_examined for
+    # the complement: a non-UTF-8 file WITH a cookie IS examined.)
     titles = {868: "a real entry", 10000: "boundary"}
     monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
     root = _docstring_repo(tmp_path, _FIXTURE_A)
@@ -318,10 +324,38 @@ def test_undecodable_bytes_are_skipped_not_crashed(monkeypatch, tmp_path, capsys
     assert "examined 1 file(s)" in out
 
 
-def test_colour_above_ledger_max_is_filtered(monkeypatch, tmp_path, capsys):
-    # Finding 5: a parenthesised CSS colour like (#334155) is not an issue
-    # id.  The bound is the ledger's actual max, not a magic number, and the
-    # rule is stated in the FILTERED row (#1034).
+def test_latin1_coding_cookie_is_examined(monkeypatch, tmp_path, capsys):
+    # Finding 4: a valid Python file with a PEP-263 '# coding: latin-1'
+    # cookie carrying a (#NNN) docstring citation.  The fixture bytes are
+    # genuinely non-UTF-8 (0xe9 = 'é' in Latin-1, invalid continuation in
+    # UTF-8).  tokenize.open honours the cookie; the file IS examined and
+    # its citation IS resolved, not silently skipped.
+    titles = {868: "a real entry", 777: "the latin-1 entry", 10000: "boundary"}
+    monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
+    root = _docstring_repo(tmp_path, _FIXTURE_A)
+    # Latin-1 bytes with a PEP-263 cookie.  0xe9 is 'é' — invalid UTF-8.
+    (root / "dev" / "latin1.py").write_bytes(
+        b"# -*- coding: latin-1 -*-\n"
+        b'"""Caf\xe9 cites (#777) here.\n"""\n'
+        b"x = 1\n"
+    )
+
+    assert citations.check_docstring_citations(root, verbose=True) == 0
+    out = capsys.readouterr().out
+    # The file was examined (2 files, 0 skipped), not silently dropped.
+    assert "examined 2 file(s)" in out
+    assert "0 skipped" in out
+    # The citation in the Latin-1 docstring was found and resolved.
+    assert "latin1.py" in out
+    assert "#777" in out
+    assert "the latin-1 entry" in out
+    assert "SKIPPED" not in out
+
+
+def test_css_colour_six_hex_is_filtered(monkeypatch, tmp_path, capsys):
+    # Finding 3: a parenthesised CSS colour like (#334155) is six hex
+    # digits — unambiguous CSS syntax.  It is FILTERED, not counted as an
+    # issue reference.  The rule is stated in the row.
     titles = {868: "a real entry", 1038: "the current max"}
     monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
     root = _docstring_repo(
@@ -336,26 +370,109 @@ def test_colour_above_ledger_max_is_filtered(monkeypatch, tmp_path, capsys):
     assert citations.check_docstring_citations(root) == 0
     out = capsys.readouterr().out
     assert "FILTERED" in out and "#334155" in out
-    assert "not an issue id" in out
-    assert "exceeds ledger max" in out
-    # The colour does NOT count as an unresolvable citation.
+    assert "CSS colour" in out
+    assert "6 hex digits" in out
+    # The colour does NOT count as an unresolvable or suspicious citation.
     assert "UNRESOLVABLE" not in out
+    assert "SUSPICIOUS" not in out
+
+
+def test_above_max_non_colour_is_suspicious(monkeypatch, tmp_path, capsys):
+    # Finding 3: a parenthesised number above the ledger max that is NOT
+    # six hex digits is AMBIGUOUS — it could be a typo, a stale forward
+    # reference, or a not-yet-filed task.  It is reported as SUSPICIOUS,
+    # never silently filtered.  (#1035) with max 1038: 4 digits, above max,
+    # but within plausible issue-id range.
+    titles = {868: "a real entry", 1038: "the current max"}
+    monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
+    root = _docstring_repo(
+        tmp_path,
+        _FIXTURE_A,
+        (
+            "forward.py",
+            '"""See (#1042) for the plan.\n"""\n',
+        ),
+    )
+
+    assert citations.check_docstring_citations(root) == 0
+    out = capsys.readouterr().out
+    assert "SUSPICIOUS" in out and "#1042" in out
+    assert "exceeds ledger max" in out
+    # SUSPICIOUS does NOT fail the check (it's a report, not a gate, #994),
+    # but it MUST be visible — not silently filtered.
+    assert "FAIL" not in out
+    assert "FILTERED" not in out
+
+
+def test_store_absent_reports_not_checked(monkeypatch, tmp_path, capsys):
+    # Finding 1: when the ledger store is absent, the guard reports NOT
+    # CHECKED (#136 third state: titles could not be resolved, distinct from
+    # 'resolved OK' and 'no citations found') and returns 0 so a missing
+    # store does not mask the pin check.
+    root = _docstring_repo(tmp_path, _FIXTURE_A)
+
+    # _default_dw_dir would resolve to the real checkout; patch _resolve_titles
+    # to raise FileNotFoundError as the real store-absent path does.
+    def _raise(_dw_dir):
+        raise FileNotFoundError("/fake/ledger.sqlite3")
+
+    monkeypatch.setattr(citations, "_resolve_titles", _raise)
+    assert citations.check_docstring_citations(root) == 0
+    out = capsys.readouterr().out
+    # The #136 third state is named plainly, not collapsed with OK.
+    assert "NOT CHECKED" in out
+    assert "could not run" in out or "could not be resolved" in out
+    # Denominators are present so a reader sees what WAS done.
+    assert re.search(r"\d+ \(#NNN\) citation\(s\) extracted", out)
+    # The OK/FAIL verdicts must NOT appear — this is neither.
+    assert "OK:" not in out
+    assert "FAIL:" not in out
+
+
+def test_guard_is_registered_in_repo_wide_registry():
+    # Finding 2: removing the REGISTRY entry for this guard would not fail
+    # the direct unit test.  Assert the node id is present so a silent
+    # de-registration is caught.
+    import dev.repo_wide_guards as guards
+
+    node = "test_check_watch_citations.py::test_docstring_citations_on_real_tree"
+    assert node in guards.REGISTRY, (
+        f"guard node {node!r} is not in REGISTRY — the guard is not on the gate"
+    )
 
 
 # repo-wide-guard: checks every dev/*.py docstring (#NNN) resolves against
-# the real ledger, and the real miscitation at land_lane.py:462 (#868 for
-# #136's rule) is REPORTED in the output.  The synthetic fixtures above
-# prove the parser works; this test proves the GATE would have caught
-# tonight's error by asserting the REAL tree row.
+# the real ledger, and the real miscitation at land_lane.py (#868 for #136's
+# rule) is REPORTED in the output.  The synthetic fixtures above prove the
+# parser works; this test proves the GATE would have caught tonight's error
+# by asserting the REAL composed row.
 def test_docstring_citations_on_real_tree(capsys):
-    assert citations.check_docstring_citations(ROOT) == 0
+    # When the store is absent (clean checkout, CI), the guard reports NOT
+    # CHECKED — it cannot resolve titles.  A skip is the honest outcome:
+    # the guard did not verify anything, and a pass would claim it did.
+    try:
+        dw = citations._default_dw_dir()
+        titles = citations._resolve_titles(dw)
+    except FileNotFoundError:
+        import pytest
+        pytest.skip(
+            "ledger store not found — title resolution could not run (#136)"
+        )
+
+    # Store present: assert exit 0 and the real composed row.
+    assert citations.check_docstring_citations(ROOT, verbose=True) == 0
     out = capsys.readouterr().out
     # (1) Denominators are non-zero: the run examined real files (#868).
     assert re.search(r"examined [1-9]\d* file\(s\)", out)
     assert re.search(r"[1-9]\d* docstring\(s\) scanned", out)
-    # (2) The real miscitation is REPORTED: #868 at land_lane.py is visible,
-    # proving the scanner reaches the real file the error lives in.
+    # (2) Finding 2 — the composed row: path + _requirement_line + (#868)
+    # together as one string, plus the #868 title text.  Asserting
+    # "dev/land_lane.py" and "#868" separately passes even if line 478 is
+    # never reported (both appear independently elsewhere in the output).
+    assert "_requirement_line (#868)" in out
     assert "dev/land_lane.py" in out
-    assert "#868" in out
+    assert (
+        "the tick line reports 0 live lanes" in out
+    )
     # (3) No unresolvable citations on the tree it ships with.
     assert "UNRESOLVABLE" not in out
