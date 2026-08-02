@@ -230,20 +230,30 @@ a refuted premise — stop and report it, and do not assume the coordinator chec
 seductive precisely because the wrong entry is usually true and adjacent; adjacency is not
 authority.
 
-**And a citation can be wrong by naming a real entry that says something else entirely — or by
-naming nothing at all.** `#996` landed at `e89b50be` and its generation-time citation report
-caught the author on its FIRST run against a live brief: every brief written that night carried
-*"`#894` — never compose a note inline; write to a file"*, and `#894` is actually *"ledger.py
-sweep cannot see a merge-sha citation."* No ledger entry states the note rule; the citation was
-invented wholesale around a practice that is genuinely good. **A remembered number is not
-evidence.** If you cannot quote the entry, state the rule without a number rather than borrowing
-authority from one.
+**And a citation can be wrong by naming a real entry whose TITLE says something else entirely.**
+`#996` landed at `e89b50be` and its generation-time citation report caught the author on its
+FIRST run against a live brief: every brief written that night carried *"`#894` — never compose a
+note inline; write to a file"*, while `#894`'s title is *"ledger.py sweep cannot see a merge-sha
+citation."* **A remembered number is not evidence.** If you cannot quote the entry, state the
+rule without a number rather than borrowing authority from one.
 
-**Compose a `--note` in a FILE and pass `$(cat …)`, never inline.** A note is prose containing
-backticks, quotes, `$`, `#` and newlines; composing it inline hands all of that to the shell,
-which is how a note gets silently truncated at the first unescaped character. This is a standing
-rule of this repo with no issue number behind it — deliberately stated without one, per the
-paragraph above.
+**The correction to that very example is the sharper lesson, and it is the coordinator's error.**
+This paragraph used to say the `#894` citation was *invented wholesale* and that no ledger entry
+stated the note rule. **That was false.** `#894`'s BODY states it exactly — *"THE STANDING FIX for
+the coordinator: write long notes to a file and pass `--note "$(cat <file>)"`"* — so the citation
+named the right entry and glossed it with a rule that lives in the body rather than the title. A
+gloss mismatch, not an invention. The coordinator's search was entry titles plus one narrow
+`LIKE '%inline%'` body pattern; it returned nothing, and **"I found nothing" was published as
+"there is nothing"** — the exact collapse `#136` names, committed in the same breath as quoting
+`#136`. So: before writing *no entry says X*, say what you searched and what would have made that
+search miss, exactly as `lessons.md`'s *"A probe that can match itself has no floor"* demands of a
+count. **A title search is not an entry search.**
+
+**Compose a `--note` in a FILE and pass `$(cat …)`, never inline** — the rule is `#894`'s, stated
+in that entry's body, so reach it with `python3 dev/ledger.py get 894` and read, never by grepping
+titles. A note is prose containing backticks, quotes, `$`, `#` and newlines; composing it inline
+hands all of that to the shell, which is how a note gets silently truncated at the first
+unescaped character.
 
 **Every quantity a brief asserts must sit next to the command that re-derives it** (`#978`).
 `dev/brief.py` now reports, at generation, each bare number in a core that no re-derivation
