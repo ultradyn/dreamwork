@@ -300,7 +300,8 @@ class TestCheckDoesNotClaimProductionEvidence:
         assert "check: restoration clean" in out
         assert "1 injection(s) registered" in out
         assert "1 other target(s), 0 test-like target(s)" in out
-        assert "red-proof semantics and production reach were NOT verified" in out
+        assert "red-proof reach: DID NOT CHECK" in out
+        assert "production" not in out.lower()
         assert "check: clean" not in out
 
     def test_a_test_file_is_visible_but_not_refused(self, repo, capsys):
@@ -342,7 +343,8 @@ class TestCheckDoesNotClaimProductionEvidence:
         assert _check(repo) == 0
         out, _ = capsys.readouterr()
         assert "[other] expectations.py" in out
-        assert "production reach were NOT verified" in out
+        assert "red-proof reach: DID NOT CHECK" in out
+        assert "CAUGHT by" not in out
 
     def test_a_guard_fixture_target_remains_allowed(self, repo, capsys):
         target = repo / "dev" / "capture" / "fixture.mjs"
@@ -671,6 +673,12 @@ class TestDeletedInjectionIsRestored:
             self, repo, capsys):
         _begin(repo, "router.js")
         (repo / "router.js").unlink()
+        command = [
+            sys.executable, "-c",
+            "from pathlib import Path; assert Path('router.js').exists(), "
+            "'deleted router was reached'",
+        ]
+        assert _observe(repo, "router.js", "deleted router was reached", command) == 0
         assert _restore(repo, "router.js") == 0
         capsys.readouterr()
 
@@ -1811,10 +1819,10 @@ class TestNamedLaneAcrossEveryCliVerb:
     @staticmethod
     def _run(repo: Path, env: dict[str, str], *args: str):
         return subprocess.run(
-            ["python3", str(CLI_PATH), *args, "--cwd", str(repo)],
+            ["python3", str(CLI_PATH), "--cwd", str(repo), *args],
             capture_output=True, text=True, env=env)
 
-    def test_explicit_lane_wins_over_a_disagreeing_env_for_all_four_verbs(
+    def test_explicit_lane_wins_over_a_disagreeing_env_for_all_five_verbs(
             self, repo, tmp_path):
         named = "named-lane-957"
         env_lane = "different-env-lane-957"
@@ -1842,6 +1850,14 @@ class TestNamedLaneAcrossEveryCliVerb:
         assert armed.stderr.startswith("check: REFUSED —"), armed.stderr
 
         (repo / "router.js").write_text("SABOTAGE FROM NAMED LANE 957\n")
+        observed = self._run(
+            repo, env, "observe", "router.js", "--lane", named,
+            "--failure", "named lane injection reached", "--command",
+            sys.executable, "-c",
+            "from pathlib import Path; assert 'SABOTAGE' not in "
+            "Path('router.js').read_text(), 'named lane injection reached'")
+        assert observed.returncode == 0, observed.stdout + observed.stderr
+        assert named_seg in observed.stdout and env_seg not in observed.stdout
         restore = self._run(repo, env, "restore", "router.js", "--lane", named)
         assert restore.returncode == 0, restore.stdout + restore.stderr
         assert "original restored & verified" in restore.stdout, restore.stdout

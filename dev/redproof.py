@@ -34,8 +34,10 @@ Replace the manual ``cp`` snapshot / ``cp`` restore with the tool's verbs::
 
     python3 dev/redproof.py begin router.js --expectation test_router.py
                                                # pin an independent expectation
-    # ...sabotage router.js; run the red test; watch it fail...
-    python3 dev/redproof.py restore router.js    # record INJECTED, restore, cmp
+    # ...sabotage router.js...
+    python3 dev/redproof.py observe router.js --failure 'route assertion' \
+        --command just pytest test_router.py     # persist the injected red
+    python3 dev/redproof.py restore router.js    # restore, cmp, rerun control
     # ...apply the real fix (may edit router.js further)...
     python3 dev/redproof.py check                # hand-off gate
 
@@ -47,7 +49,11 @@ records the injected sha and the first line that differs from the original,
 then copies the original back and verifies byte-identity — never ``git
 checkout`` (#349). ``check`` repeats the expectation-byte comparison at the
 hand-off and refuses if an expectation was omitted or drifted, as well as if
-any registered file still matches its recorded injection.
+any registered file still matches its recorded injection. ``observe`` runs the
+named command while the injection is present and writes its output immediately
+beside the registry. ``restore`` reruns that exact command after copying the
+original back. Only a nonzero injected run containing the independently named
+failure plus a green restored control is reported as CAUGHT.
 
 A CLEAN TREE IS NOT A CLEAN BRANCH (#710)
 -----------------------------------------
@@ -113,15 +119,14 @@ that simply had no red-proof step. The byte-sha check also passes if a lane
 restores and then re-applies a *different* sabotage than the one recorded —
 see the report's direction-2 section. Both are named, not hidden.
 
-Most importantly, file bytes cannot establish red-proof semantics. A target
+File bytes alone cannot establish red-proof semantics. A target
 named ``test_*.py`` or ``dev/capture/*.mjs`` is reported as ``test-like``;
 everything else is conservatively ``other``, never ``production``. The path is
 the resolved, worktree-confined target recorded by ``begin``, so a symlink or
 relative spelling cannot hide a test-like target. This lexical signal is only
 advisory: legitimate injections can target guard fixtures, and test files can
-have other names. ``check`` therefore says explicitly that it verified
-restoration and branch absence only — not that a test reached a production
-seam, nor that a reported failure was discriminating (#795).
+have other names. The paired observation establishes command-level causal
+reach; it does not prove that a lexical "other" target is production code.
 
 The history scan inherits all of that, and adds two of its own, both with a
 test that asserts the miss so closing one fails loudly:
@@ -915,6 +920,12 @@ def _reach_section(label: str, command: list[str], exit_code: int, output: str) 
             f"{output.rstrip()}\n")
 
 
+# IGC decision for reach evidence. Goals: G1 attribute the red to the injection,
+# G2 reuse #878's lane-private at-run artifact, G3 add no suite run to the merge
+# gate. An artifact-only receipt is refuted by G1 (an unrelated failure fits it);
+# a gate-owned rerun is refuted by G3. The injected-red/restored-green pair is
+# the only candidate non-refuted on all three: observe writes the mandated
+# artifact, restore supplies the causal control, and check only reads receipts.
 def observe(cwd: Path | None, path: str, *, failure: str,
             command: list[str], lane: str | None = None) -> int:
     """Observe the armed injection making an exact command fail discriminatingly.
@@ -936,10 +947,13 @@ def observe(cwd: Path | None, path: str, *, failure: str,
         if armed is None:
             raise RedproofError(
                 f"{posix!r} has no armed injection; run `begin {posix}` before observe")
-        injected = _read_wt(root, posix)
-        injected_sha = _sha(injected)
+        injected_absent = not os.path.lexists(root / Path(posix))
+        injected_sha = None if injected_absent else _sha(_read_wt(root, posix))
+        injected_kind = ABSENT if injected_absent else BYTES
         exit_code, output = _reach_run(root, command)
-        evidence = identity_dir / f"{hashlib.sha256(posix.encode()).hexdigest()[:12]}-{injected_sha[:12]}.reach.txt"
+        observed_token = "absent" if injected_sha is None else injected_sha[:12]
+        evidence = identity_dir / (
+            f"{hashlib.sha256(posix.encode()).hexdigest()[:12]}-{observed_token}.reach.txt")
         evidence_text = _reach_section("INJECTED RUN", command, exit_code, output)
         evidence.write_text(evidence_text)
         if exit_code == 0:
@@ -957,6 +971,7 @@ def observe(cwd: Path | None, path: str, *, failure: str,
             "command": command,
             "failure": failure,
             "observed_injected_sha": injected_sha,
+            "observed_injected_kind": injected_kind,
             "injected_exit": exit_code,
             "evidence": str(evidence),
             "evidence_sha": _sha(evidence_text.encode()),
@@ -1110,7 +1125,8 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
             command = reach.get("command")
             failure = reach.get("failure")
             evidence = Path(str(reach.get("evidence", "")))
-            if reach.get("observed_injected_sha") != injected_sha:
+            if (reach.get("observed_injected_sha") != injected_sha or
+                    reach.get("observed_injected_kind", BYTES) != injected_kind):
                 reach["status"] = "not_caught"
                 reach["reason"] = "injected bytes changed after the observed failure"
             elif not isinstance(command, list) or not command or not isinstance(failure, str):
