@@ -4559,3 +4559,48 @@ This repo's whole citation-guard family exists because references drift, and thi
 structurally cannot catch. Worth knowing when reading any `#NNNN` in a lane report: a resolving
 citation is evidence the id exists, not evidence it is the right id — and `lessons.md:NNNN` and
 `#NNNN` are one keystroke apart in a note written from a file the lane was reading by line.
+
+## A tool's summary can be false about the tool's own action (2026-08-03, #1093, coordinator's, measured)
+
+`just launch-lane` printed `dispatch prepared: ... runner not attempted` and `deliberately did not
+perform: governed runner launch`, exited 0 — and had spawned a runner. Two lines further down its own
+output: `warning: runner "grok" may save this session`, which is a runner-INVOCATION warning printed
+after the claim that no runner was attempted. I read the summary, believed it, and dispatched a second
+agent. Twice, on #1091 and #1057. Each task then had two agents racing in one worktree, and the
+tool-spawned one had the MAIN CHECKOUT as its cwd — the one place a lane must never commit.
+
+What made it invisible: I was checking whether the tool had done something, and the tool told me. A
+status line is the cheapest possible evidence about a process, and the only evidence that shares the
+failure mode of the thing it describes. /proc settled it in one command — `readlink /proc/<pid>/fd/1`
+showed a `ccc` whose stdout was launch-lane's own log file, started seconds before my manual dispatch.
+
+The rule: **when a tool reports what it did NOT do, verify the negative independently.** A positive
+claim ("I launched X") is self-limiting — if it is wrong you get no X and notice. A negative claim is
+the dangerous one, because acting on it means doing the thing yourself, and now there are two.
+
+## Reconciling two accounts is not explaining them (2026-08-03, #1089, coordinator's, measured)
+
+A lane produced two contradictory reports: one said a premise-stop fired and the rebase was "not
+attempted", the other reported a completed, rebased implementation. I measured the branch, found it
+already contained master, and concluded both statements were true of one agent — no rebase had been
+needed. The measurement was right. The explanation was wrong: they were two different agents, spawned
+by the defect above.
+
+The reconciliation was seductive precisely because it *worked* — it required only that both sentences
+be true, and both were. That is a weaker condition than it feels like. It never asked the cheaper
+question: how many authors were there? An explanation that makes the evidence consistent is not the
+same as the explanation that produced it, and the difference is invisible from inside the
+reconciliation.
+
+## A fresh measurement of a real fault feels like discovery even when the fault is already filed (2026-08-03, #1089/#1038, coordinator's, measured)
+
+I measured a genuine P1 — `redproof check` faulting on an absent registry — and filed it as #1089. It
+was already open as #1038, with a lane in flight, and #1038 landed hours later and fixed it. A codex
+lane was spent re-solving a solved problem, and its branch is now unlandable against the superseded
+base.
+
+The tell was in the fault text I had already read: it named its own provenance, "#949's unfixed second
+half", and #1038 was open under almost that sentence. Searching the open ledger for the fault's own
+words costs one command. I skipped it because the measurement was fresh and mine, and freshness reads
+as novelty. **Before filing, search the ledger for the words the failure itself uses** — not for what
+you would have called it, which is how the duplicate escaped.
