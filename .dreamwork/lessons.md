@@ -4866,3 +4866,30 @@ disagreed with the story — neither looked wrong on its own.
   `#1088`'s disposable red-proof expectations. Compose the note AFTER the
   landing, from the merge sha and the tag; never from a sha captured while the
   branch was still queued. (2026-08-03, coordinator)
+
+- **A reviewer in a clone cannot evaluate lane-scoped state, and will report its
+  own environment as a branch defect.** I dispatch reviewers into
+  `git clone -s` copies under `/tmp` so they cannot hold the main checkout and
+  block a gate — which is right — and then asked them to verify the branch's
+  red-proof. They cannot: the registry lives at
+  `~/.cache/ud-dreamwork/lane-scratch/ud-dreamwork/<lane>/…` keyed by LANE
+  IDENTITY, and a clone has none. `#1033`'s reviewer duly reported
+  *"check --require 1 → FAULT, no redproof registry could be located"* as one of
+  two "material hand-off failures". In the real lane worktree the same command
+  exits 0 with `caught 1 of 1`. Both of its red-proof findings were artifacts;
+  acting on them would have cost a full re-arm cycle to fix nothing. Either
+  point the reviewer at the lane worktree explicitly with `--cwd`, or do not ask
+  a clone-based reviewer about red-proof at all — the gate checks it anyway.
+  (2026-08-03, coordinator)
+
+- **`redproof` pins `sha1(content)`; git names blobs by
+  `sha1("blob <len>\0" + content)`. Comparing the two proves nothing.**
+  `#1033`'s reviewer found the pin at `6a8a…` while "both HEAD and the worktree"
+  read `5ebc…`, and concluded the expectation was stale — then added that
+  `git cat-file -t 6a8a…` could not find the object, as corroboration. Both
+  observations are expected: `6a8a…` was the content hash of the very file it
+  named, and a content hash is not a git object, so `cat-file` must fail. The
+  content hash is deliberate (`#1088` measured it) — it is what makes the pin
+  fire on real byte changes rather than on every rebase. When a hash comparison
+  yields a surprising mismatch, check the two values are in the same hash space
+  before believing the conclusion. (2026-08-03, coordinator)
