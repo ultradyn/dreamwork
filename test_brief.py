@@ -507,11 +507,11 @@ def test_brief_generation_reports_an_uncovered_headline_beside_a_covered_claim(c
     )
     assert brief.validate_core(core) == 3
     report = capsys.readouterr().err
-    assert "found 2 asserted quantities" in report, report
-    assert "covered 1 of 2" in report, report
     assert "1 uncovered: line 9 '5 recipes'" in report, (
         f"quantity verification lost uncovered 5 recipes: {report}"
     )
+    assert "found 2 asserted quantities" in report, report
+    assert "covered 1 of 2" in report, report
 
 
 def test_quantity_report_zero_population_is_not_all_verified():
