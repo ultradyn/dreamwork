@@ -22,6 +22,7 @@ import ast
 import importlib.util
 import os
 import pathlib
+import re
 import shutil
 
 import watch
@@ -32,6 +33,123 @@ CLIENT = ROOT / "client"
 
 def _assets():
     return list(watch._CLIENT_ASSETS)
+
+
+def _rules(css, want):
+    """Declarations of every rule whose selector list satisfies `want`.
+
+    Comments are stripped first — this stylesheet's prose discusses selectors
+    and braces, and a scan that reads a comment as a rule finds values nobody
+    ships. Selectors are compared whole, so `.taskpreview` never matches
+    `#task-ref-preview.taskpreview`; that distinction is the entire point of
+    the specificity check below.
+    """
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    out = []
+    for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+        sels = [s.strip() for s in match.group(1).split(",") if s.strip()]
+        if any(want(s) for s in sels):
+            out.append(match.group(2))
+    return out
+
+
+_COLOUR_LITERAL = re.compile(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\([^)]*\)")
+
+
+def test_the_task_ref_hover_is_stated_in_tokens_and_outranks_its_injected_block():
+    """#1007 — the #282 hover panel must keep matching the site, not merely
+    have matched it once.
+
+    Two ways this silently dies, one check each.
+
+    SPECIFICITY. `client/components.js` injects a self-contained `<style>` for
+    the panel and appends it to `<head>` AFTER this sheet, so a class-level
+    rule here loses the source-order tie and the panel reverts to that block's
+    literals with nothing rendering wrong enough to notice. The rules are
+    therefore id-qualified, and a bare `.taskpreview` rule in this file would
+    be inert — which is worse than absent, because it reads as styling.
+
+    A LITERAL THAT MATCHES TODAY. `#334155` and `var(--border)` render
+    identically until the token moves, and then only one of them still matches
+    the page. So every colour this lane states must come through a `var()`
+    that `:root` actually declares — with the sole exception of a literal the
+    surface being matched states ITSELF, which is read back out of that rule
+    rather than repeated here.
+    """
+    css = (CLIENT / "style.css").read_text(encoding="utf-8")
+    components = (CLIENT / "components.js").read_text(encoding="utf-8")
+
+    injected = re.search(r"style\.textContent\s*=\s*`(.*?)`;", components, re.S)
+    # ...and it must be the rule that STATES the surface: a reduced-motion
+    # `.taskpreview{transition:none}` also satisfies "a class-level rule
+    # exists" while saying nothing about the appearance being matched.
+    assert injected and [b for b in _rules(injected.group(1), lambda s: s == ".taskpreview")
+                         if "background" in b], (
+        "client/components.js no longer injects a CLASS-specificity "
+        "`.taskpreview` rule declaring a background — the id-qualification "
+        "below is answering a question nobody asks, and this check cannot "
+        "tell you whether the panel still matches the site"
+    )
+
+    ours = _rules(css, lambda s: "task-ref-preview" in s or "taskref" in s)
+    assert ours, (
+        "client/style.css states nothing about the task-ref hover, so the "
+        "panel is whatever client/components.js hardcoded (#1007)"
+    )
+    assert not _rules(css, lambda s: s == ".taskpreview"), (
+        "client/style.css declares a bare `.taskpreview` rule — same "
+        "specificity as the block components.js appends to <head> after this "
+        "sheet, so it loses the source-order tie and styles nothing"
+    )
+
+    # The surface being matched, and it must be the rule that STATES the
+    # surface: #cmdpalette also appears in a reduced-motion selector list that
+    # declares only `transition:none`, and reading that one instead would
+    # silently empty the permitted-literal set and blame the hover for it.
+    source = [b for b in _rules(css, lambda s: s == "#cmdpalette") if "box-shadow" in b]
+    assert source, (
+        "no #cmdpalette rule in client/style.css declares a box-shadow — it is "
+        "one of the two statements of the floating-overlay idiom the hover was "
+        "matched to, so nothing below can be derived from it"
+    )
+    allowed = set(_COLOUR_LITERAL.findall(" ".join(source)))
+    assert allowed, (
+        "#cmdpalette states no colour literal, so the permitted set is empty "
+        "and the loop below would reject every literal the hover legitimately "
+        "shares with it — a refusal about the wrong file"
+    )
+    declared = set(re.findall(r"(--[a-z0-9-]+)\s*:", " ".join(_rules(css, lambda s: s == ":root"))))
+    assert declared, ":root declares no custom property; every var() below would be vacuous"
+
+    for block in ours:
+        for literal in _COLOUR_LITERAL.findall(block):
+            assert literal in allowed, (
+                "the task-ref hover states the colour literal %s, which "
+                "#cmdpalette — the surface it is matched to — does not state "
+                "either. A literal that happens to match a token today stops "
+                "matching the day the token moves (#1007)" % literal
+            )
+        for name in re.findall(r"var\((--[a-z0-9-]+)", block):
+            assert name in declared, (
+                "the task-ref hover reads %s, which :root does not declare — "
+                "the property resolves to nothing and the panel silently "
+                "falls back to the client/components.js literal" % name
+            )
+
+    panel = _rules(css, lambda s: s == "#task-ref-preview.taskpreview")
+    assert panel, "the task-ref panel rule is no longer id-qualified"
+    for prop in ("box-shadow", "border-radius"):
+        mine = re.search(prop + r"\s*:\s*([^;}]+)", panel[0])
+        theirs = re.search(prop + r"\s*:\s*([^;}]+)", source[0])
+        assert mine and theirs and mine.group(1).strip() == theirs.group(1).strip(), (
+            "the task-ref hover's %s is %r and #cmdpalette's is %r — the two "
+            "floating overlays no longer agree, so the hover has stopped "
+            "matching the surface #1007 matched it to" % (
+                prop,
+                mine.group(1).strip() if mine else None,
+                theirs.group(1).strip() if theirs else None,
+            )
+        )
 
 
 def test_the_asset_list_is_not_empty_and_every_file_exists():
