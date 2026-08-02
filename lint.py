@@ -3178,97 +3178,240 @@ _BUILDER_DELEGATE_RE = re.compile(
 # client sources; the indent distinguishes them from same-named locals.
 _BUILDER_DEF_RE = re.compile(
     r"^(?:export\s+)?(?:async\s+)?(?:function|const|let|var)\s+"
-    r"([A-Za-z_$][\w$]*)"
+    r"([A-Za-z_$][\w$]*)",
+    re.MULTILINE,
 )
 
 
-def _strip_js_comments(text: str) -> str:
-    """Replace JS comment text with spaces, preserving column alignment.
+_REGEX_AFTER_OP = set("!%&(*+,-/:;<=>?[^{|}~")
 
-    Line comments (``// …``) and block comments (``/* … */``) are blanked.
-    String literals are preserved intact so their contents remain available
-    for delegate-name capture. The ``in_string`` state prevents ``//`` inside
-    a string (e.g. ``"http://…"``) from reading as a comment; ``in_block``
-    carries across lines for multi-line block comments. Regex literals are
-    NOT distinguished from division — a ``/`` in code context that is not
-    ``//`` or ``/*`` passes through — so a pattern mention inside a regex
-    literal is an unhandled false-positive context (none exists in the real
-    sources; see check_builder_delegation docstring).
+
+def _regex_after(prev_sig: str) -> bool:
+    """Heuristic: is ``/`` a regex opener or a division operator?
+
+    After expression-ending tokens (identifier chars, digits, ``)``, ``]``,
+    ``}``, closing quotes/backtick) ``/`` is DIVISION. After operators,
+    punctuators (``(``, ``,``, ``;``, ``{``, ``[``), or start of input, ``/``
+    opens a REGEX. This is the standard prev-significant-token heuristic used
+    by every lightweight JS lexer; it is correct for ``a / b / c`` (division)
+    and ``= /pattern/`` (regex).
+
+    Known limitation: keyword tails (``return``, ``typeof``) look like
+    identifiers to a per-character check, so ``return /re/`` is mis-read as
+    division. The real sources have no regex literals and the test fixtures
+    use ``const x = /re/`` (operator context), so this does not arise.
     """
-    out: list[str] = []
-    i, n = 0, len(text)
-    in_block = False
-    in_string = False
-    quote = ""
-    while i < n:
-        ch = text[i]
-        if in_block:
-            if ch == '*' and i + 1 < n and text[i + 1] == '/':
-                in_block = False
-                out.append('  ')
-                i += 2
-                continue
-            out.append('\n' if ch == '\n' else ' ')
-            i += 1
-            continue
-        if in_string:
-            if ch == '\\' and i + 1 < n:
-                out.append(text[i:i + 2])
-                i += 2
-                continue
-            out.append(ch)
-            if ch == quote:
-                in_string = False
-            i += 1
-            continue
-        if ch == '/' and i + 1 < n and text[i + 1] == '/':
-            while i < n and text[i] != '\n':
-                out.append(' ')
-                i += 1
-            continue
-        if ch == '/' and i + 1 < n and text[i + 1] == '*':
-            in_block = True
-            out.append('  ')
-            i += 2
-            continue
-        if ch in ('"', "'", '`'):
-            in_string = True
-            quote = ch
-        out.append(ch)
-        i += 1
-    return ''.join(out)
+    if not prev_sig:
+        return True
+    if prev_sig in ")]}":
+        return False
+    if prev_sig.isalnum() or prev_sig in "$_":
+        return False
+    if prev_sig in "'\"`":
+        return False
+    return True
 
 
-def _js_string_spans(line: str) -> list[tuple[int, int]]:
-    """Return ``(start_inclusive, end_exclusive)`` for string literals on a line.
+def _js_noncode_spans(text: str) -> list[tuple[int, int]]:
+    """Non-code character intervals in JavaScript source.
 
-    Covers ``'…'``, ``"…"``, and backtick template literals. Escaped
-    delimiters do not close the span. Used to reject delegate-site matches
-    whose structural prefix starts inside a string literal — a mention, not
-    a code site. Multi-line template literals that opened on a prior line
-    are invisible here (the opening backtick is off-line); see the docstring
-    for that named limitation.
+    Returns ``(start, end)`` spans for positions that are NOT executable code:
+    comment bodies (including delimiters), string-literal CONTENTS (the bytes
+    between quotes, not the delimiters), template-literal TEXT runs (the bytes
+    between a backtick and ``${`` or ``}``, not the interpolation interior),
+    and regex-literal bodies (including delimiters and flags).
+
+    Quote/backtick delimiters and ``${}`` interpolation interiors are CODE —
+    they are structural positions where a delegate pattern legitimately begins.
+    A delegate-site regex match whose START offset falls inside any returned
+    span is a mention inside a comment/string/regex, not a real code site.
+
+    This is a CHARACTER-STREAM lexer, not a line-oriented scanner. Round 3
+    split the input into lines and applied the regex per line, which made
+    line-crossing constructs invisible by construction: a key and its value
+    on separate lines were never on the same line together, and ``${}``
+    interpolation was treated as string-interior because the opening backtick
+    was on a prior line. A character stream handles both by construction —
+    the regex runs over the whole text and the lexer's non-code spans are
+    the only filter, so a construct that spans lines is visible iff every
+    character of it is in code position.
+
+    Template interpolation nesting is handled with a context stack: ``${``
+    pushes an interpolation frame that tracks ``{}`` depth, so object/function
+    braces inside the interpolation do not prematurely close it, and a nested
+    template unwinds correctly through the stack.
     """
+    n = len(text)
     spans: list[tuple[int, int]] = []
-    i, n = 0, len(line)
+    i = 0
+    # Context stack for template/interpolation nesting.
+    #   ('code',)           — top-level code (always at bottom)
+    #   ('tmpl',)           — inside a `...` text run
+    #   ('interp', depth)   — inside ${...}; depth counts nested {}
+    ctx: list[tuple] = [('code',)]
+    prev_sig = ""   # last significant (non-space) char in a code context
+
     while i < n:
-        ch = line[i]
-        if ch in ('"', "'", '`'):
+        kind = ctx[-1][0]
+        c = text[i]
+
+        if kind == 'tmpl':
+            if c == '`':
+                ctx.pop()
+                i += 1
+                prev_sig = '`'
+                continue
+            if c == '\\' and i + 1 < n:
+                i += 2
+                continue
+            if c == '$' and i + 1 < n and text[i + 1] == '{':
+                ctx.append(('interp', 0))
+                i += 2
+                prev_sig = ""
+                continue
+            # Accumulate a template text run (non-code) until ` or ${
             start = i
-            i += 1
             while i < n:
-                if line[i] == '\\' and i + 1 < n:
+                ch = text[i]
+                if ch == '`':
+                    break
+                if ch == '\\' and i + 1 < n:
                     i += 2
                     continue
-                if line[i] == ch:
-                    i += 1
+                if ch == '$' and i + 1 < n and text[i + 1] == '{':
                     break
                 i += 1
             spans.append((start, i))
-        else:
+            continue
+
+        # ---- 'code' or 'interp' (shared code-handling) ----
+        depth = ctx[-1][1] if kind == 'interp' else None
+
+        # Closing } that ends a ${} interpolation (depth == 0)
+        if kind == 'interp' and c == '}':
+            if depth == 0:
+                ctx.pop()
+                i += 1
+                continue
+            ctx[-1] = ('interp', depth - 1)
             i += 1
+            continue
+
+        # Opening { inside interpolation — track nesting so object/function
+        # braces do not prematurely close the ${}.
+        if kind == 'interp' and c == '{':
+            ctx[-1] = ('interp', depth + 1)
+            i += 1
+            continue
+
+        # ---- Comments ----
+        if c == '/' and i + 1 < n and text[i + 1] == '/':
+            start = i
+            i += 2
+            while i < n and text[i] != '\n':
+                i += 1
+            spans.append((start, i))
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] == '*':
+            start = i
+            i += 2
+            while i + 1 < n and not (text[i] == '*' and text[i + 1] == '/'):
+                i += 1
+            i = min(i + 2, n)
+            spans.append((start, i))
+            continue
+
+        # ---- Single-quoted string ----
+        if c == "'":
+            j = i + 1
+            while j < n:
+                if text[j] == '\\' and j + 1 < n:
+                    j += 2
+                    continue
+                if text[j] == "'":
+                    break
+                if text[j] == '\n':
+                    break
+                j += 1
+            spans.append((i + 1, j))
+            i = j + 1 if (j < n and text[j] == "'") else j
+            prev_sig = "'"
+            continue
+
+        # ---- Double-quoted string ----
+        if c == '"':
+            j = i + 1
+            while j < n:
+                if text[j] == '\\' and j + 1 < n:
+                    j += 2
+                    continue
+                if text[j] == '"':
+                    break
+                if text[j] == '\n':
+                    break
+                j += 1
+            spans.append((i + 1, j))
+            i = j + 1 if (j < n and text[j] == '"') else j
+            prev_sig = '"'
+            continue
+
+        # ---- Template literal ----
+        if c == '`':
+            ctx.append(('tmpl',))
+            i += 1
+            prev_sig = '`'
+            continue
+
+        # ---- Regex literal vs division ----
+        if c == '/':
+            if _regex_after(prev_sig):
+                start = i
+                i += 1
+                in_class = False
+                while i < n:
+                    if text[i] == '\\' and i + 1 < n:
+                        i += 2
+                        continue
+                    if text[i] == '[':
+                        in_class = True
+                    elif text[i] == ']':
+                        in_class = False
+                    elif text[i] == '/' and not in_class:
+                        i += 1
+                        break
+                    elif text[i] == '\n':
+                        break
+                    i += 1
+                while i < n and text[i].isalpha():
+                    i += 1          # flags
+                spans.append((start, i))
+                prev_sig = "1"       # regex is an expression → next / is division
+                continue
+            prev_sig = '/'
+            i += 1
+            continue
+
+        # ---- Regular code character ----
+        if not c.isspace():
+            prev_sig = c
+        i += 1
+
     return spans
 
+
+def _in_spans(pos: int, spans: list[tuple[int, int]]) -> bool:
+    """Binary search: is ``pos`` inside any sorted ``(start, end)`` interval?"""
+    lo, hi = 0, len(spans)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        s, e = spans[mid]
+        if pos < s:
+            hi = mid
+        elif pos >= e:
+            lo = mid + 1
+        else:
+            return True
+    return False
 
 def check_builder_delegation(root: Path, rep: Report) -> None:
     """#1057 — refuse a builder deletion a live delegate still calls.
@@ -3312,26 +3455,24 @@ def check_builder_delegation(root: Path, rep: Report) -> None:
     dev/build/ at all is a foreign target where the check does not apply
     (silent, matching round 2's verified-good client-only closure).
 
-    Lexical context — round 3 (#1057). The ``data-dw-delegate`` arms matched
-    the text anywhere on the line, producing false ERRORs on mentions in
-    comments and string literals. Two layers now filter non-code matches:
+    Lexical context — round 4 (#1057). Rounds 1–3 matched the delegate regex
+    per LINE after stripping comments, which made line-crossing constructs
+    invisible by construction: a ``'data-dw-delegate':`` key and its ``'NAME'``
+    value on separate lines were never on the same line together (false
+    GREEN), and ``${}`` interpolation code was treated as string-interior
+    because the opening backtick was off-line (false GREEN); multiline
+    template bodies and regex literals produced false ERRORs because the
+    per-line string-span filter could not see the opening delimiter.
 
-      1. ``_strip_js_comments`` blanks ``//`` and ``/* */`` text before the
-         regex runs, so a mention in a comment never reaches the matcher.
-      2. ``_js_string_spans`` rejects any match whose structural prefix starts
-         strictly inside a string literal (``'…'``, ``"…"``, or a backtick
-    template), so a
-         mention inside a string value or template body is not a code site.
-
-    Contexts handled: line comment, block comment, single/double-quoted
-    string, template literal. Contexts NOT handled (named, not silently
-    accepted): regex literals containing the pattern (JS division/regex
-    disambiguation is undecable without a parser; no such regex exists in the
-    real sources), and ``${}`` interpolation inside template literals (code
-    inside ``${}`` is treated as string-interior because the opening backtick
-    may be off-line; no delegate site in the real codebase lives inside
-    ``${}``). The ``fromBuilder``/``.dwBuilder`` arms gain the same protection
-    transitively — a mention of those in a comment or string is filtered too.
+    Round 4 replaces the line-oriented scanner with a CHARACTER-STREAM lexer
+    (``_js_noncode_spans``) that walks the whole text in a single pass,
+    tracking line comments, block comments, single/double-quoted strings,
+    template literals WITH their ``${}`` interpolation depth, and regex
+    literals (with the prev-significant-token division/regex heuristic). It
+    emits non-code spans; the delegate regex runs over the raw text and a
+    match is accepted only when its START offset is in code position. A
+    construct that spans lines is visible iff every character of it is in
+    code position — by construction, not by adding per-context cases.
     """
     # Applicability is gated on the native-runtime HOME (dev/build/), not on
     # a single marker file. A directory is structural — it cannot be forged
@@ -3342,8 +3483,16 @@ def check_builder_delegation(root: Path, rep: Report) -> None:
     if not (root / "dev/build").is_dir():
         return
     sources = _builder_delegation_js_sources(root)
-    if not sources:
-        return  # no .js source in dev/build/ or client/ — nothing to say
+    # When dev/build/ exists but no .js sources are found anywhere, the
+    # directory's existence is still a claim that a native runtime lives
+    # here. The #611 rule applies: "examined nothing must not read as a pass."
+    # Falling through to the zero-delegate ERROR (rather than returning) makes
+    # an empty dev/build/ read as the broken scan it is. An ABSENT dev/build/
+    # (no directory at all) stays silent — the check does not apply there.
+    # dev/build as a FILE (not a directory) is treated as absent: is_dir() is
+    # False, the gate does not fire, and the check is N/A. That is a
+    # misconfiguration, but the check's ERROR message says "the native runtime
+    # is present," which would be false for a file.
     delegates: list[tuple[str, str]] = []  # (builder name, "rel/path:line")
     delegate_files: set[str] = set()
     defined: set[str] = set()
@@ -3353,20 +3502,24 @@ def check_builder_delegation(root: Path, rep: Report) -> None:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
-        stripped = _strip_js_comments(text)
-        for i, line in enumerate(stripped.splitlines(), 1):
-            spans = _js_string_spans(line)
-            for m in _BUILDER_DELEGATE_RE.finditer(line):
-                # Reject matches whose structural prefix starts inside a
-                # string literal — a mention, not a code site (#1057 P2).
-                if any(s < m.start() < e for s, e in spans):
-                    continue
-                name = m.group(1) or m.group(2) or m.group(3) or m.group(4)
-                delegates.append((name, "%s:%d" % (rel, i)))
-                delegate_files.add(str(rel))
-            m = _BUILDER_DEF_RE.match(line)
-            if m:
-                defined.add(m.group(1))
+        # Character-stream lexer: one pass over the whole text produces the
+        # non-code spans (comments, string contents, template text, regex
+        # bodies). The delegate regex then runs over the RAW text — not
+        # line-by-line, not comment-stripped — and a match is accepted only
+        # when its START offset is in code position. Line-crossing constructs
+        # are visible by construction: the regex sees the whole file.
+        noncode = _js_noncode_spans(text)
+        for m in _BUILDER_DELEGATE_RE.finditer(text):
+            if _in_spans(m.start(), noncode):
+                continue
+            name = m.group(1) or m.group(2) or m.group(3) or m.group(4)
+            lineno = text.count('\n', 0, m.start()) + 1
+            delegates.append((name, "%s:%d" % (rel, lineno)))
+            delegate_files.add(str(rel))
+        for m in _BUILDER_DEF_RE.finditer(text):
+            if _in_spans(m.start(), noncode):
+                continue
+            defined.add(m.group(1))
     if not delegates:
         rep.add(
             ERROR, "builder delegation",

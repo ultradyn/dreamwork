@@ -11176,3 +11176,134 @@ class TestBuilderDelegation:
             client={"views.js": "function known(r) { return ''; }\n"})
         assert len(rows) == 1 and rows[0][0] == lint.OK, rows
         assert "1 delegate reference(s)" in rows[0][1], rows
+
+    # ---- P1 (#1057 r4): line-crossing constructs (character-stream lexer) ----
+
+    def test_line_crossing_object_literal_delegate_is_caught(self, tmp_path):
+        # The false GREEN that round 3's line-oriented scanner could not see:
+        # ``'data-dw-delegate':`` and its value ``'gone'`` are on SEPARATE
+        # lines. Round 3 applied the regex per line, so the two never appeared
+        # on the same scan. A character-stream lexer sees the whole text.
+        #
+        # Production line that must change for this to fail: the scan loop in
+        # check_builder_delegation — if it goes back to
+        # ``for i, line in enumerate(text.splitlines(), 1)`` the match is
+        # invisible because the key and value are on different lines.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "const X = React.createElement(HOST, {\n"
+                "  'data-dw-delegate':\n"
+                "    'gone',\n"
+                "});\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        errs = [r for r in rows if r[0] == lint.ERROR]
+        assert errs and "gone" in errs[0][1], rows
+
+    def test_interpolation_inside_template_is_real_code(self, tmp_path):
+        # The second false GREEN: ``${...}`` interpolation inside a template
+        # literal is executable code. Round 3 treated the whole template body
+        # (including the ``${}`` interior) as string-interior because the
+        # opening backtick was on the same or a prior line. A character-stream
+        # lexer tracks interpolation depth and emits code positions inside
+        # ``${}``.
+        #
+        # Production line: ``_js_noncode_spans`` — the ``interp`` frame must
+        # push/pop on ``${``/``}`` so code inside the interpolation is visible.
+        # If the lexer treated template interiors as uniform non-code, 'gone'
+        # would be invisible.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "const desc = `${attrs({ 'data-dw-delegate': 'gone' })}`;\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        errs = [r for r in rows if r[0] == lint.ERROR]
+        assert errs and "gone" in errs[0][1], rows
+
+    # ---- P2 (#1057 r4): multiline templates and regex literals (no false red) ----
+
+    def test_multiline_template_body_mention_is_not_a_delegate(self, tmp_path):
+        # Round 3 false RED: a mention inside a template body whose opening
+        # backtick is on a PRIOR line was not recognised as string-interior
+        # (the per-line span filter only sees the current line). A
+        # character-stream lexer tracks the open backtick across lines.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "const desc = `prefix\n"
+                "data-dw-delegate='gone' suffix`;\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
+
+    def test_regex_literal_mention_is_not_a_delegate(self, tmp_path):
+        # Round 3 false RED: a mention inside a regex literal (``/pattern/``)
+        # was not filtered because the line-oriented scanner did not
+        # distinguish regex from division. A character-stream lexer uses the
+        # prev-significant-token heuristic (``/`` after ``=`` is regex) to
+        # mask the regex body as non-code.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "const re = /data-dw-delegate='gone'/.test(x);\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
+
+    def test_division_is_not_swallowed_as_regex(self, tmp_path):
+        # The regex/division heuristic must not treat ``a / b / c`` as a regex
+        # literal and swallow ``b`` as non-code. ``/`` after an identifier is
+        # division (prev-significant-token rule).
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "const ratio = a / b / c;\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
+
+    # ---- P1 (#994 r4): empty dev/build/ must not bypass ----
+
+    def test_empty_dev_build_directory_is_an_error(self, tmp_path):
+        # Round 3 returned silently when dev/build/ existed but no .js sources
+        # were found — the ``if not sources: return`` ran before the
+        # zero-delegate ERROR. An empty dev/build/ that claims a native runtime
+        # is home must not read as a pass (#611). The fix removes that early
+        # return; the zero-delegate ERROR fires with ``0 source file(s)``.
+        #
+        # Production line: the ``if not sources: return`` that USED to sit
+        # between the applicability gate and the scan loop. If it returns,
+        # the check is silent over an empty-but-present runtime home.
+        (tmp_path / "dev/build").mkdir(parents=True)
+        rep = lint.Report()
+        lint.check_builder_delegation(tmp_path, rep)
+        rows = [(l, d) for l, w, d in rep.rows if w == "builder delegation"]
+        assert rows and rows[0][0] == lint.ERROR, rows
+        assert "0 source file(s)" in rows[0][1], rows
+
+    def test_dev_build_as_file_is_silent(self, tmp_path):
+        # dev/build existing as a FILE (not a directory) is a
+        # misconfiguration. The check's applicability is ``is_dir()``; a file
+        # does not meet it, so the check is N/A (silent). The ERROR message
+        # says "the native runtime is present," which would be false for a file.
+        (tmp_path / "dev").mkdir(parents=True)
+        (tmp_path / "dev/build").write_text("not a directory")
+        rep = lint.Report()
+        lint.check_builder_delegation(tmp_path, rep)
+        rows = [(l, d) for l, w, d in rep.rows if w == "builder delegation"]
+        assert rows == [], rows
