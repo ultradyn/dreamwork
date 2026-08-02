@@ -15572,7 +15572,8 @@ class TestUserSettings(unittest.TestCase):
                     body = {}
                 self.assertEqual(
                     body.get("reason"), "settings_store_busy",
-                    "contention lost the settings_store_busy outcome",
+                    f"contention collapsed into changed={body.get('changed')!r} "
+                    "instead of settings_store_busy",
                 )
                 self.assertEqual(status, 503)
                 self.assertEqual(retry_after, "1")

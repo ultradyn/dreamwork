@@ -6061,14 +6061,21 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             if source_of_truth(dw) != "store":
                 self._reject("domain_invalid", detail="no_store"); return
             try:
-                with open_database(
-                        task_store_spec(store_path(dw)),
-                        access=Access.WRITE) as db:
-                    with db.transaction():
-                        changed = db.settings.set_many(
-                            values, user_settings.LOCAL_USER_ID)
-                        result = db.settings.get_many(
-                            list(values), user_settings.LOCAL_USER_ID)
+                for attempt in range(2):
+                    try:
+                        with open_database(
+                                task_store_spec(store_path(dw)),
+                                access=Access.WRITE) as db:
+                            with db.transaction():
+                                changed = db.settings.set_many(
+                                    values, user_settings.LOCAL_USER_ID)
+                                result = db.settings.get_many(
+                                    list(values), user_settings.LOCAL_USER_ID)
+                        break
+                    except Busy:
+                        if attempt:
+                            raise
+                        time.sleep(0.1)
             except BatchSettingValidationError as exc:
                 self._reject("domain_invalid", detail="invalid_settings",
                              extra={"errors": exc.errors}); return
