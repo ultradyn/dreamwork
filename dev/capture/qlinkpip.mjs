@@ -381,14 +381,17 @@ if (!tref.err && tref.qid && tref.taskId) {
      !drove.tickErr && drove.gen > genBefore);
 
   if (drove.gen > genBefore) {
-    // re-find the SAME task ref by its id; assert the ELEMENT + href survive,
-    // not the bare text (raw #NNN in the DOM is true of the unlinked state too)
-    const after = await p.evaluate((taskId) => {
-      const a = document.querySelector('a.taskref[data-task-id="' + taskId + '"]');
-      if (!a) return { survived: false };
+    // re-find the SAME task ref — scoped to the recorded card (data-qid), not
+    // a global query by task id, so a duplicate #NNN elsewhere cannot satisfy
+    // this; assert the ELEMENT + href survive, not the bare text (raw #NNN in
+    // the DOM is true of the unlinked state too).
+    const after = await p.evaluate(({qid, taskId}) => {
+      const card = document.querySelector('.qa[data-qid="' + qid + '"]');
+      const a = card && card.querySelector('a.taskref[data-task-id="' + taskId + '"]');
+      if (!a) return { survived: false, inCard: !!card };
       return { survived: true, href: a.getAttribute('href') || '',
                inMd: !!(a.closest('.md')) };
-    }, tref.taskId);
+    }, {qid: tref.qid, taskId: tref.taskId});
     notes.push('taskref after re-render: ' + JSON.stringify(after));
     ok('the #NNN task-ref link survives a content-changing re-render ' +
        '(anchor element + href intact after the tick; was lost pre-#1008 ' +

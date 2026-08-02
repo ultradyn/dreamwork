@@ -6574,17 +6574,34 @@ class TestTasksRoute(unittest.TestCase):
         self.assertEqual(detail["body"], "body 281")
 
     def test_tasks2_is_a_second_shell_and_tasks_route_resolves_to_the_view(self):
+        # SUPERSEDED RULE (#1013). This test once pinned the OPPOSITE of the
+        # route assertion below. Its old form was:
+        #     if (oldRoute.name !== 'dashboard') process.exit(11);
+        # i.e. /tasks was DELIBERATELY left on the dashboard, so tasks2 was a
+        # second surface the client chose WITHOUT /tasks giving up its view —
+        # the assertion message recorded that decision on purpose.
+        # #1013 reversed it: /tasks?t=N is the href every task-ref link carries
+        # (a.taskref in components.js), and falling through to the dashboard
+        # rendered the wrong view for a click that had navigated to the right
+        # URL. tasks2 is the one task view that exists, so /tasks now resolves
+        # to it — same app shell, the route picks the task view. The decision
+        # is recorded at client/router.js (routeOf, the /tasks|/tasks2 arm).
+        # An open question asks whether /tasks should own this view at all; if
+        # he rules it back to the dashboard, the exit(11) line is what moves,
+        # and this supersession is what makes that reversal legible rather than
+        # a silent edit.
         status, tasks_shell = self._request("/tasks?t=281")
         self.assertEqual(status, 200)
         status, triage_shell = self._request("/tasks2?t=281")
         self.assertEqual(status, 200)
+        # Both routes serve the SAME app shell (one HTML document); the client
+        # router resolves /tasks and /tasks2 alike to the tasks2 view (#1013).
         self.assertEqual(
             triage_shell, tasks_shell,
-            "both routes must receive the same app shell; the client chooses "
-            "the second layout without replacing /tasks")
+            "both routes must receive the same app shell; the client resolves "
+            "both /tasks and /tasks2 to the tasks2 view")
 
-        # #1013 — /tasks?t=N is the href every task-ref link carries, so it
-        # must resolve to the task view, not fall through to the dashboard.
+        # #1013 — /tasks?t=N now resolves to the task view, not the dashboard.
         route = _extract_js_fn(watch.ROUTER_JS, "function routeOf(")
         script = route + textwrap.dedent("""
             const oldRoute = routeOf(new URL('http://watch/tasks?t=281'));
@@ -6699,6 +6716,19 @@ class TestTasksRoute(unittest.TestCase):
                           "a missing id must be explicit, never an empty record")
 
     def test_task_reference_client_uses_one_context_aware_resolver(self):
+        # SUPERSEDED RULE (#1017). This test once asserted a STATIC skip set:
+        #     self.assertIn("parent.closest(TASK_REF_SKIP)", src)
+        # TASK_REF_SKIP always carried `code`, so an inline `#NNN` inside an
+        # isolated <code> was NEVER autolinked — inline code was protected
+        # from autolinking on purpose, the assertion recording that decision.
+        # #1017 reversed it: the skip set is now chosen DYNAMICALLY
+        # (parent.closest(skip)), and a second set TASK_REF_SKIP_NO_CODE omits
+        # `code` so an inline `#NNN` links when the setting is on. He asked for
+        # backtick task-id autolinking AND the escape hatch in one breath, so
+        # the default is ON (backtickTaskLinksOn) and /settings toggles it off.
+        # <pre> stays in both sets: a fenced code block is never a place to
+        # mint a click. The decision is recorded at client/components.js
+        # (TASK_REF_SKIP / TASK_REF_SKIP_NO_CODE / backtickTaskLinksOn).
         src = watch.COMPONENTS_JS
         self.assertIn("function resolveTaskRefs(root)", src)
         self.assertIn("createTreeWalker(root, 4", src)
