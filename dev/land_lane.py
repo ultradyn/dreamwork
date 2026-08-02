@@ -838,21 +838,38 @@ def _declared_warn_index(
     the same ``_warn_row_index`` the gate uses on the observed rows, so label
     padding never reads as a change (#794).
 
-    Returns ``(index, None)`` on success or ``(empty, fault)`` when two declared
-    rows of different text collapse to one identity — an ambiguity the gate
-    cannot adjudicate, so it is the caller's refusal rather than a guess. A row
-    that does not even parse as a WARN row falls back to a ``("raw", ...)``
-    identity: it will not match any observed row, so it authorises nothing and
-    fails closed. The presence of a declaration never reads as its correctness
-    (#994); only an exact identity-set match does.
+    Returns ``(index, None)`` on success or ``(empty, fault)`` on one of two
+    distinct faults (#136 — nothing declared, nothing changed, the declaration
+    could not be read must stay distinct):
+
+    - **unreadable**: a cleaned row does not parse as a WARN row, so its
+      identity is ``("raw", …)`` — it could not name a real observed row. The
+      fault names the offending token. Binding validity to the same
+      ``_warn_row_identity`` the observed rows use means a declaration is valid
+      exactly when it could name a real row, so a typo is caught as unreadable
+      rather than silently authorising nothing and reporting as a mismatch
+      (#1040).
+    - **ambiguous**: two declared rows of different text collapse to one
+      identity, which the gate cannot adjudicate.
+
+    A valid declaration that simply names a row the merge did not observe is NOT
+    unreadable — it is a mismatch, reported by the caller after the merge. The
+    presence of a declaration never reads as its correctness (#994); only an
+    exact identity-set match does.
     """
     cleaned: list[str] = []
     for row in rows:
         cleaned.append(row[2:] if row[:2] in ("+ ", "- ") else row)
+    unreadable = [row for row in cleaned if _warn_row_identity(row)[0] == "raw"]
+    if unreadable:
+        return {}, (
+            f"coordinator WARN declaration could not be read: "
+            f"{unreadable[0]!r} is not a WARN row"
+        )
     try:
         return _warn_row_index(cleaned), None
     except ValueError as exc:
-        return {}, f"declared WARN identity is ambiguous: {exc}"
+        return {}, f"coordinator WARN declaration is ambiguous: {exc}"
 
 
 def _print_rows(label: str, rows: Sequence[str]) -> None:
@@ -1070,7 +1087,7 @@ def land(
     if add_fault or remove_fault:
         return _refuse(
             "lint-baseline",
-            f"coordinator WARN declaration is ambiguous: {add_fault or remove_fault}",
+            add_fault or remove_fault,
             f"declared_add={len(expect_warn_add)}; declared_remove={len(expect_warn_remove)}",
             retained,
             base_state=_base_state(repo, base, base_sha),
