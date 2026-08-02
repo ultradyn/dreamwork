@@ -4283,3 +4283,43 @@ landed anyway. This failure had ALREADY RECURRED TWICE in about two hours when I
 above, so by his own standing instruction it owed a tool on sight. Filed as **`#994`**: report a
 brief's blocking numbers at generation and make the author say which of them the act of dispatching
 could change. Keep reading this entry for the reasoning; do not rely on it to stop the failure.
+
+## A wait-loop whose predicate names its own script waits forever (2026-08-02, #1019/#349, mine, measured)
+
+A wait-loop whose predicate names the script it waits for will wait on itself forever. Tonight the
+coordinator wrote `while pgrep -f 'dispatch6.sh' >/dev/null; do sleep 10; done; bash gate_chain.sh`
+to sequence a gate run behind a dispatch — and the shell running that loop has `dispatch6.sh` in its
+own command line, so the predicate matched the waiter. `dispatch6.sh` had exited minutes earlier;
+the chain never started, five finished branches sat unlanded, and nothing reported an error because
+waiting is not a failure. It looked exactly like a slow gate: `pgrep gate_chain` said RUNNING, the
+output file was empty, and both were true.
+
+This is the same defect as this file's *"A probe that can match itself has no floor"*, moved from a
+COUNT to a CONTROL FLOW, and the move is what made it dangerous: a self-matching count reports a
+number that is too high and someone eventually questions it, while a self-matching wait reports
+nothing at all and looks like patience. The general form: **`pgrep -f <pattern>` in a script whose
+own command line contains `<pattern>` is always non-empty.** Ask the same question the count version
+demands — *what would make this read zero?* — and if the answer is "nothing, ever", the loop is not
+a wait, it is a hang.
+
+Two fixes, both cheap. Wait on the thing you actually own — capture the PID (`cmd & pid=$!;
+wait $pid`) rather than searching for it by name. Or make the pattern unmatchable by the searcher:
+`pgrep -f '[d]ispatch6.sh'`, or match the interpreter form (`ps -eo pid,args | grep -E '^ *[0-9]+
+bash [^ ]*dispatch6'`), which is what finally distinguished a real process from the probe.
+
+Worth noting the diagnosis order, because the wrong probe hid the right one twice: `pgrep -af
+'land_lane'` also matched the LANE PROCESSES, whose briefs quote `land_lane` in prose, so
+"is a gate in flight?" read yes when none was running. Both times the fix was to anchor on the
+command line's leading interpreter rather than on a word that appears in text the process is merely
+carrying. Per DREAMWORK.md's *"a recurring failure mode gets a tool, not another lesson"*, this is
+the self-matching probe's second appearance and it owes one: filed as **#1019**.
+
+**A coda from the repair, which is the same defect wearing different clothes.** Undoing a stray
+commit, I wrote the append and the `git commit` as bare relative paths — and the harness had carried
+the shell's cwd into a LANE worktree three calls earlier, so the lesson about self-matching
+predicates was itself committed to `cx-1016goallink` instead of master. Both failures share one
+shape: **an operation that silently inherits its subject from ambient state.** `pgrep` inherits its
+match set from every process on the box including the asker; a relative path inherits its repository
+from wherever the shell happens to be. Neither reports the inheritance, and both succeed loudly at
+the wrong thing. Address the subject explicitly — an absolute path, an owned PID — whenever the cost
+of writing to the wrong one exceeds the cost of typing it out.
