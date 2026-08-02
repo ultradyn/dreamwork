@@ -4853,3 +4853,16 @@ disagreed with the story — neither looked wrong on its own.
   mechanism: hand-copying carries no check that the id and the claim belong
   together. Quote the title, not just the number, so the mismatch is visible on
   the page. (2026-08-03, coordinator)
+
+- **A sha you noted before the gate is orphaned by the gate's own rebase — cite
+  the preservation tag, not the sha.** The gate rebases a branch immediately
+  before landing it (`#1055`), so every tip sha recorded while the branch was
+  waiting stops being an ancestor of master the moment it lands. I wrote two
+  fold notes tonight citing `0553727b` and `e945f7b8`, and the ledger's citation
+  guard refused both with the right instruction: *"if this is pre-squash history,
+  cite the preservation tag `<branch>-presquash` instead; it is a ref and will
+  not be collected."* The sha still resolved when I wrote it, which is why it
+  looked fine — it was a citation with a scheduled expiry, the same shape as
+  `#1088`'s disposable red-proof expectations. Compose the note AFTER the
+  landing, from the merge sha and the tag; never from a sha captured while the
+  branch was still queued. (2026-08-03, coordinator)
