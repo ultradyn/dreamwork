@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -50,12 +51,36 @@ def launch_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # ledger.py's own imports (watch, ledger_parse, dreamwork_db, …) resolve from
     # the worktree root, which is on sys.path via pytest's cwd.
     _write(root / "dev" / "ledger.py", (REPO / "dev" / "ledger.py").read_text(encoding="utf-8"))
+    # #1118: the fake dispatcher's --prepare path must emit the SAME line the
+    # real dispatcher emits, or the ordering assertion in
+    # test_a_spawned_runner_is_reported_as_spawned_not_not_attempted silently
+    # skips (the line is absent, so its guard declines to run). Derive the
+    # message from the real source rather than hand-writing a literal: a literal
+    # would pass while agreeing only with itself if production's wording drifted,
+    # because the test checks the substring "runner not attempted". This search
+    # is a build-time contract — if production restructures the prepare print,
+    # collection fails loudly instead of a stub that agrees with the assertion.
+    _prepare_match = re.search(
+        r'"(dispatch prepared:[^"\n]*runner not attempted[^"\n]*)"',
+        (REPO / "dev" / "dispatch_lane.py").read_text(encoding="utf-8"),
+    )
+    assert _prepare_match, (
+        "could not derive the prepare-phase message from dev/dispatch_lane.py; "
+        "the faithful #1118 stub cannot mirror it"
+    )
+    monkeypatch.setenv("DISPATCH_PREPARE_MSG", _prepare_match.group(1))
     _write(root / "dev" / "dispatch_lane.py", """
 import argparse, os, subprocess, sys
 p = argparse.ArgumentParser(); p.add_argument('--prompt'); p.add_argument('--prepare', action='store_true'); p.add_argument('rest', nargs=argparse.REMAINDER)
 a = p.parse_args(); cmd = a.rest[1:] if a.rest and a.rest[0] == '--' else a.rest
 prompt = open(a.prompt, encoding='utf-8').read()
-if a.prepare: raise SystemExit(int(os.environ.get('DISPATCH_PREPARE_EXIT', '0')))
+if a.prepare:
+    # #1118: mirror the real dispatcher's prepare-phase line (fed in via
+    # DISPATCH_PREPARE_MSG, derived from dev/dispatch_lane.py at build time) so
+    # the launcher's stdout carries it — the ordering test asserts this line
+    # precedes the derived "launching governed runner" line.
+    print(os.environ.get('DISPATCH_PREPARE_MSG', ''))
+    raise SystemExit(int(os.environ.get('DISPATCH_PREPARE_EXIT', '0')))
 # Production detaches the runner (fork/setsid/execvp) and returns 0 once the
 # child confirms exec — the runner's own exit is never observed by the
 # dispatcher. Simulate that contract: launch the runner, then report only
@@ -461,16 +486,31 @@ def test_a_spawned_runner_is_reported_as_spawned_not_not_attempted(launch_repo: 
     assert "dispatcher exit=0" in result.stdout
     # The "runner not attempted" claim from the prepare pass must come BEFORE
     # the derived "launching governed runner" line, never after the spawn — so
-    # the last runner-state statement is the derived one.
+    # the last runner-state statement is the derived one. #1118: this ORDERING
+    # is the whole point of #1093, but the assertion was silently skipped — the
+    # fake dispatcher printed nothing on --prepare, so prepare_idx was -1 and
+    # the guard below declined to run (#136: a skipped assertion and a passing
+    # one read the same green). The precondition the ordering check depends on
+    # is now ASSERTED (its absence is a failure, not a reason to skip), and the
+    # fake dispatcher's prepare path mirrors the real message (derived from
+    # dev/dispatch_lane.py) so the line is genuinely present. All three lines
+    # land in result.stdout — the prepare print inherits the launcher's captured
+    # stdout, and the launch/spawn lines are the launcher's own prints — so a
+    # single-stream index comparison is sound (no stdout/stderr interleaving).
     prepare_idx = result.stdout.find("runner not attempted")
     launch_idx = result.stdout.find("launching governed runner")
     spawn_idx = result.stdout.find("runner spawned")
-    assert prepare_idx != -1 or launch_idx != -1  # at least one is present
-    if prepare_idx != -1:
-        assert launch_idx > prepare_idx, (
-            "the derived launch line must follow the prepare pass's "
-            "'runner not attempted', not precede or replace it"
-        )
+    assert prepare_idx != -1, (
+        "the prepare pass's 'runner not attempted' line is absent from output; "
+        "the ordering assertion cannot run without it (#1118: a guarded "
+        "assertion that never runs is the defect this test exists to catch)"
+    )
+    assert launch_idx != -1, "the derived 'launching governed runner' line is absent"
+    assert spawn_idx != -1, "the 'runner spawned' summary is absent"
+    assert launch_idx > prepare_idx, (
+        "the derived launch line must follow the prepare pass's "
+        "'runner not attempted', not precede or replace it"
+    )
     assert spawn_idx > launch_idx
 
 
