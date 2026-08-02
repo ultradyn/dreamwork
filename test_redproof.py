@@ -1278,7 +1278,8 @@ class TestLaneOwnedExpectationWarning:
         assert _begin(repo, "router.js", ("owned-expectation.txt",)) == 0
         out, _ = capsys.readouterr()
         warning = out.splitlines()[-1]
-        assert "WARNING" in warning, out
+        assert "WARNING" in warning, (
+            "begin did not warn for owned-expectation.txt:\n" + out)
         assert "owned-expectation.txt" in warning, out
         assert "plausibly part of this lane's work" in warning, out
         assert (
