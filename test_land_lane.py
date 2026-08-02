@@ -1057,11 +1057,13 @@ def test_real_code_beside_a_doc_map_row_still_requires_an_injection(
         "already covered by lint-precheck and lint-comparison: "
         ".dreamwork/docs/doc-map.md"
     ) in result.stdout
-    assert "--require 1 was set" in result.stderr
+    assert "1 injection(s) were required (--require)" in result.stderr
     _assert_base_unmoved(root, before)
 
 
-@pytest.mark.parametrize("beside", ["feature.txt", "briefs/frame.md"])
+@pytest.mark.parametrize(
+    "beside", ["feature.txt", "briefs/frame.md", ".dreamwork/tasks.md"]
+)
 def test_one_document_does_not_lower_the_bar_for_what_is_beside_it(doc_only_repo, beside):
     """`briefs/frame.md` is the sharp case: a `.md` compiled into every dispatch.
 
