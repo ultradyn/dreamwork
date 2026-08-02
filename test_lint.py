@@ -3494,6 +3494,55 @@ class TestDevTaskCitations:
         import inspect
         assert "check_dev_task_citations(dw, rep)" in inspect.getsource(lint.run_checks)
 
+    @staticmethod
+    def _fixture(tmp_path, live_text="", dep_text=""):
+        root = fresh(tmp_path)
+        dw = root / ".dreamwork"
+        dw.mkdir()
+        if live_text:
+            (dw / "tasks.md").write_text(live_text, encoding="utf-8")
+        if dep_text:
+            (dw / "tasks.md.deprecated").write_text(dep_text, encoding="utf-8")
+        return dw
+
+    _LIVE = "## Open\n- **#500** live task\n\n## Recently landed\n- **#600** landed (sha)\n"
+    _DEP = ("## Open\n- **#100** deprecated-open task\n\n"
+            "## Recently landed\n- **#200** deprecated-landed (sha)\n")
+
+    def test_a_citation_into_frozen_history_resolves_not_errors(self, tmp_path):
+        """A landed id that left the live store resolves from the deprecated
+        ledger — resolves-frozen is valid, not resolves-nowhere (#1094)."""
+        dw = self._fixture(tmp_path, self._LIVE, self._DEP)
+        rep = lint.Report()
+        # No known_ids: _resolvable_task_ids reads the fixture ledgers.
+        lint.check_dev_task_citations(
+            dw, rep, diff_text=self._diff("# see (#200) and (#500) and (#999999)"))
+        rows = [(lvl, d) for lvl, what, d in rep.rows if what == "dev task citations"]
+        # #999999 is the ONLY unresolved id; #200 (frozen) and #500 (live) resolve.
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rep.rows
+        assert "#999999" in rows[0][1]
+        assert "#200" not in rows[0][1]
+
+    def test_the_ok_row_names_frozen_resolutions(self, tmp_path):
+        """A reader can tell resolves-frozen from resolves-live (#1094, #136)."""
+        dw = self._fixture(tmp_path, self._LIVE, self._DEP)
+        rep = lint.Report()
+        lint.check_dev_task_citations(
+            dw, rep, diff_text=self._diff("# cite (#200)"))
+        rows = [(lvl, d) for lvl, what, d in rep.rows if what == "dev task citations"]
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rep.rows
+        assert "frozen history" in rows[0][1]
+        assert "tasks.md.deprecated" in rows[0][1]
+
+    def test_a_deprecated_open_id_also_resolves(self, tmp_path):
+        """Both parse_ledger halves are unioned — dopen ids resolve too (#1094)."""
+        dw = self._fixture(tmp_path, self._LIVE, self._DEP)
+        rep = lint.Report()
+        lint.check_dev_task_citations(
+            dw, rep, diff_text=self._diff("# see (#100)"))
+        rows = [(lvl, d) for lvl, what, d in rep.rows if what == "dev task citations"]
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rep.rows
+
 
 class TestHandoffs:
     """#381's delivery half: a landing the ledger writer has not folded yet.
