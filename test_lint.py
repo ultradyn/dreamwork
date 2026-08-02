@@ -10799,6 +10799,12 @@ class TestBuilderDelegation:
     """
 
     def _check(self, tmp_path, *, dev_build=None, client=None, extra=None):
+        # The marker gate (dev/build/src/delegate.js) must be present for the
+        # check to activate. Tests that need it create it via dev_build; the
+        # helper ensures the marker exists unless dev_build is empty (the
+        # client-only and empty-tree tests deliberately omit it).
+        if dev_build is not None and "src/delegate.js" not in dev_build:
+            dev_build = {"src/delegate.js": "", **dev_build}
         for rel, content in (dev_build or {}).items():
             p = tmp_path / "dev/build" / rel
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -10892,6 +10898,22 @@ class TestBuilderDelegation:
         rep = lint.Report()
         lint.check_builder_delegation(tmp_path, rep)
         assert rep.rows == []
+
+    def test_client_only_tree_without_runtime_is_silent(self, tmp_path):
+        # A tree with client/ source but NO native runtime (dev/build/src/
+        # delegate.js) is a foreign target, not a migration in progress. The
+        # zero-delegate ERROR must NOT fire — its message claims the runtime
+        # is present, which would be false. Applicability is gated on the
+        # runtime marker, not on the source-file selector.
+        #
+        # Production line that must change for this to fail: the early return
+        # at the top of check_builder_delegation that tests for the marker —
+        # without it, sources is non-empty (client/*.js) and the zero-delegate
+        # ERROR fires.
+        rows = self._check(
+            tmp_path,
+            client={"views.js": "function artifactRow(r) { return ''; }\n"})
+        assert rows == [], rows
 
     def test_dwbuilder_assignment_is_a_delegate_site(self, tmp_path):
         # The hand-written export shape (wrapper-exports.js): .dwBuilder = 'X'.

@@ -3207,6 +3207,14 @@ def check_builder_delegation(root: Path, rep: Report) -> None:
     delegates on a tree that carries the native runtime is a broken scan, not
     a clean result — ERROR, with the denominator named.
     """
+    # Applicability is gated on the native-runtime marker (delegate.js), not
+    # on the source-file selector: a tree with client/ source but no
+    # dev/build/ is a foreign target, not a migration in progress, and the
+    # zero-delegate ERROR's message ("the native runtime is present") would
+    # be false there. The marker is the one file that defines fromBuilder —
+    # if it is gone, this check has nothing to say.
+    if not (root / "dev/build/src/delegate.js").exists():
+        return
     sources = _builder_delegation_js_sources(root)
     if not sources:
         return  # no dev/build/ or client/ source — this check does not apply
