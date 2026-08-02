@@ -675,7 +675,20 @@ class TestTheBugItWasBuiltFor:
         # subject here so #428's fixed-tree dogfood remains a fixed-tree claim.
         monkeypatch.setattr(lint, "check_in_repo_worktree_drain",
                             lambda dw, rep: None)
+        # #977: task citations resolve against the LIVE ledger, which this
+        # pre-cutover frozen store cannot represent. As with #846 above, keep
+        # the moving external authority out of #428's fixed-tree claim, but
+        # report the exclusion so it cannot read as a clean citation sweep.
+        monkeypatch.setattr(
+            lint, "check_dev_task_citations",
+            lambda dw, rep: rep.add(
+                lint.OK, "dev task citations",
+                "excluded from frozen-tree dogfood: task resolution requires "
+                "the live ledger; dedicated tests and live lint gates bind it"),
+        )
         rep = run(frozen_tree)
+        assert any(what == "dev task citations" and "excluded" in detail
+                   for _, what, detail in rep.rows), rep.render()
         assert not rep.failed, rep.render()
 
     def test_the_canonical_fixture_passes(self):
