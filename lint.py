@@ -4774,21 +4774,74 @@ def _added_dev_task_citations(diff: str) -> list[tuple[str, int, int]]:
     return found
 
 
-def _resolvable_task_ids(dw: Path) -> tuple[set[int], str]:
-    """Known task ids and the ledger source used, through existing readers."""
+def _deprecated_task_ids(dw: Path) -> tuple[set[int], bool]:
+    """Ids in ``tasks.md.deprecated`` — the union of BOTH ``parse_ledger`` halves.
+
+    The frozen history holds ids that left the live store (landed, archived).
+    ``watch.parse_ledger`` yields TWO collections — ``dopen`` and ``dlanded`` —
+    and BOTH must be unioned: ``dlanded`` is the larger half (the landed ids),
+    and a half-union taking only ``dopen`` passes the #199 case while leaving
+    every LANDED id unresolvable (#1094). Measured: dopen=120, dlanded=277,
+    union=397 — a ``dopen``-only fix would miss 277 ids. Returns ints to match
+    the live half's shape.
+
+    Three derivation states, never collapsed (#136, redone #1094 round 2):
+    returns ``(ids, readable)``. ``readable`` is True for BOTH genuinely-empty
+    cases — the file is ABSENT, or the file is present and PARSED — because in
+    both the caller may trust an empty ``ids`` to mean "no frozen ids". It is
+    False ONLY when the file is present but unreadable or unparseable, which is
+    a distinct state: the checker failed to derive the ids, the citation did
+    not fail. Collapsing that into an empty set reported every frozen-only
+    citation as ``cites unresolved task #NNN`` — the checker blaming valid code
+    for its own read failure (#1094 round 2). The bare ``except`` stays (the
+    failure modes are OSError on read plus anything ``parse_ledger`` raises,
+    all meaning "could not read the frozen history"); the difference is it now
+    returns a reported state instead of swallowing into empty. Module-scope
+    ``watch`` import (line ~59) — no cycle; watch's use of lint is lazy.
+    """
+    dep = dw / "tasks.md.deprecated"
+    if not dep.is_file():
+        return set(), True  # absent — genuinely empty, not a failure
+    try:
+        dopen, dlanded = watch.parse_ledger(dep.read_text(encoding="utf-8"))
+    except Exception:
+        return set(), False  # unreadable — the checker failed, not the citation
+    return {int(x) for x in dopen | dlanded}, True
+
+
+def _resolvable_task_ids(dw: Path) -> tuple[set[int], set[int], str, bool]:
+    """Live ids, frozen-history ids, the live source path, and frozen health.
+
+    Returns ``(live_ids, frozen_ids, source, frozen_readable)`` so the caller
+    distinguishes the three resolution states — resolves-live, resolves-frozen,
+    resolves-nowhere — AND the one derivation failure: frozen history present
+    but unreadable. Only resolves-nowhere (against a read frozen history) is an
+    ERROR; a citation into frozen history is valid, and the previous live-only
+    resolution reported it as broken (#1094). When ``frozen_readable`` is False
+    the check cannot tell resolves-frozen from resolves-nowhere, so it must not
+    assert either: it reports unverifiable (WARN), the same shape as
+    ``watch.py unimportable`` elsewhere, never a false ERROR (#1094 round 2).
+    """
     local = store_path(dw)
     shared = shared_store_for_worktree(dw)
+    live: set[int] = set()
+    source = str(dw / "tasks.md")
     for path in (local, shared):
         if path is not None and path.is_file():
-            return ({int(record["id"]) for record in store_records(path.parent)},
-                    str(path))
-    tasks = dw / "tasks.md"
-    try:
-        text = tasks.read_text(encoding="utf-8")
-    except OSError:
-        return set(), str(tasks)
-    return ({int(task_id) for ids, _ in ledger_entries(text) for task_id in ids},
-            str(tasks))
+            live = {int(record["id"]) for record in store_records(path.parent)}
+            source = str(path)
+            break
+    else:
+        tasks = dw / "tasks.md"
+        try:
+            text = tasks.read_text(encoding="utf-8")
+        except OSError:
+            return set(), set(), str(tasks), True
+        live = {int(task_id) for ids, _ in ledger_entries(text)
+                for task_id in ids}
+        source = str(tasks)
+    frozen, frozen_readable = _deprecated_task_ids(dw)
+    return live, frozen, source, frozen_readable
 
 
 def check_dev_task_citations(
@@ -4803,6 +4856,19 @@ def check_dev_task_citations(
     This is deliberately the cheap, mechanical half only. A real landed task
     can still be unrelated to the sentence citing it; task state and semantic
     relevance are not mechanically verified, and every output row says so.
+
+    Sibling-check caveat (#1094 round 2, kept and strengthened): this change
+    unblocks the frozen-history path HERE only. It does NOT touch the sibling
+    docstring-citation guard ``check_docstring_citations`` (#1034), which
+    resolves ids through ``ledger_parse.store_records(...)`` and has NO
+    frozen-history path at all — so it still resolves live-only regardless of
+    this fix. A grep of THIS tip for ``check_docstring_citations`` returns
+    nothing, and that is not evidence the caveat is false: the function lives
+    on the unlanded branch ``glm-1034clean`` (``dev/check_watch_citations.py``)
+    and is therefore absent from this checkout. Verify with
+    ``git show glm-1034clean:dev/check_watch_citations.py`` rather than grepping
+    a tip that cannot contain it — saying so is what stops the next reviewer
+    re-refuting a correct claim from a clone that lacks the sibling branch.
     """
     root = dw.parent
     if diff_text is None:
@@ -4833,21 +4899,56 @@ def check_dev_task_citations(
         return
 
     if known_ids is None:
-        known_ids, source = _resolvable_task_ids(dw)
+        live_ids, frozen_ids, source, frozen_readable = _resolvable_task_ids(dw)
+        known_ids = live_ids | frozen_ids
     else:
+        live_ids = known_ids
+        frozen_ids = set()
         source = "supplied test ledger"
-    missing = sorted((path, line, task_id) for path, line, task_id in hits
-                     if task_id not in known_ids)
+        frozen_readable = True
+    # When the frozen history is unreadable, a citation NOT in the live store
+    # is unclassifiable: it may resolve-frozen (valid) or resolves-nowhere
+    # (ERROR), and the checker cannot tell which. Reporting it as ERROR would
+    # blame valid code for the checker's own read failure — the exact collapse
+    # #136 names, and the one #1094 round 2 reopened on the frozen half. So it
+    # is WARN ("could not check"), the same shape as ``watch.py unimportable``
+    # elsewhere, never a false ERROR. ``known_ids`` already excludes the empty
+    # unreadable frozen set, so this branch keys off ``live_ids`` directly.
+    if frozen_readable:
+        missing = sorted((path, line, task_id)
+                         for path, line, task_id in hits
+                         if task_id not in known_ids)
+        unverifiable: list[tuple[str, int, int]] = []
+    else:
+        missing = []
+        unverifiable = sorted((path, line, task_id)
+                              for path, line, task_id in hits
+                              if task_id not in live_ids)
     for path, line, task_id in missing:
         rep.add(ERROR, "dev task citations",
                 f"{path}:{line} cites unresolved task #{task_id}; file the task "
                 "or remove the numeric attribution")
-    if not missing:
-        rep.add(OK, "dev task citations",
-                f"{len(hits)} newly added citation occurrence(s) resolve to "
-                f"{len({task_id for _, _, task_id in hits})} task(s) across "
-                f"{len(files)} dev/*.py file(s) via {source}; resolution only — "
-                "task state and subject relevance are NOT verified")
+    for path, line, task_id in unverifiable:
+        rep.add(WARN, "dev task citations",
+                f"{path}:{line} cites #{task_id} which is not in the live "
+                "store; frozen history (tasks.md.deprecated) unreadable, so "
+                "the citation could not be checked — resolve the ledger or "
+                "confirm the attribution")
+    if not missing and not unverifiable:
+        cited_ids = {task_id for _, _, task_id in hits}
+        detail = (f"{len(hits)} newly added citation occurrence(s) resolve to "
+                  f"{len(cited_ids)} task(s) across "
+                  f"{len(files)} dev/*.py file(s) via {source}")
+        frozen_resolved = cited_ids & frozen_ids - live_ids
+        if frozen_resolved:
+            detail += (f"; {len(frozen_resolved)} resolved from frozen "
+                       "history (tasks.md.deprecated)")
+        if not frozen_readable:
+            detail += ("; frozen history (tasks.md.deprecated) unreadable — "
+                       "frozen-only citations were NOT checked")
+        detail += ("; resolution only — "
+                   "task state and subject relevance are NOT verified")
+        rep.add(OK, "dev task citations", detail)
 
 
 # ── brief hand-off obligation (#398) ──────────────────────────────────
