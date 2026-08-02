@@ -34,40 +34,25 @@ DEFAULT_BRIEFS = ROOT / ".dreamwork" / "docs" / "briefs"
 BOILERPLATE = ROOT / "briefs" / "boilerplate.md"
 
 
-def scan_core(core: str, predicate, warn_output) -> list[tuple[int, int, str, str | None]]:
+def scan_core(core: str) -> list[tuple[int, int, str, str | None]]:
     """Return state-claim candidates in one core as (line, task, context, word).
 
-    Mirrors the claim-collection loop in ``brief._task_state_claim_report`` so
-    the population it measures is the same one the report sees at generation.
+    Delegates to ``brief._collect_state_claims`` so the population this scanner
+    measures is the one the production report sees — same fence tracking, same
+    ``(line, task)`` keying — rather than a second copy of the fence loop.  The
+    copy once opened ``~~~`` fences but only closed backtick ones, hiding a
+    claim after a closed ``~~~`` fence from the scanner while production saw it
+    (#1028 Finding 3); a scanner that re-implements the thing it measures will
+    drift again.
     """
-    claims: dict[tuple[int, int], tuple[int, int, str, str | None]] = {}
-    in_fence = False
-    for index, line in enumerate(core.splitlines()):
-        if in_fence:
-            if re.match(r"^ {0,3}`{3,}[ \t]*$", line):
-                in_fence = False
-            continue
-        if re.match(r"^ {0,3}(`{3,}|~{3,})", line):
-            in_fence = True
-            continue
-        for match in predicate.finditer(line):
-            key = (index + 1, int(match.group("task")))
-            claims.setdefault(
-                key,
-                (index + 1, int(match.group("task")),
-                 "state predicate", match.group("state")),
-            )
-        for match in warn_output.finditer(line):
-            for cite in re.finditer(r"#(\d+)", match.group("clause")):
-                task = int(cite.group(1))
-                key = (index + 1, task)
-                claims.setdefault(key, (index + 1, task, "WARN output", None))
+    import brief  # noqa: PLC0415
+
+    claims, _ = brief._collect_state_claims(core.splitlines())
     return list(claims.values())
 
 
 def measure(briefs_dir: Path) -> dict:
     sys.path.insert(0, str(ROOT / "dev"))
-    import brief  # noqa: PLC0415
 
     boilerplate_head = BOILERPLATE.read_text(encoding="utf-8").splitlines()[0]
     examined = 0
@@ -81,9 +66,7 @@ def measure(briefs_dir: Path) -> dict:
             skipped.append(path.name)
             continue
         examined += 1
-        candidates = scan_core(
-            text[:cut], brief._TASK_STATE_PREDICATE, brief._TASK_WARN_OUTPUT
-        )
+        candidates = scan_core(text[:cut])
         if candidates:
             by_core.append((path.name, candidates))
 

@@ -1052,27 +1052,19 @@ def _task_state(task: int, ledger: Path) -> str | None:
         raise
 
 
-def _task_state_claim_report(core: str, ledger: Path) -> str:
-    """Report task ids in state-claim contexts against their actual ledger state.
+def _collect_state_claims(
+    lines: list[str],
+) -> tuple[dict[tuple[int, int], tuple[int, int, str, str | None]], int]:
+    """Collect state-claim candidates and count ``#NNN`` citations, fence-aware.
 
-    A brief that says "expect a live WARN for #641" while #641 is ``landed``
-    sends a lane to verify an expectation that can never hold (#1024/#1028).
-    This binds to the SPECIFIC claim — a #NNN that is the grammatical subject
-    of a state predicate ("#641 is live") or inside a WARN-row expected-output
-    claim ("WARN rows (#641)") — not to every citation (the direction-2 trap:
-    flagging every #NNN drowns the real finding).  The prior lane also matched
-    a generic ``expect|fixture ... #NNN`` regex; measured at 66.7% false
-    positives across 77 cores it was DROPPED (#1028).
-
-    REPORT, not REFUSE (#994/#136): an unreadable or empty ledger is reported
-    as NOT CHECKED, never allowed to escape and refuse the dispatch — the tool
-    knows least exactly then.  Claims are keyed by (line, task) so a #NNN on
-    one line matched by more than one regex counts once: deriving "other
-    citations" as ``total - len(claims)`` went negative when one line matched
-    twice (#1028 P2), and a count that can go below zero is a count derived
-    twice.
+    Single source of truth for the fence tracking and ``(line, task)`` keying
+    the state-claim report and the corpus measurement scanner both depend on.
+    The scanner imports this so the population it measures is the one
+    production sees, instead of re-implementing the fence logic and drifting —
+    the measurement copy once opened ``~~~`` fences but only closed backtick
+    ones, so a claim after a closed ``~~~`` fence was hidden from the scanner
+    but seen by production (#1028 Finding 3).
     """
-    lines = core.splitlines()
     claims: dict[tuple[int, int], tuple[int, int, str, str | None]] = {}
     total_citations = 0
     in_fence = False
@@ -1103,6 +1095,31 @@ def _task_state_claim_report(core: str, ledger: Path) -> str:
                 key = (index + 1, task)
                 claims.setdefault(key, (index + 1, task, "WARN output", None))
         total_citations += len(re.findall(r"#\d+", line))
+    return claims, total_citations
+
+
+def _task_state_claim_report(core: str, ledger: Path) -> str:
+    """Report task ids in state-claim contexts against their actual ledger state.
+
+    A brief that says "expect a live WARN for #641" while #641 is ``landed``
+    sends a lane to verify an expectation that can never hold (#1024/#1028).
+    This binds to the SPECIFIC claim — a #NNN that is the grammatical subject
+    of a state predicate ("#641 is live") or inside a WARN-row expected-output
+    claim ("WARN rows (#641)") — not to every citation (the direction-2 trap:
+    flagging every #NNN drowns the real finding).  The prior lane also matched
+    a generic ``expect|fixture ... #NNN`` regex; measured at 66.7% false
+    positives across 77 cores it was DROPPED (#1028).
+
+    REPORT, not REFUSE (#994/#136): an unreadable or empty ledger is reported
+    as NOT CHECKED, never allowed to escape and refuse the dispatch — the tool
+    knows least exactly then.  Claims are keyed by (line, task) so a #NNN on
+    one line matched by more than one regex counts once: deriving "other
+    citations" as ``total - len(claims)`` went negative when one line matched
+    twice (#1028 P2), and a count that can go below zero is a count derived
+    twice.
+    """
+    lines = core.splitlines()
+    claims, total_citations = _collect_state_claims(lines)
 
     claim_list = list(claims.values())
 
