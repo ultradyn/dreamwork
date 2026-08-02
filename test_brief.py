@@ -194,14 +194,40 @@ def _scope_fixture(tmp_path: Path) -> Path:
 
 
 def test_scope_report_names_an_import_derived_test_the_authored_scope_omits():
+    """An import-derived test omitted by the authored scope must be NAMED in the
+    report. Asserted as a property, not a pinned ambient count, so a new file
+    joining the land_lane import graph cannot break it (#1091). Kept on ROOT: the
+    hermetic form is already covered by the _scope_fixture sibling test, and this
+    one guards the real import graph a synthetic tree cannot reproduce."""
     report = brief._scope_derivation_report(
         ROOT, ["dev/land_lane.py", "test_land_lane.py"]
     )
-    assert (
-        "selected 2 existing test(s)" in report
-        and "authored Lane-owns covered 1 of 2" in report
-        and "1 omitted: test_suite_baseline.py" in report
-    ), f"scope derivation lost omitted test_suite_baseline.py: {report}"
+    # Assert against the omitted clause alone, not the whole report string:
+    # the report names files only inside "{N} omitted: {names}", so the
+    # filename must be a token in THAT clause — not merely present somewhere
+    # in the string. A future "selected names" diagnostic that echoes the
+    # filename elsewhere must not satisfy a property that is about omission.
+    # The clause is bounded on the right by "; matched dirs:" (an optional
+    # trailing clause) or by ". This is a report" (the closing sentence); a
+    # parse that ran past either would re-admit the false green a bare
+    # substring test permitted. Filenames contain periods, so the boundary
+    # is the sentence anchor, not a bare dot.
+    omitted = re.search(
+        r"omitted:\s*(.+?)(?:;\s*matched dirs|\. This is a report)", report
+    )
+    omitted_names = omitted.group(1).split() if omitted else []
+    assert "test_suite_baseline.py" in omitted_names, (
+        f"scope derivation did not NAME test_suite_baseline.py as omitted "
+        f"(omitted clause: {omitted_names!r}): {report}"
+    )
+    # Internal consistency at any tree size: the "of N" denominator equals the
+    # "selected N" count (both derive from len(existing)).
+    selected = int(re.search(r"selected (\d+) existing test", report).group(1))
+    covered_of = int(re.search(r"covered \d+ of (\d+)", report).group(1))
+    assert selected == covered_of, (
+        f"scope derivation denominator mismatch (selected {selected} vs "
+        f"covered-of {covered_of}): {report}"
+    )
 
 
 def test_scope_report_reads_the_base_tree_not_a_dirty_authored_checkout(tmp_path):
