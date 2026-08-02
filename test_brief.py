@@ -179,6 +179,68 @@ def test_prepared_build_composes_before_the_worktree_exists(tmp_path):
     assert f"Base sha: {base}" in text
 
 
+def _scope_fixture(tmp_path: Path) -> Path:
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "widget.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "test_widget.py").write_text(
+        "from pkg import widget\ndef test_widget(): assert widget.VALUE == 1\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "test_import_only.py").write_text(
+        "from pkg import widget\ndef test_unrelated(): assert True\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def test_scope_report_names_an_import_derived_test_the_authored_scope_omits():
+    report = brief._scope_derivation_report(
+        ROOT, ["dev/land_lane.py", "test_land_lane.py"]
+    )
+    assert (
+        "selected 2 existing test(s)" in report
+        and "authored Lane-owns covered 1 of 2" in report
+        and "1 omitted: test_suite_baseline.py" in report
+    ), f"scope derivation lost omitted test_suite_baseline.py: {report}"
+
+
+def test_scope_report_does_not_double_count_a_derived_test_already_named(tmp_path):
+    root = _scope_fixture(tmp_path)
+    report = brief._scope_derivation_report(
+        root, ["pkg/widget.py", "test_widget.py", "test_import_only.py"]
+    )
+    assert "selected 2 existing test(s)" in report, report
+    assert "authored Lane-owns covered 2 of 2; 0 omitted" in report, report
+
+
+def test_scope_report_faults_when_a_source_file_derives_no_existing_test(tmp_path):
+    (tmp_path / "worker.rs").write_text("fn main() {}\n", encoding="utf-8")
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief._scope_derivation_report(tmp_path, ["worker.rs"])
+    message = str(excinfo.value)
+    assert "scope derivation FAULT: selected 0 existing test(s)" in message, message
+    assert "name=0 import=0 map=0" in message, message
+
+
+def test_scope_report_reports_an_irrelevant_import_without_refusing(tmp_path):
+    root = _scope_fixture(tmp_path)
+    report = brief._scope_derivation_report(
+        root, ["pkg/widget.py", "test_widget.py"]
+    )
+    assert "1 omitted: test_import_only.py" in report, report
+    assert "This is a report, not an edit grant" in report, report
+
+
+@pytest.mark.parametrize("owns", [["pkg/"], ["pkg/*.py"]])
+def test_scope_report_does_not_treat_a_directory_or_glob_as_a_gate_diff(
+    tmp_path, owns,
+):
+    _scope_fixture(tmp_path)
+    report = brief._scope_derivation_report(tmp_path, owns)
+    assert report.startswith("scope derivation NOT CHECKED"), report
+    assert "found 0 existing non-inert files" in report, report
+
+
 # --- direction 2, construction 1: an EMPTY authored core still emits --------
 
 def test_empty_core_is_refused(lane):
