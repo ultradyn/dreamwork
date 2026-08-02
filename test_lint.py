@@ -11060,3 +11060,22 @@ class TestBuilderDelegation:
         lint.run_checks(dw, lint.load_watch(), rep)
         whats = [w for _, w, _ in rep.rows]
         assert "builder delegation" in whats
+
+    def test_dev_build_dist_is_not_excluded_from_the_scan(self, tmp_path):
+        # The exclusion targets client/dist (the built bundle), not any path
+        # component named 'dist'. A delegate under dev/build/dist/ must be
+        # scanned — a missing builder there is a real deletion, not generated
+        # noise. The old exclusion (`"dist" in parts`) skipped it; the narrow
+        # form (`client/dist`) does not.
+        #
+        # Production line that must change for this to fail: the exclusion
+        # condition in _builder_delegation_js_sources — the broad
+        # `"dist" in parts` skips this path; the narrow form does not.
+        rows = self._check(
+            tmp_path,
+            dev_build={"dist/bundle.js": (
+                "const Row = fromBuilder('gone', function (p) {\n"
+                "  return gone(p.row);\n"
+                "});\n")})
+        errs = [r for r in rows if r[0] == lint.ERROR]
+        assert errs and "gone" in errs[0][1], rows

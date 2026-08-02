@@ -3130,6 +3130,11 @@ def _builder_delegation_js_sources(root: Path) -> list[Path]:
     populations and mask a source-level deletion. The boundary is named in
     the check's report: a delegate or builder outside `dev/build/` or `client/`
     source is invisible here.
+
+    The exclusion is scoped to `client/dist` specifically — a `dist` under
+    `dev/build/` is not the bundle and must be scanned (there is none today,
+    but narrowing the exclusion makes that a property of the code, not of the
+    current tree).
     """
     found: list[Path] = []
     for sub in ("dev/build", "client"):
@@ -3137,7 +3142,8 @@ def _builder_delegation_js_sources(root: Path) -> list[Path]:
         if not base.is_dir():
             continue
         for path in sorted(base.rglob("*.js")):
-            if "dist" in path.relative_to(root).parts:
+            parts = path.relative_to(root).parts
+            if len(parts) >= 2 and parts[0] == "client" and parts[1] == "dist":
                 continue
             found.append(path)
     return found
