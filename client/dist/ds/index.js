@@ -2888,7 +2888,9 @@ var DreamworkDesign = (() => {
     if (agents.length)
       h += agents.map((a) => `<div class="stagent"><span class="stname">${esc(String(a.name || "?"))}</span><span class="stdoing">${mdInline(String(a.in_flight || "—"))}</span></div>`).join("");
     const facts = [];
-    if (s.queue) facts.push(esc(`${s.queue.in_progress || 0} in flight · ${s.queue.pending || 0} pending`));
+    if (s.queue && typeof s.queue === "object" && typeof s.queue.in_progress === "number" && typeof s.queue.pending === "number")
+      facts.push(esc(`${s.queue.in_progress} in flight · ${s.queue.pending} pending`));
+    else if ("queue" in s) facts.push("queue depth unreadable");
     if (typeof s.pending_events === "number" && s.pending_events)
       facts.push(esc(`${s.pending_events} to drain`));
     else if ("pending_events" in s && s.pending_events == null)

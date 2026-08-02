@@ -162,8 +162,22 @@ function statusBlock(s, handoffs) {
   //    timestamp — a dashboard whose thesis is liveness should say "2m old",
   //    and it should keep counting while he watches it.
   const facts = [];
-  if (s.queue) facts.push(esc(`${s.queue.in_progress || 0} in flight · ` +
-                              `${s.queue.pending || 0} pending`));
+  // THREE STATES FROM THE DATA — the same rule as pending_events below, and
+  // the data layer (#965) now answers all three. `queue` is an object when the
+  // dreamers roster was readable, and a genuine zero is the all-clear that
+  // renders; `null` when the roster is THERE and could not be read; absent when
+  // a target never wrote one. A number is a measurement, and `null` must not
+  // borrow zero's pixels — a count that answered 0 there would paint the
+  // dashboard's most reassuring state for its least reassuring reason, and
+  // permanently (the fault does not clear on the next tick). `== null` catches
+  // null and undefined, and the two `|| 0` are gone: a malformed object has no
+  // count to render, and a manufactured 0 was the degrade-to-zero shape (#868)
+  // this panel exists to refuse.
+  if (s.queue && typeof s.queue === 'object' &&
+      typeof s.queue.in_progress === 'number' &&
+      typeof s.queue.pending === 'number')
+    facts.push(esc(`${s.queue.in_progress} in flight · ${s.queue.pending} pending`));
+  else if ('queue' in s) facts.push('queue depth unreadable');
   // #655 — batched events waiting for the coordinator to drain (receipts after
   // the journal cursor; the same set `journal_consume.py pending` lists). The
   // coordinator drains them itself each tick, so this is a liveness signal
