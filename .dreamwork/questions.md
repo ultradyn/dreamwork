@@ -7,9 +7,13 @@
   You ruled that the React migration is the main near-term goal, and told me to plan it out and
   file it all. That is done — 27 tasks, `#1057`–`#1083`. I then resolved the dependency graph,
   and it has a single choke point that is yours, not the loop's.
-  - **~20 of the 27 sit behind `#1060`**, whose stated dependency is *"authenticated QaCard
-    ingestion checkpoint recorded on `#630`"*. The chain is
-    `#1060 → #1061 → #1062 → #1063 → #1064 → #1065 → #1066/#1067 → #1071…#1081`.
+  - **22 of the 24 still-open tasks sit behind `#1060`**, whose stated dependency is
+    *"authenticated QaCard ingestion checkpoint recorded on `#630`"*. Exact, after resolving the
+    planner's numbering by hand (task N = `#1056+N` — the bodies say "tasks 9 and 11", not ledger
+    ids, which is why `ledger.py counts` reports this chain as carrying **no** blocker at all):
+    `#1060` `#1061` `#1062` `#1063` `#1064` `#1065` `#1066` `#1067` `#1069` `#1070` `#1071` `#1072`
+    `#1073` `#1074` `#1075` `#1076` `#1077` `#1078` `#1079` `#1080` `#1081` `#1082`.
+    (`#1082` also wants `#1047`/`#1048` or an explicit grandfather decision.)
   - **A lane physically cannot do it.** It needs authentication and it *uploads to an external
     service*. That is outward-facing and your call. `#630`'s own note says so in terms, and says
     the lane must not describe the local half as if it were the end-to-end proof.
@@ -21,9 +25,21 @@
   - **What I need:** either run that one wrapper through claude.ai/design and tell me whether it
     renders acceptably, or tell me to proceed on the assumption it does and accept the rework risk
     across nine wrappers if it does not.
-  - **Not blocking everything.** `#1057` (the port's root — *"land before any builder-deleting
-    flip"*) is in flight now, and `#1068` depends on nothing and is dispatchable. I am working
-    those meanwhile, so the port is not idle — but the long chain does not start without you.
+  - **CORRECTION 2026-08-03 (coordinator): the "meanwhile work" this entry named is now done, so
+    the reassurance below has expired.** `#1057` has landed (`3e33e0ed`) and so has `#1068`. Of the
+    27, three are landed (`#1057`, `#1058`, `#1068`); of the 24 open, **exactly two are dispatchable
+    without you** — `#1059` and `#1083` — and both are *scoping* tasks whose lanes have already
+    delivered and whose branches are sitting in my merge-gate queue right now. When those two land,
+    the React port has **no remaining work I can dispatch**. I am keeping the fleet busy on the
+    tool/infrastructure backlog (`#1054`, `#1115`, `#1119`, `#1120`, `#1114`, `#1118`), which is
+    real work but is not the goal you named.
+  - **The cheapest unblock, if you'd rather not do it by hand: authorise me to run the ingestion
+    from my session** against your claude.ai/design account. I have the tooling. I would create a
+    new project for it, report exactly what ingested and what degraded, and touch nothing else. I
+    have not done it unasked because it is an external publish against your account. Otherwise:
+    run it yourself and tell me the verdict, or tell me to proceed and accept the rework risk
+    (`react-migration-increments.md:304` says the correct response to a bad ingestion is to *stop*,
+    so proceeding anyway is an override I'd record as one, not a quiet exception).
 
 - **P1 · 2026-08-03 — do I widen the native-agent sandbox to reach `../.worktrees/`, or route your
   "use an Opus 5 subagent" instructions to a different agent? (#1009)**
