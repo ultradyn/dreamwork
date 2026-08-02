@@ -25,9 +25,12 @@ from __future__ import annotations
 import argparse
 import ast
 from dataclasses import dataclass
+import errno
+import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import signal
 import subprocess
 import sys
 from typing import Sequence
@@ -57,6 +60,136 @@ GATES = (
     "repo-wide-guards",
     "lint-comparison",
 )
+
+
+# ---------------------------------------------------------------------------
+# The gate-in-flight breadcrumb (#1120).
+#
+# ``land_lane`` detaches the main checkout, builds the merge, runs the gates,
+# and only then fast-forwards ``master``. Interrupted anywhere after the
+# detach it leaves HEAD on a merge commit NO GATE PHASE EXAMINED, while
+# ``master`` is correctly unmoved — and ``git log`` follows HEAD, so a
+# detached HEAD sitting on ``Merge glm-XXXX`` reads exactly like a landed
+# branch to any reader that asks "what is the latest commit" without first
+# asking "am I on a branch". This breadcrumb is the record that makes the
+# state DISCOVERABLE rather than merely rarer.
+#
+# The breadcrumb is the piece that matters most because the ``finally``
+# reattach cannot cover SIGKILL, ``os._exit``, or a segfault — all of which
+# skip ``finally`` (#651: say plainly which signals are covered and which
+# are not, rather than implying the hole is closed). The handler covers
+# SIGTERM/SIGINT and an unexpected exception; the breadcrumb covers what
+# those cannot. A reader (the next run's preflight, below) distinguishes
+# THREE states (#136: three zero-states, not two): no file / file with a
+# LIVE pid / file with a DEAD pid. A live pid means a gate is running RIGHT
+# NOW and the checkout is detached by design; a dead pid means a gate died
+# mid-flight and the checkout must be recovered.
+GATE_IN_FLIGHT_PATH = Path(".dreamwork") / "gate-in-flight.json"
+
+
+def _pid_alive(pid: int) -> bool:
+    """Whether a process id is currently live (``kill(pid, 0)``)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # The pid exists but is owned by another user — treat as live,
+        # because a reader cannot distinguish "another user's gate" from
+        # "my gate under a different uid" without that being a dead-state
+        # false alarm.
+        return True
+    except OSError as exc:
+        if exc.errno == errno.ESRCH:
+            return False
+        return True
+    return True
+
+
+@dataclass(frozen=True)
+class GateInFlight:
+    """The three states (#136) a reader must distinguish, encoded by data.
+
+    * ``path is None`` — no breadcrumb file: no gate in flight.
+    * ``path`` set, ``pid`` LIVE — a gate is running right now.
+    * ``path`` set, ``pid`` DEAD — a gate died mid-flight; recover.
+    """
+
+    path: Path | None
+    branch: str
+    merge_sha: str
+    phase: str
+    pid: int
+
+    @property
+    def present(self) -> bool:
+        return self.path is not None
+
+    @property
+    def pid_live(self) -> bool:
+        return self.path is not None and _pid_alive(self.pid)
+
+
+def _read_gate_in_flight(repo: Path) -> GateInFlight:
+    """The current gate-in-flight breadcrumb, or an absent sentinel.
+
+    ``#136``: a file that is present but unparseable is a third state
+    distinct from absent and genuinely empty, and it is read as "the
+    breadcrumb could not be read" rather than collapsed into "no gate".
+    A reader that cannot tell those apart reports a dead gate as clean.
+    """
+    path = repo / GATE_IN_FLIGHT_PATH
+    if not path.is_file():
+        return GateInFlight(None, "", "", "", 0)
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        # Unparseable is a fault, not "no gate": a dead gate whose
+        # breadcrumb was half-written reads exactly like no gate to a
+        # reader that treats parse failure as absence (#136). Surface it
+        # as a dead gate so the refusal below names it.
+        return GateInFlight(path, "<unreadable>", "<unreadable>", "<unreadable>", 0)
+    try:
+        return GateInFlight(
+            path,
+            str(record.get("branch", "")),
+            str(record.get("merge_sha", "")),
+            str(record.get("phase", "")),
+            int(record.get("pid", 0)),
+        )
+    except (TypeError, ValueError):
+        return GateInFlight(path, "<unreadable>", "<unreadable>", "<unreadable>", 0)
+
+
+def _write_gate_in_flight(
+    repo: Path, *, branch: str, base: str, merge_sha: str, phase: str
+) -> None:
+    """Write (or update) the gate-in-flight breadcrumb naming this phase.
+
+    Called once after the detach succeeds and again as each gate phase
+    begins, so the breadcrumb always names the FURTHEST phase reached. A
+    reader finding a dead breadcrumb then knows the gate died at exactly
+    ``phase``, not merely "somewhere during the run".
+    """
+    path = repo / GATE_IN_FLIGHT_PATH
+    record = {
+        "branch": branch,
+        "base": base,
+        "merge_sha": merge_sha,
+        "phase": phase,
+        "pid": os.getpid(),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _clear_gate_in_flight(repo: Path) -> None:
+    """Delete the breadcrumb on a clean exit (landing or refusal)."""
+    path = repo / GATE_IN_FLIGHT_PATH
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def _gate_coverage_line(passed: Sequence[str]) -> str:
@@ -1422,6 +1555,33 @@ def _refuse(
     return 1
 
 
+def _refuse_dead_gate(repo: Path, crumb: GateInFlight, base: str) -> int:
+    """Refuse on a dead gate-in-flight breadcrumb, naming the state (#1120).
+
+    Refuses on the breadcrumb, NOT on detachment alone: someone may detach
+    the main checkout for their own reasons, and a refusal that fires on
+    any detached HEAD would false-alarm on that. The breadcrumb is this
+    tool's OWN record that IT left the checkout detached mid-gate, so
+    reading it is reading our own state, not inferring from a symptom.
+    """
+    path_text = str(crumb.path) if crumb.path else "<none>"
+    pid_state = "LIVE" if crumb.pid_live else "DEAD"
+    print(
+        f"gate-in-flight: {pid_state} breadcrumb at {path_text} "
+        f"(branch={crumb.branch}; merge={crumb.merge_sha}; phase={crumb.phase}; pid={crumb.pid})",
+        file=sys.stderr,
+    )
+    return _refuse(
+        "gate-in-flight",
+        f"a previous land_lane died mid-flight leaving a {pid_state} gate-in-flight breadcrumb",
+        f"breadcrumb={path_text}; branch={crumb.branch}; merge_sha={crumb.merge_sha}; "
+        f"phase_reached={crumb.phase}; pid={crumb.pid} ({pid_state}); "
+        f"recovery: `git switch {base}` in {repo}, then delete {path_text}",
+        f"branch={crumb.branch}; dead-gate-breadcrumb={path_text}",
+        base_state=_base_state(repo, base, None),
+    )
+
+
 def _lint(repo: Path) -> tuple[subprocess.CompletedProcess[str], tuple[str, ...] | None]:
     result = _run([sys.executable, "lint.py"], repo)
     _relay(result)
@@ -1467,6 +1627,14 @@ def land(
             retained,
             base_state=_base_state(repo, base, None),
         )
+    # #1120: refuse on OUR OWN dead gate-in-flight breadcrumb, not on a
+    # detached checkout in general. A dead breadcrumb means a previous
+    # land_lane left the main checkout detached at an ungated merge; a live
+    # one means another land_lane is running right now. Either way, running
+    # again would detach over a checkout whose state we did not establish.
+    existing_crumb = _read_gate_in_flight(repo)
+    if existing_crumb.present:
+        return _refuse_dead_gate(repo, existing_crumb, base)
     lane = worktrees.get(branch)
     if lane is None:
         return _refuse(
@@ -1771,10 +1939,59 @@ def land(
         )
     print(f"detached at {base_sha}: {base} does not move until every gate in {list(GATES)!r} passes")
 
+    # #1120: the checkout is now DETACHED. From here until the fast-forward,
+    # an interruption (SIGTERM/SIGINT/exception) would leave HEAD on an
+    # ungated merge that reads as a landed branch to anything following HEAD.
+    # Two guards: a breadcrumb naming the state (discoverable) and signal
+    # handlers that reattach (silent recovery for the common case).
+    #
+    # The breadcrumb is the load-bearing piece: the signal handler covers
+    # SIGTERM/SIGINT but NOT SIGKILL, ``os._exit``, or a segfault — all of
+    # which skip Python's signal machinery entirely (#651). ``finally``
+    # also does not run under those. The breadcrumb survives all of them
+    # because it is a file, and the next run's preflight reads it.
+    _write_gate_in_flight(
+        repo, branch=branch, base=base, merge_sha="<pre-merge>", phase="post-detach",
+    )
+
+    _prev_sig: dict[str, signal.Handlers] = {}
+
+    def _gate_signal_handler(signum: int, frame: object) -> None:
+        """Reattach the checkout on interruption, then die.
+
+        LEAVES the breadcrumb: reattaching is recovery, the breadcrumb is the
+        record. A reader finding a dead breadcrumb with a reattached checkout
+        can still tell 'a gate died at phase X' from 'no gate ran' (#1120
+        Direction 2). Raising propagates the exit so no later phase runs.
+        """
+        _restore(repo, base, base_sha)
+        raise SystemExit(f"land_lane interrupted by signal {signum}; checkout reattached to {base}")
+
+    def _install_gate_signals() -> None:
+        _prev_sig["SIGTERM"] = signal.signal(signal.SIGTERM, _gate_signal_handler)
+        _prev_sig["SIGINT"] = signal.signal(signal.SIGINT, _gate_signal_handler)
+
+    def _restore_gate_signals() -> None:
+        for name in ("SIGTERM", "SIGINT"):
+            if name in _prev_sig:
+                signal.signal(getattr(signal, name), _prev_sig[name])
+                del _prev_sig[name]
+
+    _install_gate_signals()
+
     merged_sha = "not-created"
 
     def refuse_gated(phase: str, reason: str, examined: str) -> int:
-        """Refuse a post-merge phase, restoring the checkout first."""
+        """Refuse a post-merge phase, restoring the checkout first.
+
+        A clean refusal is NOT a gate death: the gate ran, examined something,
+        and refused — the checkout was restored to base and master is unmoved.
+        So the breadcrumb is CLEARED here (no death to record) and the signal
+        handlers are restored to their defaults. Only the crash path (signal
+        or unexpected exception) leaves the breadcrumb behind.
+        """
+        _clear_gate_in_flight(repo)
+        _restore_gate_signals()
         faults = _restore(repo, base, base_sha)
         return _refuse(
             phase,
@@ -1800,6 +2017,9 @@ def land(
             f"base={base_sha}; branch={branch_sha}; worktree={lane}",
         )
     merged_sha = _git_text(repo, "rev-parse", "HEAD") or "UNKNOWN"
+    _write_gate_in_flight(
+        repo, branch=branch, base=base, merge_sha=merged_sha, phase="merge-identity",
+    )
 
     # The gates below examine whatever HEAD is; prove it is the merge of the
     # two shas preflight read, so no gate can pass against the branch tree, a
@@ -1912,6 +2132,9 @@ def land(
     # live or derived artifact that lint.py reads; only the post-gate reading
     # can catch a WARN introduced by that refresh. The cheap duplicate closes
     # the common case before either pytest invocation spends the lane's budget.
+    _write_gate_in_flight(
+        repo, branch=branch, base=base, merge_sha=merged_sha, phase="lint-precheck",
+    )
     lint_precheck = compare_lint("lint-precheck", "post-merge precheck")
     if lint_precheck is not None:
         return lint_precheck
@@ -1981,6 +2204,9 @@ def land(
     selection = tuple(dict.fromkeys((*tests, *unnamed)))
     print(_test_relevance_line(repo, selection, diff.changed, data_tests=data_tests))
 
+    _write_gate_in_flight(
+        repo, branch=branch, base=base, merge_sha=merged_sha, phase="named-tests",
+    )
     named = _run(["just", "pytest", *selection], repo)
     _relay(named)
     if named.returncode:
@@ -1992,6 +2218,9 @@ def land(
         )
     passed.append("named-tests")
 
+    _write_gate_in_flight(
+        repo, branch=branch, base=base, merge_sha=merged_sha, phase="guard-selection",
+    )
     guard_list = _run([sys.executable, "dev/repo_wide_guards.py", "list"], repo)
     _relay(guard_list)
     guards = guard_list.stdout.split()
@@ -2008,6 +2237,9 @@ def land(
         )
     passed.append("guard-selection")
     print(f"repo-wide guard selection: {len(guards)} test path(s): {' '.join(guards)}")
+    _write_gate_in_flight(
+        repo, branch=branch, base=base, merge_sha=merged_sha, phase="repo-wide-guards",
+    )
     guarded = _run(["just", "pytest", *guards], repo)
     _relay(guarded)
     if guarded.returncode:
@@ -2018,6 +2250,9 @@ def land(
         )
     passed.append("repo-wide-guards")
 
+    _write_gate_in_flight(
+        repo, branch=branch, base=base, merge_sha=merged_sha, phase="lint-comparison",
+    )
     lint_comparison = compare_lint("lint-comparison", "post-gates")
     if lint_comparison is not None:
         return lint_comparison
@@ -2034,6 +2269,10 @@ def land(
 
     back = _restore(repo, base, base_sha)
     if back is not None:
+        _restore_gate_signals()
+        # Restore FAILED: the checkout may still be detached at the gated
+        # merge. LEAVE the breadcrumb so the next run names the state rather
+        # than reading a detached HEAD as clean.
         return _refuse(
             "advance",
             f"could not return to {base} to fast-forward it onto the gated merge",
@@ -2042,6 +2281,10 @@ def land(
             base_state=_base_state(repo, base, base_sha),
             alert=f"{back}; the checkout may still hold the gated merge {merged_sha}",
         )
+    # Restore succeeded: the checkout is safely on base. All gates passed, so
+    # the merge was gated and the state is safe — clear the breadcrumb.
+    _clear_gate_in_flight(repo)
+    _restore_gate_signals()
     forward = _git(repo, "merge", "--ff-only", merged_sha)
     landed = _git_text(repo, "rev-parse", "--verify", f"refs/heads/{base}")
     if forward.returncode or landed != merged_sha:

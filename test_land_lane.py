@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 
@@ -2617,3 +2620,262 @@ def test_just_recipe_requires_branch_but_leaves_empty_tests_for_named_refusal():
     )
     assert result.returncode == 0, result.stderr
     assert "python3 dev/land_lane.py lane test_land_lane.py" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# #1120: an interrupted land_lane leaves the main checkout detached at an
+# ungated merge, which reads as a successful landing to anything following
+# HEAD. These tests cover the breadcrumb's three states (#136: no file /
+# live pid / dead pid), the refusal on a dead breadcrumb, and — critically —
+# a REAL SIGTERM delivered to a REAL land_lane subprocess, which proves the
+# signal handler is reached rather than merely that the handler runs when
+# called from a mock.
+
+
+def _write_dead_breadcrumb(root: Path, *, branch: str, merge_sha: str, phase: str) -> Path:
+    """Write a gate-in-flight breadcrumb with a pid guaranteed dead (#136).
+
+    ``os.kill(0, 0)`` is NOT "no such process" on Linux — pid 0 means "the
+    calling process's group", so it is always live. To guarantee a dead pid,
+    spawn a child that exits immediately, reap it, and use its (now-recycled)
+    pid: that pid refers to a process that no longer exists, so
+    ``_pid_alive`` reports DEAD — the state a real SIGKILLed gate would leave
+    behind (SIGKILL skips the signal handler, so the breadcrumb survives and
+    the checkout stays detached).
+    """
+    child = subprocess.Popen([sys.executable, "-c", "import sys; sys.exit(0)"])
+    child.wait()
+    dead_pid = child.pid
+    crumb = root / ".dreamwork" / "gate-in-flight.json"
+    crumb.parent.mkdir(parents=True, exist_ok=True)
+    crumb.write_text(json.dumps({
+        "branch": branch,
+        "base": "master",
+        "merge_sha": merge_sha,
+        "phase": phase,
+        "pid": dead_pid,
+    }, sort_keys=True) + "\n", encoding="utf-8")
+    return crumb
+
+
+def _write_live_breadcrumb(root: Path, *, branch: str, merge_sha: str, phase: str) -> Path:
+    """Write a gate-in-flight breadcrumb with THIS process's pid (LIVE)."""
+    crumb = root / ".dreamwork" / "gate-in-flight.json"
+    crumb.parent.mkdir(parents=True, exist_ok=True)
+    crumb.write_text(json.dumps({
+        "branch": branch,
+        "base": "master",
+        "merge_sha": merge_sha,
+        "phase": phase,
+        "pid": os.getpid(),
+    }, sort_keys=True) + "\n", encoding="utf-8")
+    return crumb
+
+
+def test_dead_gate_breadcrumb_refuses_and_names_the_state(landing_repo):
+    """A dead gate-in-flight breadcrumb must refuse with the recovery command."""
+    root, lane = landing_repo
+    before = _git(root, "rev-parse", "HEAD")
+    crumb = _write_dead_breadcrumb(
+        root, branch="lane", merge_sha="deadbeefdeadbeef", phase="named-tests",
+    )
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "REFUSE phase=gate-in-flight" in result.stderr
+    # The refusal names the phase reached — the discriminating field (#1094:
+    # a field no message reads is decoration). A dead gate at named-tests
+    # must read differently from "no gate ran".
+    assert "phase_reached=named-tests" in result.stderr
+    # And the merge sha and the dead pid state.
+    assert "merge=deadbeefdeadbeef" in result.stderr
+    assert "DEAD" in result.stderr
+    # Recovery command names the base and the breadcrumb path.
+    assert "git switch master" in result.stderr
+    assert str(crumb) in result.stderr
+    # master unmoved; the refuse happened before the merge.
+    assert _git(root, "rev-parse", "--verify", "refs/heads/master") == before
+    _assert_retained(root, lane)
+
+
+def test_live_gate_breadcrumb_refuses_as_a_gate_running_now(landing_repo):
+    """A LIVE breadcrumb means another gate is running right now — also refuse."""
+    root, lane = landing_repo
+    _write_live_breadcrumb(
+        root, branch="lane", merge_sha="cafebabecafebabe", phase="repo-wide-guards",
+    )
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "REFUSE phase=gate-in-flight" in result.stderr
+    assert "LIVE" in result.stderr
+    assert "phase_reached=repo-wide-guards" in result.stderr
+
+
+def test_no_breadcrumb_does_not_refuse_on_detachment_alone(tmp_path):
+    """A detached checkout with NO breadcrumb must not false-alarm (#1120 dir 2).
+
+    Someone may detach the main checkout for their own reasons; the refusal
+    fires on THIS TOOL's breadcrumb, not on detachment alone. This is a
+    direction-2 guard: construct a detached checkout (the thing the refusal
+    must NOT fire on) and confirm land_lane still reaches its normal
+    preflight rather than refusing on detachment.
+    """
+    root, lane = _make_repo(tmp_path)
+    _write(lane / "feature.txt", "lane\n")
+    _git(lane, "add", "feature.txt")
+    _git(lane, "commit", "-m", "lane change")
+    armed = _redproof(lane, "begin", "feature.txt", "--expectation", "test_named.py")
+    assert armed.returncode == 0, armed.stdout + armed.stderr
+    _write(lane / "feature.txt", "inj\n")
+    observed = _redproof(
+        lane, "observe", "feature.txt", "--failure", "inj",
+        "--command", sys.executable, "-c", "assert 0, 'inj'",
+    )
+    assert observed.returncode == 0, observed.stdout + observed.stderr
+    _redproof(lane, "restore", "feature.txt")
+    # Detach the main checkout for an unrelated reason — no breadcrumb.
+    _git(root, "checkout", "--detach", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    # The refusal is the NORMAL preflight "requires current branch master",
+    # NOT the gate-in-flight refusal — detachment alone does not trigger it.
+    assert result.returncode == 1
+    assert "REFUSE phase=preflight:" in result.stderr
+    assert "gate-in-flight" not in result.stderr
+
+
+def test_successful_landing_clears_the_breadcrumb(landing_repo):
+    """A clean landing leaves no breadcrumb behind (it is deleted on success)."""
+    root, lane = landing_repo
+    crumb = root / ".dreamwork" / "gate-in-flight.json"
+    assert not crumb.is_file(), "precondition: no breadcrumb before the run"
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not crumb.is_file(), (
+        "a successful landing must delete the gate-in-flight breadcrumb; "
+        "a leftover from a succeeded gate is a false alarm (#1120 dir 2)"
+    )
+
+
+def test_clean_refusal_after_detach_clears_the_breadcrumb(landing_repo):
+    """A post-merge gate refusal is not a death — it clears the breadcrumb.
+
+    The breadcrumb records a gate that DIED (interrupted). A gate that ran,
+    examined something, and refused is a clean exit: the checkout was restored
+    and master is unmoved, so leaving the breadcrumb would be a false alarm.
+
+    Uses a NEW failing test file rather than editing ``test_named.py``, because
+    the ``landing_repo`` fixture arms redproof with ``test_named.py`` as the
+    expectation source — editing it stale's the pin and refuses at red-proof,
+    before the detach, so the breadcrumb would never be written.
+    """
+    root, lane = landing_repo
+    _write(lane / "test_failing.py", "def test_fails(): assert False\n")
+    _git(lane, "add", "test_failing.py")
+    _git(lane, "commit", "-m", "add a failing named test")
+    crumb = root / ".dreamwork" / "gate-in-flight.json"
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py", "test_failing.py")
+
+    assert result.returncode == 1
+    assert "REFUSE phase=named-tests" in result.stderr
+    assert not crumb.is_file(), (
+        "a clean post-merge refusal must clear the breadcrumb; only an "
+        "interrupted gate (signal/SIGKILL) leaves it behind"
+    )
+    _assert_base_unmoved(root, before)
+
+
+def test_real_sigterm_reattaches_checkout_and_leaves_breadcrumb(landing_repo):
+    """A REAL SIGTERM to a REAL land_lane subprocess reattaches the checkout.
+
+    This is the test the brief mandates (#1120 Direction 2): a mocked signal
+    proves the handler runs, not that a real SIGTERM reaches it. Here a
+    land_lane subprocess is started, allowed to reach the gate phase, then
+    SIGTERM'd. The checkout must be back on master (the handler reattached),
+    AND the breadcrumb must survive (the handler leaves it as the record).
+
+    The gate phase is reached by adding a blocking named test that waits on a
+    sentinel file: the land_lane subprocess will be in the named-tests gate
+    when the signal arrives. A SEPARATE file avoids stale-ing the redproof
+    expectation pin armed against ``test_named.py`` by the fixture.
+    """
+    root, lane = landing_repo
+    _write(
+        lane / "test_block.py",
+        "import time, pathlib\n"
+        "def test_block():\n"
+        "    while not pathlib.Path('unblock.txt').exists():\n"
+        "        time.sleep(0.05)\n",
+    )
+    _git(lane, "add", "test_block.py")
+    _git(lane, "commit", "-m", "add a blocking named test")
+    before = _git(root, "rev-parse", "HEAD")
+    crumb = root / ".dreamwork" / "gate-in-flight.json"
+
+    proc = subprocess.Popen(
+        [sys.executable, str(TOOL), "lane", "test_named.py", "test_block.py"],
+        cwd=root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        # Wait until the breadcrumb appears and names named-tests, proving
+        # the subprocess reached the gate phase before we signal it.
+        import time as _time
+        deadline = _time.time() + 30
+        while _time.time() < deadline:
+            if crumb.is_file():
+                try:
+                    record = json.loads(crumb.read_text(encoding="utf-8"))
+                except ValueError:
+                    record = {}
+                if record.get("phase") == "named-tests":
+                    break
+            _time.sleep(0.1)
+        else:
+            out, err = proc.communicate(timeout=5)
+            raise AssertionError(
+                f"breadcrumb never reached named-tests phase; "
+                f"stdout={out!r} stderr={err!r}"
+            )
+
+        os.kill(proc.pid, signal.SIGTERM)
+        proc.wait(timeout=15)
+    finally:
+        (root / "unblock.txt").write_text("unblock\n")
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+
+    # The handler reattached the checkout to master.
+    assert _git(root, "branch", "--show-current") == "master", (
+        "SIGTERM handler did not reattach the checkout to master"
+    )
+    # master is unmoved — the signal arrived before the fast-forward.
+    assert _git(root, "rev-parse", "--verify", "refs/heads/master") == before
+    # The breadcrumb SURVIVES the handler (it is the record, #1120 dir 2).
+    assert crumb.is_file(), (
+        "SIGTERM handler must LEAVE the breadcrumb; reattaching is recovery, "
+        "the breadcrumb is the record"
+    )
+    record = json.loads(crumb.read_text(encoding="utf-8"))
+    assert record["branch"] == "lane"
+    assert record["phase"] == "named-tests"
+    assert record["merge_sha"] != "<pre-merge>"
+    # A subsequent run refuses on the now-dead breadcrumb (pid no longer live).
+    result = _run(root, "test_named.py")
+    assert result.returncode == 1
+    assert "REFUSE phase=gate-in-flight" in result.stderr
+    assert "DEAD" in result.stderr
+    assert "phase_reached=named-tests" in result.stderr
+    # Recovery restores the tree: switch to master, delete the breadcrumb.
+    crumb.unlink(missing_ok=True)
