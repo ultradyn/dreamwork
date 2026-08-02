@@ -333,4 +333,3 @@ as a stronger claim than the code supports.
   plan-map completeness. This is the planning branch's landability exception.
 - **#794:** “The COUNT was stable-to-falling while the COMPOSITION changed.”
   This is why lint verification compares the complete WARN row set.
-
