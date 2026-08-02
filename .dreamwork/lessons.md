@@ -5088,3 +5088,31 @@ disagreed with the story — neither looked wrong on its own.
   have burned a round. **Diff the pending merges against each waiting branch's expectation source
   before choosing the gate order** — it is a two-command check that converts a guaranteed re-arm
   round into none. (2026-08-03, coordinator)
+- **My brief's own elaboration works against my brief's own stop-rule, and a lane had to point it
+  out.** The `#1041` brief opened with *"reproduce the contradiction on the CURRENT tree; if `#1093`
+  already removed it, say so and stop — a corrected premise is a complete result"*, and then spent two
+  long sections — *"What a good increment looks like"* and a detailed *"Direction 2"* — written
+  entirely as though the premise held, including implementation guidance for the very check it had
+  just licensed the lane not to build. The lane stopped correctly and then told me why that was
+  nearly an accident: *"a less-disciplined lane would read Direction 2 as the real assignment and
+  build ask #2 anyway."* It is right. The stop-rule is one paragraph and the work-anyway material is
+  two pages; length is itself an instruction. **When a head anticipates a refuted premise, every
+  downstream section that presumes the premise must say so in its own heading** — *"ONLY if the
+  premise holds"* — because a lane reads sections, not the document. This applies to most briefs I
+  now write, since verify-first heads have become the default. (2026-08-03, coordinator)
+- **A stale TITLE dispatched a lane against a premise that had been dead for five hours, twice in one
+  night.** `#1010` said *"`client/` … has no `DIR_TESTSET_MAP` entry, so a client-only lane cannot be
+  dispatched at all"*. He had landed the entry himself in `168aa4c6`, the same session he filed the
+  task, and left the task open for the residuals — recording that in the BODY. I read the body's first
+  screen, which described the original refusal, and dispatched. **Dispatch reads the title.** A body
+  that corrects its own title is not a correction, it is a trap with a paper trail. The remedy that
+  worked was retitling to name what is actually still owed; the remedy that would have prevented it is
+  re-reading the title as a fresh dispatch would, at the moment of filing-and-fixing in one session.
+  (2026-08-03, coordinator)
+- **Two lanes returned zero commits and both were successes.** `#1041` and `#1010` each refuted their
+  brief's central premise, evidenced it against the current tree, and stopped. That outcome is only
+  available because the briefs said in advance that it was — and the `#1010` lane said the stop-rule
+  is specifically what stopped it committing a duplicate `DIR_TESTSET_MAP` row that would have
+  conflicted with his own commit. **A dispatch that cannot come back empty will always come back
+  full**, and the fullness will be indistinguishable from work. Keep licensing the empty return
+  explicitly, in the head, in words the lane can quote back. (2026-08-03, coordinator)
