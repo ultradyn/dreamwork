@@ -26,6 +26,8 @@
   **What I have changed on my side regardless:** I have stopped using backticks in shell strings
   and switched to `$(…)` inside single-quoted heredocs for anything with embedded quoting. Filed
   nothing for it — it was operator error, not a defect in the repo.
+  - **Answer (via watch, 2026-08-02 17:35):** no, though you can have a
+    subagent redact them from the transcript after your next compaction.
 
 - **P2 · 2026-08-02 10:35 — #939/#862: the goal tree is complete and completely empty. Here is a proposed root and first children, in your own words. Approve, edit, or tell me to leave it empty.**
   **Short version:** every heartbeat tick all night has ended `· no current goal ·`. It was telling
@@ -68,6 +70,9 @@
   **And a real third option:** if you would rather the tree stay empty for now, say so and I will
   record that as a *decision*. The tick would then be reporting a chosen state rather than an
   unnoticed one — which is the whole difference `#939` is about, and I would stop re-raising it.
+  - **Answer (via watch, 2026-08-02 17:37):** Yeah you can autogenerate
+    a goal tree. integrate the goal i added. you should consider that
+    the project is more ambitious but we can add more goals as we go.
 
 - **P2 · 2026-08-01 23:10 — #867: 44 old briefs omit `Lane-owns:` — content-resolved cutoff (my rec), or delete them?**
   **Short version:** #867's lane finished the mechanism and then found that fixing the blindness turns
@@ -137,6 +142,7 @@
   **What I need from you, if anything:** only a veto or a redirect. If you want the 44 gone, say so and
   I will do it — that is the one branch I will not take on my own judgement, because it is irreversible
   and the briefs are your project's history, not mine.
+  - **Answer (via watch, 2026-08-02 17:38):** rec
 
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
@@ -167,6 +173,7 @@
     the global hook path. It does not" retracts the framing. Only `Q1` (repo-local
     vs global install) is still yours. Left unmarked, this note made the whole entry
     read as awaiting a reply the loop had already written.
+  - **Answer (via watch, 2026-08-02 17:39):** still needed? rec
 
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
   2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
