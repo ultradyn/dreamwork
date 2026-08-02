@@ -1931,6 +1931,76 @@ class TestCoordinatorModeBlindCaseViaCli:
         assert "1 injection(s) were required" in r.stderr, r.stderr
 
 
+class TestObserveRemainderOptionGuard:
+    @staticmethod
+    def _run(repo: Path, env: dict[str, str], *args: str):
+        return subprocess.run(
+            ["python3", str(CLI_PATH), "--cwd", str(repo), *args],
+            capture_output=True, text=True, env=env)
+
+    def test_swallowed_lane_refuses_and_names_the_token(self, repo, tmp_path):
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "scratch-989")
+
+        result = self._run(
+            repo, env, "observe", "router.js", "--failure", "not reached",
+            "--command", sys.executable, "-c", "raise SystemExit(0)",
+            "--lane", "cx-989lane")
+
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "observe: FAULT" in result.stderr, result.stderr
+        assert "swallowed token '--lane'" in result.stderr, result.stderr
+        assert "before --command" in result.stderr, result.stderr
+        assert "command's `--` delimiter" in result.stderr, result.stderr
+
+    def test_guard_derives_options_and_honours_the_command_escape(self):
+        parser = rp._parser()
+        parser.add_argument("--future-option-989")
+        escaped = rp._parse_args(parser, [
+            "observe", "router.js", "--command", "grep", "--", "--lane",
+            "somefile"])
+
+        assert escaped.command == ["grep", "--", "--lane", "somefile"]
+        assert rp._swallowed_self_option(parser, escaped.command) is None
+        assert rp._swallowed_self_option(
+            parser, ["consumer", "--", "--cwd"]) is None
+        assert rp._swallowed_self_option(
+            parser, ["consumer", "--cwd"]) == ("--cwd", "--cwd")
+        assert rp._swallowed_self_option(
+            parser, ["consumer", "--lan"]) == ("--lan", "--lane")
+        assert rp._swallowed_self_option(
+            parser, ["consumer", "--future-option-989"]) == (
+                "--future-option-989", "--future-option-989")
+
+    def test_lane_before_command_is_not_part_of_the_payload(self):
+        parser = rp._parser()
+        args = parser.parse_args([
+            "observe", "router.js", "--lane", "cx-989lane", "--command",
+            "grep", "needle", "somefile"])
+
+        assert args.lane == "cx-989lane"
+        assert args.command == ["grep", "needle", "somefile"]
+        assert rp._swallowed_self_option(parser, args.command) is None
+
+    def test_empty_registry_names_its_path_and_population(
+            self, repo, tmp_path, monkeypatch):
+        scratch = tmp_path / "scratch-989"
+        monkeypatch.setenv("REDPROOF_SCRATCH_ROOT", str(scratch))
+        monkeypatch.setattr(rp._ls, "SCRATCH_ROOT", scratch)
+        env = dict(__import__("os").environ)
+        lane = "empty-lane-989"
+        expected_registry = rp._registry_path(repo, lane)
+
+        result = self._run(
+            repo, env, "observe", "router.js", "--lane", lane,
+            "--failure", "not reached", "--command", sys.executable, "-c",
+            "raise SystemExit(0)")
+
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert str(expected_registry) in result.stderr, result.stderr
+        assert "population=0" in result.stderr, result.stderr
+
+
 class TestNamedLaneAcrossEveryCliVerb:
     """#957: ``--lane`` is one identity selector, not a check-only flag."""
 

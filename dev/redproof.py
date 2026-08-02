@@ -966,11 +966,14 @@ def observe(cwd: Path | None, path: str, *, failure: str,
             raise RedproofError("--failure must name a non-empty discriminating message")
         if not command:
             raise RedproofError("--command must name the check that caught the injection")
-        entries, _ = _read_registry(cwd, lane)
+        registry = _registry_path(cwd, lane)
+        entries, population_state = _read_registry_at(registry)
         armed = _find(entries, posix)
         if armed is None:
             raise RedproofError(
-                f"{posix!r} has no armed injection; run `begin {posix}` before observe")
+                f"{posix!r} has no armed injection in examined registry "
+                f"{str(registry)!r} (population={len(entries)}, "
+                f"state={population_state}); run `begin {posix}` before observe")
         injected_absent = not os.path.lexists(root / Path(posix))
         injected_sha = None if injected_absent else _sha(_read_wt(root, posix))
         injected_kind = ABSENT if injected_absent else BYTES
@@ -1744,7 +1747,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
 # CLI                                                                          #
 # --------------------------------------------------------------------------- #
 
-def main(argv: list[str] | None = None) -> int:
+def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="redproof.py",
         description="Red-proof injection registry + hand-off gate (#683). "
@@ -1776,7 +1779,65 @@ def main(argv: list[str] | None = None) -> int:
                          "enumerates every identity dir when the environment "
                          "is absent (#895).")
     ap.add_argument("--cwd", default=None, help="derive for this directory")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def _self_option(ap: argparse.ArgumentParser, token: str) -> str | None:
+    option_strings = {
+        option
+        for action in ap._actions
+        for option in action.option_strings
+    }
+    candidate = token.partition("=")[0]
+    if candidate in option_strings:
+        return candidate
+    if ap.allow_abbrev and candidate.startswith("--"):
+        matches = [option for option in option_strings
+                   if option.startswith(candidate)]
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
+def _parse_args(
+        ap: argparse.ArgumentParser,
+        argv: list[str] | None = None) -> argparse.Namespace:
+    """Split REMAINDER ourselves so a command's literal ``--`` survives."""
+    raw = list(sys.argv[1:] if argv is None else argv)
+    for index, token in enumerate(raw):
+        if "=" not in token and _self_option(ap, token) == "--command":
+            args = ap.parse_args(raw[:index])
+            args.command = raw[index + 1:]
+            return args
+    return ap.parse_args(raw)
+
+
+def _swallowed_self_option(
+        ap: argparse.ArgumentParser,
+        command: list[str]) -> tuple[str, str] | None:
+    """Return a command token argparse would recognise as our own option."""
+    for token in command:
+        if token == "--":
+            return None
+        option = _self_option(ap, token)
+        if option is not None:
+            return token, option
+    return None
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = _parser()
+    args = _parse_args(ap, argv)
+    if args.verb == "observe":
+        swallowed = _swallowed_self_option(ap, args.command)
+        if swallowed is not None:
+            token, option = swallowed
+            sys.stderr.write(
+                f"observe: FAULT — swallowed token {token!r} in --command "
+                f"matches redproof.py option {option!r}; place redproof options "
+                "before --command. If the token is command data, put it after "
+                "the command's `--` delimiter.\n")
+            return 2
     cwd = Path(args.cwd) if args.cwd else None
 
     try:
