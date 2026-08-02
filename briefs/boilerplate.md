@@ -201,6 +201,30 @@ what it would catch.
 **Every issue number you cite must be opened and read**, with the relied-on line quoted into
 your report. Confidently-wrong citations are the characteristic failure mode here.
 
+**This rule binds the brief's AUTHOR exactly as hard as it binds you, and on `#996` the author
+was the one who broke it.** Of the 20 tracked sites citing `#140`, 17 carried its real meaning
+(*"show the deployed revision so a stale view announces itself"*) and 3 substituted *"a check
+that could not run must never look like one that ran"* — all 3 written by the coordinator, in
+briefs and a code comment, in a single session. The correct authority for that principle is
+`#136` (three zero-states: missing, present-but-unparseable, genuinely empty). `cx-866wording`
+STOPPED rather than build on it, opened the entry, quoted `#140`'s actual title back, and was
+right. **So: if a citation in the brief head does not say what the brief claims it says, that is
+a refuted premise — stop and report it, and do not assume the coordinator checked.** The error is
+seductive precisely because the wrong entry is usually true and adjacent; adjacency is not
+authority.
+
+**Every quantity a brief asserts must sit next to the command that re-derives it** (`#978`).
+`dev/brief.py` now reports, at generation, each bare number in a core that no re-derivation
+command covers — and coverage means an apparent command on the SAME, previous, or next nonblank
+line, inside an explicitly cued verification block. **A command elsewhere in the brief is
+deliberately NOT borrowed as coverage**, because that is the defect `#978` was filed for: a
+verified sub-claim beside an unverified headline makes the headline look verified. The `#972`
+brief said *"13 recipes; 5 carry pipefail"*, gave a command for the `5`, and the true figure was
+`17`. The report certifies SYNTACTIC completeness only — that a command is present — never that
+the command can produce the number: `#978` measured `grep -c 'pipefail' justfile` → 7 against the
+semantic 5, same file, same question, both defensible. So a covered number is not a verified one,
+and **counts in a brief head are CONTEXT unless the brief names them as blocking** (`#994`).
+
 **Cite a lesson by its exact bolded title, not by `lessons.md:<line>`.** Confirm the title
 resolves to exactly one lesson head with `grep`; zero matches means it drifted, and two matches
 are ambiguous. A line coordinate can silently move to unrelated content while looking valid.
