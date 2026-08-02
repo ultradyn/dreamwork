@@ -237,20 +237,25 @@ _JUST_RECIPE = re.compile(
 # "live"/"stale" map to formal state "open"; "done"/"closed" to "landed".
 _OPEN_IMPLYING = r"open|live|stale"
 _LANDED_IMPLYING = r"landed|done|closed"
+# A #NNN directly asserted to be in a state: "#641 is live", "#630 is open".
+# "live"/"stale" map to formal state "open"; "done"/"closed" to "landed".
+# The gap between the subject #NNN and the state verb carries a negative
+# lookahead on ``#\d+`` so the predicate binds to THAT id, not a later one:
+# in "#671 exactly, and #816 is a live task" the gap after #671 hits #816 and
+# fails, so #671 is NOT claimed and #816 IS — fixing the prior lane's false
+# positive for #671 and the simultaneous miss of #816 (#1028).
 _TASK_STATE_PREDICATE = re.compile(
-    r"#(?P<task>\d+)[^.\n;]{0,25}?\b(?:is|are|was|were|remain|stands)\b"
-    r"[^.\n;]{0,15}?\b(?P<state>"
+    r"#(?P<task>\d+)(?:(?!#\d+)[^.\n;]){0,25}?\b(?:is|are|was|were|remain|stands)\b"
+    r"(?:(?!#\d+)[^.\n;]){0,15}?\b(?P<state>"
     + _OPEN_IMPLYING + r"|" + _LANDED_IMPLYING + r")\b",
     re.IGNORECASE,
 )
-# A #NNN inside an expected-output or fixture claim.  Word-bounded
-# "expect"/"expected"/"fixture" excludes "expectation" (which matched
-# "TEST EXPECTATION ... #795" six times in the corpus — all false positives).
-_TASK_EXPECTED_CLAIM = re.compile(
-    r"\b(?:expect(?:ed)?|fixture)\b[^.\n;]{0,60}?#(?P<task>\d+)",
-    re.IGNORECASE,
-)
 # A #NNN inside a WARN-row expected-output claim: "WARN rows (#630, #641)".
+# This predicts that id will appear in lint output, i.e. claims it is active.
+# The prior lane also matched a generic ``expect|expected|fixture ... #NNN``
+# regex; measured across 77 retained cores that was the source of 4/6 false
+# positives (bare "fixture rename from #645" etc.), so it is DROPPED: proximity
+# to the word "fixture"/"expect" is ordinary context, not a state assertion.
 _TASK_WARN_OUTPUT = re.compile(
     r"\bWARN\s+rows?\b[^.\n;]{0,30}?#(?P<task>\d+)",
     re.IGNORECASE,
@@ -957,6 +962,7 @@ def _command_existence_report(core: str) -> str:
     recipes = sorted({recipe for _, recipe in claims})
     missing: list[str] = []
     checked = 0
+    not_checked: list[str] = []  # recipes we could not classify
     try:
         for recipe in recipes:
             result = subprocess.run(
@@ -967,10 +973,16 @@ def _command_existence_report(core: str) -> str:
                 checked += 1
             elif "does not contain recipe" in result.stderr:
                 missing.append(recipe)
-            else:
-                # Exists but needs positional args, or other non-existence
-                # error — the recipe IS there, just not runnable bare.
+            elif "positional argument" in result.stderr:
+                # A usage error naming positional arguments is an existence
+                # confirmation: the recipe resolved, it just needs args.
+                # ONLY this error implies existence — a malformed or unreadable
+                # Justfile, or any other parser error, does NOT, and blessing
+                # it would silently certify every command claim in the brief
+                # (#1028). Everything else is NOT CHECKED.
                 checked += 1
+            else:
+                not_checked.append(recipe)
     except (OSError, subprocess.TimeoutExpired):
         return (
             f"command existence NOT CHECKED: found {len(claims)} "
@@ -990,6 +1002,12 @@ def _command_existence_report(core: str) -> str:
         f"{len(missing)} MISSING: {'; '.join(details)}"
         if missing else "0 MISSING"
     )
+    if not_checked:
+        findings += (
+            f"; {len(not_checked)} NOT CHECKED: "
+            f"{', '.join(not_checked)} (just --dry-run returned an error that "
+            "neither confirms nor denies the recipe — e.g. a malformed Justfile)"
+        )
     return (
         f"command existence REPORT: found {len(claims)} `just <recipe>` "
         f"claim(s) in code context ({len(recipes)} distinct recipe(s)); "
@@ -1015,19 +1033,23 @@ def _task_state_claim_report(core: str, ledger: Path) -> str:
 
     A brief that says "expect a live WARN for #641" while #641 is ``landed``
     sends a lane to verify an expectation that can never hold (#1024/#1028).
-    This binds to the SPECIFIC claim — a #NNN inside a state-predicate,
-    expected-output, fixture, or WARN-row context — not to every citation
-    (the direction-2 trap: flagging every #NNN drowns the real finding).
-    Each matched #NNN is resolved against the ledger and the claim context is
-    placed beside the actual state for human review.
+    This binds to the SPECIFIC claim — a #NNN that is the grammatical subject
+    of a state predicate ("#641 is live") or inside a WARN-row expected-output
+    claim ("WARN rows (#641)") — not to every citation (the direction-2 trap:
+    flagging every #NNN drowns the real finding).  The prior lane also matched
+    a generic ``expect|fixture ... #NNN`` regex; measured at 66.7% false
+    positives across 77 cores it was DROPPED (#1028).
 
-    REPORT, not REFUSE (#994).  State consistency between the claimed context
-    and the actual state is flagged as MISMATCH when the claim is clear (a
-    predicate like "#641 is live") and as a surface-only finding when the
-    claim is an expected-output context (implied open).
+    REPORT, not REFUSE (#994/#136): an unreadable or empty ledger is reported
+    as NOT CHECKED, never allowed to escape and refuse the dispatch — the tool
+    knows least exactly then.  Claims are keyed by (line, task) so a #NNN on
+    one line matched by more than one regex counts once: deriving "other
+    citations" as ``total - len(claims)`` went negative when one line matched
+    twice (#1028 P2), and a count that can go below zero is a count derived
+    twice.
     """
     lines = core.splitlines()
-    claims: list[tuple[int, int, str, str | None]] = []
+    claims: dict[tuple[int, int], tuple[int, int, str, str | None]] = {}
     total_citations = 0
     in_fence = False
     fence_char = ""
@@ -1046,21 +1068,18 @@ def _task_state_claim_report(core: str, ledger: Path) -> str:
             fence_len = len(opened.group(2))
             continue
         for match in _TASK_STATE_PREDICATE.finditer(line):
-            claims.append(
-                (index + 1, int(match.group("task")), "state predicate",
-                 match.group("state"))
-            )
-        for match in _TASK_EXPECTED_CLAIM.finditer(line):
-            claims.append(
-                (index + 1, int(match.group("task")), "expected/fixture", None)
-            )
+            key = (index + 1, int(match.group("task")))
+            claims[key] = (index + 1, int(match.group("task")),
+                           "state predicate", match.group("state"))
         for match in _TASK_WARN_OUTPUT.finditer(line):
-            claims.append(
-                (index + 1, int(match.group("task")), "WARN output", None)
-            )
+            key = (index + 1, int(match.group("task")))
+            claims.setdefault(key, (index + 1, int(match.group("task")),
+                                    "WARN output", None))
         total_citations += len(re.findall(r"#\d+", line))
 
-    if not claims:
+    claim_list = list(claims.values())
+
+    if not claim_list:
         return (
             f"task-state claim NOT CHECKED: found 0 task-state claim(s); "
             f"resolved 0; 0 mismatched. {total_citations} other #NNN "
@@ -1069,12 +1088,27 @@ def _task_state_claim_report(core: str, ledger: Path) -> str:
             "all-verified result."
         )
 
+    # P1 (#1028): an unreadable/empty ledger must NOT refuse the dispatch.  A
+    # per-task "not found" returns None inside _task_state and is fine; a
+    # ledger-level failure (could not read / holds no entries) re-raises and is
+    # caught here as NOT CHECKED — report-only, exactly when the tool knows
+    # least (#136).
+    try:
+        _task_state(claim_list[0][1], ledger)
+    except BriefFault as exc:
+        return (
+            f"task-state claim NOT CHECKED: found {len(claim_list)} "
+            f"task-state claim(s) but the ledger could not be read ({exc}); "
+            "0 resolved; 0 mismatched. There IS a state-claim population, so "
+            "this is not an all-verified result; the claims were not checked."
+        )
+
     state_cache: dict[int, str | None] = {}
     details: list[str] = []
     resolved = 0
     mismatched = 0
     unresolvable = 0
-    for line_no, task, context, claimed_word in claims:
+    for line_no, task, context, claimed_word in claim_list:
         if task not in state_cache:
             state_cache[task] = _task_state(task, ledger)
         actual = state_cache[task]
@@ -1092,12 +1126,12 @@ def _task_state_claim_report(core: str, ledger: Path) -> str:
                 else "landed"
             )
         else:
-            implied = "open"  # expected/fixture/WARN all imply open
+            implied = "open"  # WARN-output claims imply an active task
         if actual != implied:
             mismatched += 1
             details.append(
                 f"line {line_no} #{task} MISMATCH in {context!r}: "
-                f"claim implies {implied!r} ({claimed_word or 'expected output'}); "
+                f"claim implies {implied!r} ({claimed_word or context}); "
                 f"actual state {actual!r}"
             )
         else:
@@ -1106,9 +1140,12 @@ def _task_state_claim_report(core: str, ledger: Path) -> str:
                 f"actual state {actual!r}"
             )
 
+    # P2 (#1028): derive "other citations" once, from distinct (line, task)
+    # claims, so it can never go negative.  Each claim key implies at least one
+    # #NNN occurrence on its line, so len(claims) <= total_citations always.
     unclassified = total_citations - len(claims)
     return (
-        f"task-state claim REPORT: found {len(claims)} task-state claim(s); "
+        f"task-state claim REPORT: found {len(claim_list)} task-state claim(s); "
         f"resolved {resolved}; mismatched {mismatched}; unresolvable "
         f"{unresolvable}. {unclassified} other #NNN citation(s) without "
         "state-claim language were NOT CHECKED (direction-2: flagging every "
