@@ -855,8 +855,13 @@ def test_state_report_confirms_a_live_claim_for_an_open_task(tmp_path):
 
 def test_state_report_flags_an_expected_output_claim_for_a_landed_task(tmp_path):
     """The #1024 defect in its expected-output form: 'expect a WARN for #641'
-    when #641 is landed.  Expected/fixture/WARN claims imply open; a landed
-    task can never truthfully produce a live WARN."""
+    when #641 is landed.  WARN-row claims imply open; a landed task can never
+    truthfully produce a live WARN.
+
+    Asserting only that A mismatch substring exists hid the P2 double-count:
+    this line matched BOTH the (dropped) expected-claim regex and the
+    WARN-output regex, so 'other citations' was reported as -1.  Assert the
+    COUNT and that #700 appears exactly once (#1028 P2)."""
     ledger = _state_ledger(tmp_path)
     core = (
         "## Verify\n\n"
@@ -867,6 +872,8 @@ def test_state_report_flags_an_expected_output_claim_for_a_landed_task(tmp_path)
     assert "#700 MISMATCH" in report, report
     assert "claim implies 'open'" in report, report
     assert "actual state 'landed'" in report, report
+    assert "0 other #NNN citation(s)" in report, report  # not -1 (P2)
+    assert report.count("#700 MISMATCH") == 1, report  # counted once, not twice
 
 
 def test_state_report_does_not_flag_every_citation(tmp_path):
@@ -913,6 +920,62 @@ def test_state_report_reports_a_warn_row_claim_against_the_ledger(tmp_path):
     report = brief._task_state_claim_report(core, ledger)
     assert "#700 MISMATCH" in report, report
     assert "actual state 'landed'" in report, report
+
+
+def test_command_report_a_parser_error_is_not_checked_not_certified(monkeypatch):
+    """Direction 1, the :970 defect: a malformed/unreadable Justfile or any
+    parser error was treated as 'resolved', silently blessing every command
+    claim.  Only a 'positional argument' usage error implies existence; every
+    other error is NOT CHECKED.  We mock just --dry-run to return a parse
+    error (neither 'does not contain recipe' nor 'positional argument') and
+    assert the recipe is NOT certified."""
+    class _Fake:
+        returncode = 1
+        stderr = "error: Justfile is malformed: unexpected token at line 1"
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Fake())
+    core = "## Verify\n\nRun `just build`.\n\n## Direction 2\n\nA case.\n"
+    report = brief._command_existence_report(core)
+    assert "NOT CHECKED" in report, report
+    assert "build" in report, report
+    # It must NOT be certified as resolved: a parser error neither confirms nor
+    # denies the recipe.  'resolved 0 of 1' is the discriminating count.
+    assert "resolved 0 of 1" in report, report
+    assert "resolved 1 of 1" not in report, report
+
+
+def test_command_report_positional_args_counted_as_resolved_not_not_checked():
+    """The keep-case for the :970 fix: a recipe that exists but needs positional
+    arguments returns a 'positional argument' usage error, which IS an existence
+    confirmation.  `just dispatch-lane` resolves to 'checked', NOT 'not checked'."""
+    core = (
+        "## Verify\n\nRun `just dispatch-lane prompt.md @agent`.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    report = brief._command_existence_report(core)
+    assert "0 MISSING" in report, report
+    assert "resolved 1 of 1" in report, report
+    assert "NOT CHECKED" not in report, report
+
+
+def test_state_report_unreadable_ledger_is_not_checked_not_raised(tmp_path):
+    """Direction 1, the P1 defect: a missing/empty ledger must NOT raise and
+    refuse the dispatch.  Report-only (#136): the tool knows least here, so
+    absence of evidence is not evidence of a fault.  A test with a readable
+    ledger never reaches this path, so this asserts the unreadable path
+    directly."""
+    missing_ledger = tmp_path / "nope" / "tasks.md"  # does not exist
+    core = (
+        "## Verify\n\n"
+        "#700 is live right now.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    # Must not raise:
+    report = brief._task_state_claim_report(core, missing_ledger)
+    assert "task-state claim NOT CHECKED" in report, report
+    assert "found 1 task-state claim(s)" in report, report
+    assert "could not be read" in report, report
+    assert "not an all-verified result" in report, report
 
 
 def test_validate_core_emits_both_new_reports(capsys):
