@@ -82,6 +82,23 @@ wrong by construction.
 If the rebase is genuinely hard, **hand back the analysis instead of a bad resolution** —
 that is a legitimate outcome, not a failure.
 
+**After every rebase, RE-ARM every required red-proof in full** — `forget` → `begin` →
+sabotage → `observe` → `restore` → `cmp` against the path `begin` printed → `check --require N`
+— **even when the changed paths look unrelated to your seam** (`#993`). This is an epistemic
+requirement, not a claim that your evidence is definitely stale: `#993` ran 5 real rebase shapes
+and measured that 1 preserved the pre-rebase evidence and 4 did not, and that the registry
+cannot tell them apart, because it records no fail-closed dependency closure for the observed
+command. Its sharpest case: master changed only an imported module, the recorded injection was
+no longer reached, the post-rebase injection run went GREEN — and `check --require 1` still
+exited 0 reporting CAUGHT 1/1. Content-based history scanning is orthogonal to whether the
+causal evidence still holds.
+
+**"Unrelated paths" is judged by what your command actually reads, not by what your seam
+touches.** The coordinator nearly waved a rebase through on that reasoning when the seam was in
+`lint.py` and master had only moved `briefs/boilerplate.md` — but `lint.py` READS that file, so
+it was a direct input to the module under test. If you cannot enumerate every input to your
+observed command, you cannot claim the paths were unrelated; re-arm instead.
+
 **Red-proof both directions. This is the one that catches real defects.**
 - *Direction 1*: inject the real defect and watch your check go red **on the discriminating
   failure message** — not on a red count. A red for the wrong reason is indistinguishable
