@@ -6686,11 +6686,85 @@ class LaneEnumerationError(RuntimeError):
 
 
 class LaneWorktrees(list[tuple[str, str]]):
-    """Classified lanes plus the worktree-population denominator."""
+    """Classified lanes plus the worktree-population denominator.
 
-    def __init__(self, values: list[tuple[str, str]], *, examined: int):
+    ``transient`` holds (worktree-path, operation) for lane-root worktrees
+    that are detached because they are mid-git-operation (rebase, merge,
+    cherry-pick). They are still classified — returned in the list with a
+    worktree-name placeholder for the branch — so their owned paths stay
+    protected. They carry no branch line because git detaches HEAD during
+    these operations, and the operation name lets the caller report the
+    transient state without halting the gate (#1116).
+    """
+
+    def __init__(
+        self, values: list[tuple[str, str]], *, examined: int,
+        transient: list[tuple[str, str]] | None = None,
+    ):
         super().__init__(values)
         self.examined = examined
+        self.transient = transient or []
+
+
+# State files that exist only while git is mid-operation in a worktree's
+# private git-dir. Each maps to a human-readable operation name. The presence
+# of ANY of these distinguishes case (a) — a lane mid-operation, expected and
+# transient — from case (b) — a detached worktree with no explanation, which
+# is genuinely unclassifiable (#1116, after #136's three-states shape).
+#
+# rebase-merge: created by `git rebase` (merge backend, the default since git
+#   2.6) and `git rebase -i`.
+# rebase-apply: created by `git rebase --apply` (the legacy backend) and
+#   `git am`.
+# MERGE_HEAD: created by `git merge` with conflicts.
+# CHERRY_PICK_HEAD: created by `git cherry-pick` with conflicts.
+# REVERT_HEAD: created by `git revert` with conflicts.
+_IN_PROGRESS_MARKERS: tuple[tuple[str, str], ...] = (
+    ("rebase-merge", "rebase"),
+    ("rebase-apply", "rebase"),
+    ("MERGE_HEAD", "merge"),
+    ("CHERRY_PICK_HEAD", "cherry-pick"),
+    ("REVERT_HEAD", "revert"),
+)
+
+
+def _worktree_git_dir(wt_path: Path) -> Path | None:
+    """Resolve a linked worktree's private git-dir.
+
+    For a linked worktree, ``<wt>/.git`` is a FILE containing
+    ``gitdir: <path>`` pointing to ``<repo>/.git/worktrees/<name>`` — NOT a
+    directory. Getting this wrong (treating ``<wt>/.git`` as a directory)
+    makes every linked worktree look like case (b) and changes nothing
+    (#1116). Returns None when the pointer is missing or the git-dir is
+    gone, so the caller falls through to the genuinely-unclassifiable path.
+    """
+    git_file = wt_path / ".git"
+    if not git_file.is_file():
+        return None
+    text = git_file.read_text(encoding="utf-8", errors="replace").strip()
+    if not text.startswith("gitdir:"):
+        return None
+    gd = Path(text[len("gitdir:"):].strip())
+    if not gd.is_absolute():
+        gd = wt_path / gd
+    return gd if gd.is_dir() else None
+
+
+def _worktree_operation_in_progress(wt_path: Path) -> str | None:
+    """Return the operation name when ``wt_path`` is mid-git-operation.
+
+    Reads the worktree's private git-dir (resolved via ``<wt>/.git``) for
+    state files that exist only while git is mid-operation. Returns the
+    operation name ('rebase', 'merge', 'cherry-pick', 'revert') or None
+    when no in-progress marker is found.
+    """
+    gd = _worktree_git_dir(wt_path)
+    if gd is None:
+        return None
+    for marker, op in _IN_PROGRESS_MARKERS:
+        if (gd / marker).exists():
+            return op
+    return None
 
 
 def _lane_name_from_worktree_path(path: Path, roots: tuple[Path, Path]) -> str | None:
@@ -6763,6 +6837,7 @@ def _live_lane_worktrees(root: Path) -> LaneWorktrees:
     roots = worktree_roots(main_checkout)
     root_resolved = main_checkout.resolve()
     lanes: list[tuple[str, str]] = []
+    transient: list[tuple[str, str]] = []
     linked: list[str] = []
     for raw_path, record_branch in records:
         candidate = Path(raw_path)
@@ -6773,6 +6848,18 @@ def _live_lane_worktrees(root: Path) -> LaneWorktrees:
         if lane_name is None:
             continue
         if not record_branch:
+            # A worktree under a lane root with no branch line is detached.
+            # #1116's three states: (a) mid-operation (rebase/merge/etc.) is
+            # expected and transient — classify it so its owned paths stay
+            # protected and report the transient state as a WARN; (b) detached
+            # with NO in-progress state is genuinely unclassifiable — the
+            # ERROR is correct here and this is the case the check was
+            # written for.
+            operation = _worktree_operation_in_progress(candidate)
+            if operation is not None:
+                transient.append((raw_path, operation))
+                lanes.append((raw_path, lane_name))
+                continue
             compared = ", ".join(str(r) for r in roots)
             raise LaneEnumerationError(
                 f"worktree {raw_path} is under a lane root but has no branch line "
@@ -6788,7 +6875,7 @@ def _live_lane_worktrees(root: Path) -> LaneWorktrees:
             f"compared against lane roots: {compared}",
             examined=len(records), classified=0,
         )
-    return LaneWorktrees(lanes, examined=len(records))
+    return LaneWorktrees(lanes, examined=len(records), transient=transient)
 
 
 def _dirty_paths(root: Path) -> list[str] | None:
@@ -6919,6 +7006,19 @@ def check_lane_containment_backstop(dw: Path, rep: Report) -> None:
                 f"lane {branch} ({lane_path}) — a lane editing the main tree is "
                 f"#465, and it aborts a merge before any commit is attempted; "
                 f"move the edit into the worktree or revert it here (#468)")
+    # #1116: a lane-root worktree detached mid-rebase (or mid-merge/-cherry-pick)
+    # is an expected transient state — every lane runs `git rebase master` — and
+    # must not ERROR, or one lane's instructed rebase halts the gate for every
+    # branch. It is still reported (a WARN naming the worktree and the operation)
+    # because lane-containment exists to surface unclassified worktrees, and
+    # silence would trade a false ERROR for a blind spot. The worktree is still
+    # classified and ownership-checked from its registered path.
+    for lane_path, operation in lanes.transient:
+        rep.add(
+            WARN, "lane-containment",
+            f"worktree {lane_path} is mid-{operation} (detached HEAD is transient "
+            f"during an instructed rebase); its owned paths are still checked from "
+            f"the registered path")
     # The OK row is a CLEAN BILL, so it must not sit beside a finding saying the
     # opposite — a check that contradicts itself in one run gets read as noise
     # and then ignored. (Found by the red-proof: the first version printed both.)
