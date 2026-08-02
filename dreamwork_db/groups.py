@@ -235,9 +235,10 @@ class GroupRepository:
             self.get(node) for node in subtree if node != group_id
         )
 
-    def add_task(
+    def _resolve_add_task(
         self, group_id: int, task_id: int, *, actor: str, at: str,
-    ) -> str:
+    ) -> tuple[str, str, str]:
+        """Return disposition plus normalized insert values, without writing."""
         group = self.get(group_id)
         task = self._session.execute(
             "SELECT id FROM task WHERE id = ?", (task_id,),
@@ -252,15 +253,25 @@ class GroupRepository:
             (group_id, task_id),
         ).fetchone()
         if existing is not None:
-            return "unchanged"
+            return "unchanged", "", ""
         _require_text(actor, "membership actor")
         _require_text(at, "membership timestamp")
-        self._session.execute(
-            "INSERT INTO task_group_member"
-            " (group_id, task_id, added_by, added_at) VALUES (?, ?, ?, ?)",
-            (group_id, task_id, actor.strip(), at.strip()),
+        return "added", actor.strip(), at.strip()
+
+    def add_task(
+        self, group_id: int, task_id: int, *, actor: str, at: str,
+        apply: bool = True,
+    ) -> str:
+        status, normalized_actor, normalized_at = self._resolve_add_task(
+            group_id, task_id, actor=actor, at=at,
         )
-        return "added"
+        if status == "added" and apply:
+            self._session.execute(
+                "INSERT INTO task_group_member"
+                " (group_id, task_id, added_by, added_at) VALUES (?, ?, ?, ?)",
+                (group_id, task_id, normalized_actor, normalized_at),
+            )
+        return status
 
     def progress(self, group_id: int) -> GroupProgress:
         """Roll the WHOLE SUBTREE up, by exact task identity.
