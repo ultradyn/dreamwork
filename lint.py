@@ -5959,11 +5959,28 @@ def check_review_dispatch_frame(dw: Path, rep: Report) -> None:
     was told the clone rules".  It is named accordingly and the WARN text says
     "frame section absent", never "reviewer was not told".
 
-    **Frame identity.** The check compares the frame section in each prompt
-    against the current ``briefs/review-frame.md``.  A stale frame (one that
-    was current at dispatch time but has since been corrected) is the same
-    class of finding ``check_review_artifacts`` reports as "stale": WARN, not
-    ERROR — the words are still legible and the fix is one re-dispatch.
+    **Frame identity — three states, not two (#1115).**  The receipt each
+    dispatch carries (`dispatch_lane.persist_review_prompt`, #1112) records the
+    ``frame_sha256`` the prompt was validated against at persist time.  That
+    digest is what separates the two facts a bare substring check collapses:
+
+    * **current** — the receipt's ``frame_sha256`` equals the current frame's
+      digest AND the frame is present in the prompt.  No row.
+    * **missing** — the digest matches the current frame but the frame section
+      is absent from the prompt.  The dispatch was assembled wrong: re-dispatch.
+    * **stale** — the digest differs from the current frame.  The dispatch was
+      correct and the frame moved underneath it; the review is still valid, and
+      the question is whether to re-review against the new frame, not whether to
+      re-dispatch.
+
+    Reporting "missing" for both is the #136 collapse — two facts with opposite
+    remedies sharing one verdict — and it trained the reader to re-dispatch a
+    review that did not need it.  A prompt whose receipt is absent is a fourth
+    condition reported in its own words, never folded into "missing": without
+    ``frame_sha256`` the check cannot classify, and a stale frame misread as
+    "missing" is exactly the bug this fixes.  Stale is WARN, not ERROR — the
+    words are still legible and the remedy is a decision, mirroring
+    ``check_review_artifacts`` (#329).
     """
     root = dw.parent
     dispatches_dir = dw / "review-dispatches"
@@ -5998,10 +6015,13 @@ def check_review_dispatch_frame(dw: Path, rep: Report) -> None:
         )
         return
     frame_text = frame_path.read_text(encoding="utf-8")
+    current_sha = hashlib.sha256(frame_text.encode("utf-8")).hexdigest()
 
     in_scope = 0
     missing: list[str] = []
-    stale: list[str] = []
+    stale: list[tuple[str, str, str]] = []
+    no_receipt: list[str] = []
+    current = 0
     for prompt_path in prompt_paths:
         try:
             prompt = prompt_path.read_text(encoding="utf-8")
@@ -6009,19 +6029,57 @@ def check_review_dispatch_frame(dw: Path, rep: Report) -> None:
             missing.append(f"{prompt_path.name}(unreadable)")
             continue
         in_scope += 1
+        # The receipt is <stem>.json beside <stem>.prompt.md; persist_review_prompt
+        # always writes both, so a prompt without one is corruption, not a frame
+        # state — reported in its own words so it cannot pose as "missing".
+        receipt_path = prompt_path.with_name(
+            prompt_path.name[:-len(".prompt.md")] + ".json")
+        receipt_sha: str | None = None
+        if receipt_path.is_file():
+            try:
+                record = json.loads(receipt_path.read_text(encoding="utf-8"))
+                if isinstance(record, dict):
+                    receipt_sha = record.get("frame_sha256")
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                receipt_sha = None
+        if not receipt_sha:
+            no_receipt.append(prompt_path.name)
+            continue
         occurrence = prompt.find(frame_text)
-        if occurrence < 0:
+        if receipt_sha != current_sha:
+            # The frame moved after dispatch.  The prompt carried the OLD frame
+            # (persist validated it then); the review was sound at dispatch time.
+            stale.append((prompt_path.name, receipt_sha, current_sha))
+        elif occurrence < 0:
             missing.append(prompt_path.name)
         elif prompt.find(frame_text, occurrence + 1) >= 0:
             missing.append(f"{prompt_path.name}(duplicate frame)")
+        else:
+            current += 1
 
+    findings = missing or stale or no_receipt
     detail = (
         f"examined {in_scope} review dispatch prompt(s) in review-dispatches/; "
-        f"{len(missing)} missing the review-frame section, {len(stale)} stale"
+        f"{current} current, {len(missing)} missing the review-frame section, "
+        f"{len(stale)} stale, {len(no_receipt)} without a receipt"
     )
     if missing:
-        detail += "; missing: " + " ".join(missing)
-    level = WARN if missing else OK
+        detail += (
+            "; missing (frame unchanged at dispatch but absent now — re-dispatch): "
+            + " ".join(missing)
+        )
+    if stale:
+        detail += (
+            "; stale (frame moved after dispatch — the review was valid then; "
+            "decide whether to re-review, not whether to re-dispatch): "
+            + " ".join(f"{name}(receipt {r[:12]}; current {c[:12]})" for name, r, c in stale)
+        )
+    if no_receipt:
+        detail += (
+            "; no receipt (cannot read frame_sha256 — re-dispatch through "
+            "brief.py --review so a receipt is written): " + " ".join(no_receipt)
+        )
+    level = WARN if findings else OK
     if missing:
         detail += (
             " — a substring check cannot prove the reviewer was TOLD the clone "

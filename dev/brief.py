@@ -66,6 +66,17 @@ through `dispatch_lane.validate_prompt`.  Drift is then a loud test failure
 before it costs a dispatch, and a runtime typo here is still refused by an
 instrument that did not help write it.
 
+The one exception is `--review` (#1115).  A review prompt had no generator at
+all — the coordinator concatenated `briefs/review-frame.md` by hand, and
+`#1109` measured that the frame was a convention, not a construction.  The fix
+is to make the generator and the receipt the *same path*: `review_prompt`
+appends the frame by construction and `main` persists through
+`dispatch_lane.persist_review_prompt` (#1112) rather than re-deriving the
+receipt.  So the lane path (`build`) stays independent of `dispatch_lane`, and
+the review path deliberately is not — collapsing generator and validator for
+review is the point, because a hand-assembled review prompt is exactly what
+there is no second instrument to witness.
+
 ## Storage
 
 This tool writes no files and opens no store for writing; it emits text on
@@ -78,12 +89,14 @@ this tool does not touch.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
+import dispatch_lane
 import land_lane
 
 
@@ -1392,6 +1405,35 @@ def frame_sections(text: str) -> list[str]:
     return [section for section in sections if section]
 
 
+def review_prompt(core: str, frame: str) -> str:
+    """Concatenate authored review text with ``briefs/review-frame.md`` (#1115).
+
+    The frame is appended verbatim as the final section, by construction — the
+    receipt half (#1112, ``dispatch_lane.persist_review_prompt``) can then
+    verify it landed, because the very thing that validates the frame is the
+    thing that persists it.  This is the construction `#1109` named as missing:
+    before it, the frame was a coordinator convention hand-concatenated per
+    dispatch, and no instrument could prove it reached a reviewer.
+
+    ``frame`` is the RAW file text (the bytes
+    ``dispatch_lane.validate_review_prompt`` searches for verbatim), so it is
+    appended without stripping.  Returned text is exactly what
+    ``persist_review_prompt`` validates and receipts; a caller that alters it
+    will be refused at persist time, not silently accepted.
+    """
+    core = core.strip()
+    if not core:
+        raise BriefFault(
+            "review core is empty; no task-specific review text was supplied"
+        )
+    if not frame.strip():
+        raise BriefFault(
+            "review frame briefs/review-frame.md is empty; the assertion "
+            "examined no rules"
+        )
+    return core + "\n\n" + frame
+
+
 def _read(path: Path, label: str) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -1516,11 +1558,24 @@ def _core_of(body: str, task: int) -> str:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--task", type=int, required=True, help="the task id")
+    # --task (lane brief) and --review (review dispatch) are the two modes; a
+    # review is of a branch, not a task, so neither flag is required alone but
+    # exactly one must be given (#1115).
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--task", type=int, help="the task id (lane brief mode)")
+    mode.add_argument(
+        "--review", metavar="BRANCH",
+        help="emit a review dispatch prompt for BRANCH with briefs/review-frame.md "
+             "appended by construction, and persist its receipt (#1115)")
     parser.add_argument("--lane", help="branch name (default: cx-<task>)")
     parser.add_argument(
-        "--owns", required=True,
-        help="comma-separated repo paths the lane owns (`Lane-owns:`, #465)")
+        "--round", type=int, default=1,
+        help="review round number (review mode only, default 1) — reaches the "
+             "receipt (#1115)")
+    parser.add_argument(
+        "--owns",
+        help="comma-separated repo paths the lane owns (`Lane-owns:`, #465); "
+             "lane-brief mode only — build() refuses an empty set")
     parser.add_argument(
         "--core", type=Path,
         help="file holding the authored core; `-` or omitted reads stdin")
@@ -1533,21 +1588,70 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _read_core(args) -> str:
+    """The authored core/review text from --core, stdin, or --core-from-task."""
+    if args.core_from_task:
+        if args.core is not None:
+            raise BriefFault("--core and --core-from-task name two different cores")
+        if args.task is None:
+            raise BriefFault("--core-from-task needs --task (lane-brief mode)")
+        return core_from_task(args.task, args.ledger)
+    if args.core is None or str(args.core) == "-":
+        if sys.stdin.isatty():
+            raise BriefFault(
+                "no authored core: --core was not given and stdin is a terminal"
+            )
+        return sys.stdin.read()
+    return _read(args.core, "authored core")
+
+
+def _main_review(args) -> int:
+    """Emit a review dispatch prompt and persist its receipt (#1115).
+
+    The generator and the receipt are the same path: ``review_prompt`` appends
+    the frame by construction and ``dispatch_lane.persist_review_prompt``
+    (#1112) validates and writes it.  There is no second persist call and no
+    hand-concatenation to get wrong.
+    """
+    branch = args.review
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", branch or ""):
+        print(
+            "review refused: --review <branch> is required and must be one safe "
+            "path component (letters, digits, . _ -)",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        core = _read_core(args)
+        frame = _read(dispatch_lane.REVIEW_FRAME_PATH, "review frame")
+        prompt = review_prompt(core, frame)
+        receipt = dispatch_lane.persist_review_prompt(prompt, branch, args.round)
+    except (BriefFault, dispatch_lane.DispatchFault) as exc:
+        print(f"review refused: {exc}", file=sys.stderr)
+        return 2
+    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    sys.stdout.write(prompt)
+    print(
+        f"review prompt persisted: branch={branch}; round={args.round}; "
+        f"receipt={receipt}; digest={digest}",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.review:
+        return _main_review(args)
     try:
-        if args.core_from_task:
-            if args.core is not None:
-                raise BriefFault("--core and --core-from-task name two different cores")
-            core = core_from_task(args.task, args.ledger)
-        elif args.core is None or str(args.core) == "-":
-            if sys.stdin.isatty():
-                raise BriefFault(
-                    "no authored core: --core was not given and stdin is a terminal"
-                )
-            core = sys.stdin.read()
-        else:
-            core = _read(args.core, "authored core")
+        core = _read_core(args)
+        if not args.owns:
+            raise BriefFault(
+                "no --owns paths — SKILL.md (#465) makes `Lane-owns:` mandatory "
+                "on a worktree brief and lint.check_brief_lane_owns ERRORs without "
+                "it; the lane-containment guard has nothing to protect from an "
+                "empty set"
+            )
         owns = [token.strip().strip("`") for token in args.owns.split(",") if token.strip().strip("`")]
         # main reads the section count and prints the tool-verbs denominator in
         # one validation; direct build callers still self-validate by default.
@@ -1570,6 +1674,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sys.stdout.write(brief)
     return 0
+
 
 
 if __name__ == "__main__":
