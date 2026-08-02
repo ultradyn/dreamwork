@@ -5,6 +5,35 @@ dreamwork-version: 5853e1789929
 
 ## Goals
 
+**NEAR-TERM FOCUS (his, 2026-08-02 19:1x): the React migration is the main near-term goal, and
+no new webui feature is built before it.** His words, in two messages: *"why don't we migrate over
+before the session log? then we can do the session log thing entirely in react."* and *"for all new
+webui features, we should implement them after react micration. make react migration the main
+near-term goal"*.
+
+The reasoning is his and it generalises: **a surface built before the migration is built twice**,
+and the second build is not a port but a rewrite — the thing "One fact, one owner" refuses. So a
+new webui feature that lands now buys a few days of use and costs a full re-implementation.
+
+What this changes in practice:
+- **Goal `#1`** (*"Convert webui to fully run via build react webui and migrate watch server over"*)
+  is the current goal and the near-term priority. Its members are `#630`, `#640`, `#692`, `#823`,
+  `#859`; `#630` (the derived component surface + bundle step) is the head and is marked next-up.
+- **New webui features WAIT.** `#631` (live session-log view) is the worked example — recorded via
+  `groups require --task 631 --needs-group 1` rather than as a goal-`#1` membership, because it is
+  not migration work, it is work that follows the migration.
+- **Existing-surface polish he asks for directly is NOT covered by this** — he asked for the issue
+  hover styling (`#1007`) and the `/goals` redesign (`#1006`) the same evening. Cheap CSS polish on
+  a surface that already exists does not get rebuilt in the sense above. A substantial redesign of
+  an existing page does, so `#1006` was put back to him rather than shelved quietly.
+- This does NOT retire anything below; loop-infrastructure, gate, and ledger work continue, because
+  they are what makes the migration landable at all.
+
+**It was already scheduled and the loop missed it.** His `#591` ruling of 2026-07-31 17:03 said he
+wanted the inline-HTML replacement *"prioritised at the earliest suitable time"* — yet `#630` sat
+open for two days behind a stale *"do not start before the ruling"* note that the same ruling had
+cleared. Recorded so the near-term focus is not re-derived from scratch next time: `#1023`.
+
 - Make "leave an agent dreaming on a project" a real workflow: the human
   can walk away and come back to steady, safe, well-chosen progress.
   - The loop's memory survives anything that ends a session — restart,
