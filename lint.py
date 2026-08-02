@@ -5984,6 +5984,11 @@ def check_lane_containment_backstop(dw: Path, rep: Report) -> None:
     which is precisely how `#465`'s own premise (`status.json` ownership) failed.
     """
     root = dw.parent
+    # lint supports foreign/non-git target fixtures. Lane containment is a git
+    # repository check; absence of checkout metadata means not applicable,
+    # whereas a present checkout whose git command fails remains a loud fault.
+    if not (root / ".git").exists():
+        return
     try:
         lanes = _live_lane_worktrees(root)
     except LaneEnumerationError as exc:

@@ -9163,7 +9163,8 @@ class TestWorktreeLedgerAbsent:
         return root, dw
 
     def _worktree(self, root, name="lane-x"):
-        wt = root.parent / name
+        wt = root.parent / ".worktrees" / name
+        wt.parent.mkdir(exist_ok=True)
         subprocess.run(["git", "-C", str(root), "worktree", "add", "-q",
                         "-b", name, str(wt)],
                        capture_output=True, text=True, check=True)
