@@ -1067,20 +1067,22 @@ def _presquash_ref_from_message(message):
 
 
 def _git_presquash_refs(repo, shas):
-    """Map each sha to its Presquash-Ref trailer value (only non-empty).
+    """Map each FULL sha to its Presquash-Ref trailer value (only non-empty).
 
-    One batched ``git log --no-walk`` over the given shas — the same commits
-    ``_git_subjects`` already fetched, read once more for their trailers. A sha
-    that does not resolve (a fixture placeholder) yields no line, so invented
-    shas contribute nothing. Returns {} on any git failure: the sweep then
-    reports it followed nothing rather than guessing.
+    One batched ``git log --no-walk`` over the given shas. Keyed by the FULL
+    sha (%H) so the join with the subject list cannot silently miss on an
+    abbreviation-length mismatch (#1111): the ``commits`` list carries %h shas
+    from ``_git_subjects``, and the caller resolves those to %H via
+    ``_resolve_to_full`` (prefix match against the full-sha keys). Returns {}
+    on any git failure.
     """
     if not shas:
         return {}
     try:
         out = subprocess.run(
             ["git", "-C", str(repo), "log", "--no-walk",
-             "--format=%h\x1f%(trailers:key=Presquash-Ref,valueonly)", *shas],
+             "--format=%H\x1f%(trailers:key=Presquash-Ref,valueonly)",
+             *shas],
             capture_output=True, text=True, timeout=20,
         )
     except (OSError, subprocess.SubprocessError):
@@ -1089,9 +1091,9 @@ def _git_presquash_refs(repo, shas):
         return {}
     refs = {}
     for line in out.stdout.splitlines():
-        sha, sep, val = line.partition("\x1f")
+        full, sep, val = line.partition("\x1f")
         if sep and val.strip():
-            refs[sha] = val.strip()
+            refs[full] = val.strip()
     return refs
 
 
@@ -1135,6 +1137,20 @@ def _git_constituent_subjects(repo, base_sha, tip_sha):
     return pairs
 
 
+def _resolve_to_full(sha, full_shas):
+    """Resolve any valid sha abbreviation to its full sha by prefix match.
+
+    #1111: the ``commits`` list carries %h shas from ``_git_subjects``, while
+    the trailer maps key on %H (full shas). A prefix match is correct because
+    any abbreviation of a git sha IS a prefix of the full sha. Returns ``sha``
+    unchanged if no full sha matches (the caller then misses gracefully).
+    """
+    for full in full_shas:
+        if full.startswith(sha):
+            return full
+    return sha
+
+
 def _presquash_expand(repo, commits):
     """Follow Presquash-Ref trailers; return constituent ids + follow status.
 
@@ -1166,7 +1182,11 @@ def _presquash_expand(repo, commits):
     trailers = _git_presquash_refs(repo, shas)
     expanded, followed, unfollowable = [], [], []
     for sha, subject in commits:
-        ref = trailers.get(sha)
+        # #1111: resolve the abbreviated sha from the commits list to the full
+        # sha the trailer map keys on, so an abbreviation-length mismatch
+        # cannot silently turn a followable squash into "nothing followed".
+        full = _resolve_to_full(sha, trailers)
+        ref = trailers.get(full)
         if ref is None:
             continue  # not a land_lane squash (or a fixture sha) — scan normally
         tip = _git_resolve_quiet(repo, ref)
@@ -1211,7 +1231,89 @@ def _classify_presquash(text, expanded, cites, bodies):
     return sorted(found.items()), sorted(cited_open.items())
 
 
-def sweep_text(text, commits, since, source, repo=".", presquash=None):
+# ---------------------------------------------------------------------------
+# #1111 — Also-Fixes: a declared trailer for incidental fixes
+#
+# A lane that fixes a second task and names it only in a commit BODY is
+# invisible to sweep — subjects are scanned (#404), bodies are not (#1097),
+# and the presquash follower only recovers constituent SUBJECTS. The trailer
+# ``Also-Fixes: #NNN`` makes an incidental fix DECLARED rather than inferred,
+# so sweep can surface it without the body-scan false-positive problem.
+#
+# Report-as-candidate, not landing: the trailer is a lane's CLAIM about
+# another task, and sweep is advisory. The coordinator confirms before
+# closing. An id the subject scan already found is NOT re-reported.
+# ---------------------------------------------------------------------------
+
+def _collect_also_fixes(repo, commits):
+    """``[(sha, tid, subject)]`` for each Also-Fixes trailer value on the commits.
+
+    The sha and subject are taken verbatim from ``commits`` so the report
+    shows the same abbreviated sha as the rest of the sweep. Internally
+    resolves to full sha (%H) for the git trailer read — the same join-safety
+    fix as presquash refs (#1111). Handles multiple ids on one line
+    (``Also-Fixes: #12, #13``) and multiple trailer lines on one commit.
+    Returns ``[]`` on any git failure.
+    """
+    shas = [sha for sha, _ in commits]
+    if not shas:
+        return []
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "log", "--no-walk",
+             "--format=%H\x1f%(trailers:key=Also-Fixes,valueonly)",
+             *shas],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if out.returncode != 0:
+        return []
+    full_to_ids = {}
+    current_full = None
+    for line in out.stdout.splitlines():
+        full, sep, val = line.partition("\x1f")
+        if sep:
+            current_full = full
+            for tid_str in SWEEP_ID.findall(val):
+                full_to_ids.setdefault(current_full, []).append(int(tid_str))
+        elif current_full is not None:
+            for tid_str in SWEEP_ID.findall(line):
+                full_to_ids.setdefault(current_full, []).append(int(tid_str))
+    if not full_to_ids:
+        return []
+    result = []
+    for sha, subject in commits:
+        full = _resolve_to_full(sha, full_to_ids)
+        ids = full_to_ids.get(full)
+        if ids:
+            for tid in ids:
+                result.append((sha, tid, subject))
+    return result
+
+
+def _classify_also_fixes(text, also_fixes, cites, bodies):
+    """Classify Also-Fixes ids as CANDIDATES with the master scan's rules.
+
+    Same open-id gate and citation split as ``_classify_presquash``, so an id
+    that is already landed (not in open_ids) or cited by sha is handled
+    identically. The caller deduplicates against the subject-scan and
+    presquash findings so an id named by both a subject and a trailer is
+    reported once (#1111 Direction 2). Returns ``(found, cited_open)`` as
+    sorted ``(tid, [(sha, subject)])`` lists.
+    """
+    open_ids, _ = watch.parse_ledger(text)
+    found, cited_open = {}, {}
+    for sha, tid, subject in also_fixes:
+        if str(tid) not in open_ids:
+            continue
+        bucket = cited_open if cites(sha, bodies.get(tid, "")) else found
+        bucket.setdefault(tid, []).append((sha, subject))
+    return sorted(found.items()), sorted(cited_open.items())
+
+
+def sweep_text(text, commits, since, source, repo=".", presquash=None,
+               also_fixes=None):
     """The advisory report — BOTH halves of the correlation are accounted for.
 
     #404 ruled that a sweep which found nothing must be distinguishable from
@@ -1271,6 +1373,18 @@ def sweep_text(text, commits, since, source, repo=".", presquash=None):
             cited_map.setdefault(tid, lands)
     findings = sorted(found_map.items())
     cited_open = sorted(cited_map.items())
+    # #1111: Also-Fixes trailers — declared incidental-fix claims. Reported as
+    # CANDIDATES, not landings: the trailer is a lane's claim about another
+    # task, and sweep is advisory. An id the subject scan or presquash already
+    # found is NOT re-reported — double-reporting is the Direction-2 bug.
+    if also_fixes:
+        af_found, af_cited = _classify_also_fixes(
+            text, also_fixes, cites, bodies)
+        known_tids = set(found_map) | set(cited_map)
+        af_found = [(tid, l) for tid, l in af_found if tid not in known_tids]
+        af_cited = [(tid, l) for tid, l in af_cited if tid not in known_tids]
+    else:
+        af_found, af_cited = [], []
     open_ids, landed_ids = watch.parse_ledger(text)
     expected_body_ids = {int(tid) for tid in open_ids}
     parsed_body_ids = set(bodies)
@@ -1369,7 +1483,14 @@ def sweep_text(text, commits, since, source, repo=".", presquash=None):
     for tid, landings in cited_open:
         ev = ", ".join(f"`{sha}` {subject}" for sha, subject in landings)
         lines.append(f"  CITED-OPEN #{tid} — {ev}")
-    if not verb_rows and not widened_rows and not cited_open:
+    for tid, landings in af_found:
+        ev = ", ".join(f"`{sha}` {subject}" for sha, subject in landings)
+        lines.append(f"  ALSO-FIXES #{tid} — {ev}")
+    for tid, landings in af_cited:
+        ev = ", ".join(f"`{sha}` {subject}" for sha, subject in landings)
+        lines.append(f"  ALSO-FIXES-CITED-OPEN #{tid} — {ev}")
+    if (not verb_rows and not widened_rows and not cited_open
+            and not af_found and not af_cited):
         lines.append(
             "sweep: nothing to review (this ran — see the examined count above)")
     else:
@@ -1386,6 +1507,11 @@ def sweep_text(text, commits, since, source, repo=".", presquash=None):
             lines.append(
                 f"sweep: {len(cited_open)} cited-but-still-open id(s) — "
                 f"sha-citation is evidence, not closure; review the open state")
+        if af_found:
+            lines.append(
+                f"sweep: {len(af_found)} also-fixes candidate(s) — "
+                f"trailer claims, not subject landings; confirm before "
+                f"closing (#1111)")
     return "\n".join(lines) + "\n"
 
 
@@ -3459,8 +3585,12 @@ def _dispatch(args):
         # resolution; the pure `sweep`/`_sweep_classified` contracts are
         # untouched (#404's pins).
         presquash = _presquash_expand(args.repo, commits)
+        # #1111: collect Also-Fixes trailers — declared incidental-fix claims
+        # that bodies cannot surface (#1097) and subjects may not carry.
+        also_fixes = _collect_also_fixes(args.repo, commits)
         sys.stdout.write(sweep_text(
-            text, commits, since, source, args.repo, presquash=presquash))
+            text, commits, since, source, args.repo, presquash=presquash,
+            also_fixes=also_fixes))
         return 0
 
     ledger_path = Path(args.ledger)
