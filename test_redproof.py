@@ -1956,9 +1956,12 @@ class TestObserveRemainderOptionGuard:
     def test_guard_derives_options_and_honours_the_command_escape(self):
         parser = rp._parser()
         parser.add_argument("--future-option-989")
+        escaped = rp._parse_args(parser, [
+            "observe", "router.js", "--command", "grep", "--", "--lane",
+            "somefile"])
 
-        assert rp._swallowed_self_option(
-            parser, ["grep", "--", "--lane", "somefile"]) is None
+        assert escaped.command == ["grep", "--", "--lane", "somefile"]
+        assert rp._swallowed_self_option(parser, escaped.command) is None
         assert rp._swallowed_self_option(
             parser, ["consumer", "--", "--cwd"]) is None
         assert rp._swallowed_self_option(

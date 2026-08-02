@@ -1782,32 +1782,52 @@ def _parser() -> argparse.ArgumentParser:
     return ap
 
 
-def _swallowed_self_option(
-        ap: argparse.ArgumentParser,
-        command: list[str]) -> tuple[str, str] | None:
-    """Return a command token argparse would recognise as our own option."""
+def _self_option(ap: argparse.ArgumentParser, token: str) -> str | None:
     option_strings = {
         option
         for action in ap._actions
         for option in action.option_strings
     }
+    candidate = token.partition("=")[0]
+    if candidate in option_strings:
+        return candidate
+    if ap.allow_abbrev and candidate.startswith("--"):
+        matches = [option for option in option_strings
+                   if option.startswith(candidate)]
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
+def _parse_args(
+        ap: argparse.ArgumentParser,
+        argv: list[str] | None = None) -> argparse.Namespace:
+    """Split REMAINDER ourselves so a command's literal ``--`` survives."""
+    raw = list(sys.argv[1:] if argv is None else argv)
+    for index, token in enumerate(raw):
+        if "=" not in token and _self_option(ap, token) == "--command":
+            args = ap.parse_args(raw[:index])
+            args.command = raw[index + 1:]
+            return args
+    return ap.parse_args(raw)
+
+
+def _swallowed_self_option(
+        ap: argparse.ArgumentParser,
+        command: list[str]) -> tuple[str, str] | None:
+    """Return a command token argparse would recognise as our own option."""
     for token in command:
         if token == "--":
             return None
-        candidate = token.partition("=")[0]
-        if candidate in option_strings:
-            return token, candidate
-        if ap.allow_abbrev and candidate.startswith("--"):
-            matches = [option for option in option_strings
-                       if option.startswith(candidate)]
-            if len(matches) == 1:
-                return token, matches[0]
+        option = _self_option(ap, token)
+        if option is not None:
+            return token, option
     return None
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = _parser()
-    args = ap.parse_args(argv)
+    args = _parse_args(ap, argv)
     if args.verb == "observe":
         swallowed = _swallowed_self_option(ap, args.command)
         if swallowed is not None:
