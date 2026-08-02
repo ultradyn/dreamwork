@@ -3122,6 +3122,642 @@ def check_client_dist(root: Path, rep: Report) -> None:
             "%s%s" % (detail, (" — %s" % fix) if fix else ""))
 
 
+def _builder_delegation_js_sources(root: Path) -> list[Path]:
+    """Source `.js` where builders and delegates live, excluding generated output.
+
+    `client/dist/**` is the built bundle and carries its own minified
+    `fromBuilder`/`dwBuilder` shapes; scanning it would both inflate the
+    populations and mask a source-level deletion. The boundary is named in
+    the check's report: a delegate or builder outside `dev/build/` or `client/`
+    source is invisible here.
+
+    The exclusion is scoped to `client/dist` specifically — a `dist` under
+    `dev/build/` is not the bundle and must be scanned (there is none today,
+    but narrowing the exclusion makes that a property of the code, not of the
+    current tree).
+    """
+    found: list[Path] = []
+    for sub in ("dev/build", "client"):
+        base = root / sub
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*.js")):
+            parts = path.relative_to(root).parts
+            if len(parts) >= 2 and parts[0] == "client" and parts[1] == "dist":
+                continue
+            found.append(path)
+    return found
+
+
+# The source shapes that name the builder a component delegates to. The first
+# two require a STRING LITERAL so the generic mechanism in delegate.js —
+# `export function fromBuilder(name, call)` and `Delegate.dwBuilder = name`,
+# where the name is a runtime parameter, not a delegation — does not match.
+#
+# The third and fourth arms match `data-dw-delegate` — the attribute the
+# delegating host element carries (delegate.js:110). The mechanism itself
+# writes it with a VARIABLE value (`'data-dw-delegate': name`), so both arms
+# require a string-literal value and exclude the brace-expression/variable
+# forms the mechanism uses. Two positions are covered:
+#   - object-literal: `'data-dw-delegate': 'NAME'` (quoted key, colon)
+#   - JSX attribute:  `data-dw-delegate='NAME'`     (bare key, equals)
+# Both appear in the real sources — wrapper-exports.js:40 uses the object-
+# literal form, and a JSX build (forbidden here but live in a fork) uses the
+# attribute form. A brace-expression value (`data-dw-delegate={name}`) is NOT
+# covered and should not be — it is the mechanism's own parameter form.
+#
+# Token boundaries (round 5): each arm carries a fixed-width NEGATIVE
+# LOOKBEHIND so it matches only at a token boundary, not as a substring of a
+# longer identifier or attribute name. `fromBuilder` rejects
+# `notfromBuilder('x')` (identifier prefix); `data-dw-delegate` rejects
+# `not-data-dw-delegate='x'` (attribute-name prefix, where `-` is a name
+# continuation char). The two prefix cases fail for different reasons (one is
+# an identifier-prefix collision, one an attribute-name-prefix collision) and
+# a single boundary class covers neither, so the identifier arm uses
+# ``[A-Za-z0-9_$]`` and the attribute arms use ``[A-Za-z0-9-]``. ``.dwBuilder``
+# needs no lookbehind: the literal ``.`` is itself the boundary. Comments
+# between the identifier and the paren (``fromBuilder /* c */ (``) are handled
+# by blanking comments to trivia before this regex runs, not here — the regex
+# only sees code-and-string text with comments replaced by spaces.
+_BUILDER_DELEGATE_RE = re.compile(
+    r"(?<![A-Za-z0-9_$])fromBuilder\s*\(\s*['\"]([A-Za-z_$][\w$]*)['\"]"
+    r"|\.dwBuilder\s*=\s*['\"]([A-Za-z_$][\w$]*)['\"]"
+    r"|(?<![A-Za-z0-9\-])['\"]data-dw-delegate['\"]\s*:\s*['\"]([A-Za-z_$][\w$]*)['\"]"
+    r"|(?<![A-Za-z0-9\-])data-dw-delegate\s*=\s*['\"]([A-Za-z_$][\w$]*)['\"]"
+)
+# A builder definition: a column-0 (top-level) function/const/let/var binding.
+# Column-0 is load-bearing — client/router.js:553 has a LOCAL `const label`
+# indented inside a function that is NOT the builder, and keying on it would
+# mask the real builder's deletion. Builders live at the top level of the
+# client sources; the indent distinguishes them from same-named locals.
+_BUILDER_DEF_RE = re.compile(
+    r"^(?:export\s+)?(?:async\s+)?(?:function|const|let|var)\s+"
+    r"([A-Za-z_$][\w$]*)",
+    re.MULTILINE,
+)
+
+
+# Keywords after which ``/`` opens a REGEX (not division). These are the
+# expression-introducing / unary-operator keywords: each is followed by an
+# operand, never by a division's right-hand side, so ``return /re/``,
+# ``typeof /re/``, ``case /re/:`` etc. are regexes. The lexer tracks the last
+# complete identifier token and passes it here so the keyword TAIL is not
+# mistaken for an identifier (``return`` ends in ``n`` → ``n`` alone reads as
+# an identifier → division; the whole word ``return`` reads as a keyword →
+# regex). This is the residual-limit fix; the limit itself is named below.
+_REGEX_AFTER_KEYWORD = frozenset({
+    "return", "typeof", "case", "do", "else", "void", "delete", "throw",
+    "yield", "await", "new", "in", "instanceof", "of",
+})
+
+# Statement keywords whose parenthesised HEADER closes in statement context.
+# ``if (x) /re/``, ``while (x) /re/``, ``for (…) /re/``, ``switch (x) /re/``,
+# ``catch (e) /re/`` and ``with (o) /re/`` are all regexes: the ``)`` that
+# closes the header is NOT an expression close — a statement follows, so a
+# division has no left-hand side there. This is the one case where two tokens
+# that look identical to a char-stream lexer (the ``)`` of ``f(x)`` and the
+# ``)`` of ``if (x)``) must read differently, so the lexer marks the ``(``
+# that follows one of these keywords and carries statement context to its
+# matching ``)`` (see ``_js_noncode_spans``). Unary/expression keywords
+# (``typeof``, ``void``…) are deliberately ABSENT: ``typeof (x) / y`` is
+# division, and those are handled by ``_REGEX_AFTER_KEYWORD`` instead.
+_CONTROL_KEYWORDS = frozenset({
+    "if", "while", "for", "switch", "catch", "with",
+})
+
+
+def _regex_after(prev_sig: str, prev_word: str, ctrl_close: bool) -> bool:
+    """Heuristic: is ``/`` a regex opener or a division operator?
+
+    After expression-ending tokens (identifier chars, digits, ``)``, ``]``,
+    ``}``, closing quotes/backtick) ``/`` is DIVISION. After operators,
+    punctuators (``(``, ``,``, ``;``, ``{``, ``[``), or start of input, ``/``
+    opens a REGEX. This is the standard prev-significant-token heuristic used
+    by every lightweight JS lexer; it is correct for ``a / b / c`` (division)
+    and ``= /pattern/`` (regex).
+
+    Token-aware keyword rule (round 5): the lexer accumulates the last
+    complete identifier as ``prev_word``. When that word is an
+    expression-introducing keyword (``return``, ``typeof``, …) the next ``/``
+    opens a REGEX, because the keyword expects an operand and a division has
+    no left-hand side there. This closes the ``return /re/`` hole round 4 left
+    open (``return`` ended in ``n``, which read as an identifier → division).
+
+    Control-condition rule (round 6): ``ctrl_close`` is True when the last
+    significant token was the ``)`` that CLOSED a control-header paren
+    (``if (…)``, ``while (…)``, ``for (…)``, ``switch (…)``, ``catch (…)``,
+    ``with (…)``). That ``)`` ends a CONDITION, not an expression — a
+    statement follows — so a ``/`` there opens a REGEX. The lexer tracks
+    which ``(`` opened a control header and carries that mark to its match,
+    because the ``)`` of ``if (x)`` and the ``)`` of ``f(x)`` are the same
+    character and only the mark distinguishes them. Ordinary division
+    ``f(x) / g(y)`` keeps reading as division: its ``(`` did not follow a
+    control keyword, so ``ctrl_close`` stays False and the ``)`` branch below
+    classifies ``/`` as division. Both shapes end in ``)`` and both are
+    covered, in opposite directions, by the round-6 regression pair.
+
+    Residual limit: regex-vs-division is genuinely undecidable without a full
+    parser, and this heuristic is not one. Genuine residuals it still misses:
+    an automatic semicolon insertion (ASI) line break before ``return /re/``
+    where the preceding statement already terminated; a division whose left
+    operand is a closing ``)`` that is NOT a call or control header (a bare
+    grouping like ``(a + b) / c`` reads as division correctly — its ``)`` is
+    an expression close — but an exotic expression-position target could
+    still fool a single-char heuristic); numeric literals with exotic
+    suffixes; and any expression keyword not listed in
+    ``_REGEX_AFTER_KEYWORD``. The boundary named here is the one the code
+    actually draws: ordinary division including ``f(x) / g(y)`` reads as
+    division (tested), and a regex after a control condition reads as a regex
+    (tested). The guard names the rest rather than implying total coverage
+    (#651). The real sources carry no regex literals, so the practical risk
+    is a false POSITIVE (a regex body read as code), never a silent deletion.
+    """
+    if not prev_sig:
+        return True
+    if prev_word in _REGEX_AFTER_KEYWORD:
+        return True
+    if ctrl_close:
+        return True
+    if prev_sig in ")]}":
+        return False
+    if prev_sig.isalnum() or prev_sig in "$_":
+        return False
+    if prev_sig in "'\"`":
+        return False
+    return True
+
+
+def _js_noncode_spans(text: str) -> list[tuple[int, int, str]]:
+    """Non-code character intervals in JavaScript source, each tagged by kind.
+
+    Returns ``(start, end, kind)`` spans for positions that are NOT executable
+    code, where kind is one of:
+
+      - ``'comment'``  — line/block comment bodies INCLUDING delimiters
+      - ``'string'``   — single/double-quoted literal CONTENTS (between quotes,
+                         not the delimiters)
+      - ``'template'`` — template-literal TEXT runs (between a backtick and
+                         ``${`` or ``}``, not the interpolation interior)
+      - ``'regex'``    — regex-literal bodies INCLUDING delimiters and flags
+
+    Quote/backtick delimiters and ``${}`` interpolation interiors are CODE —
+    they are structural positions where a delegate pattern legitimately begins.
+    A delegate-site regex match whose START offset falls inside any returned
+    span is a mention inside a comment/string/regex, not a real code site.
+
+    The ``kind`` tag lets callers treat comments as TRIVIA (blank them to
+    spaces before the delegate regex runs) while leaving string contents
+    intact — string literals carry the builder NAME the regex must read, so
+    they cannot be blanked. Blanking only comments fixes the
+    ``fromBuilder /* c */ (`` false-negative without swapping it for the
+    opposite false-positive (comment contents becoming code).
+
+    This is a CHARACTER-STREAM lexer, not a line-oriented scanner. Round 3
+    split the input into lines and applied the regex per line, which made
+    line-crossing constructs invisible by construction: a key and its value
+    on separate lines were never on the same line together, and ``${}``
+    interpolation was treated as string-interior because the opening backtick
+    was on a prior line. A character stream handles both by construction —
+    the regex runs over the whole text and the lexer's non-code spans are
+    the only filter, so a construct that spans lines is visible iff every
+    character of it is in code position.
+
+    Template interpolation nesting is handled with a context stack: ``${``
+    pushes an interpolation frame that tracks ``{}`` depth, so object/function
+    braces inside the interpolation do not prematurely close it, and a nested
+    template unwinds correctly through the stack.
+
+    The lexer also accumulates ``prev_word`` — the last complete identifier
+    token in a code context — so ``_regex_after`` can recognise
+    expression-introducing keywords (``return``, ``typeof``, …) whose final
+    character alone would read as an identifier and mis-classify a following
+    ``/`` as division. It also keeps a paren-attribute stack so the ``)`` that
+    closes a control header (``if (…)`` … ``with (…)``) can be distinguished
+    from the ``)`` that closes a call/grouping: only the former puts the next
+    ``/`` in statement (regex) position.
+    """
+    n = len(text)
+    spans: list[tuple[int, int, str]] = []
+    i = 0
+    # Context stack for template/interpolation nesting.
+    #   ('code',)           — top-level code (always at bottom)
+    #   ('tmpl',)           — inside a `...` text run
+    #   ('interp', depth)   — inside ${...}; depth counts nested {}
+    ctx: list[tuple] = [('code',)]
+    prev_sig = ""   # last significant (non-space) char in a code context
+    prev_word = ""  # last complete identifier token in a code context
+    # One entry per UNCLOSED '(': True iff it opened a control header
+    # (if/while/for/switch/catch/with). Its matching ')' carries that mark to
+    # ctrl_close so _regex_after reads the following '/' as a regex (statement
+    # position), not division. Bracket/brace nesting is not tracked here —
+    # only '(' matters, and an unmatched ')' reads as expression-close.
+    parens: list[bool] = []
+    ctrl_close = False  # last significant char was a control-header ')'
+
+    while i < n:
+        kind = ctx[-1][0]
+        c = text[i]
+
+        if kind == 'tmpl':
+            if c == '`':
+                ctx.pop()
+                i += 1
+                prev_sig = '`'
+                prev_word = ""
+                ctrl_close = False
+                continue
+            if c == '\\' and i + 1 < n:
+                i += 2
+                continue
+            if c == '$' and i + 1 < n and text[i + 1] == '{':
+                ctx.append(('interp', 0))
+                i += 2
+                prev_sig = ""
+                prev_word = ""
+                ctrl_close = False
+                continue
+            # Accumulate a template text run (non-code) until ` or ${
+            start = i
+            while i < n:
+                ch = text[i]
+                if ch == '`':
+                    break
+                if ch == '\\' and i + 1 < n:
+                    i += 2
+                    continue
+                if ch == '$' and i + 1 < n and text[i + 1] == '{':
+                    break
+                i += 1
+            spans.append((start, i, 'template'))
+            continue
+
+        # ---- 'code' or 'interp' (shared code-handling) ----
+        depth = ctx[-1][1] if kind == 'interp' else None
+
+        # Closing } that ends a ${} interpolation (depth == 0)
+        if kind == 'interp' and c == '}':
+            if depth == 0:
+                ctx.pop()
+                i += 1
+                continue
+            ctx[-1] = ('interp', depth - 1)
+            i += 1
+            continue
+
+        # Opening { inside interpolation — track nesting so object/function
+        # braces do not prematurely close the ${}.
+        if kind == 'interp' and c == '{':
+            ctx[-1] = ('interp', depth + 1)
+            i += 1
+            continue
+
+        # ---- Comments ----
+        if c == '/' and i + 1 < n and text[i + 1] == '/':
+            start = i
+            i += 2
+            while i < n and text[i] != '\n':
+                i += 1
+            spans.append((start, i, 'comment'))
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] == '*':
+            start = i
+            i += 2
+            while i + 1 < n and not (text[i] == '*' and text[i + 1] == '/'):
+                i += 1
+            i = min(i + 2, n)
+            spans.append((start, i, 'comment'))
+            continue
+
+        # ---- Single-quoted string ----
+        if c == "'":
+            j = i + 1
+            while j < n:
+                if text[j] == '\\' and j + 1 < n:
+                    j += 2
+                    continue
+                if text[j] == "'":
+                    break
+                if text[j] == '\n':
+                    break
+                j += 1
+            spans.append((i + 1, j, 'string'))
+            i = j + 1 if (j < n and text[j] == "'") else j
+            prev_sig = "'"
+            prev_word = ""
+            ctrl_close = False
+            continue
+
+        # ---- Double-quoted string ----
+        if c == '"':
+            j = i + 1
+            while j < n:
+                if text[j] == '\\' and j + 1 < n:
+                    j += 2
+                    continue
+                if text[j] == '"':
+                    break
+                if text[j] == '\n':
+                    break
+                j += 1
+            spans.append((i + 1, j, 'string'))
+            i = j + 1 if (j < n and text[j] == '"') else j
+            prev_sig = '"'
+            prev_word = ""
+            ctrl_close = False
+            continue
+
+        # ---- Template literal ----
+        if c == '`':
+            ctx.append(('tmpl',))
+            i += 1
+            prev_sig = '`'
+            prev_word = ""
+            ctrl_close = False
+            continue
+
+        # ---- Regex literal vs division ----
+        if c == '/':
+            if _regex_after(prev_sig, prev_word, ctrl_close):
+                start = i
+                i += 1
+                in_class = False
+                while i < n:
+                    if text[i] == '\\' and i + 1 < n:
+                        i += 2
+                        continue
+                    if text[i] == '[':
+                        in_class = True
+                    elif text[i] == ']':
+                        in_class = False
+                    elif text[i] == '/' and not in_class:
+                        i += 1
+                        break
+                    elif text[i] == '\n':
+                        break
+                    i += 1
+                while i < n and text[i].isalpha():
+                    i += 1          # flags
+                spans.append((start, i, 'regex'))
+                prev_sig = "1"       # regex is an expression → next / is division
+                prev_word = ""
+                ctrl_close = False
+                continue
+            prev_sig = '/'
+            prev_word = ""
+            ctrl_close = False
+            i += 1
+            continue
+
+        # ---- Identifier / keyword (accumulate for the keyword regex rule) ----
+        # A whole identifier is consumed so _regex_after can see keywords
+        # (return/typeof/…): `return` ends in `n`, which alone reads as an
+        # identifier (→ division), but the complete word reads as a keyword
+        # (→ regex). Digits are not identifier-START chars, so a leading digit
+        # falls through to the regular-character branch below.
+        if c.isalpha() or c in "_$":
+            start = i
+            i += 1
+            while i < n and (text[i].isalnum() or text[i] in "_$"):
+                i += 1
+            prev_word = text[start:i]
+            prev_sig = prev_word[-1]
+            ctrl_close = False
+            continue
+
+        # ---- Paren tracking: mark control headers ----
+        # '(' after a control keyword (if/while/for/switch/catch/with) opens a
+        # CONDITION, so its matching ')' closes statement context. Every other
+        # '(' opens a call/grouping whose ')' is an expression close. The
+        # pushed bool carries that distinction to the ')'.
+        if c == '(':
+            parens.append(prev_word in _CONTROL_KEYWORDS)
+            prev_sig = '('
+            prev_word = ""
+            ctrl_close = False
+            i += 1
+            continue
+        if c == ')':
+            was_ctrl = parens.pop() if parens else False
+            prev_sig = ')'
+            prev_word = ""
+            # Only a control-header ')' leaves the next '/' in regex position.
+            ctrl_close = was_ctrl
+            i += 1
+            continue
+
+        # ---- Regular code character ----
+        if not c.isspace():
+            prev_sig = c
+            prev_word = ""
+            ctrl_close = False
+        i += 1
+
+    return spans
+
+
+def _in_spans(pos: int, spans: list[tuple]) -> bool:
+    """Binary search: is ``pos`` inside any sorted ``(start, end[, kind])`` span?
+
+    Accepts either untagged ``(start, end)`` or tagged ``(start, end, kind)``
+    tuples — the kind is ignored, only the interval matters. The spans must be
+    sorted by start (the lexer emits them in increasing-offset order).
+    """
+    lo, hi = 0, len(spans)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        s, e = spans[mid][0], spans[mid][1]
+        if pos < s:
+            hi = mid
+        elif pos >= e:
+            lo = mid + 1
+        else:
+            return True
+    return False
+
+
+def _blank_kinds(text: str, spans: list[tuple[int, int, str]],
+                 kinds) -> str:
+    """Return ``text`` with the characters of ``kinds`` spans replaced by spaces.
+
+    Length-preserving: every replaced byte becomes a space, so offsets in the
+    result line up with offsets in the original. Used to treat COMMENT spans
+    as trivia before the delegate regex runs — ``fromBuilder /* c */ (`` has
+    its comment blanked so the call shape is visible, WITHOUT turning comment
+    CONTENTS into code (they become spaces, which cannot match). String,
+    regex, and template spans are left intact: strings carry the builder NAME
+    the regex must read, and regex/template bodies are still filtered by the
+    span check separately.
+    """
+    want = set(kinds)
+    chars = list(text)
+    for s, e, kind in spans:
+        if kind in want:
+            for k in range(s, e):
+                chars[k] = " "
+    return "".join(chars)
+
+def check_builder_delegation(root: Path, rep: Report) -> None:
+    """#1057 — refuse a builder deletion a live delegate still calls.
+
+    The React port (#630) replaces builders with native components one surface
+    at a time, and every flip DELETES a builder. ``fromBuilder``
+    (dev/build/src/delegate.js) throws at render time when its builder is gone,
+    so a flip that deletes a builder something still delegates to breaks an
+    already-native route at RUNTIME, not at the gate. This makes that break a
+    gate ERROR instead.
+
+    Both populations are DERIVED from the tree at check time — never a
+    hand-maintained roster, which is stale the day after it is written and
+    fails in the worst direction (silently passing a deletion it never knew to
+    look for):
+
+      - delegates — ``fromBuilder('NAME', …)`` and ``.dwBuilder = 'NAME'`` sites
+        and ``'data-dw-delegate': 'NAME'`` / ``data-dw-delegate='NAME'`` forms.
+      - definitions — column-0 ``function NAME`` / ``const NAME =`` bindings.
+
+    The check is UNCONDITIONAL: a delegate that names a builder with no live
+    definition is always a runtime break, so there is no escape hatch. Every
+    legitimate completion path leaves the delegate names a subset of the
+    defined names — the delegate is removed (the surface went native), the
+    delegate is retargeted to a builder that exists, or the builder is kept.
+    An in-tree "retirement" that kept a live delegate to a deleted builder
+    would keep a call that throws, and any such declaration is forgeable by the
+    lane that lands it (#994), so no opt-out is shipped.
+
+    #611: a guard that examined nothing must not read as a pass. Zero
+    delegates on a tree that carries the native runtime is a broken scan, not
+    a clean result — ERROR, with the denominator named.
+
+    Applicability gate — #994 (forgeable marker). Round 2 gated on the
+    delegate.js FILE; deleting that one file silenced the guard over a live
+    broken delegate, which is a bypass, not a configuration. The gate is now
+    the dev/build/ DIRECTORY: structural, not forgeable by a single-file
+    delete. When dev/build/ exists but the marker is absent the check RUNS
+    rather than skipping — the delegates still name builders, and those
+    builders are still defined (or not) in client/*.js. A tree with no
+    dev/build/ at all is a foreign target where the check does not apply
+    (silent, matching round 2's verified-good client-only closure).
+
+    Lexical context — round 4 (#1057). Rounds 1–3 matched the delegate regex
+    per LINE after stripping comments, which made line-crossing constructs
+    invisible by construction: a ``'data-dw-delegate':`` key and its ``'NAME'``
+    value on separate lines were never on the same line together (false
+    GREEN), and ``${}`` interpolation code was treated as string-interior
+    because the opening backtick was off-line (false GREEN); multiline
+    template bodies and regex literals produced false ERRORs because the
+    per-line string-span filter could not see the opening delimiter.
+
+    Round 4 replaces the line-oriented scanner with a CHARACTER-STREAM lexer
+    (``_js_noncode_spans``) that walks the whole text in a single pass,
+    tracking line comments, block comments, single/double-quoted strings,
+    template literals WITH their ``${}`` interpolation depth, and regex
+    literals (with the prev-significant-token division/regex heuristic). It
+    emits non-code spans; the delegate regex runs over the raw text and a
+    match is accepted only when its START offset is in code position. A
+    construct that spans lines is visible iff every character of it is in
+    code position — by construction, not by adding per-context cases.
+
+    Round 5 closes four lexer holes without a special case per form:
+
+      - comments-as-trivia: comments are blanked to spaces (length-preserving)
+        before the regex runs, so ``fromBuilder /* c */ (`` is visible without
+        turning comment CONTENTS into code;
+      - token boundaries: each delegate arm carries a fixed-width negative
+        lookbehind, so ``notfromBuilder('x')`` (identifier prefix) and
+        ``not-data-dw-delegate='x'`` (attribute-name prefix) do not match;
+      - keyword-aware regex: the lexer tracks the last complete identifier, so
+        ``return /re/`` opens a regex (``return`` is a keyword, not an
+        identifier tail) — the residual undecidable cases are named in
+        ``_regex_after``, not implied away;
+      - client-only definitions: builders are DEFINED in client/ source, so a
+        dev/build/ namesake no longer masks a client/ deletion.
+    """
+    # Applicability is gated on the native-runtime HOME (dev/build/), not on
+    # a single marker file. A directory is structural — it cannot be forged
+    # away by deleting one file (#994). When dev/build/ exists the check runs
+    # even if delegate.js is absent: the delegates still call builder names,
+    # and those names are still defined (or not) in client/*.js. A tree with
+    # no dev/build/ at all is a foreign target where the check does not apply.
+    if not (root / "dev/build").is_dir():
+        return
+    sources = _builder_delegation_js_sources(root)
+    # When dev/build/ exists but no .js sources are found anywhere, the
+    # directory's existence is still a claim that a native runtime lives
+    # here. The #611 rule applies: "examined nothing must not read as a pass."
+    # Falling through to the zero-delegate ERROR (rather than returning) makes
+    # an empty dev/build/ read as the broken scan it is. An ABSENT dev/build/
+    # (no directory at all) stays silent — the check does not apply there.
+    # dev/build as a FILE (not a directory) is treated as absent: is_dir() is
+    # False, the gate does not fire, and the check is N/A. That is a
+    # misconfiguration, but the check's ERROR message says "the native runtime
+    # is present," which would be false for a file.
+    delegates: list[tuple[str, str]] = []  # (builder name, "rel/path:line")
+    delegate_files: set[str] = set()
+    defined: set[str] = set()
+    for path in sources:
+        rel = path.relative_to(root)
+        parts = rel.parts
+        # P1-a (round 5): builders are DEFINED in client/ source. dev/build/
+        # is the native-runtime HOME and a delegate SITE, not a definition
+        # source — a column-0 namesake there masked a client/ deletion (the
+        # exact breakage this guard exists to prevent). Delegates are still
+        # collected from every scanned source (dev/build + client); only the
+        # DEFINITION population is keyed on client/.
+        is_client_source = parts[0] == "client"
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # Character-stream lexer: one pass over the whole text produces the
+        # non-code spans (comments, string contents, template text, regex
+        # bodies), each tagged by kind. Comments are then blanked to trivia
+        # (spaces, length-preserving) so ``fromBuilder /* c */ (`` is visible
+        # to the regex WITHOUT turning comment contents into code — string,
+        # regex, and template spans are left intact (strings carry the builder
+        # NAME). The delegate and definition regexes run over the MASKED text;
+        # a match is accepted only when its START offset is in code position
+        # in the original. Line-crossing constructs are visible by
+        # construction: the regex sees the whole file.
+        noncode = _js_noncode_spans(text)
+        masked = _blank_kinds(text, noncode, {'comment'})
+        for m in _BUILDER_DELEGATE_RE.finditer(masked):
+            if _in_spans(m.start(), noncode):
+                continue
+            name = m.group(1) or m.group(2) or m.group(3) or m.group(4)
+            lineno = text.count('\n', 0, m.start()) + 1
+            delegates.append((name, "%s:%d" % (rel, lineno)))
+            delegate_files.add(str(rel))
+        if is_client_source:
+            for m in _BUILDER_DEF_RE.finditer(masked):
+                if _in_spans(m.start(), noncode):
+                    continue
+                defined.add(m.group(1))
+    if not delegates:
+        rep.add(
+            ERROR, "builder delegation",
+            "examined 0 delegate references across %d source file(s) — the "
+            "native runtime (dev/build/) is present, so this is a broken scan, "
+            "not a clean result; if the React port is complete and the last "
+            "delegate was removed, retire this check with that flip (#611)"
+            % len(sources))
+        return
+    broken = [(name, site) for name, site in delegates if name not in defined]
+    if broken:
+        for name, site in broken:
+            rep.add(
+                ERROR, "builder delegation",
+                "%s delegates to builder '%s' but no live definition was found "
+                "— fromBuilder throws when its builder disappears; remove or "
+                "retarget the delegate before deleting the builder (#1057)"
+                % (site, name))
+        return
+    rep.add(
+        OK, "builder delegation",
+        "%d delegate reference(s) in %d file(s); all resolve to live builder "
+        "definitions (%d examined) (#1057)"
+        % (len(delegates), len(delegate_files), len(defined)))
+
+
 def check_guards_execution_accounting(root: Path, rep: Report) -> None:
     """The guard runner must compare executed vs registered, not just run.
 
@@ -8048,6 +8684,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_justfile_pipe_safety(dw.parent, rep)
     check_guards_execution_accounting(dw.parent, rep)
     check_client_dist(dw.parent, rep)
+    check_builder_delegation(dw.parent, rep)
     check_in_repo_worktree_drain(dw, rep)
     check_inbox_rotation(dw, rep)
     # LAST, and it must stay last: the ledger checks that can skip are spread
