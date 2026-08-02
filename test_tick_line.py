@@ -847,13 +847,6 @@ class TestGoalHandleOnTheTickLine:
         from dreamwork_db import Access, open_database
         from dreamwork_db.store import dreamwork_store_spec
 
-        zero = make_target(tmp_path / "zero", posture=HOT)
-        zero_db = Path(zero) / ".dreamwork" / "ledger.sqlite3"
-        with open_database(dreamwork_store_spec(zero_db), access=Access.WRITE):
-            pass
-        assert tick_line._goal_fact(zero) == (
-            "no current goal (0 goals defined)")
-
         populated = make_target(tmp_path / "populated", posture=HOT)
         _add_goal_store(populated, "first goal", current=False)
         _add_goal_store(populated, "second goal", current=False)
@@ -865,6 +858,13 @@ class TestGoalHandleOnTheTickLine:
                     kind="batch", title="not a goal", actor="test", at="now")
         assert tick_line._goal_fact(populated) == (
             "no current goal (2 goals defined)")
+
+        zero = make_target(tmp_path / "zero", posture=HOT)
+        zero_db = Path(zero) / ".dreamwork" / "ledger.sqlite3"
+        with open_database(dreamwork_store_spec(zero_db), access=Access.WRITE):
+            pass
+        assert tick_line._goal_fact(zero) == (
+            "no current goal (0 goals defined)")
 
     def test_dangling_current_pointer_is_unknown_not_a_population(self, tmp_path):
         """A non-null pointer must be validated before any healthy rendering."""
