@@ -466,9 +466,15 @@ def _derived_tests_line(
     )
 
 
-def _run(args: Sequence[str], repo: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _run(
+    args: Sequence[str],
+    repo: Path,
+    *,
+    env: dict[str, str] | None = None,
+    input_text: str | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        list(args), cwd=repo, env=env, capture_output=True, text=True
+        list(args), cwd=repo, env=env, input=input_text, capture_output=True, text=True
     )
 
 
@@ -489,6 +495,154 @@ def _git_text(repo: Path, *args: str) -> str | None:
         _relay(result)
         return None
     return result.stdout.strip()
+
+
+@dataclass(frozen=True)
+class SquashResult:
+    new_sha: str | None
+    tag_ref: str
+    differing_paths: tuple[str, ...] = ()
+    error: str | None = None
+
+
+def _squash_commit_tree(lane: Path, branch_sha: str) -> str | None:
+    """Return the complete lane tree to put in the squash commit.
+
+    This seam is deliberately separate from verification below: deriving both
+    the commit and its check from one answer would let one bad path selection
+    make the same omission twice and call itself equal.
+    """
+    return _git_text(lane, "rev-parse", f"{branch_sha}^{{tree}}")
+
+
+def _squash_tree_diff(
+    lane: Path, preserved_ref: str, squashed_ref: str
+) -> tuple[str, ...] | None:
+    """Name every tree path changed by a history-only rewrite, or fail closed."""
+    result = _git(
+        lane,
+        "diff",
+        "--name-status",
+        "--no-renames",
+        "--no-ext-diff",
+        preserved_ref,
+        squashed_ref,
+    )
+    if result.returncode:
+        _relay(result)
+        return None
+    return tuple(line for line in result.stdout.splitlines() if line)
+
+
+def _squash_lane(
+    lane: Path, branch: str, base_sha: str, branch_sha: str
+) -> SquashResult:
+    """Rewrite ``branch`` in place as one commit, preserving and proving its tree.
+
+    The commit is built before the ref moves, from the original tip's complete
+    tree. ``update-ref`` then performs the only branch movement atomically. This
+    removes the soft-reset/commit interruption window while retaining the
+    established in-place result and its durable pre-squash tag.
+    """
+    tag_ref = f"refs/tags/{branch}-presquash"
+    existing = _git(lane, "rev-parse", "--verify", "--quiet", tag_ref)
+    if existing.returncode == 0:
+        return SquashResult(
+            None,
+            tag_ref,
+            error=(
+                f"preservation tag {tag_ref} already exists at {existing.stdout.strip()}; "
+                "refusing to replace the only recorded copy of earlier history"
+            ),
+        )
+    if existing.returncode != 1:
+        _relay(existing)
+        return SquashResult(None, tag_ref, error=f"could not determine whether {tag_ref} exists")
+
+    current_branch = _git_text(lane, "branch", "--show-current")
+    lane_head = _git_text(lane, "rev-parse", "HEAD")
+    if current_branch != branch or lane_head != branch_sha:
+        return SquashResult(
+            None,
+            tag_ref,
+            error=(
+                f"lane moved before squash: branch={current_branch or 'DETACHED'} "
+                f"HEAD={lane_head or 'UNREADABLE'} expected={branch}@{branch_sha}"
+            ),
+        )
+
+    tagged = _git(lane, "tag", tag_ref.removeprefix("refs/tags/"), branch_sha)
+    if tagged.returncode:
+        _relay(tagged)
+        return SquashResult(None, tag_ref, error=f"could not create preservation tag {tag_ref}")
+    preserved = _git_text(lane, "rev-parse", "--verify", tag_ref)
+    if preserved != branch_sha:
+        return SquashResult(
+            None,
+            tag_ref,
+            error=f"preservation tag {tag_ref} resolved to {preserved or 'UNREADABLE'}, not {branch_sha}",
+        )
+
+    tree = _squash_commit_tree(lane, branch_sha)
+    message = _git_text(lane, "log", "-1", "--format=%B", branch_sha)
+    if not tree or message is None:
+        return SquashResult(None, tag_ref, error="could not read the lane tip tree or commit message")
+    message = message.rstrip() + f"\n\nPresquash-Ref: {tag_ref}\n"
+    built = _run(
+        ["git", "commit-tree", tree, "-p", base_sha, "-F", "-"],
+        lane,
+        input_text=message,
+    )
+    if built.returncode or not built.stdout.strip():
+        _relay(built)
+        return SquashResult(None, tag_ref, error="could not build the squashed commit off base")
+    new_sha = built.stdout.strip()
+
+    moved = _git(lane, "update-ref", f"refs/heads/{branch}", new_sha, branch_sha)
+    if moved.returncode:
+        _relay(moved)
+        return SquashResult(
+            None,
+            tag_ref,
+            error=f"atomic branch update failed; {branch} remains at its original tip",
+        )
+
+    differing = _squash_tree_diff(lane, tag_ref, f"refs/heads/{branch}")
+    if differing is None or differing:
+        rollback = _git(lane, "update-ref", f"refs/heads/{branch}", branch_sha, new_sha)
+        rolled_head = _git_text(lane, "rev-parse", "HEAD")
+        rolled_status = _git(lane, "status", "--porcelain=v1", "--untracked-files=no")
+        rollback_fault = (
+            rollback.returncode
+            or rolled_head != branch_sha
+            or rolled_status.returncode
+            or bool(rolled_status.stdout)
+        )
+        path_text = ", ".join(differing or ()) if differing is not None else "UNAVAILABLE"
+        return SquashResult(
+            None,
+            tag_ref,
+            differing_paths=differing or (),
+            error=(
+                f"squash tree verification {'could not run' if differing is None else 'found differences'}: "
+                f"{path_text}; branch rollback {'FAILED' if rollback_fault else 'restored the original tip'}"
+            ),
+        )
+
+    final_head = _git_text(lane, "rev-parse", "HEAD")
+    final_parent = _git_text(lane, "rev-parse", f"{new_sha}^")
+    clean = _git(lane, "status", "--porcelain=v1", "--untracked-files=no")
+    if final_head != new_sha or final_parent != base_sha or clean.returncode or clean.stdout:
+        return SquashResult(
+            None,
+            tag_ref,
+            error=(
+                "post-squash state could not be proved: "
+                f"HEAD={final_head or 'UNREADABLE'} parent={final_parent or 'UNREADABLE'} "
+                f"tracked-status={len(clean.stdout.splitlines())}"
+            ),
+        )
+    return SquashResult(new_sha, tag_ref)
 
 
 def _worktrees(repo: Path) -> dict[str, Path] | None:
@@ -640,7 +794,9 @@ def _lint(repo: Path) -> tuple[subprocess.CompletedProcess[str], tuple[str, ...]
     return result, rows
 
 
-def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
+def land(
+    branch: str, tests: Sequence[str], *, base: str = "master", squash: bool = False
+) -> int:
     repo_text = _git_text(Path.cwd(), "rev-parse", "--show-toplevel")
     repo = Path(repo_text).resolve() if repo_text else Path.cwd().resolve()
     retained = f"branch={branch}; worktree=not-yet-resolved"
@@ -777,22 +933,79 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
     redproof_env = os.environ.copy()
     redproof_env.pop("DREAMWORK_LANE_ID", None)
     redproof_env["DREAMWORK_LANE_ROLE"] = "author"
-    redproof = _run(
-        [
-            sys.executable,
-            str(Path(__file__).with_name("redproof.py")),
-            "check",
-            "--cwd",
-            str(lane),
-            "--base",
-            base_sha,
-            "--require",
-            str(required),
-        ],
-        repo,
-        env=redproof_env,
+    def run_redproof() -> subprocess.CompletedProcess[str]:
+        return _run(
+            [
+                sys.executable,
+                str(Path(__file__).with_name("redproof.py")),
+                "check",
+                "--cwd",
+                str(lane),
+                "--base",
+                base_sha,
+                "--require",
+                str(required),
+            ],
+            repo,
+            env=redproof_env,
+        )
+
+    redproof = run_redproof()
+    did_squash = False
+    history_refusal = (
+        redproof.returncode == 1
+        and "commit(s) on this branch still hold a recorded injection"
+        in redproof.stderr
     )
-    _relay(redproof)
+    if squash and (redproof.returncode == 0 or history_refusal):
+        cause = "history held a recorded injection (#710)" if history_refusal else "explicit --squash request"
+        print(f"squash cause: {cause}; pre-squash red-proof audit follows")
+        _relay(redproof)
+        original_sha = branch_sha
+        squashed = _squash_lane(lane, branch, base_sha, original_sha)
+        if squashed.error or not squashed.new_sha:
+            differing = (
+                "; differing paths=" + ", ".join(squashed.differing_paths)
+                if squashed.differing_paths
+                else ""
+            )
+            return _refuse(
+                "squash-verification",
+                squashed.error or "squash produced no commit",
+                f"original={original_sha}; preserved={squashed.tag_ref}{differing}",
+                retained,
+                base_state=_base_state(repo, base, base_sha),
+            )
+        branch_sha = squashed.new_sha
+        did_squash = True
+        print(
+            f"squash: rewrote {branch} in place {original_sha} -> {branch_sha}; "
+            f"preserved original history at {squashed.tag_ref}"
+        )
+        print(
+            "squash-verification: PASS — git diff --name-status "
+            f"{squashed.tag_ref} refs/heads/{branch} examined the complete trees and found 0 differing paths"
+        )
+        branch_commits = _git(repo, "rev-list", "--count", f"{base_sha}..{branch_sha}")
+        try:
+            commits_examined = int(branch_commits.stdout.strip())
+        except ValueError:
+            commits_examined = -1
+        if branch_commits.returncode or commits_examined < 0:
+            _relay(branch_commits)
+            return _refuse(
+                "red-proof-history",
+                "could not count the squashed branch commits the red-proof scan must examine",
+                f"base={base_sha}; branch={branch_sha}; rev-list exit={branch_commits.returncode}",
+                retained,
+                base_state=_base_state(repo, base, base_sha),
+            )
+        redproof = run_redproof()
+    else:
+        _relay(redproof)
+
+    if did_squash:
+        _relay(redproof)
     audited_lane_head = _git_text(lane, "rev-parse", "HEAD")
     audited_branch_sha = _git_text(repo, "rev-parse", "--verify", f"refs/heads/{branch}")
     population = (
@@ -1106,8 +1319,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("branch", help="explicit local lane branch")
     parser.add_argument("tests", nargs="*", help="explicit named pytest paths/node ids")
     parser.add_argument("--base", default="master", help="checked-out base branch (default: master)")
+    parser.add_argument(
+        "--squash",
+        action="store_true",
+        help="atomically squash the lane in place, preserving and verifying its original tree",
+    )
     args = parser.parse_args(argv)
-    return land(args.branch, args.tests, base=args.base)
+    return land(args.branch, args.tests, base=args.base, squash=args.squash)
 
 
 if __name__ == "__main__":
