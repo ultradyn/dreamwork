@@ -105,6 +105,15 @@ instrument read normal).
   verdict this frame accepts as a paraphrase, and a paraphrase of `28 passed, 1
   failed` reads as the green it does not have. An omitted pass/fail line is
   indistinguishable from a lane that never ran the suite.
+- **Persist a red-proof's discriminating output to a lane-private file at the
+  moment of the run, and quote from that file — never from memory.** Compaction
+  preserves the form of a measurement while losing its provenance: a number
+  recalled after compaction reads as rigorous whether or not it came from a run
+  (#878). `dev/lane_scratch.py` is the supported place (the harness scratchpad
+  is not lane-private, #652); write the FAIL line and the command that produced
+  it there as the run happens, and quote that file in your report. A lane that
+  wrote zero evidence files and one that wrote five must be distinguishable in
+  the report, or the discipline is decoration.
 - Every issue number you cite, with the line you relied on quoted.
 - The rebase outcome.
 - Anything out of scope that you found: name it, do not fix it.
