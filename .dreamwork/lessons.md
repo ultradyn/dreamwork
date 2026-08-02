@@ -4756,3 +4756,55 @@ interchangeable, "either order."
 something you supplied, that is the tell: it is confirming receipt, not predicting execution. The
 question to ask of any such line is *could this have said something I did not already know?* — and if
 it could not, it is not evidence about what the tool will do.
+
+## A brief that says "work in a clone" does not move the process
+
+The gate refuses to run while any agent process holds the main checkout, and it decides that by reading
+`/proc/<pid>/cwd`. That is where the process was **launched**, not where it does its work.
+
+I dispatched a reviewer whose brief opens by telling it to clone the repo into a scratch directory and
+review there — and I launched it with `nohup ccc ... &` from the repo root. The brief was obeyed; the
+reviewer never touched the main checkout. But its process cwd stayed on the main checkout for its whole
+run, so the very next gate refused:
+
+```
+REFUSE: main checkout held by: 3376236(ccc) 3376288(codex)
+```
+
+The guard was right and the reviewer was well-behaved. The mismatch was mine: I read "works in a clone"
+as a fact about the process when it is only a fact about the instructions. A ~40-minute review would
+have blocked every gate in the queue, and the refusal would have read as a scheduling conflict rather
+than a dispatch bug.
+
+`cd "$REVDIR" && nohup ccc ...` fixes it. The general form: **when a guard tests a process property,
+satisfy it in the dispatch, not in the prose** — the brief governs what the agent does, the launch
+governs what the agent *is*.
+
+Corollary for the kill path: the child had already reparented, so enumerating children *after* killing
+the parent found none while a live `codex` grandchild still held the directory. Enumerate first, kill
+second, then confirm the guard's own predicate reads clear rather than trusting the kills.
+
+## During a gate, `git log` answers about the provisional merge, not about master
+
+I reported #1097 landed. It had not, yet. `land_lane` detaches the main checkout and builds the merge
+commit on the detached HEAD *before* running the post-merge gates, so for the several minutes those
+gates run there is a real, well-formed merge commit at HEAD that master does not point at.
+
+```
+master:   524f31ed Merge glm-1091brief
+HEAD:     59d4d311 Merge glm-1097landed      <-- provisional, still under gate
+detached: yes
+```
+
+`git log --oneline` follows HEAD. Every word it printed was true; the claim I read off it — "this is
+what master now carries" — was not. I had even written the guard for this: my gate script tests
+`git symbolic-ref -q HEAD` precisely because a refused gate strands the checkout here. I checked that
+predicate for *recovery* and then read `git log` for *state*, without connecting them.
+
+The habit that fixes it: during a gate, ask about the ref you mean **by name** — `git rev-parse master`,
+`git log master` — never the bare form that silently resolves to HEAD. The bare form is unambiguous only
+when nothing is detaching the checkout, which is exactly when it does not matter.
+
+Same family as the `tests=(...)` misreading above: a field that truthfully reports one thing, read as
+reporting the adjacent thing I actually wanted. Both were caught only because a later measurement
+disagreed with the story — neither looked wrong on its own.
