@@ -538,6 +538,23 @@ reap-lane *ARGS:
 land-lane BRANCH *TESTS:
     python3 dev/land_lane.py {{BRANCH}} {{TESTS}}
 
+# Enable with exactly: git config --local core.hooksPath .githooks
+enable-lane-guard:
+    git config --local core.hooksPath .githooks
+    @echo "lane guard enabled for this repository; global hooks are forwarded"
+
+# Disable with exactly: git config --local --unset core.hooksPath
+disable-lane-guard:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    current=$(git config --local --get core.hooksPath || true)
+    if [ "$current" != ".githooks" ]; then
+        echo "refusing: local core.hooksPath is '${current:-unset}', not .githooks" >&2
+        exit 2
+    fi
+    git config --local --unset core.hooksPath
+    echo "lane guard disabled; global core.hooksPath applies again"
+
 # edit-and-see, for whoever is CHANGING the page. Deliberately not the
 # persisted port: that one belongs to the deployed instance the human is
 # reading, and two servers wanting it is a fight nobody wins. Pass a port

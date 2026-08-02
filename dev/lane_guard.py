@@ -52,14 +52,13 @@ WHAT IT DOES
 5. No-ops cleanly when no lane is out, when nothing is staged, or when no lane
    declares ownership — the ordinary solo case costs a few git calls.
 
-MACHINE-LOCAL
--------------
-``core.hooksPath`` is machine-local and not committed, so enabling is manual:
-``python3 dev/lane_guard.py --install`` symlinks this script into the resolved
-hook path, chaining to any pre-existing pre-commit rather than clobbering it. An
-un-enabled checkout is unprotected until it runs ``--install``; the committed
-artefacts that protect every checkout are the brief convention (``Lane-owns:``,
-enforced by ``lint``) and the successor backstop.
+REPO-LOCAL, EXPLICITLY ENABLED
+------------------------------
+The tracked ``.githooks/`` forwards ``pre-commit``, ``commit-msg`` and
+``pre-push`` to their global counterparts before adding this guard to
+``pre-commit``. Enable it with ``just enable-lane-guard``; disable it with
+``just disable-lane-guard``. Those recipes change the shared repository's
+local ``core.hooksPath`` and are intentionally never run automatically.
 """
 
 from __future__ import annotations
@@ -118,13 +117,7 @@ def is_main_checkout(repo_root: Path) -> bool:
     worktree's is ``.git/worktrees/<name>``. The segment discriminator is robust
     to absolute vs relative git-dir resolution.
     """
-    try:
-        git_dir = _run_git(["rev-parse", "--git-dir"], repo_root).strip()
-    except GuardError:
-        # If we cannot tell, we are not the main checkout for the purpose of
-        # this guard — decline to act rather than risk a false refusal in a tree
-        # we do not understand.
-        return False
+    git_dir = _run_git(["rev-parse", "--git-dir"], repo_root).strip()
     return WORKTREE_GITDIR_SEGMENT not in git_dir
 
 
@@ -257,9 +250,21 @@ def check(root: Path) -> int:
     0 = allow (no lane out, or no overlap); 1 = refuse (contested path); 2 =
     guard could not evaluate its inputs (fail loud).
     """
-    if not is_main_checkout(root):
+    try:
+        main_checkout = is_main_checkout(root)
+    except GuardError as exc:
+        sys.stderr.write(
+            f"lane-containment guard: cannot classify main checkout ({exc}); "
+            "refusing\n"
+        )
+        return 2
+    if not main_checkout:
         # A linked worktree commits freely; the guard only acts on the main
         # checkout, which is where a lane's stray edits become dangerous.
+        sys.stderr.write(
+            "lane-containment guard: OK — linked worktree commit; "
+            "the MAIN CHECKOUT alone is guarded\n"
+        )
         return 0
     try:
         lanes = _parse_worktree_list(root)
@@ -267,7 +272,12 @@ def check(root: Path) -> int:
         sys.stderr.write(f"lane-containment guard: {exc}; refusing\n")
         return 2
     if not lanes:
-        # No dispatched lane: the ordinary solo case. Frictionless.
+        # This is an allow, not evidence of containment: there was no lane
+        # population against which ownership could be compared.
+        sys.stderr.write(
+            "lane-containment guard: NOT EVALUATED — no lane worktrees exist; "
+            "allowing commit without an ownership comparison\n"
+        )
         return 0
     staged = _staged_paths(root)
     if not staged:
@@ -275,6 +285,7 @@ def check(root: Path) -> int:
         # by something other than a content commit). Nothing to guard.
         return 0
     findings: list[str] = []
+    undeclared: list[str] = []
     main_root = _main_checkout_root(root)
     for lane_root, branch in lanes:
         owned = _owned_paths_for_lane(main_root, lane_root.name)
@@ -282,6 +293,7 @@ def check(root: Path) -> int:
             # No declared ownership → nothing to protect for this lane. The
             # lint companion (check_brief_lane_owns) ensures this is loud at
             # brief-write time rather than a silent no-op at commit time.
+            undeclared.append(f"{branch} ({lane_root})")
             continue
         contested = _contested(staged, owned)
         if contested:
@@ -291,6 +303,19 @@ def check(root: Path) -> int:
                 f"    contested staged paths: {', '.join(sorted(contested))}"
             )
     if not findings:
+        if undeclared:
+            sys.stderr.write(
+                "lane-containment guard: INCOMPLETE — allowing commit, but "
+                f"{len(undeclared)} of {len(lanes)} lane(s) declare no "
+                "Lane-owns: paths and are unprotected: "
+                + ", ".join(undeclared)
+                + "\n"
+            )
+        else:
+            sys.stderr.write(
+                f"lane-containment guard: OK — examined {len(lanes)} lane(s); "
+                f"{len(staged)} staged path(s); no ownership overlap\n"
+            )
         return 0
     sys.stderr.write(
         "lane-containment guard (#465): refusing commit in the MAIN CHECKOUT.\n"
@@ -302,125 +327,6 @@ def check(root: Path) -> int:
         + "\n\nEmergency bypass: "
         f"{BYPASS_ENV}=1 git commit ... (then fix the root cause)\n"
     )
-    return 1
-
-
-def hook_path() -> Path:
-    """Resolve the pre-commit hook path from ``core.hooksPath``."""
-    try:
-        hpd = _run_git(["config", "core.hooksPath"], Path.cwd()).strip()
-    except GuardError:
-        hpd = ""
-    if not hpd:
-        # Fall back to the default .git/hooks relative to the common dir.
-        hpd = str(_run_git(["rev-parse", "--git-common-dir"], Path.cwd()).strip()) + "/hooks"
-    p = Path(hpd)
-    if not p.is_absolute():
-        p = (Path.cwd() / p).resolve()
-    return p / "pre-commit"
-
-
-def _install() -> int:
-    """Symlink this guard into the pre-commit hook, chaining to any existing one.
-
-    Refuses to clobber a pre-existing pre-commit that is not already this guard;
-    instead it writes a small wrapper that runs the existing hook then this one.
-    """
-    hp = hook_path()
-    hp.parent.mkdir(parents=True, exist_ok=True)
-    target = Path(__file__).resolve()
-    existing = hp.exists() or hp.is_symlink()
-    is_us = False
-    if existing:
-        try:
-            is_us = hp.resolve() == target
-        except OSError:
-            is_us = False
-    if is_us:
-        print(f"lane-guard: already installed at {hp}")
-        return 0
-    if existing:
-        # Chain: rename the existing hook aside and write a wrapper. A guard
-        # that silently replaced an existing hook would be the silent breakage
-        # this repo documents.
-        chain = hp.with_suffix(hp.suffix + ".prev")
-        if chain.exists() or chain.is_symlink():
-            print(
-                f"lane-guard: refusing to install — a chained predecessor "
-                f"{chain} already exists. Inspect it and resolve manually.",
-                file=sys.stderr,
-            )
-            return 1
-        try:
-            hp.rename(chain)
-        except OSError as exc:
-            print(f"lane-guard: could not move existing hook aside: {exc}", file=sys.stderr)
-            return 1
-        wrapper = hp
-        wrapper.write_text(
-            "#!/usr/bin/env bash\n"
-            "# lane-guard pre-commit wrapper — runs the previous hook, then the\n"
-            "# lane-containment guard (#465). Installed by `dev/lane_guard.py --install`.\n"
-            "# To uninstall and restore the previous hook alone:\n"
-            "#   python3 dev/lane_guard.py --uninstall\n"
-            "set -euo pipefail\n"
-            f'prev="$(cd "$(dirname "$0")" && pwd)/{chain.name}"\n'
-            'if [ -x "$prev" ]; then "$prev" "$@"; fi\n'
-            f'DREAMWORK_LANE_GUARD_ROOT="${{DREAMWORK_LANE_GUARD_ROOT:-}}" \\\n'
-            f'python3 "{target}" hook "$@"\n',
-            encoding="utf-8",
-        )
-        wrapper.chmod(0o755)
-        print(
-            f"lane-guard: chained at {hp} (previous hook preserved as {chain.name})"
-        )
-    else:
-        try:
-            if hp.is_symlink():
-                hp.unlink()
-            hp.symlink_to(target)
-            hp.chmod(0o755)
-        except OSError as exc:
-            print(f"lane-guard: could not symlink: {exc}", file=sys.stderr)
-            return 1
-        print(f"lane-guard: installed at {hp}")
-    print(
-        "lane-guard: active on the MAIN CHECKOUT only. Lanes commit freely from\n"
-        "            their worktrees. Test: python3 dev/lane_guard.py selftest"
-    )
-    return 0
-
-
-def _uninstall() -> int:
-    """Remove the guard, restoring a chained predecessor if one exists."""
-    hp = hook_path()
-    chain = hp.with_suffix(hp.suffix + ".prev")
-    if chain.exists() or chain.is_symlink():
-        try:
-            if hp.exists() or hp.is_symlink():
-                hp.unlink()
-            chain.rename(hp)
-            print(f"lane-guard: removed; restored previous hook to {hp}")
-        except OSError as exc:
-            print(f"lane-guard: could not restore predecessor: {exc}", file=sys.stderr)
-            return 1
-        return 0
-    target = Path(__file__).resolve()
-    is_us = False
-    if hp.exists() or hp.is_symlink():
-        try:
-            is_us = hp.resolve() == target
-        except OSError:
-            is_us = False
-    if is_us:
-        try:
-            hp.unlink()
-            print(f"lane-guard: removed {hp}")
-        except OSError as exc:
-            print(f"lane-guard: could not remove: {exc}", file=sys.stderr)
-            return 1
-        return 0
-    print(f"lane-guard: nothing to remove at {hp}", file=sys.stderr)
     return 1
 
 
@@ -458,9 +364,8 @@ def _selftest() -> int:
 # WHERE IT LIVES, on the will-it-be-skipped axis. A `pre-merge-commit` hook is
 # the only automatic form and it is ruled out: it does NOT fire on a fast-
 # forward (a hook that silently does not run is worse than no hook), and wiring
-# it needs `Needs: consent` that is a separate open ask (the pre-commit guard's
-# own consent is still un-granted — #465). So R2 is an explicit subcommand the
-# coordinator runs before merging, reusing THIS module's lane registry and the
+# wiring it repo-locally is a separate coordinator-controlled step. So R2 is
+# an explicit subcommand the coordinator runs before merging, reusing THIS module's lane registry and the
 # backstop's ownership reader. The one-word habit that closes the "remember" gap
 # is a `just merge-lane <branch>` wrapper (justfile is not this file's to write;
 # the report carries the line). The ambient half is already lint's backstop,
@@ -696,7 +601,8 @@ def main(argv: list[str] | None = None) -> int:
         nargs="?",
         default="hook",
         choices=["hook", "install", "uninstall", "selftest", "pre-merge"],
-        help="hook = run as a pre-commit guard (default); install/uninstall wire it; "
+        help="hook = run as a pre-commit guard (default); install/uninstall are "
+        "retired in favour of the repo-local just recipes; "
         "selftest = introspect without refusing; "
         "pre-merge BRANCH = assert the preconditions of `git merge BRANCH` (#468)",
     )
@@ -709,9 +615,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.mode == "install":
-        return _install()
+        sys.stderr.write(
+            "lane-guard: direct install is retired; run `just enable-lane-guard` "
+            "to set this repository's core.hooksPath\n"
+        )
+        return 2
     if args.mode == "uninstall":
-        return _uninstall()
+        sys.stderr.write(
+            "lane-guard: direct uninstall is retired; run `just disable-lane-guard` "
+            "to unset this repository's core.hooksPath\n"
+        )
+        return 2
     if args.mode == "selftest":
         return _selftest()
     if args.mode == "pre-merge":
@@ -732,6 +646,9 @@ def main(argv: list[str] | None = None) -> int:
     if os.environ.get(BYPASS_ENV):
         # Documented emergency escape. A hook that cannot be bypassed is a hook
         # that gets disabled; a disabled hook protects nothing.
+        sys.stderr.write(
+            f"lane-containment guard: BYPASSED because {BYPASS_ENV} is set\n"
+        )
         return 0
     root = repo_root(Path.cwd())
     try:

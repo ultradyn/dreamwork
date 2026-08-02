@@ -1,0 +1,27 @@
+#!/bin/sh
+# Run the same-named hook from the user's global hooksPath. A repo-local
+# hooksPath shadows the global one, so every tracked hook calls this first.
+set -eu
+
+hook_name=$1
+shift
+
+set +e
+global_hooks=$(git config --global --path --get core.hooksPath)
+config_status=$?
+set -e
+case $config_status in
+    0) ;;
+    1) exit 0 ;; # no global core.hooksPath is a legitimate empty population
+    *)
+        echo "forward-global: cannot resolve global core.hooksPath; refusing" >&2
+        exit "$config_status"
+        ;;
+esac
+
+global_hook=$global_hooks/$hook_name
+if [ ! -x "$global_hook" ]; then
+    exit 0
+fi
+
+"$global_hook" "$@"
