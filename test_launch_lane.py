@@ -45,6 +45,11 @@ def launch_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # brief.py imports land_lane at module level for DERIVATION_RULES (#988);
     # the real module, not a stub, so the fixture can import brief.py at all.
     _write(root / "dev" / "land_lane.py", (REPO / "dev" / "land_lane.py").read_text(encoding="utf-8"))
+    # brief.py's task_record function-locally imports ledger (#1100); the real
+    # module, not a stub, so brief-generation can read the fixture's tasks.md.
+    # ledger.py's own imports (watch, ledger_parse, dreamwork_db, …) resolve from
+    # the worktree root, which is on sys.path via pytest's cwd.
+    _write(root / "dev" / "ledger.py", (REPO / "dev" / "ledger.py").read_text(encoding="utf-8"))
     _write(root / "dev" / "dispatch_lane.py", """
 import argparse, os, subprocess, sys
 p = argparse.ArgumentParser(); p.add_argument('--prompt'); p.add_argument('--prepare', action='store_true'); p.add_argument('rest', nargs=argparse.REMAINDER)
