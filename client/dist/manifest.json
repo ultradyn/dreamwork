@@ -12,7 +12,7 @@
   "inputs": {
     "client/app_body.html": "b951127b0a4201969dc1f0c6a6d14d5660a4e8e6036bca77325cf31f57d4cac3",
     "client/command.js": "a7346f466f100f6fc9a764ca22245e5983bfe8c7abd6c802d6d06e894750f577",
-    "client/components.js": "f956d556801d28442cdda566442fada5e251c58c9fbcd43336d238c8514af30d",
+    "client/components.js": "685049388468755bf551dd46555abbdbc28ac4d14f9d82447b8b0ddbfdab0f5a",
     "client/favicon.js": "746a512fb2d23b6ac1294f4d5fdbb4bcc5809a93cae1fe6e78dbbe70882ba901",
     "client/router.js": "b00b457407c75fff8da54388a17771a9da2ada70f0e72ec13cf81e8b26a5273f",
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",

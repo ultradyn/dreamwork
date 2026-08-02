@@ -524,10 +524,24 @@ function mdRender(text, inline, options = {}) {
 }
 
 /* #282 — task references are resolved from DOM context, never by rewriting
-   rendered HTML.  A TreeWalker can see the ancestry a regex sweep cannot:
-   code, pre, existing links, scripts and the preview UI are rejected before
-   a text node is parsed.  The same resolver is installed in the app document
-   and same-origin review iframes, so Markdown and review HTML cannot drift. */
+   rendered HTML.  A TreeWalker can see the ancestry a regex sweep cannot.
+   Pre, existing links, scripts and the preview UI are rejected before a text
+   node is parsed in BOTH skip sets below.  Inline <code> is the one element
+   that differs: TASK_REF_SKIP (the static set, used when the setting is OFF)
+   keeps `code`, so an inline #NNN stays literal; TASK_REF_SKIP_NO_CODE (the
+   default, #1017) omits it, so an inline `#NNN` links when the setting is ON.
+   <pre> is always skipped in both — a fenced code block is never a place to
+   mint a click, and that part did not change.  The same resolver is installed
+   in the app document and same-origin review iframes, so Markdown and review
+   HTML cannot drift.
+
+   Record note: this section is itself a production-code record of the old
+   "inline code is always rejected" rule, which #1017 reversed in code but
+   not in this comment until now.  So commit 54e2dc5b's "both old rules lived
+   only in the tests" was over-broad — the route decision is also preserved
+   at .dreamwork/questions.md:12, and historical plan/hand-off records exist.
+   The design surfaces actually checked were watch-design.md, the
+   client/router.js route table, and this #282 section — not the whole repo. */
 const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]';
 /* #1017 — the same skip set WITHOUT `code`, used when the user has kept
    backtick task-id autolinking on. <pre> stays in both: a fenced code block
