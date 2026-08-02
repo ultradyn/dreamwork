@@ -4648,3 +4648,37 @@ comment bridging it is evidence of the gap rather than a fix for it.** Assert ag
 clause, field, or structure the property is about. And when a lane hands you a plausible reason a weak
 check suffices, that reason is a claim to test, not a fact to accept — it arrived from the same author
 who wrote the check.
+
+## Reading a check's severity is not reading what the gate gates on (2026-08-03, #630 gate window 5, coordinator's, measured)
+
+Before gating `cx-630scope3` I found the real defect: the branch adds
+`.dreamwork/docs/plans/react-migration-increments.md` and no `doc-map.md` row, so
+`lint.check_doc_map_plans` reports `plans row omits 1 plan that exists`. I read that check, confirmed it
+calls `rep.add(WARN, ...)` and not `rep.add(ERROR, ...)`, and wrote on the task: *"WARN, not ERROR, so
+it will not refuse the gate; but the doc lands undiscoverable."* I then planned to add the row on master
+afterwards.
+
+The gate refused:
+
+```
+REFUSE phase=lint-precheck: WARN row set changed from the pre-merge baseline
+examined: baseline=1 rows; post-merge precheck=2 rows
+```
+
+`land_lane` compares the **WARN row set** against the pre-merge baseline. A new WARN refuses exactly as
+an ERROR would. The severity told me how `lint` classifies the finding; it told me nothing about how the
+gate treats a change in the set of findings — and the gate's rule is about *change*, not *severity*.
+
+Both halves of my note were true. The check is a WARN. The doc would land undiscoverable. The
+conclusion joining them — therefore the gate will pass it — came from neither. I had the right file open
+and read the wrong property out of it, which is much easier than it sounds when the property you read is
+genuinely relevant and genuinely correct.
+
+The repair was one line, and its ORDER mattered in a way the severity reading also obscured: the row has
+to be committed **on the branch**, not on master afterwards, because `check_doc_map_plans` WARNs both
+ways — a row naming a plan with no file trips the phantom half. There was no order that avoided a
+transient WARN except the one that puts both in the same merge.
+
+**Before predicting a gate's verdict, read the gate, not the check.** `land_lane`'s phases each have
+their own predicate, and `lint-precheck`'s is set-equality against a baseline. A finding's severity is
+an input to what the row says, not to whether the phase passes.
