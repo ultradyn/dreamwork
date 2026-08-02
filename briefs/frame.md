@@ -130,9 +130,11 @@ caught is before code is written.
   moment of the run, and quote from that file — never from memory.** Compaction
   preserves the form of a measurement while losing its provenance: a number
   recalled after compaction reads as rigorous whether or not it came from a run
-  (#878). `dev/lane_scratch.py` is the supported place (the harness scratchpad
-  is not lane-private, #652); write the FAIL line and the command that produced
-  it there as the run happens, and quote that file in your report. A lane that
+  (#878). Write it with `dev/lane_scratch.py write <name>` (stdin): it creates
+  the lane-private directory, refuses an empty payload so a zero-byte file
+  cannot masquerade as evidence (#868), and prints the absolute path it wrote.
+  The harness scratchpad is not lane-private (#652); quote from the printed
+  path, never from memory. A lane that
   wrote zero evidence files and one that wrote five must be distinguishable in
   the report, or the discipline is decoration.
 - Every issue number you cite, with the line you relied on quoted.
