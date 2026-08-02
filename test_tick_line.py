@@ -296,23 +296,40 @@ class TestLiveFleetDetector:
 
     def test_inspection_names_worktree_only_and_process_only(
             self, tmp_path, monkeypatch):
-        """Both set-difference directions are visible, never silently chosen."""
+        """Every classified mismatch is visible, never silently conflated."""
         target = Path(make_target(tmp_path / "project", posture=HOT))
-        registered = tmp_path / ".worktrees" / "cx-finished"
-        registered.mkdir(parents=True)
+        settled = tmp_path / ".worktrees" / "cx-settled"
+        settled.mkdir(parents=True)
+        finished = tmp_path / ".worktrees" / "cx-finished"
+        (finished / ".dreamwork").mkdir(parents=True)
+        identity = finished / "brief.md"
+        (finished / ".dreamwork" / "lane.lock").write_text(json.dumps({
+            "pid": 4242, "task": 999, "lane": "cx-finished",
+            "identity": str(identity),
+        }))
         removed = tmp_path / ".worktrees" / "cx-removed"
         raw = ("ccc\x00# Task #999 -- fixture\nWorktree: %s\n" % removed).encode()
+        monkeypatch.setattr(
+            lane_liveness, "pid_matches_lane", lambda *_args: False)
         inspection = lane_liveness.inspect_lanes(
             target, process_entries=["999"],
-            registered_worktrees=(registered,), read_cmdline=lambda _pid: raw)
+            registered_worktrees=(settled, finished),
+            read_cmdline=lambda _pid: raw)
         assert inspection.live == ()
-        assert inspection.worktree_only == ('cx-finished',), \
-            "registered worktree without a process was not named"
+        assert inspection.worktree_only == ('cx-settled',), \
+            "lockless settled worktree landed in the wrong bucket: %r" % \
+            (inspection,)
+        assert inspection.finished == (lane_liveness.FinishedLane(
+            lane="cx-finished", task=999, pid=4242,
+            identity=str(identity)),), \
+            "cx-finished task #999 landed in the wrong bucket: %r" % \
+            (inspection,)
         assert inspection.process_only == ('cx-removed',), \
             "process whose worktree was removed was not named"
         monkeypatch.setattr(lane_liveness, "inspect_lanes", lambda _target: inspection)
         out = tick_line.facts(str(target))
-        assert "worktree-only 1 [cx-finished]" in out
+        assert "worktree-only 1 [cx-settled]" in out
+        assert "finished 1 [#999 cx-finished]" in out
         assert "process-only 1 [cx-removed]" in out
 
     def test_incidental_review_path_cannot_become_lane_identity(self, tmp_path):
