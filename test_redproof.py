@@ -1105,7 +1105,72 @@ class TestExpectationDriftNamesTheRearm:
         assert "repeat that cycle after the final rebase" in err
 
 
-# ── CLI smoke ──────────────────────────────────────────────────────────
+class TestUntrackedExpectationWarning:
+    """#1088: an untracked expectation is a registration with a scheduled expiry.
+    begin WARNs on stdout — the same stream its other output uses — naming the
+    consequence, but does not refuse: the fail-closed refusal lives at check
+    time (``_read_wt``), not at registration."""
+
+    def test_begin_warns_when_expectation_is_untracked(self, repo, capsys):
+        """Direction 1: an untracked expectation source produces a WARNING that
+        names the expiry consequence. Before the fix, begin accepted an
+        untracked source silently — a registration with a scheduled expiry."""
+        scratch = repo / "scratch-expectation.txt"
+        scratch.write_text("untracked scratch expectation\n")
+        # Explicitly NOT committed — this is the #1100/#1088 failure mode.
+        assert _begin(repo, "router.js", ("scratch-expectation.txt",)) == 0
+        out, _ = capsys.readouterr()
+        assert "WARNING" in out, (
+            "begin must warn when an expectation source is untracked — "
+            "an untracked expectation is a registration with a scheduled "
+            "expiry (#1088)")
+        assert "not tracked by git" in out
+        assert "will expire" in out, (
+            "the warning must name the consequence so a lane can act on it")
+
+    def test_begin_does_not_warn_when_expectation_is_tracked(self, repo, capsys):
+        """A tracked expectation source produces NO warning — only untracked
+        sources are registrations with a scheduled expiry."""
+        tracked = repo / "committed-expectation.txt"
+        tracked.write_text("committed expectation\n")
+        _git(repo, "add", "committed-expectation.txt")
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-qm", "add tracked expectation")
+        assert _begin(repo, "router.js",
+                      ("committed-expectation.txt",)) == 0
+        out, _ = capsys.readouterr()
+        assert "WARNING" not in out, (
+            "a tracked expectation must not warn — it survives cleanup")
+
+    def test_warning_uses_git_truth_not_path_name(self, repo, capsys):
+        """Direction 2: the check fires on ``git ls-files`` truth, not on the
+        path NAME looking disposable. A tracked file named like a scratch file
+        (``.redproof_expect_*``) does NOT warn — string matching on the name
+        would false-positive here."""
+        dotted = repo / ".redproof_expect_tracked.txt"
+        dotted.write_text("looks disposable but is committed\n")
+        _git(repo, "add", ".redproof_expect_tracked.txt")
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-qm", "add dotted expectation")
+        assert _begin(repo, "router.js",
+                      (".redproof_expect_tracked.txt",)) == 0
+        out, _ = capsys.readouterr()
+        assert "WARNING" not in out, (
+            "the untracked check must use git ls-files truth, not string "
+            "matching on the path name — a tracked file with a disposable-"
+            "looking name is safe (#1088 direction 2)")
+
+    def test_warning_reaches_stdout_not_stderr(self, repo, capsys):
+        """Direction 2: the warning goes to stdout (the stream the lane reads
+        for begin's other output), NOT to stderr where it would be invisible
+        like the failure it replaces."""
+        scratch = repo / "scratch-expectation.txt"
+        scratch.write_text("untracked\n")
+        assert _begin(repo, "router.js", ("scratch-expectation.txt",)) == 0
+        out, err = capsys.readouterr()
+        assert "will expire" in out, (
+            "the warning must reach stdout — begin's other output stream")
+        assert "will expire" not in err
 
 class TestCli:
     def _env(self, tmp_path):
