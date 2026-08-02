@@ -134,7 +134,10 @@ def test_tracked_hook_forwards_global_then_refuses_the_indexed_path(tmp_path):
 
     refused = _git(root, "commit", "-m", "must refuse", env=env, check=False)
 
-    assert refused.returncode != 0
+    assert refused.returncode != 0, (
+        "hook allowed owned.py despite lane cx-992modern ownership; "
+        f"stderr: {refused.stderr}"
+    )
     assert "contested staged paths: owned.py" in refused.stderr
     assert f"lane cx-992modern ({lane}) owns" in refused.stderr
     assert trace.read_text(encoding="utf-8").splitlines() == ["pre-commit:"]
