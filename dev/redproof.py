@@ -1686,12 +1686,16 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             f"check: REFUSED — the working tree is clean, but {len(rep['hits'])} "
             f"commit(s) on this branch still hold a recorded injection:\n"
             + "\n".join(lines) +
-            "\nCommitting mid-injection is correct — COMMIT INCREMENTALLY exists "
+            "\nCommitting mid-injection is correct, not the lane's fault — "
+            "COMMIT INCREMENTALLY exists "
             "because lanes get killed without warning — but the branch cannot "
             "merge as it stands: a merge makes the defect reachable from master "
             "forever, where bisect, blame and cherry-pick all resurrect it. "
-            "Tell the coordinator to SQUASH this branch at merge (the fix for "
-            "this branch only), or rebase the injection out yourself. #710")
+            "Run `just land-lane <branch> <tests...> --squash`. It tags the "
+            "pre-squash history as `<branch>-presquash` and records that ref "
+            "in the squashed commit's `Presquash-Ref:` trailer, so the history "
+            "is preserved rather than discarded. Or rebase the injection out "
+            "yourself. #710")
         return 1
 
     restored = [e for e in active if e.get("state") in RESTORED_STATES]
