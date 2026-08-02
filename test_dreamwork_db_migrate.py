@@ -9,6 +9,13 @@ import pytest
 from dreamwork_db import Access, SchemaMismatch, StoreSpec, open_database
 from dreamwork_db.migrate import MIGRATIONS, SCHEMA_VERSION, initialize_legacy_store
 from dreamwork_db.migrations import v004_groups
+from dreamwork_db.posture import (
+    POSTURE_AGREE,
+    POSTURE_CANNOT_COMPARE,
+    POSTURE_DISAGREE,
+    PostureRepository,
+    resolve_posture_agreement,
+)
 from ledger_store import SchemaVersionError, SeedError, open_store
 
 
@@ -103,6 +110,82 @@ def _assert_frozen_v2_subject(conn) -> None:
     assert _columns(conn, "review_decision") == {
         "artifact", "question_title", "decision", "decided_at", "actor"
     }, "fixture must carry the frozen live v2 review_decision shape"
+
+
+def test_posture_agreement_names_each_difference_and_both_denominators():
+    axes = ("pace", "asking", "delegation", "delivery", "orchestration")
+    result = resolve_posture_agreement(
+        {"pace": "hot", "asking": "ask", "delegation": 2,
+         "delivery": "instant", "orchestration": "hands-on"},
+        {"pace": "idle", "asking": "inform", "delegation": "2",
+         "delivery": "instant", "orchestration": "hands-on"},
+        axes,
+    )
+    assert result["message"] == (
+        "DISAGREE: pace file='hot' db='idle'; "
+        "asking file='ask' db='inform'; axes compared 5, axes not compared 0"
+    )
+    assert result["status"] == POSTURE_DISAGREE
+    assert result["axes_compared"] == 5
+    assert result["axes_not_compared"] == 0
+
+
+def test_posture_agreement_never_defaults_an_absent_history_axis():
+    result = resolve_posture_agreement(
+        {"pace": "idle", "asking": "ask"}, {"pace": "idle"},
+        ("pace", "asking"),
+    )
+    assert result["status"] == POSTURE_CANNOT_COMPARE
+    assert result["axes_compared"] == 1
+    assert result["axes_not_compared"] == 1
+    assert result["uncompared_axes"] == ["asking"]
+
+
+def test_populated_file_and_empty_history_cannot_compare_on_day_one():
+    result = resolve_posture_agreement(
+        {"pace": "idle"}, {}, ("pace",),
+    )
+    assert result["status"] == POSTURE_CANNOT_COMPARE
+    assert result["message"] == (
+        "CANNOT_COMPARE: posture history is empty; "
+        "axes compared 0, axes not compared 1"
+    )
+
+
+def test_history_reconstruction_uses_latest_row_even_when_it_is_a_noop():
+    class Result:
+        def fetchall(self):
+            return [
+                ("pace", "idle", "hot"),
+                ("pace", "steady", "steady"),
+            ]
+
+    class Session:
+        def execute(self, sql):
+            assert "ORDER BY ordinal" in sql
+            return Result()
+
+    current = PostureRepository(Session()).current()
+    assert current == {"pace": "steady"}
+    result = resolve_posture_agreement(
+        {"pace": "hot"}, current, ("pace",),
+    )
+    assert result["status"] == POSTURE_DISAGREE
+
+
+def test_history_encoding_distinguishes_unset_from_literal_none():
+    class Session:
+        rows = None
+
+        def executemany(self, _sql, rows):
+            self.rows = rows
+
+    session = Session()
+    written = PostureRepository(session).append_changes(
+        [("pace", None, "None")], at="now", actor="test"
+    )
+    assert written == 1
+    assert session.rows[0][2:4] == ("\x1eunset", "None")
 
 
 def _migrate_through_core(path) -> None:
