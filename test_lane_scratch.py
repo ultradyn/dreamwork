@@ -514,3 +514,151 @@ class TestDocstringDefersToRedproof:
             "(snap/ vs redproof/) so an agent reading it does not assume the "
             "snap/ path is the red-proof snapshot root")
 
+
+# ── #973: the `write` verb the frame promises but the tool lacked ──────
+
+class TestWriteVerb:
+    """#973: the frame (#878) names ``dev/lane_scratch.py`` as "the supported
+    place" to persist red-proof evidence, but the tool only PRINTED a path — so
+    every lane re-invented the write or skipped the evidence. This is the
+    missing verb: ``write <name>`` reads stdin, lands under this lane's scratch
+    dir, prints the absolute path.
+
+    The CLI is exercised via subprocess (the production seam a lane invokes),
+    not by calling ``_write_main`` directly: an import-call would not reach the
+    argparse layer or the stdin path, and a check that patches out the
+    production seam is structurally incapable of failing on it (the CLAUDE.md
+    born-hollow rule)."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_fixture_lane_scratch(self, repo):
+        """The subprocess resolves to the REAL ~/.cache root keyed on this
+        fixture's repo (repo_key=origin, lane_key=master), which is SHARED
+        across every TestWriteVerb invocation. Files a prior test wrote trip
+        the overwrite guard, so a second run of the suite reddens on its own
+        residue. Clean the fixture's lane dir before each test so each measures
+        its own call, not a leftover. Safe: this is under origin/master/, never
+        the real lane's ud-dreamwork/<branch>/ evidence root."""
+        import shutil
+        d = ls.lane_scratch_dir(repo, create=False)
+        if d.exists():
+            shutil.rmtree(d)
+        yield
+
+    @staticmethod
+    def _run(repo: Path, name: str, payload: bytes, *extra: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["python3", str(CLI_PATH), "write", name, *extra,
+             "--cwd", str(repo)],
+            input=payload, capture_output=True,
+        )
+
+    def test_writes_payload_and_prints_an_absolute_lane_private_path(self, repo):
+        """The core #973 behaviour: pipe content in, get the path back, the file
+        holds exactly what was piped."""
+        r = self._run(repo, "redproof-d1-973.txt", b"FAIL: red line\n")
+        assert r.returncode == 0, r.stderr
+        printed = Path(r.stdout.decode().strip())
+        assert printed.is_absolute(), f"printed path is not absolute: {printed}"
+        # The file is under THIS repo's lane-private dir, not a shared root
+        lane_dir = ls.lane_scratch_dir(repo, create=False)
+        assert printed.is_relative_to(lane_dir), (
+            f"wrote outside the lane-private dir ({printed} not under "
+            f"{lane_dir}) — evidence must land lane-private (#652)")
+        assert printed.read_bytes() == b"FAIL: red line\n"
+
+    def test_the_path_it_prints_is_the_path_it_wrote_to(self, repo):
+        """#934's sharper form: the printed path and the written path must be the
+        SAME path, not a directory plus a name the lane has to rejoin. A lane
+        quotes what was printed; that must be the evidence."""
+        r = self._run(repo, "evidence.txt", b"payload\n")
+        printed = Path(r.stdout.decode().strip())
+        assert printed.read_bytes() == b"payload\n", (
+            "the path printed on stdout must hold the bytes written — a lane "
+            "quotes that path, and it must be the evidence the run produced")
+
+    def test_empty_payload_is_refused_and_writes_no_file(self, repo):
+        """Degrade-to-zero (#868): an empty capture must not look like a
+        successful one. An evidence file that exists and proves nothing reads
+        exactly like real evidence — the failure the #878 persistence rule
+        exists to prevent. Refused (exit 2), no file left behind, remedy named.
+
+        Isolation: the subprocess resolves to the REAL ~/.cache scratch root
+        (keyed on this fixture's repo), so a leftover from a prior run would
+        satisfy the absence assertion falsely. Clean the target first, then
+        assert THIS call created nothing — measuring the call's effect, not a
+        prior run's residue."""
+        target = ls.lane_scratch_dir(repo, create=False) / "empty.txt"
+        target.unlink(missing_ok=True)  # measure this call, not a leftover
+        r = self._run(repo, "empty.txt", b"")
+        assert r.returncode == 2, r.stderr
+        assert b"refuse" in r.stderr
+        assert b"0 bytes" in r.stderr
+        # No file is left behind to masquerade as evidence
+        assert not target.exists()
+
+    def test_second_write_to_the_same_name_is_refused_without_force(self, repo):
+        """Direction 2 candidate the brief named: a second call overwrites the
+        first lane's capture, so the evidence quoted in a delivery is not the
+        evidence the run produced. Refuse by default (#940 shape); --force opts
+        in because same lane + same name is the lane's own choice."""
+        first = self._run(repo, "cap.txt", b"FIRST\n")
+        assert first.returncode == 0
+        again = self._run(repo, "cap.txt", b"SECOND\n")
+        assert again.returncode == 2, again.stderr
+        assert b"refuse" in again.stderr
+        assert b"--force" in again.stderr
+        # The first capture is intact, not replaced
+        printed = Path(first.stdout.decode().strip())
+        assert printed.read_bytes() == b"FIRST\n", (
+            "a refused overwrite must leave the original evidence byte-identical")
+        # --force does replace, because the lane asked explicitly
+        forced = self._run(repo, "cap.txt", b"SECOND\n", "--force")
+        assert forced.returncode == 0, forced.stderr
+        assert printed.read_bytes() == b"SECOND\n"
+
+    def test_a_traversing_name_stays_inside_the_lane_dir(self, repo):
+        """The slug is the traversal protection: `../../escape` folds each `..`
+        into `unnamed`, so the path stays lane-private. A containment check
+        AFTER slug-ging can never fire (the born-hollow rule), so the slug is the
+        protection and this test pins that property rather than asserting a
+        dead guard."""
+        r = self._run(repo, "../../escape.txt", b"x")
+        assert r.returncode == 0, r.stderr
+        printed = Path(r.stdout.decode().strip())
+        lane_dir = ls.lane_scratch_dir(repo, create=False)
+        assert printed.is_relative_to(lane_dir), (
+            f"a traversing name escaped the lane dir: {printed}")
+        # No parent-component survives in the path
+        assert ".." not in printed.relative_to(lane_dir).parts
+
+    def test_help_lists_the_write_subcommand(self, repo):
+        """Discoverability (#973's framing): a lane that runs ``--help`` must
+        learn the verb exists, otherwise it re-invents the write exactly as
+        before. The epilog names `write`."""
+        r = subprocess.run(
+            ["python3", str(CLI_PATH), "--help", "--cwd", str(repo)],
+            capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        assert "write" in r.stdout, (
+            "--help must advertise the write subcommand or a lane cannot "
+            "discover it (#973)")
+
+    def test_from_reads_a_file_instead_of_stdin(self, repo, tmp_path):
+        """``--from <path>`` reads a file, so a lane can persist a file it
+        already captured without re-piping. Empty --from is refused too
+        (degrade-to-zero applies to both inputs)."""
+        src = tmp_path / "src.txt"
+        src.write_bytes(b"from-file-payload\n")
+        r = self._run(repo, "from.txt", b"", "--from", str(src))
+        assert r.returncode == 0, r.stderr
+        printed = Path(r.stdout.decode().strip())
+        assert printed.read_bytes() == b"from-file-payload\n"
+        # Empty --from is refused (no stdin consumed)
+        empty_src = tmp_path / "empty.txt"
+        empty_src.write_bytes(b"")
+        r2 = self._run(repo, "e.txt", b"", "--from", str(empty_src))
+        assert r2.returncode == 2
+        assert b"0 bytes" in r2.stderr
+
+

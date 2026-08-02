@@ -44,12 +44,20 @@ Usage
     dev/lane_scratch.py --no-create  # print without creating
     dev/lane_scratch.py snap         # print (and create) a named subdir
     dev/lane_scratch.py measure      # the one filesystem-measurement location
+    dev/lane_scratch.py write <name> # write stdin to a lane-private file, print
+                                     # its absolute path; REFUSES empty input (#868)
 
     S="$(dev/lane_scratch.py snap)"
     cp client/router.js "$S/router.js"      # snapshot before the injection
     ...                                     # inject, watch it go red
     cp "$S/router.js" client/router.js      # restore -- never `git checkout`
     cmp client/router.js "$S/router.js"     # prove byte-identical
+
+    # Persist red-proof evidence at the moment of the run (#878): pipe the FAIL
+    # line, get the absolute path back to quote. Empty input is REFUSED, not
+    # written (#868). `write` lands under this lane's general scratch root; a
+    # redproof restore is `cmp`'d against the path `redproof.py` PRINTED (#934).
+    P="$(printf '%s\n' "$out" | dev/lane_scratch.py write redproof-d1.txt)"
 
 For RED-PROOF injections specifically, prefer ``dev/redproof.py`` (#683): it owns
 the snapshot/restore protocol, snapshots under a distinct ``redproof/`` root
@@ -368,13 +376,128 @@ def author_dir(cwd: Path | None = None, *, create: bool = False,
     return lane_scratch_dir(cwd, create=create, sub=sub, role=ROLE_AUTHOR)
 
 
+def _write_main(argv: list[str]) -> int:
+    """``write <name>``: persist stdin (or ``--from``) to a lane-private file.
+
+    The frame (#878) tells every lane to write its red-proof evidence to a
+    lane-private file at the moment of the run. Until this verb existed, the
+    frame named ``dev/lane_scratch.py`` as "the supported place" while the tool
+    could only PRINT a directory — so every lane re-invented the write and some
+    skipped the evidence. This is the missing verb.
+
+    Degrade-to-zero (#868): an empty payload is REFUSED, not written. An
+    evidence file that exists and proves nothing reads exactly like real
+    evidence, which is the failure the #878 persistence rule exists to prevent.
+    The remedy is named in the refusal (#940): pass real content or omit the
+    write.
+    """
+    ap = argparse.ArgumentParser(
+        prog="lane_scratch.py write",
+        description=(
+            "Write stdin (or --from <path>) to a lane-private file and print "
+            "its absolute path. Empty input is REFUSED (#868): an evidence "
+            "file that proves nothing cannot masquerade as one."
+        ),
+    )
+    ap.add_argument("name",
+                    help="filename under this lane's scratch dir, e.g. "
+                         "'redproof-d1-973.txt'; may include subdirs")
+    ap.add_argument("--from", dest="from_path", default=None,
+                    help="read from this file instead of stdin")
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite an existing file (default: refuse, so a "
+                         "re-write cannot silently destroy quoted evidence)")
+    ap.add_argument("--cwd", default=None,
+                    help="derive for this directory instead of the current one")
+    ap.add_argument("--role", default=None,
+                    help=f"override the role (env {ROLE_ENV}, default "
+                         f"{ROLE_AUTHOR})")
+    args = ap.parse_args(argv)
+    cwd = Path(args.cwd) if args.cwd else None
+    role = args.role or lane_role()
+
+    # Read the payload before creating anything: an empty input is refused
+    # with no file left behind, so it cannot masquerade as evidence (#868).
+    if args.from_path:
+        src = Path(args.from_path)
+        try:
+            payload = src.read_bytes()
+        except OSError as exc:
+            print(f"refuse: cannot read --from {src}: {exc}", file=sys.stderr)
+            return 1
+    else:
+        if sys.stdin.isatty():
+            print("refuse: stdin is a terminal and no --from <path> given — "
+                  "pipe content (`... | lane_scratch.py write <name>`) or pass "
+                  "--from", file=sys.stderr)
+            return 2
+        payload = sys.stdin.buffer.read()
+
+    if not payload:
+        print(f"refuse: 0 bytes read for '{args.name}' — an empty evidence "
+              "file reads exactly like real evidence and proves nothing (#868); "
+              "pass real content or omit the write", file=sys.stderr)
+        return 2
+
+    # Slug each path component so <name> cannot escape the lane dir: every part
+    # is folded to a single safe component, so a `../` in <name> becomes
+    # `unnamed` rather than a parent reference (the existing `_slug` is the
+    # traversal protection — tested in test_lane_scratch.py, not duplicated
+    # here, because a containment check after slug-ging can never fire and a
+    # check that can never fire is hollow).
+    parts = [p for p in (_slug(x) for x in Path(args.name).parts) if p]
+    if not parts:
+        print(f"refuse: '{args.name}' resolves to no usable filename after "
+              "sanitising", file=sys.stderr)
+        return 2
+    d = lane_scratch_dir(cwd, create=True, role=role)
+    target = d.joinpath(*parts)
+
+    # Overwrite protection: the file a delivery cites must be the file the run
+    # produced. A silent re-write that replaces already-quoted evidence is the
+    # same "reads like real evidence" failure as an empty file (#868); refusing
+    # by default and naming --force follows the refuse-and-name-the-remedy shape
+    # (#940). Same lane + same name is the lane's own choice, so --force opts in.
+    if target.exists() and not args.force:
+        print(f"refuse: {target} already exists — overwriting would silently "
+              "replace evidence already quoted (the file a delivery cites must "
+              "be the file the run produced); pick a new name or pass --force",
+              file=sys.stderr)
+        return 2
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+    except OSError as exc:
+        print(f"refuse: cannot write {target}: {exc}", file=sys.stderr)
+        return 1
+
+    # Bytes is authoritative; line count is a convenience for text evidence.
+    try:
+        n_lines = len(payload.decode("utf-8").splitlines())
+    except UnicodeDecodeError:
+        n_lines = payload.count(b"\n")
+    print(target)  # stdout: the absolute path, for capture and quoting
+    print(f"wrote {len(payload)} bytes ({n_lines} lines) -> {target}",
+          file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["require-mtime-change"]:
         return _mtime_control_main(argv[1:])
+    if argv[:1] == ["write"]:
+        return _write_main(argv[1:])
     ap = argparse.ArgumentParser(
         description="Print this lane's private scratch directory (#652). "
-                    "Role-keyed (#694): a reviewer gets a separate subdir.")
+                    "Role-keyed (#694): a reviewer gets a separate subdir.",
+        epilog=(
+            "Subcommands: `write <name>` writes stdin to a lane-private file "
+            "and prints its path (#868); `require-mtime-change <path> -- <cmd>` "
+            "runs a positive control. With no subcommand, prints this lane's "
+            "scratch dir."),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("sub", nargs="?", default=None,
                     help="optional subdirectory, e.g. 'snap'")
     ap.add_argument("--no-create", action="store_true",
