@@ -2397,6 +2397,28 @@ def _verb_groups(args, dw_dir):
                         f"completion trigger #{trigger_id} {status} for group"
                         f" #{args.group_id} (inert; no task filed)"
                     )
+                elif args.groups_cmd == "set-current":
+                    # --none clears; a group id sets; BOTH or NEITHER is a
+                    # usage error. Both raise ValidationError -> exit 2, so a
+                    # bare `set-current` typo can never silently clear (#962).
+                    if args.clear_current and args.group_id is not None:
+                        raise ValidationError(
+                            "set-current: a group id and --none are mutually"
+                            " exclusive"
+                        )
+                    target = None if args.clear_current else args.group_id
+                    if target is None and not args.clear_current:
+                        raise ValidationError(
+                            "set-current needs a group id or --none"
+                        )
+                    # set_current_goal_id carries the kind='goal' guard and
+                    # surfaces its own vocabulary: set|cleared|unchanged.
+                    status = tx.goals.set_current_goal_id(target)
+                    disposition = (
+                        f"current goal {status}"
+                        if target is None
+                        else f"current goal #{target} {status}"
+                    )
                 else:  # argparse makes this unreachable; keep failure named.
                     raise ValidationError(
                         f"unknown groups command {args.groups_cmd!r}"
@@ -2790,6 +2812,21 @@ def main(argv=None):
     groups_ready.add_argument("group_id", type=int)
     groups_ready.add_argument("--json", action="store_true")
     groups_ready.add_argument("--ledger", default=LEDGER_DEFAULT)
+    # #962 — the current-goal pointer the tick renders. Setting it asserts
+    # what the work is FOR (#939), so clearing is an EXPLICIT --none: a bare
+    # `set-current` is a usage error (exit 2), never a silent clear. group_id
+    # is optional only so --none can omit it; the handler rejects "neither".
+    groups_setcurrent = groups_sub.add_parser(
+        "set-current",
+        help="point the tick's current-goal pointer at a goal, or clear it")
+    groups_setcurrent.add_argument(
+        "group_id", type=int, nargs="?",
+        help="a goal group id (kind='goal'); refused for any other kind")
+    groups_setcurrent.add_argument(
+        "--none", action="store_true", dest="clear_current",
+        help="clear the current-goal pointer")
+    groups_setcurrent.add_argument("--actor", default=None)
+    groups_setcurrent.add_argument("--ledger", default=LEDGER_DEFAULT)
 
     args = p.parse_args(argv)
     # Reach's git and ledger subjects are one project. When callers override

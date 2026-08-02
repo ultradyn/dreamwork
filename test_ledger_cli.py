@@ -43,6 +43,7 @@ from dreamwork_db.tasks import task_store_spec
 import ledger_store
 import ledger_write
 import lint  # #671 — `ledger_view`, the #294 dispatch the sweep tests derive from
+import tick_line  # #962 — the goal-fact renderer is the witness surface
 import watch
 
 REPO = Path(__file__).resolve().parent
@@ -1688,3 +1689,211 @@ def test_a_marked_task_that_is_blocked_says_so_on_the_hoisted_line(
     assert top.startswith(f"#{stuck}  "), f"precondition: the mark hoists: {out}"
     assert "NEXT-UP" in top and "BLOCKED:a ruling from him" in top, (
         f"a hoisted task that cannot be taken must say so: {top!r}")
+
+
+# ===========================================================================
+# groups set-current — #962. The current-goal pointer had a writer
+# (dreamwork_db/goals.py:set_current_goal_id) with NO caller outside tests, so
+# no supported interface could move it and every tick rendered 'no current
+# goal' forever. The verb is plumbing only; populating the tree is the human's
+# (#939). Every test drives the verb against a FIXTURE store (the real
+# ledger.sqlite3 has one writer, the coordinator) and asserts on the RENDERED
+# goal fact (tick_line._goal_fact) — the surface that was wrong all night —
+# never on the stored value alone.
+# ===========================================================================
+
+def _goal_target(tmp_path, *, title, completed=0, total=0):
+    """A target whose store holds ONE goal group, NOT set current.
+
+    Mirrors test_tick_line._add_goal_store but leaves the pointer empty so a
+    test can move it via the CLI. Returns (target_str, goal_id, ledger_path).
+    Every store here is a fresh fixture under tmp_path; the real store is
+    never touched.
+    """
+    import subprocess
+    target = tmp_path / "proj"
+    subprocess.run(["git", "init", "-q", str(target)], check=True)
+    dw = target / ".dreamwork"
+    dw.mkdir(parents=True)
+    db = dw / ledger_parse.STORE_FILENAME
+    (dw / "tasks.md").write_text("# Task ledger\n\nNext id: **1**\n")
+    with open_database(task_store_spec(db), access=Access.WRITE) as store:
+        with store.transaction() as tx:
+            goal_id = tx.groups.create(
+                kind="goal", title=title, actor="test",
+                at="2026-08-01T00:00:00Z")
+            tx.goals.set_state(goal_id, "open")
+            for i in range(total):
+                tid = tx.tasks.file(
+                    "member %d" % i, "body", actor="test",
+                    at="2026-08-01T00:00:01Z")
+                tx.groups.add_task(
+                    goal_id, tid, actor="test", at="2026-08-01T00:00:02Z")
+                if i < completed:
+                    tx.tasks.land(
+                        tid, actor="test", at="2026-08-01T00:00:03Z")
+    return str(target), goal_id, str(dw / "tasks.md")
+
+
+def test_set_current_moves_the_rendered_tick_line(dev_ledger, tmp_path):
+    """THE DEFECT (#962): no supported interface could move the current-goal
+    pointer, so the tick rendered 'no current goal' forever. Direction 1
+    asserts on the RENDERED goal fact (tick_line._goal_fact), not the stored
+    value — the rendered line is the surface that was wrong all night.
+
+    PRODUCTION LINE: the `set-current` branch in dev/ledger.py `_verb_groups`
+    that calls tx.goals.set_current_goal_id. RED: with the branch absent the
+    sub-verb is unknown (argparse exit 2), the pointer never moves, and the
+    final equality fails.
+    """
+    title = "the loop can act on its goal"
+    target, goal_id, ledger = _goal_target(
+        tmp_path, title=title, completed=1, total=3)
+    # Baseline: a goal exists but the pointer is empty -> the healthy empty.
+    assert tick_line._goal_fact(target) == "no current goal"
+    rc, out, err = _run(dev_ledger,
+                        ["groups", "set-current", str(goal_id),
+                         "--ledger", ledger])
+    assert rc == 0, (rc, out, err)
+    assert f"current goal #{goal_id} set" in out, out
+    # The thing that was wrong all night: the RENDERED line moved.
+    assert tick_line._goal_fact(target) == (
+        'goal #G%d "%s" 1/3' % (goal_id, title)), (
+        tick_line._goal_fact(target))
+
+
+def test_set_current_none_clears_the_rendered_pointer(dev_ledger, tmp_path):
+    """--none clears the pointer and the tick returns to the healthy empty.
+    Clearing is EXPLICIT (#962 IGC): only --none clears; a bare set-current
+    errors. Asserts on the rendered line."""
+    target, goal_id, ledger = _goal_target(
+        tmp_path, title="holder", completed=0, total=1)
+    _run(dev_ledger, ["groups", "set-current", str(goal_id),
+                      "--ledger", ledger])
+    assert tick_line._goal_fact(target).startswith("goal #G")
+    rc, out, err = _run(dev_ledger,
+                        ["groups", "set-current", "--none",
+                         "--ledger", ledger])
+    assert rc == 0, (rc, out, err)
+    assert "current goal cleared" in out, out
+    assert tick_line._goal_fact(target) == "no current goal"
+
+
+def test_set_current_bare_errors_and_does_not_clear(dev_ledger, tmp_path):
+    """The IGC decision (#962): clearing must be EXPLICIT. A bare
+    `set-current` (no id, no --none) is a usage error (exit 2), never a silent
+    clear. DIRECTION-2 closure: against a store whose pointer is ALREADY SET,
+    the bare invocation must leave it intact — a typo cannot destroy the
+    loop's stated purpose (#939)."""
+    target, goal_id, ledger = _goal_target(
+        tmp_path, title="holder", completed=0, total=1)
+    _run(dev_ledger, ["groups", "set-current", str(goal_id),
+                      "--ledger", ledger])
+    assert tick_line._goal_fact(target).startswith("goal #G")
+    rc, out, err = _run(dev_ledger,
+                        ["groups", "set-current", "--ledger", ledger])
+    assert rc == 2, (rc, out, err)
+    assert "needs a group id or --none" in err, err
+    # Pointer intact: still pointing at the goal, not silently cleared.
+    assert tick_line._goal_fact(target).startswith("goal #G")
+
+
+def test_set_current_rejects_id_and_none_together(dev_ledger, tmp_path):
+    """Mutual exclusion: an id and --none together is a usage error (exit 2)."""
+    target, goal_id, ledger = _goal_target(
+        tmp_path, title="holder", completed=0, total=1)
+    rc, out, err = _run(dev_ledger,
+                        ["groups", "set-current", str(goal_id), "--none",
+                         "--ledger", ledger])
+    assert rc == 2, (rc, out, err)
+    assert "mutually exclusive" in err, err
+    assert tick_line._goal_fact(target) == "no current goal"
+
+
+def test_set_current_refuses_a_non_goal_kind(dev_ledger, tmp_path):
+    """The kind='goal' guard fires at WRITE time (#962), so the renderer can
+    never reach a state it would call healthy when it is not. A non-goal group
+    is refused (exit 2) and the pointer stays empty — the tick keeps rendering
+    the healthy 'no current goal', never a misleading handle (#868).
+
+    PRODUCTION LINE: GoalRepository._goal's `kind != "goal"` -> ValidationError
+    (dreamwork_db/goals.py), reached through tx.goals.set_current_goal_id. RED
+    would be the guard returning instead of raising; the renderer would then
+    render a non-goal as if it were current."""
+    target, goal_id, ledger = _goal_target(
+        tmp_path, title="the real goal", completed=0, total=1)
+    # A non-goal group, distinct in kind from the goal (asserted, not assumed).
+    db = Path(ledger).parent / ledger_parse.STORE_FILENAME
+    with open_database(task_store_spec(db), access=Access.WRITE) as store:
+        with store.transaction() as tx:
+            epic_id = tx.groups.create(
+                kind="epic", title="not a goal", actor="test", at="now")
+    assert epic_id != goal_id, "precondition: the epic must be a distinct group"
+    rc, out, err = _run(dev_ledger,
+                        ["groups", "set-current", str(epic_id),
+                         "--ledger", ledger])
+    assert rc == 2, (rc, out, err)
+    assert "not a goal" in err, err
+    # Pointer unchanged -> the healthy empty, not a dangling/misleading handle.
+    rendered = tick_line._goal_fact(target)
+    assert rendered == "no current goal", rendered
+    assert "GOAL UNKNOWN" not in rendered
+
+
+def test_set_current_refuses_a_missing_group(dev_ledger, tmp_path):
+    """Pointing at a group that does not exist is refused (NotFound, exit 1),
+    and the renderer stays at the healthy empty rather than GOAL UNKNOWN. This
+    is the 'likely real bug in any fix here' candidate from the brief, closed:
+    the guard fires before the pointer can dangle."""
+    target, goal_id, ledger = _goal_target(
+        tmp_path, title="holder", completed=0, total=1)
+    missing = goal_id + 999  # a genuinely-absent id, derived at runtime
+    rc, out, err = _run(dev_ledger,
+                        ["groups", "set-current", str(missing),
+                         "--ledger", ledger])
+    assert rc == 1, (rc, out, err)
+    assert f"no task group #{missing}" in err, err
+    assert tick_line._goal_fact(target) == "no current goal"
+
+
+def test_set_current_surfaces_the_full_return_vocabulary(dev_ledger, tmp_path):
+    """set_current_goal_id returns set|cleared|unchanged; the verb surfaces
+    that vocabulary honestly rather than a fixed 'ok' (#962). Each value is
+    produced by driving the verb, not asserted against the DB."""
+    _, goal_id, ledger = _goal_target(
+        tmp_path, title="holder", completed=0, total=1)
+    rc1, out1, _ = _run(dev_ledger,
+                        ["groups", "set-current", str(goal_id),
+                         "--ledger", ledger])
+    assert rc1 == 0
+    assert f"current goal #{goal_id} set" in out1, out1
+    # Setting the SAME id again -> 'unchanged', not a second 'set'.
+    rc2, out2, _ = _run(dev_ledger,
+                        ["groups", "set-current", str(goal_id),
+                         "--ledger", ledger])
+    assert rc2 == 0
+    assert f"current goal #{goal_id} unchanged" in out2, out2
+    # Clearing when already empty -> 'unchanged'.
+    _run(dev_ledger, ["groups", "set-current", "--none", "--ledger", ledger])
+    rc4, out4, _ = _run(dev_ledger,
+                        ["groups", "set-current", "--none",
+                         "--ledger", ledger])
+    assert rc4 == 0
+    assert "current goal unchanged" in out4, out4
+
+
+def test_set_current_honours_ledger_and_writes_only_there(dev_ledger, tmp_path):
+    """--ledger isolation (#962): the verb writes only to the store under the
+    --ledger path, so a lane can never touch another store. Set current on A
+    and B's rendered line must stay 'no current goal'."""
+    target_a, goal_a, ledger_a = _goal_target(
+        tmp_path / "a", title="A", completed=0, total=1)
+    target_b, goal_b, ledger_b = _goal_target(
+        tmp_path / "b", title="B", completed=0, total=1)
+    rc, out, err = _run(dev_ledger,
+                        ["groups", "set-current", str(goal_a),
+                         "--ledger", ledger_a])
+    assert rc == 0, (rc, out, err)
+    assert tick_line._goal_fact(target_a).startswith("goal #G")
+    # B untouched: the verb wrote only under ledger_a.
+    assert tick_line._goal_fact(target_b) == "no current goal"
