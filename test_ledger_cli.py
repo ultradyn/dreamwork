@@ -33,6 +33,7 @@ import json
 import re
 import sqlite3
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -169,6 +170,131 @@ def _store_dw(migrate, dw, cut_over=True):
         finally:
             store.close()
     return dw
+
+
+def _store_dump(db_path):
+    """Every persistent store row and schema object, in stable dump order."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return "\n".join(conn.iterdump())
+    finally:
+        conn.close()
+
+
+def _task_row(db_path, task_id):
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return conn.execute(
+            "SELECT state, body FROM task WHERE id = ?", (task_id,)).fetchone()
+    finally:
+        conn.close()
+
+
+def _event_count(db_path, task_id):
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return conn.execute(
+            "SELECT COUNT(*) FROM task_event WHERE task_id = ?", (task_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_dry_run_population_is_all_three_store_write_verbs(
+        dev_ledger, monkeypatch):
+    """Denominator: derive every parser verb that accepts ``--dry-run``.
+
+    Dispatch is replaced only after parsing, so this classifies the parser's
+    accepted flag surface without letting any candidate reach a writer.
+    """
+    monkeypatch.setattr(dev_ledger, "_dispatch", lambda args: 0)
+    monkeypatch.setattr(dev_ledger, "emit_warnings", lambda _dw, rc: rc)
+    accepted = set()
+    for verb, argv in _VERB_ARGV.items():
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                dev_ledger.main(argv + ["--dry-run"])
+            except SystemExit:
+                continue
+        accepted.add(verb)
+    assert accepted == {"file", "fold", "note"}, (
+        f"checked {len(accepted)} verb(s) accepting --dry-run: {sorted(accepted)}")
+
+
+def test_store_fold_dry_run_rolls_back_every_persistent_write(
+        migrate, dev_ledger, tmp_path):
+    """Post-cutover fold rehearses task/body/event changes, committing none.
+
+    A real fold writes the task state, optional body note, and one chained
+    ``task_event``.  The full SQL dump additionally closes a false-green where
+    an unenumerated table, sequence, or metadata row changed.  The immediate
+    real fold is the positive control for both mutation and released locking.
+    """
+    dw = _store_dw(migrate, tmp_path / "fold-dry-run")
+    db_path = ledger_parse.store_path(dw)
+    task_id = min(int(i) for i in _fixture_ids()[0])
+    note = "dry-run probe"
+    state_before, body_before = _task_row(db_path, task_id)
+    events_before = _event_count(db_path, task_id)
+    dump_before = _store_dump(db_path)
+    assert state_before == "open"
+
+    rc, out, err = _run(dev_ledger, [
+        "fold", str(task_id), "--note", note, "--dry-run",
+        "--ledger", str(dw / "tasks.md")])
+
+    state_after, body_after = _task_row(db_path, task_id)
+    events_after = _event_count(db_path, task_id)
+    assert rc == 0, err
+    assert state_after == state_before, (
+        f"fold --dry-run changed state: before={state_before!r} "
+        f"after={state_after!r}")
+    assert "dry-run" in out and f"#{task_id}" in out, out
+    assert body_after == body_before, "fold --dry-run committed its note"
+    assert events_after == events_before, "fold --dry-run committed an event"
+    assert _store_dump(db_path) == dump_before, (
+        "fold --dry-run changed persistent store content outside the named rows")
+
+    started = time.monotonic()
+    with contextlib.redirect_stdout(io.StringIO()):
+        dev_ledger._fold_store(str(dw), task_id, note)
+    elapsed = time.monotonic() - started
+    assert elapsed < 2, (
+        f"real fold store write blocked for {elapsed:.3f}s after dry-run")
+    state_real, body_real = _task_row(db_path, task_id)
+    assert state_real == "landed" and body_real.endswith("  · " + note), (
+        f"positive control did not perform fold: state={state_real!r}")
+    assert _event_count(db_path, task_id) == events_before + 1
+
+
+@pytest.mark.parametrize("verb", ["file", "note"])
+def test_other_store_dry_runs_are_wholly_inert_and_release_the_writer(
+        verb, migrate, dev_ledger, tmp_path):
+    """The two sibling parser verbs share fold's rollback-only contract."""
+    dw = _store_dw(migrate, tmp_path / f"{verb}-dry-run")
+    db_path = ledger_parse.store_path(dw)
+    task_id = min(int(i) for i in _fixture_ids()[0])
+    if verb == "file":
+        argv = ["file", "dry-run filed task", "--note", "fixture body"]
+    else:
+        argv = ["note", str(task_id), "--note", "dry-run note"]
+    ledger_arg = ["--ledger", str(dw / "tasks.md")]
+    dump_before = _store_dump(db_path)
+
+    rc, out, err = _run(dev_ledger, argv + ["--dry-run"] + ledger_arg)
+
+    assert rc == 0, err
+    assert "dry-run" in out, out
+    assert _store_dump(db_path) == dump_before, (
+        f"{verb} --dry-run changed persistent store content")
+
+    started = time.monotonic()
+    rc, _, err = _run(dev_ledger, argv + ledger_arg)
+    elapsed = time.monotonic() - started
+    assert rc == 0, f"real {verb} after dry-run failed or remained locked: {err!r}"
+    assert elapsed < 2, f"real {verb} blocked for {elapsed:.3f}s after dry-run"
+    assert _store_dump(db_path) != dump_before, (
+        f"positive control: real {verb} did not change the store")
 
 
 # ===========================================================================

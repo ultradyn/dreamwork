@@ -515,12 +515,42 @@ def _migrate_guard():
     return _MIGRATE_MOD
 
 
-def _fold_store(dw_dir, task_id, note):
+class _DryRunRollback(Exception):
+    """Private signal that makes DatabaseHandle.transaction roll back."""
+
+
+def _dry_run_store_write(dw_dir, write):
+    """Execute one store write completely, then roll its transaction back.
+
+    ``transaction()`` uses ``BEGIN IMMEDIATE``, so this briefly reserves the
+    writer while the synchronous domain call runs.  The private signal is
+    raised immediately after that call and the handle is closed before this
+    function returns; no lock is held while output or reach reporting runs.
+    """
+    result = None
+    with open_database(
+            task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
+        try:
+            with store.transaction():
+                result = write(store.tasks)
+                raise _DryRunRollback
+        except _DryRunRollback:
+            return result
+
+
+def _fold_store(dw_dir, task_id, note, *, dry_run=False):
     """Store-mode fold: land_task (state CAS open→landed, note appended to body).
 
     There is no text to move — the state flip IS the fold. The Markdown file
     is untouched (the store is the single source post-cutover).
     """
+    if dry_run:
+        _dry_run_store_write(
+            dw_dir, lambda tasks: tasks.land(task_id, note=note))
+        sys.stdout.write(
+            f"dry-run: would fold #{task_id} (store: state open→landed; "
+            "append note and chained event); transaction rolled back\n")
+        return
     with open_database(
             task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
         ledger_write.land_task(store, task_id, note=note)
@@ -532,7 +562,7 @@ def _fold_store(dw_dir, task_id, note):
     sys.stdout.write(f"folded #{task_id} (store: state open→landed)\n")
 
 
-def _file_store(dw_dir, title, body, priority, type, origin):
+def _file_store(dw_dir, title, body, priority, type, origin, *, dry_run=False):
     """Store-mode file: file_task (seeded AUTOINCREMENT id, chained filed event).
 
     #681 — file_task now rejects a bad enum (priority/origin) with a WriteError
@@ -543,24 +573,41 @@ def _file_store(dw_dir, title, body, priority, type, origin):
     and 1 is `get`'s "no such id" under the #497 contract.
     """
     try:
-        with open_database(
-                task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
-            new_id = ledger_write.file_task(
-                store, title, body, priority=priority, type=type, origin=origin)
+        if dry_run:
+            new_id = _dry_run_store_write(
+                dw_dir, lambda tasks: tasks.file(
+                    title, body, priority=priority, type=type, origin=origin))
+        else:
+            with open_database(
+                    task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
+                new_id = ledger_write.file_task(
+                    store, title, body, priority=priority, type=type, origin=origin)
     except ledger_write.WriteError as exc:
         sys.stderr.write(f"ledger: {exc}\n")
         return 2
+    if dry_run:
+        sys.stdout.write(
+            f"dry-run: would file #{new_id} (store: task row and chained "
+            "event); transaction rolled back\n")
+        return 0
     sys.stdout.write(f"filed #{new_id} (store)\n")
     return 0
 
 
-def _note_store(dw_dir, task_id, note):
+def _note_store(dw_dir, task_id, note, *, dry_run=False):
     """Store-mode note: note_task (append note to body in any state, no event).
 
     There is no state change — a note annotates the body, so the store verb
     appends and the Markdown file is untouched (the store is the single
     source post-cutover).
     """
+    if dry_run:
+        _dry_run_store_write(
+            dw_dir, lambda tasks: tasks.note(task_id, note))
+        sys.stdout.write(
+            f"dry-run: would note #{task_id} (store: append body only, no "
+            "event); transaction rolled back\n")
+        return
     with open_database(
             task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
         ledger_write.note_task(store, task_id, note)
@@ -3197,11 +3244,13 @@ def _dispatch(args):
     if args.cmd in ("fold", "file", "note", "reprioritise", "unblock",
                     "retitle", "next-up") and source_of_truth(dw_dir) == "store":
         if args.cmd == "fold":
-            _fold_store(dw_dir, args.id, args.note)
+            _fold_store(dw_dir, args.id, args.note, dry_run=args.dry_run)
+            if args.dry_run:
+                return 0
             sys.stdout.write(_reach_trailer(args.repo, dw_dir))
             return 0
         if args.cmd == "note":
-            _note_store(dw_dir, args.id, args.note)
+            _note_store(dw_dir, args.id, args.note, dry_run=args.dry_run)
             return 0
         if args.cmd == "reprioritise":
             return _reprioritise_store(dw_dir, args.id, args.band, args.why)
@@ -3214,7 +3263,8 @@ def _dispatch(args):
         # #681 — _file_store returns the exit code: 0 on success, 2 on a bad
         # enum (priority/origin), surfaced as stderr not a sqlite traceback.
         return _file_store(dw_dir, args.title, args.note or args.title,
-                           args.priority, args.type, args.origin)
+                           args.priority, args.type, args.origin,
+                           dry_run=args.dry_run)
 
     if args.cmd == "counts" and source_of_truth(dw_dir) == "store":
         open_ids, landed_ids = store_ids_by_state(dw_dir)
