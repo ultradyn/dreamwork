@@ -31,6 +31,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tokenize
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -149,10 +150,14 @@ def _scan_docstring_citations(
     """Return ``(findings, skipped, docstrings_scanned)`` for dev/*.py.
 
     Uses the AST so only docstrings are examined — not inline comments, not
-    string literals in executable code.  Files that cannot be parsed
-    (SyntaxError, undecodable bytes) are returned as SKIPPED with their
-    reason, never silently dropped into the examined count (#868).  The
-    denominators are derived once at runtime, never as a stale literal.
+    string literals in executable code.  Source is read via
+    :func:`tokenize.open`, which honours the PEP-263 coding cookie so a
+    valid Latin-1 (or other non-UTF-8) file with a ``# coding:`` declaration
+    is decoded correctly and its docstring IS examined (#1034).  Files that
+    cannot be decoded (no cookie, invalid bytes) or parsed (SyntaxError) are
+    returned as SKIPPED with their reason, never silently dropped into the
+    examined count (#868).  The denominators are derived once at runtime,
+    never as a stale literal.
     """
     findings: list[DocstringCitation] = []
     skipped: list[SkippedFile] = []
@@ -160,9 +165,16 @@ def _scan_docstring_citations(
     for path in sorted((root / "dev").glob("*.py")):
         rel = path.relative_to(root).as_posix()
         try:
-            source = path.read_text(encoding="utf-8")
+            with tokenize.open(path) as stream:
+                source = stream.read()
         except UnicodeDecodeError as exc:
             skipped.append(SkippedFile(rel, f"undecodable bytes: {exc}"))
+            continue
+        except SyntaxError as exc:
+            # tokenize.detect_encoding raises SyntaxError for a malformed
+            # coding cookie or BOM — a file that cannot be read, not one
+            # whose body has a syntax error.
+            skipped.append(SkippedFile(rel, f"bad encoding cookie: {exc}"))
             continue
         try:
             tree = ast.parse(source, filename=str(path))
@@ -230,24 +242,53 @@ def _resolve_titles(dw_dir: Path) -> dict[int, str]:
     }
 
 
+def _is_css_colour(task_id: int) -> bool:
+    """Whether a parenthesised number is unambiguously a CSS colour.
+
+    A parenthesised number is a CSS colour only if it is exactly six
+    hexadecimal digits — ``(#334155)``, ``(#ffffff)`` (#1034).  Shorter
+    tokens (1–5 digits, or 6 digits with non-hex characters) are issue
+    references.  An issue reference above the ledger max is AMBIGUOUS — it
+    could be a typo, a stale forward reference, or a not-yet-filed task —
+    and is reported as SUSPICIOUS, never silently filtered.  The rule is
+    stated in words first: six hex digits in parentheses is a colour by
+    syntax, not by magnitude.
+    """
+    digits = str(task_id)
+    return len(digits) == 6 and all(
+        d in "0123456789abcdefABCDEF" for d in digits
+    )
+
+
 def check_docstring_citations(
-    root: Path, dw_dir: Path | None = None
+    root: Path, dw_dir: Path | None = None, *, verbose: bool = False
 ) -> int:
     """Report each dev/*.py docstring (#NNN) with its resolved title.
 
-    A file that cannot be parsed (SyntaxError, invalid UTF-8) is reported as
-    SKIPPED with its reason, separately from examined — never silently
-    absorbed into a green count (#868).  Parenthesised numbers above the
-    ledger's max id are not issue references (they are CSS colours or other
-    six-digit tokens); they are FILTERED and the bounding rule is stated
-    (#1034).
+    Three resolution states, never collapsed (#136): titles were resolved,
+    titles could not be resolved, and there were no citations.  When the
+    ledger store is absent the check reports NOT CHECKED — it extracted
+    citations but could not resolve their titles — and returns 0 so the
+    store's absence does not mask the pin check (which works in any
+    checkout).  The NOT CHECKED banner is printed so a reader who skims sees
+    the check did not actually check.
 
-    Exit 2 if no dev/*.py files were examined (vacuity: a run that examined
-    nothing must not read as one that examined everything and found nothing,
-    #868).  Exit 1 if any cited id does not resolve (a dangling reference is
-    a mechanical defect).  Exit 0 when every cited id resolves — the titles
-    are REPORTED for human aptness review, never certified (#994): a
-    resolvable id is a real entry, not an attested attribution.
+    A file that cannot be parsed (SyntaxError, invalid encoding without a
+    coding cookie) is reported as SKIPPED with its reason, separately from
+    examined — never silently absorbed into a green count (#868).
+
+    Parenthesised numbers are classified by a stated rule (#1034): six hex
+    digits is a CSS colour (FILTERED); an issue reference above the ledger
+    max is SUSPICIOUS (reported, not hidden); an id that resolves is
+    reported with its title; an id that does not resolve is UNRESOLVABLE
+    (the only mechanical gate).  The output is signal-first: UNRESOLVABLE,
+    SUSPICIOUS, SKIPPED, and FILTERED rows print by default; resolved rows
+    print only when *verbose* is set.
+
+    Exit 2 if no dev/*.py files were examined (vacuity: #868).  Exit 1 if
+    any cited id does not resolve.  Exit 0 when every cited id resolves or
+    the store is absent (NOT CHECKED).  Titles are REPORTED for human
+    aptness review, never certified (#994).
     """
     dev_dir = root / "dev"
     py_files = sorted(dev_dir.glob("*.py")) if dev_dir.is_dir() else []
@@ -271,51 +312,92 @@ def check_docstring_citations(
     try:
         titles = _resolve_titles(dw_dir)
     except FileNotFoundError as exc:
-        print(f"ERROR cannot resolve titles: ledger store not found: {exc}")
-        return 2
+        # NOT CHECKED (#136 third state): the store is absent.  The
+        # extraction ran and found citations, but title resolution could
+        # not run.  This must not read like "resolved and all good" or
+        # "no citations found."  Exit 0 so this does not mask the pin
+        # check; the banner makes the state unmissable.
+        print(
+            f"NOT CHECKED: ledger store not found ({exc}); "
+            f"{len(citations)} (#NNN) citation(s) extracted across "
+            f"{files_examined} file(s), {docstrings_scanned} docstring(s) "
+            f"scanned — title resolution could not run, attribution "
+            f"review did not happen (#136).  Pin check above remains "
+            f"authoritative."
+        )
+        for s in skipped:
+            print(f"  SKIPPED {s.rel_path}: {s.reason}")
+        if verbose:
+            for c in sorted(
+                citations, key=lambda x: (x.rel_path, x.lineno)
+            ):
+                print(
+                    f"  {c.rel_path}:{c.lineno} {c.symbol} "
+                    f"(#{c.task_id}) [unverified]"
+                )
+        return 0
 
-    # Parenthesised numbers above the ledger max are not issue references.
-    # Six hex digits is a CSS colour, not an id.  Bound by what the ledger
-    # can actually contain, not a magic number (#1034).
+    # Classify by the stated rule (#1034).
     max_task_id = max(titles) if titles else 0
-    filtered = [c for c in citations if max_task_id and c.task_id > max_task_id]
-    real_citations = [c for c in citations if c not in filtered]
-    unresolvable = [c for c in real_citations if c.task_id not in titles]
+    resolved: list[DocstringCitation] = []
+    unresolvable: list[DocstringCitation] = []
+    suspicious: list[DocstringCitation] = []
+    filtered: list[DocstringCitation] = []
+    for c in citations:
+        if _is_css_colour(c.task_id):
+            filtered.append(c)
+        elif max_task_id and c.task_id > max_task_id:
+            suspicious.append(c)
+        elif c.task_id in titles:
+            resolved.append(c)
+        else:
+            unresolvable.append(c)
+    total_real = len(resolved) + len(unresolvable) + len(suspicious)
 
+    # Signal-first output (#1034 Finding 5): the rows a reader must act on
+    # print first; resolved rows print only with --verbose.
     print(
         f"DOCSTRING CITATIONS: examined {files_examined} file(s) "
         f"({len(skipped)} skipped), {docstrings_scanned} docstring(s) "
-        f"scanned, {len(real_citations)} (#NNN) citation(s) — REPORT not "
-        f"certification (#994): a resolvable id is never an attested "
-        f"attribution"
+        f"scanned, {total_real} (#NNN) citation(s)"
+        f"{f', {len(filtered)} CSS colour(s) filtered' if filtered else ''}"
+        f" — REPORT not certification (#994)"
     )
+    for c in unresolvable:
+        print(
+            f"  UNRESOLVABLE {c.rel_path}:{c.lineno} {c.symbol} "
+            f"(#{c.task_id}) not found in ledger"
+        )
+    for c in suspicious:
+        print(
+            f"  SUSPICIOUS {c.rel_path}:{c.lineno} {c.symbol} "
+            f"(#{c.task_id}) exceeds ledger max (#{max_task_id}) — "
+            f"typo, stale ref, or not-yet-filed"
+        )
     for s in skipped:
         print(f"  SKIPPED {s.rel_path}: {s.reason}")
     for c in filtered:
         print(
             f"  FILTERED {c.rel_path}:{c.lineno} {c.symbol} "
-            f"(#{c.task_id}) not an issue id: exceeds ledger max "
-            f"(#{max_task_id})"
+            f"(#{c.task_id}) CSS colour (6 hex digits)"
         )
-    for c in sorted(real_citations, key=lambda x: (x.rel_path, x.lineno)):
-        title = titles.get(c.task_id)
-        marker = "UNRESOLVABLE " if title is None else ""
-        quoted = "not found in ledger" if title is None else f'"{title}"'
-        print(
-            f"  {marker}{c.rel_path}:{c.lineno} {c.symbol} "
-            f"(#{c.task_id}) {quoted}"
-        )
+    if verbose:
+        for c in sorted(resolved, key=lambda x: (x.rel_path, x.lineno)):
+            print(
+                f"  {c.rel_path}:{c.lineno} {c.symbol} "
+                f"(#{c.task_id}) \"{titles[c.task_id]}\""
+            )
 
     if unresolvable:
         print(
-            f"\nFAIL: {len(unresolvable)} of {len(real_citations)} docstring "
+            f"\nFAIL: {len(unresolvable)} of {total_real} docstring "
             f"citation(s) did not resolve across {files_examined} file(s)"
         )
         return 1
     print(
-        f"\nOK: {len(real_citations)} docstring citation(s) resolved across "
-        f"{files_examined} file(s); {len(skipped)} skipped, "
-        f"{len(filtered)} filtered; titles reported for human review"
+        f"\nOK: {len(resolved)} resolved, {len(unresolvable)} unresolvable, "
+        f"{len(suspicious)} suspicious, {len(filtered)} filtered, "
+        f"{len(skipped)} skipped across {files_examined} file(s)"
     )
     return 0
 
@@ -441,9 +523,16 @@ def main(argv: list[str] | None = None) -> int:
         help=".dreamwork/ dir for issue-id resolution "
         "(default: main checkout's)",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="show resolved citation rows (default: signal-only output)",
+    )
     args = parser.parse_args(argv)
     root = args.root.resolve()
-    return check(root) | check_docstring_citations(root, args.dw_dir)
+    return check(root) | check_docstring_citations(
+        root, args.dw_dir, verbose=args.verbose
+    )
 
 
 if __name__ == "__main__":
