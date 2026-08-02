@@ -57,14 +57,40 @@ declare({
   drives: 'phone-width (390px) horizontal-overflow on /, /questions, ' +
           '/answers and /file (planted long path) with palette closed, / with ' +
           'the cmd menu open, and an injected 160-char value in every ' +
-          'unbounded-length slot',
+          'unbounded-length slot, with a space-consuming scrollbar confirmed',
   traceWindow: 'static scrollWidth measurement per route after ~0.5-0.7s ' +
                'settle; no motion traced',
 });
-const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
+const browser = await chromium.launch({
+  args: ['--use-gl=swiftshader', '--enable-webgl'],
+  ignoreDefaultArgs: ['--hide-scrollbars'],
+});
 
 const PHONE = { width: 390, height: 844 };        // iPhone 12/13/14 class
 const log = notes;
+
+// Refuse to grade horizontal fit through Playwright's normally hidden
+// scrollbar. Both halves matter: a zero-width reading on a page with no
+// vertical overflow means the instrument could not run, not that it passed.
+{
+  const ctx = await browser.newContext({ viewport: PHONE });
+  const page = await ctx.newPage();
+  await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+  const sb = await page.evaluate(() => ({
+    width: window.innerWidth - document.documentElement.clientWidth,
+    scrollH: document.documentElement.scrollHeight,
+    innerH: window.innerHeight,
+  }));
+  log.push('scrollbar precondition: ' + JSON.stringify(sb));
+  ok(`scrollbar precondition: dashboard genuinely overflows vertically `
+   + `(${sb.scrollH} > ${sb.innerH}) — else scrollbar width could not be tested`,
+     sb.scrollH > sb.innerH);
+  ok(`scrollbar precondition: this browser's scrollbar consumes width `
+   + `(sb=${sb.width}px) — else --hide-scrollbars survived ignoreDefaultArgs `
+   + `and every horizontal-fit verdict below is blind`,
+     sb.scrollH > sb.innerH && sb.width > 0);
+  await ctx.close();
+}
 
 /* #595 — /file needs a rendered markdown pane holding a long known-internal
    path, and the fixture's prose is shared with a dozen other guards. So plant

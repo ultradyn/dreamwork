@@ -181,7 +181,10 @@ const scrollMax = pg => pg.evaluate(`(() => { const c =
   document.querySelector('.qdock > .qa > .qbody');
   return c.scrollHeight - c.clientHeight; })()`);
 
-const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
+const br = await chromium.launch({
+  args: ['--use-gl=swiftshader', '--enable-webgl'],
+  ignoreDefaultArgs: ['--hide-scrollbars'],
+});
 const open = async (opts = {}) => {
   const ctx = await br.newContext({
     viewport: opts.viewport || { width: 1280, height: 820 },
@@ -199,6 +202,28 @@ const open = async (opts = {}) => {
   await sleep(700);
   return { ctx, p };
 };
+
+// Refuse to grade horizontal geometry through Playwright's normally hidden
+// scrollbar. The phone review is deliberately used because it must overflow
+// vertically; without overflow, a zero-width reading means "could not test".
+{
+  const { ctx, p } = await open({ viewport: { width: 390, height: 844 } });
+  const sb = await p.evaluate(() => ({
+    width: window.innerWidth - document.documentElement.clientWidth,
+    scrollH: document.documentElement.scrollHeight,
+    innerH: window.innerHeight,
+  }));
+  say(`scrollbar precondition: width ${sb.width}px, page ${sb.scrollH}px ` +
+      `inside ${sb.innerH}px viewport`);
+  ok(`scrollbar precondition: phone review genuinely overflows vertically `
+   + `(${sb.scrollH} > ${sb.innerH}) — else scrollbar width could not be tested`,
+     sb.scrollH > sb.innerH);
+  ok(`scrollbar precondition: this browser's scrollbar consumes width `
+   + `(sb=${sb.width}px) — else --hide-scrollbars survived ignoreDefaultArgs `
+   + `and every horizontal-geometry verdict below is blind`,
+     sb.scrollH > sb.innerH && sb.width > 0);
+  await ctx.close();
+}
 
 /* ── one pane, two columns, and the window is full ─────────────────────── */
 const { ctx: c1, p } = await open();
