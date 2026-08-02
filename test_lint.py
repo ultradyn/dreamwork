@@ -7827,6 +7827,20 @@ class TestPreMergeAssertion:
         assert "2 worktree(s) examined; 1 lane(s) classified" in out, out
         assert "1 of 1 live lane(s) declare ownership" in out, out
 
+    def test_stable_worktree_name_resolves_a_post_dispatch_branch_rename(
+            self, tmp_path, capsys):
+        """Production seam: the ``by_name`` normalization in ``_pre_merge``."""
+        lg = _load_lane_guard()
+        t, git = self._repo(tmp_path)
+        wt = t / ".worktrees" / "lane"
+        git("branch", "-m", "renamed-after-dispatch", cwd=wt)
+
+        rc = lg._pre_merge(t, "lane")
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "safe to merge `renamed-after-dispatch`" in out, out
+        assert "registered lane `renamed-after-dispatch`" in out, out
+
     def test_a_lane_owned_dirty_path_refuses_naming_lane_path_and_action(
             self, tmp_path, capsys):
         """Production line: ``lint.lane_owned_paths`` (the shared reader).
