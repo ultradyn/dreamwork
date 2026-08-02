@@ -256,12 +256,12 @@ _TASK_STATE_PREDICATE = re.compile(
 # AFTER it — so "WARN rows (#630, #700)" reported #630 and dropped #700 as an
 # "other citation", missing exactly the landed-id mismatch this checker exists
 # to find (#1028 P1).  The clause is bounded by a sentence terminator (``.``,
-# newline, ``;``) or 80 chars, whichever comes first; then every ``#NNN``
-# inside it is a claim.  The standing-rules line "WARN row set against the
-# measured baseline" has no ``#NNN`` in its clause, so it yields zero claims
-# and cannot false-positive.
+# newline, ``;``) or 30 chars — the SAME boundary the prior lane measured as
+# false-positive-free across 77 cores (a wider window reaches ``#794`` in
+# quoted standing-rules prose, "WARN ROW SET … (`#794`)", and creates ~20
+# false positives).  Every ``#NNN`` inside the clause is then a claim.
 _TASK_WARN_OUTPUT = re.compile(
-    r"\bWARN\s+rows?\b(?P<clause>[^.\n;]{0,80})",
+    r"\bWARN\s+rows?\b(?P<clause>[^.\n;]{0,30})",
     re.IGNORECASE,
 )
 
