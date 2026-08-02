@@ -15541,6 +15541,85 @@ class TestUserSettings(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_write_lock_contention_is_retryable_and_never_reports_success(self):
+        """A real competing writer produces a named retry, not success/no-op."""
+        with tempfile.TemporaryDirectory() as d:
+            dw = _store_target(d)
+            base = self._serve(d)
+            import sqlite3
+            lock = sqlite3.connect(str(watch.store_path(dw)), isolation_level=None)
+            try:
+                lock.execute("BEGIN IMMEDIATE")
+                request = urllib.request.Request(
+                    base + "/settings",
+                    data=json.dumps({
+                        "key": "composer.rememberManualResize", "value": True,
+                    }).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    urllib.request.urlopen(request, timeout=10)
+                response = caught.exception
+                self.assertEqual(response.status, 503)
+                self.assertEqual(response.headers["Retry-After"], "1")
+                body = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(body["reason"], "settings_store_busy")
+                self.assertTrue(body["retryable"])
+                self.assertNotIn("changed", body)
+                self.assertEqual(lock.execute(
+                    "SELECT COUNT(*) FROM user_setting WHERE userid = ? AND key = ?",
+                    ("local", "composer.rememberManualResize"),
+                ).fetchone()[0], 0)
+            finally:
+                lock.rollback()
+                lock.close()
+
+            status, body = self._post_json(base + "/settings", {
+                "key": "composer.rememberManualResize", "value": True,
+            })
+            self.assertEqual(status, 202)
+            self.assertEqual(body["changed"], ["composer.rememberManualResize"])
+            stored = sqlite3.connect(str(watch.store_path(dw)))
+            try:
+                self.assertEqual(stored.execute(
+                    "SELECT value FROM user_setting "
+                    "WHERE userid = ? AND key = ?",
+                    ("local", "composer.rememberManualResize"),
+                ).fetchone(), ("true",))
+            finally:
+                stored.close()
+
+    def test_unexpected_settings_failure_is_named_and_logged(self):
+        with tempfile.TemporaryDirectory() as d:
+            dw = _store_target(d)
+            import sqlite3
+            conn = sqlite3.connect(str(watch.store_path(dw)))
+            try:
+                conn.execute("DROP TABLE user_setting")
+                conn.commit()
+            finally:
+                conn.close()
+            base = self._serve(d)
+            request = urllib.request.Request(
+                base + "/settings",
+                data=json.dumps({"key": "gfx.dither", "value": "bayer"}).encode(
+                    "utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(request, timeout=5)
+            response = caught.exception
+            self.assertEqual(response.status, 500)
+            self.assertIn("settings write failed; see dashboard event log",
+                          response.reason)
+            events = os.path.join(dw, "watch-events.log")
+            with open(events, encoding="utf-8") as f:
+                logged = f.read()
+            self.assertIn("SETTINGS WRITE FAILED:", logged)
+            self.assertIn("user_setting", logged)
+
     def test_route_validates_writes_and_default_deletes_override(self):
         with tempfile.TemporaryDirectory() as d:
             dw = _store_target(d)

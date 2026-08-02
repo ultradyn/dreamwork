@@ -5435,11 +5435,13 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             obj["receipt"] = receipt
             return obj
 
-        def _send(self, body, ctype, status=200):
+        def _send(self, body, ctype, status=200, headers=None):
             data = body.encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", ctype + "; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(data)
 
@@ -6039,7 +6041,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
         def _handle_settings(self):
             """Atomically persist one or many settings through the canonical store."""
             import settings as user_settings
-            from dreamwork_db import Access, ValidationError, open_database
+            from dreamwork_db import Access, Busy, ValidationError, open_database
             from dreamwork_db.settings import BatchSettingValidationError
             from dreamwork_db.tasks import task_store_spec
             req = self._read_json()
@@ -6072,8 +6074,23 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                              extra={"errors": exc.errors}); return
             except ValidationError as exc:
                 self._reject("domain_invalid", detail=str(exc)); return
-            except Exception:
-                self.send_error(500); return
+            except Busy as exc:
+                log_event(target, "SETTINGS STORE BUSY: " + one_line(str(exc)))
+                self._send(json.dumps({
+                    "ok": False, "retryable": True,
+                    "reason": "settings_store_busy",
+                    "detail": "the settings store is locked; retry the write",
+                }), "application/json", status=503,
+                    headers={"Retry-After": "1"})
+                return
+            except Exception as exc:
+                log_event(
+                    target,
+                    "SETTINGS WRITE FAILED: " + type(exc).__name__ + ": "
+                    + one_line(str(exc)),
+                )
+                self.send_error(500, "settings write failed; see dashboard event log")
+                return
             if changed:
                 log_event(target, f'settings via watch: "{one_line(", ".join(changed))}" '
                           '-> .dreamwork/ledger.sqlite3')
