@@ -1108,7 +1108,7 @@ def _collect_constituent_also_fixes(lane: Path, base_sha: str, tip_sha: str):
         return None
     ids: set[int] = set()
     for m in _ALSO_FIXES_RE.finditer(out.stdout):
-        for tid_str in _TRAILER.findall(m.group(1)):
+        for tid_str in _TRAILER_ID.findall(m.group(1)):
             ids.add(int(tid_str))
     return sorted(ids)
 
@@ -1174,7 +1174,7 @@ def _squash_lane(
     # are appended, deduplicated and sorted.
     constituent_ids = _collect_constituent_also_fixes(lane, base_sha, branch_sha)
     if constituent_ids:
-        existing = {int(t) for t in _TRAILER.findall(
+        existing = {int(t) for t in _TRAILER_ID.findall(
             "\n".join(_ALSO_FIXES_RE.findall(message)))}
         extra = [tid for tid in constituent_ids if tid not in existing]
         if extra:
