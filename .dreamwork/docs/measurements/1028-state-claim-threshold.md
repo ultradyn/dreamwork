@@ -96,7 +96,10 @@ the measurement commit.
 fixtures call `brief.build(881, …)`, which reads the real
 `.dreamwork/ledger.sqlite3` in the ambient checkout. A clean clone with no
 populated ledger hits pre-existing non-hermetic failures unrelated to the
-state-claim work (the `1 failed, 92 passed` result this lane reports requires
-a populated ledger). The 21 state-claim tests added by this task ARE hermetic
+state-claim work (the `1 failed, 93 passed` result this lane reports requires
+a populated ledger). The 22 state-claim tests added by this task ARE hermetic
 — each builds its own fixture store via `_state_ledger(tmp_path)` — and pass
-independently of the ambient ledger.
+independently of the ambient ledger. These counts are re-derived at the lane
+tip; the prior reading of 92 passed / 21 tests went stale when the F3 commit
+added the tilde-fence regression and the count was not re-run — which is the
+only way a number in a record about measurement rigour goes stale.
