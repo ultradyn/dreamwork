@@ -275,7 +275,14 @@ def test_remove_task_records_auditable_event_readable_back(store_path):
     """#1037 auditability: after a removal a reader can still discover the
     task was once a member and on whose judgement it left. Reads the
     SUPPORTED reader (groups.removed_members), not raw SQL — an audit trail
-    nobody can reach through the product is documentation, not machinery."""
+    nobody can reach through the product is documentation, not machinery.
+
+    Finding 3 (#1037) — this round-trip also BINDS the prose coupling between
+    remove_task's detail writer ('removed from {kind} #{id} ...') and
+    removed_members' LIKE reader ('removed from {kind} #{id} %'). A wording
+    change to the detail prefix that leaves the reader's pattern stale makes
+    removed_members() return empty here; verified by injecting 'removed' ->
+    'dropped' in the writer only, which reds this assertion."""
     _insert_tasks(store_path, [(611, "open")])
     with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
         group_id = _create_group(store, kind="epic", title="Audited epic")
