@@ -10611,3 +10611,48 @@ class TestFramePremiseVerified:
         rep = lint.Report()
         lint.check_frame_premise_verified(tmp_path / ".dreamwork", rep)
         assert rep.rows == []
+
+
+class TestInboxRotation:
+    """#1104: inbox.md size is the only contract a reader depends on, and it
+    must WARN past the threshold so the file does not silently grow back to the
+    ~938K-token Read that killed three lanes. These tests build their own
+    fixture inbox (never touching the live file)."""
+
+    def _check(self, dw: Path) -> lint.Report:
+        rep = lint.Report()
+        lint.check_inbox_rotation(dw, rep)
+        return rep
+
+    def _rows(self, rep: lint.Report) -> list:
+        return [(level, detail) for level, _, detail in rep.rows]
+
+    def test_absent_inbox_is_silent(self, tmp_path):
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        rep = self._check(dw)
+        assert rep.rows == []
+
+    def test_small_inbox_passes_with_ok_coverage(self, tmp_path):
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "inbox.md").write_text("## small report\nbody\n")
+        rows = self._rows(self._check(dw))
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        # Coverage: the OK row carries the byte count and threshold.
+        assert "bytes" in rows[0][1]
+        assert str(lint.INBOX_ROTATE_THRESHOLD_BYTES // 1024) in rows[0][1]
+
+    def test_oversized_inbox_warns_with_rotation_command(self, tmp_path):
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        # Build a file OVER the threshold — derived size, not a literal.
+        over = lint.INBOX_ROTATE_THRESHOLD_BYTES + 1024
+        (dw / "inbox.md").write_text("x" * over)
+        rows = self._rows(self._check(dw))
+        assert len(rows) == 1 and rows[0][0] == lint.WARN, rows
+        # The WARN names the fix command.
+        assert "rotate_inbox" in rows[0][1]
+        assert "#1104" in rows[0][1]
+        # Threshold-anchored: the WARN's byte count exceeds the threshold.
+        assert str(over // 1024) in rows[0][1]

@@ -4429,6 +4429,51 @@ def _prior_drain_state(target: Path, current: dict) -> dict | None:
     return states[1] if len(states) > 1 else None
 
 
+# #1104: lanes die appending to inbox.md because the harness requires a Read
+# before an Edit on a file that grew to 3.77 MB / ~938K tokens. The durable fix
+# is rotation (dev/rotate_inbox.py); this threshold is the cadence mechanism —
+# a WARN here names the rotation command so the file does not silently grow
+# back to the death zone between rotations. The value keeps ~128K tokens of
+# history (generous) while staying well under the ~938K-token Read that killed
+# three lanes. A permanent WARN is the wrong category (#794); this one is
+# transient — it clears the moment the coordinator rotates.
+INBOX_ROTATE_THRESHOLD_BYTES = 512 * 1024
+
+
+def check_inbox_rotation(dw: Path, rep: Report) -> None:
+    """inbox.md must stay under the rotation threshold so a lane can append (#1104).
+
+    No code reads the contents (file-formats.md:1063: "append-only prose read by
+    a language model"), so size is the only contract a reader depends on: a lane
+    that must Read-before-Edit dies when the file is too large. The threshold is
+    the cadence — without it the file grows back silently after a one-off
+    rotation. Calm on an absent file (a fresh target writes it on the first
+    lane report); WARN (transient) when over threshold, naming the fix.
+    """
+    inbox = dw / "inbox.md"
+    if not inbox.is_file():
+        return
+    try:
+        size = inbox.stat().st_size
+    except OSError:
+        return
+    if size > INBOX_ROTATE_THRESHOLD_BYTES:
+        rep.add(
+            WARN, "inbox.md",
+            f"{size} bytes ({size // 1024}KB) — over the {INBOX_ROTATE_THRESHOLD_BYTES // 1024}KB "
+            f"rotation threshold; a lane appending its report must Read the whole file "
+            f"first and will die of context exhaustion (#1104); run "
+            f"`python3 dev/rotate_inbox.py rotate --target <repo-root>` to archive "
+            f"older entries",
+        )
+    else:
+        rep.add(
+            OK, "inbox.md",
+            f"{size} bytes ({size // 1024}KB) — under the {INBOX_ROTATE_THRESHOLD_BYTES // 1024}KB "
+            f"rotation threshold (#1104)",
+        )
+
+
 def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
     """Old-root membership/count may only drain; size is reported evidence (#846)."""
     state_path = dw / WORKTREE_DRAIN_STATE
@@ -7894,6 +7939,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_guards_execution_accounting(dw.parent, rep)
     check_client_dist(dw.parent, rep)
     check_in_repo_worktree_drain(dw, rep)
+    check_inbox_rotation(dw, rep)
     # LAST, and it must stay last: the ledger checks that can skip are spread
     # through the list above and each records its own skip as it returns, so
     # the single #611 row can only be rendered once they have all had their
