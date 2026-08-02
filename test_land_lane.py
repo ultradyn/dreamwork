@@ -1865,6 +1865,44 @@ def test_directory_map_matches_a_changed_file_under_it():
     assert empty_targets == () and empty_dirs == ()
 
 
+def test_directory_map_derives_a_client_only_owns_list():
+    """A client-only lane must select tests through the directory map (#1010).
+
+    The client extraction made ``client/`` a first-class source directory whose
+    files have no name-derivable or import-derivable Python test, so the
+    directory map is the ONLY rule that reaches them. Without the ``client/``
+    entry in ``DIR_TESTSET_MAP`` a client-only lane derives zero tests and is
+    refused at dispatch as "an empty selection is indistinguishable from broken
+    derivation" (#136) — silently blocking a whole class of work. ``168aa4c6``
+    added the row; this guard pins the DERIVATION (what a client owns-list
+    actually selects), not the data structure's contents, so it fails if the
+    row is removed AND if the map rule itself is broken, but survives a
+    legitimate rename of a mapped test module.
+
+    A ``.js`` and a non-``.js`` client file both sit under ``client/``, so both
+    must select through the directory map — a ``.js``-only probe would not
+    notice a rule that accidentally keyed on extension.
+
+    Production line this binds: the ``client/`` row in ``DIR_TESTSET_MAP`` plus
+    ``_map_derived``'s membership walk (``_path_in_mapped_directory``) over it.
+    """
+    js_targets, js_dirs = land_lane._map_derived(["client/router.js"])
+    css_targets, css_dirs = land_lane._map_derived(["client/style.css"])
+    assert js_targets, "client/router.js derived no tests via the map rule"
+    assert css_targets, "client/style.css derived no tests via the map rule"
+    # Relevance, not identity: the path matched the client/ entry specifically
+    # (not a catch-all), so a legitimate rename of a mapped test module does
+    # not break this. Pinning the exact three module names would make this a
+    # spelling checker that passes on a broken derivation keyed on the row.
+    assert js_dirs == ("client/",) and css_dirs == ("client/",)
+    # The map is path-gated: a path outside every mapped directory selects
+    # nothing, which is the refusal that protects dispatch (#136). If this
+    # stops being empty the map has stopped discriminating, and the guard has
+    # traded one silent hole for another.
+    outside_targets, outside_dirs = land_lane._map_derived(["unmapped/file.xyz"])
+    assert outside_targets == () and outside_dirs == ()
+
+
 def test_data_derived_finds_a_test_referencing_a_changed_data_file(tmp_path):
     """#1099's shape: a test that reads a tracked file as data is derived.
 
