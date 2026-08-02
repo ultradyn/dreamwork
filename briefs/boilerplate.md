@@ -96,12 +96,36 @@ that is a legitimate outcome, not a failure.
   Its successful verdict is restoration evidence only: quote its resolved target classes, and
   never report that verdict as the direction-1 evidence. A zero-registration verdict is
   explicitly **no evidence**, not a vacuous proof over zero injections.
-  **Use `dev/redproof.py`; it owns the snapshot/restore protocol** (`#683`):
+  **Use `dev/redproof.py`; it owns the snapshot/restore protocol** (`#683`), and **registering an
+  injection is no longer enough** — `check` requires evidence that some exact command went red
+  BECAUSE of your injection and green again once it was restored (`#948`). **Carry
+  `--lane <your-lane>` on every verb** (`#957`): a lane may have more than one registry, and the
+  bare verbs resolve only to the legacy one, so omitting it operates on a different registry than
+  the one that answered you.
 
-      python3 dev/redproof.py begin <path> --expectation <expectation-source>
+      python3 dev/redproof.py begin <path> --expectation <source> --lane <your-lane>
       …sabotage it, run your check, watch it go red…
-      python3 dev/redproof.py restore <path>   # record the injected content, restore, verify
-      python3 dev/redproof.py check --require 1 # mandated hand-off gate — run before you report, quote it
+      python3 dev/redproof.py observe <path> --failure '<discriminating message>' \
+          --command just pytest <test-file> --lane <your-lane>
+      python3 dev/redproof.py restore <path> --lane <your-lane>
+      python3 dev/redproof.py check --require 1 --lane <your-lane>
+
+  **`--failure` must name a string that appears ONLY because of your injection.** A generic
+  `AssertionError` matches an unrelated failure and proves nothing. `observe` refuses if the command
+  exits 0, and refuses if the declared string is absent from the output. `restore` then reruns that
+  exact command against the restored bytes, and only *injected-red plus restored-green* is reported
+  CAUGHT — which is what makes the evidence causal rather than merely concurrent: an unrelated or
+  flaky failure fails the control too, and correctly does not count. `check` distinguishes CAUGHT /
+  NOT CAUGHT / NOT CHECKED and prints both denominators; **NOT CHECKED is a refusal under
+  `--require`, not a pass** — `red-proof reach: DID NOT CHECK … examined 0 evidence artifact(s) for
+  N registered injection(s)`. Absence of evidence is not evidence the injection was caught.
+
+  **Register against a TRACKED path that exists in every checkout.** The gate evaluates the registry
+  from the MAIN CHECKOUT, so an injection registered against an ephemeral fixture or a lane-relative
+  path FAULTS there — `cannot evaluate its injection; refusing rather than guessing` — even though
+  your own `check` was clean when you ran it. Creating a fixture, proving a detector fires against
+  it, and cleaning up is correct practice that the registry cannot yet express (`#982`); until it
+  can, keep the registered subject a real tracked file.
 
   **Editing your `--expectation` file mid-injection is legitimate** (inject →
   red → add a test → restore is the natural rhythm) and `restore`/`check` will
