@@ -669,7 +669,29 @@ def test_the_delivered_argv_carries_the_standing_rules(tmp_path, lane):
         import json  # noqa: PLC0415
         child = json.loads(lock.read_text(encoding="utf-8"))["pid"]
         os.kill(child, 0)
-        delivered = Path(f"/proc/{child}/cmdline").read_bytes().split(b"\0")
+        # Wait for the cmdline to be POPULATED, not merely for the pid to
+        # exist.  `os.kill(pid, 0)` succeeds from the moment of fork, but
+        # `/proc/<pid>/cmdline` reads EMPTY across the execve window: the
+        # kernel swaps the mm_struct and `arg_start`/`arg_end` are briefly
+        # zero.  Under full-suite load that window gets hit, and the failure
+        # presents as `argv carried 0 brief items: [b'']` — which reads as a
+        # delivery defect and is not one.  Measured: the identical tree passed
+        # 1521/1521 in one gate run and failed this one test in the next, and
+        # passes 5/5 in isolation.
+        #
+        # This does NOT weaken the assertion.  A genuine delivery failure
+        # yields a POPULATED argv that lacks the brief, so it still fails
+        # below; only the empty-cmdline exec window is waited out, and an
+        # exhausted budget still fails with the same diagnostic.
+        for _ in range(250):
+            delivered = Path(f"/proc/{child}/cmdline").read_bytes().split(b"\0")
+            if any(delivered):
+                break
+            time.sleep(0.02)
+        else:
+            raise AssertionError(
+                f"/proc/{child}/cmdline stayed empty for 5s: the runner never "
+                f"finished exec (stderr: {process.stderr.read()!r})")
     finally:
         process.wait(timeout=30)
 
