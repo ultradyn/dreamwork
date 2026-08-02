@@ -5051,19 +5051,19 @@ disagreed with the story — neither looked wrong on its own.
   A standing rule's stated scope is evidence about its cost, not an enumeration of its causes —
   when narrowing one, the question is not *"can I explain the failure it names?"* but *"can I show
   there is no OTHER failure it also happens to prevent?"* Those are very different burdens and I
-  met the easy one.
+  met the easy one. (2026-08-03, coordinator)
 - **A transient, instructed state was reported at the one severity that halts everything.** Every
   lane is told to rebase twice; every rebase detaches its worktree; the check calls that
   unclassifiable and ERRORs. The check's wording is honest about what it saw — the defect is the
   severity, and it is `#136`'s three-states collapsed: detached-with-rebase-state (expected),
   detached-without (genuinely unclassifiable), and classified. Worth noticing as a shape: when a
   guard fires on a state the system's own instructions produce on purpose, suspect the severity
-  before the wording.
+  before the wording. (2026-08-03, coordinator)
 - **The gate's refusal named a branch that was not at fault.** Two branches refused, neither
   defective, and the log reads as though they were — the real cause was a third branch's worktree.
   A refusal that names the branch under gate, when the blocking condition belongs to the repo, is
   an attribution error of the same family as `#651` (a guard whose message names a failure mode it
-  cannot detect). Cheap to misread as "the lane broke something" and expensive to chase.
+  cannot detect). Cheap to misread as "the lane broke something" and expensive to chase. (2026-08-03, coordinator)
 - **I wrote a prediction into a fold note in the past tense, and it went into the durable record.**
   Folding `#1084` I wrote *"the very next tick after this landed still read `lanes 0 live []` while a
   lane ran — that is the deploy boundary, not a defect in this work."* I had observed no such tick;
@@ -5073,11 +5073,11 @@ disagreed with the story — neither looked wrong on its own.
   repo's own `tick_line.py`, in which case there is no deploy boundary at all. Two unverified claims,
   fused into one confident sentence, in the one place that outlives the session. The transcript
   version of this error is cheap; the ledger version is what a future reader takes as measured. When
-  a note explains away a result, check that the result was observed before explaining it.
+  a note explains away a result, check that the result was observed before explaining it. (2026-08-03, coordinator)
 - **The remedy that worked was a correction appended to the same task, not a quiet edit.** The wrong
   claim stays visible next to what is actually known and what would test it. A silently-fixed record
   teaches nobody why it was wrong, and this particular error — a prediction wearing the grammar of an
-  observation — is one I will make again if the only trace is a clean note.
+  observation — is one I will make again if the only trace is a clean note. (2026-08-03, coordinator)
 - **A pin stales only if the merge touches the expectation source, and that is schedulable.** Four
   finished branches were waiting; `#1057` and `#1112` both pinned `lint.py`/`test_lint.py`, while
   `#1084` (`lane_liveness.py`, `tick_line.py`) and `#1111` (`dev/ledger.py`, `dev/land_lane.py`)
@@ -5087,4 +5087,4 @@ disagreed with the story — neither looked wrong on its own.
   whichever lands first stales the other no matter what, and dispatching both re-arms at once would
   have burned a round. **Diff the pending merges against each waiting branch's expectation source
   before choosing the gate order** — it is a two-command check that converts a guaranteed re-arm
-  round into none.
+  round into none. (2026-08-03, coordinator)
