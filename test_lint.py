@@ -7093,8 +7093,10 @@ class TestBlockerCitations1024:
         assert "→ answered" not in answered, "fixture accidentally stopped testing follows"
         warns = self.blocker_rows(self.rows(self.build(
             tmp_path, tasks, self.questions(answered_entries=answered))))
-        assert any("#701 cites blocker #613: ANSWERED" in row for row in warns), warns
-        assert any("#702 cites blocker #614: ANSWERED" in row for row in warns), warns
+        assert any("#701 cites blocker #613: ANSWERED" in row for row in warns), (
+            "marker-only implementation lost human follows for #613: " + repr(warns))
+        assert any("#702 cites blocker #614: ANSWERED" in row for row in warns), (
+            "marker-only implementation lost human follows for #614: " + repr(warns))
 
     def test_a_genuinely_open_blocker_stays_quiet(self, tmp_path):
         tasks = self.tasks(
