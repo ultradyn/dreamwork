@@ -174,6 +174,10 @@ _ASSERTED_QUANTITY = re.compile(
 _INLINE_CODE = re.compile(
     r"(?<!`)(?P<fence>`+)(?P<body>.*?)(?P=fence)(?!`)", re.DOTALL
 )
+_GLOSSED_TASK_CITATION = re.compile(
+    r"(?<![\w/])(?:\*\*)?#(?P<task>\d+)(?:\*\*)?\s*(?:—|:)\s*"
+    r"(?P<gloss>\S.*?)(?=\s+(?:\*\*)?#\d+(?:\*\*)?\s*(?:—|:)|$)"
+)
 _DIRECTION_NUMBER = re.compile(r"\bdirection\s+\d+\b", re.IGNORECASE)
 _VERIFICATION_CUE = re.compile(
     r"\b(?:verif(?:y|ied|ication)|re[ -]?deriv(?:e|ation)|reproduc(?:e|tion))\b",
@@ -667,7 +671,78 @@ def _quantity_verification_report(core: str) -> str:
     )
 
 
-def validate_core(core: str) -> int:
+def _citation_title(task: int, ledger: Path) -> str | None:
+    """Resolve one cited task id to its ledger title; ``None`` means absent."""
+    try:
+        return str(task_record(task, ledger)["title"]).strip()
+    except BriefFault as exc:
+        if str(exc).startswith(f"#{task} not found in "):
+            return None
+        raise
+
+
+def _citation_authority_report(core: str, ledger: Path) -> str:
+    """Put each explicit citation gloss beside its ledger title for human review."""
+    prose_lines = _INLINE_CODE.sub(
+        lambda match: "".join("\n" if char == "\n" else " " for char in match.group()),
+        core,
+    ).splitlines()
+    citations: list[tuple[int, int, str]] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line_no, line in enumerate(prose_lines, 1):
+        if in_fence:
+            if re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+            ):
+                in_fence = False
+            continue
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            continue
+        prose = re.sub(r"https?://\S+", " ", line)
+        for match in _GLOSSED_TASK_CITATION.finditer(prose):
+            citations.append((
+                line_no,
+                int(match.group("task")),
+                match.group("gloss").strip().strip("*_ "),
+            ))
+
+    if not citations:
+        return (
+            "citation authority NOT CHECKED: found 0 task citations carrying an "
+            "author gloss; resolved 0 and found 0 unresolvable. There is no "
+            "citation population, so this is not an all-verified result."
+        )
+
+    details: list[str] = []
+    resolved = 0
+    for line_no, task, gloss in citations:
+        title = _citation_title(task, ledger)
+        if title is None:
+            details.append(
+                f"line {line_no} #{task} UNRESOLVABLE: author gloss {gloss!r}; "
+                "no ledger title"
+            )
+        else:
+            resolved += 1
+            details.append(
+                f"line {line_no} #{task} RESOLVED: author gloss {gloss!r}; "
+                f"ledger title {title!r}"
+            )
+    return (
+        f"citation authority REPORT: found {len(citations)} task citation(s) "
+        f"carrying an author gloss; resolved {resolved}; unresolvable "
+        f"{len(citations) - resolved}. Semantic agreement is NOT CHECKED and "
+        f"requires human judgment. " + "; ".join(details)
+    )
+
+
+def validate_core(core: str, ledger: Path | None = None) -> int:
     """Refuse an authored core that is absent, placeholder, or has no direction 2.
 
     Each refusal names a mode this function can actually detect.  Tool verbs
@@ -775,12 +850,15 @@ def validate_core(core: str) -> int:
     if empties:
         raise BriefFault(_no_body_message(empties, sections_seen))
 
+    ledger = ledger or (main_checkout() / ".dreamwork" / "tasks.md")
     tool_report = _validate_tool_invocations(core)
     quantity_report = _quantity_verification_report(core)
+    citation_report = _citation_authority_report(core, ledger)
     for index, line in enumerate(lines):
         if _DIRECTION_2.search(line) and any(_substantive(rest) for rest in lines[index + 1:]):
             print(tool_report, file=sys.stderr)
             print(quantity_report, file=sys.stderr)
+            print(citation_report, file=sys.stderr)
             return sections_seen
     # Reaching here proves `empties` came back empty (it raises above), so the
     # denominator is the one signal left that the walk ran on thin data: a core
@@ -870,7 +948,7 @@ def build(task: int, branch: str, owns: list[str], core: str, *,
         )
 
     if not _core_already_validated:
-        validate_core(core)
+        validate_core(core, ledger)
 
     frame = frame_sections(_read(frame_path, "frame"))
     if not frame:
@@ -1003,7 +1081,7 @@ def main(argv: list[str] | None = None) -> int:
         owns = [token.strip().strip("`") for token in args.owns.split(",") if token.strip().strip("`")]
         # main reads the section count and prints the tool-verbs denominator in
         # one validation; direct build callers still self-validate by default.
-        sections = validate_core(core)
+        sections = validate_core(core, args.ledger)
         brief = build(args.task, args.lane or f"cx-{args.task}", owns, core,
                       ledger=args.ledger, frame_path=args.frame,
                       _core_already_validated=True)

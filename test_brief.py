@@ -567,6 +567,79 @@ def test_quantity_report_detects_bare_range_ends_but_not_word_or_grouped_counts(
     assert "line 3 '4'" in report and "line 3 '6 lessons'" in report, report
 
 
+def _citation_ledger(tmp_path: Path) -> Path:
+    dreamwork = tmp_path / ".dreamwork"
+    dreamwork.mkdir()
+    ledger = dreamwork / "tasks.md"
+    ledger.write_text(
+        "# Tasks\n\n## Open\n\n"
+        "- **#140** — **DECIDED**: show the deployed revision, no deploy hook\n"
+        "  instead show the SHA being served so a stale view announces itself\n\n"
+        "- **#141** — Calm grey is genuinely empty\n\n"
+        "## Recently landed\n",
+        encoding="utf-8",
+    )
+    return ledger
+
+
+def test_citation_report_places_the_real_title_beside_a_high_overlap_wrong_gloss(
+    tmp_path,
+):
+    ledger = _citation_ledger(tmp_path)
+    core = "- **#140** — show a loud wrong state, so an unavailable check looks checked."
+
+    report = brief._citation_authority_report(core, ledger)
+
+    assert "#140 RESOLVED" in report, (
+        f"citation #140 was not reported as resolved: {report}"
+    )
+    assert "show a loud wrong state" in report
+    assert "DECIDED**: show the deployed revision, no deploy hook" in report
+    assert "Semantic agreement is NOT CHECKED and requires human judgment" in report
+
+
+def test_citation_report_distinguishes_unresolvable_from_resolved(tmp_path):
+    ledger = _citation_ledger(tmp_path)
+    core = (
+        "- **#140** — stale views announce themselves.\n"
+        "- **#999999** — this authority does not exist.\n"
+    )
+
+    report = brief._citation_authority_report(core, ledger)
+
+    assert "resolved 1; unresolvable 1" in report
+    assert "#140 RESOLVED" in report
+    assert "#999999 UNRESOLVABLE" in report
+    assert "no ledger title" in report
+
+
+def test_citation_report_zero_population_is_not_all_verified(tmp_path):
+    ledger = _citation_ledger(tmp_path)
+    core = (
+        "A bare #140 reference carries no gloss.\n"
+        "`#140 — inline code is evidence, not an authority claim`\n"
+        "https://example.test/#140 — a URL fragment is not a citation.\n"
+        "```text\n#140 — fenced code is not a citation.\n```\n"
+    )
+
+    report = brief._citation_authority_report(core, ledger)
+
+    assert "citation authority NOT CHECKED" in report
+    assert "found 0 task citations" in report
+    assert "not an all-verified result" in report
+
+
+def test_citation_report_resolves_an_entry_with_no_note(tmp_path):
+    ledger = _citation_ledger(tmp_path)
+
+    report = brief._citation_authority_report(
+        "#141: an author supplied gloss despite an empty task note.", ledger
+    )
+
+    assert "#141 RESOLVED" in report
+    assert "ledger title 'Calm grey is genuinely empty'" in report
+
+
 def test_tool_verb_check_refuses_an_unknown_master_verb_by_name(capsys):
     core = GOOD_CORE + "\nRun `dev/ledger.py definitely-not-a-verb 979`.\n"
     try:
