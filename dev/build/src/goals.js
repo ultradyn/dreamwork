@@ -7,7 +7,8 @@ const Details = fromBuilder('mdB', function (props) {
 });
 
 const stateChip = node => React.createElement(
-  'span', { className: 'goalstate ' + node.state }, node.state);
+  'span', { className: 'goalstate ' + (node.state_error ? 'unreadable' : node.state) },
+  node.state_error ? 'unreadable' : node.state);
 
 const goalOptions = (nodes, includeRoot) => [
   ...(includeRoot ? [React.createElement('option', { value: '', key: 'root' },
@@ -173,42 +174,50 @@ function GoalPage(props) {
     }, stateChip(node),
     React.createElement('span', { className: 'goaltree-title' }, node.title),
     React.createElement('span', { className: 'goalmeta' },
-      node.total_count == null ? 'progress unavailable'
-        : node.completed_count + '/' + node.total_count,
-      node.blockers.length ? ' · ' + node.blockers.length + ' blocked' : ''))));
+      node.state_error ? 'unreadable — ' + node.state_error
+      : node.total_count == null ? 'progress unavailable'
+      : node.completed_count + '/' + node.total_count,
+      node.state_error ? ''
+      : node.blockers.length ? ' · ' + node.blockers.length + ' blocked' : ''))));
   const currentPanel = current ? React.createElement('section', {
     className: 'goalcurrent', 'data-goal-id': String(current.id),
   }, React.createElement('div', { className: 'goalmeta' }, 'current goal'),
   React.createElement('div', { className: 'goalcurrent-head' },
     stateChip(current), React.createElement('h2', null, current.title),
     React.createElement('span', { className: 'goalmeta' },
-      current.total_count == null ? 'progress unavailable'
-        : current.completed_count + '/' + current.total_count)),
-  React.createElement(Details, { text: current.details }),
-  React.createElement('h3', null, 'criteria'),
-  current.criteria.length
+      current.state_error ? 'unreadable'
+      : (current.total_count == null ? 'progress unavailable'
+        : current.completed_count + '/' + current.total_count))),
+  current.state_error
+    ? React.createElement('div', { className: 'goalpage-fault' },
+        'this goal could not be read — ' + current.state_error +
+        '. The tree below remains readable.')
+    : null,
+  current.state_error ? null : React.createElement(Details, { text: current.details }),
+  current.state_error ? null : React.createElement('h3', null, 'criteria'),
+  current.state_error ? null : (current.criteria.length
     ? React.createElement('ul', { className: 'goalcriteria' },
         current.criteria.map((criterion, index) =>
           React.createElement('li', { key: index }, criterion)))
     : React.createElement('div', { className: 'dim' },
-        'no criteria found under ## Done when'),
-  React.createElement('h3', null, 'member tasks'),
-  current.member_tasks.length
+        'no criteria found under ## Done when')),
+  current.state_error ? null : React.createElement('h3', null, 'member tasks'),
+  current.state_error ? null : (current.member_tasks.length
     ? current.member_tasks.map(task => React.createElement('div', {
         className: 'goaltask', key: task.id,
       }, React.createElement('span', { className: task.state },
         '#' + task.id + ' · ' + task.state), ' · ' + task.title))
     : React.createElement('div', { className: 'dim' },
-        current.progress_error || 'no member tasks'),
-  React.createElement('h3', null, 'blockers'),
-  current.blockers.length
+        current.progress_error || 'no member tasks')),
+  current.state_error ? null : React.createElement('h3', null, 'blockers'),
+  current.state_error ? null : (current.blockers.length
     ? current.blockers.map(blocker => React.createElement('div', {
         className: 'goalblocker', key: blocker.kind + ':' + blocker.id,
       }, blocker.kind + ' #' + blocker.id + ' · ' + blocker.title +
          ' — ' + blocker.reason))
-    : React.createElement('div', { className: 'dim' }, 'none'),
-  React.createElement('h3', null, 'last panel verdict'),
-  current.verdicts.length
+    : React.createElement('div', { className: 'dim' }, 'none')),
+  current.state_error ? null : React.createElement('h3', null, 'last panel verdict'),
+  current.state_error ? null : (current.verdicts.length
     ? current.verdicts.map(verdict => React.createElement('div', {
         className: 'goalverdict' + (verdict.refuted ? ' refuted' : ''),
         key: verdict.lens,
@@ -218,7 +227,7 @@ function GoalPage(props) {
         (finding, index) => React.createElement('div', {
           className: 'goalmeta', key: index,
         }, finding))))
-    : React.createElement('div', { className: 'dim' }, 'no panel verdict yet'))
+    : React.createElement('div', { className: 'dim' }, 'no panel verdict yet')))
     : React.createElement('div', { className: 'goalpage-fault' },
         'no current goal selected — the tree below remains readable');
   return React.createElement('div', null,

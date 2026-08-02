@@ -6877,6 +6877,96 @@ class TestGoalsRoute(unittest.TestCase):
             ("ok", 0, 0, []))
         self.assertNotIn("error", payload)
 
+    def test_one_unreadable_node_degrades_only_that_node(self):
+        """#1029: a NULL goal_state on one node must not discard the tree.
+
+        This is the RENDERER contract, not the payload envelope: the prior
+        lane proved the payload was healthy with three nodes, and the /goals
+        renderer still threw TypeError on node.blockers.length because the
+        degraded node dropped every field. So this asserts every field both
+        renderers dereference is PRESENT on the degraded node, at a safe
+        default, and that the good nodes are present BY ID.
+        """
+        prerequisite, root, child = self.ids
+        # Precondition the proof depends on: all three render healthy
+        # before the injection, so a red can only be the fault (#794-style
+        # guard: assert the gap the check relies on).
+        before = watch.goal_tree_payload(self.target)
+        self.assertEqual(before["health"], "ok")
+        self.assertEqual(len(before["nodes"]), 3)
+        self.assertNotIn("state_error", before["nodes"][0])
+        # Inject the real defect at the persistence seam — NULL one node's
+        # goal_state directly, the way the CLI-created nodes arrived tonight.
+        dw = os.path.join(self.target, ".dreamwork")
+        conn = sqlite3.connect(str(watch.store_path(dw)))
+        try:
+            conn.execute(
+                "UPDATE task_group SET goal_state = NULL WHERE id = ?", (root,))
+            conn.commit()
+        finally:
+            conn.close()
+        payload = watch.goal_tree_payload(self.target)
+        # The tree renders — it does not collapse to unavailable (#136:
+        # present-but-unreadable is a fourth state, not 'unavailable').
+        self.assertEqual(payload["health"], "ok")
+        self.assertEqual(len(payload["nodes"]), 3)
+        by_id = {node["id"]: node for node in payload["nodes"]}
+        # The faulted node carries its own error and names itself.
+        self.assertIn("state_error", by_id[root])
+        self.assertIn("no goal_state", by_id[root]["state_error"])
+        # The degraded node keeps EVERY field both renderers dereference, at
+        # safe empty defaults — so no TypeError crashes the /goals renderer
+        # (node.blockers.length) and no undefined state lies on the dashboard.
+        for field in ("state", "blockers", "member_tasks", "verdicts"):
+            self.assertIn(field, by_id[root],
+                          f"degraded node must carry {field} (renderers "
+                          f"dereference it) — the prior lane dropped it")
+        self.assertEqual(by_id[root]["state"], "unreadable",
+                         "a degraded node must LOOK unreadable, not pass as a "
+                         "goal with no state (#136)")
+        self.assertEqual(by_id[root]["blockers"], [])
+        self.assertEqual(by_id[root]["member_tasks"], [])
+        self.assertEqual(by_id[root]["verdicts"], [])
+        # The two good nodes still render their state and carry no error.
+        for good in (prerequisite, child):
+            self.assertEqual(by_id[good].get("state"), "open")
+            self.assertNotIn("state_error", by_id[good])
+
+    def test_per_node_isolation_is_not_coupled_to_null_goal_state(self):
+        """The per-node catch isolates store/schema faults, not only NULL state.
+
+        A check bound to NULL goal_state alone would pass if goals.state were
+        patched to tolerate NULL — leaving the tree fragile to the next
+        unreadable field. So this injects a fault on a DIFFERENT read (rank)
+        and asserts the same isolation (#1029 direction 2).
+
+        Production catches only DatabaseError, OSError and ValueError
+        (watch.py:7171) — NOT every exception. An unexpected TypeError or
+        KeyError still propagates and discards the tree, correctly: the
+        catch is deliberately narrow, and this test matches that scope.
+        """
+        from dreamwork_db.core import DatabaseError
+        from dreamwork_db.goals import GoalRepository
+        prerequisite, root, child = self.ids
+        original_rank = GoalRepository.rank
+
+        def rank_faulting(repo, group_id):
+            if group_id == root:
+                raise DatabaseError(
+                    f"injected: goal #{group_id} rank unreadable")
+            return original_rank(repo, group_id)
+
+        with unittest.mock.patch.object(GoalRepository, "rank", rank_faulting):
+            payload = watch.goal_tree_payload(self.target)
+        self.assertEqual(payload["health"], "ok")
+        self.assertEqual(len(payload["nodes"]), 3)
+        by_id = {node["id"]: node for node in payload["nodes"]}
+        self.assertIn("state_error", by_id[root])
+        self.assertIn("rank unreadable", by_id[root]["state_error"])
+        for good in (prerequisite, child):
+            self.assertNotIn("state_error", by_id[good])
+            self.assertEqual(by_id[good].get("state"), "open")
+
     def test_goals_shell_and_data_route_are_read_only(self):
         port = self._serve()
         headers = {"Host": f"allowed.test:{port}"}
@@ -7161,9 +7251,17 @@ class TestGoalsRoute(unittest.TestCase):
             "a.pathname === '/goals'", watch.PAGE,
             "same-document links no longer claim /goals")
         self.assertNotIn("function buildGoals(", watch.PAGE)
+        # Companion assertion, not positive proof of #1029: this doc string
+        # predates the unreadable-node feature and passes on master. It is
+        # kept because it verifies the native /goals authority surface is
+        # intact, but the unreadable-node contract is proven by goalfault.mjs
+        # and the payload tests above, not here. Assert against `native`
+        # (de-continuated), not the raw minified string: esbuild's
+        # --line-limit=200 can split a string literal across a
+        # backslash-newline, so the raw bytes are not contiguous.
         self.assertIn(
             "Native /goals read surface; sole full-page renderer.",
-            watch.NATIVE_JS)
+            native)
         self.assertIn(
             "no goals yet — the examined tree is genuinely empty",
             native,

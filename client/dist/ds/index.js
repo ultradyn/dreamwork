@@ -2925,9 +2925,14 @@ var DreamworkDesign = (() => {
     );
     if (!current)
       return `<a class="goalhandle empty" href="/goals"><span>${expected ? "no current goal" : "no goals yet"}</span><span>${esc(`${examined}/${expected} nodes examined`)}</span></a>`;
-    const progress = typeof current.total_count === "number" ? `${current.completed_count}/${current.total_count}` : "progress unavailable";
-    const blocked = (current.blockers || []).length;
-    return `<a class="goalhandle" href="/goals"><span class="goalstate ${esc(current.state)}">${esc(current.state)}</span><span class="goaltitle">${esc(current.title)}</span><span class="goalprogress">${esc(progress)}` + (blocked ? ` · ${blocked} blocked` : "") + `</span></a>`;
+    const progress = current.state_error ? "unreadable" : typeof current.total_count === "number" ? `${current.completed_count}/${current.total_count}` : "progress unavailable";
+    const blocked = current.state_error ? 0 : (current.blockers || []).length;
+    const stateLabel = current.state_error ? "unreadable" : current.state;
+    const stateClass = current.state_error ? "unreadable" : current.state;
+    const unreadOthers = (payload.nodes || []).filter(
+      (node) => node.state_error && node.id !== payload.current_goal_id
+    ).length;
+    return `<a class="goalhandle${current.state_error ? " fault" : ""}" href="/goals"><span class="goalstate ${esc(stateClass)}">${esc(stateLabel)}</span><span class="goaltitle">${esc(current.title)}</span><span class="goalprogress">${esc(progress)}` + (blocked ? ` · ${blocked} blocked` : "") + (unreadOthers ? ` · <span class="goalwarn">${unreadOthers} unreadable</span>` : "") + `</span></a>`;
   }
   var qSummary = (d) => {
     const n = d.open_questions || 0;

@@ -7091,72 +7091,113 @@ def goal_tree_payload(target):
             nodes = []
             for group_id in ordered:
                 group = groups[group_id]
-                blockers = []
-                blocker_keys = set()
-
-                def add_blocker(blocker):
-                    key = (blocker.needs_kind, blocker.needs_id)
-                    if key in blocker_keys:
-                        return
-                    blocker_keys.add(key)
-                    if blocker.needs_kind == "group":
-                        needed = store.groups.get(blocker.needs_id)
-                        title = needed.title
-                    else:
-                        title = task_records.get(
-                            blocker.needs_id, {}).get("title", "unknown task")
-                    blockers.append({
-                        "kind": blocker.needs_kind,
-                        "id": blocker.needs_id,
-                        "title": title,
-                        "reason": blocker.reason,
-                    })
-
-                for blocker in store.groups.blockers(group_id=group_id):
-                    add_blocker(blocker)
-                node = {
-                    "id": group.id,
-                    "title": group.title,
-                    "details": group.description,
-                    "criteria": _goal_criteria(group.description),
-                    "parent_id": group.parent_id,
-                    "rank": store.goals.rank(group.id),
-                    "state": store.goals.state(group.id),
-                    "blockers": blockers,
-                    "member_tasks": [],
-                    "verdicts": [],
-                }
+                # One unreadable node degrades THAT node, not the whole tree
+                # (#1029). A fault here is present-but-unreadable — a fourth
+                # state distinct from missing/incomplete/unavailable (#136) —
+                # so the node carries its own error AND every field both
+                # renderers dereference, at safe empty defaults, the way
+                # progress_error does below (which ADDS an error to a complete
+                # node, never drops fields). A degraded node that omitted
+                # state/blockers/member_tasks/verdicts crashed the /goals
+                # renderer (node.blockers.length) and lied on the dashboard
+                # (an undefined state) — the failure moved one layer down
+                # without changing the outcome.
+                #
+                # The catch is deliberately narrow: DatabaseError, OSError,
+                # ValueError are the store/schema faults a NULL or corrupt
+                # goal_state, rank or progress read raises. It is NOT a
+                # general-purpose guard — an unexpected TypeError or KeyError
+                # still propagates and discards the tree, correctly, because
+                # hiding a programming bug behind a silent degraded node is
+                # worse than losing the render.
                 try:
-                    progress = store.groups.progress(group.id)
-                except EmptyGroup as exc:
-                    node["progress_error"] = str(exc)
-                else:
-                    # blockers(task_id=...) is the repository seam that adds
-                    # every governing group, including ancestor goals. Do not
-                    # reproduce that hierarchy walk here.
-                    for task_id in progress.member_task_ids:
-                        for blocker in store.groups.blockers(task_id=task_id):
-                            add_blocker(blocker)
-                    node.update({
-                        "completed_count": progress.completed_count,
-                        "total_count": progress.total_count,
-                        "member_tasks": [
-                            task_records[task_id]
-                            for task_id in progress.member_task_ids
-                            if task_id in task_records
-                        ],
+                    blockers = []
+                    blocker_keys = set()
+
+                    def add_blocker(blocker):
+                        key = (blocker.needs_kind, blocker.needs_id)
+                        if key in blocker_keys:
+                            return
+                        blocker_keys.add(key)
+                        if blocker.needs_kind == "group":
+                            needed = store.groups.get(blocker.needs_id)
+                            title = needed.title
+                        else:
+                            title = task_records.get(
+                                blocker.needs_id, {}).get("title", "unknown task")
+                        blockers.append({
+                            "kind": blocker.needs_kind,
+                            "id": blocker.needs_id,
+                            "title": title,
+                            "reason": blocker.reason,
+                        })
+
+                    for blocker in store.groups.blockers(group_id=group_id):
+                        add_blocker(blocker)
+                    node = {
+                        "id": group.id,
+                        "title": group.title,
+                        "details": group.description,
+                        "criteria": _goal_criteria(group.description),
+                        "parent_id": group.parent_id,
+                        "rank": store.goals.rank(group.id),
+                        "state": store.goals.state(group.id),
+                        "blockers": blockers,
+                        "member_tasks": [],
+                        "verdicts": [],
+                    }
+                    try:
+                        progress = store.groups.progress(group.id)
+                    except EmptyGroup as exc:
+                        node["progress_error"] = str(exc)
+                    else:
+                        # blockers(task_id=...) is the repository seam that adds
+                        # every governing group, including ancestor goals. Do
+                        # not reproduce that hierarchy walk here.
+                        for task_id in progress.member_task_ids:
+                            for blocker in store.groups.blockers(task_id=task_id):
+                                add_blocker(blocker)
+                        node.update({
+                            "completed_count": progress.completed_count,
+                            "total_count": progress.total_count,
+                            "member_tasks": [
+                                task_records[task_id]
+                                for task_id in progress.member_task_ids
+                                if task_id in task_records
+                            ],
+                        })
+                    claims = store.goals.claims(group.id)
+                    if claims:
+                        node["verdicts"] = [{
+                            "lens": verdict.lens,
+                            "refuted": verdict.refuted,
+                            "blocking": verdict.blocking,
+                            "findings": list(verdict.findings),
+                            "corroborated": list(verdict.corroborated),
+                            "examined": dict(verdict.examined),
+                        } for verdict in store.goals.verdicts(claims[-1].id)]
+                    nodes.append(node)
+                except (DatabaseError, OSError, ValueError) as exc:
+                    nodes.append({
+                        "id": group.id,
+                        "title": group.title,
+                        "details": group.description,
+                        "criteria": _goal_criteria(group.description),
+                        "parent_id": group.parent_id,
+                        # Sentinel state + safe defaults: every field
+                        # dev/build/src/goals.js and client/views.js dereference
+                        # is present, so no renderer throws. total_count is
+                        # omitted on purpose — both renderers null-check it.
+                        # "unreadable" is a display sentinel, not a stored
+                        # goal state (legal states: open/claimed/blocked/
+                        # complete), so an unreadable node LOOKS unreadable
+                        # rather than passing as a goal with no blockers.
+                        "state": "unreadable",
+                        "blockers": [],
+                        "member_tasks": [],
+                        "verdicts": [],
+                        "state_error": str(exc),
                     })
-                claims = store.goals.claims(group.id)
-                if claims:
-                    node["verdicts"] = [{
-                        "lens": verdict.lens,
-                        "refuted": verdict.refuted,
-                        "blocking": verdict.blocking,
-                        "findings": list(verdict.findings),
-                        "corroborated": list(verdict.corroborated),
-                        "examined": dict(verdict.examined),
-                    } for verdict in store.goals.verdicts(claims[-1].id)]
-                nodes.append(node)
             envelope.update({
                 "health": "ok",
                 "current_goal_id": store.goals.current_goal_id(),
@@ -7166,9 +7207,12 @@ def goal_tree_payload(target):
     except (DatabaseError, OSError, ValueError) as exc:
         envelope.update({
             "health": "unavailable",
-            "error": (
-                "goal tree unavailable after examining %d of %d goal nodes: %s"
-                % (envelope["examined_count"], envelope["expected_count"], exc)),
+            # This catch no longer sees per-node faults (those degrade the
+            # node above), so it fires only when the read itself failed —
+            # open/walk/current-pointer — not after "examining" nodes. Say
+            # that plainly and let the exception name the cause; the
+            # examined/expected counts stay as structured fields above.
+            "error": "goal tree unavailable: %s" % (exc,),
         })
         return envelope
 
