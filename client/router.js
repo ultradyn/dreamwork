@@ -38,6 +38,18 @@ const parseMtime = raw => {
                  : { gen: '', mtime: raw };
 };
 let view = { name: null, param: null, q: null };
+/* #1058 r2 — the route-specific payload for native routes TRAVELS ON THE VIEW
+   OBJECT, not a separate global. Each navigation assigns `view` a fresh
+   object (navigate:4772), so the object's identity IS the navigation's
+   identity. buildCurrent captures that object before its await and stashes
+   the fetched payload on the CAPTURED object (v.payload = …); commitCurrent
+   reads view.payload. Because payload and route identity are the same object,
+   a payload can only ever be read alongside the navigation that fetched it —
+   a later navigation's view is a different object and carries its own (or no)
+   payload. A navigation superseded while buildCurrent is awaiting is
+   discarded before it can commit (navigate: guard after the await), exactly
+   as tick already discards its own stale work (tick: view !== tickView). */
+
 /* /file view fetch (#336). `fetched` is one of:
    - null: the file is missing or the request failed → 'not found'
    - {text}: the file is text → render as today (md or <pre>)
@@ -1434,7 +1446,39 @@ async function fetchTaskTriage(rawId) {
   }
   return { list, detail, selected };
 }
+/* #1058 — the single dispatch seam for route-specific payloads. The native
+   /file, /chat, and /tasks2 mounts each need data that /data.json does not
+   carry (file content, chat transcript, task triage). buildCurrent calls this
+   for native routes and stashes the result in routePayload, which commitCurrent
+   hands to registry.mount. The fetchers themselves are unchanged — they keep
+   their caching, error, and not-found semantics (null on failure → the
+   component renders in-voice not-found). Returns null for routes without a
+   route-specific payload, so the same seam serves all native routes. */
+async function fetchRoutePayload(name, param) {
+  if (name === 'file') return await fetchFile(param);
+  if (name === 'chat') return await fetchChat(param);
+  if (name === 'tasks2') return await fetchTaskTriage(param);
+  return null;
+}
 async function buildCurrent() {
+  /* #1058 r2 — capture the view BEFORE any await. The native branch fetches
+     a route payload and stashes it on THIS object (v.payload), not a global:
+     a later navigation reassigns `view` to a fresh object, so its commit reads
+     a different view.payload and can never see this fetch's result. The fetch
+     args come from the captured v too, so they match the payload's identity. */
+  const v = view;
+  /* #1058 — native routes are checked FIRST. Before this, the file/chat/tasks2
+     builder branches ran before the native check, so those routes could never
+     go native: the builder returned a string and the native mount was never
+     reached. Now a native route fetches its payload, stashes it, and returns
+     null so commitCurrent mounts the component instead. The builder branches
+     below are unchanged and serve routes that are NOT native. */
+  if (isNativeRoute(v.name)) {
+    await ensureData();
+    v.payload = await fetchRoutePayload(v.name, v.param);
+    return null;
+  }
+  v.payload = null;
   /* #522: the file view also needs `data` — linkify / linkifyMd consult
      `data.linkable_paths` to decide which targets to promote. Skipping
      ensureData here left a cold /file load with data===null, so every
@@ -2108,7 +2152,7 @@ function commitCurrent(html) {
   viewEl.replaceChildren();
   lastViewHtml = null;
   window.__dwViewRenderGen = (window.__dwViewRenderGen || 0) + 1;
-  registry.mount(view.name, viewEl, data, view.param);
+  registry.mount(view.name, viewEl, data, view.param, view.payload);
   finishViewCommit();
 }
 /* ── what the human did to a card survives a tick (#118, #111) ────────────
@@ -4761,7 +4805,16 @@ async function navigate(name, param, opts) {
   const artifactDoc = name === 'review' || name === 'tasks2' ||
                       (name === 'research' && !!param);
   if (opts.push) history.pushState({ name, param, q: opts.q || null }, '', url);
+  /* #1058 r2 — capture THIS navigation's view identity before awaiting
+     buildCurrent (which itself awaits the route fetch). If another navigation
+     reassigned `view` during that wait, `view !== navView` and we return
+     WITHOUT committing — committing would mount a later route under a stale
+     fetch's payload, or a stale fetch's payload under a later route. This is
+     the same discard tick performs (tick: view !== tickView). Returning early
+     is fine; committing stale state is not. */
+  const navView = view;
   const html = await buildCurrent();
+  if (view !== navView) return;
   if (opts.transition === false) {
     document.body.classList.toggle('review', artifactDoc);
     document.body.classList.toggle('file', name === 'file');
