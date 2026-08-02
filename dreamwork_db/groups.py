@@ -183,7 +183,18 @@ class GroupRepository:
             (kind, title.strip(), description, actor.strip(), at.strip(),
              parent_id),
         )
-        return int(cur.lastrowid)
+        group_id = int(cur.lastrowid)
+        if kind == "goal":
+            # Establish the readable invariant in the constructor, not in one
+            # remembering caller. LEGAL_STATE_TRANSITIONS (goals.py) makes
+            # None -> 'open' the ONLY legal opening move, so 'open' is the
+            # state a freshly-created goal must carry to be readable at all —
+            # GoalRepository.state treats a NULL goal_state as a hard fault.
+            self._session.execute(
+                "UPDATE task_group SET goal_state = 'open' WHERE id = ?",
+                (group_id,),
+            )
+        return group_id
 
     def get(self, group_id: int) -> StoredGroup:
         row = self._session.execute(

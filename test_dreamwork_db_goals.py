@@ -325,6 +325,62 @@ def test_current_goal_pointer_replaces_and_refuses_non_goals(store_path):
         conn.close()
 
 
+def test_create_goal_establishs_open_state_without_set_state(store_path):
+    """#1030: Groups.create must set goal_state='open' for kind=='goal'.
+
+    Asserts the STORED VALUE through goals.state(), not the absence of an
+    exception: today's create() does not raise — it writes a NULL goal_state
+    and the fault surfaces later, in a different module, on read. So the proof
+    is that state() reads 'open' immediately after create(), with no
+    remembering second set_state call, and that the raw column persisted it.
+    """
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        with db.transaction() as tx:
+            group_id = tx.groups.create(
+                kind="goal", title="Constructed by create() alone",
+                actor="test", at="2026-08-01T00:00:00Z")
+            # No set_state follow-up: the constructor owns the invariant, or
+            # state() raises SchemaMismatch ("has no goal_state") right here.
+            assert tx.goals.state(group_id) == "open", (
+                "create() must leave a goal readable; state() faults on a NULL")
+    # Persisted across a fresh handle: assert the RAW COLUMN so the proof is
+    # the stored value, not only the repository view that tolerates nothing else.
+    conn = sqlite3.connect(store_path)
+    try:
+        row = conn.execute(
+            "SELECT goal_state FROM task_group WHERE id = ?", (group_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None and row[0] == "open", (
+        f"create() persisted goal_state={row[0]!r}, expected 'open'")
+
+
+def test_create_non_goal_leaves_goal_state_null(store_path):
+    """#1029: the create() goal invariant must fire for kind=='goal' ONLY.
+
+    The paired regression to test_create_goal_establishs_open_state: a future
+    change that fires the goal_state='open' branch for every kind would pass
+    the goal test while breaking the contract that only goals carry state.
+    So a non-goal group must leave goal_state NULL after create().
+    """
+    with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:
+        with db.transaction() as tx:
+            group_id = tx.groups.create(
+                kind="milestone", title="A non-goal group",
+                actor="test", at="2026-08-01T00:00:00Z")
+    conn = sqlite3.connect(store_path)
+    try:
+        row = conn.execute(
+            "SELECT goal_state FROM task_group WHERE id = ?", (group_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None and row[0] is None, (
+        f"create() persisted goal_state={row[0]!r} for a non-goal; the "
+        f"invariant must fire for kind=='goal' only")
+
+
 def test_goal_state_transitions_are_one_closed_graph(store_path):
     """Red on goals.py:LEGAL_STATE_TRANSITIONS and set_state."""
     with open_database(dreamwork_store_spec(store_path), access=Access.WRITE) as db:

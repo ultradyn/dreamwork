@@ -1213,8 +1213,10 @@
   .goalstate.claimed { color:var(--accent); }
   .goalstate.complete { color:var(--ok); }
   .goalstate.blocked { color:var(--warn); }
+  .goalstate.unreadable { color:var(--warn); }
   .goaltitle { color:var(--lit); }
   .goalprogress { color:var(--dim); font-size:.72rem; white-space:nowrap; }
+  .goalwarn { color:var(--warn); }
   .goalpage-count { color:var(--dim); margin-bottom:1.2rem; }
   .goalpage-fault { border-left:2px solid var(--warn); padding:.6rem 1ch;
     color:var(--warn); }

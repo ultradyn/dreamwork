@@ -253,14 +253,29 @@ function goalHandle(payload) {
     return `<a class="goalhandle empty" href="/goals">` +
       `<span>${expected ? 'no current goal' : 'no goals yet'}</span>` +
       `<span>${esc(`${examined}/${expected} nodes examined`)}</span></a>`;
-  const progress = typeof current.total_count === 'number'
-    ? `${current.completed_count}/${current.total_count}` : 'progress unavailable';
-  const blocked = (current.blockers || []).length;
-  return `<a class="goalhandle" href="/goals">` +
-    `<span class="goalstate ${esc(current.state)}">${esc(current.state)}</span>` +
+  const progress = current.state_error ? 'unreadable'
+    : (typeof current.total_count === 'number'
+      ? `${current.completed_count}/${current.total_count}` : 'progress unavailable');
+  const blocked = current.state_error ? 0 : (current.blockers || []).length;
+  const stateLabel = current.state_error ? 'unreadable' : current.state;
+  const stateClass = current.state_error ? 'unreadable' : current.state;
+  /* #1029 — an unreadable NON-current node must not look like a healthy tree.
+     The dashboard is what tells him something needs attention; he does not go
+     to /goals to find out whether /goals is worth visiting (#136: a tree with
+     an unreadable node must not look identical to a healthy one). When the
+     current goal is fine but a sibling carries state_error, surface a count in
+     the warn colour, alongside the progress it already shows. The handle keeps
+     its healthy layout — the current goal IS fine — and the count is the hint
+     that part of the tree could not be read. */
+  const unreadOthers = (payload.nodes || []).filter(
+    node => node.state_error && node.id !== payload.current_goal_id).length;
+  return `<a class="goalhandle${current.state_error ? ' fault' : ''}" href="/goals">` +
+    `<span class="goalstate ${esc(stateClass)}">${esc(stateLabel)}</span>` +
     `<span class="goaltitle">${esc(current.title)}</span>` +
     `<span class="goalprogress">${esc(progress)}` +
-      (blocked ? ` · ${blocked} blocked` : '') + `</span></a>`;
+      (blocked ? ` · ${blocked} blocked` : '') +
+      (unreadOthers ? ` · <span class="goalwarn">${unreadOthers} unreadable</span>` : '') +
+      `</span></a>`;
 }
 /* ── the dashboard's questions section folds (#141) ───────────────────────
    His words: "on the dashboard, the questions section should be collapsed by
