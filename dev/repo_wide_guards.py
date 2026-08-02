@@ -125,6 +125,11 @@ REGISTRY: list[str] = [
     # A lane changing one Markdown file cannot enumerate the other classified
     # documents or know that the population still resolves non-vacuously.
     "test_check_watch_citations.py::test_reviewed_watch_citation_population_is_still_resolved",
+    # Scans EVERY dev/*.py docstring (#NNN) against the real ledger and
+    # asserts the real miscitation at land_lane.py (#868 for #136's rule)
+    # is REPORTED.  A lane editing one dev/*.py file cannot enumerate the
+    # other docstrings or know that the population still resolves. (#1034.)
+    "test_check_watch_citations.py::test_docstring_citations_on_real_tree",
 ]
 
 # The detector signal: a quoted `ls-files` token that is the LAST positional
