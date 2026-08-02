@@ -93,61 +93,15 @@ def pid_matches_lane(
     return any(needle in raw for needle in needles)
 
 
-# Known lane runners — a process whose argv[0] basename is one of these is a
-# lane runner; a head/grep/tail/bash sharing the cwd is NOT. Mirrors
-# status_sync._LANE_RUNNERS (#440) and reaper.parse_cmdline's shape so the cwd
-# channel and the lock channel agree on what counts as a runner.
-_LANE_RUNNERS = ("ccc", "claude", "grok", "codex")
-
-
-def _is_lane_runner(raw: bytes) -> bool:
-    """Whether ``raw`` cmdline's argv[0] basename is a known lane runner.
-
-    A ``head -3``, a ``grep``, a ``tail -F``, a ``bash`` — these share a
-    lane's cwd but are NOT lane processes. Copying reaper.parse_cmdline's
-    shape and status_sync._is_lane_runner: a basename check on the
-    NUL-split argv[0], never a substring of the raw cmdline (the /proc
-    cmdline is NUL-separated, #716). Takes raw BYTES so it reuses the same
-    /proc read the governed-prompt scan already did — no second shell-out,
-    so a pattern in this tool's own command line can never match itself.
-    """
-    if not raw:
-        return False
-    first = raw.split(b"\x00", 1)[0]
-    return os.path.basename(first.decode("utf-8", "replace")) in _LANE_RUNNERS
-
-
-def _ancestor_pids() -> set[int]:
-    """Pids from ``os.getpid()`` up to init via ``/proc/<pid>/stat`` field 4.
-
-    A process that is an ancestor of the thing doing the counting is by
-    construction not a lane (#729). Exact, not heuristic, no allowlist — the
-    coordinator process started in a worktree that was later removed, so its
-    cwd really IS deleted and the reading is correct; what was wrong was the
-    classification. Mirrors status_sync._ancestor_pids.
-    """
-    ancestors: set[int] = set()
-    pid = os.getpid()
-    seen: set[int] = set()           # cycle guard against a corrupt stat file
-    while pid > 1 and pid not in seen:
-        ancestors.add(pid)
-        seen.add(pid)
-        try:
-            with open("/proc/%d/stat" % pid) as f:
-                text = f.read()
-        except OSError:
-            break
-        rparen = text.rfind(")")
-        if rparen < 0:
-            break
-        rest = text[rparen + 2:].split()
-        if len(rest) < 2:
-            break
-        try:
-            pid = int(rest[1])        # field 4 (ppid) == index 1 after comm
-        except ValueError:
-            break
-    return ancestors
+# What counts as a lane runner, and the ancestor-self exclusion (#729), are
+# shared with status_sync from lane_runner_identity — the single source — so
+# the tick's fleet count and status.json's agree by construction, not by two
+# hand-kept lists (#1113: the #868/#1084 "the fleet count lied" defect class
+# was two copies drifting). is_lane_runner takes raw BYTES so this channel
+# reuses the /proc read the governed-prompt scan already did (no second
+# shell-out; a pattern in this tool's own command line can never match itself).
+from lane_runner_identity import ancestor_pids as _ancestor_pids  # noqa: E402
+from lane_runner_identity import is_lane_runner as _is_lane_runner  # noqa: E402
 
 
 def _registered_worktrees(target: Path) -> tuple[Path, ...]:
