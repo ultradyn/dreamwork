@@ -555,6 +555,166 @@ class TestRestoreRecordsInjected:
         assert entries == []
 
 
+class TestDeletedInjectionIsRestored:
+    def test_restore_recreates_a_deleted_target_from_the_printed_snapshot(
+            self, repo, capsys):
+        """#961 direction 1: the production seam is ``restore``'s absent
+        target branch. The expected bytes come from the target before begin,
+        independently checked against the exact snapshot path begin prints."""
+        target = repo / "router.js"
+        original = target.read_bytes()
+
+        assert _begin(repo, "router.js") == 0
+        begin_out, _ = capsys.readouterr()
+        snapshot_line = next(
+            line for line in begin_out.splitlines()
+            if "snapshotted original" in line)
+        snapshot = Path(snapshot_line.rsplit(" -> ", 1)[1])
+        assert snapshot.read_bytes() == original
+
+        target.unlink()
+        assert _restore(repo, "router.js") == 0
+
+        assert target.read_bytes() == original
+        assert target.read_bytes() == snapshot.read_bytes()
+        entries, _ = rp._read_registry(repo)
+        assert entries[0]["injected_kind"] == "absent"
+        assert entries[0]["injected_sha"] is None
+        assert entries[0]["injected_hint"] == "target absent from working tree"
+
+    def test_check_counts_an_absent_kind_as_nonzero_evidence(
+            self, repo, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").unlink()
+        assert _restore(repo, "router.js") == 0
+        capsys.readouterr()
+
+        assert _check(repo, require=1) == 0
+        out, _ = capsys.readouterr()
+
+        assert "targets: 0 other target(s), 0 test-like target(s), 1 absent target(s)" in out
+        assert "[absent] router.js" in out
+        assert "1 injection(s) registered" in out
+
+    def test_check_still_faults_if_a_restored_absent_target_disappears_again(
+            self, repo, capsys):
+        """#895 invariant: only restore may account for deliberate deletion.
+        A later unexplained absence must remain loud, never degrade to clean."""
+        _begin(repo, "router.js")
+        (repo / "router.js").unlink()
+        assert _restore(repo, "router.js") == 0
+        (repo / "router.js").unlink()
+        capsys.readouterr()
+
+        exit_code = _check(repo, require=1)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2
+        assert "registered path 'router.js' is absent" in err
+        assert "cannot evaluate its injection" in err
+
+    def test_head_that_deleted_the_target_is_not_resurrected(
+            self, repo, capsys):
+        """Direction 2: a new HEAD, not the lane's working-tree sabotage,
+        removes the file. Restore must fault and leave that deletion intact."""
+        assert _begin(repo, "router.js") == 0
+        snapshot = rp._snapshot_path(repo, "router.js")
+        (repo / "router.js").unlink()
+        _git(repo, "add", "-u", "router.js")
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
+             "-qm", "new head deliberately removes router")
+        capsys.readouterr()
+
+        exit_code = _restore(repo, "router.js")
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2
+        assert not (repo / "router.js").exists()
+        assert "HEAD no longer holds the snapshotted original" in err
+        assert str(snapshot) in err
+        assert f"cp -- {snapshot} router.js" in err
+        assert f"cmp -- router.js {snapshot}" in err
+
+    def test_absent_expectation_fault_names_the_exact_snapshot_recovery(
+            self, repo, capsys):
+        _begin(repo, "router.js")
+        snapshot = rp._snapshot_path(repo, "router.js")
+        (repo / "router.js").unlink()
+        (repo / "expectation.txt").write_text("expectation drifted\n")
+        capsys.readouterr()
+
+        exit_code = _restore(repo, "router.js")
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2
+        assert not (repo / "router.js").exists()
+        assert "expectation source changed" in err
+        assert f"cp -- {snapshot} router.js" in err
+        assert f"cmp -- router.js {snapshot}" in err
+
+    def test_delete_then_recreate_different_bytes_is_a_bytes_injection(
+            self, repo):
+        """Direction 2: transient absence is irrelevant when bytes exist at
+        restore time; the ordinary injected-bytes record must still govern."""
+        _begin(repo, "router.js")
+        target = repo / "router.js"
+        target.unlink()
+        target.write_bytes(b"RECREATED WITH DIFFERENT BYTES\n")
+
+        assert _restore(repo, "router.js") == 0
+
+        entries, _ = rp._read_registry(repo)
+        assert entries[0]["injected_kind"] == "bytes"
+        assert entries[0]["injected_sha"] == rp._sha(
+            b"RECREATED WITH DIFFERENT BYTES\n")
+
+    def test_history_scan_refuses_a_commit_that_holds_the_absence(
+            self, repo, capsys):
+        """A deletion injection has no blob sha, but a poisoned branch commit
+        must remain visible to the same history gate as byte injections."""
+        target = repo / "router.js"
+        original = target.read_bytes()
+        _git(repo, "switch", "-qc", "lane")
+        _begin(repo, "router.js")
+        target.unlink()
+        assert _restore(repo, "router.js") == 0
+
+        target.unlink()
+        _git(repo, "add", "-u", "router.js")
+        poisoned = _git(
+            repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
+            "-qm", "commit the recorded absence")
+        target.write_bytes(original)
+        capsys.readouterr()
+
+        exit_code = _check(repo, require=1, base="master")
+        out, err = capsys.readouterr()
+
+        assert poisoned == ""  # commit command succeeded; output is quiet
+        assert exit_code == 1
+        assert "working tree is clean" in err
+        assert "router.js" in err
+        assert "target absent from working tree" in err
+        assert "1 holding a recorded injection" in out
+
+    def test_unknown_injected_kind_is_refused_not_defaulted_to_safe(
+            self, repo, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("SABOTAGE\n")
+        assert _restore(repo, "router.js") == 0
+        entries, _ = rp._read_registry(repo)
+        entries[0]["injected_kind"] = "future-kind"
+        rp._write_registry(repo, entries)
+        capsys.readouterr()
+
+        exit_code = _check(repo, require=1)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 1
+        assert "injected-target kind this build cannot audit" in err
+        assert "future-kind" in err
+
+
 class TestExpectationSourcesArePinned:
     """The subject and its expectation must have separate, stable bytes."""
 
