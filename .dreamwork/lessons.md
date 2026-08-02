@@ -4621,3 +4621,30 @@ sections only grow by append, so a Pending entry is done when a Folded line name
 a check whose failure mode is *"reports the all-clear"* cannot be validated by seeing the all-clear. It
 needs a positive control — parse a case you know is outstanding and confirm the check says so — which
 is the same discipline as red-proofing, applied to a throwaway one-liner rather than to a test.
+
+## The comment that explains why a weak assertion is enough is the part nothing tests (2026-08-03, #1091 review, lane's + coordinator's, measured)
+
+A test asserted `"test_suite_baseline.py" in report` — a substring search over the whole report string
+— and carried a comment saying why that was sufficient: *"The report names files only in the omitted
+clause, so the specific filename's presence proves it was named as omitted, not merely counted."*
+
+The comment is true of today's report format. It is not an invariant, and the assertion does not
+enforce it. The reviewer built a report naming the file under a new *selected names* field while the
+omitted clause rendered `2 omitted` with no filenames. The test passed with its own named property
+false. A future selected-filenames diagnostic — a plainly good change — silently converts this test
+into a green light.
+
+The structure is worth naming because it is invisible in review: **the assertion tests the weak thing,
+the comment claims the strong thing, and the reader believes the comment.** Anyone auditing the test
+reads the justification and stops, because a stated reason feels like a discharged obligation. The
+comment is load-bearing documentation that no run can falsify.
+
+I believed it too. The lane put that exact sentence in its report, I read it, and I moved the branch
+into a gate window on the strength of it — checking nothing. It took a reviewer constructing the
+counterexample in a clone to expose it.
+
+So: **when a test's assertion is broader than the property it is named for, the gap is the bug, and a
+comment bridging it is evidence of the gap rather than a fix for it.** Assert against the specific
+clause, field, or structure the property is about. And when a lane hands you a plausible reason a weak
+check suffices, that reason is a claim to test, not a fact to accept — it arrived from the same author
+who wrote the check.
