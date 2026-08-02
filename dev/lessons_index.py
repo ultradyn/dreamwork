@@ -29,6 +29,7 @@ fact worth seeing, not a defect to hide.
 """
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -198,11 +199,31 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         hits = index[args.act]
         when = next(w for s, w, _ in ACTS if s == args.act)
-        print(f"# act: {args.act} — {len(hits)} of {len(entries)} lessons "
-              f"(consult {when})")
+        # Build the verbatim body once so the header can state its line count
+        # and a trailing sentinel can confirm it. The slice can run to
+        # hundreds of lines and a reader (an agent harness) that receives a
+        # truncated prefix has no way to tell it is incomplete: the header
+        # states the magnitude up front, and the sentinel at the end is the
+        # presence-check a truncated read loses — so a caller that does not
+        # see the sentinel knows it received a prefix (#1033). The count is
+        # metadata around the entries; output stays verbatim, never a summary
+        # of the evidence (the evidence half is why the format exists).
+        body_lines: list[str] = []
         for ln, body in hits:
-            print(f"\nlessons.md:{ln}")
-            print(body)
+            body_lines.append("")
+            body_lines.append(f"lessons.md:{ln}")
+            body_lines.extend(body.split("\n"))
+        n_lines = len(body_lines)
+        print(f"# act: {args.act} — {len(hits)} of {len(entries)} lessons, "
+              f"{n_lines} lines (consult {when})")
+        # Only emit a body when there is one. An empty act declares `0 lines`
+        # in the header; printing "\n".join([]) would emit a single blank
+        # line anyway (print("") writes a newline), so the stated count would
+        # lie about the received body — the same defect class this format
+        # exists to close (#1033). Skip the line entirely at zero.
+        if body_lines:
+            print("\n".join(body_lines))
+        print(f"# end {args.act} — {len(hits)} lessons, {n_lines} lines")
         return 0
 
     # Default: the index summary plus the tool's own coverage report.
@@ -226,4 +247,29 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        rc = main()
+        # Force any buffered output out now, while we can still catch a
+        # broken pipe. main()'s prints go through a BufferedWriter whose
+        # final chunk may not flush until interpreter shutdown — and the
+        # shutdown flush runs OUTSIDE any try/except, surfacing as an
+        # uncatchable "Exception ignored while flushing sys.stdout" trace
+        # (the exact symptom this exists to prevent). Flushing here pulls
+        # that failure inside the guard.
+        sys.stdout.flush()
+        sys.exit(rc)
+    except BrokenPipeError:
+        # This tool exists to be read by an agent harness that may truncate
+        # it, and `| head` is the most likely way a caller does that. A
+        # downstream reader closing the pipe early (or a final buffered
+        # flush into a pipe whose reader has gone) raises BrokenPipeError;
+        # left uncaught it leaves a traceback on stderr and exits 120 — a
+        # traceback on the intended usage undermines the fix's credibility
+        # even though truncation detection itself is unaffected (#1033).
+        # Truncation by the reader is expected, not an error: redirect fd 1
+        # to devnull (do NOT close stdout first — that invalidates fileno)
+        # so the interpreter's shutdown flush cannot re-traceback on the
+        # same dead pipe, and exit cleanly.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        sys.exit(0)
