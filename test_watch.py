@@ -2335,19 +2335,22 @@ class TestCollector(unittest.TestCase):
         `filed as` in one historical entry's prose suppressed every LATER
         bold id on the same column-0 paragraph line. The guard must scope to
         the entry (a head line), not the whole line — this is the
-        discriminating red for that fix."""
+        discriminating red for that fix. All three markers are exercised so
+        a fix keyed to the literal `filed as` alone (leaving `related:` /
+        `also-landed:` per-line) cannot pass: each would still suppress #3."""
         # Precondition: no entry head, so the line is a historical paragraph
-        # (every column-0 mention lands). The `filed as` is prose inside
-        # entry #2's clause, not a `·`-field; #3 is a separate entry.
-        line = ("**#1** first entry (2026-07-25). "
-                "**#2** gap filed as #9 (2026-07-25). "
-                "**#3** third entry (sha)\n")
-        self.assertFalse(line.startswith("- "),
-                        "fixture must be a column-0 paragraph, not a head")
-        landed = watch._landed_ids("## Recently landed\n\n" + line)
-        self.assertIn("3", landed,
-                      "a later entry's id must land despite an earlier "
-                      "entry's prose `filed as` on the same line")
+        # (every column-0 mention lands). The marker is prose inside entry
+        # #2's clause, not a `·`-field; #3 is a separate entry.
+        for marker in ("filed as", "related:", "also-landed:"):
+            line = ("**#1** first entry (2026-07-25). "
+                    "**#2** gap %s #9 (2026-07-25). "
+                    "**#3** third entry (sha)\n" % marker)
+            self.assertFalse(line.startswith("- "),
+                            "fixture must be a column-0 paragraph, not a head")
+            landed = watch._landed_ids("## Recently landed\n\n" + line)
+            self.assertIn("3", landed,
+                          "a later entry's id must land despite an earlier "
+                          "entry's prose `%s` on the same line" % marker)
 
     def test_a_related_filed_as_and_also_landed_each_suppress_on_a_head_line(self):
         """#1097 Direction 2: all three reference markers (`related:`,
