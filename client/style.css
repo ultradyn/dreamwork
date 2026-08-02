@@ -820,6 +820,55 @@
   .dim { color:var(--dimmer); }
   a { color:var(--accent); text-decoration:none; }
   a:hover { text-decoration:underline; }
+  /* #1007 — the #282 task-reference hover, restated in the page's own
+     vocabulary. components.js injects a self-contained <style> for the panel
+     so it still reads inside a review iframe, where THIS sheet is absent; its
+     values are literals (#171923, rgba(140,150,190,.45), 12px, system-ui)
+     that match nothing in :root. Wherever this sheet is loaded it is the
+     authority (conventions.md: "style.css is the sole source for token values
+     and component CSS"), so these rules re-say the panel in tokens. They are
+     id-qualified because that block is appended to <head> AFTER this file, so
+     a class-level rule loses the source-order tie — measured, not assumed.
+     Nothing here is a new idiom. The surface is the page's floating-overlay
+     idiom, already stated twice by #cmdpalette and .cmdmenu: the page's own
+     background just short of opaque over a blur, hairline --border, 8px,
+     0 14px 44px, and an arrival that eases opacity+transform+blur on the
+     dream curve. Type is body's monospace and the text ramp. .taskref is the
+     "there is more behind this text" affordance .bdstep and .gservact define.
+     The two literals are deliberate: 8px and the shadow are what BOTH
+     overlays state, and expressing them through --radius (4px) would drift
+     away from those overlays the day it moved. The page declares no shadow
+     token and this task is not where one gets invented. */
+  #task-ref-preview.taskpreview {
+    font:inherit; line-height:1.5; color:var(--text);
+    background:color-mix(in srgb, var(--bg) 94%, transparent);
+    backdrop-filter:blur(7px);
+    border:1px solid var(--border); border-radius:8px;
+    box-shadow:0 14px 44px rgba(0,0,0,.5);
+    transform:translateY(-6px); filter:blur(5px);
+    transition:opacity .34s cubic-bezier(.32,.12,.2,1),
+               transform .34s cubic-bezier(.32,.12,.2,1),
+               filter .34s ease; }
+  #task-ref-preview.taskpreview.open { transform:none; filter:none; }
+  /* emphasis is LUMINANCE on this page, not weight — components.js says so
+     itself about the markdown it renders ("a mono bold would change metrics
+     to say no more"), while the panel it injects says the opposite in 700. */
+  #task-ref-preview .tp-title { font-weight:inherit; font-size:inherit;
+    color:var(--bright); }
+  #task-ref-preview .tp-meta { color:var(--muted); font-size:.7rem; }
+  #task-ref-preview .tp-body { color:var(--text); }
+  /* --warn means BROKEN here (#136), which is what three of this line's four
+     messages are. The fourth, "Loading task…", is live rather than broken and
+     needs a class of its own — that is a markup change, so not in this lane. */
+  #task-ref-preview .tp-state { color:var(--warn); }
+  a.taskref { text-underline-offset:2px; }
+  a.taskref:hover { text-decoration-style:solid; }
+  a.taskref:focus-visible { outline:1px solid var(--accent); outline-offset:2px;
+    border-radius:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    #task-ref-preview.taskpreview { transition:none; transform:none;
+      filter:none; }
+  }
   /* a card travels to its new place in the list rather than teleporting
      there (#104/#77); the transform is set and cleared by regroupCards */
   /* The rail's gutter is reserved in EVERY state rather than added when the
