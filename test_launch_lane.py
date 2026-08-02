@@ -56,7 +56,14 @@ p = argparse.ArgumentParser(); p.add_argument('--prompt'); p.add_argument('--pre
 a = p.parse_args(); cmd = a.rest[1:] if a.rest and a.rest[0] == '--' else a.rest
 prompt = open(a.prompt, encoding='utf-8').read()
 if a.prepare: raise SystemExit(int(os.environ.get('DISPATCH_PREPARE_EXIT', '0')))
-raise SystemExit(subprocess.run([*cmd, prompt]).returncode)
+# Production detaches the runner (fork/setsid/execvp) and returns 0 once the
+# child confirms exec — the runner's own exit is never observed by the
+# dispatcher. Simulate that contract: launch the runner, then report only
+# whether the LAUNCH succeeded, never the runner's exit (#1093).
+if launch_exit := os.environ.get('DISPATCH_LAUNCH_EXIT'):
+    raise SystemExit(int(launch_exit))
+subprocess.run([*cmd, prompt])
+raise SystemExit(0)
 """.lstrip())
     # The production launcher deliberately routes cleanup through this sibling.
     _write(root / "dev" / "reap.py", (REPO / "dev" / "reap.py").read_text(encoding="utf-8"))
@@ -66,11 +73,14 @@ raise SystemExit(subprocess.run([*cmd, prompt]).returncode)
     bindir = tmp_path / "bin"
     _write(bindir / "ccc", """#!/usr/bin/env python3
 import glob, json, os, pathlib
+root = os.environ.get('LAUNCH_MAIN', os.getcwd())
 if target := os.environ.get('CAPTURE_ATTEMPT_STATE'):
-    record = glob.glob('.dreamwork/launch-attempts/*.json')[0]
+    record = glob.glob(root + '/.dreamwork/launch-attempts/*.json')[0]
     pathlib.Path(target).write_text(json.load(open(record))['state'], encoding='utf-8')
 if target := os.environ.get('CAPTURE_PROMPT'):
     pathlib.Path(target).write_text(__import__('sys').argv[-1], encoding='utf-8')
+if target := os.environ.get('CAPTURE_CWD'):
+    pathlib.Path(target).write_text(os.getcwd(), encoding='utf-8')
 raise SystemExit(int(os.environ.get('CCC_EXIT', '0')))
 """)
     (bindir / "ccc").chmod(0o755)
@@ -95,6 +105,11 @@ def _run(
 ):
     actual_env = (env or os.environ.copy()).copy()
     actual_env["DREAMWORK_ALLOW_PIPED_STDOUT"] = "1"
+    # The governed dispatcher now spawns the runner in the lane worktree (#1093),
+    # so a fixture fake that globs a main-checkout-local dir (launch-attempts/ is
+    # gitignored) must resolve that dir from the main checkout, not from its
+    # inherited cwd.
+    actual_env["LAUNCH_MAIN"] = str(root)
     return subprocess.run(
         [sys.executable, str(root / "dev" / "launch_lane.py"), "832", "lane-832", agent, str(head), *extra],
         cwd=root, capture_output=True, text=True, env=actual_env,
@@ -240,32 +255,54 @@ def test_governed_prepare_failure_reaps_created_worktree(
 
 
 def test_existing_lane_refuses_without_explicit_resume_and_changes_nothing(launch_repo: Path):
-    env = os.environ.copy(); env["CCC_EXIT"] = "8"
     head = _head(launch_repo)
-    first = _run(launch_repo, head, env=env)
+    first = _run(launch_repo, head)
     before = _worktree_rows(launch_repo)
-    second = _run(launch_repo, head, env=env)
-    assert first.returncode == 8
+    second = _run(launch_repo, head)
+    assert first.returncode == 0
     assert second.returncode == 1
     assert "REFUSE phase=worktree-preflight" in second.stderr
     assert "use --resume ATTEMPT_ID" in second.stderr
     assert _worktree_rows(launch_repo) == before
 
 
-def test_runner_exit_is_not_reported_as_success_and_attempt_is_durable(launch_repo: Path):
+def test_a_crashing_runner_is_not_reported_as_success_and_attempt_is_durable(launch_repo: Path):
+    """#1093: the runner is detached by dispatch_lane.py, so its own exit is
+    never observed here. The dispatcher returns 0 (launch confirmed) whether
+    the runner goes on to exit 0 or 7. Measured before the fix, a runner that
+    crashed (CCC_EXIT=7) was recorded as ``runner result verified: exit 0``
+    one second after spawn — a green-faced lie, because the 0 was the
+    dispatcher's detach-confirmation, not the runner's exit. The honest record
+    is ``spawned: runner detached; exit not observed`` with ``runner_exit``
+    null, and "verified" is unreachable from a path that observed no exit.
+    """
     observed = launch_repo / "observed-state"
     env = os.environ.copy(); env["CCC_EXIT"] = "7"; env["CAPTURE_ATTEMPT_STATE"] = str(observed)
     result = _run(launch_repo, _head(launch_repo), env=env)
     path, record = _attempt(launch_repo)
 
-    assert result.returncode == 7
-    assert "REFUSE phase=runner-result: runner exited 7; this is not a successful launch" in result.stderr
-    assert "deliberately did not perform: worktree retirement or corpus identity deletion" in result.stderr
-    assert record["runner_exit"] == 7
-    assert record["state"] == "runner result verified: exit 7; worktree and exact brief retained"
+    assert result.returncode == 0
+    assert record["runner_exit"] is None
+    assert record["state"] == "spawned: runner detached; exit not observed; exact brief bytes preserved"
+    assert "verified" not in str(record["state"])
     assert observed.read_text(encoding="utf-8").startswith("unverified attempt:")
     assert path.with_suffix(".prompt.md").is_file()
     assert "lane-832" in _worktree_rows(launch_repo)
+
+
+def test_dispatcher_refusal_records_launch_refused_and_no_success_claim(launch_repo: Path):
+    """#1093 direction-2 guard: when the dispatcher itself refuses (the only
+    non-zero it can return in production), the attempt records ``launch
+    refused`` with ``runner_exit`` null — never ``runner result verified``.
+    """
+    env = os.environ.copy(); env["DISPATCH_LAUNCH_EXIT"] = "2"
+    result = _run(launch_repo, _head(launch_repo), env=env)
+    _, record = _attempt(launch_repo)
+
+    assert result.returncode == 2
+    assert record["runner_exit"] is None
+    assert record["state"] == "launch refused: dispatcher exited 2; runner not confirmed spawned; exact brief bytes preserved"
+    assert "verified" not in str(record["state"])
 
 
 def test_launcher_dispatches_brief_pys_canonical_frame(launch_repo: Path):
@@ -282,12 +319,11 @@ def test_launcher_dispatches_brief_pys_canonical_frame(launch_repo: Path):
 
 
 def test_launcher_resolves_lane_under_the_sibling_worktree_root(launch_repo: Path):
-    env = os.environ.copy(); env["CCC_EXIT"] = "7"
-    result = _run(launch_repo, _head(launch_repo), env=env)
+    result = _run(launch_repo, _head(launch_repo))
     _, record = _attempt(launch_repo)
     expected = (launch_repo.parent / ".worktrees" / "lane-832").resolve()
 
-    assert result.returncode == 7
+    assert result.returncode == 0
     resolved = Path(str(record["worktree"]))
     assert resolved == expected, (
         f"governed launcher resolved {resolved}, expected sibling lane path {expected}"
@@ -296,6 +332,38 @@ def test_launcher_resolves_lane_under_the_sibling_worktree_root(launch_repo: Pat
     assert not (launch_repo / ".worktrees").exists(), (
         "the governed launcher recreated the draining in-repo root"
     )
+
+
+def test_runner_inherits_the_lane_worktree_as_cwd_not_the_main_checkout(launch_repo: Path):
+    """#1093: ``/proc/<pid>/cwd`` is where a process was LAUNCHED, not where
+    its brief tells it to work. A runner spawned with the main checkout as cwd
+    holds that tree — the one directory a lane must never commit to — and a
+    brief that says "work in a clone" does not move the process. The governed
+    launcher must spawn the dispatcher in the lane's worktree so the detached
+    runner inherits that worktree as its cwd. The fake ``ccc`` captures the
+    cwd it INHERITED from the launcher's spawn (through the dispatcher stub),
+    proving the assertion is load-bearing: reverting ``cwd`` to the main
+    checkout makes this capture the main checkout and the test fails.
+    """
+    captured = launch_repo / "captured-cwd"
+    env = os.environ.copy(); env["CAPTURE_CWD"] = str(captured)
+    result = _run(launch_repo, _head(launch_repo), env=env)
+    _, record = _attempt(launch_repo)
+    expected_worktree = (launch_repo.parent / ".worktrees" / "lane-832").resolve()
+
+    assert result.returncode == 0, result.stderr
+    inherited = Path(captured.read_text(encoding="utf-8")).resolve()
+    assert inherited == expected_worktree, (
+        f"runner inherited cwd {inherited}, expected the lane worktree "
+        f"{expected_worktree}; a runner holding the main checkout blocks every "
+        "merge gate (#1093)"
+    )
+    assert inherited != launch_repo.resolve(), (
+        "runner inherited the MAIN CHECKOUT as its cwd — this is the #1093 defect"
+    )
+    # The derived launch line must name the worktree it spawned into, so a reader
+    # of the log can corroborate the cwd without consulting /proc.
+    assert f"cwd={expected_worktree}" in result.stdout
 
 
 def test_native_agent_refuses_sibling_worktree_with_remedy_before_creation(launch_repo: Path):
@@ -328,9 +396,48 @@ def test_runner_zero_names_only_the_checks_it_actually_completed(launch_repo: Pa
     result = _run(launch_repo, _head(launch_repo))
 
     assert result.returncode == 0, result.stderr
-    assert "exit=0; verified check=runner-exit-code" in result.stdout
-    assert "unchecked=worktree reach, interpreter availability, lane work" in result.stdout
-    assert "verified launch completion" not in result.stdout
+    # #1093: the runner is detached, so the only check the launcher completed is
+    # the dispatcher's exit (the spawn); it did NOT observe a runner exit. The
+    # summary must name "dispatcher exit=0" and "runner exit not observed", and
+    # must not claim "verified" — that word is unreachable without an observed
+    # exit.
+    assert "dispatcher exit=0" in result.stdout
+    assert "runner exit not observed" in result.stdout
+    assert "unchecked=runner exit, worktree reach, interpreter availability, lane work" in result.stdout
+    assert "verified" not in result.stdout
+
+
+def test_a_spawned_runner_is_reported_as_spawned_not_not_attempted(launch_repo: Path):
+    """#1093: a coordinator reading "runner not attempted" dispatched a second
+    agent onto the same task twice in one session. The prepare pass honestly
+    prints "runner not attempted" (it did not attempt one), but that line must
+    not survive as the final word when the launcher then spawned a runner. The
+    derived summary — ``launching governed runner`` before the spawn and
+    ``runner spawned`` after — must state what actually happened, so the two
+    outputs cannot contradict each other about whether a runner was launched.
+    """
+    result = _run(launch_repo, _head(launch_repo))
+
+    assert result.returncode == 0, result.stderr
+    # The prepare pass's "runner not attempted" may appear earlier (it is true
+    # at that moment), but a derived launch line must also appear...
+    assert "launching governed runner" in result.stdout
+    # ...and the final spawn summary must state a runner was spawned.
+    assert "runner spawned" in result.stdout
+    assert "dispatcher exit=0" in result.stdout
+    # The "runner not attempted" claim from the prepare pass must come BEFORE
+    # the derived "launching governed runner" line, never after the spawn — so
+    # the last runner-state statement is the derived one.
+    prepare_idx = result.stdout.find("runner not attempted")
+    launch_idx = result.stdout.find("launching governed runner")
+    spawn_idx = result.stdout.find("runner spawned")
+    assert prepare_idx != -1 or launch_idx != -1  # at least one is present
+    if prepare_idx != -1:
+        assert launch_idx > prepare_idx, (
+            "the derived launch line must follow the prepare pass's "
+            "'runner not attempted', not precede or replace it"
+        )
+    assert spawn_idx > launch_idx
 
 
 def test_native_reach_uses_abspath_not_realpath(tmp_path: Path):
@@ -347,8 +454,7 @@ def test_native_reach_uses_abspath_not_realpath(tmp_path: Path):
 
 
 def test_changed_bytes_cannot_resume_the_same_attempt(launch_repo: Path):
-    env = os.environ.copy(); env["CCC_EXIT"] = "9"
-    first = _run(launch_repo, _head(launch_repo), env=env)
+    first = _run(launch_repo, _head(launch_repo))
     _, record = _attempt(launch_repo)
     attempt_id = str(record["attempt_id"])
     before = _worktree_rows(launch_repo)
@@ -358,9 +464,9 @@ def test_changed_bytes_cannot_resume_the_same_attempt(launch_repo: Path):
         "Implement different human requested bytes.\n\n## Direction 2\n\n"
         "A missing persisted prompt would pass a corpus-only check.\n",
     )
-    retry = _run(launch_repo, changed, "--resume", attempt_id, env=env)
+    retry = _run(launch_repo, changed, "--resume", attempt_id)
 
-    assert first.returncode == 9
+    assert first.returncode == 0
     assert retry.returncode == 1
     assert "REFUSE phase=resume" in retry.stderr
     assert "identical-digest retry required" in retry.stderr
@@ -368,14 +474,13 @@ def test_changed_bytes_cannot_resume_the_same_attempt(launch_repo: Path):
 
 
 def test_identical_digest_resume_reuses_attempt_and_worktree(launch_repo: Path):
-    env = os.environ.copy(); env["CCC_EXIT"] = "6"
     head = _head(launch_repo)
-    first = _run(launch_repo, head, env=env)
+    first = _run(launch_repo, head)
     _, record = _attempt(launch_repo)
-    retry = _run(launch_repo, head, "--resume", str(record["attempt_id"]), env=env)
+    retry = _run(launch_repo, head, "--resume", str(record["attempt_id"]))
     _, after = _attempt(launch_repo)
 
-    assert first.returncode == retry.returncode == 6
+    assert first.returncode == retry.returncode == 0
     assert after["runs"] == 2
     assert _worktree_rows(launch_repo).count("branch refs/heads/lane-832") == 1
 
