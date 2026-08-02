@@ -298,8 +298,9 @@ def _goal_fact(target: str) -> str:
     rather than 0 because "an unreadable ledger and an empty one look
     identical to a parser":
 
-      - the store answered and the pointer is empty -> "no current goal"
-        (lowercase, no capitals: a genuine, healthy state, not a fault);
+      - the store answered and the pointer is empty -> "no current goal
+        (<N> goals defined)" (lowercase, no capitals: a genuine, measured
+        state, not a fault);
       - the store exists but would not answer (unreadable, pre-v008, or a
         pointer to a row that is missing or not a goal) -> GOAL UNKNOWN
         (<reason>) in capitals, which in this file always means "a number here
@@ -316,7 +317,10 @@ def _goal_fact(target: str) -> str:
         with open_database(task_store_spec(db), access=Access.READ) as store:
             goal_id = store.goals.current_goal_id()
             if goal_id is None:
-                return "no current goal"
+                goal_count = sum(
+                    group.kind == "goal" for group in store.groups.list())
+                return "no current goal (%d goal%s defined)" % (
+                    goal_count, "" if goal_count == 1 else "s")
             title = store.groups.get(goal_id).title
             progress = store.groups.progress(goal_id)
     except Exception as exc:                                  # noqa: BLE001

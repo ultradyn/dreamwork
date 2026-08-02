@@ -822,7 +822,7 @@ class TestGoalHandleOnTheTickLine:
         empty_target = make_target(tmp_path / "empty", posture=HOT)
         _add_goal_store(empty_target, "exists but unset", current=False)
         empty = tick_line.facts(empty_target)
-        assert "no current goal" in empty
+        assert "no current goal (1 goal defined)" in empty
         assert "GOAL UNKNOWN" not in empty
 
         # Store exists but will not answer the goal question: the current-goal
@@ -841,6 +841,45 @@ class TestGoalHandleOnTheTickLine:
             "(the degrade-to-zero false green): %s" % unreadable)
         assert "no current goal" not in unreadable
         assert "current_goal_id" in unreadable  # the reason is named
+
+    def test_null_pointer_names_the_measured_goal_population(self, tmp_path):
+        """A zero-only fixture would pass before #963; move N and filter kind."""
+        from dreamwork_db import Access, open_database
+        from dreamwork_db.store import dreamwork_store_spec
+
+        zero = make_target(tmp_path / "zero", posture=HOT)
+        zero_db = Path(zero) / ".dreamwork" / "ledger.sqlite3"
+        with open_database(dreamwork_store_spec(zero_db), access=Access.WRITE):
+            pass
+        assert tick_line._goal_fact(zero) == (
+            "no current goal (0 goals defined)")
+
+        populated = make_target(tmp_path / "populated", posture=HOT)
+        _add_goal_store(populated, "first goal", current=False)
+        _add_goal_store(populated, "second goal", current=False)
+        populated_db = Path(populated) / ".dreamwork" / "ledger.sqlite3"
+        with open_database(
+                dreamwork_store_spec(populated_db), access=Access.WRITE) as store:
+            with store.transaction() as tx:
+                tx.groups.create(
+                    kind="batch", title="not a goal", actor="test", at="now")
+        assert tick_line._goal_fact(populated) == (
+            "no current goal (2 goals defined)")
+
+    def test_dangling_current_pointer_is_unknown_not_a_population(self, tmp_path):
+        """A non-null pointer must be validated before any healthy rendering."""
+        import sqlite3
+
+        target = make_target(tmp_path, posture=HOT)
+        goal_id = _add_goal_store(target, "deleted", current=True)
+        db = Path(target) / ".dreamwork" / "ledger.sqlite3"
+        conn = sqlite3.connect(str(db))
+        conn.execute("DELETE FROM task_group WHERE id = ?", (goal_id,))
+        conn.commit()
+        conn.close()
+        out = tick_line._goal_fact(target)
+        assert out.startswith("GOAL UNKNOWN ("), out
+        assert "goals defined" not in out
 
     def test_corrupt_store_is_not_rendered_as_no_goal(self, tmp_path):
         """The unreadable arm: a store file that is not a database at all."""
@@ -861,4 +900,3 @@ class TestGoalHandleOnTheTickLine:
         out = tick_line.facts(target)
         assert "SECRET-ACCEPTANCE-CRITERIA" not in out
         assert 'goal #G' in out
-
