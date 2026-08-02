@@ -254,17 +254,24 @@ def _open_fact(target: str) -> str:
 def _fleet_fact(target: str) -> str:
     """Live lane names from the canonical lock/process identity detector.
 
-    The old line repeated ``status.json['lanes']`` and then probed only the
-    recorded ``dreamers``. Both can be stale. A lane lock binds a registered
-    worktree to the runner pid through :mod:`lane_liveness`; both set-difference
-    directions are reported, and zero candidates is an instrument failure.
+    The headline count is dispatch-route-invariant (#1084): lock-confirmed
+    lanes PLUS cwd-detected lanes the lock could not see. A hand-dispatched
+    lane (every follow-up round) has no ``lane.lock``, so the lock channel is
+    blind to it; the cwd channel is not. Both are genuinely live, and the
+    disagreement is REPORTED in the ``cwd-only`` clause rather than silently
+    resolved (#136): the coordinator must see that the lock missed lanes, not
+    read a confident number that hid them.
     """
     if not (Path(target) / ".dreamwork").is_dir():
         raise status_sync.LivenessUnknown("target has no .dreamwork directory")
     inspection = lane_liveness.inspect_lanes(Path(target))
+    all_live = sorted(inspection.live + inspection.cwd_live)
     fact = "lanes %d live [%s] (probe examined %d processes)" % (
-        len(inspection.live), ", ".join(inspection.live),
+        len(all_live), ", ".join(all_live),
         inspection.examined_processes)
+    if inspection.cwd_live:
+        fact += " · cwd-only %d [%s] (live runner, no live lane.lock)" % (
+            len(inspection.cwd_live), ", ".join(inspection.cwd_live))
     if inspection.worktree_only:
         fact += " · worktree-only %d [%s]" % (
             len(inspection.worktree_only), ", ".join(inspection.worktree_only))

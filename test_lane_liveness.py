@@ -146,3 +146,135 @@ def test_stale_lock_on_settled_branch_looks_finished(tmp_path, monkeypatch):
     inspection = _inspect(target, worktree)
 
     assert inspection.finished[0].lane == "cx-stale-lock"
+
+
+class TestCwdRunnerChannel:
+    """The dispatch-route-invariant channel (#1084).
+
+    A hand-dispatched lane (every follow-up round) has no lane.lock, so the
+    lock channel is blind to it. The cwd channel names it live when a known
+    RUNNER process holds the worktree as its cwd — a measurement that cannot
+    vary with dispatch route. These tests inject ``read_cwd`` and
+    ``read_cmdline`` so the cwd scan is exercised without real processes.
+    """
+
+    def test_lockless_worktree_with_live_runner_is_cwd_live(
+            self, tmp_path, monkeypatch):
+        """THE CASE THAT IS BROKEN TODAY: no lock, live runner in the worktree."""
+        target, worktree, _identity = _subject(tmp_path, lane="glm-hand")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: False)
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["501"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"ccc\x00-y\x00@glm52\x00",
+            read_cwd=lambda _pid: str(worktree),
+            skip_pids=set())
+        assert inspection.cwd_live == ("glm-hand",), \
+            "cwd channel missed glm-hand: a hand-dispatched lane with a live " \
+            "runner and no lock was not detected by cwd: %r" % (inspection,)
+        assert inspection.worktree_only == (), \
+            "a worktree with a live runner was reported as idle: %r" % (
+                inspection,)
+
+    def test_non_runner_in_worktree_cwd_is_not_live(
+            self, tmp_path, monkeypatch):
+        """#671: a shell/editor sharing the worktree cwd is not a lane runner."""
+        target, worktree, _identity = _subject(tmp_path, lane="glm-idle")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: False)
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["502"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"zsh\x00-c\x00sleep 9999\x00",
+            read_cwd=lambda _pid: str(worktree),
+            skip_pids=set())
+        assert inspection.cwd_live == (), \
+            "a non-runner process (zsh) was counted as a live lane: %r" % (
+                inspection,)
+        assert inspection.worktree_only == ("glm-idle",)
+
+    def test_many_processes_in_one_worktree_count_one_lane(
+            self, tmp_path, monkeypatch):
+        """#837: ccc spawns grok; both share the cwd. The set dedupes to one
+        lane per worktree, so the fleet number is a lane count not a process
+        count."""
+        target, worktree, _identity = _subject(tmp_path, lane="glm-dup")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: False)
+        cwds = {601: str(worktree), 602: str(worktree), 603: str(worktree)}
+        cmdlines = {
+            601: b"ccc\x00-y\x00@glm52\x00",
+            602: b"grok\x00--yolo\x00",
+            603: b"zsh\x00-c\x00echo hi\x00",
+        }
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["601", "602", "603"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda pid: cmdlines.get(pid, b""),
+            read_cwd=lambda pid: cwds.get(pid),
+            skip_pids=set())
+        assert inspection.cwd_live == ("glm-dup",), \
+            "multiple processes in one worktree did not dedupe to one " \
+            "lane: %r" % (inspection,)
+
+    def test_deleted_cwd_is_not_a_live_runner(
+            self, tmp_path, monkeypatch):
+        """#719: a process whose worktree was removed carries ' (deleted)'."""
+        target, worktree, _identity = _subject(tmp_path, lane="glm-phantom")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: False)
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["701"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"ccc\x00-y\x00@glm52\x00",
+            read_cwd=lambda _pid: str(worktree) + " (deleted)",
+            skip_pids=set())
+        assert inspection.cwd_live == (), \
+            "a deleted-cwd phantom was counted as a live runner: %r" % (
+                inspection,)
+
+    def test_stale_lock_with_live_runner_is_cwd_live_not_finished(
+            self, tmp_path, monkeypatch):
+        """A re-armed lane has a stale lock (dead pid) but a new live runner
+        by cwd. The cwd channel finds it live; the stale lock does not make
+        it 'finished'."""
+        target, worktree, identity = _subject(tmp_path, lane="glm-rearmed")
+        _write_lock(worktree, identity, task=555)
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: False)
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["801"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"grok\x00--yolo\x00",
+            read_cwd=lambda _pid: str(worktree),
+            skip_pids=set())
+        assert inspection.cwd_live == ("glm-rearmed",), \
+            "re-armed lane with live cwd runner not detected: %r" % (
+                inspection,)
+        assert inspection.finished == (), \
+            "a re-armed lane with a live runner was reported as " \
+            "finished: %r" % (inspection,)
+
+    def test_lock_live_and_cwd_only_both_named(self, tmp_path, monkeypatch):
+        """Both dispatch routes on one tick: one lock-confirmed, one cwd-only."""
+        target = tmp_path / "project"
+        target.mkdir()
+        locked = tmp_path / ".worktrees" / "cx-locked"
+        (locked / ".dreamwork").mkdir(parents=True)
+        identity = locked / "brief.md"
+        (locked / ".dreamwork" / "lane.lock").write_text(json.dumps({
+            "pid": 4242, "task": 999, "lane": "cx-locked",
+            "identity": str(identity),
+        }))
+        hand = tmp_path / ".worktrees" / "glm-hand"
+        (hand / ".dreamwork").mkdir(parents=True)
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        cwds = {901: str(locked), 902: str(hand)}
+        cmdlines = {
+            901: b"ccc\x00-y\x00@glm52\x00",
+            902: b"grok\x00--yolo\x00",
+        }
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["901", "902"],
+            registered_worktrees=(locked, hand),
+            read_cmdline=lambda pid: cmdlines.get(pid, b""),
+            read_cwd=lambda pid: cwds.get(pid),
+            skip_pids=set())
+        assert inspection.live == ("cx-locked",)
+        assert inspection.cwd_live == ("glm-hand",)

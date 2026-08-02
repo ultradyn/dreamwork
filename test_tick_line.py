@@ -345,6 +345,60 @@ class TestLiveFleetDetector:
             "incidental path invented lane 'review' and omitted cx-884nextup: %r" % found
 
 
+class TestCwdLiveLanesReported:
+    """#1084: a hand-dispatched lane has no lane.lock but a live runner in its
+    worktree cwd. The tick line must count it in the headline AND name the
+    disagreement with the lock channel, not silently resolve it (#136)."""
+
+    def test_cwd_only_lane_counted_in_headline_and_disagreement_named(
+            self, tmp_path, monkeypatch):
+        target = make_target(tmp_path, posture=HOT)
+
+        def inspection(_target):
+            return lane_liveness.LaneInspection(
+                live=('cx-lock',), worktree_only=(), process_only=(),
+                examined_processes=99, cwd_live=('glm-hand',))
+
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", inspection)
+        out = tick_line.facts(target)
+        assert "lanes 2 live [cx-lock, glm-hand]" in out, \
+            "cwd-only lane not counted in headline: %s" % out
+        assert "cwd-only 1 [glm-hand]" in out
+        assert "live runner, no live lane.lock" in out
+
+    def test_cwd_only_lane_named_not_just_counted(self, tmp_path, monkeypatch):
+        """Direction-2 anchor: a count-only check passes when the lane is
+        silently dropped. Bind the NAME of the missed lane."""
+        target = make_target(tmp_path, posture=HOT)
+
+        def inspection(_target):
+            return lane_liveness.LaneInspection(
+                live=(), worktree_only=(), process_only=(),
+                examined_processes=99, cwd_live=('glm-1034clean',))
+
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", inspection)
+        out = tick_line.facts(target)
+        assert "lanes 1 live [glm-1034clean]" in out, \
+            "cwd-only lane glm-1034clean was not named in the headline: %s" % out
+        assert "cwd-only 1 [glm-1034clean]" in out, \
+            "the missed lane was not named in the disagreement clause: %s" % out
+
+    def test_no_cwd_live_means_no_disagreement_clause(self, tmp_path,
+                                                      monkeypatch):
+        """When lock and cwd agree, no cwd-only clause clutters the line."""
+        target = make_target(tmp_path, posture=HOT)
+
+        def inspection(_target):
+            return lane_liveness.LaneInspection(
+                live=('cx-lock',), worktree_only=(), process_only=(),
+                examined_processes=99)
+
+        monkeypatch.setattr(lane_liveness, "inspect_lanes", inspection)
+        out = tick_line.facts(target)
+        assert "lanes 1 live [cx-lock]" in out
+        assert "cwd-only" not in out
+
+
 class TestTheContradictionIsAdjacent:
     """#673's whole mechanism: the rule and the measurement that fails it, on
     the same line, close enough to read as one statement."""
