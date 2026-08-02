@@ -7,6 +7,7 @@ passing on their own bug.
 """
 
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -5508,7 +5509,7 @@ class TestBriefCorpusReach:
         # named for the file it changed — #938). Same bump-cost shape #940
         # retired two literals over; keeping it here because dropping it
         # retires real coverage, not redundant coverage.
-        assert "six brief-corpus checks" in findings[0]
+        assert "seven brief-corpus checks" in findings[0]
         assert "not a merge verdict" in findings[0]
 
     def test_add_then_remove_between_samples_is_the_open_false_green(
@@ -5528,6 +5529,110 @@ class TestBriefCorpusReach:
         rep = run(root)
         assert not [detail for level, what, detail in rep.rows
                     if level == lint.ERROR and what == "brief corpus"], rep.render()
+
+
+class TestBriefDispatchCoverage:
+    @staticmethod
+    def _attempt(root: Path, task: int, lane: str, prompt: bytes,
+                 *, runs: int = 1) -> None:
+        attempts = root / ".dreamwork" / "launch-attempts"
+        attempts.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(prompt).hexdigest()
+        record = {
+            "task_id": task,
+            "lane": lane,
+            "runs": runs,
+            "prompt_sha256": digest,
+        }
+        (attempts / f"{task}-{lane}-{digest[:16]}.json").write_text(
+            json.dumps(record), encoding="utf-8")
+
+    @staticmethod
+    def _brief(root: Path, task: int, lane: str, prompt: bytes) -> None:
+        briefs = root / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True, exist_ok=True)
+        (briefs / f"{task}-{lane}.md").write_bytes(prompt)
+
+    @staticmethod
+    def _row(root: Path):
+        rep = lint.Report()
+        lint.check_brief_dispatch_coverage(root / ".dreamwork", rep)
+        rows = [row for row in rep.rows if row[1] == "brief dispatch coverage"]
+        assert len(rows) == 1, rep.render()
+        return rows[0]
+
+    def test_clean_join_names_both_populations_and_the_zero_gap(self, tmp_path):
+        root = target(tmp_path)
+        prompt = b"# dispatched brief\n"
+        self._attempt(root, 902, "cx-902", prompt)
+        self._brief(root, 902, "cx-902", prompt)
+        level, _, detail = self._row(root)
+        assert level == lint.OK
+        assert "examined 1 dispatch record(s), 1 in scope" in detail
+        assert "examined 1 corpus brief(s); 0 uncovered dispatch(es)" in detail
+
+    def test_removing_and_restoring_one_brief_moves_the_gap(self, tmp_path):
+        root = target(tmp_path)
+        prompt = b"# dispatched brief\n"
+        self._attempt(root, 902, "cx-902", prompt)
+        level, _, detail = self._row(root)
+        assert level == lint.WARN
+        assert "1 uncovered dispatch(es) (1 missing, 0 byte-mismatched)" in detail
+        assert detail.endswith(": 902-cx-902")
+        self._brief(root, 902, "cx-902", prompt)
+        level, _, detail = self._row(root)
+        assert level == lint.OK
+        assert "0 uncovered dispatch(es)" in detail
+
+    def test_empty_attempt_population_is_no_verdict_not_zero_missing(self, tmp_path):
+        root = target(tmp_path)
+        (root / ".dreamwork" / "launch-attempts").mkdir()
+        level, _, detail = self._row(root)
+        assert level == lint.ERROR
+        assert "examined 0 dispatch record(s) and 0 corpus brief(s)" in detail
+        assert "NO VERDICT" in detail
+        assert "degrade to zero" in detail
+
+    def test_both_operator_local_populations_absent_is_explicit(self, tmp_path):
+        root = target(tmp_path)
+        (root / "SKILL.md").write_text("# skill\n", encoding="utf-8")
+        (root / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+        level, _, detail = self._row(root)
+        assert level == lint.OK
+        assert "examined 0 dispatch record(s) and 0 corpus brief(s)" in detail
+        assert "NO VERDICT" in detail
+        assert "not an all-clear" in detail
+
+    def test_stub_is_not_accepted_as_the_dispatched_brief(self, tmp_path):
+        root = target(tmp_path)
+        prompt = b"# exact dispatched bytes\n"
+        self._attempt(root, 902, "cx-902", prompt)
+        self._brief(root, 902, "cx-902", b"")
+        level, _, detail = self._row(root)
+        assert level == lint.WARN
+        assert "1 uncovered dispatch(es) (0 missing, 1 byte-mismatched)" in detail
+        assert detail.endswith(": 902-cx-902")
+
+    def test_task_id_alone_cannot_cover_two_lanes(self, tmp_path):
+        root = target(tmp_path)
+        first = b"# first lane\n"
+        second = b"# second lane\n"
+        self._attempt(root, 867, "cx-867cut2", first)
+        self._attempt(root, 867, "cx-867cutoff", second)
+        self._brief(root, 867, "cx-867cut2", first)
+        level, _, detail = self._row(root)
+        assert level == lint.WARN
+        assert "examined 2 dispatch record(s), 2 in scope" in detail
+        assert "1 uncovered dispatch(es)" in detail
+        assert detail.endswith(": 867-cx-867cutoff")
+
+    def test_refusal_before_runner_attempt_is_excluded(self, tmp_path):
+        root = target(tmp_path)
+        self._attempt(root, 902, "cx-refused", b"# never dispatched\n", runs=0)
+        level, _, detail = self._row(root)
+        assert level == lint.OK
+        assert "0 in scope after runner-attempt rule, 1 pre-dispatch/refused excluded" in detail
+        assert "0 uncovered dispatch(es)" in detail
 
 
 class TestBriefHandoffObligation:

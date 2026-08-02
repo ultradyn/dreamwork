@@ -4637,21 +4637,124 @@ def brief_corpus_reach(root: Path) -> str:
 
 
 def brief_corpus_fingerprint(root: Path) -> str:
-    """Content identity for the five checks' shared mutable brief input (#773)."""
-    digest = hashlib.sha256(b"brief-corpus-v1\0")
-    briefs_dir = root / ".dreamwork" / "docs" / "briefs"
-    for path in sorted(briefs_dir.glob("*.md")):
-        digest.update(path.name.encode("utf-8", errors="surrogateescape"))
-        digest.update(b"\0")
-        try:
-            digest.update(path.read_bytes())
-        except OSError:
-            # A file disappearing while the snapshot is read is itself a
-            # distinct state. The second snapshot will either read it or omit
-            # it, so the enclosing check reports the interference.
-            digest.update(b"<unreadable>")
-        digest.update(b"\0")
+    """Content identity for the brief checks' shared mutable inputs (#773)."""
+    digest = hashlib.sha256(b"brief-corpus-v2\0")
+    populations = (
+        (root / ".dreamwork" / "docs" / "briefs", "*.md"),
+        (root / ".dreamwork" / "launch-attempts", "*.json"),
+    )
+    for directory, pattern in populations:
+        for path in sorted(directory.glob(pattern)):
+            digest.update(path.name.encode("utf-8", errors="surrogateescape"))
+            digest.update(b"\0")
+            try:
+                digest.update(path.read_bytes())
+            except OSError:
+                # A file disappearing while the snapshot is read is itself a
+                # distinct state. The second snapshot will either read it or
+                # omit it, so the enclosing check reports the interference.
+                digest.update(b"<unreadable>")
+            digest.update(b"\0")
     return digest.hexdigest()
+
+
+def check_brief_dispatch_coverage(dw: Path, rep: Report) -> None:
+    """Every runner-attempted governed launch has its exact corpus brief."""
+    root = dw.parent
+    attempts_dir = dw / "launch-attempts"
+    briefs_dir = dw / "docs" / "briefs"
+    attempts_present = attempts_dir.is_dir()
+    briefs_present = briefs_dir.is_dir()
+    brief_paths = sorted(briefs_dir.glob("*.md")) if briefs_present else []
+
+    # launch-attempts/ is operator-local and does not travel into linked
+    # worktrees. That absence is expected there, but a main checkout with no
+    # attempt population is a broken denominator and must not pass.
+    if not attempts_present:
+        if (root / ".git").is_file():
+            rep.add(
+                OK, "brief dispatch coverage",
+                f"examined 0 dispatch record(s) and {len(brief_paths)} corpus "
+                "brief(s); NO VERDICT because launch-attempts/ is "
+                "operator-local and absent from this linked worktree — this "
+                "is not an all-clear",
+            )
+        elif (root / "SKILL.md").is_file() or briefs_present:
+            rep.add(
+                ERROR, "brief dispatch coverage",
+                f"examined 0 dispatch record(s) and {len(brief_paths)} corpus "
+                "brief(s); NO VERDICT because launch-attempts/ is absent — "
+                "the dispatch denominator cannot silently degrade to zero",
+            )
+        return
+
+    attempt_paths = sorted(path for path in attempts_dir.glob("*.json")
+                           if path.is_file())
+    if not attempt_paths:
+        rep.add(
+            ERROR, "brief dispatch coverage",
+            f"examined 0 dispatch record(s) and {len(brief_paths)} corpus "
+            "brief(s); NO VERDICT because launch-attempts/ is empty — the "
+            "dispatch denominator cannot silently degrade to zero",
+        )
+        return
+
+    in_scope = 0
+    excluded = 0
+    malformed: list[str] = []
+    missing: list[str] = []
+    mismatched: list[str] = []
+    for path in attempt_paths:
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            task_id = int(record["task_id"])
+            lane = record["lane"]
+            runs = int(record["runs"])
+            prompt_sha256 = record["prompt_sha256"]
+            if not isinstance(lane, str) or not lane:
+                raise ValueError("lane is not a non-empty string")
+            if not isinstance(prompt_sha256, str) or not re.fullmatch(
+                    r"[0-9a-f]{64}", prompt_sha256):
+                raise ValueError("prompt_sha256 is not a lowercase SHA-256")
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError,
+                UnicodeError):
+            malformed.append(path.name)
+            continue
+        if runs < 1:
+            # launch_lane writes runs=1 only after governed prepare has made
+            # the corpus brief. Pre-dispatch refusals therefore carry no duty.
+            excluded += 1
+            continue
+        in_scope += 1
+        key = f"{task_id}-{lane}"
+        brief = briefs_dir / f"{key}.md"
+        if not brief.is_file():
+            missing.append(key)
+            continue
+        try:
+            actual = hashlib.sha256(brief.read_bytes()).hexdigest()
+        except OSError:
+            missing.append(key)
+            continue
+        if actual != prompt_sha256:
+            mismatched.append(key)
+
+    uncovered = len(missing) + len(mismatched)
+    detail = (
+        f"examined {len(attempt_paths)} dispatch record(s), {in_scope} in "
+        f"scope after runner-attempt rule, {excluded} pre-dispatch/refused "
+        f"excluded, {len(malformed)} unclassifiable; examined "
+        f"{len(brief_paths)} corpus brief(s); {uncovered} uncovered "
+        f"dispatch(es) ({len(missing)} missing, {len(mismatched)} "
+        "byte-mismatched)"
+    )
+    names = missing + mismatched
+    if names:
+        detail += ": " + " ".join(names)
+    level = ERROR if malformed else WARN if uncovered else OK
+    if malformed:
+        detail += "; unclassifiable record(s): " + " ".join(malformed)
+    rep.add(level, "brief dispatch coverage", detail)
 
 
 _BRIEF_DREAM_INSTRUCTION = re.compile(
@@ -7206,11 +7309,12 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_placeholder_citations(dw, rep)
     check_citation_range(dw, rep)
     check_handoffs(dw, watch, rep)
-    # These six checks all read the dispatcher's corpus. Since #770 the
+    # These seven checks all read the dispatcher's corpus. Since #770 the
     # correct dispatch route writes that corpus in the main checkout while a
     # gate may be reading it. Bind their block to one content identity: a
     # changed identity is concurrent input, not evidence that the merge is bad.
     brief_corpus_before = brief_corpus_fingerprint(dw.parent)
+    check_brief_dispatch_coverage(dw, rep)
     check_brief_dream_contradictions(dw, rep)
     check_brief_handoff_obligation(dw, rep)
     check_brief_worktree_abs_inbox(dw, rep)
@@ -7221,7 +7325,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     if brief_corpus_before != brief_corpus_after:
         rep.add(
             ERROR, "brief corpus",
-            "CHANGED DURING LINT — the six brief-corpus checks did not "
+            "CHANGED DURING LINT — the seven brief-corpus checks did not "
             "examine one "
             "fixed corpus "
             f"({brief_corpus_before[:12]} -> {brief_corpus_after[:12]}); "
