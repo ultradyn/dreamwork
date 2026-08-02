@@ -35,6 +35,12 @@ that will be used that way at 3am.
 non-placeholder body*.  It cannot judge whether the direction-2 list is any
 good — no check can — and it must not be reported as if it did.
 
+Tool-verb validation is narrower still: it checks only that a named verb exists
+on master's copy of a tool.  It does not re-derive numbers, environments, tool
+arguments, or which interpreter a lane will actually run.  A brief can pass
+this check and remain wrong in any of those ways, so every result names both
+the checked and NOT-CHECKED populations.
+
 Placeholder detection is LINE-shaped, not token-shaped, and that came from the
 measurement: the only two placeholder tokens in 40 brief heads are both in
 #881's own brief, which discusses placeholders in prose.  A token-level
@@ -75,6 +81,7 @@ import argparse
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -141,6 +148,17 @@ def _is_atx_heading(line: str) -> bool:
 # to quote Markdown, and a fenced ``## Read ...`` is a quotation, not a section
 # of the brief (#947 third instance).
 _FENCE_OPEN = re.compile(r"^( {0,3})(`{3,}|~{3,})")
+
+_TOOL_INVOCATION = re.compile(
+    r"(?<![\w./-])(?P<path>"
+    r"/[^\s`\"'<>]*/ud-dreamwork/(?:dev/)?[A-Za-z_][\w-]*\.py"
+    r"|dev/[A-Za-z_][\w-]*\.py"
+    r"|[A-Za-z_][\w-]*\.py)"
+    r"[ \t]+(?P<verb>[A-Za-z][\w-]*)"
+)
+_QUOTED_PROSE = re.compile(r'"[^"\n]*"|“[^”\n]*”|\'[^\'\n]*\'|‘[^’\n]*’')
+_ARGPARSE_CHOICES = re.compile(r"choose from (?P<choices>[^)]+)\)")
+_DOCUMENTED_SUBCOMMANDS = re.compile(r"`(?P<verb>[a-z][a-z0-9-]*)(?:\s|`)")
 
 
 class BriefFault(Exception):
@@ -277,15 +295,154 @@ def substantive_lines(text: str) -> list[str]:
     return [line for line in text.splitlines() if _substantive(line)]
 
 
+def _tool_invocations(core: str) -> list[tuple[str, str]]:
+    """Find command-shaped tool invocations, not quoted or fenced examples."""
+    found: list[tuple[str, str]] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line in core.splitlines():
+        if in_fence:
+            if re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+            ):
+                in_fence = False
+            continue
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            continue
+        searchable = _QUOTED_PROSE.sub("", line)
+        found.extend(
+            (match.group("path"), match.group("verb"))
+            for match in _TOOL_INVOCATION.finditer(searchable)
+        )
+    return found
+
+
+def _master_tool_path(named_path: str) -> str:
+    """Map a brief spelling to the repository path whose master bytes matter."""
+    marker = "/ud-dreamwork/"
+    if marker in named_path:
+        return named_path.split(marker, 1)[1]
+    if named_path.startswith("dev/"):
+        return named_path
+    return f"dev/{named_path}"
+
+
+def _derive_master_verbs(named_path: str) -> tuple[set[str] | None, str | None]:
+    """Derive verbs by executing master's real bytes from a real sibling file."""
+    repo_path = _master_tool_path(named_path)
+    try:
+        source = _git("show", f"master:{repo_path}")
+    except BriefFault:
+        return None, None
+
+    target_dir = ROOT / Path(repo_path).parent
+    temp_path: Path | None = None
+    try:
+        # Master is deliberate: the coordinator's working tree is exactly where
+        # an unlanded verb can exist and mislead an authored lane brief.  A real
+        # sibling file preserves __file__ and imports; /dev/fd process
+        # substitution detaches both from their repository anchor.
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=target_dir,
+            prefix=".brief-master-", suffix=".py", delete=False,
+        ) as materialized:
+            materialized.write(source)
+            temp_path = Path(materialized.name)
+
+        try:
+            unknown = subprocess.run(
+                [sys.executable, str(temp_path), "brief-validator-unknown-verb", "--no-create"],
+                cwd=ROOT, capture_output=True, text=True, check=False, timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None, None
+        choice_match = _ARGPARSE_CHOICES.search(unknown.stderr)
+        if choice_match:
+            verbs = {
+                token.strip().strip("'\"")
+                for token in choice_match.group("choices").split(",")
+            }
+            return verbs, "argparse choices"
+
+        try:
+            help_run = subprocess.run(
+                [sys.executable, str(temp_path), "--help"], cwd=ROOT,
+                capture_output=True, text=True, check=False, timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None, None
+        help_text = help_run.stdout + help_run.stderr
+        marker = help_text.find("Subcommands:")
+        if help_run.returncode == 0 and marker >= 0:
+            verbs = {
+                match.group("verb")
+                for match in _DOCUMENTED_SUBCOMMANDS.finditer(help_text[marker:])
+            }
+            if verbs:
+                return verbs, "documented subcommands"
+        return None, None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def _validate_tool_invocations(core: str) -> str:
+    """Validate what is derivable and name what was not checked."""
+    invocations = _tool_invocations(core)
+    cache: dict[str, tuple[set[str] | None, str | None]] = {}
+    checked = 0
+    unresolved: list[str] = []
+    techniques: dict[str, list[str]] = {}
+    invalid: list[tuple[str, str]] = []
+    for named_path, verb in invocations:
+        repo_path = _master_tool_path(named_path)
+        if repo_path not in cache:
+            cache[repo_path] = _derive_master_verbs(named_path)
+        verbs, technique = cache[repo_path]
+        if verbs is None:
+            unresolved.append(named_path)
+            continue
+        checked += 1
+        techniques.setdefault(technique or "unknown", []).append(named_path)
+        if verb not in verbs:
+            invalid.append((named_path, verb))
+
+    summary = (
+        f"examined {len(invocations)} invocation(s), {checked} derivable, "
+        f"{len(unresolved)} not derivable; the {len(unresolved)} were NOT CHECKED"
+    )
+    if invalid:
+        named_path, verb = invalid[0]
+        raise BriefFault(
+            f"tool verb check ERROR: {named_path} has no verb {verb!r} on master — {summary}"
+        )
+    if unresolved:
+        detail = ", ".join(dict.fromkeys(unresolved))
+        return f"tool verb check NOT CHECKED: {summary}; not derivable: {detail}"
+    resolved = "; ".join(
+        f"{technique}: {', '.join(dict.fromkeys(paths))}"
+        for technique, paths in techniques.items()
+    )
+    suffix = f"; {resolved}" if resolved else ""
+    return f"tool verb check OK: {summary}{suffix}"
+
+
 def validate_core(core: str) -> int:
     """Refuse an authored core that is absent, placeholder, or has no direction 2.
 
-    Each refusal names a mode this function can actually detect.  It cannot
-    detect a direction-2 list that is present, substantive and wrong.  On the
-    happy path it returns how many ATX sections the walk examined, so a caller
-    can print the denominator on every path (#868: a run that examined zero
-    sections must not read the same as one that examined forty and found them
-    all written).
+    Each refusal names a mode this function can actually detect.  Tool verbs
+    are checked against master when their runtime surface is derivable; an
+    underivable surface is reported as NOT CHECKED, never collapsed into pass
+    or fail.  This catches only a wrong tool version, not wrong numbers,
+    environments, argument shapes, or interpreter paths.  On the happy path it
+    returns how many ATX sections the walk examined, so a caller can print the
+    denominator on every path (#868: a run that examined zero sections must not
+    read the same as one that examined forty and found them all written).
     """
     if not core.strip():
         raise BriefFault(
@@ -383,8 +540,10 @@ def validate_core(core: str) -> int:
     if empties:
         raise BriefFault(_no_body_message(empties, sections_seen))
 
+    tool_report = _validate_tool_invocations(core)
     for index, line in enumerate(lines):
         if _DIRECTION_2.search(line) and any(_substantive(rest) for rest in lines[index + 1:]):
+            print(tool_report, file=sys.stderr)
             return sections_seen
     # Reaching here proves `empties` came back empty (it raises above), so the
     # denominator is the one signal left that the walk ran on thin data: a core
@@ -460,7 +619,8 @@ def build(task: int, branch: str, owns: list[str], core: str, *,
           boilerplate_path: Path = BOILERPLATE_PATH,
           prepared_worktree: Path | None = None,
           prepared_base_sha: str | None = None,
-          prepared_checkout: Path | None = None) -> str:
+          prepared_checkout: Path | None = None,
+          _core_already_validated: bool = False) -> str:
     checkout = prepared_checkout.resolve() if prepared_checkout else main_checkout()
     if prepared_checkout is not None and not prepared_checkout.is_absolute():
         raise BriefFault(f"prepared checkout must be absolute: {prepared_checkout}")
@@ -472,7 +632,8 @@ def build(task: int, branch: str, owns: list[str], core: str, *,
             "lane-containment guard has nothing to protect from an empty set"
         )
 
-    validate_core(core)
+    if not _core_already_validated:
+        validate_core(core)
 
     frame = frame_sections(_read(frame_path, "frame"))
     if not frame:
@@ -599,13 +760,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             core = _read(args.core, "authored core")
         owns = [token.strip().strip("`") for token in args.owns.split(",") if token.strip().strip("`")]
-        # validate_core is pure, so main reads the section count directly for
-        # the success-path denominator (#868); build re-validates internally to
-        # keep its self-validating API for direct callers. Same function, no
-        # drift (#852/#905), one extra O(n) pass over a small core.
+        # main reads the section count and prints the tool-verbs denominator in
+        # one validation; direct build callers still self-validate by default.
         sections = validate_core(core)
         brief = build(args.task, args.lane or f"cx-{args.task}", owns, core,
-                      ledger=args.ledger, frame_path=args.frame)
+                      ledger=args.ledger, frame_path=args.frame,
+                      _core_already_validated=True)
     except BriefFault as exc:
         print(f"brief refused: {exc}", file=sys.stderr)
         return 2

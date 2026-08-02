@@ -405,6 +405,65 @@ def test_validate_core_returns_the_section_count_on_success():
     assert brief.validate_core(core) == 3
 
 
+def test_tool_verb_check_refuses_an_unknown_master_verb_by_name(capsys):
+    core = GOOD_CORE + "\nRun `dev/ledger.py definitely-not-a-verb 979`.\n"
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief.validate_core(core)
+    message = str(excinfo.value)
+    assert "tool verb check ERROR" in message, message
+    assert "dev/ledger.py" in message, message
+    assert "'definitely-not-a-verb'" in message, message
+    assert "examined 1 invocation(s), 1 derivable, 0 not derivable" in message, message
+    assert capsys.readouterr().err == ""
+
+
+def test_argparse_and_documented_subcommand_surfaces_resolve_on_master(capsys):
+    core = GOOD_CORE + (
+        "\nRun `ledger.py get 979`, then persist with "
+        "`dev/lane_scratch.py write proof.txt`.\n"
+    )
+    assert brief.validate_core(core) == 2
+    report = capsys.readouterr().err
+    assert "tool verb check OK" in report, report
+    assert "examined 2 invocation(s), 2 derivable, 0 not derivable" in report, report
+    assert "argparse choices: ledger.py" in report, report
+    assert "documented subcommands: dev/lane_scratch.py" in report, report
+
+
+def test_underivable_surface_is_not_checked_and_does_not_refuse(capsys):
+    core = GOOD_CORE + "\nRun `dev/brief.py imaginary-verb`.\n"
+    assert brief.validate_core(core) == 2
+    report = capsys.readouterr().err
+    assert "tool verb check NOT CHECKED" in report, report
+    assert "examined 1 invocation(s), 0 derivable, 1 not derivable" in report, report
+    assert "the 1 were NOT CHECKED" in report, report
+    assert "not derivable: dev/brief.py" in report, report
+
+
+def test_existing_verb_does_not_claim_to_validate_arguments_or_interpreter(capsys):
+    core = GOOD_CORE + (
+        "\n`dev/ledger.py get` has a real verb but an invalid argument shape.\n"
+        "Run `/home/xertrov/.llm-general/skills/ud-dreamwork/dev/ledger.py get 979`; "
+        "that skill-dir path still selects the main checkout's interpreter.\n"
+    )
+    assert brief.validate_core(core) == 2
+    report = capsys.readouterr().err
+    assert "examined 2 invocation(s), 2 derivable, 0 not derivable" in report, report
+
+
+def test_fenced_and_quoted_non_commands_are_not_tool_invocations(capsys):
+    core = GOOD_CORE + (
+        "\nThe refusal said \"dev/ledger.py definitely-not-a-verb is invalid\".\n"
+        "The lane must not run this fenced example:\n"
+        "```sh\n"
+        "dev/ledger.py definitely-not-a-verb 979\n"
+        "```\n"
+    )
+    assert brief.validate_core(core) == 2
+    report = capsys.readouterr().err
+    assert "examined 0 invocation(s), 0 derivable, 0 not derivable" in report, report
+
+
 def test_all_empty_sections_are_reported_not_just_the_first(lane):
     """Direction 1, enumerate. core-847b cost two launch cycles because the
     refusal named one empty section; the author fixed it, relaunched, and hit
