@@ -51,10 +51,13 @@ def test_dead_runner_is_finished_with_its_lock_record(tmp_path, monkeypatch):
 
     inspection = _inspect(target, worktree)
 
-    assert inspection.worktree_only == ()
-    assert inspection.finished == (lane_liveness.FinishedLane(
-        lane="cx-finished", task=987, pid=4242, identity=str(identity)),), \
-        "cx-finished task #987 landed in the wrong bucket: %r" % (inspection,)
+    expected = lane_liveness.FinishedLane(
+        lane="cx-finished", task=987, pid=4242, identity=str(identity))
+    assert (inspection.worktree_only == () and
+            inspection.finished == (expected,)), \
+        "cx-finished task #987 landed in wrong bucket: " \
+        "worktree_only=%r finished=%r" % (
+            inspection.worktree_only, inspection.finished)
     assert inspection.finished[0].pid == record["pid"]
 
 
