@@ -1838,29 +1838,68 @@ class TestCoordinatorAuditSeesTheLane:
             "the two flags produced the same verdict — the fix does not "
             "discriminate require==0 from require>=1 on an absent registry")
 
-    def test_an_identity_that_ran_but_left_no_registry_still_faults(
+    def test_an_identity_that_ran_but_left_no_registry_passes_at_require_zero(
             self, repo, monkeypatch, capsys):
-        """#955 fact 2: a launch identity provably ran here (its dir exists)
-        but left no redproof registry. Even at --require 0 this stays a FAULT:
-        a registry this audit cannot reach might exist, and an armed injection
-        it held would be invisible (#895). The relaxation is ONLY for the case
-        where NO identity ever ran — the 'none was warranted' state."""
+        """#955/#1038: a launch identity provably ran here (its dir exists)
+        but left no redproof registry — because the lane owed no injection and
+        never called begin. A doc-only lane that wrote lane-scratch evidence
+        (creating its identity dir) must PASS at --require 0: nothing was
+        required, none was expected, and an absent registry is the expected
+        state, NOT a fault. The old behavior faulted here independently of
+        --require, which is #949's unfixed second half.
+
+        DIRECTION 2 — the paired assertion that stops this being an opt-out: the
+        SAME fixture under --require 1 must still FAULT. A lane that changed real
+        code and skipped its injection cannot pass by simply never creating a
+        registry; the exemption is conditional on zero injections being
+        REQUIRED, the fact land_lane computes from the diff and passes here.
+
+        Why identity_dirs is not a hiding-armed-injection signal: an armed
+        injection lives INSIDE registry.json, and this block's precondition is
+        that NO registry.json exists anywhere this audit can reach. So no armed
+        entry can be on disk under any discoverable identity; identity_dirs only
+        means the lane wrote other scratch, which is unrelated to red-proof."""
         # A lane ran under an identity and used lane scratch (creating its dir)
         # but never called redproof begin, so no registry exists.
-        monkeypatch.setenv(rp._ls.IDENTITY_ENV, "ran-but-no-registry-955")
+        monkeypatch.setenv(rp._ls.IDENTITY_ENV, "ran-but-no-registry-1038")
         rp._ls.lane_scratch_dir(repo, sub="snap")  # creates the identity dir
         monkeypatch.delenv(rp._ls.IDENTITY_ENV, raising=False)  # coordinator
         # PRECONDITION: an identity dir exists, but no redproof registry does.
         assert len(rp._ls.lane_identity_dirs(repo)) == 1
         assert not rp._redproof_dir(repo, "", rp._role(repo)).exists()
 
-        exit = _check(repo, require=0)
-        _, err = capsys.readouterr()
-        assert exit == 2, (
-            "an identity that ran but left no registry must FAULT even at "
-            "--require 0 — its registry might be one this audit cannot reach")
-        assert "launch-identity dir(s)" in err, err
-        assert "NOT an all-clear" in err, err
+        # Flag 0: PASS. Nothing was required; an absent registry is expected.
+        exit0 = _check(repo, require=0)
+        out0, _ = capsys.readouterr()
+        assert exit0 == 0, (
+            "a lane that ran but owed no red-proof must PASS at --require 0, not "
+            "fault — an absent registry is the expected state when nothing was "
+            "required (#1038/#949 second half): " + out0)
+        # State the denominator and the zero that is explained, not a bare pass.
+        assert "0 required" in out0, out0
+        assert "none registered" in out0, out0
+        assert "1 launch-identity dir(s)" in out0, out0
+        # #895/#932: must NOT read as an all-clear, a restoration verdict, or
+        # the calm-zero 'no evidence' sentence over a population not swept.
+        assert "restoration clean" not in out0, out0
+        assert "no evidence" not in out0, out0
+
+        # Flag 1, SAME fixture: FAULT. A required injection cannot be verified
+        # when no registry can be located (#671/#895) — the gate stays closed.
+        exit1 = _check(repo, require=1)
+        _, err1 = capsys.readouterr()
+        assert exit1 == 2, (
+            "a coordinator that required an injection but located no registry "
+            "must still FAULT even when an identity ran here — the exemption is "
+            "conditional on zero being required (#1038)")
+        assert "1 injection(s) were required" in err1, err1
+        assert "cannot be verified" in err1, err1
+        # THE discrimination: one fixture, two flags, two different verdicts.
+        assert exit0 != exit1, (
+            "the two flags produced the same verdict — the fix does not "
+            "discriminate require==0 from require>=1 on a registry-less "
+            "identity dir, and a require==0-only test would pass on a build "
+            "that exempts every lane")
 
     def test_lane_flag_audits_a_named_identity_exactly(
             self, repo, monkeypatch, capsys):
