@@ -577,8 +577,9 @@ def test_malformed_warn_declaration_refuses_naming_offending_token(landing_repo)
 
     The lane has a GENUINE added warning, so the defect is not whether the lane
     changed the baseline — it did — but that the declaration cannot be read.
-    Validation is bound to the same _warn_row_identity the observed rows use, so
-    a declaration is unreadable exactly when it could not name a real row.
+    Validation is bound to WARN_ROW, the same filter _warn_rows applies to the
+    observed lint output, so a declaration is unreadable exactly when it could
+    not name a real row.
 
     This stays distinct from a mismatch: a valid declaration naming a row the
     merge did not observe is still a MISMATCH (proven by
