@@ -149,6 +149,124 @@ def test_red_proof_slice_is_truncation_detectable():
     )
 
 
+def test_empty_act_emits_no_uncounted_blank_line(tmp_path):
+    """#1033 r2 (P2): the count the header and sentinel state must equal the
+    lines actually emitted — even at zero. An act with no lessons declared
+    ``0 lines`` yet printed one blank line (``print("\\n".join([]))`` emits a
+    newline), so the stated magnitude lied about the received body. That is
+    the same defect class this task exists to close: a stated count that does
+    not equal what was emitted (#1033 Direction 2, at its degenerate zero).
+
+    No real act is empty today, so this uses a controlled fixture — but the
+    fixture is the PRECONDITION (an entry that matches one act but not the
+    one asked for), not the thing under test. The thing under test is the
+    emission path in ``main()``: the ``print("\\n".join(body_lines))`` line
+    is the production line that would have to change for this to fail. The
+    test calls ``li.main`` for real, so an empty-body print reaches that line.
+    """
+    # A single lesson that matches worktree-dispatch but never 'clock' — so
+    # --act clock yields zero hits against a non-empty file (the denominator
+    # is real, the numerator is genuinely zero).
+    fixture = tmp_path / "empty_act.md"
+    fixture.write_text(
+        "- **Dispatching a lane is a worktree act.**\n"
+        "  Some prose about lanes.\n",
+        encoding="utf-8",
+    )
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = li.main(["--act", "clock", "--lessons", str(fixture)])
+    assert rc == 0, "a known act with zero hits exits 0, not an error"
+    out = buf.getvalue()
+    parts = out.split("\n")
+
+    # Header is first, sentinel is the first `# end ...` line.
+    header = parts[0]
+    assert header.startswith("# act: clock"), f"unexpected header {header!r}"
+    sent_idx = next(
+        (i for i, p in enumerate(parts) if p.startswith("# end clock")), None
+    )
+    assert sent_idx is not None, "no `# end clock` sentinel emitted"
+    # Lines strictly between the header and the sentinel.
+    between = parts[1:sent_idx]
+
+    # The invariant the whole format exists to hold: stated line count equals
+    # lines actually emitted. At zero this means NOTHING sits between the
+    # header and the sentinel — not even one blank line.
+    m = re.search(r"(\d+) lines", header)
+    assert m, f"header {header!r} carries no line count"
+    stated = int(m.group(1))
+    assert stated == len(between), (
+        f"header states {stated} lines but {len(between)} line(s) were "
+        f"emitted between header and sentinel {between!r} — a stated count "
+        "that does not match the received body is the false-green #1033 "
+        "exists to close, and the zero case is the one nobody exercises"
+    )
+    # And state the zero property directly so the intent is unmissable.
+    assert stated == 0, "this fixture must produce zero hits; precondition"
+
+
+def test_act_output_survives_a_truncating_reader():
+    """#1033 r2 (P3): this command exists BECAUSE readers truncate it, and
+    ``| head`` is the most likely way a caller does that. Piping into a reader
+    that exits early must not leave a producer-side ``BrokenPipeError``
+    traceback on stderr (nor exit 120) — a traceback on the intended usage
+    undermines the fix's credibility even though truncation detection itself
+    is unaffected.
+
+    This cannot be exercised with an ``io.StringIO`` redirect (a StringIO
+    never breaks), so it runs the real CLI as a subprocess, reads one line,
+    and closes the pipe — exactly what ``head`` does. The production line is
+    the ``__main__`` guard's ``sys.exit(main())``: the BrokenPipeError raised
+    by a ``print`` inside ``main()`` must be caught there, not traced.
+    """
+    import subprocess
+    import sys as _sys
+    # The red-proof slice is ~84KB, well past a 64KB pipe buffer, so a reader
+    # that takes one line and exits guarantees the producer's next write hits
+    # a closed pipe. A tiny act would fit in the buffer and never break,
+    # making this test hollow (#136). Assert the precondition against the real
+    # corpus so a future shrink is caught, not silently passed over.
+    #
+    # A faithful two-process pipeline (producer | head) is required: closing
+    # only the parent's read fd does NOT reproduce the bug, because the
+    # producer never observes a reader that *exited*. The break happens when a
+    # downstream reader (head) closes ITS stdin, exactly the `| head` usage.
+    prod = subprocess.Popen(
+        [_sys.executable, "dev/lessons_index.py",
+         "--act", "red-proof", "--lessons", str(LESSONS)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        cwd=str(HERE),
+    )
+    reader = subprocess.Popen(
+        ["head", "-1"], stdin=prod.stdout, stdout=subprocess.DEVNULL,
+    )
+    # Release the parent's read fd so the producer's only reader is `head`;
+    # when head exits after one line, the producer's next write has nowhere
+    # to go.
+    prod.stdout.close()
+    try:
+        prod.wait(timeout=30)
+        reader.wait(timeout=30)
+    finally:
+        if prod.poll() is None:
+            prod.kill()
+            prod.wait()
+        if reader.poll() is None:
+            reader.kill()
+            reader.wait()
+    stderr = prod.stderr.read().decode("utf-8", "replace")
+    assert "BrokenPipeError" not in stderr, (
+        "piping the act output into a truncating reader left a "
+        f"BrokenPipeError traceback on stderr:\n{stderr}"
+    )
+    assert "Traceback" not in stderr, (
+        "piping the act output into a truncating reader left a traceback "
+        f"on stderr:\n{stderr}"
+    )
+
 
 def test_unknown_act_is_distinct_from_empty():
     """#136: 'no lessons for this act' and 'this act is unknown to me' must
