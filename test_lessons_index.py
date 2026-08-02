@@ -71,6 +71,85 @@ def test_red_proof_stays_skimmable():
     assert n > 0, "red-proof matched zero lessons — the anchor is broken"
 
 
+def test_red_proof_slice_is_truncation_detectable():
+    """#1033: the red-proof slice is the loop's largest (hundreds of lines),
+    and a reader (an agent harness) that receives a truncated prefix has no
+    way to tell it is incomplete — the consultation looks performed. The act
+    output must let a caller that received a partial slice detect it.
+
+    The mechanism: a header states the magnitude up front (a truncated read
+    still has the header), and a trailing sentinel restating the lesson count
+    is the presence-check a truncated read loses. Absence of the sentinel IS
+    the truncation signal.
+
+    The sentinel's stated count must equal the lessons actually emitted: a
+    count that lies makes a truncated read look complete, which is worse than
+    no count at all (#1033 Direction 2). Tested against the REAL slice, not a
+    synthetic handful, because a three-lesson act would prove nothing about
+    the case that is the entire point (#136: a check that can pass on a
+    trivial population is not a check).
+    """
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        li.main(["--act", "red-proof", "--lessons", str(LESSONS)])
+    out = buf.getvalue()
+    lines = out.split("\n")
+
+    # Actual count of lessons emitted — one `lessons.md:N` cite per entry.
+    actual = len(re.findall(r"(?m)^lessons\.md:\d+$", out))
+
+    # Precondition: the slice is genuinely large. The whole defect is that
+    # red-proof overflows its reader; a regression that shrank it to a
+    # handful would make this test prove nothing about truncation (#136).
+    assert actual > 10, (
+        f"precondition failed: red-proof matched only {actual} lessons — "
+        "the slice is too small for this test to discriminate truncation; "
+        "re-derive the population before trusting this gate"
+    )
+
+    # Direction 1: the sentinel must be present — a truncated reader loses
+    # it, so its absence is the detectable truncation signal.
+    sentinels = [l for l in lines if l.startswith("# end red-proof")]
+    assert sentinels, (
+        "no `# end red-proof` sentinel — a reader that received a prefix "
+        "cannot tell it is incomplete; truncation is silent (#1033)"
+    )
+
+    # The sentinel must be the FINAL non-blank line. If anything trails it, a
+    # truncation that cuts after the sentinel still leaves a present sentinel
+    # and is undetectable.
+    nonblank = [l for l in lines if l.strip()]
+    assert nonblank[-1].startswith("# end red-proof"), (
+        "the sentinel is not the final line — truncation after it would "
+        "leave the sentinel present and the read would still look complete"
+    )
+
+    # Direction 2: the sentinel's stated lesson count must equal the lessons
+    # actually emitted. A count that does not match makes a partial read look
+    # whole, which is the false-green this whole task exists to close.
+    m = re.search(r"(\d+) lessons", sentinels[-1])
+    assert m, f"sentinel {sentinels[-1]!r} carries no lesson count"
+    stated = int(m.group(1))
+    assert stated == actual, (
+        f"sentinel states {stated} lessons but {actual} were emitted — a "
+        "mismatched count makes a truncated read look complete (#1033 "
+        "Direction 2)"
+    )
+
+    # The header up front must state the same count, so a reader that still
+    # has the header (truncation cuts the end, not the start) knows the
+    # magnitude even before checking for the sentinel.
+    header = lines[0]
+    mh = re.search(r"(\d+) of \d+ lessons", header)
+    assert mh, f"header {header!r} carries no 'N of M lessons' count"
+    assert int(mh.group(1)) == actual, (
+        f"header states {mh.group(1)} lessons but {actual} were emitted"
+    )
+
+
+
 def test_unknown_act_is_distinct_from_empty():
     """#136: 'no lessons for this act' and 'this act is unknown to me' must
     not render identically. An unknown act exits 2 with a named error; a

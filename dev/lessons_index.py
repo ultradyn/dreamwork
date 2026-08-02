@@ -198,11 +198,25 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         hits = index[args.act]
         when = next(w for s, w, _ in ACTS if s == args.act)
-        print(f"# act: {args.act} — {len(hits)} of {len(entries)} lessons "
-              f"(consult {when})")
+        # Build the verbatim body once so the header can state its line count
+        # and a trailing sentinel can confirm it. The slice can run to
+        # hundreds of lines and a reader (an agent harness) that receives a
+        # truncated prefix has no way to tell it is incomplete: the header
+        # states the magnitude up front, and the sentinel at the end is the
+        # presence-check a truncated read loses — so a caller that does not
+        # see the sentinel knows it received a prefix (#1033). The count is
+        # metadata around the entries; output stays verbatim, never a summary
+        # of the evidence (the evidence half is why the format exists).
+        body_lines: list[str] = []
         for ln, body in hits:
-            print(f"\nlessons.md:{ln}")
-            print(body)
+            body_lines.append("")
+            body_lines.append(f"lessons.md:{ln}")
+            body_lines.extend(body.split("\n"))
+        n_lines = len(body_lines)
+        print(f"# act: {args.act} — {len(hits)} of {len(entries)} lessons, "
+              f"{n_lines} lines (consult {when})")
+        print("\n".join(body_lines))
+        print(f"# end {args.act} — {len(hits)} lessons, {n_lines} lines")
         return 0
 
     # Default: the index summary plus the tool's own coverage report.
