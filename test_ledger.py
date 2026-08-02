@@ -1248,6 +1248,257 @@ def test_sweep_text_distinguishes_unfollowable_from_followed_and_found_nothing(
 
 
 # ---------------------------------------------------------------------------
+# #1111 — Also-Fixes: a declared trailer for incidental fixes that bodies
+# cannot surface (#1097) and subjects may not carry. These tests exercise
+# the reader (_collect_also_fixes), the classifier, the dedup, and the
+# short-sha join fix. See #1108's presquash tests for the shared pattern.
+# ---------------------------------------------------------------------------
+
+def _also_fixes_commit(root, subject, also_ids):
+    """An empty commit whose message carries an Also-Fixes trailer."""
+    also_line = ", ".join(f"#{i}" for i in also_ids)
+    msg = f"{subject}\n\nAlso-Fixes: {also_line}\n"
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-q", "--allow-empty", "-F", "-"],
+        input=msg, capture_output=True, text=True, check=True)
+    return _git(root, "rev-parse", "HEAD").stdout.strip()
+
+
+def test_collect_also_fixes_reads_a_single_trailer(tmp_path):
+    """The basic acceptance shape: one commit, one Also-Fixes id."""
+    root = _bare_repo(tmp_path, "also-fixes-basic")
+    full = _also_fixes_commit(root, "fix(#11): the named task", [12])
+    short = _short_sha(root, full)
+
+    result = ledger._collect_also_fixes(
+        root, [(short, "fix(#11): the named task")])
+
+    tids = {tid for _, tid, _ in result}
+    assert 12 in tids, (
+        f"#12 is declared in the Also-Fixes trailer and must be collected: "
+        f"{result!r}")
+    assert 11 not in tids, (
+        f"#11 is in the SUBJECT, not the trailer; _collect_also_fixes reads "
+        f"only trailers: {result!r}")
+
+
+def test_collect_also_fixes_reads_multiple_ids_on_one_line(tmp_path):
+    """``Also-Fixes: #12, #13`` — both ids must be collected."""
+    root = _bare_repo(tmp_path, "also-fixes-multi")
+    _also_fixes_commit(root, "fix(#11): task", [12, 13])
+
+    commits = [(_short_sha(root, "HEAD"), "fix(#11): task")]
+    result = ledger._collect_also_fixes(root, commits)
+    tids = {tid for _, tid, _ in result}
+    assert 12 in tids and 13 in tids, (
+        f"both ids on one line must be collected: {result!r}")
+
+
+def test_collect_also_fixes_reads_multiple_trailer_lines(tmp_path):
+    """Two ``Also-Fixes:`` lines on one commit — both ids collected.
+
+    Git's %(trailers:valueonly) yields one line per trailer, so the parser
+    must accumulate across lines for the same commit."""
+    root = _bare_repo(tmp_path, "also-fixes-lines")
+    msg = ("fix(#11): task\n\n"
+           "Also-Fixes: #12\n"
+           "Also-Fixes: #13\n")
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-q", "--allow-empty", "-F", "-"],
+        input=msg, capture_output=True, text=True, check=True)
+
+    commits = [(_short_sha(root, "HEAD"), "fix(#11): task")]
+    result = ledger._collect_also_fixes(root, commits)
+    tids = {tid for _, tid, _ in result}
+    assert 12 in tids and 13 in tids, (
+        f"ids across multiple trailer lines must be collected: {result!r}")
+
+
+def test_collect_also_fixes_handles_length_mismatch(tmp_path):
+    """#1111 direction-2: the short-sha join must survive a length mismatch.
+
+    _collect_also_fixes uses the same full-sha keying as _git_presquash_refs.
+    This test constructs a commit, then reads it through _collect_also_fixes
+    using a DIFFERENT abbreviation length (7 chars vs git's default) — the
+    realistic shape that broke #1108's join during development."""
+    root = _bare_repo(tmp_path, "also-fixes-shamismatch")
+    full = _also_fixes_commit(root, "fix(#11): task", [12])
+    # git default is 7 chars for small repos; use a 7-char abbreviation
+    short7 = full[:7]
+    result = ledger._collect_also_fixes(root, [(short7, "fix(#11): task")])
+    tids = {tid for _, tid, _ in result}
+    assert 12 in tids, (
+        f"a 7-char sha must still resolve to the full-sha trailer map; the "
+        f"length mismatch must not silently drop the id: {result!r}")
+
+
+def test_sweep_text_reports_also_fixes_as_candidates(tmp_path):
+    """An Also-Fixes id that the subject did NOT name surfaces as a CANDIDATE."""
+    root = _bare_repo(tmp_path, "also-fixes-report")
+    full = _also_fixes_commit(root, "fix(#11): named task", [12])
+    short = _short_sha(root, full)
+    also_fixes = ledger._collect_also_fixes(
+        root, [(short, "fix(#11): named task")])
+    ledger_text = (
+        "# Task ledger\n\nNext id: **13**\n\n## Open\n"
+        "- **#12** — open · origin: **loop**\n\n## Recently landed\n")
+
+    out = ledger.sweep_text(
+        ledger_text, [(short, "fix(#11): named task")], "base", "markdown",
+        also_fixes=also_fixes)
+
+    assert "ALSO-FIXES #12" in out, (
+        f"#12 is declared in an Also-Fixes trailer; the report must surface it "
+        f"as a candidate: {out!r}")
+    assert "also-fixes candidate(s)" in out, (
+        f"the summary must name the candidate count: {out!r}")
+
+
+def test_sweep_text_does_not_double_report_an_also_fixes_id(tmp_path):
+    """#1111 direction-2: an id named by BOTH the subject and the trailer
+    must be reported ONCE — as a subject landing, not a candidate."""
+    root = _bare_repo(tmp_path, "also-fixes-dedup")
+    # #12 is in BOTH the subject AND the Also-Fixes trailer
+    full = _also_fixes_commit(root, "fix(#12): named task", [12])
+    short = _short_sha(root, full)
+    also_fixes = ledger._collect_also_fixes(
+        root, [(short, "fix(#12): named task")])
+    ledger_text = (
+        "# Task ledger\n\nNext id: **13**\n\n## Open\n"
+        "- **#12** — open · origin: **loop**\n\n## Recently landed\n")
+
+    out = ledger.sweep_text(
+        ledger_text, [(short, "fix(#12): named task")], "base", "markdown",
+        also_fixes=also_fixes)
+
+    # #12 appears as a subject landing (verb form), NOT as an ALSO-FIXES row
+    assert "#12 —" in out, (
+        f"#12 is in the subject and must be reported as a landing: {out!r}")
+    assert "ALSO-FIXES #12" not in out, (
+        f"#12 was already found by the subject scan; re-reporting it as an "
+        f"ALSO-FIXES candidate is the double-report #1111 forbids: {out!r}")
+    assert "also-fixes candidate(s)" not in out, (
+        f"zero also-fixes candidates after dedup; the summary must not claim "
+        f"a candidate: {out!r}")
+
+
+def test_sweep_text_drops_an_also_fixes_id_that_is_already_landed(tmp_path):
+    """An id not in open_ids is silently dropped — not a candidate, not an error."""
+    root = _bare_repo(tmp_path, "also-fixes-landed")
+    full = _also_fixes_commit(root, "fix(#11): task", [99])
+    short = _short_sha(root, full)
+    also_fixes = ledger._collect_also_fixes(root, [(short, "fix(#11): task")])
+    # #99 is NOT in the ledger at all — it is either landed or non-existent
+    ledger_text = (
+        "# Task ledger\n\nNext id: **100**\n\n## Open\n"
+        "- **#11** — open · origin: **loop**\n\n## Recently landed\n")
+
+    out = ledger.sweep_text(
+        ledger_text, [(short, "fix(#11): task")], "base", "markdown",
+        also_fixes=also_fixes)
+
+    assert "ALSO-FIXES #99" not in out, (
+        f"#99 is not an open id; it must not be reported as a candidate: "
+        f"{out!r}")
+
+
+def test_sweep_text_exit_zero_with_also_fixes_only(tmp_path):
+    """#1111: sweep's advisory contract — exit 0 always, even with only
+    also-fixes candidates. 'found nothing' must stay distinguishable from
+    'did not run' via the examined commit count."""
+    root = _bare_repo(tmp_path, "also-fixes-advisory")
+    full = _also_fixes_commit(root, "fix(#11): task", [12])
+    short = _short_sha(root, full)
+    also_fixes = ledger._collect_also_fixes(root, [(short, "fix(#11): task")])
+    ledger_text = (
+        "# Task ledger\n\nNext id: **13**\n\n## Open\n"
+        "- **#12** — open · origin: **loop**\n\n## Recently landed\n")
+
+    out = ledger.sweep_text(
+        ledger_text, [(short, "fix(#11): task")], "base", "markdown",
+        also_fixes=also_fixes)
+
+    assert "examined 1 commits" in out, (
+        f"the examined count must be real (#404/#136): {out!r}")
+    assert "ALSO-FIXES #12" in out
+
+
+def test_presquash_expand_survives_a_sha_length_mismatch(tmp_path):
+    """#1111: _presquash_expand must resolve the commits-list %h sha to the
+    full %H the trailer map keys on, even when the abbreviation length differs.
+
+    This constructs the exact shape that broke #1108 during development: the
+    commits list carries a DIFFERENT abbreviation than the trailer map's own
+    %h. Before the fix, the join silently missed and the follower returned
+    all-empty with no COULD NOT FOLLOW signal (#136 collapse)."""
+    root = _bare_repo(tmp_path, "presquash-shamismatch")
+    base = _commit(root, "docs: base")
+    _git(root, "checkout", "-q", "-b", "lane")
+    _commit(root, "feat(#12): hidden by the squash subject")
+    _git(root, "tag", "lane-presquash")
+    _git(root, "checkout", "-q", base)
+    squashed = _squashed_commit(
+        root, base, "refs/tags/lane-presquash",
+        "fix(#11): squash", "refs/tags/lane-presquash")
+    # Use a 7-char abbreviation (git's %h for a small repo is 7 chars); the
+    # trailer map uses its own %h. Before the fix, a mismatch dropped the join.
+    short7 = squashed[:7]
+
+    expanded, followed, unfollowable = ledger._presquash_expand(
+        root, [(short7, "fix(#11): squash")])
+
+    hidden = {tid for _, tid, _ in expanded}
+    assert 12 in hidden, (
+        f"#12 is named in a constituent subject; the length mismatch must "
+        f"not silently drop it: {expanded!r}")
+    assert followed, (
+        f"the ref must be followed despite the sha length mismatch: "
+        f"{followed!r}")
+    assert unfollowable == [], (
+        f"a resolving ref must not be reported unfollowable: {unfollowable!r}")
+
+
+def test_sweep_text_round_trip_also_fixes_through_a_squashed_commit(tmp_path):
+    """#1111 Direction-2: a squashed commit carries a propagated Also-Fixes
+    trailer, and a sweep finds it. Proves the reader + sweep form a closed loop
+    against the shape land_lane --squash produces (the propagation itself is
+    tested in test_land_lane.py)."""
+    root = _bare_repo(tmp_path, "also-fixes-roundtrip")
+    base = _commit(root, "docs: base")
+    _git(root, "checkout", "-q", "-b", "lane")
+    _commit(root, "fix(#11): the named task")
+    _git(root, "tag", "lane-presquash")
+    _git(root, "checkout", "-q", base)
+    # Build a squashed commit carrying BOTH trailers — the shape land_lane
+    # produces when a constituent declared an Also-Fixes
+    tree = _git(root, "rev-parse", "refs/tags/lane-presquash^{tree}").stdout.strip()
+    msg = ("fix(#11): squashed rebuild\n\n"
+           "Presquash-Ref: refs/tags/lane-presquash\n"
+           "Also-Fixes: #12\n")
+    squashed = subprocess.run(
+        ["git", "-C", str(root), "commit-tree", tree, "-p", base, "-F", "-"],
+        input=msg, capture_output=True, text=True, check=True).stdout.strip()
+    short = _short_sha(root, squashed)
+    commits = [(short, "fix(#11): squashed rebuild")]
+
+    also_fixes = ledger._collect_also_fixes(root, commits)
+    assert {tid for _, tid, _ in also_fixes} == {12}, (
+        f"the propagated Also-Fixes #12 must be collected from the squashed "
+        f"commit: {also_fixes!r}")
+    ledger_text = (
+        "# Task ledger\n\nNext id: **13**\n\n## Open\n"
+        "- **#12** — open · origin: **loop**\n\n## Recently landed\n")
+
+    out = ledger.sweep_text(
+        ledger_text, commits, "base", "markdown",
+        repo=root, also_fixes=also_fixes)
+
+    assert "ALSO-FIXES #12" in out, (
+        f"the round trip must find #12: the squashed commit carries the "
+        f"trailer, sweep collected it, and the report surfaces it: {out!r}")
+
+
+# ---------------------------------------------------------------------------
 # #688 — reach(): the pure function that collapses duplicate sha sets and
 # reports only branches with at least one + commit. The integration path
 # (git cherry, fold hook) is in test_ledger_reach.py; these pin the

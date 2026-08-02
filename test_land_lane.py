@@ -939,6 +939,85 @@ def test_existing_presquash_tag_is_never_force_replaced(tmp_path):
     assert _git(lane, "rev-parse", "refs/heads/lane") == second_tip
 
 
+# ---------------------------------------------------------------------------
+# #1111 — Also-Fixes propagation through --squash. A constituent that carries
+# ``Also-Fixes: #NNN`` claims an incidental fix for another task. The squash
+# collapses constituents into one commit, so the trailer must be propagated
+# into the squashed message or the claim is lost.
+# ---------------------------------------------------------------------------
+
+def test_squash_propagates_constituent_also_fixes_into_squashed_message(tmp_path):
+    """A constituent's Also-Fixes trailer survives the squash."""
+    root, lane = _make_repo(tmp_path)
+    # A constituent with an Also-Fixes trailer for a different task
+    _write(lane / "also.txt", "claim\n")
+    _git(lane, "add", "also.txt")
+    _git(lane, "commit", "-m", "fix(#11): the named task", "-m",
+         "Also-Fixes: #12")
+    base_sha = _git(root, "rev-parse", "master")
+    branch_sha = _git(lane, "rev-parse", "HEAD")
+
+    result = land_lane._squash_lane(lane, "lane", base_sha, branch_sha)
+    assert result.error is None, result.error
+
+    msg = _git(lane, "log", "-1", "--format=%B")
+    assert "Also-Fixes: #12" in msg, (
+        f"the constituent's Also-Fixes #12 must be propagated into the "
+        f"squashed message: {msg!r}")
+
+
+def test_squash_deduplicates_also_fixes_already_in_the_tip_message(tmp_path):
+    """The tip's own Also-Fixes ids are already in the preserved message; only
+    ids from OTHER constituents (and not already present) are appended."""
+    root, lane = _make_repo(tmp_path)
+    # Tip carries Also-Fixes #12 already
+    _write(lane / "tip.txt", "tip\n")
+    _git(lane, "add", "tip.txt")
+    _git(lane, "commit", "-m", "fix(#11): tip", "-m", "Also-Fixes: #12")
+    # Earlier constituent also claims #12 (plus #13)
+    _write(lane / "earlier.txt", "earlier\n")
+    _git(lane, "add", "earlier.txt")
+    _git(lane, "commit", "-m", "feat(#11): earlier", "-m",
+         "Also-Fixes: #12, #13")
+    base_sha = _git(root, "rev-parse", "master")
+    branch_sha = _git(lane, "rev-parse", "HEAD")
+
+    result = land_lane._squash_lane(lane, "lane", base_sha, branch_sha)
+    assert result.error is None, result.error
+
+    msg = _git(lane, "log", "-1", "--format=%B")
+    assert "Also-Fixes: #12" in msg, (
+        f"#12 was already in the tip and must survive: {msg!r}")
+    assert "#13" in msg, (
+        f"#13 is new from the earlier constituent and must be propagated: "
+        f"{msg!r}")
+    # #12 must appear exactly once in the appended trailer
+    also_lines = [l for l in msg.splitlines() if l.startswith("Also-Fixes:")]
+    all_ids = []
+    for line in also_lines:
+        all_ids.extend(land_lane._TRAILER_ID.findall(line))
+    assert all_ids.count("12") == 1, (
+        f"#12 must appear exactly once across all Also-Fixes lines: {msg!r}")
+
+
+def test_squash_without_also_fixes_adds_no_trailer(tmp_path):
+    """A squash with no constituent Also-Fixes must not append an empty trailer."""
+    root, lane = _make_repo(tmp_path)
+    _write(lane / "feat.txt", "feat\n")
+    _git(lane, "add", "feat.txt")
+    _git(lane, "commit", "-m", "fix(#11): no also-fixes here")
+    base_sha = _git(root, "rev-parse", "master")
+    branch_sha = _git(lane, "rev-parse", "HEAD")
+
+    result = land_lane._squash_lane(lane, "lane", base_sha, branch_sha)
+    assert result.error is None, result.error
+
+    msg = _git(lane, "log", "-1", "--format=%B")
+    assert "Also-Fixes:" not in msg, (
+        f"no constituent carried an Also-Fixes trailer; the squashed message "
+        f"must not add one: {msg!r}")
+
+
 def test_empty_registry_refuses_with_loud_zero_denominators(landing_repo):
     root, lane = landing_repo
     forgotten = _redproof(lane, "forget", "feature.txt")
