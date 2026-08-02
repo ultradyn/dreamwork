@@ -465,12 +465,18 @@ def test_docstring_citations_on_real_tree(capsys):
     # (1) Denominators are non-zero: the run examined real files (#868).
     assert re.search(r"examined [1-9]\d* file\(s\)", out)
     assert re.search(r"[1-9]\d* docstring\(s\) scanned", out)
-    # (2) Finding 2 — the composed row: path + _requirement_line + (#868)
-    # together as one string, plus the #868 title text.  Asserting
-    # "dev/land_lane.py" and "#868" separately passes even if line 478 is
-    # never reported (both appear independently elsewhere in the output).
-    assert "_requirement_line (#868)" in out
-    assert "dev/land_lane.py" in out
+    # (2) Finding 2 — the EXACT composed row as one regex: path + line +
+    # _requirement_line + (#868) cannot be matched by any other row in the
+    # output.  Asserting "dev/land_lane.py" and "#868" separately passes
+    # even when line 478 is never reported: land_lane.py:5 carries #882,
+    # and brief.py:1008 carries #868 independently.  The regex pins all
+    # four tokens (path, line, symbol, citation) to one match.
+    assert re.search(
+        r"dev/land_lane\.py:\d+ _requirement_line \(#868\)", out
+    ), "miscitation row (land_lane _requirement_line #868) must be reported"
+    # The title on the same row proves the guard resolved the id and printed
+    # it for aptness review — a human sees #868's unrelated title beside the
+    # three-zero-states rule it miscites.
     assert (
         "the tick line reports 0 live lanes" in out
     )
