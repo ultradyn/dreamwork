@@ -1028,6 +1028,226 @@ def test_sweep_wip_multi_id_subject_captures_all_ids():
 
 
 # ---------------------------------------------------------------------------
+# #1108 — presquash: a --squash landing carries a `Presquash-Ref:` trailer
+# (dev/land_lane.py:720) naming the preserved `<branch>-presquash` tag. The
+# follower resolves that ref and scans the constituent SUBJECTS, recovering
+# any task id a constituent claimed that the one squashed subject did not.
+# Only SUBJECTS are scanned (#404 convention); constituent bodies are not
+# (#1097). These tests build real repos because the follower is git-backed.
+# ---------------------------------------------------------------------------
+
+def _short_sha(root, sha):
+    """The %h form `_git_subjects` yields — the form the trailer map keys on."""
+    return _git(root, "rev-parse", "--short", sha).stdout.strip()
+
+
+def _squashed_commit(root, base_sha, tree_ref, subject, trailer_ref):
+    """A commit off base whose tree is tree_ref and whose message carries the
+    Presquash-Ref trailer — the shape land_lane --squash builds."""
+    tree = _git(root, "rev-parse", f"{tree_ref}^{{tree}}").stdout.strip()
+    msg = f"{subject}\n\nPresquash-Ref: {trailer_ref}\n"
+    out = subprocess.run(
+        ["git", "-C", str(root), "commit-tree", tree, "-p", base_sha, "-F", "-"],
+        input=msg, capture_output=True, text=True, check=True)
+    return out.stdout.strip()
+
+
+def test_presquash_ref_from_message_extracts_the_trailer_and_absent_yields_none():
+    assert ledger._presquash_ref_from_message(
+        "build(#11): x\n\nPresquash-Ref: refs/tags/lane-presquash\n") == (
+        "refs/tags/lane-presquash")
+    assert ledger._presquash_ref_from_message("build(#11): no trailer") is None
+    assert ledger._presquash_ref_from_message("") is None
+
+
+def test_presquash_expand_follows_a_resolving_ref_and_returns_hidden_ids(tmp_path):
+    """The acceptance shape: a constituent SUBJECT names a task the squashed
+    subject did not, and the follower recovers it. An id the squashed subject
+    CLAIMS (a recognised verb form) is de-duped, not re-reported."""
+    root = _bare_repo(tmp_path, "presquash-follow")
+    base = _commit(root, "docs: base")
+    _git(root, "checkout", "-q", "-b", "lane")
+    _commit(root, "fix(#11): first task the squash subject claims")
+    c2 = _commit(root, "feat(#12): second task the squash subject hides")
+    _git(root, "tag", "lane-presquash")
+    _git(root, "checkout", "-q", base)
+    squashed = _squashed_commit(
+        root, base, "refs/tags/lane-presquash",
+        "fix(#11): squashed rebuild", "refs/tags/lane-presquash")
+    short = _short_sha(root, squashed)
+
+    expanded, followed, unfollowable = ledger._presquash_expand(
+        root, [(short, "fix(#11): squashed rebuild")])
+
+    hidden = {tid for _, tid, _ in expanded}
+    assert 12 in hidden, (
+        f"#12 lives in constituent subject {c2[:7]!r} the squashed subject did "
+        f"not name; the follower must recover it: {expanded!r}")
+    assert 11 not in hidden, (
+        f"#11 is CLAIMED by the squashed subject (fix(#11)); re-reporting it "
+        f"from a constituent is the double-report #1108 Direction 2 forbids: "
+        f"{expanded!r}")
+    assert followed and followed[0][0] == short and followed[0][2] == 2, (
+        f"the ref resolved and the follower saw both constituent commits: "
+        f"{followed!r}")
+    assert unfollowable == [], (
+        f"a resolving ref must not be reported unfollowable: {unfollowable!r}")
+
+
+def test_presquash_expand_recovers_ids_a_build_squash_subject_did_not_claim(
+        tmp_path):
+    """The real #1029 shape: the squashed subject is ``build(#N): rebuild
+    client/dist`` — ``build`` is NOT a landing verb, so SWEEP_SUBJECT does not
+    treat it as a claim. A constituent ``fix(#N):`` IS a claim, so #N is
+    legitimately recovered from the constituent (not de-duped, because the
+    squashed subject claimed nothing). This is why the follower has value even
+    for a squash whose subject names its own task in a non-verb form."""
+    root = _bare_repo(tmp_path, "presquash-build")
+    base = _commit(root, "docs: base")
+    _git(root, "checkout", "-q", "-b", "lane")
+    _commit(root, "fix(#11): the real landing verb the build subject lacks")
+    _git(root, "tag", "lane-presquash")
+    _git(root, "checkout", "-q", base)
+    squashed = _squashed_commit(
+        root, base, "refs/tags/lane-presquash",
+        "build(#11): rebuild client/dist", "refs/tags/lane-presquash")
+    short = _short_sha(root, squashed)
+
+    expanded, followed, _unfollowable = ledger._presquash_expand(
+        root, [(short, "build(#11): rebuild client/dist")])
+
+    hidden = {tid for _, tid, _ in expanded}
+    assert 11 in hidden, (
+        f"the squashed subject build(#11) is not a landing claim (build is not "
+        f"a verb), so the constituent fix(#11) legitimately recovers #11: "
+        f"{expanded!r}")
+
+
+def test_presquash_expand_reports_unfollowable_when_the_ref_does_not_resolve(
+        tmp_path):
+    """#136: a trailer whose ref cannot resolve is a distinct state from a
+    squash that followed its ref and found no new ids."""
+    root = _bare_repo(tmp_path, "presquash-broken")
+    base = _commit(root, "docs: base")
+    _git(root, "checkout", "-q", "-b", "lane")
+    _commit(root, "fix(#11): only task")
+    _git(root, "tag", "lane-presquash")
+    _git(root, "checkout", "-q", base)
+    squashed = _squashed_commit(
+        root, base, "refs/tags/lane-presquash", "build(#11): squash",
+        "refs/tags/lane-presquash")
+    short = _short_sha(root, squashed)
+    # delete the tag the trailer names — the ref no longer resolves
+    _git(root, "tag", "-d", "lane-presquash")
+
+    expanded, followed, unfollowable = ledger._presquash_expand(
+        root, [(short, "build(#11): squash")])
+
+    assert expanded == [] and followed == [], (
+        f"a ref that does not resolve yields neither ids nor a followed row: "
+        f"{(expanded, followed)!r}")
+    assert len(unfollowable) == 1 and unfollowable[0][0] == short, (
+        f"the broken ref must be reported unfollowable, naming the squashed "
+        f"sha: {unfollowable!r}")
+    assert "does not resolve" in unfollowable[0][2], (
+        f"the reason must name the ref resolution failure: {unfollowable!r}")
+
+
+def test_presquash_expand_does_not_scan_constituent_bodies(tmp_path):
+    """A constituent id that lives only in a BODY is NOT recovered — the
+    #1108 acceptance case (#1030) is exactly this shape. Scanning bodies would
+    import #1097's false-positive problem (a head-lined reference like '#710 —
+    why --squash exists' is not a landing)."""
+    root = _bare_repo(tmp_path, "presquash-body")
+    base = _commit(root, "docs: base")
+    _git(root, "checkout", "-q", "-b", "lane")
+    _commit(root, "fix(#11): the named task",
+            body="#12 — mentioned only in this body, not the subject")
+    _git(root, "tag", "lane-presquash")
+    _git(root, "checkout", "-q", base)
+    squashed = _squashed_commit(
+        root, base, "refs/tags/lane-presquash", "build(#11): squash",
+        "refs/tags/lane-presquash")
+    short = _short_sha(root, squashed)
+
+    expanded, followed, unfollowable = ledger._presquash_expand(
+        root, [(short, "build(#11): squash")])
+
+    hidden = {tid for _, tid, _ in expanded}
+    assert 12 not in hidden, (
+        f"#12 is in a constituent BODY only; subjects are scanned, bodies are "
+        f"not (#1097), so it must not be recovered: {expanded!r}")
+    assert followed and unfollowable == [], (
+        f"the ref resolved (the body-only id is a limitation, not a broken "
+        f"ref): {(followed, unfollowable)!r}")
+
+
+def test_sweep_text_reports_a_constituent_landing_the_squashed_subject_hid(
+        tmp_path):
+    """Integration: the CLI-built presquash triples surface in the report as a
+    landing attributed to the squashed sha (#1108 acceptance shape)."""
+    root = _bare_repo(tmp_path, "presquash-report")
+    base = _commit(root, "docs: base")
+    _git(root, "checkout", "-q", "-b", "lane")
+    _commit(root, "fix(#11): named in the squash subject")
+    _commit(root, "fix(#12): hidden by the squash subject")
+    _git(root, "tag", "lane-presquash")
+    _git(root, "checkout", "-q", base)
+    squashed = _squashed_commit(
+        root, base, "refs/tags/lane-presquash", "build(#11): squash",
+        "refs/tags/lane-presquash")
+    short = _short_sha(root, squashed)
+    presquash = ledger._presquash_expand(
+        root, [(short, "build(#11): squash")])
+    ledger_text = (
+        "# Task ledger\n\nNext id: **13**\n\n## Open\n"
+        "- **#11** — named · origin: **loop**\n"
+        "- **#12** — hidden · origin: **loop**\n\n## Recently landed\n")
+
+    out = ledger.sweep_text(
+        ledger_text, [(short, "build(#11): squash")], "base", "markdown",
+        repo=root, presquash=presquash)
+
+    assert "#12 —" in out, (
+        f"#12 is named in a constituent subject the squashed subject hid; the "
+        f"report must surface it: {out!r}")
+    assert "presquash: followed 1 ref(s)" in out, (
+        f"the report must say it followed the ref (#136 discriminability): "
+        f"{out!r}")
+    # #11 is in BOTH the squashed subject and a constituent — reported once
+    assert out.count("#11 —") + out.count("#11,") <= 1 or "CITED-OPEN #11" in out
+
+
+def test_sweep_text_distinguishes_unfollowable_from_followed_and_found_nothing(
+        tmp_path):
+    """#136: 'could not follow' must not render like 'followed and found
+    nothing'. Two presquash args, same empty id result, different status."""
+    ledger_text = (
+        "# Task ledger\n\nNext id: **13**\n\n## Open\n"
+        "- **#11** — open · origin: **loop**\n\n## Recently landed\n")
+    commits = [("sss0001", "build(#11): squash")]
+    # followed, found nothing new (#11 already in the squashed subject)
+    followed_empty = ([], [("sss0001", "refs/tags/x-presquash", 1)], [])
+    # could not follow — ref does not resolve
+    unfollowable = ([], [], [("sss0001", "refs/tags/x-presquash",
+                              "ref does not resolve")])
+
+    out_ok = ledger.sweep_text(
+        ledger_text, commits, "base", "markdown", presquash=followed_empty)
+    out_bad = ledger.sweep_text(
+        ledger_text, commits, "base", "markdown", presquash=unfollowable)
+
+    assert "followed 1 ref(s)" in out_ok and "; 0 could not follow" in out_ok, (
+        f"a followed ref that found nothing names its followed count, not a "
+        f"could-not-follow: {out_ok!r}")
+    assert "COULD NOT FOLLOW" not in out_ok, (
+        f"a followed ref must not raise the could-not-follow alarm: {out_ok!r}")
+    assert "COULD NOT FOLLOW" in out_bad and "ref does not resolve" in out_bad, (
+        f"an unresolvable ref must be reported as could-not-follow, distinct "
+        f"from followed-and-empty: {out_bad!r}")
+
+
+# ---------------------------------------------------------------------------
 # #688 — reach(): the pure function that collapses duplicate sha sets and
 # reports only branches with at least one + commit. The integration path
 # (git cherry, fold hook) is in test_ledger_reach.py; these pin the
