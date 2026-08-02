@@ -133,6 +133,16 @@ that is a legitimate outcome, not a failure.
   `--require`, not a pass** — `red-proof reach: DID NOT CHECK … examined 0 evidence artifact(s) for
   N registered injection(s)`. Absence of evidence is not evidence the injection was caught.
 
+  **Your `--failure` string must also survive the test runner's own output rendering.** Pytest
+  ABBREVIATES long values when it renders an assertion, so a `--failure` declaring the whole
+  injected line can be genuinely ABSENT from the captured output even though the test failed for
+  exactly the reason you intended — and `observe` will correctly report NOT CAUGHT. That refusal is
+  the tool working, not a bug: it compares the string you declared against the bytes actually
+  produced. **Declare the SHORTEST substring only your injection could produce**, and read the
+  captured output to confirm it is there rather than assuming. `#980` hit this live and recovered by
+  shortening `RED-PROOF INJECTION: presquash ref may be collected` to
+  `presquash ref may be collected`.
+
   **Register against a TRACKED path that exists in every checkout.** The gate evaluates the registry
   from the MAIN CHECKOUT, so an injection registered against an ephemeral fixture or a lane-relative
   path FAULTS there — `cannot evaluate its injection; refusing rather than guessing` — even though
