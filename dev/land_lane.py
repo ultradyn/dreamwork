@@ -64,7 +64,8 @@ def _gate_coverage_line(passed: Sequence[str]) -> str:
         f"gate-coverage: {len(passed)} of {len(GATES)} declared gates passed: "
         f"{' '.join(passed)}; full repo suite NOT RUN "
         "(test coverage was limited to lane-named tests, the tests derived from "
-        "the changed files by `foo.py`->`test_foo.py`, and the repo-wide guards)"
+        f"the changed files by {len(DERIVATION_RULES)} derivation rule(s), and "
+        "the repo-wide guards)"
     )
 
 
@@ -117,6 +118,16 @@ def _is_inert_doc(path: str) -> bool:
         and path.startswith(INERT_DOC_ROOT)
         and path not in EXECUTABLE_DOCS
     )
+
+
+# The declared inventory of test-derivation rules. ``_derived_tests_line`` and
+# ``_gate_coverage_line`` both read ``len(DERIVATION_RULES)`` so the rule count
+# they print is derived from one place, not restated independently (#959: after
+# #953 widened derivation to three rules, the coverage sentence still named only
+# the name convention — the checker ratified the disagreement, #852/#905).
+# Adding a rule means appending here AND implementing it at the call site in
+# ``land()``; both reports' counts follow from this inventory.
+DERIVATION_RULES: tuple[str, ...] = ("name", "import", "map")
 
 
 def _derived_test(path: str) -> str | None:
@@ -449,7 +460,7 @@ def _derived_tests_line(
     )
     return (
         f"derived-tests: {len(existing)} required test(s) from "
-        f"{len(diff.changed)} changed path(s) by 3 rules [{by_rule}]: "
+        f"{len(diff.changed)} changed path(s) by {len(DERIVATION_RULES)} rules [{by_rule}]: "
         f"{' '.join(existing)}; {added}{missing}. {reach}"
     )
 
