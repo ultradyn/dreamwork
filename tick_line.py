@@ -268,6 +268,11 @@ def _fleet_fact(target: str) -> str:
     if inspection.worktree_only:
         fact += " · worktree-only %d [%s]" % (
             len(inspection.worktree_only), ", ".join(inspection.worktree_only))
+    if inspection.finished:
+        fact += " · finished %d [%s]" % (
+            len(inspection.finished), ", ".join(
+                "#%s %s" % (lane.task, lane.lane)
+                for lane in inspection.finished))
     if inspection.process_only:
         fact += " · process-only %d [%s]" % (
             len(inspection.process_only), ", ".join(inspection.process_only))

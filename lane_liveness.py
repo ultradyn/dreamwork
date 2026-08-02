@@ -19,6 +19,16 @@ class LivenessUnknown(Exception):
 
 
 @dataclass(frozen=True)
+class FinishedLane:
+    """A dispatched lane whose recorded runner is no longer present."""
+
+    lane: str
+    task: object
+    pid: object
+    identity: str
+
+
+@dataclass(frozen=True)
 class LaneInspection:
     """One checkable view of lane locks, worktrees, and process evidence."""
 
@@ -26,6 +36,7 @@ class LaneInspection:
     worktree_only: tuple[str, ...]
     process_only: tuple[str, ...]
     examined_processes: int
+    finished: tuple[FinishedLane, ...] = ()
 
 
 def pid_alive(pid) -> bool:
@@ -131,7 +142,7 @@ def inspect_lanes(
 
     A live lane is the intersection of a git-registered worktree, its strict
     lane lock, and the exact process identity checked by :func:`pid_matches_lane`.
-    Registered worktrees without that process and governed process prompts
+    Lockless worktrees, finished dispatched lanes, and governed process prompts
     whose worktree is no longer registered are named separately.
     """
     target = target.resolve()
@@ -164,6 +175,7 @@ def inspect_lanes(
 
     live = []
     worktree_only = []
+    finished = []
     for worktree in sorted(registered, key=lambda path: path.name):
         lock = worktree / ".dreamwork" / "lane.lock"
         try:
@@ -188,11 +200,14 @@ def inspect_lanes(
         if pid_matches_lane(record["pid"], str(identity)):
             live.append(worktree.name)
         else:
-            worktree_only.append(worktree.name)
+            finished.append(FinishedLane(
+                lane=record["lane"], task=record["task"], pid=record["pid"],
+                identity=str(identity)))
 
     return LaneInspection(
         live=tuple(live),
         worktree_only=tuple(worktree_only),
         process_only=tuple(sorted(path.name for path in process_paths - registered)),
         examined_processes=len(pids),
+        finished=tuple(finished),
     )
