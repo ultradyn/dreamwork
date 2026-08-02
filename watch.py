@@ -7182,7 +7182,7 @@ def _append_goal_condition(details, condition):
 
 def _handle_goal_write(handler, target):
     """Apply one quiet /goals mutation through the canonical store handle."""
-    from dreamwork_db import Access, NotFound, ValidationError, open_database
+    from dreamwork_db import Access, Busy, NotFound, ValidationError, open_database
     from dreamwork_db.tasks import task_store_spec
 
     req = handler._read_json()
@@ -7191,70 +7191,112 @@ def _handle_goal_write(handler, target):
     if not isinstance(req, dict):
         handler._reject("schema_invalid"); return
     action = req.get("action")
-    if action not in ("edit-details", "add-condition", "add-goal"):
+    if action not in ("edit-details", "add-condition", "add-goal", "set-current"):
         handler._reject("schema_invalid"); return
     dw = os.path.join(target, ".dreamwork")
     if source_of_truth(dw) != "store":
         handler._reject("domain_invalid", detail="no_store"); return
 
     try:
-        with open_database(
-                task_store_spec(store_path(dw)), access=Access.WRITE) as store:
-            with store.transaction():
-                if action in ("edit-details", "add-condition"):
-                    goal_id = req.get("goal_id")
-                    if isinstance(goal_id, bool) or not isinstance(goal_id, int):
-                        raise ValidationError("goal_id must be an integer")
-                    goal = store.groups.get(goal_id)
-                    if goal.kind != "goal":
-                        raise ValidationError("target group is not a goal")
-                    if action == "edit-details":
-                        details = req.get("details")
-                        if not isinstance(details, str):
-                            raise ValidationError("details must be a string")
-                    else:
-                        condition = req.get("condition")
-                        if not isinstance(condition, str) or not condition.strip():
-                            raise ValidationError("condition must be non-empty text")
-                        details = _append_goal_condition(
-                            goal.description, condition.strip())
-                    store.groups._session.execute(
-                        "UPDATE task_group SET description = ? WHERE id = ?",
-                        (details, goal_id))
-                    written_id = goal_id
-                else:
-                    title = req.get("title")
-                    details = req.get("details", "")
-                    parent_id = req.get("parent_id")
-                    rank = req.get("rank")
-                    if not isinstance(title, str) or not title.strip():
-                        raise ValidationError("title must be non-empty text")
-                    if not isinstance(details, str):
-                        raise ValidationError("details must be a string")
-                    if parent_id is not None:
-                        if isinstance(parent_id, bool) or not isinstance(parent_id, int):
-                            raise ValidationError("parent_id must be an integer or null")
-                        if store.groups.get(parent_id).kind != "goal":
-                            raise ValidationError("parent group is not a goal")
-                    if rank is not None and (isinstance(rank, bool)
-                                             or not isinstance(rank, int)):
-                        raise ValidationError("rank must be an integer or null")
-                    written_id = store.groups.create(
-                        kind="goal", title=title, description=details,
-                        parent_id=parent_id, actor="human-via-watch",
-                        at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
-                    store.goals.set_state(written_id, "open")
-                    store.goals.set_rank(written_id, rank)
+        for attempt in range(2):
+            try:
+                with open_database(
+                        task_store_spec(store_path(dw)), access=Access.WRITE) as store:
+                    with store.transaction():
+                        if action == "set-current":
+                            goal_id = req.get("goal_id")
+                            if isinstance(goal_id, bool) or not isinstance(goal_id, int):
+                                raise ValidationError("goal_id must be an integer")
+                            disposition = store.goals.set_current_goal_id(goal_id)
+                            written_id = goal_id
+                        elif action in ("edit-details", "add-condition"):
+                            goal_id = req.get("goal_id")
+                            if isinstance(goal_id, bool) or not isinstance(goal_id, int):
+                                raise ValidationError("goal_id must be an integer")
+                            goal = store.groups.get(goal_id)
+                            if goal.kind != "goal":
+                                raise ValidationError("target group is not a goal")
+                            if action == "edit-details":
+                                details = req.get("details")
+                                if not isinstance(details, str):
+                                    raise ValidationError("details must be a string")
+                            else:
+                                condition = req.get("condition")
+                                if not isinstance(condition, str) or not condition.strip():
+                                    raise ValidationError("condition must be non-empty text")
+                                details = _append_goal_condition(
+                                    goal.description, condition.strip())
+                            store.groups._session.execute(
+                                "UPDATE task_group SET description = ? WHERE id = ?",
+                                (details, goal_id))
+                            written_id = goal_id
+                        else:
+                            title = req.get("title")
+                            details = req.get("details", "")
+                            parent_id = req.get("parent_id")
+                            rank = req.get("rank")
+                            if not isinstance(title, str) or not title.strip():
+                                raise ValidationError("title must be non-empty text")
+                            if not isinstance(details, str):
+                                raise ValidationError("details must be a string")
+                            if parent_id is not None:
+                                if isinstance(parent_id, bool) or not isinstance(parent_id, int):
+                                    raise ValidationError("parent_id must be an integer or null")
+                                if store.groups.get(parent_id).kind != "goal":
+                                    raise ValidationError("parent group is not a goal")
+                            if rank is not None and (isinstance(rank, bool)
+                                                     or not isinstance(rank, int)):
+                                raise ValidationError("rank must be an integer or null")
+                            written_id = store.groups.create(
+                                kind="goal", title=title, description=details,
+                                parent_id=parent_id, actor="human-via-watch",
+                                at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+                            store.goals.set_state(written_id, "open")
+                            store.goals.set_rank(written_id, rank)
+
+                if action == "set-current":
+                    # The write handle has committed and closed. Read back through
+                    # a fresh connection so an uncommitted view cannot authorise a
+                    # success response for a pointer that never became durable.
+                    with open_database(
+                            task_store_spec(store_path(dw)),
+                            access=Access.READ) as read_store:
+                        persisted_id = read_store.goals.current_goal_id()
+                    if persisted_id != written_id:
+                        handler._send(json.dumps({
+                            "ok": False,
+                            "reason": "goal_pointer_not_persisted",
+                            "detail": (
+                                f"set current goal #{written_id}, but a fresh "
+                                f"connection read {persisted_id!r}"
+                            ),
+                        }), "application/json", status=500)
+                        return
+                break
+            except Busy:
+                if attempt:
+                    raise
+                time.sleep(0.1)
     except (NotFound, ValidationError, ValueError, TypeError) as exc:
         handler._reject("domain_invalid", detail=str(exc)); return
+    except Busy as exc:
+        handler._send(json.dumps({
+            "ok": False, "retryable": True,
+            "reason": "goal_store_busy",
+            "detail": "the goal store is locked; retry the write",
+        }), "application/json", status=503, headers={"Retry-After": "1"})
+        return
     except Exception:
         handler.send_error(500); return
 
     # Deliberately no log_event/emits_wake call: every /goals action is quiet
     # under every posture. The receipt above is its delivery on the next tick.
-    handler._send_receipt(json.dumps({
-        "ok": True, "action": action, "goal_id": written_id,
-    }), "application/json")
+    body = {"ok": True, "action": action, "goal_id": written_id}
+    if action == "set-current":
+        body.update({"current_goal_id": written_id,
+                     "changed": disposition != "unchanged",
+                     "disposition": disposition})
+    handler._send_receipt(json.dumps(body), "application/json")
 
 
 if __name__ == "__main__":
