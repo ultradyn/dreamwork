@@ -956,6 +956,25 @@ def doc_only_repo(tmp_path: Path):
     return root, lane
 
 
+@pytest.fixture
+def plan_with_doc_map_repo(tmp_path: Path):
+    """A new plan plus the doc-map row lint requires beside it."""
+    root, lane = _make_repo(tmp_path)
+    _write(lane / ".dreamwork/docs/plans/foo.md", "# New plan\n")
+    _write(
+        lane / ".dreamwork/docs/doc-map.md",
+        "| `.dreamwork/docs/plans/` | Plans (foo) | add a row per plan |\n",
+    )
+    _git(
+        lane,
+        "add",
+        ".dreamwork/docs/plans/foo.md",
+        ".dreamwork/docs/doc-map.md",
+    )
+    _git(lane, "commit", "-m", "plan plus required doc-map row")
+    return root, lane
+
+
 def test_documentation_only_branch_requires_no_injection_and_lands(doc_only_repo):
     """A documentation-only gate must not manufacture a false-green.
 
@@ -987,7 +1006,64 @@ def test_documentation_only_branch_requires_no_injection_and_lands(doc_only_repo
     assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before
 
 
-@pytest.mark.parametrize("beside", ["feature.txt", "briefs/frame.md"])
+def test_plan_plus_required_doc_map_row_lands_without_an_injection(
+    plan_with_doc_map_repo,
+):
+    """The gate, not only its classifier, admits #1032's complete diff."""
+    root, lane = plan_with_doc_map_repo
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    assert _git(lane, "diff", "--name-only", "master", "lane").split() == [
+        ".dreamwork/docs/doc-map.md",
+        ".dreamwork/docs/plans/foo.md",
+    ]
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "diff-classification: 2 changed path(s); 1 inert documentation; "
+        "1 that a red-proof could bind"
+    ) in result.stdout
+    assert "red-proof requirement: 0 injections REQUIRED" in result.stdout
+    assert (
+        "lint-precheck and lint-comparison: .dreamwork/docs/doc-map.md"
+        in result.stdout
+    )
+    assert "gate-coverage: 6 of 6 declared gates passed" in result.stdout
+    assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before
+
+
+def test_real_code_beside_a_doc_map_row_still_requires_an_injection(
+    plan_with_doc_map_repo,
+):
+    """The narrow credit must not exempt a mixed documentation/code diff."""
+    root, lane = plan_with_doc_map_repo
+    _write(lane / "dev/feature.py", "VALUE = 1\n")
+    _git(lane, "add", "dev/feature.py")
+    _git(lane, "commit", "-m", "real code beside the plan")
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    assert _git(lane, "diff", "--name-only", "master", "lane").split() == [
+        ".dreamwork/docs/doc-map.md",
+        ".dreamwork/docs/plans/foo.md",
+        "dev/feature.py",
+    ]
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "red-proof requirement: 1 injection required" in result.stdout
+    assert "red-proof must bind: dev/feature.py" in result.stdout
+    assert (
+        "already covered by lint-precheck and lint-comparison: "
+        ".dreamwork/docs/doc-map.md"
+    ) in result.stdout
+    assert "1 injection(s) were required (--require)" in result.stderr
+    _assert_base_unmoved(root, before)
+
+
+@pytest.mark.parametrize(
+    "beside", ["feature.txt", "briefs/frame.md", ".dreamwork/tasks.md"]
+)
 def test_one_document_does_not_lower_the_bar_for_what_is_beside_it(doc_only_repo, beside):
     """`briefs/frame.md` is the sharp case: a `.md` compiled into every dispatch.
 
@@ -1032,8 +1108,9 @@ def test_a_markdown_file_that_is_a_program_is_not_inert(doc):
         "vacuously against a classifier that calls nothing inert"
     )
     assert not land_lane._is_inert_doc(doc), (
-        f"{doc} is executable input, so exempting it would let a behavioural "
-        "change land with no red-proof owed at all"
+        f"{doc} is executable input, so the conservative classifier must keep "
+        "it binding even when a downstream requirement credits separate "
+        "checker coverage"
     )
 
 

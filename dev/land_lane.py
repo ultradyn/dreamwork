@@ -97,15 +97,23 @@ def _gate_coverage_line(passed: Sequence[str]) -> str:
 # LANE-AUTHORED red-proof, not the gating itself.
 INERT_DOC_ROOT = ".dreamwork/"
 
-EXECUTABLE_DOCS = frozenset({
+TOOL_EXECUTABLE_DOCS = frozenset({
     ".dreamwork/tasks.md",          # dev/ledger.py store; lint.py reads it
     ".dreamwork/lessons.md",        # dev/lessons_index.py parses its heads
     ".dreamwork/answers.md",        # dev/ledger.py
     ".dreamwork/questions.md",      # dev/ledger.py, dev/check_watch_citations.py
     ".dreamwork/handoffs.md",       # dev/brief.py, dev/check_watch_citations.py
     ".dreamwork/applied.md",        # dev/journal_consume.py, dev/expedite_hook.py
+})
+
+# These remain executable documentation for the conservative classifier, but
+# the landing gate itself runs the checker that parses them before and after
+# its tests. Credit that coverage when deriving whether an injection is owed.
+LINT_GATED_EXECUTABLE_DOCS = frozenset({
     ".dreamwork/docs/doc-map.md",   # lint.py check_doc_map_plans parses its rows
 })
+
+EXECUTABLE_DOCS = TOOL_EXECUTABLE_DOCS | LINT_GATED_EXECUTABLE_DOCS
 
 
 def _is_inert_doc(path: str) -> bool:
@@ -431,10 +439,18 @@ class Diff:
     tests: tuple[str, ...]
 
     @property
+    def lint_gated_binding(self) -> tuple[str, ...]:
+        return tuple(p for p in self.binding if p in LINT_GATED_EXECUTABLE_DOCS)
+
+    @property
+    def redproof_binding(self) -> tuple[str, ...]:
+        return tuple(p for p in self.binding if p not in LINT_GATED_EXECUTABLE_DOCS)
+
+    @property
     def required_injections(self) -> int:
         # An EMPTY diff is not an exemption: `changed` must be non-empty for
         # the documentation rule to have examined anything at all (#868).
-        return 0 if self.changed and not self.binding else 1
+        return 0 if self.changed and not self.redproof_binding else 1
 
 
 def _classify_diff(repo: Path, base_sha: str, branch_sha: str) -> Diff | None:
@@ -465,6 +481,15 @@ def _requirement_line(diff: Diff) -> str:
     says which of them it is holding.
     """
     if diff.required_injections == 0:
+        if diff.lint_gated_binding:
+            return (
+                "red-proof requirement: 0 injections REQUIRED — "
+                f"{len(diff.inert)} inert documentation path(s) need no "
+                f"behavioural proof; {len(diff.lint_gated_binding)} executable "
+                "documentation binding path(s) are already covered by "
+                "lint-precheck and lint-comparison: "
+                + " ".join(diff.lint_gated_binding)
+            )
         return (
             "red-proof requirement: 0 injections REQUIRED — all "
             f"{len(diff.changed)} changed path(s) are inert documentation under "
@@ -475,6 +500,17 @@ def _requirement_line(diff: Diff) -> str:
         return (
             "red-proof requirement: 1 injection required — the diff is EMPTY, "
             "and examining no path is not a documentation exemption"
+        )
+    if diff.lint_gated_binding:
+        return (
+            "red-proof requirement: 1 injection required — "
+            f"{len(diff.redproof_binding)} of {len(diff.changed)} changed "
+            "path(s) still need a behavioural red-proof; red-proof must bind: "
+            + " ".join(diff.redproof_binding)
+            + f"; {len(diff.lint_gated_binding)} executable documentation "
+            "binding path(s) are already covered by lint-precheck and "
+            "lint-comparison: "
+            + " ".join(diff.lint_gated_binding)
         )
     return (
         f"red-proof requirement: 1 injection required — {len(diff.binding)} of "
