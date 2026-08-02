@@ -6955,6 +6955,23 @@ class TestGoalsRoute(unittest.TestCase):
                 fresh_store.goals.current_goal_id(),
                 "empty-tree set-current looked runnable and moved the pointer")
 
+    def test_set_current_refuses_missing_id_without_moving_pointer(self):
+        prerequisite, root, child = self.ids
+        status, body = self._post(self._serve(), {
+            "action": "set-current", "goal_id": 999,
+        })
+        self.assertEqual(status, 202)
+        self.assertTrue(body["rejected"], body)
+        self.assertEqual(body["reason"], "domain_invalid")
+        self.assertEqual(body["detail"], "no task group #999")
+        dw = os.path.join(self.target, ".dreamwork")
+        with open_database(
+                task_store_spec(watch.store_path(dw)),
+                access=Access.READ) as fresh_store:
+            self.assertEqual(
+                fresh_store.goals.current_goal_id(), root,
+                "missing-id refusal silently moved the current-goal pointer")
+
     def test_set_current_reuses_goal_kind_guard(self):
         dw = os.path.join(self.target, ".dreamwork")
         with open_database(
