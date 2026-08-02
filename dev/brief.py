@@ -217,6 +217,54 @@ _UNIT_STOPWORDS = {
     "with",
 }
 
+# --- #1028: command-existence and task-state claim reports -----------------
+#
+# Two mechanically checkable premise classes that burned six dispatches in one
+# evening (#1028).  Both follow the #994 precedent: REPORT, do not certify.
+# A ``just <recipe>`` inside inline code or a fenced block is a claim the recipe
+# exists; a ``#NNN`` inside a state-predicate or expected-output context is a
+# claim about that task's state.  Both are resolvable at generation by a command
+# the lane would otherwise run itself.
+#
+# ``just`` is an English word, so the recipe matcher is restricted to CODE
+# CONTEXT (inline code and fenced blocks).  Measured across the corpus: 10 false
+# positives in 152 prose matches ("just the", "just as"), zero in 199
+# code-context matches.
+_JUST_RECIPE = re.compile(
+    r"(?<![\w./-])just\s+(?P<recipe>[a-z][a-z0-9_-]*)\b", re.IGNORECASE
+)
+# A #NNN directly asserted to be in a state: "#641 is live", "#630 is open".
+# "live"/"stale" map to formal state "open"; "done"/"closed" to "landed".
+_OPEN_IMPLYING = r"open|live|stale"
+_LANDED_IMPLYING = r"landed|done|closed"
+# A #NNN directly asserted to be in a state: "#641 is live", "#630 is open".
+# "live"/"stale" map to formal state "open"; "done"/"closed" to "landed".
+# The gap between the subject #NNN and the state verb carries a negative
+# lookahead on ``#\d+`` so the predicate binds to THAT id, not a later one:
+# in "#671 exactly, and #816 is a live task" the gap after #671 hits #816 and
+# fails, so #671 is NOT claimed and #816 IS — fixing the prior lane's false
+# positive for #671 and the simultaneous miss of #816 (#1028).
+_TASK_STATE_PREDICATE = re.compile(
+    r"#(?P<task>\d+)(?:(?!#\d+)[^.\n;]){0,25}?\b(?:is|are|was|were|remain|stands)\b"
+    r"(?:(?!#\d+)[^.\n;]){0,15}?\b(?P<state>"
+    + _OPEN_IMPLYING + r"|" + _LANDED_IMPLYING + r")\b",
+    re.IGNORECASE,
+)
+# A WARN-row expected-output claim: "WARN rows (#630, #641)".  This predicts
+# every id in the clause will appear in lint output, i.e. claims each is
+# active.  The prior regex captured a SINGLE ``#NNN`` and ``finditer`` resumed
+# AFTER it — so "WARN rows (#630, #700)" reported #630 and dropped #700 as an
+# "other citation", missing exactly the landed-id mismatch this checker exists
+# to find (#1028 P1).  The clause is bounded by a sentence terminator (``.``,
+# newline, ``;``) or 30 chars — the SAME boundary the prior lane measured as
+# false-positive-free across 77 cores (a wider window reaches ``#794`` in
+# quoted standing-rules prose, "WARN ROW SET … (`#794`)", and creates ~20
+# false positives).  Every ``#NNN`` inside the clause is then a claim.
+_TASK_WARN_OUTPUT = re.compile(
+    r"\bWARN\s+rows?\b(?P<clause>[^.\n;]{0,30})",
+    re.IGNORECASE,
+)
+
 
 class BriefFault(Exception):
     """A brief could not be generated from the inputs given."""
@@ -843,6 +891,26 @@ def _citation_authority_report(core: str, ledger: Path) -> str:
             "citation population, so this is not an all-verified result."
         )
 
+    # P1 (#1028, citation-path sibling): an unreadable/empty ledger must NOT
+    # refuse the dispatch.  This report runs FIRST in validate_core, before the
+    # task-state report, so an unfixed unreadable-ledger path here refuses the
+    # dispatch even though the state-path P1 is fixed — a fix at the named site
+    # only, while the sibling re-raised, made the refusal survive unchanged.  A
+    # per-task "not found" returns None inside _citation_title and is fine; a
+    # ledger-level failure (could not read / holds no entries) re-raises and is
+    # caught here as NOT CHECKED — report-only, exactly when the tool knows
+    # least (#136).
+    try:
+        _citation_title(citations[0][1], ledger)
+    except BriefFault as exc:
+        return (
+            f"citation authority NOT CHECKED: found {len(citations)} task "
+            f"citation(s) carrying an author gloss but the ledger could not "
+            f"be read ({exc}); 0 resolved; 0 unresolvable. There IS a "
+            "citation population, so this is not an all-verified result; the "
+            "citations were not checked."
+        )
+
     details: list[str] = []
     resolved = 0
     for line_no, task, gloss in citations:
@@ -863,6 +931,271 @@ def _citation_authority_report(core: str, ledger: Path) -> str:
         f"carrying an author gloss; resolved {resolved}; unresolvable "
         f"{len(citations) - resolved}. Semantic agreement is NOT CHECKED and "
         f"requires human judgment. " + "; ".join(details)
+    )
+
+
+def _command_existence_report(core: str) -> str:
+    """Report ``just <recipe>`` claims confirmed against ``just --dry-run``.
+
+    A brief that names ``just build`` when the recipe is ``just build-client``
+    is a false premise that looks verified because ``build-client`` exists
+    nearby and lends it credibility (#630/#1028).  This binds to the SPECIFIC
+    recipe named in code context — inline code or fenced blocks — and probes
+    each with ``just --dry-run``, which resolves the recipe rather than
+    grepping a word in ``just --list`` (the direction-2 trap: a commented-out
+    recipe or a variable assignment matches a list grep but not a dry-run).
+
+    REPORT, not REFUSE (#994): a recipe that exists but requires positional
+    arguments passes ``just --dry-run`` with a usage error rather than a
+    "does not contain recipe" error — that is an existence confirmation, not
+    a finding.  Only the "does not contain recipe" message is a finding.
+    """
+    claims: list[tuple[int, str]] = []  # (line_no, recipe)
+    lines = core.splitlines()
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for index, line in enumerate(lines):
+        if in_fence:
+            if re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+            ):
+                in_fence = False
+            else:
+                for match in _JUST_RECIPE.finditer(line):
+                    claims.append((index + 1, match.group("recipe")))
+            continue
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            continue
+        # Inline code: `` `just build` `` is a claim, not a discussion.
+        for match in _INLINE_CODE.finditer(line):
+            for recipe_match in _JUST_RECIPE.finditer(match.group("body")):
+                claims.append((index + 1, recipe_match.group("recipe")))
+
+    if not claims:
+        return (
+            "command existence NOT CHECKED: found 0 `just <recipe>` claim(s) "
+            "in code context; resolved 0; 0 MISSING. There is no "
+            "command-claim population, so this is not an all-verified result."
+        )
+
+    recipes = sorted({recipe for _, recipe in claims})
+    missing: list[str] = []
+    checked = 0
+    not_checked: list[str] = []  # recipes we could not classify
+    try:
+        for recipe in recipes:
+            result = subprocess.run(
+                ["just", "--dry-run", recipe],
+                cwd=ROOT, capture_output=True, text=True, check=False, timeout=10,
+            )
+            if result.returncode == 0:
+                checked += 1
+            elif "does not contain recipe" in result.stderr:
+                missing.append(recipe)
+            elif "positional argument" in result.stderr:
+                # A usage error naming positional arguments is an existence
+                # confirmation: the recipe resolved, it just needs args.
+                # ONLY this error implies existence — a malformed or unreadable
+                # Justfile, or any other parser error, does NOT, and blessing
+                # it would silently certify every command claim in the brief
+                # (#1028). Everything else is NOT CHECKED.
+                checked += 1
+            else:
+                not_checked.append(recipe)
+    except (OSError, subprocess.TimeoutExpired):
+        return (
+            f"command existence NOT CHECKED: found {len(claims)} "
+            f"`just <recipe>` claim(s) ({len(recipes)} distinct) but "
+            "`just --dry-run` could not run. There IS a command-claim "
+            "population, so this is not an all-verified result; the claims "
+            "were not checked."
+        )
+
+    details = [
+        f"`just {recipe}` (line(s) "
+        f"{', '.join(str(ln) for ln in sorted({l for l, r in claims if r == recipe}))}) "
+        f"MISSING: recipe does not exist"
+        for recipe in missing
+    ]
+    findings = (
+        f"{len(missing)} MISSING: {'; '.join(details)}"
+        if missing else "0 MISSING"
+    )
+    if not_checked:
+        findings += (
+            f"; {len(not_checked)} NOT CHECKED: "
+            f"{', '.join(not_checked)} (just --dry-run returned an error that "
+            "neither confirms nor denies the recipe — e.g. a malformed Justfile)"
+        )
+    return (
+        f"command existence REPORT: found {len(claims)} `just <recipe>` "
+        f"claim(s) in code context ({len(recipes)} distinct recipe(s)); "
+        f"resolved {checked} of {len(recipes)}; {findings}. Probed with "
+        "`just --dry-run`, which resolves the recipe rather than grepping a "
+        "word in `just --list`. This is a syntactic existence report, not "
+        "proof: it does not verify that a recipe produces the claimed result."
+    )
+
+
+def _task_state(task: int, ledger: Path) -> str | None:
+    """Resolve one task's state; ``None`` means the id is absent from the ledger."""
+    try:
+        return str(task_record(task, ledger)["state"]).strip()
+    except BriefFault as exc:
+        if str(exc).startswith(f"#{task} not found in "):
+            return None
+        raise
+
+
+def _collect_state_claims(
+    lines: list[str],
+) -> tuple[dict[tuple[int, int], tuple[int, int, str, str | None]], int]:
+    """Collect state-claim candidates and count ``#NNN`` citations, fence-aware.
+
+    Single source of truth for the fence tracking and ``(line, task)`` keying
+    the state-claim report and the corpus measurement scanner both depend on.
+    The scanner imports this so the population it measures is the one
+    production sees, instead of re-implementing the fence logic and drifting —
+    the measurement copy once opened ``~~~`` fences but only closed backtick
+    ones, so a claim after a closed ``~~~`` fence was hidden from the scanner
+    but seen by production (#1028 Finding 3).
+    """
+    claims: dict[tuple[int, int], tuple[int, int, str, str | None]] = {}
+    total_citations = 0
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for index, line in enumerate(lines):
+        if in_fence:
+            if re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+            ):
+                in_fence = False
+            continue
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            continue
+        for match in _TASK_STATE_PREDICATE.finditer(line):
+            key = (index + 1, int(match.group("task")))
+            claims[key] = (index + 1, int(match.group("task")),
+                           "state predicate", match.group("state"))
+        for match in _TASK_WARN_OUTPUT.finditer(line):
+            # Capture EVERY #NNN in the bounded WARN-row clause, not just the
+            # first — "WARN rows (#630, #700)" claims both ids (#1028 P1).
+            for cite in re.finditer(r"#(\d+)", match.group("clause")):
+                task = int(cite.group(1))
+                key = (index + 1, task)
+                claims.setdefault(key, (index + 1, task, "WARN output", None))
+        total_citations += len(re.findall(r"#\d+", line))
+    return claims, total_citations
+
+
+def _task_state_claim_report(core: str, ledger: Path) -> str:
+    """Report task ids in state-claim contexts against their actual ledger state.
+
+    A brief that says "expect a live WARN for #641" while #641 is ``landed``
+    sends a lane to verify an expectation that can never hold (#1024/#1028).
+    This binds to the SPECIFIC claim — a #NNN that is the grammatical subject
+    of a state predicate ("#641 is live") or inside a WARN-row expected-output
+    claim ("WARN rows (#641)") — not to every citation (the direction-2 trap:
+    flagging every #NNN drowns the real finding).  The prior lane also matched
+    a generic ``expect|fixture ... #NNN`` regex; measured at 66.7% false
+    positives across 77 cores it was DROPPED (#1028).
+
+    REPORT, not REFUSE (#994/#136): an unreadable or empty ledger is reported
+    as NOT CHECKED, never allowed to escape and refuse the dispatch — the tool
+    knows least exactly then.  Claims are keyed by (line, task) so a #NNN on
+    one line matched by more than one regex counts once: deriving "other
+    citations" as ``total - len(claims)`` went negative when one line matched
+    twice (#1028 P2), and a count that can go below zero is a count derived
+    twice.
+    """
+    lines = core.splitlines()
+    claims, total_citations = _collect_state_claims(lines)
+
+    claim_list = list(claims.values())
+
+    if not claim_list:
+        return (
+            f"task-state claim NOT CHECKED: found 0 task-state claim(s); "
+            f"resolved 0; 0 mismatched. {total_citations} other #NNN "
+            "citation(s) without state-claim language were NOT CHECKED. "
+            "There is no state-claim population, so this is not an "
+            "all-verified result."
+        )
+
+    # P1 (#1028): an unreadable/empty ledger must NOT refuse the dispatch.  A
+    # per-task "not found" returns None inside _task_state and is fine; a
+    # ledger-level failure (could not read / holds no entries) re-raises and is
+    # caught here as NOT CHECKED — report-only, exactly when the tool knows
+    # least (#136).
+    try:
+        _task_state(claim_list[0][1], ledger)
+    except BriefFault as exc:
+        return (
+            f"task-state claim NOT CHECKED: found {len(claim_list)} "
+            f"task-state claim(s) but the ledger could not be read ({exc}); "
+            "0 resolved; 0 mismatched. There IS a state-claim population, so "
+            "this is not an all-verified result; the claims were not checked."
+        )
+
+    state_cache: dict[int, str | None] = {}
+    details: list[str] = []
+    resolved = 0
+    mismatched = 0
+    unresolvable = 0
+    for line_no, task, context, claimed_word in claim_list:
+        if task not in state_cache:
+            state_cache[task] = _task_state(task, ledger)
+        actual = state_cache[task]
+        if actual is None:
+            unresolvable += 1
+            details.append(
+                f"line {line_no} #{task} UNRESOLVABLE in {context!r}: "
+                "no ledger entry"
+            )
+            continue
+        resolved += 1
+        if claimed_word is not None:
+            implied = (
+                "open" if re.fullmatch(_OPEN_IMPLYING, claimed_word, re.I)
+                else "landed"
+            )
+        else:
+            implied = "open"  # WARN-output claims imply an active task
+        if actual != implied:
+            mismatched += 1
+            details.append(
+                f"line {line_no} #{task} MISMATCH in {context!r}: "
+                f"claim implies {implied!r} ({claimed_word or context}); "
+                f"actual state {actual!r}"
+            )
+        else:
+            details.append(
+                f"line {line_no} #{task} MATCH in {context!r}: "
+                f"actual state {actual!r}"
+            )
+
+    # P2 (#1028): derive "other citations" once, from distinct (line, task)
+    # claims, so it can never go negative.  Each claim key implies at least one
+    # #NNN occurrence on its line, so len(claims) <= total_citations always.
+    unclassified = total_citations - len(claims)
+    return (
+        f"task-state claim REPORT: found {len(claim_list)} task-state claim(s); "
+        f"resolved {resolved}; mismatched {mismatched}; unresolvable "
+        f"{unresolvable}. {unclassified} other #NNN citation(s) without "
+        "state-claim language were NOT CHECKED (direction-2: flagging every "
+        "citation drowns the finding). " + "; ".join(details) + " State "
+        "consistency is REPORTED, not certified: a claim's implied state is "
+        "a heuristic and requires human judgment."
     )
 
 
@@ -979,12 +1312,16 @@ def validate_core(core: str, ledger: Path | None = None) -> int:
     quantity_report = _quantity_verification_report(core)
     citation_report = _citation_authority_report(core, ledger)
     blocking_report = _blocking_number_report(core)
+    command_report = _command_existence_report(core)
+    state_report = _task_state_claim_report(core, ledger)
     for index, line in enumerate(lines):
         if _DIRECTION_2.search(line) and any(_substantive(rest) for rest in lines[index + 1:]):
             print(tool_report, file=sys.stderr)
             print(quantity_report, file=sys.stderr)
             print(citation_report, file=sys.stderr)
             print(blocking_report, file=sys.stderr)
+            print(command_report, file=sys.stderr)
+            print(state_report, file=sys.stderr)
             return sections_seen
     # Reaching here proves `empties` came back empty (it raises above), so the
     # denominator is the one signal left that the walk ran on thin data: a core
