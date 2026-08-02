@@ -433,6 +433,17 @@ def test_argparse_and_documented_subcommand_surfaces_resolve_on_master(capsys):
     assert "documented subcommands: dev/lane_scratch.py" in report, report
 
 
+def test_documented_subcommand_surface_rejects_an_unknown_verb(capsys):
+    core = GOOD_CORE + "\nRun `dev/lane_scratch.py definitely-not-a-verb proof.txt`.\n"
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief.validate_core(core)
+    message = str(excinfo.value)
+    assert "dev/lane_scratch.py" in message, message
+    assert "'definitely-not-a-verb'" in message, message
+    assert "examined 1 invocation(s), 1 derivable, 0 not derivable" in message, message
+    assert capsys.readouterr().err == ""
+
+
 def test_underivable_surface_is_not_checked_and_does_not_refuse(capsys):
     core = GOOD_CORE + "\nRun `dev/brief.py imaginary-verb`.\n"
     assert brief.validate_core(core) == 2
