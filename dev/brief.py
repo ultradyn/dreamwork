@@ -188,6 +188,29 @@ _COMMANDISH = re.compile(
     r"(?:^|\s)(?:\./|dev/)[\w./-]+",
     re.IGNORECASE,
 )
+_BLOCKING_STOP_CUE = re.compile(
+    r"(?:\b(?:stop|refuse|do\s+not\s+proceed)\b.*"
+    r"\b(?:if|unless|when|otherwise)\b|"
+    r"\b(?:if|unless|when|otherwise)\b.*"
+    r"\b(?:stop|refuse|do\s+not\s+proceed)\b)",
+    re.IGNORECASE,
+)
+_BLOCKING_SECTION_CUE = re.compile(
+    r"\bblocking\b.*\b(?:numbers?|invariants?|stop[ -]?conditions?)\b",
+    re.IGNORECASE,
+)
+_NONBLOCKING_CUE = re.compile(
+    r"\b(?:not\s+blocking|non[ -]blocking|context\s+only|do\s+not\s+stop)\b",
+    re.IGNORECASE,
+)
+_INVARIANCE_JUSTIFICATION_CUE = re.compile(
+    r"\binvariants?\b|"
+    r"\b(?:cannot|can't|does\s+not|won't|will\s+not|do\s+not)\s+"
+    r"(?:change|perish)\b|"
+    r"\bstable\b|\bunchanging\b|"
+    r"\bdispatch(?:ing)?\b[^.\n]*\b(?:cannot|does\s+not|will\s+not)\s+change\b",
+    re.IGNORECASE,
+)
 _UNIT_STOPWORDS = {
     "after", "and", "as", "at", "before", "by", "for", "from", "in",
     "is", "of", "on", "or", "than", "that", "the", "to", "was", "were",
@@ -671,6 +694,107 @@ def _quantity_verification_report(core: str) -> str:
     )
 
 
+def _blocking_number_report(core: str) -> str:
+    """Report blocking-number claims without judging whether they are invariant."""
+    lines = core.splitlines()
+    prose_lines = _INLINE_CODE.sub(
+        lambda match: "".join("\n" if char == "\n" else " " for char in match.group()),
+        core,
+    ).splitlines()
+    eligible: set[int] = set()
+    justification_lines: set[int] = set()
+    blocking_section = False
+    section_justified = False
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+
+    for index, line in enumerate(prose_lines):
+        if in_fence:
+            if re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+            ):
+                in_fence = False
+            continue
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            continue
+
+        prose = _DIRECTION_NUMBER.sub("", line)
+        if _is_atx_heading(prose):
+            blocking_section = (
+                _BLOCKING_SECTION_CUE.search(prose) is not None
+                and _NONBLOCKING_CUE.search(prose) is None
+            )
+            section_justified = (
+                blocking_section
+                and _INVARIANCE_JUSTIFICATION_CUE.search(prose) is not None
+            )
+        elif _BLOCKING_SECTION_CUE.search(prose) and re.match(
+            r"^\s*(?:[-*+]\s+)?\*\*", prose
+        ):
+            # House briefs also use a bold prose label rather than an ATX head:
+            # ``**BLOCKING — these three are invariant:**``.
+            blocking_section = True
+            section_justified = (
+                _INVARIANCE_JUSTIFICATION_CUE.search(prose) is not None
+            )
+        if _NONBLOCKING_CUE.search(prose):
+            blocking_section = False
+            section_justified = False
+        elif prose.strip() and (blocking_section or _BLOCKING_STOP_CUE.search(prose)):
+            eligible.add(index)
+            if section_justified:
+                justification_lines.add(index)
+        if _INVARIANCE_JUSTIFICATION_CUE.search(prose):
+            justification_lines.add(index)
+
+    substantive = [index for index, line in enumerate(lines) if line.strip()]
+    ordinal = {line_no: position for position, line_no in enumerate(substantive)}
+    blocking: list[tuple[int, str, bool]] = []
+    for line_no in sorted(eligible):
+        prose = _DIRECTION_NUMBER.sub("", prose_lines[line_no])
+        for match in _ASSERTED_QUANTITY.finditer(prose):
+            unit = match.group("unit")
+            label = match.group("number")
+            if unit and unit.lower() not in _UNIT_STOPWORDS:
+                label += f" {unit}"
+            justified = any(
+                abs(ordinal[line_no] - ordinal[claim]) <= 1
+                for claim in justification_lines
+            )
+            blocking.append((line_no + 1, label, justified))
+
+    justified_count = sum(justified for _, _, justified in blocking)
+    if not blocking:
+        return (
+            "blocking-number invariance NOT CHECKED: found 0 blocking numbers "
+            "presented in prose; invariance justification claims covered 0 of 0. "
+            "State: no blocking numbers presented, so this is not an "
+            "all-justified result."
+        )
+    details = "; ".join(
+        f"line {line_no} {label!r} justification claim "
+        f"{'PRESENT' if justified else 'MISSING'}"
+        for line_no, label, justified in blocking
+    )
+    state = (
+        "presented and all carry justification claims"
+        if justified_count == len(blocking)
+        else "presented with unjustified blocking numbers"
+    )
+    return (
+        f"blocking-number invariance REPORT: found {len(blocking)} blocking "
+        f"number(s) presented in prose; invariance justification claims covered "
+        f"{justified_count} of {len(blocking)}. State: {state}. {details}. "
+        "Justification correctness is NOT CHECKED and requires human judgment: "
+        "which of these can the act of dispatching change?"
+    )
+
+
 def _citation_title(task: int, ledger: Path) -> str | None:
     """Resolve one cited task id to its ledger title; ``None`` means absent."""
     try:
@@ -854,11 +978,13 @@ def validate_core(core: str, ledger: Path | None = None) -> int:
     tool_report = _validate_tool_invocations(core)
     quantity_report = _quantity_verification_report(core)
     citation_report = _citation_authority_report(core, ledger)
+    blocking_report = _blocking_number_report(core)
     for index, line in enumerate(lines):
         if _DIRECTION_2.search(line) and any(_substantive(rest) for rest in lines[index + 1:]):
             print(tool_report, file=sys.stderr)
             print(quantity_report, file=sys.stderr)
             print(citation_report, file=sys.stderr)
+            print(blocking_report, file=sys.stderr)
             return sections_seen
     # Reaching here proves `empties` came back empty (it raises above), so the
     # denominator is the one signal left that the walk ran on thin data: a core
