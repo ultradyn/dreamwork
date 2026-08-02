@@ -12,6 +12,7 @@ import re
 import stat
 import subprocess
 import sys
+import time
 from typing import Sequence
 
 # Direct script execution puts dev/ rather than the repo root on sys.path.
@@ -37,6 +38,14 @@ INBOX_PREFIX = (
     "when you finish: "
 )
 NATIVE_INHERITED_SANDBOX_AGENTS = frozenset({"@opus5"})
+
+# #1117: after dispatch confirms the runner exec'd, a short settle hedges the
+# window before the detached child's /proc/<pid>/cwd is observable. The cwd is
+# set at exec (which dispatch waited for), so this covers only kernel bookkeeping
+# latency — too short and a healthy runner reads as dead; too long and every
+# dispatch pays. 0.3s is a cheap hedge; LAUNCH_RUNNER_SETTLE overrides it (tests
+# use 0, since a fake runner's cwd is set at fork).
+_RUNNER_SETTLE_SECONDS = 0.3
 
 
 class LaunchFault(Exception):
@@ -135,6 +144,61 @@ def _native_reach_fault(agent: str, coordinator_root: Path, worktree: Path) -> s
         f"their own lane sandbox, or extend the native sandbox to include {target.parent}; "
         "interpreter availability was not checked"
     )
+
+
+def _lane_runner_present(lane_path: Path) -> tuple[bool, int]:
+    """Whether a known lane-runner process holds ``lane_path`` as its cwd.
+
+    #1117: dispatch confirms a runner exec'd, but a runner that exec'd and died
+    one millisecond later is indistinguishable from a healthy one on the
+    dispatcher's exit-0 alone. The spawn lands in ``cwd=lane_path`` (#1093), so a
+    live runner's ``/proc/<pid>/cwd`` IS the lane worktree. This reads
+    ``/proc/<pid>/cwd`` only — NEVER argv: a ``ccc`` runner's argv embeds the
+    entire brief, so any argv path search matches the lane's own command line
+    (four separate tools hit that trap in one session). A process is classified
+    as a runner via ``lane_liveness._is_lane_runner`` (argv[0] basename, the
+    notion #1084 landed — reused, not re-derived), and self/ancestors are
+    excluded via ``lane_liveness._ancestor_pids`` (#729: a probe that counts its
+    own process tree always succeeds).
+
+    Returns ``(present, examined)``. ``examined`` is the count of live cwds the
+    probe read, so "examined 0" (#868: a probe that examined nothing) cannot read
+    as "examined everything and found none". A hit proves a runner PROCESS exists
+    in the worktree; it cannot prove useful lane work (#651).
+    """
+    # Lazy import: lane_liveness lives at the repo root (on sys.path via the
+    # launcher's REPO_ROOT insert, or PYTHONPATH for subprocess tests). It is
+    # NOT edited here — #1113 owns that seam; this reuses it (#1084).
+    from lane_liveness import _ancestor_pids, _is_lane_runner, read_proc_cwd
+
+    lane = str(lane_path.resolve())
+    ancestors = _ancestor_pids()
+    examined = 0
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        return False, 0
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        if pid in ancestors:
+            continue
+        cwd = read_proc_cwd(pid)
+        if cwd is None:
+            continue
+        examined += 1
+        if cwd.endswith(" (deleted)"):
+            continue
+        if not (cwd == lane or cwd.startswith(lane + os.sep)):
+            continue
+        try:
+            raw = Path("/proc/%d/cmdline" % pid).read_bytes()
+        except OSError:
+            continue
+        if _is_lane_runner(raw):
+            return True, examined
+    return False, examined
 
 
 def _refuse(phase: str, reasons: Sequence[str], examined: str, retained: str) -> int:
@@ -560,7 +624,30 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
     result = subprocess.run(command, cwd=lane_path)
     record["runner_exit"] = None
     if result.returncode == 0:
-        record["state"] = "spawned: runner detached; exit not observed; exact brief bytes preserved"
+        # #1117: dispatch confirmed the runner exec'd, but a runner that exec'd
+        # and died one millisecond later is indistinguishable from a healthy one
+        # on dispatcher-0 alone. The spawn lands in cwd=lane_path (#1093), so a
+        # live runner's /proc/<pid>/cwd IS the worktree: settle, then probe for a
+        # known runner process holding that cwd. This moves "worktree reach" out
+        # of the unchecked list into a measured result, keeping #136's three
+        # states (not attempted / attempted and gone / attempted and present)
+        # distinguishable. A failed check fails the launch (exit 3) and records
+        # it — an unobserved result is the defect this closes.
+        settle = float(os.environ.get("LAUNCH_RUNNER_SETTLE", _RUNNER_SETTLE_SECONDS))
+        if settle > 0:
+            time.sleep(settle)
+        present, examined = _lane_runner_present(lane_path)
+        if present:
+            record["state"] = (
+                "spawned: runner present in worktree (cwd-containment); runner "
+                "exit not observed; exact brief bytes preserved"
+            )
+        else:
+            record["state"] = (
+                "spawn failed: dispatcher exit=0 but no lane runner found in "
+                "worktree (cwd-containment); runner exit not observed; exact "
+                "brief bytes preserved"
+            )
         try:
             _write_record(attempt_path, record)
         except OSError as exc:
@@ -571,12 +658,32 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
                 file=sys.stderr,
             )
             return 2
+        if present:
+            print(
+                f"runner spawned: attempt={attempt_id}; dispatcher exit=0; runner "
+                f"detached; runner present in worktree (cwd-containment, examined "
+                f"{examined}); runner exit not observed; unchecked=runner exit, "
+                "interpreter availability, lane work"
+            )
+            return 0
+        # The runner exec'd (dispatch confirmed) but no runner process holds the
+        # worktree cwd now: it may have exec'd and died instantly. Reported as a
+        # launch failure (exit 3) so downstream automation acts on it, not by
+        # hand-probing /proc — which is how three silent non-starts were found.
         print(
-            f"runner spawned: attempt={attempt_id}; dispatcher exit=0; runner detached; "
-            "runner exit not observed; unchecked=runner exit, worktree reach, "
-            "interpreter availability, lane work"
+            f"runner spawned: attempt={attempt_id}; dispatcher exit=0; runner "
+            f"detached; no lane runner in worktree (cwd-containment, examined "
+            f"{examined}); runner exit not observed; unchecked=runner exit, "
+            "interpreter availability, lane work",
+            file=sys.stderr,
         )
-        return 0
+        print(
+            f"REFUSE phase=spawn-containment: dispatcher exit=0 but no lane "
+            f"runner process holds the worktree cwd; the runner may have exec'd "
+            f"and exited immediately; probe the worktree by hand",
+            file=sys.stderr,
+        )
+        return 3
     record["state"] = (
         f"launch refused: dispatcher exited {result.returncode}; runner not confirmed "
         "spawned; exact brief bytes preserved"

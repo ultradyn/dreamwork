@@ -72,20 +72,43 @@ raise SystemExit(0)
     _git(root, "commit", "-m", "base")
     bindir = tmp_path / "bin"
     _write(bindir / "ccc", """#!/usr/bin/env python3
-import glob, json, os, pathlib
+import glob, json, os, pathlib, subprocess, sys
 root = os.environ.get('LAUNCH_MAIN', os.getcwd())
 if target := os.environ.get('CAPTURE_ATTEMPT_STATE'):
     record = glob.glob(root + '/.dreamwork/launch-attempts/*.json')[0]
     pathlib.Path(target).write_text(json.load(open(record))['state'], encoding='utf-8')
 if target := os.environ.get('CAPTURE_PROMPT'):
-    pathlib.Path(target).write_text(__import__('sys').argv[-1], encoding='utf-8')
+    pathlib.Path(target).write_text(sys.argv[-1], encoding='utf-8')
 if target := os.environ.get('CAPTURE_CWD'):
     pathlib.Path(target).write_text(os.getcwd(), encoding='utf-8')
+# Production detaches the runner (fork/setsid/execvp) and returns 0 once the
+# child confirms exec — the runner outlives the dispatcher (#1093). Simulate
+# that contract: when CCC_DETACH_SECONDS is set, spawn a detached sleeper whose
+# inherited cwd is the lane worktree. argv[0] is 'ccc' (set by exec'ing the
+# interpreter directly with a custom argv[0], NOT a shebang — a shebang script's
+# /proc cmdline argv[0] is the interpreter basename, so lane_liveness's
+# _is_lane_runner would never classify it). The detached copy outlives the
+# foreground, so a post-spawn cwd-containment probe can observe it (#1117).
+# Empty/unset = the runner exits immediately (the dead-runner case).
+if detach := os.environ.get('CCC_DETACH_SECONDS'):
+    env = {k: v for k, v in os.environ.items() if k != 'CCC_DETACH_SECONDS'}
+    env['CCC_SLEEP_SECONDS'] = detach
+    code = 'import os,time; time.sleep(float(os.environ["CCC_SLEEP_SECONDS"]))'
+    subprocess.Popen(['ccc', '-c', code], executable=sys.executable, env=env,
+                     start_new_session=True, cwd=os.getcwd(),
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 raise SystemExit(int(os.environ.get('CCC_EXIT', '0')))
 """)
     (bindir / "ccc").chmod(0o755)
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
     monkeypatch.setenv("PYTHONPATH", f"{REPO / 'dev'}:{REPO}")
+    # #1117: the default fake runner stays alive (detached), matching the
+    # production happy path — without this, every happy-path test's runner is
+    # dead by the time the containment probe runs. The dead-runner case opts out
+    # by setting CCC_DETACH_SECONDS=''. A zero settle is safe in the fixture
+    # because the sleeper's cwd is set at fork, before the probe runs.
+    monkeypatch.setenv("CCC_DETACH_SECONDS", "3")
+    monkeypatch.setenv("LAUNCH_RUNNER_SETTLE", "0")
     return root
 
 
@@ -267,23 +290,33 @@ def test_existing_lane_refuses_without_explicit_resume_and_changes_nothing(launc
 
 
 def test_a_crashing_runner_is_not_reported_as_success_and_attempt_is_durable(launch_repo: Path):
-    """#1093: the runner is detached by dispatch_lane.py, so its own exit is
-    never observed here. The dispatcher returns 0 (launch confirmed) whether
-    the runner goes on to exit 0 or 7. Measured before the fix, a runner that
+    """#1093/#1117: the runner is detached by dispatch_lane.py, so its own exit
+    is never observed here. The dispatcher returns 0 (launch confirmed) whether
+    the runner goes on to exit 0 or 7. Measured before #1093, a runner that
     crashed (CCC_EXIT=7) was recorded as ``runner result verified: exit 0``
     one second after spawn — a green-faced lie, because the 0 was the
-    dispatcher's detach-confirmation, not the runner's exit. The honest record
-    is ``spawned: runner detached; exit not observed`` with ``runner_exit``
-    null, and "verified" is unreachable from a path that observed no exit.
+    dispatcher's detach-confirmation, not the runner's exit. #1093 made the
+    record honest (``runner_exit`` null, "verified" unreachable). #1117 adds the
+    other half: a runner that exec'd and is now gone is reported as a spawn
+    FAILURE (exit 3), not success — because a cwd-containment probe finds no
+    runner process in the worktree. The sleeper is disabled here so the runner
+    truly exits 7 and is gone; ``runner_exit`` stays null (#1093 holds: the exit
+    was still never observed, only the absence was).
     """
     observed = launch_repo / "observed-state"
-    env = os.environ.copy(); env["CCC_EXIT"] = "7"; env["CAPTURE_ATTEMPT_STATE"] = str(observed)
+    env = os.environ.copy(); env["CCC_EXIT"] = "7"; env["CCC_DETACH_SECONDS"] = ""
+    env["CAPTURE_ATTEMPT_STATE"] = str(observed)
     result = _run(launch_repo, _head(launch_repo), env=env)
     path, record = _attempt(launch_repo)
 
-    assert result.returncode == 0
+    assert result.returncode == 3, (
+        f"a gone runner must fail the launch (exit 3), got {result.returncode}: {result.stderr}"
+    )
     assert record["runner_exit"] is None
-    assert record["state"] == "spawned: runner detached; exit not observed; exact brief bytes preserved"
+    assert record["state"] == (
+        "spawn failed: dispatcher exit=0 but no lane runner found in worktree "
+        "(cwd-containment); runner exit not observed; exact brief bytes preserved"
+    )
     assert "verified" not in str(record["state"])
     assert observed.read_text(encoding="utf-8").startswith("unverified attempt:")
     assert path.with_suffix(".prompt.md").is_file()
@@ -396,14 +429,15 @@ def test_runner_zero_names_only_the_checks_it_actually_completed(launch_repo: Pa
     result = _run(launch_repo, _head(launch_repo))
 
     assert result.returncode == 0, result.stderr
-    # #1093: the runner is detached, so the only check the launcher completed is
-    # the dispatcher's exit (the spawn); it did NOT observe a runner exit. The
-    # summary must name "dispatcher exit=0" and "runner exit not observed", and
-    # must not claim "verified" — that word is unreachable without an observed
-    # exit.
+    # #1093: the runner is detached, so the launcher never observes a runner
+    # exit — "verified" is unreachable without one. #1117: the launcher now ALSO
+    # completes a cwd-containment probe, so "worktree reach" left the unchecked
+    # list (it is measured) and the summary names the containment result. The
+    # remaining unchecked items name only what was genuinely not checked.
     assert "dispatcher exit=0" in result.stdout
     assert "runner exit not observed" in result.stdout
-    assert "unchecked=runner exit, worktree reach, interpreter availability, lane work" in result.stdout
+    assert "runner present in worktree (cwd-containment" in result.stdout
+    assert "unchecked=runner exit, interpreter availability, lane work" in result.stdout
     assert "verified" not in result.stdout
 
 
@@ -438,6 +472,58 @@ def test_a_spawned_runner_is_reported_as_spawned_not_not_attempted(launch_repo: 
             "'runner not attempted', not precede or replace it"
         )
     assert spawn_idx > launch_idx
+
+
+def test_a_live_runner_is_reported_present_in_the_worktree(launch_repo: Path):
+    """#1117: dispatch confirms a runner exec'd, but that alone cannot tell a
+    healthy runner from one that exec'd and died one millisecond later — both
+    produce dispatcher exit 0. The default fake runner detaches and stays alive
+    (matching production's happy path), so a cwd-containment probe finds it in
+    the worktree and the launch succeeds. This is the EASY half: a live runner
+    is detected. It is a different claim from inheritance
+    (test_runner_inherits_the_lane_worktree_as_cwd_not_the_main_checkout proves
+    the spawn cwd, not that a process is there now); this proves a runner
+    PROCESS holds the worktree cwd at probe time.
+    """
+    result = _run(launch_repo, _head(launch_repo))
+    _, record = _attempt(launch_repo)
+
+    assert result.returncode == 0, result.stderr
+    assert record["state"] == (
+        "spawned: runner present in worktree (cwd-containment); runner exit "
+        "not observed; exact brief bytes preserved"
+    )
+    assert "runner present in worktree (cwd-containment, examined" in result.stdout
+    # The probe must have examined something — "examined 0" would mean it read
+    # no cwds, which cannot read as a clean all-clear (#868).
+    assert "examined 0)" not in result.stdout
+
+
+def test_a_runner_that_exits_immediately_is_reported_gone_and_fails(launch_repo: Path):
+    """#1117: the test that matters. A runner that exec's and dies one
+    millisecond later must be reported as FAILED, not success — that is the
+    whole gap #1093 left open. The fake runner exits immediately (no detached
+    sleeper), so by the time the containment probe runs no runner process holds
+    the worktree cwd. The launch must fail (exit 3), the attempt record must
+    name the gone runner, and the three #136 states must stay distinguishable:
+    this (gone) reads differently from the live case above (present) and from a
+    pre-spawn refusal (no "runner spawned" line at all).
+    """
+    env = os.environ.copy(); env["CCC_DETACH_SECONDS"] = ""
+    result = _run(launch_repo, _head(launch_repo), env=env)
+    _, record = _attempt(launch_repo)
+
+    assert result.returncode == 3, (
+        f"a gone runner must fail the launch (exit 3), got {result.returncode}: "
+        f"{result.stderr}"
+    )
+    assert record["state"] == (
+        "spawn failed: dispatcher exit=0 but no lane runner found in worktree "
+        "(cwd-containment); runner exit not observed; exact brief bytes preserved"
+    )
+    assert "no lane runner in worktree (cwd-containment, examined" in result.stderr
+    # Distinguishable from the present case: this names the absence.
+    assert "runner present" not in result.stderr
 
 
 def test_native_reach_uses_abspath_not_realpath(tmp_path: Path):
