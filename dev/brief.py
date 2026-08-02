@@ -346,6 +346,54 @@ def _scope_derivation_report(checkout: Path, owns: list[str]) -> str:
     )
 
 
+def _base_scope_derivation_report(
+    checkout: Path, base_sha: str, owns: list[str]
+) -> str:
+    """Run the gate's derivation over materialized bytes from the lane base."""
+    try:
+        listing = subprocess.run(
+            ["git", "-C", str(checkout), "ls-tree", "-r", "--name-only", "-z", base_sha],
+            capture_output=True, check=False,
+        )
+    except OSError as exc:
+        raise BriefFault(f"scope derivation FAULT: could not run git: {exc}") from exc
+    if listing.returncode:
+        detail = listing.stderr.decode(errors="replace").strip()
+        raise BriefFault(
+            f"scope derivation FAULT: could not read base tree {base_sha}: "
+            f"{detail or f'git exited {listing.returncode}'}"
+        )
+    tracked = {
+        path.decode(errors="surrogateescape")
+        for path in listing.stdout.split(b"\0") if path
+    }
+    materialize = {
+        path for path in tracked
+        if (path.startswith("test_") and "/" not in path and path.endswith(".py"))
+        or path in owns
+    }
+    with tempfile.TemporaryDirectory(prefix="brief-base-scope-") as temp_dir:
+        base = Path(temp_dir)
+        for path in materialize:
+            target = Path(path)
+            if target.is_absolute() or ".." in target.parts:
+                raise BriefFault(f"scope derivation FAULT: unsafe base-tree path {path!r}")
+            content = subprocess.run(
+                ["git", "-C", str(checkout), "show", f"{base_sha}:{path}"],
+                capture_output=True, check=False,
+            )
+            if content.returncode:
+                detail = content.stderr.decode(errors="replace").strip()
+                raise BriefFault(
+                    f"scope derivation FAULT: could not materialize {path} from "
+                    f"base {base_sha}: {detail or f'git exited {content.returncode}'}"
+                )
+            destination = base / target
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content.stdout)
+        return _scope_derivation_report(base, owns)
+
+
 def _tool_invocations(core: str) -> list[tuple[str, str]]:
     """Find command-shaped tool invocations, not quoted or fenced examples."""
     found: list[tuple[str, str]] = []
@@ -686,8 +734,6 @@ def build(task: int, branch: str, owns: list[str], core: str, *,
     if not _core_already_validated:
         validate_core(core)
 
-    print(_scope_derivation_report(checkout, owns), file=sys.stderr)
-
     frame = frame_sections(_read(frame_path, "frame"))
     if not frame:
         raise BriefFault(
@@ -717,6 +763,10 @@ def build(task: int, branch: str, owns: list[str], core: str, *,
         if not re.fullmatch(r"[0-9a-f]{40}", prepared_base_sha or ""):
             raise BriefFault(f"prepared base sha is not a commit id: {prepared_base_sha!r}")
         resolved_base = prepared_base_sha
+    print(
+        _base_scope_derivation_report(checkout, resolved_base, owns),
+        file=sys.stderr,
+    )
     head = "\n".join([
         f"# Task #{task} — {record['title'].strip()}",
         "",

@@ -204,6 +204,34 @@ def test_scope_report_names_an_import_derived_test_the_authored_scope_omits():
     ), f"scope derivation lost omitted test_suite_baseline.py: {report}"
 
 
+def test_scope_report_reads_the_base_tree_not_a_dirty_authored_checkout(tmp_path):
+    root = _scope_fixture(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "add", "."], cwd=root, check=True)
+    subprocess.run(
+        [
+            "git", "-c", "user.name=brief-test", "-c",
+            "user.email=brief-test@example.invalid", "commit", "-qm", "base",
+        ],
+        cwd=root, check=True,
+    )
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root,
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    (root / "test_dirty_only.py").write_text(
+        "from pkg import widget\ndef test_dirty_only(): assert widget.VALUE == 1\n",
+        encoding="utf-8",
+    )
+
+    report = brief._base_scope_derivation_report(
+        root, base, ["pkg/widget.py", "test_widget.py", "test_import_only.py"]
+    )
+
+    assert "selected 2 existing test(s)" in report, report
+    assert "test_dirty_only.py" not in report, report
+
+
 def test_scope_report_does_not_double_count_a_derived_test_already_named(tmp_path):
     root = _scope_fixture(tmp_path)
     report = brief._scope_derivation_report(
