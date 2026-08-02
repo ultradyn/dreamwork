@@ -42,6 +42,9 @@ def launch_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # launch_lane shares brief.py's placeholder predicate (#881); the real
     # module, not a stub, so a change to it is exercised here too.
     _write(root / "dev" / "brief.py", (REPO / "dev" / "brief.py").read_text(encoding="utf-8"))
+    # brief.py imports land_lane at module level for DERIVATION_RULES (#988);
+    # the real module, not a stub, so the fixture can import brief.py at all.
+    _write(root / "dev" / "land_lane.py", (REPO / "dev" / "land_lane.py").read_text(encoding="utf-8"))
     _write(root / "dev" / "dispatch_lane.py", """
 import argparse, os, subprocess, sys
 p = argparse.ArgumentParser(); p.add_argument('--prompt'); p.add_argument('--prepare', action='store_true'); p.add_argument('rest', nargs=argparse.REMAINDER)
