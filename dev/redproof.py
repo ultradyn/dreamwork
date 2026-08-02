@@ -301,6 +301,40 @@ def _pin_expectations(root: Path, target_posix: str,
     return sources, untracked
 
 
+def _lane_changed_expectations(root: Path, base: str,
+                               sources: list[dict]) -> list[str]:
+    """Return pinned sources whose bytes differ from this lane's base."""
+    changed: list[str] = []
+    for source in sources:
+        path = source["path"]
+        if _git(root, "diff", "--name-only", base, "--", path):
+            changed.append(path)
+    return changed
+
+
+def _expectation_staling_cause(root: Path, entry: dict, path: str) -> str:
+    """Name whether the lane or a moved base made an expectation pin stale."""
+    begun_base = entry.get("begun_base")
+    base_shas = entry.get("expectation_base_shas")
+    if (not isinstance(begun_base, str) or not begun_base
+            or not isinstance(base_shas, dict) or path not in base_shas):
+        return (
+            "staling cause unavailable — this registration predates base "
+            "recording; re-arm against the current tree")
+    current_base = _git(root, "merge-base", "HEAD", "master")
+    current_base_sha = _batch_blobs(root, [current_base], [path]).get(
+        (current_base, path))
+    if current_base_sha != base_shas[path]:
+        return (
+            "rebase-caused staling — the expectation source changed in the "
+            "lane's base after arming; re-observe the evidence and re-arm "
+            "against the rebased tree")
+    return (
+        "lane-caused staling — the expectation source did not change in the "
+        "lane's base after arming; re-arm after your last commit to this "
+        "expectation source")
+
+
 def _expectation_drift(root: Path, entry: dict) -> list[str]:
     """Return expectation drift descriptions, faulting on unevaluable state."""
     sources = entry.get("expectation_sources")
@@ -331,7 +365,8 @@ def _expectation_drift(root: Path, entry: dict) -> list[str]:
         if actual_sha != pinned_sha:
             drift.append(
                 f"{entry.get('path', '?')!r}: expectation source {posix!r} "
-                f"changed (pinned {pinned_sha[:12]}, current {actual_sha[:12]})")
+                f"changed (pinned {pinned_sha[:12]}, current {actual_sha[:12]}); "
+                f"{_expectation_staling_cause(root, entry, posix)}")
     return drift
 
 
@@ -907,6 +942,16 @@ def begin(cwd: Path | None, path: str,
         expectation_sources, untracked = _pin_expectations(
             root, posix, list(expectations))
         begun_head = _git(root, "rev-parse", "HEAD")
+        begun_base = _git(root, "merge-base", begun_head, "master")
+        base_blobs = _batch_blobs(
+            root, [begun_base], [source["path"]
+                                 for source in expectation_sources])
+        expectation_base_shas = {
+            source["path"]: base_blobs.get((begun_base, source["path"]))
+            for source in expectation_sources
+        }
+        lane_changed = _lane_changed_expectations(
+            root, begun_base, expectation_sources)
     except RedproofError as exc:
         sys.stderr.write(f"begin: REFUSED — {exc}\n")
         return 2
@@ -943,6 +988,10 @@ def begin(cwd: Path | None, path: str,
         # Commit reachability is the registration boundary.  Unlike begun_at,
         # it cannot be forged by commit-date rewriting (#901).
         "begun_head": begun_head,
+        # Distinguishes a lane-local post-arm change from a base move/rebase
+        # when a pinned expectation later drifts.
+        "begun_base": begun_base,
+        "expectation_base_shas": expectation_base_shas,
         "expectation_sources": expectation_sources,
         # cleared until restore records them:
         "injected_sha": None,
@@ -975,6 +1024,15 @@ def begin(cwd: Path | None, path: str,
             f"scratch and the file leaves the working tree. Prefer a committed "
             f"expectation source so the registration survives cleanup (#1088).")
     print(f"       state=armed; sabotage it, then `restore {posix}`.")
+    for src in lane_changed:
+        # LAST so it cannot disappear between the ordinary protocol lines.
+        # This is evidence, not prophecy: differing from the merge base makes
+        # the source plausibly lane-owned, but does not prove a future edit.
+        print(
+            f"begin: WARNING — expectation source {src!r} already differs "
+            f"from this lane's base, so it is plausibly part of this lane's "
+            f"work and may change again; re-arm after your last commit to "
+            f"{src!r}.")
     return 0
 
 
@@ -1165,6 +1223,8 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
             entry = {
                 "path": posix,
                 "begun_head": armed.get("begun_head"),
+                "begun_base": armed.get("begun_base"),
+                "expectation_base_shas": armed.get("expectation_base_shas"),
                 "expectation_sources": armed.get("expectation_sources"),
             }
             entries.append(entry)
