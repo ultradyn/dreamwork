@@ -117,7 +117,7 @@ PIN = re.compile(r"\s*@\s*(?P<rev>[0-9a-fA-F]{7,40})\b")
 # not an attested attribution.  The only mechanical defect it gates on is an
 # UNRESOLVABLE id — a dangling reference.
 
-DOCSTRING_CITATION = re.compile(r"\(#(\d+)\)")
+DOCSTRING_CITATION = re.compile(r"\(#([0-9a-fA-F]+)\)")
 _DOCSTRING_NODES = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 
@@ -200,9 +200,16 @@ def _scan_docstring_citations(
             for match in DOCSTRING_CITATION.finditer(doc):
                 lineno = base_line + doc[: match.start()].count("\n")
                 raw = match.group(1)
+                try:
+                    tid = int(raw)
+                except ValueError:
+                    # Hex-letter token (e.g. ffffff) — not a decimal issue
+                    # id.  Classified as CSS colour if six hex digits,
+                    # else UNRESOLVABLE (#1034).
+                    tid = -1
                 findings.append(
                     DocstringCitation(
-                        rel, name, lineno, int(raw), raw
+                        rel, name, lineno, tid, raw
                     )
                 )
     return findings, skipped, docstrings_scanned
@@ -247,26 +254,31 @@ def _resolve_titles(dw_dir: Path) -> dict[int, str]:
 
 
 def _is_css_colour(raw_token: str) -> bool:
-    """Whether a parenthesised number is unambiguously a CSS colour.
+    """Whether a parenthesised token is a CSS colour shape.
 
     Operates on the ORIGINAL TOKEN STRING, not the int's decimal
-    re-rendering (#1034).  The regex ``\\(#(\\d+)\\)`` extracts decimal
-    digit runs; a six-digit all-decimal run like ``000000`` becomes int 0
-    and ``str(0)`` is ``"0"`` (length 1), so the old int-based check
-    returned False and the token reached UNRESOLVABLE — a legitimate CSS
-    black wedged the checker.  Checking the original ``"000000"`` (length
-    6, all hex) returns True → FILTERED, as documented.
+    re-rendering (#1034).  A six-digit all-decimal run like ``000000``
+    becomes int 0 and ``str(0)`` is ``"0"`` (length 1), so an int-based
+    check returned False and the token reached UNRESOLVABLE — a
+    legitimate CSS black wedged the checker.  Checking the original
+    ``"000000"`` (length 6, all hex) returns True → FILTERED.
 
-    ``(#ffffff)`` is never extracted (the regex matches ``\\d`` only, and
-    ``f`` is not a digit), so hex-letter colours are naturally absent.
-    Six-digit decimal tokens above the ledger max are also six hex digits
-    and are treated as CSS — a known false-negative direction stated
-    here, not hidden: a decimal run that could be a miscited high issue
-    id is indistinguishable from a CSS colour by syntax alone.  The
-    checker exists to catch miscitations *within the plausible issue-id
-    range*; an id above the max is already SUSPICIOUS when it is 1–5
-    digits, and a 6-digit above-max token is the one shape the CSS rule
-    cannot disambiguate.
+    The regex ``\\(#([0-9a-fA-F]+)\\)`` now extracts hex-letter tokens
+    too, so ``(#ffffff)`` IS extracted and reaches this function —
+    length 6, all hex → True → FILTERED (#1034).  Hex-letter tokens that
+    fail ``int()`` are given ``task_id = -1`` (never above max, never in
+    titles), so they reach the CSS check rather than being swallowed as
+    UNRESOLVABLE.
+
+    Ordering matters (#1034): the classifier checks the ledger max
+    FIRST.  A six-digit token that is BOTH a valid CSS colour shape AND
+    above the ledger max is SUSPICIOUS, not FILTERED — silently
+    swallowing an above-max lookalike is precisely the false negative
+    this checker exists to prevent.  CSS filtering applies only to
+    tokens WITHIN the plausible id range (at or below the max), where
+    being a colour is the more likely reading.  A real CSS colour like
+    ``334155`` is still FILTERED when the max encompasses it; a
+    six-digit above-max lookalike like ``999999`` is SUSPICIOUS.
     """
     return len(raw_token) == 6 and all(
         d in "0123456789abcdefABCDEF" for d in raw_token
@@ -290,13 +302,15 @@ def check_docstring_citations(
     coding cookie) is reported as SKIPPED with its reason, separately from
     examined — never silently absorbed into a green count (#868).
 
-    Parenthesised numbers are classified by a stated rule (#1034): six hex
-    digits in the ORIGINAL TOKEN is a CSS colour (FILTERED); an issue
-    reference above the ledger max is SUSPICIOUS (reported, not hidden);
-    an id that resolves is reported with its title; an id that does not
-    resolve is UNRESOLVABLE (the only mechanical gate).  Resolved rows
-    print by default — the checker's value is the title beside each
-    citation, visible without flags (#1034 Finding 5).
+    Parenthesised tokens are classified by a stated rule (#1034): the
+    ledger max is consulted FIRST — an issue reference above the max is
+    SUSPICIOUS (reported, not hidden), even when it is also six hex
+    digits and could be read as a CSS colour; a six-hex-digit token
+    WITHIN range is a CSS colour (FILTERED); an id that resolves is
+    reported with its title; an id that does not resolve is UNRESOLVABLE
+    (the only mechanical gate).  Resolved rows print by default — the
+    checker's value is the title beside each citation, visible without
+    flags (#1034 Finding 5).
 
     Exit 2 if no dev/*.py files were examined (vacuity: #868).  Exit 1 if
     any cited id does not resolve.  Exit 0 when every cited id resolves or
@@ -360,10 +374,10 @@ def check_docstring_citations(
     suspicious: list[DocstringCitation] = []
     filtered: list[DocstringCitation] = []
     for c in citations:
-        if _is_css_colour(c.raw_token):
-            filtered.append(c)
-        elif max_task_id and c.task_id > max_task_id:
+        if max_task_id and c.task_id > max_task_id:
             suspicious.append(c)
+        elif _is_css_colour(c.raw_token):
+            filtered.append(c)
         elif c.task_id in titles:
             resolved.append(c)
         else:
@@ -371,7 +385,8 @@ def check_docstring_citations(
     total_real = len(resolved) + len(unresolvable) + len(suspicious)
 
     # Signal-first output (#1034 Finding 5): the rows a reader must act on
-    # print first; resolved rows print only with --verbose.
+    # print first; resolved rows print by default so the title beside each
+    # citation is visible without flags.
     print(
         f"DOCSTRING CITATIONS: examined {files_examined} file(s) "
         f"({len(skipped)} skipped), {docstrings_scanned} docstring(s) "
@@ -545,7 +560,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="show resolved citation rows (default: signal-only output)",
+        help="accepted for compatibility; resolved rows print by default "
+        "(#1034 Finding 5)",
     )
     args = parser.parse_args(argv)
     root = args.root.resolve()

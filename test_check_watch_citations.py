@@ -225,7 +225,8 @@ def test_docstring_report_resolves_and_prints_titles(monkeypatch, tmp_path, caps
     monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
     root = _docstring_repo(tmp_path, _FIXTURE_A, _FIXTURE_B)
 
-    # verbose=True so resolved rows appear (default hides them, Finding 5).
+    # Resolved rows print by default (Finding 5); verbose is accepted for
+    # compatibility but does not gate them.
     assert citations.check_docstring_citations(root, verbose=True) == 0
     out = capsys.readouterr().out
 
@@ -355,8 +356,11 @@ def test_latin1_coding_cookie_is_examined(monkeypatch, tmp_path, capsys):
 def test_css_colour_six_hex_is_filtered(monkeypatch, tmp_path, capsys):
     # Finding 3: a parenthesised CSS colour like (#334155) is six hex
     # digits — unambiguous CSS syntax.  It is FILTERED, not counted as an
-    # issue reference.  The rule is stated in the row.
-    titles = {868: "a real entry", 1038: "the current max"}
+    # issue reference.  The rule is stated in the row.  The fixture max
+    # MUST encompass the colour's decimal value (3355189) so the max-first
+    # classifier does not divert it to SUSPICIOUS before the CSS check —
+    # a CSS colour within range is the case the filter exists for (#1034).
+    titles = {868: "a real entry", 5000000: "the current max"}
     monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
     root = _docstring_repo(
         tmp_path,
@@ -430,6 +434,65 @@ def test_above_max_non_colour_is_suspicious(monkeypatch, tmp_path, capsys):
     # but it MUST be visible — not silently filtered.
     assert "FAIL" not in out
     assert "FILTERED" not in out
+
+
+def test_hex_letter_css_colour_is_extracted_and_filtered(monkeypatch, tmp_path, capsys):
+    # Finding 2 path 1 (#1034): (#ffffff) contains hex letters, so the
+    # old regex \\(#(\\d+)\\) never matched it — the token was invisible
+    # and the checker reported ZERO citations for a docstring that had
+    # one.  The broadened regex \\(#([0-9a-fA-F]+)\\) now extracts it;
+    # int("ffffff") raises ValueError so task_id is -1 (never above max,
+    # never in titles); _is_css_colour("ffffff") is True → FILTERED.
+    # A test using only decimal digits cannot see this path.
+    titles = {868: "a real entry", 1038: "the current max"}
+    monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
+    root = _docstring_repo(
+        tmp_path,
+        _FIXTURE_A,
+        (
+            "hexcolour.py",
+            '"""The background is (#ffffff) in this docstring.\n"""\n',
+        ),
+    )
+
+    assert citations.check_docstring_citations(root) == 0
+    out = capsys.readouterr().out
+    # The token WAS extracted (it appears in FILTERED output) — proving
+    # the regex now sees hex letters, not just decimal digits.
+    assert "FILTERED" in out and "#ffffff" in out
+    assert "CSS colour" in out
+    assert "UNRESOLVABLE" not in out
+    assert "SUSPICIOUS" not in out
+
+
+def test_above_max_css_lookalike_is_suspicious(monkeypatch, tmp_path, capsys):
+    # Finding 2 path 2 (#1034): (#999999) is six decimal digits (all hex),
+    # so the old CSS-first classifier swallowed it as FILTERED before
+    # consulting the ledger max.  But 999999 is far above the real max
+    # (~1038) — it is a plausible typo for a future issue id, and silently
+    # filtering it is precisely the false negative this checker exists to
+    # prevent.  The max-first classifier reports it as SUSPICIOUS.
+    # A test using a 1–5 digit id cannot see this path: the defect is
+    # specific to six-digit tokens that look like colours.  Use six digits
+    # above the max (#1034).
+    titles = {868: "a real entry", 1038: "the current max"}
+    monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
+    root = _docstring_repo(
+        tmp_path,
+        _FIXTURE_A,
+        (
+            "lookalike.py",
+            '"""See (#999999) for the plan.\n"""\n',
+        ),
+    )
+
+    assert citations.check_docstring_citations(root) == 0
+    out = capsys.readouterr().out
+    assert "SUSPICIOUS" in out and "#999999" in out
+    assert "exceeds ledger max" in out
+    # The dangerous direction: it must NOT be silently FILTERED.
+    assert "FILTERED" not in out
+    assert "FAIL" not in out
 
 
 def test_store_absent_reports_not_checked(monkeypatch, tmp_path, capsys):
