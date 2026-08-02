@@ -826,6 +826,53 @@ def _warn_row_index(rows: Sequence[str]) -> dict[tuple[str, ...], str]:
     return indexed
 
 
+def _declared_warn_index(
+    rows: Sequence[str],
+) -> tuple[dict[tuple[str, ...], str], str | None]:
+    """Normalise coordinator-declared WARN rows to an identity→row index.
+
+    A declared row is the WARN line exactly as ``lint.py`` prints it
+    (``"  WARN  detail"``). The coordinator copies it from the gate's own
+    ``+ row`` / ``- row`` diff output, so a leading ``"+ "`` or ``"- "`` prefix
+    is tolerated and stripped before normalisation. Identity is then derived by
+    the same ``_warn_row_index`` the gate uses on the observed rows, so label
+    padding never reads as a change (#794).
+
+    Returns ``(index, None)`` on success or ``(empty, fault)`` on one of two
+    distinct faults (#136 — nothing declared, nothing changed, the declaration
+    could not be read must stay distinct):
+
+    - **unreadable**: a cleaned row does not even parse as a WARN row — it
+      could not name a real observed row. Validity is bound to ``WARN_ROW``,
+      the *same* filter ``_warn_rows`` applies to the observed lint output, so
+      a declaration is valid exactly when it could name a real row: a row with
+      no structured separator (``"  WARN  detail"``) is still a valid WARN row,
+      while a typo (``"not a WARN row"``) is not. The fault names the offending
+      token, so a typo is caught as unreadable rather than silently authorising
+      nothing and reporting as a mismatch (#1040).
+    - **ambiguous**: two declared rows of different text collapse to one
+      identity, which the gate cannot adjudicate.
+
+    A valid declaration that simply names a row the merge did not observe is NOT
+    unreadable — it is a mismatch, reported by the caller after the merge. The
+    presence of a declaration never reads as its correctness (#994); only an
+    exact identity-set match does.
+    """
+    cleaned: list[str] = []
+    for row in rows:
+        cleaned.append(row[2:] if row[:2] in ("+ ", "- ") else row)
+    unreadable = [row for row in cleaned if not WARN_ROW.match(row)]
+    if unreadable:
+        return {}, (
+            f"coordinator WARN declaration could not be read: "
+            f"{unreadable[0]!r} is not a WARN row"
+        )
+    try:
+        return _warn_row_index(cleaned), None
+    except ValueError as exc:
+        return {}, f"coordinator WARN declaration is ambiguous: {exc}"
+
+
 def _print_rows(label: str, rows: Sequence[str]) -> None:
     print(f"lint WARN rows {label}: {len(rows)}")
     for row in rows:
@@ -925,7 +972,13 @@ def _lint(repo: Path) -> tuple[subprocess.CompletedProcess[str], tuple[str, ...]
 
 
 def land(
-    branch: str, tests: Sequence[str], *, base: str = "master", squash: bool = False
+    branch: str,
+    tests: Sequence[str],
+    *,
+    base: str = "master",
+    squash: bool = False,
+    expect_warn_add: Sequence[str] = (),
+    expect_warn_remove: Sequence[str] = (),
 ) -> int:
     repo_text = _git_text(Path.cwd(), "rev-parse", "--show-toplevel")
     repo = Path(repo_text).resolve() if repo_text else Path.cwd().resolve()
@@ -1020,6 +1073,28 @@ def land(
             retained,
             base_state=_base_state(repo, base, base_sha),
         )
+
+    # Coordinator authorisation for an intended WARN row-set change (#1040).
+    # The coordinator is the single writer of the lint baseline, so the
+    # declaration arrives by the one channel the lane cannot forge: the gate
+    # invocation itself. The declared rows are normalised by _declared_warn_index
+    # (which also tolerates a leading "+ "/"- " prefix the coordinator copies
+    # from the gate's own diff output), so padding differences do not read as a
+    # mismatch. A declaration is validated here — before the merge — so an
+    # ambiguous declaration (two rows sharing one identity) refuses early
+    # instead of spending the lane's budget.
+    declared_added_index, add_fault = _declared_warn_index(expect_warn_add)
+    declared_removed_index, remove_fault = _declared_warn_index(expect_warn_remove)
+    if add_fault or remove_fault:
+        return _refuse(
+            "lint-baseline",
+            add_fault or remove_fault,
+            f"declared_add={len(expect_warn_add)}; declared_remove={len(expect_warn_remove)}",
+            retained,
+            base_state=_base_state(repo, base, base_sha),
+        )
+    declared_added_ids = set(declared_added_index)
+    declared_removed_ids = set(declared_removed_index)
 
     # Spans the pre-merge phase (red-proof-history, below) and the post-merge
     # phases. Declared here — before the first gate appends to it — so the
@@ -1312,6 +1387,56 @@ def land(
             print(f"+ {row}")
         for row in removed:
             print(f"- {row}")
+
+        # #1040: a coordinator may authorise an intended WARN row-set change by
+        # declaring the exact added and removed rows. When a declaration is
+        # present the observed sets must match the declared sets EXACTLY — set
+        # equality, both directions, for added and removed separately. An exact
+        # match passes (with denominators reported); anything else refuses. The
+        # default with no declaration is unchanged behaviour: any change refuses.
+        if declared_added_ids or declared_removed_ids:
+            added_match = added_ids == declared_added_ids
+            removed_match = removed_ids == declared_removed_ids
+            added_matched = added_ids & declared_added_ids
+            removed_matched = removed_ids & declared_removed_ids
+            overdeclared_added = sorted(declared_added_ids - added_ids)
+            undeclared_added = sorted(added_ids - declared_added_ids)
+            overdeclared_removed = sorted(declared_removed_ids - removed_ids)
+            undeclared_removed = sorted(removed_ids - declared_removed_ids)
+            print(
+                f"{phase} WARN authorisation: "
+                f"declared_added={len(declared_added_ids)} observed_added={len(added_ids)} "
+                f"matched_added={len(added_matched)}; "
+                f"declared_removed={len(declared_removed_ids)} observed_removed={len(removed_ids)} "
+                f"matched_removed={len(removed_matched)}"
+            )
+            if added_match and removed_match:
+                # An authorised pass is never silent (#136/#868): the
+                # denominators above distinguish it from a zero-change pass.
+                return None
+            mismatch: list[str] = []
+            if undeclared_added:
+                mismatch.append(
+                    f"{len(undeclared_added)} added row(s) not declared"
+                )
+            if overdeclared_added:
+                mismatch.append(
+                    f"{len(overdeclared_added)} declared-added row(s) not observed"
+                )
+            if undeclared_removed:
+                mismatch.append(
+                    f"{len(undeclared_removed)} removed row(s) not declared"
+                )
+            if overdeclared_removed:
+                mismatch.append(
+                    f"{len(overdeclared_removed)} declared-removed row(s) not observed"
+                )
+            return refuse_gated(
+                phase,
+                "WARN row-set change does not match the coordinator declaration exactly",
+                f"merge={merged_sha}; baseline={len(baseline)} rows; {reading}={len(after)} rows; "
+                f"{'; '.join(mismatch)}",
+            )
         if added or removed:
             return refuse_gated(
                 phase,
@@ -1502,8 +1627,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="atomically squash the lane in place, preserving and verifying its original tree",
     )
+    parser.add_argument(
+        "--expect-warn-add",
+        action="append",
+        default=[],
+        metavar="ROW",
+        help="declare a WARN row (exact text as lint.py prints it) expected to be ADDED "
+        "relative to the baseline; the observed added set must match all declared rows "
+        "exactly (#1040). Repeatable.",
+    )
+    parser.add_argument(
+        "--expect-warn-remove",
+        action="append",
+        default=[],
+        metavar="ROW",
+        help="declare a WARN row expected to be REMOVED relative to the baseline; "
+        "the observed removed set must match exactly (#1040). Repeatable.",
+    )
     args = parser.parse_args(argv)
-    return land(args.branch, args.tests, base=args.base, squash=args.squash)
+    return land(
+        args.branch,
+        args.tests,
+        base=args.base,
+        squash=args.squash,
+        expect_warn_add=args.expect_warn_add,
+        expect_warn_remove=args.expect_warn_remove,
+    )
 
 
 if __name__ == "__main__":

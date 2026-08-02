@@ -15,6 +15,7 @@ Restore discipline while writing these (#349/#652): snapshots live in
 import importlib.machinery
 import importlib.util
 import hashlib
+import inspect
 import json
 import re
 import shlex
@@ -1243,8 +1244,26 @@ class TestInjectionInHistoryIsRefused:
 
         parsed = {}
 
-        def capture(branch, tests, *, base="master", squash=False):
-            parsed.update(branch=branch, tests=list(tests), base=base, squash=squash)
+        # Bind against land()'s real signature, captured before the patch
+        # below swaps land_lane.land for this double. The double now tracks
+        # land()'s parameters: it cannot fall behind a new one (the drift
+        # that broke the gate, #1040 — a literal stub lagged main()'s
+        # forwarding) and cannot silently accept one land() does not take
+        # (signature.bind rejects kwargs land() lacks, so this is not the
+        # **kwargs trap). This matches the derive-from-real discipline
+        # already applied to the invocation above, closing the one literal
+        # that drifted.
+        land_sig = inspect.signature(land_lane.land)
+
+        def capture(*args, **kwargs):
+            bound = land_sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            parsed.update(
+                branch=bound.arguments["branch"],
+                tests=list(bound.arguments["tests"]),
+                base=bound.arguments["base"],
+                squash=bound.arguments["squash"],
+            )
             return 0
 
         monkeypatch.setattr(land_lane, "land", capture)

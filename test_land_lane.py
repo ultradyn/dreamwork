@@ -347,6 +347,325 @@ def test_meaningful_detail_whitespace_swap_refuses_and_names_both_rows(landing_r
     _assert_retained(root, lane)
 
 
+# ---------------------------------------------------------------------------
+# #1040: coordinator authorisation for an intended WARN row-set change.
+#
+# The gate invocation is the one channel a lane cannot forge (the coordinator
+# types it), so the declaration arrives as CLI flags. Every test below pairs a
+# "declared change passes" assertion with its mandatory "undeclared change
+# still refuses" counterpart, and asserts the reported DENOMINATORS rather than
+# exit codes alone — an exit code cannot distinguish "adjudicated and matched"
+# from "ignored the declaration" (#136/#868).
+# ---------------------------------------------------------------------------
+
+
+def _run_declared(root, *warn_flags, tests="test_named.py"):
+    """Invoke the gate with coordinator WARN-authorisation flags.
+
+    ``warn_flags`` are the raw CLI tokens (``--expect-warn-add ROW`` etc.) so
+    the test body shows exactly what the coordinator would type.
+    """
+    return _run(root, *warn_flags, tests)
+
+
+def _add_lane_warn(lane, *rows):
+    """Commit a lint-rows.txt on the lane adding the given rows to the baseline."""
+    _write(lane / "lint-rows.txt", "old warning\n" + "\n".join(rows) + "\n")
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", "add warn row(s)")
+
+
+def _baseline_two_warnings(root, lane):
+    """Give the baseline a second warning so removing one leaves a non-empty
+    population — the gate refuses on an empty WARN reading BEFORE it reaches
+    authorisation, so a fix-only test must leave at least one row."""
+    _write(root / "lint-rows.txt", "old warning\nkeeper warning\n")
+    _git(root, "add", "lint-rows.txt")
+    _git(root, "commit", "-m", "add a second baseline warning")
+    _git(lane, "rebase", "master")
+
+
+def test_declared_warn_add_passes_and_reports_denominators(landing_repo):
+    """The core #1040 case: a lane whose product is a new WARN row, declared
+    by the coordinator, passes — and the pass reports denominators that
+    distinguish it from a silent zero-change pass."""
+    root, lane = landing_repo
+    _add_lane_warn(lane, "new warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root, "--expect-warn-add", "  WARN  new warning"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "gate-coverage: 6 of 6 declared gates passed" in result.stdout
+    # The comparison still shows what changed — suppression would hide regressions.
+    assert "lint-precheck WARN row-set comparison: added=1 removed=0" in result.stdout
+    # The authorisation line reports denominators (#136/#868): declared,
+    # observed, and matched must all be visible and distinguish this pass from
+    # a zero-change pass.
+    assert (
+        "lint-precheck WARN authorisation: "
+        "declared_added=1 observed_added=1 matched_added=1; "
+        "declared_removed=0 observed_removed=0 matched_removed=0"
+    ) in result.stdout
+    # lint-comparison must also adjudicate the same declaration.
+    assert (
+        "lint-comparison WARN authorisation: "
+        "declared_added=1 observed_added=1 matched_added=1"
+    ) in result.stdout
+    # Master advances on a successful landing (unlike a refusal).
+    assert _git(root, "rev-parse", "refs/heads/master") != before
+
+
+def test_undeclared_warn_add_still_refuses(landing_repo):
+    """Mandatory pair for test_declared_warn_add_passes: the SAME diff without
+    a declaration still refuses — proving the authorisation was adjudicated,
+    not bypassed."""
+    root, lane = landing_repo
+    _add_lane_warn(lane, "new warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "lint-precheck WARN row-set comparison: added=1 removed=0" in result.stdout
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_declared_warn_remove_passes(landing_repo):
+    """Symmetry: a lane that FIXES a lint warning removes a row. The
+    declaration covers removed as well as added, or a fix-only lane is stuck."""
+    root, lane = landing_repo
+    _baseline_two_warnings(root, lane)
+    # Remove only one warning; the other survives so the after-population is
+    # non-empty and the gate reaches the authorisation check.
+    _write(lane / "lint-rows.txt", "keeper warning\n")
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", "fix the baseline warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root, "--expect-warn-remove", "  WARN  old warning"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "gate-coverage: 6 of 6 declared gates passed" in result.stdout
+    assert "lint-precheck WARN row-set comparison: added=0 removed=1" in result.stdout
+    assert (
+        "lint-precheck WARN authorisation: "
+        "declared_added=0 observed_added=0 matched_added=0; "
+        "declared_removed=1 observed_removed=1 matched_removed=1"
+    ) in result.stdout
+    # Master advances on a successful landing.
+    assert _git(root, "rev-parse", "refs/heads/master") != before
+
+
+def test_undeclared_warn_remove_still_refuses(landing_repo):
+    """Mandatory pair for test_declared_warn_remove_passes."""
+    root, lane = landing_repo
+    _baseline_two_warnings(root, lane)
+    _write(lane / "lint-rows.txt", "keeper warning\n")
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", "fix the baseline warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "lint-precheck WARN row-set comparison: added=0 removed=1" in result.stdout
+    assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_declared_add_wrong_row_refuses(landing_repo):
+    """Declared A, observed B → refuse. A declaration that means 'some change
+    is fine' would let an unrelated regression ride along."""
+    root, lane = landing_repo
+    _add_lane_warn(lane, "actual warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root, "--expect-warn-add", "  WARN  declared warning"
+    )
+
+    assert result.returncode == 1
+    assert "REFUSE phase=lint-precheck" in result.stderr
+    assert "does not match the coordinator declaration exactly" in result.stderr
+    # Denominators show the mismatch concretely.
+    assert "declared_added=1 observed_added=1 matched_added=0" in result.stdout
+    assert "1 added row(s) not declared" in result.stderr
+    assert "1 declared-added row(s) not observed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_declared_add_observed_has_extra_refuses(landing_repo):
+    """Declared A, observed A plus B → refuse. The undeclared B is a
+    regression hiding inside an authorised landing."""
+    root, lane = landing_repo
+    _add_lane_warn(lane, "declared warning", "undeclared warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root, "--expect-warn-add", "  WARN  declared warning"
+    )
+
+    assert result.returncode == 1
+    assert "REFUSE phase=lint-precheck" in result.stderr
+    assert "does not match the coordinator declaration exactly" in result.stderr
+    assert "declared_added=1 observed_added=2 matched_added=1" in result.stdout
+    assert "1 added row(s) not declared" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_declared_add_overdeclared_refuses(landing_repo):
+    """Declared A and B, observed only A → refuse. This is the case the brief
+    names as most likely to be skipped: the declaration is a SUPERSET of the
+    observed change, so a permissive check would pass."""
+    root, lane = landing_repo
+    _add_lane_warn(lane, "observed warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root,
+        "--expect-warn-add", "  WARN  observed warning",
+        "--expect-warn-add", "  WARN  never appeared warning",
+    )
+
+    assert result.returncode == 1
+    assert "REFUSE phase=lint-precheck" in result.stderr
+    assert "does not match the coordinator declaration exactly" in result.stderr
+    assert "declared_added=2 observed_added=1 matched_added=1" in result.stdout
+    assert "1 declared-added row(s) not observed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_declared_change_not_observed_refuses(landing_repo):
+    """Declared A, observed nothing → refuse. The coordinator declared a
+    change that did not happen; the gate must not pass on a phantom
+    declaration."""
+    root, lane = landing_repo
+    # No change to lint-rows.txt — the lane only has feature.txt.
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root, "--expect-warn-add", "  WARN  phantom warning"
+    )
+
+    assert result.returncode == 1
+    assert "REFUSE phase=lint-precheck" in result.stderr
+    assert "does not match the coordinator declaration exactly" in result.stderr
+    assert "declared_added=1 observed_added=0 matched_added=0" in result.stdout
+    assert "1 declared-added row(s) not observed" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_malformed_warn_declaration_refuses_naming_offending_token(landing_repo):
+    """#1040 Finding 1: a coordinator declaration that does not parse as a WARN
+    row (a typo) must refuse as a DECLARATION-UNREADABLE fault naming the
+    offending token — not as a generic row-set mismatch that diagnoses the
+    coordinator's own command-line error as a lane defect (#136: nothing
+    declared, nothing changed, the declaration could not be read must stay
+    distinct).
+
+    The lane has a GENUINE added warning, so the defect is not whether the lane
+    changed the baseline — it did — but that the declaration cannot be read.
+    Validation is bound to WARN_ROW, the same filter _warn_rows applies to the
+    observed lint output, so a declaration is unreadable exactly when it could
+    not name a real row.
+
+    This stays distinct from a mismatch: a valid declaration naming a row the
+    merge did not observe is still a MISMATCH (proven by
+    test_declared_add_wrong_row_refuses), never unreadable. Asserting both the
+    offending token AND the absence of the generic mismatch closes the
+    false-green where 'refuses' passes for the wrong reason.
+    """
+    root, lane = landing_repo
+    _add_lane_warn(lane, "actual warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root, "--expect-warn-add", "not a WARN row"
+    )
+
+    assert result.returncode == 1
+    # Pre-merge validation (lint-baseline), not the post-merge mismatch (lint-precheck).
+    assert "REFUSE phase=lint-baseline" in result.stderr
+    assert "could not be read" in result.stderr
+    # The offending token is named, so the coordinator sees THEIR typo, not a
+    # lane defect.
+    assert "not a WARN row" in result.stderr
+    # The generic mismatch message must NOT appear — that is the bug this fixes.
+    assert "does not match the coordinator declaration exactly" not in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_malformed_warn_remove_declaration_refuses_naming_offending_token(landing_repo):
+    """#1040 Finding 1, remove direction: symmetry — a malformed remove
+    declaration refuses the same way as a malformed add declaration."""
+    root, lane = landing_repo
+    _baseline_two_warnings(root, lane)
+    _write(lane / "lint-rows.txt", "keeper warning\n")
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", "remove one warn row")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root, "--expect-warn-remove", "total garbage declaration"
+    )
+
+    assert result.returncode == 1
+    assert "REFUSE phase=lint-baseline" in result.stderr
+    assert "could not be read" in result.stderr
+    assert "total garbage declaration" in result.stderr
+    assert "does not match the coordinator declaration exactly" not in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_zero_change_pass_prints_no_authorisation_line(landing_repo):
+    """#136: a pass because zero rows changed must NOT print an authorisation
+    line. The authorised-pass case prints one (proven by
+    test_declared_warn_add_passes_and_reports_denominators); this test proves
+    the discriminator — the two passes read differently."""
+    root, lane = landing_repo
+
+    zero_change = _run(root, "test_named.py")
+    assert zero_change.returncode == 0, zero_change.stderr
+    assert "WARN authorisation:" not in zero_change.stdout
+
+
+def test_declared_warn_add_accepts_diff_prefix_from_gate_output(landing_repo):
+    """The coordinator copies the added-row line straight from the gate's
+    ``+   WARN  ...`` diff output. _declared_warn_index strips that leading
+    ``+ `` so the declaration matches the observed row. Without prefix
+    stripping the identity would differ (raw ``"+   WARN  ..."`` vs raw
+    ``"  WARN  ..."``) and the authorisation would never fire — the helper
+    exists to bridge exactly that gap."""
+    root, lane = landing_repo
+    _add_lane_warn(lane, "new warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root, "--expect-warn-add", "+   WARN  new warning"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "lint-precheck WARN authorisation: "
+        "declared_added=1 observed_added=1 matched_added=1"
+    ) in result.stdout
+    assert _git(root, "rev-parse", "refs/heads/master") != before
+
+
 def test_empty_warn_baseline_refuses_as_zero_population(landing_repo):
     root, lane = landing_repo
     _write(root / "lint-rows.txt", "")
