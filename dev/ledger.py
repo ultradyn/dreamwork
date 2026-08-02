@@ -32,7 +32,7 @@ INVARIANTS — enforced before AND after the write
 
 USAGE
   python3 dev/ledger.py counts [--ledger PATH]
-  python3 dev/ledger.py fold <id> --note <text> [--ledger PATH] [--dry-run]
+  python3 dev/ledger.py fold <id> --note <text> [--base REF] [--ledger PATH] [--dry-run]
   python3 dev/ledger.py file <title> [--note <text>] [--priority P] [--type T] [--origin O] [--ledger PATH] [--dry-run]
   python3 dev/ledger.py note <id> --note <text> [--ledger PATH] [--dry-run]
   python3 dev/ledger.py reprioritise <id> <band> --why <text> [--ledger PATH]
@@ -97,7 +97,7 @@ LEDGER_DEFAULT = ".dreamwork/tasks.md"
 NOTE_PREFIX = "  · "  # two-space indent, U+00B7, space — the ledger's continuation idiom
 _BLOCKER_ID = re.compile(r"(?<![\w#])#([1-9]\d*)\b")
 _FOLD_SHA_TOKEN = re.compile(
-    r"(?<![0-9A-Za-z])[0-9A-Fa-f]{7,40}(?![0-9A-Za-z])")
+    r"(?<![0-9A-Za-z])[0-9A-Fa-f]{7,}(?![0-9A-Za-z])")
 
 
 class LedgerError(Exception):
