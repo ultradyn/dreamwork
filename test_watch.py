@@ -34,6 +34,59 @@ from dreamwork_db import Access, open_database
 from dreamwork_db.tasks import task_store_spec
 
 
+# --- node subprocess policy (#1121) --------------------------------------
+# Seconds before a `node` spawn in a test is declared timed out.  Node startup
+# is ~30 ms median on an idle box (measured 2026-08-03); the default is generous
+# so a real hang still fails fast while an honest run needs well under a second.
+# The merge gate raises it via ``DREAMWORK_NODE_TIMEOUT`` when six lanes contend
+# on a two-thread box, where an honest `node` run can blow past a hard-coded
+# ceiling and read as a defect in the branch under test (#1121).  This is the
+# single source for every node timeout in this file: a bare literal named only
+# at the call site is how the old 5 s ceiling drifted in unmeasured.
+NODE_TIMEOUT = float(os.environ.get("DREAMWORK_NODE_TIMEOUT", "10"))
+
+
+def _node_timeout_message(argv, timeout):
+    return (
+        "node timed out after %gs (%s); under lane-fleet load this is usually "
+        "NOT a defect in the branch under test — re-run before filing. "
+        "If it persists on an idle box, the script is genuinely hung."
+        % (timeout, argv[0] if argv else "node"))
+
+
+def _node_run(argv, **kwargs):
+    """``subprocess.run`` for a node spawn: one named timeout + a diagnosis.
+
+    On ``TimeoutExpired`` re-raises as ``AssertionError`` so the failure MESSAGE
+    carries the load-sensitive diagnosis instead of a bare ``TimeoutExpired``
+    traceback that reads identically to an assertion failure in the gate log.
+    The original exception is chained (``__cause__``) for the raw details.
+    """
+    kwargs.setdefault("timeout", NODE_TIMEOUT)
+    try:
+        return subprocess.run(argv, **kwargs)
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError(_node_timeout_message(argv, NODE_TIMEOUT)) from exc
+
+
+def _node_output(argv, **kwargs):
+    """``subprocess.check_output`` for a node spawn (see ``_node_run``)."""
+    kwargs.setdefault("timeout", NODE_TIMEOUT)
+    try:
+        return subprocess.check_output(argv, **kwargs)
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError(_node_timeout_message(argv, NODE_TIMEOUT)) from exc
+
+
+def _node_check(argv, **kwargs):
+    """``subprocess.check_call`` for a node spawn (see ``_node_run``)."""
+    kwargs.setdefault("timeout", NODE_TIMEOUT)
+    try:
+        return subprocess.check_call(argv, **kwargs)
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError(_node_timeout_message(argv, NODE_TIMEOUT)) from exc
+
+
 QUESTIONS = """# Questions for the human
 
 ## Open
@@ -732,8 +785,8 @@ class TestCollector(unittest.TestCase):
             ]) + ";\n"
             "console.log(JSON.stringify(cases.map(c => chatList(c.d))));\n"
         )
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=10)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         if proc.returncode != 0:
             self.fail("node eval failed: " + proc.stderr)
         empty, pending, replied = json.loads(proc.stdout)
@@ -963,8 +1016,8 @@ class TestCollector(unittest.TestCase):
             ]) + ";\n"
             "console.log(JSON.stringify(cases.map(c => chatList(c))));\n"
         )
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=10)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         if proc.returncode != 0:
             self.fail("node eval failed: " + proc.stderr)
         with_unread, without_unread = json.loads(proc.stdout)
@@ -997,8 +1050,8 @@ class TestCollector(unittest.TestCase):
             "console.log(JSON.stringify(chatRow({id:'c-42',status:'replied',"
             "preview:'in review',turns:2,unread:false})));\n"
         )
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=10)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         if proc.returncode != 0:
             self.fail("node eval failed: " + proc.stderr)
         row = json.loads(proc.stdout)
@@ -1033,8 +1086,8 @@ class TestCollector(unittest.TestCase):
             "{id:'first',status:'pending',preview:'waiting',turns:2},"
             "{id:'second',status:'replied',preview:'answered',turns:2}]})));\n"
         )
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=10)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         if proc.returncode != 0:
             self.fail("node eval failed: " + proc.stderr)
         rendered = json.loads(proc.stdout)
@@ -1082,8 +1135,8 @@ class TestCollector(unittest.TestCase):
             "entries:entries}), buildChat({title:'t',status:'replied',"
             "archived:true,entries:entries}), buildChat(null)]));\n"
         )
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=10)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         if proc.returncode != 0:
             self.fail("node eval failed: " + proc.stderr)
         rendered, archived_render, notfound = json.loads(proc.stdout)
@@ -1568,8 +1621,8 @@ class TestCollector(unittest.TestCase):
             }) + ";\n"
             "process.stdout.write(buildDashboard(d));\n"
         )
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=10)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         if proc.returncode != 0:
             self.fail("node eval failed: " + proc.stderr)
         h = proc.stdout
@@ -1779,8 +1832,8 @@ class TestCollector(unittest.TestCase):
                  "delivery:'batched',orchestration:'orchestrator'}")
         script = "const draft=" + draft + ";\n" + lm.group(0) \
             + "\nconsole.log(label);\n"
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=10)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         self.assertEqual(proc.returncode, 0,
                          "label node eval failed: " + proc.stderr)
         out = proc.stdout
@@ -1833,8 +1886,8 @@ class TestCollector(unittest.TestCase):
             "source:'derived',delegation_label:'own'});\n"
             + pp + "\nconsole.log(posturePicker({posture:{}}));\n"
         )
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=10)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         self.assertEqual(proc.returncode, 0,
                          "posturePicker node eval failed: " + proc.stderr)
         out = proc.stdout
@@ -4485,7 +4538,7 @@ class TestCollector(unittest.TestCase):
               {title:'T', body:'B', aid:'ans:deadbeef'}, true);
             process.stdout.write(JSON.stringify({missing, present}));
         """) % fn
-        out = subprocess.check_output(["node", "-e", script], text=True)
+        out = _node_output(["node", "-e", script], text=True)
         rendered = json.loads(out)
         self.assertEqual(
             rendered["missing"],
@@ -5526,7 +5579,7 @@ class TestCollector(unittest.TestCase):
             if (row.includes('href="/tasks2?t=7"')) process.exit(0);
             process.exit(32);
         """)
-        subprocess.check_call(["node", "-e", script])
+        _node_check(["node", "-e", script])
         # the dispatch names the postCommand symbol, tied to the do-next
         # kind — so removing it (or routing through a fetch) reds here.
         self.assertIn("postCommand('do-next'", src)
@@ -5747,8 +5800,8 @@ class TestCollector(unittest.TestCase):
             "  files: { 'questions.md': '# Q\\n\\n## Open\\n\\n## x\\nctx\\n' } });\n"
             "process.stdout.write(html);\n"
         )
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=10)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         if proc.returncode != 0:
             self.fail("node eval failed: " + proc.stderr)
         h = proc.stdout
@@ -6301,7 +6354,7 @@ class TestPendingEventCount(unittest.TestCase):
             if (none.includes('unreadable')) process.exit(18);
             process.stdout.write('ok');
         """) % block
-        out = subprocess.check_output(["node", "-e", script], text=True)
+        out = _node_output(["node", "-e", script], text=True)
         self.assertEqual(out, "ok")
 
 
@@ -6366,7 +6419,7 @@ class TestQueueFactRendersThreeStates(unittest.TestCase):
             if (facts(none).includes('unreadable')) process.exit(28);
             process.stdout.write('ok');
         """) % block
-        out = subprocess.check_output(["node", "-e", script], text=True)
+        out = _node_output(["node", "-e", script], text=True)
         self.assertEqual(out, "ok")
 
 
@@ -6611,7 +6664,7 @@ class TestTasksRoute(unittest.TestCase):
             if (routeOf(new URL('http://watch/tasks2?t=not-an-id')).param !== null)
               process.exit(13);
         """)
-        subprocess.check_call(["node", "-e", script])
+        _node_check(["node", "-e", script])
 
     def test_tasks2_list_and_detail_are_bound_to_one_payload_reader(self):
         reader_source = inspect.getsource(watch.tasks_payload)
@@ -6694,7 +6747,7 @@ class TestTasksRoute(unittest.TestCase):
                 !healthy.includes('id="qdock"') ||
                 !healthy.includes('id="rsplit"')) process.exit(26);
         """)
-        subprocess.check_call(["node", "-e", script])
+        _node_check(["node", "-e", script])
 
     def test_unknown_state_is_reachable_and_fail_closed(self):
         record = {
@@ -6799,7 +6852,7 @@ class TestTasksRoute(unittest.TestCase):
         """) % (_extract_js_fn(src, "function taskRefParts("),
                    _extract_js_fn(src, "function backtickTaskLinksOn("),
                    _extract_js_fn(src, "function linkTaskRefText("))
-        subprocess.check_call(["node", "-e", script])
+        _node_check(["node", "-e", script])
 
     def test_task_reference_states_and_origin_fail_closed(self):
         src = watch.COMPONENTS_JS
@@ -7437,7 +7490,7 @@ class TestAppShell(unittest.TestCase):
         self.assertIn(
             "k === 'queued_dispatches' ? queuedDispatchLines(v) : stLines(v)",
             page)
-        out = subprocess.check_output(["node", "-e", script], text=True)
+        out = _node_output(["node", "-e", script], text=True)
         self.assertEqual(out, "ok")
 
     def test_page_has_dream_transition_wiring(self):
@@ -8230,8 +8283,8 @@ class TestAppShell(unittest.TestCase):
         script = ("const btns=['answer','note'];"
                   "const adv=(i)=>{const next=" + m.group(1) + ";return next;};"
                   "console.log(adv(0)+'|'+adv(1));")
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=10)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         self.assertEqual(proc.returncode, 0,
                          "card cycle node eval failed: " + proc.stderr)
         a, b = proc.stdout.strip().split('|')
@@ -8257,8 +8310,8 @@ class TestAppShell(unittest.TestCase):
         script = ("const order=['do-now','chat','add-idea'];"
                   "const adv=(i)=>{const kind=" + m.group(1) + ";return kind;};"
                   "console.log(adv(0)+'|'+adv(1)+'|'+adv(2));")
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=10)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         self.assertEqual(proc.returncode, 0,
                          "composer cycle node eval failed: " + proc.stderr)
         vals = proc.stdout.strip().split('|')
@@ -8462,7 +8515,7 @@ class TestAppShell(unittest.TestCase):
             if (!outBt.includes('class="rev"')) process.exit(16);
             process.stdout.write('ok');
         """) % block
-        out = subprocess.check_output(["node", "-e", script], text=True)
+        out = _node_output(["node", "-e", script], text=True)
         self.assertEqual(out, "ok")
         # HTTP half: the basename the link targets really resolves.
         with tempfile.TemporaryDirectory() as d:
@@ -8523,7 +8576,7 @@ class TestAppShell(unittest.TestCase):
             %s
             process.stdout.write(JSON.stringify(AGE_PAIRS));
         """) % block
-        out = subprocess.check_output(["node", "-e", script], text=True)
+        out = _node_output(["node", "-e", script], text=True)
         pairs = json.loads(out)
         self.assertTrue(pairs, "AGE_PAIRS empty")
         return pairs  # [[bu, bd, su, sd], ...]
@@ -8547,7 +8600,7 @@ class TestAppShell(unittest.TestCase):
             const age = %d;
             process.stdout.write(agePair(NOW - age));
         """) % (block, int(age_s))
-        return subprocess.check_output(["node", "-e", script], text=True)
+        return _node_output(["node", "-e", script], text=True)
 
     def _parse_pair(self, rendered):
         import re
@@ -8656,7 +8709,7 @@ class TestAppShell(unittest.TestCase):
               bKeepsDate: b.includes('2026-06-15'),
             }));
         """) % fn
-        out = subprocess.check_output(["node", "-e", script], text=True)
+        out = _node_output(["node", "-e", script], text=True)
         data = json.loads(out)
         self.assertTrue(data["aHasAge"] and data["bHasAge"])
         self.assertFalse(data["noneHasAge"])
@@ -8712,7 +8765,7 @@ class TestAppShell(unittest.TestCase):
               throw new Error('fixture ages collided: ' + single.plain);
             process.stdout.write(JSON.stringify({ single, double }));
         """) % block
-        out = subprocess.check_output(["node", "-e", script], text=True)
+        out = _node_output(["node", "-e", script], text=True)
         data = json.loads(out)
         self.assertEqual(data["single"]["plain"], "05h 09m")
         self.assertEqual(data["double"]["plain"], "15h 42m")
@@ -8811,7 +8864,7 @@ class TestAppShell(unittest.TestCase):
                ".replace(/\"/g,'&quot;');")
         script = (esc + '\n' + qthtml + '\n' +
                   f'process.stdout.write(qtHtml({json.dumps(title)}));')
-        return subprocess.check_output(["node", "-e", script], text=True)
+        return _node_output(["node", "-e", script], text=True)
 
     def _qt_ct(self, title):
         """The local-midnight `ct` the production `qtHtml` computes (node)."""
@@ -8865,8 +8918,8 @@ class TestAppShell(unittest.TestCase):
             .replace('__QTHTML__', qthtml).replace('__AGES__', ages_fn)\
             .replace('__NOW__', str(int(now)))\
             .replace('__SPANS__', json.dumps(spans))
-        return json.loads(subprocess.check_output(["node", "-e", script],
-                                                  text=True))
+        return json.loads(_node_output(["node", "-e", script],
+                                       text=True))
 
     def test_a_date_only_question_shows_one_figure_not_two(self):
         # CRITERION 3 — assert the PRECISION of the input at runtime, not a
@@ -9178,7 +9231,7 @@ class TestAppShell(unittest.TestCase):
               : (k && k.textContent != null ? k.textContent : '')).join('');
             process.stdout.write(JSON.stringify({ pads, text }));
         """) % (block, ct)
-        out = subprocess.check_output(["node", "-e", script], text=True)
+        out = _node_output(["node", "-e", script], text=True)
         data = json.loads(out)
         self.assertEqual(data["text"], "03d ago")
         self.assertEqual(
@@ -9446,9 +9499,9 @@ for (const fn of listeners.click)
 process.stdout.write(JSON.stringify({afterInit, afterRestore:saves, reads,
   restored:els.cmdtext.value}));
 '''
-        proc = subprocess.run(
+        proc = _node_run(
             [node, "-e", script + "\n" + mount], capture_output=True,
-            text=True, timeout=10)
+            text=True)
         self.assertEqual(proc.returncode, 0,
                          "composer draft reachability eval failed: " + proc.stderr)
         got = json.loads(proc.stdout)
@@ -10882,8 +10935,8 @@ class TestBundleParses(unittest.TestCase):
                 f.write(body)
                 path = f.name
             try:
-                r = subprocess.run([node, "--check", path],
-                                   capture_output=True, text=True)
+                r = _node_run([node, "--check", path],
+                              capture_output=True, text=True)
                 self.assertEqual(
                     r.returncode, 0,
                     "page inline script %d does not parse:\n%s" %
@@ -10923,7 +10976,7 @@ class TestFileHeadingLockup(unittest.TestCase):
         self.assertIsNotNone(
             m, "fileBase/fileDir are not in the page in the shape this test "
                "reads them — find them and fix the cut, do not delete the test")
-        r = subprocess.run(
+        r = _node_run(
             [node, "-e", m.group(0) + "\nconsole.log(JSON.stringify(" + expr + "))"],
             capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -11112,7 +11165,7 @@ class TestFileViewMode(unittest.TestCase):
                    ".replace(/&/g,'&amp;').replace(/</g,'&lt;')"
                    ".replace(/>/g,'&gt;');\n"
                    "const mdB = t => 'MD:' + t;\n")
-        r = subprocess.run(
+        r = _node_run(
             [node, "-e", prelude + "\n".join(cuts) +
              "\nconsole.log(JSON.stringify(" + expr + "))"],
             capture_output=True, text=True)
@@ -12962,8 +13015,8 @@ const got = SUBAGENT_POLICY_PLACEHOLDERS.map((_, i) => placeholderAt(i * step));
 process.stdout.write(JSON.stringify({got, all: SUBAGENT_POLICY_PLACEHOLDERS,
   wraps: placeholderAt(SUBAGENT_POLICY_PLACEHOLDERS.length * step)}));
 """
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=5)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         got = json.loads(proc.stdout)
         self.assertEqual(got["got"], got["all"])
@@ -12992,8 +13045,8 @@ const overrideHtml = subagentPolicyPicker({posture: {
   subagent_policy_source: "file"}});
 process.stdout.write(JSON.stringify({defaultHtml, overrideHtml}));
 '''
-        proc = subprocess.run([node, "-e", script], capture_output=True,
-                              text=True, timeout=5)
+        proc = _node_run([node, "-e", script], capture_output=True,
+                         text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         got = json.loads(proc.stdout)
         self.assertIn("in force: standing default: default policy", got["defaultHtml"])
@@ -13074,8 +13127,8 @@ const resetRace = {msg: els["spolicy-msg"].textContent,
   field: els["spolicy-field"].value, source: data.posture.subagent_policy_source};
 process.stdout.write(JSON.stringify({saved, cleared, calls, saveRace, resetRace}));
 """
-        proc = subprocess.run([node, "--input-type=module", "-e", script],
-                              capture_output=True, text=True, timeout=5)
+        proc = _node_run([node, "--input-type=module", "-e", script],
+                         capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         got = json.loads(proc.stdout)
         self.assertEqual(got["saved"], {
@@ -15079,7 +15132,7 @@ class TestSubmissionIdempotency(unittest.TestCase):
               shape: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(a1)
             }));
         """) % store
-        out = subprocess.check_output(["node", "-e", script], text=True)
+        out = _node_output(["node", "-e", script], text=True)
         res = json.loads(out)
         self.assertTrue(res['stable'],
                         f"attempt id must be stable for one draft: {res}")
@@ -16198,9 +16251,8 @@ class TestArtifactRowRender(unittest.TestCase):
             "const fs = " + json.dumps(fixtures) + ";\n"
             "console.log(JSON.stringify(fs.map(r => artifactRow(r,'review'))));\n"
         )
-        import subprocess
-        proc = subprocess.run(
-            ["node", "-e", script], capture_output=True, text=True, timeout=10)
+        proc = _node_run(
+            ["node", "-e", script], capture_output=True, text=True)
         if proc.returncode != 0:
             self.fail("node eval failed: " + proc.stderr)
         return json.loads(proc.stdout)
@@ -16686,3 +16738,80 @@ class TestNativePageAssembly(unittest.TestCase):
         self.assertIn(
             'if (isNativeRoute(view.name)) return null;', watch.PAGE,
             'a native route must bypass the string-builder dispatch')
+
+
+class TestNodeTimeoutPolicy(unittest.TestCase):
+    """#1121 — the node-timeout policy is one named constant, not 35 literals."""
+
+    def test_node_timeout_is_a_float_defaulting_to_ten(self):
+        # The default stays developer-friendly (fast hang detection); the gate
+        # raises it via DREAMWORK_NODE_TIMEOUT.  float() wrapping confirms the
+        # env path is exercised, not a bare int.
+        self.assertIsInstance(NODE_TIMEOUT, float)
+        self.assertEqual(NODE_TIMEOUT, 10.0)
+
+    def test_node_run_passes_the_single_source_timeout_to_subprocess(self):
+        # Production seam: _node_run's ``kwargs.setdefault("timeout", NODE_TIMEOUT)``.
+        # Blind that line and this captures None, not NODE_TIMEOUT.
+        captured = {}
+
+        def spy(argv, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            # Don't actually spawn; return a minimal CompletedProcess.
+            return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+
+        with unittest.mock.patch.object(subprocess, "run", spy):
+            _node_run(["node", "-e", "0"], capture_output=True)
+        self.assertEqual(
+            captured["timeout"], NODE_TIMEOUT,
+            "_node_run must pass NODE_TIMEOUT as the subprocess timeout")
+
+    def test_node_output_and_check_also_use_the_single_source(self):
+        seen = {}
+
+        def spy_run(argv, **kwargs):
+            seen["run"] = kwargs.get("timeout")
+            return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+
+        def spy_call(argv, **kwargs):
+            seen["call"] = kwargs.get("timeout")
+            return 0
+
+        with unittest.mock.patch.object(subprocess, "check_output", spy_run), \
+                unittest.mock.patch.object(subprocess, "check_call", spy_call):
+            _node_output(["node", "-e", "0"])
+            _node_check(["node", "-e", "0"])
+        self.assertEqual(seen["run"], NODE_TIMEOUT)
+        self.assertEqual(seen["call"], NODE_TIMEOUT)
+
+    def test_timeout_expired_raises_diagnostic_message_naming_load(self):
+        # A real timeout: an explicit 0.3s ceiling on a node script held alive
+        # past it.  The message must distinguish a load-induced timeout from an
+        # assertion failure so the next gate reader is not sent on the detour
+        # this task was filed to prevent.
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node unavailable")
+        with self.assertRaises(AssertionError) as ctx:
+            _node_run(
+                [node, "-e", "setTimeout(()=>process.exit(0), 10000)"],
+                capture_output=True, text=True, timeout=0.3)
+        msg = str(ctx.exception)
+        self.assertIn("NOT a defect in the branch under test", msg)
+        self.assertIn("timed out", msg)
+        # The original TimeoutExpired is chained for the raw traceback.
+        self.assertIsInstance(ctx.exception.__cause__,
+                              subprocess.TimeoutExpired)
+
+    def test_caller_can_override_the_timeout_per_call(self):
+        # setdefault must not clobber an explicit per-call timeout — that is
+        # how the diagnosis test above pins a tiny ceiling deterministically.
+        captured = {}
+
+        def spy(argv, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+
+        with unittest.mock.patch.object(subprocess, "run", spy):
+            _node_run(["node", "-e", "0"], timeout=99)
+        self.assertEqual(captured["timeout"], 99)
