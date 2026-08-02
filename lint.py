@@ -4566,6 +4566,112 @@ def check_citation_range(dw: Path, rep: Report) -> None:
         )
 
 
+DEV_TASK_CITATION = re.compile(r"(?<![\w#])#(\d{3,})(?!\d)")
+DEV_DIFF_FILE = re.compile(r"^\+\+\+ b/(dev/[^/]+\.py)$")
+DEV_DIFF_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def _added_dev_task_citations(diff: str) -> list[tuple[str, int, int]]:
+    """``(path, line, id)`` for numeric task citations added to ``dev/*.py``."""
+    found: list[tuple[str, int, int]] = []
+    path: str | None = None
+    line = 0
+    for row in diff.splitlines():
+        file_match = DEV_DIFF_FILE.match(row)
+        if file_match:
+            path = file_match.group(1)
+            continue
+        hunk_match = DEV_DIFF_HUNK.match(row)
+        if hunk_match:
+            line = int(hunk_match.group(1))
+            continue
+        if path is None or row.startswith("---"):
+            continue
+        if row.startswith("+"):
+            found.extend((path, line, int(m.group(1)))
+                         for m in DEV_TASK_CITATION.finditer(row[1:]))
+            line += 1
+        elif not row.startswith("-") and not row.startswith("\\"):
+            line += 1
+    return found
+
+
+def _resolvable_task_ids(dw: Path) -> tuple[set[int], str]:
+    """Known task ids and the ledger source used, through existing readers."""
+    local = store_path(dw)
+    shared = shared_store_for_worktree(dw)
+    for path in (local, shared):
+        if path is not None and path.is_file():
+            return ({int(record["id"]) for record in store_records(path.parent)},
+                    str(path))
+    tasks = dw / "tasks.md"
+    try:
+        text = tasks.read_text(encoding="utf-8")
+    except OSError:
+        return set(), str(tasks)
+    return ({int(task_id) for ids, _ in ledger_entries(text) for task_id in ids},
+            str(tasks))
+
+
+def check_dev_task_citations(
+    dw: Path,
+    rep: Report,
+    *,
+    diff_text: str | None = None,
+    known_ids: set[int] | None = None,
+) -> None:
+    """Resolve newly added ``#NNN`` tokens in ``dev/*.py`` against the ledger.
+
+    This is deliberately the cheap, mechanical half only. A real landed task
+    can still be unrelated to the sentence citing it; task state and semantic
+    relevance are not mechanically verified, and every output row says so.
+    """
+    root = dw.parent
+    if diff_text is None:
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--no-color", "--unified=0", "HEAD^",
+                 "--", ":(glob)dev/*.py"],
+                cwd=root, capture_output=True, text=True, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            rep.add(OK, "dev task citations",
+                    "examined 0 newly added citation(s): git was unavailable; "
+                    "no resolution verdict")
+            return
+        if result.returncode:
+            rep.add(OK, "dev task citations",
+                    "examined 0 newly added citation(s): no HEAD^..working-tree "
+                    "diff was available; no resolution verdict")
+            return
+        diff_text = result.stdout
+    hits = _added_dev_task_citations(diff_text)
+    files = {path for path, _, _ in hits}
+    if not hits:
+        rep.add(OK, "dev task citations",
+                "examined 0 newly added #NNN citation(s) across 0 dev/*.py "
+                "file(s); population is zero, not a clean citation sweep; "
+                "task state and subject relevance are NOT verified")
+        return
+
+    if known_ids is None:
+        known_ids, source = _resolvable_task_ids(dw)
+    else:
+        source = "supplied test ledger"
+    missing = sorted((path, line, task_id) for path, line, task_id in hits
+                     if task_id not in known_ids)
+    for path, line, task_id in missing:
+        rep.add(ERROR, "dev task citations",
+                f"{path}:{line} cites unresolved task #{task_id}; file the task "
+                "or remove the numeric attribution")
+    if not missing:
+        rep.add(OK, "dev task citations",
+                f"{len(hits)} newly added citation occurrence(s) resolve to "
+                f"{len({task_id for _, _, task_id in hits})} task(s) across "
+                f"{len(files)} dev/*.py file(s) via {source}; resolution only — "
+                "task state and subject relevance are NOT verified")
+
+
 # ── brief hand-off obligation (#398) ──────────────────────────────────
 # Distinctive phrase from the SKILL.md paragraph that introduced the
 # dispatch-time hand-off obligation (#394). Resolved via `git log -S`, never a
@@ -7411,6 +7517,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_cited_shas(dw, rep)
     check_placeholder_citations(dw, rep)
     check_citation_range(dw, rep)
+    check_dev_task_citations(dw, rep)
     check_handoffs(dw, watch, rep)
     # These seven checks all read the dispatcher's corpus. Since #770 the
     # correct dispatch route writes that corpus in the main checkout while a
