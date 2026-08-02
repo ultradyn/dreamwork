@@ -42,6 +42,27 @@ instrument read normal).
   lane inherits one session id and resolves to the same directory. Use
   `dev/lane_scratch.py`.
 
+## Verify the brief's premises before you build
+
+The task list describes the code and can be wrong about it. A wrong premise
+silently becomes wrong work that passes its own gate — the gate checks the work
+against the brief, and the brief is what is wrong. The only point it can be
+caught is before code is written.
+
+- **Verify the entry's central factual claims against the code before you
+  build.** Names, paths, cited issue numbers — open them and look. Filed
+  premises fail contact with the code roughly once a session; the ones caught
+  were caught here, before code (#967).
+- **If a premise does not hold, STOP and report.** Do not proceed, re-scope, or
+  fix silently — a lane that doubts but is not licensed to stop improvises a
+  scope change nobody sanctioned, and that is unattributable afterwards.
+  **Stopping with a refuted premise is a successful delivery**: zero commits and
+  a report naming the claim is the best outcome when the premise is wrong.
+- **A resumed lane must re-establish its evidence and re-verify its citations
+  against the current tree.** A citation carried across a compaction boundary is
+  unverified by default, whatever the summary's confidence — compaction preserves
+  the form of a claim while losing whether it was ever checked (#878).
+
 ## Standing rules
 
 - `git commit --only <paths>`, never `git commit -a`. Run `git add -N` for new

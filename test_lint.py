@@ -10243,3 +10243,113 @@ class TestFrameEvidencePersisted:
         rep = lint.Report()
         lint.check_frame_evidence_persisted(tmp_path / ".dreamwork", rep)
         assert rep.rows == []
+
+
+class TestFramePremiseVerified:
+    """#967 — the frame must tell lanes to verify the brief's premises against
+    the code before building, to STOP when they do not hold (stopping is a
+    successful delivery), and to re-verify citations on resume.
+
+    Seven filed premises failed contact with the code in one session; four were
+    caught by a hand-written sentence in each brief, not by review or tests. This
+    promotes that coordinator habit into a standing rule pinned by a
+    section-aware check.
+    """
+
+    # The premise anchor (already in the frame via the new section): the word
+    # 'premise' identifies the section that carries the rule.
+    _PREMISE_INTRO = (
+        "The task list describes the code and can be wrong about it. "
+        "A wrong premise silently becomes wrong work.\n"
+    )
+    # Carries all three markers: central, successful delivery, re-verify.
+    _PREMISE_BULLETS = (
+        "- **Verify the entry's central factual claims against the code before "
+        "you build.** Open them and look (#967).\n"
+        "- **If a premise does not hold, STOP and report.** **Stopping with a "
+        "refuted premise is a successful delivery**: zero commits is the best "
+        "outcome when the premise is wrong.\n"
+        "- **A resumed lane must re-verify its citations against the current "
+        "tree.** A citation carried across compaction is unverified (#878).\n"
+    )
+
+    def _check(self, tmp_path, frame_text):
+        (tmp_path / ".dreamwork").mkdir(exist_ok=True)
+        bp = tmp_path / "briefs"
+        bp.mkdir(exist_ok=True)
+        (bp / "frame.md").write_text(frame_text)
+        rep = lint.Report()
+        lint.check_frame_premise_verified(tmp_path / ".dreamwork", rep)
+        return rep
+
+    def _rows(self, rep):
+        return [(lvl, detail) for lvl, what, detail in rep.rows
+                if what == "frame premise verified"]
+
+    def test_real_frame_carries_the_premise_rule(self):
+        rep = lint.Report()
+        lint.check_frame_premise_verified(lint.SKILL_DIR / ".dreamwork", rep)
+        rows = self._rows(rep)
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "premise" in rows[0][1]
+        assert "examined" in rows[0][1] and "section(s)" in rows[0][1]
+
+    def test_premise_section_without_markers_is_an_error(self, tmp_path):
+        frame = (
+            "## Verify the brief's premises before you build\n\n"
+            + self._PREMISE_INTRO + "\n"
+            "## Standing rules\n\nThe sha.\n"
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "'central'" in rows[0][1]
+        assert "'successful delivery'" in rows[0][1]
+        assert "'re-verify'" in rows[0][1]
+
+    def test_premise_in_the_wrong_section_does_not_satisfy(self, tmp_path):
+        # direction 2a: the markers sit in 'Standing rules', not in the premise
+        # section where the lane reads them at the pre-build moment. The check
+        # must notice the premise section is missing its markers.
+        frame = (
+            "## Verify the brief's premises before you build\n\n"
+            + self._PREMISE_INTRO + "\n"
+            "## Standing rules\n\n" + self._PREMISE_BULLETS
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "section '## Verify the brief's premises" in rows[0][1]
+        assert "'central'" in rows[0][1]
+
+    def test_a_loose_substring_does_not_satisfy(self, tmp_path):
+        # direction 2b (the likely real bug): the section carries 'premise' and
+        # 'verify' but NONE of the three distinctive markers. A substring grep
+        # for 'verify'/'report' would pass here; the check must require the
+        # distinctive markers instead.
+        frame = (
+            "## Verify the brief's premises before you build\n\n"
+            "Verify the report before you build. Report what you verify.\n"
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+
+    def test_empty_frame_fails_with_examined_zero(self, tmp_path):
+        # degrade-to-zero (#868): no `## ` sections is an ERROR naming
+        # 'examined 0', never a silent pass.
+        rep = self._check(tmp_path, "# Frame\n\nNo sections here.\n")
+        rows = self._rows(rep)
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "examined 0 section(s)" in rows[0][1]
+
+    def test_premise_present_passes(self, tmp_path):
+        frame = (
+            "## Verify the brief's premises before you build\n\n"
+            + self._PREMISE_INTRO + self._PREMISE_BULLETS
+        )
+        rows = self._rows(self._check(tmp_path, frame))
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+
+    def test_absent_frame_is_silent_for_foreign_target(self, tmp_path):
+        (tmp_path / ".dreamwork").mkdir()
+        rep = lint.Report()
+        lint.check_frame_premise_verified(tmp_path / ".dreamwork", rep)
+        assert rep.rows == []
