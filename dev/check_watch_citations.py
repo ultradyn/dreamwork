@@ -129,6 +129,7 @@ class DocstringCitation:
     symbol: str
     lineno: int
     task_id: int
+    raw_token: str = ""
 
 
 @dataclass
@@ -198,8 +199,11 @@ def _scan_docstring_citations(
             name = getattr(node, "name", "<module>")
             for match in DOCSTRING_CITATION.finditer(doc):
                 lineno = base_line + doc[: match.start()].count("\n")
+                raw = match.group(1)
                 findings.append(
-                    DocstringCitation(rel, name, lineno, int(match.group(1)))
+                    DocstringCitation(
+                        rel, name, lineno, int(raw), raw
+                    )
                 )
     return findings, skipped, docstrings_scanned
 
@@ -242,21 +246,30 @@ def _resolve_titles(dw_dir: Path) -> dict[int, str]:
     }
 
 
-def _is_css_colour(task_id: int) -> bool:
+def _is_css_colour(raw_token: str) -> bool:
     """Whether a parenthesised number is unambiguously a CSS colour.
 
-    A parenthesised number is a CSS colour only if it is exactly six
-    hexadecimal digits — ``(#334155)``, ``(#ffffff)`` (#1034).  Shorter
-    tokens (1–5 digits, or 6 digits with non-hex characters) are issue
-    references.  An issue reference above the ledger max is AMBIGUOUS — it
-    could be a typo, a stale forward reference, or a not-yet-filed task —
-    and is reported as SUSPICIOUS, never silently filtered.  The rule is
-    stated in words first: six hex digits in parentheses is a colour by
-    syntax, not by magnitude.
+    Operates on the ORIGINAL TOKEN STRING, not the int's decimal
+    re-rendering (#1034).  The regex ``\\(#(\\d+)\\)`` extracts decimal
+    digit runs; a six-digit all-decimal run like ``000000`` becomes int 0
+    and ``str(0)`` is ``"0"`` (length 1), so the old int-based check
+    returned False and the token reached UNRESOLVABLE — a legitimate CSS
+    black wedged the checker.  Checking the original ``"000000"`` (length
+    6, all hex) returns True → FILTERED, as documented.
+
+    ``(#ffffff)`` is never extracted (the regex matches ``\\d`` only, and
+    ``f`` is not a digit), so hex-letter colours are naturally absent.
+    Six-digit decimal tokens above the ledger max (e.g. ``(#999999)`` with
+    max 1056) are also six hex digits and are treated as CSS — a known
+    false-negative direction stated here, not hidden: a decimal run that
+    could be a miscited high issue id is indistinguishable from a CSS
+    colour by syntax alone.  The checker exists to catch miscitations
+    *within the plausible issue-id range*; an id above the max is already
+    SUSPICIOUS when it is 1–5 digits, and a 6-digit above-max token is
+    the one shape the CSS rule cannot disambiguate.
     """
-    digits = str(task_id)
-    return len(digits) == 6 and all(
-        d in "0123456789abcdefABCDEF" for d in digits
+    return len(raw_token) == 6 and all(
+        d in "0123456789abcdefABCDEF" for d in raw_token
     )
 
 
@@ -278,12 +291,12 @@ def check_docstring_citations(
     examined — never silently absorbed into a green count (#868).
 
     Parenthesised numbers are classified by a stated rule (#1034): six hex
-    digits is a CSS colour (FILTERED); an issue reference above the ledger
-    max is SUSPICIOUS (reported, not hidden); an id that resolves is
-    reported with its title; an id that does not resolve is UNRESOLVABLE
-    (the only mechanical gate).  The output is signal-first: UNRESOLVABLE,
-    SUSPICIOUS, SKIPPED, and FILTERED rows print by default; resolved rows
-    print only when *verbose* is set.
+    digits in the ORIGINAL TOKEN is a CSS colour (FILTERED); an issue
+    reference above the ledger max is SUSPICIOUS (reported, not hidden);
+    an id that resolves is reported with its title; an id that does not
+    resolve is UNRESOLVABLE (the only mechanical gate).  Resolved rows
+    print by default — the checker's value is the title beside each
+    citation, visible without flags (#1034 Finding 5).
 
     Exit 2 if no dev/*.py files were examined (vacuity: #868).  Exit 1 if
     any cited id does not resolve.  Exit 0 when every cited id resolves or
@@ -320,21 +333,24 @@ def check_docstring_citations(
         print(
             f"NOT CHECKED: ledger store not found ({exc}); "
             f"{len(citations)} (#NNN) citation(s) extracted across "
-            f"{files_examined} file(s), {docstrings_scanned} docstring(s) "
+            f"{files_examined} file(s) ({len(skipped)} skipped), "
+            f"{docstrings_scanned} docstring(s) "
             f"scanned — title resolution could not run, attribution "
             f"review did not happen (#136).  Pin check above remains "
             f"authoritative."
         )
         for s in skipped:
             print(f"  SKIPPED {s.rel_path}: {s.reason}")
-        if verbose:
-            for c in sorted(
-                citations, key=lambda x: (x.rel_path, x.lineno)
-            ):
-                print(
-                    f"  {c.rel_path}:{c.lineno} {c.symbol} "
-                    f"(#{c.task_id}) [unverified]"
-                )
+        # Extracted citations print by default (#1034 Finding 5): the
+        # operator should see what was extracted even when resolution
+        # could not run.
+        for c in sorted(
+            citations, key=lambda x: (x.rel_path, x.lineno)
+        ):
+            print(
+                f"  {c.rel_path}:{c.lineno} {c.symbol} "
+                f"(#{c.task_id}) [unverified]"
+            )
         return 0
 
     # Classify by the stated rule (#1034).
@@ -344,7 +360,7 @@ def check_docstring_citations(
     suspicious: list[DocstringCitation] = []
     filtered: list[DocstringCitation] = []
     for c in citations:
-        if _is_css_colour(c.task_id):
+        if _is_css_colour(c.raw_token):
             filtered.append(c)
         elif max_task_id and c.task_id > max_task_id:
             suspicious.append(c)
@@ -379,14 +395,17 @@ def check_docstring_citations(
     for c in filtered:
         print(
             f"  FILTERED {c.rel_path}:{c.lineno} {c.symbol} "
-            f"(#{c.task_id}) CSS colour (6 hex digits)"
+            f"(#{c.raw_token}) CSS colour (6 hex digits)"
         )
-    if verbose:
-        for c in sorted(resolved, key=lambda x: (x.rel_path, x.lineno)):
-            print(
-                f"  {c.rel_path}:{c.lineno} {c.symbol} "
-                f"(#{c.task_id}) \"{titles[c.task_id]}\""
-            )
+    # Resolved rows print by default (#1034 Finding 5): the checker's value
+    # is showing the title beside each citation so a human can spot an
+    # attribution mismatch.  Hiding resolved rows on a clean run made the
+    # miscitation this task exists to surface invisible by default.
+    for c in sorted(resolved, key=lambda x: (x.rel_path, x.lineno)):
+        print(
+            f"  {c.rel_path}:{c.lineno} {c.symbol} "
+            f"(#{c.task_id}) \"{titles[c.task_id]}\""
+        )
 
     if unresolvable:
         print(

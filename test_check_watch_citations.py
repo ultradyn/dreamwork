@@ -377,6 +377,34 @@ def test_css_colour_six_hex_is_filtered(monkeypatch, tmp_path, capsys):
     assert "SUSPICIOUS" not in out
 
 
+def test_css_colour_black_zero_is_filtered_not_unresolvable(monkeypatch, tmp_path, capsys):
+    # Finding 4 (#1034): (#000000) is CSS black — six hex digits, all zero.
+    # The old int-based check computed str(int("000000")) = "0" (length 1)
+    # and returned False, so the token reached UNRESOLVABLE and wedged the
+    # checker with exit 1.  The fix checks the ORIGINAL TOKEN STRING
+    # "000000" (length 6, all hex) → FILTERED.  The FILTERED row must also
+    # print the original token (#000000), not the int (#0), so leading
+    # zeros are preserved.
+    titles = {868: "a real entry", 1038: "the current max"}
+    monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
+    root = _docstring_repo(
+        tmp_path,
+        _FIXTURE_A,
+        (
+            "black.py",
+            '"""The background is (#000000) in this docstring.\n"""\n',
+        ),
+    )
+
+    assert citations.check_docstring_citations(root) == 0
+    out = capsys.readouterr().out
+    assert "FILTERED" in out
+    assert "#000000" in out
+    assert "#0)" not in out  # the int re-rendering must not appear
+    assert "UNRESOLVABLE" not in out
+    assert "FAIL" not in out
+
+
 def test_above_max_non_colour_is_suspicious(monkeypatch, tmp_path, capsys):
     # Finding 3: a parenthesised number above the ledger max that is NOT
     # six hex digits is AMBIGUOUS — it could be a typo, a stale forward
@@ -422,22 +450,44 @@ def test_store_absent_reports_not_checked(monkeypatch, tmp_path, capsys):
     # The #136 third state is named plainly, not collapsed with OK.
     assert "NOT CHECKED" in out
     assert "could not run" in out or "could not be resolved" in out
-    # Denominators are present so a reader sees what WAS done.
     assert re.search(r"\d+ \(#NNN\) citation\(s\) extracted", out)
+    # Finding 5 (#1034): all three denominators present as a set —
+    # examined, skipped, docstrings — so a regression losing the skip
+    # count (or any other) stays red.  The banner format is
+    # "N file(s) (M skipped), K docstring(s) scanned".
+    assert re.search(r"\d+ file\(s\)", out)
+    assert re.search(r"\d+ skipped", out)
+    assert re.search(r"\d+ docstring\(s\) scanned", out)
     # The OK/FAIL verdicts must NOT appear — this is neither.
     assert "OK:" not in out
     assert "FAIL:" not in out
 
 
 def test_guard_is_registered_in_repo_wide_registry():
-    # Finding 2: removing the REGISTRY entry for this guard would not fail
-    # the direct unit test.  Assert the node id is present so a silent
-    # de-registration is caught.
+    # Finding 2 (#1034): deleting the REGISTRY entry for the docstring
+    # guard would not fail any test the gate runs — the membership test
+    # below would fail, but it was not itself in the generated set, so the
+    # gate never ran it.  The detector stayed silent because a DIFFERENT
+    # entry for the same file survived.  This test is now registered
+    # alongside the guard it protects, so the gate runs it and catches the
+    # deletion (#1034 Finding 2).
+    #
+    # Both nodes are asserted: the guard whose registration we protect,
+    # and this test's own registration.  Deleting the guard's row fails
+    # this test through the first assertion; deleting this test's row
+    # means the gate no longer runs it (the circular case — a deliberate
+    # attack on the protection mechanism, outside the stated threat model
+    # of "a lane deletes only the new row").
     import dev.repo_wide_guards as guards
 
-    node = "test_check_watch_citations.py::test_docstring_citations_on_real_tree"
-    assert node in guards.REGISTRY, (
-        f"guard node {node!r} is not in REGISTRY — the guard is not on the gate"
+    guard_node = "test_check_watch_citations.py::test_docstring_citations_on_real_tree"
+    self_node = "test_check_watch_citations.py::test_guard_is_registered_in_repo_wide_registry"
+    assert guard_node in guards.REGISTRY, (
+        f"guard node {guard_node!r} is not in REGISTRY — the guard is not on the gate"
+    )
+    assert self_node in guards.REGISTRY, (
+        f"self-protection node {self_node!r} is not in REGISTRY — "
+        f"the guard above can be silently de-registered"
     )
 
 
@@ -447,38 +497,68 @@ def test_guard_is_registered_in_repo_wide_registry():
 # parser works; this test proves the GATE would have caught tonight's error
 # by asserting the REAL composed row.
 def test_docstring_citations_on_real_tree(capsys):
-    # When the store is absent (clean checkout, CI), the guard reports NOT
-    # CHECKED — it cannot resolve titles.  A skip is the honest outcome:
-    # the guard did not verify anything, and a pass would claim it did.
-    try:
-        dw = citations._default_dw_dir()
-        titles = citations._resolve_titles(dw)
-    except FileNotFoundError:
-        import pytest
-        pytest.skip(
-            "ledger store not found — title resolution could not run (#136)"
-        )
-
-    # Store present: assert exit 0 and the real composed row.
-    assert citations.check_docstring_citations(ROOT, verbose=True) == 0
+    # Finding 1 (#1034): NOT CHECKED is its own reported state, not a skip.
+    # A skip inside a green run collapses could-not-check with checked-and-
+    # passed (#136).  The test RUNS in both cases: when the store is absent
+    # it asserts the checker reported NOT CHECKED; when the store is present
+    # it asserts resolved citations.  The state is surfaced in the gate's
+    # own output via capsys.disabled() so a clean-checkout run is
+    # distinguishable from a resolved one by its output alone.
+    rc = citations.check_docstring_citations(ROOT)
     out = capsys.readouterr().out
-    # (1) Denominators are non-zero: the run examined real files (#868).
-    assert re.search(r"examined [1-9]\d* file\(s\)", out)
-    assert re.search(r"[1-9]\d* docstring\(s\) scanned", out)
-    # (2) Finding 2 — the EXACT composed row as one regex: path + line +
-    # _requirement_line + (#868) cannot be matched by any other row in the
-    # output.  Asserting "dev/land_lane.py" and "#868" separately passes
-    # even when line 478 is never reported: land_lane.py:5 carries #882,
-    # and brief.py:1008 carries #868 independently.  The regex pins all
-    # four tokens (path, line, symbol, citation) to one match.
-    assert re.search(
-        r"dev/land_lane\.py:\d+ _requirement_line \(#868\)", out
-    ), "miscitation row (land_lane _requirement_line #868) must be reported"
-    # The title on the same row proves the guard resolved the id and printed
-    # it for aptness review — a human sees #868's unrelated title beside the
-    # three-zero-states rule it miscites.
-    assert (
-        "the tick line reports 0 live lanes" in out
-    )
-    # (3) No unresolvable citations on the tree it ships with.
-    assert "UNRESOLVABLE" not in out
+
+    if "NOT CHECKED" in out:
+        # Store absent (clean checkout, CI): the checker reported NOT CHECKED.
+        assert rc == 0
+        assert "NOT CHECKED" in out
+        # Finding 5: all three denominators present together — examined,
+        # skipped, docstrings — so a regression losing any one stays red.
+        assert re.search(r"\d+ file\(s\)", out)
+        assert re.search(r"\d+ skipped", out)
+        assert re.search(r"\d+ docstring\(s\) scanned", out)
+        assert re.search(r"\d+ \(#NNN\) citation\(s\) extracted", out)
+        # NOT CHECKED is neither OK nor FAIL (#136 three states).
+        assert "OK:" not in out
+        assert "FAIL:" not in out
+        # Surface the state in the gate's own output so a clean-checkout
+        # run is distinguishable from a resolved one (#1034 Finding 1).
+        with capsys.disabled():
+            for line in out.splitlines():
+                if "NOT CHECKED" in line:
+                    print(line)
+                    break
+    else:
+        # Store present: assert exit 0 and the real composed row.
+        assert rc == 0
+        # (1) Denominators are non-zero: the run examined real files (#868).
+        assert re.search(r"examined [1-9]\d* file\(s\)", out)
+        assert re.search(r"[1-9]\d* docstring\(s\) scanned", out)
+        # (2) Finding 3 (#1034) — the EXACT composed row as one regex: path
+        # + symbol + id + TITLE PREFIX all in one match.  The title is
+        # asserted on the SAME row, not separately: the old test asserted
+        # "the tick line reports 0 live lanes" alone, which passes even
+        # when it appears on brief.py's or check_watch_citations.py's row
+        # (both also cite #868).  Composing path + symbol + id + title
+        # prefix into one regex means only the land_lane _requirement_line
+        # row matches — no other row in the output carries all four.
+        # The line number is deliberately :\\d+ (not pinned to :478): a
+        # line number is brittle, and what the test guarantees is that
+        # path + symbol + id + title are composed as one fact on one row,
+        # not that the citation has not moved within the function.  Moving
+        # the (#868) to a different function (different symbol) or a
+        # different file fails the regex.  The title is a PREFIX match
+        # (the full title can grow or change; the prefix "the tick line
+        # reports 0 live lanes" is the stable, discriminating part).
+        assert re.search(
+            r'dev/land_lane\.py:\d+ _requirement_line \(#868\) '
+            r'"the tick line reports 0 live lanes',
+            out,
+        ), "composed miscitation row (land_lane _requirement_line #868 + title) must be reported"
+        # (3) No unresolvable citations on the tree it ships with.
+        assert "UNRESOLVABLE" not in out
+        # Surface the resolved-state banner.
+        with capsys.disabled():
+            for line in out.splitlines():
+                if "DOCSTRING CITATIONS:" in line:
+                    print(line)
+                    break
