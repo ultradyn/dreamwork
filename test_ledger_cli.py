@@ -1020,6 +1020,127 @@ def _sweep_fixture(migrate, tmp_path, name="main"):
     return root, dw
 
 
+def _task_record(dw, task_id):
+    return next(record for record in ledger_parse.store_records(str(dw))
+                if record["id"] == task_id)
+
+
+def test_fold_refuses_a_commit_off_base_without_writing(
+        migrate, dev_ledger, tmp_path):
+    """An existing detached/lane commit cannot support irreversible landed.
+
+    The expected ancestry is derived independently with ``git merge-base``;
+    the production seam is the citation check before ``_fold_store``. Removing
+    that return makes the state assertion fail, while a message-only check
+    would stay green after the dangerous write.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    task_id = min(int(i) for i in _fixture_ids()[0])
+    base = _git(root, "symbolic-ref", "--short", "HEAD").stdout.strip()
+    _git(root, "checkout", "-q", "-b", "rolled-back-gate")
+    detached_sha = _plant(root, f"fix(#{task_id}): provisional landing")
+    _git(root, "checkout", "-q", base)
+    ancestry = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor",
+         detached_sha, base])
+    assert ancestry.returncode == 1, "fixture commit must exist off the base"
+
+    rc, out, err = _run(dev_ledger, [
+        "fold", str(task_id), "--note", f"landed {detached_sha}",
+        "--repo", str(root), "--ledger", str(dw / "tasks.md")])
+
+    assert rc == 2, (
+        "off-base citation must refuse before writing; observed CLI output:\n"
+        + out + err)
+    assert detached_sha in err and "exists but is NOT an ancestor" in err
+    assert "refusing irreversible landed write" in err
+    assert _task_record(dw, task_id)["state"] == "open"
+    assert detached_sha not in _task_record(dw, task_id)["body"]
+
+
+def test_fold_override_records_the_unreachable_commit_in_the_task(
+        migrate, dev_ledger, tmp_path):
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    task_ids = sorted(int(i) for i in _fixture_ids()[0])
+    task_id, other_base_id = task_ids[:2]
+    base = _git(root, "symbolic-ref", "--short", "HEAD").stdout.strip()
+    _git(root, "checkout", "-q", "-b", "foreign-base")
+    sha = _plant(root, f"fix(#{task_id}): landing on another base")
+    _git(root, "checkout", "-q", base)
+
+    rc, base_out, err = _run(dev_ledger, [
+        "fold", str(other_base_id), "--note", f"landed {sha}",
+        "--base", "foreign-base", "--repo", str(root),
+        "--ledger", str(dw / "tasks.md")])
+    assert rc == 0 and "refusing irreversible" not in err
+    assert "is an ancestor of foreign-base" in base_out
+
+    rc, out, err = _run(dev_ledger, [
+        "fold", str(task_id), "--note", f"landed {sha}",
+        "--allow-unreachable-citations", "--repo", str(root),
+        "--ledger", str(dw / "tasks.md")])
+
+    record = _task_record(dw, task_id)
+    assert rc == 0 and "refusing irreversible" not in err
+    assert "OVERRIDE recorded in task note" in out
+    assert record["state"] == "landed"
+    assert ("FOLD CITATION OVERRIDE" in record["body"] and sha in record["body"]
+            and f"not ancestors of {base}" in record["body"])
+
+
+def test_fold_citation_report_distinguishes_zero_unresolved_and_ancestor(
+        migrate, dev_ledger, tmp_path):
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    task_ids = sorted(int(i) for i in _fixture_ids()[0])
+    prose = "feedback on docs/deadbeefish-design.md and task #968"
+
+    rc, zero_out, err = _run(dev_ledger, [
+        "fold", str(task_ids[0]), "--note", prose, "--repo", str(root),
+        "--ledger", str(dw / "tasks.md")])
+    assert rc == 0 and "refusing irreversible" not in err
+    assert "examined 0" in zero_out
+    assert "population is zero, not a clean citation sweep" in zero_out
+    assert "landing sha reachability is NOT verified" in zero_out
+
+    rc, missing_out, err = _run(dev_ledger, [
+        "fold", str(task_ids[1]), "--note", "landed deadbeef",
+        "--repo", str(root), "--ledger", str(dw / "tasks.md")])
+    assert rc == 0 and "refusing irreversible" not in err
+    assert "examined 1" in missing_out
+    assert "deadbeef does not resolve to a commit" in missing_out
+
+    ancestor_sha = _plant(root, f"fix(#{task_ids[2]}): landed on base")
+    rc, ancestor_out, err = _run(dev_ledger, [
+        "fold", str(task_ids[2]), "--note", f"landed {ancestor_sha}",
+        "--repo", str(root), "--ledger", str(dw / "tasks.md")])
+    assert rc == 0 and "refusing irreversible" not in err
+    assert "examined 1" in ancestor_out
+    assert ancestor_sha in ancestor_out and "is an ancestor" in ancestor_out
+
+
+def test_fold_reports_but_does_not_block_an_existing_tree_citation(
+        migrate, dev_ledger, tmp_path):
+    """Direction-2 boundary: the policy refuses off-base *commits* only.
+
+    A tree object is a genuinely broken landing citation and fold still exits
+    zero, but it cannot read as verified: the output says it does not resolve
+    to a commit. This is the deliberate foreign/typo escape hatch, not an
+    undetected scanner miss.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    task_id = min(int(i) for i in _fixture_ids()[0])
+    tree_sha = _git(root, "rev-parse", "HEAD^{tree}").stdout.strip()
+    assert _git(root, "cat-file", "-t", tree_sha).stdout.strip() == "tree"
+
+    rc, out, err = _run(dev_ledger, [
+        "fold", str(task_id), "--note", f"landed {tree_sha}",
+        "--repo", str(root), "--ledger", str(dw / "tasks.md")])
+
+    assert rc == 0 and "refusing irreversible" not in err
+    assert f"{tree_sha} does not resolve to a commit" in out
+    assert _task_record(dw, task_id)["state"] == "landed"
+
+
 def test_reach_cli_reads_exact_store_adjudications_and_keeps_near_miss_open(
         migrate, dev_ledger, tmp_path):
     """Both #913 directions through the real store-backed CLI path.

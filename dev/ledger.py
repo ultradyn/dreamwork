@@ -32,7 +32,7 @@ INVARIANTS — enforced before AND after the write
 
 USAGE
   python3 dev/ledger.py counts [--ledger PATH]
-  python3 dev/ledger.py fold <id> --note <text> [--ledger PATH] [--dry-run]
+  python3 dev/ledger.py fold <id> --note <text> [--base REF] [--ledger PATH] [--dry-run]
   python3 dev/ledger.py file <title> [--note <text>] [--priority P] [--type T] [--origin O] [--ledger PATH] [--dry-run]
   python3 dev/ledger.py note <id> --note <text> [--ledger PATH] [--dry-run]
   python3 dev/ledger.py reprioritise <id> <band> --why <text> [--ledger PATH]
@@ -96,6 +96,8 @@ from user_events.sqlite import open_journal  # noqa: E402 — the journal read A
 LEDGER_DEFAULT = ".dreamwork/tasks.md"
 NOTE_PREFIX = "  · "  # two-space indent, U+00B7, space — the ledger's continuation idiom
 _BLOCKER_ID = re.compile(r"(?<![\w#])#([1-9]\d*)\b")
+_FOLD_SHA_TOKEN = re.compile(
+    r"(?<![0-9A-Za-z])[0-9A-Fa-f]{7,}(?![0-9A-Za-z])")
 
 
 class LedgerError(Exception):
@@ -1377,6 +1379,86 @@ def _git_subjects_for(repo, shas):
     return result
 
 
+def _git_resolve_commit(repo, ref):
+    """Full commit sha for ``ref``, or ``None`` when it is not a commit."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--verify", "--quiet",
+             f"{ref}^{{commit}}"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def _git_is_ancestor(repo, commit, base_commit):
+    """True/False from merge-base, or None when git could not judge."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "merge-base", "--is-ancestor",
+             commit, base_commit], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode in (0, 1):
+        return result.returncode == 0
+    return None
+
+
+def _fold_citation_check(repo, note, base):
+    """Classify 7+ hex note tokens against ``base`` before fold can write.
+
+    Returns ``(report, unreachable, cannot_judge)``. The token boundary is an
+    alphanumeric boundary, not merely a hex boundary: ``deadbeefish`` in a
+    prose/path word is not silently promoted into a purported citation.
+    """
+    tokens = tuple(dict.fromkeys(_FOLD_SHA_TOKEN.findall(note)))
+    if not tokens:
+        return (
+            "OK  fold citations  examined 0 7+ hex token(s) in --note; "
+            "population is zero, not a clean citation sweep; landing sha "
+            "reachability is NOT verified\n", [], [])
+
+    lines = [
+        f"CHECK  fold citations  examined {len(tokens)} 7+ hex token(s) "
+        f"in --note against base {base}\n"]
+    unreachable, cannot_judge = [], []
+    base_commit = None
+    for token in tokens:
+        commit = _git_resolve_commit(repo, token)
+        if commit is None:
+            lines.append(
+                f"  CHECK {token} does not resolve to a commit in {repo}; "
+                "it may be a typo or a foreign commit, and ancestry is NOT "
+                "verified\n")
+            continue
+        if base_commit is None:
+            base_commit = _git_resolve_commit(repo, base)
+        if base_commit is None:
+            cannot_judge.append((token, commit))
+            lines.append(
+                f"  REFUSE {token} resolves as commit {commit}, but base "
+                f"{base} does not resolve to a commit; ancestry cannot be "
+                "judged\n")
+            continue
+        is_ancestor = _git_is_ancestor(repo, commit, base_commit)
+        if is_ancestor is True:
+            lines.append(
+                f"  OK {token} resolves as commit {commit} and is an "
+                f"ancestor of {base}\n")
+        elif is_ancestor is False:
+            unreachable.append((token, commit))
+            lines.append(
+                f"  REFUSE {token} resolves as commit {commit}: it exists "
+                f"but is NOT an ancestor of {base}\n")
+        else:
+            cannot_judge.append((token, commit))
+            lines.append(
+                f"  REFUSE {token} resolves as commit {commit}, but git "
+                f"could not judge ancestry against {base}\n")
+    return "".join(lines), unreachable, cannot_judge
+
+
 def _git_branch_reach(repo, base="master"):
     """Enumerate local branches and cherry-mark each against ``base``.
 
@@ -2513,6 +2595,11 @@ def main(argv=None):
     pf.add_argument("--note", required=True, help="appended as a `  · <text>` continuation line")
     pf.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
     pf.add_argument("--repo", default=".", help="the git repo for the reach hook (default %(default)s)")
+    pf.add_argument("--base", default="master",
+                    help="base ref every resolved note citation must reach (default %(default)s)")
+    pf.add_argument(
+        "--allow-unreachable-citations", action="store_true",
+        help="override an off-base commit refusal; the override is appended to the task note")
     pf.add_argument("--dry-run", action="store_true", help="print the result; do not write")
 
     pfile = sub.add_parser("file", help="file a new task under ## Open (or the store after cutover)")
@@ -2996,6 +3083,36 @@ def _dispatch(args):
 
     ledger_path = Path(args.ledger)
     dw_dir = str(ledger_path.parent)
+
+    # `landed` is irreversible in this CLI. Resolve note citations BEFORE
+    # either writer runs, so a detached provisional merge cannot become the
+    # task's strongest state claim merely because its object still exists.
+    if args.cmd == "fold":
+        report, unreachable, cannot_judge = _fold_citation_check(
+            args.repo, args.note, args.base)
+        sys.stdout.write(report)
+        if cannot_judge:
+            sys.stderr.write(
+                "ledger: refusing irreversible landed write because citation "
+                "ancestry could not be judged; fix --repo/--base and retry\n")
+            return 2
+        if unreachable and not args.allow_unreachable_citations:
+            cited = ", ".join(token for token, _ in unreachable)
+            sys.stderr.write(
+                "ledger: refusing irreversible landed write: " + cited
+                + f" exists but is NOT an ancestor of {args.base}. Land it "
+                "on that base, name the intended --base, or use "
+                "--allow-unreachable-citations; an override is recorded in "
+                "the task note.\n")
+            return 2
+        if unreachable:
+            cited = ", ".join(commit for _, commit in unreachable)
+            args.note += (
+                f"; FOLD CITATION OVERRIDE: {cited} exist but are not "
+                f"ancestors of {args.base}; "
+                "--allow-unreachable-citations used")
+            sys.stdout.write(
+                "OVERRIDE recorded in task note before landed write\n")
 
     # #497 — read-only verbs dispatch on source_of_truth themselves and never
     # touch the markdown file, so they run BEFORE the markdown-existence gate
