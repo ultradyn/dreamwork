@@ -7099,6 +7099,7 @@ class TestGoalsRoute(unittest.TestCase):
             native,
             "native /goals failure copy no longer names the unreadable zero")
         for token in ("edit-details", "add-condition", "add-goal",
+                      "set-current", "make current", "current goal",
                       "saved quietly · appears on the next tick"):
             self.assertIn(token, native,
                           f"native /goals write UI lost {token!r}")
