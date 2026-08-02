@@ -1108,8 +1108,9 @@ def test_a_markdown_file_that_is_a_program_is_not_inert(doc):
         "vacuously against a classifier that calls nothing inert"
     )
     assert not land_lane._is_inert_doc(doc), (
-        f"{doc} is executable input, so exempting it would let a behavioural "
-        "change land with no red-proof owed at all"
+        f"{doc} is executable input, so the conservative classifier must keep "
+        "it binding even when a downstream requirement credits separate "
+        "checker coverage"
     )
 
 
