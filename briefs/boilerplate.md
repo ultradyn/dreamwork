@@ -333,7 +333,13 @@ Likewise, judge targeted pytest by its own before/after collected count; a whole
 in a moving brief head is not that run's bar.
 
 **Filesystem measurements need a measured substrate and an exact positive control.** Use
-`M="$(dev/lane_scratch.py measure)"` as the one lane-private location; ask the kernel for its
+`M="$(dev/lane_scratch.py measure)" || true` followed by `[ -n "$M" ] || exit 1` as the one
+lane-private location — **capture the refusal, do not let the assignment swallow it.** In
+`X="$(cmd)"` the assignment's exit status IS the command's, but a caller that never tests it
+receives an EMPTY string and carries on as though it got a path: `#981` measured exactly that
+(`refused_assignment_exit=2 refused_value=<> shell_continued=yes`), and `#985` then measured
+every such site in the repo and found this the only exposed one. The `guards` recipe is the
+model — it captures with `|| true` and then tests the value. Ask the kernel for the substrate's
 filesystem type (`stat -f` / `findmnt`), never infer it from `/tmp`, the repo, or any path prefix.
 Before believing a negative mtime result, set up a subject under `$M` and run
 `dev/lane_scratch.py require-mtime-change "$M/<subject>" -- <the positive-control command>` with
