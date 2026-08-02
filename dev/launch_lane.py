@@ -528,41 +528,70 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
         return _refuse("attempt-persistence", [f"could not mark attempt unverified before launch: {exc}"],
                        f"attempt={attempt_id}; digest={digest}", retained)
 
+    # The runner is detached by dispatch_lane.py (fork/setsid/execvp): the
+    # dispatcher returns 0 once the child confirms exec, NOT when the runner
+    # exits. So the dispatcher's exit code is the LAUNCH status, and the
+    # runner's own exit is never observed here. Recording dispatch's 0 as
+    # "runner result verified: exit 0" minted a green-faced lie one second
+    # after spawn (#1093). Spawn the dispatcher in the lane's worktree so the
+    # detached runner inherits that worktree as its cwd — a brief that says
+    # "work in a clone" does not move the process, and /proc/<pid>/cwd is where
+    # a process was launched, not where its brief points it (#1093).
+    if not lane_path.is_dir():
+        record["state"] = f"launch refused: lane worktree {lane_path} is not a directory"
+        try:
+            _write_record(attempt_path, record)
+        except OSError:
+            pass
+        return _refuse(
+            "runner-cwd",
+            [f"lane worktree {lane_path} is not a directory; refusing to spawn a "
+             "runner that would inherit the main checkout as its cwd"],
+            f"worktree={lane_path}; attempt={attempt_id}", retained,
+        )
     command = [sys.executable, str(Path(__file__).with_name("dispatch_lane.py")),
                "--prompt", str(prompt_path), "--", "ccc", *runner_args, agent]
+    print(
+        f"launching governed runner: dispatcher=dispatch_lane.py; cwd={lane_path.resolve()}; "
+        f"agent={agent}; attempt={attempt_id}"
+    )
     # Inherit the launcher's regular-file stdout/stderr. Capturing here would
     # manufacture the pipe hazard that dispatch_lane correctly refuses.
-    result = subprocess.run(command, cwd=repo)
-    record["runner_exit"] = result.returncode
+    result = subprocess.run(command, cwd=lane_path)
+    record["runner_exit"] = None
     if result.returncode == 0:
-        record["state"] = "runner result verified: exit 0"
+        record["state"] = "spawned: runner detached; exit not observed; exact brief bytes preserved"
         try:
             _write_record(attempt_path, record)
         except OSError as exc:
             print(
-                f"UNVERIFIED ATTEMPT: attempt={attempt_id}; runner returned 0 but its result "
-                f"could not be persisted: {exc}; exact brief bytes are preserved and only "
-                f"--resume {attempt_id} with the identical digest is allowed",
+                f"UNVERIFIED ATTEMPT: attempt={attempt_id}; dispatcher returned 0 but the "
+                f"spawn record could not be persisted: {exc}; exact brief bytes are preserved "
+                f"and only --resume {attempt_id} with the identical digest is allowed",
                 file=sys.stderr,
             )
             return 2
         print(
-            f"runner result: attempt={attempt_id}; exit=0; verified check=runner-exit-code; "
-            "unchecked=worktree reach, interpreter availability, lane work"
+            f"runner spawned: attempt={attempt_id}; dispatcher exit=0; runner detached; "
+            "runner exit not observed; unchecked=runner exit, worktree reach, "
+            "interpreter availability, lane work"
         )
         return 0
-    record["state"] = f"runner result verified: exit {result.returncode}; worktree and exact brief retained"
+    record["state"] = (
+        f"launch refused: dispatcher exited {result.returncode}; runner not confirmed "
+        "spawned; exact brief bytes preserved"
+    )
     try:
         _write_record(attempt_path, record)
     except OSError as exc:
         print(
-            f"UNVERIFIED ATTEMPT: attempt={attempt_id}; runner returned {result.returncode} "
-            f"but its result could not be persisted: {exc}; exact brief bytes are preserved "
-            f"and only --resume {attempt_id} with the identical digest is allowed",
+            f"UNVERIFIED ATTEMPT: attempt={attempt_id}; dispatcher returned {result.returncode} "
+            f"but the spawn record could not be persisted: {exc}; exact brief bytes are "
+            f"preserved and only --resume {attempt_id} with the identical digest is allowed",
             file=sys.stderr,
         )
         return 2
-    print(f"REFUSE phase=runner-result: runner exited {result.returncode}; this is not a successful launch", file=sys.stderr)
+    print(f"REFUSE phase=runner-launch: dispatcher exited {result.returncode}; runner not confirmed spawned", file=sys.stderr)
     print(f"retained: {retained}; exact brief digest={digest}", file=sys.stderr)
     print(f"retry: --resume {attempt_id} is accepted only with the identical digest", file=sys.stderr)
     print("deliberately did not perform: worktree retirement or corpus identity deletion", file=sys.stderr)
