@@ -3414,6 +3414,74 @@ class TestCitationRange:
             inspect.getsource(lint.run_checks)
 
 
+class TestDevTaskCitations:
+    """New numeric attributions in production Python resolve mechanically."""
+
+    @staticmethod
+    def _diff(text: str, path: str = "dev/example.py") -> str:
+        lines = text.splitlines()
+        added = "\n".join("+" + line for line in lines)
+        return (
+            f"diff --git a/{path} b/{path}\n"
+            f"--- a/{path}\n+++ b/{path}\n"
+            f"@@ -0,0 +1,{len(lines)} @@\n{added}\n"
+        )
+
+    @staticmethod
+    def _run(tmp_path, diff: str, known: set[int]):
+        root = fresh(tmp_path)
+        dw = root / ".dreamwork"
+        dw.mkdir()
+        rep = lint.Report()
+        lint.check_dev_task_citations(dw, rep, diff_text=diff, known_ids=known)
+        return [(level, detail) for level, what, detail in rep.rows
+                if what == "dev task citations"]
+
+    def test_an_unresolved_added_citation_names_the_production_line(self, tmp_path):
+        rows = self._run(tmp_path, self._diff("# ruling (#999999: invented)"), set())
+        assert rows == [
+            (lint.ERROR,
+             "dev/example.py:1 cites unresolved task #999999; file the task "
+             "or remove the numeric attribution")
+        ]
+
+    def test_a_resolved_id_is_not_semantically_certified(self, tmp_path):
+        """The exact #932-class blind spot stays stated, never certified."""
+        rows = self._run(
+            tmp_path,
+            self._diff("# unrelated real task (#932: false-green ruling)"),
+            {932},
+        )
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 newly added citation occurrence(s)" in rows[0][1]
+        assert "subject relevance are NOT verified" in rows[0][1]
+
+    def test_zero_population_prints_differently_from_a_verified_population(self, tmp_path):
+        rows = self._run(tmp_path, self._diff("# no numeric citation"), set())
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "examined 0" in rows[0][1]
+        assert "population is zero, not a clean citation sweep" in rows[0][1]
+
+    def test_bad_citation_example_in_own_test_data_is_outside_dev_scope(self, tmp_path):
+        rows = self._run(
+            tmp_path,
+            self._diff('BAD = "example citation #999999"', path="test_lint.py"),
+            set(),
+        )
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "examined 0" in rows[0][1]
+
+    def test_placeholders_ordinals_and_longer_tokens_are_not_task_citations(self, tmp_path):
+        text = "# placeholder #NNN; ordinal #1; sha-ish abc#999999; #1234"
+        rows = self._run(tmp_path, self._diff(text), {1234})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 newly added citation occurrence(s)" in rows[0][1]
+
+    def test_the_check_is_registered_in_run_checks(self):
+        import inspect
+        assert "check_dev_task_citations(dw, rep)" in inspect.getsource(lint.run_checks)
+
+
 class TestHandoffs:
     """#381's delivery half: a landing the ledger writer has not folded yet.
 
