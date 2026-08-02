@@ -495,7 +495,7 @@ def test_validate_core_returns_the_section_count_on_success():
     assert brief.validate_core(core) == 3
 
 
-def test_quantity_report_names_an_uncovered_headline_beside_a_covered_claim():
+def test_brief_generation_reports_an_uncovered_headline_beside_a_covered_claim(capsys):
     core = (
         "## Verify the premises\n\n"
         "17 recipes are registered.\n\n"
@@ -505,7 +505,8 @@ def test_quantity_report_names_an_uncovered_headline_beside_a_covered_claim():
         "## Direction 2 - construct these\n\n"
         "A word-form count can escape the scan.\n"
     )
-    report = brief._quantity_verification_report(core)
+    assert brief.validate_core(core) == 3
+    report = capsys.readouterr().err
     assert "found 2 asserted quantities" in report, report
     assert "covered 1 of 2" in report, report
     assert "1 uncovered: line 9 '5 recipes'" in report, (
