@@ -474,6 +474,152 @@ def test_history_injection_refuses_before_detach_and_names_the_commit(
     _assert_retained(root, lane)
 
 
+def test_squash_repairs_history_injection_and_preserves_original_tip(landing_repo):
+    root, lane = landing_repo
+    _write(lane / "feature.txt", "recorded red-proof injection\n")
+    _git(lane, "add", "feature.txt")
+    _git(lane, "commit", "-m", "test injection held in history")
+    _write(lane / "feature.txt", "lane\n")
+    _git(lane, "add", "feature.txt")
+    _git(lane, "commit", "-m", "restore fixed tree")
+    original = _git(lane, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py", "--squash")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "squash cause: history held a recorded injection (#710)" in result.stdout
+    assert "squash-verification: PASS" in result.stdout
+    assert "found 0 differing paths" in result.stdout
+    assert _git(root, "rev-parse", "refs/tags/lane-presquash") == original
+    squashed = _git(root, "rev-parse", "refs/heads/lane")
+    assert _git(root, "rev-list", "--count", f"master^..{squashed}") == "1"
+
+
+def test_squash_verification_refuses_a_dropped_outside_path_and_reattaches_main(
+    landing_repo, monkeypatch, capsys
+):
+    """The complete-tree diff catches the exact ``commit --only`` loss.
+
+    ``kept`` is the tree a hand squash naming only ``feature.txt`` would
+    produce; ``outside.txt`` is the lane-owned path that spelling silently
+    drops. The assertion message is the direction-1 discriminator for the
+    production seam ``_squash_tree_diff``.
+    """
+    root, lane = landing_repo
+    kept = _git(lane, "rev-parse", "HEAD")
+    _write(lane / "outside.txt", "must survive squash\n")
+    _git(lane, "add", "outside.txt")
+    _git(lane, "commit", "-m", "change outside the imagined only-path list")
+    original = _git(lane, "rev-parse", "HEAD")
+    kept_tree = _git(lane, "rev-parse", f"{kept}^{{tree}}")
+    before = _git(root, "rev-parse", "HEAD")
+    monkeypatch.setattr(land_lane, "_squash_commit_tree", lambda *_: kept_tree)
+    monkeypatch.chdir(root)
+
+    code = land_lane.land("lane", ["test_named.py"], squash=True)
+    output = capsys.readouterr()
+
+    assert code == 1, (
+        "dropped path outside.txt was not caught by _squash_tree_diff; "
+        "the lossy squash continued"
+    )
+    assert "REFUSE phase=squash-verification" in output.err
+    assert "D\toutside.txt" in output.err, output.err
+    assert "branch rollback restored the original tip" in output.err
+    assert _git(root, "rev-parse", "refs/heads/lane") == original
+    assert _git(root, "rev-parse", "refs/tags/lane-presquash") == original
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_squash_preserves_deletion_mode_and_symlink_target(tmp_path):
+    root, lane = _make_repo(tmp_path)
+    _write(root / "deleted.txt", "remove me\n")
+    _write(root / "mode.sh", "#!/bin/sh\nexit 0\n")
+    (root / "link.txt").symlink_to("old-target")
+    _git(root, "add", "deleted.txt", "mode.sh", "link.txt")
+    _git(root, "commit", "-m", "add tree-shape fixtures")
+    _git(lane, "rebase", "master")
+
+    (lane / "deleted.txt").unlink()
+    (lane / "mode.sh").chmod(0o755)
+    (lane / "link.txt").unlink()
+    (lane / "link.txt").symlink_to("new-target")
+    _git(lane, "add", "deleted.txt", "mode.sh", "link.txt")
+    _git(lane, "commit", "-m", "change deletion mode and symlink target")
+    base_sha = _git(root, "rev-parse", "master")
+    original = _git(lane, "rev-parse", "HEAD")
+
+    result = land_lane._squash_lane(lane, "lane", base_sha, original)
+
+    assert result.error is None, result.error
+    assert result.new_sha
+    assert land_lane._squash_tree_diff(
+        lane, "refs/tags/lane-presquash", "refs/heads/lane"
+    ) == ()
+    assert not (lane / "deleted.txt").exists(), "squash resurrected a deletion"
+    assert (lane / "mode.sh").stat().st_mode & 0o111, "squash dropped executable mode"
+    assert (lane / "link.txt").readlink() == Path("new-target"), (
+        "squash dropped a symlink target change whose regular-file content is empty"
+    )
+
+
+def test_tree_diff_names_reinstated_deletion_mode_loss_and_symlink_loss(tmp_path):
+    root, lane = _make_repo(tmp_path)
+    _write(root / "deleted.txt", "remove me\n")
+    _write(root / "mode.sh", "#!/bin/sh\nexit 0\n")
+    (root / "link.txt").symlink_to("old-target")
+    _git(root, "add", "deleted.txt", "mode.sh", "link.txt")
+    _git(root, "commit", "-m", "add tree-shape fixtures")
+    _git(lane, "rebase", "master")
+
+    (lane / "deleted.txt").unlink()
+    (lane / "mode.sh").chmod(0o755)
+    (lane / "link.txt").unlink()
+    (lane / "link.txt").symlink_to("new-target")
+    _git(lane, "add", "deleted.txt", "mode.sh", "link.txt")
+    _git(lane, "commit", "-m", "change deletion mode and symlink target")
+    original = _git(lane, "rev-parse", "HEAD")
+    _git(lane, "tag", "lane-preserved", original)
+
+    # This is the lossy post-squash tree: deletion resurrected, executable bit
+    # removed, and symlink target reverted. No regular-file contents need be
+    # missing for two of the three losses to be real.
+    _git(lane, "reset", "--hard", "master")
+    differing = land_lane._squash_tree_diff(
+        lane, "refs/tags/lane-preserved", "refs/heads/lane"
+    )
+
+    assert differing == (
+        "A\tdeleted.txt",
+        "M\tlink.txt",
+        "M\tmode.sh",
+    ), f"tree verification failed to name every non-content loss: {differing!r}"
+
+
+def test_existing_presquash_tag_is_never_force_replaced(tmp_path):
+    root, lane = _make_repo(tmp_path)
+    _write(lane / "one.txt", "one\n")
+    _git(lane, "add", "one.txt")
+    _git(lane, "commit", "-m", "first lane history")
+    base_sha = _git(root, "rev-parse", "master")
+    first_tip = _git(lane, "rev-parse", "HEAD")
+    first = land_lane._squash_lane(lane, "lane", base_sha, first_tip)
+    assert first.error is None, first.error
+
+    _write(lane / "two.txt", "two\n")
+    _git(lane, "add", "two.txt")
+    _git(lane, "commit", "-m", "second lane history")
+    second_tip = _git(lane, "rev-parse", "HEAD")
+    second = land_lane._squash_lane(lane, "lane", base_sha, second_tip)
+
+    assert second.new_sha is None
+    assert "already exists" in (second.error or "")
+    assert "refusing to replace the only recorded copy" in (second.error or "")
+    assert _git(lane, "rev-parse", "refs/tags/lane-presquash") == first_tip
+    assert _git(lane, "rev-parse", "refs/heads/lane") == second_tip
+
+
 def test_empty_registry_refuses_with_loud_zero_denominators(landing_repo):
     root, lane = landing_repo
     forgotten = _redproof(lane, "forget", "feature.txt")
