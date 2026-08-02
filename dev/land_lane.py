@@ -1059,22 +1059,24 @@ def land(
     # Coordinator authorisation for an intended WARN row-set change (#1040).
     # The coordinator is the single writer of the lint baseline, so the
     # declaration arrives by the one channel the lane cannot forge: the gate
-    # invocation itself. The declared rows are normalised by the SAME identity
-    # function as observed rows, so padding differences do not read as a
+    # invocation itself. The declared rows are normalised by _declared_warn_index
+    # (which also tolerates a leading "+ "/"- " prefix the coordinator copies
+    # from the gate's own diff output), so padding differences do not read as a
     # mismatch. A declaration is validated here — before the merge — so an
     # ambiguous declaration (two rows sharing one identity) refuses early
     # instead of spending the lane's budget.
-    try:
-        declared_added_ids = set(_warn_row_index(expect_warn_add))
-        declared_removed_ids = set(_warn_row_index(expect_warn_remove))
-    except ValueError as exc:
+    declared_added_index, add_fault = _declared_warn_index(expect_warn_add)
+    declared_removed_index, remove_fault = _declared_warn_index(expect_warn_remove)
+    if add_fault or remove_fault:
         return _refuse(
             "lint-baseline",
-            f"coordinator WARN declaration is ambiguous: {exc}",
+            f"coordinator WARN declaration is ambiguous: {add_fault or remove_fault}",
             f"declared_add={len(expect_warn_add)}; declared_remove={len(expect_warn_remove)}",
             retained,
             base_state=_base_state(repo, base, base_sha),
         )
+    declared_added_ids = set(declared_added_index)
+    declared_removed_ids = set(declared_removed_index)
 
     # Spans the pre-merge phase (red-proof-history, below) and the post-merge
     # phases. Declared here — before the first gate appends to it — so the

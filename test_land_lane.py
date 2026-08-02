@@ -567,35 +567,18 @@ def test_declared_change_not_observed_refuses(landing_repo):
     _assert_retained(root, lane)
 
 
-def test_authorised_pass_reads_differently_from_zero_change_pass(tmp_path):
+def test_authorised_pass_reads_differently_from_zero_change_pass(tmp_path, landing_repo):
     """#136: a pass because zero rows changed must read differently from a pass
     because declared rows changed as declared. The authorisation line is the
     discriminator — a zero-change pass prints no authorisation line at all.
 
-    Uses two separate repos because a successful landing reaps the lane
-    worktree, so the same lane cannot be reused for a second run.
+    Uses ``landing_repo`` for the zero-change case (its red-proof is already
+    armed), then builds a separate repo for the authorised case because a
+    successful landing reaps the lane worktree.
     """
-    # Repo 1: zero-change landing.
-    zero_dir = tmp_path / "zero"
-    zero_dir.mkdir()
-    root1, lane1 = _make_repo(zero_dir)
-    _write(lane1 / "feature.txt", "lane\n")
-    _git(lane1, "add", "feature.txt")
-    _git(lane1, "commit", "-m", "lane change")
-    armed = _redproof(lane1, "begin", "feature.txt", "--expectation", "test_named.py")
-    assert armed.returncode == 0, armed.stdout + armed.stderr
-    _write(lane1 / "feature.txt", "recorded red-proof injection\n")
-    observed = _redproof(
-        lane1, "observe", "feature.txt", "--failure", "feature injection reached",
-        "--command", sys.executable, "-c",
-        "from pathlib import Path; assert Path('feature.txt').read_text() == "
-        "'lane\\n', 'feature injection reached'",
-    )
-    assert observed.returncode == 0, observed.stdout + observed.stderr
-    restored = _redproof(lane1, "restore", "feature.txt")
-    assert restored.returncode == 0, restored.stdout + restored.stderr
+    root_zero, lane_zero = landing_repo
 
-    zero_change = _run(root1, "test_named.py")
+    zero_change = _run(root_zero, "test_named.py")
     assert zero_change.returncode == 0, zero_change.stderr
     assert "WARN authorisation:" not in zero_change.stdout
 
