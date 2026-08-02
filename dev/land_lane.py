@@ -842,13 +842,14 @@ def _declared_warn_index(
     distinct faults (#136 — nothing declared, nothing changed, the declaration
     could not be read must stay distinct):
 
-    - **unreadable**: a cleaned row does not parse as a WARN row, so its
-      identity is ``("raw", …)`` — it could not name a real observed row. The
-      fault names the offending token. Binding validity to the same
-      ``_warn_row_identity`` the observed rows use means a declaration is valid
-      exactly when it could name a real row, so a typo is caught as unreadable
-      rather than silently authorising nothing and reporting as a mismatch
-      (#1040).
+    - **unreadable**: a cleaned row does not even parse as a WARN row — it
+      could not name a real observed row. Validity is bound to ``WARN_ROW``,
+      the *same* filter ``_warn_rows`` applies to the observed lint output, so
+      a declaration is valid exactly when it could name a real row: a row with
+      no structured separator (``"  WARN  detail"``) is still a valid WARN row,
+      while a typo (``"not a WARN row"``) is not. The fault names the offending
+      token, so a typo is caught as unreadable rather than silently authorising
+      nothing and reporting as a mismatch (#1040).
     - **ambiguous**: two declared rows of different text collapse to one
       identity, which the gate cannot adjudicate.
 
@@ -860,7 +861,7 @@ def _declared_warn_index(
     cleaned: list[str] = []
     for row in rows:
         cleaned.append(row[2:] if row[:2] in ("+ ", "- ") else row)
-    unreadable = [row for row in cleaned if _warn_row_identity(row)[0] == "raw"]
+    unreadable = [row for row in cleaned if not WARN_ROW.match(row)]
     if unreadable:
         return {}, (
             f"coordinator WARN declaration could not be read: "
