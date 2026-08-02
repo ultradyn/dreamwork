@@ -2266,9 +2266,14 @@ var DreamworkDesign = (() => {
     return blocks.map((b) => b.kind === "fence" ? `<pre class="mdcode">${esc(b.text)}</pre>` : b.kind === "h" ? `<div class="mdh">${renderInline(b.text)}</div>` : b.kind === "li" ? `<div class="mdli" style="--lvl:${levels.indexOf(b.indent)}">${renderInline(b.text)}</div>` : b.kind === "quote" ? `<blockquote class="mdquote">${renderInline(b.text)}</blockquote>` : b.kind === "table" ? mdTable(b) : `<p>${renderInline(b.text)}</p>`).join("");
   }
   var TASK_REF_SKIP = "a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]";
+  var TASK_REF_SKIP_NO_CODE = "a,button,pre,script,select,style,textarea,[data-task-ref-ui]";
   var TASK_REF_RE = /(^|[^\w])#(\d+)\b/g;
   var TASK_REF_CACHE_MS = 60 * 1e3;
   var taskRefCache = /* @__PURE__ */ new Map();
+  function backtickTaskLinksOn() {
+    const v = data && data.settings && data.settings.values;
+    return !v || v["links.backtickTasks"] !== false;
+  }
   function taskRefParts(text) {
     const out = [];
     let last = 0, match;
@@ -2398,7 +2403,8 @@ var DreamworkDesign = (() => {
   }
   function linkTaskRefText(node) {
     const parent = node.parentElement;
-    if (!parent || parent.closest(TASK_REF_SKIP)) return;
+    const skip = backtickTaskLinksOn() ? TASK_REF_SKIP_NO_CODE : TASK_REF_SKIP;
+    if (!parent || parent.closest(skip)) return;
     if (!node.ownerDocument.__dwTaskRefReview && !parent.closest(".md")) return;
     const parts = taskRefParts(node.nodeValue || "");
     if (!parts.some((part) => part.id != null)) return;
@@ -4743,7 +4749,7 @@ var DreamworkDesign = (() => {
       const sp = new URLSearchParams(loc.search);
       return { name: "review", param: sp.get("p"), q: sp.get("q") };
     }
-    if (loc.pathname === "/tasks2") {
+    if (loc.pathname === "/tasks" || loc.pathname === "/tasks2") {
       const sp = new URLSearchParams(loc.search);
       const raw = sp.get("t");
       return { name: "tasks2", param: raw && /^\d+$/.test(raw) ? raw : null };
@@ -5332,6 +5338,7 @@ var DreamworkDesign = (() => {
     restoreAnswerDrafts();
     bindAskDraft();
     bindChatReplyDraft();
+    resolveTaskRefs(document.getElementById("view"));
   }
   function nativeRegistry() {
     return window.dwNative && window.dwNative.registry ? window.dwNative.registry : null;
@@ -7211,7 +7218,7 @@ var DreamworkDesign = (() => {
   function isInternal(a) {
     if (!a || a.target === "_blank" || a.hasAttribute("download")) return false;
     if (a.origin !== location.origin) return false;
-    return a.pathname === "/" || a.pathname === "/questions" || a.pathname === "/answers" || a.pathname === "/settings" || a.pathname === "/file" || a.pathname === "/review" || a.pathname === "/tasks2" || a.pathname === "/question" || a.pathname === "/research" || a.pathname === "/reviews" || a.pathname === "/goals" || a.pathname.startsWith("/chat/");
+    return a.pathname === "/" || a.pathname === "/questions" || a.pathname === "/answers" || a.pathname === "/settings" || a.pathname === "/file" || a.pathname === "/review" || a.pathname === "/tasks" || a.pathname === "/tasks2" || a.pathname === "/question" || a.pathname === "/research" || a.pathname === "/reviews" || a.pathname === "/goals" || a.pathname.startsWith("/chat/");
   }
   addEventListener("click", (e) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
