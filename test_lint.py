@@ -5288,6 +5288,136 @@ class TestGuardsRegistered:
         assert str(len(names)) in detail, detail
 
 
+class TestJustfilePipeSafety:
+    """#972 — a pipe in a recipe without pipefail eats the upstream exit code.
+
+    Production line named (what must change for these to fail): the
+    ``shebang and pipefail`` short-circuit and the ``"|" in ln.replace("||",
+    "  ")`` scan in ``lint.check_justfile_pipe_safety``. Make the short-circuit
+    unconditionally ``continue`` and a real pipe reports clean; make the scan
+    always return ``False`` and the same happens.
+    """
+
+    def test_clean_justfile_reports_both_denominators(self, tmp_path):
+        # 3 recipes: 1 shebang+pipefail, 2 non-shebang without pipes.
+        # The OK row must carry both denominators derived from this fixture.
+        (tmp_path / "justfile").write_text(
+            "safe:\n"
+            "    #!/usr/bin/env bash\n"
+            "    set -euo pipefail\n"
+            "    echo a | cat\n"           # protected: shebang + pipefail
+            "\n"
+            "plain-one:\n"
+            "    python3 -m pytest\n"      # non-shebang, no pipe
+            "\n"
+            "plain-two:\n"
+            "    python3 lint.py\n",       # non-shebang, no pipe
+            encoding="utf-8")
+        rep = lint.Report()
+        lint.check_justfile_pipe_safety(tmp_path, rep)
+        assert lint.ERROR not in levels(rep, "justfile"), rep.render()
+        detail = next(d for lvl, w, d in rep.rows
+                      if w == "justfile" and lvl == lint.OK)
+        # Both denominators derived from the 3-recipe fixture above.
+        assert "examined 3 recipe(s)" in detail, detail
+        assert "2 in scope" in detail, detail
+
+    def test_pipe_in_non_shebang_recipe_is_error(self, tmp_path):
+        (tmp_path / "justfile").write_text(
+            "danger:\n"
+            "    python3 -m pytest | head\n",   # pipe, no pipefail
+            encoding="utf-8")
+        rep = lint.Report()
+        lint.check_justfile_pipe_safety(tmp_path, rep)
+        assert lint.ERROR in levels(rep, "justfile"), rep.render()
+        detail = next(d for lvl, w, d in rep.rows
+                      if w == "justfile" and lvl == lint.ERROR)
+        # Discriminating: must NAME the recipe, not just count a red.
+        assert "danger" in detail, detail
+
+    def test_pipe_in_shebang_with_pipefail_is_ok(self, tmp_path):
+        (tmp_path / "justfile").write_text(
+            "safe:\n"
+            "    #!/usr/bin/env bash\n"
+            "    set -uo pipefail\n"
+            "    cmd_a | cmd_b\n",              # pipe but protected
+            encoding="utf-8")
+        rep = lint.Report()
+        lint.check_justfile_pipe_safety(tmp_path, rep)
+        assert lint.ERROR not in levels(rep, "justfile"), rep.render()
+
+    def test_pipe_in_shebang_without_pipefail_is_error(self, tmp_path):
+        (tmp_path / "justfile").write_text(
+            "danger:\n"
+            "    #!/usr/bin/env bash\n"
+            "    set -eu\n"                     # shebang but no pipefail
+            "    cmd_a | cmd_b\n",
+            encoding="utf-8")
+        rep = lint.Report()
+        lint.check_justfile_pipe_safety(tmp_path, rep)
+        assert lint.ERROR in levels(rep, "justfile"), rep.render()
+
+    def test_pipefail_set_after_pipe_is_unprotected(self, tmp_path):
+        # D2-5 closed: pipefail AFTER a pipe does not protect it.
+        (tmp_path / "justfile").write_text(
+            "danger:\n"
+            "    #!/usr/bin/env bash\n"
+            "    cmd_a | cmd_b\n"               # pipe runs without pipefail
+            "    set -o pipefail\n",            # too late
+            encoding="utf-8")
+        rep = lint.Report()
+        lint.check_justfile_pipe_safety(tmp_path, rep)
+        assert lint.ERROR in levels(rep, "justfile"), rep.render()
+
+    def test_zero_recipes_is_fault_not_pass(self, tmp_path):
+        # #868/#937: a parser that finds nothing must not report a clean bill.
+        (tmp_path / "justfile").write_text(
+            "# only comments here\n# no recipes\n", encoding="utf-8")
+        rep = lint.Report()
+        lint.check_justfile_pipe_safety(tmp_path, rep)
+        assert lint.ERROR in levels(rep, "justfile"), rep.render()
+        detail = next(d for lvl, w, d in rep.rows
+                      if w == "justfile" and lvl == lint.ERROR)
+        assert "0 recipes" in detail, detail
+
+    def test_logical_or_not_flagged(self, tmp_path):
+        (tmp_path / "justfile").write_text(
+            "test-thing:\n"
+            "    python3 -c 'x || y'\n",       # || not |
+            encoding="utf-8")
+        rep = lint.Report()
+        lint.check_justfile_pipe_safety(tmp_path, rep)
+        assert lint.ERROR not in levels(rep, "justfile"), rep.render()
+
+    def test_no_justfile_is_silent(self, tmp_path):
+        rep = lint.Report()
+        lint.check_justfile_pipe_safety(tmp_path, rep)
+        assert levels(rep, "justfile") == [], rep.render()
+
+    def test_pipe_on_continuation_line_is_caught(self, tmp_path):
+        # Direction-2 candidate: a pipe on a backslash-joined continuation.
+        # The parser collects ALL indented body lines, so this IS caught.
+        (tmp_path / "justfile").write_text(
+            "danger:\n"
+            "    python3 -m pytest \\\n"
+            "        | head\n",                 # pipe on continuation line
+            encoding="utf-8")
+        rep = lint.Report()
+        lint.check_justfile_pipe_safety(tmp_path, rep)
+        assert lint.ERROR in levels(rep, "justfile"), rep.render()
+
+    def test_real_justfile_reports_nonzero_denominators(self):
+        # The real justfile must produce a non-zero examined count — a parser
+        # that stopped matching would report 0 and that is the #868 trap.
+        rep = lint.Report()
+        lint.check_justfile_pipe_safety(lint.SKILL_DIR, rep)
+        assert lint.ERROR not in levels(rep, "justfile"), rep.render()
+        detail = next(d for lvl, w, d in rep.rows
+                      if w == "justfile" and lvl == lint.OK and "#972" in d)
+        assert "examined" in detail and "in scope" in detail, detail
+        assert "examined 0 recipe(s)" not in detail, detail
+
+
 class TestRanAndJudged:
     """#471 — "executed" must mean ran AND judged, not "the recipe printed a line".
 
