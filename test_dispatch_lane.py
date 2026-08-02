@@ -1099,3 +1099,235 @@ def test_detached_dispatch_still_refuses_bad_base_sha_before_fork(tmp_path):
     assert "missing required 'Base sha: <git revision>' line" in result.stderr
     # No lane.lock should exist — the refusal happened before fork.
     assert not any(root.rglob("lane.lock"))
+
+
+# --- #1056: review dispatch pins a sha and warns on a live lane ------------
+
+REVIEW_FRAME = (ROOT / "briefs" / "review-frame.md").read_text(encoding="utf-8")
+
+
+def _import_dispatch_lane():
+    """Import the worktree's dev/dispatch_lane.py for unit-level liveness tests.
+
+    The CLI tests shell out; the liveness helper takes injectable process
+    readers, so testing it in-process lets a fake process table prove the
+    self-exclusion and examined-count properties directly.
+    """
+    sys.path.insert(0, str(ROOT / "dev"))
+    import dispatch_lane
+    return dispatch_lane
+
+
+def _sandbox_review_cli(tmp_path: Path, branch: str = "cx-review") -> tuple[Path, Path]:
+    """A sandbox with boilerplate + review-frame, plus a real branch for sha pinning."""
+    cli, root = _sandbox_cli(tmp_path)
+    (root / "briefs" / "review-frame.md").write_text(REVIEW_FRAME, encoding="utf-8")
+    subprocess.run(["git", "branch", branch, "master"], cwd=root, check=True)
+    return cli, root
+
+
+def _review_prompt(tmp_path: Path, root: Path, branch: str = "cx-review") -> Path:
+    """A minimal valid review prompt: task head + review frame (verbatim, last)."""
+    prompt = tmp_path / f"review-{branch}.txt"
+    prompt.write_text(
+        f"# Review — branch {branch}\n\n"
+        f"Branch under review: {branch}\n\n"
+        + REVIEW_FRAME,
+        encoding="utf-8",
+    )
+    return prompt
+
+
+def _run_review(cli: Path, prompt: Path, branch: str) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, "DREAMWORK_ALLOW_PIPED_STDOUT": "1"}
+    return subprocess.run(
+        [sys.executable, str(cli), "--review-prompt", str(prompt),
+         "--review-branch", branch],
+        capture_output=True, text=True, env=env,
+    )
+
+
+def _fake_lane_runner(worktree: Path, name: str = "ccc") -> subprocess.Popen:
+    """A short-lived process whose argv[0] basename is a lane runner name,
+    with its cwd set inside ``worktree`` (#1056's endorsed fixture).
+
+    A symlink ``<name> -> sleep`` is exec'd with argv ``[<link>, "60"]``: the
+    kernel resolves the target but keeps argv[0] as the link path, so
+    /proc/<pid>/cmdline's first element has basename ``name`` — exactly what
+    lane_liveness._is_lane_runner keys on. A #!/bin/sh script would NOT work:
+    the shebang rewrites argv[0] to the interpreter, so the basename check fails.
+    """
+    worktree.mkdir(parents=True, exist_ok=True)
+    sleep_bin = shutil.which("sleep")
+    if not sleep_bin:
+        pytest.skip("sleep is required for the fake runner fixture")
+    link = worktree / name
+    if not link.exists():
+        link.symlink_to(sleep_bin)
+    proc = subprocess.Popen(
+        [str(link), "60"], cwd=str(worktree),
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    for _ in range(150):
+        try:
+            cwd = os.readlink("/proc/%d/cwd" % proc.pid)
+            raw = Path("/proc/%d/cmdline" % proc.pid).read_bytes()
+            first = raw.split(b"\x00", 1)[0]
+            if (cwd and os.path.basename(first.decode("utf-8", "replace")) == name
+                    and (cwd == str(worktree.resolve())
+                         or cwd.startswith(str(worktree.resolve()) + os.sep))):
+                return proc
+        except FileNotFoundError:
+            break
+        time.sleep(0.02)
+    raise AssertionError(f"fake runner {proc.pid} did not settle in {worktree}")
+
+
+def _review_receipt(root: Path, branch: str) -> dict:
+    """Read the persisted review-dispatch receipt JSON for ``branch``."""
+    dispatches = root / ".dreamwork" / "review-dispatches"
+    matches = sorted(dispatches.glob(f"{branch}-r*.json"))
+    assert matches, f"no review-dispatch receipt for {branch} in {dispatches}"
+    return json.loads(matches[-1].read_text(encoding="utf-8"))
+
+
+def _review_persisted_prompt(root: Path, branch: str) -> str:
+    dispatches = root / ".dreamwork" / "review-dispatches"
+    matches = sorted(dispatches.glob(f"{branch}-r*.prompt.md"))
+    assert matches, f"no review-dispatch prompt for {branch}"
+    return matches[-1].read_text(encoding="utf-8")
+
+
+def test_review_persists_pinned_sha_when_no_live_lane(tmp_path):
+    """No live runner → dispatch proceeds with no liveness warning; the receipt
+    carries the pinned sha and the prompt head carries the sha line (#1056)."""
+    cli, root = _sandbox_review_cli(tmp_path)
+    branch = "cx-review"
+    prompt = _review_prompt(tmp_path, root, branch)
+    expected_sha = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", branch],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    result = _run_review(cli, prompt, branch)
+    assert result.returncode == 0, result.stderr
+    assert "live lane runner" not in result.stderr
+    receipt = _review_receipt(root, branch)
+    assert receipt["pinned_sha"] == expected_sha, receipt
+    persisted = _review_persisted_prompt(root, branch)
+    assert "Review sha (pinned at dispatch, #1056): %s" % expected_sha in persisted
+
+
+def test_review_warns_but_proceeds_when_live_lane_runner_present(tmp_path):
+    """A live runner in the branch worktree → the dispatch WARNS (naming the
+    branch), proceeds (exit 0), and still pins the sha — warn not refuse, so a
+    hung lane stays reviewable with the sha as backstop (#1056)."""
+    cli, root = _sandbox_review_cli(tmp_path)
+    branch = "cx-review"
+    worktree = root / ".worktrees" / branch
+    proc = _fake_lane_runner(worktree)
+    try:
+        prompt = _review_prompt(tmp_path, root, branch)
+        result = _run_review(cli, prompt, branch)
+        assert result.returncode == 0, result.stderr
+        assert "live lane runner" in result.stderr, result.stderr
+        assert branch in result.stderr, result.stderr
+        assert "examined" in result.stderr, result.stderr
+        # Dispatch proceeded despite the warning: the receipt exists with a pin.
+        receipt = _review_receipt(root, branch)
+        assert receipt["pinned_sha"] is not None, receipt
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_review_liveness_counts_runner_via_cwd_never_argv(tmp_path):
+    """The runner is detected by cwd, and the argv-embedding trap (#729) is
+    avoided: a NON-runner process (basename not in the runner set) sharing the
+    worktree cwd is NOT counted as live."""
+    dl = _import_dispatch_lane()
+    # The scan checks candidate paths worktree_paths derives from coordinator
+    # root (tmp_path.parent/.worktrees/<branch> and tmp_path/.worktrees/<branch>).
+    worktree = tmp_path / ".worktrees" / "cx-review"
+    worktree.mkdir(parents=True)
+    proc = _fake_lane_runner(worktree, name="not-a-runner")
+    try:
+        entries = [str(proc.pid)]
+        live, examined, _ = dl._review_lane_live(
+            "cx-review", tmp_path,
+            process_entries=entries,
+        )
+        assert not live
+        assert examined == 1
+        # Same pid but a runner basename → live. Override the cmdline reader so
+        # the process argv[0] reads as a runner name regardless of the symlink.
+        live, _, _ = dl._review_lane_live(
+            "cx-review", tmp_path,
+            process_entries=entries,
+            read_cmdline=lambda pid: b"/x/ccc\x00sleep 60\x00",
+        )
+        assert live
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_review_liveness_excludes_self_and_ancestors(tmp_path):
+    """#729: a pid in the ancestor/skip set is never counted, even if its cwd
+    is in the worktree and it is a runner. Without this, the probe counts
+    itself and refuses/warns on every dispatch."""
+    dl = _import_dispatch_lane()
+    worktree = tmp_path / ".worktrees" / "cx-review"
+    worktree.mkdir(parents=True)
+    runner_pid = 999999
+    fake_read_cwd = lambda pid: str(worktree)
+    fake_read_cmdline = lambda pid: b"/x/ccc\x00"
+    # Excluded as an ancestor → not live.
+    live, examined, _ = dl._review_lane_live(
+        "cx-review", tmp_path,
+        process_entries=[str(runner_pid)],
+        read_cwd=fake_read_cwd, read_cmdline=fake_read_cmdline,
+        skip_pids={runner_pid},
+    )
+    assert not live
+    assert examined == 0  # the only candidate was skipped, so examined is 0
+    # Not excluded → live.
+    live, examined, _ = dl._review_lane_live(
+        "cx-review", tmp_path,
+        process_entries=[str(runner_pid)],
+        read_cwd=fake_read_cwd, read_cmdline=fake_read_cmdline,
+        skip_pids=set(),
+    )
+    assert live
+    assert examined == 1
+
+
+def test_review_liveness_probed_nothing_reports_examined_zero(tmp_path):
+    """#868: a probe that examined 0 processes must not read as 'found none,
+    all clear'. An empty process table yields examined=0 and the CLI warns
+    NO VERDICT rather than silently proceeding as if clean."""
+    dl = _import_dispatch_lane()
+    live, examined, _ = dl._review_lane_live(
+        "cx-review", tmp_path, process_entries=[],
+    )
+    assert not live
+    assert examined == 0
+
+
+def test_review_liveness_resolves_worktree_from_coordinator_root(tmp_path):
+    """The scan checks the worktree paths worktree_paths.derives, so a runner
+    in a DIFFERENT branch's worktree is not counted for this branch (#136:
+    no lane / lane live / lane finished are distinct)."""
+    dl = _import_dispatch_lane()
+    other_wt = tmp_path / ".worktrees" / "cx-other"
+    other_wt.mkdir(parents=True)
+    other_pid = 888888
+    # Runner in cx-other's worktree, reviewing cx-review → not live.
+    live, examined, _ = dl._review_lane_live(
+        "cx-review", tmp_path,
+        process_entries=[str(other_pid)],
+        read_cwd=lambda pid: str(other_wt),
+        read_cmdline=lambda pid: b"/x/ccc\x00",
+    )
+    assert not live
+    assert examined == 1
