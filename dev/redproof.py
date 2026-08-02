@@ -144,6 +144,7 @@ import datetime as _dt
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -179,6 +180,13 @@ RETIRED = "retired"    # forgotten as live evidence; still in HISTORY scope (#94
 # still refused. What changes is that the refusal NAMES the format-skew
 # possibility rather than reading identically to four genuinely-armed entries.
 KNOWN_STATES = (ARMED, RESTORED, RETIRED)
+
+# The injected state is orthogonal to the registry lifecycle state. Keeping
+# deletion as a kind (not a new state) lets older fail-closed gates continue to
+# classify the entry as RESTORED while newer builds can audit its semantics.
+BYTES = "bytes"
+ABSENT = "absent"
+KNOWN_KINDS = (BYTES, ABSENT)
 
 # Re-arm guidance appended to every expectation-drift refusal (#910). The
 # natural lane rhythm — inject, observe red, add a test, restore — edits an
@@ -297,13 +305,16 @@ def _expectation_drift(root: Path, entry: dict) -> list[str]:
     return drift
 
 
-def _target_kind(posix_path: str) -> str:
-    """Conservative lexical signal for targets likely to be test machinery.
+def _target_kind(entry: dict) -> str:
+    """Kind of restored target, including first-class deletion injections.
 
     The complement is deliberately ``other``, not ``production``: a filename
     cannot prove semantics, and test files need not follow either convention.
-    ``posix_path`` is the resolved canonical key returned by ``_worktree_path``.
+    Legacy entries without ``injected_kind`` contain byte injections.
     """
+    if entry.get("injected_kind", BYTES) == ABSENT:
+        return ABSENT
+    posix_path = entry["path"]
     path = Path(posix_path)
     if path.name.startswith("test_") and path.suffix == ".py":
         return "test-like"
@@ -461,17 +472,41 @@ def _find(entries: list[dict], posix_path: str) -> dict | None:
 
 
 def _find_restored(entries: list[dict], posix_path: str,
-                   injected_sha: str) -> dict | None:
-    """A restored entry matching (path, injected_sha), for dedup (#717).
+                   injected_sha: str | None, injected_kind: str) -> dict | None:
+    """A restored entry matching (path, injection kind, sha), for dedup.
 
-    The same sabotage bytes restored twice is the same observed state — one
-    injection — so restore collapses it rather than double-counting. A
-    different sha is a different injection and gets its own entry."""
+    The same observed state restored twice is one injection. Absence has no
+    byte sha, so its explicit kind is the discriminating half of the key."""
     for e in entries:
         if (e.get("path") == posix_path and e.get("state") == RESTORED
+                and e.get("injected_kind", BYTES) == injected_kind
                 and e.get("injected_sha") == injected_sha):
             return e
     return None
+
+
+def _snapshot_recovery(snapshot: Path, posix_path: str) -> str:
+    """One copy-pasteable recovery from a refusal that leaves a path absent."""
+    src = shlex.quote(str(snapshot))
+    dst = shlex.quote(posix_path)
+    return (f"The working tree is still missing {posix_path!r}. Recover the "
+            f"snapshotted bytes with `cp -- {src} {dst} && "
+            f"cmp -- {dst} {src}`.")
+
+
+def _absence_is_worktree_injection(root: Path, entry: dict,
+                                   original: bytes) -> bool:
+    """Whether HEAD still accounts for the original that is absent in the WT.
+
+    An unchanged HEAD proves the disappearance happened after begin. If HEAD
+    moved, require its target blob to remain byte-identical; a rebase/checkout
+    that removed or changed the target must not be silently undone.
+    """
+    head = _git(root, "rev-parse", "HEAD")
+    if head == entry.get("begun_head"):
+        return True
+    blobs = _batch_blobs(root, [head], [entry["path"]])
+    return blobs.get((head, entry["path"])) == _sha(original)
 
 
 def _read_wt(root: Path, posix_path: str) -> bytes:
@@ -613,7 +648,9 @@ def scan_history(cwd: Path | None, entries: list[dict],
     # RETIRED records are in scope here and nowhere else (#942): a lane may
     # withdraw a claim about its own evidence, but it cannot un-commit a commit.
     recorded = [e for e in entries
-                if e.get("state") in (RESTORED, RETIRED) and e.get("injected_sha")]
+                if e.get("state") in (RESTORED, RETIRED)
+                and (e.get("injected_sha")
+                     or e.get("injected_kind") == ABSENT)]
     base_oid, base_ref = _resolve_base(root, base)
     commits = [c for c in _git(root, "rev-list", f"{base_oid}..HEAD").split() if c]
     paths = sorted({e["path"] for e in recorded})
@@ -630,29 +667,30 @@ def scan_history(cwd: Path | None, entries: list[dict],
     }
     order = {c: n for n, c in enumerate(commits)}
     hits, excluded = [], []
-    for (commit, path), sha in blobs.items():
-        # Per (commit, path), not per record: two records can carry the same
-        # bytes (a re-arm re-injects them), and one commit holding one
-        # injection is one finding, not one per record that remembers it.
-        matches = [e for e in recorded
-                   if e["path"] == path and sha == e["injected_sha"]]
-        if not matches:
-            continue
-        armed_by = [e for e in matches if commit not in preexisting[id(e)]]
-        subject = _git(root, "log", "-1", "--format=%s", commit)
-        if armed_by:
-            hits.append({"commit": commit, "path": path,
-                         "hint": armed_by[0].get("injected_hint"),
-                         "subject": subject})
-        else:
-            # EVERY record of these bytes was begun at a head that already
-            # contained this commit, so it predates registration. Correct — and
-            # reported, because "excluded" and "not found" were one silent zero
-            # and that is exactly how #942 hid a real injection.
-            excluded.append({"commit": commit, "path": path,
-                             "hint": matches[0].get("injected_hint"),
-                             "subject": subject,
-                             "boundary": matches[0].get("begun_head")})
+    for commit in commits:
+        for path in paths:
+            sha = blobs.get((commit, path))
+            # Per (commit, path), not per record: two records can carry the same
+            # injection, and one commit holding it is one finding.
+            matches = [e for e in recorded if e["path"] == path and (
+                (e.get("injected_kind") == ABSENT and sha is None)
+                or (e.get("injected_kind", BYTES) == BYTES
+                    and sha == e.get("injected_sha")))]
+            if not matches:
+                continue
+            armed_by = [e for e in matches if commit not in preexisting[id(e)]]
+            subject = _git(root, "log", "-1", "--format=%s", commit)
+            if armed_by:
+                hits.append({"commit": commit, "path": path,
+                             "hint": armed_by[0].get("injected_hint"),
+                             "subject": subject})
+            else:
+                # EVERY matching record was begun at a head that already
+                # contained this commit, so it predates registration.
+                excluded.append({"commit": commit, "path": path,
+                                 "hint": matches[0].get("injected_hint"),
+                                 "subject": subject,
+                                 "boundary": matches[0].get("begun_head")})
     hits.sort(key=lambda h: (order[h["commit"]], h["path"]))
     excluded.sort(key=lambda h: (order[h["commit"]], h["path"]))
     return {"base_oid": base_oid, "base_ref": base_ref, "commits": len(commits),
@@ -902,16 +940,44 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
         except OSError as exc:
             raise RedproofError(f"snapshot {snap} unreadable: {exc}") from exc
 
-        drift = _expectation_drift(root, armed)
+        absent = not os.path.lexists(root / Path(posix))
+        recovery = _snapshot_recovery(snap, posix) if absent else ""
+
+        try:
+            drift = _expectation_drift(root, armed)
+        except RedproofError as exc:
+            if absent:
+                raise RedproofError(f"{exc}\n{recovery}") from exc
+            raise
         if drift:
             raise RedproofError(
                 "declared expectation source changed during the injection; "
                 "refusing to record a red-proof:\n  " + "\n  ".join(drift)
-                + "\n" + _EXPECTATION_DRIFT_REARM)
+                + "\n" + _EXPECTATION_DRIFT_REARM
+                + ("\n" + recovery if recovery else ""))
 
-        injected = _read_wt(root, posix)
+        if absent:
+            try:
+                accounted = _absence_is_worktree_injection(root, armed, original)
+            except RedproofError as exc:
+                raise RedproofError(f"{exc}\n{recovery}") from exc
+            if not accounted:
+                raise RedproofError(
+                    f"registered path {posix!r} is absent, but HEAD no longer "
+                    f"holds the snapshotted original. A rebase, checkout, or "
+                    f"commit may now intend that path to be deleted or changed; "
+                    f"refusing to resurrect it as though the absence were the "
+                    f"lane's injection. {recovery}")
+            injected_kind = ABSENT
+            injected_sha = None
+            injected_hint = "target absent from working tree"
+        else:
+            injected = _read_wt(root, posix)
+            injected_kind = BYTES
+            injected_sha = _sha(injected)
+            injected_hint = _first_changed_line(original, injected)
 
-        if _sha(injected) == _sha(original):
+        if injected_kind == BYTES and injected_sha == _sha(original):
             # begin was called but the file was never changed: no injection to
             # record. Drop the armed entry so check's byte-test never fires on
             # a no-op.
@@ -922,11 +988,10 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
                   f"entry dropped.")
             return 0
 
-        injected_sha = _sha(injected)
         # #717: dedup the SAME observed state, append a DIFFERENT one. A path
         # may carry several restored records (one per distinct injection), so
         # the count is honest and the history scan has every injected sha.
-        entry = _find_restored(entries, posix, injected_sha)
+        entry = _find_restored(entries, posix, injected_sha, injected_kind)
         if entry is None:
             entry = {
                 "path": posix,
@@ -936,7 +1001,8 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
             entries.append(entry)
         entry.update({
             "injected_sha": injected_sha,
-            "injected_hint": _first_changed_line(original, injected),
+            "injected_kind": injected_kind,
+            "injected_hint": injected_hint,
             "state": RESTORED,
             "restored_at": _now(),
         })
@@ -948,7 +1014,12 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
 
         # Restore the original by cp, then verify byte-identity. Never git checkout.
         _, out = _worktree_path(root, posix)
-        shutil.copyfile(str(snap), str(out))
+        try:
+            shutil.copyfile(str(snap), str(out))
+        except OSError as exc:
+            remedy = f" {recovery}" if absent else ""
+            raise RedproofError(
+                f"could not copy snapshot {snap} to {posix!r}: {exc}.{remedy}") from exc
         restored = out.read_bytes()
         if restored != original:
             raise RedproofError(
@@ -959,7 +1030,9 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
     except RedproofError as exc:
         sys.stderr.write(f"restore: FAULT — {exc}\n")
         return 2
-    print(f"restore: {posix!r} injected state recorded (sha {entry['injected_sha'][:12]}, "
+    observation = ("kind absent" if entry["injected_kind"] == ABSENT else
+                   f"sha {entry['injected_sha'][:12]}")
+    print(f"restore: {posix!r} injected state recorded ({observation}, "
           f"hint: {entry['injected_hint']!r}); original restored & verified.")
     return 0
 
@@ -1241,6 +1314,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
 
     armed: list[dict] = []
     unknown: list[dict] = []   # entries whose state THIS build cannot read (#950)
+    unknown_kinds: list[dict] = []
     live: list[dict] = []
     expectation_drift: list[str] = []
     for e in active:
@@ -1255,6 +1329,9 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             continue
         if st != RESTORED:
             armed.append(e)
+            continue
+        if e.get("injected_kind", BYTES) not in KNOWN_KINDS:
+            unknown_kinds.append(e)
             continue
         try:
             wt = _read_wt(root, e["path"])
@@ -1297,6 +1374,20 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             f"cannot classify: re-run the gate from a build that carries the "
             f"branch's change, or resolve the entries by hand. This message is "
             f"not permission to merge.")
+        return 1
+
+    if unknown_kinds:
+        kinds = sorted({str(e.get("injected_kind")) for e in unknown_kinds})
+        names = ", ".join(
+            f"{e['path']} (kind {str(e.get('injected_kind'))!r}, from "
+            f"{e.get('_source', 'this lane')})" for e in unknown_kinds)
+        _check_error(identity_scope,
+            f"check: REFUSED — {len(unknown_kinds)} of {len(active)} active "
+            f"registration(s) have an injected-target kind this build cannot "
+            f"audit ({', '.join(repr(k) for k in kinds)}): {names}. This build "
+            f"knows only {', '.join(repr(k) for k in KNOWN_KINDS)}. Unknown "
+            f"kinds are never treated as restored; use a build that carries "
+            f"their semantics or recover and resolve them by hand.")
         return 1
 
     if armed:
@@ -1384,17 +1475,19 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
               f"evaluated, because no live injection is registered.")
         print(identity_scope)
         return 0
-    kinds = [_target_kind(e["path"]) for e in restored]
+    kinds = [_target_kind(e) for e in restored]
     test_like = kinds.count("test-like")
     other = kinds.count("other")
+    absent = kinds.count(ABSENT)
     listed = "\n".join(
-        f"  [{_target_kind(e['path'])}] {e['path']} "
-        f"(sha {e.get('injected_sha', '?')[:12]}, "
+        f"  [{_target_kind(e)}] {e['path']} "
+        f"({'kind absent' if _target_kind(e) == ABSENT else 'sha ' + str(e.get('injected_sha', '?'))[:12]}, "  # noqa: E501
         f"hint: {e.get('injected_hint', '?')!r})" for e in restored)
     print(f"check: restoration clean — {len(restored)} injection(s) registered "
-          f"(role: {role}); registered bytes are restored and absent from the "
-          f"working tree and from this branch's commits.")
-    print(f"targets: {other} other target(s), {test_like} test-like target(s).")
+          f"(role: {role}); originals are restored and registered injection "
+          f"states are absent from the working tree and this branch's commits.")
+    print(f"targets: {other} other target(s), {test_like} test-like target(s), "
+          f"{absent} absent target(s).")
     if retired:
         print(f"retired: {len(retired)} withdrawn registration(s) were also "
               f"searched for in history and found in no commit (#942).")
