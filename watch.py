@@ -6263,8 +6263,9 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
         def _handle_posture(self):
             """Five-axis posture override (#445 + #342 delivery + #510 orchestration).
 
-            Dual-write: authoritative gitignored `.dreamwork/posture` plus
-            one watch-events.log line when a posture point actually changes
+            Increment 1 triple-write: authoritative gitignored
+            `.dreamwork/posture`, append-only store history, plus one
+            watch-events.log line when a posture point actually changes
             — a `posture via watch` line for the pace/asking/delegation/
             orchestration point, a `delivery via watch` line for the delivery
             axis (delivery drives wake routing; the rest do not). Both
@@ -6325,7 +6326,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                     "ok": True, "pace": pace, "asking": asking,
                     "delegation": delegation, "delivery": delivery,
                     "orchestration": orchestration,
-                    "changed": False,
+                    "changed": False, "store_logged": True,
                 }), "application/json")
                 return
             # Also silent when the on-disk file already holds exactly this
@@ -6342,13 +6343,53 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                     "ok": True, "pace": pace, "asking": asking,
                     "delegation": delegation, "delivery": delivery,
                     "orchestration": orchestration,
-                    "changed": False,
+                    "changed": False, "store_logged": True,
                 }), "application/json")
                 return
             if not write_posture(target, pace, asking, delegation, delivery,
                                  orchestration):
                 self.send_error(500)
                 return
+            final = {
+                "pace": pace, "asking": asking, "delegation": delegation,
+                "delivery": delivery, "orchestration": orchestration,
+            }
+            axis_changes = [
+                (axis, current[axis], final[axis])
+                for axis in lint.POSTURE_AXES
+                if current[axis] != final[axis]
+            ]
+            store_logged = True
+            if axis_changes:
+                from dreamwork_db import Access, open_database
+                from dreamwork_db.tasks import task_store_spec
+                dw = os.path.join(target, ".dreamwork")
+                try:
+                    if not store_path(dw).exists():
+                        raise FileNotFoundError(store_path(dw))
+                    with open_database(
+                            task_store_spec(store_path(dw)),
+                            access=Access.WRITE) as store:
+                        with store.transaction():
+                            written = store.posture.append_changes(
+                                axis_changes,
+                                at=time.strftime(
+                                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                actor="watch",
+                                receipt_id=(self.journal_result().receipt_id
+                                            if self.journal_result() else None),
+                            )
+                    if written != len(axis_changes):
+                        raise RuntimeError(
+                            f"wrote {written}/{len(axis_changes)} posture changes")
+                except Exception as exc:
+                    # Increment 1 keeps the file authoritative: a store fault
+                    # must not roll back his posture, but it must be visible.
+                    store_logged = False
+                    log_event(
+                        target,
+                        "POSTURE STORE WRITE FAILED: " + one_line(str(exc)),
+                    )
             changed = False
             # The posture point (pace/asking/delegation/orchestration) fires
             # one line on any change; orchestration rides it because it has
@@ -6365,6 +6406,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 "delegation": delegation, "delivery": delivery,
                 "orchestration": orchestration,
                 "changed": changed,
+                "store_logged": store_logged,
                 "delegation_label": lint.delegation_posture(delegation),
             }), "application/json")
 

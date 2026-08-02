@@ -179,6 +179,13 @@ def test_frozen_v2_store_migrates_through_current_and_reports_zero_legacy_rows(
         )
         assert _columns(after, "user_setting") == {"userid", "key", "value"}
         assert after.execute("SELECT COUNT(*) FROM user_setting").fetchone()[0] == 0
+        assert _columns(after, "posture_change") == {
+            "ordinal", "at", "axis", "old_value", "new_value", "actor",
+            "receipt_id",
+        }
+        assert after.execute(
+            "SELECT COUNT(*) FROM posture_change"
+        ).fetchone()[0] == 0
         assert _columns(after, "question") == {
             "id", "status", "title", "body_markdown", "priority",
             "asked_at", "asked_precision", "created_by", "created_at",
@@ -456,6 +463,36 @@ def test_ladder_declares_the_single_ordered_path_to_current():
         f"migration ladder examined {step_count} steps from v{versions[0][0]} "
         f"to v{SCHEMA_VERSION}; expected one step per version"
     )
+
+
+def test_posture_history_downgrade_refuses_to_discard_a_change(tmp_path):
+    from dreamwork_db.migrations import v010_posture_history
+
+    path = tmp_path / "posture-history.sqlite3"
+    _migrate_through_core(path)
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "INSERT INTO posture_change"
+        " (at,axis,old_value,new_value,actor) VALUES (?,?,?,?,?)",
+        ("2026-08-02T00:00:00Z", "pace", "idle", "hot", "test"),
+    )
+    conn.commit()
+    conn.execute("BEGIN")
+    try:
+        with pytest.raises(
+                SchemaMismatch, match=r"posture_change rows=1"):
+            v010_posture_history.downgrade(conn)
+    finally:
+        conn.execute("ROLLBACK")
+    try:
+        assert conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone() == (str(SCHEMA_VERSION),)
+        assert conn.execute(
+            "SELECT axis,old_value,new_value FROM posture_change"
+        ).fetchall() == [("pace", "idle", "hot")]
+    finally:
+        conn.close()
 
 
 def test_empty_v4_group_schema_rolls_back_to_v3_without_touching_tasks(tmp_path):

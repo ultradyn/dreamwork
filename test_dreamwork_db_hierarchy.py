@@ -17,7 +17,9 @@ from dreamwork_db import Access, ValidationError, open_database
 from dreamwork_db.core import SchemaMismatch
 from dreamwork_db.groups import DependencyCycle, EmptyGroup
 from dreamwork_db.migrate import SCHEMA_VERSION
-from dreamwork_db.migrations import v005_hierarchy, v008_goals
+from dreamwork_db.migrations import (
+    v005_hierarchy, v008_goals, v009_goal_bypass, v010_posture_history,
+)
 from dreamwork_db.tasks import task_store_spec
 from dev import ledger as ledger_cli
 
@@ -450,6 +452,8 @@ def _roll_back_the_ladder_above_v005(conn):
     v007 has no production downgrade because #584's settings are shared user
     data; these fixtures never write one, so only that empty shape is dropped.
     """
+    v010_posture_history.downgrade(conn)
+    v009_goal_bypass.downgrade(conn)
     v008_goals.downgrade(conn)
     conn.execute("DROP TABLE user_setting")
     conn.execute("UPDATE meta SET value='6' WHERE key='schema_version'")
