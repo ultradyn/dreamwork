@@ -26,6 +26,7 @@ function GoalWrites(props) {
     return node ? node.details : '';
   });
   const [conditionGoal, setConditionGoal] = React.useState(first);
+  const [currentGoal, setCurrentGoal] = React.useState(first);
   const [condition, setCondition] = React.useState('');
   const [title, setTitle] = React.useState('');
   const [newDetails, setNewDetails] = React.useState('');
@@ -42,6 +43,7 @@ function GoalWrites(props) {
       setDetailsGoal(next); setDetails(node ? node.details : '');
     }
     if (!valid(conditionGoal) && next) setConditionGoal(next);
+    if (!valid(currentGoal) && next) setCurrentGoal(next);
     if (parent !== '' && !valid(parent)) setParent(next);
   }, [nodes, props.currentId]);
 
@@ -78,6 +80,13 @@ function GoalWrites(props) {
     React.createElement('h2', null, 'write the tree'),
     React.createElement('p', { className: 'goalmeta' },
       'These writes are quiet: the loop reads their receipts on its next tick.'),
+    nodes.length ? React.createElement('form', { className: 'goalwrite', onSubmit: event => {
+      event.preventDefault();
+      write({ action: 'set-current', goal_id: Number(currentGoal) }, function () {});
+    } }, React.createElement('h3', null, 'current goal'),
+    selector(currentGoal, event => setCurrentGoal(event.target.value), false),
+    React.createElement('button', { type: 'submit', disabled: busy },
+      'make current')) : null,
     nodes.length ? React.createElement('form', { className: 'goalwrite', onSubmit: event => {
       event.preventDefault();
       write({ action: 'edit-details', goal_id: Number(detailsGoal), details },
@@ -169,7 +178,8 @@ function GoalPage(props) {
       node.blockers.length ? ' · ' + node.blockers.length + ' blocked' : ''))));
   const currentPanel = current ? React.createElement('section', {
     className: 'goalcurrent', 'data-goal-id': String(current.id),
-  }, React.createElement('div', { className: 'goalcurrent-head' },
+  }, React.createElement('div', { className: 'goalmeta' }, 'current goal'),
+  React.createElement('div', { className: 'goalcurrent-head' },
     stateChip(current), React.createElement('h2', null, current.title),
     React.createElement('span', { className: 'goalmeta' },
       current.total_count == null ? 'progress unavailable'

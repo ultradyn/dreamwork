@@ -6893,6 +6893,173 @@ class TestGoalsRoute(unittest.TestCase):
             ("Human child", root, 7),
             "POST /goals reported success but the ranked goal was not stored")
 
+    def test_set_current_moves_pointer_and_reads_it_back_fresh(self):
+        prerequisite, root, child = self.ids
+        port = self._serve()
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/goals",
+            data=json.dumps({
+                "action": "set-current", "goal_id": child,
+            }).encode("utf-8"),
+            method="POST",
+            headers={"Host": f"allowed.test:{port}",
+                     "Content-Type": "application/json"},
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=10)
+        except urllib.error.HTTPError as exc:
+            response = exc
+        with response:
+            status = response.status
+            body = json.loads(response.read())
+
+        dw = os.path.join(self.target, ".dreamwork")
+        with open_database(
+                task_store_spec(watch.store_path(dw)),
+                access=Access.READ) as fresh_store:
+            persisted_id = fresh_store.goals.current_goal_id()
+        self.assertEqual(
+            persisted_id, child,
+            f"POST /goals returned {status}, but a fresh connection still "
+            f"read current goal #{persisted_id} instead of requested #{child}")
+        self.assertEqual(status, 202, body)
+        self.assertTrue(body["ok"], body)
+        self.assertEqual(body["disposition"], "set")
+        self.assertTrue(body["changed"])
+        self.assertEqual(body["current_goal_id"], child)
+
+    def test_set_current_noop_is_named_not_used_as_mutation_proof(self):
+        prerequisite, root, child = self.ids
+        status, body = self._post(self._serve(), {
+            "action": "set-current", "goal_id": root,
+        })
+        self.assertEqual(status, 202)
+        self.assertEqual(body["disposition"], "unchanged")
+        self.assertFalse(body["changed"])
+
+    def test_set_current_refuses_when_no_goal_can_be_selected(self):
+        empty = tempfile.TemporaryDirectory()
+        self.addCleanup(empty.cleanup)
+        dw = _store_target(empty.name)
+        status, body = self._post(self._serve(empty.name), {
+            "action": "set-current", "goal_id": 1,
+        })
+        self.assertEqual(status, 202)
+        self.assertTrue(body["rejected"], body)
+        self.assertEqual(body["reason"], "domain_invalid")
+        self.assertEqual(body["detail"], "no task group #1")
+        with open_database(
+                task_store_spec(watch.store_path(dw)),
+                access=Access.READ) as fresh_store:
+            self.assertIsNone(
+                fresh_store.goals.current_goal_id(),
+                "empty-tree set-current looked runnable and moved the pointer")
+
+    def test_set_current_refuses_missing_id_without_moving_pointer(self):
+        prerequisite, root, child = self.ids
+        status, body = self._post(self._serve(), {
+            "action": "set-current", "goal_id": 999,
+        })
+        self.assertEqual(status, 202)
+        self.assertTrue(body["rejected"], body)
+        self.assertEqual(body["reason"], "domain_invalid")
+        self.assertEqual(body["detail"], "no task group #999")
+        dw = os.path.join(self.target, ".dreamwork")
+        with open_database(
+                task_store_spec(watch.store_path(dw)),
+                access=Access.READ) as fresh_store:
+            self.assertEqual(
+                fresh_store.goals.current_goal_id(), root,
+                "missing-id refusal silently moved the current-goal pointer")
+
+    def test_set_current_reuses_goal_kind_guard(self):
+        dw = os.path.join(self.target, ".dreamwork")
+        with open_database(
+                task_store_spec(watch.store_path(dw)),
+                access=Access.WRITE) as store:
+            with store.transaction():
+                epic_id = store.groups.create(
+                    kind="epic", title="Not a goal", actor="test",
+                    at="2026-08-01T01:00:09Z")
+        status, body = self._post(self._serve(), {
+            "action": "set-current", "goal_id": epic_id,
+        })
+        self.assertEqual(status, 202)
+        self.assertTrue(body["rejected"], body)
+        self.assertEqual(body["reason"], "domain_invalid")
+        self.assertEqual(
+            body["detail"], f"epic #{epic_id} 'Not a goal' is not a goal")
+
+    def test_set_current_readback_uses_a_different_store_session(self):
+        from dreamwork_db.goals import GoalRepository
+        original_set = GoalRepository.set_current_goal_id
+        original_read = GoalRepository.current_goal_id
+        writer_sessions = []
+        reader_sessions = []
+
+        def tracked_set(repo, goal_id):
+            writer_sessions.append(repo._session)
+            return original_set(repo, goal_id)
+
+        def tracked_read(repo):
+            reader_sessions.append(repo._session)
+            return original_read(repo)
+
+        with unittest.mock.patch.object(
+                GoalRepository, "set_current_goal_id", tracked_set), \
+                unittest.mock.patch.object(
+                    GoalRepository, "current_goal_id", tracked_read):
+            status, body = self._post(self._serve(), {
+                "action": "set-current", "goal_id": self.ids[2],
+            })
+        self.assertEqual(status, 202, body)
+        self.assertEqual(len(writer_sessions), 1)
+        self.assertEqual(len(reader_sessions), 1)
+        self.assertIsNot(
+            writer_sessions[0], reader_sessions[0],
+            "set-current read back through the writer's own store session")
+
+    def test_set_current_lock_contention_is_named_and_retryable(self):
+        prerequisite, root, child = self.ids
+        import sqlite3
+        dw = os.path.join(self.target, ".dreamwork")
+        lock = sqlite3.connect(str(watch.store_path(dw)), isolation_level=None)
+        try:
+            lock.execute("BEGIN IMMEDIATE")
+            port = self._serve()
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/goals",
+                data=json.dumps({
+                    "action": "set-current", "goal_id": child,
+                }).encode("utf-8"), method="POST",
+                headers={"Host": f"allowed.test:{port}",
+                         "Content-Type": "application/json"},
+            )
+            try:
+                response = urllib.request.urlopen(request, timeout=15)
+            except urllib.error.HTTPError as exc:
+                response = exc
+            with response:
+                status = response.status
+                retry_after = response.headers["Retry-After"]
+                body = json.loads(response.read())
+            self.assertEqual(
+                body.get("reason"), "goal_store_busy",
+                f"contention returned {status} without the goal_store_busy reason")
+            self.assertEqual(status, 503)
+            self.assertEqual(retry_after, "1")
+            self.assertTrue(body["retryable"])
+        finally:
+            lock.rollback()
+            lock.close()
+
+        with open_database(
+                task_store_spec(watch.store_path(dw)),
+                access=Access.READ) as fresh_store:
+            self.assertEqual(
+                fresh_store.goals.current_goal_id(), root,
+                "contended set-current moved the pointer despite reporting busy")
+
     def test_goal_writes_never_emit_wake_line(self):
         prerequisite, root, child = self.ids
         status, body = self._post(self._serve(), {
@@ -6967,6 +7134,7 @@ class TestGoalsRoute(unittest.TestCase):
             native,
             "native /goals failure copy no longer names the unreadable zero")
         for token in ("edit-details", "add-condition", "add-goal",
+                      "set-current", "make current", "current goal",
                       "saved quietly · appears on the next tick"):
             self.assertIn(token, native,
                           f"native /goals write UI lost {token!r}")

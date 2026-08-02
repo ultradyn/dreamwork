@@ -19,7 +19,7 @@
     "client/style.css": "97741d4a674e1fc31ba4cae6506ce7d6f90c82790bc7e7d932e906aa4a9042cd",
     "client/views.js": "b86d13a07c0217634e01a48baaf07bb089333319432acd86770300671e65e9d4",
     "dev/build/src/delegate.js": "8cbeb4bce8ccaee70c8dc6ae76160eeb8dd9f8f3a92ca51e28712747ee28b293",
-    "dev/build/src/goals.js": "4483640771c70cafa477c665ab9f75efb6b9bb2db269205ebb42bbf3a4c40ce1",
+    "dev/build/src/goals.js": "8074d3c07801491eb6a6bb176c268312355f93e8c648ed956b7fe498309cabcb",
     "dev/build/src/native-entry.js": "42c071b11224dd1be63aa3065ae59c45cc6dafb5bb3f1200b8fa30821b10f9d4",
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
     "dev/build/src/registry.js": "be11d2691bd0fb31c4e8df658bb79cf289a3ad1164319a5a1aa86174b2c9e825",
@@ -29,7 +29,7 @@
   "outputs": {
     "client/dist/ds/index.js": "de5de465ab338ed064c58b7b7e6b3e13bc00b371ab895b6bb412f2587fd9f509",
     "client/dist/ds/styles.css": "97741d4a674e1fc31ba4cae6506ce7d6f90c82790bc7e7d932e906aa4a9042cd",
-    "client/dist/native.js": "72b5dadd94bdbd0339df6add61d330f759c0a1a451f6c06b8368f17f17d5a6c7"
+    "client/dist/native.js": "dd85bc962e454b8032975521981bad15abd0680cf08d2fc26260f53039392044"
   },
   "schema": 1,
   "tool": {
