@@ -32,7 +32,7 @@ Two classes of ``submissions.log`` record commit no receipt by construction:
 
   · TRUNCATED — a body over the 20,000-byte cap is refused 413 BEFORE the
     receipt branch (``watch.py`` ``if not truncated and self.journal_shadow``);
-    its first 20,000 bytes live ONLY in ``submissions.log`` — the #199
+    its first 20,000 bytes live ONLY in ``submissions.log`` — the (#199)
     witness.  The cursor will never list it.
   · UNKNOWN ROUTE — a POST path not in ``WRITE_ROUTE_HANDLERS`` is 404'd
     pre-receipt (``watch.py`` E5); ``submissions.log`` is its only home.
