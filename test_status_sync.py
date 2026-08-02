@@ -30,6 +30,8 @@ import pytest
 
 import status_sync
 import session_source
+import lane_runner_identity
+import lane_liveness
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
@@ -2793,3 +2795,113 @@ class TestReapFinishedLanes:
         assert reaped == []
         assert kept == []
         assert unparseable == 0
+
+
+# ── #1113: the shared-classifier mutation test ──────────────────────────
+#
+# Two probes must agree about the fleet because they SHARE the classifier, not
+# because two hand-kept lists happen to match. A test that sets up the same
+# fixture for both and asserts they agree proves NOTHING — two independent
+# copies would pass it just as well (#1113's central false-green).
+#
+# THE BINDING TEST: mutate the shared constant and watch BOTH probes flip
+# together. A probe that kept its own copy would not move. This spawns a REAL
+# ccc-shaped process (argv[0] basename == "ccc"), removes "ccc" from
+# lane_runner_identity.LANE_RUNNERS, and asserts the tick channel
+# (lane_liveness._is_lane_runner, raw-bytes) AND the status channel
+# (status_sync._is_lane_runner, pid-based I/O wrapper) both go blind — proving
+# they read the same source.
+
+class TestSharedClassifierMutation:
+    """#1113: both fleet probes share one classifier; mutating it moves both."""
+
+    def test_removing_a_runner_blinds_both_probes_together(
+            self, tmp_path, monkeypatch):
+        # Spawn a REAL process whose argv[0] basename is "ccc" — a known lane
+        # runner — so both production code paths have a genuine subject.
+        proc = subprocess.Popen(
+            ["ccc", "-e", "sleep 30", "--", "--yolo", "@glm52", "brief"],
+            executable=_which_perl(), cwd=str(tmp_path),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid), \
+                "precondition: the ccc proxy must be alive"
+
+            # Read the raw bytes the tick channel would pass — the real /proc
+            # read, not a fabricated value (#1019: be explicit about the
+            # subject each probe takes).
+            raw = Path("/proc/%d/cmdline" % proc.pid).read_bytes()
+            assert raw, "precondition: cmdline must be non-empty"
+
+            # BASELINE: both probes classify the process as a lane runner,
+            # through their REAL production code paths (lane_liveness takes
+            # raw bytes; status_sync takes a pid and reads /proc itself).
+            assert lane_liveness._is_lane_runner(raw) is True, \
+                "baseline: the tick channel must see a ccc runner"
+            assert status_sync._is_lane_runner(proc.pid) is True, \
+                "baseline: the status channel must see a ccc runner"
+
+            # THE MUTATION: remove "ccc" from the shared constant. If the
+            # probes are genuinely sharing, both must flip to False; if one
+            # kept its own copy, it would stay True.
+            monkeypatch.setattr(
+                lane_runner_identity, "LANE_RUNNERS",
+                tuple(n for n in lane_runner_identity.LANE_RUNNERS
+                      if n != "ccc"))
+
+            # DISCRIMINATING: BOTH probes must now classify the SAME process
+            # as NOT a lane runner. A probe with its own stale copy would not
+            # move — that is the #868/#1084 defect class this test exists to
+            # prevent.
+            assert lane_liveness._is_lane_runner(raw) is False, \
+                "after removing ccc: the tick channel must go blind — " \
+                "if it stayed True, lane_liveness has its own copy (#1113)"
+            assert status_sync._is_lane_runner(proc.pid) is False, \
+                "after removing ccc: the status channel must go blind — " \
+                "if it stayed True, status_sync has its own copy (#1113)"
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_adding_a_runner_lights_both_probes_together(
+            self, tmp_path, monkeypatch):
+        # The inverse direction: a process whose argv[0] is NOT a known runner
+        # ("zzz-mut-probe") is classified as non-runner by both probes; ADD
+        # the name to the shared constant and both must flip to True. This is
+        # the drift scenario the task names — one list gains a name the other
+        # lacks — made into a proof that it cannot happen here.
+        proc = subprocess.Popen(
+            ["zzz-mut-probe", "-e", "sleep 30", "--", "arg"],
+            executable=_which_perl(), cwd=str(tmp_path),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid)
+
+            raw = Path("/proc/%d/cmdline" % proc.pid).read_bytes()
+            assert raw
+
+            # BASELINE: not a known runner — both say False.
+            assert lane_liveness._is_lane_runner(raw) is False, \
+                "baseline: zzz-mut-probe is not a known runner (tick)"
+            assert status_sync._is_lane_runner(proc.pid) is False, \
+                "baseline: zzz-mut-probe is not a known runner (status)"
+
+            # THE MUTATION: add the name to the shared constant.
+            monkeypatch.setattr(
+                lane_runner_identity, "LANE_RUNNERS",
+                lane_runner_identity.LANE_RUNNERS + ("zzz-mut-probe",))
+
+            # DISCRIMINATING: BOTH probes must now see it as a runner.
+            assert lane_liveness._is_lane_runner(raw) is True, \
+                "after adding zzz-mut-probe: the tick channel must see it " \
+                "— if it stayed False, lane_liveness has its own copy (#1113)"
+            assert status_sync._is_lane_runner(proc.pid) is True, \
+                "after adding zzz-mut-probe: the status channel must see it " \
+                "— if it stayed False, status_sync has its own copy (#1113)"
+        finally:
+            proc.kill()
+            proc.wait()
