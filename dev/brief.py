@@ -84,6 +84,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import land_lane
+
 
 ROOT = Path(__file__).resolve().parent.parent
 FRAME_PATH = ROOT / "briefs" / "frame.md"
@@ -293,6 +295,103 @@ def substantive_lines(text: str) -> list[str]:
     independent witness is `dev/dispatch_lane.py`, which neither imports.
     """
     return [line for line in text.splitlines() if _substantive(line)]
+
+
+def _scope_derivation_report(checkout: Path, owns: list[str]) -> str:
+    """Report tests the gate derives from existing, non-inert owned files."""
+    changed = tuple(
+        path for path in owns
+        if (checkout / path).is_file() and not land_lane._is_inert_doc(path)
+    )
+    if not changed:
+        return (
+            f"scope derivation NOT CHECKED: examined {len(owns)} Lane-owns "
+            "entrie(s), found 0 existing non-inert files; directories, globs, "
+            "missing paths, and inert documentation are not a gate diff"
+        )
+
+    named = tuple(
+        sorted(set(filter(None, (land_lane._derived_test(path) for path in changed))))
+    )
+    modules = tuple(
+        filter(None, (land_lane._dotted_module(path) for path in changed))
+    )
+    imported = land_lane._import_derived(checkout, modules)
+    mapped, mapped_dirs = land_lane._map_derived(changed)
+    derived = tuple(sorted(set(named) | set(imported) | set(mapped)))
+    existing = tuple(path for path in derived if (checkout / path).is_file())
+    authored = land_lane._named_files(owns)
+    covered = tuple(path for path in existing if path in authored)
+    omitted = tuple(path for path in existing if path not in authored)
+    by_rule = f"name={len(named)} import={len(imported)} map={len(mapped)}"
+    if not existing:
+        raise BriefFault(
+            f"scope derivation FAULT: selected 0 existing test(s) from "
+            f"{len(changed)} existing non-inert Lane-owns file(s) by "
+            f"{len(land_lane.DERIVATION_RULES)} rules [{by_rule}] — an empty "
+            "selection is indistinguishable from broken derivation"
+        )
+    omission = (
+        f"{len(omitted)} omitted: {' '.join(omitted)}"
+        if omitted else "0 omitted"
+    )
+    dirs = f"; matched dirs: {' '.join(mapped_dirs)}" if mapped_dirs else ""
+    return (
+        f"scope derivation REPORT: selected {len(existing)} existing test(s) "
+        f"from {len(changed)} existing non-inert Lane-owns file(s) by "
+        f"{len(land_lane.DERIVATION_RULES)} rules [{by_rule}]; authored "
+        f"Lane-owns covered {len(covered)} of {len(existing)}; {omission}{dirs}. "
+        "This is a report, not an edit grant: the coordinator decides whether "
+        "an imported test is genuinely in the change's blast radius."
+    )
+
+
+def _base_scope_derivation_report(
+    checkout: Path, base_sha: str, owns: list[str]
+) -> str:
+    """Run the gate's derivation over materialized bytes from the lane base."""
+    try:
+        listing = subprocess.run(
+            ["git", "-C", str(checkout), "ls-tree", "-r", "--name-only", "-z", base_sha],
+            capture_output=True, check=False,
+        )
+    except OSError as exc:
+        raise BriefFault(f"scope derivation FAULT: could not run git: {exc}") from exc
+    if listing.returncode:
+        detail = listing.stderr.decode(errors="replace").strip()
+        raise BriefFault(
+            f"scope derivation FAULT: could not read base tree {base_sha}: "
+            f"{detail or f'git exited {listing.returncode}'}"
+        )
+    tracked = {
+        path.decode(errors="surrogateescape")
+        for path in listing.stdout.split(b"\0") if path
+    }
+    materialize = {
+        path for path in tracked
+        if (path.startswith("test_") and "/" not in path and path.endswith(".py"))
+        or path in owns
+    }
+    with tempfile.TemporaryDirectory(prefix="brief-base-scope-") as temp_dir:
+        base = Path(temp_dir)
+        for path in materialize:
+            target = Path(path)
+            if target.is_absolute() or ".." in target.parts:
+                raise BriefFault(f"scope derivation FAULT: unsafe base-tree path {path!r}")
+            content = subprocess.run(
+                ["git", "-C", str(checkout), "show", f"{base_sha}:{path}"],
+                capture_output=True, check=False,
+            )
+            if content.returncode:
+                detail = content.stderr.decode(errors="replace").strip()
+                raise BriefFault(
+                    f"scope derivation FAULT: could not materialize {path} from "
+                    f"base {base_sha}: {detail or f'git exited {content.returncode}'}"
+                )
+            destination = base / target
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content.stdout)
+        return _scope_derivation_report(base, owns)
 
 
 def _tool_invocations(core: str) -> list[tuple[str, str]]:
@@ -664,6 +763,10 @@ def build(task: int, branch: str, owns: list[str], core: str, *,
         if not re.fullmatch(r"[0-9a-f]{40}", prepared_base_sha or ""):
             raise BriefFault(f"prepared base sha is not a commit id: {prepared_base_sha!r}")
         resolved_base = prepared_base_sha
+    print(
+        _base_scope_derivation_report(checkout, resolved_base, owns),
+        file=sys.stderr,
+    )
     head = "\n".join([
         f"# Task #{task} — {record['title'].strip()}",
         "",
