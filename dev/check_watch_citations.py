@@ -130,23 +130,45 @@ class DocstringCitation:
     task_id: int
 
 
-def _scan_docstring_citations(root: Path) -> list[DocstringCitation]:
-    """Return every (#NNN) inside a docstring of dev/*.py.
+@dataclass
+class SkippedFile:
+    """A dev/*.py file that could not be parsed (#868/#1034).
+
+    A file that could not be read or parsed must not be silently absorbed
+    into the examined count (#868): a probe that examined nothing must not
+    read like one that examined everything.
+    """
+
+    rel_path: str
+    reason: str
+
+
+def _scan_docstring_citations(
+    root: Path,
+) -> tuple[list[DocstringCitation], list[SkippedFile], int]:
+    """Return ``(findings, skipped, docstrings_scanned)`` for dev/*.py.
 
     Uses the AST so only docstrings are examined — not inline comments, not
-    string literals in executable code.  The narrowing from all (#NNN) in
-    dev/*.py (286) to those in docstrings (142) is what makes the report
-    reviewable (#1034).
+    string literals in executable code.  Files that cannot be parsed
+    (SyntaxError, undecodable bytes) are returned as SKIPPED with their
+    reason, never silently dropped into the examined count (#868).  The
+    denominators are derived once at runtime, never as a stale literal.
     """
     findings: list[DocstringCitation] = []
+    skipped: list[SkippedFile] = []
+    docstrings_scanned = 0
     for path in sorted((root / "dev").glob("*.py")):
-        try:
-            tree = ast.parse(
-                path.read_text(encoding="utf-8"), filename=str(path)
-            )
-        except SyntaxError:
-            continue
         rel = path.relative_to(root).as_posix()
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            skipped.append(SkippedFile(rel, f"undecodable bytes: {exc}"))
+            continue
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError as exc:
+            skipped.append(SkippedFile(rel, f"SyntaxError: {exc}"))
+            continue
         for node in ast.walk(tree):
             if not isinstance(node, _DOCSTRING_NODES) or not node.body:
                 continue
@@ -158,6 +180,7 @@ def _scan_docstring_citations(root: Path) -> list[DocstringCitation]:
                 val.value, str
             ):
                 continue
+            docstrings_scanned += 1
             doc = val.value
             base_line = doc_node.lineno
             name = getattr(node, "name", "<module>")
@@ -166,7 +189,7 @@ def _scan_docstring_citations(root: Path) -> list[DocstringCitation]:
                 findings.append(
                     DocstringCitation(rel, name, lineno, int(match.group(1)))
                 )
-    return findings
+    return findings, skipped, docstrings_scanned
 
 
 def _docstring_checkout_root() -> Path:
@@ -212,6 +235,13 @@ def check_docstring_citations(
 ) -> int:
     """Report each dev/*.py docstring (#NNN) with its resolved title.
 
+    A file that cannot be parsed (SyntaxError, invalid UTF-8) is reported as
+    SKIPPED with its reason, separately from examined — never silently
+    absorbed into a green count (#868).  Parenthesised numbers above the
+    ledger's max id are not issue references (they are CSS colours or other
+    six-digit tokens); they are FILTERED and the bounding rule is stated
+    (#1034).
+
     Exit 2 if no dev/*.py files were examined (vacuity: a run that examined
     nothing must not read as one that examined everything and found nothing,
     #868).  Exit 1 if any cited id does not resolve (a dangling reference is
@@ -221,12 +251,21 @@ def check_docstring_citations(
     """
     dev_dir = root / "dev"
     py_files = sorted(dev_dir.glob("*.py")) if dev_dir.is_dir() else []
-    files_examined = len(py_files)
-    if files_examined == 0:
+    if not py_files:
         print("ERROR vacuity: examined 0 file(s) in dev/*.py")
         return 2
 
-    citations = _scan_docstring_citations(root)
+    citations, skipped, docstrings_scanned = _scan_docstring_citations(root)
+    files_examined = len(py_files) - len(skipped)
+    if files_examined == 0:
+        print(
+            f"ERROR vacuity: examined 0 of {len(py_files)} file(s) in "
+            f"dev/*.py ({len(skipped)} skipped)"
+        )
+        for s in skipped:
+            print(f"  SKIPPED {s.rel_path}: {s.reason}")
+        return 2
+
     if dw_dir is None:
         dw_dir = _default_dw_dir()
     try:
@@ -235,14 +274,30 @@ def check_docstring_citations(
         print(f"ERROR cannot resolve titles: ledger store not found: {exc}")
         return 2
 
-    unresolvable = [c for c in citations if c.task_id not in titles]
+    # Parenthesised numbers above the ledger max are not issue references.
+    # Six hex digits is a CSS colour, not an id.  Bound by what the ledger
+    # can actually contain, not a magic number (#1034).
+    max_task_id = max(titles) if titles else 0
+    filtered = [c for c in citations if max_task_id and c.task_id > max_task_id]
+    real_citations = [c for c in citations if c not in filtered]
+    unresolvable = [c for c in real_citations if c.task_id not in titles]
+
     print(
-        "DOCSTRING CITATIONS: examined "
-        f"{files_examined} file(s) in dev/*.py, {len(citations)} (#NNN) "
-        "citation(s) — REPORT not certification (#994): a resolvable id is "
-        "never an attested attribution"
+        f"DOCSTRING CITATIONS: examined {files_examined} file(s) "
+        f"({len(skipped)} skipped), {docstrings_scanned} docstring(s) "
+        f"scanned, {len(real_citations)} (#NNN) citation(s) — REPORT not "
+        f"certification (#994): a resolvable id is never an attested "
+        f"attribution"
     )
-    for c in sorted(citations, key=lambda x: (x.rel_path, x.lineno)):
+    for s in skipped:
+        print(f"  SKIPPED {s.rel_path}: {s.reason}")
+    for c in filtered:
+        print(
+            f"  FILTERED {c.rel_path}:{c.lineno} {c.symbol} "
+            f"(#{c.task_id}) not an issue id: exceeds ledger max "
+            f"(#{max_task_id})"
+        )
+    for c in sorted(real_citations, key=lambda x: (x.rel_path, x.lineno)):
         title = titles.get(c.task_id)
         marker = "UNRESOLVABLE " if title is None else ""
         quoted = "not found in ledger" if title is None else f'"{title}"'
@@ -253,13 +308,14 @@ def check_docstring_citations(
 
     if unresolvable:
         print(
-            f"\nFAIL: {len(unresolvable)} of {len(citations)} docstring "
+            f"\nFAIL: {len(unresolvable)} of {len(real_citations)} docstring "
             f"citation(s) did not resolve across {files_examined} file(s)"
         )
         return 1
     print(
-        f"\nOK: {len(citations)} docstring citation(s) resolved across "
-        f"{files_examined} file(s); titles reported for human review"
+        f"\nOK: {len(real_citations)} docstring citation(s) resolved across "
+        f"{files_examined} file(s); {len(skipped)} skipped, "
+        f"{len(filtered)} filtered; titles reported for human review"
     )
     return 0
 
