@@ -200,7 +200,7 @@ def _event_count(db_path, task_id):
         conn.close()
 
 
-def test_dry_run_population_is_all_three_store_write_verbs(
+def test_dry_run_population_includes_groups_add_task(
         dev_ledger, monkeypatch):
     """Denominator: derive every parser verb that accepts ``--dry-run``.
 
@@ -217,7 +217,7 @@ def test_dry_run_population_is_all_three_store_write_verbs(
             except SystemExit:
                 continue
         accepted.add(verb)
-    assert accepted == {"file", "fold", "note"}, (
+    assert accepted == {"file", "fold", "groups", "note"}, (
         f"checked {len(accepted)} verb(s) accepting --dry-run: {sorted(accepted)}")
 
 
@@ -687,7 +687,7 @@ _VERB_ARGV = {
     "questions-retitle": ["questions-retitle", "1", "new title", "--why", "x", "--revision", "1"],
     "reviews-register": ["reviews-register", "design.html"],
     "reviews-link": ["reviews-link", "design.html"],
-    "groups": ["groups", "list"],
+    "groups": ["groups", "add-task", "1", "10"],
 }
 
 
@@ -1980,6 +1980,75 @@ def _goal_target(tmp_path, *, title, completed=0, total=0):
                     tx.tasks.land(
                         tid, actor="test", at="2026-08-01T00:00:03Z")
     return str(target), goal_id, str(dw / "tasks.md")
+
+
+def _membership_target(tmp_path):
+    """One existing and one absent membership in a fixture-only store."""
+    target, group_id, ledger = _goal_target(
+        tmp_path, title="membership fixture", total=1)
+    db = Path(ledger).parent / ledger_parse.STORE_FILENAME
+    with open_database(task_store_spec(db), access=Access.WRITE) as store:
+        with store.transaction() as tx:
+            fresh_task_id = tx.tasks.file(
+                "fresh member", "body", actor="test",
+                at="2026-08-02T00:00:00Z")
+    return target, group_id, 1, fresh_task_id, ledger, db
+
+
+def _membership_disposition(output):
+    match = re.search(r"groups: task #\d+ (added|unchanged) in group #\d+", output)
+    assert match is not None, f"membership disposition absent from {output!r}"
+    return match.group(1)
+
+
+def test_groups_add_task_dry_run_agrees_with_real_and_writes_nothing(
+        dev_ledger, tmp_path):
+    """Real-command output is the oracle for all three outcome classes.
+
+    The fresh membership is dry-run first so byte identity is measured on the
+    only path that could insert. The real command then runs against that same
+    unchanged fixture. The existing link distinguishes ``unchanged`` from a
+    dry run that merely predicts ``added`` for every valid input.
+    """
+    _, group_id, existing_id, fresh_id, ledger, db = _membership_target(tmp_path)
+    real_dispositions = set()
+
+    for task_id in (fresh_id, existing_id):
+        before = db.read_bytes()
+        dry = _run(dev_ledger, [
+            "groups", "add-task", str(group_id), str(task_id),
+            "--dry-run", "--ledger", ledger,
+        ])
+        assert db.read_bytes() == before, (
+            f"dry run reporting a would-be add changed {db} bytes")
+        real = _run(dev_ledger, [
+            "groups", "add-task", str(group_id), str(task_id),
+            "--ledger", ledger,
+        ])
+        assert dry[0] == real[0] == 0, (dry, real)
+        dry_status = _membership_disposition(dry[1])
+        real_status = _membership_disposition(real[1])
+        assert dry_status == real_status, (
+            f"dry run reported {dry_status!r} for a membership the real "
+            f"command reports {real_status!r}")
+        real_dispositions.add(real_status)
+
+    assert real_dispositions == {"added", "unchanged"}, (
+        "fixture did not exercise two distinct membership dispositions: "
+        f"{sorted(real_dispositions)}")
+
+    for group, task in ((group_id, 999999), (999999, existing_id)):
+        dry = _run(dev_ledger, [
+            "groups", "add-task", str(group), str(task),
+            "--dry-run", "--ledger", ledger,
+        ])
+        real = _run(dev_ledger, [
+            "groups", "add-task", str(group), str(task),
+            "--ledger", ledger,
+        ])
+        assert dry == real, (
+            "dry-run refusal diverged from the real command: "
+            f"dry={dry!r}, real={real!r}")
 
 
 def test_set_current_moves_the_rendered_tick_line(dev_ledger, tmp_path):

@@ -100,6 +100,28 @@ def test_progress_names_exact_task_membership_not_only_counts(store_path):
         == (2, 3, False)
 
 
+def test_add_task_dry_run_resolves_disposition_without_writing(store_path):
+    _insert_tasks(store_path, [(105, "open")])
+    with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
+        group_id = _create_group(store)
+        with store.transaction() as tx:
+            status = tx.groups.add_task(
+                group_id, 105, actor="test", at="2026-08-01T00:00:01Z",
+                apply=False,
+            )
+
+    assert status == "added"
+    conn = sqlite3.connect(store_path)
+    try:
+        membership_count = conn.execute(
+            "SELECT COUNT(*) FROM task_group_member"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert membership_count == 0, (
+        "a dry-run disposition must not create membership")
+
+
 def test_equal_size_wrong_membership_cannot_false_green(store_path):
     """Direction 2(a): task 102 swapped for 104 keeps count three."""
     _insert_tasks(store_path, [(101, "landed"), (102, "open"),

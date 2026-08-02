@@ -2544,6 +2544,7 @@ def _verb_groups(args, dw_dir):
                 elif args.groups_cmd == "add-task":
                     status = tx.groups.add_task(
                         args.group_id, args.task_id, actor=actor, at=at,
+                        apply=not args.dry_run,
                     )
                     disposition = (
                         f"task #{args.task_id} {status} in group #{args.group_id}"
@@ -2920,6 +2921,9 @@ def main(argv=None):
     groups_add.add_argument("group_id", type=int)
     groups_add.add_argument("task_id", type=int)
     groups_add.add_argument("--actor", default=None)
+    groups_add.add_argument(
+        "--dry-run", action="store_true",
+        help="print the disposition after full validation; write nothing")
     groups_add.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_trigger = groups_sub.add_parser(
         "add-trigger",
