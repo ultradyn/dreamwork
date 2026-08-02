@@ -103,12 +103,18 @@ that is a legitimate outcome, not a failure.
   bare verbs resolve only to the legacy one, so omitting it operates on a different registry than
   the one that answered you.
 
-      python3 dev/redproof.py begin <path> --expectation <source> --lane <your-lane>
+      python3 dev/redproof.py begin <path> --expectation <expectation-source>
       …sabotage it, run your check, watch it go red…
       python3 dev/redproof.py observe <path> --failure '<discriminating message>' \
           --command just pytest <test-file> --lane <your-lane>
       python3 dev/redproof.py restore <path> --lane <your-lane>
       python3 dev/redproof.py check --require 1 --lane <your-lane>
+
+  **The `begin` line above is the ONE exception, and it is a linter artefact, not a rule:** it omits
+  `--lane` because `lint.py` executes that exact line as a standing example and its cleanup does not
+  thread the flag (`#909`), so adding it there makes the repo's own lint refuse. **Add `--lane
+  <your-lane>` when you run `begin` yourself** — a `begin` on the legacy registry followed by an
+  `observe` on the lane registry is `#957` in its purest form, and neither verb complains.
 
   **`--failure` must name a string that appears ONLY because of your injection.** A generic
   `AssertionError` matches an unrelated failure and proves nothing. `observe` refuses if the command
