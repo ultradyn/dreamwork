@@ -4604,3 +4604,20 @@ half", and #1038 was open under almost that sentence. Searching the open ledger 
 words costs one command. I skipped it because the measurement was fresh and mine, and freshness reads
 as novelty. **Before filing, search the ledger for the words the failure itself uses** — not for what
 you would have called it, which is how the duplicate escaped.
+
+## A correct answer from a broken measurement is the one nothing prompts you to re-check (2026-08-03, handoffs drain, coordinator's, measured)
+
+Draining hand-offs, I split `handoffs.md` on its two headings assuming `## Pending` came before
+`## Folded`. It does not — `## Folded` is at line 36 and `## Pending` at line 211. So my "folded" set
+was everything after line 36, which SWALLOWED the pending section, and every pending id looked already
+folded. The script printed `OUTSTANDING: NONE`.
+
+That answer is correct. A line-range re-parse gives the same result: 152 folded ids, 120 pending
+entries, nothing outstanding. Had one hand-off genuinely been unfolded, the broken parse would have
+hidden it and I would have had no reason to look — the output was exactly what a healthy file produces.
+
+Two things worth keeping. The specific one: **in `handoffs.md`, Folded precedes Pending**, and both
+sections only grow by append, so a Pending entry is done when a Folded line names it. The general one:
+a check whose failure mode is *"reports the all-clear"* cannot be validated by seeing the all-clear. It
+needs a positive control — parse a case you know is outstanding and confirm the check says so — which
+is the same discipline as red-proofing, applied to a throwaway one-liner rather than to a test.
