@@ -17,11 +17,14 @@ import importlib.util
 import hashlib
 import json
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+import dev.land_lane as land_lane
 
 CLI_PATH = Path(__file__).resolve().parent / "dev" / "redproof.py"
 
@@ -1156,7 +1159,8 @@ def _poison(lane: Path) -> tuple[str, str]:
 class TestInjectionInHistoryIsRefused:
     """THE #710 red run: clean tree, poisoned history, and the gate was blind."""
 
-    def test_the_commit_holding_the_injection_is_named(self, lane, capsys):
+    def test_the_commit_holding_the_injection_is_named(
+            self, lane, capsys, monkeypatch):
         poisoned, clean = _poison(lane)
         entries, _ = rp._read_registry(lane)
 
@@ -1175,10 +1179,50 @@ class TestInjectionInHistoryIsRefused:
         assert exit == 1
         assert poisoned[:12] in err, err
         assert "router.js" in err
+        assert "wip(#710): mid red-proof" in err
+        assert "return false" in err
         # discriminating: it names the poisoned commit, not every commit
         assert clean[:12] not in err, err
-        # and it names the remedy, because refusing without one strands the lane
-        assert "squash" in err.lower(), err
+        assert "Committing mid-injection is correct, not the lane's fault" in err
+
+        # Derive the expectation from the independent just recipe and
+        # land_lane parser. A literal copied from this refusal would accept a
+        # plausible-looking flag that argparse rejects.
+        match = re.search(r"`(just land-lane [^`]+)`", err)
+        assert match, "refusal did not name a runnable land-lane command"
+        template = shlex.split(match.group(1))
+        replacements = {
+            "<branch>": "cx-example",
+            "<tests...>": "test_redproof.py",
+        }
+        invocation = [replacements.get(arg, arg) for arg in template]
+        dry = subprocess.run(
+            [invocation[0], "--dry-run", *invocation[1:]],
+            cwd=CLI_PATH.parent.parent,
+            capture_output=True,
+            text=True,
+        )
+        assert dry.returncode == 0, dry.stdout + dry.stderr
+        rendered = (dry.stdout + dry.stderr).strip()
+        parser_argv = shlex.split(rendered)
+        assert parser_argv[:2] == ["python3", "dev/land_lane.py"], rendered
+
+        parsed = {}
+
+        def capture(branch, tests, *, base="master", squash=False):
+            parsed.update(branch=branch, tests=list(tests), base=base, squash=squash)
+            return 0
+
+        monkeypatch.setattr(land_lane, "land", capture)
+        assert land_lane.main(parser_argv[2:]) == 0
+        assert parsed == {
+            "branch": "cx-example",
+            "tests": ["test_redproof.py"],
+            "base": "master",
+            "squash": True,
+        }
+        assert "`<branch>-presquash`" in err
+        assert "`Presquash-Ref:`" in err
 
     def test_a_clean_branch_passes_and_says_what_it_examined(self, lane, capsys):
         """#590: a zero is a question about whether you looked. So say."""
