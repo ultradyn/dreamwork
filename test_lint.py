@@ -10789,3 +10789,137 @@ class TestInboxRotation:
             "#1107: OK detail changed when only the byte count changed — "
             "same defect, other row"
         )
+
+
+class TestBuilderDelegation:
+    """#1057 — refuse a builder deletion a live delegate still calls.
+
+    Both populations are derived from the tree; the red is the exact runtime
+    break `fromBuilder` throws when its builder disappears.
+    """
+
+    def _check(self, tmp_path, *, dev_build=None, client=None, extra=None):
+        for rel, content in (dev_build or {}).items():
+            p = tmp_path / "dev/build" / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content)
+        for rel, content in (client or {}).items():
+            p = tmp_path / "client" / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content)
+        for rel, content in (extra or {}).items():
+            p = tmp_path / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content)
+        rep = lint.Report()
+        lint.check_builder_delegation(tmp_path, rep)
+        return [(level, detail) for level, what, detail in rep.rows
+                if what == "builder delegation"]
+
+    def test_live_delegate_with_definition_passes_and_names_denominator(
+            self, tmp_path):
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "import { fromBuilder } from './delegate.js';\n"
+                "const Row = fromBuilder('artifactRow', function (p) {\n"
+                "  return artifactRow(p.row);\n"
+                "});\n")},
+            client={"views.js": "function artifactRow(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1]
+        assert "1 file(s)" in rows[0][1]
+
+    def test_deleted_builder_with_live_delegate_is_an_error(self, tmp_path):
+        # Direction 1 in miniature: the builder is gone, the delegate remains.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('artifactRow', function (p) {\n"
+                "  return artifactRow(p.row);\n"
+                "});\n")},
+            client={"views.js": "// builder was deleted in this flip\n"})
+        assert rows and rows[0][0] == lint.ERROR, rows
+        assert "artifactRow" in rows[0][1]
+        assert "research.js:1" in rows[0][1]
+
+    def test_deleting_one_builder_and_its_delegate_passes(self, tmp_path):
+        # The legitimate flip: ONE surface went native (both builder and
+        # delegate removed together). Other delegates remain, so the removed
+        # name is simply absent from the delegate set — not broken.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Label = fromBuilder('label', function (p) {\n"
+                "  return label(p.text);\n"
+                "});\n"
+                "// artifactRow went native — its delegate was removed too\n")},
+            client={"components.js": "const label = t => '';\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1]
+
+    def test_zero_delegates_on_a_tree_with_source_is_an_error(self, tmp_path):
+        # #611: a guard that examined nothing must not read as a pass. A tree
+        # that carries dev/build/ source but no delegate references is a broken
+        # scan (or a completed migration), never a quiet green.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": "// all surfaces native now\n"},
+            client={"views.js": "function artifactRow(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.ERROR, rows
+        assert "examined 0 delegate" in rows[0][1]
+
+    def test_indented_local_does_not_mask_a_deleted_builder(self, tmp_path):
+        # Column-0 is load-bearing: client/router.js:553 carries an indented
+        # LOCAL `const label` that is NOT the builder. An indented namesake
+        # must not let a deleted top-level builder read as defined.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Label = fromBuilder('label', function (p) {\n"
+                "  return label(p.text);\n"
+                "});\n")},
+            client={"router.js": (
+                "function route() {\n"
+                "    const label = draft.pace;\n"   # indented LOCAL, not a builder
+                "    return label;\n"
+                "}\n")})
+        assert rows and rows[0][0] == lint.ERROR, rows
+        assert "label" in rows[0][1]
+
+    def test_no_native_runtime_source_is_silent(self, tmp_path):
+        # The check only applies to a repo that carries dev/build/ source.
+        rep = lint.Report()
+        lint.check_builder_delegation(tmp_path, rep)
+        assert rep.rows == []
+
+    def test_dwbuilder_assignment_is_a_delegate_site(self, tmp_path):
+        # The hand-written export shape (wrapper-exports.js): .dwBuilder = 'X'.
+        rows = self._check(
+            tmp_path,
+            dev_build={"wrapper-exports.js": (
+                "export const QaCard = () => null;\n"
+                "QaCard.dwBuilder = 'qaCard';\n")},
+            client={"components.js": "const qaCard = () => '';\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1]
+
+    def test_generic_frombuilder_definition_is_not_a_delegate(self, tmp_path):
+        # delegate.js defines the mechanism itself — `fromBuilder(name, call)`
+        # and `Delegate.dwBuilder = name` — where the name is a parameter, not
+        # a delegation. Neither must inflate the delegate population.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/delegate.js": (
+                "export function fromBuilder(name, call) {\n"
+                "  function D() {}\n"
+                "  D.dwBuilder = name;\n"
+                "  return D;\n"
+                "}\n"
+                "const Row = fromBuilder('artifactRow', function (p) {\n"
+                "  return artifactRow(p.row);\n"
+                "});\n")},
+            client={"views.js": "function artifactRow(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        # Exactly one delegate — the mechanism lines did not add a second.
+        assert "1 delegate reference(s)" in rows[0][1]

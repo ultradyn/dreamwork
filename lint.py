@@ -3122,6 +3122,123 @@ def check_client_dist(root: Path, rep: Report) -> None:
             "%s%s" % (detail, (" — %s" % fix) if fix else ""))
 
 
+def _builder_delegation_js_sources(root: Path) -> list[Path]:
+    """Source `.js` where builders and delegates live, excluding generated output.
+
+    `client/dist/**` is the built bundle and carries its own minified
+    `fromBuilder`/`dwBuilder` shapes; scanning it would both inflate the
+    populations and mask a source-level deletion. The boundary is named in
+    the check's report: a delegate or builder outside `dev/build/` or `client/`
+    source is invisible here.
+    """
+    found: list[Path] = []
+    for sub in ("dev/build", "client"):
+        base = root / sub
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*.js")):
+            if "dist" in path.relative_to(root).parts:
+                continue
+            found.append(path)
+    return found
+
+
+# The two source shapes that name the builder a component delegates to. Both
+# require a STRING LITERAL so the generic mechanism in delegate.js —
+# `export function fromBuilder(name, call)` and `Delegate.dwBuilder = name`,
+# where the name is a runtime parameter, not a delegation — does not match.
+_BUILDER_DELEGATE_RE = re.compile(
+    r"fromBuilder\s*\(\s*['\"]([A-Za-z_$][\w$]*)['\"]"
+    r"|\.dwBuilder\s*=\s*['\"]([A-Za-z_$][\w$]*)['\"]"
+)
+# A builder definition: a column-0 (top-level) function/const/let/var binding.
+# Column-0 is load-bearing — client/router.js:553 has a LOCAL `const label`
+# indented inside a function that is NOT the builder, and keying on it would
+# mask the real builder's deletion. Builders live at the top level of the
+# client sources; the indent distinguishes them from same-named locals.
+_BUILDER_DEF_RE = re.compile(
+    r"^(?:export\s+)?(?:async\s+)?(?:function|const|let|var)\s+"
+    r"([A-Za-z_$][\w$]*)"
+)
+
+
+def check_builder_delegation(root: Path, rep: Report) -> None:
+    """#1057 — refuse a builder deletion a live delegate still calls.
+
+    The React port (#630) replaces builders with native components one surface
+    at a time, and every flip DELETES a builder. `fromBuilder`
+    (dev/build/src/delegate.js) throws at render time when its builder is gone,
+    so a flip that deletes a builder something still delegates to breaks an
+    already-native route at RUNTIME, not at the gate. This makes that break a
+    gate ERROR instead.
+
+    Both populations are DERIVED from the tree at check time — never a
+    hand-maintained roster, which is stale the day after it is written and
+    fails in the worst direction (silently passing a deletion it never knew to
+    look for):
+
+      - delegates — `fromBuilder('NAME', …)` and `.dwBuilder = 'NAME'` sites.
+      - definitions — column-0 `function NAME` / `const NAME =` bindings.
+
+    The check is UNCONDITIONAL: a delegate that names a builder with no live
+    definition is always a runtime break, so there is no escape hatch. Every
+    legitimate completion path leaves the delegate names a subset of the
+    defined names — the delegate is removed (the surface went native), the
+    delegate is retargeted to a builder that exists, or the builder is kept.
+    An in-tree "retirement" that kept a live delegate to a deleted builder
+    would keep a call that throws, and any such declaration is forgeable by the
+    lane that lands it (#994), so no opt-out is shipped.
+
+    #611: a guard that examined nothing must not read as a pass. Zero
+    delegates on a tree that carries the native runtime is a broken scan, not
+    a clean result — ERROR, with the denominator named.
+    """
+    sources = _builder_delegation_js_sources(root)
+    if not sources:
+        return  # no dev/build/ or client/ source — this check does not apply
+    delegates: list[tuple[str, str]] = []  # (builder name, "rel/path:line")
+    delegate_files: set[str] = set()
+    defined: set[str] = set()
+    for path in sources:
+        rel = path.relative_to(root)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for i, line in enumerate(text.splitlines(), 1):
+            for m in _BUILDER_DELEGATE_RE.finditer(line):
+                name = m.group(1) or m.group(2)
+                delegates.append((name, "%s:%d" % (rel, i)))
+                delegate_files.add(str(rel))
+            m = _BUILDER_DEF_RE.match(line)
+            if m:
+                defined.add(m.group(1))
+    if not delegates:
+        rep.add(
+            ERROR, "builder delegation",
+            "examined 0 delegate references across %d source file(s) — the "
+            "native runtime (dev/build/) is present, so this is a broken scan, "
+            "not a clean result; if the React port is complete and the last "
+            "delegate was removed, retire this check with that flip (#611)"
+            % len(sources))
+        return
+    broken = [(name, site) for name, site in delegates if name not in defined]
+    if broken:
+        for name, site in broken:
+            rep.add(
+                ERROR, "builder delegation",
+                "%s delegates to builder '%s' but no live definition was found "
+                "— fromBuilder throws when its builder disappears; remove or "
+                "retarget the delegate before deleting the builder (#1057)"
+                % (site, name))
+        return
+    rep.add(
+        OK, "builder delegation",
+        "%d delegate reference(s) in %d file(s); all resolve to live builder "
+        "definitions (%d examined) (#1057)"
+        % (len(delegates), len(delegate_files), len(defined)))
+
+
 def check_guards_execution_accounting(root: Path, rep: Report) -> None:
     """The guard runner must compare executed vs registered, not just run.
 
@@ -8048,6 +8165,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_justfile_pipe_safety(dw.parent, rep)
     check_guards_execution_accounting(dw.parent, rep)
     check_client_dist(dw.parent, rep)
+    check_builder_delegation(dw.parent, rep)
     check_in_repo_worktree_drain(dw, rep)
     check_inbox_rotation(dw, rep)
     # LAST, and it must stay last: the ledger checks that can skip are spread
