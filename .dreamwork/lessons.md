@@ -4495,3 +4495,67 @@ Two questions that would have caught both, cheaply:
   a successful run by reading only that?
 - Did I fix the thing the operator reads, or a thing it calls?
 
+## A guard that has never once passed is not cautious, it is broken (2026-08-02, gate window/#1055/#773, mine, measured)
+
+I wrote a preflight for the gate window that refused unless **no process anywhere** under the repo's
+worktree root was live. It never passed. Not once, in a whole session. The fleet runs at
+delegation=6; a fleet that size is never globally idle, so the condition I had written was not
+"gate only when it is safe" but "do not gate" — and it cost the session every landing it was
+supposedly protecting. Two branches sat MERGE-verified for hours behind a guard whose stated risk
+never materialised because the code guarded by it never ran.
+
+The first version of the same guard failed in the OPPOSITE direction and I caught that one by
+rehearsal: `*.worktrees/*` matched every repo on this machine (B226, shader-129, sequencer,
+wf2-lane-d, ...), so it also refused permanently. I fixed the matcher and felt done. I had fixed the
+symptom — a permanently-refusing guard — and reintroduced it one layer up, in the SCOPE rather than
+the pattern. Same defect, second form, inside its own fix.
+
+What finally settled it was reading what the gated tool actually touches instead of reasoning about
+what it might: `dev/land_lane.py:883` preflights the main checkout and the ONE lane worktree, and
+`:1439` reaps that one worktree. Nothing else. So the honest guard is main-checkout-busy (refuse the
+window) plus this-branch's-worktree-busy (skip this branch) — and a lane in an unrelated worktree,
+which I had been refusing on for hours, was never a hazard at all.
+
+The catching question is not "is this guard safe?" — a guard that always refuses is maximally safe
+and worthless. It is:
+
+- **"Under what live conditions does this guard PASS, and have those conditions ever actually
+  occurred?"** If the answer is "never", the guard has no evidence behind it, only intent.
+- **"What did I verify the guarded tool touches, versus what did I assume?"** I had assumed
+  worktree-wide blast radius. Two greps established it was one worktree.
+
+And the rehearsal that matters is two-directional: I confirmed the relaxed guard reads 0 on the five
+gate targets AND reads 4 and 7 on two worktrees I knew were busy. A zero is only evidence when you
+have shown the probe can produce a non-zero.
+
+## A red-proof that pushes the value one way cannot see the other way (2026-08-02, #1029, lane's, measured by review)
+
+The `/goals` guard asserted that the word `unreadable` appears for a faulted non-current goal. The
+lane red-proofed it by injecting `unreadOthers → 0` and watched it red: 19 passed, 1 failed. Real
+injection, real catch, correctly registered. The reviewer then injected `unreadOthers → constant 1`
+and got **20 passed, 0 failed** — the guard passes while the faulted-CURRENT cell displays a
+spurious warning that should not exist at all. Production was correctly selective the whole time
+(`client/views.js:270`); only the guard was one-sided.
+
+The lane's evidence was true and its conclusion was too strong: "the guard catches a regression in
+this value" was demonstrated only for regressions in ONE DIRECTION. A presence assertion cannot
+distinguish "the warning is correct" from "there is a warning that should not be there", and no
+amount of injecting toward absence will ever reveal that, because every such injection tests the
+half that works.
+
+The rule this yields: **when a guard asserts a presence or a count, red-proof it with both a
+decrease and an increase.** The cheap tell is the assertion's shape — `assert "word" in output` and
+`assert count >= 1` are one-sided by construction; `assert count == 0` for one case and
+`assert count == 1` for the other is what actually pins it.
+
+## A citation that resolves can still point at the wrong thing (2026-08-02, #1037, lane's, measured by review)
+
+A lane cited `#1052` for the no-op-injection lesson. The lesson is at `lessons.md:1052`. It read a
+LINE NUMBER as a TASK ID — and `#1052` exists (it is the `/` dashboard React flip), so the citation
+RESOLVES. Lint's citation check asks "does this id exist?", which is exactly the question that cannot
+tell a correct citation from a wrong one that happens to be in range.
+
+This repo's whole citation-guard family exists because references drift, and this is the class it
+structurally cannot catch. Worth knowing when reading any `#NNNN` in a lane report: a resolving
+citation is evidence the id exists, not evidence it is the right id — and `lessons.md:NNNN` and
+`#NNNN` are one keystroke apart in a note written from a file the lane was reading by line.
