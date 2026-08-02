@@ -4792,6 +4792,139 @@ Next id: **9**
         assert "check_cited_shas(dw, rep)" in src
 
 
+class TestLandedGuards:
+    """#1114: a landed task whose guard test was deleted in a later refactor.
+
+    #868 landed a regression test at 46eeba09; a later refactor deleted it,
+    and #1084 is the recurrence that absence permitted. The ledger reads
+    `landed` because `landed` and `still guarded` are different claims. This
+    check reads an opt-in registry (landed-guards.md) and verifies each named
+    guard is still defined in the test tree — name-defined only, never
+    behaviour-guarded (#651); renamed vs deleted are different states (#136).
+    """
+
+    def build(self, tmp_path, registry, tests=None):
+        """A repo root with .dreamwork/, a landed-guards.md, and test_*.py.
+
+        ``tests`` maps a filename (e.g. ``test_foo.py``) to its body; a guard
+        resolves only when its ``def`` is in a file whose name matches
+        ``test_*.py``, which is the convention the check scans."""
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        if registry is not None:
+            (t / "landed-guards.md").write_text(registry)
+        for name, body in (tests or {}).items():
+            (t / name).write_text(body)
+        return t
+
+    def rows(self, t, level=None):
+        rep = lint.Report()
+        lint.check_landed_guards(t / ".dreamwork", rep)
+        return [(lvl, d) for lvl, w, d in rep.rows
+                if w == "landed-guards.md"
+                and (level is None or lvl == level)]
+
+    def test_a_guard_named_in_the_registry_that_is_absent_warns(self, tmp_path):
+        # The measured instance: #868's guard was deleted in a refactor. The
+        # precondition is that the test is genuinely absent from the tree the
+        # check scans — not assumed, derived (#967).
+        name = "test_tick_and_status_sync_agree_on_sibling_root_process_table"
+        t = self.build(
+            tmp_path, f"- #868 {name}\n",
+            tests={"test_other.py": "def test_other():\n    pass\n"})
+        # Precondition: no `def <name>` in any test_*.py the check scans.
+        scanned = [
+            p.read_text() for p in t.rglob("test_*.py")
+            if "/node_modules/" not in str(p)]
+        assert not any(re.search(r"\bdef\s+%s\s*\(" % name, tx) for tx in scanned)
+        warns = self.rows(t, lint.WARN)
+        assert len(warns) == 1, warns
+        assert "#868" in warns[0][1] and name in warns[0][1]
+        # The ceiling and the rename/delete distinction are in the message,
+        # because a guard whose message overclaims is the defect this files
+        # most often (#651).
+        assert "#651" in warns[0][1] and "#136" in warns[0][1]
+
+    def test_a_guard_that_is_still_defined_resolves_clean(self, tmp_path):
+        t = self.build(
+            tmp_path, "- #868 test_still_here\n",
+            tests={"test_still_here.py": "def test_still_here():\n    assert True\n"})
+        assert self.rows(t, lint.WARN) == []
+        oks = self.rows(t, lint.OK)
+        assert len(oks) == 1 and "1 guard(s) declared" in oks[0][1] and "defined" in oks[0][1]
+
+    def test_an_empty_registry_reports_zero_so_checked_nothing_is_honest(
+            self, tmp_path):
+        # #868, the lesson this descends from: a probe that examined nothing
+        # must not read as a probe that examined everything. Zero declared
+        # guards is said aloud, with the population, not rendered as silence.
+        t = self.build(tmp_path, "# no guards yet\n")
+        warns = self.rows(t, lint.WARN)
+        assert warns == [], warns
+        oks = self.rows(t, lint.OK)
+        assert len(oks) == 1 and "0 guards declared" in oks[0][1]
+
+    def test_no_registry_file_is_silent_opt_in_infrastructure(self, tmp_path):
+        # Calm when absent, like check_guards_registered with no justfile: a
+        # target that does not use the registry has nothing to check.
+        t = self.build(tmp_path, None, tests={"test_x.py": "def test_x():\n    pass\n"})
+        assert self.rows(t) == []
+
+    def test_a_malformed_row_errors_rather_than_reading_as_absent(
+            self, tmp_path):
+        # #136: an unparseable claim must not look like an absent one. A list
+        # item that does not match the row grammar ERRORs; prose is ignored.
+        t = self.build(
+            tmp_path,
+            "# Landed guards\n\n- #868 test_real\n- not a guard row\n",
+            tests={"test_real.py": "def test_real():\n    pass\n"})
+        errs = self.rows(t, lint.ERROR)
+        assert len(errs) == 1 and "not a guard row" in errs[0][1], errs
+
+    def test_the_population_count_is_in_every_row(self, tmp_path):
+        # Two declared, one absent: the OK row carries BOTH counts so a gap is
+        # visible and "checked nothing" cannot masquerade as "checked everything".
+        t = self.build(
+            tmp_path, "- #1 test_present\n- #2 test_gone\n",
+            tests={"test_present.py": "def test_present():\n    pass\n"})
+        warns = self.rows(t, lint.WARN)
+        assert len(warns) == 1 and "#2" in warns[0][1]
+        oks = self.rows(t, lint.OK)
+        assert len(oks) == 1, oks
+        assert "2 guard(s) declared" in oks[0][1] and "1 defined" in oks[0][1]
+        assert "1 not defined" in oks[0][1]
+
+    def test_a_gutted_guard_resolves_clean_and_that_is_the_ceiling(
+            self, tmp_path):
+        """Direction 2, and it is OPEN (#651). A guard reduced to `pass` keeps
+        its name and resolves clean — so this check asserts name-defined, never
+        behaviour-guarded. This test documents the false-green it cannot close;
+        it is not a passing proof that the behaviour is guarded."""
+        t = self.build(
+            tmp_path, "- #868 test_gutted\n",
+            tests={"test_gutted.py": "def test_gutted():\n    pass\n"})
+        assert self.rows(t, lint.WARN) == [], (
+            "a gutted test still defines its name — the check cannot see this, "
+            "and that is the #651 ceiling stated in the row, not a gap to close")
+
+    def test_a_guard_defined_only_in_a_non_test_file_does_not_resolve(
+            self, tmp_path):
+        # The check scans test_*.py only; a guard moved to a helper module is
+        # flagged, not silently resolved — which is correct, because a test
+        # that no test runner collects is no guard at all.
+        t = self.build(
+            tmp_path, "- #868 test_moved\n",
+            tests={"helpers.py": "def test_moved():\n    pass\n"})
+        warns = self.rows(t, lint.WARN)
+        assert len(warns) == 1 and "test_moved" in warns[0][1]
+
+    def test_the_check_is_registered_in_run_checks(self):
+        import inspect
+        src = inspect.getsource(lint.run_checks)
+        assert "check_landed_guards(dw, rep)" in src
+
+
 class TestRelatedMarkers:
     """#353: `related:` makes "these two are one piece of work" explicit.
 
