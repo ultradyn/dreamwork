@@ -1142,6 +1142,7 @@ class TestUntrackedExpectationWarning:
         assert "WARNING" not in out, (
             "a tracked expectation must not warn — it survives cleanup")
 
+
     def test_warning_uses_git_truth_not_path_name(self, repo, capsys):
         """Direction 2: the check fires on ``git ls-files`` truth, not on the
         path NAME looking disposable. A tracked file named like a scratch file
@@ -1262,6 +1263,101 @@ class TestUntrackedExpectationWarning:
             "begin must not warn when ls-files fails — the check could not "
             "run, not 'the file is untracked' (#1088)")
         assert "will expire" not in out
+
+
+class TestLaneOwnedExpectationWarning:
+    def test_begin_warns_last_when_the_lane_already_changed_the_source(
+            self, repo, capsys):
+        source = repo / "owned-expectation.txt"
+        source.write_text("baseline expectation\n")
+        _commit(repo, "owned-expectation.txt", msg="add expectation")
+        _git(repo, "checkout", "-qb", "lane")
+        source.write_text("lane-owned expectation\n")
+        _commit(repo, "owned-expectation.txt", msg="lane changes expectation")
+
+        assert _begin(repo, "router.js", ("owned-expectation.txt",)) == 0
+        out, _ = capsys.readouterr()
+        warning = out.splitlines()[-1]
+        assert "WARNING" in warning, out
+        assert "owned-expectation.txt" in warning, out
+        assert "plausibly part of this lane's work" in warning, out
+        assert (
+            "re-arm after your last commit to 'owned-expectation.txt'"
+            in warning), out
+
+    def test_begin_does_not_warn_for_a_clean_source_the_lane_did_not_touch(
+            self, repo, capsys):
+        source = repo / "clean-expectation.txt"
+        source.write_text("stable expectation\n")
+        _commit(repo, "clean-expectation.txt", msg="add expectation")
+        _git(repo, "checkout", "-qb", "lane")
+
+        assert _begin(repo, "router.js", ("clean-expectation.txt",)) == 0
+        out, _ = capsys.readouterr()
+        assert "plausibly part of this lane's work" not in out, out
+
+
+class TestExpectationStalingCause:
+    @staticmethod
+    def _arm_and_restore(repo: Path) -> Path:
+        source = repo / "mode-expectation.txt"
+        source.write_text("baseline expectation\n")
+        _commit(repo, "mode-expectation.txt", msg="add expectation")
+        _git(repo, "checkout", "-qb", "lane")
+        assert _begin(repo, "router.js", ("mode-expectation.txt",)) == 0
+        (repo / "router.js").write_text("SABOTAGE\n")
+        assert _restore(repo, "router.js") == 0
+        return source
+
+    def test_check_names_lane_caused_staling_after_a_lane_commit(
+            self, repo, capsys):
+        source = self._arm_and_restore(repo)
+        capsys.readouterr()
+        source.write_text("lane changed expectation after arming\n")
+        _commit(repo, "mode-expectation.txt", msg="lane changes expectation")
+
+        assert _check(repo) == 1
+        _, err = capsys.readouterr()
+        assert "mode-expectation.txt" in err, err
+        assert "lane-caused staling" in err, err
+        assert "re-arm after your last commit" in err, err
+        assert "rebase-caused staling" not in err, err
+
+    def test_check_names_rebase_caused_staling_after_master_moves_the_source(
+            self, repo, capsys):
+        source = self._arm_and_restore(repo)
+        capsys.readouterr()
+        _git(repo, "checkout", "master")
+        source.write_text("master changed expectation after the lane armed\n")
+        _commit(repo, "mode-expectation.txt", msg="master changes expectation")
+        _git(repo, "checkout", "lane")
+        _git(repo, "rebase", "master")
+
+        assert _check(repo) == 1
+        _, err = capsys.readouterr()
+        assert "mode-expectation.txt" in err, err
+        assert "rebase-caused staling" in err, err
+        assert "re-observe the evidence" in err, err
+        assert "lane-caused staling" not in err, err
+
+    def test_unrelated_rebase_does_not_take_blame_for_a_lane_source_change(
+            self, repo, capsys):
+        source = self._arm_and_restore(repo)
+        capsys.readouterr()
+        _git(repo, "checkout", "master")
+        unrelated = repo / "unrelated.txt"
+        unrelated.write_text("master moved elsewhere\n")
+        _commit(repo, "unrelated.txt", msg="unrelated master change")
+        _git(repo, "checkout", "lane")
+        source.write_text("lane changed expectation after arming\n")
+        _commit(repo, "mode-expectation.txt", msg="lane changes expectation")
+        _git(repo, "rebase", "master")
+
+        assert _check(repo) == 1
+        _, err = capsys.readouterr()
+        assert "lane-caused staling" in err, err
+        assert "rebase-caused staling" not in err, err
+
 
 class TestCli:
     def _env(self, tmp_path):
