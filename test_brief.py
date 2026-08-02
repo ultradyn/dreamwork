@@ -590,7 +590,9 @@ def test_citation_report_places_the_real_title_beside_a_high_overlap_wrong_gloss
 
     report = brief._citation_authority_report(core, ledger)
 
-    assert "#140 RESOLVED" in report
+    assert "#140 RESOLVED" in report, (
+        f"citation #140 was not reported as resolved: {report}"
+    )
     assert "show a loud wrong state" in report
     assert "DECIDED**: show the deployed revision, no deploy hook" in report
     assert "Semantic agreement is NOT CHECKED and requires human judgment" in report
