@@ -173,7 +173,9 @@ SUB = "redproof"
 # Registry entry states.
 ARMED = "armed"        # begun (original snapshotted), not yet restored
 RESTORED = "restored"  # restore ran; injected_sha recorded
+RESTORED_EPHEMERAL = "restored_ephemeral"  # verified untracked original may vanish
 RETIRED = "retired"    # forgotten as live evidence; still in HISTORY scope (#942)
+RESTORED_STATES = (RESTORED, RESTORED_EPHEMERAL)
 
 # The states THIS build knows how to classify. An entry whose ``state`` is not
 # in this set is UNKNOWN to this build of redproof.py — fail-closed as the
@@ -184,7 +186,7 @@ RETIRED = "retired"    # forgotten as live evidence; still in HISTORY scope (#94
 # refuses. The fail-closed direction is right and is not changed: unknown is
 # still refused. What changes is that the refusal NAMES the format-skew
 # possibility rather than reading identically to four genuinely-armed entries.
-KNOWN_STATES = (ARMED, RESTORED, RETIRED)
+KNOWN_STATES = (ARMED, *RESTORED_STATES, RETIRED)
 
 # The injected state is orthogonal to the registry lifecycle state. Keeping
 # deletion as a kind (not a new state) lets older fail-closed gates continue to
@@ -471,7 +473,7 @@ def _find(entries: list[dict], posix_path: str) -> dict | None:
     malformed entry with no state reads as armed and fails closed."""
     for e in entries:
         if (e.get("path") == posix_path
-                and e.get("state") not in (RESTORED, RETIRED)):
+                and e.get("state") not in (*RESTORED_STATES, RETIRED)):
             return e
     return None
 
@@ -483,11 +485,24 @@ def _find_restored(entries: list[dict], posix_path: str,
     The same observed state restored twice is one injection. Absence has no
     byte sha, so its explicit kind is the discriminating half of the key."""
     for e in entries:
-        if (e.get("path") == posix_path and e.get("state") == RESTORED
+        if (e.get("path") == posix_path and e.get("state") in RESTORED_STATES
                 and e.get("injected_kind", BYTES) == injected_kind
                 and e.get("injected_sha") == injected_sha):
             return e
     return None
+
+
+def _restored_state(root: Path, posix_path: str) -> str:
+    """Classify a verified restoration from facts the tool can inspect now.
+
+    A caller can never assert that a missing subject was ephemeral at check
+    time: that would make every fail-closed refusal negotiable.  ``restore``
+    alone earns this state, while the restored bytes still exist, and only for
+    a path Git's index confirms is untracked. Existing ``restored`` records
+    therefore retain their persistent, missing-is-a-fault semantics.
+    """
+    tracked = _git(root, "ls-files", "--", posix_path)
+    return RESTORED if tracked else RESTORED_EPHEMERAL
 
 
 def _snapshot_recovery(snapshot: Path, posix_path: str) -> str:
@@ -528,6 +543,15 @@ def _read_wt(root: Path, posix_path: str) -> bytes:
         ) from exc
     except OSError as exc:
         raise RedproofError(f"could not read {p}: {exc}") from exc
+
+
+def _restored_subject_bytes(root: Path, entry: dict) -> bytes | None:
+    """Resolve a restored subject; ``None`` is verified ephemeral absence."""
+    _, path = _worktree_path(root, entry["path"])
+    if (entry.get("state") == RESTORED_EPHEMERAL
+            and not os.path.lexists(path)):
+        return None
+    return _read_wt(root, entry["path"])
 
 
 def _first_changed_line(original: bytes, injected: bytes) -> str:
@@ -653,7 +677,7 @@ def scan_history(cwd: Path | None, entries: list[dict],
     # RETIRED records are in scope here and nowhere else (#942): a lane may
     # withdraw a claim about its own evidence, but it cannot un-commit a commit.
     recorded = [e for e in entries
-                if e.get("state") in (RESTORED, RETIRED)
+                if e.get("state") in (*RESTORED_STATES, RETIRED)
                 and (e.get("injected_sha")
                      or e.get("injected_kind") == ABSENT)]
     base_oid, base_ref = _resolve_base(root, base)
@@ -1095,7 +1119,6 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
             "injected_sha": injected_sha,
             "injected_kind": injected_kind,
             "injected_hint": injected_hint,
-            "state": RESTORED,
             "restored_at": _now(),
             # Set even when absent so a later registration of the same path
             # cannot inherit an earlier injection's reach receipt.
@@ -1120,6 +1143,10 @@ def restore(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
             raise RedproofError(
                 f"restore of {posix!r} did not reproduce the snapshot byte-for-byte "
                 f"after cp — investigate before continuing")
+        # Only now, after the tool's own byte comparison, may the registry say
+        # a later absence is intentional. There is deliberately no check-time
+        # flag for a caller to turn an unexplained missing subject into safety.
+        entry["state"] = _restored_state(root, posix)
         reach = entry.get("reach")
         if reach and reach.get("status") == "pending_control":
             command = reach.get("command")
@@ -1217,7 +1244,7 @@ def forget(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
         elif e.get("state") == RETIRED:
             kept.append(e)
             already_retired += 1
-        elif e.get("state") == RESTORED and e.get("injected_sha"):
+        elif e.get("state") in RESTORED_STATES and e.get("injected_sha"):
             # Deliberately minimal: no expectation_sources, so a retired record
             # can never re-enter the drift population the re-arm exists to clear.
             kept.append({"path": posix, "state": RETIRED,
@@ -1527,19 +1554,19 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             # entry so the two never wear each other's words.
             unknown.append(e)
             continue
-        if st != RESTORED:
+        if st not in RESTORED_STATES:
             armed.append(e)
             continue
         if e.get("injected_kind", BYTES) not in KNOWN_KINDS:
             unknown_kinds.append(e)
             continue
         try:
-            wt = _read_wt(root, e["path"])
+            wt = _restored_subject_bytes(root, e)
             expectation_drift.extend(_expectation_drift(root, e))
         except RedproofError as exc:
             _check_error(identity_scope, f"check: FAULT — {exc}")
             return 2
-        if _sha(wt) == e.get("injected_sha"):
+        if wt is not None and _sha(wt) == e.get("injected_sha"):
             live.append(e)
 
     if require > 0 and len(active) < require:
@@ -1664,7 +1691,7 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
             "this branch only), or rebase the injection out yourself. #710")
         return 1
 
-    restored = [e for e in active if e.get("state") == RESTORED]
+    restored = [e for e in active if e.get("state") in RESTORED_STATES]
     if not restored:
         # Retired-only, and the scan cleared them. Distinct from "restoration
         # clean" (nothing was restored here) and from "no evidence" (bytes WERE
@@ -1681,7 +1708,8 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
     absent = kinds.count(ABSENT)
     listed = "\n".join(
         f"  [{_target_kind(e)}] {e['path']} "
-        f"({'kind absent' if _target_kind(e) == ABSENT else 'sha ' + str(e.get('injected_sha', '?'))[:12]}, "  # noqa: E501
+        f"({'ephemeral subject; ' if e.get('state') == RESTORED_EPHEMERAL else ''}"
+        f"{'kind absent' if _target_kind(e) == ABSENT else 'sha ' + str(e.get('injected_sha', '?'))[:12]}, "  # noqa: E501
         f"hint: {e.get('injected_hint', '?')!r})" for e in restored)
     print(f"check: restoration clean — {len(restored)} injection(s) registered "
           f"(role: {role}); originals are restored and registered injection "

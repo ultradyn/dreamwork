@@ -826,6 +826,106 @@ class TestDeletedInjectionIsRestored:
         assert "future-kind" in err
 
 
+class TestEphemeralRestoredSubject:
+    PATH = "fixture/justfile"
+    ORIGINAL = b"clean fixture\n"
+    INJECTED = b"broken fixture\n"
+
+    def restore_fixture(self, repo: Path) -> Path:
+        target = repo / self.PATH
+        target.parent.mkdir()
+        target.write_bytes(self.ORIGINAL)
+        assert _begin(repo, self.PATH) == 0
+        target.write_bytes(self.INJECTED)
+        command = [
+            sys.executable, "-c",
+            "from pathlib import Path; "
+            "assert Path('fixture/justfile').read_bytes() == "
+            "b'clean fixture\\n', 'ephemeral fixture remained injected'",
+        ]
+        assert _observe(
+            repo, self.PATH, "ephemeral fixture remained injected", command) == 0
+        assert _restore(repo, self.PATH) == 0
+        assert target.read_bytes() == self.ORIGINAL
+        return target
+
+    def test_verified_untracked_subject_may_disappear(self, repo, capsys):
+        """The tool earns this state while the restored fixture still exists."""
+        target = self.restore_fixture(repo)
+        entries, _ = rp._read_registry(repo)
+        assert entries[0]["state"] == rp.RESTORED_EPHEMERAL
+        target.unlink()
+        capsys.readouterr()
+
+        exit_code = _check(repo, require=1)
+        out, err = capsys.readouterr()
+
+        assert exit_code == 0, (
+            "verified ephemeral disappearance must be restoration clean")
+        assert err == ""
+        assert "check: restoration clean" in out
+        assert "1 injection(s) registered" in out
+        assert "[other] fixture/justfile (ephemeral subject;" in out
+
+    def test_recreated_injected_subject_is_refused(self, repo, capsys):
+        """Direction 2: disappearance cannot hide the injected bytes returning."""
+        target = self.restore_fixture(repo)
+        target.unlink()
+        target.write_bytes(self.INJECTED)
+        capsys.readouterr()
+
+        exit_code = _check(repo, require=1)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 1
+        assert "check: REFUSED — hand-off blocked" in err
+        assert "fixture/justfile: working tree STILL MATCHES" in err
+
+    def test_removed_armed_fixture_is_still_unrestored(self, repo, capsys):
+        target = repo / self.PATH
+        target.parent.mkdir()
+        target.write_bytes(self.ORIGINAL)
+        assert _begin(repo, self.PATH) == 0
+        target.write_bytes(self.INJECTED)
+        target.unlink()
+        capsys.readouterr()
+
+        exit_code = _check(repo, require=1)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 1
+        assert "check: REFUSED — 1 of 1 begun-but-unrestored injection(s)" in err
+
+    def test_replacement_with_different_bytes_is_not_the_injection(
+            self, repo, capsys):
+        target = self.restore_fixture(repo)
+        target.unlink()
+        target.write_bytes(b"a later, different fixture\n")
+        capsys.readouterr()
+
+        exit_code = _check(repo, require=1)
+        out, err = capsys.readouterr()
+
+        assert exit_code == 0
+        assert err == ""
+        assert "check: restoration clean" in out
+
+    def test_replacement_symlink_outside_worktree_faults(
+            self, repo, tmp_path, capsys):
+        target = self.restore_fixture(repo)
+        target.unlink()
+        outside = tmp_path / "outside-justfile"
+        outside.write_bytes(b"outside\n")
+        target.symlink_to(outside)
+        capsys.readouterr()
+
+        exit_code = _check(repo, require=1)
+        _, err = capsys.readouterr()
+
+        assert exit_code == 2
+        assert "check: FAULT — path 'fixture/justfile' resolves outside" in err
+
+
 class TestExpectationSourcesArePinned:
     """The subject and its expectation must have separate, stable bytes."""
 
