@@ -106,9 +106,16 @@ that is a legitimate outcome, not a failure.
       python3 dev/redproof.py begin <path> --expectation <expectation-source>
       …sabotage it, run your check, watch it go red…
       python3 dev/redproof.py observe <path> --failure '<discriminating message>' \
-          --command just pytest <test-file> --lane <your-lane>
+          --lane <your-lane> --command just pytest <test-file>
       python3 dev/redproof.py restore <path> --lane <your-lane>
       python3 dev/redproof.py check --require 1 --lane <your-lane>
+
+  **`--lane` MUST come BEFORE `--command`, and this ordering is load-bearing** (`#989`).
+  `--command` is an `argparse.REMAINDER` (`dev/redproof.py:1765`), so it consumes everything after
+  it — including `--lane` (`:1772`), which is then never parsed. The tool resolves a DIFFERENT
+  registry and reports `has no armed injection`: a statement that is TRUE of the registry it
+  examined and FALSE about your lane. This example taught the broken order until `#989` was filed
+  by a lane that hit it live. Until `#989` lands the refusal, the ordering is yours to get right.
 
   **The `begin` line above is the ONE exception, and it is a linter artefact, not a rule:** it omits
   `--lane` because `lint.py` executes that exact line as a standing example and its cleanup does not
