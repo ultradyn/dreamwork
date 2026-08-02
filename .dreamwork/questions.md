@@ -2,6 +2,27 @@
 
 ## Open
 
+- **P2 · 2026-08-03 — which URL should be the canonical task view, `/tasks` or `/tasks2`? (#1013)**
+  A lane fixed #1013 and the review refused it, correctly, because the fix supersedes a decision
+  someone took deliberately. I need one fact from you that I cannot get from the code.
+  - **The symptom is real.** Every task-ref link in the UI carries `href="/tasks?t=N"`
+    (`client/components.js:668`, `client/views.js:1494`), and `routeOf` has a `/tasks2` case but no
+    `/tasks` case, so `/tasks` falls through to the dashboard default. Clicking a task shows the
+    dashboard.
+  - **But `/tasks` was left alone on purpose.** A `test_watch.py` test pinned it with the docstring
+    *"both routes must receive the same app shell; the client chooses the second layout without
+    replacing /tasks"* — a migration-in-progress stance, not an oversight. The lane fixed #1013 by
+    aliasing `/tasks` to the `tasks2` layout and rewrote that test; rewriting the test that records a
+    decision erases the evidence the decision was ever taken, which is why the review blocked it.
+  - **Two coherent answers.** (1) `/tasks` becomes the task view — nicer URL, treats the migration as
+    finished, supersedes the old decision. (2) Retarget the links to `/tasks2?t=N` — preserves the old
+    decision, still fixes the symptom, but leaves a user-facing URL called "tasks2".
+  - **Not blocking.** My default is (1) with the supersession made explicit: the old test rewritten to
+    assert the new rule while naming what it replaced and why, so the record survives. The lane is
+    proceeding on that; overturning it later is cheap.
+  - **What I actually need:** is `tasks2` finished enough to own `/tasks`? That is the only part the
+    code cannot tell me.
+
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
   2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
   then, nothing blocks and nothing is delivered by hand.
