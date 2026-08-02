@@ -4096,3 +4096,28 @@ new insight. Both are the existing insight, moved out of prose and into somethin
 
 **The tell:** *when the same lesson catches you twice in an hour, stop writing it down — the next
 edit belongs in a check, not in this file.*
+
+**A guard that refuses is usually asking for a truer referent, not for an override.** Twice tonight
+a tool blocked a landing, both times because work could be discarded unseen, and both times the
+override was right there and wrong.
+
+- **`land_lane`'s red-proof history refused #977**: *"read 10 blob(s), 5 holding a recorded
+  injection"*. The lane had obeyed the rule to keep committing while sabotaged, so its history
+  carried the defect, and merging would have made it reachable from master forever. #710's remedy is
+  the coordinator squashing that one branch — so: tag the tip, soft-reset to master, recommit the net
+  diff, and **prove `git diff <tag> <branch>` is EMPTY before re-gating**. Same tree, clean history;
+  the second gate read *"0 holding a recorded injection"*.
+- **`reap.py` refused a stray worktree** on four unmerged commits. `--force` exists and would have
+  printed everything it discarded. But those commits were already preserved under the pre-squash
+  tag, so the honest move was `--base <that-tag>` — and the tool then answered its own question:
+  *"unmerged-commits=0"*, and removed it.
+
+**The distinction is who does the looking.** `--force` after an inspection asserts *I checked and
+it is safe*; re-pointing the base lets the **tool** check and say so. Both produce a removal. Only
+one produces evidence — and the assertion reads exactly as strong as the evidence does, which is
+this repo's oldest trap wearing operational clothes.
+
+**The generalisation worth carrying:** when a refusal names a referent (`master`, `HEAD`, a base, a
+population), ask whether that referent is the right one for *this* act before asking whether the
+refusal is wrong. A refusal computed against the wrong referent is not a false positive; it is a
+correct answer to a question nobody meant to ask.
