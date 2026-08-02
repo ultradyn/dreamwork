@@ -12,6 +12,7 @@
 ## Answered
 
 - **P1 · 2026-08-02 21:20 — #859: the info you asked for, and your "pip separately" remark already answers half of it**
+  → **resolved (2026-08-02 21:36):** retitled to "convert popouts/PiP to React as a separable surface" and kept in goal #1 — his *"that live behavior is going to need to be implemented anyway"* refuted my caution, since #74/#459/Document-PiP work is owed whenever popouts convert. His *"plan it out and add it all as tasks"* dispatched as a full planning pass.
   You asked for more info on `#859` before ruling. Short version: **you have already half-answered it
   in the same message.**
   **`#859` was originally your own idea** (ord 160, from `/chat`): *"Are the popout windows a full
@@ -47,9 +48,9 @@
     going to need to be implemented anyway, right? if there's much left
     to do for the react port, plan it out and add it all as tasks to the
     db.
-  → **resolved (2026-08-02 21:36):** retitled to "convert popouts/PiP to React as a separable surface" and kept in goal #1 — his *"that live behavior is going to need to be implemented anyway"* refuted my caution, since #74/#459/Document-PiP work is owed whenever popouts convert. His *"plan it out and add it all as tasks"* dispatched as a full planning pass.
 
 - **P1 · 2026-08-02 20:30 — goal #1 currently renders 1-of-5 done. Should it narrow to just #630?**
+  → **resolved (2026-08-02 21:36):** narrowing approved; blocked on the removal verb (#1037 — lane finished, in review). His React question answered by survey: 2 of 12 routes native; surface-flip track filed as #1044-#1053 and linked to goal #1.
   Your `#1016` dogfooding lane read all **197 open task records** and proposed **zero new links** to
   goal #1. Its stricter finding was the reverse: only `#630` of the five current members still
   satisfies "part of delivering the React migration". It judged the other four to be something else —
@@ -74,7 +75,6 @@
     but eventually we'll need to do the main pages in one big move so
     that it handles all url paths / routes that we need to handle). #859
     i need more info on.
-  → **resolved (2026-08-02 21:36):** narrowing approved; blocked on the removal verb (#1037 — lane finished, in review). His React question answered by survey: 2 of 12 routes native; surface-flip track filed as #1044-#1053 and linked to goal #1.
 
 
 - **P2 · 2026-08-02 19:10 — #631: does the live session-log view belong to the React migration goal, or may it land on the current client first?**
