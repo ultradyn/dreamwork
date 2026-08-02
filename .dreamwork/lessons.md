@@ -4365,3 +4365,50 @@ Worth noting how nearly the right answer was reached for the wrong reason: the m
 alone the one-shot rivals tie with it. Only adding the standing-signal goal separated them.
 **A right answer reached by an insufficient argument is not yet a decided question**, and it will not
 survive the first person who argues the tie the other way.
+
+## A red-proof binds a check to a defect, never a check to the human's experience (2026-08-02, #1029/#1030, mine, measured)
+
+`glm-1029goaltree` fixed the bug he reported tonight — his goal tree vanishing when one node had a
+NULL `goal_state` — and its verification was, by every rule this repo has, excellent. The injection
+was real. The discriminating failure was real (`'unavailable' != 'ok'`). Restoration was clean. The
+direction-2 candidates were enumerated and each closed with a specific assertion, including a second
+test that patches `GoalRepository.rank` rather than `state`, so the isolation is not coupled to NULL
+`goal_state` in particular. An adversarial `@cx-reviewer` independently re-ran
+`dev/redproof.py check --require 2` rather than trusting the report, and confirmed `caught 2 of 2`,
+restoration clean, zero injected states left in the tree or the branch's commits.
+
+**And the human still could not see his goal tree.**
+
+`goal_tree_payload` now returns `health: "ok"` with three nodes, one carrying `state_error`. Every
+word of that is true. But the degraded node OMITS `blockers`, and `dev/build/src/goals.js:169`
+evaluates `node.blockers.length` for every healthy node unconditionally. So the backend succeeds and
+the FRONTEND throws a `TypeError`. `client/views.js:246/260` has the same break on the current-goal
+path, rendering an undefined state instead of a fault. The failure moved down one layer. The
+outcome — no goal tree — did not move at all.
+
+**The seam is the thing, and red-proof does not ask about it.** A red-proof answers *"does this
+check catch this defect?"* It never asks *"is this check bound to the layer where the human
+experiences the failure?"* Both questions have to be answered and only one of them has machinery.
+Every check here bound to the payload, the payload is not the surface, and so an honest,
+discriminating, doubly-red-proofed test suite certified a fix that changed nothing the human would
+notice. This is the strongest form of the pattern this session kept finding: **a true statement read
+as a stronger claim than it supports** — here, "the tree renders" meaning the dict has three keys.
+
+**The false analogy was the coordinator's, and that is the transmissible part.** The brief told the
+lane to mark the degraded node *"exactly as `progress_error` already does at watch.py:7122"*. The
+reviewer found what the brief had not: *"The existing `progress_error` precedent is not equivalent:
+those nodes retain the fields the renderers dereference."* `progress_error` is ADDITIVE — it adds an
+error field and keeps everything a renderer touches. `state_error` was SUBTRACTIVE. The two look
+identical at the level a brief describes them and differ in exactly the respect that decided the
+outcome. The lane followed the precedent it was handed, correctly.
+
+So: a precedent cited in a brief is a premise like any other, and "follow the existing convention"
+hides its own assumption — that the new case is like the old one in the way that matters. Of the
+seven false premises the coordinator authored tonight, six were wrong facts a command could have
+checked (`#1028` now carries two such checks). This one was a right-looking analogy, which no
+command can check, and it was the most expensive.
+
+The practical rule, for briefs and for reviews: **name the seam the check must bind to, not just the
+defect it must catch.** When a fix spans a backend and a renderer, a test at the backend seam is
+half a fix and reads like a whole one. And when citing a precedent, state the property being
+borrowed — "additive error field, all other fields retained" — rather than the precedent's name.
