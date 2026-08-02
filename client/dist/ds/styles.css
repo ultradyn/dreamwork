@@ -821,14 +821,15 @@
   a { color:var(--accent); text-decoration:none; }
   a:hover { text-decoration:underline; }
   /* #1007 — the #282 task-reference hover, restated in the page's own
-     vocabulary. components.js injects a self-contained <style> for the panel
-     so it still reads inside a review iframe, where THIS sheet is absent; its
-     values are literals (#171923, rgba(140,150,190,.45), 12px, system-ui)
-     that match nothing in :root. Wherever this sheet is loaded it is the
-     authority (conventions.md: "style.css is the sole source for token values
-     and component CSS"), so these rules re-say the panel in tokens. They are
-     id-qualified because that block is appended to <head> AFTER this file, so
-     a class-level rule loses the source-order tie — measured, not assumed.
+     vocabulary. components.js injects a self-contained stylesheet for the
+     panel so it still reads inside a review iframe, where THIS sheet is
+     absent; its values are literals (#171923, rgba(140,150,190,.45), 12px,
+     system-ui) that match nothing in :root. Wherever this sheet is loaded it
+     is the authority (conventions.md: "style.css is the sole source for token
+     values and component CSS"), so these rules re-say the panel in tokens.
+     They are id-qualified because that block is appended to the document head
+     AFTER this file, so a class-level rule loses the source-order tie —
+     measured, not assumed.
      Nothing here is a new idiom. The surface is the page's floating-overlay
      idiom, already stated twice by #cmdpalette and .cmdmenu: the page's own
      background just short of opaque over a blur, hairline --border, 8px,
