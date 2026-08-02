@@ -80,10 +80,15 @@ def test_the_task_ref_hover_is_stated_in_tokens_and_outranks_its_injected_block(
     components = (CLIENT / "components.js").read_text(encoding="utf-8")
 
     injected = re.search(r"style\.textContent\s*=\s*`(.*?)`;", components, re.S)
-    assert injected and ".taskpreview" in injected.group(1), (
-        "client/components.js no longer injects a .taskpreview stylesheet — "
-        "the id-qualification below is answering a question nobody asks, and "
-        "this check cannot tell you whether the panel still matches the site"
+    # ...and it must be the rule that STATES the surface: a reduced-motion
+    # `.taskpreview{transition:none}` also satisfies "a class-level rule
+    # exists" while saying nothing about the appearance being matched.
+    assert injected and [b for b in _rules(injected.group(1), lambda s: s == ".taskpreview")
+                         if "background" in b], (
+        "client/components.js no longer injects a CLASS-specificity "
+        "`.taskpreview` rule declaring a background — the id-qualification "
+        "below is answering a question nobody asks, and this check cannot "
+        "tell you whether the panel still matches the site"
     )
 
     ours = _rules(css, lambda s: "task-ref-preview" in s or "taskref" in s)
@@ -97,13 +102,22 @@ def test_the_task_ref_hover_is_stated_in_tokens_and_outranks_its_injected_block(
         "sheet, so it loses the source-order tie and styles nothing"
     )
 
-    source = _rules(css, lambda s: s == "#cmdpalette")
+    # The surface being matched, and it must be the rule that STATES the
+    # surface: #cmdpalette also appears in a reduced-motion selector list that
+    # declares only `transition:none`, and reading that one instead would
+    # silently empty the permitted-literal set and blame the hover for it.
+    source = [b for b in _rules(css, lambda s: s == "#cmdpalette") if "box-shadow" in b]
     assert source, (
-        "#cmdpalette is gone from client/style.css — it is one of the two "
-        "statements of the floating-overlay idiom the hover was matched to, "
-        "so the literals permitted below can no longer be derived"
+        "no #cmdpalette rule in client/style.css declares a box-shadow — it is "
+        "one of the two statements of the floating-overlay idiom the hover was "
+        "matched to, so nothing below can be derived from it"
     )
     allowed = set(_COLOUR_LITERAL.findall(" ".join(source)))
+    assert allowed, (
+        "#cmdpalette states no colour literal, so the permitted set is empty "
+        "and the loop below would reject every literal the hover legitimately "
+        "shares with it — a refusal about the wrong file"
+    )
     declared = set(re.findall(r"(--[a-z0-9-]+)\s*:", " ".join(_rules(css, lambda s: s == ":root"))))
     assert declared, ":root declares no custom property; every var() below would be vacuous"
 
