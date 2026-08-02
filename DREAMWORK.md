@@ -824,6 +824,37 @@ cleared. Recorded so the near-term focus is not re-derived from scratch next tim
   task does carry one, the lane must be told explicitly or it will helpfully
   build the thing. The generalisation error is the lesson: an instruction
   attached to one task is scoped to that task until he says otherwise.
+- **Project goals are cited as `PG-<num>`, never as `#<num>`** (human-set
+  2026-08-02, `#1042`): he saw *"goal #1"* in a question render as a link to
+  task 1 and asked for a distinct symbol — *"like PG&lt;num&gt; or PG-&lt;num&gt;
+  whatever works best"* — with the constraint that it must not collide with the
+  `G1` labels the `use-igcs` skill uses for decision-local goals. I chose the
+  hyphenated form under that latitude: `\bPG-\d+\b` is an unambiguous grep and
+  lexer rule where `PG\d+` collides with ordinary prose (`pg1`, `pg. 1`), and
+  both notations can now coexist in one sentence — *"`PG-1` is blocked on
+  `#630`"* was previously unsayable. **Adopt going forward; do not retrofit
+  history** — rewriting past notes would churn hundreds of records and misquote
+  what was actually said. He also flagged, and deferred, that `#<num>` cannot
+  distinguish our tasks from GitHub issues (`#1043`): *"Not a problem for us
+  right now, but … longer term."* So pick prefixes as an extensible **pattern**,
+  not as one-offs.
+- **The React migration converts surface by surface; only the router swap is
+  atomic** (human-set 2026-08-02, `#1044`-`#1053`): he asked *"we should at
+  least have tasks to cover converting each html surface (like we can do pip
+  separately to the main pages, but eventually we'll need to do the main pages
+  in one big move so that it handles all url paths / routes that we need to
+  handle)."* Measured against the code, his end state is right and the path is
+  looser than he assumed: `routeOf` already branches on `isNativeRoute` and has
+  run a mixed React/legacy state since `#751`, so surfaces flip **individually**
+  (`/research` and `/goals` each landed alone). The genuinely atomic commit is
+  only the last one — replacing `routeOf` and deleting
+  `client/{router,views,components}.js`, ~8,637 lines loaded as one blob, which
+  can land only when zero legacy views remain. Each flip follows `#751`: write
+  the native component, register it, **delete the legacy builder in the same
+  commit** — deletion, not a comparison check, is the anti-divergence mechanism
+  `#591` demands. His PiP instinct holds: `/reviewraw` and `/researchraw` are
+  already standalone outside the client; the `/file` popout is not (it loads the
+  app shell) and converts with `/file`.
 
 ## Plugins
 
