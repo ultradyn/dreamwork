@@ -530,6 +530,21 @@ class TestWriteVerb:
     production seam is structurally incapable of failing on it (the CLAUDE.md
     born-hollow rule)."""
 
+    @pytest.fixture(autouse=True)
+    def _clean_fixture_lane_scratch(self, repo):
+        """The subprocess resolves to the REAL ~/.cache root keyed on this
+        fixture's repo (repo_key=origin, lane_key=master), which is SHARED
+        across every TestWriteVerb invocation. Files a prior test wrote trip
+        the overwrite guard, so a second run of the suite reddens on its own
+        residue. Clean the fixture's lane dir before each test so each measures
+        its own call, not a leftover. Safe: this is under origin/master/, never
+        the real lane's ud-dreamwork/<branch>/ evidence root."""
+        import shutil
+        d = ls.lane_scratch_dir(repo, create=False)
+        if d.exists():
+            shutil.rmtree(d)
+        yield
+
     @staticmethod
     def _run(repo: Path, name: str, payload: bytes, *extra: str) -> subprocess.CompletedProcess:
         return subprocess.run(
