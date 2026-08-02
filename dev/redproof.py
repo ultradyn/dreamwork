@@ -430,13 +430,27 @@ def _read_registry_at(rp: Path) -> tuple[list[dict], str]:
       "empty"    — registry parsed to [] (calm zero; nothing live)
       "present"  — registry held ≥1 entry
     A present-but-unparseable registry raises RedproofError (#136 fault).
+
+    An UNREADABLE registry is NOT absence (#1038 Finding 1): ``Path.exists()``
+    swallows ``OSError`` and returns False when the path's parent is
+    unreachable (e.g. ``chmod 000``), so a present-but-inaccessible registry
+    was silently reported as ``"absent"`` — the calm zero — and false-greened
+    at ``--require 0``. ``#136`` keeps three facts distinct (nothing-required,
+    nothing-found, could-not-be-read); "I could not determine whether this
+    exists" is the third and must fault. So the read is attempted directly and
+    only ``FileNotFoundError`` is absence — any other ``OSError`` is
+    inaccessibility, raised as a fault rather than collapsed into the calm zero.
     """
-    if not rp.exists():
-        return [], "absent"
     try:
         text = rp.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [], "absent"
     except OSError as exc:
-        raise RedproofError(f"registry exists but is unreadable: {rp} ({exc})") from exc
+        raise RedproofError(
+            f"registry could not be read — the path is not confirmed absent "
+            f"(it may be present but unreachable, e.g. a permission-denied "
+            f"parent dir, which ``Path.exists`` reports as missing): "
+            f"{rp} ({exc})") from exc
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -1287,6 +1301,20 @@ def _check_error(scope: str, message: str) -> None:
     sys.stderr.write(message.rstrip("\n") + "\n" + scope + "\n")
 
 
+def _reach_examined_fragment(examined: int, total: int) -> str:
+    """The evidence-artifact denominator shared by the calm and populated paths.
+
+    Extracted (#1038 Finding 2) so both paths use ONE formatter, tested
+    independently with a non-empty population. The calm path's population is
+    structurally empty (it runs only when no registry was located), so its
+    own assertion ("examined 0 for 0") cannot distinguish a real computation
+    from a hardcoded zero — the shared-function test with (1, 1) is the
+    discriminating guard that a literal ``0`` would fail.
+    """
+    return (f"examined {examined} evidence artifact(s) for {total} "
+            f"registered injection(s)")
+
+
 def _reach_report(restored: list[dict]) -> tuple[str, list[str], bool]:
     """Classify causal reach receipts without collapsing absent into caught."""
     caught = not_caught = not_checked = examined = 0
@@ -1333,8 +1361,8 @@ def _reach_report(restored: list[dict]) -> tuple[str, list[str], bool]:
                 f"  {path}: NOT CHECKED — observation has no restored causal control "
                 f"(status {status!r}); evidence: {evidence}")
     total = len(restored)
-    prefix = (f"caught {caught} of {total} registered injection(s); examined "
-              f"{examined} evidence artifact(s) for {total} registered injection(s)")
+    prefix = (f"caught {caught} of {total} registered injection(s); "
+              f"{_reach_examined_fragment(examined, total)}")
     if total and caught == total:
         return f"red-proof reach: OK — {prefix}.", details, True
     counts = f"{not_caught} not caught, {not_checked} not checked"
@@ -1436,26 +1464,44 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
 
     identity_dirs = len(_ls.lane_identity_dirs(cwd)) if coordinator_mode else None
 
-    if coordinator_mode and not entries and registries_found == 0:
-        # The blind case (#895): the coordinator located NO registry for this
-        # worktree. Three facts, three different lines (#955) — do not collapse
-        # any two, in either direction:
+    if not entries and registries_found == 0:
+        # The blind case (#895/#1038): NO registry could be located. The verdict
+        # is bound to --require (the diff-derived fact land_lane computes and
+        # passes in), NEVER to the registry's absence — "treat a missing
+        # registry as OK" would let a lane that SHOULD have injected pass by
+        # simply never creating one, converting the loop's central verification
+        # into an opt-out (#1038).
         #
-        # (1) NO REGISTRY BECAUSE NONE WAS WARRANTED. Nothing was required
-        #     (--require 0) AND no launch identity ever ran here (0 identity
-        #     dirs) AND nothing was registered. A doc-only lane owes no
-        #     red-proof, so an absent registry is the EXPECTED state, not a
-        #     fault. It must still not read as an all-clear (#895/#932): it is
-        #     NOT a verification of restoration (nothing was registered to
-        #     restore) and NOT a clean sweep of a population — it audited
-        #     nothing, and that is stated (#868).
-        # (2) NO REGISTRY THAT COULD NOT BE FOUND. Either an injection WAS
-        #     required and no registry could be located (the proof cannot be
-        #     verified — #895's invisible-injection case), OR a launch identity
-        #     ran here but left no readable registry (one this audit cannot
-        #     reach might exist). Still FAULT (#671): the moment an injection
-        #     was required, or a lane provably ran, an absent registry is a
-        #     question, not an answer.
+        # This block runs in BOTH modes (#1038 Finding 3): coordinator (which
+        # searches every reachable identity dir plus legacy) and named-lane
+        # (`--lane` / `own_token`, which checks one exact path). The MESSAGES
+        # differ because the populations differ — the coordinator's absence is
+        # uncertainty ("a registry it cannot reach might exist"), while a named
+        # lane's absence is certain ("that identity registered nothing"). The
+        # VERDICT must not: a required injection with no verifiable registry is
+        # a fault either way, and two paths answering the same facts differently
+        # is how the next version of this bug is born. Without this, `--lane`
+        # reported the same absent-registry facts as REFUSED (exit 1) at
+        # require>0 where the coordinator FAULTs (exit 2).
+        #
+        # Three facts that must not collapse into one (#136/#868):
+        #
+        # (1) NOTHING WAS REQUIRED (--require 0). No injection was owed, so an
+        #     absent registry is the EXPECTED state, not a fault — and this
+        #     holds whether or not a launch identity ran here. A doc-only lane
+        #     writes lane-scratch evidence (creating its identity dir) without
+        #     ever calling begin, so identity_dirs > 0 only means the lane ran,
+        #     NOT that a registry with an armed injection is hiding: an armed
+        #     entry lives INSIDE registry.json, and this block's precondition is
+        #     that NO registry.json exists anywhere this audit can reach. So no
+        #     armed entry can be on disk under any discoverable identity. This
+        #     pass must still not read as an all-clear (#895/#932): it is NOT a
+        #     verification of restoration and NOT a clean sweep of a population.
+        # (2) NOTHING WAS FOUND (--require > 0). An injection WAS required and
+        #     no registry could be located — the proof cannot be verified
+        #     (#895's invisible-injection case). Still FAULT (#671): the moment
+        #     an injection was required, an absent registry is a question, not
+        #     an answer.
         # (3) Registry found and clean is the ordinary green reached below.
         #
         # --require governs the MINIMUM count, never the VALIDITY of what is
@@ -1463,20 +1509,68 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
         # armed or unknown-state entry (which lives IN a registry) can never
         # reach the pass below — it is refused on the normal path regardless of
         # --require. Relaxing (1) does not relax that (#955).
-        if require == 0 and identity_dirs == 0:
-            print(
-                "check: no injection required and none registered — 0 required, "
-                f"audited 0 registry/ies across 0 launch-identity dir(s) "
-                f"(role: {role}). A lane that owes no red-proof registers "
-                f"nothing, so an absent registry is the expected state here, "
-                f"NOT a verification of restoration (nothing was registered to "
-                f"restore) and NOT an all-clear over a population this audit "
-                f"did not sweep. If this lane ran a red-proof under a launch "
-                f"identity, pass `--lane <DREAMWORK_LANE_ID>` or inspect its "
-                f"scratch by hand.")
+        if require == 0:
+            # Finding 2: the evidence-artifact denominator. With no registry
+            # there are no registered injections, so nothing was examined.
+            # The denominator is STRUCTURALLY zero: this block's precondition
+            # is ``not entries`` (no registry was located), so an empty
+            # population cannot produce anything but zero. Not a ``sum()`` over
+            # reach dicts — that implies the count could vary when it cannot,
+            # a hardcoded zero wearing a ``sum()`` (#1038 Finding 2). Stated as
+            # ``len(entries)`` so a reader sees WHY it is zero (no entries),
+            # not a computation that pretends to inspect reach dicts it does
+            # not have. The FORMATTER (``_reach_examined_fragment``) is shared
+            # with ``_reach_report`` and tested independently with non-empty
+            # input — that test is the discriminating guard the calm path's
+            # own "examined 0 for 0" assertion cannot be.
+            evidence_examined = len(entries)  # 0: no registry → no entries
+            reach_line = (
+                f"red-proof reach: "
+                f"{_reach_examined_fragment(evidence_examined, len(entries))}; "
+                f"--require {require} means 0 were owed, so zero-examined "
+                f"reflects the zero registered (nothing to examine), not a "
+                f"probe that ran over nothing or skipped.")
+            if coordinator_mode:
+                ran_note = ""
+                if identity_dirs:
+                    # State that the lane ran but registered nothing, so a
+                    # reader cannot take the absent registry for "the lane
+                    # never ran" nor for "a registry this audit failed to
+                    # read" — it audited the identity dirs, found no registry
+                    # in any, and none was owed.
+                    ran_note = (
+                        f" A launch identity ran here ({identity_dirs} identity "
+                        f"dir(s) audited) and registered no injection — the "
+                        f"expected state for a lane that owed no red-proof, not "
+                        f"a registry this audit failed to read (it found no "
+                        f"registry.json in any of those dirs, so no armed entry "
+                        f"can be on disk under them).")
+                print(
+                    "check: no injection required and none registered — 0 "
+                    f"required, audited 0 registry/ies across {identity_dirs} "
+                    f"launch-identity dir(s) (role: {role}). A lane that owes "
+                    f"no red-proof registers nothing, so an absent registry is "
+                    f"the expected state here{ran_note} — NOT a verification of "
+                    f"restoration (nothing was registered to restore) and NOT "
+                    f"an all-clear over a population this audit did not sweep. "
+                    f"If this lane ran a red-proof under a launch identity, "
+                    f"pass `--lane <DREAMWORK_LANE_ID>` or inspect its scratch "
+                    f"by hand.")
+            else:
+                # Named-lane calm: one exact path was audited and found absent.
+                print(
+                    "check: no injection required and none registered — 0 "
+                    f"required, the named lane's registry is absent (role: "
+                    f"{role}). Nothing was owed (--require 0), so an absent "
+                    f"registry is the expected state — NOT a verification of "
+                    f"restoration (nothing was registered to restore) and NOT "
+                    f"an all-clear.")
+            print(reach_line)
             print(identity_scope)
             return 0
-        if require > 0:
+        # require > 0: a required injection cannot be verified when no registry
+        # can be located. Stays FAULT (#671/#895) in BOTH modes (#1038 F3).
+        if coordinator_mode:
             _check_error(identity_scope,
                 f"check: FAULT — {require} injection(s) were required "
                 f"(--require) but no redproof registry could be located for "
@@ -1488,17 +1582,12 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                 f"`--lane <DREAMWORK_LANE_ID>` or inspect its scratch by "
                 f"hand.")
         else:
-            # require == 0 but a launch identity ran and left no registry:
-            # the lane provably ran, so an absent registry is "could not
-            # find", not "none was warranted". Stay fail-closed (#895/#671).
             _check_error(identity_scope,
-                f"check: FAULT — found {identity_dirs} launch-identity dir(s) "
-                f"but no redproof registry in any of them (role: {role}); 0 "
-                f"injections were required, yet a lane provably ran here and "
-                f"this audit could read no injection registry. This is NOT an "
-                f"all-clear: a registry this audit cannot reach might exist, "
-                f"and an armed injection it held would not be seen. If one was "
-                f"expected, pass `--lane <DREAMWORK_LANE_ID>`.")
+                f"check: FAULT — {require} injection(s) were required "
+                f"(--require) but no redproof registry could be located for "
+                f"the named lane (role: {role}). A required red-proof must "
+                f"leave a registry this audit can read; its absence means the "
+                f"proof cannot be verified, not that it passed.")
         return 2
 
     # RETIRED records are history-scan evidence and nothing else (#942), so
@@ -1535,8 +1624,8 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                   f"restoration was not evaluated; production reach was not "
                   f"evaluated.")
             print("red-proof reach: DID NOT CHECK — caught 0 of 0 registered "
-                  "injection(s); examined 0 evidence artifact(s) for 0 registered "
-                  "injection(s); population is zero, not a clean reach sweep.")
+                  f"injection(s); {_reach_examined_fragment(0, 0)}; "
+                  "population is zero, not a clean reach sweep.")
             print(identity_scope)
             return 0
         # Retired-only: there is no restoration to certify, but there ARE

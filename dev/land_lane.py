@@ -1150,14 +1150,50 @@ def land(
         # was OWED, never about whether the audit could run. But #940: say
         # which of the two this is, because a doc-only branch that owed nothing
         # and a branch hiding an armed injection print the same exit code.
+        #
+        # #1038: the note must be CAUSE-AWARE. Exit 2 at --require 0 no longer
+        # means "no registry found" (that case exits 0 now) — it means the
+        # registry could not be read (permissions) or parsed (malformed JSON),
+        # or some other audit fault. The old note asserted "can locate no
+        # registry" / "#949" for every exit-2-at-require-0 cause, which is
+        # false for the unreadable case (#1038 Finding 1): it sends the
+        # operator looking for a missing file when the cause is a permission
+        # bit. Round 3 fixed "absent" → "exists," which moved the overclaim one
+        # notch: "exists" is equally false when the file is not there. #136's
+        # three states are absent / present / could-not-determine, and the note
+        # must say the third — "not confirmed" — rather than picking one.
+        # Derive the cause from redproof's own stderr so the note can never
+        # assert something the audit did not report.
+        #
+        # The cause→note coupling is a PROSE protocol (#1038 P2): land_lane
+        # matches substrings of redproof's stderr. A wording rename in
+        # redproof silently degrades to the generic cause. The protection is
+        # test_land_lane.py::test_unreadable_registry_at_require_zero_names_its_cause_not_absence,
+        # which asserts "permission issue" in the refuse line — that clause
+        # lives ONLY in the cause-aware branch, so a broken match fails the
+        # test. This is named here so the coupling is explicit, not incidental.
         note = ""
         if required == 0 and redproof.returncode == 2:
+            fault = redproof.stderr
+            if "could not be read" in fault:
+                cause = (
+                    "the registry could not be read — its existence is not "
+                    "confirmed (it may be present but unreachable, or absent "
+                    "under an unreadable parent); likely a permission issue "
+                    "(e.g. a chmod 000 parent dir)")
+            elif "present but unparseable" in fault:
+                cause = (
+                    "the registry is present but malformed JSON — inspect "
+                    "and repair it")
+            else:
+                cause = (
+                    "see dev/redproof.py's output above for the specific "
+                    "cause")
             note = (
-                "; NOTE this FAULT is NOT the --require rule: 0 injections were "
-                "owed, and dev/redproof.py faults independently of --require when "
-                "it can locate no registry for this worktree. That fault is #949's "
-                "unfixed second half and lives in dev/redproof.py, not here"
-            )
+                "; NOTE this FAULT is NOT the --require rule: 0 injections "
+                "were owed, and dev/redproof.py faulted during its own "
+                f"audit because {cause}, not because a required injection "
+                "is missing")
         return _refuse(
             "red-proof-history",
             f"dev/redproof.py check refused or faulted with exit {redproof.returncode}"
