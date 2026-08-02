@@ -4774,21 +4774,58 @@ def _added_dev_task_citations(diff: str) -> list[tuple[str, int, int]]:
     return found
 
 
-def _resolvable_task_ids(dw: Path) -> tuple[set[int], str]:
-    """Known task ids and the ledger source used, through existing readers."""
+def _deprecated_task_ids(dw: Path) -> set[int]:
+    """Ids in ``tasks.md.deprecated`` — the union of BOTH ``parse_ledger`` halves.
+
+    The frozen history holds ids that left the live store (landed, archived).
+    ``watch.parse_ledger`` yields TWO collections — ``dopen`` and ``dlanded`` —
+    and BOTH must be unioned: ``dlanded`` is the larger half (the landed ids),
+    and a half-union taking only ``dopen`` passes the #199 case while leaving
+    every LANDED id unresolvable (#1094). Measured: dopen=120, dlanded=277,
+    union=397 — a ``dopen``-only fix would miss 277 ids. Returns ints to match
+    the live half's shape.
+    """
+    dep = dw / "tasks.md.deprecated"
+    if not dep.is_file():
+        return set()
+    try:
+        import watch
+        dopen, dlanded = watch.parse_ledger(dep.read_text(encoding="utf-8"))
+    except Exception:
+        return set()
+    return {int(x) for x in dopen | dlanded}
+
+
+def _resolvable_task_ids(dw: Path) -> tuple[set[int], set[int], str]:
+    """Live ids, frozen-history ids, and the live source path.
+
+    Returns ``(live_ids, frozen_ids, source)`` so the caller distinguishes
+    three states — resolves-live, resolves-frozen, resolves-nowhere. Only the
+    third is an ERROR: a citation into frozen history is valid, and the
+    previous live-only resolution reported it as broken (#1094). ``frozen_ids``
+    is empty when the deprecated ledger is absent or unreadable; the check then
+    resolves against the live store alone, matching its pre-#1094 behaviour.
+    """
     local = store_path(dw)
     shared = shared_store_for_worktree(dw)
+    live: set[int] = set()
+    source = str(dw / "tasks.md")
     for path in (local, shared):
         if path is not None and path.is_file():
-            return ({int(record["id"]) for record in store_records(path.parent)},
-                    str(path))
-    tasks = dw / "tasks.md"
-    try:
-        text = tasks.read_text(encoding="utf-8")
-    except OSError:
-        return set(), str(tasks)
-    return ({int(task_id) for ids, _ in ledger_entries(text) for task_id in ids},
-            str(tasks))
+            live = {int(record["id"]) for record in store_records(path.parent)}
+            source = str(path)
+            break
+    else:
+        tasks = dw / "tasks.md"
+        try:
+            text = tasks.read_text(encoding="utf-8")
+        except OSError:
+            return set(), set(), str(tasks)
+        live = {int(task_id) for ids, _ in ledger_entries(text)
+                for task_id in ids}
+        source = str(tasks)
+    frozen = _deprecated_task_ids(dw)
+    return live, frozen, source
 
 
 def check_dev_task_citations(
@@ -4833,8 +4870,11 @@ def check_dev_task_citations(
         return
 
     if known_ids is None:
-        known_ids, source = _resolvable_task_ids(dw)
+        live_ids, frozen_ids, source = _resolvable_task_ids(dw)
+        known_ids = live_ids | frozen_ids
     else:
+        live_ids = known_ids
+        frozen_ids = set()
         source = "supplied test ledger"
     missing = sorted((path, line, task_id) for path, line, task_id in hits
                      if task_id not in known_ids)
@@ -4843,11 +4883,17 @@ def check_dev_task_citations(
                 f"{path}:{line} cites unresolved task #{task_id}; file the task "
                 "or remove the numeric attribution")
     if not missing:
-        rep.add(OK, "dev task citations",
-                f"{len(hits)} newly added citation occurrence(s) resolve to "
-                f"{len({task_id for _, _, task_id in hits})} task(s) across "
-                f"{len(files)} dev/*.py file(s) via {source}; resolution only — "
-                "task state and subject relevance are NOT verified")
+        cited_ids = {task_id for _, _, task_id in hits}
+        detail = (f"{len(hits)} newly added citation occurrence(s) resolve to "
+                  f"{len(cited_ids)} task(s) across "
+                  f"{len(files)} dev/*.py file(s) via {source}")
+        frozen_resolved = cited_ids & frozen_ids - live_ids
+        if frozen_resolved:
+            detail += (f"; {len(frozen_resolved)} resolved from frozen "
+                       "history (tasks.md.deprecated)")
+        detail += ("; resolution only — "
+                   "task state and subject relevance are NOT verified")
+        rep.add(OK, "dev task citations", detail)
 
 
 # ── brief hand-off obligation (#398) ──────────────────────────────────
