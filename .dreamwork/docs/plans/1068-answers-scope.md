@@ -67,16 +67,36 @@ the defect this doc exists to correct.
 
 ### What the four named symbols actually are
 
-| Symbol | Exists in `client/`? | Used by `/answers`? |
-|---|---|---|
-| `QaCard` | Only in the React design-system artifacts `client/dist/ds/` (e.g. `QaCard.d.ts:16`), **not** in legacy `views.js`/`router.js` | No |
-| `QaCompose` | **No match anywhere in `client/`** — a phantom name | No |
-| `FollowThread` | **No match anywhere in `client/`** — a phantom name | No |
-| `flipDock` | Yes — defined `client/router.js:4686`, called `client/views.js:2267,2268,2327` | No (those calls are in `sendAnswer`/`sendComment`, a different surface) |
+This repo uses a two-layer naming convention, measurable at
+`dev/build/wrapper-exports.js:39-45`:
 
-So `#1050` named two symbols that do not exist and two that exist but belong to a
-different surface. **This is why QaCard FLIP work is excluded from the
-`/answers` flip** (see *Exclusions*).
+```
+export const QaCard = ({ q, k, ctx = {} }) => React.createElement(HOST, { ... });
+QaCard.displayName = 'QaCard';
+QaCard.dwBuilder   = 'qaCard';
+```
+
+**PascalCase is the React wrapper** (authored in `dev/build/`) and
+**camelCase is its string-template builder** (authored in `client/`). `QaCard`
+itself returns 0 hits in `client/` source for exactly this reason — it delegates
+to the `qaCard` builder (`client/components.js:1130`) — and nobody reads that
+absence as phantom. With that convention, the symbols resolve as:
+
+| `#1050` names (wrapper) | Builder in `client/`? | Wrapper in `dev/build/`? | Used by `/answers`? |
+|---|---|---|---|
+| `QaCard` | `qaCard` — `components.js:1130` | `wrapper-exports.js:39` | No |
+| `QaCompose` | `qaCompose` — `components.js:888` | not yet written — that is `#1064` | No |
+| `FollowThread` | `followThread` — `components.js:786` | not yet written — that is `#1063` | No |
+| `flipDock` | `flipDock` — `router.js:4686` (not a wrapper/builder pair) | — | No (called only in `sendAnswer`/`sendComment`, a different surface) |
+
+So `#1050`'s defect is not phantom names — the builders all exist, and
+`QaCompose`/`FollowThread` are live React-port tasks (`#1063`/`#1064`) whose job
+is to write the missing delegating wrappers. The defect is narrower: it names
+these symbols as if `/answers` used them, and `/answers` calls **none of their
+builders** — verified by scanning `buildAnswers`/`answerRecord`/`sendAsk`
+(`client/views.js:1184-1280`) for `qaCard`, `qaCompose`, and `followThread`
+(zero matches). **This is why QaCard FLIP work is excluded from the `/answers`
+flip** (see *Exclusions*).
 
 ---
 
@@ -233,11 +253,12 @@ port.
    `.qa[data-qid]` cards (`QA_LIST`, `client/router.js:2339`), reached on
    `/dashboard`/`/questions`/`/question`. `/answers`' `sendAsk` uses none of
    `flipDock`/`snapshotCards`/`regroupCards`/`ripple`.
-3. Two of the four symbols `#1050` names — `QaCompose` and `FollowThread` — **do
-   not exist** anywhere in `client/`. Folding QaCard work into `/answers` would
-   scope machinery this surface does not have, reproducing `#1050`'s original
-   error in a longer form (`#651`: a description that names something it cannot
-   back).
+3. `/answers` calls none of the builders `#1050`'s named wrappers sit over.
+   `qaCard` (`components.js:1130`), `qaCompose` (`:888`), and `followThread`
+   (`:786`) are all absent from `buildAnswers`/`answerRecord`/`sendAsk`
+   (`views.js:1184-1280`). Folding QaCard work into `/answers` would scope
+   machinery this surface does not call, reproducing `#1050`'s original error in
+   a longer form (`#651`: a description that names something it cannot back).
 
 The shared `EXPAND_SURFACES`/`snapshotCards`/`regroupCards` FLIP *engine* is
 touched only insofar as `/answers` supplies it one row set (`ANSWER_LIST`); the
