@@ -106,10 +106,15 @@ def test_recreated_worktree_with_old_lock_looks_finished(tmp_path, monkeypatch):
 
 
 def test_pid_reuse_can_make_a_dead_lane_look_live(tmp_path, monkeypatch):
-    """Open false-green inherited from the pid identity probe."""
+    """Open false-green: an unrelated same-cwd process can reuse the pid."""
     target, worktree, identity = _subject(tmp_path, lane="cx-pid-reused")
     _write_lock(worktree, identity, task=222)
-    monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_args: True)
+    probe = lane_liveness.pid_matches_lane
+    monkeypatch.setattr(
+        lane_liveness, "pid_matches_lane",
+        lambda pid, brief: probe(
+            pid, brief, is_pid_alive=lambda _pid: True,
+            proc_cwd=lambda _pid: str(Path(brief).parent)))
 
     inspection = _inspect(target, worktree)
 
