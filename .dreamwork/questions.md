@@ -189,13 +189,13 @@
 
   **If you say nothing:** the guard stays committed and inert, and the stray-edit protection does not exist —
   the status quo that cost the held merge. `DREAMWORK_LANE_GUARD_BYPASS=1` remains the escape.
+  → answered (2026-07-29): his note below asked two things — why #465 could not be enabled without
+  the hook, and what #465 even is. The entry was rewritten for exactly those two: "What `#465` is"
+  says what it is, and "You also asked why it needs the global hook path. It does not" retracts the
+  framing. Only `Q1` (repo-local vs global install) stayed his. Left unmarked, that note made the
+  whole entry read as awaiting a reply the loop had already written.
   - **Note (human, via watch, 2026-07-29 05:51):** why can't we enable #465
     without this? And also, what is 465?
-    → answered above (2026-07-29): the entry was rewritten for exactly these two
-    questions — "What `#465` is" says what it is, and "You also asked why it needs
-    the global hook path. It does not" retracts the framing. Only `Q1` (repo-local
-    vs global install) is still yours. Left unmarked, this note made the whole entry
-    read as awaiting a reply the loop had already written.
   - **Answer (via watch, 2026-08-02 17:39):** still needed? rec
   - **Folded 2026-08-02 — your "still needed?" answered: YES, and it recurred tonight with ME as the
     culprit.** I edited `watch.py:4416` while `cx-995wake` held that file under its `Lane-owns:` line, and
