@@ -621,8 +621,16 @@ def test_stop_deployed_cli_wire(tmp_path):
         [sys.executable, "dev/deploy_state.py",
          "--stop-deployed", "--port", str(port), "--snap", str(snap)],
         cwd=str(root), capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
-    assert "nothing to stop" in r.stdout
+    attached = subprocess.run(
+        ["git", "symbolic-ref", "-q", "HEAD"], cwd=str(root),
+        capture_output=True).returncode == 0
+    if attached:
+        assert r.returncode == 0, r.stderr
+        assert "nothing to stop" in r.stdout
+    else:
+        assert r.returncode == 1
+        assert "deploy refused: HEAD is detached" in r.stderr
+        assert "switch to the branch you intend to deploy" in r.stderr
 
 
 # --- #480: the snapshot is one file, but the server imports sibling modules --
@@ -1719,3 +1727,142 @@ def test_a_sibling_missing_from_the_deploy_dir_is_stale_not_matching(repo, tmp_p
     head = ds.resolve_blob("HEAD", "watch.py", repo)
     assert ds.stale_identity_paths(src, head, dest, repo) == \
         ["client/style.css"]
+
+
+# --- #974: the deployed directory, not a derived subset, is the denominator ---
+
+
+def test_stale_resident_tracked_file_cannot_hide_outside_declared_identity(
+        repo, tmp_path):
+    """A tracked resident ``lint.py`` is compared even when watch.py does not
+    declare it as a data sibling.
+
+    This is the measured #974 seam: the deployed process imports lint lazily,
+    while the old currency report compared only ``dashboard_identity`` and
+    returned ``[]``.  The expectation comes independently from git's HEAD blob
+    and the deliberately older resident bytes, not from the implementation's
+    derived path set.
+    """
+    (repo / "watch.py").write_bytes(REAL_MODULE)
+    (repo / "lint.py").write_bytes(b"VERSION = 'head'\n")
+    _commit(repo)
+    head = ds.resolve_blob("HEAD", "watch.py", repo)
+
+    dest = tmp_path / "deployed"
+    dest.mkdir()
+    (dest / "lint.py").write_bytes(b"VERSION = 'stale'\n")
+
+    result = ds.resident_file_comparison(head, head, dest, repo)
+    assert result["resident_count"] == 1
+    assert result["compared_count"] == 1, (
+        "resident lint.py was omitted from comparison; compared "
+        f"{result['compared_count']} of {result['resident_count']} resident file(s)")
+    assert result["file_states"]["lint.py"] == {
+        "state": "differs_from_head", "head_path": "lint.py"}
+    assert result["matching_paths"] == []
+    assert result["differing_paths"] == ["lint.py"]
+    assert result["stale_paths"] == ["lint.py"]
+    assert ds.stale_identity_paths(head, head, dest, repo) == ["lint.py"]
+
+
+def test_resident_denominators_name_unclassifiable_runtime_artifacts(repo, tmp_path):
+    """Logs, bytecode, and scratch Python are resident but not compared.
+
+    The compared and resident denominators must differ visibly; treating these
+    files as matching would rebuild the same false all-clear at a new layer.
+    """
+    (repo / "watch.py").write_bytes(REAL_MODULE)
+    (repo / "lint.py").write_bytes(b"VERSION = 'head'\n")
+    _commit(repo)
+    head = ds.resolve_blob("HEAD", "watch.py", repo)
+
+    dest = tmp_path / "deployed"
+    (dest / "__pycache__").mkdir(parents=True)
+    (dest / "lint.py").write_bytes(b"VERSION = 'head'\n")
+    (dest / "serve.log").write_text("started\n")
+    (dest / "425-scratch-old-watch.py").write_text("scratch = True\n")
+    (dest / "__pycache__" / "lint.pyc").write_bytes(b"bytecode")
+
+    result = ds.resident_file_comparison(head, head, dest, repo)
+    assert result["resident_count"] == 4
+    assert result["compared_count"] == 1
+    assert result["not_compared_paths"] == [
+        "425-scratch-old-watch.py", "__pycache__/lint.pyc", "serve.log"]
+    assert result["file_states"]["lint.py"]["state"] == "matches_head"
+
+
+def test_zero_compared_population_is_explicit_not_an_all_clear(repo, tmp_path):
+    """A resident population with no HEAD counterparts reports 0 of N."""
+    (repo / "watch.py").write_bytes(REAL_MODULE)
+    _commit(repo)
+    head = ds.resolve_blob("HEAD", "watch.py", repo)
+    dest = tmp_path / "deployed"
+    dest.mkdir()
+    (dest / "serve.log").write_text("only an untracked artifact\n")
+
+    result = ds.resident_file_comparison(head, head, dest, repo)
+    assert result["resident_count"] == 1
+    assert result["compared_count"] == 0
+    assert result["not_compared_paths"] == ["serve.log"]
+
+
+def test_resolve_snapshot_stays_silent_under_detached_head(
+        monkeypatch, capsys, repo):
+    """A read-only snapshot resolution remains valid for a detached gate."""
+    (repo / "watch.py").write_bytes(REAL_MODULE)
+    _commit(repo)
+    _git(repo, "checkout", "--detach", "-q")
+    monkeypatch.setattr(ds, "ROOT", str(repo))
+    monkeypatch.setattr(sys, "argv", ["deploy_state.py", "--resolve-snapshot", "HEAD"])
+
+    assert ds.main() == 0
+    captured = capsys.readouterr()
+    assert captured.out.encode() == REAL_MODULE
+    assert "deploy refused" not in captured.err
+
+
+def test_stop_deployed_refuses_unreferenced_detached_head_with_remedy(
+        monkeypatch, capsys, repo):
+    """The first live deploy write refuses an unreferenced detached commit."""
+    (repo / "watch.py").write_bytes(REAL_MODULE)
+    _commit(repo)
+    _git(repo, "checkout", "--detach", "-q")
+    (repo / "watch.py").write_bytes(REAL_MODULE + b"\n# detached revision\n")
+    _commit(repo)
+    monkeypatch.setattr(ds, "ROOT", str(repo))
+    monkeypatch.setattr(sys, "argv", [
+        "deploy_state.py", "--stop-deployed", "--port", "1",
+        "--snap", str(repo / "snap-watch.py")])
+
+    assert ds.main() == 1, (
+        "detached-HEAD deploy reached the live-state write instead of refusing")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "deploy refused: HEAD is detached" in captured.err
+    assert "Finish or abort the landing" in captured.err
+    assert "the live dashboard was left running" in captured.err
+
+
+def test_stop_deployed_refuses_detached_head_at_attached_branch_tip(
+        monkeypatch, capsys, repo):
+    """Detachment is posture even when an attached branch names the commit."""
+    (repo / "watch.py").write_bytes(REAL_MODULE)
+    _commit(repo)
+    branch_tip = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "master"], check=True,
+        capture_output=True, text=True).stdout.strip()
+    _git(repo, "checkout", "--detach", "master", "-q")
+    detached_tip = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True,
+        capture_output=True, text=True).stdout.strip()
+    assert detached_tip == branch_tip
+    monkeypatch.setattr(ds, "ROOT", str(repo))
+    monkeypatch.setattr(sys, "argv", [
+        "deploy_state.py", "--stop-deployed", "--port", "1",
+        "--snap", str(repo / "snap-watch.py")])
+
+    assert ds.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "deploy refused: HEAD is detached" in captured.err
+    assert "switch to the branch you intend to deploy" in captured.err
