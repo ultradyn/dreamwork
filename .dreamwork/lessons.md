@@ -4330,8 +4330,16 @@ of writing to the wrong one exceeds the cost of typing it out.
 earliest suitable time"* — sat open for two days behind a note reading *"Do not start before the
 ruling"*, when the ruling had landed **the same afternoon the note was written** (2026-07-31 17:03).
 It was found only because he asked an unrelated sequencing question that sent the coordinator to
-look at that goal's head. Measuring afterwards turned up a SECOND: `#641`, whose TITLE said
-*"BLOCKED on the #614 wire-protocol ruling"* while `#614` had been answered at 17:20 the same day.
+look at that goal's head.
+
+**A correction, and it is this lesson's own defect committed while writing it.** The first version of
+this entry claimed a SECOND live instance — `#641`, whose title said *"BLOCKED on the #614
+wire-protocol ruling"* while `#614` was answered at 17:20 the same day. **`#641` is `landed`.** The
+coordinator checked its state with `ledger.py get 641 2>/dev/null | sed -n '2,4p'`, choosing lines
+2-4 to skip the warnings banner — but that banner goes to STDERR, already suppressed, so the window
+skipped line 1, **the state line**, the one field that answered the question. A probe whose window
+excluded the fact it was checking. The real count is **1 of 3**, not 2 of 3, and the lane dispatched
+to build the check refused the brief rather than bind a live fixture that could not truthfully exist.
 
 **The tempting lesson — "write blockers down properly" — is refuted by the evidence.** The blocker
 WAS written down, in the most structured place available: the question titles carry the convention
