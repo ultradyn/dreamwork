@@ -4406,6 +4406,16 @@ def read_posture_agreement(target):
     except OSError as exc:
         file_posture = None
         file_error = f"posture file unavailable: {one_line(str(exc))}"
+    except UnicodeDecodeError as exc:
+        # `UnicodeDecodeError` is a ValueError, NOT an OSError, so the clause
+        # above never caught it and the exception escaped `resolve_posture`
+        # entirely — taking every axis down over one unreadable file, when the
+        # sibling reader `read_posture_file` tolerates the same bytes through
+        # `read_text_full`. Undecodable is reported SEPARATELY from unavailable
+        # because the file is present and its bytes are intact; saying
+        # "unavailable" would send a reader looking for a missing file (#140).
+        file_posture = None
+        file_error = f"posture file undecodable: {one_line(str(exc))}"
 
     db_path = store_path(os.path.join(target, ".dreamwork"))
     if not db_path.exists():
