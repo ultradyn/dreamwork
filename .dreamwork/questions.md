@@ -49,7 +49,10 @@
     downgrade the tier you named. Say the word and I will route them to `@cx-luna-xhigh` instead,
     which is design-capable and needs no sandbox change.
 
-- **P2 · 2026-08-03 — which URL should be the canonical task view, `/tasks` or `/tasks2`? (#1013)**
+- **P2 · 2026-08-03 — which URL should be the canonical task view, `/tasks` or `/tasks2`? (#1110)**
+  **UPDATE 2026-08-03: my stated default has since LANDED (#1013, `5887c182`, merge `bb94f305`).**
+  The question is unchanged and still yours, but it is now "confirm or overturn", not "decide before
+  we build". #1110 owns the overturn if you want it; answering (1) closes it with no code change.
   A lane fixed #1013 and the review refused it, correctly, because the fix supersedes a decision
   someone took deliberately. I need one fact from you that I cannot get from the code.
   - **The symptom is real.** Every task-ref link in the UI carries `href="/tasks?t=N"`
@@ -64,9 +67,9 @@
   - **Two coherent answers.** (1) `/tasks` becomes the task view — nicer URL, treats the migration as
     finished, supersedes the old decision. (2) Retarget the links to `/tasks2?t=N` — preserves the old
     decision, still fixes the symptom, but leaves a user-facing URL called "tasks2".
-  - **Not blocking.** My default is (1) with the supersession made explicit: the old test rewritten to
-    assert the new rule while naming what it replaced and why, so the record survives. The lane is
-    proceeding on that; overturning it later is cheap.
+  - **Not blocking.** My default was (1) with the supersession made explicit: the old test rewritten
+    to assert the new rule while naming what it replaced and why, so the record survives. That is
+    what landed. Overturning it is still cheap — the retarget is a handful of hrefs and one test.
   - **What I actually need:** is `tasks2` finished enough to own `/tasks`? That is the only part the
     code cannot tell me.
 
