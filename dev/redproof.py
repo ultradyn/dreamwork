@@ -245,9 +245,29 @@ def _worktree_path(root: Path, path: str) -> tuple[str, Path]:
     return relative.as_posix(), resolved
 
 
+def _git_tracks(root: Path, posix: str) -> bool | None:
+    """Whether git's index tracks ``posix``; ``None`` if the check fails.
+
+    A tracked expectation survives lane-scratch cleanup; an untracked one is a
+    registration with a scheduled expiry (#1088). ``None`` means the check
+    itself could not run, so the warning is skipped rather than blocking a
+    legitimate registration — the fail-closed refusal lives at check time
+    (``_read_wt``), not here.
+    """
+    try:
+        return bool(_git(root, "ls-files", "--", posix))
+    except RedproofError:
+        return None
+
+
 def _pin_expectations(root: Path, target_posix: str,
-                      declarations: list[str]) -> list[dict]:
-    """Resolve and pin the independent expectation files for one injection."""
+                      declarations: list[str]) -> tuple[list[dict], list[str]]:
+    """Resolve and pin the independent expectation files for one injection.
+
+    Returns ``(sources, untracked)`` where ``untracked`` lists the posix paths
+    of expectation sources git does not track — each is a registration that will
+    expire when the file leaves the working tree (#1088).
+    """
     if not declarations:
         raise RedproofError(
             f"injection of {target_posix!r} must declare at least one "
@@ -255,6 +275,7 @@ def _pin_expectations(root: Path, target_posix: str,
             "cannot be red-proof evidence")
 
     sources: list[dict] = []
+    untracked: list[str] = []
     seen: set[str] = set()
     for declaration in declarations:
         posix, source = _worktree_path(root, declaration)
@@ -275,7 +296,9 @@ def _pin_expectations(root: Path, target_posix: str,
                 f"cannot read expectation source {posix!r}: {exc}") from exc
         sources.append({"path": posix, "sha": _sha(data)})
         seen.add(posix)
-    return sources
+        if _git_tracks(root, posix) is False:
+            untracked.append(posix)
+    return sources, untracked
 
 
 def _expectation_drift(root: Path, entry: dict) -> list[str]:
@@ -881,7 +904,8 @@ def begin(cwd: Path | None, path: str,
         print(f"begin: resolved identity dir {identity_dir} (role: {_role(cwd)})")
         posix, target = _worktree_path(root, path)
         original = target.read_bytes()
-        expectation_sources = _pin_expectations(root, posix, list(expectations))
+        expectation_sources, untracked = _pin_expectations(
+            root, posix, list(expectations))
         begun_head = _git(root, "rev-parse", "HEAD")
     except RedproofError as exc:
         sys.stderr.write(f"begin: REFUSED — {exc}\n")
@@ -938,6 +962,18 @@ def begin(cwd: Path | None, path: str,
           f"root; `restore` verifies internally, and a manual `cmp` uses THIS path")
     print(f"       pinned {len(expectation_sources)} independent expectation "
           "source(s).")
+    for src in untracked:
+        # WARN on stdout — the same stream begin's other output uses, so the
+        # lane reads it. An untracked expectation is a registration with a
+        # scheduled expiry: it vanishes when the working tree no longer holds
+        # the file (#1088). The check-time refusal (``_read_wt``) stays
+        # fail-closed; this makes the expiry PREDICTABLE at registration time
+        # rather than discovered at the gate.
+        print(
+            f"begin: WARNING — expectation source {src!r} is not tracked by "
+            f"git; this registration will expire when the lane tidies its "
+            f"scratch and the file leaves the working tree. Prefer a committed "
+            f"expectation source so the registration survives cleanup (#1088).")
     print(f"       state=armed; sabotage it, then `restore {posix}`.")
     return 0
 
