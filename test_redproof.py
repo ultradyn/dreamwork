@@ -1901,6 +1901,55 @@ class TestCoordinatorAuditSeesTheLane:
             "identity dir, and a require==0-only test would pass on a build "
             "that exempts every lane")
 
+    def test_an_unreadable_registry_is_not_absence_and_faults_at_require_zero(
+            self, repo, monkeypatch, capsys, tmp_path):
+        """#1038 Finding 1: a registry that is PRESENT but UNREADABLE (a
+        permission-denied parent dir) must FAULT even at --require 0, not
+        report the calm zero. ``Path.exists()`` swallows ``OSError`` and
+        returns False when the parent is unreachable, so the old code treated
+        inaccessibility as absence — inverting #1038's original error rather
+        than removing it. #136 keeps three facts distinct: nothing-required,
+        nothing-found, could-not-be-read; "I could not determine whether this
+        exists" is the third and must fault.
+
+        This is a DIFFERENT code path from malformed-JSON unreadability: the
+        malformed path reaches the JSON decoder; the permission path is
+        blocked at the read, before any parse. The fixture makes the path
+        genuinely inaccessible (``exists()`` returns False), not merely
+        invalid, and asserts that precondition before the verdict."""
+        import os
+        monkeypatch.setenv(rp._ls.IDENTITY_ENV, "unreadable-registry-1038")
+        rp._ls.lane_scratch_dir(repo, sub="snap")  # creates the identity dir
+        monkeypatch.delenv(rp._ls.IDENTITY_ENV, raising=False)  # coordinator
+        role = rp._role(repo)
+        idirs = rp._ls.lane_identity_dirs(repo)
+        assert len(idirs) == 1, "precondition: one identity dir exists"
+        # A registry.json exists but its parent dir is unreadable.
+        reg = rp._redproof_dir(repo, idirs[0].name, role) / "registry.json"
+        reg.parent.mkdir(parents=True, exist_ok=True)
+        reg.write_text("[]")
+        os.chmod(reg.parent, 0o000)
+        try:
+            # PRECONDITION (the brief insists): verify the fixture actually
+            # reproduces exists() == False — on a filesystem that ignores mode
+            # bits (or run as root) this would not hold and the test would
+            # prove nothing.
+            assert not reg.exists(), (
+                "fixture does not reproduce the precondition — exists() must "
+                "return False for a permission-denied parent; if it does not, "
+                "the test runs under root or a mode-ignoring filesystem and "
+                "proves nothing")
+            exit = _check(repo, require=0)
+            _, err = capsys.readouterr()
+            assert exit == 2, (
+                "an unreadable registry must FAULT at --require 0, not report "
+                "the calm zero — inaccessibility is not absence (#136/#1038): "
+                + err)
+            assert "could not be read" in err, err
+            assert "not confirmed absent" in err, err
+        finally:
+            os.chmod(reg.parent, 0o755)  # restore so cleanup can remove it
+
     def test_lane_flag_audits_a_named_identity_exactly(
             self, repo, monkeypatch, capsys):
         """`--lane <token>` resolves the named launch identity's registry

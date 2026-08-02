@@ -430,13 +430,27 @@ def _read_registry_at(rp: Path) -> tuple[list[dict], str]:
       "empty"    — registry parsed to [] (calm zero; nothing live)
       "present"  — registry held ≥1 entry
     A present-but-unparseable registry raises RedproofError (#136 fault).
+
+    An UNREADABLE registry is NOT absence (#1038 Finding 1): ``Path.exists()``
+    swallows ``OSError`` and returns False when the path's parent is
+    unreachable (e.g. ``chmod 000``), so a present-but-inaccessible registry
+    was silently reported as ``"absent"`` — the calm zero — and false-greened
+    at ``--require 0``. ``#136`` keeps three facts distinct (nothing-required,
+    nothing-found, could-not-be-read); "I could not determine whether this
+    exists" is the third and must fault. So the read is attempted directly and
+    only ``FileNotFoundError`` is absence — any other ``OSError`` is
+    inaccessibility, raised as a fault rather than collapsed into the calm zero.
     """
-    if not rp.exists():
-        return [], "absent"
     try:
         text = rp.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [], "absent"
     except OSError as exc:
-        raise RedproofError(f"registry exists but is unreadable: {rp} ({exc})") from exc
+        raise RedproofError(
+            f"registry could not be read — the path is not confirmed absent "
+            f"(it may be present but unreachable, e.g. a permission-denied "
+            f"parent dir, which ``Path.exists`` reports as missing): "
+            f"{rp} ({exc})") from exc
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
