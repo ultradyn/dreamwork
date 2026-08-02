@@ -128,7 +128,7 @@ class DocstringCitation:
     rel_path: str
     symbol: str
     lineno: int
-    task_id: int
+    task_id: int | None
     raw_token: str = ""
 
 
@@ -201,12 +201,16 @@ def _scan_docstring_citations(
                 lineno = base_line + doc[: match.start()].count("\n")
                 raw = match.group(1)
                 try:
-                    tid = int(raw)
+                    tid: int | None = int(raw)
                 except ValueError:
                     # Hex-letter token (e.g. ffffff) — not a decimal issue
                     # id.  Classified as CSS colour if six hex digits,
-                    # else UNRESOLVABLE (#1034).
-                    tid = -1
+                    # else UNRESOLVABLE (#1034).  None is an out-of-band
+                    # sentinel: it is not an int and can never collide with
+                    # a real task id in title membership or appear as a
+                    # number in output.  The raw token is what the operator
+                    # sees.
+                    tid = None
                 findings.append(
                     DocstringCitation(
                         rel, name, lineno, tid, raw
@@ -266,7 +270,7 @@ def _is_css_colour(raw_token: str) -> bool:
     The regex ``\\(#([0-9a-fA-F]+)\\)`` now extracts hex-letter tokens
     too, so ``(#ffffff)`` IS extracted and reaches this function —
     length 6, all hex → True → FILTERED (#1034).  Hex-letter tokens that
-    fail ``int()`` are given ``task_id = -1`` (never above max, never in
+    fail ``int()`` are given ``task_id = None`` (never above max, never in
     titles), so they reach the CSS check rather than being swallowed as
     UNRESOLVABLE.
 
@@ -363,7 +367,7 @@ def check_docstring_citations(
         ):
             print(
                 f"  {c.rel_path}:{c.lineno} {c.symbol} "
-                f"(#{c.task_id}) [unverified]"
+                f"(#{c.raw_token}) [unverified]"
             )
         return 0
 
@@ -374,11 +378,11 @@ def check_docstring_citations(
     suspicious: list[DocstringCitation] = []
     filtered: list[DocstringCitation] = []
     for c in citations:
-        if max_task_id and c.task_id > max_task_id:
+        if c.task_id is not None and max_task_id and c.task_id > max_task_id:
             suspicious.append(c)
         elif _is_css_colour(c.raw_token):
             filtered.append(c)
-        elif c.task_id in titles:
+        elif c.task_id is not None and c.task_id in titles:
             resolved.append(c)
         else:
             unresolvable.append(c)
@@ -397,7 +401,7 @@ def check_docstring_citations(
     for c in unresolvable:
         print(
             f"  UNRESOLVABLE {c.rel_path}:{c.lineno} {c.symbol} "
-            f"(#{c.task_id}) not found in ledger"
+            f"(#{c.raw_token}) not found in ledger"
         )
     for c in suspicious:
         print(

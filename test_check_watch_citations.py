@@ -357,8 +357,9 @@ def test_css_colour_six_hex_is_filtered(monkeypatch, tmp_path, capsys):
     # Finding 3: a parenthesised CSS colour like (#334155) is six hex
     # digits — unambiguous CSS syntax.  It is FILTERED, not counted as an
     # issue reference.  The rule is stated in the row.  The fixture max
-    # MUST encompass the colour's decimal value (3355189) so the max-first
-    # classifier does not divert it to SUSPICIOUS before the CSS check —
+    # MUST encompass the token's decimal value — int("334155") = 334155,
+    # the value the max-first classifier actually compares — so it is not
+    # diverted to SUSPICIOUS before the CSS check —
     # a CSS colour within range is the case the filter exists for (#1034).
     titles = {868: "a real entry", 5000000: "the current max"}
     monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
@@ -441,7 +442,7 @@ def test_hex_letter_css_colour_is_extracted_and_filtered(monkeypatch, tmp_path, 
     # old regex \\(#(\\d+)\\) never matched it — the token was invisible
     # and the checker reported ZERO citations for a docstring that had
     # one.  The broadened regex \\(#([0-9a-fA-F]+)\\) now extracts it;
-    # int("ffffff") raises ValueError so task_id is -1 (never above max,
+    # int("ffffff") raises ValueError so task_id is None (never above max,
     # never in titles); _is_css_colour("ffffff") is True → FILTERED.
     # A test using only decimal digits cannot see this path.
     titles = {868: "a real entry", 1038: "the current max"}
@@ -463,6 +464,32 @@ def test_hex_letter_css_colour_is_extracted_and_filtered(monkeypatch, tmp_path, 
     assert "CSS colour" in out
     assert "UNRESOLVABLE" not in out
     assert "SUSPICIOUS" not in out
+
+
+def test_sentinel_task_id_does_not_resolve(monkeypatch, tmp_path, capsys):
+    # P2 resolution (#1034): an in-band sentinel shared a type with real ids.
+    # If the ledger has an explicit entry with id -1, a non-decimal token
+    # like (#a) is given task_id -1 and MATCHES the ledger entry, falsely
+    # resolving to its title.  The out-of-band None sentinel cannot collide
+    # with any task id by construction: None is not an int and can never be
+    # a key in the int-keyed titles dict.  (#a) is not six hex digits, so it
+    # is NOT a CSS colour — it must be reported UNRESOLVABLE, never resolved.
+    titles = {868: "a real entry", -1: "negative sentinel", 1038: "the max"}
+    monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
+    root = _docstring_repo(
+        tmp_path,
+        _FIXTURE_A,
+        (
+            "hexletter.py",
+            '"""See (#a) for something.\n"""\n',
+        ),
+    )
+
+    assert citations.check_docstring_citations(root) == 1
+    out = capsys.readouterr().out
+    assert "UNRESOLVABLE" in out and "#a" in out
+    assert "#-1" not in out  # sentinel must not appear in output
+    assert "negative sentinel" not in out  # must not resolve to fake entry
 
 
 def test_above_max_css_lookalike_is_suspicious(monkeypatch, tmp_path, capsys):
@@ -524,6 +551,32 @@ def test_store_absent_reports_not_checked(monkeypatch, tmp_path, capsys):
     # The OK/FAIL verdicts must NOT appear — this is neither.
     assert "OK:" not in out
     assert "FAIL:" not in out
+
+
+def test_store_absent_renders_raw_token_not_sentinel(monkeypatch, tmp_path, capsys):
+    # P2 output (#1034): when the store is absent, a hex-letter token like
+    # (#ffffff) must print (#ffffff) [unverified], not (#-1) [unverified].
+    # The -1 sentinel was an in-band int that printed in place of the raw
+    # token the operator actually needs to see.  The raw_token is always
+    # what was extracted; a sentinel value must never be operator-visible.
+    root = _docstring_repo(
+        tmp_path,
+        _FIXTURE_A,
+        (
+            "hexcolour.py",
+            '"""The background is (#ffffff) in this docstring.\n"""\n',
+        ),
+    )
+
+    def _raise(_dw_dir):
+        raise FileNotFoundError("/fake/ledger.sqlite3")
+
+    monkeypatch.setattr(citations, "_resolve_titles", _raise)
+    assert citations.check_docstring_citations(root) == 0
+    out = capsys.readouterr().out
+    assert "#ffffff" in out  # raw token shown
+    assert "#-1)" not in out  # sentinel must not appear
+    assert "#None)" not in out  # None must not render as text either
 
 
 def test_guard_is_registered_in_repo_wide_registry():
