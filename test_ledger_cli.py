@@ -1049,7 +1049,9 @@ def test_fold_refuses_a_commit_off_base_without_writing(
         "fold", str(task_id), "--note", f"landed {detached_sha}",
         "--repo", str(root), "--ledger", str(dw / "tasks.md")])
 
-    assert rc == 2
+    assert rc == 2, (
+        "off-base citation must refuse before writing; observed CLI output:\n"
+        + out + err)
     assert detached_sha in err and "exists but is NOT an ancestor" in err
     assert "refusing irreversible landed write" in err
     assert _task_record(dw, task_id)["state"] == "open"
