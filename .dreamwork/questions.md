@@ -2,6 +2,48 @@
 
 ## Open
 
+- **P2 · 2026-08-02 10:35 — #939/#862: the goal tree is complete and completely empty. Here is a proposed root and first children, in your own words. Approve, edit, or tell me to leave it empty.**
+  **Short version:** every heartbeat tick all night has ended `· no current goal ·`. It was telling
+  the truth and I read past it on all of them. Tonight I found out why, and it is two separate
+  things — only one of which is yours.
+
+  **1. Mechanical, not yours, already dispatched.** The current-goal pointer has a writer
+  (`dreamwork_db/goals.py:128`, `set_current_goal_id`, guard already in place) whose *only* callers
+  are six test sites. `ledger.py groups` has twelve verbs and `set-current` is not among them; there
+  is no route either. **So the pointer could not have been moved by any supported interface even if
+  the tree were full.** `no current goal` read as "we haven't got round to it" and actually meant
+  "there is no supported way to". Filed as `#962`, lane out now.
+
+  **2. Yours: what the tree should say.** Populating it asserts what the work is *for*, and
+  DREAMWORK.md says every chain terminates in your goals. I am not doing that unilaterally at
+  10:35 any more than the earlier lane would at 05:45.
+
+  **The proposal — a root and three children, quoted from DREAMWORK.md's own Goals section rather
+  than invented by me:**
+
+  - **G1 (root)** — Make "leave an agent dreaming on a project" a real workflow: the human can walk
+    away and come back to steady, safe, well-chosen progress.
+    - **G2** — The loop's memory survives anything that ends a session — restart, compaction, a
+      fresh agent. What it knew, it still knows.
+    - **G3** — The dashboard is how you check on it and steer it without a chat turn, and it is
+      worth looking at. (Dreamhub as successor surface, per your 2026-07-29 05:54 ruling on `#275`
+      Q3.)
+    - **G4** — Nothing fails quietly.
+
+  **Which one is current is a separate question from the tree's shape**, and there is an obvious
+  candidate: your 2026-07-31 focus — watch.py into modules reusable by dreamhub, the UI into a built
+  frontend. It is the only goal in the record carrying a date and a "prioritised" from you. It sits
+  under G3.
+
+  **What I need from you:** (a) approve or edit the four; (b) say which is current, or that none is.
+
+  **My rec:** approve as-is, current = the 2026-07-31 focus. It costs you one line and it makes the
+  tick line actionable instead of decorative.
+
+  **And a real third option:** if you would rather the tree stay empty for now, say so and I will
+  record that as a *decision*. The tick would then be reporting a chosen state rather than an
+  unnoticed one — which is the whole difference `#939` is about, and I would stop re-raising it.
+
 - **P2 · 2026-08-01 23:10 — #867: 44 old briefs omit `Lane-owns:` — content-resolved cutoff (my rec), or delete them?**
   **Short version:** #867's lane finished the mechanism and then found that fixing the blindness turns
   lint red on 44 old briefs. It refused to resolve that by weakening anything and handed the choice
