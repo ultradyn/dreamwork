@@ -1319,7 +1319,14 @@ function routeOf(loc) {
     const sp = new URLSearchParams(loc.search);
     return { name: 'review', param: sp.get('p'), q: sp.get('q') };
   }
-  if (loc.pathname === '/tasks2') {
+  // #1013 — /tasks?t=N is the href every task reference link carries
+  // (a.taskref in components.js, the "one-column task view" back-link in
+  // views.js), but the client only ever built /tasks2. /tasks fell through
+  // to the dashboard default, so a click navigated to the right URL and
+  // rendered the wrong view. /tasks2 is the one task view that exists, so
+  // /tasks resolves to it: the link, the navigation, and the destination
+  // view all line up. (Server serves the app shell for /tasks already.)
+  if (loc.pathname === '/tasks' || loc.pathname === '/tasks2') {
     const sp = new URLSearchParams(loc.search);
     const raw = sp.get('t');
     return { name: 'tasks2', param: raw && /^\d+$/.test(raw) ? raw : null };
@@ -2120,6 +2127,20 @@ function finishViewCommit() {
   bindAskDraft();
   // #577: same discipline for the /chat/<id> reply box (chat:<id> key).
   bindChatReplyDraft();
+  // #1008 — re-link #NNN task references after every view commit. morphdom
+  // keeps a surviving .md node and reconciles its text by UPDATING a kept
+  // text node's nodeValue in place (a characterData mutation), merging the
+  // bare #NNN back out of server-fresh HTML. The observeTaskRefs observer
+  // watches childList only, so that in-place edit fires no addedNodes and
+  // the link is silently lost — which is exactly the quiet failure he saw
+  // after a composer submit (the submit changes the data, defeating the
+  // content-hash skip, so a real reconcile runs). finishViewCommit is the
+  // one seam every view commit passes through (setContent and the native
+  // mount both land here), so re-running the walker here re-links every
+  // render path, not just the composer's caller. Idempotent: an already-
+  // linked #NNN lives in an <a> (in TASK_REF_SKIP), so a second pass finds
+  // nothing to promote.
+  resolveTaskRefs(document.getElementById('view'));
 }
 
 function nativeRegistry() {
@@ -4838,7 +4859,7 @@ function isInternal(a) {
       || a.pathname === '/answers'
       || a.pathname === '/settings'
       || a.pathname === '/file' || a.pathname === '/review'
-      || a.pathname === '/tasks2'
+      || a.pathname === '/tasks' || a.pathname === '/tasks2'
       || a.pathname === '/question' || a.pathname === '/research'
       || a.pathname === '/reviews'
       || a.pathname === '/goals'

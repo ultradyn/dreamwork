@@ -60,6 +60,14 @@ SETTINGS = MappingProxyType({
         }),
         control="radio",
     ),
+    "links.backtickTasks": Setting(
+        kind="boolean",
+        default=True,
+        label="Link task ids in code spans",
+        category="Links",
+        description="Turn a task id written inside backticks (like `#1007`) "
+                    "into a link. Turn off to keep them as literal text.",
+    ),
 })
 
 

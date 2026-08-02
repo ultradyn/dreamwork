@@ -524,14 +524,47 @@ function mdRender(text, inline, options = {}) {
 }
 
 /* #282 — task references are resolved from DOM context, never by rewriting
-   rendered HTML.  A TreeWalker can see the ancestry a regex sweep cannot:
-   code, pre, existing links, scripts and the preview UI are rejected before
-   a text node is parsed.  The same resolver is installed in the app document
-   and same-origin review iframes, so Markdown and review HTML cannot drift. */
+   rendered HTML.  A TreeWalker can see the ancestry a regex sweep cannot.
+   Pre, existing links, scripts and the preview UI are rejected before a text
+   node is parsed in BOTH skip sets below.  Inline <code> is the one element
+   that differs: TASK_REF_SKIP (the static set, used when the setting is OFF)
+   keeps `code`, so an inline #NNN stays literal; TASK_REF_SKIP_NO_CODE (the
+   default, #1017) omits it, so an inline `#NNN` links when the setting is ON.
+   <pre> is always skipped in both — a fenced code block is never a place to
+   mint a click, and that part did not change.  The same resolver is installed
+   in the app document and same-origin review iframes, so Markdown and review
+   HTML cannot drift.
+
+   Record note: this section is itself a production-code record of the old
+   "inline code is always rejected" rule, which #1017 reversed in code but
+   not in this comment until now.  So commit 54e2dc5b's "both old rules lived
+   only in the tests" was over-broad — the route decision is also preserved
+   at .dreamwork/questions.md:12, and historical plan/hand-off records exist.
+   The design surfaces actually checked were watch-design.md, the
+   client/router.js route table, and this #282 section — not the whole repo. */
 const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]';
+/* #1017 — the same skip set WITHOUT `code`, used when the user has kept
+   backtick task-id autolinking on. <pre> stays in both: a fenced code block
+   is never a place to mint a click, so a #NNN inside ``` … ``` stays literal
+   regardless of the setting. Only an INLINE `#NNN` (an isolated <code>) is
+   eligible. The :349 "bleed bug" is in the string path-pipeline
+   (linkifyMd→linkify), not this DOM walker, so promoting an inline-code id
+   to a link here does not re-open it. */
+const TASK_REF_SKIP_NO_CODE =
+  'a,button,pre,script,select,style,textarea,[data-task-ref-ui]';
 const TASK_REF_RE = /(^|[^\w])#(\d+)\b/g;
 const TASK_REF_CACHE_MS = 60 * 1000;
 const taskRefCache = new Map();
+/* #1017 — inline `#NNN` links unless the user turned the setting off. The
+   default is ON: he asked for the links AND the escape hatch in one breath,
+   so the links come first and the setting is the opt-out. Reads the same
+   data.settings.values envelope /settings writes, so a toggle on that page
+   takes effect on the next view commit (finishViewCommit re-runs the
+   walker). */
+function backtickTaskLinksOn() {
+  const v = data && data.settings && data.settings.values;
+  return !v || v['links.backtickTasks'] !== false;
+}
 
 function taskRefParts(text) {
   const out = [];
@@ -657,7 +690,11 @@ function hideTaskRef(doc) {
 
 function linkTaskRefText(node) {
   const parent = node.parentElement;
-  if (!parent || parent.closest(TASK_REF_SKIP)) return;
+  // #1017 — drop `code` from the skip set when inline backtick ids link, so
+  // a `#NNN` inside an isolated <code> promotes. The setting is read fresh
+  // each call so a /settings toggle takes effect on the next commit.
+  const skip = backtickTaskLinksOn() ? TASK_REF_SKIP_NO_CODE : TASK_REF_SKIP;
+  if (!parent || parent.closest(skip)) return;
   if (!node.ownerDocument.__dwTaskRefReview && !parent.closest('.md')) return;
   const parts = taskRefParts(node.nodeValue || '');
   if (!parts.some(part => part.id != null)) return;
