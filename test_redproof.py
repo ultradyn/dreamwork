@@ -18,6 +18,7 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -79,6 +80,10 @@ def _restore(repo: Path, path: str) -> int:
 
 def _check(repo: Path, **kw) -> int:
     return rp.check(repo, **kw)
+
+
+def _observe(repo: Path, path: str, failure: str, command: list[str]) -> int:
+    return rp.observe(repo, path, failure=failure, command=command)
 
 
 def test_two_lane_registries_in_one_worktree_restore_their_own_bytes(
@@ -259,6 +264,9 @@ class TestZeroStatesAreDistinct:
         assert "no evidence" in out
         assert "no injections registered" in out
         assert "production reach was not evaluated" in out
+        assert "red-proof reach: DID NOT CHECK" in out
+        assert "caught 0 of 0 registered injection(s)" in out
+        assert "population is zero, not a clean reach sweep" in out
 
     def test_empty_registry_is_calm_zero(self, repo, capsys):
         """Ran but nothing live → no evidence, exit 0."""
@@ -295,7 +303,8 @@ class TestCheckDoesNotClaimProductionEvidence:
         assert "check: restoration clean" in out
         assert "1 injection(s) registered" in out
         assert "1 other target(s), 0 test-like target(s)" in out
-        assert "red-proof semantics and production reach were NOT verified" in out
+        assert "red-proof reach: DID NOT CHECK" in out
+        assert "production" not in out.lower()
         assert "check: clean" not in out
 
     def test_a_test_file_is_visible_but_not_refused(self, repo, capsys):
@@ -337,7 +346,8 @@ class TestCheckDoesNotClaimProductionEvidence:
         assert _check(repo) == 0
         out, _ = capsys.readouterr()
         assert "[other] expectations.py" in out
-        assert "production reach were NOT verified" in out
+        assert "red-proof reach: DID NOT CHECK" in out
+        assert "CAUGHT by" not in out
 
     def test_a_guard_fixture_target_remains_allowed(self, repo, capsys):
         target = repo / "dev" / "capture" / "fixture.mjs"
@@ -555,6 +565,101 @@ class TestRestoreRecordsInjected:
         assert entries == []
 
 
+class TestInjectionReachEvidence:
+    FAILURE = "route assertion saw the injected false branch"
+
+    def _route_check(self) -> list[str]:
+        return [
+            sys.executable,
+            "-c",
+            "from pathlib import Path; "
+            "assert 'return true' in Path('router.js').read_text(), "
+            f"{self.FAILURE!r}",
+        ]
+
+    def test_paired_red_and_restored_run_names_what_caught_the_injection(
+            self, repo, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text(
+            "export function route() { return false; /* BUG */ }\n")
+
+        assert _observe(repo, "router.js", self.FAILURE, self._route_check()) == 0
+        assert _restore(repo, "router.js") == 0
+        assert _check(repo, require=1) == 0
+
+        out, err = capsys.readouterr()
+        assert not err
+        assert "red-proof reach: OK" in out
+        assert "caught 1 of 1 registered injection(s)" in out
+        assert self.FAILURE in out
+        entries, _ = rp._read_registry(repo)
+        evidence = Path(entries[0]["reach"]["evidence"])
+        assert evidence.is_file()
+        text = evidence.read_text()
+        assert "INJECTED RUN" in text and "RESTORED CONTROL RUN" in text
+        assert self.FAILURE in text
+
+    def test_unrelated_failure_does_not_count_as_caught(self, repo, capsys):
+        unrelated = "unrelated pre-existing fixture failure"
+        command = [sys.executable, "-c", f"raise AssertionError({unrelated!r})"]
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("BROKEN\n")
+
+        assert _observe(repo, "router.js", unrelated, command) == 0
+        assert _restore(repo, "router.js") == 0
+        assert _check(repo, require=1) == 1
+
+        out, err = capsys.readouterr()
+        assert "red-proof reach: WARN" in err
+        assert "caught 0 of 1 registered injection(s)" in err
+        assert "restored control still failed" in err
+        assert unrelated in err
+        assert "restoration clean" in out
+
+    def test_restored_without_an_observation_is_not_checked(self, repo, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("BROKEN\n")
+        assert _restore(repo, "router.js") == 0
+
+        assert _check(repo, require=1) == 1
+        out, err = capsys.readouterr()
+        assert "restoration clean" in out
+        assert "red-proof reach: DID NOT CHECK" in err
+        assert "examined 0 evidence artifact(s) for 1 registered injection(s)" in err
+
+    def test_missing_artifact_cannot_keep_a_caught_verdict(self, repo, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text(
+            "export function route() { return false; /* BUG */ }\n")
+        assert _observe(repo, "router.js", self.FAILURE, self._route_check()) == 0
+        assert _restore(repo, "router.js") == 0
+        entries, _ = rp._read_registry(repo)
+        Path(entries[0]["reach"]["evidence"]).unlink()
+
+        assert _check(repo, require=1) == 1
+        _, err = capsys.readouterr()
+        assert "red-proof reach: DID NOT CHECK" in err
+        assert "evidence artifact absent/unreadable" in err
+        assert "caught 0 of 1 registered injection(s)" in err
+
+    def test_second_registration_does_not_inherit_first_reach(self, repo, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text(
+            "export function route() { return false; /* FIRST */ }\n")
+        assert _observe(repo, "router.js", self.FAILURE, self._route_check()) == 0
+        assert _restore(repo, "router.js") == 0
+        capsys.readouterr()
+
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text("SECOND BREAK\n")
+        assert _restore(repo, "router.js") == 0
+        assert _check(repo, require=1) == 1
+        _, err = capsys.readouterr()
+        assert "red-proof reach: DID NOT CHECK" in err
+        assert "caught 1 of 2 registered injection(s)" in err
+        assert "0 not caught, 1 not checked" in err
+
+
 class TestDeletedInjectionIsRestored:
     def test_restore_recreates_a_deleted_target_from_the_printed_snapshot(
             self, repo, capsys):
@@ -586,6 +691,12 @@ class TestDeletedInjectionIsRestored:
             self, repo, capsys):
         _begin(repo, "router.js")
         (repo / "router.js").unlink()
+        command = [
+            sys.executable, "-c",
+            "from pathlib import Path; assert Path('router.js').exists(), "
+            "'deleted router was reached'",
+        ]
+        assert _observe(repo, "router.js", "deleted router was reached", command) == 0
         assert _restore(repo, "router.js") == 0
         capsys.readouterr()
 
@@ -1726,10 +1837,10 @@ class TestNamedLaneAcrossEveryCliVerb:
     @staticmethod
     def _run(repo: Path, env: dict[str, str], *args: str):
         return subprocess.run(
-            ["python3", str(CLI_PATH), *args, "--cwd", str(repo)],
+            ["python3", str(CLI_PATH), "--cwd", str(repo), *args],
             capture_output=True, text=True, env=env)
 
-    def test_explicit_lane_wins_over_a_disagreeing_env_for_all_four_verbs(
+    def test_explicit_lane_wins_over_a_disagreeing_env_for_all_five_verbs(
             self, repo, tmp_path):
         named = "named-lane-957"
         env_lane = "different-env-lane-957"
@@ -1757,6 +1868,14 @@ class TestNamedLaneAcrossEveryCliVerb:
         assert armed.stderr.startswith("check: REFUSED —"), armed.stderr
 
         (repo / "router.js").write_text("SABOTAGE FROM NAMED LANE 957\n")
+        observed = self._run(
+            repo, env, "observe", "router.js", "--lane", named,
+            "--failure", "named lane injection reached", "--command",
+            sys.executable, "-c",
+            "from pathlib import Path; assert 'SABOTAGE' not in "
+            "Path('router.js').read_text(), 'named lane injection reached'")
+        assert observed.returncode == 0, observed.stdout + observed.stderr
+        assert named_seg in observed.stdout and env_seg not in observed.stdout
         restore = self._run(repo, env, "restore", "router.js", "--lane", named)
         assert restore.returncode == 0, restore.stdout + restore.stderr
         assert "original restored & verified" in restore.stdout, restore.stdout

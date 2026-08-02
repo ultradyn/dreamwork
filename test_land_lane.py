@@ -45,7 +45,7 @@ def _write(path: Path, text: str) -> None:
 
 def _redproof(lane: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(REDPROOF), *args, "--cwd", str(lane)],
+        [sys.executable, str(REDPROOF), "--cwd", str(lane), *args],
         cwd=lane,
         capture_output=True,
         text=True,
@@ -107,6 +107,13 @@ def landing_repo(tmp_path: Path):
     armed = _redproof(lane, "begin", "feature.txt", "--expectation", "test_named.py")
     assert armed.returncode == 0, armed.stdout + armed.stderr
     _write(lane / "feature.txt", "recorded red-proof injection\n")
+    observed = _redproof(
+        lane, "observe", "feature.txt", "--failure", "feature injection reached",
+        "--command", sys.executable, "-c",
+        "from pathlib import Path; assert Path('feature.txt').read_text() == "
+        "'lane\\n', 'feature injection reached'",
+    )
+    assert observed.returncode == 0, observed.stdout + observed.stderr
     restored = _redproof(lane, "restore", "feature.txt")
     assert restored.returncode == 0, restored.stdout + restored.stderr
     return root, lane
@@ -453,7 +460,29 @@ def test_empty_registry_refuses_with_loud_zero_denominators(landing_repo):
     assert "--require 1 was set" in result.stderr
     assert "commits examined=1" in result.stderr
     assert "registries audited=ALL DISCOVERABLE" in result.stderr
-    assert "injections registered>=1 required" in result.stderr
+    assert "injections registered and causally caught>=1 required" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_registered_but_unchecked_injection_refuses_with_reach_denominators(
+        landing_repo):
+    """#948's remaining half: restored bytes are not evidence of causal reach."""
+    root, lane = landing_repo
+    armed = _redproof(lane, "begin", "feature.txt", "--expectation", "test_named.py")
+    assert armed.returncode == 0, armed.stdout + armed.stderr
+    _write(lane / "feature.txt", "second injection caught by nothing\n")
+    restored = _redproof(lane, "restore", "feature.txt")
+    assert restored.returncode == 0, restored.stdout + restored.stderr
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "red-proof reach: DID NOT CHECK" in result.stderr
+    assert "caught 1 of 2 registered injection(s)" in result.stderr
+    assert "examined 1 evidence artifact(s) for 2 registered injection(s)" in result.stderr
+    assert "REFUSE phase=red-proof-history" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
 
@@ -749,7 +778,7 @@ def test_documentation_only_branch_requires_no_injection_and_lands(doc_only_repo
         "0 that a red-proof could bind"
     ) in result.stdout
     assert "red-proof requirement: 0 injections REQUIRED" in result.stdout
-    assert "injections registered>=0 required" in result.stdout
+    assert "injections registered and causally caught>=0 required" in result.stdout
     assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before
 
 
@@ -1040,6 +1069,13 @@ def test_relevance_warns_when_test_brief_cannot_relate_to_redproof(tmp_path):
     armed = _redproof(lane, "begin", "dev/redproof.py", "--expectation", "test_brief.py")
     assert armed.returncode == 0, armed.stdout + armed.stderr
     _write(lane / "dev" / "redproof.py", "VALUE = 999\n")
+    observed = _redproof(
+        lane, "observe", "dev/redproof.py", "--failure", "redproof injection reached",
+        "--command", sys.executable, "-c",
+        "from pathlib import Path; assert Path('dev/redproof.py').read_text() == "
+        "'VALUE = 2\\n', 'redproof injection reached'",
+    )
+    assert observed.returncode == 0, observed.stdout + observed.stderr
     restored = _redproof(lane, "restore", "dev/redproof.py")
     assert restored.returncode == 0, restored.stdout + restored.stderr
 

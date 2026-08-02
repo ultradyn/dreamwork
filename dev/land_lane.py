@@ -796,7 +796,8 @@ def land(branch: str, tests: Sequence[str], *, base: str = "master") -> int:
     audited_branch_sha = _git_text(repo, "rev-parse", "--verify", f"refs/heads/{branch}")
     population = (
         f"commits examined={commits_examined}; registries audited=ALL DISCOVERABLE "
-        f"by dev/redproof.py (zero is not accepted); injections registered>="
+        f"by dev/redproof.py (zero is not accepted); injections registered and "
+        f"causally caught>="
         f"{required} required; {_requirement_line(diff)}; "
         f"audited tip={audited_lane_head or 'UNREADABLE'}"
     )
