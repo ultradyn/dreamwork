@@ -1006,6 +1006,85 @@ def test_documentation_only_branch_requires_no_injection_and_lands(doc_only_repo
     assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before
 
 
+def test_unreadable_registry_at_require_zero_names_its_cause_not_absence(
+        doc_only_repo, monkeypatch):
+    """#1038 Finding 1 integration: a registry that is PRESENT but UNREADABLE
+    (a chmod 000 parent) must not make land_lane tell the operator 'can locate
+    no registry' or attribute the fault to #949's absent-registry case. The
+    note in land_lane's FAULT clause was written when exit-2-at-require-0 meant
+    the absent-registry blind case; #1038 made unreadable registries fault too,
+    so the old note now asserts something false — the operator gets redproof's
+    true FAULT and then a false explanation that sends them looking for a
+    missing file when the cause is a permission bit they could fix in one
+    command.
+
+    This goes through the land_lane path (not redproof directly) because the
+    defect is in land_lane's composition of redproof's output (#1038 F1 D2):
+    a user of ``just land-lane`` never reads redproof's stdout directly.
+
+    Direction 2 guards: (a) asserting the bad text is *absent* passes if the
+    note is deleted entirely, so the test also asserts a CAUSE-SPECIFIC clause
+    IS present; (b) a substring shared by both branches passes either way, so
+    the asserted clause is the one unique to the unreadable cause.
+    """
+    import os
+    root, lane = doc_only_repo
+    assert _git(lane, "diff", "--name-only", "master", "lane").split() == [
+        ".dreamwork/docs/census.md"
+    ], "precondition: doc-only diff so --require derives to 0"
+
+    # Create a launch-identity dir holding a registry.json, then make its
+    # redproof dir unreadable so redproof faults at the read.
+    monkeypatch.setenv("DREAMWORK_LANE_ID", "unreadable-1038")
+    armed = _redproof(lane, "begin", ".dreamwork/docs/census.md",
+                      "--expectation", "test_named.py")
+    assert armed.returncode == 0, armed.stdout + armed.stderr
+    forgotten = _redproof(lane, "forget", ".dreamwork/docs/census.md")
+    assert forgotten.returncode == 0, forgotten.stdout + forgotten.stderr
+    monkeypatch.delenv("DREAMWORK_LANE_ID", raising=False)
+
+    import dev.redproof as rp
+    idirs = rp._ls.lane_identity_dirs(lane)
+    assert len(idirs) == 1, f"precondition: one identity dir, got {len(idirs)}"
+    reg_dir = rp._redproof_dir(lane, idirs[0].name, rp._role(lane))
+    reg = reg_dir / "registry.json"
+    assert reg.exists(), "precondition: registry.json exists and is readable"
+    os.chmod(reg_dir, 0o000)
+    try:
+        assert not reg.exists(), (
+            "precondition: exists() must return False under chmod 000 — "
+            "if not, the test runs as root or a mode-ignoring fs and "
+            "proves nothing")
+        result = _run(root, "test_named.py")
+        assert result.returncode == 1, (
+            "an unreadable registry must REFUSE, not pass:\n" + result.stderr)
+        # Extract the REFUSE line — the note lives inside it, distinct from
+        # the relayed redproof stderr that precedes it.
+        refuse_lines = [
+            line for line in result.stderr.splitlines()
+            if "REFUSE phase=red-proof-history" in line
+        ]
+        assert refuse_lines, (
+            "expected a REFUSE phase=red-proof-history line:\n" + result.stderr)
+        refuse_line = refuse_lines[0]
+        # Direction 1: the false attribution must be gone.
+        assert "can locate no registry" not in refuse_line, (
+            "land_lane's note told the operator the registry is absent when "
+            "it exists but is unreadable:\n" + refuse_line)
+        assert "#949" not in refuse_line, (
+            "land_lane's note attributed an unreadable-registry fault to "
+            "#949's absent-registry case:\n" + refuse_line)
+        # Direction 2: the cause-specific clause must be present — this is
+        # what catches a fix that just deletes the note. "permission issue"
+        # is unique to the note, not to redproof's relayed stderr.
+        assert "permission issue" in refuse_line, (
+            "land_lane's note must name the unreadable cause specifically "
+            "(permission issue), not just omit the false one:\n"
+            + refuse_line)
+    finally:
+        os.chmod(reg_dir, 0o755)
+
+
 def test_plan_plus_required_doc_map_row_lands_without_an_injection(
     plan_with_doc_map_repo,
 ):

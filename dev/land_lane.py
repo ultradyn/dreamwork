@@ -1150,14 +1150,36 @@ def land(
         # was OWED, never about whether the audit could run. But #940: say
         # which of the two this is, because a doc-only branch that owed nothing
         # and a branch hiding an armed injection print the same exit code.
+        #
+        # #1038: the note must be CAUSE-AWARE. Exit 2 at --require 0 no longer
+        # means "no registry found" (that case exits 0 now) — it means the
+        # registry exists but could not be read (permissions) or parsed
+        # (malformed JSON), or some other audit fault. The old note asserted
+        # "can locate no registry" / "#949" for every exit-2-at-require-0
+        # cause, which is false for the unreadable case (#1038 Finding 1):
+        # it sends the operator looking for a missing file when the cause is a
+        # permission bit. Derive the cause from redproof's own stderr so the
+        # note can never assert something the audit did not report.
         note = ""
         if required == 0 and redproof.returncode == 2:
+            fault = redproof.stderr
+            if "could not be read" in fault:
+                cause = (
+                    "the registry exists but could not be read — likely a "
+                    "permission issue (e.g. a chmod 000 parent dir)")
+            elif "present but unparseable" in fault:
+                cause = (
+                    "the registry is present but malformed JSON — inspect "
+                    "and repair it")
+            else:
+                cause = (
+                    "see dev/redproof.py's output above for the specific "
+                    "cause")
             note = (
-                "; NOTE this FAULT is NOT the --require rule: 0 injections were "
-                "owed, and dev/redproof.py faults independently of --require when "
-                "it can locate no registry for this worktree. That fault is #949's "
-                "unfixed second half and lives in dev/redproof.py, not here"
-            )
+                "; NOTE this FAULT is NOT the --require rule: 0 injections "
+                "were owed, and dev/redproof.py faulted during its own "
+                f"audit because {cause}, not because a required injection "
+                "is missing")
         return _refuse(
             "red-proof-history",
             f"dev/redproof.py check refused or faulted with exit {redproof.returncode}"
