@@ -4391,6 +4391,41 @@ def read_posture_file(target):
     return parse_posture_text(raw)
 
 
+def read_posture_agreement(target):
+    """Observe whether the readable file agrees with append-only history."""
+    from dreamwork_db import Access, open_database
+    from dreamwork_db.posture import resolve_posture_agreement
+    from dreamwork_db.tasks import task_store_spec
+
+    axes = tuple(_posture_vocab().POSTURE_AXES)
+    path = os.path.join(target, ".dreamwork", "posture")
+    try:
+        with open(path, encoding="utf-8") as posture_file:
+            file_posture = parse_posture_text(posture_file.read())
+        file_error = None
+    except OSError as exc:
+        file_posture = None
+        file_error = f"posture file unavailable: {one_line(str(exc))}"
+
+    db_path = store_path(os.path.join(target, ".dreamwork"))
+    if not db_path.exists():
+        return resolve_posture_agreement(
+            file_posture, {}, axes, file_error=file_error
+        )
+    try:
+        with open_database(
+                task_store_spec(db_path), access=Access.READ) as store:
+            return store.posture.agreement(
+                file_posture, axes, file_error=file_error
+            )
+    except Exception as exc:
+        return resolve_posture_agreement(
+            file_posture, {}, axes,
+            file_error=file_error,
+            history_error=f"posture history unavailable: {one_line(str(exc))}",
+        )
+
+
 def read_subagent_policy(target):
     """The free-text subagent policy override (#650), or None if unset.
 
@@ -4456,6 +4491,7 @@ def resolve_posture(target):
     out["subagent_policy"] = (lint.SUBAGENT_POLICY_DEFAULT if policy is None
                               else policy)
     out["subagent_policy_source"] = "default" if policy is None else "file"
+    out["agreement"] = read_posture_agreement(target)
     return out
 
 
@@ -6326,7 +6362,8 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                     "ok": True, "pace": pace, "asking": asking,
                     "delegation": delegation, "delivery": delivery,
                     "orchestration": orchestration,
-                    "changed": False, "store_logged": True,
+                    "changed": False, "store_log": "nothing-to-write",
+                    "agreement": current["agreement"],
                 }), "application/json")
                 return
             # Also silent when the on-disk file already holds exactly this
@@ -6343,7 +6380,8 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                     "ok": True, "pace": pace, "asking": asking,
                     "delegation": delegation, "delivery": delivery,
                     "orchestration": orchestration,
-                    "changed": False, "store_logged": True,
+                    "changed": False, "store_log": "nothing-to-write",
+                    "agreement": current["agreement"],
                 }), "application/json")
                 return
             if not write_posture(target, pace, asking, delegation, delivery,
@@ -6359,7 +6397,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 for axis in lint.POSTURE_AXES
                 if current[axis] != final[axis]
             ]
-            store_logged = True
+            store_log = "nothing-to-write"
             if axis_changes:
                 from dreamwork_db import Access, open_database
                 from dreamwork_db.tasks import task_store_spec
@@ -6382,10 +6420,11 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                     if written != len(axis_changes):
                         raise RuntimeError(
                             f"wrote {written}/{len(axis_changes)} posture changes")
+                    store_log = "wrote"
                 except Exception as exc:
                     # Increment 1 keeps the file authoritative: a store fault
                     # must not roll back his posture, but it must be visible.
-                    store_logged = False
+                    store_log = "failed"
                     log_event(
                         target,
                         "POSTURE STORE WRITE FAILED: " + one_line(str(exc)),
@@ -6406,7 +6445,8 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 "delegation": delegation, "delivery": delivery,
                 "orchestration": orchestration,
                 "changed": changed,
-                "store_logged": store_logged,
+                "store_log": store_log,
+                "agreement": read_posture_agreement(target),
                 "delegation_label": lint.delegation_posture(delegation),
             }), "application/json")
 

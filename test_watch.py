@@ -11409,6 +11409,51 @@ class TestPosture(unittest.TestCase):
             self.assertEqual(p["delegation"], 1)
             self.assertEqual(p["delegation_label"], "assist")
 
+    def test_agreement_compares_parsed_posture_not_file_spelling(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            with open_database(
+                    task_store_spec(watch.store_path(dw)),
+                    access=Access.WRITE) as store:
+                with store.transaction():
+                    store.posture.append_changes([
+                        ("pace", "idle", "hot"),
+                        ("asking", "ask", "inform"),
+                        ("delegation", 0, 2),
+                        ("delivery", "instant", "batched"),
+                        ("orchestration", "hands-on", "orchestrator"),
+                    ], at="2026-08-02T00:00:00Z", actor="test")
+            posture_path = os.path.join(dw, "posture")
+            with open(posture_path, "w", encoding="utf-8") as f:
+                f.write(
+                    "  ORCHESTRATION : orchestrator\n"
+                    "delivery: batched\n\n"
+                    "delegation : 02\n"
+                    "asking: inform\n"
+                    "pace: hot\n"
+                )
+            agreement = watch.collect(d)["posture"]["agreement"]
+            self.assertEqual(agreement["status"], "AGREE", agreement)
+            self.assertEqual(agreement["axes_compared"], 5)
+            self.assertEqual(agreement["axes_not_compared"], 0)
+
+    def test_unreadable_posture_file_cannot_compare(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            with open_database(
+                    task_store_spec(watch.store_path(dw)),
+                    access=Access.WRITE) as store:
+                with store.transaction():
+                    pass
+            os.mkdir(os.path.join(dw, "posture"))
+            agreement = watch.collect(d)["posture"]["agreement"]
+            self.assertEqual(agreement["status"], "CANNOT_COMPARE")
+            self.assertEqual(agreement["axes_compared"], 0)
+            self.assertEqual(agreement["axes_not_compared"], 5)
+            self.assertIn("posture file unavailable", agreement["message"])
+
     def test_post_writes_file_and_one_event_on_change(self):
         """Production line: _handle_posture write + log_event on real change."""
         with tempfile.TemporaryDirectory() as d:
@@ -11463,7 +11508,8 @@ class TestPosture(unittest.TestCase):
             payload = {"pace": "steady", "asking": "ask", "delegation": 0}
             status, body = self._post_json(base + "/posture", payload)
             self.assertEqual(status, 202)
-            self.assertTrue(body["store_logged"])
+            self.assertEqual(body["store_log"], "wrote")
+            self.assertEqual(body["agreement"]["status"], "CANNOT_COMPARE")
             conn = sqlite3.connect(str(watch.store_path(dw)))
             try:
                 rows = conn.execute(
@@ -11479,7 +11525,7 @@ class TestPosture(unittest.TestCase):
             status, body = self._post_json(base + "/posture", payload)
             self.assertEqual(status, 202)
             self.assertFalse(body["changed"])
-            self.assertTrue(body["store_logged"])
+            self.assertEqual(body["store_log"], "nothing-to-write")
             conn = sqlite3.connect(str(watch.store_path(dw)))
             try:
                 count = conn.execute(
@@ -11546,19 +11592,24 @@ class TestPosture(unittest.TestCase):
                     task_store_spec(watch.store_path(dw)),
                     access=Access.WRITE) as store:
                 with store.transaction():
-                    pass
+                    store.posture.append_changes(
+                        [("pace", "steady", "idle")],
+                        at="2026-08-02T00:00:00Z", actor="test")
             self.assertTrue(watch.write_posture(
                 d, "idle", "ask", 0, "instant", "hands-on"))
             base = self._serve(d)
             with unittest.mock.patch(
-                    "dreamwork_db.open_database",
+                    "dreamwork_db.posture.PostureRepository.append_changes",
                     side_effect=RuntimeError("injected locked store")):
                 status, body = self._post_json(base + "/posture", {
                     "pace": "hot", "asking": "ask", "delegation": 0,
                 })
             self.assertEqual(status, 202, (
                 "store history is write-through, not the increment-1 authority"))
-            self.assertFalse(body["store_logged"])
+            self.assertEqual(body["store_log"], "failed")
+            self.assertEqual(body["agreement"]["status"], "DISAGREE")
+            self.assertIn(
+                "pace file='hot' db='idle'", body["agreement"]["message"])
             self.assertEqual(watch.read_posture_file(d)["pace"], "hot")
             conn = sqlite3.connect(str(watch.store_path(dw)))
             try:
@@ -11567,7 +11618,9 @@ class TestPosture(unittest.TestCase):
                 ).fetchone()[0]
             finally:
                 conn.close()
-            self.assertEqual(count, 0)
+            self.assertEqual(count, 1, (
+                "the injected failed append must not add a row beyond the "
+                "one-row comparison baseline"))
             with open(os.path.join(dw, "watch-events.log"), encoding="utf-8") as f:
                 events = f.read()
             self.assertIn(
