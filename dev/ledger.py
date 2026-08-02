@@ -44,7 +44,7 @@ USAGE
   python3 dev/ledger.py get <id> [--ledger PATH]
   python3 dev/ledger.py count [--state open|landed] [--json] [--ledger PATH]
   python3 dev/ledger.py reviews list|get <artifact> [--ledger PATH]
-  python3 dev/ledger.py groups create|add-task|get|list|add-trigger ... [--ledger PATH]
+  python3 dev/ledger.py groups create|add-task|remove-task|get|list|add-trigger ... [--ledger PATH]
   python3 dev/ledger.py groups kinds|define-kind|set-parent|tree|require|blockers|ready ...
 
 FROM A LANE WORKTREE, `--ledger` IS NOT OPTIONAL (#667). The store is
@@ -2464,6 +2464,7 @@ def _verb_groups(args, dw_dir):
                                access=Access.READ) as store:
                 group = store.groups.get(args.group_id)
                 triggers = store.groups.triggers(args.group_id)
+                removed = store.groups.removed_members(args.group_id)
                 try:
                     progress = store.groups.progress(args.group_id)
                 except EmptyGroup as exc:
@@ -2481,6 +2482,16 @@ def _verb_groups(args, dw_dir):
                     "task_type": trigger.task_type,
                 }
                 for trigger in triggers
+            ]
+            # #1037 Finding 1 — the supported audit reader.  Without this the
+            # actor, reason and former membership are reachable only by raw
+            # SQL, so a goal quietly narrowed to match finished work reads
+            # 100% done.  Surfaced here so `groups get` answers "what was
+            # removed from this goal?" without leaving the product.
+            rec["removed_members"] = [
+                {"task_id": m.task_id, "removed_at": m.removed_at,
+                 "actor": m.actor, "detail": m.detail}
+                for m in removed
             ]
             if progress is None:
                 rec["progress_error"] = progress_error
@@ -2507,6 +2518,13 @@ def _verb_groups(args, dw_dir):
                     ) or "none")
                     + "\n"
                 )
+                if removed:
+                    sys.stdout.write("removed_members:\n")
+                    for m in removed:
+                        sys.stdout.write(
+                            f"  #{m.task_id} removed at {m.removed_at}"
+                            f" by {m.actor} — {m.detail}\n"
+                        )
             # A zero-member group was inspected, but progress was not judged.
             # Nonzero makes that impossible to mistake for a green 0/0 bar.
             return 2 if progress is None else 0
@@ -2549,6 +2567,32 @@ def _verb_groups(args, dw_dir):
                     disposition = (
                         f"task #{args.task_id} {status} in group #{args.group_id}"
                     )
+                elif args.groups_cmd == "remove-task":
+                    status = tx.groups.remove_task(
+                        args.group_id, args.task_id, actor=actor, at=at,
+                        why=args.why, apply=not args.dry_run,
+                    )
+                    disposition = (
+                        f"task #{args.task_id} {status} from group"
+                        f" #{args.group_id}"
+                    )
+                    # #1037 Finding 2 — progress rolls the whole subtree up by
+                    # de-duplicated task id, so a task still in a descendant
+                    # keeps the parent's denominator unchanged after a
+                    # direct-edge removal.  Name the retaining descendants in
+                    # the disposition so the operator sees the task is still
+                    # counted and why, rather than a silent success (option (a)
+                    # — honest and cheap; the caller must still act).
+                    retaining = tx.groups.descendant_membership(
+                        args.group_id, args.task_id,
+                    )
+                    if retaining:
+                        ids = ", ".join(f"#{g.id}" for g in retaining)
+                        disposition += (
+                            f" — still counted via descendant {ids}"
+                            f" (progress counts the subtree; remove it there"
+                            f" too to narrow the denominator)"
+                        )
                 elif args.groups_cmd == "add-trigger":
                     trigger_id, status = tx.groups.register_completion_task(
                         args.group_id, title=args.title, priority=args.priority,
@@ -2925,6 +2969,22 @@ def main(argv=None):
         "--dry-run", action="store_true",
         help="print the disposition after full validation; write nothing")
     groups_add.add_argument("--ledger", default=LEDGER_DEFAULT)
+    # #1037 — the correction path add-task never had. Removal is auditable, not
+    # a bare delete: --why is required (as retitle/unblock/next-up require it)
+    # and the reason lands in the task's chained event log. Refuses non-members
+    # and missing groups rather than no-op succeeding.
+    groups_remove = groups_sub.add_parser(
+        "remove-task",
+        help="remove one task from a group (audited; refuses non-members)")
+    groups_remove.add_argument("group_id", type=int)
+    groups_remove.add_argument("task_id", type=int)
+    groups_remove.add_argument("--why", required=True,
+        help="the reason — recorded in the task's history (NOT optional)")
+    groups_remove.add_argument("--actor", default=None)
+    groups_remove.add_argument(
+        "--dry-run", action="store_true",
+        help="print the disposition after full validation; write nothing")
+    groups_remove.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_trigger = groups_sub.add_parser(
         "add-trigger",
         help="register an inert task definition for group completion")

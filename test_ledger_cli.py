@@ -2051,6 +2051,192 @@ def test_groups_add_task_dry_run_agrees_with_real_and_writes_nothing(
             f"dry={dry!r}, real={real!r}")
 
 
+# groups remove-task — #1037. The correction path add-task never had. This is
+# the CLI seam: PRODUCTION LINE is the `args.groups_cmd == "remove-task"`
+# branch in dev/ledger.py `_verb_groups`. Direction 1 RED: with the branch
+# absent the sub-verb is unknown (argparse exit 2) and the denominator never
+# shrinks; the tests below assert the rendered consequence, not the rc.
+
+def _remove_disposition(output):
+    match = re.search(
+        r"groups: task #\d+ (removed) from group #\d+", output)
+    assert match is not None, (
+        f"removal disposition absent from {output!r}")
+    return match.group(1)
+
+
+def _cli_progress_total(dev_ledger, ledger, group_id):
+    """Read total_count back through the CLI — the denominator this task exists for."""
+    rc, out, _ = _run(dev_ledger, [
+        "groups", "get", str(group_id), "--json", "--ledger", ledger,
+    ])
+    assert rc == 0, out
+    return json.loads(out.splitlines()[0])["progress"]["total_count"]
+
+
+def test_groups_remove_task_shrinks_rendered_denominator(dev_ledger, tmp_path):
+    """Direction 1: removing a member must reduce the progress denominator.
+    Asserts total_count before and after with concrete numbers — a test that
+    never re-reads progress misses the whole point (#1037).
+
+    Also the NEGATIVE half of the descendant-retention guard (#1037 Finding
+    2): a leaf removal — no descendants retain the task — must NOT carry the
+    'still counted via descendant' clause. An unconditional warning there is
+    the exact false alarm that would stop the coordinator mid-narrowing, and
+    the success-prefix match alone proved unable to catch it. The leaf case
+    is asserted BY CONSTRUCTION here (the goal has no child groups), not left
+    to accident — a group with no children by accident passes vacuously."""
+    _, group_id, existing_id, fresh_id, ledger, db = _membership_target(tmp_path)
+    # Deliberate leaf: the membership fixture is one flat goal with no child
+    # groups, so descendant_membership() must be empty. Asserted at runtime
+    # rather than assumed, so the negative assertion below is not vacuous.
+    with open_database(task_store_spec(db), access=Access.READ) as store:
+        assert store.groups.descendants(group_id) == (), (
+            f"precondition broken: goal #{group_id} must be a leaf (no"
+            f" descendants) for the no-retention-clause assertion; got"
+            f" {[g.id for g in store.groups.descendants(group_id)]}")
+    # add the fresh member so the goal has TWO members (precondition, derived).
+    rc, out, err = _run(dev_ledger, [
+        "groups", "add-task", str(group_id), str(fresh_id),
+        "--ledger", ledger,
+    ])
+    assert rc == 0, err
+    before = _cli_progress_total(dev_ledger, ledger, group_id)
+    assert before == 2, f"precondition broken: expected 2 members, got {before}"
+
+    rc, out, err = _run(dev_ledger, [
+        "groups", "remove-task", str(group_id), str(fresh_id),
+        "--why", "dependency-not-membership",
+        "--ledger", ledger,
+    ])
+    assert rc == 0, err
+    assert _remove_disposition(out) == "removed"
+    after = _cli_progress_total(dev_ledger, ledger, group_id)
+    assert after == 1, (
+        f"denominator did not shrink: expected 1 after removal, got {after}")
+    # #1037 Finding 2 — the negative half. A leaf removal has no retaining
+    # descendant, so the clause that names one must be ABSENT. Asserting the
+    # specific clause (not the whole string) so an unrelated wording change
+    # cannot make this pass for the wrong reason.
+    assert "still counted via descendant" not in out, (
+        f"a leaf removal must not report descendant retention, but the"
+        f" disposition did: {out!r}")
+
+
+def test_groups_remove_task_refuses_non_member_and_missing_group(
+        dev_ledger, tmp_path):
+    """A no-op success is indistinguishable from a removal that worked. Both
+    the non-member and missing-group cases must refuse (exit 1, named error),
+    because that is exactly where a silent no-op hides."""
+    _, group_id, existing_id, fresh_id, ledger, db = _membership_target(tmp_path)
+    # fresh_id was filed but never added to the group -> not a member.
+    rc, out, err = _run(dev_ledger, [
+        "groups", "remove-task", str(group_id), str(fresh_id),
+        "--why", "never belonged", "--ledger", ledger,
+    ])
+    assert rc == 1, f"non-member removal must refuse (rc=1), got rc={rc}: {err}"
+    assert "not a member" in err, (
+        f"refusal must name the gap, got err={err!r}")
+
+    # missing group must also refuse, not no-op.
+    rc, out, err = _run(dev_ledger, [
+        "groups", "remove-task", "999999", str(existing_id),
+        "--why", "no such group", "--ledger", ledger,
+    ])
+    assert rc == 1, f"missing-group removal must refuse (rc=1), got rc={rc}: {err}"
+    assert "no task group #999999" in err, (
+        f"refusal must name the missing group, got err={err!r}")
+
+
+def test_groups_remove_task_requires_reason(dev_ledger, tmp_path):
+    """--why is required, as retitle/unblock/next-up require it (#1037). A
+    bare removal is an unaudited reshape of a goal. argparse enforces this
+    itself, so the signal is SystemExit(2) — the same shape every
+    missing-required-arg verb produces."""
+    _, group_id, existing_id, _fresh_id, ledger, db = _membership_target(tmp_path)
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        with pytest.raises(SystemExit) as exc:
+            dev_ledger.main([
+                "groups", "remove-task", str(group_id), str(existing_id),
+                "--ledger", ledger,
+            ])
+    assert exc.value.code == 2, (
+        f"missing --why must be a usage error (exit 2), got {exc.value.code}")
+    assert "--why" in err.getvalue()
+
+
+def test_groups_remove_task_auditable_via_supported_reader(
+        dev_ledger, tmp_path):
+    """#1037 Finding 1 — the audit trail has a supported reader. After a
+    removal, 'groups get --json' must surface removed_members with the actor
+    and reason, so an operator never reaches past the product to raw SQL.
+    Asserts the JSON output the reader produces, not the database row."""
+    _, group_id, existing_id, _fresh_id, ledger, db = _membership_target(tmp_path)
+    rc, out, err = _run(dev_ledger, [
+        "groups", "remove-task", str(group_id), str(existing_id),
+        "--why", "narrow goal scope", "--ledger", ledger,
+    ])
+    assert rc == 0, err
+    # Read it back through the SUPPORTED reader. rc=2 is correct when the
+    # group becomes empty after its last member is removed — progress cannot
+    # judge, but removed_members must still surface.
+    rc, out, _ = _run(dev_ledger, [
+        "groups", "get", str(group_id), "--json", "--ledger", ledger,
+    ])
+    assert rc in (0, 2), out
+    rec = json.loads(out.splitlines()[0])
+    removed = rec.get("removed_members", [])
+    assert removed, (
+        f"removed_members must appear in groups get; got {rec!r}")
+    matched = [m for m in removed if m["task_id"] == existing_id]
+    assert matched, (
+        f"removed_members must name the removed task #{existing_id}: {removed}")
+    entry = matched[-1]
+    assert entry["actor"], (
+        f"removed_members must carry the actor: {entry}")
+    assert "narrow goal scope" in entry["detail"], (
+        f"removed_members must carry the reason: {entry['detail']!r}")
+
+
+def test_groups_remove_task_reports_descendant_retention(dev_ledger, tmp_path):
+    """#1037 Finding 2 — a task in a parent AND a descendant keeps the
+    denominator unchanged after a direct-edge removal. The disposition must
+    NAME the retaining descendant so the operator sees the task is still
+    counted, rather than a silent success. Hierarchical fixture: a flat
+    fixture cannot see this class at all."""
+    target, parent_id, ledger = _goal_target(
+        tmp_path, title="hierarchical parent", total=1)
+    db = Path(ledger).parent / ledger_parse.STORE_FILENAME
+    existing_id = 1  # _goal_target(total=1) files task #1
+    # Create a child epic under the parent and add the same task to it.
+    with open_database(task_store_spec(db), access=Access.WRITE) as store:
+        with store.transaction() as tx:
+            child_id = tx.groups.create(
+                kind="epic", title="child epic", actor="test",
+                at="2026-08-01T00:00:00Z", parent_id=parent_id)
+            tx.groups.add_task(
+                child_id, existing_id, actor="test",
+                at="2026-08-01T00:00:01Z")
+    before = _cli_progress_total(dev_ledger, ledger, parent_id)
+    # Remove the direct edge from the parent — the task is still in the child.
+    rc, out, err = _run(dev_ledger, [
+        "groups", "remove-task", str(parent_id), str(existing_id),
+        "--why", "narrow the goal", "--ledger", ledger,
+    ])
+    assert rc == 0, err
+    # The hazard: denominator UNCHANGED — the task is still counted via child.
+    after = _cli_progress_total(dev_ledger, ledger, parent_id)
+    assert before == after, (
+        f"precondition: denominator must be unchanged (task retained by"
+        f" child); before={before} after={after}")
+    # The guard: the disposition names the retaining descendant.
+    assert "still counted via descendant" in out, (
+        f"disposition must name the retaining descendant: {out!r}")
+    assert f"#{child_id}" in out, (
+        f"disposition must name the child #{child_id}: {out!r}")
+
+
 def test_set_current_moves_the_rendered_tick_line(dev_ledger, tmp_path):
     """THE DEFECT (#962): no supported interface could move the current-goal
     pointer, so the tick rendered 'no current goal' forever. Direction 1
