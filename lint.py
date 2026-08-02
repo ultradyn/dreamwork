@@ -3143,13 +3143,27 @@ def _builder_delegation_js_sources(root: Path) -> list[Path]:
     return found
 
 
-# The two source shapes that name the builder a component delegates to. Both
-# require a STRING LITERAL so the generic mechanism in delegate.js —
+# The source shapes that name the builder a component delegates to. The first
+# two require a STRING LITERAL so the generic mechanism in delegate.js —
 # `export function fromBuilder(name, call)` and `Delegate.dwBuilder = name`,
 # where the name is a runtime parameter, not a delegation — does not match.
+#
+# The third and fourth arms match `data-dw-delegate` — the attribute the
+# delegating host element carries (delegate.js:110). The mechanism itself
+# writes it with a VARIABLE value (`'data-dw-delegate': name`), so both arms
+# require a string-literal value and exclude the brace-expression/variable
+# forms the mechanism uses. Two positions are covered:
+#   - object-literal: `'data-dw-delegate': 'NAME'` (quoted key, colon)
+#   - JSX attribute:  `data-dw-delegate='NAME'`     (bare key, equals)
+# Both appear in the real sources — wrapper-exports.js:40 uses the object-
+# literal form, and a JSX build (forbidden here but live in a fork) uses the
+# attribute form. A brace-expression value (`data-dw-delegate={name}`) is NOT
+# covered and should not be — it is the mechanism's own parameter form.
 _BUILDER_DELEGATE_RE = re.compile(
     r"fromBuilder\s*\(\s*['\"]([A-Za-z_$][\w$]*)['\"]"
     r"|\.dwBuilder\s*=\s*['\"]([A-Za-z_$][\w$]*)['\"]"
+    r"|['\"]data-dw-delegate['\"]\s*:\s*['\"]([A-Za-z_$][\w$]*)['\"]"
+    r"|data-dw-delegate\s*=\s*['\"]([A-Za-z_$][\w$]*)['\"]"
 )
 # A builder definition: a column-0 (top-level) function/const/let/var binding.
 # Column-0 is load-bearing — client/router.js:553 has a LOCAL `const label`
@@ -3207,7 +3221,7 @@ def check_builder_delegation(root: Path, rep: Report) -> None:
             continue
         for i, line in enumerate(text.splitlines(), 1):
             for m in _BUILDER_DELEGATE_RE.finditer(line):
-                name = m.group(1) or m.group(2)
+                name = m.group(1) or m.group(2) or m.group(3) or m.group(4)
                 delegates.append((name, "%s:%d" % (rel, i)))
                 delegate_files.add(str(rel))
             m = _BUILDER_DEF_RE.match(line)

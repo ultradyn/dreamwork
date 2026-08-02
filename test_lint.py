@@ -10961,3 +10961,62 @@ class TestBuilderDelegation:
                 "const label = () => 'namesake';\n")},
             client={"components.js": "const other = 1;\n"})
         assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+
+    def test_data_dw_delegate_object_literal_is_a_delegate_site(self, tmp_path):
+        # The third source shape: a static `'data-dw-delegate': 'NAME'` in
+        # object-literal position (wrapper-exports.js:40). A delegate whose
+        # builder was deleted must ERROR even when it only appears here —
+        # fromBuilder('known') resolves but 'gone' does not.
+        #
+        # Production line that must change for this to fail: the alternation
+        # in `_BUILDER_DELEGATE_RE` — without the data-dw-delegate arm, 'gone'
+        # is silently omitted and the check reports OK.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "import { fromBuilder } from './delegate.js';\n"
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "const X = React.createElement(HOST, {\n"
+                "  'data-dw-delegate': 'gone',\n"
+                "});\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        errs = [r for r in rows if r[0] == lint.ERROR]
+        assert errs and "gone" in errs[0][1], rows
+        assert "research.js:6" in errs[0][1], rows
+
+    def test_data_dw_delegate_jsx_attribute_is_a_delegate_site(self, tmp_path):
+        # The JSX-attribute position: `data-dw-delegate="NAME"` as a bare
+        # attribute name with a string value. The mechanism itself uses a
+        # brace expression (`data-dw-delegate={name}`) so it must NOT match;
+        # only the string-literal value is a delegation.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "<Host data-dw-delegate='gone'></Host>\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        errs = [r for r in rows if r[0] == lint.ERROR]
+        assert errs and "gone" in errs[0][1], rows
+
+    def test_data_dw_delegate_with_variable_value_is_not_a_delegate(self, tmp_path):
+        # The mechanism in delegate.js:110 uses a VARIABLE value
+        # (`'data-dw-delegate': name`), not a string literal. It must not
+        # inflate the delegate count — only a static name is a delegation.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/delegate.js": (
+                "export function fromBuilder(name, call) {\n"
+                "  return React.createElement(HOST, {\n"
+                "    'data-dw-delegate': name,\n"
+                "  });\n"
+                "}\n"
+                "const Row = fromBuilder('artifactRow', function (p) {\n"
+                "  return artifactRow(p.row);\n"
+                "});\n")},
+            client={"views.js": "function artifactRow(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1]
