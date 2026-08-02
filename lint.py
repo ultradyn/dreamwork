@@ -6344,6 +6344,116 @@ def check_frame_evidence_persisted(dw: Path, rep: Report) -> None:
             "evidence-reporting rule (#878)")
 
 
+def check_frame_premise_verified(dw: Path, rep: Report) -> None:
+    """The frame must tell lanes to verify the brief's premises against the code
+    before building, to STOP and report when they do not hold (stopping is a
+    successful delivery), and to re-verify citations on resume (#967).
+
+    Seven filed premises failed contact with the code in one session (#967).
+    Four were caught — not by review or tests, but by a sentence the coordinator
+    hand-wrote into each brief: "verify this yourself before you build." That is
+    a per-brief habit of one coordinator, not a property of the system. A wrong
+    premise silently becomes wrong work that passes its own gate (the gate checks
+    the work against the brief, and the brief is what is wrong), so the only
+    point it can be caught is before code is written. The rule promotes that
+    habit into the frame, where every dispatched lane reads it.
+
+    The rule has three halves and all three must land together: the first without
+    the second is worse than neither — a lane told to doubt but not licensed to
+    stop will improvise a scope change nobody sanctioned, unattributable
+    afterwards. The third extends #878's measurement-persistence rule to
+    citations: a citation carried across a compaction boundary is unverified by
+    default, whatever the summary's confidence.
+
+    Section-aware (direction 2a): the three markers must sit in the SAME ``## ``
+    section as the premise rule — a bullet stranded in 'Standing rules' is
+    invisible at the moment the lane is deciding whether to build. Direction 2b
+    (the likely real bug): the markers are distinctive on purpose — ``central``,
+    ``successful delivery``, and ``re-verify`` are all ABSENT from the frame
+    outside this rule (verified by census at write time), so deleting the section
+    removes all three and the check fails. A looser grep (``verify``,
+    ``report``) would be satisfied by existing text and could never go red.
+    Degrade-to-zero (#868): an empty or rule-less frame is an ERROR naming what
+    was examined (how many sections, how many carried the premise rule), never a
+    silent pass. Scope: only the skill repo carries ``briefs/frame.md`` at its
+    root, so a foreign dreamwork target is silent — the same scoping the two
+    sibling checks use.
+    """
+    root = dw.parent
+    frame = root / "briefs" / "frame.md"
+    if not frame.is_file():
+        return
+    text = frame.read_text(encoding="utf-8", errors="replace")
+    # Reuse the same `## ` section split as the two sibling frame checks and
+    # dev/brief.py's frame_sections: content before the first heading is preamble
+    # and is NOT emitted into a brief, so it cannot satisfy the rule.
+    sections: list[tuple[str, str]] = []
+    cur_head: str | None = None
+    cur_body: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if cur_head is not None:
+                sections.append((cur_head, "\n".join(cur_body)))
+            cur_head, cur_body = line.strip(), []
+        elif cur_head is not None:
+            cur_body.append(line)
+    if cur_head is not None:
+        sections.append((cur_head, "\n".join(cur_body)))
+    n_sections = len(sections)
+
+    # Anchor: the section carrying the premise-verification rule. `premise` is
+    # the word that names the whole rule and is census-clean (absent from the
+    # frame outside this section at write time).
+    _PREMISE = re.compile(r"premise", re.I)
+    premise_secs = [(h, b) for h, b in sections if _PREMISE.search(b)]
+    if not premise_secs:
+        rep.add(
+            ERROR, "frame premise verified",
+            f"examined {n_sections} section(s); 0 carry the premise-verification "
+            "rule — the frame no longer tells lanes to verify filed premises "
+            "against the code before building, so a wrong premise silently "
+            "becomes wrong work that passes its own gate (#967)")
+        return
+
+    # Three markers, each load-bearing and census-clean (all absent from the
+    # frame outside this rule at write time):
+    # - 'central': half 1 — verify the entry's CENTRAL factual claims.
+    # - 'successful delivery': half 2 — the license to stop. A lane told to
+    #   doubt but not licensed to stop will improvise; the frame must say in
+    #   those words that stopping with a refuted premise is a SUCCESSFUL
+    #   DELIVERY (#965's lane left zero commits and that was its best outcome).
+    # - 're-verify': half 3 — a resumed lane must re-verify its citations; a
+    #   citation carried across compaction is unverified by default (#878 for
+    #   measurements; citations fail identically and are cheaper to fabricate).
+    _CENTRAL = re.compile(r"central", re.I)
+    _SUCCESSFUL = re.compile(r"successful delivery", re.I)
+    _REVERIFY = re.compile(r"re-?verif", re.I)
+    all_armed = True
+    for h, b in premise_secs:
+        gaps = []
+        if not _CENTRAL.search(b):
+            gaps.append("'central' (half 1: verify the entry's central claims)")
+        if not _SUCCESSFUL.search(b):
+            gaps.append("'successful delivery' (half 2: the license to stop)")
+        if not _REVERIFY.search(b):
+            gaps.append("'re-verify' (half 3: re-verify citations on resume)")
+        if gaps:
+            all_armed = False
+            rep.add(
+                ERROR, "frame premise verified",
+                f"section '{h}' carries the premise rule but is missing "
+                f"{', '.join(gaps)} — a lane that doubts a premise but is not "
+                f"licensed to stop will improvise a scope change nobody "
+                f"sanctioned (#967); examined {n_sections} section(s)")
+    if all_armed:
+        rep.add(
+            OK, "frame premise verified",
+            "the premise section carries all three halves (verify central "
+            "claims, stopping is a successful delivery, re-verify citations "
+            f"on resume); examined {n_sections} section(s), "
+            f"{len(premise_secs)} carrying the premise rule (#967)")
+
+
 def check_handoffs(dw: Path, watch, rep: Report) -> None:
     """The delivery half of the single-writer rule (#381).
 
@@ -7548,6 +7658,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_boilerplate_expectation_derivation(dw, rep)
     check_frame_rebase_rearm(dw, rep)
     check_frame_evidence_persisted(dw, rep)
+    check_frame_premise_verified(dw, rep)
     check_related_markers(dw, watch, rep)
     check_lesson_near_duplicates(dw, rep)
     check_review_decision_integrity(dw, rep)
