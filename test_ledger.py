@@ -1318,12 +1318,14 @@ def test_collect_also_fixes_handles_length_mismatch(tmp_path):
     """#1111 direction-2: the short-sha join must survive a length mismatch.
 
     _collect_also_fixes uses the same full-sha keying as _git_presquash_refs.
-    This test constructs a commit, then reads it through _collect_also_fixes
-    using a DIFFERENT abbreviation length (7 chars vs git's default) — the
-    realistic shape that broke #1108's join during development."""
+    This test sets ``core.abbrev=8`` so git's %%h produces 8-char shas, then
+    passes a 7-char sha in the commits list — the length mismatch that broke
+    #1108's join during development. Before the fix, the join silently dropped
+    the id."""
     root = _bare_repo(tmp_path, "also-fixes-shamismatch")
+    _git(root, "config", "core.abbrev", "8")
     full = _also_fixes_commit(root, "fix(#11): task", [12])
-    # git default is 7 chars for small repos; use a 7-char abbreviation
+    # git's %%h now produces 8 chars; pass a 7-char sha to force the mismatch
     short7 = full[:7]
     result = ledger._collect_also_fixes(root, [(short7, "fix(#11): task")])
     tids = {tid for _, tid, _ in result}
@@ -1428,10 +1430,14 @@ def test_presquash_expand_survives_a_sha_length_mismatch(tmp_path):
     full %H the trailer map keys on, even when the abbreviation length differs.
 
     This constructs the exact shape that broke #1108 during development: the
-    commits list carries a DIFFERENT abbreviation than the trailer map's own
-    %h. Before the fix, the join silently missed and the follower returned
-    all-empty with no COULD NOT FOLLOW signal (#136 collapse)."""
+    commits list carries a DIFFERENT abbreviation length than the trailer map's
+    own %h. Before the fix, the join silently missed and the follower returned
+    all-empty with no COULD NOT FOLLOW signal (#136 collapse).
+
+    Sets ``core.abbrev=8`` so git's %%h produces 8-char shas, then passes a
+    7-char sha in the commits list to force the mismatch."""
     root = _bare_repo(tmp_path, "presquash-shamismatch")
+    _git(root, "config", "core.abbrev", "8")
     base = _commit(root, "docs: base")
     _git(root, "checkout", "-q", "-b", "lane")
     _commit(root, "feat(#12): hidden by the squash subject")
@@ -1440,8 +1446,7 @@ def test_presquash_expand_survives_a_sha_length_mismatch(tmp_path):
     squashed = _squashed_commit(
         root, base, "refs/tags/lane-presquash",
         "fix(#11): squash", "refs/tags/lane-presquash")
-    # Use a 7-char abbreviation (git's %h for a small repo is 7 chars); the
-    # trailer map uses its own %h. Before the fix, a mismatch dropped the join.
+    # git's %%h now produces 8 chars; pass a 7-char sha to force the mismatch
     short7 = squashed[:7]
 
     expanded, followed, unfollowable = ledger._presquash_expand(

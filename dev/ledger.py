@@ -1067,42 +1067,34 @@ def _presquash_ref_from_message(message):
 
 
 def _git_presquash_refs(repo, shas):
-    """Map each sha to its Presquash-Ref trailer value (only non-empty).
+    """Map each FULL sha to its Presquash-Ref trailer value (only non-empty).
 
-    One batched ``git log --no-walk`` over the given shas — the same commits
-    ``_git_subjects`` already fetched, read once more for their trailers. A sha
-    that does not resolve (a fixture placeholder) yields no line, so invented
-    shas contribute nothing. Keyed by the FULL sha (%H) so the join with the
-    subject list cannot silently miss on an abbreviation-length mismatch (#1111):
-    the ``commits`` list carries %h shas from ``_git_subjects``, and this
-    function's %h may differ if ``core.abbrev`` changes between calls. The
-    returned ``short_to_full`` map lets the caller resolve those %h shas to
-    the %H keys. Returns ({}, {}) on any git failure.
+    One batched ``git log --no-walk`` over the given shas. Keyed by the FULL
+    sha (%H) so the join with the subject list cannot silently miss on an
+    abbreviation-length mismatch (#1111): the ``commits`` list carries %h shas
+    from ``_git_subjects``, and the caller resolves those to %H via
+    ``_resolve_to_full`` (prefix match against the full-sha keys). Returns {}
+    on any git failure.
     """
     if not shas:
-        return {}, {}
+        return {}
     try:
         out = subprocess.run(
             ["git", "-C", str(repo), "log", "--no-walk",
-             "--format=%H\x1f%h\x1f%(trailers:key=Presquash-Ref,valueonly)",
+             "--format=%H\x1f%(trailers:key=Presquash-Ref,valueonly)",
              *shas],
             capture_output=True, text=True, timeout=20,
         )
     except (OSError, subprocess.SubprocessError):
-        return {}, {}
+        return {}
     if out.returncode != 0:
-        return {}, {}
+        return {}
     refs = {}
-    short_to_full = {}
     for line in out.stdout.splitlines():
-        parts = line.split("\x1f")
-        if len(parts) >= 2:
-            full, short = parts[0], parts[1]
-            short_to_full[short] = full
-            val = parts[2] if len(parts) >= 3 else ""
-            if val.strip():
-                refs[full] = val.strip()
-    return refs, short_to_full
+        full, sep, val = line.partition("\x1f")
+        if sep and val.strip():
+            refs[full] = val.strip()
+    return refs
 
 
 def _git_resolve_quiet(repo, revision):
@@ -1145,6 +1137,20 @@ def _git_constituent_subjects(repo, base_sha, tip_sha):
     return pairs
 
 
+def _resolve_to_full(sha, full_shas):
+    """Resolve any valid sha abbreviation to its full sha by prefix match.
+
+    #1111: the ``commits`` list carries %h shas from ``_git_subjects``, while
+    the trailer maps key on %H (full shas). A prefix match is correct because
+    any abbreviation of a git sha IS a prefix of the full sha. Returns ``sha``
+    unchanged if no full sha matches (the caller then misses gracefully).
+    """
+    for full in full_shas:
+        if full.startswith(sha):
+            return full
+    return sha
+
+
 def _presquash_expand(repo, commits):
     """Follow Presquash-Ref trailers; return constituent ids + follow status.
 
@@ -1173,13 +1179,13 @@ def _presquash_expand(repo, commits):
       level up (#1108/#136).
     """
     shas = [sha for sha, _ in commits]
-    trailers, short_to_full = _git_presquash_refs(repo, shas)
+    trailers = _git_presquash_refs(repo, shas)
     expanded, followed, unfollowable = [], [], []
     for sha, subject in commits:
         # #1111: resolve the abbreviated sha from the commits list to the full
         # sha the trailer map keys on, so an abbreviation-length mismatch
         # cannot silently turn a followable squash into "nothing followed".
-        full = short_to_full.get(sha, sha)
+        full = _resolve_to_full(sha, trailers)
         ref = trailers.get(full)
         if ref is None:
             continue  # not a land_lane squash (or a fixture sha) — scan normally
@@ -1255,7 +1261,7 @@ def _collect_also_fixes(repo, commits):
     try:
         out = subprocess.run(
             ["git", "-C", str(repo), "log", "--no-walk",
-             "--format=%H\x1f%h\x1f%(trailers:key=Also-Fixes,valueonly)",
+             "--format=%H\x1f%(trailers:key=Also-Fixes,valueonly)",
              *shas],
             capture_output=True, text=True, timeout=20,
         )
@@ -1264,14 +1270,11 @@ def _collect_also_fixes(repo, commits):
     if out.returncode != 0:
         return []
     full_to_ids = {}
-    short_to_full = {}
     current_full = None
     for line in out.stdout.splitlines():
-        parts = line.split("\x1f")
-        if len(parts) >= 2:
-            current_full, short = parts[0], parts[1]
-            short_to_full[short] = current_full
-            val = parts[2] if len(parts) >= 3 else ""
+        full, sep, val = line.partition("\x1f")
+        if sep:
+            current_full = full
             for tid_str in SWEEP_ID.findall(val):
                 full_to_ids.setdefault(current_full, []).append(int(tid_str))
         elif current_full is not None:
@@ -1281,7 +1284,7 @@ def _collect_also_fixes(repo, commits):
         return []
     result = []
     for sha, subject in commits:
-        full = short_to_full.get(sha, sha)
+        full = _resolve_to_full(sha, full_to_ids)
         ids = full_to_ids.get(full)
         if ids:
             for tid in ids:
