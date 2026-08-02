@@ -122,6 +122,23 @@ def test_commit_guard_fails_loud_when_classification_cannot_run(
     assert "worktrees examined=0; lanes classified=0" in err, err
 
 
+def test_commit_guard_fails_loud_when_main_checkout_cannot_be_classified(
+        tmp_path, monkeypatch, capsys):
+    root, _ = _repo_with_modern_lane(tmp_path)
+    real_run_git = lane_guard._run_git
+
+    def fail_git_dir(args, cwd):
+        if args == ["rev-parse", "--git-dir"]:
+            raise lane_guard.GuardError("git-dir unreadable")
+        return real_run_git(args, cwd)
+
+    monkeypatch.setattr(lane_guard, "_run_git", fail_git_dir)
+    assert lane_guard.check(root) == 2
+    assert "cannot classify main checkout (git-dir unreadable); refusing" in (
+        capsys.readouterr().err
+    )
+
+
 def test_tracked_hook_forwards_global_then_refuses_the_indexed_path(tmp_path):
     """The production hook reaches `check` and `_staged_paths`, in that order."""
     root, lane = _repo_with_modern_lane(tmp_path, hooks=True)
@@ -156,6 +173,23 @@ def test_global_pre_commit_refusal_stops_before_lane_guard(tmp_path):
     assert "global pre-commit refused" in refused.stderr
     assert "lane-containment guard" not in refused.stderr
     assert trace.read_text(encoding="utf-8").splitlines() == ["pre-commit:"]
+
+
+def test_global_config_fault_refuses_before_lane_guard(tmp_path):
+    root, _ = _repo_with_modern_lane(tmp_path, hooks=True)
+    env, _ = _hook_env(tmp_path)
+    Path(env["GIT_CONFIG_GLOBAL"]).write_text("[broken\n", encoding="utf-8")
+    (root / "owned.py").write_text("staged offender\n", encoding="utf-8")
+    _git(root, "add", "owned.py")
+
+    refused = subprocess.run(
+        [str(root / ".githooks" / "pre-commit")],
+        cwd=root, env=env, capture_output=True, text=True,
+    )
+
+    assert refused.returncode != 0
+    assert "cannot resolve global core.hooksPath; refusing" in refused.stderr
+    assert "lane-containment guard" not in refused.stderr
 
 
 def test_lane_commit_fires_relative_hook_and_forwards_commit_msg(tmp_path):

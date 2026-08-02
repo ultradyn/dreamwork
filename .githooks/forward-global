@@ -6,10 +6,18 @@ set -eu
 hook_name=$1
 shift
 
-global_hooks=$(git config --global --path --get core.hooksPath || true)
-if [ -z "$global_hooks" ]; then
-    exit 0
-fi
+set +e
+global_hooks=$(git config --global --path --get core.hooksPath)
+config_status=$?
+set -e
+case $config_status in
+    0) ;;
+    1) exit 0 ;; # no global core.hooksPath is a legitimate empty population
+    *)
+        echo "forward-global: cannot resolve global core.hooksPath; refusing" >&2
+        exit "$config_status"
+        ;;
+esac
 
 global_hook=$global_hooks/$hook_name
 if [ ! -x "$global_hook" ]; then

@@ -117,13 +117,7 @@ def is_main_checkout(repo_root: Path) -> bool:
     worktree's is ``.git/worktrees/<name>``. The segment discriminator is robust
     to absolute vs relative git-dir resolution.
     """
-    try:
-        git_dir = _run_git(["rev-parse", "--git-dir"], repo_root).strip()
-    except GuardError:
-        # If we cannot tell, we are not the main checkout for the purpose of
-        # this guard — decline to act rather than risk a false refusal in a tree
-        # we do not understand.
-        return False
+    git_dir = _run_git(["rev-parse", "--git-dir"], repo_root).strip()
     return WORKTREE_GITDIR_SEGMENT not in git_dir
 
 
@@ -256,7 +250,15 @@ def check(root: Path) -> int:
     0 = allow (no lane out, or no overlap); 1 = refuse (contested path); 2 =
     guard could not evaluate its inputs (fail loud).
     """
-    if not is_main_checkout(root):
+    try:
+        main_checkout = is_main_checkout(root)
+    except GuardError as exc:
+        sys.stderr.write(
+            f"lane-containment guard: cannot classify main checkout ({exc}); "
+            "refusing\n"
+        )
+        return 2
+    if not main_checkout:
         # A linked worktree commits freely; the guard only acts on the main
         # checkout, which is where a lane's stray edits become dangerous.
         sys.stderr.write(
