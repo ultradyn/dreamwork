@@ -25,14 +25,18 @@ WHAT IS DERIVED (the only rendered field the store owns):
 
   queue.in_progress / queue.pending   the store is the source for the OPEN
                                       COUNT (queue depth); `in_progress` is
-                                      the live-lane count the loop's `agents`
-                                      roster already carries (the loop-claim
-                                      remainder that stays in status.json —
-                                      see the brief). The derivation mirrors
-                                      `status_sync`'s split: in_progress +
-                                      pending == the store's open count, so the
-                                      total is the #362 truth, not the
-                                      hand-maintained claim.
+                                      the live-lane count the loop's
+                                      `dreamers` roster carries — the pruned,
+                                      liveness-checked lane set `status_sync`
+                                      derives (#965; `agents` is the empty
+                                      loop-claim the derivation once misread).
+                                      The derivation mirrors `status_sync`'s
+                                      split: in_progress + pending == the
+                                      store's open count, so the total is the
+                                      #362 truth, not the hand-maintained
+                                      claim. When the roster is unreadable
+                                      (absent/non-list) `queue` is `None`,
+                                      not a borrowed 0 (#868).
 
 WHAT STAYS FROM status.json (loop-claim remainder — never touched here):
 push, awaiting_human, task, goal, agents, last_tick, last_commit, deployed,
@@ -91,10 +95,15 @@ def queue_depth(open_count: int, live_count: int) -> dict:
     """``{in_progress, pending}`` mirroring status_sync's split.
 
     The store owns the open COUNT (queue depth); the live-lane count is the
-    `agents` roster (the loop claim that stays). ``in_progress`` is clamped to
-    the open count — a stale roster cannot name more lanes in flight than
-    there are open tasks — so ``in_progress + pending == open_count`` always,
-    which is exactly the #362 invariant the hand-maintained claim broke.
+    `dreamers` roster (the pruned, liveness-checked lane set `status_sync`
+    derives and maintains — #965). ``in_progress`` is clamped to the open
+    count — a stale roster cannot name more lanes in flight than there are
+    open tasks — so ``in_progress + pending == open_count`` always, which is
+    exactly the #362 invariant the hand-maintained claim broke.
+
+    Note: an UNREADABLE roster (absent/non-list) is handled one call up in
+    ``status_from_store`` as ``queue is None`` — it must not reach this clamp,
+    which would manufacture a plausible 0 for a count never taken (#868).
     """
     in_progress = max(0, min(live_count, open_count))
     pending = max(0, open_count - in_progress)
@@ -106,9 +115,11 @@ def status_from_store(dreamwork_dir, status):
 
     Post-cutover (the store's cutover watermark is present, per
     ``source_of_truth``): returns a shallow copy of ``status`` with ``queue``
-    set from the store's open count + the live-agent count the roster
-    already carries. The loop-claim remainder (agents, push, deployed, prose)
-    is passed through untouched.
+    set from the store's open count + the live-lane count the ``dreamers``
+    roster carries. When the roster is absent/non-list (unreadable), ``queue``
+    is set to ``None`` — "there and unreadable", not a borrowed 0. The
+    loop-claim remainder (agents, push, deployed, prose) is passed through
+    untouched.
 
     Pre-cutover / unreadable store / ``status`` not a dict: returns
     ``status`` UNCHANGED — byte-for-byte today's rendering, so a target that
@@ -121,16 +132,30 @@ def status_from_store(dreamwork_dir, status):
         return status
     # The store is the ONE source for queue depth (#294 T2 / #362): it owns
     # the open count, the truth the hand-maintained claim drifted from. The
-    # live-lane count comes from the `agents` roster — the loop-claim
-    # remainder that stays in status.json (the brief: agents, push, deployed,
-    # prose stay sourced from the file). status_sync's split, with the store
-    # as the open-count source and the roster as the live source.
+    # live-lane count comes from the `dreamers` roster — the pruned,
+    # liveness-checked lane set `status_sync` DERIVES and maintains (#965).
+    # `agents` is the author-owned loop-claim and is EMPTY in production; this
+    # derivation once read it and rendered `0 in flight` while lanes worked.
+    # `status_sync`'s split, with the store as the open-count source and the
+    # `dreamers` roster as the live source — the same field `status_sync`
+    # computes `current_task_ids` from, so the two cannot disagree.
     open_ids, _landed = store_ids_by_state(str(dreamwork_dir))
     open_count = len(open_ids)
-    agents = status.get("agents")
-    live = ([a for a in agents if isinstance(a, dict)]
-            if isinstance(agents, list) else [])
+    dreamers = status.get("dreamers")
     out = dict(status)
+    if not isinstance(dreamers, list):
+        # No roster to measure: the live count is UNREADABLE, not zero. The
+        # clamp (`min(live, open)`) would otherwise manufacture a plausible 0
+        # — the #868 degrade-to-zero shape inside this very arithmetic, and
+        # why nobody noticed the empty-`agents` read. `queue is None` says
+        # "there and unreadable" (the `== null` idiom the panel runs for
+        # `pending_events`) rather than borrowing zero's pixels for a count
+        # that was never taken. An EMPTY list is a genuine measurement (0
+        # lanes running) and takes the branch below; only an absent/non-list
+        # roster degrades here.
+        out["queue"] = None
+        return out
+    live = [d for d in dreamers if isinstance(d, dict)]
     out["queue"] = queue_depth(open_count, len(live))
     return out
 

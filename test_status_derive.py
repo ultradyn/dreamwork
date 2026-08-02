@@ -107,30 +107,109 @@ def test_post_cutover_derives_queue_from_the_store(tmp_path):
         "precondition: the stale claim's total must REALLY differ from the "
         "store's open count, or the test examines nothing")
 
-    status = {"task": "prose loop claim", "agents": [
-        {"name": "lane-a", "in_flight": "x"}, {"name": "lane-b"}],
-        "queue": stale}
+    # The live roster is `dreamers` — the roster status_sync DERIVES and
+    # maintains (#965: `agents` is the author-owned loop-claim and is empty;
+    # `dreamers` is the pruned, liveness-checked lane set the writer keeps).
+    dreamers = [{"name": "lane-a", "task": 600},
+                {"name": "lane-b", "task": 601}]
+    status = {"task": "prose loop claim", "dreamers": dreamers, "queue": stale}
     out = status_derive.status_from_store(str(dw), status)
 
     q = out["queue"]
     # the derivation makes the panel read the STORE total, not the claim.
     assert q["in_progress"] + q["pending"] == _open_count(dw) == 6
     assert q != stale, "the stale claim must be replaced, not echoed"
-    # in_progress mirrors the live roster (2 agents) the loop already carries.
+    # in_progress mirrors the live `dreamers` roster (2 lanes) the loop carries.
     assert q["in_progress"] == 2
     assert q["pending"] == 4
     # the loop-claim remainder is passed through untouched.
     assert out["task"] == "prose loop claim"
-    assert out["agents"] == status["agents"]
+    assert out["dreamers"] == dreamers
 
 
-def test_post_cutover_handles_no_agents_roster(tmp_path):
+# #965 — THE BUG: queue_depth took its live count from the EMPTY `agents`
+# roster and rendered `0 in flight` while lanes were genuinely working. This
+# is the regression: a NON-EMPTY `dreamers` roster must report those lanes as
+# in flight. A fixture with an empty roster passes either way (0 is what the
+# bug prints too), so the precondition asserts the roster AND the expected
+# count are BOTH non-zero — the discriminating pair.
+def test_post_cutover_dreamers_drives_in_flight_not_agents(tmp_path):
+    dw = tmp_path / ".dreamwork"
+    dw.mkdir()
+    # 8 filed, 1 landed -> 7 open in the REAL store (more than the lanes, so
+    # the clamp cannot be what caps in_progress at the roster size).
+    open_count = _cut_over_store(dw, total=8, land_n=1)
+    assert _open_count(dw) == open_count == 7, "fixture: store genuinely open"
+
+    n_lanes = 5  # five lanes genuinely working, as in the live measurement
+    dreamers = [{"name": "lane-%d" % i, "task": 700 + i} for i in range(n_lanes)]
+    # `agents` is the author-owned loop-claim and is EMPTY in production; it is
+    # carried here exactly to prove the old read is dead — if the derivation
+    # read `agents` it would report 0.
+    status = {"agents": [], "dreamers": dreamers,
+              "queue": {"in_progress": 0, "pending": 0}}
+    out = status_derive.status_from_store(str(dw), status)
+
+    q = out["queue"]
+    # precondition the assertion depends on: roster non-empty, expected > 0,
+    # and open_count large enough that only the roster can set in_progress.
+    assert n_lanes > 0 and n_lanes <= open_count, (
+        "precondition: non-empty roster, expected in_progress non-zero")
+    assert q["in_progress"] == n_lanes, (
+        "the live `dreamers` roster must drive in_progress, not the empty "
+        "`agents` roster — this is the #965 defect when it reads 0")
+    # #362 invariant survives the field switch.
+    assert q["in_progress"] + q["pending"] == open_count
+
+
+def test_post_cutover_empty_dreamers_means_genuinely_zero(tmp_path):
     dw = tmp_path / ".dreamwork"
     dw.mkdir()
     _cut_over_store(dw, total=5, land_n=2)  # 3 open
-    # no agents key at all (a loop with no live lanes): all open is pending.
-    out = status_derive.status_from_store(str(dw), {"queue": {"in_progress": 9, "pending": 9}})
+    # an EMPTY `dreamers` list (present, zero lanes) is a genuine measurement:
+    # nothing is running. This must NOT be confused with an absent roster
+    # (next test) — 0 here is a true report, not a degrade.
+    out = status_derive.status_from_store(
+        str(dw), {"dreamers": [], "queue": {"in_progress": 9, "pending": 9}})
     assert out["queue"] == {"in_progress": 0, "pending": 3}
+
+
+def test_post_cutover_absent_roster_is_unreadable_not_zero(tmp_path):
+    dw = tmp_path / ".dreamwork"
+    dw.mkdir()
+    _cut_over_store(dw, total=5, land_n=2)  # 3 open
+    # NO `dreamers` key at all: the live count cannot be measured. This is the
+    # degrade-to-zero shape inside the arithmetic (#868) — the clamp would
+    # manufacture a plausible 0. `queue is None` says "there and unreadable"
+    # (the `== null` idiom views.js runs for `pending_events`) rather than
+    # borrowing zero's pixels for an unmeasured count.
+    out = status_derive.status_from_store(str(dw), {"queue": {"in_progress": 9, "pending": 9}})
+    assert out["queue"] is None, (
+        "an absent roster must degrade to None (unreadable), not to a "
+        "confident 0 in flight — the #868 shape this clamp manufactures")
+
+
+# A stale roster naming more lanes than there are open tasks: the clamp
+# (#362) must still hold and the invariant must stay true. This is a
+# Direction-2 input — without the clamp, in_progress would exceed open_count
+# and the invariant would break.
+def test_post_cutover_stale_roster_clamps_in_flight_to_open(tmp_path):
+    dw = tmp_path / ".dreamwork"
+    dw.mkdir()
+    _cut_over_store(dw, total=4, land_n=2)  # 2 open
+    open_count = _open_count(dw)
+    assert open_count == 2, "fixture: store genuinely open"
+    # 5 dreamers but only 2 open tasks — a stale roster. in_progress must be
+    # clamped to the open count, not the roster size.
+    dreamers = [{"name": "lane-%d" % i, "task": 800 + i} for i in range(5)]
+    out = status_derive.status_from_store(
+        str(dw), {"dreamers": dreamers, "queue": {"in_progress": 0, "pending": 0}})
+    q = out["queue"]
+    assert q["in_progress"] == open_count, (
+        "a stale roster cannot name more lanes in flight than there are open "
+        "tasks — the #362 clamp")
+    assert q["in_progress"] + q["pending"] == open_count, (
+        "in_progress + pending == open_count must hold under a stale roster")
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +242,34 @@ def test_post_cutover_store_with_zero_open(tmp_path):
     dw.mkdir()
     _cut_over_store(dw, total=3, land_n=3)  # all landed -> 0 open
     out = status_derive.status_from_store(
-        str(dw), {"agents": [{"name": "lane-a"}], "queue": {"in_progress": 5, "pending": 5}})
+        str(dw), {"dreamers": [{"name": "lane-a"}], "queue": {"in_progress": 5, "pending": 5}})
     # total is the store truth (0); in_flight clamped to 0.
     assert out["queue"] == {"in_progress": 0, "pending": 0}
+
+
+# The `isinstance` guard on roster entries is inherited and kept (#965): a
+# dreamers list carrying junk must not crash and must filter to dict entries.
+# A non-list roster degrades to None (same as absent), never throws.
+def test_post_cutover_non_dict_dreamers_entries_are_filtered(tmp_path):
+    dw = tmp_path / ".dreamwork"
+    dw.mkdir()
+    _cut_over_store(dw, total=6, land_n=0)  # 6 open
+    # mixed roster: 2 real dicts + junk. Only the dicts count.
+    dreamers = [{"name": "lane-a", "task": 900}, "junk-string",
+                42, {"name": "lane-b", "task": 901}]
+    out = status_derive.status_from_store(
+        str(dw), {"dreamers": dreamers, "queue": {"in_progress": 0, "pending": 0}})
+    q = out["queue"]
+    assert q["in_progress"] == 2, "non-dict roster entries are filtered, dicts counted"
+    assert q["in_progress"] + q["pending"] == 6
+
+
+def test_post_cutover_non_list_dreamers_degrades_not_throws(tmp_path):
+    dw = tmp_path / ".dreamwork"
+    dw.mkdir()
+    _cut_over_store(dw, total=3, land_n=0)  # 3 open
+    # a roster that is not a list at all cannot be measured — degrade to None,
+    # never raise (the request path must not 500 over a derivation).
+    out = status_derive.status_from_store(
+        str(dw), {"dreamers": "not a list", "queue": {"in_progress": 9, "pending": 9}})
+    assert out["queue"] is None
