@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ledger_store import append_chained_event
+
 from .core import Conflict, NotFound, ValidationError
 
 
@@ -270,6 +272,76 @@ class GroupRepository:
                 "INSERT INTO task_group_member"
                 " (group_id, task_id, added_by, added_at) VALUES (?, ?, ?, ?)",
                 (group_id, task_id, normalized_actor, normalized_at),
+            )
+        return status
+
+    def _resolve_remove_task(
+        self, group_id: int, task_id: int,
+    ) -> tuple[str, StoredGroup]:
+        """Return disposition plus the group, without writing.
+
+        A removal that removes nothing is a REFUSAL, not an idempotent no-op.
+        ``add_task`` may say ``unchanged`` for an already-member because
+        idempotent addition is safe; removal must name the gap, because a
+        no-op success is indistinguishable from a removal that worked, and the
+        caller cannot tell which happened (#671 — the same shape ``unblock``
+        refuses on).  This is the auditability constraint from #1037: a
+        membership that can be silently dropped lets a goal be quietly
+        redefined to match whatever has been finished.
+        """
+        group = self.get(group_id)
+        task = self._session.execute(
+            "SELECT id FROM task WHERE id = ?", (task_id,),
+        ).fetchone()
+        if task is None:
+            raise NotFound(
+                f"cannot remove task #{task_id} from {group.kind} #{group_id}"
+                f" {group.title!r}: no such task"
+            )
+        existing = self._session.execute(
+            "SELECT 1 FROM task_group_member WHERE group_id = ? AND task_id = ?",
+            (group_id, task_id),
+        ).fetchone()
+        if existing is None:
+            raise NotFound(
+                f"cannot remove task #{task_id} from {group.kind} #{group_id}"
+                f" {group.title!r}: it is not a member — a removal that"
+                f" removed nothing must not read as success (#671)"
+            )
+        return "removed", group
+
+    def remove_task(
+        self, group_id: int, task_id: int, *, actor: str, at: str,
+        why: str, apply: bool = True,
+    ) -> str:
+        status, group = self._resolve_remove_task(group_id, task_id)
+        _require_text(actor, "membership actor")
+        _require_text(at, "membership timestamp")
+        _require_text(why, "removal reason")
+        if status == "removed" and apply:
+            # Hard delete the membership row.  Chosen over a tombstone by IGC:
+            # the row is gone, so EVERY membership read (progress, ready_tasks,
+            # _empty_within, _governing_groups, the duplicate check) already
+            # treats a non-member as a non-member — zero read-path filters, and
+            # zero silent "still counts" bugs a tombstone would need at each
+            # site.  The decision still survives, auditably: it lands in the
+            # task's chained event log — the same home retitle/unblock/next-up
+            # record their reasons (#1037) — naming who, when, which group, and
+            # why.  After a removal a reader can still discover the task was
+            # once a member and on whose judgement it left: read task_event.
+            self._session.execute(
+                "DELETE FROM task_group_member"
+                " WHERE group_id = ? AND task_id = ?",
+                (group_id, task_id),
+            )
+            append_chained_event(
+                self._session, task_id=task_id, at=at.strip(),
+                cause="reconciled", from_state=None, to_state=None,
+                actor=actor.strip(),
+                detail=(
+                    f"removed from {group.kind} #{group_id} {group.title!r}:"
+                    f" {why.strip()}"
+                ),
             )
         return status
 

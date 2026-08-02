@@ -2051,6 +2051,98 @@ def test_groups_add_task_dry_run_agrees_with_real_and_writes_nothing(
             f"dry={dry!r}, real={real!r}")
 
 
+# groups remove-task — #1037. The correction path add-task never had. This is
+# the CLI seam: PRODUCTION LINE is the `args.groups_cmd == "remove-task"`
+# branch in dev/ledger.py `_verb_groups`. Direction 1 RED: with the branch
+# absent the sub-verb is unknown (argparse exit 2) and the denominator never
+# shrinks; the tests below assert the rendered consequence, not the rc.
+
+def _remove_disposition(output):
+    match = re.search(
+        r"groups: task #\d+ (removed) from group #\d+", output)
+    assert match is not None, (
+        f"removal disposition absent from {output!r}")
+    return match.group(1)
+
+
+def _cli_progress_total(dev_ledger, ledger, group_id):
+    """Read total_count back through the CLI — the denominator this task exists for."""
+    rc, out, _ = _run(dev_ledger, [
+        "groups", "get", str(group_id), "--json", "--ledger", ledger,
+    ])
+    assert rc == 0, out
+    return json.loads(out.splitlines()[0])["progress"]["total_count"]
+
+
+def test_groups_remove_task_shrinks_rendered_denominator(dev_ledger, tmp_path):
+    """Direction 1: removing a member must reduce the progress denominator.
+    Asserts total_count before and after with concrete numbers — a test that
+    never re-reads progress misses the whole point (#1037)."""
+    _, group_id, existing_id, fresh_id, ledger, db = _membership_target(tmp_path)
+    # add the fresh member so the goal has TWO members (precondition, derived).
+    rc, out, err = _run(dev_ledger, [
+        "groups", "add-task", str(group_id), str(fresh_id),
+        "--ledger", ledger,
+    ])
+    assert rc == 0, err
+    before = _cli_progress_total(dev_ledger, ledger, group_id)
+    assert before == 2, f"precondition broken: expected 2 members, got {before}"
+
+    rc, out, err = _run(dev_ledger, [
+        "groups", "remove-task", str(group_id), str(fresh_id),
+        "--why", "dependency-not-membership",
+        "--ledger", ledger,
+    ])
+    assert rc == 0, err
+    assert _remove_disposition(out) == "removed"
+    after = _cli_progress_total(dev_ledger, ledger, group_id)
+    assert after == 1, (
+        f"denominator did not shrink: expected 1 after removal, got {after}")
+
+
+def test_groups_remove_task_refuses_non_member_and_missing_group(
+        dev_ledger, tmp_path):
+    """A no-op success is indistinguishable from a removal that worked. Both
+    the non-member and missing-group cases must refuse (exit 1, named error),
+    because that is exactly where a silent no-op hides."""
+    _, group_id, existing_id, fresh_id, ledger, db = _membership_target(tmp_path)
+    # fresh_id was filed but never added to the group -> not a member.
+    rc, out, err = _run(dev_ledger, [
+        "groups", "remove-task", str(group_id), str(fresh_id),
+        "--why", "never belonged", "--ledger", ledger,
+    ])
+    assert rc == 1, f"non-member removal must refuse (rc=1), got rc={rc}: {err}"
+    assert "not a member" in err, (
+        f"refusal must name the gap, got err={err!r}")
+
+    # missing group must also refuse, not no-op.
+    rc, out, err = _run(dev_ledger, [
+        "groups", "remove-task", "999999", str(existing_id),
+        "--why", "no such group", "--ledger", ledger,
+    ])
+    assert rc == 1, f"missing-group removal must refuse (rc=1), got rc={rc}: {err}"
+    assert "no task group #999999" in err, (
+        f"refusal must name the missing group, got err={err!r}")
+
+
+def test_groups_remove_task_requires_reason(dev_ledger, tmp_path):
+    """--why is required, as retitle/unblock/next-up require it (#1037). A
+    bare removal is an unaudited reshape of a goal. argparse enforces this
+    itself, so the signal is SystemExit(2) — the same shape every
+    missing-required-arg verb produces."""
+    _, group_id, existing_id, _fresh_id, ledger, db = _membership_target(tmp_path)
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        with pytest.raises(SystemExit) as exc:
+            dev_ledger.main([
+                "groups", "remove-task", str(group_id), str(existing_id),
+                "--ledger", ledger,
+            ])
+    assert exc.value.code == 2, (
+        f"missing --why must be a usage error (exit 2), got {exc.value.code}")
+    assert "--why" in err.getvalue()
+
+
 def test_set_current_moves_the_rendered_tick_line(dev_ledger, tmp_path):
     """THE DEFECT (#962): no supported interface could move the current-goal
     pointer, so the tick rendered 'no current goal' forever. Direction 1

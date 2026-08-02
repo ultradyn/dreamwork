@@ -44,7 +44,7 @@ USAGE
   python3 dev/ledger.py get <id> [--ledger PATH]
   python3 dev/ledger.py count [--state open|landed] [--json] [--ledger PATH]
   python3 dev/ledger.py reviews list|get <artifact> [--ledger PATH]
-  python3 dev/ledger.py groups create|add-task|get|list|add-trigger ... [--ledger PATH]
+  python3 dev/ledger.py groups create|add-task|remove-task|get|list|add-trigger ... [--ledger PATH]
   python3 dev/ledger.py groups kinds|define-kind|set-parent|tree|require|blockers|ready ...
 
 FROM A LANE WORKTREE, `--ledger` IS NOT OPTIONAL (#667). The store is
@@ -2549,6 +2549,15 @@ def _verb_groups(args, dw_dir):
                     disposition = (
                         f"task #{args.task_id} {status} in group #{args.group_id}"
                     )
+                elif args.groups_cmd == "remove-task":
+                    status = tx.groups.remove_task(
+                        args.group_id, args.task_id, actor=actor, at=at,
+                        why=args.why, apply=not args.dry_run,
+                    )
+                    disposition = (
+                        f"task #{args.task_id} {status} from group"
+                        f" #{args.group_id}"
+                    )
                 elif args.groups_cmd == "add-trigger":
                     trigger_id, status = tx.groups.register_completion_task(
                         args.group_id, title=args.title, priority=args.priority,
@@ -2925,6 +2934,22 @@ def main(argv=None):
         "--dry-run", action="store_true",
         help="print the disposition after full validation; write nothing")
     groups_add.add_argument("--ledger", default=LEDGER_DEFAULT)
+    # #1037 — the correction path add-task never had. Removal is auditable, not
+    # a bare delete: --why is required (as retitle/unblock/next-up require it)
+    # and the reason lands in the task's chained event log. Refuses non-members
+    # and missing groups rather than no-op succeeding.
+    groups_remove = groups_sub.add_parser(
+        "remove-task",
+        help="remove one task from a group (audited; refuses non-members)")
+    groups_remove.add_argument("group_id", type=int)
+    groups_remove.add_argument("task_id", type=int)
+    groups_remove.add_argument("--why", required=True,
+        help="the reason — recorded in the task's history (NOT optional)")
+    groups_remove.add_argument("--actor", default=None)
+    groups_remove.add_argument(
+        "--dry-run", action="store_true",
+        help="print the disposition after full validation; write nothing")
+    groups_remove.add_argument("--ledger", default=LEDGER_DEFAULT)
     groups_trigger = groups_sub.add_parser(
         "add-trigger",
         help="register an inert task definition for group completion")
