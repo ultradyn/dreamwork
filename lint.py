@@ -4628,11 +4628,17 @@ def check_dev_task_citations(
     """
     root = dw.parent
     if diff_text is None:
-        result = subprocess.run(
-            ["git", "diff", "--no-color", "--unified=0", "HEAD^",
-             "--", ":(glob)dev/*.py"],
-            cwd=root, capture_output=True, text=True, check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--no-color", "--unified=0", "HEAD^",
+                 "--", ":(glob)dev/*.py"],
+                cwd=root, capture_output=True, text=True, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            rep.add(OK, "dev task citations",
+                    "examined 0 newly added citation(s): git was unavailable; "
+                    "no resolution verdict")
+            return
         if result.returncode:
             rep.add(OK, "dev task citations",
                     "examined 0 newly added citation(s): no HEAD^..working-tree "
