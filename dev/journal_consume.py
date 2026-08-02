@@ -750,6 +750,45 @@ def _consume_cleared(args, journal_id: str, out, err) -> int:
     return _emit_uncleared(out, remaining)
 
 
+def _refuse_split_applied(args, err) -> "int | None":
+    """Refuse (#808/#940) when ``--applied`` is not co-located with ``--journal``.
+
+    The applied-ledger is the dedup record for ONE journal — its markers prove
+    "this receipt was already drained from THIS journal".  A split (the journal
+    in one checkout's ``.dreamwork``, the applied-ledger in another's) writes
+    that journal's dedup record into the wrong tree.  It is the shape that left
+    byte-identical ``actor=coordinator-drain`` files in three reaped lane
+    worktrees; its mirror — a coordinator journal drained into a lane's tree, or
+    a lane's markers stamped into the coordinator's LIVE ``applied.md`` — is the
+    one that can suppress an unread human instruction (#513).
+
+    Returns ``EX_USAGE`` and writes the remedy when the resolved parent
+    directories differ; ``None`` when they are co-located and the caller may
+    proceed.  ``resolve()`` (realpath) is used so a ``..``-bearing or
+    differently-spelled path to the SAME directory is not a false refusal.  The
+    residual it cannot reach — a symlink that aliases one checkout's
+    ``.dreamwork`` onto another's — is named in the task report, not silently
+    redirected: a tool that quietly writes somewhere else is how this class
+    stays invisible (#940).
+    """
+    jdir = Path(args.journal).resolve().parent
+    adir = Path(args.applied).resolve().parent
+    if jdir == adir:
+        return None
+    err.write(
+        f"{args.cmd}: refused — the applied-ledger must live in the same "
+        f"directory as the journal it dedups ({args.applied} resolves to "
+        f"{adir}; the journal {args.journal} resolves to {jdir}).  A split "
+        f"writes one checkout's receipt markers into another's tree and is how "
+        f"a lane can stamp coordinator-drain into the wrong dedup file (#808). "
+        f"Re-run with --applied {jdir / 'applied.md'}, or run from the "
+        f"journal's checkout so the default resolves beside it.  Do not point "
+        f"--applied elsewhere to bypass this: the ledger and the journal are "
+        f"one unit.\n"
+    )
+    return EX_USAGE
+
+
 def cmd_consume(args, out, err) -> int:
     """Read-then-advance as one act: drain (coordinator_cursor, head].
 
@@ -789,6 +828,14 @@ def cmd_consume(args, out, err) -> int:
         # No journal → nothing to consume; do not create one to consume zero.
         out.write("consumed 0 event(s)\n")
         return EX_OK
+    # --- #808: refuse a split applied-ledger before any drain writes it.
+    # --cleared is sidecar-maintenance (no applied.md write) so it is exempt;
+    # every other consume path routes drained receipts through apply.reconcile,
+    # which stamps coordinator-drain into --applied — the write this guards.
+    if args.cleared is None:
+        refused = _refuse_split_applied(args, err)
+        if refused is not None:
+            return refused
     with open_journal(args.journal) as j:
         journal_id = j.journal_id  # #619: bind the uncleared sidecar to THIS journal
         # --- #619: --cleared is a sidecar-maintenance mode (no drain, no
@@ -1095,6 +1142,12 @@ def cmd_expedite(args, out, err) -> int:
         # No journal → nothing to deliver.  Do not create it: this verb is a
         # reader and an absent journal must stay absent (the #501 discipline).
         return EX_OK
+    # --- #808: expedite proves every delivered receipt through apply.reconcile
+    # (#526), which stamps coordinator-drain into --applied — the write this
+    # guards.  A split is refused before any delivery, same guard as consume.
+    refused = _refuse_split_applied(args, err)
+    if refused is not None:
+        return refused
     with open_journal(args.journal) as j:
         events = j.events_since_cursor(CONSUMER)
     classed = [

@@ -2631,3 +2631,135 @@ def test_sidecar_is_bound_to_its_journal(tmp_path: Path):
     assert rid_a not in _still_unapplied_ids(out), (
         f"A's uncleared receipt must not bleed into B's consume (sidecar is "
         f"journal-bound); got {out!r}")
+
+
+# ---------------------------------------------------------------------------
+# #808 — a split applied-ledger (journal in one tree, applied in another) is
+# refused before any write.  The applied-ledger is the dedup record for ONE
+# journal; a split writes that journal's markers into the wrong tree and is the
+# shape that left actor=coordinator-drain files in three reaped lane worktrees.
+# ---------------------------------------------------------------------------
+
+def test_consume_refuses_split_applied_ledger(tmp_path: Path):
+    """consume refuses when --applied is not co-located with --journal (#808).
+
+    The journal and its applied-ledger are one unit — the ledger's markers
+    prove "this receipt was drained from THIS journal".  A lane running a bare
+    ``consume`` from a cwd that is the MAIN checkout (the harness default,
+    #882) while its own journal lives in its worktree resolves the two
+    CWD-relative defaults to DIFFERENT trees: the journal from the worktree's
+    ``--journal`` (or a fixture), the applied-ledger from the main checkout's
+    ``.dreamwork/applied.md``.  That split stamps ``coordinator-drain`` into
+    the wrong dedup file — the defect this task exists to close.
+
+    RED LINE (run): delete the ``_refuse_split_applied`` call in cmd_consume
+      (the ``if args.cleared is None`` block).  The split consume then proceeds,
+      writes the marker into the wrong tree, and the refusal assertions fail.
+      Production line: ``_refuse_split_applied`` in dev/journal_consume.py,
+      invoked from ``cmd_consume`` after the journal-existence early return.
+    """
+    cli = _load_cli()
+    # Two trees: the journal here, the applied-ledger there.  Different parent
+    # directories is the split.  The seed runs BEFORE the guard sees the paths
+    # (the guard only checks parent dirs, never opens the journal).
+    checkout_a = tmp_path / "worktree"
+    checkout_b = tmp_path / "main"
+    checkout_a.mkdir()
+    checkout_b.mkdir()
+    journal = checkout_a / "user-events.sqlite3"
+    applied = checkout_b / "applied.md"
+    # Precondition: the parents genuinely differ (derived, not assumed) — a
+    # guard that compares resolved paths must see two distinct directories.
+    assert journal.resolve().parent != applied.resolve().parent, (
+        "precondition: journal and applied must live in different directories "
+        "for the split to be real")
+    seeded = _seed(journal, [b'{"kind":"add-idea","text":"x"}'], route="/command")
+
+    code, out, err = _run(cli, ["consume", "--journal", str(journal),
+                                "--applied", str(applied)])
+    # The refusal: EX_USAGE, names the split, names the remedy.
+    assert code == 64, (
+        f"a split applied-ledger must refuse EX_USAGE (64); got {code} "
+        f"(err={err!r})")
+    assert "refused" in err, (
+        f"the refusal must say 'refused'; got {err!r}")
+    assert "same directory" in err, (
+        f"the refusal must name the co-location requirement; got {err!r}")
+    assert "coordinator-drain" in err or "#808" in err, (
+        f"the refusal must name the defect class it closes; got {err!r}")
+    # The remedy names the journal's directory as where applied should live.
+    assert "applied.md" in err, (
+        f"the refusal must name the remedy (point --applied beside the "
+        f"journal); got {err!r}")
+    # The cursor was NOT advanced (no drain ran).
+    with open_journal(journal) as j:
+        cur = j.cursor(CONSUMER)
+    assert cur.scanned_through_event_ordinal == 0, (
+        f"a refused consume must not advance the cursor; got "
+        f"{cur.scanned_through_event_ordinal}")
+    # NEITHER tree's applied-ledger was written — no marker stamped anywhere.
+    assert not applied.exists(), (
+        f"the wrong-tree applied-ledger must not be created; {applied} exists")
+    worktree_applied = checkout_a / "applied.md"
+    assert not worktree_applied.exists(), (
+        f"no applied-ledger should appear in the worktree either; "
+        f"{worktree_applied} exists")
+
+
+def test_consume_allows_colocated_applied_ledger(tmp_path: Path):
+    """consume proceeds when --applied IS co-located with --journal (#808 parity).
+
+    The guard must not false-refuse the ordinary case: journal and applied-ledger
+    in the same directory (the shape every existing test uses, and the shape the
+    coordinator's tick produces).  This is the negative control for the guard —
+    without it, a guard that refuses everything would pass the split test above.
+    """
+    cli = _load_cli()
+    journal = tmp_path / "consume.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(journal, [b'{"kind":"add-idea","text":"x"}'], route="/command")
+    # Precondition: co-located (same parent dir), derived not assumed.
+    assert journal.resolve().parent == applied.resolve().parent, (
+        "precondition: journal and applied must share a directory")
+
+    code, out, err = _run(cli, ["consume", "--journal", str(journal),
+                                "--applied", str(applied)])
+    assert code == 0, (
+        f"a co-located applied-ledger must proceed (exit 0); got {code} "
+        f"(err={err!r})")
+    assert "consumed 1 event(s)" in out, (
+        f"the drain must run on a co-located ledger; got {out!r}")
+
+
+def test_expedite_refuses_split_applied_ledger(tmp_path: Path):
+    """expedite refuses the same split — it also stamps coordinator-drain (#808).
+
+    expedite routes every delivered receipt through apply.reconcile (#526), the
+    same write consume makes.  A split is refused before any delivery.
+
+    RED LINE (run): delete the ``_refuse_split_applied`` call in cmd_expedite.
+      The split expedite then delivers and writes the wrong tree's applied-ledger.
+      Production line: ``_refuse_split_applied``, invoked from ``cmd_expedite``
+      after the journal-existence early return.
+    """
+    cli = _load_cli()
+    checkout_a = tmp_path / "worktree"
+    checkout_b = tmp_path / "main"
+    checkout_a.mkdir()
+    checkout_b.mkdir()
+    journal = checkout_a / "user-events.sqlite3"
+    applied = checkout_b / "applied.md"
+    assert journal.resolve().parent != applied.resolve().parent, (
+        "precondition: journal and applied must live in different directories")
+    _seed(journal,
+          [b'{"kind":"do-next","text":"urgent"}'], route="/command")
+
+    code, out, err = _run(cli, ["expedite", "--journal", str(journal),
+                                "--applied", str(applied)])
+    assert code == 64, (
+        f"a split applied-ledger must refuse EX_USAGE (64) on expedite too; "
+        f"got {code} (err={err!r})")
+    assert "refused" in err and "same directory" in err, (
+        f"the refusal must name the co-location requirement; got {err!r}")
+    assert not applied.exists(), (
+        f"the wrong-tree applied-ledger must not be created by expedite")
