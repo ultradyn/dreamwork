@@ -10900,16 +10900,16 @@ class TestBuilderDelegation:
         assert rep.rows == []
 
     def test_client_only_tree_without_runtime_is_silent(self, tmp_path):
-        # A tree with client/ source but NO native runtime (dev/build/src/
-        # delegate.js) is a foreign target, not a migration in progress. The
-        # zero-delegate ERROR must NOT fire — its message claims the runtime
-        # is present, which would be false. Applicability is gated on the
-        # runtime marker, not on the source-file selector.
+        # A tree with client/ source but NO native runtime home (dev/build/)
+        # is a foreign target, not a migration in progress. The zero-delegate
+        # ERROR must NOT fire — its message claims the runtime is present,
+        # which would be false. Applicability is gated on the dev/build/
+        # directory, not on the source-file selector or any single file.
         #
         # Production line that must change for this to fail: the early return
-        # at the top of check_builder_delegation that tests for the marker —
-        # without it, sources is non-empty (client/*.js) and the zero-delegate
-        # ERROR fires.
+        # ``if not (root / "dev/build").is_dir(): return`` at the top of
+        # check_builder_delegation — without it, sources is non-empty
+        # (client/*.js) and the zero-delegate ERROR fires.
         rows = self._check(
             tmp_path,
             client={"views.js": "function artifactRow(r) { return ''; }\n"})
@@ -11079,3 +11079,100 @@ class TestBuilderDelegation:
                 "});\n")})
         errs = [r for r in rows if r[0] == lint.ERROR]
         assert errs and "gone" in errs[0][1], rows
+
+    # ---- P1 (#994): the gate must be structural, not a forgeable marker ----
+
+    def test_marker_deleted_but_dev_build_present_still_scans(self, tmp_path):
+        # Round 2 gated on the delegate.js FILE: deleting that one file
+        # silenced the guard over a live broken delegate — a forgeable bypass
+        # (#994). Round 3 gates on the dev/build/ DIRECTORY instead. When
+        # dev/build/ exists but delegate.js is absent the check RUNS and finds
+        # the break.
+        #
+        # Production line that must change for this to fail: the gate
+        # ``if not (root / "dev/build").is_dir(): return`` — if this is
+        # narrowed back to ``delegate.js`` file existence, the check returns
+        # without scanning and 'gone' is invisible.
+        #
+        # This test bypasses the _check helper, which auto-creates
+        # delegate.js; the point is that the file's absence does NOT silence
+        # the check when the dev/build/ directory is still present.
+        p = tmp_path / "dev/build/src/research.js"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(
+            "const Row = fromBuilder('gone', function (p) {\n"
+            "  return gone(p.row);\n"
+            "});\n")
+        # delegate.js is deliberately ABSENT — the marker file is deleted.
+        assert not (tmp_path / "dev/build/src/delegate.js").exists()
+        rep = lint.Report()
+        lint.check_builder_delegation(tmp_path, rep)
+        rows = [(l, d) for l, w, d in rep.rows if w == "builder delegation"]
+        errs = [r for r in rows if r[0] == lint.ERROR]
+        assert errs and "gone" in errs[0][1], rows
+        assert "research.js:1" in errs[0][1], rows
+
+    # ---- P2 (#1057 r3): lexical context for data-dw-delegate ----
+
+    def test_data_dw_delegate_in_line_comment_is_not_a_delegate(self, tmp_path):
+        # A mention of ``'data-dw-delegate': 'gone'`` inside a ``//`` comment
+        # is documentation, not a code site. The comment-stripper blanks it
+        # before the regex runs. Only the real fromBuilder delegate counts.
+        #
+        # Production line: ``_strip_js_comments`` — without it, the regex
+        # matches the comment text and 'gone' is counted as a second delegate.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "// docs: 'data-dw-delegate': 'gone' is the attribute\n"
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
+
+    def test_data_dw_delegate_in_block_comment_is_not_a_delegate(self, tmp_path):
+        # Same as the line-comment case but inside a ``/* … */`` block.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "/* the attribute is 'data-dw-delegate': 'gone' */\n"
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
+
+    def test_data_dw_delegate_in_string_literal_is_not_a_delegate(self, tmp_path):
+        # A mention inside a string value — ``"data-dw-delegate='gone'"`` —
+        # is data, not a code site. The string-span filter rejects any match
+        # whose structural prefix starts inside a quoted literal.
+        #
+        # Production line: ``_js_string_spans`` + the ``if any(s < m.start()
+        # < e …)`` guard — without it, the regex matches inside the string.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                'const desc = "data-dw-delegate=\'gone\'";\n'
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
+
+    def test_data_dw_delegate_in_template_literal_is_not_a_delegate(self, tmp_path):
+        # A mention inside a template literal (backtick string) — same
+        # rejection as an ordinary string literal via the span filter.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const desc = `data-dw-delegate='gone'`;\n"
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
