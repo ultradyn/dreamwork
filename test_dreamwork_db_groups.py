@@ -308,16 +308,20 @@ def test_removed_members_survives_unrelated_mutation(store_path):
     """#1037 Finding 1 direction-2 guard: a history projection that renders
     only for the current state passes a test that removes-and-immediately-
     reads but fails the case that matters — reading months later, after
-    other changes. Assert the removal event survives an unrelated task
-    landing in the SAME group, which is exactly the churn that would bury it."""
+    other changes. Assert the removal event survives an unrelated event on
+    the SAME task (a priority change), which is exactly the churn that would
+    bury it in a latest-event-only projection."""
     _insert_tasks(store_path, [(612, "open"), (613, "open")])
     with open_database(task_store_spec(store_path), access=Access.WRITE) as store:
         group_id = _create_group(store, kind="goal", title="Durable audit")
         _add(store, group_id, 612, 613)
         _remove(store, group_id, 612, why="out of scope")
-        # An UNRELATED mutation after the removal — task 613 lands.
+        # An UNRELATED mutation on the SAME task after the removal — a
+        # reprioritisation creates a later event that would bury the
+        # reconciled removal in a latest-event-only projection.
         with store.transaction() as tx:
-            tx.tasks.land(613, actor="test", at="2026-08-02T00:00:03Z")
+            tx.tasks.reprioritise(612, "P1", why="bumped",
+                                  actor="test", at="2026-08-02T00:00:03Z")
     # The removal must still be readable after the unrelated change.
     with open_database(task_store_spec(store_path), access=Access.READ) as store:
         removed = store.groups.removed_members(group_id)
