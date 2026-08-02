@@ -162,6 +162,34 @@ _QUOTED_PROSE = re.compile(r'"[^"\n]*"|“[^”\n]*”|\'[^\'\n]*\'|‘[^’\n]*
 _ARGPARSE_CHOICES = re.compile(r"choose from (?P<choices>[^)]+)\)")
 _DOCUMENTED_SUBCOMMANDS = re.compile(r"`(?P<verb>[a-z][a-z0-9-]*)(?:\s|`)")
 
+# Deliberately narrow: this reports decimal integers asserted in prose, not
+# every digit-shaped token in Markdown.  The exclusions keep task ids, source
+# coordinates, versions, dates, percentages, approximations, digit-grouped
+# values, inline code, quotations, and code blocks out of the population.  A
+# report with known blind spots is usable; a noisy "all numbers" scan is not.
+_ASSERTED_QUANTITY = re.compile(
+    r"(?<![#\w.,:/~-])(?P<number>\d+)(?![\w.,/%~-])"
+    r"(?:[ \t]+(?P<unit>[A-Za-z][A-Za-z-]*))?"
+)
+_INLINE_CODE = re.compile(
+    r"(?<!`)(?P<fence>`+)(?P<body>.*?)(?P=fence)(?!`)", re.DOTALL
+)
+_DIRECTION_NUMBER = re.compile(r"\bdirection\s+\d+\b", re.IGNORECASE)
+_VERIFICATION_CUE = re.compile(
+    r"\b(?:verif(?:y|ied|ication)|re[ -]?deriv(?:e|ation)|reproduc(?:e|tion))\b",
+    re.IGNORECASE,
+)
+_COMMANDISH = re.compile(
+    r"(?:^|[;&|]\s*|\b)(?:awk|find|git|grep|just|python\d*|rg|sed|wc)\b|"
+    r"(?:^|\s)(?:\./|dev/)[\w./-]+",
+    re.IGNORECASE,
+)
+_UNIT_STOPWORDS = {
+    "after", "and", "as", "at", "before", "by", "for", "from", "in",
+    "is", "of", "on", "or", "than", "that", "the", "to", "was", "were",
+    "with",
+}
+
 
 class BriefFault(Exception):
     """A brief could not be generated from the inputs given."""
@@ -531,6 +559,114 @@ def _validate_tool_invocations(core: str) -> str:
     return f"tool verb check OK: {summary}{suffix}"
 
 
+def _quantity_verification_report(core: str) -> str:
+    """Report prose integers lacking adjacent commands in verification blocks.
+
+    This is intentionally a syntactic completeness report, not a truth check.
+    A command is adjacent when it shares the quantity's line or is the previous
+    or next non-blank line. Requiring that local relationship prevents one
+    unrelated command elsewhere in a long verification section from lending
+    borrowed coverage to every quantity in the core. Whether the command can
+    actually produce the number is not statically knowable and is stated in
+    every non-empty report.
+    """
+    lines = core.splitlines()
+    verification_lines: set[int] = set()
+    command_lines: set[int] = set()
+    prose: list[tuple[int, str]] = []
+    verification_section = False
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+
+    def mask_code(match: re.Match[str]) -> str:
+        return "".join("\n" if char == "\n" else " " for char in match.group())
+
+    prose_lines = _INLINE_CODE.sub(mask_code, core).splitlines()
+    inline_command_lines = {
+        core.count("\n", 0, match.start())
+        for match in _INLINE_CODE.finditer(core)
+        if _COMMANDISH.search(match.group("body"))
+    }
+
+    for index, line in enumerate(lines):
+        if in_fence:
+            if re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+            ):
+                in_fence = False
+            elif verification_section and line.strip():
+                command_lines.add(index)
+                verification_lines.add(index)
+            continue
+
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            if verification_section:
+                verification_lines.add(index)
+            continue
+
+        if _is_atx_heading(line):
+            verification_section = _VERIFICATION_CUE.search(line) is not None
+        elif _VERIFICATION_CUE.search(prose_lines[index]):
+            # A bold or ordinary imperative such as "Re-derive these counts"
+            # is also a verification-block opener; the next heading closes it.
+            verification_section = True
+
+        if verification_section:
+            verification_lines.add(index)
+            if line.startswith(("    ", "\t")) or index in inline_command_lines:
+                command_lines.add(index)
+
+        if line.startswith(("    ", "\t")) or re.match(r"^\s*>", line):
+            continue
+        prose.append((
+            index,
+            _DIRECTION_NUMBER.sub("", _QUOTED_PROSE.sub("", prose_lines[index])),
+        ))
+
+    substantive = [index for index, line in enumerate(lines) if line.strip()]
+    ordinal = {line_no: position for position, line_no in enumerate(substantive)}
+    quantities: list[tuple[int, str, bool]] = []
+    for line_no, line in prose:
+        for match in _ASSERTED_QUANTITY.finditer(line):
+            unit = match.group("unit")
+            label = match.group("number")
+            if unit and unit.lower() not in _UNIT_STOPWORDS:
+                label += f" {unit}"
+            covered = line_no in verification_lines and any(
+                abs(ordinal[line_no] - ordinal[command]) <= 1
+                for command in command_lines
+            )
+            quantities.append((line_no + 1, label, covered))
+
+    covered = sum(is_covered for _, _, is_covered in quantities)
+    if not quantities:
+        return (
+            "quantity verification NOT CHECKED: found 0 asserted quantities in "
+            "prose; adjacent re-derivation commands covered 0 of 0. There is no "
+            "quantity population, so this is not an all-verified result."
+        )
+    uncovered = [
+        f"line {line_no} {label!r}"
+        for line_no, label, is_covered in quantities if not is_covered
+    ]
+    gap = (
+        f"{len(uncovered)} uncovered: {', '.join(uncovered)}"
+        if uncovered else "0 uncovered"
+    )
+    return (
+        f"quantity verification REPORT: found {len(quantities)} asserted "
+        f"quantities in prose; adjacent re-derivation commands in verification "
+        f"blocks covered {covered} of {len(quantities)}; {gap}. This is a "
+        "syntactic completeness report, not proof: it does not verify that a "
+        "command can produce the claimed quantity."
+    )
+
+
 def validate_core(core: str) -> int:
     """Refuse an authored core that is absent, placeholder, or has no direction 2.
 
@@ -640,9 +776,11 @@ def validate_core(core: str) -> int:
         raise BriefFault(_no_body_message(empties, sections_seen))
 
     tool_report = _validate_tool_invocations(core)
+    quantity_report = _quantity_verification_report(core)
     for index, line in enumerate(lines):
         if _DIRECTION_2.search(line) and any(_substantive(rest) for rest in lines[index + 1:]):
             print(tool_report, file=sys.stderr)
+            print(quantity_report, file=sys.stderr)
             return sections_seen
     # Reaching here proves `empties` came back empty (it raises above), so the
     # denominator is the one signal left that the walk ran on thin data: a core
