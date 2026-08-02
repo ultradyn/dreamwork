@@ -4992,3 +4992,29 @@ disagreed with the story — neither looked wrong on its own.
   the latent version, so expect this from any older branch and re-arm against a
   COMMITTED expectation rather than reading it as a branch defect. (2026-08-03,
   coordinator)
+
+- Put a brief's escape clause at the TOP, not paragraph six. `#1109`'s lane found
+  the premise false — `dev/brief.py` generates lane briefs only, so there was no
+  review-brief seam to edit — and stopped correctly, but its dogfood report is
+  the sharper finding: the brief READ as if generation were confirmed ("find
+  where review briefs are generated and put it there") for five paragraphs
+  before licensing a stop, and its Red-proof and Verification sections
+  presupposed the edit. A lane reading top-down and starting work would have
+  authored a review path nobody asked for. The premise is the first thing a lane
+  can verify and the most load-bearing, so the licence to stop belongs before the
+  instructions that assume it holds. (2026-08-03, coordinator)
+
+- An owns-list whose members are not the literal site of the named defect is
+  itself a premise to double-check. `#1109`'s lane observed that
+  `Lane-owns: dev/brief.py test_brief.py` on a task about REVIEW briefs was the
+  strongest early signal the premise was wrong: if the fix site were really those
+  files, the ownership would be self-evident rather than something the brief had
+  to assert. An owns-list is a hypothesis about where the defect lives, and it
+  should be read as one. (2026-08-03, coordinator)
+
+- `.dreamwork/docs/briefs/` is gitignored (`#867` made the 372-file brief corpus
+  operator-local), while the tracked brief FRAMES live in `briefs/` at the repo
+  root — `frame.md`, `boilerplate.md`, `coordinator-checklist.md`. Writing a
+  durable frame into the first directory produces a file git refuses to add and
+  that no other checkout will ever see. Frames go in `briefs/`; per-task briefs
+  are operator-local. (2026-08-03, coordinator)
