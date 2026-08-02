@@ -1124,20 +1124,40 @@ def test_validate_core_unreadable_ledger_does_not_refuse_with_citation(tmp_path)
     assert brief.validate_core(core, ledger=missing_ledger) == 2
 
 
-def test_validate_core_emits_both_new_reports(capsys):
-    """Both new reports must appear in validate_core's stderr output, alongside
-    the existing four.  A core that carries both a missing recipe and a state
-    mismatch must surface both."""
+def test_validate_core_emits_both_new_reports(tmp_path, capsys):
+    """Finding 3 (#1028 P2): both new reports must appear AND carry their
+    details through validate_core's stderr output.  The prior test asserted only
+    that the two report LABELS appeared while its core contained no ``just …``
+    and no ``#NNN`` — so both scanners could return their zero-population
+    report for every nonzero claim and the test still passed.  This core carries
+    a genuinely missing recipe (``just build`` — only ``just build-client``
+    exists) and a genuinely mismatched state claim (``#700 is live`` while #700
+    is landed), and asserts both DETAILS, not the labels.
+
+    Production change that would break this: either scanner returning its
+    zero-population report while still emitting its label would now fail,
+    because the details (``1 MISSING: `just build``` and ``#700 MISMATCH …
+    'landed'``) are required and are produced only by a real scan of the
+    combined input."""
+    ledger = _state_ledger(tmp_path)  # #630 open, #700 landed
     core = (
         "## The defect, measured\n\n"
-        "Real prose so the section has substance.\n\n"
+        "Run `just build` to rebuild; #700 is live.\n\n"
         "## Direction 2 - construct these\n\n"
         "1. A case.\n"
     )
-    assert brief.validate_core(core) == 2
+    assert brief.validate_core(core, ledger=ledger) == 2
     report = capsys.readouterr().err
+    # The label check (kept) plus the DETAIL checks that the prior test lacked.
     assert "command existence" in report, report
     assert "task-state claim" in report, report
+    # Command-existence detail: a genuinely missing recipe is reported MISSING.
+    assert "1 MISSING" in report, report
+    assert "`just build`" in report, report
+    assert "recipe does not exist" in report, report
+    # Task-state detail: a landed task claimed live is a MISMATCH.
+    assert "#700 MISMATCH" in report, report
+    assert "actual state 'landed'" in report, report
 
 
 def test_tool_verb_check_refuses_an_unknown_master_verb_by_name(capsys):
