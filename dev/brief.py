@@ -217,6 +217,45 @@ _UNIT_STOPWORDS = {
     "with",
 }
 
+# --- #1028: command-existence and task-state claim reports -----------------
+#
+# Two mechanically checkable premise classes that burned six dispatches in one
+# evening (#1028).  Both follow the #994 precedent: REPORT, do not certify.
+# A ``just <recipe>`` inside inline code or a fenced block is a claim the recipe
+# exists; a ``#NNN`` inside a state-predicate or expected-output context is a
+# claim about that task's state.  Both are resolvable at generation by a command
+# the lane would otherwise run itself.
+#
+# ``just`` is an English word, so the recipe matcher is restricted to CODE
+# CONTEXT (inline code and fenced blocks).  Measured across the corpus: 10 false
+# positives in 152 prose matches ("just the", "just as"), zero in 199
+# code-context matches.
+_JUST_RECIPE = re.compile(
+    r"(?<![\w./-])just\s+(?P<recipe>[a-z][a-z0-9_-]*)\b", re.IGNORECASE
+)
+# A #NNN directly asserted to be in a state: "#641 is live", "#630 is open".
+# "live"/"stale" map to formal state "open"; "done"/"closed" to "landed".
+_OPEN_IMPLYING = r"open|live|stale"
+_LANDED_IMPLYING = r"landed|done|closed"
+_TASK_STATE_PREDICATE = re.compile(
+    r"#(?P<task>\d+)[^.\n;]{0,25}?\b(?:is|are|was|were|remain|stands)\b"
+    r"[^.\n;]{0,15}?\b(?P<state>"
+    + _OPEN_IMPLYING + r"|" + _LANDED_IMPLYING + r")\b",
+    re.IGNORECASE,
+)
+# A #NNN inside an expected-output or fixture claim.  Word-bounded
+# "expect"/"expected"/"fixture" excludes "expectation" (which matched
+# "TEST EXPECTATION ... #795" six times in the corpus — all false positives).
+_TASK_EXPECTED_CLAIM = re.compile(
+    r"\b(?:expect(?:ed)?|fixture)\b[^.\n;]{0,60}?#(?P<task>\d+)",
+    re.IGNORECASE,
+)
+# A #NNN inside a WARN-row expected-output claim: "WARN rows (#630, #641)".
+_TASK_WARN_OUTPUT = re.compile(
+    r"\bWARN\s+rows?\b[^.\n;]{0,30}?#(?P<task>\d+)",
+    re.IGNORECASE,
+)
+
 
 class BriefFault(Exception):
     """A brief could not be generated from the inputs given."""
@@ -866,6 +905,219 @@ def _citation_authority_report(core: str, ledger: Path) -> str:
     )
 
 
+def _command_existence_report(core: str) -> str:
+    """Report ``just <recipe>`` claims confirmed against ``just --dry-run``.
+
+    A brief that names ``just build`` when the recipe is ``just build-client``
+    is a false premise that looks verified because ``build-client`` exists
+    nearby and lends it credibility (#630/#1028).  This binds to the SPECIFIC
+    recipe named in code context — inline code or fenced blocks — and probes
+    each with ``just --dry-run``, which resolves the recipe rather than
+    grepping a word in ``just --list`` (the direction-2 trap: a commented-out
+    recipe or a variable assignment matches a list grep but not a dry-run).
+
+    REPORT, not REFUSE (#994): a recipe that exists but requires positional
+    arguments passes ``just --dry-run`` with a usage error rather than a
+    "does not contain recipe" error — that is an existence confirmation, not
+    a finding.  Only the "does not contain recipe" message is a finding.
+    """
+    claims: list[tuple[int, str]] = []  # (line_no, recipe)
+    lines = core.splitlines()
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for index, line in enumerate(lines):
+        if in_fence:
+            if re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+            ):
+                in_fence = False
+            else:
+                for match in _JUST_RECIPE.finditer(line):
+                    claims.append((index + 1, match.group("recipe")))
+            continue
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            continue
+        # Inline code: `` `just build` `` is a claim, not a discussion.
+        for match in _INLINE_CODE.finditer(line):
+            for recipe_match in _JUST_RECIPE.finditer(match.group("body")):
+                claims.append((index + 1, recipe_match.group("recipe")))
+
+    if not claims:
+        return (
+            "command existence NOT CHECKED: found 0 `just <recipe>` claim(s) "
+            "in code context; resolved 0; 0 MISSING. There is no "
+            "command-claim population, so this is not an all-verified result."
+        )
+
+    recipes = sorted({recipe for _, recipe in claims})
+    missing: list[str] = []
+    checked = 0
+    try:
+        for recipe in recipes:
+            result = subprocess.run(
+                ["just", "--dry-run", recipe],
+                cwd=ROOT, capture_output=True, text=True, check=False, timeout=10,
+            )
+            if result.returncode == 0:
+                checked += 1
+            elif "does not contain recipe" in result.stderr:
+                missing.append(recipe)
+            else:
+                # Exists but needs positional args, or other non-existence
+                # error — the recipe IS there, just not runnable bare.
+                checked += 1
+    except (OSError, subprocess.TimeoutExpired):
+        return (
+            f"command existence NOT CHECKED: found {len(claims)} "
+            f"`just <recipe>` claim(s) ({len(recipes)} distinct) but "
+            "`just --dry-run` could not run. There IS a command-claim "
+            "population, so this is not an all-verified result; the claims "
+            "were not checked."
+        )
+
+    details = [
+        f"`just {recipe}` (line(s) "
+        f"{', '.join(str(ln) for ln in sorted({l for l, r in claims if r == recipe}))}) "
+        f"MISSING: recipe does not exist"
+        for recipe in missing
+    ]
+    findings = (
+        f"{len(missing)} MISSING: {'; '.join(details)}"
+        if missing else "0 MISSING"
+    )
+    return (
+        f"command existence REPORT: found {len(claims)} `just <recipe>` "
+        f"claim(s) in code context ({len(recipes)} distinct recipe(s)); "
+        f"resolved {checked} of {len(recipes)}; {findings}. Probed with "
+        "`just --dry-run`, which resolves the recipe rather than grepping a "
+        "word in `just --list`. This is a syntactic existence report, not "
+        "proof: it does not verify that a recipe produces the claimed result."
+    )
+
+
+def _task_state(task: int, ledger: Path) -> str | None:
+    """Resolve one task's state; ``None`` means the id is absent from the ledger."""
+    try:
+        return str(task_record(task, ledger)["state"]).strip()
+    except BriefFault as exc:
+        if str(exc).startswith(f"#{task} not found in "):
+            return None
+        raise
+
+
+def _task_state_claim_report(core: str, ledger: Path) -> str:
+    """Report task ids in state-claim contexts against their actual ledger state.
+
+    A brief that says "expect a live WARN for #641" while #641 is ``landed``
+    sends a lane to verify an expectation that can never hold (#1024/#1028).
+    This binds to the SPECIFIC claim — a #NNN inside a state-predicate,
+    expected-output, fixture, or WARN-row context — not to every citation
+    (the direction-2 trap: flagging every #NNN drowns the real finding).
+    Each matched #NNN is resolved against the ledger and the claim context is
+    placed beside the actual state for human review.
+
+    REPORT, not REFUSE (#994).  State consistency between the claimed context
+    and the actual state is flagged as MISMATCH when the claim is clear (a
+    predicate like "#641 is live") and as a surface-only finding when the
+    claim is an expected-output context (implied open).
+    """
+    lines = core.splitlines()
+    claims: list[tuple[int, int, str, str | None]] = []
+    total_citations = 0
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for index, line in enumerate(lines):
+        if in_fence:
+            if re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+            ):
+                in_fence = False
+            continue
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            continue
+        for match in _TASK_STATE_PREDICATE.finditer(line):
+            claims.append(
+                (index + 1, int(match.group("task")), "state predicate",
+                 match.group("state"))
+            )
+        for match in _TASK_EXPECTED_CLAIM.finditer(line):
+            claims.append(
+                (index + 1, int(match.group("task")), "expected/fixture", None)
+            )
+        for match in _TASK_WARN_OUTPUT.finditer(line):
+            claims.append(
+                (index + 1, int(match.group("task")), "WARN output", None)
+            )
+        total_citations += len(re.findall(r"#\d+", line))
+
+    if not claims:
+        return (
+            f"task-state claim NOT CHECKED: found 0 task-state claim(s); "
+            f"resolved 0; 0 mismatched. {total_citations} other #NNN "
+            "citation(s) without state-claim language were NOT CHECKED. "
+            "There is no state-claim population, so this is not an "
+            "all-verified result."
+        )
+
+    state_cache: dict[int, str | None] = {}
+    details: list[str] = []
+    resolved = 0
+    mismatched = 0
+    unresolvable = 0
+    for line_no, task, context, claimed_word in claims:
+        if task not in state_cache:
+            state_cache[task] = _task_state(task, ledger)
+        actual = state_cache[task]
+        if actual is None:
+            unresolvable += 1
+            details.append(
+                f"line {line_no} #{task} UNRESOLVABLE in {context!r}: "
+                "no ledger entry"
+            )
+            continue
+        resolved += 1
+        if claimed_word is not None:
+            implied = (
+                "open" if re.fullmatch(_OPEN_IMPLYING, claimed_word, re.I)
+                else "landed"
+            )
+        else:
+            implied = "open"  # expected/fixture/WARN all imply open
+        if actual != implied:
+            mismatched += 1
+            details.append(
+                f"line {line_no} #{task} MISMATCH in {context!r}: "
+                f"claim implies {implied!r} ({claimed_word or 'expected output'}); "
+                f"actual state {actual!r}"
+            )
+        else:
+            details.append(
+                f"line {line_no} #{task} MATCH in {context!r}: "
+                f"actual state {actual!r}"
+            )
+
+    unclassified = total_citations - len(claims)
+    return (
+        f"task-state claim REPORT: found {len(claims)} task-state claim(s); "
+        f"resolved {resolved}; mismatched {mismatched}; unresolvable "
+        f"{unresolvable}. {unclassified} other #NNN citation(s) without "
+        "state-claim language were NOT CHECKED (direction-2: flagging every "
+        "citation drowns the finding). " + "; ".join(details) + " State "
+        "consistency is REPORTED, not certified: a claim's implied state is "
+        "a heuristic and requires human judgment."
+    )
+
+
 def validate_core(core: str, ledger: Path | None = None) -> int:
     """Refuse an authored core that is absent, placeholder, or has no direction 2.
 
@@ -979,12 +1231,16 @@ def validate_core(core: str, ledger: Path | None = None) -> int:
     quantity_report = _quantity_verification_report(core)
     citation_report = _citation_authority_report(core, ledger)
     blocking_report = _blocking_number_report(core)
+    command_report = _command_existence_report(core)
+    state_report = _task_state_claim_report(core, ledger)
     for index, line in enumerate(lines):
         if _DIRECTION_2.search(line) and any(_substantive(rest) for rest in lines[index + 1:]):
             print(tool_report, file=sys.stderr)
             print(quantity_report, file=sys.stderr)
             print(citation_report, file=sys.stderr)
             print(blocking_report, file=sys.stderr)
+            print(command_report, file=sys.stderr)
+            print(state_report, file=sys.stderr)
             return sections_seen
     # Reaching here proves `empties` came back empty (it raises above), so the
     # denominator is the one signal left that the walk ran on thin data: a core
