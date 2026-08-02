@@ -12,6 +12,17 @@ from dreamwork_db import (
     Access, NotFound, SchemaMismatch, ValidationError, open_database,
 )
 from dreamwork_db.store import dreamwork_store_spec
+from dreamwork_db.migrate import SCHEMA_VERSION
+
+
+def _downgrade_to_v8(conn):
+    """Remove the empty v10 shape, then the additive v9 column."""
+    v010 = importlib.import_module(
+        "dreamwork_db.migrations.v010_posture_history"
+    )
+    v009 = importlib.import_module("dreamwork_db.migrations.v009_goal_bypass")
+    v010.downgrade(conn)
+    v009.downgrade(conn)
 
 
 @pytest.fixture
@@ -40,8 +51,8 @@ def test_v008_upgrade_builds_the_decided_goal_shape(store_path):
         version = conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
         ).fetchone()[0]
-        assert version == "9", (
-            "migrate.py must advance the ordered ladder through v009_goal_bypass; "
+        assert version == str(SCHEMA_VERSION), (
+            "migrate.py must advance the ordered ladder through current; "
             f"stored schema_version was {version!r}"
         )
         assert conn.execute(
@@ -80,6 +91,7 @@ def test_v008_downgrade_names_every_nonempty_fact_before_discarding(store_path):
     )
     conn = sqlite3.connect(store_path)
     conn.execute("PRAGMA foreign_keys=ON")
+    _downgrade_to_v8(conn)
     conn.execute(
         "INSERT INTO task_group"
         " (kind,title,created_by,created_at,goal_state,goal_rank)"
@@ -127,7 +139,7 @@ def test_v008_downgrade_names_every_nonempty_fact_before_discarding(store_path):
     try:
         assert conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone() == ("9",), "a refused downgrade must not move the version"
+        ).fetchone() == ("8",), "a refused downgrade must not move the version"
         assert conn.execute("SELECT COUNT(*) FROM goal_claim").fetchone() == (1,)
     finally:
         conn.close()
@@ -141,6 +153,7 @@ def test_v008_empty_downgrade_restores_v007_without_loss(store_path):
     conn = sqlite3.connect(store_path)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("BEGIN")
+    _downgrade_to_v8(conn)
     v008_goals.downgrade(conn)
     conn.execute("COMMIT")
     try:
@@ -173,6 +186,7 @@ def test_a_real_v007_store_upgrades_in_place_to_v008(store_path):
     conn = sqlite3.connect(store_path)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("BEGIN")
+    _downgrade_to_v8(conn)
     v008_goals.downgrade(conn)
     conn.execute(
         "INSERT INTO task_group (kind,title,created_by,created_at)"
@@ -193,7 +207,7 @@ def test_a_real_v007_store_upgrades_in_place_to_v008(store_path):
     try:
         assert conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'"
-        ).fetchone() == ("9",)
+        ).fetchone() == (str(SCHEMA_VERSION),)
         assert conn.execute(
             "SELECT kind,title FROM task_group"
         ).fetchall() == [("epic", "existing group")], (
@@ -214,6 +228,10 @@ def test_v008_rows_upgrade_with_null_bypass_attribution(store_path):
     conn = sqlite3.connect(store_path)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("BEGIN")
+    v010 = importlib.import_module(
+        "dreamwork_db.migrations.v010_posture_history"
+    )
+    v010.downgrade(conn)
     v009.downgrade(conn)
     conn.execute(
         "INSERT INTO task_group (kind,title,created_by,created_at) "
@@ -255,6 +273,10 @@ def test_bypass_attribution_round_trips_and_downgrade_refuses(store_path):
     conn = sqlite3.connect(store_path)
     conn.execute("BEGIN")
     try:
+        v010 = importlib.import_module(
+            "dreamwork_db.migrations.v010_posture_history"
+        )
+        v010.downgrade(conn)
         with pytest.raises(SchemaMismatch, match=r"bypassed_by values=1"):
             v009.downgrade(conn)
     finally:

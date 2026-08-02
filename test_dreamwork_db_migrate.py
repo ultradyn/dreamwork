@@ -465,6 +465,36 @@ def test_ladder_declares_the_single_ordered_path_to_current():
     )
 
 
+def test_posture_history_downgrade_refuses_to_discard_a_change(tmp_path):
+    from dreamwork_db.migrations import v010_posture_history
+
+    path = tmp_path / "posture-history.sqlite3"
+    _migrate_through_core(path)
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "INSERT INTO posture_change"
+        " (at,axis,old_value,new_value,actor) VALUES (?,?,?,?,?)",
+        ("2026-08-02T00:00:00Z", "pace", "idle", "hot", "test"),
+    )
+    conn.commit()
+    conn.execute("BEGIN")
+    try:
+        with pytest.raises(
+                SchemaMismatch, match=r"posture_change rows=1"):
+            v010_posture_history.downgrade(conn)
+    finally:
+        conn.execute("ROLLBACK")
+    try:
+        assert conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone() == (str(SCHEMA_VERSION),)
+        assert conn.execute(
+            "SELECT axis,old_value,new_value FROM posture_change"
+        ).fetchall() == [("pace", "idle", "hot")]
+    finally:
+        conn.close()
+
+
 def test_empty_v4_group_schema_rolls_back_to_v3_without_touching_tasks(tmp_path):
     path = tmp_path / "rollback-v4.sqlite3"
     _migrate_through_core(path)
