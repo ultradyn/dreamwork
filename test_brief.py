@@ -495,6 +495,78 @@ def test_validate_core_returns_the_section_count_on_success():
     assert brief.validate_core(core) == 3
 
 
+def test_brief_generation_reports_an_uncovered_headline_beside_a_covered_claim(capsys):
+    core = (
+        "## Verify the premises\n\n"
+        "17 recipes are registered.\n\n"
+        "`just --summary | wc -w`\n\n"
+        "## The surviving gap\n\n"
+        "5 recipes carry a setting whose meaning was not re-derived.\n\n"
+        "## Direction 2 - construct these\n\n"
+        "A word-form count can escape the scan.\n"
+    )
+    assert brief.validate_core(core) == 3
+    report = capsys.readouterr().err
+    assert "1 uncovered: line 9 '5 recipes'" in report, (
+        f"quantity verification lost uncovered 5 recipes: {report}"
+    )
+    assert "found 2 asserted quantities" in report, report
+    assert "covered 1 of 2" in report, report
+
+
+def test_quantity_report_zero_population_is_not_all_verified():
+    report = brief._quantity_verification_report(
+        "## Verify premises\n\nNo decimal quantities here.\n"
+    )
+    assert "NOT CHECKED: found 0 asserted quantities" in report, report
+    assert "covered 0 of 0" in report, report
+    assert "not an all-verified result" in report, report
+
+
+def test_quantity_report_excludes_identifier_and_evidence_number_shapes():
+    core = (
+        "## Verify premises\n\n"
+        "Task #972 at lint.py:5781 used v2.3 on 2026-08-02 and reached 40%.\n"
+        "The estimate was ~200 lines and the grouped value was 1,300.\n"
+        "> Past refusal: 13 recipes were claimed.\n\n"
+        "```text\n17 is expected output, not an assertion\n```\n"
+    )
+    report = brief._quantity_verification_report(core)
+    assert "found 0 asserted quantities" in report, report
+
+
+def test_quantity_report_requires_local_coverage_inside_the_verification_block():
+    core = (
+        "## Verify premises\n\n"
+        "11 files are affected.\n\n"
+        "This paragraph separates the claim from the unrelated command.\n\n"
+        "`find . -type f | wc -l`\n"
+    )
+    report = brief._quantity_verification_report(core)
+    assert "covered 0 of 1" in report, report
+    assert "line 3 '11 files'" in report, report
+
+
+def test_quantity_report_states_that_adjacent_coverage_is_not_semantic_proof():
+    core = (
+        "## Verify premises\n\n"
+        "13 recipes are registered.\n\n"
+        "`grep -c pipefail justfile`\n"
+    )
+    report = brief._quantity_verification_report(core)
+    assert "covered 1 of 1; 0 uncovered" in report, report
+    assert "does not verify that a command can produce the claimed quantity" in report
+
+
+def test_quantity_report_detects_bare_range_ends_but_not_word_or_grouped_counts():
+    report = brief._quantity_verification_report(
+        "## Premises\n\n"
+        "The change teaches 4 to 6 lessons, thirteen recipes, and 1,300 files.\n"
+    )
+    assert "found 2 asserted quantities" in report, report
+    assert "line 3 '4'" in report and "line 3 '6 lessons'" in report, report
+
+
 def test_tool_verb_check_refuses_an_unknown_master_verb_by_name(capsys):
     core = GOOD_CORE + "\nRun `dev/ledger.py definitely-not-a-verb 979`.\n"
     try:
