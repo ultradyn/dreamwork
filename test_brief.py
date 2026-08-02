@@ -1031,6 +1031,35 @@ def test_state_report_unreadable_ledger_is_not_checked_not_raised(tmp_path):
     assert "not an all-verified result" in report, report
 
 
+def test_state_report_empty_ledger_is_not_checked_not_raised(tmp_path):
+    """Finding 4 (#1028 P3): the sibling of the missing-ledger test above.  An
+    EMPTY ledger (present but holds no entries) raises BriefFault inside
+    ``task_record`` (``holds NO entries at all``), which the report-only path
+    must catch the same as a missing file.  Production is correct today, so
+    this is latent: re-raising only the empty-ledger BriefFault would leave the
+    missing-ledger test above green while an empty ledger refuses dispatch.
+    Asserting the empty path directly — a test with a populated ledger never
+    reaches it.
+
+    Production change that would break this: letting the empty-ledger
+    BriefFault escape ``_task_state_claim_report`` instead of catching it as
+    NOT CHECKED."""
+    empty_ledger = tmp_path / ".dreamwork" / "tasks.md"
+    empty_ledger.parent.mkdir()
+    empty_ledger.write_text("# Tasks\n", encoding="utf-8")  # present, no entries
+    core = (
+        "## Verify\n\n"
+        "#700 is live right now.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    # Must not raise:
+    report = brief._task_state_claim_report(core, empty_ledger)
+    assert "task-state claim NOT CHECKED" in report, report
+    assert "found 1 task-state claim(s)" in report, report
+    assert "could not be read" in report, report
+    assert "not an all-verified result" in report, report
+
+
 def test_citation_report_unreadable_ledger_is_not_checked_not_raised(tmp_path):
     """Direction 1, the P1 sibling (#1028): _citation_authority_report runs
     FIRST in validate_core, before the task-state report, so an unfixed
@@ -1048,6 +1077,32 @@ def test_citation_report_unreadable_ledger_is_not_checked_not_raised(tmp_path):
     )
     # Must not raise:
     report = brief._citation_authority_report(core, missing_ledger)
+    assert "citation authority NOT CHECKED" in report, report
+    assert "found 1 task citation(s)" in report, report
+    assert "could not be read" in report, report
+    assert "not an all-verified result" in report, report
+
+
+def test_citation_report_empty_ledger_is_not_checked_not_raised(tmp_path):
+    """Finding 4 (#1028 P3): the citation-path counterpart of the empty-ledger
+    state test.  ``_citation_authority_report`` runs FIRST in validate_core, so
+    an empty-ledger BriefFault escaping here refuses the dispatch before the
+    state report is reached.  Production is correct today; this is latent: the
+    missing-ledger sibling above stays green if this path regresses.
+
+    Production change that would break this: letting the empty-ledger
+    BriefFault escape ``_citation_authority_report`` instead of catching it as
+    NOT CHECKED."""
+    empty_ledger = tmp_path / ".dreamwork" / "tasks.md"
+    empty_ledger.parent.mkdir()
+    empty_ledger.write_text("# Tasks\n", encoding="utf-8")  # present, no entries
+    core = (
+        "## The defect\n\n"
+        "#641 — the false premise that started this task.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    # Must not raise:
+    report = brief._citation_authority_report(core, empty_ledger)
     assert "citation authority NOT CHECKED" in report, report
     assert "found 1 task citation(s)" in report, report
     assert "could not be read" in report, report
