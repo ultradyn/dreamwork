@@ -3210,8 +3210,23 @@ _REGEX_AFTER_KEYWORD = frozenset({
     "yield", "await", "new", "in", "instanceof", "of",
 })
 
+# Statement keywords whose parenthesised HEADER closes in statement context.
+# ``if (x) /re/``, ``while (x) /re/``, ``for (…) /re/``, ``switch (x) /re/``,
+# ``catch (e) /re/`` and ``with (o) /re/`` are all regexes: the ``)`` that
+# closes the header is NOT an expression close — a statement follows, so a
+# division has no left-hand side there. This is the one case where two tokens
+# that look identical to a char-stream lexer (the ``)`` of ``f(x)`` and the
+# ``)`` of ``if (x)``) must read differently, so the lexer marks the ``(``
+# that follows one of these keywords and carries statement context to its
+# matching ``)`` (see ``_js_noncode_spans``). Unary/expression keywords
+# (``typeof``, ``void``…) are deliberately ABSENT: ``typeof (x) / y`` is
+# division, and those are handled by ``_REGEX_AFTER_KEYWORD`` instead.
+_CONTROL_KEYWORDS = frozenset({
+    "if", "while", "for", "switch", "catch", "with",
+})
 
-def _regex_after(prev_sig: str, prev_word: str) -> bool:
+
+def _regex_after(prev_sig: str, prev_word: str, ctrl_close: bool) -> bool:
     """Heuristic: is ``/`` a regex opener or a division operator?
 
     After expression-ending tokens (identifier chars, digits, ``)``, ``]``,
@@ -3228,20 +3243,40 @@ def _regex_after(prev_sig: str, prev_word: str) -> bool:
     no left-hand side there. This closes the ``return /re/`` hole round 4 left
     open (``return`` ended in ``n``, which read as an identifier → division).
 
+    Control-condition rule (round 6): ``ctrl_close`` is True when the last
+    significant token was the ``)`` that CLOSED a control-header paren
+    (``if (…)``, ``while (…)``, ``for (…)``, ``switch (…)``, ``catch (…)``,
+    ``with (…)``). That ``)`` ends a CONDITION, not an expression — a
+    statement follows — so a ``/`` there opens a REGEX. The lexer tracks
+    which ``(`` opened a control header and carries that mark to its match,
+    because the ``)`` of ``if (x)`` and the ``)`` of ``f(x)`` are the same
+    character and only the mark distinguishes them. Ordinary division
+    ``f(x) / g(y)`` keeps reading as division: its ``(`` did not follow a
+    control keyword, so ``ctrl_close`` stays False and the ``)`` branch below
+    classifies ``/`` as division. Both shapes end in ``)`` and both are
+    covered, in opposite directions, by the round-6 regression pair.
+
     Residual limit: regex-vs-division is genuinely undecidable without a full
-    parser, and this heuristic is not one. Cases it still misses: an automatic
-    semicolon insertion (ASI) line break before ``return /re/`` where the
-    preceding statement already terminated; a regex after a closing ``)``
-    whose call is itself an expression-position division target
-    (``f(x) / g(y)``); numeric literals with exotic suffixes; and any keyword
-    not listed in ``_REGEX_AFTER_KEYWORD``. The guard names these rather than
-    implying total coverage (#651). The real sources carry no regex literals,
-    so the practical risk is a false POSITIVE (a regex body read as code),
-    never a silent deletion.
+    parser, and this heuristic is not one. Genuine residuals it still misses:
+    an automatic semicolon insertion (ASI) line break before ``return /re/``
+    where the preceding statement already terminated; a division whose left
+    operand is a closing ``)`` that is NOT a call or control header (a bare
+    grouping like ``(a + b) / c`` reads as division correctly — its ``)`` is
+    an expression close — but an exotic expression-position target could
+    still fool a single-char heuristic); numeric literals with exotic
+    suffixes; and any expression keyword not listed in
+    ``_REGEX_AFTER_KEYWORD``. The boundary named here is the one the code
+    actually draws: ordinary division including ``f(x) / g(y)`` reads as
+    division (tested), and a regex after a control condition reads as a regex
+    (tested). The guard names the rest rather than implying total coverage
+    (#651). The real sources carry no regex literals, so the practical risk
+    is a false POSITIVE (a regex body read as code), never a silent deletion.
     """
     if not prev_sig:
         return True
     if prev_word in _REGEX_AFTER_KEYWORD:
+        return True
+    if ctrl_close:
         return True
     if prev_sig in ")]}":
         return False
@@ -3296,7 +3331,10 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int, str]]:
     token in a code context — so ``_regex_after`` can recognise
     expression-introducing keywords (``return``, ``typeof``, …) whose final
     character alone would read as an identifier and mis-classify a following
-    ``/`` as division.
+    ``/`` as division. It also keeps a paren-attribute stack so the ``)`` that
+    closes a control header (``if (…)`` … ``with (…)``) can be distinguished
+    from the ``)`` that closes a call/grouping: only the former puts the next
+    ``/`` in statement (regex) position.
     """
     n = len(text)
     spans: list[tuple[int, int, str]] = []
@@ -3308,6 +3346,13 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int, str]]:
     ctx: list[tuple] = [('code',)]
     prev_sig = ""   # last significant (non-space) char in a code context
     prev_word = ""  # last complete identifier token in a code context
+    # One entry per UNCLOSED '(': True iff it opened a control header
+    # (if/while/for/switch/catch/with). Its matching ')' carries that mark to
+    # ctrl_close so _regex_after reads the following '/' as a regex (statement
+    # position), not division. Bracket/brace nesting is not tracked here —
+    # only '(' matters, and an unmatched ')' reads as expression-close.
+    parens: list[bool] = []
+    ctrl_close = False  # last significant char was a control-header ')'
 
     while i < n:
         kind = ctx[-1][0]
@@ -3319,6 +3364,7 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int, str]]:
                 i += 1
                 prev_sig = '`'
                 prev_word = ""
+                ctrl_close = False
                 continue
             if c == '\\' and i + 1 < n:
                 i += 2
@@ -3328,6 +3374,7 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int, str]]:
                 i += 2
                 prev_sig = ""
                 prev_word = ""
+                ctrl_close = False
                 continue
             # Accumulate a template text run (non-code) until ` or ${
             start = i
@@ -3397,6 +3444,7 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int, str]]:
             i = j + 1 if (j < n and text[j] == "'") else j
             prev_sig = "'"
             prev_word = ""
+            ctrl_close = False
             continue
 
         # ---- Double-quoted string ----
@@ -3415,6 +3463,7 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int, str]]:
             i = j + 1 if (j < n and text[j] == '"') else j
             prev_sig = '"'
             prev_word = ""
+            ctrl_close = False
             continue
 
         # ---- Template literal ----
@@ -3423,11 +3472,12 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int, str]]:
             i += 1
             prev_sig = '`'
             prev_word = ""
+            ctrl_close = False
             continue
 
         # ---- Regex literal vs division ----
         if c == '/':
-            if _regex_after(prev_sig, prev_word):
+            if _regex_after(prev_sig, prev_word, ctrl_close):
                 start = i
                 i += 1
                 in_class = False
@@ -3450,9 +3500,11 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int, str]]:
                 spans.append((start, i, 'regex'))
                 prev_sig = "1"       # regex is an expression → next / is division
                 prev_word = ""
+                ctrl_close = False
                 continue
             prev_sig = '/'
             prev_word = ""
+            ctrl_close = False
             i += 1
             continue
 
@@ -3469,12 +3521,35 @@ def _js_noncode_spans(text: str) -> list[tuple[int, int, str]]:
                 i += 1
             prev_word = text[start:i]
             prev_sig = prev_word[-1]
+            ctrl_close = False
+            continue
+
+        # ---- Paren tracking: mark control headers ----
+        # '(' after a control keyword (if/while/for/switch/catch/with) opens a
+        # CONDITION, so its matching ')' closes statement context. Every other
+        # '(' opens a call/grouping whose ')' is an expression close. The
+        # pushed bool carries that distinction to the ')'.
+        if c == '(':
+            parens.append(prev_word in _CONTROL_KEYWORDS)
+            prev_sig = '('
+            prev_word = ""
+            ctrl_close = False
+            i += 1
+            continue
+        if c == ')':
+            was_ctrl = parens.pop() if parens else False
+            prev_sig = ')'
+            prev_word = ""
+            # Only a control-header ')' leaves the next '/' in regex position.
+            ctrl_close = was_ctrl
+            i += 1
             continue
 
         # ---- Regular code character ----
         if not c.isspace():
             prev_sig = c
             prev_word = ""
+            ctrl_close = False
         i += 1
 
     return spans

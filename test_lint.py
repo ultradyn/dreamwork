@@ -11387,6 +11387,74 @@ class TestBuilderDelegation:
         assert len(rows) == 1 and rows[0][0] == lint.OK, rows
         assert "1 delegate reference(s)" in rows[0][1], rows
 
+    # ---- P1 (round 6): regex after a CONTROL-CONDITION close ----
+
+    def test_regex_after_if_condition_is_not_a_delegate(self, tmp_path):
+        # Round 6: ``if (flag) /fromBuilder('gone')/.test(x);`` is valid JS
+        # (verified via new Function). The ')' that closes an if-CONDITION is a
+        # STATEMENT-context close — a statement follows, not a divisor's right
+        # operand — so the '/' after it opens a REGEX. Round 5's
+        # prev-significant-char heuristic saw ')' and forced division, so the
+        # regex body was scanned as code and 'gone' read as a missing delegate
+        # (false RED). The ')' that ends ``f(x)`` in ``f(x) / g(y)`` looks
+        # identical to that char-stream lexer, so this case is genuinely
+        # distinct from ordinary division and is tested separately below.
+        #
+        # Production line: the paren-attr stack in _js_noncode_spans that
+        # marks the '(' after a control keyword (if/while/for/switch/catch/
+        # with) and sets statement context on its matching ')'. Reverting it
+        # makes the ')' read as expression-close → '/' as division → 'gone'
+        # scanned as code → false ERROR.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "if (flag) /fromBuilder('gone')/.test(x);\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
+
+    def test_regex_after_while_condition_is_not_a_delegate(self, tmp_path):
+        # Round 6: the control-condition rule is a SET (if/while/for/switch/
+        # catch/with), not an ``if``-only patch. while/for/switch close a
+        # condition the same way ``if`` does, so the same ')' marks statement
+        # context. This proves the set generalises; only ``if`` would be a
+        # namesake bug of the kind #651 names.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "while (flag) /fromBuilder('gone')/.test(x);\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rows
+        assert "1 delegate reference(s)" in rows[0][1], rows
+
+    def test_division_after_call_close_stays_division(self, tmp_path):
+        # Round 6 COUNTER-regression (the brief's "both end in ')'" rule):
+        # fixing the if-condition regex above must NOT re-break ordinary
+        # division. ``f(x) / g(y)`` ends in ')' too, but that ')' closes a
+        # CALL — an expression, so '/' is DIVISION and code continues on the
+        # same line. A real delegate (a MISSING builder, 'gone2') planted on
+        # the same line AFTER the division must still be detected: if the '/'
+        # were wrongly swallowed as a regex it would eat to the newline and
+        # HIDE 'gone2' (false GREEN). Asserting ERROR proves code continued,
+        # i.e. '/' was division. The if-case and this case share ')' and are
+        # tested in BOTH directions, as required.
+        rows = self._check(
+            tmp_path,
+            dev_build={"src/research.js": (
+                "const Row = fromBuilder('known', function (p) {\n"
+                "  return known(p.row);\n"
+                "});\n"
+                "const r = f(x) / g(y); const R2 = fromBuilder('gone2', fn);\n")},
+            client={"views.js": "function known(r) { return ''; }\n"})
+        assert rows and rows[0][0] == lint.ERROR, rows
+        assert "gone2" in rows[0][1], rows
+
     # ---- P2 (round 5): the rendered line is the deliverable ----
 
     def test_the_rendered_delegation_row_carries_its_message(self, tmp_path):
