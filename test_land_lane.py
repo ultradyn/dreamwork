@@ -567,6 +567,69 @@ def test_declared_change_not_observed_refuses(landing_repo):
     _assert_retained(root, lane)
 
 
+def test_malformed_warn_declaration_refuses_naming_offending_token(landing_repo):
+    """#1040 Finding 1: a coordinator declaration that does not parse as a WARN
+    row (a typo) must refuse as a DECLARATION-UNREADABLE fault naming the
+    offending token — not as a generic row-set mismatch that diagnoses the
+    coordinator's own command-line error as a lane defect (#136: nothing
+    declared, nothing changed, the declaration could not be read must stay
+    distinct).
+
+    The lane has a GENUINE added warning, so the defect is not whether the lane
+    changed the baseline — it did — but that the declaration cannot be read.
+    Validation is bound to the same _warn_row_identity the observed rows use, so
+    a declaration is unreadable exactly when it could not name a real row.
+
+    This stays distinct from a mismatch: a valid declaration naming a row the
+    merge did not observe is still a MISMATCH (proven by
+    test_declared_add_wrong_row_refuses), never unreadable. Asserting both the
+    offending token AND the absence of the generic mismatch closes the
+    false-green where 'refuses' passes for the wrong reason.
+    """
+    root, lane = landing_repo
+    _add_lane_warn(lane, "actual warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root, "--expect-warn-add", "not a WARN row"
+    )
+
+    assert result.returncode == 1
+    # Pre-merge validation (lint-baseline), not the post-merge mismatch (lint-precheck).
+    assert "REFUSE phase=lint-baseline" in result.stderr
+    assert "could not be read" in result.stderr
+    # The offending token is named, so the coordinator sees THEIR typo, not a
+    # lane defect.
+    assert "not a WARN row" in result.stderr
+    # The generic mismatch message must NOT appear — that is the bug this fixes.
+    assert "does not match the coordinator declaration exactly" not in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_malformed_warn_remove_declaration_refuses_naming_offending_token(landing_repo):
+    """#1040 Finding 1, remove direction: symmetry — a malformed remove
+    declaration refuses the same way as a malformed add declaration."""
+    root, lane = landing_repo
+    _baseline_two_warnings(root, lane)
+    _write(lane / "lint-rows.txt", "keeper warning\n")
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", "remove one warn row")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root, "--expect-warn-remove", "total garbage declaration"
+    )
+
+    assert result.returncode == 1
+    assert "REFUSE phase=lint-baseline" in result.stderr
+    assert "could not be read" in result.stderr
+    assert "total garbage declaration" in result.stderr
+    assert "does not match the coordinator declaration exactly" not in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
 def test_zero_change_pass_prints_no_authorisation_line(landing_repo):
     """#136: a pass because zero rows changed must NOT print an authorisation
     line. The authorised-pass case prints one (proven by
