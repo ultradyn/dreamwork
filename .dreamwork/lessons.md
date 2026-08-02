@@ -4151,3 +4151,30 @@ citation must be for **Y**, not for the failure. A quoted error message is a cit
 failure only. That is the fifth premise of mine a lane has had to refute (`#978`) — and every lane
 that stopped on one has been right, which is now a large enough population to be a finding about
 the briefs rather than about the lanes.
+
+**A probe that can match itself has no floor, and a count that cannot be zero is not a measurement.**
+I checked whether two lanes were still running with `pgrep -af "$LANE" | grep -c 'ccc @'`. It
+returned 2 for each. Every match was the **zsh process running the loop** — its own argv held both
+lane names *and* the literal string `ccc @`, so the probe matched itself, twice. Both lanes had in
+fact finished. Re-probing by pid resolved every match to a single process: mine.
+
+**I was one step from filing its output as evidence.** The reading contradicted `status_sync`'s
+pid-exact liveness check, and I had already written the ledger entry declaring that check broken —
+mechanism read from source, consequence "measured", the whole shape of a solid finding. The entry
+survives only because the tick probe disagreed five minutes later and I went back to look.
+
+**This is the `pkill -f` rule arriving through `pgrep`.** I hold that rule — never `pkill -f` a
+pattern another agent's command line can carry — and it did not fire, because nothing was being
+killed. The danger I had filed it under was *destruction*. The actual defect is *self-reference*,
+and it is just as present in the read-only form, where it feels safe.
+
+**The check that would have caught it, and costs one thought:** *what would make this read zero?*
+If the answer is "nothing", the number is describing the probe, not the system. A liveness count
+whose floor is 1 is a constant wearing a number's clothes.
+
+**Two general forms worth keeping.** For process probes: resolve matches to pids and exclude self
+and its ancestry, or match `/proc/<pid>/comm` alongside argv — never argv alone from a shell whose
+command line contains the pattern. For everything else: the denominator family (`#868`, `#937`) has
+a third sibling here — not a denominator that reaches zero, nor one that can never notice it is too
+small, but a **numerator that can never reach zero**. All three fail the same way: the number stays
+plausible while it stops depending on the world.
