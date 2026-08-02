@@ -732,6 +732,205 @@ def test_citation_report_resolves_an_entry_with_no_note(tmp_path):
     assert "ledger title 'Calm grey is genuinely empty'" in report
 
 
+# --- #1028: command-existence and task-state claim reports -----------------
+#
+# Two mechanically checkable premise classes that burned six dispatches in one
+# evening.  Each test includes a known-bad core (direction-1 red) and asserts on
+# CONTENT, not count (a report of two wrong things reads the same count as two
+# right ones).  The FP-resistance tests bind to the claim CONTEXT, proving the
+# matcher does not flag every citation or every English "just".
+
+
+def _state_ledger(tmp_path: Path) -> Path:
+    """A fixture ledger with one open and one landed task for state-claim tests."""
+    dreamwork = tmp_path / ".dreamwork"
+    dreamwork.mkdir()
+    ledger = dreamwork / "tasks.md"
+    ledger.write_text(
+        "# Tasks\n\n## Open\n\n"
+        "- **#630** a live open task\n\n"
+        "- **#641** another open task\n\n"
+        "## Recently landed\n\n"
+        "- **#700** a task that already landed\n",
+        encoding="utf-8",
+    )
+    return ledger
+
+
+# --- command existence: direction-1 known-bad, and the discriminating message
+
+def test_command_report_flags_a_missing_recipe_a_brief_named():
+    """Direction 1, the real defect: `just build` was named where the recipe is
+    `just build-client` (#630/#1028).  The report must name `build` as MISSING
+    — not merely return a non-empty string.  A recipe that exists but requires
+    positional arguments is NOT a finding (it returns a usage error, not a
+    'does not contain recipe' error)."""
+    core = "## Verify\n\nBuild with `just build`.\n\n## Direction 2\n\nA case.\n"
+    report = brief._command_existence_report(core)
+    assert "1 MISSING" in report, report
+    assert "`just build`" in report, report
+    assert "recipe does not exist" in report, report
+
+
+def test_command_report_confirms_an_existing_recipe_without_a_finding():
+    """The keep-case: a real recipe resolves cleanly and reports 0 MISSING.
+    `just pytest` exists and takes no required args, so `--dry-run` exits 0."""
+    core = "## Verify\n\nRun `just pytest`.\n\n## Direction 2\n\nA case.\n"
+    report = brief._command_existence_report(core)
+    assert "0 MISSING" in report, report
+    assert "resolved 1 of 1" in report, report
+    assert "pytest" not in [
+        part for part in report.split(";") if "MISSING" in part
+    ]
+
+
+def test_command_report_does_not_flag_a_recipe_that_exists_but_needs_args():
+    """Direction 2, false-green closed: `just dispatch-lane` exists but
+    requires two positional arguments.  `just --dry-run` returns a usage error
+    (exit 1), NOT a 'does not contain recipe' error — that is an existence
+    confirmation, not a finding.  A checker that greps `just --list` would
+    match a commented-out recipe or a variable assignment; `--dry-run` is the
+    seam that answers the question the brief is claiming."""
+    core = (
+        "## Verify\n\nRun `just dispatch-lane prompt.md @agent`.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    report = brief._command_existence_report(core)
+    assert "0 MISSING" in report, report
+
+
+def test_command_report_does_not_flag_the_english_word_just_in_prose():
+    """Direction 2, false-green closed: `just` is an English word.  Measured
+    across the corpus, 'just the', 'just as', 'just appear' matched 10 times
+    in prose and zero times in code context.  Restricting to inline code and
+    fenced blocks eliminates the false positives.  A matcher that grepped
+    'just <word>' in prose would flag this sentence."""
+    core = (
+        "## The defect\n\n"
+        "A lane that is just the wrong shape will just appear to pass.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    report = brief._command_existence_report(core)
+    assert "found 0 `just <recipe>` claim(s)" in report, report
+
+
+def test_command_report_zero_population_is_not_all_verified():
+    """A core with no `just <recipe>` claims must say NOT CHECKED, not pass."""
+    report = brief._command_existence_report(
+        "## Verify\n\nNo commands here.\n\n## Direction 2\n\nA case.\n"
+    )
+    assert "command existence NOT CHECKED" in report, report
+    assert "found 0" in report, report
+    assert "not an all-verified result" in report, report
+
+
+# --- task-state claims: direction-1 known-bad, and the discriminating message
+
+def test_state_report_flags_a_live_claim_for_a_landed_task(tmp_path):
+    """Direction 1, the real defect: 'expect a live WARN for #641' while #641
+    is `landed` (#1024/#1028).  The report must name #641 as MISMATCH and
+    quote the actual state.  Asserting on the count alone passes when the
+    checker reports two wrong things instead of the one right one."""
+    ledger = _state_ledger(tmp_path)
+    core = (
+        "## Verify\n\n"
+        "#700 is live right now and carries a WARN.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    report = brief._task_state_claim_report(core, ledger)
+    assert "#700 MISMATCH" in report, report
+    assert "claim implies 'open'" in report, report
+    assert "actual state 'landed'" in report, report
+
+
+def test_state_report_confirms_a_live_claim_for_an_open_task(tmp_path):
+    """The keep-case: '#630 is live' against an open #630 reports MATCH."""
+    ledger = _state_ledger(tmp_path)
+    core = "## Verify\n\n#630 is live right now.\n\n## Direction 2\n\nA case.\n"
+    report = brief._task_state_claim_report(core, ledger)
+    assert "#630 MATCH" in report, report
+    assert "mismatched 0" in report, report
+    assert "actual state 'open'" in report, report
+
+
+def test_state_report_flags_an_expected_output_claim_for_a_landed_task(tmp_path):
+    """The #1024 defect in its expected-output form: 'expect a WARN for #641'
+    when #641 is landed.  Expected/fixture/WARN claims imply open; a landed
+    task can never truthfully produce a live WARN."""
+    ledger = _state_ledger(tmp_path)
+    core = (
+        "## Verify\n\n"
+        "Expect a live WARN row for #700.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    report = brief._task_state_claim_report(core, ledger)
+    assert "#700 MISMATCH" in report, report
+    assert "claim implies 'open'" in report, report
+    assert "actual state 'landed'" in report, report
+
+
+def test_state_report_does_not_flag_every_citation(tmp_path):
+    """Direction 2, false-green closed: flagging every #NNN drowns the real
+    finding (#1028 direction-2).  A bare citation with no state-claim language
+    is context, not a state claim.  Measured across the corpus: 1.3% of
+    citations carry state-claim language; flagging all would be ~98% noise."""
+    ledger = _state_ledger(tmp_path)
+    core = (
+        "## The defect\n\n"
+        "The fix follows #630 and #641 and #700. "
+        "Run `dev/ledger.py get 630 --ledger …`.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    report = brief._task_state_claim_report(core, ledger)
+    assert "found 0 task-state claim(s)" in report, report
+    assert "NOT CHECKED" in report, report
+    assert "not an all-verified result" in report, report
+    assert "3 other #NNN citation(s)" in report, report
+
+
+def test_state_report_zero_population_is_not_all_verified(tmp_path):
+    """A core with no state-claim population must say NOT CHECKED."""
+    ledger = _state_ledger(tmp_path)
+    report = brief._task_state_claim_report(
+        "## Verify\n\nNo task-state claims here.\n\n## Direction 2\n\nA case.\n",
+        ledger,
+    )
+    assert "task-state claim NOT CHECKED" in report, report
+    assert "found 0 task-state claim(s)" in report, report
+    assert "not an all-verified result" in report, report
+
+
+def test_state_report_reports_a_warn_row_claim_against_the_ledger(tmp_path):
+    """The 'WARN rows (#630, #641)' idiom from tonight's briefs: a #NNN inside
+    a WARN-row expected-output claim is a state claim.  #700 is landed so a
+    WARN claim is a mismatch."""
+    ledger = _state_ledger(tmp_path)
+    core = (
+        "## Verify\n\n"
+        "Your check will add WARN rows (#700).\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    report = brief._task_state_claim_report(core, ledger)
+    assert "#700 MISMATCH" in report, report
+    assert "actual state 'landed'" in report, report
+
+
+def test_validate_core_emits_both_new_reports(capsys):
+    """Both new reports must appear in validate_core's stderr output, alongside
+    the existing four.  A core that carries both a missing recipe and a state
+    mismatch must surface both."""
+    core = (
+        "## The defect, measured\n\n"
+        "Real prose so the section has substance.\n\n"
+        "## Direction 2 - construct these\n\n"
+        "1. A case.\n"
+    )
+    assert brief.validate_core(core) == 2
+    report = capsys.readouterr().err
+    assert "command existence" in report, report
+    assert "task-state claim" in report, report
+
+
 def test_tool_verb_check_refuses_an_unknown_master_verb_by_name(capsys):
     core = GOOD_CORE + "\nRun `dev/ledger.py definitely-not-a-verb 979`.\n"
     try:
