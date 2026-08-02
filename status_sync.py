@@ -766,6 +766,58 @@ def _lane_task(lane: str, ids) -> int | str:
     return base if base in set(ids) else re.sub(r"^lane-", "", str(lane))
 
 
+def _lane_entry_base_id(entry) -> int | None:
+    """The task id a free-form ``lanes`` entry names, from its lane prefix.
+
+    ``lanes`` entries are author-written dispatch notes whose text begins
+    with the lane name (``cx-968foldsha — #968 P2: …``). A lane name is
+    ``<dispatch>-<id><slug>`` (brief.py builds ``cx-{task}``; a slug may
+    follow), so the leading digits after the first ``-`` are the task.
+    Returns ``None`` for an entry the prefix cannot reach — matching
+    ``_base_id``'s contract so *cannot compare* reads as *kept*, never as
+    *landed* (#702/#136): a judgement string the tool cannot tie to a task
+    is preserved, not pruned on a guess.
+    """
+    m = re.match(r"^[a-z]+-(\d+)", str(entry))
+    return int(m.group(1)) if m else None
+
+
+def reap_finished_lanes(lanes, open_ids):
+    """Prune ``lanes`` entries whose dispatch has landed (#969).
+
+    ``lanes`` is author-owned judgement text, but the dispatch it names is
+    finished when its task leaves ``## Open`` — the same ledger signal that
+    reaps ``dreamers`` (#402a). ``lanes`` had no deriver at all, so it could
+    only be true by coordinator diligence, and for hours it named landed
+    dispatches while ``dreamers`` agreed (both stale in the same direction),
+    leaving the #702 disagreement check silent. Giving ``lanes`` the same
+    task-open reaper breaks the tie: the ledger is the third party both
+    fields answer to, so they can no longer corroborate each other's
+    staleness.
+
+    Returns ``(kept, reaped, examined, unparseable)``. An entry whose prefix
+    yields no task id is KEPT (#702/#136: *cannot compare* must not read as
+    *landed*); the population is returned in full so ``examined 0`` is
+    visibly not an all-clear — ``lanes: []`` is both the correct idle state
+    and what a broken deriver produces (#868 inside the fix).
+    """
+    if not isinstance(lanes, list):
+        return [], [], 0, 0
+    open_set = set(open_ids)
+    kept, reaped = [], []
+    unparseable = 0
+    for entry in lanes:
+        base = _lane_entry_base_id(entry)
+        if base is None:
+            unparseable += 1
+            kept.append(entry)
+        elif base in open_set:
+            kept.append(entry)
+        else:
+            reaped.append(entry)
+    return kept, reaped, len(lanes), unparseable
+
+
 def _normalise_live(live: set) -> list:
     """A deterministic order for mixed-type ids without `sorted()`'s crash.
 
@@ -1166,6 +1218,33 @@ def main(argv: list[str] | None = None) -> int:
         state = "live" if agent_session.get("session_id") else "absent"
         changes.append("agent_session -> %s %s"
                        % (state, agent_session.get("session_id")))
+
+    # #969: `lanes` is author-owned judgement text, but the dispatch it names
+    # is finished when its task leaves `## Open` — the same ledger signal that
+    # reaps `dreamers` (#402a). `lanes` had no deriver at all, so it could
+    # only be true by coordinator diligence, and for hours it named landed
+    # dispatches while `dreamers` agreed (both stale in the same direction),
+    # leaving the #702 disagreement check silent. Giving `lanes` the same
+    # task-open reaper breaks the tie: the ledger is the third party both
+    # fields answer to, so they can no longer corroborate each other's
+    # staleness. The population is named on every run because `lanes: []` is
+    # both correct-idle and a broken deriver's output (#868 inside the fix).
+    raw_lanes = status.get("lanes", [])
+    if isinstance(raw_lanes, list):
+        kept_lanes, reaped_lanes, examined, unparseable = reap_finished_lanes(
+            raw_lanes, ids)
+        print("status_sync: lanes reap examined %d, pruned %d, kept %d, "
+              "unparseable %d — population named because an empty pair is "
+              "both idle and a broken deriver (#868/#969)"
+              % (examined, len(reaped_lanes), len(kept_lanes), unparseable),
+              file=sys.stderr)
+        if reaped_lanes:
+            status["lanes"] = kept_lanes
+            changes.append("lanes reap %d finished dispatch(es) (examined "
+                           "%d, pruned %d, kept %d, unparseable %d): %s"
+                           % (len(reaped_lanes), examined, len(reaped_lanes),
+                              len(kept_lanes), unparseable,
+                              [_lane_entry_base_id(e) for e in reaped_lanes]))
 
     print(coverage(status))
 
