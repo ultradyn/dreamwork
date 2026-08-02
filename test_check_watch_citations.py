@@ -672,9 +672,117 @@ def test_docstring_citations_on_real_tree(capsys):
         ), "composed miscitation row (land_lane _requirement_line #868 + title) must be reported"
         # (3) No unresolvable citations on the tree it ships with.
         assert "UNRESOLVABLE" not in out
+        # (4) #1034 round 7 — the committed expectation that arms against a
+        # frozen-path collapse: the REAL #199 citation in
+        # reconcile_submissions.py (a task that left the live store and lives
+        # ONLY in tasks.md.deprecated) must resolve from FROZEN history, not
+        # read as UNRESOLVABLE.  This is the row the red-proof names: if
+        # _deprecated_task_ids returns nothing, #199 falls through to
+        # UNRESOLVABLE and this assertion fails (and (3) above fails too).
+        # The row composes path + symbol + id + provenance as one regex so
+        # no other row can satisfy it.  #199 is frozen-only by construction
+        # (absent from the live store); if it were re-filed live, everything
+        # would pass for a reason that evaporates — the frozen provenance
+        # string is what proves the frozen path was taken.
+        assert re.search(
+            r'dev/reconcile_submissions\.py:\d+ <module> \(#199\) '
+            r'resolved from frozen history',
+            out,
+        ), ("the real #199 citation must resolve from frozen history "
+            "(tasks.md.deprecated) — if this fails, the frozen path is "
+            "unwired or #199 was re-filed live")
         # Surface the resolved-state banner.
         with capsys.disabled():
             for line in out.splitlines():
                 if "DOCSTRING CITATIONS:" in line:
                     print(line)
                     break
+
+
+# ---------------------------------------------------------------------------
+# Frozen-history resolution (#1034 round 7, mirroring lint.py #1094)
+#
+# check_docstring_citations now resolves ids against BOTH the live store and
+# frozen history (tasks.md.deprecated), using the SAME three-state pattern
+# lint.py landed at 6e0d7524: (ids, readable).  These tests cover the two
+# states that the live-only path could not produce: resolves-FROZEN and
+# UNVERIFIABLE (frozen-unreadable, could-not-check).
+
+
+def test_frozen_only_id_resolves_from_frozen_history(monkeypatch, tmp_path, capsys):
+    # #1034 round 7: an id that is in frozen history but NOT in the live
+    # store resolves from frozen, reported with its provenance — not
+    # UNRESOLVABLE.  This is the synthetic complement to the real-tree #199
+    # assertion: it isolates the frozen path so a collapse of _deprecated
+    # task_ids alone (with live untouched) is caught here too.
+    titles = {868: "a live entry", 10000: "the live max"}
+    monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
+    # Frozen set contains 4242 (NOT in live titles); readable=True.
+    monkeypatch.setattr(
+        citations, "_deprecated_task_ids", lambda dw_dir: ({4242}, True)
+    )
+    root = _docstring_repo(
+        tmp_path,
+        _FIXTURE_A,
+        (
+            "frozen_only.py",
+            '"""See (#4242) for the frozen rule.\n"""\n',
+        ),
+    )
+
+    assert citations.check_docstring_citations(root) == 0
+    out = capsys.readouterr().out
+    # The frozen-only citation resolves, with provenance stated — NOT
+    # UNRESOLVABLE.  Composed row: path + symbol + id + provenance as one
+    # match, so no other row can satisfy it.
+    assert re.search(
+        r'frozen_only\.py:\d+ <module> \(#4242\) '
+        r'resolved from frozen history',
+        out,
+    ), "frozen-only id must resolve from frozen history with provenance"
+    assert "UNRESOLVABLE" not in out
+    # The banner reports the frozen count.
+    assert "1 resolved from frozen history" in out
+
+
+def test_frozen_unreadable_is_unverifiable_not_unresolvable(
+    monkeypatch, tmp_path, capsys
+):
+    # #1034 round 7 / #1094 round 2 / #136: when the frozen history is
+    # UNREADABLE (present but unparseable), a citation NOT in the live store
+    # is UNCLASSIFIABLE — it may resolve-frozen or resolve-nowhere, and the
+    # checker cannot tell which.  Reporting it as UNRESOLVABLE would blame
+    # valid code for the checker's own read failure.  It must be UNVERIFIABLE
+    # (could-not-check), a DISTINCT reported state, and it must NOT gate
+    # (exit 0, like NOT CHECKED).  This is the `readable` bool as behaviour,
+    # not just signature: if the bool never changes the reported row, the
+    # signature is hollow.
+    titles = {868: "a live entry", 10000: "the live max"}
+    monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
+    # Frozen UNREADABLE: (set(), False) — the file exists but could not be
+    # parsed.  This is NOT the same as (set(), True) (empty-but-readable),
+    # which would make #4242 UNRESOLVABLE (resolves-nowhere).
+    monkeypatch.setattr(
+        citations, "_deprecated_task_ids", lambda dw_dir: (set(), False)
+    )
+    root = _docstring_repo(
+        tmp_path,
+        _FIXTURE_A,
+        (
+            "unverifiable.py",
+            '"""See (#4242) for the frozen rule.\n"""\n',
+        ),
+    )
+
+    # Exit 0: UNVERIFIABLE does not gate (could-not-check, #136).
+    assert citations.check_docstring_citations(root) == 0
+    out = capsys.readouterr().out
+    # The citation is UNVERIFIABLE, NOT UNRESOLVABLE — the discriminating
+    # assertion.  If `readable` is ignored, #4242 falls to UNRESOLVABLE and
+    # exit becomes 1; both assertions below fail.
+    assert "UNVERIFIABLE" in out and "#4242" in out
+    assert "could not check" in out
+    assert "UNRESOLVABLE" not in out
+    assert "FAIL" not in out
+    # The OK verdict reports the unverifiable count.
+    assert "1 unverifiable" in out
