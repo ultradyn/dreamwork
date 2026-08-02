@@ -1630,7 +1630,15 @@ def _main_review(args) -> int:
         print(f"review refused: {exc}", file=sys.stderr)
         return 2
     digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-    sys.stdout.write(prompt)
+    payload = prompt
+    if args.out:
+        try:
+            args.out.write_text(payload, encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            print(f"review refused: could not write {args.out}: {exc}", file=sys.stderr)
+            return 2
+    else:
+        sys.stdout.write(payload)
     print(
         f"review prompt persisted: branch={branch}; round={args.round}; "
         f"receipt={receipt}; digest={digest}",
