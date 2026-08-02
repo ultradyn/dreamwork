@@ -116,3 +116,7 @@ dev/build/node_modules/
 # (#1009) permits worktrees inside the repo for them.  Deliberately NOT under
 # .worktrees/, whose drain ratchet is absorbing at zero (lint.check_in_repo_worktree_drain).
 .native-lanes/
+# ignore subagnet briefs
+.dreamwork/docs/briefs/
+# ignore db backups
+*.sqlite3.*
