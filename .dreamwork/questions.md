@@ -3,6 +3,24 @@
 ## Open
 
 
+- **P1 · 2026-08-02 20:30 — goal #1 currently renders 1-of-5 done. Should it narrow to just #630?**
+  Your `#1016` dogfooding lane read all **197 open task records** and proposed **zero new links** to
+  goal #1. Its stricter finding was the reverse: only `#630` of the five current members still
+  satisfies "part of delivering the React migration". It judged the other four to be something else —
+  `#640` documentation maintenance, `#692` explicitly starting only *after* this goal completes,
+  `#823` a React-**gated** new feature (a dependency, not a membership), `#859` a decision whose
+  rival already lost when `/research` landed as the first React surface (`#751`).
+  If that reading is right, your main near-term goal is substantially done and its bar is
+  understating it — `groups.progress()` derives the denominator from membership, so four wrong
+  members permanently make a finished goal look 20% complete.
+  **I cannot act on it either way: there is no removal verb.** `groups` has `add-task` and nothing
+  that unlinks (filed `#1037`, P1) — membership is append-only today, so this needs both your ruling
+  and a tool that does not exist yet.
+  Weakest of the four is `#640`: if implementers read that artifact as spec *during* the migration,
+  repairing it is arguably delivery work. `#859` also has an open state question — the lane offered
+  "remove or close-stale" and deliberately did not choose.
+  My recommendation: narrow to `#630` + keep `#640`, and close `#859` as stale rather than unlink it.
+
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
   2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
   then, nothing blocks and nothing is delivered by hand.
