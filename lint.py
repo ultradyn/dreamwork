@@ -2748,6 +2748,120 @@ def check_guards_registered(root: Path, rep: Report) -> None:
                 f"{len(registered)} guard(s) registered, each with a file")
 
 
+def _parse_justfile_recipes(text: str) -> list[tuple[str, str]]:
+    """Split a justfile into ``(name, body)`` pairs.
+
+    A recipe header sits at column 0, starts with an identifier, and ends
+    its signature with ``:`` (a bare colon — ``:=`` is an assignment, not a
+    recipe). Body lines are indented or blank; the recipe ends at the next
+    line at column 0.
+
+    Returns ``[]`` when the file holds no recipes. The caller treats that as
+    a FAULT (#868/#937): a parser that silently stops matching must fail
+    loudly, not report a clean bill over an empty population.
+    """
+    recipes: list[tuple[str, str]] = []
+    lines = text.split("\n")
+    n = len(lines)
+    i = 0
+    while i < n:
+        line = lines[i]
+        if (not line
+                or line[0].isspace()
+                or line.lstrip().startswith("#")
+                or ":=" in line
+                or line.startswith(("set ", "export ", "alias ",
+                                    "import ", "mod ", "unexport "))):
+            i += 1
+            continue
+        if ":" not in line:
+            i += 1
+            continue
+        name_m = re.match(r"^([a-zA-Z][a-zA-Z0-9_-]*)", line)
+        if not name_m:
+            i += 1
+            continue
+        name = name_m.group(1)
+        body: list[str] = []
+        i += 1
+        while i < n and (lines[i].startswith((" ", "\t")) or not lines[i].strip()):
+            body.append(lines[i])
+            i += 1
+        recipes.append((name, "\n".join(body)))
+    return recipes
+
+
+def check_justfile_pipe_safety(root: Path, rep: Report) -> None:
+    """#972: a pipe in a recipe without pipefail eats the upstream exit code.
+
+    just's default shell (``sh -cu``) has no ``pipefail``, so every pipeline
+    ``cmd_a | cmd_b`` reports ``cmd_b``'s exit — and ``cmd_a`` failing is
+    silent. A shebang recipe (``#!/usr/bin/env bash``) carries its own
+    ``set -o pipefail`` and is inert to just's top-level ``set shell``, so
+    the hazard lives in the recipes that are NEITHER shebang NOR carry
+    pipefail. ``land-lane`` — the merge gate — is one of them: one pipe
+    added and a refusing gate reports success.
+
+    The check's day-one output is ``0 violations`` over a population that
+    genuinely IS zero, which is indistinguishable from a check that examined
+    nothing (#919, "a true statement read as a stronger claim than it
+    supports"). So it prints BOTH denominators every run — recipes examined
+    and recipes in scope — and a parse that yields zero recipes is a FAULT,
+    not a pass (#868/#937, #136/#671).
+
+    In this repo ``WARN`` means a transient condition someone will clear;
+    a standing fact belongs in an OK row. So the population rides an OK row
+    and ERROR fires only on a real unprotected pipe.
+
+    Production line: the ``shebang and pipefail`` short-circuit and the
+    ``"|" in ln.replace("||", "  ")`` scan. Make either unconditionally skip
+    a real pipe and an unprotected recipe reports clean — the exact defect
+    this check exists to prevent.
+    """
+    justfile = root / "justfile"
+    if not justfile.exists():
+        return
+
+    recipes = _parse_justfile_recipes(justfile.read_text(encoding="utf-8"))
+
+    if not recipes:
+        rep.add(
+            ERROR, "justfile",
+            "parsed 0 recipes — the recipe parser is broken or the file was "
+            "reformatted; a clean bill over zero recipes is a false green (#972)")
+        return
+
+    examined = len(recipes)
+    in_scope = 0
+    offenders: list[str] = []
+
+    for name, body in recipes:
+        shebang = body.lstrip().startswith("#!")
+        pipefail = "pipefail" in body
+        if shebang and pipefail:
+            continue
+        in_scope += 1
+        for ln in body.splitlines():
+            if "|" in ln.replace("||", "  "):
+                offenders.append(name)
+                break
+
+    if offenders:
+        sample = ", ".join(dict.fromkeys(offenders))
+        rep.add(
+            ERROR, "justfile",
+            f"{len(offenders)} recipe(s) have a pipe without pipefail — a "
+            f"pipe in a recipe that is not a shebang recipe (or is one "
+            f"without `pipefail`) eats the upstream exit code and the recipe "
+            f"reports success: {sample} (#972)")
+        return
+
+    rep.add(
+        OK, "justfile",
+        f"examined {examined} recipe(s), {in_scope} in scope "
+        f"(non-shebang or without pipefail), 0 with an unprotected pipe (#972)")
+
+
 def _local_production_module(root: Path, module_name: str) -> bool:
     parts = module_name.split(".")
     if any(part.startswith("test_") or part == "tests" for part in parts):
@@ -7670,6 +7784,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_commit_cleanup(dw.parent, rep)
     check_expected_production_constants(dw.parent, rep)
     check_guards_registered(dw.parent, rep)
+    check_justfile_pipe_safety(dw.parent, rep)
     check_guards_execution_accounting(dw.parent, rep)
     check_client_dist(dw.parent, rep)
     check_in_repo_worktree_drain(dw, rep)
