@@ -4906,3 +4906,53 @@ disagreed with the story — neither looked wrong on its own.
   itself returns 0 hits in `client/` for the same reason. Before concluding a
   symbol is absent, check you searched the naming convention the thing actually
   uses. (2026-08-03, coordinator)
+
+- A reviewer working in a clone cannot see unlanded sibling branches, so `rg`
+  returning nothing there proves the symbol is absent from THAT TIP and nothing
+  more. rev-1094 refuted a lane's caveat about `check_docstring_citations` with
+  an empty grep; the function exists at `dev/check_watch_citations.py:292` on
+  the unlanded `glm-1034clean`, exactly as the lane had said. A claim about
+  another branch is **unverifiable from a clone, not false** — and the
+  difference matters, because "false" sends a correct caveat to be deleted.
+  Second instance this week (`#1109` was the first), so brief every clone-based
+  reviewer on it explicitly rather than hoping. (2026-08-03, coordinator)
+
+- A reviewer can be wrong on the finding and right on the advice. The same
+  review that mis-refuted the caveat also said "do not rely on it to dispatch
+  `#1034` unverified" — sound, and acting on THAT is what confirmed the caveat
+  (`check_docstring_citations` resolves via `ledger_parse.store_records`, live
+  store only, no frozen-history path). Check the substance before propagating
+  either verdict. (2026-08-03, coordinator)
+
+- Folding a task is not finished when the ledger flips state: other things cite
+  it. Folding `#1013` immediately made an open `questions.md` ask name only
+  landed tasks, and lint caught it in the next run. The ask was still live — its
+  subject was a design decision that outlived the fix — so the repair was to
+  file the task that owns the decision (`#1110`), not to close the ask. When a
+  fold makes a question stale, ask which of the two was mis-scoped.
+  (2026-08-03, coordinator)
+
+- A process probe whose pattern appears in its own command line can never read
+  zero. `pgrep -f "gate_chain5.sh"` inside a shell whose cmdline contains
+  `gate_chain5.sh` matches itself, so a wait-until-gone loop ran until the
+  harness killed it — while the gate it was waiting on had finished minutes
+  earlier. Ask what would have to be true for the count to read zero; if the
+  answer is "this shell must not exist", the probe is wrong. Wait on a captured
+  pid via `/proc/<pid>` instead. (2026-08-03, coordinator)
+
+- `land_lane` requires a named test even when it has classified every changed
+  path as inert and set `required_injections=0`: `REFUSE phase=selection: named
+  test selection is empty`. Doc-only branches are not exempt. Name the suite
+  that covers the doc's actual guards — for a plan doc that is `test_lint.py`,
+  which holds the doc-map and citation-range checks — rather than treating the
+  requirement as ceremony to satisfy with any green file. (2026-08-03,
+  coordinator)
+
+- `--expect-warn-add` cannot authorise a WARN that a TEST also forbids. `#1068`
+  added a plan without `doc-map.md`'s row; the flag matched the row exactly
+  (`declared_added=1 observed_added=1 matched_added=1`) and the gate still
+  refused, because `test_this_repo_maps_its_own_plans` asserts the row lists
+  every plan on disk. Authorisation covers the lint comparison, not the suite.
+  When a WARN has a test behind it, the fix is the row, not the flag — and it
+  belongs on the branch, so the row and the file it names arrive in one tree.
+  (2026-08-03, coordinator)
