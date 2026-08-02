@@ -243,7 +243,10 @@ def store_records(dreamwork_dir) -> list[dict]:
     (``"open"|"landed"``), ``title`` (str), ``body`` (str), ``priority``
     (str|None), ``type`` (str|None), ``origin`` (str|None), ``blocked_on``
     (str|None), ``next_up`` (int|None -- the #884 mark's event ordinal when
-    the task is currently marked next-up, else None; open rows only).
+    the task is currently marked next-up, else None; open rows only),
+    ``depends_on`` (tuple of int -- the ``needs`` task ids from the
+    ``depends`` table for this task, ascending; empty tuple when none.
+    #1054 — ``block`` writes these edges, ``counts`` reads them).
     """
     return _task_read(store_path(dreamwork_dir), "records", [])
 

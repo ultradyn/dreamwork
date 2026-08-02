@@ -48,6 +48,10 @@ class SameTitle(WriteError):
     """The requested title is already current."""
 
 
+class DependencyCycle(WriteError):
+    """Adding the edge would close a dependency cycle."""
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -129,11 +133,17 @@ class TaskRepository:
             " GROUP BY t.id ORDER BY t.id"
         ).fetchall()
         marks = self.next_up_ordinals()
+        dep_rows = self._session.execute(
+            "SELECT task, needs FROM depends ORDER BY task, needs").fetchall()
+        depends_map: dict[int, list[int]] = {}
+        for task, needs in dep_rows:
+            depends_map.setdefault(int(task), []).append(int(needs))
         return [
             {"id": int(r[0]), "state": r[1], "title": r[2], "body": r[3],
              "priority": r[4], "type": r[5], "origin": r[6],
              "blocked_on": r[7], "date": r[8],
-             "next_up": marks.get(int(r[0]))}
+             "next_up": marks.get(int(r[0])),
+             "depends_on": tuple(depends_map.get(int(r[0]), ()))}
             for r in rows
         ]
 
@@ -332,6 +342,80 @@ class TaskRepository:
             task_id=task_id, at=at, cause="reprioritised", from_state=state,
             to_state=state, actor=actor, detail=why)
 
+    def block(self, task_id, *, needs, why, actor="loop", at=None) -> str:
+        """Record a task→task dependency edge in ``depends`` (#1054).
+
+        ``block`` writes the structured edge that ``unblock`` clears, so the
+        two are genuine inverses for the edge case.  The schema's own
+        ``CHECK (task <> needs)`` catches a self-edge at the DB layer; we
+        refuse it here with a named message so the caller never sees a raw
+        sqlite traceback.  A cycle across three tasks is refused by walking
+        the existing ``depends`` graph from *needs* toward *task_id* and
+        naming the path — an unrefused cycle makes ``counts`` non-terminating
+        or silently wrong, and this CLI is the single writer (#1054).
+
+        Returns ``"recorded"`` for a new edge and ``"unchanged"`` when the
+        edge already exists (idempotent, like ``groups require``).
+        """
+        if not isinstance(why, str) or not why.strip():
+            raise WriteError("why must be a non-empty string (the reason for the change)")
+        at = at or _now_iso()
+        row = self._session.execute(
+            "SELECT state FROM task WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise TaskNotFound(f"cannot block #{task_id}: no such task")
+        state = row[0]
+        needs_row = self._session.execute(
+            "SELECT 1 FROM task WHERE id = ?", (needs,)).fetchone()
+        if needs_row is None:
+            raise TaskNotFound(f"cannot block #{task_id}: blocker #{needs} does not exist")
+        if task_id == needs:
+            raise DependencyCycle(
+                f"cannot block #{task_id} on itself: a self-dependency can "
+                "never resolve and would make the task permanently stuck")
+        existing = self._session.execute(
+            "SELECT 1 FROM depends WHERE task = ? AND needs = ?",
+            (task_id, needs)).fetchone()
+        if existing is not None:
+            return "unchanged"
+        cycle = self._depends_path(needs, task_id)
+        if cycle is not None:
+            rendered = " -> ".join("#{}".format(n) for n in cycle)
+            raise DependencyCycle(
+                f"cannot block #{task_id} on #{needs}: #{needs} already "
+                f"depends on #{task_id} ({rendered}), so nothing on that "
+                "path could ever start")
+        self._session.execute(
+            "INSERT INTO depends (task, needs) VALUES (?, ?)",
+            (task_id, needs))
+        note = "blocked on #{}: {}".format(needs, why)
+        self._session.execute(
+            "UPDATE task SET body = body || ? WHERE id = ?",
+            ("\n" + _NOTE_PREFIX + note, task_id))
+        self._append_chained_event(
+            task_id=task_id, at=at, cause="blocked", from_state=state,
+            to_state=state, actor=actor, detail=why)
+        return "recorded"
+
+    def _depends_path(self, start: int, goal: int) -> list[int] | None:
+        """A ``depends`` path from *start* to *goal*, or ``None``.
+
+        DFS following ``needs`` edges; returns the node-id path (inclusive
+        of both endpoints) if *goal* is reachable from *start*, else None.
+        """
+        stack = [(start, [start])]
+        seen = {start}
+        while stack:
+            node, path = stack.pop()
+            for (nxt,) in self._session.execute(
+                    "SELECT needs FROM depends WHERE task = ?", (node,)).fetchall():
+                if nxt == goal:
+                    return path + [nxt]
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append((nxt, path + [nxt]))
+        return None
+
     def unblock(self, task_id, *, why, actor="loop", at=None) -> None:
         if not isinstance(why, str) or not why.strip():
             raise WriteError("why must be a non-empty string (the reason for the change)")
@@ -341,14 +425,28 @@ class TaskRepository:
         if row is None:
             raise TaskNotFound(f"cannot unblock #{task_id}: no such task")
         old_blocked, state = row
-        if not old_blocked or not old_blocked.strip():
+        old_edges = tuple(int(r[0]) for r in self._session.execute(
+            "SELECT needs FROM depends WHERE task = ? ORDER BY needs",
+            (task_id,)).fetchall())
+        has_prose = bool(old_blocked and old_blocked.strip())
+        if not has_prose and not old_edges:
             raise NotBlocked(
                 f"cannot unblock #{task_id}: it is not blocked "
-                "(blocked_on is empty) — an unblock that unblocked nothing "
-                "must not read as success (#671)")
-        self._session.execute(
-            "UPDATE task SET blocked_on = NULL WHERE id = ?", (task_id,))
-        note = "unblocked (was: {}): {}".format(old_blocked, why)
+                "(blocked_on is empty and no depends edge) — an unblock "
+                "that unblocked nothing must not read as success (#671)")
+        if has_prose:
+            self._session.execute(
+                "UPDATE task SET blocked_on = NULL WHERE id = ?", (task_id,))
+        if old_edges:
+            self._session.execute(
+                "DELETE FROM depends WHERE task = ?", (task_id,))
+        parts = []
+        if has_prose:
+            parts.append("was: {}".format(old_blocked))
+        if old_edges:
+            parts.append("depended on {}".format(
+                ", ".join("#{}".format(e) for e in old_edges)))
+        note = "unblocked ({}): {}".format("; ".join(parts), why)
         self._session.execute(
             "UPDATE task SET body = body || ? WHERE id = ?",
             ("\n" + _NOTE_PREFIX + note, task_id))

@@ -11,6 +11,7 @@ from ledger_store import ORIGINS, REVIEW_DECISIONS
 from dreamwork_db.tasks import (
     BadState,
     DecisionConflict,
+    DependencyCycle,
     NotBlocked,
     NotNextUp,
     SameTitle,
@@ -53,6 +54,12 @@ def unblock_task(store, task_id, *, why, actor="loop", at=None):
     """Clear a blocker and record the mandatory reason atomically."""
     with store.transaction():
         store.tasks.unblock(task_id, why=why, actor=actor, at=at)
+
+
+def block_task(store, task_id, *, needs, why, actor="loop", at=None) -> str:
+    """Record a task→task dependency edge and the mandatory reason atomically."""
+    with store.transaction():
+        return store.tasks.block(task_id, needs=needs, why=why, actor=actor, at=at)
 
 
 def set_next_up(store, task_id, *, why, actor="loop", at=None) -> None:
