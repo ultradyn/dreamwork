@@ -4893,3 +4893,16 @@ disagreed with the story — neither looked wrong on its own.
   fire on real byte changes rather than on every rebase. When a hash comparison
   yields a surprising mismatch, check the two values are in the same hash space
   before believing the conclusion. (2026-08-03, coordinator)
+
+- **In this repo PascalCase names a React wrapper under `dev/build/` and
+  camelCase names its builder under `client/`; searching one case in the other
+  place returns a true "not found" that reads as "phantom".** `#1068`'s lane
+  reported that `QaCompose` and `FollowThread` "do not exist anywhere in
+  `client/`" — literally true, and I confirmed it, then nearly propagated it as
+  evidence that `#1063` and `#1064` rest on false premises. They do not:
+  `qaCompose` is at `client/components.js:888` and `followThread` at `:786`.
+  The convention is visible at `dev/build/wrapper-exports.js:39-45`, where
+  `QaCard.dwBuilder = 'qaCard'` states the mapping outright — and `QaCard`
+  itself returns 0 hits in `client/` for the same reason. Before concluding a
+  symbol is absent, check you searched the naming convention the thing actually
+  uses. (2026-08-03, coordinator)
