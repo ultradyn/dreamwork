@@ -110,3 +110,9 @@ dev/capture/fixture/.dreamwork/.status-keys
 # node at all. `npm ci` in dev/build restores this from package-lock.json.
 dev/build/node_modules/
 .claude/
+
+# in-repo worktrees for NATIVE (non-ccc) subagent lanes.  Native agents inherit a
+# repo-rooted sandbox and cannot reach ../.worktrees/, so his 2026-08-02 ruling
+# (#1009) permits worktrees inside the repo for them.  Deliberately NOT under
+# .worktrees/, whose drain ratchet is absorbing at zero (lint.check_in_repo_worktree_drain).
+.native-lanes/
