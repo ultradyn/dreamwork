@@ -5038,3 +5038,53 @@ disagreed with the story — neither looked wrong on its own.
   for hours stops being read, and the fix arrived only because a task
   (`#1102`) was filed against the number rather than the number being tolerated.
   File against the instrument, not just the symptom. (2026-08-03, coordinator)
+- **I narrowed a standing rule to the mechanism I could name, and the mechanism I could not name
+  bit within the hour.** The rule is *"do not dispatch a lane while a land-lane is in flight"*
+  (`#773`). I reasoned that its hazard was repo-lock contention from `git worktree add`, concluded
+  that dispatching a follow-up round into an ALREADY EXISTING worktree therefore could not trigger
+  it, and dispatched `#1057`'s re-arm alongside a running gate. Both branches in that gate refused
+  at `phase=lint-baseline`, because the re-arm lane's instructed `git rebase master` detaches its
+  worktree HEAD for a few seconds, `lint.py`'s lane-containment check ERRORs on a worktree with no
+  branch line, and `land_lane` refuses on any lint ERROR (`#1116`). The rebase mechanism is entirely
+  independent of worktree creation. My reasoning about `git worktree add` may even be correct; what
+  was wrong was treating one identified mechanism as the whole reason for a rule I did not write.
+  A standing rule's stated scope is evidence about its cost, not an enumeration of its causes —
+  when narrowing one, the question is not *"can I explain the failure it names?"* but *"can I show
+  there is no OTHER failure it also happens to prevent?"* Those are very different burdens and I
+  met the easy one.
+- **A transient, instructed state was reported at the one severity that halts everything.** Every
+  lane is told to rebase twice; every rebase detaches its worktree; the check calls that
+  unclassifiable and ERRORs. The check's wording is honest about what it saw — the defect is the
+  severity, and it is `#136`'s three-states collapsed: detached-with-rebase-state (expected),
+  detached-without (genuinely unclassifiable), and classified. Worth noticing as a shape: when a
+  guard fires on a state the system's own instructions produce on purpose, suspect the severity
+  before the wording.
+- **The gate's refusal named a branch that was not at fault.** Two branches refused, neither
+  defective, and the log reads as though they were — the real cause was a third branch's worktree.
+  A refusal that names the branch under gate, when the blocking condition belongs to the repo, is
+  an attribution error of the same family as `#651` (a guard whose message names a failure mode it
+  cannot detect). Cheap to misread as "the lane broke something" and expensive to chase.
+- **I wrote a prediction into a fold note in the past tense, and it went into the durable record.**
+  Folding `#1084` I wrote *"the very next tick after this landed still read `lanes 0 live []` while a
+  lane ran — that is the deploy boundary, not a defect in this work."* I had observed no such tick;
+  the last one I saw predated the landing. I had also not established that the tick line comes from
+  the deployed dashboard rather than this checkout — `heartbeat` is a compiled binary that cannot
+  generate that text, so the line comes from whatever the monitor was armed with, quite possibly this
+  repo's own `tick_line.py`, in which case there is no deploy boundary at all. Two unverified claims,
+  fused into one confident sentence, in the one place that outlives the session. The transcript
+  version of this error is cheap; the ledger version is what a future reader takes as measured. When
+  a note explains away a result, check that the result was observed before explaining it.
+- **The remedy that worked was a correction appended to the same task, not a quiet edit.** The wrong
+  claim stays visible next to what is actually known and what would test it. A silently-fixed record
+  teaches nobody why it was wrong, and this particular error — a prediction wearing the grammar of an
+  observation — is one I will make again if the only trace is a clean note.
+- **A pin stales only if the merge touches the expectation source, and that is schedulable.** Four
+  finished branches were waiting; `#1057` and `#1112` both pinned `lint.py`/`test_lint.py`, while
+  `#1084` (`lane_liveness.py`, `tick_line.py`) and `#1111` (`dev/ledger.py`, `dev/land_lane.py`)
+  touched neither. So the second pair could land first with no cost to the first pair's pins —
+  confirmed at the gate, where `#1057`'s precheck came back `exit 0, CAUGHT 1 of 1` after rebasing
+  onto both merges. The corollary is the constraint: `#1057` and `#1112` own the same two files, so
+  whichever lands first stales the other no matter what, and dispatching both re-arms at once would
+  have burned a round. **Diff the pending merges against each waiting branch's expectation source
+  before choosing the gate order** — it is a two-command check that converts a guaranteed re-arm
+  round into none.
