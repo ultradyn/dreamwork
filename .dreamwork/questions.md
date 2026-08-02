@@ -2,6 +2,52 @@
 
 ## Open
 
+- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
+  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
+  then, nothing blocks and nothing is delivered by hand.
+  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
+    as an open question that we'll revisit once dreamhub is stable and the
+    primary way we access dreamworkers
+
+## Answered
+
+- **P1 · 2026-08-02 21:20 — #859: the info you asked for, and your "pip separately" remark already answers half of it**
+  You asked for more info on `#859` before ruling. Short version: **you have already half-answered it
+  in the same message.**
+  **`#859` was originally your own idea** (ord 160, from `/chat`): *"Are the popout windows a full
+  html page? If so, can we start migrating them over to react first so that we can easily test it
+  without breaking the main UI?"*
+  **The literal answer was no.** Popouts are not HTML pages and nothing is fetched from the server
+  for them. `client/command.js:124` opens a **blank** window (`window.open('', ...)`) and
+  `popoutShell` (`command.js:76`) builds the document imperatively — a charset meta, a `<style>`
+  carrying `POPOUT_CSS` (its own constant, **not** `client/style.css`), then JS fills the body. No
+  app shell, no router, no `/data.json` boot preamble.
+  **Your underlying idea survived, and is stronger than you framed it.** You wanted a surface where
+  React can be exercised without risking the main UI. A popout gives that *more* cleanly than a page
+  route: separate window, separate document, separate stylesheet, no router — a React root mounted
+  there **cannot reach the main tab's DOM at all**.
+  **What is moot vs still live.** `#859`'s title says *"instead of `/research`"*, and that contest is
+  over: `/research` landed as the first React surface (`#751`, P3 of `#630`, `buildResearch` deleted
+  in the same commit). What survives is a different question: **should popouts/PiP be an early React
+  conversion target, as a separable surface?**
+  **That is the half you just answered** — *"we can do pip separately to the main pages, but
+  eventually we'll need to do the main pages in one big move."* That is exactly `#859`'s surviving
+  proposition, endorsed in your own words.
+  **So: neither remove nor close-stale.** My recommendation is to retitle `#859` to its surviving
+  question and **keep it in the React goal**, because on your own instruction it *is* delivery work
+  for that goal. This reverses both the `#1016` lane's reading and my own earlier
+  close-as-stale recommendation — both were judging the moot half.
+  **One caution, so this is not sold as easy:** popouts carry live behaviour a naive port must
+  reproduce — `#74`'s world-space shader anchoring, `#459`'s `DraftStore` binding as `popout:main`,
+  and the Document-PiP vs `window.open` fallback. Well-isolated means safe to get wrong, not small.
+  **What I need:** only a yes/no on retitle-and-keep. **If you say nothing, I will take your "pip
+  separately" as sufficient and do exactly that** — recorded here so the inference is visible rather
+  than silent.
+  - **Answer (via watch, 2026-08-02 21:31):** well that live behavior is
+    going to need to be implemented anyway, right? if there's much left
+    to do for the react port, plan it out and add it all as tasks to the
+    db.
+  → **resolved (2026-08-02 21:36):** retitled to "convert popouts/PiP to React as a separable surface" and kept in goal #1 — his *"that live behavior is going to need to be implemented anyway"* refuted my caution, since #74/#459/Document-PiP work is owed whenever popouts convert. His *"plan it out and add it all as tasks"* dispatched as a full planning pass.
 
 - **P1 · 2026-08-02 20:30 — goal #1 currently renders 1-of-5 done. Should it narrow to just #630?**
   Your `#1016` dogfooding lane read all **197 open task records** and proposed **zero new links** to
@@ -20,15 +66,16 @@
   repairing it is arguably delivery work. `#859` also has an open state question — the lane offered
   "remove or close-stale" and deliberately did not choose.
   My recommendation: narrow to `#630` + keep `#640`, and close `#859` as stale rather than unlink it.
+  - **Answer (via watch, 2026-08-02 21:14):** okay yeah htose other
+    things don't sound like subtasks of the react goal. re removal verb:
+    ad da task to implement it. Are we completely converted over to
+    react yet? if not, we should at least have tasks to cover converting
+    each html surface (like we can do pip separately to the main pages,
+    but eventually we'll need to do the main pages in one big move so
+    that it handles all url paths / routes that we need to handle). #859
+    i need more info on.
+  → **resolved (2026-08-02 21:36):** narrowing approved; blocked on the removal verb (#1037 — lane finished, in review). His React question answered by survey: 2 of 12 routes native; surface-flip track filed as #1044-#1053 and linked to goal #1.
 
-- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
-  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
-  then, nothing blocks and nothing is delivered by hand.
-  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
-    as an open question that we'll revisit once dreamhub is stable and the
-    primary way we access dreamworkers
-
-## Answered
 
 - **P2 · 2026-08-02 19:10 — #631: does the live session-log view belong to the React migration goal, or may it land on the current client first?**
   Your `#1016` dogfooding pass read the title and body of all **188 open tasks** and proposed **zero
