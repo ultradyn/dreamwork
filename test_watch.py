@@ -6266,6 +6266,71 @@ class TestPendingEventCount(unittest.TestCase):
         self.assertEqual(out, "ok")
 
 
+class TestQueueFactRendersThreeStates(unittest.TestCase):
+    """#970 — status_from_store (#965) answers ``queue`` in three states: a
+    real measurement, a genuine zero, and ``null`` for an unreadable dreamers
+    roster. The renderer must not collapse them: a measurement renders its
+    count (a genuine zero is the all-clear and renders), ``null`` renders its
+    OWN fact (never zero's silence — "could not measure" reading identical to
+    "healthy" is the worse half of #868's degrade-to-zero family, because there
+    are no pixels to be suspicious of), and absent renders nothing.
+
+    Runs the PRODUCTION ``statusBlock`` out of the assembled page, the same
+    node-eval idiom the ``pending_events`` render test above uses.
+
+    Production lines whose removal reds this: the two ``queue`` arms in
+    client/views.js (the measurement push and the ``'queue' in s`` unreadable
+    push). Reverting to ``if (s.queue) ... || 0`` reds the unreadable case
+    here — it renders nothing for ``null``, so the panel is indistinguishable
+    from a target that never wrote the field, which is exactly the defect.
+    """
+
+    def test_measurement_zero_null_and_absent_are_distinguishable(self):
+        page = watch.PAGE
+        m = re.search(r"const ST_GLANCE = \[[^\]]*\];", page)
+        self.assertIsNotNone(m, "ST_GLANCE missing from PAGE")
+        block = m.group(0) + "\n" + _extract_js_fn(page, "function statusBlock(")
+        script = textwrap.dedent("""\
+            const ST_AGENT_GLANCE = ['name', 'in_flight'];
+            const esc = t => String(t).replace(/&/g,'&amp;')
+              .replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            const mdInline = t => esc(t);
+            const label = n => `<h2>${n}</h2>`;
+            const expand = (sum, body) => `<details><summary>${sum}</summary>${body}</details>`;
+            const stLines = v => (v == null ? [] : [String(v)]);
+            const stField = (k, v) => `<div class="stfield">` +
+              `<span class="stk">${esc(k.replace(/_/g,' '))}</span>` +
+              stLines(v).map(l => `<div class="stval">${l}</div>`).join('') +
+              `</div>`;
+            %s
+            const facts = out => {
+              const i = out.indexOf('class="stfacts"');
+              return i < 0 ? '' : out.slice(i);
+            };
+            // a real measurement renders its count
+            const busy = statusBlock({task: 'x', queue: {in_progress: 2, pending: 5}}, []);
+            if (!facts(busy).includes('2 in flight · 5 pending')) process.exit(21);
+            // a genuine zero is the all-clear and RENDERS (not the scary shape)
+            const idle = statusBlock({task: 'x', queue: {in_progress: 0, pending: 0}}, []);
+            if (!facts(idle).includes('0 in flight · 0 pending')) process.exit(22);
+            // null (roster there and unreadable): its own fact, never zero's silence
+            const dark = statusBlock({task: 'x', queue: null}, []);
+            if (!facts(dark).includes('queue depth unreadable')) process.exit(23);
+            if (facts(dark).includes('in flight')) process.exit(24);
+            // a malformed object has no count to render: unreadable, not a 0
+            const bad = statusBlock({task: 'x', queue: {}}, []);
+            if (!facts(bad).includes('queue depth unreadable')) process.exit(25);
+            if (facts(bad).includes('in flight')) process.exit(26);
+            // a target that never wrote the field says nothing at all
+            const none = statusBlock({task: 'x'}, []);
+            if (facts(none).includes('in flight')) process.exit(27);
+            if (facts(none).includes('unreadable')) process.exit(28);
+            process.stdout.write('ok');
+        """) % block
+        out = subprocess.check_output(["node", "-e", script], text=True)
+        self.assertEqual(out, "ok")
+
+
 class TestSummaryRoute(unittest.TestCase):
     # /summary.json the route: served by watch.py's GET, behind the SAME
     # _preflight() authority gate as every other GET. Adding the read
