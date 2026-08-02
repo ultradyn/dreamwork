@@ -185,15 +185,23 @@ def _blocked_on_states(records):
     every explicitly named blocker landed; at least one named blocker is not
     landed; and no task id was parseable.  The last state is UNKNOWN, never
     an all-clear.
+
+    A task is "carrying a blocker" when it has non-empty ``blocked_on``
+    prose OR a structured ``depends_on`` edge (#1054 — ``block`` writes the
+    ``depends`` table, so ``counts`` must read it or the number is
+    confidently wrong in the safe-looking direction).
     """
     open_records = [record for record in records if record["state"] == "open"]
     landed_ids = {record["id"] for record in records
                   if record["state"] == "landed"}
     carrying = [record for record in open_records
-                if (record.get("blocked_on") or "").strip()]
+                if (record.get("blocked_on") or "").strip()
+                or record.get("depends_on")]
     states = {"landed": [], "still_open": [], "unknown": []}
     for record in carrying:
-        blocker_ids = _named_blocker_ids(record["blocked_on"])
+        blocker_ids = tuple(dict.fromkeys(
+            _named_blocker_ids(record.get("blocked_on"))
+            + tuple(record.get("depends_on") or ())))
         if not blocker_ids:
             states["unknown"].append(record["id"])
         elif all(task_id in landed_ids for task_id in blocker_ids):
@@ -666,6 +674,31 @@ def _next_up_store(dw_dir, task_id, clear, why):
     verb = "cleared #{}'s next-up mark".format(task_id) if clear \
         else "marked #{} next-up".format(task_id)
     sys.stdout.write(f"{verb} (store)\n")
+    return 0
+
+
+def _block_store(dw_dir, task_id, needs, why):
+    """Store-mode block: block_task (write depends edge, note + event).
+
+    #1054 — the inverse of unblock for the structured-edge case.  The edge
+    lives in the ``depends`` table (#440's ruling), not in ``blocked_on``
+    prose (#346).  ``unblock`` clears both prose and edges, so the two verbs
+    are genuine inverses: whatever ``block`` sets, ``unblock`` clears.
+
+    Surfaces TaskNotFound and DependencyCycle as exit 1 (operation does not
+    apply) and WriteError (empty why) as exit 2.
+    """
+    try:
+        with open_database(
+                task_store_spec(store_path(dw_dir)), access=Access.WRITE) as store:
+            result = ledger_write.block_task(store, task_id, needs=needs, why=why)
+    except (ledger_write.TaskNotFound, ledger_write.DependencyCycle) as exc:
+        sys.stderr.write(f"ledger: {exc}\n")
+        return 1
+    except ledger_write.WriteError as exc:
+        sys.stderr.write(f"ledger: {exc}\n")
+        return 2
+    sys.stdout.write(f"blocked #{task_id} on #{needs} ({result})\n")
     return 0
 
 
@@ -2249,6 +2282,9 @@ def _markdown_records(text):
                 # markdown mode does not have. None keeps the record SHAPE
                 # identical so the presenters need no mode branch.
                 "next_up": None,
+                # #1054 — depends edges live in the store's depends table,
+                # which markdown mode does not have.
+                "depends_on": (),
             })
     return recs
 
@@ -3113,6 +3149,17 @@ def main(argv=None):
     prep.add_argument("--ledger", default=LEDGER_DEFAULT,
                       help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
 
+    pblk = sub.add_parser(
+        "block",
+        help="record a task→task dependency edge (depends), recording why [#1054]")
+    pblk.add_argument("id", type=int, help="the task id to block")
+    pblk.add_argument("--on", type=int, required=True, dest="on",
+                      help="the task id this task depends on (the blocker)")
+    pblk.add_argument("--why", required=True,
+                      help="the reason — recorded in the task's history (NOT optional)")
+    pblk.add_argument("--ledger", default=LEDGER_DEFAULT,
+                      help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
+
     punb = sub.add_parser(
         "unblock",
         help="clear a task's stale blocked_on, recording why (store-mode only) [#627]")
@@ -3698,7 +3745,7 @@ def _dispatch(args):
     # Refuse markdown with a named reason rather than inventing a text rewrite
     # that would be a new #440-class parser risk.
     if args.cmd in ("reprioritise", "unblock", "retitle",
-                    "next-up") and source_of_truth(dw_dir) != "store":
+                    "next-up", "block") and source_of_truth(dw_dir) != "store":
         sys.stderr.write(
             f"ledger: {args.cmd} is store-mode only — what it writes lives in "
             f"the store (a column, or #884's event log), not in markdown "
@@ -3710,7 +3757,7 @@ def _dispatch(args):
     # Store mode → the store write verbs; markdown mode → today's text path.
     # `counts` (inc 7) is a read consumer and dispatches below.
     if args.cmd in ("fold", "file", "note", "reprioritise", "unblock",
-                    "retitle", "next-up") and source_of_truth(dw_dir) == "store":
+                    "retitle", "next-up", "block") and source_of_truth(dw_dir) == "store":
         if args.cmd == "fold":
             _fold_store(dw_dir, args.id, args.note, dry_run=args.dry_run)
             if args.dry_run:
@@ -3724,6 +3771,8 @@ def _dispatch(args):
             return _reprioritise_store(dw_dir, args.id, args.band, args.why)
         if args.cmd == "unblock":
             return _unblock_store(dw_dir, args.id, args.why)
+        if args.cmd == "block":
+            return _block_store(dw_dir, args.id, args.on, args.why)
         if args.cmd == "retitle":
             return _retitle_store(dw_dir, args.id, args.title, args.why)
         if args.cmd == "next-up":

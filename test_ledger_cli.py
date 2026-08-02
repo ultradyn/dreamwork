@@ -668,6 +668,8 @@ _VERB_ARGV = {
     # id the fixture holds (#10), matching fold/note's shorthand.
     "reprioritise": ["reprioritise", "10", "P3", "--why", "x"],
     "unblock": ["unblock", "10", "--why", "x"],
+    # #1054 — the block verb (inverse of unblock for depends edges).
+    "block": ["block", "10", "--on", "11", "--why", "x"],
     "retitle": ["retitle", "10", "new title", "--why", "x"],
     # #884 — the next-up mark. Same store-mode write shape as the #627 verbs,
     # so the same gate applies and the argv needs a valid --why plus a

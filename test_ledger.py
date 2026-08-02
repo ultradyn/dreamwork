@@ -2052,6 +2052,234 @@ def test_unblock_cli_never_blocked_refuses_not_success(tmp_path, capsys):
         f"the refusal must name that it was not blocked (#671): {err!r}")
 
 
+# ---------------------------------------------------------------------------
+# #1054 — block: the inverse of unblock for task→task depends edges.
+#
+# The filing's core finding: there was an unblock verb but no block verb, and
+# nothing in the CLI wrote the depends table. counts read only the prose
+# blocked_on column, so dependencies expressed as structured edges were
+# invisible — the blocked-count was confidently wrong in the safe-looking
+# direction. These tests go through counts/blocked_on (Direction 2: not just
+# asserting the row landed) and exercise the correction path (unblock clears
+# the edge) so the new verb does not repeat the one-way defect (#1037).
+# ---------------------------------------------------------------------------
+
+def test_block_writes_depends_and_counts_sees_it(tmp_path, capsys):
+    """#1054 DIRECTION-2 (the one that catches the real defect): block writes
+    a depends edge AND counts reads it — not just the row landing.
+
+    PRODUCTION LINE: ``_blocked_on_states`` reads ``record["depends_on"]``
+    (surfaced via ``TaskRepository.records``). Break by dropping the
+    ``depends_on`` read from the carrying-filter — the edge lands in the
+    table but counts reports ``0 carrying a blocker``, which is the
+    confidently-wrong-in-the-safe-direction reading the filing named.
+    """
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "blocker task", "--ledger", str(ledger_path)])
+    ledger.main(["file", "blocked task", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    recs = ledger._read_records(str(ledger_path.parent))
+    blocker = recs[0]["id"]
+    blocked = recs[1]["id"]
+
+    # Precondition: neither task carries a blocker before block.
+    import io, sys
+    old_err = sys.stderr
+    sys.stderr = io.StringIO()
+    ledger.main(["counts", "--ledger", str(ledger_path)])
+    before = sys.stderr.getvalue()
+    sys.stderr = old_err
+    assert "0 carrying a blocker" in before, (
+        f"precondition: no blockers yet, got: {before!r}")
+
+    rc = ledger.main(["block", str(blocked), "--on", str(blocker),
+                      "--why", "blocker must land first",
+                      "--ledger", str(ledger_path)])
+    assert rc == 0, f"block must exit 0, got {rc}"
+
+    # THE DIRECTION-2 ASSERTION: counts sees the edge and names the blocked
+    # task — the number MOVED, not just the row landing.
+    old_err = sys.stderr
+    sys.stderr = io.StringIO()
+    ledger.main(["counts", "--ledger", str(ledger_path)])
+    after = sys.stderr.getvalue()
+    sys.stderr = old_err
+    assert "1 carrying a blocker" in after, (
+        f"counts must report 1 carrying a blocker after block, got: {after!r}")
+    assert f"#{blocked}" in after, (
+        f"counts must name the blocked task #{blocked} in the report, "
+        f"got: {after!r}")
+
+
+def test_block_records_why_in_body(tmp_path, capsys):
+    """#1054: the --why must land in the task's body, matching unblock's
+    precedent. A blocker added without a stated reason is one nobody can
+    later judge safe to clear."""
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "blocker", "--ledger", str(ledger_path)])
+    ledger.main(["file", "blocked", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    recs = ledger._read_records(str(ledger_path.parent))
+    blocker, blocked = recs[0]["id"], recs[1]["id"]
+
+    rc = ledger.main(["block", str(blocked), "--on", str(blocker),
+                      "--why", "exports not yet flipped",
+                      "--ledger", str(ledger_path)])
+    assert rc == 0
+    recs = ledger._read_records(str(ledger_path.parent))
+    match = [r for r in recs if r["id"] == blocked][0]
+    assert "exports not yet flipped" in match["body"], (
+        "the --why must land in the body — an unexplained blocker is how a "
+        "task gets silently removed from selection forever (#1054)")
+
+
+def test_block_self_edge_refused(tmp_path, capsys):
+    """#1054 constraint 3: a self-dependency (#N on #N) must be refused with
+    a message naming the task, never silently accepted."""
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "self", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    tid = ledger._read_records(str(ledger_path.parent))[0]["id"]
+
+    rc = ledger.main(["block", str(tid), "--on", str(tid), "--why", "x",
+                      "--ledger", str(ledger_path)])
+    assert rc == 1, f"self-edge must refuse (exit 1), got {rc}"
+    err = capsys.readouterr().err
+    assert f"#{tid}" in err and "itself" in err, (
+        f"the refusal must name the task #{tid} and say 'itself': {err!r}")
+
+
+def test_block_cycle_refused_with_path(tmp_path, capsys):
+    """#1054 constraint 3: a cycle across three tasks (A→B→C→A) must be
+    refused naming the cycle path, so counts never faces a non-terminating
+    graph."""
+    ledger_path = _cut_over_store(tmp_path)
+    for name in ("A", "B", "C"):
+        ledger.main(["file", name, "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    recs = ledger._read_records(str(ledger_path.parent))
+    a, b, c = recs[0]["id"], recs[1]["id"], recs[2]["id"]
+
+    # Build A → B → C (a valid chain).
+    assert ledger.main(["block", str(a), "--on", str(b), "--why", "x",
+                        "--ledger", str(ledger_path)]) == 0
+    assert ledger.main(["block", str(b), "--on", str(c), "--why", "x",
+                        "--ledger", str(ledger_path)]) == 0
+    capsys.readouterr()
+
+    # C → A would close the cycle: C→A but A→B→C already exists.
+    rc = ledger.main(["block", str(c), "--on", str(a), "--why", "cycle",
+                      "--ledger", str(ledger_path)])
+    assert rc == 1, f"cycle must refuse (exit 1), got {rc}"
+    err = capsys.readouterr().err
+    assert "cycle" not in err.lower() or "depends" in err.lower(), (
+        f"unexpected: {err!r}")
+    # The path must name every task in the cycle so the caller can see it.
+    for tid in (a, b, c):
+        assert f"#{tid}" in err, (
+            f"the cycle message must name #{tid}: {err!r}")
+
+
+def test_block_nonexistent_blocker_refused(tmp_path, capsys):
+    """#1054 constraint 4: the write side refuses a nonexistent blocker,
+    even though the read side tolerates junk ids. A blocker that does not
+    exist can never land, so the edge would be immediately stale."""
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "real task", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    tid = ledger._read_records(str(ledger_path.parent))[0]["id"]
+
+    rc = ledger.main(["block", str(tid), "--on", "99999", "--why", "x",
+                      "--ledger", str(ledger_path)])
+    assert rc == 1, f"nonexistent blocker must refuse (exit 1), got {rc}"
+    err = capsys.readouterr().err
+    assert "99999" in err and "does not exist" in err, (
+        f"must name the missing blocker #99999: {err!r}")
+
+
+def test_block_then_unblock_clears_edge(tmp_path, capsys):
+    """#1054 constraint 2 / correction path: unblock clears a depends edge
+    that block set — the two are genuine inverses. A block with no way to
+    undo a mistaken edge repeats the one-way defect (#1037)."""
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "blocker", "--ledger", str(ledger_path)])
+    ledger.main(["file", "blocked", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    recs = ledger._read_records(str(ledger_path.parent))
+    blocker, blocked = recs[0]["id"], recs[1]["id"]
+
+    rc = ledger.main(["block", str(blocked), "--on", str(blocker),
+                      "--why", "depends", "--ledger", str(ledger_path)])
+    assert rc == 0
+    recs = ledger._read_records(str(ledger_path.parent))
+    assert recs[1]["depends_on"] == (blocker,), (
+        f"precondition: edge exists, got {recs[1]['depends_on']!r}")
+
+    rc = ledger.main(["unblock", str(blocked), "--why", "blocker landed",
+                      "--ledger", str(ledger_path)])
+    assert rc == 0, f"unblock must exit 0, got {rc}"
+    recs = ledger._read_records(str(ledger_path.parent))
+    assert recs[1]["depends_on"] == (), (
+        f"unblock must clear the depends edge, got {recs[1]['depends_on']!r}")
+
+
+def test_unblock_clears_depends_only_no_prose(tmp_path, capsys):
+    """#1054: unblock works on a task blocked ONLY via a depends edge (no
+    prose blocked_on). Before #1054, unblock refused because blocked_on was
+    empty — a task the new verb could block but the old verb could not
+    unblock was the exact asymmetry constraint 2 names."""
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "blocker", "--ledger", str(ledger_path)])
+    ledger.main(["file", "blocked", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    recs = ledger._read_records(str(ledger_path.parent))
+    blocker, blocked = recs[0]["id"], recs[1]["id"]
+
+    ledger.main(["block", str(blocked), "--on", str(blocker), "--why", "x",
+                 "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    recs = ledger._read_records(str(ledger_path.parent))
+    assert recs[1]["blocked_on"] is None, "precondition: no prose blocker"
+    assert recs[1]["depends_on"] == (blocker,), "precondition: edge exists"
+
+    rc = ledger.main(["unblock", str(blocked), "--why", "cleared",
+                      "--ledger", str(ledger_path)])
+    assert rc == 0, f"unblock of an edge-only block must succeed, got {rc}"
+
+
+def test_block_idempotent_reblock_is_unchanged(tmp_path, capsys):
+    """#1054: re-blocking an existing edge is idempotent (returns unchanged),
+    matching groups require's precedent — not an error."""
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "blocker", "--ledger", str(ledger_path)])
+    ledger.main(["file", "blocked", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    recs = ledger._read_records(str(ledger_path.parent))
+    blocker, blocked = recs[0]["id"], recs[1]["id"]
+
+    ledger.main(["block", str(blocked), "--on", str(blocker), "--why", "first",
+                 "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    rc = ledger.main(["block", str(blocked), "--on", str(blocker), "--why", "again",
+                      "--ledger", str(ledger_path)])
+    assert rc == 0, f"re-block must exit 0, got {rc}"
+    out = capsys.readouterr().out
+    assert "unchanged" in out, f"re-block must report unchanged, got: {out!r}"
+
+
+def test_block_missing_why_is_argparse_error(tmp_path, capsys):
+    """--why is mandatory: omitting it is an argparse error (exit 2)."""
+    ledger_path = _cut_over_store(tmp_path)
+    ledger.main(["file", "a", "--ledger", str(ledger_path)])
+    ledger.main(["file", "b", "--ledger", str(ledger_path)])
+    capsys.readouterr()
+    recs = ledger._read_records(str(ledger_path.parent))
+    with pytest.raises(SystemExit) as ei:
+        ledger.main(["block", str(recs[0]["id"]), "--on", str(recs[1]["id"]),
+                     "--ledger", str(ledger_path)])
+    assert ei.value.code == 2
+
+
 def test_reprioritise_cli_nonexistent_id_is_exit1(tmp_path, capsys):
     """DIRECTION-2: a nonexistent id refuses (exit 1), matching the #497 contract."""
     ledger_path = _cut_over_store(tmp_path)
