@@ -375,6 +375,16 @@ def _add_lane_warn(lane, *rows):
     _git(lane, "commit", "-m", "add warn row(s)")
 
 
+def _baseline_two_warnings(root, lane):
+    """Give the baseline a second warning so removing one leaves a non-empty
+    population — the gate refuses on an empty WARN reading BEFORE it reaches
+    authorisation, so a fix-only test must leave at least one row."""
+    _write(root / "lint-rows.txt", "old warning\nkeeper warning\n")
+    _git(root, "add", "lint-rows.txt")
+    _git(root, "commit", "-m", "add a second baseline warning")
+    _git(lane, "rebase", "master")
+
+
 def test_declared_warn_add_passes_and_reports_denominators(landing_repo):
     """The core #1040 case: a lane whose product is a new WARN row, declared
     by the coordinator, passes — and the pass reports denominators that
@@ -429,8 +439,10 @@ def test_declared_warn_remove_passes(landing_repo):
     """Symmetry: a lane that FIXES a lint warning removes a row. The
     declaration covers removed as well as added, or a fix-only lane is stuck."""
     root, lane = landing_repo
-    # Remove the baseline warning entirely.
-    _write(lane / "lint-rows.txt", "")
+    _baseline_two_warnings(root, lane)
+    # Remove only one warning; the other survives so the after-population is
+    # non-empty and the gate reaches the authorisation check.
+    _write(lane / "lint-rows.txt", "keeper warning\n")
     _git(lane, "add", "lint-rows.txt")
     _git(lane, "commit", "-m", "fix the baseline warning")
     before = _git(root, "rev-parse", "HEAD")
@@ -454,7 +466,8 @@ def test_declared_warn_remove_passes(landing_repo):
 def test_undeclared_warn_remove_still_refuses(landing_repo):
     """Mandatory pair for test_declared_warn_remove_passes."""
     root, lane = landing_repo
-    _write(lane / "lint-rows.txt", "")
+    _baseline_two_warnings(root, lane)
+    _write(lane / "lint-rows.txt", "keeper warning\n")
     _git(lane, "add", "lint-rows.txt")
     _git(lane, "commit", "-m", "fix the baseline warning")
     before = _git(root, "rev-parse", "HEAD")
@@ -554,19 +567,57 @@ def test_declared_change_not_observed_refuses(landing_repo):
     _assert_retained(root, lane)
 
 
-def test_authorised_pass_reads_differently_from_zero_change_pass(landing_repo):
+def test_authorised_pass_reads_differently_from_zero_change_pass(tmp_path):
     """#136: a pass because zero rows changed must read differently from a pass
     because declared rows changed as declared. The authorisation line is the
-    discriminator — a zero-change pass prints no authorisation line at all."""
-    root, lane = landing_repo
+    discriminator — a zero-change pass prints no authorisation line at all.
 
-    zero_change = _run(root, "test_named.py")
+    Uses two separate repos because a successful landing reaps the lane
+    worktree, so the same lane cannot be reused for a second run.
+    """
+    # Repo 1: zero-change landing.
+    root1, lane1 = _make_repo(tmp_path / "zero")
+    _write(lane1 / "feature.txt", "lane\n")
+    _git(lane1, "add", "feature.txt")
+    _git(lane1, "commit", "-m", "lane change")
+    armed = _redproof(lane1, "begin", "feature.txt", "--expectation", "test_named.py")
+    assert armed.returncode == 0, armed.stdout + armed.stderr
+    _write(lane1 / "feature.txt", "recorded red-proof injection\n")
+    observed = _redproof(
+        lane1, "observe", "feature.txt", "--failure", "feature injection reached",
+        "--command", sys.executable, "-c",
+        "from pathlib import Path; assert Path('feature.txt').read_text() == "
+        "'lane\\n', 'feature injection reached'",
+    )
+    assert observed.returncode == 0, observed.stdout + observed.stderr
+    restored = _redproof(lane1, "restore", "feature.txt")
+    assert restored.returncode == 0, restored.stdout + restored.stderr
+
+    zero_change = _run(root1, "test_named.py")
     assert zero_change.returncode == 0, zero_change.stderr
     assert "WARN authorisation:" not in zero_change.stdout
 
-    _add_lane_warn(lane, "new warning")
+    # Repo 2: authorised WARN-add landing.
+    root2, lane2 = _make_repo(tmp_path / "auth")
+    _write(lane2 / "feature.txt", "lane\n")
+    _git(lane2, "add", "feature.txt")
+    _git(lane2, "commit", "-m", "lane change")
+    armed2 = _redproof(lane2, "begin", "feature.txt", "--expectation", "test_named.py")
+    assert armed2.returncode == 0, armed2.stdout + armed2.stderr
+    _write(lane2 / "feature.txt", "recorded red-proof injection\n")
+    observed2 = _redproof(
+        lane2, "observe", "feature.txt", "--failure", "feature injection reached",
+        "--command", sys.executable, "-c",
+        "from pathlib import Path; assert Path('feature.txt').read_text() == "
+        "'lane\\n', 'feature injection reached'",
+    )
+    assert observed2.returncode == 0, observed2.stdout + observed2.stderr
+    restored2 = _redproof(lane2, "restore", "feature.txt")
+    assert restored2.returncode == 0, restored2.stdout + restored2.stderr
+    _add_lane_warn(lane2, "new warning")
+
     authorised = _run_declared(
-        root, "--expect-warn-add", "  WARN  new warning"
+        root2, "--expect-warn-add", "  WARN  new warning"
     )
     assert authorised.returncode == 0, authorised.stderr
     assert "WARN authorisation:" in authorised.stdout
