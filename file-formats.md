@@ -1065,6 +1065,15 @@ it does not have (#150).
   also means a malformed or misdirected relay fails silently. `relay.py`
   removes the two failures that actually happened (shell expansion,
   invented timestamps) by construction rather than by checking.
+  `.dreamwork/inbox.md` gains one size check (#1104): `lint.py`
+  (`check_inbox_rotation`) WARNs when it exceeds 512 KB, because the
+  harness requires a Read before an Edit and a lane appending its report
+  dies of context exhaustion on a file that grew to 3.77 MB / ~938K
+  tokens. The check names the fix — `dev/rotate_inbox.py rotate` — and
+  clears when the coordinator runs it. The rotation archive lives under
+  `.dreamwork/inbox-archive/<YYYY-MM>.md`, also gitignored, and a pointer
+  comment at the top of the live file names it so older entries stay
+  greppable.
 - **Delivery is unguarded and probably unguardable.** The inbox is
   durable but not delivered: an idle agent never reads it, and nothing
   can tell a silent agent from a silent channel. The mitigation is

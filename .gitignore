@@ -69,6 +69,7 @@ __pycache__/
 # the output used to decide whether a finished agent's worktree still holds
 # unsaved work.
 .dreamwork/inbox.md
+.dreamwork/inbox-archive/
 # The same two files one directory down: a guard that drives the composer or
 # answers a question for real makes the server write into the FROZEN fixture.
 # The write is correct behaviour being exercised; the patterns above are
