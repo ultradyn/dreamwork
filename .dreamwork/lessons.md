@@ -4682,3 +4682,39 @@ transient WARN except the one that puts both in the same merge.
 **Before predicting a gate's verdict, read the gate, not the check.** `land_lane`'s phases each have
 their own predicate, and `lint-precheck`'s is set-equality against a baseline. A finding's severity is
 an input to what the row says, not to whether the phase passes.
+
+## A clause that proves the probe ran does not prove it asked the right question
+
+The heartbeat tick has read `lanes 0 live [] (probe examined 1250 processes)` all night while four lane
+pairs were running. The parenthesised clause is there on purpose: `#868` added it so that an empty
+result could be distinguished from a probe that never ran. It does exactly that, correctly, every tick.
+And it sat beside a wrong number for hours without ever being in tension with it.
+
+`lane_liveness.inspect_lanes` reads each worktree's `.dreamwork/lane.lock`, takes its `pid`, and asks
+whether that pid is alive. `just launch-lane` writes the lock naming the runner **it** spawns — and
+`#1093` is the standing finding that this runner's cwd is the main checkout, the one place a lane must
+never commit. So the dispatch path kills it and spawns a replacement inside the worktree. Nothing
+rewrites the lock. Every lock therefore names a pid the coordinator deliberately killed:
+
+```
+glm-1100fixture  lock_pid=2539051  alive=False    <- "killed stray launch-lane runner pid=2539051
+                                                      comm=ccc (cwd=MAIN)" — my own dispatch said so
+                 actual runner=2550017, alive, cwd=the worktree, unknown to the lock
+```
+
+Two fixes, each right on its own, met at a file neither of them owns.
+
+I guessed the mechanism wrong first: I assumed my hand-dispatch never wrote a lock at all. The locks all
+exist; one `cat` refuted it. The defect is not an absent lock but one that is **stale by construction**
+on every dispatch routing around `#1093` — which is a different fix, and one I would not have reached by
+reasoning from the absence I expected.
+
+What makes this worth writing down is not the bug. It is that the probe carried a self-verification
+clause, the clause was honest, and it was honest about the wrong axis. `examined 1250 processes` answers
+*did I run?* The failure was in *what did I ask?* — and no count of things examined can reach that,
+because the probe examined all of them and then compared against a pid list that was already dead.
+
+**A coverage clause bounds the search, not the query.** When a check reports how much it looked at, that
+number retires exactly one hypothesis — that it didn't look. It leaves untouched every hypothesis about
+what it was looking *for*. Under `delegation=6` this one reported the precise reading that says
+*dispatch more*, which is how a monitoring defect becomes an action defect.
