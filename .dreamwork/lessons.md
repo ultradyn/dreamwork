@@ -4956,3 +4956,39 @@ disagreed with the story — neither looked wrong on its own.
   When a WARN has a test behind it, the fix is the row, not the flag — and it
   belongs on the branch, so the row and the file it names arrive in one tree.
   (2026-08-03, coordinator)
+
+- Never wait for a gate in the same shell call that launched it. A foreground
+  poll loop hit the tool's 10-minute ceiling, and the SIGTERM that ended it took
+  the whole process group with it — including the `nohup`'d gate, which was
+  killed midway through `land_lane` for `#1094`. `nohup` survives SIGHUP, not
+  SIGTERM. The damage was recoverable only because `land_lane` had not yet
+  advanced master: the main checkout was left DETACHED at an unverified merge
+  commit it had built but never gated. Launch gates as the background task's own
+  foreground command so the harness owns the lifetime, and poll in separate
+  calls. (2026-08-03, coordinator)
+
+- A detached HEAD after an interrupted gate may sit on a merge commit that
+  `land_lane` created BEFORE running any gate. It looks like a finished landing
+  and is not one: `git log` from the detached head shows the merge, the branch's
+  commits, and a clean tree. Check whether the gates actually ran (the log ends
+  where the kill landed) before deciding what the commit means, and reattach with
+  `git switch master` rather than advancing to it. The merge is cheap to
+  recreate; a merge that skipped its gates is not cheap to discover later.
+  (2026-08-03, coordinator)
+
+- The fold citation guard refuses pre-squash constituents, and `#1108` made that
+  concrete: its own fold note cited two commits that exist only under
+  `refs/tags/glm-1029dash-presquash`, and the guard refused. Cite the
+  preservation TAG, which is a ref and will not be collected — never a
+  constituent's sha. `#1108`'s subject is exactly this hazard, so the refusal
+  arrived as a demonstration of the task it was documenting. (2026-08-03,
+  coordinator)
+
+- A red-proof registration whose expectation was disposable scratch FAULTs at the
+  gate with exit 2 once the scratch is gone — `registered path '<p>' is absent
+  from the working tree`. `glm-1093runner` hit exactly this on
+  `.lane1093_expect.py`, one gate after `#1088` landed the begin-time WARNING for
+  it. The warning would have prevented it; lanes armed before `#1088` still carry
+  the latent version, so expect this from any older branch and re-arm against a
+  COMMITTED expectation rather than reading it as a branch defect. (2026-08-03,
+  coordinator)
