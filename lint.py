@@ -3182,11 +3182,99 @@ _BUILDER_DEF_RE = re.compile(
 )
 
 
+def _strip_js_comments(text: str) -> str:
+    """Replace JS comment text with spaces, preserving column alignment.
+
+    Line comments (``// …``) and block comments (``/* … */``) are blanked.
+    String literals are preserved intact so their contents remain available
+    for delegate-name capture. The ``in_string`` state prevents ``//`` inside
+    a string (e.g. ``"http://…"``) from reading as a comment; ``in_block``
+    carries across lines for multi-line block comments. Regex literals are
+    NOT distinguished from division — a ``/`` in code context that is not
+    ``//`` or ``/*`` passes through — so a pattern mention inside a regex
+    literal is an unhandled false-positive context (none exists in the real
+    sources; see check_builder_delegation docstring).
+    """
+    out: list[str] = []
+    i, n = 0, len(text)
+    in_block = False
+    in_string = False
+    quote = ""
+    while i < n:
+        ch = text[i]
+        if in_block:
+            if ch == '*' and i + 1 < n and text[i + 1] == '/':
+                in_block = False
+                out.append('  ')
+                i += 2
+                continue
+            out.append('\n' if ch == '\n' else ' ')
+            i += 1
+            continue
+        if in_string:
+            if ch == '\\' and i + 1 < n:
+                out.append(text[i:i + 2])
+                i += 2
+                continue
+            out.append(ch)
+            if ch == quote:
+                in_string = False
+            i += 1
+            continue
+        if ch == '/' and i + 1 < n and text[i + 1] == '/':
+            while i < n and text[i] != '\n':
+                out.append(' ')
+                i += 1
+            continue
+        if ch == '/' and i + 1 < n and text[i + 1] == '*':
+            in_block = True
+            out.append('  ')
+            i += 2
+            continue
+        if ch in ('"', "'", '`'):
+            in_string = True
+            quote = ch
+        out.append(ch)
+        i += 1
+    return ''.join(out)
+
+
+def _js_string_spans(line: str) -> list[tuple[int, int]]:
+    """Return ``(start_inclusive, end_exclusive)`` for string literals on a line.
+
+    Covers ``'…'``, ``"…"``, and backtick template literals. Escaped
+    delimiters do not close the span. Used to reject delegate-site matches
+    whose structural prefix starts inside a string literal — a mention, not
+    a code site. Multi-line template literals that opened on a prior line
+    are invisible here (the opening backtick is off-line); see the docstring
+    for that named limitation.
+    """
+    spans: list[tuple[int, int]] = []
+    i, n = 0, len(line)
+    while i < n:
+        ch = line[i]
+        if ch in ('"', "'", '`'):
+            start = i
+            i += 1
+            while i < n:
+                if line[i] == '\\' and i + 1 < n:
+                    i += 2
+                    continue
+                if line[i] == ch:
+                    i += 1
+                    break
+                i += 1
+            spans.append((start, i))
+        else:
+            i += 1
+    return spans
+
+
 def check_builder_delegation(root: Path, rep: Report) -> None:
     """#1057 — refuse a builder deletion a live delegate still calls.
 
     The React port (#630) replaces builders with native components one surface
-    at a time, and every flip DELETES a builder. `fromBuilder`
+    at a time, and every flip DELETES a builder. ``fromBuilder``
     (dev/build/src/delegate.js) throws at render time when its builder is gone,
     so a flip that deletes a builder something still delegates to breaks an
     already-native route at RUNTIME, not at the gate. This makes that break a
@@ -3197,8 +3285,9 @@ def check_builder_delegation(root: Path, rep: Report) -> None:
     fails in the worst direction (silently passing a deletion it never knew to
     look for):
 
-      - delegates — `fromBuilder('NAME', …)` and `.dwBuilder = 'NAME'` sites.
-      - definitions — column-0 `function NAME` / `const NAME =` bindings.
+      - delegates — ``fromBuilder('NAME', …)`` and ``.dwBuilder = 'NAME'`` sites
+        and ``'data-dw-delegate': 'NAME'`` / ``data-dw-delegate='NAME'`` forms.
+      - definitions — column-0 ``function NAME`` / ``const NAME =`` bindings.
 
     The check is UNCONDITIONAL: a delegate that names a builder with no live
     definition is always a runtime break, so there is no escape hatch. Every
@@ -3212,18 +3301,49 @@ def check_builder_delegation(root: Path, rep: Report) -> None:
     #611: a guard that examined nothing must not read as a pass. Zero
     delegates on a tree that carries the native runtime is a broken scan, not
     a clean result — ERROR, with the denominator named.
+
+    Applicability gate — #994 (forgeable marker). Round 2 gated on the
+    delegate.js FILE; deleting that one file silenced the guard over a live
+    broken delegate, which is a bypass, not a configuration. The gate is now
+    the dev/build/ DIRECTORY: structural, not forgeable by a single-file
+    delete. When dev/build/ exists but the marker is absent the check RUNS
+    rather than skipping — the delegates still name builders, and those
+    builders are still defined (or not) in client/*.js. A tree with no
+    dev/build/ at all is a foreign target where the check does not apply
+    (silent, matching round 2's verified-good client-only closure).
+
+    Lexical context — round 3 (#1057). The ``data-dw-delegate`` arms matched
+    the text anywhere on the line, producing false ERRORs on mentions in
+    comments and string literals. Two layers now filter non-code matches:
+
+      1. ``_strip_js_comments`` blanks ``//`` and ``/* */`` text before the
+         regex runs, so a mention in a comment never reaches the matcher.
+      2. ``_js_string_spans`` rejects any match whose structural prefix starts
+         strictly inside a string literal (``'…'``, ``"…"``, or a backtick
+    template), so a
+         mention inside a string value or template body is not a code site.
+
+    Contexts handled: line comment, block comment, single/double-quoted
+    string, template literal. Contexts NOT handled (named, not silently
+    accepted): regex literals containing the pattern (JS division/regex
+    disambiguation is undecable without a parser; no such regex exists in the
+    real sources), and ``${}`` interpolation inside template literals (code
+    inside ``${}`` is treated as string-interior because the opening backtick
+    may be off-line; no delegate site in the real codebase lives inside
+    ``${}``). The ``fromBuilder``/``.dwBuilder`` arms gain the same protection
+    transitively — a mention of those in a comment or string is filtered too.
     """
-    # Applicability is gated on the native-runtime marker (delegate.js), not
-    # on the source-file selector: a tree with client/ source but no
-    # dev/build/ is a foreign target, not a migration in progress, and the
-    # zero-delegate ERROR's message ("the native runtime is present") would
-    # be false there. The marker is the one file that defines fromBuilder —
-    # if it is gone, this check has nothing to say.
-    if not (root / "dev/build/src/delegate.js").exists():
+    # Applicability is gated on the native-runtime HOME (dev/build/), not on
+    # a single marker file. A directory is structural — it cannot be forged
+    # away by deleting one file (#994). When dev/build/ exists the check runs
+    # even if delegate.js is absent: the delegates still call builder names,
+    # and those names are still defined (or not) in client/*.js. A tree with
+    # no dev/build/ at all is a foreign target where the check does not apply.
+    if not (root / "dev/build").is_dir():
         return
     sources = _builder_delegation_js_sources(root)
     if not sources:
-        return  # no dev/build/ or client/ source — this check does not apply
+        return  # no .js source in dev/build/ or client/ — nothing to say
     delegates: list[tuple[str, str]] = []  # (builder name, "rel/path:line")
     delegate_files: set[str] = set()
     defined: set[str] = set()
@@ -3233,8 +3353,14 @@ def check_builder_delegation(root: Path, rep: Report) -> None:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
-        for i, line in enumerate(text.splitlines(), 1):
+        stripped = _strip_js_comments(text)
+        for i, line in enumerate(stripped.splitlines(), 1):
+            spans = _js_string_spans(line)
             for m in _BUILDER_DELEGATE_RE.finditer(line):
+                # Reject matches whose structural prefix starts inside a
+                # string literal — a mention, not a code site (#1057 P2).
+                if any(s < m.start() < e for s, e in spans):
+                    continue
                 name = m.group(1) or m.group(2) or m.group(3) or m.group(4)
                 delegates.append((name, "%s:%d" % (rel, i)))
                 delegate_files.add(str(rel))
