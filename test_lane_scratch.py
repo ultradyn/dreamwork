@@ -243,7 +243,7 @@ class TestCli:
     def test_no_create_flag(self, repo, tmp_path):
         out = subprocess.check_output(
             ["python3", str(CLI_PATH), "--no-create", "--cwd", str(repo),
-             str(tmp_path.name)], text=True).strip()
+             "--dir", str(tmp_path.name)], text=True).strip()
         assert out
 
     def test_measure_names_the_one_filesystem_measurement_location(self, repo):
@@ -662,3 +662,51 @@ class TestWriteVerb:
         assert b"0 bytes" in r2.stderr
 
 
+class TestVerbDirectoryDisambiguation:
+    """#981: positional typos must not masquerade as successful directories."""
+
+    @staticmethod
+    def _run(repo: Path, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["python3", str(CLI_PATH), *args, "--cwd", str(repo)],
+            capture_output=True, text=True,
+        )
+
+    def test_write_typo_is_refused_with_suggestion_and_directory_remedy(self, repo):
+        r = self._run(repo, "wrote", "evidence.txt")
+        assert r.returncode == 2
+        assert r.stdout == ""
+        assert ("unknown verb 'wrote'; did you mean 'write'? "
+                "for the legacy directory form use --dir wrote") in r.stderr
+
+    def test_unknown_verb_is_refused_instead_of_creating_a_directory(self, repo):
+        name = "brief-validator-unknown-verb"
+        target = ls.lane_scratch_dir(repo, create=False) / name
+        target.rmdir() if target.exists() else None
+        r = self._run(repo, name)
+        assert r.returncode == 2, (
+            f"unknown verb '{name}' was absorbed as a directory and exited "
+            f"{r.returncode}; evidence can be lost behind a printed path")
+        assert r.stdout == ""
+        assert (f"unknown verb '{name}'; for the legacy directory form use "
+                f"--dir {name}") in r.stderr
+        assert not target.exists()
+
+    def test_explicit_directory_form_preserves_arbitrary_legacy_names(self, repo):
+        name = "brief-validator-unknown-verb"
+        r = self._run(repo, "--dir", name)
+        assert r.returncode == 0, r.stderr
+        assert Path(r.stdout.strip()).name == name
+
+    def test_measure_still_survives_command_substitution(self, repo):
+        script = 'M="$("$1" "$2" measure --cwd "$3")"; rc=$?; printf "%s\\n%s\\n" "$rc" "$M"'
+        r = subprocess.run(
+            ["bash", "-c", script, "bash", "python3", str(CLI_PATH), str(repo)],
+            capture_output=True, text=True,
+        )
+        rc, measured = r.stdout.splitlines()
+        assert rc == "0", (
+            "measure returned nonzero inside command substitution; the shell "
+            "would assign an empty string and could carry on")
+        assert measured
+        assert Path(measured).name == "measure"
