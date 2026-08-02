@@ -7,6 +7,12 @@ The coordinates are pinned, not verified against the pinned revision.  In
 particular, the check never reads ``watch.py`` and cannot claim that a pinned
 coordinate identifies the intended source at that revision.
 
+A second check, :func:`check_docstring_citations`, scans ``dev/*.py``
+docstrings for ``(#NNN)`` issue references, resolves each id against the
+ledger, and prints the title beside the citation for human aptness review
+(#1034).  It reports, never certifies attribution (#994); it gates only on
+an id that does not resolve.
+
 A MISSING or UNPINNED finding often results from a CORRECT pin repair — the
 coordinate moved or was retired to prose.  That requires a matching enrolment
 update in BOTH ``PINNED_CITATIONS`` (this file) and the
@@ -18,10 +24,14 @@ guard or its test to force green.
 from __future__ import annotations
 
 import argparse
+import ast
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import subprocess
+import sys
+import tokenize
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,6 +101,445 @@ CITATION = re.compile(
 # A slash after a hash belongs to prose such as ``@ dc739001/4056`` (old/new
 # coordinates), not to the revision.  The guarded corpus uses commit hashes.
 PIN = re.compile(r"\s*@\s*(?P<rev>[0-9a-fA-F]{7,40})\b")
+
+
+# --- Docstring citation report (#1034) ---------------------------------------
+#
+# The pin check above binds watch.py:NNN coordinates to git revisions in
+# .dreamwork/ documents.  It never reads dev/*.py and never sees the (#NNN)
+# issue references in docstrings — the gap that let land_lane's
+# _requirement_line miscite #868 for #136's three-zero-states rule (#1034).
+#
+# This section scans every dev/*.py docstring for (#NNN), resolves each id
+# against the ledger, and prints the resolved TITLE beside the citation so a
+# human or brief author can spot an attribution mismatch at a glance.  It
+# REPORTS, never certifies aptness (#994): a resolvable id is a real entry,
+# not an attested attribution.  The only mechanical defect it gates on is an
+# UNRESOLVABLE id — a dangling reference.
+
+DOCSTRING_CITATION = re.compile(r"\(#([0-9a-fA-F]+)\)")
+_DOCSTRING_NODES = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+
+@dataclass
+class DocstringCitation:
+    """One (#NNN) found inside a dev/*.py docstring."""
+
+    rel_path: str
+    symbol: str
+    lineno: int
+    task_id: int | None
+    raw_token: str = ""
+
+
+@dataclass
+class SkippedFile:
+    """A dev/*.py file that could not be parsed (#868/#1034).
+
+    A file that could not be read or parsed must not be silently absorbed
+    into the examined count (#868): a probe that examined nothing must not
+    read like one that examined everything.
+    """
+
+    rel_path: str
+    reason: str
+
+
+def _scan_docstring_citations(
+    root: Path,
+) -> tuple[list[DocstringCitation], list[SkippedFile], int]:
+    """Return ``(findings, skipped, docstrings_scanned)`` for dev/*.py.
+
+    Uses the AST so only docstrings are examined — not inline comments, not
+    string literals in executable code.  Source is read via
+    :func:`tokenize.open`, which honours the PEP-263 coding cookie so a
+    valid Latin-1 (or other non-UTF-8) file with a ``# coding:`` declaration
+    is decoded correctly and its docstring IS examined (#1034).  Files that
+    cannot be decoded (no cookie, invalid bytes) or parsed (SyntaxError) are
+    returned as SKIPPED with their reason, never silently dropped into the
+    examined count (#868).  The denominators are derived once at runtime,
+    never as a stale literal.
+    """
+    findings: list[DocstringCitation] = []
+    skipped: list[SkippedFile] = []
+    docstrings_scanned = 0
+    for path in sorted((root / "dev").glob("*.py")):
+        rel = path.relative_to(root).as_posix()
+        try:
+            with tokenize.open(path) as stream:
+                source = stream.read()
+        except UnicodeDecodeError as exc:
+            skipped.append(SkippedFile(rel, f"undecodable bytes: {exc}"))
+            continue
+        except SyntaxError as exc:
+            # tokenize.detect_encoding raises SyntaxError for a malformed
+            # coding cookie or BOM — a file that cannot be read, not one
+            # whose body has a syntax error.
+            skipped.append(SkippedFile(rel, f"bad encoding cookie: {exc}"))
+            continue
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError as exc:
+            skipped.append(SkippedFile(rel, f"SyntaxError: {exc}"))
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, _DOCSTRING_NODES) or not node.body:
+                continue
+            doc_node = node.body[0]
+            if not isinstance(doc_node, ast.Expr):
+                continue
+            val = doc_node.value
+            if not isinstance(val, ast.Constant) or not isinstance(
+                val.value, str
+            ):
+                continue
+            docstrings_scanned += 1
+            doc = val.value
+            base_line = doc_node.lineno
+            name = getattr(node, "name", "<module>")
+            for match in DOCSTRING_CITATION.finditer(doc):
+                lineno = base_line + doc[: match.start()].count("\n")
+                raw = match.group(1)
+                try:
+                    tid: int | None = int(raw)
+                except ValueError:
+                    # Hex-letter token (e.g. ffffff) — not a decimal issue
+                    # id.  Classified as CSS colour if six hex digits,
+                    # else UNRESOLVABLE (#1034).  None is an out-of-band
+                    # sentinel: it is not an int and can never collide with
+                    # a real task id in title membership or appear as a
+                    # number in output.  The raw token is what the operator
+                    # sees.
+                    tid = None
+                findings.append(
+                    DocstringCitation(
+                        rel, name, lineno, tid, raw
+                    )
+                )
+    return findings, skipped, docstrings_scanned
+
+
+def _docstring_checkout_root() -> Path:
+    """Resolve the primary checkout through git's shared administrative dir."""
+    here = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["git", "-C", str(here), "rev-parse", "--path-format=absolute",
+         "--git-common-dir"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode == 0:
+        return Path(result.stdout.strip()).parent
+    return here
+
+
+def _default_dw_dir() -> Path:
+    """Find the main checkout's .dreamwork/ from a worktree (#1034)."""
+    return _docstring_checkout_root() / ".dreamwork"
+
+
+def _resolve_titles(dw_dir: Path) -> dict[int, str]:
+    """Map task id to title via the one reader the loop uses (#352, #667).
+
+    A hand-rolled reader over tasks.md is the documented failure mode: the
+    file that travels into worktrees is a migration notice.  ledger_parse is
+    the single reader, so we import it rather than re-deriving.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    import ledger_parse
+
+    store = ledger_parse.store_path(dw_dir)
+    if not store.is_file():
+        raise FileNotFoundError(store)
+    return {
+        r["id"]: r["title"] for r in ledger_parse.store_records(str(dw_dir))
+    }
+
+
+def _deprecated_task_ids(dw_dir: Path) -> tuple[set[int], bool]:
+    """Frozen task ids from ``tasks.md.deprecated`` — mirrors lint.py (#1094).
+
+    This is the SAME three-state resolution lint.py landed at 6e0d7524
+    (``_deprecated_task_ids`` there), ported here verbatim in logic so the
+    two checkers agree on what "resolved" means (#1034 round 7).  It returns
+    ``(ids, readable)``: the union of BOTH ``parse_ledger`` halves — ``dopen``
+    AND ``dlanded`` — because a ``dopen``-only read misses every LANDED id
+    (#1094: dopen=120, dlanded=277, union=397; #199 is in the dlanded half).
+
+    ``readable`` is the bool #1094 round 2 added and #136 has been about all
+    along: True for BOTH genuinely-empty cases (file ABSENT, or present and
+    PARSED) so an empty ``ids`` may be trusted to mean "no frozen ids"; False
+    ONLY when the file is present but unreadable or unparseable — a DISTINCT
+    state, never collapsed into empty.  An unreadable frozen history must not
+    read as an empty one: collapsing it reported every frozen-only citation
+    as UNRESOLVABLE, blaming valid code for the checker's own read failure.
+    """
+    dep = dw_dir / "tasks.md.deprecated"
+    if not dep.is_file():
+        return set(), True  # absent — genuinely empty, not a failure
+    repo_root = Path(__file__).resolve().parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    import watch
+
+    try:
+        dopen, dlanded = watch.parse_ledger(dep.read_text(encoding="utf-8"))
+    except Exception:
+        return set(), False  # unreadable — the checker failed, not the citation
+    return {int(x) for x in dopen | dlanded}, True
+
+
+def _is_css_colour(raw_token: str) -> bool:
+    """Whether a parenthesised token is a CSS colour shape.
+
+    Operates on the ORIGINAL TOKEN STRING, not the int's decimal
+    re-rendering (#1034).  A six-digit all-decimal run like ``000000``
+    becomes int 0 and ``str(0)`` is ``"0"`` (length 1), so an int-based
+    check returned False and the token reached UNRESOLVABLE — a
+    legitimate CSS black wedged the checker.  Checking the original
+    ``"000000"`` (length 6, all hex) returns True → FILTERED.
+
+    The regex ``\\(#([0-9a-fA-F]+)\\)`` now extracts hex-letter tokens
+    too, so ``(#ffffff)`` IS extracted and reaches this function —
+    length 6, all hex → True → FILTERED (#1034).  Hex-letter tokens that
+    fail ``int()`` are given ``task_id = None`` (never above max, never in
+    titles), so they reach the CSS check rather than being swallowed as
+    UNRESOLVABLE.
+
+    Ordering matters (#1034): the classifier checks the ledger max
+    FIRST.  A six-digit token that is BOTH a valid CSS colour shape AND
+    above the ledger max is SUSPICIOUS, not FILTERED — silently
+    swallowing an above-max lookalike is precisely the false negative
+    this checker exists to prevent.  CSS filtering applies only to
+    tokens WITHIN the plausible id range (at or below the max), where
+    being a colour is the more likely reading.  A real CSS colour like
+    ``334155`` is still FILTERED when the max encompasses it; a
+    six-digit above-max lookalike like ``999999`` is SUSPICIOUS.
+    """
+    return len(raw_token) == 6 and all(
+        d in "0123456789abcdefABCDEF" for d in raw_token
+    )
+
+
+def check_docstring_citations(
+    root: Path, dw_dir: Path | None = None, *, verbose: bool = False
+) -> int:
+    """Report each dev/*.py docstring (#NNN) with its resolved title.
+
+    Resolution states, never collapsed (#136): resolves-LIVE (in the store,
+    title printed), resolves-FROZEN (in tasks.md.deprecated, provenance
+    printed), resolves-NOWHERE (UNRESOLVABLE, the only mechanical gate), and
+    — when the frozen history is UNREADABLE — could-not-check (UNVERIFIABLE,
+    distinct from empty, #1094 round 2).  When the ledger store is entirely
+    absent the check reports NOT CHECKED and returns 0 so the store's absence
+    does not mask the pin check (which works in any checkout).  The NOT
+    CHECKED banner is printed so a reader who skims sees the check did not
+    actually check.
+
+    A file that cannot be parsed (SyntaxError, invalid encoding without a
+    coding cookie) is reported as SKIPPED with its reason, separately from
+    examined — never silently absorbed into a green count (#868).
+
+    Parenthesised tokens are classified by a stated rule (#1034): the
+    ledger max (union of live AND frozen) is consulted FIRST — an issue
+    reference above the max is SUSPICIOUS (reported, not hidden), even
+    when it is also six hex digits and could be read as a CSS colour; a
+    six-hex-digit token WITHIN range is a CSS colour (FILTERED); an id
+    that resolves live is reported with its title; an id that resolves
+    only from frozen history is reported with its provenance; an id that
+    resolves nowhere is UNRESOLVABLE (the only mechanical gate).  Resolved
+    rows print by default — the checker's value is the title beside each
+    citation, visible without flags (#1034 Finding 5).
+
+    Exit 2 if no dev/*.py files were examined (vacuity: #868).  Exit 1 if
+    any cited id resolves nowhere.  Exit 0 when every cited id resolves
+    (live or frozen), is unverifiable (could-not-check, not a gate), or the
+    store is absent (NOT CHECKED).  Titles are REPORTED for human aptness
+    review, never certified (#994).
+    """
+    dev_dir = root / "dev"
+    py_files = sorted(dev_dir.glob("*.py")) if dev_dir.is_dir() else []
+    if not py_files:
+        print("ERROR vacuity: examined 0 file(s) in dev/*.py")
+        return 2
+
+    citations, skipped, docstrings_scanned = _scan_docstring_citations(root)
+    files_examined = len(py_files) - len(skipped)
+    if files_examined == 0:
+        print(
+            f"ERROR vacuity: examined 0 of {len(py_files)} file(s) in "
+            f"dev/*.py ({len(skipped)} skipped)"
+        )
+        for s in skipped:
+            print(f"  SKIPPED {s.rel_path}: {s.reason}")
+        return 2
+
+    if dw_dir is None:
+        dw_dir = _default_dw_dir()
+    try:
+        titles = _resolve_titles(dw_dir)
+    except FileNotFoundError as exc:
+        # NOT CHECKED (#136 third state): the store is absent.  The
+        # extraction ran and found citations, but title resolution could
+        # not run.  This must not read like "resolved and all good" or
+        # "no citations found."  Exit 0 so this does not mask the pin
+        # check; the banner makes the state unmissable.
+        print(
+            f"NOT CHECKED: ledger store not found ({exc}); "
+            f"{len(citations)} (#NNN) citation(s) extracted across "
+            f"{files_examined} file(s) ({len(skipped)} skipped), "
+            f"{docstrings_scanned} docstring(s) "
+            f"scanned — title resolution could not run, attribution "
+            f"review did not happen (#136).  Pin check above remains "
+            f"authoritative."
+        )
+        for s in skipped:
+            print(f"  SKIPPED {s.rel_path}: {s.reason}")
+        # Extracted citations print by default (#1034 Finding 5): the
+        # operator should see what was extracted even when resolution
+        # could not run.
+        for c in sorted(
+            citations, key=lambda x: (x.rel_path, x.lineno)
+        ):
+            print(
+                f"  {c.rel_path}:{c.lineno} {c.symbol} "
+                f"(#{c.raw_token}) [unverified]"
+            )
+        return 0
+
+    # Frozen history (#1034 round 7, mirroring lint.py #1094): ids that left
+    # the live store (landed, archived) live in tasks.md.deprecated.  Without
+    # this path every frozen-only citation — #199 among them — read as
+    # UNRESOLVABLE, and no parenthesised form of the #199 line could satisfy
+    # both scanners (round 6's deadlock).  (ids, readable): readable is False
+    # ONLY when the file is present but unreadable — a distinct state from
+    # empty (#136, redone #1094 round 2).
+    frozen_ids, frozen_readable = _deprecated_task_ids(dw_dir)
+
+    # Classify by the stated rule (#1034).  The ledger max spans the UNION of
+    # live and frozen ids: a frozen id is a real id, not a typo, so the
+    # SUSPICIOUS/CSS band must encompass it.  When frozen is unreadable the
+    # union reduces to live-only (the frozen half could not be derived).
+    max_task_id = max(titles) if titles else 0
+    if frozen_ids:
+        max_task_id = max(max_task_id, max(frozen_ids))
+    resolved_live: list[DocstringCitation] = []
+    resolved_frozen: list[DocstringCitation] = []
+    unresolvable: list[DocstringCitation] = []
+    unverifiable: list[DocstringCitation] = []
+    suspicious: list[DocstringCitation] = []
+    filtered: list[DocstringCitation] = []
+    for c in citations:
+        if c.task_id is not None and max_task_id and c.task_id > max_task_id:
+            suspicious.append(c)
+        elif _is_css_colour(c.raw_token):
+            filtered.append(c)
+        elif c.task_id is not None and c.task_id in titles:
+            resolved_live.append(c)
+        elif (c.task_id is not None and frozen_readable
+              and c.task_id in frozen_ids):
+            # resolves-frozen: a real id that left the live store.  Reported
+            # distinctly from resolves-live (#1034 round 7).  No title — the
+            # frozen reader is id-only (lint.py's pattern, reused not
+            # reinvented), and the row says where it resolved from.
+            resolved_frozen.append(c)
+        elif (c.task_id is not None and not frozen_readable
+              and c.task_id not in titles):
+            # could-not-check (#136 / #651): the citation is absent from the
+            # live store AND the frozen history is unreadable, so the checker
+            # cannot tell resolves-frozen from resolves-nowhere.  Reported as
+            # UNVERIFIABLE — never collapsed into UNRESOLVABLE, which would
+            # blame valid code for the checker's own read failure (#1094
+            # round 2).  Does not gate (could-not-check, like NOT CHECKED).
+            unverifiable.append(c)
+        else:
+            unresolvable.append(c)
+    total_real = (
+        len(resolved_live) + len(resolved_frozen) + len(unresolvable)
+        + len(unverifiable) + len(suspicious)
+    )
+
+    # Signal-first output (#1034 Finding 5): the rows a reader must act on
+    # print first; resolved rows print by default so the title (or frozen
+    # provenance) beside each citation is visible without flags.
+    frozen_note = (
+        f", {len(resolved_frozen)} resolved from frozen history"
+        if resolved_frozen else ""
+    )
+    print(
+        f"DOCSTRING CITATIONS: examined {files_examined} file(s) "
+        f"({len(skipped)} skipped), {docstrings_scanned} docstring(s) "
+        f"scanned, {total_real} (#NNN) citation(s)"
+        f"{frozen_note}"
+        f"{f', {len(filtered)} CSS colour(s) filtered' if filtered else ''}"
+        f" — REPORT not certification (#994)"
+    )
+    for c in unresolvable:
+        print(
+            f"  UNRESOLVABLE {c.rel_path}:{c.lineno} {c.symbol} "
+            f"(#{c.raw_token}) not found in ledger"
+        )
+    for c in unverifiable:
+        print(
+            f"  UNVERIFIABLE {c.rel_path}:{c.lineno} {c.symbol} "
+            f"(#{c.task_id}) not in live store; frozen history "
+            f"(tasks.md.deprecated) unreadable — could not check (#136)"
+        )
+    for c in suspicious:
+        print(
+            f"  SUSPICIOUS {c.rel_path}:{c.lineno} {c.symbol} "
+            f"(#{c.task_id}) exceeds ledger max (#{max_task_id}) — "
+            f"typo, stale ref, or not-yet-filed"
+        )
+    for s in skipped:
+        print(f"  SKIPPED {s.rel_path}: {s.reason}")
+    for c in filtered:
+        print(
+            f"  FILTERED {c.rel_path}:{c.lineno} {c.symbol} "
+            f"(#{c.raw_token}) CSS colour (6 hex digits)"
+        )
+    # Resolved-live rows print by default (#1034 Finding 5): the checker's
+    # value is showing the title beside each citation so a human can spot an
+    # attribution mismatch.  Hiding resolved rows on a clean run made the
+    # miscitation this task exists to surface invisible by default.
+    for c in sorted(resolved_live, key=lambda x: (x.rel_path, x.lineno)):
+        print(
+            f"  {c.rel_path}:{c.lineno} {c.symbol} "
+            f"(#{c.task_id}) \"{titles[c.task_id]}\""
+        )
+    # Resolved-frozen rows print distinctly (#1034 round 7): the provenance
+    # is "frozen history", not a live title — the two must be visually
+    # distinguishable so a reader does not mistake a landed id for a live one.
+    for c in sorted(resolved_frozen, key=lambda x: (x.rel_path, x.lineno)):
+        print(
+            f"  {c.rel_path}:{c.lineno} {c.symbol} "
+            f"(#{c.task_id}) resolved from frozen history "
+            f"(tasks.md.deprecated)"
+        )
+
+    if unresolvable:
+        print(
+            f"\nFAIL: {len(unresolvable)} of {total_real} docstring "
+            f"citation(s) did not resolve across {files_examined} file(s)"
+        )
+        return 1
+    # UNVERIFIABLE does not gate: it is could-not-check (#136), not
+    # resolves-nowhere.  Collapsing it into FAIL would blame valid code for
+    # the checker's own read failure (#1094 round 2, #651).
+    verdict_parts = [
+        f"{len(resolved_live)} resolved",  # live count headline
+        f"{len(resolved_frozen)} frozen",
+        f"{len(unresolvable)} unresolvable",
+        f"{len(unverifiable)} unverifiable",
+        f"{len(suspicious)} suspicious",
+        f"{len(filtered)} filtered",
+        f"{len(skipped)} skipped",
+    ]
+    print(
+        f"\nOK: {', '.join(verdict_parts)} across {files_examined} file(s)"
+    )
+    return 0
 
 
 def _scan_affected_citations(
@@ -207,8 +656,24 @@ def check(root: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
+    parser.add_argument(
+        "--dw-dir",
+        type=Path,
+        default=None,
+        help=".dreamwork/ dir for issue-id resolution "
+        "(default: main checkout's)",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="accepted for compatibility; resolved rows print by default "
+        "(#1034 Finding 5)",
+    )
     args = parser.parse_args(argv)
-    return check(args.root.resolve())
+    root = args.root.resolve()
+    return check(root) | check_docstring_citations(
+        root, args.dw_dir, verbose=args.verbose
+    )
 
 
 if __name__ == "__main__":

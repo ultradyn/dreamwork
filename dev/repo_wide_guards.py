@@ -125,6 +125,21 @@ REGISTRY: list[str] = [
     # A lane changing one Markdown file cannot enumerate the other classified
     # documents or know that the population still resolves non-vacuously.
     "test_check_watch_citations.py::test_reviewed_watch_citation_population_is_still_resolved",
+    # Scans EVERY dev/*.py docstring (#NNN) against the real ledger and
+    # asserts the real miscitation at land_lane.py (#868 for #136's rule)
+    # is REPORTED.  A lane editing one dev/*.py file cannot enumerate the
+    # other docstrings or know that the population still resolves. (#1034.)
+    "test_check_watch_citations.py::test_docstring_citations_on_real_tree",
+    # SELF-PROTECTION (#1034 Finding 2): asserts the row above stays in
+    # this registry.  Without this entry, a lane deleting only the
+    # docstring-citation row would leave the generated set passing (3
+    # passed) — the membership test would fail but the gate would not run
+    # it, and the detector stays silent because a DIFFERENT entry for the
+    # same file survives.  Binding the check to its own registration makes
+    # the deletion visible through the generated gate: the membership test
+    # runs and fails.  This is a meta-guard, not a population-property
+    # guard; it is registered to protect the entry it names.
+    "test_check_watch_citations.py::test_guard_is_registered_in_repo_wide_registry",
 ]
 
 # The detector signal: a quoted `ls-files` token that is the LAST positional
