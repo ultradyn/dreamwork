@@ -1301,6 +1301,20 @@ def _check_error(scope: str, message: str) -> None:
     sys.stderr.write(message.rstrip("\n") + "\n" + scope + "\n")
 
 
+def _reach_examined_fragment(examined: int, total: int) -> str:
+    """The evidence-artifact denominator shared by the calm and populated paths.
+
+    Extracted (#1038 Finding 2) so both paths use ONE formatter, tested
+    independently with a non-empty population. The calm path's population is
+    structurally empty (it runs only when no registry was located), so its
+    own assertion ("examined 0 for 0") cannot distinguish a real computation
+    from a hardcoded zero — the shared-function test with (1, 1) is the
+    discriminating guard that a literal ``0`` would fail.
+    """
+    return (f"examined {examined} evidence artifact(s) for {total} "
+            f"registered injection(s)")
+
+
 def _reach_report(restored: list[dict]) -> tuple[str, list[str], bool]:
     """Classify causal reach receipts without collapsing absent into caught."""
     caught = not_caught = not_checked = examined = 0
@@ -1347,8 +1361,8 @@ def _reach_report(restored: list[dict]) -> tuple[str, list[str], bool]:
                 f"  {path}: NOT CHECKED — observation has no restored causal control "
                 f"(status {status!r}); evidence: {evidence}")
     total = len(restored)
-    prefix = (f"caught {caught} of {total} registered injection(s); examined "
-              f"{examined} evidence artifact(s) for {total} registered injection(s)")
+    prefix = (f"caught {caught} of {total} registered injection(s); "
+              f"{_reach_examined_fragment(examined, total)}")
     if total and caught == total:
         return f"red-proof reach: OK — {prefix}.", details, True
     counts = f"{not_caught} not caught, {not_checked} not checked"
@@ -1497,17 +1511,22 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
         # --require. Relaxing (1) does not relax that (#955).
         if require == 0:
             # Finding 2: the evidence-artifact denominator. With no registry
-            # there are no registered injections, so nothing was examined — but
-            # the count is DERIVED from the entries this block holds (empty
-            # here), not a hardcoded zero, so a reader can tell "zero examined
-            # because zero were owed" from "zero examined because the probe did
-            # nothing". A non-zero case on the normal reach path (caught 1 of
-            # 1; examined 1) is the discriminating guard against a literal.
-            evidence_examined = sum(
-                1 for e in entries if isinstance(e.get("reach"), dict))
+            # there are no registered injections, so nothing was examined.
+            # The denominator is STRUCTURALLY zero: this block's precondition
+            # is ``not entries`` (no registry was located), so an empty
+            # population cannot produce anything but zero. Not a ``sum()`` over
+            # reach dicts — that implies the count could vary when it cannot,
+            # a hardcoded zero wearing a ``sum()`` (#1038 Finding 2). Stated as
+            # ``len(entries)`` so a reader sees WHY it is zero (no entries),
+            # not a computation that pretends to inspect reach dicts it does
+            # not have. The FORMATTER (``_reach_examined_fragment``) is shared
+            # with ``_reach_report`` and tested independently with non-empty
+            # input — that test is the discriminating guard the calm path's
+            # own "examined 0 for 0" assertion cannot be.
+            evidence_examined = len(entries)  # 0: no registry → no entries
             reach_line = (
-                f"red-proof reach: examined {evidence_examined} evidence "
-                f"artifact(s) for {len(entries)} registered injection(s); "
+                f"red-proof reach: "
+                f"{_reach_examined_fragment(evidence_examined, len(entries))}; "
                 f"--require {require} means 0 were owed, so zero-examined "
                 f"reflects the zero registered (nothing to examine), not a "
                 f"probe that ran over nothing or skipped.")
@@ -1605,8 +1624,8 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
                   f"restoration was not evaluated; production reach was not "
                   f"evaluated.")
             print("red-proof reach: DID NOT CHECK — caught 0 of 0 registered "
-                  "injection(s); examined 0 evidence artifact(s) for 0 registered "
-                  "injection(s); population is zero, not a clean reach sweep.")
+                  f"injection(s); {_reach_examined_fragment(0, 0)}; "
+                  "population is zero, not a clean reach sweep.")
             print(identity_scope)
             return 0
         # Retired-only: there is no restoration to certify, but there ARE

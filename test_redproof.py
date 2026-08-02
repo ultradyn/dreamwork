@@ -300,6 +300,19 @@ class TestZeroStatesAreDistinct:
         assert "unparseable" in err or "FAULT" in err
 
 
+def test_reach_examined_fragment_formats_non_empty_population():
+    """#1038 Finding 2: the shared denominator formatter must handle a
+    NON-empty population. The calm path's population is structurally empty
+    (it runs only when no registry was located), so its own "examined 0 for 0"
+    assertion cannot distinguish a real formatter from a hardcoded zero. This
+    test drives the formatter with (1, 1) — the discriminating guard a literal
+    ``0`` or a ``sum()`` over an always-empty list would fail."""
+    assert rp._reach_examined_fragment(1, 1) == (
+        "examined 1 evidence artifact(s) for 1 registered injection(s)")
+    assert rp._reach_examined_fragment(0, 0) == (
+        "examined 0 evidence artifact(s) for 0 registered injection(s)")
+
+
 class TestCheckDoesNotClaimProductionEvidence:
     """#795: restoration evidence must not masquerade as production reach."""
 
