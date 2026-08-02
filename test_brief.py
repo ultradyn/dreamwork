@@ -922,6 +922,27 @@ def test_state_report_reports_a_warn_row_claim_against_the_ledger(tmp_path):
     assert "actual state 'landed'" in report, report
 
 
+def test_state_report_predicate_binds_to_the_right_id_not_a_later_one(tmp_path):
+    """The regex-gap fix: '#700 exactly, and #630 is a live task' must bind the
+    'live' predicate to #630 (open → MATCH), NOT to the earlier #700 (landed).
+    The prior lane's 25-char gap let the earlier id consume a LATER predicate —
+    a false positive for #700 and a simultaneous miss of #630.  Uses the
+    fixture's real ids: #700 is landed, #630 is open."""
+    ledger = _state_ledger(tmp_path)
+    core = (
+        "## Verify\n\n"
+        "`#700` exactly, and `#630` is a live task about that failure.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    report = brief._task_state_claim_report(core, ledger)
+    assert "#630 MATCH" in report, report
+    # The discriminating assertion: the earlier landed #700 is NOT reported as
+    # a state claim — the 'live' predicate bound to #630, not to #700.
+    assert "found 1 task-state claim(s)" in report, report
+    assert "#700 MATCH" not in report, report
+    assert "#700 MISMATCH" not in report, report
+
+
 def test_command_report_a_parser_error_is_not_checked_not_certified(monkeypatch):
     """Direction 1, the :970 defect: a malformed/unreadable Justfile or any
     parser error was treated as 'resolved', silently blessing every command
