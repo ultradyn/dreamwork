@@ -1134,6 +1134,47 @@ def test_import_derived_sees_a_consumer_import_inside_a_function(tmp_path):
     ) == ("test_consumer.py",)
 
 
+def test_production_importers_skip_a_registered_in_repo_worktree(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "master")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test")
+    _write(repo / ".gitignore", ".native-lanes/\n")
+    _write(repo / "subject.py", "VALUE = 1\n")
+    _write(repo / "consumer.py", "import subject\n")
+    _write(repo / ".native-lanes-notes" / "consumer.py", "import subject\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "fixture")
+
+    in_repo = repo / ".native-lanes" / "lane"
+    external = tmp_path / "external-lane"
+    _git(repo, "worktree", "add", "-b", "in-repo", str(in_repo))
+    _git(repo, "worktree", "add", "-b", "external", str(external))
+    listing = _git(repo, "worktree", "list", "--porcelain")
+    assert f"worktree {in_repo.resolve()}" in listing, (
+        "fixture did not register the in-repo worktree, so the exclusion "
+        "assertion would pass vacuously"
+    )
+
+    roots = land_lane._in_repo_worktree_roots(repo)
+    found = land_lane._production_importers(repo, ["subject"])
+
+    assert roots == (Path(".native-lanes/lane"),), (
+        "only the registered worktree nested below the repo is an exclusion "
+        f"root; the external worktree must remain outside it: {roots!r}"
+    )
+    assert "consumer" in found
+    assert ".native-lanes.lane.consumer" not in found, (
+        "the registered in-repo worktree leaked a duplicate second-copy "
+        f"module into production importers: {sorted(found)!r}"
+    )
+    assert ".native-lanes-notes.consumer" in found, (
+        "a legitimate source path sharing only the worktree-root prefix was "
+        f"excluded: {sorted(found)!r}"
+    )
+
+
 def test_depth_two_reports_but_does_not_select_a_third_hop(tmp_path):
     """Direction 2: one more consumer is the chosen selection boundary."""
     (tmp_path / "watch.py").write_text("VALUE = 1\n")

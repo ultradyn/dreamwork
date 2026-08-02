@@ -222,9 +222,12 @@ def _production_importers(repo: Path, modules: Sequence[str]) -> frozenset[str]:
     wanted = {module for module in modules if module}
     if not wanted:
         return frozenset()
+    worktree_roots = _in_repo_worktree_roots(repo)
     found: set[str] = set()
     for source_path in sorted(repo.rglob("*.py")):
         relative = source_path.relative_to(repo)
+        if any(relative.is_relative_to(root) for root in worktree_roots):
+            continue
         module = _dotted_module(relative.as_posix())
         if module is None or source_path.name.startswith("test_"):
             continue
@@ -236,6 +239,32 @@ def _production_importers(repo: Path, modules: Sequence[str]) -> frozenset[str]:
                for wanted_module in wanted):
             found.add(module)
     return frozenset(found)
+
+
+def _in_repo_worktree_roots(repo: Path) -> tuple[Path, ...]:
+    """Git-registered linked-worktree roots nested below ``repo``."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, check=False,
+        )
+    except OSError:
+        return ()
+    if result.returncode:
+        return ()
+    repo_root = repo.resolve()
+    roots: set[Path] = set()
+    for line in result.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        try:
+            path = Path(line.removeprefix("worktree ")).resolve()
+            relative = path.relative_to(repo_root)
+        except ValueError:
+            continue
+        if relative.parts:
+            roots.add(relative)
+    return tuple(sorted(roots))
 
 
 def _import_derived(
