@@ -1013,7 +1013,205 @@ def _resolved_cites(commits, bodies, repo):
     return _cites, degraded, receipt
 
 
-def sweep_text(text, commits, since, source, repo="."):
+# ---------------------------------------------------------------------------
+# presquash (#1108) — follow a squashed commit's preserved pre-squash history
+#
+# `land_lane --squash` rewrites a branch as one commit, but first tags the
+# original tip as `<branch>-presquash` and records that ref in the squashed
+# commit's `Presquash-Ref:` trailer (dev/land_lane.py:720). The sweep keys on
+# SUBJECTS (#404: "the commit convention puts the id in the subject by
+# construction"), and a squashed commit has ONE subject, so any second task
+# the branch fixed — named in a constituent subject — is invisible to the
+# subject scan by construction. The trailer makes those constituents
+# recoverable rather than lost: a sweep that follows the ref sees every id a
+# constituent SUBJECT claimed, applying the same landing-claim convention that
+# makes a master subject a landing.
+#
+# Constituent BODIES are deliberately NOT scanned. A body mention is a
+# reference, not a landing claim (#1097), and head-line scoping does not save
+# it: this task's own body head-lines "#710 — why --squash exists at all" as a
+# REFERENCE. So a constituent id that lives only in bodies — the #1108
+# acceptance case (#1030) is exactly that — is NOT recoverable by any
+# convention-preserving scan. That is a measured limitation, reported by the
+# lane, not a gap in the follower: the follower recovers every id a
+# constituent SUBJECT cited, which is the convention's entire claim (#404).
+# ---------------------------------------------------------------------------
+
+_PRESQUASH_REF = re.compile(r"^Presquash-Ref:\s*(\S+)", re.M)
+
+
+def _subject_landing_ids(subject):
+    """The set of task ids a subject CLAIMS as landings (#404 convention).
+
+    Mirrors the extraction in ``_sweep_classified``: SWEEP_SUBJECT decides
+    whether the subject is a landing claim at all, SWEEP_ID pulls the ids. A
+    subject that does not match yields an empty set — its ids (if any) are
+    references, not landings (#1097). Factored out so the presquash follower
+    and the master scan apply ONE definition of "what a subject claims".
+    """
+    m = SWEEP_SUBJECT.match(subject)
+    if not m:
+        return set()
+    id_text = next(g for g in m.groups() if g)
+    return {int(x) for x in SWEEP_ID.findall(id_text)}
+
+
+def _presquash_ref_from_message(message):
+    """The ``Presquash-Ref:`` trailer value, or None when absent.
+
+    land_lane writes the trailer verbatim (dev/land_lane.py:720); this pure
+    extractor mirrors it so a message can be checked without a git call.
+    """
+    m = _PRESQUASH_REF.search(message or "")
+    return m.group(1).strip() if m else None
+
+
+def _git_presquash_refs(repo, shas):
+    """Map each sha to its Presquash-Ref trailer value (only non-empty).
+
+    One batched ``git log --no-walk`` over the given shas — the same commits
+    ``_git_subjects`` already fetched, read once more for their trailers. A sha
+    that does not resolve (a fixture placeholder) yields no line, so invented
+    shas contribute nothing. Returns {} on any git failure: the sweep then
+    reports it followed nothing rather than guessing.
+    """
+    if not shas:
+        return {}
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "log", "--no-walk",
+             "--format=%h\x1f%(trailers:key=Presquash-Ref,valueonly)", *shas],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if out.returncode != 0:
+        return {}
+    refs = {}
+    for line in out.stdout.splitlines():
+        sha, sep, val = line.partition("\x1f")
+        if sep and val.strip():
+            refs[sha] = val.strip()
+    return refs
+
+
+def _git_resolve_quiet(repo, revision):
+    """Resolve ``revision`` to a full commit sha, or None (git failure/missing)."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--verify", "--quiet",
+             f"{revision}^{{commit}}"],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout.strip() or None
+
+
+def _git_constituent_subjects(repo, base_sha, tip_sha):
+    """(sha, subject) pairs for ``base..tip`` (the history land_lane preserved).
+
+    None on any git failure — the caller reports the squash as unfollowable
+    rather than silently treating it as empty (#136: a broken derivation must
+    not render as an empty selection).
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "log", "--format=%h\x1f%s",
+             f"{base_sha}..{tip_sha}"],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    pairs = []
+    for line in out.stdout.splitlines():
+        csha, sep, csubject = line.partition("\x1f")
+        if sep:
+            pairs.append((csha, csubject))
+    return pairs
+
+
+def _presquash_expand(repo, commits):
+    """Follow Presquash-Ref trailers; return constituent ids + follow status.
+
+    For each commit in ``commits`` whose message carries a ``Presquash-Ref:``
+    trailer, resolve the ref and read the constituent SUBJECTS the preserved
+    tag reaches (``base..tip`` where base is the squashed commit's parent and
+    tip the resolved ref — the range land_lane preserved). Only constituent
+    SUBJECTS are read: a subject is a landing claim (#404), a body mention is a
+    reference (#1097). Ids the squashed commit's OWN subject already names are
+    dropped, so an id named by both is reported once.
+
+    Returns ``(expanded, followed, unfollowable)``:
+
+    * ``expanded``     — ``[(squashed_sha, tid, constituent_subject)]``, one
+      triple per constituent id the squashed subject did NOT already name.
+      Attributed to the squashed sha so the citation check and the finding
+      display name the landing on master, not a pre-squash tip a lane cannot
+      cite. Feed to ``_classify_presquash`` alongside the master scan.
+    * ``followed``     — ``[(squashed_sha, tag_ref, n_constituents)]`` for
+      every trailer followed to a resolving ref, including ones that yielded
+      no new ids. The count is what makes "followed and found nothing"
+      distinguishable from "did not follow" (#136).
+    * ``unfollowable`` — ``[(squashed_sha, tag_ref, reason)]`` for a trailer
+      whose ref the sweep COULD NOT resolve. This is a distinct state from a
+      squash with no extra ids — collapsing them recreates the defect one
+      level up (#1108/#136).
+    """
+    shas = [sha for sha, _ in commits]
+    trailers = _git_presquash_refs(repo, shas)
+    expanded, followed, unfollowable = [], [], []
+    for sha, subject in commits:
+        ref = trailers.get(sha)
+        if ref is None:
+            continue  # not a land_lane squash (or a fixture sha) — scan normally
+        tip = _git_resolve_quiet(repo, ref)
+        if tip is None:
+            unfollowable.append((sha, ref, "ref does not resolve"))
+            continue
+        base = _git_resolve_quiet(repo, sha + "^")
+        constituents = (_git_constituent_subjects(repo, base, tip)
+                        if base is not None else None)
+        if constituents is None:
+            unfollowable.append((sha, ref, "could not read constituent subjects"))
+            continue
+        squashed_ids = _subject_landing_ids(subject)
+        seen = set()
+        for _csha, csubject in constituents:
+            for tid in _subject_landing_ids(csubject):
+                if tid in squashed_ids or tid in seen:
+                    continue
+                seen.add(tid)
+                expanded.append((sha, tid, csubject))
+        followed.append((sha, ref, len(constituents)))
+    return expanded, followed, unfollowable
+
+
+def _classify_presquash(text, expanded, cites, bodies):
+    """Classify presquash constituent ids with the SAME rules as the master scan.
+
+    Mirrors ``_sweep_classified``'s open-id gate and citation split, but
+    operates on the (squashed_sha, tid, subject) triples ``_presquash_expand``
+    emits — each triple carries ONE already-extracted id, so there is no
+    re-extraction to de-dup against. Returns ``(found, cited_open)`` as sorted
+    ``(tid, [(sha, subject)])`` lists; the caller merges tids the master scan
+    already found.
+    """
+    open_ids, _ = watch.parse_ledger(text)
+    found, cited_open = {}, {}
+    for sha, tid, subject in expanded:
+        if str(tid) not in open_ids:
+            continue
+        bucket = cited_open if cites(sha, bodies.get(tid, "")) else found
+        bucket.setdefault(tid, []).append((sha, subject))
+    return sorted(found.items()), sorted(cited_open.items())
+
+
+def sweep_text(text, commits, since, source, repo=".", presquash=None):
     """The advisory report — BOTH halves of the correlation are accounted for.
 
     #404 ruled that a sweep which found nothing must be distinguishable from
@@ -1056,6 +1254,23 @@ def sweep_text(text, commits, since, source, repo="."):
             bodies[tid] = body
     cites, degraded, resolution = _resolved_cites(commits, bodies, repo)
     n, findings, cited_open = _sweep_classified(text, commits, cites=cites)
+    # #1108: follow Presquash-Ref trailers on squashed commits and classify
+    # the constituent ids the squashed subject hid, with the SAME open-id and
+    # citation rules the master scan applies. A tid the master scan already
+    # found is not re-added — an id named by both a master subject and a
+    # constituent reports once. presquash is None for direct sweep_text calls
+    # (no git following); the CLI handler passes the expanded triples.
+    found_map = {tid: lands for tid, lands in findings}
+    cited_map = {tid: lands for tid, lands in cited_open}
+    if presquash:
+        psq_found, psq_cited = _classify_presquash(
+            text, presquash[0], cites, bodies)
+        for tid, lands in psq_found:
+            found_map.setdefault(tid, lands)
+        for tid, lands in psq_cited:
+            cited_map.setdefault(tid, lands)
+    findings = sorted(found_map.items())
+    cited_open = sorted(cited_map.items())
     open_ids, landed_ids = watch.parse_ledger(text)
     expected_body_ids = {int(tid) for tid in open_ids}
     parsed_body_ids = set(bodies)
@@ -1112,6 +1327,24 @@ def sweep_text(text, commits, since, source, repo="."):
             f"{len(unexpected_bodies)} unexpected parsed body id(s): "
             f"{unexpected}. No landing verdict is reliable (#753).")
         return "\n".join(lines) + "\n"
+    # #1108: report presquash following so "followed and found nothing" is
+    # distinguishable from "could not follow" — the same discriminability #136
+    # demands of every empty selection. Only constituent SUBJECTS were scanned
+    # (#404 convention); a constituent id that lives only in BODIES is not
+    # recoverable by this path and is not silently treated as absent.
+    if presquash is not None:
+        _exp, followed, unfollowable = presquash
+        if followed or unfollowable:
+            n_const = sum(c for _, _, c in followed)
+            lines.append(
+                f"sweep: presquash: followed {len(followed)} ref(s) "
+                f"({n_const} constituent subjects); "
+                f"{len(unfollowable)} could not follow")
+            for sha, ref, reason in unfollowable:
+                lines.append(
+                    f"sweep: presquash: COULD NOT FOLLOW `{sha}` {ref} — "
+                    f"{reason}; its constituent subjects are invisible to "
+                    f"this sweep (#1108/#136)")
     # #707: split findings by confidence class. verb(#N) is high confidence
     # (the verb carries landing intent); Merge/Fold and bare-#N are the
     # widened forms — "named" but not "landed" (#707: the report says "names",
@@ -3220,7 +3453,14 @@ def _dispatch(args):
         if commits is None:
             sys.stdout.write("sweep: git could not answer (not a repo?) — did not run\n")
             return 0
-        sys.stdout.write(sweep_text(text, commits, since, source, args.repo))
+        # #1108: follow Presquash-Ref trailers so a --squash landing's hidden
+        # constituent subjects join the scan. Computed here (the git layer) and
+        # passed to sweep_text, which keeps its own git work to citation
+        # resolution; the pure `sweep`/`_sweep_classified` contracts are
+        # untouched (#404's pins).
+        presquash = _presquash_expand(args.repo, commits)
+        sys.stdout.write(sweep_text(
+            text, commits, since, source, args.repo, presquash=presquash))
         return 0
 
     ledger_path = Path(args.ledger)
