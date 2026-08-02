@@ -85,10 +85,13 @@ caught is before code is written.
   file path, never process substitution, which silently reports zero rows.
 - In this repo **`WARN` means "a transient condition someone will clear"**,
   not a standing fact worth stating: a standing fact belongs in an **OK row
-  that names it**. `dev/land_lane.py`'s lint-comparison refuses any added WARN
-  row (the row-set rule, `#794`), so a check that emits a permanent WARN makes
-  the branch unlandable by construction — state the standing fact as an OK row
-  that names it instead.
+  that names it**. `dev/land_lane.py`'s lint-comparison refuses any undeclared
+  WARN row change (the row-set rule, `#794`): a lane whose deliverable is a new
+  lint check — the exact case that adds an intended WARN — must have that change
+  AUTHORISED by the coordinator via `--expect-warn-add`/`--expect-warn-remove`
+  flags on the gate invocation, NOT declared by the lane itself. A check that
+  emits a permanent WARN is not an intended change but a misuse of the category:
+  state the standing fact as an OK row that names it instead.
 - **Rebase onto local `master` before you report**, and report the sha *after*
   the rebase — a rebase rewrites shas, so a sha captured first names a commit
   that no longer exists. Local `master`, not `origin/master`, which is behind.
