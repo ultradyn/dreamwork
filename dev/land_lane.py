@@ -1086,6 +1086,33 @@ def _squash_tree_diff(
     return tuple(line for line in result.stdout.splitlines() if line)
 
 
+# #1111: Also-Fixes trailer propagation through --squash. A constituent that
+# carries ``Also-Fixes: #NNN`` claims an incidental fix for another task. The
+# squash collapses constituents into one commit, so the trailer must be
+# propagated into the squashed message — otherwise the claim is lost exactly
+# when the motivating case (#1030, named only in a body) needs it most.
+_ALSO_FIXES_RE = re.compile(r"^Also-Fixes:\s*(.+)$", re.MULTILINE)
+_TRAILER_ID = re.compile(r"#(\d+)")
+
+
+def _collect_constituent_also_fixes(lane: Path, base_sha: str, tip_sha: str):
+    """Deduplicated, sorted Also-Fixes ids from ``base..tip`` commit messages.
+
+    Returns ``None`` on git failure (the caller treats that as no propagation
+    rather than blocking the squash). The tip itself is included in the range
+    — its own Also-Fixes are already in the preserved message, so the caller
+    strips ids already present before appending.
+    """
+    out = _git(lane, "log", "--format=%B", f"{base_sha}..{tip_sha}")
+    if out.returncode:
+        return None
+    ids: set[int] = set()
+    for m in _ALSO_FIXES_RE.finditer(out.stdout):
+        for tid_str in _TRAILER.findall(m.group(1)):
+            ids.add(int(tid_str))
+    return sorted(ids)
+
+
 def _squash_lane(
     lane: Path, branch: str, base_sha: str, branch_sha: str
 ) -> SquashResult:
@@ -1140,6 +1167,19 @@ def _squash_lane(
     if not tree or message is None:
         return SquashResult(None, tag_ref, error="could not read the lane tip tree or commit message")
     message = message.rstrip() + f"\n\nPresquash-Ref: {tag_ref}\n"
+    # #1111: propagate Also-Fixes trailers from constituents into the squashed
+    # commit, so an incidental-fix claim survives the squash. The tip's OWN
+    # Also-Fixes ids are already in the message (they were in the preserved
+    # body); only ids from OTHER constituents (and not already in the message)
+    # are appended, deduplicated and sorted.
+    constituent_ids = _collect_constituent_also_fixes(lane, base_sha, branch_sha)
+    if constituent_ids:
+        existing = {int(t) for t in _TRAILER.findall(
+            "\n".join(_ALSO_FIXES_RE.findall(message)))}
+        extra = [tid for tid in constituent_ids if tid not in existing]
+        if extra:
+            also = ", ".join(f"#{tid}" for tid in extra)
+            message = message.rstrip() + f"\nAlso-Fixes: {also}\n"
     built = _run(
         ["git", "commit-tree", tree, "-p", base_sha, "-F", "-"],
         lane,
