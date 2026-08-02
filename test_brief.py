@@ -15,6 +15,8 @@ asserts the discriminating phrase, not merely a non-zero exit — a refusal for
 the wrong reason is indistinguishable from the right one in an exit code.
 """
 
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -111,13 +113,22 @@ def generated(lane: str) -> str:
 
 # --- the generator and the validator agree, without sharing a truth ---------
 
-def test_inbox_prefix_matches_the_validators_literal_without_importing_it():
-    """Drift between the two independent literals is a test failure, not a dispatch failure."""
-    source = (ROOT / "dev" / "brief.py").read_text(encoding="utf-8")
-    assert "from dispatch_lane import" not in source
-    assert "import dispatch_lane" not in source, (
-        "brief.py must not import the validator; sharing its notion of a valid "
-        "brief would stop the validator witnessing a generator bug"
+def test_lane_build_stays_independent_of_the_validator():
+    """The lane emitter (`build`) must not reach into the validator, so
+    `dispatch_lane.validate_prompt` can still witness a generator bug.
+
+    The review mode is the one documented exception (#1115): it persists
+    through `dispatch_lane.persist_review_prompt` because a review frame had no
+    generator and the fix is to make the generator and the receipt the same
+    path.  So the independence guard scopes to `build` — the lane emitter —
+    rather than the whole module, which is the #736 shape (a whole-file
+    substring check that one legitimate import defeats).
+    """
+    import inspect
+    build_src = inspect.getsource(brief.build)
+    assert "dispatch_lane" not in build_src, (
+        "build() must not reach into the validator; only the review mode "
+        "(_main_review) is licensed to import dispatch_lane (#1115)"
     )
     assert brief.COORDINATOR_INBOX_PREFIX == dispatch_lane.COORDINATOR_INBOX_PREFIX
 
@@ -1789,3 +1800,128 @@ def test_brief_py_output_does_not_trip_the_dream_lint(tmp_path, generated):
     rows = _dream_rows(tmp_path, {"generated.md": generated})
     assert not [row for row in rows if row[0] == lint.ERROR], rows
     assert "examined 1 brief(s)" in rows[0][2]
+
+
+# --- review dispatch mode (#1115) ------------------------------------------
+#
+# `dev/brief.py` had no --review mode, so the coordinator concatenated
+# briefs/review-frame.md into a review prompt by hand (#1109: the frame was a
+# convention, not a construction).  #1115 makes the generator and the receipt
+# the same path: review_prompt() appends the frame by construction and the
+# caller persists through dispatch_lane.persist_review_prompt (#1112).  These
+# tests exercise the real briefs/review-frame.md, not a two-line fixture, so
+# the output is a usable review prompt rather than a concatenation that merely
+# runs.
+
+REVIEW_FRAME_TEXT = (ROOT / "briefs" / "review-frame.md").read_text(encoding="utf-8")
+
+
+class TestReviewPrompt:
+    """#1115 piece 1: review_prompt appends the frame by construction."""
+
+    def test_appends_the_real_review_frame_as_the_final_section(self):
+        """Against the REAL briefs/review-frame.md, the frame is the final section.
+
+        A two-line fake proves the concatenation runs; this proves the output is
+        a usable review prompt.  Production line: the ``core + "\\n\\n" + frame``
+        return in review_prompt — break it (no-op the append) and this fails.
+        """
+        prompt = brief.review_prompt("# Review of foo\n\nLook at the diff.\n",
+                                     REVIEW_FRAME_TEXT)
+        # The frame is present exactly once, as the final section, verbatim.
+        assert prompt.endswith(REVIEW_FRAME_TEXT)
+        assert prompt.count(REVIEW_FRAME_TEXT) == 1
+        # And the very thing that persists also validates it (#1112).
+        dispatch_lane.validate_review_prompt(prompt, REVIEW_FRAME_TEXT)
+
+    def test_round_trip_persists_and_validates_through_persist_review_prompt(self, tmp_path):
+        """Generator and receipt are the same path (#1115's whole constraint).
+
+        review_prompt's output must pass persist_review_prompt unchanged — the
+        function that validates and writes the receipt.  Production line: the
+        persist_review_prompt call in _main_review / review_prompt's return.
+        """
+        prompt = brief.review_prompt("# Review\n\nDiff.\n", REVIEW_FRAME_TEXT)
+        dispatches = tmp_path / "review-dispatches"
+        receipt = dispatch_lane.persist_review_prompt(
+            prompt, "foo-branch", 2, review_frame=REVIEW_FRAME_TEXT,
+            dispatches_dir=dispatches)
+        assert receipt.is_file()
+        assert receipt.read_text(encoding="utf-8") == prompt
+        # The round number reaches the receipt's filename and its JSON record.
+        assert "-r2-" in receipt.name
+        # persist names the prompt <stem>.prompt.md and the receipt <stem>.json;
+        # mirror lint's own derivation to find the JSON beside it.
+        json_path = receipt.with_name(receipt.name[:-len(".prompt.md")] + ".json")
+        record = json.loads(json_path.read_text(encoding="utf-8"))
+        assert record["branch"] == "foo-branch"
+        assert record["round"] == 2
+        assert record["frame_sha256"] == hashlib.sha256(
+            REVIEW_FRAME_TEXT.encode("utf-8")).hexdigest()
+
+    def test_empty_core_is_refused(self):
+        """An empty review core refuses, not silently emits a frame-only prompt."""
+        with pytest.raises(brief.BriefFault, match="review core is empty"):
+            brief.review_prompt("   \n\n  ", REVIEW_FRAME_TEXT)
+
+    def test_empty_frame_is_refused(self):
+        """An empty frame refuses — the assertion examined no rules."""
+        with pytest.raises(brief.BriefFault, match="review frame .* is empty"):
+            brief.review_prompt("# Review\n\nDiff.\n", "   \n")
+
+
+class TestReviewCliMode:
+    """The --review flag emits and persists; --task/--review are exclusive."""
+
+    def test_review_requires_a_core_and_persists(self, tmp_path, monkeypatch, capsys):
+        """--review <branch> --round N emits the prompt and writes the receipt.
+
+        Production line: _main_review — the review_prompt + persist_review_prompt
+        path.  Run in-process (not as a subprocess) so the persist dir can be
+        redirected to tmp_path via monkeypatch without touching the live
+        review-dispatches/ corpus; a subprocess would import its own module and
+        the patch would not apply.
+        """
+        core_file = tmp_path / "core.md"
+        core_file.write_text("# Review of foo\n\nLook at the diff.\n",
+                             encoding="utf-8")
+        out = tmp_path / "review.md"
+        dispatches = tmp_path / "review-dispatches"
+        written = {}
+        orig_persist = dispatch_lane.persist_review_prompt
+
+        def spy(prompt, branch, round_num, **kw):
+            kw.setdefault("dispatches_dir", dispatches)
+            result = orig_persist(prompt, branch, round_num, **kw)
+            written["prompt"] = prompt
+            return result
+
+        monkeypatch.setattr(dispatch_lane, "persist_review_prompt", spy)
+        rc = brief.main(["--review", "foo-branch", "--round", "3",
+                         "--core", str(core_file), "--out", str(out)])
+        assert rc == 0
+        assert out.is_file()
+        assert out.read_text(encoding="utf-8") == written["prompt"]
+        assert out.read_text(encoding="utf-8").endswith(REVIEW_FRAME_TEXT)
+        err = capsys.readouterr().err
+        assert "round=3" in err
+        assert "foo-branch" in err
+
+    def test_task_and_review_are_mutually_exclusive(self):
+        """--task and --review cannot both be given; argparse exits 2."""
+        result = subprocess.run(
+            [sys.executable, str(CLI), "--task", "881", "--review", "foo",
+             "--owns", "dev/brief.py", "--core", "-"],
+            cwd=ROOT, capture_output=True, text=True, input="",
+            check=False)
+        assert result.returncode == 2
+        assert "not allowed with argument" in result.stderr or "one argument" in result.stderr
+
+    def test_neither_task_nor_review_is_required(self):
+        """Exactly one of --task/--review is required; neither exits 2."""
+        result = subprocess.run(
+            [sys.executable, str(CLI), "--owns", "dev/brief.py", "--core", "-"],
+            cwd=ROOT, capture_output=True, text=True, input="", check=False)
+        assert result.returncode == 2
+        assert "one of the arguments" in result.stderr or "required" in result.stderr
+
