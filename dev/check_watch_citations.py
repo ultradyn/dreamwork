@@ -7,6 +7,12 @@ The coordinates are pinned, not verified against the pinned revision.  In
 particular, the check never reads ``watch.py`` and cannot claim that a pinned
 coordinate identifies the intended source at that revision.
 
+A second check, :func:`check_docstring_citations`, scans ``dev/*.py``
+docstrings for ``(#NNN)`` issue references, resolves each id against the
+ledger, and prints the title beside the citation for human aptness review
+(#1034).  It reports, never certifies attribution (#994); it gates only on
+an id that does not resolve.
+
 A MISSING or UNPINNED finding often results from a CORRECT pin repair — the
 coordinate moved or was retired to prose.  That requires a matching enrolment
 update in BOTH ``PINNED_CITATIONS`` (this file) and the
@@ -18,10 +24,13 @@ guard or its test to force green.
 from __future__ import annotations
 
 import argparse
+import ast
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,6 +100,168 @@ CITATION = re.compile(
 # A slash after a hash belongs to prose such as ``@ dc739001/4056`` (old/new
 # coordinates), not to the revision.  The guarded corpus uses commit hashes.
 PIN = re.compile(r"\s*@\s*(?P<rev>[0-9a-fA-F]{7,40})\b")
+
+
+# --- Docstring citation report (#1034) ---------------------------------------
+#
+# The pin check above binds watch.py:NNN coordinates to git revisions in
+# .dreamwork/ documents.  It never reads dev/*.py and never sees the (#NNN)
+# issue references in docstrings — the gap that let land_lane's
+# _requirement_line miscite #868 for #136's three-zero-states rule (#1034).
+#
+# This section scans every dev/*.py docstring for (#NNN), resolves each id
+# against the ledger, and prints the resolved TITLE beside the citation so a
+# human or brief author can spot an attribution mismatch at a glance.  It
+# REPORTS, never certifies aptness (#994): a resolvable id is a real entry,
+# not an attested attribution.  The only mechanical defect it gates on is an
+# UNRESOLVABLE id — a dangling reference.
+
+DOCSTRING_CITATION = re.compile(r"\(#(\d+)\)")
+_DOCSTRING_NODES = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+
+@dataclass
+class DocstringCitation:
+    """One (#NNN) found inside a dev/*.py docstring."""
+
+    rel_path: str
+    symbol: str
+    lineno: int
+    task_id: int
+
+
+def _scan_docstring_citations(root: Path) -> list[DocstringCitation]:
+    """Return every (#NNN) inside a docstring of dev/*.py.
+
+    Uses the AST so only docstrings are examined — not inline comments, not
+    string literals in executable code.  The narrowing from all (#NNN) in
+    dev/*.py (286) to those in docstrings (142) is what makes the report
+    reviewable (#1034).
+    """
+    findings: list[DocstringCitation] = []
+    for path in sorted((root / "dev").glob("*.py")):
+        try:
+            tree = ast.parse(
+                path.read_text(encoding="utf-8"), filename=str(path)
+            )
+        except SyntaxError:
+            continue
+        rel = path.relative_to(root).as_posix()
+        for node in ast.walk(tree):
+            if not isinstance(node, _DOCSTRING_NODES) or not node.body:
+                continue
+            doc_node = node.body[0]
+            if not isinstance(doc_node, ast.Expr):
+                continue
+            val = doc_node.value
+            if not isinstance(val, ast.Constant) or not isinstance(
+                val.value, str
+            ):
+                continue
+            doc = val.value
+            base_line = doc_node.lineno
+            name = getattr(node, "name", "<module>")
+            for match in DOCSTRING_CITATION.finditer(doc):
+                lineno = base_line + doc[: match.start()].count("\n")
+                findings.append(
+                    DocstringCitation(rel, name, lineno, int(match.group(1)))
+                )
+    return findings
+
+
+def _docstring_checkout_root() -> Path:
+    """Resolve the primary checkout through git's shared administrative dir."""
+    here = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["git", "-C", str(here), "rev-parse", "--path-format=absolute",
+         "--git-common-dir"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode == 0:
+        return Path(result.stdout.strip()).parent
+    return here
+
+
+def _default_dw_dir() -> Path:
+    """Find the main checkout's .dreamwork/ from a worktree (#1034)."""
+    return _docstring_checkout_root() / ".dreamwork"
+
+
+def _resolve_titles(dw_dir: Path) -> dict[int, str]:
+    """Map task id to title via the one reader the loop uses (#352, #667).
+
+    A hand-rolled reader over tasks.md is the documented failure mode: the
+    file that travels into worktrees is a migration notice.  ledger_parse is
+    the single reader, so we import it rather than re-deriving.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    import ledger_parse
+
+    store = ledger_parse.store_path(dw_dir)
+    if not store.is_file():
+        raise FileNotFoundError(store)
+    return {
+        r["id"]: r["title"] for r in ledger_parse.store_records(str(dw_dir))
+    }
+
+
+def check_docstring_citations(
+    root: Path, dw_dir: Path | None = None
+) -> int:
+    """Report each dev/*.py docstring (#NNN) with its resolved title.
+
+    Exit 2 if no dev/*.py files were examined (vacuity: a run that examined
+    nothing must not read as one that examined everything and found nothing,
+    #868).  Exit 1 if any cited id does not resolve (a dangling reference is
+    a mechanical defect).  Exit 0 when every cited id resolves — the titles
+    are REPORTED for human aptness review, never certified (#994): a
+    resolvable id is a real entry, not an attested attribution.
+    """
+    dev_dir = root / "dev"
+    py_files = sorted(dev_dir.glob("*.py")) if dev_dir.is_dir() else []
+    files_examined = len(py_files)
+    if files_examined == 0:
+        print("ERROR vacuity: examined 0 file(s) in dev/*.py")
+        return 2
+
+    citations = _scan_docstring_citations(root)
+    if dw_dir is None:
+        dw_dir = _default_dw_dir()
+    try:
+        titles = _resolve_titles(dw_dir)
+    except FileNotFoundError as exc:
+        print(f"ERROR cannot resolve titles: ledger store not found: {exc}")
+        return 2
+
+    unresolvable = [c for c in citations if c.task_id not in titles]
+    print(
+        "DOCSTRING CITATIONS: examined "
+        f"{files_examined} file(s) in dev/*.py, {len(citations)} (#NNN) "
+        "citation(s) — REPORT not certification (#994): a resolvable id is "
+        "never an attested attribution"
+    )
+    for c in sorted(citations, key=lambda x: (x.rel_path, x.lineno)):
+        title = titles.get(c.task_id)
+        marker = "UNRESOLVABLE " if title is None else ""
+        quoted = "not found in ledger" if title is None else f'"{title}"'
+        print(
+            f"  {marker}{c.rel_path}:{c.lineno} {c.symbol} "
+            f"(#{c.task_id}) {quoted}"
+        )
+
+    if unresolvable:
+        print(
+            f"\nFAIL: {len(unresolvable)} of {len(citations)} docstring "
+            f"citation(s) did not resolve across {files_examined} file(s)"
+        )
+        return 1
+    print(
+        f"\nOK: {len(citations)} docstring citation(s) resolved across "
+        f"{files_examined} file(s); titles reported for human review"
+    )
+    return 0
 
 
 def _scan_affected_citations(
@@ -207,8 +378,16 @@ def check(root: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
+    parser.add_argument(
+        "--dw-dir",
+        type=Path,
+        default=None,
+        help=".dreamwork/ dir for issue-id resolution "
+        "(default: main checkout's)",
+    )
     args = parser.parse_args(argv)
-    return check(args.root.resolve())
+    root = args.root.resolve()
+    return check(root) | check_docstring_citations(root, args.dw_dir)
 
 
 if __name__ == "__main__":
