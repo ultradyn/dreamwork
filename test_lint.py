@@ -11042,3 +11042,21 @@ class TestBuilderDelegation:
             client={"views.js": "function artifactRow(r) { return ''; }\n"})
         assert len(rows) == 1 and rows[0][0] == lint.OK, rows
         assert "1 delegate reference(s)" in rows[0][1]
+
+    def test_the_check_is_wired_into_run_checks(self, tmp_path):
+        # The direct-call tests above all passed when the reviewer deleted
+        # check_builder_delegation(dw.parent, rep) from run_checks — a check
+        # that is not wired reports nothing, and nothing reports that. This
+        # test goes through run_checks and asserts the row appears in a real
+        # report, so deleting the wiring makes it fail.
+        #
+        # Production line that must change for this to fail: the
+        # `check_builder_delegation(dw.parent, rep)` call inside run_checks.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (tmp_path / "dev/build/src").mkdir(parents=True)
+        (tmp_path / "dev/build/src/delegate.js").write_text("")
+        rep = lint.Report()
+        lint.run_checks(dw, lint.load_watch(), rep)
+        whats = [w for _, w, _ in rep.rows]
+        assert "builder delegation" in whats
