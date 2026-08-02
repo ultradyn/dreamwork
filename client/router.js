@@ -2120,6 +2120,20 @@ function finishViewCommit() {
   bindAskDraft();
   // #577: same discipline for the /chat/<id> reply box (chat:<id> key).
   bindChatReplyDraft();
+  // #1008 — re-link #NNN task references after every view commit. morphdom
+  // keeps a surviving .md node and reconciles its text by UPDATING a kept
+  // text node's nodeValue in place (a characterData mutation), merging the
+  // bare #NNN back out of server-fresh HTML. The observeTaskRefs observer
+  // watches childList only, so that in-place edit fires no addedNodes and
+  // the link is silently lost — which is exactly the quiet failure he saw
+  // after a composer submit (the submit changes the data, defeating the
+  // content-hash skip, so a real reconcile runs). finishViewCommit is the
+  // one seam every view commit passes through (setContent and the native
+  // mount both land here), so re-running the walker here re-links every
+  // render path, not just the composer's caller. Idempotent: an already-
+  // linked #NNN lives in an <a> (in TASK_REF_SKIP), so a second pass finds
+  // nothing to promote.
+  resolveTaskRefs(document.getElementById('view'));
 }
 
 function nativeRegistry() {
