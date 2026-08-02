@@ -11,6 +11,104 @@ import ledger_write  # noqa: E402  — for filing a blocked task in #627 CLI tes
 import watch   # noqa: E402
 
 
+def test_fold_citation_refusal_names_the_presquash_tag_remedy(monkeypatch):
+    """An off-base commit remains refused, but no longer teaches deletion."""
+    token = "866eb584"
+    commit = token + "0" * 32
+    base_commit = "a" * 40
+    monkeypatch.setattr(
+        ledger, "_git_resolve_commit",
+        lambda _repo, revision: {token: commit, "master": base_commit}.get(revision))
+    monkeypatch.setattr(ledger, "_git_is_ancestor", lambda *_args: False)
+
+    report, unreachable, cannot_judge = ledger._fold_citation_check(
+        ".", f"squashed pre-merge tip {token}", "master")
+
+    assert unreachable == [(token, commit)] and cannot_judge == []
+    assert f"REFUSE {token} resolves as commit {commit}" in report
+    assert "NOT an ancestor of master" in report
+    assert "cite the preservation tag <branch>-presquash instead" in report
+    assert "it is a ref and will not be collected" in report
+    assert "examined 1 token(s); could not judge 0 token(s)" in report
+
+
+def test_fold_cli_refusal_names_the_presquash_tag_remedy(
+        tmp_path, monkeypatch, capsys):
+    token = "866eb584"
+    commit = token + "0" * 32
+    ledger_path = tmp_path / "tasks.md"
+    ledger_path.write_text(LEDGER_FIXTURE)
+    monkeypatch.setattr(
+        ledger, "_fold_citation_check",
+        lambda *_args: ("citation report\n", [(token, commit)], []))
+
+    rc = ledger.main([
+        "fold", "2", "--note", f"squashed pre-merge tip {token}",
+        "--ledger", str(ledger_path)])
+    captured = capsys.readouterr()
+
+    assert rc == 2
+    assert f"{token} exists but is NOT an ancestor of master" in captured.err
+    assert "cite the preservation tag <branch>-presquash instead" in captured.err
+    assert "it is a ref and will not be collected" in captured.err
+    assert "- **#2** — fold me" in ledger_path.read_text(), (
+        "the refusal must precede the irreversible write")
+
+
+def test_fold_citation_hex_english_is_unjudged_not_refused(monkeypatch):
+    """`defaced` is a lexical candidate, not evidence of an off-base commit."""
+    monkeypatch.setattr(ledger, "_git_resolve_commit", lambda *_args: None)
+
+    report, unreachable, cannot_judge = ledger._fold_citation_check(
+        ".", "the old surface was defaced", "master")
+
+    assert "CHECK defaced does not resolve to a commit" in report
+    assert "REFUSE defaced" not in report
+    assert "examined 1 token(s); could not judge 1 token(s)" in report
+    assert unreachable == [] and cannot_judge == []
+
+
+def test_fold_citation_ignores_fences_and_quoted_past_refusals(monkeypatch):
+    """Quoting the check's own evidence must not recursively trigger it."""
+    planted = "abc1234"
+    resolved = planted + "0" * 33
+    seen = []
+
+    def resolve(_repo, revision):
+        seen.append(revision)
+        return {planted: resolved, "master": "b" * 40}.get(revision)
+
+    monkeypatch.setattr(ledger, "_git_resolve_commit", resolve)
+    monkeypatch.setattr(ledger, "_git_is_ancestor", lambda *_args: True)
+    note = (
+        "actual landing abc1234\n"
+        "```text\n"
+        "REFUSE 866eb584 resolves as commit " + "8" * 40
+        + ": it exists but is NOT an ancestor of master\n"
+        "```\n"
+        "I previously saw \"REFUSE 7c51c0b5 resolves as commit " + "7" * 40
+        + ": it exists but is NOT an ancestor of master\", then verified "
+        "abc1234 independently.\n")
+
+    report, unreachable, cannot_judge = ledger._fold_citation_check(
+        ".", note, "master")
+
+    assert seen == [planted, "master"], (
+        "only the independently planted prose citation and base may resolve; "
+        f"quoted evidence leaked into the scanner: {seen!r}")
+    assert "examined 1 token(s); could not judge 0 token(s)" in report
+    assert unreachable == [] and cannot_judge == []
+
+
+def test_fold_citation_zero_population_states_both_denominators():
+    report, unreachable, cannot_judge = ledger._fold_citation_check(
+        ".", "ordinary prose", "master")
+    assert "examined 0 7+ hex token(s)" in report
+    assert "could not judge 0 token(s)" in report
+    assert "population is zero, not a clean citation sweep" in report
+    assert unreachable == [] and cannot_judge == []
+
+
 # ---------------------------------------------------------------------------
 # A fixture ledger whose OPEN section contains the literal string
 # `## Recently landed` inside an entry's prose. That is the #440 trap: a bare
