@@ -356,7 +356,15 @@ guards port="39899":
     # probe and reported feature bugs for 20 minutes. ss -tlnp gives the pid
     # for same-user listeners; we read the full cmdline + cwd from /proc so the
     # operator knows exactly what to go look at (and `just reap` cleans it up).
-    _holder_line=$(ss -tlnp 2>/dev/null | grep -E ":{{port}}\b" | grep -oE 'pid=[0-9]+' | head -1)
+    # #972 — NOT an active pipe-eats-exit instance: `guards` is a shebang
+    # recipe (sets its own `set -uo pipefail`, no -e) and just's top-level
+    # `set shell` directive does NOT reach shebang recipes (verified
+    # empirically), so neither a global flip nor today's settings consume this
+    # pipe's exit as a verdict — the verdict is the captured string, checked
+    # via [ -n ] below. `|| true` guards solely against a future edit to
+    # guards' OWN set line adding -e, under which grep's no-match (the common
+    # port-is-free case) would abort. Zero behaviour change today.
+    _holder_line=$(ss -tlnp 2>/dev/null | grep -E ":{{port}}\b" | grep -oE 'pid=[0-9]+' | head -1) || true
     if [ -n "$_holder_line" ]; then
       _hp=${_holder_line#pid=}
       echo "guards: :{{port}} already held by pid $_hp:"
@@ -424,7 +432,14 @@ guards port="39899":
         # frame-sampler red at load 30 and one at load 3 are different findings,
         # and previously the output could not tell them apart.
         echo "  FAIL $g${code:+ (exit $code)} [load $_l0->$(_loadavg) / $_cores cores]"
-        grep -E "^(FAIL|Error)" "$OUT/$g.log" | head -5 | sed 's/^/        /'
+        # #972 — NOT an active defect: display-only line in the shebang
+        # `guards` recipe (own `set -uo pipefail`, no -e; top-level `set shell`
+        # does not reach shebang recipes). The FAIL verdict is the echo above,
+        # not this pipe's exit. `|| true` guards solely against a future edit
+        # to guards' OWN set line adding -e, under which grep's no-match (a
+        # guard that fails by timeout/exit code with no FAIL line) would abort
+        # the suite mid-run and skip the guards after it.
+        { grep -E "^(FAIL|Error)" "$OUT/$g.log" | head -5 | sed 's/^/        /'; } || true
       fi
     done
     # the hub's own guards (#96, #134). They start their own servers — their
@@ -440,7 +455,10 @@ guards port="39899":
         code=$?
         fail=1
         echo "  FAIL $h${code:+ (exit $code)}"
-        grep -E "^(FAIL|Error)" "$OUT/$h.log" | head -5 | sed 's/^/        /'
+        # #972 — display-only, same shape as the $g loop above: shebang
+        # `guards` recipe, verdict is the FAIL echo above. `|| true` guards
+        # only against a future edit to guards' OWN set line adding -e.
+        { grep -E "^(FAIL|Error)" "$OUT/$h.log" | head -5 | sed 's/^/        /'; } || true
       fi
     done
     # A missing browser is a missing verifier, not a pass. Say so loudly.
