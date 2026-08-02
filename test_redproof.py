@@ -260,16 +260,24 @@ class TestZeroStatesAreDistinct:
     """#136: a calm zero and a broken channel must not render identically."""
 
     def test_no_registry_is_calm_zero(self, repo, capsys):
-        """Never used → no evidence, exit 0, distinct from a verified restore."""
+        """Never used → calm zero, exit 0, distinct from a verified restore.
+
+        An absent registry at --require 0 (the default) is the expected state,
+        reported via the blind-case calm path with the evidence-artifact
+        denominator (#1038 Finding 2). The assertions check the calm-zero
+        SIGNATURE common to both coordinator and named-lane modes (the test
+        process may carry a launch identity), not mode-specific wording, so the
+        invariant holds regardless of which mode the fixture resolves to."""
         exit = _check(repo)
         out, _ = capsys.readouterr()
         assert exit == 0
-        assert "no evidence" in out
-        assert "no injections registered" in out
-        assert "production reach was not evaluated" in out
-        assert "red-proof reach: DID NOT CHECK" in out
-        assert "caught 0 of 0 registered injection(s)" in out
-        assert "population is zero, not a clean reach sweep" in out
+        assert "no injection required and none registered" in out, out
+        assert "0 required" in out, out
+        # Finding 2: the evidence-artifact denominator is present and derived.
+        assert "examined 0 evidence artifact(s) for 0 registered" in out, out
+        assert "NOT a verification of restoration" in out, out
+        # Distinct from a fault (#136): a broken channel reads as FAULT, not calm.
+        assert "FAULT" not in out, out
 
     def test_empty_registry_is_calm_zero(self, repo, capsys):
         """Ran but nothing live → no evidence, exit 0."""
@@ -594,6 +602,11 @@ class TestInjectionReachEvidence:
         assert not err
         assert "red-proof reach: OK" in out
         assert "caught 1 of 1 registered injection(s)" in out
+        # #1038 Finding 2 direction-2 guard: the evidence-artifact count is
+        # NON-zero here (1 examined for 1 registered), proving the denominator
+        # is derived from reality, not a hardcoded zero that the calm path and
+        # this path would both satisfy.
+        assert "examined 1 evidence artifact(s) for 1 registered" in out, out
         assert self.FAILURE in out
         entries, _ = rp._read_registry(repo)
         evidence = Path(entries[0]["reach"]["evidence"])
@@ -1107,13 +1120,21 @@ class TestCli:
         assert r.returncode == 0, r.stderr
         assert "clean" in r.stdout
 
-    def test_check_require_refuses_when_none_registered(self, repo, tmp_path):
-        """--require enforces the brief-mandated minimum (point 3)."""
+    def test_check_require_faults_when_none_registered(self, repo, tmp_path):
+        """--require > 0 with no registry locatable FAULTs (exit 2), matching
+        the coordinator's treatment of an absent registry (#1038 Finding 3).
+        A required injection that left no verifiable registry is a fault — the
+        proof cannot be verified — not a refusal over a counted population. The
+        old named-lane path REFUSED (exit 1) here, disagreeing with the
+        coordinator's FAULT (exit 2) for the same facts; both paths now agree."""
         env = self._env(tmp_path)
         r = subprocess.run(["python3", str(CLI_PATH), "check", "--require", "1",
                             "--cwd", str(repo)], capture_output=True, text=True, env=env)
-        assert r.returncode == 1
-        assert "require" in r.stderr
+        assert r.returncode == 2, (
+            f"an absent registry at --require 1 must FAULT (exit 2) in both "
+            f"modes, not REFUSE (exit 1): {r.stdout}{r.stderr}")
+        assert "FAULT" in r.stderr, r.stderr
+        assert "cannot be verified" in r.stderr, r.stderr
 
 
 # ── #710: an injection committed mid-branch, restored, and committed again ──
@@ -2048,6 +2069,11 @@ class TestCoordinatorModeBlindCaseViaCli:
         assert "0 required" in r.stdout, r.stdout
         assert "none registered" in r.stdout, r.stdout
         assert "NOT a verification of restoration" in r.stdout, r.stdout
+        # #1038 Finding 2: the evidence-artifact denominator is printed on the
+        # calm path so a reader can tell "zero examined because zero were owed"
+        # from "zero examined because the probe did nothing".
+        assert "examined 0 evidence artifact(s) for 0 registered" in r.stdout, (
+            r.stdout)
 
     def test_require_one_on_a_no_registry_worktree_faults_via_cli(
             self, repo, tmp_path):
@@ -2061,6 +2087,50 @@ class TestCoordinatorModeBlindCaseViaCli:
             capture_output=True, text=True, env=env)
         assert r.returncode == 2, r.stdout + r.stderr
         assert "1 injection(s) were required" in r.stderr, r.stderr
+
+    def test_named_lane_absent_registry_agrees_with_coordinator_both_flags(
+            self, repo, tmp_path):
+        """#1038 Finding 3: --lane (named-lane mode) with an absent registry
+        must agree with the coordinator on the SAME facts. Two code paths
+        answering one question differently is how the next version of this bug
+        is born. The old named-lane path REFUSED (exit 1) at require>0 where
+        the coordinator FAULTs (exit 2), and printed 'no evidence' at require==0
+        without '0 required' or the audit denominators. Both flags now match.
+
+        Direction 2 — the paired negative that stops this gutting the gate: a
+        required injection with no verifiable registry still faults (exit 2),
+        NOT a calm pass; the agreement is in the FAULT direction, never a
+        relaxation toward exit 0."""
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "cli-scratch-f3")
+        env.pop(rp._ls.IDENTITY_ENV, None)   # coordinator's shell: no own token
+        env[rp._ls.ROLE_ENV] = rp._ls.ROLE_AUTHOR
+        lane_token = "named-absent-1038f3"
+        # require==0: calm zero, exit 0, with '0 required' + evidence denominator
+        r0 = subprocess.run(
+            ["python3", str(CLI_PATH), "check", "--cwd", str(repo),
+             "--lane", lane_token, "--require", "0"],
+            capture_output=True, text=True, env=env)
+        assert r0.returncode == 0, r0.stdout + r0.stderr
+        assert "0 required" in r0.stdout, r0.stdout
+        assert "examined 0 evidence artifact(s) for 0 registered" in r0.stdout, (
+            r0.stdout)
+        assert "NOT a verification of restoration" in r0.stdout, r0.stdout
+        # require==1, SAME facts: FAULT (exit 2), matching the coordinator —
+        # NOT the old REFUSED (exit 1). The gate does not relax.
+        r1 = subprocess.run(
+            ["python3", str(CLI_PATH), "check", "--cwd", str(repo),
+             "--lane", lane_token, "--require", "1"],
+            capture_output=True, text=True, env=env)
+        assert r1.returncode == 2, (
+            f"named-lane absent registry at require>0 must FAULT (exit 2), "
+            f"agreeing with the coordinator — not REFUSE (exit 1): "
+            f"{r1.stdout}{r1.stderr}")
+        assert "FAULT" in r1.stderr, r1.stderr
+        assert "cannot be verified" in r1.stderr, r1.stderr
+        # THE discrimination: one fixture, two flags, two verdicts — and the
+        # require>0 verdict (2) matches what the coordinator produces.
+        assert r0.returncode != r1.returncode
 
 
 class TestObserveRemainderOptionGuard:

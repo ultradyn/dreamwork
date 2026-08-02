@@ -1450,13 +1450,25 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
 
     identity_dirs = len(_ls.lane_identity_dirs(cwd)) if coordinator_mode else None
 
-    if coordinator_mode and not entries and registries_found == 0:
-        # The blind case (#895): the coordinator located NO registry for this
-        # worktree. The verdict is bound to --require (the diff-derived fact
-        # land_lane computes and passes in), NEVER to the registry's absence —
-        # "treat a missing registry as OK" would let a lane that SHOULD have
-        # injected pass by simply never creating one, converting the loop's
-        # central verification into an opt-out (#1038).
+    if not entries and registries_found == 0:
+        # The blind case (#895/#1038): NO registry could be located. The verdict
+        # is bound to --require (the diff-derived fact land_lane computes and
+        # passes in), NEVER to the registry's absence — "treat a missing
+        # registry as OK" would let a lane that SHOULD have injected pass by
+        # simply never creating one, converting the loop's central verification
+        # into an opt-out (#1038).
+        #
+        # This block runs in BOTH modes (#1038 Finding 3): coordinator (which
+        # searches every reachable identity dir plus legacy) and named-lane
+        # (`--lane` / `own_token`, which checks one exact path). The MESSAGES
+        # differ because the populations differ — the coordinator's absence is
+        # uncertainty ("a registry it cannot reach might exist"), while a named
+        # lane's absence is certain ("that identity registered nothing"). The
+        # VERDICT must not: a required injection with no verifiable registry is
+        # a fault either way, and two paths answering the same facts differently
+        # is how the next version of this bug is born. Without this, `--lane`
+        # reported the same absent-registry facts as REFUSED (exit 1) at
+        # require>0 where the coordinator FAULTs (exit 2).
         #
         # Three facts that must not collapse into one (#136/#868):
         #
@@ -1484,44 +1496,79 @@ def check(cwd: Path | None, *, require: int = 0, base: str | None = None,
         # reach the pass below — it is refused on the normal path regardless of
         # --require. Relaxing (1) does not relax that (#955).
         if require == 0:
-            ran_note = ""
-            if identity_dirs:
-                # State that the lane ran but registered nothing, so a reader
-                # cannot take the absent registry for "the lane never ran" nor
-                # for "a registry this audit failed to read" — it audited the
-                # identity dirs, found no registry in any, and none was owed.
-                ran_note = (
-                    f" A launch identity ran here ({identity_dirs} identity "
-                    f"dir(s) audited) and registered no injection — the "
-                    f"expected state for a lane that owed no red-proof, not a "
-                    f"registry this audit failed to read (it found no "
-                    f"registry.json in any of those dirs, so no armed entry "
-                    f"can be on disk under them).")
-            print(
-                "check: no injection required and none registered — 0 required, "
-                f"audited 0 registry/ies across {identity_dirs} launch-identity "
-                f"dir(s) (role: {role}). A lane that owes no red-proof registers "
-                f"nothing, so an absent registry is the expected state here"
-                f"{ran_note} — NOT a verification of restoration (nothing was "
-                f"registered to restore) and NOT an all-clear over a population "
-                f"this audit did not sweep. If this lane ran a red-proof under a "
-                f"launch identity, pass `--lane <DREAMWORK_LANE_ID>` or inspect "
-                f"its scratch by hand.")
+            # Finding 2: the evidence-artifact denominator. With no registry
+            # there are no registered injections, so nothing was examined — but
+            # the count is DERIVED from the entries this block holds (empty
+            # here), not a hardcoded zero, so a reader can tell "zero examined
+            # because zero were owed" from "zero examined because the probe did
+            # nothing". A non-zero case on the normal reach path (caught 1 of
+            # 1; examined 1) is the discriminating guard against a literal.
+            evidence_examined = sum(
+                1 for e in entries if isinstance(e.get("reach"), dict))
+            reach_line = (
+                f"red-proof reach: examined {evidence_examined} evidence "
+                f"artifact(s) for {len(entries)} registered injection(s); "
+                f"--require {require} means 0 were owed, so zero-examined "
+                f"reflects the zero registered (nothing to examine), not a "
+                f"probe that ran over nothing or skipped.")
+            if coordinator_mode:
+                ran_note = ""
+                if identity_dirs:
+                    # State that the lane ran but registered nothing, so a
+                    # reader cannot take the absent registry for "the lane
+                    # never ran" nor for "a registry this audit failed to
+                    # read" — it audited the identity dirs, found no registry
+                    # in any, and none was owed.
+                    ran_note = (
+                        f" A launch identity ran here ({identity_dirs} identity "
+                        f"dir(s) audited) and registered no injection — the "
+                        f"expected state for a lane that owed no red-proof, not "
+                        f"a registry this audit failed to read (it found no "
+                        f"registry.json in any of those dirs, so no armed entry "
+                        f"can be on disk under them).")
+                print(
+                    "check: no injection required and none registered — 0 "
+                    f"required, audited 0 registry/ies across {identity_dirs} "
+                    f"launch-identity dir(s) (role: {role}). A lane that owes "
+                    f"no red-proof registers nothing, so an absent registry is "
+                    f"the expected state here{ran_note} — NOT a verification of "
+                    f"restoration (nothing was registered to restore) and NOT "
+                    f"an all-clear over a population this audit did not sweep. "
+                    f"If this lane ran a red-proof under a launch identity, "
+                    f"pass `--lane <DREAMWORK_LANE_ID>` or inspect its scratch "
+                    f"by hand.")
+            else:
+                # Named-lane calm: one exact path was audited and found absent.
+                print(
+                    "check: no injection required and none registered — 0 "
+                    f"required, the named lane's registry is absent (role: "
+                    f"{role}). Nothing was owed (--require 0), so an absent "
+                    f"registry is the expected state — NOT a verification of "
+                    f"restoration (nothing was registered to restore) and NOT "
+                    f"an all-clear.")
+            print(reach_line)
             print(identity_scope)
             return 0
         # require > 0: a required injection cannot be verified when no registry
-        # can be located. Stays FAULT (#671/#895). identity_dirs is named so a
-        # reader sees whether a lane provably ran here.
-        _check_error(identity_scope,
-            f"check: FAULT — {require} injection(s) were required "
-            f"(--require) but no redproof registry could be located for "
-            f"this worktree (audited 0 registry/ies across "
-            f"{identity_dirs} launch-identity dir(s); role: {role}). A "
-            f"required red-proof must leave a registry this audit can "
-            f"read; its absence means the proof cannot be verified, not "
-            f"that it passed. If the lane ran, pass "
-            f"`--lane <DREAMWORK_LANE_ID>` or inspect its scratch by "
-            f"hand.")
+        # can be located. Stays FAULT (#671/#895) in BOTH modes (#1038 F3).
+        if coordinator_mode:
+            _check_error(identity_scope,
+                f"check: FAULT — {require} injection(s) were required "
+                f"(--require) but no redproof registry could be located for "
+                f"this worktree (audited 0 registry/ies across "
+                f"{identity_dirs} launch-identity dir(s); role: {role}). A "
+                f"required red-proof must leave a registry this audit can "
+                f"read; its absence means the proof cannot be verified, not "
+                f"that it passed. If the lane ran, pass "
+                f"`--lane <DREAMWORK_LANE_ID>` or inspect its scratch by "
+                f"hand.")
+        else:
+            _check_error(identity_scope,
+                f"check: FAULT — {require} injection(s) were required "
+                f"(--require) but no redproof registry could be located for "
+                f"the named lane (role: {role}). A required red-proof must "
+                f"leave a registry this audit can read; its absence means the "
+                f"proof cannot be verified, not that it passed.")
         return 2
 
     # RETIRED records are history-scan evidence and nothing else (#942), so
