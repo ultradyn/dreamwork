@@ -15558,15 +15558,29 @@ class TestUserSettings(unittest.TestCase):
                     method="POST",
                     headers={"Content-Type": "application/json"},
                 )
-                with self.assertRaises(urllib.error.HTTPError) as caught:
-                    urllib.request.urlopen(request, timeout=10)
-                response = caught.exception
-                self.assertEqual(response.status, 503)
-                self.assertEqual(response.headers["Retry-After"], "1")
-                body = json.loads(response.read().decode("utf-8"))
-                self.assertEqual(body["reason"], "settings_store_busy")
+                try:
+                    response = urllib.request.urlopen(request, timeout=10)
+                except urllib.error.HTTPError as exc:
+                    response = exc
+                with response:
+                    status = response.status
+                    retry_after = response.headers["Retry-After"]
+                    raw_body = response.read().decode("utf-8")
+                try:
+                    body = json.loads(raw_body)
+                except ValueError:
+                    body = {}
+                self.assertEqual(
+                    body.get("reason"), "settings_store_busy",
+                    "contention lost the settings_store_busy outcome",
+                )
+                self.assertEqual(status, 503)
+                self.assertEqual(retry_after, "1")
                 self.assertTrue(body["retryable"])
-                self.assertNotIn("changed", body)
+                self.assertNotIn(
+                    "changed", body,
+                    "contention collapsed into the already-equal changed=[] state",
+                )
                 self.assertEqual(lock.execute(
                     "SELECT COUNT(*) FROM user_setting WHERE userid = ? AND key = ?",
                     ("local", "composer.rememberManualResize"),
@@ -15586,7 +15600,8 @@ class TestUserSettings(unittest.TestCase):
                     "SELECT value FROM user_setting "
                     "WHERE userid = ? AND key = ?",
                     ("local", "composer.rememberManualResize"),
-                ).fetchone(), ("true",))
+                ).fetchone(), ("true",),
+                    "success response did not store composer.rememberManualResize")
             finally:
                 stored.close()
 
