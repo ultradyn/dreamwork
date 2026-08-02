@@ -2708,8 +2708,8 @@ def append_human_question(text, question, stamp):
 # of #229/#270). A chat send is a /command POST of kind `chat`; the #263
 # receipt is the durable home (committed in do_POST before dispatch), and this
 # application step writes the CONVERSATIONAL truth: an append-only transcript of
-# framed turns. The receipt id is the chat identity for this slice (1:1 — a send
-# creates a chat; #373 adds follow-up threading + the worker). Reply
+# framed turns. The receipt id of the send that CREATES a chat is its identity
+# (1:1 — #373 adds follow-up threading + the worker). Reply
 # instructions attach at consume (journal_consume), not here; the main dreamer
 # replies by appending an agent turn through the dreamwork CLI to this same
 # transcript. Format (#229 `dw-turn` framing), each turn:
@@ -2728,8 +2728,8 @@ def append_human_question(text, question, stamp):
 # carries identity only, never a second source of truth.
 CHAT_DIR = "chats-v1"
 CHAT_PREVIEW_N = 80
-# A chat id is a journal receipt id (UUID hex) and a DIRECTORY NAME under
-# chats-v1/, so it must be a safe path component — no separator, no `..`. The
+# A chat id is the creating journal receipt id (UUID hex) and a DIRECTORY NAME
+# under chats-v1/, so it must be a safe path component — no separator, no `..`. The
 # /chatdata endpoint validates against this before it ever joins the id onto a
 # path, so a typo'd or hostile id is a 404, never a traversal. Mirrors
 # bin/ud-dw-chat's _CHAT_ID (the CLI's reply guard), one definition of "what
@@ -6198,12 +6198,13 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # #342/#818 wake routing — wake the same way a chat send does.
             # `chat` is a pre-empt kind, so both new messages and replies wake
             # in every delivery mode; the receipt still rides the cursor too.
-            # The wake-line carries this POST's receipt id (#527), so the
-            # coordinator can match a drained receipt to a wake it acted on.
+            # The route bracket carries the canonical chat id, independently
+            # of this POST's receipt suffix (#527), so the line is dispatchable
+            # without first reading the receipt payload.
             if emits_wake("chat", target):
                 result = self.journal_result()
                 rid = result.receipt_id if result else None
-                log_event(target, command_line("chat", text, req.get("from"), rid))
+                log_event(target, command_line("chat", text, f"/chat/{cid}", rid))
             # best-effort write — the receipt already committed in do_POST, so
             # an IO failure never refuses the 202. apply_chat_turn is the ONE
             # writer; the route calls it, never re-implements it. Runs once per

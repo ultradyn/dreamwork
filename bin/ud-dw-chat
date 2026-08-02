@@ -7,9 +7,10 @@ chats-v1 transcript. This is the one supported way to reply: it goes through
 reversibly escaping structural-looking marker lines, and whose parser anchors
 both ``dw-turn`` markers at line start. Import it; never re-implement it.
 
-A chat id is the journal receipt id of the human's send (1:1 — a send creates a
-chat; ``watch._handle_command`` keys the transcript dir on the receipt id). So
-``reply <chat-id>`` answers the chat whose first human turn that receipt wrote.
+A chat id is the journal receipt id of the human's CREATING send (1:1 — that
+send creates a chat; ``watch._handle_command`` keys the transcript dir on its
+receipt id). So ``reply <chat-id>`` answers the chat whose first human turn
+that receipt wrote; later reply receipts are not chat ids.
 
   list                      derived chat records (reuses watch.list_chats)
   show <chat-id>            the full decoded transcript
@@ -56,9 +57,10 @@ EX_OK = 0
 EX_USAGE = 64
 EX_SOFTWARE = 70
 
-# A chat id is a journal receipt id (a UUID hex string). It becomes a DIRECTORY
-# NAME under chats-v1/, so it must be a safe path component — no separator, no
-# `..`. This also makes a typo'd id a loud refusal rather than a traversal.
+# A chat id is the creating journal receipt id (a UUID hex string). It becomes
+# a DIRECTORY NAME under chats-v1/, so it must be a safe path component — no
+# separator, no `..`. This also makes a typo'd id a loud refusal rather than a
+# traversal. A later reply's receipt id is not a chat id.
 _CHAT_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -161,7 +163,8 @@ def _parser() -> argparse.ArgumentParser:
 
     ps = sub.add_parser(
         "show", help="print the full decoded transcript of one chat")
-    ps.add_argument("chat_id", help="the chat id (= the receipt id)")
+    ps.add_argument(
+        "chat_id", help="the chat id (= the chat-creating receipt id)")
     ps.add_argument(
         "--target", default=TARGET_DEFAULT,
         help="target project dir (default: %(default)s)")
@@ -169,7 +172,8 @@ def _parser() -> argparse.ArgumentParser:
     pr = sub.add_parser(
         "reply",
         help="append an AGENT turn (text via argv OR stdin)")
-    pr.add_argument("chat_id", help="the chat id to reply to (= the receipt id)")
+    pr.add_argument(
+        "chat_id", help="the chat id to reply to (= the chat-creating receipt id)")
     pr.add_argument(
         "text", nargs="*",
         help="the reply text (joined with spaces); if omitted, read stdin")
