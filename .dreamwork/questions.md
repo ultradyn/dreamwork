@@ -2,6 +2,38 @@
 
 ## Open
 
+- **P2 · 2026-08-02 19:10 — #631: does the live session-log view belong to the React migration goal, or may it land on the current client first?**
+  Your `#1016` dogfooding pass read the title and body of all **188 open tasks** and proposed **zero
+  new links** to goal 1 (*"Convert webui to fully run via build react webui and migrate watch server
+  over"*). It kept the five members already there (`#630`, `#640`, `#692`, `#823`, `#859`) and rejected
+  183 as clear non-members. That zero is argued, not shrugged — the goal's wording is narrow, and the
+  lane deliberately refused to inflate it with dashboard/client work that merely mentions `client/`,
+  `webui`, `router` or `component`.
+
+  **Exactly one task it could not settle, and it is yours to settle:**
+
+  **`#631` — Build the live session-log view (the `#613` design).** Its body names a *"SessionLog
+  component"* and asks whether it should use the new component system — but also says most of the work
+  is independent of the React ruling.
+
+  **The question:** is `#631` required to be implemented as PART of the React migration, or may it land
+  as a current-client component before or alongside that migration?
+
+  - **If it's migration-gated** → I link it to goal 1, and goal 1's progress denominator becomes 6.
+  - **If it may land first** → it stays unlinked, and the session-log view is buildable now rather than
+    waiting on the whole conversion.
+
+  The lane's reason for not deciding this itself is right: linking it would conflate a future component
+  feature with the migration, and unlinking it would silently authorise building a surface you may want
+  built in React. Either way it is a scope call, not a classification call.
+
+  **rec:** may land first, unlinked. `#613`'s design is about what the view SHOWS; the component
+  system is how it is drawn, and the migration will redraw every surface anyway. Gating a useful view
+  on the conversion buys consistency you get for free later and costs you the view now. But you have
+  been clearer than me about wanting the React surface to be where new UI goes, so this is a real
+  question rather than a rhetorical one.
+
+
 
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
   2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
