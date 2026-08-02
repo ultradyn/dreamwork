@@ -171,3 +171,105 @@ def test_pin_and_revision_failures_name_the_identity(monkeypatch, tmp_path, caps
     # NOT appear — this is the direction-2 check that the note is scoped to
     # MISSING/UNPINNED rather than firing on every finding type.
     assert "COORDINATOR act" not in unresolved_output
+
+
+# ---------------------------------------------------------------------------
+# Docstring citation report (#1034)
+#
+# The pin checks above bind watch.py:NNN coordinates to git revisions in
+# .dreamwork/ documents.  check_docstring_citations scans dev/*.py DOCSTRINGS
+# for (#NNN), resolves each id against the ledger, and prints the title beside
+# the citation so an attribution mismatch is visible at a glance.  It REPORTS,
+# never certifies aptness (#994); it gates only on an id that does not resolve.
+#
+# Two independently-constructed fixture citations: the second is NOT derived
+# from the first, so a checker hardcoded to one string cannot pass both.
+
+
+def _docstring_repo(tmp_path: Path, *entries: tuple[str, str]) -> Path:
+    """Build a repo with dev/*.py docstring citations and a fake resolver.
+
+    *entries* are (filename, filebody) pairs.  The fake title resolver is
+    installed by the caller via monkeypatch; this helper only writes files.
+    """
+    root = tmp_path / "repo"
+    dev = root / "dev"
+    dev.mkdir(parents=True)
+    for name, body in entries:
+        (dev / name).write_text(body, encoding="utf-8")
+    return root
+
+
+# Fixture A: a module-level docstring citing #868 with a mismatched principle.
+_FIXTURE_A = (
+    "example_a.py",
+    '"""A principle about three zero-states (#868).\n\nNothing required,\n'
+    "nothing found, registry unread.\n\"\"\"\nx = 1\n",
+)
+
+# Fixture B: a FUNCTION-level docstring citing (#5001) with a different shape.
+# Independently constructed — not a copy or rename of fixture A — so a
+# checker hardcoded to fixture A's id or symbol cannot find it.
+_FIXTURE_B = (
+    "example_b.py",
+    'def thing():\n    """See (#5001) for the rule.\n\nA docstring on a '
+    'function, not a module.\n    """\n    pass\n',
+)
+
+
+def test_docstring_report_resolves_and_prints_titles(monkeypatch, tmp_path, capsys):
+    titles = {
+        868: "the tick line reports 0 live lanes",
+        5001: "an unrelated real entry",
+    }
+    monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
+    root = _docstring_repo(tmp_path, _FIXTURE_A, _FIXTURE_B)
+
+    assert citations.check_docstring_citations(root) == 0
+    out = capsys.readouterr().out
+
+    # (1) Denominator: the run examined real files, not nothing.  A run that
+    # examined 0 files must not read as a clean run (#868).
+    assert "examined 2 file(s) in dev/*.py" in out
+    assert "2 (#NNN) citation(s)" in out
+    # (2) Report-not-certify contract (#994): the banner states it plainly.
+    assert "REPORT not certification" in out
+    # (3) Both fixture citations are printed with their resolved titles, one
+    # module-level (fixture A) and one function-level (fixture B) — proving
+    # the scanner reads both docstring sites, not only module-level.
+    assert "example_a.py" in out and "#868" in out
+    assert "the tick line reports 0 live lanes" in out
+    assert "example_b.py" in out and "#5001" in out
+    assert "an unrelated real entry" in out
+    assert "OK: 2 docstring citation(s) resolved" in out
+
+
+def test_docstring_unresolvable_id_gates_on_exit_1(monkeypatch, tmp_path, capsys):
+    # A miscitation cites a REAL entry (868) but a dangling ref (9999) does
+    # not exist.  Resolution is the only mechanical gate; aptness is reported.
+    titles = {868: "the tick line reports 0 live lanes"}
+    monkeypatch.setattr(citations, "_resolve_titles", lambda dw_dir: titles)
+    root = _docstring_repo(
+        tmp_path,
+        _FIXTURE_A,
+        (
+            "dangling.py",
+            '"""See (#9999) — a real-looking number that is not in the '
+            'ledger.\n"""\n',
+        ),
+    )
+
+    assert citations.check_docstring_citations(root) == 1
+    out = capsys.readouterr().out
+    assert "UNRESOLVABLE" in out and "#9999" in out
+    assert "not found in ledger" in out
+    assert "FAIL: 1 of 2" in out
+
+
+def test_docstring_vacuity_no_dev_dir_is_a_fault(tmp_path, capsys):
+    # Direction-2 guard: a run that examined 0 files must not read as a
+    # clean run over everything and found nothing (#868's lesson).
+    empty_root = tmp_path / "empty"
+    empty_root.mkdir()
+    assert citations.check_docstring_citations(empty_root) == 2
+    assert "examined 0 file(s)" in capsys.readouterr().out
