@@ -1172,6 +1172,97 @@ class TestUntrackedExpectationWarning:
             "the warning must reach stdout — begin's other output stream")
         assert "will expire" not in err
 
+    def test_a_tracked_path_containing_spaces_does_not_warn(self, repo, capsys):
+        """#1088 contract edge: a tracked expectation whose path contains a
+        space must NOT warn. ``_git_tracks`` shells the path to
+        ``git ls-files -- <path>`` as one argv element, which finds a spaced
+        tracked path; a caller that normalised or split on the space would
+        miss it and warn over a file that is in fact tracked.
+
+        Direction 2: assert the helper's OWN return (``True``), not just the
+        absence of a warning. A caller that stripped the space before ls-files
+        would leave the warning absent for the WRONG reason — only the helper's
+        return proves the spaced path reached git intact."""
+        spaced = "expectation with spaces.txt"
+        (repo / spaced).write_text("spaced but committed\n")
+        _git(repo, "add", spaced)
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-qm", "add spaced expectation")
+        # PRECONDITION: the spaced path is genuinely tracked — derived from
+        # git, not assumed, so the case cannot silently become an untracked one
+        # (which would make a True assertion pass for the wrong reason).
+        assert _git(repo, "ls-files", "--", spaced) == spaced
+
+        # The helper's OWN return: the spaced path reached ls-files and git
+        # found it. A normalising caller would leave this False over a tracked
+        # file — the discriminating assertion a warning-absence check is not.
+        assert rp._git_tracks(repo, spaced) is True, (
+            "a tracked path containing a space must be found by ls-files — a "
+            "normalising caller would leave this False and the warning absent "
+            "for the wrong reason (#1088 direction 2)")
+
+        assert _begin(repo, "router.js", (spaced,)) == 0
+        out, _ = capsys.readouterr()
+        assert "WARNING" not in out, (
+            "a tracked spaced expectation must not warn — it survives cleanup")
+
+    def test_ls_files_failing_returns_none_and_begin_does_not_warn(
+            self, repo, tmp_path, monkeypatch, capsys):
+        """#1088 contract edge: when ``git ls-files`` itself fails (a
+        misbehaving git, a corrupt index), ``_git_tracks`` returns ``None`` —
+        NOT ``False`` — and begin proceeds at exit 0 WITHOUT warning and
+        WITHOUT refusing. ``None`` means 'the check could not run', which is
+        distinct from ``False`` ('the file is untracked'): conflating them
+        would warn on every registration on a machine where git misbehaves.
+
+        Direction 2: the failure is forced at the ``git`` INVOCATION — a fake
+        git on PATH that exits non-zero for ``ls-files`` and delegates every
+        other command to the real binary — not stubbed at a level above
+        ``_git_tracks``. Assert the helper's OWN return (``None``) AND that
+        non-ls-files git still works, so the proof is the helper's exception
+        handling, not the test harness."""
+        bin_dir = tmp_path / "fake-git-bin"
+        bin_dir.mkdir()
+        fake_git = bin_dir / "git"
+        # Scans ALL args for `ls-files` so the `-C <root>` prefix redproof's
+        # _git leads with does not mask the match; delegates the rest.
+        fake_git.write_text(
+            "#!/bin/sh\n"
+            "for arg in \"$@\"; do\n"
+            "  if [ \"$arg\" = ls-files ]; then\n"
+            "    echo 'fatal: fake broken git index' >&2\n"
+            "    exit 1\n"
+            "  fi\n"
+            "done\n"
+            "exec /usr/bin/git \"$@\"\n")
+        fake_git.chmod(0o755)
+        import os
+        monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ.get('PATH', '')}")
+
+        # The helper's OWN return: ls-files failed at the invocation, _git
+        # raised RedproofError, _git_tracks caught it and returned None.
+        assert rp._git_tracks(repo, "expectation.txt") is None, (
+            "_git_tracks must return None (not False) when ls-files fails — "
+            "'could not run' is distinct from 'untracked', and conflating them "
+            "would warn on every registration where git misbehaves (#1088)")
+        # Non-ls-files git still works: the fake delegates rev-parse to the
+        # real binary, proving the failure is SPECIFIC to ls-files (at the
+        # invocation), not a blanket stub above _git_tracks. Without this, a
+        # fake that broke all git would leave _git_tracks None for the wrong
+        # reason and the assertion would prove the harness, not the helper.
+        assert rp._git(repo, "rev-parse", "HEAD"), (
+            "the fake git must delegate non-ls-files commands — if rev-parse "
+            "also failed, the test would prove the harness, not the helper")
+
+        # begin proceeds: None is not False, so the expectation is not added
+        # to the untracked list, no warning fires, and there is no refusal.
+        assert _begin(repo, "router.js") == 0
+        out, _ = capsys.readouterr()
+        assert "WARNING" not in out, (
+            "begin must not warn when ls-files fails — the check could not "
+            "run, not 'the file is untracked' (#1088)")
+        assert "will expire" not in out
+
 class TestCli:
     def _env(self, tmp_path):
         # CLI subprocesses cannot see the in-process monkeypatch, so route
