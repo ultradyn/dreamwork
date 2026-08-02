@@ -3,8 +3,9 @@
 
     python3 dev/deploy_state.py [--json]
 
-Exit 0 when the deployed snapshot matches `HEAD:watch.py`, 1 when it is behind,
-2 when nothing is deployed or the state cannot be determined.
+Exit 0 when every comparable resident file matches HEAD and the live process
+runs the snapshot, 1 when it is stale, 2 when nothing is deployed or the state
+cannot be determined.
 
 WHY THIS EXISTS
 ---------------
@@ -235,9 +236,80 @@ def dashboard_identity(head_src: bytes) -> list:
     return ["watch.py"] + data_sibling_paths(head_src)
 
 
+def resident_file_comparison(deployed: bytes, head_src: bytes, dest,
+                             repo=ROOT) -> dict:
+    """Classify every resident file as matching, differing, or not compared.
+
+    The declared dashboard identity remains the required set: a missing
+    client asset is stale.  It is not the denominator, though.  A deploy can
+    also contain tracked Python loaded lazily (the measured example is
+    ``lint.py``) or a leftover from an older deploy.  Every regular file that
+    is actually resident and maps to a tracked HEAD path is therefore compared
+    too.  Logs, bytecode, and scratch files have no HEAD counterpart and stay
+    explicit as ``not_compared`` rather than silently counting as matches.
+    """
+    resident = []
+    for base, dirs, files in os.walk(dest, followlinks=False):
+        dirs.sort()
+        for name in sorted(files):
+            path = os.path.join(base, name)
+            if os.path.isfile(path):
+                resident.append(os.path.relpath(path, dest).replace(os.sep, "/"))
+    resident.sort()
+
+    snapshot = os.path.basename(str(repo)) + "-watch.py"
+    required = set(dashboard_identity(head_src))
+    states = {}
+    stale = set()
+    for rel in resident:
+        head_rel = "watch.py" if rel == snapshot else rel
+        try:
+            expected = (head_src if head_rel == "watch.py"
+                        else resolve_blob("HEAD", head_rel, repo))
+            with open(os.path.join(dest, *rel.split("/")), "rb") as f:
+                have = f.read()
+        except (OSError, RuntimeError, subprocess.CalledProcessError):
+            states[rel] = {"state": "not_compared", "head_path": None}
+            if head_rel in required:
+                stale.add(head_rel)
+            continue
+        state = "matches_head" if have == expected else "differs_from_head"
+        states[rel] = {"state": state, "head_path": head_rel}
+        if state == "differs_from_head":
+            stale.add(head_rel)
+
+    # ``deployed`` is authoritative for the snapshot comparison even in unit
+    # fixtures that do not materialise the renamed snapshot inside ``dest``.
+    if deployed != head_src:
+        stale.add("watch.py")
+    for rel in required - {"watch.py"}:
+        if rel not in resident:
+            stale.add(rel)
+
+    compared = [p for p, detail in states.items()
+                if detail["state"] != "not_compared"]
+    matching = [p for p, detail in states.items()
+                if detail["state"] == "matches_head"]
+    differing = [p for p, detail in states.items()
+                 if detail["state"] == "differs_from_head"]
+    not_compared = [p for p, detail in states.items()
+                    if detail["state"] == "not_compared"]
+    return {
+        "resident_paths": resident,
+        "resident_count": len(resident),
+        "compared_paths": compared,
+        "compared_count": len(compared),
+        "matching_paths": matching,
+        "differing_paths": differing,
+        "not_compared_paths": not_compared,
+        "file_states": states,
+        "stale_paths": sorted(stale),
+    }
+
+
 def stale_identity_paths(deployed: bytes, head_src: bytes, dest,
                          repo=ROOT) -> list:
-    """Which parts of the deployed dashboard do not match HEAD — [] if none.
+    """Which required or resident tracked files do not match HEAD — [] if none.
 
     Comparing watch.py alone would answer `current` for a deploy whose
     stylesheet is a week old, because a client-only commit leaves watch.py
@@ -250,20 +322,21 @@ def stale_identity_paths(deployed: bytes, head_src: bytes, dest,
     comparison which could not run must never look like one that ran and
     agreed.
     """
-    stale = [] if deployed == head_src else ["watch.py"]
-    for rel in data_sibling_paths(head_src):
-        try:
-            with open(os.path.join(dest, rel), "rb") as f:
-                have = f.read()
-        except OSError:
-            stale.append(rel)               # never shipped, or shipped away
-            continue
-        try:
-            if have != resolve_blob("HEAD", rel, repo):
-                stale.append(rel)
-        except Exception:                                       # noqa: BLE001
-            stale.append(rel)
-    return stale
+    return resident_file_comparison(
+        deployed, head_src, dest, repo)["stale_paths"]
+
+
+def detached_head_refusal(repo=ROOT):
+    """A visible deploy refusal whenever the checkout HEAD is detached."""
+    attached = subprocess.run(
+        ["git", "symbolic-ref", "-q", "HEAD"], cwd=str(repo),
+        capture_output=True, text=True)
+    if attached.returncode == 0:
+        return None
+    return ("deploy refused: HEAD is detached, so this snapshot may be an "
+            "ungated provisional merge. Finish or abort the landing, switch "
+            "to the branch you intend to deploy, then run `just deploy` again; "
+            "the live dashboard was left running.")
 
 
 def import_roots(src: bytes) -> list:
@@ -843,6 +916,10 @@ def main() -> int:
             return 1
         return 0
     if args.stop_deployed:
+        refusal = detached_head_refusal(ROOT)
+        if refusal:
+            print(refusal, file=sys.stderr)
+            return 1
         if args.port is None or not args.snap:
             print("--stop-deployed requires --port and --snap", file=sys.stderr)
             return 2
@@ -879,8 +956,11 @@ def main() -> int:
     st["head_sha"] = sha(head)[:12]
 
     st["identity_paths"] = dashboard_identity(head)
-    st["stale_paths"] = stale_identity_paths(deployed, head, DEPLOY_DIR)
-    st["snapshot_matches_head"] = not st["stale_paths"]
+    comparison = resident_file_comparison(deployed, head, DEPLOY_DIR)
+    st.update(comparison)
+    st["snapshot_matches_head"] = deployed == head
+    st["deployment_matches_head"] = bool(
+        st["compared_count"] and not st["stale_paths"])
     st["pid"] = listening_pid(port)
     st["head_rev"] = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                                     cwd=ROOT, capture_output=True,
@@ -906,7 +986,8 @@ def main() -> int:
     except Exception as e:                                  # noqa: BLE001
         st["error_probe"] = f"could not read /mtime: {e}"
 
-    st["current"] = bool(st["snapshot_matches_head"] and st["process_has_snapshot"])
+    st["current"] = bool(
+        st["deployment_matches_head"] and st["process_has_snapshot"])
 
     if not st["current"]:
         # Name what he cannot see, not just that something differs -- "behind" is
@@ -920,19 +1001,33 @@ def main() -> int:
         print(json.dumps(st, indent=2))
     else:
         if st["current"]:
-            print(f"current — snapshot matches HEAD ({st['head_rev']}) AND the live "
+            print(f"current — compared {st['compared_count']} of "
+                  f"{st['resident_count']} resident file(s); all compared files "
+                  f"match HEAD ({st['head_rev']}) AND the live "
                   f"process is running it (generation "
                   f"{st['process_age_vs_snapshot_s']:+}s vs snapshot); "
                   f"serving :{port} at pid {st['pid']}")
-        elif not st["snapshot_matches_head"]:
+            if st["not_compared_paths"]:
+                print("          not compared: "
+                      + ", ".join(st["not_compared_paths"]))
+        elif not st["deployment_matches_head"]:
             # Name the files. "the deployed file" was unambiguous when the
             # dashboard WAS one file; now the stale part is usually the
             # client, and "watch.py is fine" is the wrong thing to conclude.
-            print(f"STALE SNAPSHOT — the deployed dashboard does NOT match "
-                  f"HEAD ({st['head_rev']}): "
+            if not st["compared_count"]:
+                print(f"UNKNOWN — compared 0 of {st['resident_count']} resident "
+                      "file(s); population is zero, not an all-clear. "
+                      f"Not compared: {', '.join(st['not_compared_paths'])}")
+                return 1
+            print(f"STALE SNAPSHOT — compared {st['compared_count']} of "
+                  f"{st['resident_count']} resident file(s); the deployed "
+                  f"dashboard does NOT match HEAD ({st['head_rev']}): "
                   f"{', '.join(st['stale_paths'])}; serving :{port} at pid "
                   f"{st['pid']}. He is looking at older code. "
                   f"Run `just deploy`.")
+            if st["not_compared_paths"]:
+                print("                 not compared: "
+                      + ", ".join(st["not_compared_paths"]))
         elif st["process_has_snapshot"] is False:
             print(f"STALE PROCESS — the deployed file matches HEAD ({st['head_rev']}) "
                   f"but the live process imported "
