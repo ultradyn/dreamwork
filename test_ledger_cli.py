@@ -1118,6 +1118,29 @@ def test_fold_citation_report_distinguishes_zero_unresolved_and_ancestor(
     assert ancestor_sha in ancestor_out and "is an ancestor" in ancestor_out
 
 
+def test_fold_reports_but_does_not_block_an_existing_tree_citation(
+        migrate, dev_ledger, tmp_path):
+    """Direction-2 boundary: the policy refuses off-base *commits* only.
+
+    A tree object is a genuinely broken landing citation and fold still exits
+    zero, but it cannot read as verified: the output says it does not resolve
+    to a commit. This is the deliberate foreign/typo escape hatch, not an
+    undetected scanner miss.
+    """
+    root, dw = _sweep_fixture(migrate, tmp_path)
+    task_id = min(int(i) for i in _fixture_ids()[0])
+    tree_sha = _git(root, "rev-parse", "HEAD^{tree}").stdout.strip()
+    assert _git(root, "cat-file", "-t", tree_sha).stdout.strip() == "tree"
+
+    rc, out, err = _run(dev_ledger, [
+        "fold", str(task_id), "--note", f"landed {tree_sha}",
+        "--repo", str(root), "--ledger", str(dw / "tasks.md")])
+
+    assert rc == 0 and "refusing irreversible" not in err
+    assert f"{tree_sha} does not resolve to a commit" in out
+    assert _task_record(dw, task_id)["state"] == "landed"
+
+
 def test_reach_cli_reads_exact_store_adjudications_and_keeps_near_miss_open(
         migrate, dev_ledger, tmp_path):
     """Both #913 directions through the real store-backed CLI path.
