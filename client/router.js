@@ -1319,7 +1319,14 @@ function routeOf(loc) {
     const sp = new URLSearchParams(loc.search);
     return { name: 'review', param: sp.get('p'), q: sp.get('q') };
   }
-  if (loc.pathname === '/tasks2') {
+  // #1013 — /tasks?t=N is the href every task reference link carries
+  // (a.taskref in components.js, the "one-column task view" back-link in
+  // views.js), but the client only ever built /tasks2. /tasks fell through
+  // to the dashboard default, so a click navigated to the right URL and
+  // rendered the wrong view. /tasks2 is the one task view that exists, so
+  // /tasks resolves to it: the link, the navigation, and the destination
+  // view all line up. (Server serves the app shell for /tasks already.)
+  if (loc.pathname === '/tasks' || loc.pathname === '/tasks2') {
     const sp = new URLSearchParams(loc.search);
     const raw = sp.get('t');
     return { name: 'tasks2', param: raw && /^\d+$/.test(raw) ? raw : null };
@@ -4852,7 +4859,7 @@ function isInternal(a) {
       || a.pathname === '/answers'
       || a.pathname === '/settings'
       || a.pathname === '/file' || a.pathname === '/review'
-      || a.pathname === '/tasks2'
+      || a.pathname === '/tasks' || a.pathname === '/tasks2'
       || a.pathname === '/question' || a.pathname === '/research'
       || a.pathname === '/reviews'
       || a.pathname === '/goals'
