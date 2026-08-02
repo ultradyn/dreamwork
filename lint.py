@@ -65,6 +65,7 @@ from dreamwork_db.question_parse import ResolutionKind, classify_resolution_mark
 # them was edited.
 import client_dist
 from settings import SETTINGS, validate_registry
+from worktree_paths import worktree_roots
 
 ERROR, WARN, OK = "ERROR", "WARN", "OK"
 
@@ -5784,35 +5785,65 @@ def _parse_lane_owns(text: str) -> list[str]:
 
 
 
-def _live_lane_worktrees(root: Path) -> list[tuple[str, str]]:
-    """(worktree path, branch) for each dispatched lane, or [] if unknowable.
+class LaneEnumerationError(RuntimeError):
+    """The registered-worktree population could not be classified safely."""
+
+    def __init__(self, detail: str, *, examined: int, classified: int):
+        super().__init__(detail)
+        self.examined = examined
+        self.classified = classified
+
+
+class LaneWorktrees(list[tuple[str, str]]):
+    """Classified lanes plus the worktree-population denominator."""
+
+    def __init__(self, values: list[tuple[str, str]], *, examined: int):
+        super().__init__(values)
+        self.examined = examined
+
+
+def _lane_name_from_worktree_path(path: Path, roots: tuple[Path, Path]) -> str | None:
+    """Return a lane's stable registry name when ``path`` is under a lane root."""
+    resolved_parent = path.resolve().parent
+    return (
+        path.name
+        if any(resolved_parent == candidate.resolve() for candidate in roots)
+        else None
+    )
+
+
+def _live_lane_worktrees(root: Path) -> LaneWorktrees:
+    """Return registered lanes, distinguishing idle from failed classification.
 
     Reads git's own worktree registry rather than ``status.json``, which #465
-    measured as carrying no worktree path at all. Returns [] on any git failure
-    so the caller degrades to silence, never to a false accusation.
+    measured as carrying no worktree path at all. A lane is a linked worktree
+    directly under either canonical worktree root; its branch name is mutable
+    metadata, not identity. Git failure, malformed empty output, an unclassifiable
+    linked population, and a detached lane-root worktree are loud faults. A
+    main-checkout-only registry is the sole calm empty result.
     """
     try:
         out = subprocess.run(
             ["git", "-C", str(root), "worktree", "list", "--porcelain"],
             capture_output=True, text=True, timeout=10,
         )
-    except (OSError, subprocess.SubprocessError):
-        return []
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise LaneEnumerationError(
+            f"git worktree list could not run: {exc}", examined=0, classified=0,
+        ) from exc
     if out.returncode != 0:
-        return []
-    lanes, path, branch = [], None, None
+        raise LaneEnumerationError(
+            f"git worktree list exited {out.returncode}: "
+            f"{out.stderr.strip() or '(no stderr)'}",
+            examined=0, classified=0,
+        )
+    records: list[tuple[str, str | None]] = []
+    path: str | None = None
+    branch: str | None = None
 
     def flush():
-        # A lane is a LINKED worktree on a `wt/*` branch. The main checkout and
-        # any unrelated worktree are not lanes, and a detached-HEAD worktree has
-        # no branch line at all — so `branch` may legitimately be None here.
-        if path is None or not branch:
-            return
-        if not branch.startswith("wt/"):
-            return
-        if Path(path).resolve() == root.resolve():
-            return
-        lanes.append((path, branch))
+        if path is not None:
+            records.append((path, branch))
 
     for line in out.stdout.splitlines() + [""]:
         if line.startswith("worktree "):
@@ -5827,7 +5858,46 @@ def _live_lane_worktrees(root: Path) -> list[tuple[str, str]]:
             flush()
             path, branch = None, None
     flush()
-    return lanes
+    if not records:
+        raise LaneEnumerationError(
+            "git worktree list returned no records; a repository must include its main checkout",
+            examined=0, classified=0,
+        )
+
+    # Porcelain lists the main checkout first even when invoked from a linked
+    # worktree. Root the lane convention there: lint may itself be running in a
+    # frozen fixture worktree, and deriving roots from that path misclassifies
+    # every real lane.
+    main_checkout = Path(records[0][0])
+    roots = worktree_roots(main_checkout)
+    root_resolved = main_checkout.resolve()
+    lanes: list[tuple[str, str]] = []
+    linked: list[str] = []
+    for raw_path, record_branch in records:
+        candidate = Path(raw_path)
+        if candidate.resolve() == root_resolved:
+            continue
+        linked.append(raw_path)
+        lane_name = _lane_name_from_worktree_path(candidate, roots)
+        if lane_name is None:
+            continue
+        if not record_branch:
+            compared = ", ".join(str(r) for r in roots)
+            raise LaneEnumerationError(
+                f"worktree {raw_path} is under a lane root but has no branch line "
+                f"(detached HEAD); compared against lane roots: {compared}",
+                examined=len(records), classified=len(lanes),
+            )
+        lanes.append((raw_path, record_branch))
+
+    if linked and not lanes:
+        compared = ", ".join(str(r) for r in roots)
+        raise LaneEnumerationError(
+            f"linked worktree(s) failed lane classification: {', '.join(linked)}; "
+            f"compared against lane roots: {compared}",
+            examined=len(records), classified=0,
+        )
+    return LaneWorktrees(lanes, examined=len(records))
 
 
 def _dirty_paths(root: Path) -> list[str] | None:
@@ -5860,14 +5930,15 @@ def _dirty_paths(root: Path) -> list[str] | None:
     return paths
 
 
-def lane_owned_paths(dw: Path, branch: str) -> list[str]:
+def lane_owned_paths(dw: Path, branch: str, lane_path: str | Path | None = None) -> list[str]:
     """Union of ``Lane-owns:`` paths over every brief naming this lane.
 
     The single lane-ownership reader, shared by the backstop
     (``check_lane_containment_backstop``) and the pre-merge assertion
-    (``dev/lane_guard.py pre-merge``). A lane is matched by its worktree-name
-    suffix (the segment after ``wt/``), which appears in a brief as
-    ``wt/<suffix>`` or ``.worktrees/<suffix>``.
+    (``dev/lane_guard.py pre-merge``). A lane is matched by its stable worktree
+    name when its path is available; branch suffix is retained only for legacy
+    callers. Briefs carry that name in ``.worktrees/<name>`` (or legacy
+    ``wt/<name>``), so a post-dispatch branch rename cannot lose ownership.
 
     UNION over every brief naming the lane, not the first match. A worktree
     name gets reused across sessions, so one lane can have several briefs —
@@ -5878,7 +5949,7 @@ def lane_owned_paths(dw: Path, branch: str) -> list[str]:
     direction: over-protecting a path costs a dispatch, under-protecting
     corrupts the disjointness invariant the whole fan-out rests on.
     """
-    suffix = branch.split("/", 1)[-1]
+    suffix = Path(lane_path).name if lane_path is not None else branch.split("/", 1)[-1]
     briefs_dir = dw / "docs" / "briefs"
     if not briefs_dir.is_dir():
         return []
@@ -5901,10 +5972,11 @@ def check_lane_containment_backstop(dw: Path, rep: Report) -> None:
     actually did the damage: it aborted a verified `#263` merge that had been
     held for half an hour, before any commit was attempted.
 
-    Silent unless something is wrong. Three ways to be unknowable, each of which
-    degrades to silence rather than to a false accusation: git unavailable, no
-    linked lane worktrees, no brief declaring ownership. A check that accused a
-    clean tree would be disabled within the hour and then protect nothing.
+    Git/enumeration failure is an ERROR; a main-checkout-only registry is an OK
+    row naming the idle fleet and both denominators. A lane whose brief declares
+    no ownership remains silent here because ``check_brief_lane_owns`` owns that
+    fault. A check that accused a clean tree would be disabled within the hour
+    and then protect nothing.
 
     Precondition asserted at runtime: a lane is only examined when its brief
     yielded a NON-EMPTY owned set. Without that the intersection is empty by
@@ -5912,8 +5984,18 @@ def check_lane_containment_backstop(dw: Path, rep: Report) -> None:
     which is precisely how `#465`'s own premise (`status.json` ownership) failed.
     """
     root = dw.parent
-    lanes = _live_lane_worktrees(root)
+    try:
+        lanes = _live_lane_worktrees(root)
+    except LaneEnumerationError as exc:
+        rep.add(
+            ERROR, "lane-containment",
+            f"could not classify registered worktrees: {exc}; "
+            f"worktrees examined={exc.examined}; lanes classified={exc.classified}")
+        return
     if not lanes:
+        rep.add(
+            OK, "lane-containment",
+            f"{lanes.examined} worktree(s) examined; 0 lanes classified — idle fleet")
         return
     if not (dw / "docs" / "briefs").is_dir():
         return
@@ -5923,7 +6005,7 @@ def check_lane_containment_backstop(dw: Path, rep: Report) -> None:
     examined = 0
     found = False
     for lane_path, branch in lanes:
-        owned = lane_owned_paths(dw, branch)
+        owned = lane_owned_paths(dw, branch, lane_path)
         if not owned:
             # Unknowable for this lane, not clean. `check_brief_lane_owns`
             # is the check that makes the omission loud; this one stays quiet.
@@ -5947,7 +6029,8 @@ def check_lane_containment_backstop(dw: Path, rep: Report) -> None:
     if examined and not found:
         rep.add(
             OK, "lane-containment",
-            f"{examined} of {len(lanes)} live lane(s) declare ownership; "
+            f"{lanes.examined} worktree(s) examined; {len(lanes)} lane(s) classified; "
+            f"{examined} declare ownership; "
             f"no owned path is dirty in the main checkout")
 
 def check_brief_lane_owns(dw: Path, rep: Report) -> None:

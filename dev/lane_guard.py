@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Lane-containment pre-commit guard (#465).
 
-A lane dispatched into a worktree (normally ``../.worktrees/<name>`` on
-``wt/<name>``) can
+A lane dispatched into a worktree (normally ``../.worktrees/<name>``) can
 edit the **main checkout** instead of its worktree, and nothing notices until a
 merge fails — or worse, a coordinator commit sweeps the lane's half-finished
 edits into a ledger commit under the wrong message (``12f47e3`` in this repo's
@@ -45,8 +44,8 @@ WHAT IT DOES
 1. Detects it is in the **main checkout**: ``git rev-parse --git-dir`` resolves
    to the common dir (the path contains no ``/worktrees/`` segment). In a linked
    worktree it exits 0 immediately — lanes commit freely from their own trees.
-2. Enumerates dispatched lanes from ``git worktree list --porcelain``, skipping
-   the main entry and any worktree whose branch is not ``wt/*``.
+2. Enumerates dispatched lanes from ``git worktree list --porcelain`` using the
+   canonical worktree roots shared with the launcher, not a branch-name prefix.
 3. Reads each lane's owned paths from the ``Lane-owns:`` lines in its brief.
 4. Intersects the staged paths with each live lane's owned set. On any overlap
    it refuses (exit 1), naming the lane, the contested paths, and the remedy.
@@ -76,11 +75,6 @@ from pathlib import Path
 # hook that cannot be bypassed in a genuine emergency is a hook that gets
 # disabled, and a disabled hook protects nothing.
 BYPASS_ENV = "DREAMWORK_LANE_GUARD_BYPASS"
-
-# New worktrees live under ../.worktrees/<name>; legacy .worktrees/<name>
-# lanes drain in place. The branch prefix is the location-independent
-# discriminator a registered lane worktree carries.
-LANE_BRANCH_PREFIX = "wt/"
 
 # The git-dir of a linked worktree contains this segment; the main checkout's
 # git-dir (the common dir) does not.
@@ -143,33 +137,20 @@ def repo_root(cwd: Path) -> Path:
 def _parse_worktree_list(repo_root: Path) -> list[tuple[Path, str]]:
     """Return ``[(worktree_path, branch)]`` for registered lane worktrees.
 
-    Skips the main entry and any worktree whose branch does not start with
-    ``wt/``. ``git worktree list --porcelain`` is the reliable lane registry —
-    NOT ``status.json``, which carries no worktree path (see module docstring).
+    Reuses lint's production classifier so the hook and ambient backstop cannot
+    drift. ``git worktree list --porcelain`` is the registry; the canonical
+    sibling/legacy roots define lane membership and branch names may change.
     """
-    out = _run_git(["worktree", "list", "--porcelain"], repo_root)
-    lanes: list[tuple[Path, str]] = []
-    cur_path: Path | None = None
-    cur_branch: str | None = None
-    for line in out.splitlines():
-        if not line.strip():
-            # End of a record.
-            if cur_path is not None and cur_branch is not None:
-                if cur_branch.startswith(LANE_BRANCH_PREFIX):
-                    lanes.append((cur_path, cur_branch))
-            cur_path, cur_branch = None, None
-            continue
-        key, _, value = line.partition(" ")
-        if key == "worktree":
-            cur_path = Path(value)
-        elif key == "branch":
-            # value is like refs/heads/wt/contain
-            cur_branch = value.split("refs/heads/", 1)[-1] if "refs/heads/" in value else value
-    # A trailing record without a blank line.
-    if cur_path is not None and cur_branch is not None:
-        if cur_branch.startswith(LANE_BRANCH_PREFIX):
-            lanes.append((cur_path, cur_branch))
-    return lanes
+    lint = _import_lint()
+    try:
+        lanes = lint._live_lane_worktrees(repo_root)
+    except lint.LaneEnumerationError as exc:
+        raise GuardError(
+            f"could not classify registered worktrees: {exc}; "
+            f"worktrees examined={exc.examined}; lanes classified={exc.classified}"
+        ) from exc
+    return lint.LaneWorktrees(
+        [(Path(path), branch) for path, branch in lanes], examined=lanes.examined)
 
 
 def _main_checkout_root(repo_root: Path) -> Path:
@@ -186,7 +167,7 @@ def _main_checkout_root(repo_root: Path) -> Path:
     return common_path.parent
 
 
-def _briefs_for_lane(main_root: Path, lane_branch: str) -> list[Path]:
+def _briefs_for_lane(main_root: Path, lane_name: str) -> list[Path]:
     """The brief this lane was dispatched with, if one is recorded.
 
     A lane's brief lives in the **main checkout's** ``.dreamwork/docs/briefs/``
@@ -201,7 +182,7 @@ def _briefs_for_lane(main_root: Path, lane_branch: str) -> list[Path]:
     """
     # Fast path: an explicit marker the dispatch may write into the worktree.
     # Not relied upon (no dispatch writes it today), but cheap to honour.
-    suffix = lane_branch.split("/", 1)[-1] if "/" in lane_branch else lane_branch
+    suffix = lane_name
     main_briefs = main_root / ".dreamwork" / "docs" / "briefs"
     found: list[Path] = []
     if not main_briefs.is_dir():
@@ -216,7 +197,7 @@ def _briefs_for_lane(main_root: Path, lane_branch: str) -> list[Path]:
     return found
 
 
-def _owned_paths_for_lane(main_root: Path, lane_branch: str) -> set[str]:
+def _owned_paths_for_lane(main_root: Path, lane_name: str) -> set[str]:
     """Paths a lane was told it owns, from its brief's ``Lane-owns:`` lines.
 
     Returns repo-relative POSIX paths. Empty set if the brief declares nothing
@@ -224,7 +205,7 @@ def _owned_paths_for_lane(main_root: Path, lane_branch: str) -> set[str]:
     elsewhere errors so an empty set is never silently load-bearing).
     """
     owned: set[str] = set()
-    for brief in _briefs_for_lane(main_root, lane_branch):
+    for brief in _briefs_for_lane(main_root, lane_name):
         try:
             text = brief.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -280,7 +261,11 @@ def check(root: Path) -> int:
         # A linked worktree commits freely; the guard only acts on the main
         # checkout, which is where a lane's stray edits become dangerous.
         return 0
-    lanes = _parse_worktree_list(root)
+    try:
+        lanes = _parse_worktree_list(root)
+    except GuardError as exc:
+        sys.stderr.write(f"lane-containment guard: {exc}; refusing\n")
+        return 2
     if not lanes:
         # No dispatched lane: the ordinary solo case. Frictionless.
         return 0
@@ -292,7 +277,7 @@ def check(root: Path) -> int:
     findings: list[str] = []
     main_root = _main_checkout_root(root)
     for lane_root, branch in lanes:
-        owned = _owned_paths_for_lane(main_root, branch)
+        owned = _owned_paths_for_lane(main_root, lane_root.name)
         if not owned:
             # No declared ownership → nothing to protect for this lane. The
             # lint companion (check_brief_lane_owns) ensures this is loud at
@@ -452,7 +437,8 @@ def _selftest() -> int:
     print(f"root: {root}")
     print(f"is_main_checkout: {main}")
     lanes = _parse_worktree_list(root)
-    print(f"lanes: {len(lanes)}")
+    print(f"worktrees examined: {lanes.examined}")
+    print(f"lanes classified: {len(lanes)}")
     main_root = _main_checkout_root(root)
     for lane_root, branch in lanes:
         owned = _owned_paths_for_lane(main_root, branch)
@@ -585,16 +571,24 @@ def _pre_merge(root: Path, branch: str) -> int:
         )
         return 2
 
-    # Normalise the branch argument: accept `wt/foo` or bare `foo`.
-    norm = branch if branch.startswith(LANE_BRANCH_PREFIX) else LANE_BRANCH_PREFIX + branch
-
     lint = _import_lint()
-    lanes = lint._live_lane_worktrees(root)
-    if lanes is None or not isinstance(lanes, list):
-        # _live_lane_worktrees degrades to [] on git failure; a non-list means
-        # the contract moved underneath us. Fail loud either way.
-        err.write("pre-merge: could not enumerate lane worktrees — refusing\n")
+    try:
+        lanes = lint._live_lane_worktrees(root)
+    except lint.LaneEnumerationError as exc:
+        err.write(
+            f"pre-merge: could not classify registered worktrees: {exc}; "
+            f"worktrees examined={exc.examined}; lanes classified={exc.classified}; refusing\n"
+        )
         return 2
+
+    # Accept either the exact branch or the stable worktree name. The latter
+    # keeps pre-merge usable after a post-dispatch branch rename.
+    by_name = {Path(path).name: lane_branch for path, lane_branch in lanes}
+    norm = (
+        branch
+        if branch in {lane_branch for _, lane_branch in lanes}
+        else by_name.get(branch, branch)
+    )
 
     classified = _classify_status(root)
     if classified is None:
@@ -627,7 +621,7 @@ def _pre_merge(root: Path, branch: str) -> int:
     findings: list[str] = []
     examined = 0
     for lane_path, lbranch in lanes:
-        owned = lint.lane_owned_paths(dw, lbranch)
+        owned = lint.lane_owned_paths(dw, lbranch, lane_path)
         if not owned:
             continue
         examined += 1
@@ -684,7 +678,9 @@ def _pre_merge(root: Path, branch: str) -> int:
     )
     out.write(
         f"pre-merge OK: safe to merge `{norm}`.\n"
-        f"  {id_note}; {examined} of {len(lanes)} live lane(s) declare ownership;\n"
+        f"  {id_note}; {lanes.examined} worktree(s) examined; "
+        f"{len(lanes)} lane(s) classified;\n"
+        f"  {examined} of {len(lanes)} live lane(s) declare ownership;\n"
         f"  index clean (0 staged), worktree clean (0 unstaged-tracked),\n"
         f"  0 untracked-clobber, 0 lane-owned dirty paths.\n"
     )

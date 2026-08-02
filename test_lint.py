@@ -7568,17 +7568,116 @@ class TestLaneContainmentBackstop:
         rep = self._rows(t)
         rows = [(lvl, d) for lvl, w, d in rep.rows if w == "lane-containment"]
         assert [lvl for lvl, _ in rows] == [lint.OK], rep.render()
-        assert "1 of 1" in rows[0][1]
+        assert "2 worktree(s) examined; 1 lane(s) classified; 1 declare ownership" in rows[0][1]
 
     def test_a_worktree_that_is_not_a_lane_is_ignored(self, tmp_path):
-        """Production line: _live_lane_worktrees' `wt/` branch test. A worktree
-        on an ordinary branch is somebody's checkout, not a dispatched lane, so
-        its files must not become untouchable in the main tree.
+        """A checkout outside both canonical roots is not a lane.
+
+        Production seam: ``_lane_name_from_worktree_path``.
         """
         t, git = self._repo_with_lane(tmp_path)
-        git("worktree", "add", "-q", "-b", "feature/x", str(t / ".worktrees" / "notalane"))
+        git("worktree", "add", "-q", "-b", "feature/x",
+            str(t.parent / "other" / "notalane"))
         lanes = lint._live_lane_worktrees(t)
         assert [b for _, b in lanes] == ["wt/lane"], lanes
+
+    def test_a_modern_lane_is_classified_from_worktree_root_not_branch_prefix(
+            self, tmp_path):
+        """Production seam: ``_lane_name_from_worktree_path``.
+
+        The expected lane comes from the launcher's canonical worktree root and
+        git's registered branch, independently of any branch-name prefix.
+        """
+        t, git = self._repo_with_lane(tmp_path)
+        wt = t / ".worktrees" / "lane"
+        git("branch", "-m", "cx-900lane", cwd=wt)
+        lanes = lint._live_lane_worktrees(t)
+        assert [(Path(p).name, b) for p, b in lanes] == [("lane", "cx-900lane")], lanes
+        assert lanes.examined == 2
+
+    def test_branch_rename_keeps_brief_ownership_via_stable_worktree_name(
+            self, tmp_path):
+        """Production seam: ``lane_owned_paths(..., lane_path)``."""
+        t, git = self._repo_with_lane(tmp_path)
+        wt = t / ".worktrees" / "lane"
+        git("branch", "-m", "renamed-after-dispatch", cwd=wt)
+        [(lane_path, branch)] = lint._live_lane_worktrees(t)
+        assert branch == "renamed-after-dispatch"
+        assert lint.lane_owned_paths(t / ".dreamwork", branch, lane_path) == ["watch.py"]
+
+    def test_detached_worktree_under_lane_root_is_a_loud_classification_fault(
+            self, tmp_path):
+        """A detached lane cannot silently disappear for lacking a branch line."""
+        t, git = self._repo_with_lane(tmp_path)
+        detached = t / ".worktrees" / "detached-lane"
+        git("worktree", "add", "-q", "--detach", str(detached))
+        with pytest.raises(lint.LaneEnumerationError) as caught:
+            lint._live_lane_worktrees(t)
+        message = str(caught.value)
+        assert str(detached) in message and "no branch line" in message, message
+        assert "compared against lane roots" in message, message
+        assert caught.value.examined == 3 and caught.value.classified == 0
+
+    def test_prunable_lane_stays_classified_from_the_git_registry(self, tmp_path):
+        """A deleted lane directory remains registered and therefore protected."""
+        import shutil
+
+        t, _ = self._repo_with_lane(tmp_path)
+        wt = t / ".worktrees" / "lane"
+        shutil.rmtree(wt)
+        lanes = lint._live_lane_worktrees(t)
+        assert [(Path(p), b) for p, b in lanes] == [(wt, "wt/lane")], lanes
+
+    def test_main_checkout_only_is_idle_and_names_both_denominators(self, tmp_path):
+        """Idle fleet is distinct from a failed or empty enumerator."""
+        import subprocess
+
+        t = fresh(tmp_path)
+        subprocess.run(["git", "-C", str(t), "init", "-q"], check=True)
+        lanes = lint._live_lane_worktrees(t)
+        assert lanes == [] and lanes.examined == 1
+        rep = self._rows(t)
+        rows = [d for level, what, d in rep.rows
+                if level == lint.OK and what == "lane-containment"]
+        assert rows == ["1 worktree(s) examined; 0 lanes classified — idle fleet"]
+
+    def test_empty_porcelain_is_a_broken_enumerator_not_an_idle_fleet(
+            self, tmp_path, monkeypatch):
+        """Production seam: no-records refusal in ``_live_lane_worktrees``."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(
+            lint.subprocess, "run",
+            lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+        )
+        with pytest.raises(lint.LaneEnumerationError) as caught:
+            lint._live_lane_worktrees(tmp_path)
+        assert "returned no records" in str(caught.value)
+        assert caught.value.examined == 0 and caught.value.classified == 0
+
+    def test_linked_worktrees_with_zero_lane_matches_are_loud_and_discriminating(
+            self, tmp_path):
+        """A moved convention cannot collapse into the calm idle result."""
+        import subprocess
+
+        t = fresh(tmp_path)
+        subprocess.run(["git", "-C", str(t), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(t), "config", "user.email", "t@t"], check=True)
+        subprocess.run(["git", "-C", str(t), "config", "user.name", "t"], check=True)
+        (t / "tracked").write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(t), "add", "tracked"], check=True)
+        subprocess.run(["git", "-C", str(t), "commit", "-qm", "base"], check=True)
+        outside = t.parent / "other-checkouts" / "feature"
+        subprocess.run(
+            ["git", "-C", str(t), "worktree", "add", "-q", "-b", "feature/x", str(outside)],
+            check=True,
+        )
+        with pytest.raises(lint.LaneEnumerationError) as caught:
+            lint._live_lane_worktrees(t)
+        message = str(caught.value)
+        assert str(outside) in message, message
+        assert "compared against lane roots" in message, message
+        assert caught.value.examined == 2 and caught.value.classified == 0
 
     def test_a_lane_whose_brief_declares_nothing_is_silence_not_a_clean_bill(
             self, tmp_path):
@@ -7725,6 +7824,7 @@ class TestPreMergeAssertion:
         out = capsys.readouterr().out
         assert rc == 0, out
         assert "pre-merge OK" in out and "wt/lane" in out, out
+        assert "2 worktree(s) examined; 1 lane(s) classified" in out, out
         assert "1 of 1 live lane(s) declare ownership" in out, out
 
     def test_a_lane_owned_dirty_path_refuses_naming_lane_path_and_action(
