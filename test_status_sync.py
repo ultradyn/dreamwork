@@ -32,6 +32,7 @@ import status_sync
 import session_source
 import lane_runner_identity
 import lane_liveness
+import tick_line
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
@@ -2902,6 +2903,217 @@ class TestSharedClassifierMutation:
             assert status_sync._is_lane_runner(proc.pid) is True, \
                 "after adding zzz-mut-probe: the status channel must see it " \
                 "— if it stayed False, status_sync has its own copy (#1113)"
+        finally:
+            proc.kill()
+            proc.wait()
+
+
+# ── #1123: the tick probe and status_sync must AGREE on a live fleet ──────
+#
+# #868 landed a regression test (46eeba09) binding this agreement; the
+# architecture changed afterwards (tick_line._fleet_fact now calls
+# lane_liveness.inspect_lanes, not the older discover_lanes/status.json path
+# the deleted test reached) and the test was removed in that refactor. #1084
+# is the recurrence that absence permitted — the fleet count reading low
+# again. This restores the guard against the CURRENT architecture.
+#
+# Two INDEPENDENT code paths count the same live runners:
+#   PATH A (tick)    tick_line._fleet_fact -> lane_liveness.inspect_lanes
+#   PATH B (status)  status_sync.discover_lanes
+# The test exercises BOTH against ONE real live lane and compares their lane
+# SETS — not a literal count (Direction 2: an `assert fleet == 1` against a
+# fixture you built passes forever and says nothing about agreement). The
+# fixture's argv deliberately carries NO worktree path: an argv-only (broken)
+# matcher self-matches when the path is present, so a fixture that carries it
+# passes for the wrong reason and guards nothing — the argv self-match trap
+# that has bitten four separate tools this session (#868's defect class).
+
+class TestFleetProbesAgreeOnLiveLane:
+    """#868/#1084/#1123: the tick probe and status_sync agree on a live fleet."""
+
+    _LANE = "lane-1123agree"
+
+    def _git_target_with_worktree(self, tmp_path):
+        """A real git repo target + a git-registered sibling worktree.
+
+        ``inspect_lanes`` needs ``_registered_worktrees`` (it runs
+        ``git worktree list``), so the worktree must be git-registered;
+        ``discover_lanes`` walks /proc cwd and needs no registration. Both
+        derive the worktree roots from the SAME target, so a sibling
+        worktree (``<tmp>/.worktrees/<lane>``) is visible to both.
+        """
+        target = tmp_path / "repo"
+        target.mkdir()
+        (target / ".dreamwork").mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=target, check=True)
+        subprocess.run(["git", "config", "user.email", "t@t.t"], cwd=target,
+                       check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=target,
+                       check=True)
+        (target / "README").write_text("x\n")
+        subprocess.run(["git", "add", "-A"], cwd=target, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=target,
+                       check=True)
+        wt = tmp_path / ".worktrees" / self._LANE
+        subprocess.run(["git", "-C", str(target), "worktree", "add", str(wt)],
+                       check=True, capture_output=True)
+        return target, wt
+
+    def _spawn_argv_free_ccc(self, wt, hold=30.0):
+        """A live ccc-shaped runner whose cwd is ``wt``; argv has NO path.
+
+        ``executable`` sets argv independently of the binary, so argv[0] is
+        ``ccc`` while perl sleeps. ``cwd=`` sets the child's real cwd — the
+        thing ``readlink /proc/<pid>/cwd`` returns. The trailing arg is a
+        bare word (``brief-no-path``), NOT the worktree path, so an
+        argv-only matcher cannot self-match: both probes must find this lane
+        through /proc/<pid>/cwd, the channel that was right in both #868
+        samples.
+        """
+        return subprocess.Popen(
+            ["ccc", "-e", "sleep %s" % hold, "--", "--yolo", "@glm52",
+             "brief-no-path"],
+            executable=_which_perl(), cwd=str(wt),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+
+    @staticmethod
+    def _confine_proc(monkeypatch, pids):
+        """Restrict /proc enumeration to ``pids`` for BOTH probes.
+
+        Both ``inspect_lanes`` and ``discover_lanes`` call
+        ``os.listdir('/proc')``; the cwd/cmdline reads stay REAL (no fake).
+        This confines only the candidate SET so the probes see the spawned
+        lane without scanning 1000+ unrelated processes.
+        """
+        real = os.listdir
+        def _confined(d):
+            return [str(p) for p in pids] if str(d) == "/proc" else real(d)
+        monkeypatch.setattr(os, "listdir", _confined)
+
+    def test_tick_probe_and_status_sync_agree_on_argv_free_live_lane(
+            self, tmp_path, monkeypatch):
+        """The guard: both probes report the SAME live lane set.
+
+        PATH A (tick) is ``_fleet_fact`` -> ``inspect_lanes``; PATH B
+        (status) is ``discover_lanes``. The lane sets are compared TO EACH
+        OTHER, never to a literal — a literal count passes against the
+        #868/#1084 bug (one probe reads 0 while the other reads N).
+        """
+        target, wt = self._git_target_with_worktree(tmp_path)
+        proc = self._spawn_argv_free_ccc(wt)
+        try:
+            time.sleep(0.6)
+            # Preconditions — real /proc reads, not fakes.
+            assert status_sync._pid_alive(proc.pid), "lane must be alive"
+            assert status_sync._read_proc_cwd(proc.pid) == str(wt), \
+                "lane cwd must be the worktree"
+            assert status_sync._is_ccc_proc(proc.pid), \
+                "argv[0] must read as ccc"
+            # THE NON-VACUOUSNESS ASSERTION: the fixture's argv must NOT
+            # carry the worktree path. If it did, an argv-only (broken)
+            # matcher would self-match and this test would pass for the
+            # wrong reason — the exact trap this guard exists to close.
+            raw = Path("/proc/%d/cmdline" % proc.pid).read_bytes()
+            assert str(wt).encode() not in raw, \
+                "fixture argv must NOT carry the worktree path — if it " \
+                "does, an argv-only matcher self-matches and the test " \
+                "guards nothing (#868 argv self-match trap)"
+            # The spawned lane is NOT an ancestor of this test process
+            # (#729): a probe that counts its own tree agrees trivially.
+            assert proc.pid not in status_sync._ancestor_pids(), \
+                "the lane must not be an ancestor of the test (#729)"
+            self._confine_proc(monkeypatch, [proc.pid])
+
+            # PATH A — the tick probe: _fleet_fact -> inspect_lanes.
+            fact = tick_line._fleet_fact(str(target))
+            assert "UNRESOLVED" not in fact, \
+                "the tick probe must not fault: %s" % fact
+            inspection = lane_liveness.inspect_lanes(target)
+            tick_lanes = sorted(inspection.live + inspection.cwd_live)
+
+            # PATH B — status_sync: discover_lanes.
+            stats = {}
+            found, _ph, agent_tool = status_sync.discover_lanes(
+                target, stats=stats)
+            sync_lanes = sorted(f[0] for f in found + agent_tool)
+
+            # THE AGREEMENT — compared to each other, not to a literal.
+            assert tick_lanes == sync_lanes, \
+                "tick probe and status_sync disagree about the live " \
+                "fleet: tick=%s sync=%s" % (tick_lanes, sync_lanes)
+            # Both examined a real population (#868: a probe that examined
+            # nothing must not read as one that examined everything).
+            assert inspection.examined_processes > 0, \
+                "tick probe examined 0 processes — #868"
+            assert stats.get("process_candidates", 0) > 0, \
+                "status_sync examined 0 processes — #868"
+            # Discriminating: the lane IS in both answers, not just
+            # equal-empty.
+            assert self._LANE in tick_lanes, \
+                "tick probe missed the live lane: %s" % tick_lanes
+            assert self._LANE in sync_lanes, \
+                "status_sync missed the live lane: %s" % sync_lanes
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_agreement_detects_one_probe_blind_to_a_live_lane(
+            self, tmp_path, monkeypatch):
+        """Direction-2 guard: the agreement comparison is not vacuous.
+
+        The same live lane, but the tick probe is blinded by mutating the
+        shared runner constant (#1113 drift shape: one probe's classifier
+        loses a name the other still has). ``inspect_lanes`` reads
+        ``lane_runner_identity.is_lane_runner`` (via LANE_RUNNERS), so
+        removing ``ccc`` drops the lane from its cwd channel; ``discover_lanes``
+        classifies the found bucket via ``_is_ccc_proc`` (a SEPARATE hardcoded
+        basename check), so it still finds the lane. The two lane sets must
+        now DIFFER — proving test 1 fails on real disagreement, not only
+        passes on agreement.
+        """
+        target, wt = self._git_target_with_worktree(tmp_path)
+        proc = self._spawn_argv_free_ccc(wt)
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(proc.pid), "lane must be alive"
+            assert status_sync._read_proc_cwd(proc.pid) == str(wt)
+            raw = Path("/proc/%d/cmdline" % proc.pid).read_bytes()
+            assert str(wt).encode() not in raw, \
+                "fixture argv must NOT carry the worktree path"
+            self._confine_proc(monkeypatch, [proc.pid])
+
+            # BASELINE: both probes find the lane.
+            base = lane_liveness.inspect_lanes(target)
+            base_found, _bph, base_at = status_sync.discover_lanes(target)
+            assert self._LANE in sorted(base.live + base.cwd_live), \
+                "baseline: tick probe must find the lane"
+            assert self._LANE in sorted(f[0] for f in base_found + base_at), \
+                "baseline: status_sync must find the lane"
+
+            # BLIND THE TICK PROBE: remove ccc from the shared runner
+            # constant. inspect_lanes's cwd channel reads this; the lane
+            # drops out. discover_lanes uses _is_ccc_proc (hardcoded), so
+            # it is unaffected — the two now disagree.
+            monkeypatch.setattr(
+                lane_runner_identity, "LANE_RUNNERS",
+                tuple(n for n in lane_runner_identity.LANE_RUNNERS
+                      if n != "ccc"))
+
+            blind = lane_liveness.inspect_lanes(target)
+            b_found, _bfph, b_at = status_sync.discover_lanes(target)
+            tick_lanes = sorted(blind.live + blind.cwd_live)
+            sync_lanes = sorted(f[0] for f in b_found + b_at)
+            # The disagreement the #868/#1084 family descends from: one
+            # probe sees the lane, the other does not.
+            assert tick_lanes != sync_lanes, \
+                "blinding the tick probe must make the two disagree — if " \
+                "they still agree, the comparison is vacuous"
+            assert self._LANE not in tick_lanes, \
+                "tick probe should be blind to ccc now: %s" % tick_lanes
+            assert self._LANE in sync_lanes, \
+                "status_sync uses _is_ccc_proc (hardcoded), unaffected: %s" \
+                % sync_lanes
         finally:
             proc.kill()
             proc.wait()
