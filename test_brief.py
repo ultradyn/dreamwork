@@ -567,6 +567,72 @@ def test_quantity_report_detects_bare_range_ends_but_not_word_or_grouped_counts(
     assert "line 3 '4'" in report and "line 3 '6 lessons'" in report, report
 
 
+def test_blocking_report_finds_a_prose_stop_condition_without_a_numbered_list():
+    report = brief._blocking_number_report(
+        "Stop if this is not 254 branches; the premise would no longer hold."
+    )
+
+    assert "line 1 '254 branches' justification claim MISSING" in report, (
+        f"blocking report lost 254 branches: {report}"
+    )
+    assert "found 1 blocking number(s)" in report, report
+    assert "covered 0 of 1" in report, report
+    assert "State: presented with unjustified blocking numbers" in report, report
+
+
+def test_blocking_report_reads_the_house_blocking_section_and_stops_at_context():
+    core = (
+        "**BLOCKING — these findings are invariant:**\n\n"
+        "1. The forbidden prefix count is **0**.\n"
+        "2. The stale record count is **0**.\n\n"
+        "Direction 1 must name the omitted blocking number.\n\n"
+        "**NOT BLOCKING — context only:** around 15 worktrees. Do not stop if it moves.\n"
+    )
+
+    report = brief._blocking_number_report(core)
+
+    assert "found 2 blocking number(s)" in report, report
+    assert "covered 2 of 2" in report, report
+    assert "line 3 '0'" in report and "line 4 '0'" in report, report
+    assert "15 worktrees" not in report, report
+
+
+def test_blocking_report_never_treats_a_justification_claim_as_correctness():
+    report = brief._blocking_number_report(
+        "Dispatching will not change this invariant.\n"
+        "Stop if there are not 15 worktrees.\n"
+    )
+
+    assert "covered 1 of 1" in report, report
+    assert "justification claim PRESENT" in report, report
+    assert "Justification correctness is NOT CHECKED" in report, report
+    assert "which of these can the act of dispatching change?" in report, report
+
+
+def test_blocking_report_zero_population_is_not_all_justified():
+    report = brief._blocking_number_report(
+        "Three findings are described in words, with no numeric stop-condition."
+    )
+
+    assert "NOT CHECKED: found 0 blocking numbers" in report, report
+    assert "covered 0 of 0" in report, report
+    assert "State: no blocking numbers presented" in report, report
+    assert "not an all-justified result" in report, report
+
+
+def test_validate_core_reports_but_does_not_certify_a_false_invariance(capsys):
+    core = GOOD_CORE + (
+        "\nThis is invariant because the brief says so.\n"
+        "Stop if there are not 15 worktrees.\n"
+    )
+
+    assert brief.validate_core(core) == 2
+    report = capsys.readouterr().err
+    assert "found 1 blocking number(s)" in report, report
+    assert "invariance justification claims covered 1 of 1" in report, report
+    assert "Justification correctness is NOT CHECKED" in report, report
+
+
 def _citation_ledger(tmp_path: Path) -> Path:
     dreamwork = tmp_path / ".dreamwork"
     dreamwork.mkdir()
