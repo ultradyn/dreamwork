@@ -244,6 +244,15 @@ def _import_derived(repo: Path, modules: Sequence[str]) -> tuple[str, ...]:
 # the directory.
 DIR_TESTSET_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("dev/capture/", ("test_guard_evidence.py", "test_guard_argv.py")),
+    # The client extraction made client/ a first-class source directory with its
+    # own three test modules and never registered them here, so a lane owning
+    # ONLY client/ files derived zero tests and could not be dispatched at all --
+    # the scope check refused it as "an empty selection is indistinguishable from
+    # broken derivation", which was exactly right. Measured green before adding:
+    # `just pytest test_client_assets.py test_client_dist.py test_client_env.py`
+    # -> `60 passed in 9.88s`, because a mapped target that is absent or red
+    # wedges every future landing that touches the directory.
+    ("client/", ("test_client_assets.py", "test_client_dist.py", "test_client_env.py")),
 )
 
 
