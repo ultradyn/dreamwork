@@ -2,6 +2,17 @@
 
 ## Open
 
+
+- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
+  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
+  then, nothing blocks and nothing is delivered by hand.
+  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
+    as an open question that we'll revisit once dreamhub is stable and the
+    primary way we access dreamworkers
+
+## Answered
+
+
 - **P1 · 2026-08-02 18:05 — #1009: your "use an Opus 5 subagent" instruction currently cannot execute at all. Extend the sandbox, or accept ccc-only lanes?**
   **What happened.** You asked twice tonight for work to go to an Opus 5 subagent (the `/goals`
   redesign, and the issue-hover styling). `@opus5` exists and is configured correctly. The launch
@@ -43,16 +54,33 @@
   **Nothing is blocked while you decide.** `#1007` is dispatched to `@cx-luna-xhigh` with the
   substitution stated plainly in its brief, and `#1006` was already queued behind it because they
   share `client/style.css`.
-
-- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
-  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
-  then, nothing blocks and nothing is delivered by hand.
-  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
-    as an open question that we'll revisit once dreamhub is stable and the
-    primary way we access dreamworkers
-
-## Answered
-
+  - **Answer (via watch, 2026-08-02 18:13):** you should not use ccc for
+    opus subagnets. They should be started natively as claude code
+    subagents. for worktrees, you may launch opus 5 native subagents in
+    worktrees within the repo.
+  - **Folded 2026-08-02 — taken as a ruling on BOTH halves, and it is narrower and better than
+    either option I offered.** You did not pick 1 or 2; you cut between them. Recorded as two
+    standing rules:
+    1. **`ccc` is not the route to an Opus subagent.** `@opus5` exists in the ccc config with
+       `runner = "claude"`, and I reached for it because `launch_lane` wants an `@alias`. That is
+       now wrong by instruction: Opus lanes start as **native Claude Code subagents**.
+    2. **Native Opus lanes may use worktrees INSIDE the repo.** This is a deliberate, scoped
+       exception to the standing rule that worktrees live at `../.worktrees/` so the repo tree only
+       shrinks — and it is exactly the size of the problem, because the whole refusal was that an
+       out-of-repo worktree falls outside a native agent's sandbox. ccc-routed lanes
+       (`@glm52`, `@cx-coder`, `@cx-luna-*`) keep using `../.worktrees/`, so the size discipline
+       still binds everything it bound before.
+    **What I take from the shape of the answer:** I framed it as *widen the sandbox or give up the
+    model*, and both branches were worse than the obvious third — move the worktree, not the
+    boundary. Neither option I wrote down was the answer, which is the argument for asking rather
+    than deciding, not against it.
+    **`#465` is unaffected**, which was my stated reason for hesitating: the containment boundary
+    does not move, so the guard that lane is building still means what it meant.
+    **In flight:** `#1007` never actually ran under the substitution — its `@cx-luna-xhigh`
+    dispatch refused separately on `#1010`'s missing `client/` test map, so nothing has to be
+    unwound. It and `#1006` now go to native Opus subagents in in-repo worktrees, as instructed.
+    The in-repo worktree root is tracked by `lint.py`'s `worktree-drain.json` check, so these
+    register there and the size checkpoint stays honest rather than silently regressing.
 
 - **P1 · 2026-08-02 12:22 — I leaked three of your API keys into this session's transcript. Do you want them rotated?**
   **What happened, and it was my mistake, not a tool's.** I wrote a shell command with backticks
