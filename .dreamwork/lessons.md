@@ -4808,3 +4808,34 @@ when nothing is detaching the checkout, which is exactly when it does not matter
 Same family as the `tests=(...)` misreading above: a field that truthfully reports one thing, read as
 reporting the adjacent thing I actually wanted. Both were caught only because a later measurement
 disagreed with the story — neither looked wrong on its own.
+
+- **`launch-lane` prepares a lane; it does not start one. A dispatch that ends
+  at "killed the stray" has dispatched nothing.** The tool's own summary says
+  `dispatch prepared: … runner not attempted`, and it means it — the worktree,
+  the validated brief and the digest all exist, and no agent is working. It
+  also spawns a stray runner in the MAIN checkout, which is `#1093`. I wrote a
+  four-lane batch script that faithfully killed all four strays and never ran
+  the last step of the script it was derived from: `cd "$WT" && nohup ccc -y
+  @glm52 "$(cat "$B")" &`. Four worktrees sat with 50KB briefs and no runner,
+  and the fleet read as four dispatched lanes. The check that catches it is not
+  the launch's exit code (0) or its log (clean) but `/proc`: after a dispatch,
+  count live agents whose cwd is a lane worktree, and compare that number to the
+  number of lanes you think you started. (2026-08-03, coordinator)
+
+- **Identify a stray by cwd AND its stdout fd, never cwd alone.** The narrower
+  test exists because the main checkout is where the coordinator's own reviews
+  and probes also run, and `#1093`'s stray is indistinguishable from them by cwd.
+  My batch script dropped the `stdout = this launch's log` half of the predicate
+  that the working script had, which made the killer's blast radius every
+  agent-shaped process in the main checkout rather than the one process this
+  launch had just produced. It happened to hit only its intended target, which
+  is luck, not correctness. (2026-08-03, coordinator)
+
+- **A detached HEAD in the main checkout is the reliable "a gate is in flight"
+  signal; a process probe is not.** I ran `pgrep -af gate_chain2.sh` mid-gate,
+  read its negative result as "the gate finished", and said so — while
+  `land_lane` was still running the named tests. `git symbolic-ref -q HEAD`
+  returning detached was in the same output and said the opposite. Prefer the
+  state the operation itself maintains over a probe for the process performing
+  it: the state is what the next command will actually act on.
+  (2026-08-03, coordinator)

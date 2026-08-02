@@ -2,6 +2,53 @@
 
 ## Open
 
+- **P1 · 2026-08-03 — the React port's main chain is blocked on ONE action only you can take:
+  pushing the QaCard wrapper through claude.ai/design (#630 P5 stage 2, #1060)**
+  You ruled that the React migration is the main near-term goal, and told me to plan it out and
+  file it all. That is done — 27 tasks, `#1057`–`#1083`. I then resolved the dependency graph,
+  and it has a single choke point that is yours, not the loop's.
+  - **~20 of the 27 sit behind `#1060`**, whose stated dependency is *"authenticated QaCard
+    ingestion checkpoint recorded on `#630`"*. The chain is
+    `#1060 → #1061 → #1062 → #1063 → #1064 → #1065 → #1066/#1067 → #1071…#1081`.
+  - **A lane physically cannot do it.** It needs authentication and it *uploads to an external
+    service*. That is outward-facing and your call. `#630`'s own note says so in terms, and says
+    the lane must not describe the local half as if it were the end-to-end proof.
+  - **The local half is already built and landed.** P5 stage 1 landed `client/tokens.css` as a
+    six-line entrypoint over `style.css` (one palette, no derived artifact to go stale), proven
+    byte-identical on two ephemeral ports. Stage 2 authored the QaCard wrapper. `§6-R5` deliberately
+    scoped it to ONE wrapper so exactly this question gets answered before the other eight are
+    written — so this is the checkpoint working as designed, not a stall.
+  - **What I need:** either run that one wrapper through claude.ai/design and tell me whether it
+    renders acceptably, or tell me to proceed on the assumption it does and accept the rework risk
+    across nine wrappers if it does not.
+  - **Not blocking everything.** `#1057` (the port's root — *"land before any builder-deleting
+    flip"*) is in flight now, and `#1068` depends on nothing and is dispatchable. I am working
+    those meanwhile, so the port is not idle — but the long chain does not start without you.
+
+- **P1 · 2026-08-03 — do I widen the native-agent sandbox to reach `../.worktrees/`, or route your
+  "use an Opus 5 subagent" instructions to a different agent? (#1009)**
+  **Two of your own standing decisions now contradict each other, and the effect is that you have
+  asked twice for Opus 5 and neither request could execute.** Nothing told you, because the refusal
+  went to a launch log I had to read on purpose.
+  - You asked for `#1006` (`/goals` redesign) and `#1007` (issue-hover styling) to go to an Opus 5
+    subagent, naming the tier yourself.
+  - You also asked that worktrees move OUT of the repo to `../.worktrees/`, so the repo tree only
+    shrinks.
+  - Native agents inherit the coordinator's sandbox, which is rooted **at** the repo. So
+    `just launch-lane … @opus5 …` refuses: *"native agent @opus5 inherits the coordinator sandbox
+    rooted at …/ud-dreamwork, but worktree …/.worktrees/… is outside that root"*.
+  - **The refusal is correct** — it fails closed and names both remedies. This is not a bug in
+    `launch_lane`. It is a property of the fleet: **no native agent can be dispatched at all**,
+    for any task. The ccc-runner aliases (`@glm52`, `@cx-coder`, `@cx-luna-*`) are unaffected
+    because each gets its own lane sandbox.
+  - **Why I am asking rather than choosing:** the fix is to widen the coordinator's sandbox to
+    include every lane worktree, which widens my own write reach across all of them — precisely the
+    boundary `#465` is being built to police from the other side. Those two should be decided
+    together, not separately.
+  - **My default if you do not answer:** I will keep `#1006`/`#1007` held rather than silently
+    downgrade the tier you named. Say the word and I will route them to `@cx-luna-xhigh` instead,
+    which is design-capable and needs no sandbox change.
+
 - **P2 · 2026-08-03 — which URL should be the canonical task view, `/tasks` or `/tasks2`? (#1013)**
   A lane fixed #1013 and the review refused it, correctly, because the fix supersedes a decision
   someone took deliberately. I need one fact from you that I cannot get from the code.
