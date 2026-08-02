@@ -6035,9 +6035,20 @@ class TestPendingEventCount(unittest.TestCase):
             out=p_out, err=p_err)
         self.assertEqual(p_code, 0, f"pending failed: {p_err.getvalue()!r}")
         # Act 3 of the tick: the bounded advance over (cursor, through].
+        #
+        # --applied is passed EXPLICITLY, beside the fixture journal.  It is
+        # not boilerplate: `consume`'s --applied defaults to a cwd-relative
+        # ".dreamwork/applied.md", so this helper used to drain a temp journal
+        # while stamping its dedup markers into whatever checkout the suite
+        # happened to run from — the real repo's live applied.md from the main
+        # checkout, or a lane's from a worktree.  That is #808's unexplained
+        # evidence (byte-identical actor=coordinator-drain files appearing in
+        # three lane worktrees that nothing had drained) reproduced by the test
+        # suite itself, and #808's refusal is what finally made it speak.
         out, err = io.StringIO(), io.StringIO()
         code = mod.main(
-            ["consume", "--journal", self._journal(), "--through", str(through)],
+            ["consume", "--journal", self._journal(), "--through", str(through),
+             "--applied", os.path.join(self.root, ".dreamwork", "applied.md")],
             out=out, err=err)
         self.assertEqual(code, 0, f"consume failed: {err.getvalue()!r}")
         from user_events.sqlite import open_journal
