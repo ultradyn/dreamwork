@@ -4839,3 +4839,17 @@ disagreed with the story — neither looked wrong on its own.
   state the operation itself maintains over a probe for the process performing
   it: the state is what the next command will actually act on.
   (2026-08-03, coordinator)
+
+- **A lesson number pasted into a brief is a citation, and a wrong one corrupts
+  the retrieval it was meant to provide.** I wrote "`#651` — do not describe a
+  local half as if it were the end-to-end proof" into four briefs in one night.
+  `#651` is *"A guard whose message names a failure mode it cannot detect"* —
+  a different claim entirely. The gloss I attached was a real principle and the
+  number was real, so nothing looked wrong; a lane following the citation back
+  would have found a task that does not say what I said it says. `#1030`'s lane
+  caught it, honoured the principle, and explicitly declined to borrow the
+  number — the right handling. `#400` established that the lessons which reach a
+  lane are the ones hand-copied into its brief; this is the failure mode of that
+  mechanism: hand-copying carries no check that the id and the claim belong
+  together. Quote the title, not just the number, so the mismatch is visible on
+  the page. (2026-08-03, coordinator)
