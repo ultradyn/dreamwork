@@ -92,7 +92,7 @@ export function createRegistry() {
    * takes over everything inside its root, and `#view` is not ours to take
    * over — `unmount` must be able to hand `host` back exactly as it was.
    * `dev/capture/coexist.mjs` asserts that round-trip byte-for-byte. */
-  function mount(route, host, data, param) {
+  function mount(route, host, data, param, payload) {
     const entry = entries.get(route);
     if (!entry) {
       throw new Error(
@@ -114,6 +114,7 @@ export function createRegistry() {
     const root = createRoot(container);
     const rec = {
       host: host, container: container, root: root, data: data, param: param,
+      payload: payload,
     };
     live.set(route, rec);
     render(rec, entry, data);
@@ -144,6 +145,7 @@ export function createRegistry() {
       rec.root.render(React.createElement(entry.component, {
         data: data,
         param: rec.param,
+        payload: rec.payload,
       }));
     });
   }

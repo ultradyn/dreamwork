@@ -4843,7 +4843,20 @@ var DreamworkDesign = (() => {
     }
     return { list, detail, selected };
   }
+  async function fetchRoutePayload(name, param) {
+    if (name === "file") return await fetchFile(param);
+    if (name === "chat") return await fetchChat(param);
+    if (name === "tasks2") return await fetchTaskTriage(param);
+    return null;
+  }
   async function buildCurrent() {
+    const v = view;
+    if (isNativeRoute(v.name)) {
+      await ensureData();
+      v.payload = await fetchRoutePayload(v.name, v.param);
+      return null;
+    }
+    v.payload = null;
     if (view.name === "file") {
       await ensureData();
       return buildFile(view.param, await fetchFile(view.param), view.mode);
@@ -5343,7 +5356,7 @@ var DreamworkDesign = (() => {
     viewEl.replaceChildren();
     lastViewHtml = null;
     window.__dwViewRenderGen = (window.__dwViewRenderGen || 0) + 1;
-    registry.mount(view.name, viewEl, data, view.param);
+    registry.mount(view.name, viewEl, data, view.param, view.payload);
     finishViewCommit();
   }
   function snapshotCardState() {
@@ -7171,7 +7184,9 @@ var DreamworkDesign = (() => {
     const url = name === "questions" ? "/questions" : name === "answers" ? "/answers" : name === "settings" ? "/settings" : name === "file" ? "/file?p=" + encodeURIComponent(param || "") + (mode === "source" ? "&view=source" : "") : name === "review" ? "/review?p=" + encodeURIComponent(param || "") + (opts.q ? "&q=" + encodeURIComponent(opts.q) : "") : name === "tasks2" ? "/tasks2" + (param ? "?t=" + encodeURIComponent(param) : "") : name === "question" ? "/question?qid=" + encodeURIComponent(param || "") : name === "research" ? "/research" + (param ? "?p=" + encodeURIComponent(param) : "") : name === "reviews" ? "/reviews" : name === "goals" ? "/goals" : name === "chat" ? "/chat/" + encodeURIComponent(param || "") : "/";
     const artifactDoc = name === "review" || name === "tasks2" || name === "research" && !!param;
     if (opts.push) history.pushState({ name, param, q: opts.q || null }, "", url);
+    const navView = view;
     const html = await buildCurrent();
+    if (view !== navView) return;
     if (opts.transition === false) {
       document.body.classList.toggle("review", artifactDoc);
       document.body.classList.toggle("file", name === "file");
