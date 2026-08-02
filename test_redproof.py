@@ -264,6 +264,9 @@ class TestZeroStatesAreDistinct:
         assert "no evidence" in out
         assert "no injections registered" in out
         assert "production reach was not evaluated" in out
+        assert "red-proof reach: DID NOT CHECK" in out
+        assert "caught 0 of 0 registered injection(s)" in out
+        assert "population is zero, not a clean reach sweep" in out
 
     def test_empty_registry_is_calm_zero(self, repo, capsys):
         """Ran but nothing live → no evidence, exit 0."""
@@ -623,6 +626,21 @@ class TestInjectionReachEvidence:
         assert "restoration clean" in out
         assert "red-proof reach: DID NOT CHECK" in err
         assert "examined 0 evidence artifact(s) for 1 registered injection(s)" in err
+
+    def test_missing_artifact_cannot_keep_a_caught_verdict(self, repo, capsys):
+        _begin(repo, "router.js")
+        (repo / "router.js").write_text(
+            "export function route() { return false; /* BUG */ }\n")
+        assert _observe(repo, "router.js", self.FAILURE, self._route_check()) == 0
+        assert _restore(repo, "router.js") == 0
+        entries, _ = rp._read_registry(repo)
+        Path(entries[0]["reach"]["evidence"]).unlink()
+
+        assert _check(repo, require=1) == 1
+        _, err = capsys.readouterr()
+        assert "red-proof reach: DID NOT CHECK" in err
+        assert "evidence artifact absent/unreadable" in err
+        assert "caught 0 of 1 registered injection(s)" in err
 
     def test_second_registration_does_not_inherit_first_reach(self, repo, capsys):
         _begin(repo, "router.js")
