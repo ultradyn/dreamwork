@@ -4323,3 +4323,37 @@ match set from every process on the box including the asker; a relative path inh
 from wherever the shell happens to be. Neither reports the inheritance, and both succeed loudly at
 the wrong thing. Address the subject explicitly — an absolute path, an owned PID — whenever the cost
 of writing to the wrong one exceeds the cost of typing it out.
+
+## A convention with no reader is documentation, not machinery (2026-08-02, #1023/#1024/#641, mine, measured)
+
+`#630` — the head of the React migration, a P1 he had explicitly asked to be *"prioritised at the
+earliest suitable time"* — sat open for two days behind a note reading *"Do not start before the
+ruling"*, when the ruling had landed **the same afternoon the note was written** (2026-07-31 17:03).
+It was found only because he asked an unrelated sequencing question that sent the coordinator to
+look at that goal's head. Measuring afterwards turned up a SECOND: `#641`, whose TITLE said
+*"BLOCKED on the #614 wire-protocol ruling"* while `#614` had been answered at 17:20 the same day.
+
+**The tempting lesson — "write blockers down properly" — is refuted by the evidence.** The blocker
+WAS written down, in the most structured place available: the question titles carry the convention
+`#591 (blocks #630)` and `#614 (blocks #641)`. Exactly three questions in the whole corpus use that
+convention and ALL THREE are answered. The dependency was machine-readable the entire time.
+**Nothing ever re-read it.** The failure was not in recording; it was that recording had no reader.
+
+The general form: **a convention that nothing consumes decays into prose the moment it is written**,
+and it decays silently, because a stale "BLOCKED" is indistinguishable from a live one — the sentence
+is well-formed, it cites a real id, and only fetching that id shows it is resolved. Every reader
+after that treats it as current, which is this file's recurring theme once more: *a true statement,
+read as a stronger claim than it supports*, except here the statement had stopped being true.
+
+**The design consequence, which the IGC made explicit:** the fix must be a STANDING check, not a
+one-shot. Firing when a question is folded, or when a task is next considered, both die on the same
+error — they ask once, at a moment someone has to be present for, and a citation written after that
+moment is never covered. `#641` is the proof: it would have needed someone to look at a task nobody
+had reason to open. A standing check re-asks every run, which is the only version that survives
+nobody being there.
+
+Worth noting how nearly the right answer was reached for the wrong reason: the mechanism now filed as
+`#1024` had ALREADY been recommended an hour earlier on corpus-coverage grounds — and on that goal
+alone the one-shot rivals tie with it. Only adding the standing-signal goal separated them.
+**A right answer reached by an insufficient argument is not yet a decided question**, and it will not
+survive the first person who argues the tie the other way.
