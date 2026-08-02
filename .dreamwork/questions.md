@@ -2,6 +2,16 @@
 
 ## Open
 
+
+- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
+  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
+  then, nothing blocks and nothing is delivered by hand.
+  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
+    as an open question that we'll revisit once dreamhub is stable and the
+    primary way we access dreamworkers
+
+## Answered
+
 - **P2 · 2026-08-02 19:10 — #631: does the live session-log view belong to the React migration goal, or may it land on the current client first?**
   Your `#1016` dogfooding pass read the title and body of all **188 open tasks** and proposed **zero
   new links** to goal 1 (*"Convert webui to fully run via build react webui and migrate watch server
@@ -35,16 +45,13 @@
 
 
 
-- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
-  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
-  then, nothing blocks and nothing is delivered by hand.
-  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
-    as an open question that we'll revisit once dreamhub is stable and the
-    primary way we access dreamworkers
-
-## Answered
+  → answered (2026-08-02 19:1x): **neither option — it comes AFTER the migration.** His words: *"why don't we migrate over before the session log? then we can do the session log thing entirely in react."* Recorded as a DEPENDENCY, not a goal-#1 membership — `groups require --task 631 --needs-group 1`, reporting *"task #631 needs group #1: 5 of 5 subtree task(s) not landed"*. Membership would have been wrong: #631 is not migration work, and adding it would inflate goal #1's denominator with work the migration does not include. My rec (let it land first, unlinked) was refuted by the better argument: the surface that does not exist yet is the cheapest one to not build twice.
+  He then generalised it, and it is now a standing goal in DREAMWORK.md: *"for all new webui features, we should implement them after react micration. make react migration the main near-term goal"*. Following that, #630 was found unblocked since 2026-07-31 17:03 and marked next-up; the stale-blocker defect is #1023.
 
 
+
+  - **Note (human, via session, 2026-08-02 19:14):** why don't we migrate over before the session log? then we can do the session log thing entirely in react.
+  - **Note (human, via session, 2026-08-02 19:19):** also note: for all new webui features, we should implement them after react micration. make react migration the main near-term goal
 - **P1 · 2026-08-02 18:05 — #1009: your "use an Opus 5 subagent" instruction currently cannot execute at all. Extend the sandbox, or accept ccc-only lanes?**
   **What happened.** You asked twice tonight for work to go to an Opus 5 subagent (the `/goals`
   redesign, and the issue-hover styling). `@opus5` exists and is configured correctly. The launch
