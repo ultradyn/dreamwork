@@ -2,6 +2,31 @@
 
 ## Open
 
+- **P1 · 2026-08-02 12:22 — I leaked three of your API keys into this session's transcript. Do you want them rotated?**
+  **What happened, and it was my mistake, not a tool's.** I wrote a shell command with backticks
+  inside a double-quoted string. Zsh command-substituted them, ran `set`, and printed the entire
+  environment into the session log. That included three live credentials:
+  `CODEX_POOLER_API_KEY`, `OPENCODEX_API_AUTH_TOKEN`, and `xANTHROPIC_AUTH_TOKEN`.
+
+  **What the exposure actually is, stated precisely so you can size it yourself.** Nothing was
+  transmitted anywhere — no network call carried them, and the command ran locally under your own
+  user. The keys are now sitting in plaintext in this session's transcript on disk
+  (`~/.claude-p/projects/…/3a19e737-….jsonl`) and in my conversation context. So the realistic risk
+  is not interception; it is that a transcript is a file that gets copied, pasted into a bug report,
+  or shared when debugging, and these would go with it.
+
+  **The question:** do you want to rotate those three, or is a local transcript an acceptable place
+  for them to sit? I have not touched them — rotating credentials is yours, not mine, and I would be
+  guessing at the blast radius of invalidating a key that other agents on this machine are
+  currently using. Five lanes are running against at least one of them right now.
+
+  **Told you by `attn` at 12:21** as well, because it is security-shaped and you were away; this
+  entry is the durable half so it survives if you missed the audio.
+
+  **What I have changed on my side regardless:** I have stopped using backticks in shell strings
+  and switched to `$(…)` inside single-quoted heredocs for anything with embedded quoting. Filed
+  nothing for it — it was operator error, not a defect in the repo.
+
 - **P2 · 2026-08-02 10:35 — #939/#862: the goal tree is complete and completely empty. Here is a proposed root and first children, in your own words. Approve, edit, or tell me to leave it empty.**
   **Short version:** every heartbeat tick all night has ended `· no current goal ·`. It was telling
   the truth and I read past it on all of them. Tonight I found out why, and it is two separate
