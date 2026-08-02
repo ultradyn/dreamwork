@@ -81,6 +81,7 @@ that launch still need distinct names when operating on the same file.
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import os
 import re
@@ -496,10 +497,13 @@ def main(argv: list[str] | None = None) -> int:
             "Subcommands: `write <name>` writes stdin to a lane-private file "
             "and prints its path (#868); `require-mtime-change <path> -- <cmd>` "
             "runs a positive control. With no subcommand, prints this lane's "
-            "scratch dir."),
+            "scratch dir. The legacy `snap` and `measure` directory names remain "
+            "positional; use `--dir NAME` for any other directory name."),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("sub", nargs="?", default=None,
-                    help="optional subdirectory, e.g. 'snap'")
+                    help="legacy named subdirectory: 'snap' or 'measure'")
+    ap.add_argument("--dir", dest="directory", default=None,
+                    help="explicit arbitrary directory name (legacy directory form)")
     ap.add_argument("--no-create", action="store_true",
                     help="print the path without creating it")
     ap.add_argument("--cwd", default=None,
@@ -510,13 +514,25 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--author-evidence", action="store_true",
                     help="print the AUTHOR's directory (for a reviewer to "
                          "read the author's evidence), not the caller's own")
-    args = ap.parse_args(argv)
+    args, extras = ap.parse_known_args(argv)
+    if args.sub not in (None, "snap", "measure"):
+        matches = difflib.get_close_matches(
+            args.sub, ("write", "require-mtime-change"), n=1, cutoff=0.75)
+        suggestion = f"; did you mean '{matches[0]}'?" if matches else ";"
+        print(f"refuse: unknown verb '{args.sub}'{suggestion} for the legacy "
+              f"directory form use --dir {args.sub}", file=sys.stderr)
+        return 2
+    if extras:
+        ap.error(f"unrecognized arguments: {' '.join(extras)}")
+    if args.sub is not None and args.directory is not None:
+        ap.error("the legacy positional directory and --dir cannot be used together")
     cwd = Path(args.cwd) if args.cwd else None
+    sub = args.directory if args.directory is not None else args.sub
     if args.author_evidence:
-        print(author_dir(cwd, create=not args.no_create, sub=args.sub))
+        print(author_dir(cwd, create=not args.no_create, sub=sub))
         return 0
     role = args.role or lane_role()
-    d = lane_scratch_dir(cwd, create=not args.no_create, sub=args.sub, role=role)
+    d = lane_scratch_dir(cwd, create=not args.no_create, sub=sub, role=role)
     print(d)
     return 0
 
