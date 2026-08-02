@@ -1750,7 +1750,7 @@ def test_set_current_moves_the_rendered_tick_line(dev_ledger, tmp_path):
     target, goal_id, ledger = _goal_target(
         tmp_path, title=title, completed=1, total=3)
     # Baseline: a goal exists but the pointer is empty -> the healthy empty.
-    assert tick_line._goal_fact(target) == "no current goal"
+    assert tick_line._goal_fact(target) == "no current goal (1 goal defined)"
     rc, out, err = _run(dev_ledger,
                         ["groups", "set-current", str(goal_id),
                          "--ledger", ledger])
@@ -1776,7 +1776,7 @@ def test_set_current_none_clears_the_rendered_pointer(dev_ledger, tmp_path):
                          "--ledger", ledger])
     assert rc == 0, (rc, out, err)
     assert "current goal cleared" in out, out
-    assert tick_line._goal_fact(target) == "no current goal"
+    assert tick_line._goal_fact(target) == "no current goal (1 goal defined)"
 
 
 def test_set_current_bare_errors_and_does_not_clear(dev_ledger, tmp_path):
@@ -1807,14 +1807,16 @@ def test_set_current_rejects_id_and_none_together(dev_ledger, tmp_path):
                          "--ledger", ledger])
     assert rc == 2, (rc, out, err)
     assert "mutually exclusive" in err, err
-    assert tick_line._goal_fact(target) == "no current goal"
+    assert tick_line._goal_fact(target) == "no current goal (1 goal defined)"
 
 
 def test_set_current_refuses_a_non_goal_kind(dev_ledger, tmp_path):
     """The kind='goal' guard fires at WRITE time (#962), so the renderer can
     never reach a state it would call healthy when it is not. A non-goal group
     is refused (exit 2) and the pointer stays empty — the tick keeps rendering
-    the healthy 'no current goal', never a misleading handle (#868).
+    the healthy 'no current goal (N goals defined)', never a misleading
+    handle (#868). The population is named as of #963 so an empty tree and
+    an unselected one are distinguishable.
 
     PRODUCTION LINE: GoalRepository._goal's `kind != "goal"` -> ValidationError
     (dreamwork_db/goals.py), reached through tx.goals.set_current_goal_id. RED
@@ -1836,7 +1838,7 @@ def test_set_current_refuses_a_non_goal_kind(dev_ledger, tmp_path):
     assert "not a goal" in err, err
     # Pointer unchanged -> the healthy empty, not a dangling/misleading handle.
     rendered = tick_line._goal_fact(target)
-    assert rendered == "no current goal", rendered
+    assert rendered == "no current goal (1 goal defined)", rendered
     assert "GOAL UNKNOWN" not in rendered
 
 
@@ -1853,7 +1855,7 @@ def test_set_current_refuses_a_missing_group(dev_ledger, tmp_path):
                          "--ledger", ledger])
     assert rc == 1, (rc, out, err)
     assert f"no task group #{missing}" in err, err
-    assert tick_line._goal_fact(target) == "no current goal"
+    assert tick_line._goal_fact(target) == "no current goal (1 goal defined)"
 
 
 def test_set_current_surfaces_the_full_return_vocabulary(dev_ledger, tmp_path):
@@ -1885,7 +1887,8 @@ def test_set_current_surfaces_the_full_return_vocabulary(dev_ledger, tmp_path):
 def test_set_current_honours_ledger_and_writes_only_there(dev_ledger, tmp_path):
     """--ledger isolation (#962): the verb writes only to the store under the
     --ledger path, so a lane can never touch another store. Set current on A
-    and B's rendered line must stay 'no current goal'."""
+    and B's rendered line must stay unselected — 'no current goal (1 goal
+    defined)' since #963 names the population."""
     target_a, goal_a, ledger_a = _goal_target(
         tmp_path / "a", title="A", completed=0, total=1)
     target_b, goal_b, ledger_b = _goal_target(
@@ -1896,4 +1899,4 @@ def test_set_current_honours_ledger_and_writes_only_there(dev_ledger, tmp_path):
     assert rc == 0, (rc, out, err)
     assert tick_line._goal_fact(target_a).startswith("goal #G")
     # B untouched: the verb wrote only under ledger_a.
-    assert tick_line._goal_fact(target_b) == "no current goal"
+    assert tick_line._goal_fact(target_b) == "no current goal (1 goal defined)"
