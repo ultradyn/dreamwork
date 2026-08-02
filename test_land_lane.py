@@ -303,8 +303,8 @@ def test_wider_lint_label_padding_is_not_a_warn_identity_change(landing_repo):
     result = _run(root, "test_named.py")
 
     assert result.returncode == 0, result.stderr
-    assert "lint WARN row-set comparison: added=0 removed=0" in result.stdout
-    assert "baseline=1 rows; post-merge=1 rows" in result.stdout
+    assert "lint-comparison WARN row-set comparison: added=0 removed=0" in result.stdout
+    assert "baseline=1 rows; post-gates=1 rows" in result.stdout
 
 
 def test_warn_identity_does_not_collapse_meaningful_detail_whitespace():
