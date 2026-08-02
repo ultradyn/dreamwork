@@ -7805,9 +7805,16 @@ class TestLaneContainmentBackstop:
         assert branch == "renamed-after-dispatch"
         assert lint.lane_owned_paths(t / ".dreamwork", branch, lane_path) == ["watch.py"]
 
-    def test_detached_worktree_under_lane_root_is_a_loud_classification_fault(
+    def test_detached_worktree_under_lane_root_with_no_operation_is_a_loud_fault(
             self, tmp_path):
-        """A detached lane cannot silently disappear for lacking a branch line."""
+        """Case (b) from #1116: detached with NO in-progress state.
+
+        A ``--detach`` worktree under a lane root with no git operation in
+        progress is genuinely unclassifiable — the ERROR is correct here, and
+        this is the case the check was written for. The seam that would have
+        to change is the ``else`` arm after the in-progress check in
+        ``_live_lane_worktrees``.
+        """
         t, git = self._repo_with_lane(tmp_path)
         detached = t / ".worktrees" / "detached-lane"
         git("worktree", "add", "-q", "--detach", str(detached))
@@ -7950,6 +7957,189 @@ class TestLaneContainmentBackstop:
                   if lvl == lint.ERROR and w == "lane-containment"]
         assert len(errors) == 1, rep.render()
         assert "other.py" in errors[0]
+
+    # -- #1116: mid-operation detached worktrees (case a) vs genuinely
+    #    unclassifiable (case b) -------------------------------------------
+
+    def _repo_with_conflicting_rebase(self, tmp_path):
+        """A repo whose lane worktree is MID-REBASE (conflict), not just detached.
+
+        Creates a genuine `git rebase` conflict so the lane worktree is
+        detached with `rebase-merge/` state in its linked git-dir — the
+        exact transient state every lane enters when running an instructed
+        `git rebase master`. Returns ``(t, git, lane_wt)``.
+        """
+        import subprocess
+        t = fresh(tmp_path)
+
+        def git(*a, cwd=None):
+            return subprocess.run(
+                ["git", "-C", str(cwd or t), *a],
+                capture_output=True, text=True, check=True)
+
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        (t / "watch.py").write_text("# base\n", encoding="utf-8")
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True, exist_ok=True)
+        (briefs / "900-lane.md").write_text(
+            "# Brief\n\nWorktree: `.worktrees/lane` on `wt/lane`.\n\n"
+            "Lane-owns: watch.py\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-qm", "base")
+        git("worktree", "add", "-q", "-b", "wt/lane", str(t / ".worktrees" / "lane"))
+        lane_wt = t / ".worktrees" / "lane"
+        # Diverge: master and lane both edit watch.py — will conflict
+        (t / "watch.py").write_text("# master version\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-qm", "master edit")
+        (lane_wt / "watch.py").write_text("# lane version\n", encoding="utf-8")
+        git("add", "-A", cwd=lane_wt)
+        git("commit", "-qm", "lane edit", cwd=lane_wt)
+        # Rebase lane onto master — CONFLICT (returns 1, leaves rebase-merge/)
+        subprocess.run(
+            ["git", "-C", str(lane_wt), "rebase", "master"],
+            capture_output=True, text=True, check=False)
+        return t, git, lane_wt
+
+    def test_mid_rebase_worktree_is_warn_not_error_and_still_classified(
+            self, tmp_path):
+        """Case (a) from #1116: a genuine rebase conflict detaches the worktree.
+
+        Production seam: the ``_worktree_operation_in_progress`` check in
+        ``_live_lane_worktrees`` — without it the mid-rebase worktree ERRORs
+        again and halts the gate for every branch. The worktree is still
+        classified (ownership-checked from its registered path) and reported
+        as a WARN naming the worktree and the operation.
+        """
+        t, git, lane_wt = self._repo_with_conflicting_rebase(tmp_path)
+
+        # Precondition: the worktree is genuinely mid-rebase — the porcelain
+        # has no branch line for it, and its linked git-dir carries
+        # rebase-merge state. Without both of these the test proves nothing.
+        porcelain = subprocess.run(
+            ["git", "-C", str(t), "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, check=True).stdout
+        lane_block = False
+        for line in porcelain.splitlines():
+            if line.startswith("worktree ") and str(lane_wt) in line:
+                lane_block = True
+            elif lane_block and line.startswith("detached"):
+                break
+        else:
+            assert False, "lane worktree is not detached in porcelain — " \
+                          "rebase did not produce the expected state"
+        assert lint._worktree_operation_in_progress(lane_wt) == "rebase"
+
+        # The fix: _live_lane_worktrees does NOT raise for a mid-rebase worktree.
+        lanes = lint._live_lane_worktrees(t)
+        assert len(lanes) == 1, list(lanes)
+        assert lanes.transient == [(str(lane_wt), "rebase")], lanes.transient
+        assert lanes.examined == 2
+
+        # The backstop emits a WARN (not ERROR) naming the worktree and op.
+        rep = self._rows(t)
+        levels = {lvl for lvl, w, _ in rep.rows if w == "lane-containment"}
+        assert lint.ERROR not in levels, rep.render()
+        warns = [d for lvl, w, d in rep.rows
+                 if lvl == lint.WARN and w == "lane-containment"]
+        assert len(warns) == 1, rep.render()
+        assert str(lane_wt) in warns[0] and "mid-rebase" in warns[0]
+
+        # Clean up the rebase so the fixture does not leave git in a bad state.
+        subprocess.run(
+            ["git", "-C", str(lane_wt), "rebase", "--abort"],
+            capture_output=True, text=True, check=False)
+
+    def test_mid_rebase_worktree_ownership_is_still_checked(self, tmp_path):
+        """A transient (mid-rebase) lane's owned paths are still protected.
+
+        The worktree is classified from its registered path, so the ownership
+        check runs against it even while detached. If its file is dirty in the
+        main checkout, the ERROR fires alongside the WARN.
+        """
+        t, git, lane_wt = self._repo_with_conflicting_rebase(tmp_path)
+
+        # Precondition: the lane IS transient and DOES declare ownership.
+        lanes = lint._live_lane_worktrees(t)
+        assert lanes.transient, "lane is not transient — test proves nothing"
+        owned = lint.lane_owned_paths(
+            t / ".dreamwork", "placeholder", str(lane_wt))
+        assert owned == ["watch.py"], owned
+
+        # Dirty the lane's file in the MAIN checkout.
+        (t / "watch.py").write_text("# stray in main\n", encoding="utf-8")
+        rep = self._rows(t)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "lane-containment"]
+        warns = [d for lvl, w, d in rep.rows
+                 if lvl == lint.WARN and w == "lane-containment"]
+        # Both the ERROR (ownership violation) and the WARN (transient state)
+        # are independently reportable — the transient WARN does not suppress
+        # the ownership ERROR.
+        assert len(errors) == 1, rep.render()
+        assert "watch.py" in errors[0]
+        assert len(warns) == 1, rep.render()
+        assert "mid-rebase" in warns[0]
+
+        subprocess.run(
+            ["git", "-C", str(lane_wt), "rebase", "--abort"],
+            capture_output=True, text=True, check=False)
+
+    def test_worktree_operation_in_progress_reads_linked_git_dir(self, tmp_path):
+        """The in-progress detection resolves the linked worktree's git-dir.
+
+        For a linked worktree, ``<wt>/.git`` is a FILE (``gitdir: <path>``),
+        NOT a directory. The detection reads that file, not ``<wt>/.git/``.
+        This test uses a REAL linked worktree to prove the resolution path.
+        """
+        import subprocess
+        t = fresh(tmp_path)
+
+        def git(*a, cwd=None, check=True):
+            return subprocess.run(
+                ["git", "-C", str(cwd or t), *a],
+                capture_output=True, text=True, check=check)
+
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        (t / "f").write_text("base\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-qm", "base")
+        git("worktree", "add", "-q", "-b", "wt/probe", str(t / ".worktrees" / "probe"))
+        wt = t / ".worktrees" / "probe"
+
+        # Precondition: .git is a FILE, not a directory, for a linked worktree.
+        assert (wt / ".git").is_file(), "linked worktree .git should be a file"
+
+        # No operation in progress → None.
+        assert lint._worktree_operation_in_progress(wt) is None
+
+        # Simulate a rebase-in-progress by creating rebase-merge/ in the
+        # linked git-dir (the path the .git file points to). This is the
+        # same marker a real `git rebase` creates — verified above against
+        # a genuine conflict, but this test isolates the git-dir resolution.
+        git_dir = lint._worktree_git_dir(wt)
+        assert git_dir is not None, "could not resolve linked git-dir"
+        assert git_dir.is_dir()
+        (git_dir / "rebase-merge").mkdir()
+        assert lint._worktree_operation_in_progress(wt) == "rebase"
+
+        # MERGE_HEAD is a file, not a directory.
+        (git_dir / "rebase-merge").rmdir()
+        (git_dir / "MERGE_HEAD").write_text("abc123\n")
+        assert lint._worktree_operation_in_progress(wt) == "merge"
+        (git_dir / "MERGE_HEAD").unlink()
+
+        # CHERRY_PICK_HEAD
+        (git_dir / "CHERRY_PICK_HEAD").write_text("def456\n")
+        assert lint._worktree_operation_in_progress(wt) == "cherry-pick"
+        (git_dir / "CHERRY_PICK_HEAD").unlink()
+
+        # Back to None after cleanup.
+        assert lint._worktree_operation_in_progress(wt) is None
 
 
 def _load_lane_guard():
