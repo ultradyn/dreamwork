@@ -5018,3 +5018,23 @@ disagreed with the story — neither looked wrong on its own.
   durable frame into the first directory produces a file git refuses to add and
   that no other checkout will ever see. Frames go in `briefs/`; per-task briefs
   are operator-local. (2026-08-03, coordinator)
+
+- A landed fix can collide with the workaround that was standing in for it, and
+  the collision looks like the workaround still working. `#1093` made
+  `launch-lane` spawn the runner INSIDE the lane worktree; the coordinator's
+  dispatch template still killed a MAIN-checkout stray and then unconditionally
+  respawned. Post-fix there was no stray to kill, so the kill matched nothing and
+  the respawn produced TWO agents on one lane (pids 1789156 and 1799602, both
+  cwd=glm-1111alsofixes). Every step of the template reported success. When a fix
+  lands for a defect you have been working around, the workaround is the next
+  thing to re-read — it was written against the old behaviour and nothing tells
+  it the world changed. (2026-08-03, coordinator)
+
+- The heartbeat read `lanes 0 live []` for hours with up to six lanes running,
+  and one landing fixed it: `#1093`'s runner-in-the-worktree change means
+  `lane.lock` names a live pid instead of one the coordinator deliberately killed.
+  The first tick after it landed read `lanes 1 live [glm-1111alsofixes]`. The
+  lesson is not about locks — it is that a monitoring number which has been wrong
+  for hours stops being read, and the fix arrived only because a task
+  (`#1102`) was filed against the number rather than the number being tolerated.
+  File against the instrument, not just the symptom. (2026-08-03, coordinator)
