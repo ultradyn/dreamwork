@@ -5357,6 +5357,18 @@ class TestJustfilePipeSafety:
         lint.check_justfile_pipe_safety(tmp_path, rep)
         assert lint.ERROR in levels(rep, "justfile"), rep.render()
 
+    def test_pipefail_set_after_pipe_is_unprotected(self, tmp_path):
+        # D2-5 closed: pipefail AFTER a pipe does not protect it.
+        (tmp_path / "justfile").write_text(
+            "danger:\n"
+            "    #!/usr/bin/env bash\n"
+            "    cmd_a | cmd_b\n"               # pipe runs without pipefail
+            "    set -o pipefail\n",            # too late
+            encoding="utf-8")
+        rep = lint.Report()
+        lint.check_justfile_pipe_safety(tmp_path, rep)
+        assert lint.ERROR in levels(rep, "justfile"), rep.render()
+
     def test_zero_recipes_is_fault_not_pass(self, tmp_path):
         # #868/#937: a parser that finds nothing must not report a clean bill.
         (tmp_path / "justfile").write_text(

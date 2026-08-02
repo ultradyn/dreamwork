@@ -2791,6 +2791,25 @@ def _parse_justfile_recipes(text: str) -> list[tuple[str, str]]:
     return recipes
 
 
+def _pipefail_before_pipe(body: str) -> bool:
+    """True if ``pipefail`` appears at or before the first single pipe.
+
+    A shebang recipe that sets ``pipefail`` AFTER a pipe does not protect it:
+    the pipe runs under the shell's default (no pipefail), and the later
+    ``set`` only covers commands after it. Scanning line by line, the first
+    line to carry ``pipefail`` (or reach the end with no pipe at all) means
+    every pipe that follows is protected; a pipe found first means one ran
+    unprotected. Lines carrying both (e.g. ``set -o pipefail; cmd | cmd``)
+    resolve to protected — pipefail takes effect within the same line.
+    """
+    for ln in body.splitlines():
+        if "pipefail" in ln:
+            return True
+        if "|" in ln.replace("||", "  "):
+            return False
+    return True
+
+
 def check_justfile_pipe_safety(root: Path, rep: Report) -> None:
     """#972: a pipe in a recipe without pipefail eats the upstream exit code.
 
@@ -2837,8 +2856,7 @@ def check_justfile_pipe_safety(root: Path, rep: Report) -> None:
 
     for name, body in recipes:
         shebang = body.lstrip().startswith("#!")
-        pipefail = "pipefail" in body
-        if shebang and pipefail:
+        if shebang and _pipefail_before_pipe(body):
             continue
         in_scope += 1
         for ln in body.splitlines():
