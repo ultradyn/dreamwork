@@ -6955,6 +6955,24 @@ class TestGoalsRoute(unittest.TestCase):
                 fresh_store.goals.current_goal_id(),
                 "empty-tree set-current looked runnable and moved the pointer")
 
+    def test_set_current_reuses_goal_kind_guard(self):
+        dw = os.path.join(self.target, ".dreamwork")
+        with open_database(
+                task_store_spec(watch.store_path(dw)),
+                access=Access.WRITE) as store:
+            with store.transaction():
+                epic_id = store.groups.create(
+                    kind="epic", title="Not a goal", actor="test",
+                    at="2026-08-01T01:00:09Z")
+        status, body = self._post(self._serve(), {
+            "action": "set-current", "goal_id": epic_id,
+        })
+        self.assertEqual(status, 202)
+        self.assertTrue(body["rejected"], body)
+        self.assertEqual(body["reason"], "domain_invalid")
+        self.assertEqual(
+            body["detail"], f"epic #{epic_id} 'Not a goal' is not a goal")
+
     def test_set_current_readback_uses_a_different_store_session(self):
         from dreamwork_db.goals import GoalRepository
         original_set = GoalRepository.set_current_goal_id
