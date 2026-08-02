@@ -2488,6 +2488,112 @@ class TestObserveRemainderOptionGuard:
         assert "population=0" in result.stderr, result.stderr
 
 
+class TestReachRunEnvPrefix:
+    """#1119: leading ``VAR=value`` tokens run as shell env assignments, not
+    as a confusing ``could not execute 'CI='`` exit 127.
+
+    The real trap: ``subprocess.run`` with a list does not invoke a shell, so
+    a leading env-prefix was treated as the executable name. ``_reach_run``
+    now strips leading ``VAR=value`` tokens and merges them into the child
+    environment.
+    """
+
+    def test_is_env_assignment_edges(self):
+        assert rp._is_env_assignment("CI=")
+        assert rp._is_env_assignment("FOO_BAR=baz")
+        assert rp._is_env_assignment("LANG=C.UTF-8")
+        assert not rp._is_env_assignment("python3")
+        assert not rp._is_env_assignment("--lane")
+        assert not rp._is_env_assignment("=foo")
+        assert not rp._is_env_assignment("1foo=bar")
+        assert not rp._is_env_assignment("test.py")
+        assert not rp._is_env_assignment("--command")
+
+    def test_env_prefix_runs(self, tmp_path):
+        code, out = rp._reach_run(tmp_path, [
+            "CI=1", sys.executable, "-c",
+            "import os; print('CI=' + os.environ['CI'])"])
+        assert code == 0, out
+        assert "CI=1" in out
+
+    def test_multiple_env_prefixes(self, tmp_path):
+        code, out = rp._reach_run(tmp_path, [
+            "CI=1", "VERBOSE=yes", sys.executable, "-c",
+            "import os; print(os.environ['CI'] + os.environ['VERBOSE'])"])
+        assert code == 0, out
+        assert "1yes" in out
+
+    def test_inherited_env_preserved(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INHERITED_1119", "kept")
+        code, out = rp._reach_run(tmp_path, [
+            "CI=1", sys.executable, "-c",
+            "import os; print(os.environ['INHERITED_1119'])"])
+        assert code == 0, out
+        assert "kept" in out
+
+    def test_no_env_prefix_unchanged(self, tmp_path):
+        code, out = rp._reach_run(tmp_path, [
+            sys.executable, "-c", "print('plain')"])
+        assert code == 0, out
+        assert "plain" in out
+
+    def test_env_only_no_executable_is_clear_error(self, tmp_path):
+        code, out = rp._reach_run(tmp_path, ["CI=1", "VERBOSE=1"])
+        assert code == 127, out
+        assert "no executable" in out
+
+    def test_command_with_dashprefixed_tokens_unaffected(self, tmp_path):
+        # A command whose own argv includes --prefixed tokens after the
+        # executable must not be confused with env assignments: _reach_run
+        # only strips LEADING VAR= tokens.
+        code, out = rp._reach_run(tmp_path, [
+            sys.executable, "--version"])
+        assert code == 0, out
+
+    def test_wrong_order_with_env_prefix_refused_not_127(self, repo, tmp_path):
+        """Wrong order (--lane after --command) with CI= prefix: #989 catches
+        the swallowed --lane as a FAULT exit 2, NOT the confusing exit 127."""
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "scratch-1119w")
+        result = subprocess.run(
+            ["python3", str(CLI_PATH), "--cwd", str(repo),
+             "observe", "router.js", "--failure", "x",
+             "--command", "CI=1", sys.executable, "-c", "pass",
+             "--lane", "cx-1119w"],
+            capture_output=True, text=True, env=env)
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "swallowed token '--lane'" in result.stderr, result.stderr
+
+    def test_observe_with_env_prefix_runs_through_cli(self, repo, tmp_path):
+        """The brief's required explicit test: a CI= ... invocation runs
+        end-to-end through observe (correct order: --lane before --command)."""
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "scratch-1119cli")
+        lane = "cx-1119env"
+
+        def run(*a):
+            return subprocess.run(
+                ["python3", str(CLI_PATH), "--cwd", str(repo), *a],
+                capture_output=True, text=True, env=env)
+
+        begin = run("begin", "router.js", "--expectation", "expectation.txt",
+                    "--lane", lane)
+        assert begin.returncode == 0, begin.stdout + begin.stderr
+        (repo / "router.js").write_text("SABOTAGE 1119\n")
+        observed = run(
+            "observe", "router.js", "--lane", lane,
+            "--failure", "sabotage 1119 present", "--command",
+            "CI=1", sys.executable, "-c",
+            "from pathlib import Path; "
+            "assert 'SABOTAGE 1119' not in Path('router.js').read_text(), "
+            "'sabotage 1119 present'")
+        assert observed.returncode == 0, observed.stdout + observed.stderr
+        assert "emitted" in observed.stdout, observed.stdout
+        restore = run("restore", "router.js", "--lane", lane)
+        assert restore.returncode == 0, restore.stdout + restore.stderr
+        run("forget", "router.js", "--lane", lane)
+
+
 class TestNamedLaneAcrossEveryCliVerb:
     """#957: ``--lane`` is one identity selector, not a check-only flag."""
 
