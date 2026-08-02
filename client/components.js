@@ -529,9 +529,28 @@ function mdRender(text, inline, options = {}) {
    a text node is parsed.  The same resolver is installed in the app document
    and same-origin review iframes, so Markdown and review HTML cannot drift. */
 const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]';
+/* #1017 — the same skip set WITHOUT `code`, used when the user has kept
+   backtick task-id autolinking on. <pre> stays in both: a fenced code block
+   is never a place to mint a click, so a #NNN inside ``` … ``` stays literal
+   regardless of the setting. Only an INLINE `#NNN` (an isolated <code>) is
+   eligible. The :349 "bleed bug" is in the string path-pipeline
+   (linkifyMd→linkify), not this DOM walker, so promoting an inline-code id
+   to a link here does not re-open it. */
+const TASK_REF_SKIP_NO_CODE =
+  'a,button,pre,script,select,style,textarea,[data-task-ref-ui]';
 const TASK_REF_RE = /(^|[^\w])#(\d+)\b/g;
 const TASK_REF_CACHE_MS = 60 * 1000;
 const taskRefCache = new Map();
+/* #1017 — inline `#NNN` links unless the user turned the setting off. The
+   default is ON: he asked for the links AND the escape hatch in one breath,
+   so the links come first and the setting is the opt-out. Reads the same
+   data.settings.values envelope /settings writes, so a toggle on that page
+   takes effect on the next view commit (finishViewCommit re-runs the
+   walker). */
+function backtickTaskLinksOn() {
+  const v = data && data.settings && data.settings.values;
+  return !v || v['links.backtickTasks'] !== false;
+}
 
 function taskRefParts(text) {
   const out = [];
@@ -657,7 +676,11 @@ function hideTaskRef(doc) {
 
 function linkTaskRefText(node) {
   const parent = node.parentElement;
-  if (!parent || parent.closest(TASK_REF_SKIP)) return;
+  // #1017 — drop `code` from the skip set when inline backtick ids link, so
+  // a `#NNN` inside an isolated <code> promotes. The setting is read fresh
+  // each call so a /settings toggle takes effect on the next commit.
+  const skip = backtickTaskLinksOn() ? TASK_REF_SKIP_NO_CODE : TASK_REF_SKIP;
+  if (!parent || parent.closest(skip)) return;
   if (!node.ownerDocument.__dwTaskRefReview && !parent.closest('.md')) return;
   const parts = taskRefParts(node.nodeValue || '');
   if (!parts.some(part => part.id != null)) return;
