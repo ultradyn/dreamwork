@@ -37,6 +37,7 @@ from lane_liveness import LivenessUnknown, pid_matches_lane  # noqa: E402
 
 
 CONTRACT_PATH = ROOT / "briefs" / "boilerplate.md"
+REVIEW_FRAME_PATH = ROOT / "briefs" / "review-frame.md"
 INTEGRITY_START_TASK = 766
 _TASK_HEAD = re.compile(r"^# [^\n]*?#(\d+)\b", re.MULTILINE)
 _BRANCH_LINE = re.compile(
@@ -544,6 +545,117 @@ def persist_prompt(prompt: str, briefs_dir: Path | None = None) -> Path:
     return brief
 
 
+# --- Review dispatch persistence (#1112) -----------------------------------
+#
+# Lane dispatches are bound at three points: brief.py emits frame.md,
+# validate_prompt requires boilerplate.md, and persist_prompt writes a receipt.
+# Review dispatches had none of it — the coordinator hand-wrote each prompt and
+# concatenated briefs/review-frame.md by convention (#1109 measured this).  The
+# functions below mirror the lane path so the review frame is bound by
+# construction and a guard can read the receipt.
+#
+# Receipts live in .dreamwork/review-dispatches/ — a SIBLING of launch-attempts/,
+# not a discriminated kind within it.  check_brief_dispatch_coverage scans
+# launch-attempts/ and assumes every JSON record there carries the lane keys
+# (task_id, lane, prompt_sha256); adding review records to that directory would
+# silently break that scan.  Location discrimination is also what keeps the lint
+# check from reporting lane receipts as review prompts missing the frame.
+
+
+def validate_review_prompt(prompt: str, review_frame: str) -> None:
+    """Require briefs/review-frame.md verbatim, once, unfenced, as final section.
+
+    Mirrors ``validate_prompt`` for lanes: the frame must occur exactly once,
+    outside any fenced quotation, and nothing may follow it.  A frame inside a
+    code fence is quoted material, not instruction; a frame that is not last
+    leaves room for task-specific text to override it silently.
+    """
+    if not prompt:
+        raise DispatchFault("review prompt is empty; no dispatch was attempted")
+    if not review_frame:
+        raise DispatchFault(
+            "review frame file briefs/review-frame.md is empty; "
+            "the assertion examined no rules"
+        )
+    occurrence = prompt.find(review_frame)
+    if occurrence < 0:
+        raise DispatchFault(
+            "review frame from briefs/review-frame.md is missing or altered; "
+            "append that file verbatim to the review prompt"
+        )
+    if prompt.find(review_frame, occurrence + 1) >= 0:
+        raise DispatchFault(
+            "review frame appears more than once; cannot classify which copy "
+            "is instruction rather than quoted material"
+        )
+    if _fence_at(prompt, occurrence) is not None:
+        raise DispatchFault(
+            "review frame appears inside a fenced quotation, not as review instructions"
+        )
+    if prompt[occurrence + len(review_frame):].strip():
+        raise DispatchFault(
+            "review frame is not the final prompt section; append "
+            "briefs/review-frame.md verbatim after task-specific review text"
+        )
+
+
+def persist_review_prompt(
+    prompt: str, branch: str, round_num: int, *,
+    review_frame: str | None = None,
+    dispatches_dir: Path | None = None,
+) -> Path:
+    """Write a validated review dispatch prompt and its JSON receipt (#1112).
+
+    Returns the path of the persisted ``.prompt.md``.  The companion ``.json``
+    carries branch, round, the prompt digest, and the frame digest so a guard
+    can verify the frame that was validated at persistence time.
+
+    Idempotent: re-persisting the identical prompt for the same branch/round is
+    a no-op (returns the existing path); a byte mismatch is a refusal.
+    """
+    if review_frame is None:
+        review_frame = _read(REVIEW_FRAME_PATH, "review frame")
+    validate_review_prompt(prompt, review_frame)
+    if dispatches_dir is None:
+        dreamwork_dir = _briefs_dir().parent.parent
+        dispatches_dir = dreamwork_dir / "review-dispatches"
+    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    stem = f"{branch}-r{round_num}-{digest[:16]}"
+    prompt_path = dispatches_dir / f"{stem}.prompt.md"
+    receipt_path = dispatches_dir / f"{stem}.json"
+    record = {
+        "branch": branch,
+        "round": round_num,
+        "prompt_sha256": digest,
+        "prompt_bytes": len(prompt.encode("utf-8")),
+        "frame_sha256": hashlib.sha256(review_frame.encode("utf-8")).hexdigest(),
+    }
+    try:
+        dispatches_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise DispatchFault(
+            f"could not create review dispatch directory {dispatches_dir}: {exc}"
+        ) from exc
+    if prompt_path.exists():
+        existing = _read(prompt_path, "review dispatch prompt")
+        if existing != prompt:
+            raise DispatchFault(
+                f"review dispatch name {prompt_path.name} already belongs to another dispatch"
+            )
+        return prompt_path
+    _write_exclusive(prompt_path, prompt)
+    try:
+        _write_exclusive(receipt_path, json.dumps(record, indent=2, sort_keys=True) + "\n")
+    except DispatchFault:
+        for path in (prompt_path, receipt_path):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        raise
+    return prompt_path
+
+
 def verify_pending(briefs_dir: Path | None = None) -> int:
     """Verify every governed brief/receipt pair before the merge-gate commit."""
     if briefs_dir is None:
@@ -588,11 +700,17 @@ def _parser() -> argparse.ArgumentParser:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--prompt", type=Path)
     mode.add_argument("--verify-pending", action="store_true")
+    mode.add_argument("--review-prompt", type=Path,
+                      help="validate and persist a review dispatch prompt (#1112)")
     parser.add_argument(
         "--prepare",
         action="store_true",
         help="validate and persist --prompt without requiring its not-yet-created branch",
     )
+    parser.add_argument("--review-branch",
+                        help="branch under review (review-prompt mode only)")
+    parser.add_argument("--review-round", type=int, default=1,
+                        help="review round number (review-prompt mode only, default 1)")
     parser.add_argument("runner", nargs=argparse.REMAINDER)
     return parser
 
@@ -609,6 +727,33 @@ def main(argv: list[str] | None = None) -> int:
             print(f"brief integrity check failed: {exc}", file=sys.stderr)
             return 2
         print(f"brief integrity verified: {count} governed brief(s) matched receipts")
+        return 0
+
+    if args.review_prompt:
+        if args.runner:
+            print("review dispatch refused: runner is invalid in review-prompt mode", file=sys.stderr)
+            return 2
+        branch = args.review_branch
+        if not branch or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", branch):
+            print(
+                "review dispatch refused: --review-branch <name> is required "
+                "and must be one safe path component",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            prompt = _read(args.review_prompt, "review prompt")
+            review_frame = _read(REVIEW_FRAME_PATH, "review frame")
+            persist_review_prompt(prompt, branch, args.review_round,
+                                  review_frame=review_frame)
+        except DispatchFault as exc:
+            print(f"review dispatch refused: {exc}", file=sys.stderr)
+            return 2
+        digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        print(
+            f"review dispatch persisted: branch={branch}; round={args.review_round}; "
+            f"digest={digest}; exact prompt bytes preserved"
+        )
         return 0
 
     runner = args.runner

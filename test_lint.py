@@ -5940,6 +5940,112 @@ class TestBriefDispatchCoverage:
         assert "0 uncovered dispatch(es)" in detail
 
 
+class TestReviewDispatchFrame:
+    """#1112: every persisted review dispatch prompt carries the review-frame section.
+
+    The frame carries the three clone-blindnesses; without persistence it was a
+    convention and nothing could verify it landed.  These tests prove the four
+    Direction-2 shapes the brief names: missing-frame fires, empty-dir is NOT
+    CHECKED, lane receipts are not scanned, and a clean receipt is OK.
+    """
+
+    FRAME_TEXT = (Path(__file__).resolve().parent / "briefs" / "review-frame.md").read_text(encoding="utf-8")
+
+    @staticmethod
+    def _dispatch(root: Path, branch: str, prompt: bytes) -> None:
+        dispatches = root / ".dreamwork" / "review-dispatches"
+        dispatches.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(prompt).hexdigest()
+        (dispatches / f"{branch}-r1-{digest[:16]}.prompt.md").write_bytes(prompt)
+
+    @staticmethod
+    def _row(root: Path):
+        rep = lint.Report()
+        lint.check_review_dispatch_frame(root / ".dreamwork", rep)
+        rows = [row for row in rep.rows if row[1] == "review dispatch frame"]
+        assert len(rows) == 1, rep.render()
+        return rows[0]
+
+    def _ensure_frame(self, root: Path):
+        """Materialise briefs/review-frame.md so the check can read it."""
+        (root / "briefs").mkdir(exist_ok=True)
+        (root / "briefs" / "review-frame.md").write_text(self.FRAME_TEXT, encoding="utf-8")
+
+    def test_prompt_with_frame_is_ok(self, tmp_path):
+        root = target(tmp_path)
+        self._ensure_frame(root)
+        prompt = (b"# Review of branch foo\n\nLook at the diff.\n\n"
+                  + self.FRAME_TEXT.encode("utf-8"))
+        self._dispatch(root, "foo", prompt)
+        level, _, detail = self._row(root)
+        assert level == lint.OK
+        assert "examined 1 review dispatch prompt(s)" in detail
+        assert "0 missing" in detail
+
+    def test_prompt_missing_frame_warns(self, tmp_path):
+        root = target(tmp_path)
+        self._ensure_frame(root)
+        prompt = b"# Review of branch foo\n\nLook at the diff.\n"
+        self._dispatch(root, "foo", prompt)
+        level, _, detail = self._row(root)
+        assert level == lint.WARN
+        assert "1 missing the review-frame section" in detail
+        assert "frame text is absent" in detail
+
+    def test_empty_receipts_dir_is_not_checked_not_ok(self, tmp_path):
+        """#136: an empty directory examined NOTHING, which must never read as OK."""
+        root = target(tmp_path)
+        self._ensure_frame(root)
+        (root / ".dreamwork" / "review-dispatches").mkdir(parents=True)
+        level, _, detail = self._row(root)
+        assert level == lint.WARN
+        assert "examined 0 review dispatch prompt(s)" in detail
+        assert "NO VERDICT" in detail
+        assert "not an all-clear" in detail
+
+    def test_absent_receipts_dir_produces_no_row(self, tmp_path):
+        """Operator-local directory absent from a linked worktree: no row."""
+        root = target(tmp_path)
+        self._ensure_frame(root)
+        rep = lint.Report()
+        lint.check_review_dispatch_frame(root / ".dreamwork", rep)
+        assert rep.rows == [], rep.render()
+
+    def test_lane_receipts_are_not_scanned(self, tmp_path):
+        """Direction 2 from the brief: the check must not report lane receipts.
+
+        A lane receipt in launch-attempts/ carries the lane boilerplate, not the
+        review frame.  If the check scanned launch-attempts/ it would report every
+        lane receipt as a review prompt missing the frame — a false finding.
+        """
+        root = target(tmp_path)
+        self._ensure_frame(root)
+        # A lane receipt (boilerplate, NOT the review frame) in launch-attempts/
+        lane_prompt = b"# Task #902\n\nLane brief with boilerplate.\n"
+        attempts = root / ".dreamwork" / "launch-attempts"
+        attempts.mkdir(parents=True, exist_ok=True)
+        (attempts / "902-cx-902-deadbeefdeadbeef.json").write_text(
+            json.dumps({"task_id": 902, "lane": "cx-902", "runs": 1,
+                        "prompt_sha256": "a" * 64}),
+            encoding="utf-8")
+        (attempts / "902-cx-902-deadbeefdeadbeef.prompt.md").write_bytes(lane_prompt)
+        # No review-dispatches/ dir: the check says nothing about lane receipts.
+        rep = lint.Report()
+        lint.check_review_dispatch_frame(root / ".dreamwork", rep)
+        assert rep.rows == [], rep.render()
+
+    def test_duplicate_frame_in_prompt_warns(self, tmp_path):
+        root = target(tmp_path)
+        self._ensure_frame(root)
+        prompt = (b"# Review\n\n" + self.FRAME_TEXT.encode("utf-8")
+                  + b"\n\n" + self.FRAME_TEXT.encode("utf-8"))
+        self._dispatch(root, "foo", prompt)
+        level, _, detail = self._row(root)
+        assert level == lint.WARN
+        assert "missing the review-frame section" in detail
+        assert "(duplicate frame)" in detail
+
+
 class TestBriefHandoffObligation:
     """#398: a brief written after the hand-off obligation must carry it.
 
