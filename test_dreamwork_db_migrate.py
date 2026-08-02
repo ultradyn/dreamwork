@@ -121,13 +121,13 @@ def test_posture_agreement_names_each_difference_and_both_denominators():
          "delivery": "instant", "orchestration": "hands-on"},
         axes,
     )
-    assert result["status"] == POSTURE_DISAGREE
-    assert result["axes_compared"] == 5
-    assert result["axes_not_compared"] == 0
     assert result["message"] == (
         "DISAGREE: pace file='hot' db='idle'; "
         "asking file='ask' db='inform'; axes compared 5, axes not compared 0"
     )
+    assert result["status"] == POSTURE_DISAGREE
+    assert result["axes_compared"] == 5
+    assert result["axes_not_compared"] == 0
 
 
 def test_posture_agreement_never_defaults_an_absent_history_axis():
