@@ -35,9 +35,11 @@ mkdirSync(OUT, { recursive: true });
 const { ok, declare, finish, notes, errs } = makeReporter();
 declare({
   drives: '/questions card bodies: known-internal file links carry pipBtn; ' +
-          'unknown/external carry none; text selection across a pip still works',
+          'unknown/external carry none; text selection across a pip still works; ' +
+          '#1008 a #NNN task-ref link survives a content-changing re-render',
   traceWindow: 'static reads after ~1s settle; one selection probe — no ' +
-               'motion trace (arrival is always-on chrome, rides the card)',
+               'motion trace (arrival is always-on chrome, rides the card); ' +
+               'the #1008 probe drives tick() over a real /answer mtime change',
 });
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
@@ -314,6 +316,101 @@ ok('the body pip keeps a sub-line box (pip ' + (linebox.pipH ?? '?') +
    'px <= one line ' + (linebox.oneLineH ?? '?') + 'px) — it sits inside the text, not over it',
    !linebox.err && linebox.pipH > 0 && linebox.oneLineH > 0 &&
    linebox.pipH <= linebox.oneLineH);
+
+/* ── #1008: a #NNN task-ref link survives a content-changing re-render ──
+   He reported issue links present on page load and gone after a composer
+   submit. The submit changes the data; the next tick re-renders through
+   morphdom, which reconciles a surviving .md by UPDATING a kept text
+   node's nodeValue in place (a characterData mutation). observeTaskRefs'
+   observer watches childList only, so that in-place edit fires no
+   addedNodes and the link was silently lost. finishViewCommit now re-runs
+   resolveTaskRefs on every commit, so the link is re-created.
+
+   This section finds a .md body that carries a real #NNN task-ref anchor,
+   forces a content-changing re-render of the questions view (POST /answer
+   changes questions.md, so the tick rebuilds every card and morphdom
+   reconciles the .md that holds the link), and asserts the anchor — its
+   ELEMENT and its href, never the bare text #NNN — is still there after.
+
+   Production line the red-proof names (router.js finishViewCommit):
+     the resolveTaskRefs(document.getElementById('view')) call — removing
+     it reds the "survives the re-render" check while the page still
+     renders, because the morphdom reconcile merges the bare #NNN back out
+     of server-fresh HTML and the observer never fires. */
+const tref = await p.evaluate(() => {
+  // a .md body that already has a linked task ref (the walker ran on load)
+  const md = [...document.querySelectorAll('.qa .md, .md')]
+    .find(m => m.querySelector('a.taskref'));
+  if (!md) return { err: 'no .md body carries a taskref link' };
+  const card = md.closest('.qa');
+  const a = md.querySelector('a.taskref');
+  return {
+    qid: card ? (card.dataset.qid || '') : '',
+    taskId: a.dataset.taskId || '',
+    href: a.getAttribute('href') || '',
+    text: (a.textContent || '').trim(),
+  };
+});
+ok('precondition: a .md question body carries a linked #NNN task reference ' +
+   '(the #1008 check is vacuous without one — #136)', !tref.err);
+notes.push('taskref before re-render: ' + JSON.stringify(tref));
+
+if (!tref.err && tref.qid && tref.taskId) {
+  const expectedHref = '/tasks?t=' + tref.taskId;
+  // Force a content-changing re-render: /answer appends to questions.md, so
+  // the tick rebuilds the questions view and morphdom reconciles the .md
+  // holding the link. Then drive the real tick() over the mtime change.
+  const genBefore = await p.evaluate(() => window.__dwViewRenderGen || 0);
+  const drove = await p.evaluate(async (qid) => {
+    await fetch('/answer', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: qid, answer: 'qlinkpip #1008 re-render probe' }),
+    });
+    await fetch('/command', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'add-idea', text: 'qlinkpip #1008 tick drive' }),
+    });
+    try { await tick(); } catch (e) { return { tickErr: String(e) }; }
+    return { gen: window.__dwViewRenderGen || 0 };
+  }, tref.qid);
+  notes.push('render gen: ' + genBefore + ' -> ' + (drove.gen ?? '?') +
+             (drove.tickErr ? ' tickErr=' + drove.tickErr : ''));
+  ok('precondition: the driven tick produced a real re-render ' +
+     '(gen advanced ' + genBefore + ' -> ' + (drove.gen ?? '?') + ') — ' +
+     'else the survival check could not run',
+     !drove.tickErr && drove.gen > genBefore);
+
+  if (drove.gen > genBefore) {
+    // re-find the SAME task ref by its id; assert the ELEMENT + href survive,
+    // not the bare text (raw #NNN in the DOM is true of the unlinked state too)
+    const after = await p.evaluate((taskId) => {
+      const a = document.querySelector('a.taskref[data-task-id="' + taskId + '"]');
+      if (!a) return { survived: false };
+      return { survived: true, href: a.getAttribute('href') || '',
+               inMd: !!(a.closest('.md')) };
+    }, tref.taskId);
+    notes.push('taskref after re-render: ' + JSON.stringify(after));
+    ok('the #NNN task-ref link survives a content-changing re-render ' +
+       '(anchor element + href intact after the tick; was lost pre-#1008 ' +
+       'because the morphdom characterData merge fired no addedNodes)',
+       after.survived === true && after.href === expectedHref &&
+       after.inMd === true);
+    // direction-2 guard: the raw text #NNN is present whether linked or not,
+    // so a check on textContent would pass over the loss. Confirm the link is
+    // an anchor, and that asserting on text alone would be vacuous.
+    const txtOnly = await p.evaluate((taskId) => {
+      const text = '#' + taskId;
+      return { textPresent: !!document.body.textContent.match(
+        new RegExp('(^|[^\\w])#' + taskId + '\\b')) };
+    }, tref.taskId);
+    ok('direction-2: the raw #' + tref.taskId + ' text is in the DOM ' +
+       'regardless of linking (a text-only check is vacuous — the element ' +
+       'assertion above is what catches the loss)',
+       txtOnly.textPresent === true);
+  }
+} else {
+  notes.push('#1008 survival check skipped: ' + (tref.err || 'no qid/taskId'));
+}
 
 /* ── screenshots for coordinator inspection (rest state; always-on) ──── */
 await p.evaluate(({ knownPath }) => {
