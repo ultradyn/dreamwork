@@ -136,7 +136,7 @@ def _is_inert_doc(path: str) -> bool:
 # the name convention — the checker ratified the disagreement, #852/#905).
 # Adding a rule means appending here AND implementing it at the call site in
 # ``land()``; both reports' counts follow from this inventory.
-DERIVATION_RULES: tuple[str, ...] = ("name", "import", "map")
+DERIVATION_RULES: tuple[str, ...] = ("name", "import", "map", "data")
 
 
 def _derived_test(path: str) -> str | None:
@@ -356,13 +356,420 @@ def _map_derived(changed: Sequence[str]) -> tuple[tuple[str, ...], tuple[str, ..
     return tuple(sorted(targets)), tuple(matched_dirs)
 
 
+# (3) DATA-PATH derivation — for the case no file-name, import, or directory-map
+# rule can express: a test that consumes a tracked file as DATA, by reading its
+# text (``.read_text()``) or loading it dynamically (``importlib`` +
+# ``os.path.join``). The relationship is a path expression, not an import, so
+# the import graph cannot see it. Two independent master-reds (#1099, #1100)
+# landed through honest gates because of this gap, and a third —
+# ``dev/journal_consume.py`` → ``test_watch.py`` — survived inside the rule's
+# own fix because the path was expressed as ``os.path.join()`` (#1101 r2).
+#
+# DETECTION is AST-based and covers THREE syntactic forms, each yielding a
+# constant path suffix of 2+ components:
+#   (a) ``BinOp(Div)``: ``ROOT / "briefs" / "frame.md"`` → ``"briefs/frame.md"``
+#   (b) ``os.path.join(root, "dev", "journal_consume.py")`` → trailing constant
+#       string args → ``"dev/journal_consume.py"``
+#   (c) ``Path("dev/brief.py")``: single string arg with internal slash
+# Bare basenames (``"frame.md"``, 1 component) are excluded because they would
+# select half the repo on any change to a common filename (#1101's measurement:
+# ``watch.py`` alone appears as a bare string constant in 32 test files). The
+# 2+-component requirement is what makes the rule precise.
+#
+# WRITE-EXCLUSION: a path expression used as the receiver of a write operation
+# is NOT a data consumer. A test that creates a fixture at
+# ``tmp_path / "dev" / "brief.py`` is not reading the real ``dev/brief.py`` —
+# it is manufacturing a synthetic one. Without this exclusion the frame.md case
+# pulled in ``test_land_lane.py`` as collateral, because its own data-rule
+# tests build fixtures via ``(tmp_path / "dev" / "brief.py").write_text(...)``
+# (#1101 r2). The exclusion covers EVERY write form a path can take:
+#   (a) ``.write_text()`` / ``.write_bytes()`` / ``.mkdir()`` / ``.touch()`` /
+#       ``.unlink()`` — method name alone determines write.
+#   (b) ``open(path, "w")`` — builtin, positional mode, including ``"w+"``,
+#       ``"wb"``, ``"a"``, ``"x"`` (any mode string containing w/a/x).
+#   (c) ``open(path, mode="w")`` — builtin, keyword mode (#1101 r4: r2 only
+#       handled the positional form).
+#   (d) ``(path).open("w")`` / ``(path).open(mode="w")`` — the ``Path.open``
+#       method form (#1101 r4: r2 did not detect this at all).
+#   (e) ALIASED writes — ``p = <path>; open(p, "w")`` (#1101 r4: r2 missed
+#       writes through a name bound to the path expression first).
+# A suffix that appears in ANY read context — directly OR through the alias —
+# is still included (read wins), including ACROSS files: written in file A and
+# read in file B selects B (#1101 r4).
+#
+# DERIVATION has two shapes. (a) DIRECT: a test references the changed file in a
+# read context → derive that test. (b) TWO-HOP: a production file references the
+# changed data file → apply the NAME CONVENTION to that production file → derive
+# ``test_<stem>.py``. The two-hop is NAME-ONLY (not import): round 1 applied the
+# full import graph to intermediates, and a single data file referenced by
+# ``lint.py`` dragged in every test that imports lint — 17 tests for
+# ``briefs/frame.md``, costing more than the full suite it was meant to be
+# cheaper than. The name convention alone reaches the dedicated
+# ``test_<consumer>.py``, which is the documented coverage (#1099:
+# ``briefs/frame.md`` → ``dev/brief.py`` → ``test_brief.py``).
+#
+# CANNOT ROT: the reverse index is recomputed from the merged tree on every
+# gate run, so a new data dependency is covered the first time it appears. No
+# declared table can go stale.
+#
+# ACCEPTED LIMITATIONS: paths built from runtime variables (``name + ".py"``),
+# multi-arg ``Path(parent, child)`` constructors, and writes through custom
+# helper functions (``_write(path, ...)``) are not detected. The first two had
+# no real occurrences in the measured tree; the third affects one test
+# (``test_launch_lane.py``'s fixture creation of ``briefs/frame.md``), which
+# remains a low-cost collateral selection. Aliased paths ARE detected (#1101
+# r4) — the alias must be a single ``Name`` target of a plain ``Assign`` whose
+# value is a recognised path expression.
+
+_WRITE_PATH_METHODS = frozenset({
+    "write_text", "write_bytes", "mkdir", "touch", "unlink",
+})
+# ``open`` mode characters that make a mode string a write: ``"w"``, ``"a"``,
+# ``"x"`` — covers ``"w+"``, ``"wb"``, ``"ab"``, ``"xb"``, etc.
+_WRITE_MODE_CHARS = frozenset("wax")
+
+
+def _open_mode_is_write(call: ast.Call, positional_mode_index: int) -> bool:
+    """Whether an ``open(...)`` call's mode argument is a write mode.
+
+    Handles BOTH the positional form and the keyword form (``mode="w"``).
+    ``positional_mode_index`` is 1 for the builtin ``open(path, "w")`` (path
+    is ``args[0]``, mode is ``args[1]``) and 0 for ``Path.open("w")`` (the
+    path is the method's object; mode is ``args[0]``). Any mode string
+    containing ``w``, ``a``, or ``x`` is a write; ``"r"`` and ``"rb"`` are
+    not. An ``open`` with no explicit mode defaults to read.
+    """
+    if len(call.args) > positional_mode_index:
+        mode = call.args[positional_mode_index]
+        if isinstance(mode, ast.Constant) and isinstance(mode.value, str):
+            return any(c in mode.value for c in _WRITE_MODE_CHARS)
+    for kw in call.keywords:
+        if (kw.arg == "mode"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)):
+            return any(c in kw.value.value for c in _WRITE_MODE_CHARS)
+    return False
+
+
+def _constant_path_suffix(node: ast.AST) -> str | None:
+    """The trailing constant path components from a ``BinOp(Div)`` chain.
+
+    ``ROOT / "briefs" / "frame.md"`` → ``"briefs/frame.md"``; a bare
+    ``"frame.md"`` → ``"frame.md"``; a ``Name`` → ``None``. When the left
+    side is a variable the constant suffix from the right propagates, so
+    ``ROOT / "briefs" / "frame.md"`` yields the 2-component suffix while
+    ``ROOT / "frame.md"`` yields only the 1-component basename.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        left = _constant_path_suffix(node.left)
+        right = _constant_path_suffix(node.right)
+        if right is None:
+            return None
+        if left is None:
+            return right
+        return f"{left}/{right}"
+    return None
+
+
+def _call_path_suffix(node: ast.Call) -> str | None:
+    """Constant path suffix from ``os.path.join(...)`` or ``Path("a/b")``.
+
+    ``os.path.join`` yields the trailing constant string args joined by
+    ``/`` (``os.path.join(root, "dev", "brief.py")`` → ``"dev/brief.py"``);
+    a non-constant arg terminates the suffix so the variable prefix is
+    dropped, matching ``_constant_path_suffix``'s treatment of ``Name``
+    in a ``BinOp(Div)`` chain. ``Path("a/b")`` yields its single string
+    arg verbatim. Returns ``None`` for any other call shape.
+    """
+    func = node.func
+    if (isinstance(func, ast.Attribute) and func.attr == "join"
+            and isinstance(func.value, ast.Attribute)
+            and func.value.attr == "path"
+            and isinstance(func.value.value, ast.Name)
+            and func.value.value.id == "os"):
+        const_parts: list[str] = []
+        for arg in reversed(node.args):
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                const_parts.append(arg.value)
+            else:
+                break
+        const_parts.reverse()
+        return "/".join(const_parts) if const_parts else None
+    if isinstance(func, ast.Name) and func.id == "Path" and len(node.args) == 1:
+        arg = node.args[0]
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            return arg.value
+    return None
+
+
+def _path_expr_suffix(node: ast.AST) -> str | None:
+    """Constant path suffix from any recognised path-producing expression.
+
+    Unifies ``BinOp(Div)`` chains, ``os.path.join(...)`` calls, and
+    ``Path("a/b")`` calls. The returned suffix may be 1+ components;
+    callers enforce the 2+-component match requirement separately.
+    """
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        return _constant_path_suffix(node)
+    if isinstance(node, ast.Call):
+        return _call_path_suffix(node)
+    return None
+
+
+def _is_write_target(node: ast.AST, parents: dict[int, ast.AST]) -> bool:
+    """Whether a path expression is the receiver of a write operation.
+
+    Covers every form a tracked path can be written through (#1101 r4
+    closed three gaps that r2 missed):
+
+    * ``(tmp_path / "dev" / "brief.py").write_text(...)`` — the BinOp is
+      the ``value`` of an ``Attribute`` whose attr is a write method.
+    * ``open(path, "w")`` / ``open(path, mode="w")`` — the builtin, in
+      positional AND keyword-mode form (``"w+"``, ``"wb"``, ``"a"``,
+      ``"x"`` all detected via ``_open_mode_is_write``).
+    * ``(path).open("w")`` / ``(path).open(mode="w")`` — the ``Path.open``
+      method form, same mode check against the enclosing Call.
+    * Aliased paths — ``p = <path>; open(p, "w")`` — handled by
+      ``_data_path_suffixes``'s alias tracking, which calls this on the
+      ``Name`` usage.
+
+    A read (``.read_text()``, ``.glob()``, an assignment, or any other
+    non-write context) returns ``False``.
+    """
+    parent = parents.get(id(node))
+    if parent is None:
+        return False
+    if isinstance(parent, ast.Attribute) and parent.value is node:
+        if parent.attr in _WRITE_PATH_METHODS:
+            return True
+        if parent.attr == "open":
+            call = parents.get(id(parent))
+            if isinstance(call, ast.Call):
+                return _open_mode_is_write(call, 0)
+        return False
+    if (isinstance(parent, ast.Call)
+            and isinstance(parent.func, ast.Name)
+            and parent.func.id == "open"
+            and len(parent.args) >= 1
+            and parent.args[0] is node):
+        return _open_mode_is_write(parent, 1)
+    return False
+
+
+def _data_path_suffixes(source: str) -> frozenset[str]:
+    """Every 2+-component constant path suffix a source references as DATA.
+
+    Three syntactic forms are recognised (see ``_path_expr_suffix``). A
+    suffix used only as the receiver of a write operation is EXCLUDED: a
+    test that creates a fixture at ``tmp_path / "dev" / "brief.py"`` is
+    not a consumer of the real file. A suffix that appears in ANY
+    non-write context in the file IS included, even if it also appears in
+    a write context elsewhere — the read occurrence is the real
+    dependency.
+
+    ALIASED paths (``p = ROOT / "dev" / "brief.py"; open(p, "w")``) are
+    tracked: the binding itself is skipped, and the suffix's read/write
+    fate is decided by the alias's Load-context USAGES. An alias used only
+    in write contexts is excluded; an alias used in ANY read context is
+    included (read wins). An alias defined but never loaded counts as a
+    read — the binding references the path (``x = ROOT / "dev" / "f.py"``
+    with no further use yields the suffix).
+
+    A ``SyntaxError`` returns an empty set.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return frozenset()
+    parents: dict[int, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[id(child)] = parent
+    # Alias map: Name.id -> suffix, for single-target Assign of a path expr.
+    # The assigned path-expr node is skipped in the direct scan below — its
+    # fate is decided by the alias's usages, not by the binding itself.
+    aliases: dict[str, str] = {}
+    aliased_value_ids: set[int] = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            suffix = _path_expr_suffix(node.value)
+            if suffix is not None and "/" in suffix:
+                aliases[node.targets[0].id] = suffix
+                aliased_value_ids.add(id(node.value))
+    read_suffixes: set[str] = set()
+    alias_loaded: set[str] = set()
+    for node in ast.walk(tree):
+        # Direct path-expr occurrence (skip aliased assignment values).
+        if id(node) not in aliased_value_ids:
+            suffix = _path_expr_suffix(node)
+            if suffix is not None and "/" in suffix:
+                if not _is_write_target(node, parents):
+                    read_suffixes.add(suffix)
+        # Alias usage: a Load-context Name mapped to a known suffix.
+        if (isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id in aliases):
+            alias_loaded.add(node.id)
+            if not _is_write_target(node, parents):
+                read_suffixes.add(aliases[node.id])
+    # An alias defined but never loaded counts as a read — the binding
+    # references the path, matching ``x = ROOT / "dev" / "watch.py"``.
+    for name, suffix in aliases.items():
+        if name not in alias_loaded:
+            read_suffixes.add(suffix)
+    return frozenset(read_suffixes)
+
+
+def _suffix_matches_path(suffix: str, path: str) -> bool:
+    """Whether a constant suffix resolves to a tracked ``path``."""
+    return path == suffix or path.endswith("/" + suffix)
+
+
+def _data_consumers(
+    repo: Path, changed: Sequence[str]
+) -> dict[str, tuple[str, ...]]:
+    """For each matchable changed path, which Python files reference it as data.
+
+    Returns ``changed_path → tuple of Python relative paths``. Only changed
+    paths with 2+ components are matchable (a single-component changed path
+    like ``watch.py`` cannot produce a 2+-component suffix match). Worktree
+    roots nested below ``repo`` are excluded.
+    """
+    matchable = frozenset(p for p in changed if "/" in p)
+    if not matchable:
+        return {}
+    worktree_roots = _in_repo_worktree_roots(repo)
+    consumers: dict[str, set[str]] = {p: set() for p in matchable}
+    for source_path in sorted(repo.rglob("*.py")):
+        relative = source_path.relative_to(repo)
+        if any(relative.is_relative_to(root) for root in worktree_roots):
+            continue
+        try:
+            source = source_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        suffixes = _data_path_suffixes(source)
+        if not suffixes:
+            continue
+        rel_posix = relative.as_posix()
+        for suffix in suffixes:
+            for path in matchable:
+                if _suffix_matches_path(suffix, path):
+                    consumers[path].add(rel_posix)
+    return {p: tuple(sorted(v)) for p, v in consumers.items() if v}
+
+
+def _data_derived(
+    repo: Path, changed: Sequence[str]
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Apply the data-path rule: return (test targets, matched data paths).
+
+    Test files that reference a changed path as data (in a read context) are
+    selected directly. Production files that reference it are treated as
+    implicitly changed: the NAME CONVENTION alone is applied to them — not the
+    import rule. Round 1 applied the full import graph to intermediates, and a
+    single data file referenced by ``lint.py`` dragged in every test that
+    imports lint (17 tests for ``briefs/frame.md``). The name convention alone
+    reaches the dedicated ``test_<consumer>.py``, which is #1099's documented
+    coverage (``briefs/frame.md`` → ``dev/brief.py`` → ``test_brief.py``).
+    """
+    consumers = _data_consumers(repo, changed)
+    if not consumers:
+        return (), ()
+    matched = tuple(sorted(consumers))
+    direct_tests: set[str] = set()
+    impl_modules: set[str] = set()
+    for py_files in consumers.values():
+        for py_file in py_files:
+            if py_file.startswith("test_"):
+                direct_tests.add(PurePosixPath(py_file).name)
+            else:
+                module = _dotted_module(py_file)
+                if module is not None:
+                    impl_modules.add(module)
+    indirect_tests: set[str] = set()
+    for module in impl_modules:
+        stem = module.rsplit(".", 1)[-1]
+        test_name = f"test_{stem}.py"
+        if (repo / test_name).is_file():
+            indirect_tests.add(test_name)
+    return tuple(sorted(direct_tests | indirect_tests)), matched
+
+
+@dataclass(frozen=True)
+class DerivationResult:
+    """The test-derivation union computed from a diff, per rule.
+
+    Extracted from ``land()`` so that a wiring test can exercise the SAME
+    code path the gate uses — not a local re-implementation that would
+    pass even if the gate dropped a rule from its union (#1101 r2: the
+    round-1 wiring test duplicated the union locally and stayed green
+    after ``| set(data_tests)`` was removed from ``land()``).
+    """
+
+    derived: tuple[str, ...]
+    name: tuple[str, ...]
+    imported: tuple[str, ...]
+    imported_direct: tuple[str, ...]
+    imported_report_only: tuple[str, ...]
+    mapped: tuple[str, ...]
+    mapped_dirs: tuple[str, ...]
+    data: tuple[str, ...]
+    data_paths: tuple[str, ...]
+
+
+def _derive_tests_from_diff(repo: Path, diff: Diff) -> DerivationResult:
+    """Run all four derivation rules and return the union plus per-rule breakdown.
+
+    This is the single code path both ``land()`` and the wiring test call.
+    Removing any rule from the union here breaks the wiring test, because the
+    test asserts membership in ``result.derived`` — not in a locally rebuilt set.
+    """
+    name_tests = diff.tests
+    changed_modules = [
+        _dotted_module(p) for p in diff.binding if p.endswith(".py")
+    ]
+    direct_import_tests = _import_derived(repo, changed_modules, depth=1)
+    import_tests = _import_derived(
+        repo, changed_modules, depth=IMPORT_SELECTION_DEPTH
+    )
+    deeper_import_tests = _import_derived(
+        repo, changed_modules, depth=IMPORT_REPORT_DEPTH
+    )
+    import_report_only = tuple(
+        sorted(set(deeper_import_tests) - set(import_tests))
+    )
+    mapped_tests, mapped_dirs = _map_derived(diff.changed)
+    data_tests, data_paths = _data_derived(repo, diff.changed)
+    derived = tuple(sorted(
+        set(name_tests) | set(import_tests) | set(mapped_tests) | set(data_tests)
+    ))
+    return DerivationResult(
+        derived=derived,
+        name=name_tests,
+        imported=import_tests,
+        imported_direct=direct_import_tests,
+        imported_report_only=import_report_only,
+        mapped=mapped_tests,
+        mapped_dirs=mapped_dirs,
+        data=data_tests,
+        data_paths=data_paths,
+    )
+
+
 def _selected_test_file(selector: str) -> str:
     """The root test filename selected by a pytest path or node id."""
     return PurePosixPath(selector.split("::", 1)[0]).name
 
 
-def _test_relation_rules(repo: Path, selector: str, changed: Sequence[str]) -> tuple[str, ...]:
-    """Which of #953's three rules relate one selected test to the diff."""
+def _test_relation_rules(
+    repo: Path, selector: str, changed: Sequence[str], *, data_tests: Sequence[str] = ()
+) -> tuple[str, ...]:
+    """Which derivation rules relate one selected test to the diff."""
     test_file = _selected_test_file(selector)
     rules: list[str] = []
     if any(_derived_test(path) == test_file for path in changed):
@@ -378,13 +785,18 @@ def _test_relation_rules(repo: Path, selector: str, changed: Sequence[str]) -> t
         for directory, tests in DIR_TESTSET_MAP
     ):
         rules.append("map")
+    if test_file in data_tests:
+        rules.append("data")
     return tuple(rules)
 
 
-def _test_relevance_line(repo: Path, selection: Sequence[str], changed: Sequence[str]) -> str:
+def _test_relevance_line(
+    repo: Path, selection: Sequence[str], changed: Sequence[str],
+    *, data_tests: Sequence[str] = (),
+) -> str:
     """Advisory relevance report over the final named-union-derived selection.
 
-    The three rules are incomplete, so an unrelated result cannot safely
+    The derivation rules are incomplete, so an unrelated result cannot safely
     refuse a correct landing. This is a gate-output advisory, not a lint WARN
     row, and therefore cannot enter the lint row-set comparison.
     """
@@ -398,16 +810,17 @@ def _test_relevance_line(repo: Path, selection: Sequence[str], changed: Sequence
             "available when either population is empty"
         )
     unrelated = tuple(
-        selector for selector in tests if not _test_relation_rules(repo, selector, changed)
+        selector for selector in tests
+        if not _test_relation_rules(repo, selector, changed, data_tests=data_tests)
     )
     if not unrelated:
         return (
             f"test-relevance: OK — {prefix}; all {len(tests)} related by at least "
-            "one of the 3 rules"
+            f"one of the {len(DERIVATION_RULES)} rules"
         )
     return (
         f"test-relevance: WARN — {prefix}; {len(unrelated)} "
-        "unrelated-as-far-as-the-3-rules-can-tell: "
+        f"unrelated-as-far-as-the-{len(DERIVATION_RULES)}-rules-can-tell: "
         + " ".join(unrelated)
         + "; remedy: name or add a test related by the `test_<stem>.py` convention "
         "or a static import, or update DIR_TESTSET_MAP when a declared directory "
@@ -528,6 +941,8 @@ def _derived_tests_line(
     imported_report_only: Sequence[str],
     mapped: Sequence[str],
     mapped_dirs: Sequence[str],
+    data: Sequence[str],
+    data_paths: Sequence[str],
     existing: Sequence[str],
     unnamed: Sequence[str],
     absent: Sequence[str],
@@ -539,8 +954,9 @@ def _derived_tests_line(
     never named. So a zero here says WHY it is zero and what the branch's
     coverage then rests on, rather than reading like a satisfied requirement.
 
-    Three rules now contribute (#953): the name convention, the import graph,
-    and a directory→testset map. The line names what EACH reached, because a
+    Four rules now contribute (#953, #1101): the name convention, the import
+    graph, a directory→testset map, and a data-path scan. The line names what
+    EACH reached, because a
     single total would hide that one of them contributed nothing — and the
     branch whose coverage rests on an empty mechanism is the one this report
     exists to flag. ``absent`` names derived tests the merged tree does not
@@ -553,12 +969,18 @@ def _derived_tests_line(
         "`test_*.py` that statically import the module or one production "
         "consumer, and REPORTS but does not select the next consumer hop "
         "(not importlib loaders or subprocess calls); map reaches the declared directories in "
-        "DIR_TESTSET_MAP only — anything else derives NOTHING and is not covered "
+        "DIR_TESTSET_MAP only; data reaches tests that reference a changed file "
+        "as a 2+-component constant path expression (`ROOT / 'briefs' / 'frame.md'`, "
+        "`os.path.join(root, 'dev', 'x.py')`, `Path('dev/x.py')`) in a READ context, "
+        "plus tests of production files that do (two-hop: data → name convention only, "
+        "not import — import fanout on intermediates was collateral #1101 r2) — "
+        "anything else derives NOTHING and is not covered "
         "by this line"
     )
     by_rule = (
-        f"name={len(name)} import={len(imported)} map={len(mapped)}"
+        f"name={len(name)} import={len(imported)} map={len(mapped)} data={len(data)}"
         + (f" (matched dirs: {' '.join(mapped_dirs)})" if mapped_dirs else "")
+        + (f" (matched data paths: {' '.join(data_paths)})" if data_paths else "")
     )
     import_depth = (
         f"Import depth: {len(imported_direct)} direct; "
@@ -1474,22 +1896,16 @@ def land(
     # the changed module — which only the merged tree (HEAD, below) holds. Each
     # rule is RUN, never just reported (#949's IGC ruling: REPORT was refuted by
     # #936, where a true "not run" line was read past for two hours).
-    name_tests = diff.tests
-    changed_modules = [
-        _dotted_module(p) for p in diff.binding if p.endswith(".py")
-    ]
-    direct_import_tests = _import_derived(repo, changed_modules, depth=1)
-    import_tests = _import_derived(
-        repo, changed_modules, depth=IMPORT_SELECTION_DEPTH
-    )
-    deeper_import_tests = _import_derived(
-        repo, changed_modules, depth=IMPORT_REPORT_DEPTH
-    )
-    import_report_only = tuple(
-        sorted(set(deeper_import_tests) - set(import_tests))
-    )
-    mapped_tests, mapped_dirs = _map_derived(diff.changed)
-    derived = tuple(sorted(set(name_tests) | set(import_tests) | set(mapped_tests)))
+    deriv = _derive_tests_from_diff(repo, diff)
+    name_tests = deriv.name
+    import_tests = deriv.imported
+    direct_import_tests = deriv.imported_direct
+    import_report_only = deriv.imported_report_only
+    mapped_tests = deriv.mapped
+    mapped_dirs = deriv.mapped_dirs
+    data_tests = deriv.data
+    data_paths = deriv.data_paths
+    derived = deriv.derived
     existing = tuple(t for t in derived if (repo / t).is_file())
     unnamed = tuple(t for t in existing if t not in _named_files(tests))
     absent = tuple(sorted(set(derived) - set(existing)))
@@ -1516,12 +1932,14 @@ def land(
         imported_report_only=import_report_only,
         mapped=mapped_tests,
         mapped_dirs=mapped_dirs,
+        data=data_tests,
+        data_paths=data_paths,
         existing=existing,
         unnamed=unnamed,
         absent=absent,
     ))
     selection = tuple(dict.fromkeys((*tests, *unnamed)))
-    print(_test_relevance_line(repo, selection, diff.changed))
+    print(_test_relevance_line(repo, selection, diff.changed, data_tests=data_tests))
 
     named = _run(["just", "pytest", *selection], repo)
     _relay(named)

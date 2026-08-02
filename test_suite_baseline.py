@@ -88,12 +88,28 @@ def test_gate_coverage_names_the_full_suite_complement():
     # arbitrary repo code that can refresh an artifact lint.py reads, and only a
     # post-test reading catches a WARN introduced by that refresh; the precheck
     # exists to spend seconds instead of a full suite on the common case.
+    #
+    # #1101 MOVED THE RULE COUNT 3 -> 4, and the coordinator adjudicated it here
+    # rather than letting the lane bump its own pin. The fourth rule is `data`:
+    # DERIVATION_RULES is now ("name", "import", "map", "data"), and the data
+    # rule selects tests in files that READ a data path the diff WRITES. That is a
+    # real fourth way to derive a test, so the number is honest.
+    #
+    # The overclaim to rule out, since this sentence exists to describe what the
+    # reader did NOT get: does "4 derivation rule(s)" read as broader coverage
+    # than was delivered? It does not. The clause is inside "full repo suite NOT
+    # RUN (test coverage was limited to ...)" -- more derivation rules make the
+    # gap NARROWER, not the claim larger, and the sentence still names the limit
+    # in the same breath. The reading that WOULD have been an overclaim is
+    # "writes are now covered too": they are not. The data rule selects READERS
+    # of a written path, so the writer's own behaviour is still only covered if
+    # some other rule reaches it (#1101's own report says the same).
     passed = list(land_lane.GATES)
     assert land_lane._gate_coverage_line(passed) == (
         "gate-coverage: 6 of 6 declared gates passed: red-proof-history "
         "lint-precheck named-tests guard-selection repo-wide-guards "
         "lint-comparison; full repo suite NOT RUN (test coverage was limited "
-        "to lane-named tests, the tests derived from the changed files by 3 "
+        "to lane-named tests, the tests derived from the changed files by 4 "
         "derivation rule(s), and the repo-wide guards)"
     )
 

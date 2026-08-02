@@ -1786,6 +1786,430 @@ def test_directory_map_matches_a_changed_file_under_it():
     assert empty_targets == () and empty_dirs == ()
 
 
+def test_data_derived_finds_a_test_referencing_a_changed_data_file(tmp_path):
+    """#1099's shape: a test that reads a tracked file as data is derived.
+
+    A changed ``briefs/frame.md`` is read by a test that constructs the path
+    as a 2+-component BinOp expression. No import edge connects a ``.md`` file
+    to anything, so only the data rule reaches it.
+    Production line this binds: the membership check in _data_derived.
+    """
+    (tmp_path / "briefs").mkdir()
+    (tmp_path / "briefs" / "frame.md").write_text("# Frame\n")
+    (tmp_path / "test_brief.py").write_text(
+        "from pathlib import Path\n"
+        "ROOT = Path('.').resolve()\n"
+        "def test_frame():\n"
+        "    text = (ROOT / 'briefs' / 'frame.md').read_text()\n"
+        "    assert 'Frame' in text\n"
+    )
+    tests, matched = land_lane._data_derived(
+        tmp_path, ["briefs/frame.md"]
+    )
+    assert "test_brief.py" in tests, (
+        f"data rule missed test_brief.py for briefs/frame.md; got {tests!r}"
+    )
+    assert "briefs/frame.md" in matched
+
+
+def test_data_derived_two_hop_finds_test_through_production_consumer(tmp_path):
+    """The full #1099 path: data file -> production consumer -> test by name.
+
+    ``briefs/frame.md`` is referenced by ``dev/brief.py`` via
+    ``FRAME_PATH = ROOT / 'briefs' / 'frame.md'``. The data rule's two-hop
+    applies the NAME CONVENTION ONLY to ``dev/brief.py`` (not the import
+    rule — that was collateral #1101 r2), deriving ``test_brief.py``
+    even though the test itself never references ``frame.md`` directly.
+    """
+    (tmp_path / "briefs").mkdir()
+    (tmp_path / "briefs" / "frame.md").write_text("# Frame\n")
+    (tmp_path / "dev").mkdir()
+    (tmp_path / "dev" / "brief.py").write_text(
+        "from pathlib import Path\n"
+        "ROOT = Path(__file__).resolve().parent.parent\n"
+        "FRAME_PATH = ROOT / 'briefs' / 'frame.md'\n"
+    )
+    (tmp_path / "test_brief.py").write_text(
+        "import dev.brief\n"
+        "def test_brief(): assert True\n"
+    )
+    tests, matched = land_lane._data_derived(
+        tmp_path, ["briefs/frame.md"]
+    )
+    assert "test_brief.py" in tests, (
+        f"two-hop data rule missed test_brief.py; got {tests!r}"
+    )
+
+
+def test_data_derived_finds_a_py_fixture_copy_not_an_import(tmp_path):
+    """#1100's shape: a test that COPIES a .py file is derived.
+
+    ``test_launch_lane.py`` copies ``dev/brief.py`` via ``read_text()`` — not
+    an import. The data rule treats ``dev/brief.py`` as data: its path is a
+    2+-component BinOp expression, and the referencing test is derived.
+    """
+    (tmp_path / "dev").mkdir()
+    (tmp_path / "dev" / "brief.py").write_text("VALUE = 1\n")
+    (tmp_path / "test_launch_lane.py").write_text(
+        "from pathlib import Path\n"
+        "REPO = Path('.').resolve()\n"
+        "def test_copy():\n"
+        "    src = (REPO / 'dev' / 'brief.py').read_text()\n"
+        "    assert 'VALUE' in src\n"
+    )
+    tests, matched = land_lane._data_derived(
+        tmp_path, ["dev/brief.py"]
+    )
+    assert "test_launch_lane.py" in tests, (
+        f"data rule missed test_launch_lane.py for dev/brief.py; got {tests!r}"
+    )
+
+
+def test_data_derived_excludes_bare_basenames():
+    """A bare ``"watch.py"`` is NOT a data match: it would select half the repo.
+
+    The 2+-component requirement is the precision boundary. Dropping it to 1
+    makes ``watch.py`` match in 32 test files' string constants (#1101 measured).
+    """
+    # _data_path_suffixes must not yield "watch.py" from a bare Constant
+    suffixes = land_lane._data_path_suffixes(
+        'x = "watch.py"'
+    )
+    assert suffixes == frozenset(), (
+        f"bare basename should not yield a data suffix; got {suffixes!r}"
+    )
+    # But a 2-component BinOp should
+    suffixes2 = land_lane._data_path_suffixes(
+        'ROOT = "repo"\nx = ROOT / "dev" / "watch.py"\n'
+    )
+    assert "dev/watch.py" in suffixes2
+
+
+def test_data_derived_finds_nothing_for_a_single_component_changed_path(tmp_path):
+    """A changed ``watch.py`` (1 component) cannot match a 2+-component suffix."""
+    (tmp_path / "watch.py").write_text("VALUE = 1\n")
+    (tmp_path / "test_watch.py").write_text(
+        'x = "watch.py"\n'  # bare constant — not detected
+    )
+    tests, matched = land_lane._data_derived(tmp_path, ["watch.py"])
+    assert tests == (), f"1-component path should derive nothing; got {tests!r}"
+    assert matched == ()
+
+
+def test_ospathjoin_suffix_detected():
+    """os.path.join with 2+ trailing constant string args is a data suffix.
+
+    Production line this binds: ``_call_path_suffix`` in ``_data_path_suffixes``.
+    The commonest path idiom (#1101 r2 measured 64 occurrences) was an accepted
+    limitation in round 1; this test proves it is no longer.
+    """
+    # os.path.join with a variable prefix and 2 constant trailing args
+    suffixes = land_lane._data_path_suffixes(
+        'import os\n'
+        'p = os.path.join(root, "dev", "journal_consume.py")\n'
+    )
+    assert "dev/journal_consume.py" in suffixes, (
+        f"os.path.join suffix missed; got {suffixes!r}"
+    )
+
+
+def test_ospathjoin_single_constant_arg_excluded():
+    """os.path.join with only 1 trailing constant arg is a basename, excluded."""
+    suffixes = land_lane._data_path_suffixes(
+        'import os\n'
+        'p = os.path.join(root, "watch.py")\n'
+    )
+    assert "watch.py" not in suffixes, (
+        f"1-component os.path.join suffix should be excluded; got {suffixes!r}"
+    )
+
+
+def test_ospathjoin_derivation_reaches_dynamic_load_consumer(tmp_path):
+    """os.path.join detection closes the journal_consume → test_watch gap.
+
+    #1101 r2 Direction 1: a test that dynamically loads a module via
+    ``os.path.join(os.path.dirname(__file__), "dev", "journal_consume.py")``
+    is a genuine consumer — changing the loaded file breaks the test — but
+    round 1's BinOp-only detection missed it. This test proves the widened
+    detection reaches it.
+
+    Production line this binds: ``_call_path_suffix`` → ``_data_consumers``
+    → ``_data_derived``.
+    """
+    (tmp_path / "dev").mkdir()
+    (tmp_path / "dev" / "journal_consume.py").write_text("VALUE = 1\n")
+    (tmp_path / "test_watch.py").write_text(
+        "import os, importlib.util, importlib.machinery\n"
+        "def test_dynamic_load():\n"
+        "    cli_path = os.path.join(os.path.dirname(__file__), 'dev',\n"
+        "                            'journal_consume.py')\n"
+        "    loader = importlib.machinery.SourceFileLoader('jc', cli_path)\n"
+        "    assert loader is not None\n"
+    )
+    tests, matched = land_lane._data_derived(
+        tmp_path, ["dev/journal_consume.py"]
+    )
+    assert "test_watch.py" in tests, (
+        f"os.path.join data rule missed test_watch.py; got {tests!r}"
+    )
+
+
+def test_path_call_suffix_detected():
+    """Path('a/b') with internal slash is a 2+-component data suffix.
+
+    Production line this binds: ``_call_path_suffix`` Path branch.
+    """
+    suffixes = land_lane._data_path_suffixes(
+        'from pathlib import Path\n'
+        'p = Path("dev/brief.py")\n'
+    )
+    assert "dev/brief.py" in suffixes, (
+        f"Path('a/b') suffix missed; got {suffixes!r}"
+    )
+
+
+def test_write_context_excluded_from_data_suffixes():
+    """A path expression used as a .write_text() receiver is NOT a data suffix.
+
+    Production line this binds: ``_is_write_target`` in ``_data_path_suffixes``.
+    A test that creates a fixture at ``tmp_path / 'dev' / 'brief.py'`` is
+    manufacturing a synthetic file, not reading the real one (#1101 r2).
+    """
+    # write_text receiver — excluded
+    suffixes = land_lane._data_path_suffixes(
+        'from pathlib import Path\n'
+        '(Path(".") / "dev" / "brief.py").write_text("VALUE = 1")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"write-context suffix should be excluded; got {suffixes!r}"
+    )
+
+
+def test_write_context_excluded_but_read_context_included():
+    """The same suffix in BOTH write and read contexts is included (read wins).
+
+    If a file creates a fixture AND reads the real file, it IS a consumer —
+    the read occurrence is the real dependency.
+    """
+    suffixes = land_lane._data_path_suffixes(
+        'from pathlib import Path\n'
+        '(Path("/tmp") / "dev" / "brief.py").write_text("x")\n'
+        'text = (Path(".") / "dev" / "brief.py").read_text()\n'
+    )
+    assert "dev/brief.py" in suffixes, (
+        f"read occurrence should win over write; got {suffixes!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# #1101 r4 — three write-detection gaps closed.  Each test below pins one form
+# that r2's ``_is_write_target`` missed.  A missed write form means a path is
+# treated as a read, so a genuine consumer is silently EXCLUDED and the gate
+# goes green without running it.  Every mode is tested individually, not one
+# representative — a single ``mode="w"`` case would leave the others in the
+# same silent state.
+# ---------------------------------------------------------------------------
+
+
+def test_write_keyword_mode_open_excluded():
+    """``open(path, mode="w")`` — the keyword-mode form — is a write target.
+
+    Production line this binds: ``_open_mode_is_write`` (keywords branch)
+    in ``_is_write_target``.  r2 only checked the POSITIONAL second arg
+    (``parent.args[1]``); the keyword form was invisible (#1101 r4 P1.1).
+    """
+    suffixes = land_lane._data_path_suffixes(
+        'open(Path("/tmp") / "dev" / "brief.py", mode="w")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"keyword-mode open write should be excluded; got {suffixes!r}"
+    )
+
+
+@pytest.mark.parametrize("mode", ["w+", "wb", "a", "x"])
+def test_write_positional_mode_variants_excluded(mode):
+    """Every positional write-mode variant is excluded, not just ``"w"``.
+
+    Production line this binds: ``_open_mode_is_write`` (positional branch)
+    — the ``any(c in mode for c in "wax")`` check.  Each variant is a
+    separate parametrize case because a single representative would leave
+    the others untested (#1101 r4 P1.1).
+    """
+    suffixes = land_lane._data_path_suffixes(
+        f'open(Path("/tmp") / "dev" / "brief.py", "{mode}")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"positional mode {mode!r} should be excluded; got {suffixes!r}"
+    )
+
+
+def test_read_mode_open_not_excluded():
+    """``open(path, "r")`` is a READ, not excluded — guard against over-narrowing.
+
+    The mode check must accept ``"r"`` and ``"rb"`` as reads; only w/a/x
+    are writes.  Without this guard, tightening the mode check could flip
+    reads to writes.
+    """
+    assert "dev/brief.py" in land_lane._data_path_suffixes(
+        'open(Path(".") / "dev" / "brief.py", "r")\n'
+    ), "positional read mode 'r' should NOT be excluded"
+    assert "dev/brief.py" in land_lane._data_path_suffixes(
+        'open(Path(".") / "dev" / "brief.py", mode="r")\n'
+    ), "keyword read mode 'r' should NOT be excluded"
+
+
+def test_path_open_method_excluded():
+    """``(path).open("w")`` — the Path.open method form — is a write target.
+
+    Production line this binds: the ``parent.attr == "open"`` branch in
+    ``_is_write_target``.  r2 did not detect the method form at all — only
+    the builtin ``open(...)`` (#1101 r4 P1.2).  Mode is ``args[0]`` here,
+    not ``args[1]`` (the path is the method's object).
+    """
+    suffixes = land_lane._data_path_suffixes(
+        '(Path("/tmp") / "dev" / "brief.py").open("w")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"Path.open('w') write should be excluded; got {suffixes!r}"
+    )
+
+
+def test_path_open_keyword_mode_excluded():
+    """``(path).open(mode="w")`` — keyword mode on the method form."""
+    suffixes = land_lane._data_path_suffixes(
+        '(Path("/tmp") / "dev" / "brief.py").open(mode="w")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"Path.open(mode='w') write should be excluded; got {suffixes!r}"
+    )
+
+
+def test_aliased_write_excluded():
+    """A path bound to a name then written through the alias is excluded.
+
+    Production line this binds: alias tracking in ``_data_path_suffixes``
+    (the ``aliases`` dict + ``aliased_value_ids`` skip + Load-context Name
+    scan).  r2 missed this entirely (#1101 r4 P1.3): ``p = <path>;
+    open(p, "w")`` was treated as a read because the BinOp's parent was
+    ``Assign`` (non-write).
+    """
+    suffixes = land_lane._data_path_suffixes(
+        'from pathlib import Path\n'
+        'p = Path("/tmp") / "dev" / "brief.py"\n'
+        'open(p, "w")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"aliased write should be excluded; got {suffixes!r}"
+    )
+
+
+def test_aliased_write_method_form_excluded():
+    """Alias written through ``.write_text()`` is also excluded."""
+    suffixes = land_lane._data_path_suffixes(
+        'from pathlib import Path\n'
+        'p = Path("/tmp") / "dev" / "brief.py"\n'
+        'p.write_text("x")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"aliased .write_text() should be excluded; got {suffixes!r}"
+    )
+
+
+def test_aliased_read_wins_over_write():
+    """An alias used in BOTH write and read contexts is included (read wins).
+
+    If a file writes to a fixture path AND reads the real path through the
+    same alias, the read occurrence is the real dependency.
+    """
+    suffixes = land_lane._data_path_suffixes(
+        'from pathlib import Path\n'
+        'p = Path(".") / "dev" / "brief.py"\n'
+        'open(p, "w")\n'
+        'text = p.read_text()\n'
+    )
+    assert "dev/brief.py" in suffixes, (
+        f"alias read should win over write; got {suffixes!r}"
+    )
+
+
+def test_read_wins_across_files(tmp_path):
+    """A suffix written in file A and read in file B still selects B.
+
+    The read-wins rule is per-FILE: ``_data_path_suffixes`` returns B's read
+    suffixes independently of A's write-only suffixes, so ``_data_consumers``
+    includes B.  This test exercises the cross-file path the task named
+    specifically — a path written in one file and read in another.
+
+    The ``_data_consumers`` assertion is the discriminating part: without
+    alias tracking, file A's aliased write leaks the suffix as a read and
+    A appears as a consumer (the cross-file write-exclusion breaks).
+    """
+    (tmp_path / "dev").mkdir()
+    (tmp_path / "dev" / "brief.py").write_text("VALUE = 1\n")
+    # File A writes the suffix (fixture creation) — not a consumer.
+    (tmp_path / "fixture_maker.py").write_text(
+        "from pathlib import Path\n"
+        'p = Path("/tmp") / "dev" / "brief.py"\n'
+        'open(p, "w")\n'
+    )
+    # File B reads the real file — genuine consumer.
+    (tmp_path / "test_brief.py").write_text(
+        "from pathlib import Path\n"
+        'text = (Path(".") / "dev" / "brief.py").read_text()\n'
+    )
+    # _data_consumers: fixture_maker.py must NOT be a consumer.
+    consumers = land_lane._data_consumers(tmp_path, ["dev/brief.py"])
+    fixture_consumers = consumers.get("dev/brief.py", ())
+    assert "test_brief.py" in fixture_consumers, (
+        f"cross-file read should make test_brief.py a consumer; got {fixture_consumers!r}"
+    )
+    assert "fixture_maker.py" not in fixture_consumers, (
+        f"write-only fixture_maker.py should not be a consumer; got {fixture_consumers!r}"
+    )
+    # _data_derived: the test is selected.
+    tests, matched = land_lane._data_derived(
+        tmp_path, ["dev/brief.py"]
+    )
+    assert "test_brief.py" in tests, (
+        f"cross-file read should select test_brief.py; got {tests!r}"
+    )
+
+
+def test_data_rule_is_wired_into_derivation_selection(tmp_path):
+    """The data rule contributes to the derived union, not just standalone.
+
+    Production line this binds: ``_derive_tests_from_diff`` in ``land()`` —
+    the single code path that computes the ``derived`` union from all four
+    rules. Drop ``| set(data_tests)`` from THAT function and this test goes
+    red, because it calls the function (not a local re-implementation of the
+    union) and asserts membership in ``result.derived``.
+
+    Round 1's wiring test was vacuous: it rebuilt the union locally, so
+    removing ``| set(data_tests)`` from ``land()`` left the test green
+    (#1101 r2). This rewrite exercises the real path.
+    """
+    (tmp_path / "briefs").mkdir()
+    (tmp_path / "briefs" / "frame.md").write_text("# Frame\n")
+    (tmp_path / "test_brief.py").write_text(
+        "from pathlib import Path\n"
+        "ROOT = Path('.')\n"
+        "def test_frame():\n"
+        "    assert 'Frame' in (ROOT / 'briefs' / 'frame.md').read_text()\n"
+    )
+    changed = ("briefs/frame.md",)
+    diff = land_lane.Diff(changed=changed, inert=(), binding=changed, tests=())
+    result = land_lane._derive_tests_from_diff(tmp_path, diff)
+    assert "test_brief.py" in result.derived, (
+        f"data rule not wired: test_brief.py absent from derived {result.derived!r} "
+        "when briefs/frame.md changed; the _data_derived call in "
+        "_derive_tests_from_diff was dropped or excluded from the derived union"
+    )
+    assert "test_brief.py" in result.data, (
+        f"test_brief.py not in data-derived set {result.data!r}; "
+        "the data rule found nothing for briefs/frame.md"
+    )
+
+
 def test_a_test_importing_a_changed_module_is_run_even_unnamed(landing_repo):
     """Direction 1 for #953: the widened derivation names the import case.
 
@@ -1937,8 +2361,8 @@ def test_a_derived_test_the_coordinator_did_not_name_is_run_anyway(landing_repo)
         "changed: the derived test was reported but never run, which is #936 exactly"
     )
     assert (
-        "derived-tests: 1 required test(s) from 2 changed path(s) by 3 rules "
-        "[name=1 import=0 map=0]: test_lint.py"
+        "derived-tests: 1 required test(s) from 2 changed path(s) by 4 rules "
+        "[name=1 import=0 map=0 data=0]: test_lint.py"
     ) in result.stdout
     assert "1 were NOT named and have been ADDED: test_lint.py" in result.stdout
     assert "REFUSE phase=named-tests: named test selection failed" in result.stderr
@@ -1963,7 +2387,7 @@ def test_zero_derived_tests_says_why_rather_than_reading_as_coverage(doc_only_re
 def test_relevance_warns_when_test_brief_cannot_relate_to_redproof(tmp_path):
     """#948 direction 1: the real irrelevant-but-existing selection is named.
 
-    `test_brief.py` passes, but none of #953's three rules relates it to a
+    `test_brief.py` passes, but none of #953's derivation rules relates it to a
     branch that changes only `dev/redproof.py`. The advisory must name the
     test and both denominators without turning the incomplete model into a
     refusal.
@@ -1995,7 +2419,7 @@ def test_relevance_warns_when_test_brief_cannot_relate_to_redproof(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert (
         "test-relevance: WARN — examined 1 selected test(s) against 1 changed "
-        "path(s); 1 unrelated-as-far-as-the-3-rules-can-tell: test_brief.py"
+        "path(s); 1 unrelated-as-far-as-the-4-rules-can-tell: test_brief.py"
     ) in result.stdout
     assert "remedy: name or add a test related by" in result.stdout
 
@@ -2024,7 +2448,7 @@ def test_relevance_import_under_try_is_a_known_false_green(tmp_path):
     )
 
     assert line.startswith("test-relevance: OK — examined 1 selected test(s) against 1 changed path(s)")
-    assert "all 1 related by at least one of the 3 rules" in line
+    assert "all 1 related by at least one of the 4 rules" in line
 
 
 def test_a_doc_only_lane_with_no_registry_lands_because_none_was_required(
