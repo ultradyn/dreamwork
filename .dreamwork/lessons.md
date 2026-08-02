@@ -5151,3 +5151,37 @@ disagreed with the story — neither looked wrong on its own.
   A duplicate would have left the stale claim sitting above it. **Before filing, check whether the
   record already says this; if it does, the work is correcting what has gone stale in it, which is
   strictly more valuable than the new entry would have been.** (2026-08-03, coordinator)
+- **`capture_output=True` makes a parent's stdout flush at exit, so a subprocess's output always
+  precedes it — and index-based ordering assertions across that boundary cannot see print order at
+  all.** The `#1118` lane went to red-proof its repaired ordering test by the natural sabotage —
+  moving the launcher's `launching governed runner` print *before* the prepare subprocess call — and
+  found the captured output **did not change**. Under `capture_output=True` the parent's stdout is
+  block-buffered and flushes only at process exit, while the child flushes at its own, earlier exit.
+  So child-before-parent holds no matter where the parent's print statement sits. It used a valid
+  alternative (suppress the prepare line with `stdout=subprocess.DEVNULL`) and got a discriminating
+  failure, then said plainly what the test still cannot catch. **Two things to carry: an ordering
+  assertion over captured output spanning a subprocess boundary may be asserting a property of
+  buffering rather than of the code; and a red-proof whose obvious injection produces no red is
+  evidence about the test, not a reason to pick a weaker injection quietly.** (2026-08-03, coordinator)
+- **A faithful test stub should derive its message from the production source, not restate it.** Same
+  lane, same fix. Option 1 was "make the prepare stub print the real line" — and the cheap way to do
+  that is to paste the literal, which passes forever while agreeing only with the assertion beside
+  it. It instead regex-extracted the line from `dev/dispatch_lane.py` at fixture build time and
+  asserted the regex matched, so a production rewording fails collection loudly instead of leaving a
+  stub that agrees with itself. **The test-fixture form of `#736`: when a stub must mirror
+  production, derive the mirror.** (2026-08-03, coordinator)
+- **A gate refusal named a branch that was innocent, and the broken thing was master.** Gate chain 27
+  refused `glm-1054block` at `phase=named-tests` with 1 failed / 2300 passed. The failure was
+  `test_brief.py::test_the_delivered_argv_carries_the_standing_rules`, which #1054 does not touch. It
+  fails on master too: `test_brief.py:1458` copies a **hand-maintained three-file list** into a fixture
+  repo, and `#1113` had just landed `lane_runner_identity.py` as a new import of `lane_liveness.py`
+  without adding it. `#1113`'s own gate passed because this test was not in its derived set; `#1054`
+  changed `dreamwork_db/` and pulled it in. **A derived-set gate only proves the branch against the
+  tests its own diff reaches — so the first branch to widen the derived set inherits the blame for
+  everything that landed before it.** Check whether a gate failure reproduces on master before reading
+  it as a branch defect; it costs one command. Filed as `#1122`. (2026-08-03, coordinator)
+- **The diagnostic line I added to the gate paid for itself on its first run.** After `#1121` I taught
+  the gate script to print `TimeoutExpired occurrences in this gate log so far: N` after every
+  `land_lane`. Chain 27 printed **0**, which told me immediately that its refusal was NOT the known
+  load flake and was worth chasing — and it was, it was a red master. **A cheap line that discriminates
+  between two failure modes is worth more than a smart one that describes either.** (2026-08-03, coordinator)

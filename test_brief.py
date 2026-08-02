@@ -1455,7 +1455,15 @@ def _sandbox_dispatch(tmp_path: Path, lane: str) -> tuple[Path, Path, str]:
         f"sandbox base adaptation found {changed} dispatch merge-base calls, expected 1"
     )
     dispatch_copy.write_text(source, encoding="utf-8")
-    for name in ("lane_liveness.py", "worktree_paths.py", "ledger_store.py"):
+    # Hand-maintained, and that is the known fragility (#1122): this list must
+    # carry the transitive repo-root imports of dev/dispatch_lane.py, but nothing
+    # derives it. `lane_runner_identity.py` arrived with #1113 as a new import of
+    # `lane_liveness.py`, was not added here, and the fixture repo then raised
+    # ModuleNotFoundError from inside a subprocess -- surfacing as the opaque
+    # "dispatch never wrote <lane.lock>". #1113's own gate did not catch it
+    # because this test was not in its derived set.
+    for name in ("lane_liveness.py", "lane_runner_identity.py",
+                 "worktree_paths.py", "ledger_store.py"):
         shutil.copy2(ROOT / name, root / name)
     shutil.copytree(ROOT / "dreamwork_db", root / "dreamwork_db")
     shutil.copy2(ROOT / "briefs" / "boilerplate.md", root / "briefs" / "boilerplate.md")
