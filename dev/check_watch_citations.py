@@ -259,14 +259,14 @@ def _is_css_colour(raw_token: str) -> bool:
 
     ``(#ffffff)`` is never extracted (the regex matches ``\\d`` only, and
     ``f`` is not a digit), so hex-letter colours are naturally absent.
-    Six-digit decimal tokens above the ledger max (e.g. ``(#999999)`` with
-    max 1056) are also six hex digits and are treated as CSS — a known
-    false-negative direction stated here, not hidden: a decimal run that
-    could be a miscited high issue id is indistinguishable from a CSS
-    colour by syntax alone.  The checker exists to catch miscitations
-    *within the plausible issue-id range*; an id above the max is already
-    SUSPICIOUS when it is 1–5 digits, and a 6-digit above-max token is
-    the one shape the CSS rule cannot disambiguate.
+    Six-digit decimal tokens above the ledger max are also six hex digits
+    and are treated as CSS — a known false-negative direction stated
+    here, not hidden: a decimal run that could be a miscited high issue
+    id is indistinguishable from a CSS colour by syntax alone.  The
+    checker exists to catch miscitations *within the plausible issue-id
+    range*; an id above the max is already SUSPICIOUS when it is 1–5
+    digits, and a 6-digit above-max token is the one shape the CSS rule
+    cannot disambiguate.
     """
     return len(raw_token) == 6 and all(
         d in "0123456789abcdefABCDEF" for d in raw_token
