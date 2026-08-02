@@ -194,14 +194,40 @@ def _scope_fixture(tmp_path: Path) -> Path:
 
 
 def test_scope_report_names_an_import_derived_test_the_authored_scope_omits():
+    """An import-derived test omitted by the authored scope must be NAMED in the
+    report. Asserted as a property, not a pinned ambient count, so a new file
+    joining the land_lane import graph cannot break it (#1091). Kept on ROOT: the
+    hermetic form is already covered by the _scope_fixture sibling test, and this
+    one guards the real import graph a synthetic tree cannot reproduce."""
     report = brief._scope_derivation_report(
         ROOT, ["dev/land_lane.py", "test_land_lane.py"]
     )
-    assert (
-        "selected 2 existing test(s)" in report
-        and "authored Lane-owns covered 1 of 2" in report
-        and "1 omitted: test_suite_baseline.py" in report
-    ), f"scope derivation lost omitted test_suite_baseline.py: {report}"
+    # Assert against the omitted clause alone, not the whole report string:
+    # the report names files only inside "{N} omitted: {names}", so the
+    # filename must be a token in THAT clause — not merely present somewhere
+    # in the string. A future "selected names" diagnostic that echoes the
+    # filename elsewhere must not satisfy a property that is about omission.
+    # The clause is bounded on the right by "; matched dirs:" (an optional
+    # trailing clause) or by ". This is a report" (the closing sentence); a
+    # parse that ran past either would re-admit the false green a bare
+    # substring test permitted. Filenames contain periods, so the boundary
+    # is the sentence anchor, not a bare dot.
+    omitted = re.search(
+        r"omitted:\s*(.+?)(?:;\s*matched dirs|\. This is a report)", report
+    )
+    omitted_names = omitted.group(1).split() if omitted else []
+    assert "test_suite_baseline.py" in omitted_names, (
+        f"scope derivation did not NAME test_suite_baseline.py as omitted "
+        f"(omitted clause: {omitted_names!r}): {report}"
+    )
+    # Internal consistency at any tree size: the "of N" denominator equals the
+    # "selected N" count (both derive from len(existing)).
+    selected = int(re.search(r"selected (\d+) existing test", report).group(1))
+    covered_of = int(re.search(r"covered \d+ of (\d+)", report).group(1))
+    assert selected == covered_of, (
+        f"scope derivation denominator mismatch (selected {selected} vs "
+        f"covered-of {covered_of}): {report}"
+    )
 
 
 def test_scope_report_reads_the_base_tree_not_a_dirty_authored_checkout(tmp_path):
@@ -867,8 +893,9 @@ def test_the_frame_actually_carries_the_measured_rules():
 
 def test_the_frame_tells_a_lane_what_warn_means_before_the_gate_refuses_it():
     """#945 — a check that emits a PERMANENT WARN row cannot land: the merge
-    gate's lint-comparison refuses any added WARN row (the row-set rule, #794),
-    and a lane had no way to learn that until the gate refused its finished work
+    gate's lint-comparison refuses any undeclared WARN row change (the row-set
+    rule, #794), and a lane had no way to learn that until the gate refused its
+    finished work
     — #936 hit exactly this, and the repair was to move the names into an OK
     row. The frame reaches every dispatched lane (`dev/launch_lane.py` calls
     `brief.build()`), so the rule belongs there.
@@ -908,7 +935,21 @@ def test_the_frame_tells_a_lane_what_warn_means_before_the_gate_refuses_it():
         f"coherent instruction, not mentions scattered across bullets that a "
         f"containment check would pass on (#836/#945)"
     )
-    for needle in ("OK row that names it", "added WARN row", "unlandable"):
+    # Clause 1 ("WARN means a transient condition someone will clear") is pinned
+    # structurally: it IS the warn_rule selector above, so deleting it empties
+    # warn_rule and fails the len == 1 assertion by name. The needles below pin
+    # clauses 2-4 of the same bullet. Each is a multi-word phrase unique to its
+    # clause within the flattened bullet, so deleting the clause drops the
+    # needle — "OK row that names it" is deliberately NOT used because the
+    # rewrite repeats it in a later sentence, so deleting clause 2 would leave
+    # it present (the #836 false-green shape the co-occurrence check exists
+    # to close).
+    for needle in (
+        "a standing fact belongs in",            # clause 2: the transient/standing contrast
+        "refuses any undeclared WARN row change",  # clause 3: gate refuses UNDECLARED change
+        "AUTHORISED by the coordinator",         # clause 4: authorisation is the coordinator's
+        "NOT declared by the lane itself",       # clause 4: ...and is NOT the lane's to declare
+    ):
         assert needle in warn_rule[0], (
             f"the WARN-meaning bullet lost '{needle}' — deleting this sentence "
             f"must fail this test by name, not silently (#936/#945). The bullet "
