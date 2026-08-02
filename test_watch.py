@@ -6573,7 +6573,7 @@ class TestTasksRoute(unittest.TestCase):
         self.assertIsNone(detail["owner"])
         self.assertEqual(detail["body"], "body 281")
 
-    def test_tasks2_is_a_second_shell_and_tasks_route_is_unchanged(self):
+    def test_tasks2_is_a_second_shell_and_tasks_route_resolves_to_the_view(self):
         status, tasks_shell = self._request("/tasks?t=281")
         self.assertEqual(status, 200)
         status, triage_shell = self._request("/tasks2?t=281")
@@ -6583,11 +6583,13 @@ class TestTasksRoute(unittest.TestCase):
             "both routes must receive the same app shell; the client chooses "
             "the second layout without replacing /tasks")
 
+        # #1013 — /tasks?t=N is the href every task-ref link carries, so it
+        # must resolve to the task view, not fall through to the dashboard.
         route = _extract_js_fn(watch.ROUTER_JS, "function routeOf(")
         script = route + textwrap.dedent("""
             const oldRoute = routeOf(new URL('http://watch/tasks?t=281'));
             const wideRoute = routeOf(new URL('http://watch/tasks2?t=281'));
-            if (oldRoute.name !== 'dashboard') process.exit(11);
+            if (oldRoute.name !== 'tasks2' || oldRoute.param !== '281') process.exit(11);
             if (wideRoute.name !== 'tasks2' || wideRoute.param !== '281') process.exit(12);
             if (routeOf(new URL('http://watch/tasks2?t=not-an-id')).param !== null)
               process.exit(13);
@@ -6700,8 +6702,12 @@ class TestTasksRoute(unittest.TestCase):
         src = watch.COMPONENTS_JS
         self.assertIn("function resolveTaskRefs(root)", src)
         self.assertIn("createTreeWalker(root, 4", src)
-        self.assertIn("parent.closest(TASK_REF_SKIP)", src)
+        # #1017 — the skip set is now chosen dynamically so an inline-code
+        # #NNN can link when the user keeps the setting on.
+        self.assertIn("parent.closest(skip)", src)
         self.assertIn("'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]'", src)
+        self.assertIn("'a,button,pre,script,select,style,textarea,[data-task-ref-ui]'", src)
+        self.assertIn("backtickTaskLinksOn()", src)
         self.assertIn("!parent.closest('.md')", src)
         self.assertNotIn("innerHTML.replace(/#", src)
         self.assertIn("a.href = '/tasks?t=' + part.id", src)
@@ -6709,10 +6715,15 @@ class TestTasksRoute(unittest.TestCase):
         self.assertIn("observeTaskRefs(frame.contentDocument, true)", src)
 
         # Drive the production parser/emitter with a tiny DOM, including the
-        # three contexts a rendered-HTML regex cannot distinguish.
+        # three contexts a rendered-HTML regex cannot distinguish. #1017 adds
+        # a setting: inline <code> links when it is ON (default), stays literal
+        # when OFF; a #NNN already inside an <a> never double-links.
         script = textwrap.dedent("""\
             const TASK_REF_SKIP = 'a,button,code,pre,script,select,style,textarea,[data-task-ref-ui]';
+            const TASK_REF_SKIP_NO_CODE = 'a,button,pre,script,select,style,textarea,[data-task-ref-ui]';
             const TASK_REF_RE = /(^|[^\\w])#(\\d+)\\b/g;
+            let data = null;
+            %s
             %s
             %s
             const doc = {
@@ -6720,20 +6731,43 @@ class TestTasksRoute(unittest.TestCase):
               createTextNode(text) { return {kind:'text', text}; },
               createElement() { return {kind:'a', dataset:{}, setAttribute(){}}; }
             };
-            const node = (text, skipped) => ({
+            // kind drives the mock closest: 'code' is only skipped by the FULL
+            // set; 'a' is skipped by both (never double-link); prose by neither.
+            const node = (text, kind) => ({
               nodeValue:text, ownerDocument:doc,
               parentElement:{closest(selector){
-                if (selector === TASK_REF_SKIP) return skipped ? {} : null;
+                if (selector === TASK_REF_SKIP)
+                  return (kind === 'code' || kind === 'a') ? {} : null;
+                if (selector === TASK_REF_SKIP_NO_CODE)
+                  return kind === 'a' ? {} : null;
                 return selector === '.md' ? {} : null;
               }},
               replaceWith(frag){this.result=frag.kids}
             });
-            const prose=node('see #229 now', false), code=node('#229', true), link=node('#229', true);
+
+            // setting ON (default — data has no override): inline code links.
+            // '#229' alone yields a one-element fragment (the anchor at [0]);
+            // 'see #229 now' yields three (anchor at [1]).
+            const prose = node('see #229 now', 'prose');
+            const code = node('#229', 'code');
+            const link = node('#229', 'a');
             linkTaskRefText(prose); linkTaskRefText(code); linkTaskRefText(link);
             if (!prose.result || prose.result[1].href !== '/tasks?t=229') process.exit(11);
-            if (code.result || link.result) process.exit(12);
-            if (prose.result.map(x => x.text || x.textContent).join('') !== 'see #229 now') process.exit(13);
+            if (!code.result || code.result[0].href !== '/tasks?t=229')
+              { console.error('inline code did not link with setting on'); process.exit(12); }
+            if (link.result) process.exit(13);   // an existing <a> never double-links
+            if (prose.result.map(x => x.text || x.textContent).join('') !== 'see #229 now') process.exit(14);
+
+            // setting OFF: inline code stays literal, prose still links
+            data = { settings: { values: { 'links.backtickTasks': false } } };
+            const codeOff = node('#229', 'code');
+            const proseOff = node('see #229 now', 'prose');
+            linkTaskRefText(codeOff); linkTaskRefText(proseOff);
+            if (codeOff.result)
+              { console.error('inline code linked with setting off'); process.exit(15); }
+            if (!proseOff.result || proseOff.result[1].href !== '/tasks?t=229') process.exit(16);
         """) % (_extract_js_fn(src, "function taskRefParts("),
+                   _extract_js_fn(src, "function backtickTaskLinksOn("),
                    _extract_js_fn(src, "function linkTaskRefText("))
         subprocess.check_call(["node", "-e", script])
 
