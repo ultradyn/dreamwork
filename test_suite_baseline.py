@@ -72,13 +72,29 @@ def test_gate_coverage_names_the_full_suite_complement():
     # three rules in DERIVATION_RULES — name, import, map — are what this pin's
     # hardcoded "3" counts. Adding a rule changes len(DERIVATION_RULES) and
     # breaks this pin; that is the #852/#905 property, and #959 bound it.
+    #
+    # #976 REWORDED IT AGAIN, and the pin did its job: it broke the merge and
+    # made a human read the new sentence before it could ship. The coordinator
+    # adjudicated the bump rather than bumping it, so the reasoning is recorded
+    # here and not only in a commit message.
+    #
+    # The count moved 5 -> 6 because `lint-precheck` is a REAL phase, not an
+    # advisory: it calls refuse_gated and returns, so it can end the run on its
+    # own. Counting it is therefore honest. The reading that WOULD have been an
+    # overclaim — "lint is now checked two independent ways" — is refuted by the
+    # sentence itself, which names both lint phases in running order and so says
+    # plainly that the same baseline is compared twice at two points in time.
+    # The authoritative comparison is still LAST, because named tests are
+    # arbitrary repo code that can refresh an artifact lint.py reads, and only a
+    # post-test reading catches a WARN introduced by that refresh; the precheck
+    # exists to spend seconds instead of a full suite on the common case.
     passed = list(land_lane.GATES)
     assert land_lane._gate_coverage_line(passed) == (
-        "gate-coverage: 5 of 5 declared gates passed: red-proof-history "
-        "named-tests guard-selection repo-wide-guards lint-comparison; full "
-        "repo suite NOT RUN (test coverage was limited to lane-named tests, "
-        "the tests derived from the changed files by 3 derivation rule(s), "
-        "and the repo-wide guards)"
+        "gate-coverage: 6 of 6 declared gates passed: red-proof-history "
+        "lint-precheck named-tests guard-selection repo-wide-guards "
+        "lint-comparison; full repo suite NOT RUN (test coverage was limited "
+        "to lane-named tests, the tests derived from the changed files by 3 "
+        "derivation rule(s), and the repo-wide guards)"
     )
 
 
