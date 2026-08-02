@@ -2001,6 +2001,180 @@ def test_write_context_excluded_but_read_context_included():
     )
 
 
+# ---------------------------------------------------------------------------
+# #1101 r4 — three write-detection gaps closed.  Each test below pins one form
+# that r2's ``_is_write_target`` missed.  A missed write form means a path is
+# treated as a read, so a genuine consumer is silently EXCLUDED and the gate
+# goes green without running it.  Every mode is tested individually, not one
+# representative — a single ``mode="w"`` case would leave the others in the
+# same silent state.
+# ---------------------------------------------------------------------------
+
+
+def test_write_keyword_mode_open_excluded():
+    """``open(path, mode="w")`` — the keyword-mode form — is a write target.
+
+    Production line this binds: ``_open_mode_is_write`` (keywords branch)
+    in ``_is_write_target``.  r2 only checked the POSITIONAL second arg
+    (``parent.args[1]``); the keyword form was invisible (#1101 r4 P1.1).
+    """
+    suffixes = land_lane._data_path_suffixes(
+        'open(Path("/tmp") / "dev" / "brief.py", mode="w")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"keyword-mode open write should be excluded; got {suffixes!r}"
+    )
+
+
+@pytest.mark.parametrize("mode", ["w+", "wb", "a", "x"])
+def test_write_positional_mode_variants_excluded(mode):
+    """Every positional write-mode variant is excluded, not just ``"w"``.
+
+    Production line this binds: ``_open_mode_is_write`` (positional branch)
+    — the ``any(c in mode for c in "wax")`` check.  Each variant is a
+    separate parametrize case because a single representative would leave
+    the others untested (#1101 r4 P1.1).
+    """
+    suffixes = land_lane._data_path_suffixes(
+        f'open(Path("/tmp") / "dev" / "brief.py", "{mode}")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"positional mode {mode!r} should be excluded; got {suffixes!r}"
+    )
+
+
+def test_read_mode_open_not_excluded():
+    """``open(path, "r")`` is a READ, not excluded — guard against over-narrowing.
+
+    The mode check must accept ``"r"`` and ``"rb"`` as reads; only w/a/x
+    are writes.  Without this guard, tightening the mode check could flip
+    reads to writes.
+    """
+    assert "dev/brief.py" in land_lane._data_path_suffixes(
+        'open(Path(".") / "dev" / "brief.py", "r")\n'
+    ), "positional read mode 'r' should NOT be excluded"
+    assert "dev/brief.py" in land_lane._data_path_suffixes(
+        'open(Path(".") / "dev" / "brief.py", mode="r")\n'
+    ), "keyword read mode 'r' should NOT be excluded"
+
+
+def test_path_open_method_excluded():
+    """``(path).open("w")`` — the Path.open method form — is a write target.
+
+    Production line this binds: the ``parent.attr == "open"`` branch in
+    ``_is_write_target``.  r2 did not detect the method form at all — only
+    the builtin ``open(...)`` (#1101 r4 P1.2).  Mode is ``args[0]`` here,
+    not ``args[1]`` (the path is the method's object).
+    """
+    suffixes = land_lane._data_path_suffixes(
+        '(Path("/tmp") / "dev" / "brief.py").open("w")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"Path.open('w') write should be excluded; got {suffixes!r}"
+    )
+
+
+def test_path_open_keyword_mode_excluded():
+    """``(path).open(mode="w")`` — keyword mode on the method form."""
+    suffixes = land_lane._data_path_suffixes(
+        '(Path("/tmp") / "dev" / "brief.py").open(mode="w")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"Path.open(mode='w') write should be excluded; got {suffixes!r}"
+    )
+
+
+def test_aliased_write_excluded():
+    """A path bound to a name then written through the alias is excluded.
+
+    Production line this binds: alias tracking in ``_data_path_suffixes``
+    (the ``aliases`` dict + ``aliased_value_ids`` skip + Load-context Name
+    scan).  r2 missed this entirely (#1101 r4 P1.3): ``p = <path>;
+    open(p, "w")`` was treated as a read because the BinOp's parent was
+    ``Assign`` (non-write).
+    """
+    suffixes = land_lane._data_path_suffixes(
+        'from pathlib import Path\n'
+        'p = Path("/tmp") / "dev" / "brief.py"\n'
+        'open(p, "w")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"aliased write should be excluded; got {suffixes!r}"
+    )
+
+
+def test_aliased_write_method_form_excluded():
+    """Alias written through ``.write_text()`` is also excluded."""
+    suffixes = land_lane._data_path_suffixes(
+        'from pathlib import Path\n'
+        'p = Path("/tmp") / "dev" / "brief.py"\n'
+        'p.write_text("x")\n'
+    )
+    assert "dev/brief.py" not in suffixes, (
+        f"aliased .write_text() should be excluded; got {suffixes!r}"
+    )
+
+
+def test_aliased_read_wins_over_write():
+    """An alias used in BOTH write and read contexts is included (read wins).
+
+    If a file writes to a fixture path AND reads the real path through the
+    same alias, the read occurrence is the real dependency.
+    """
+    suffixes = land_lane._data_path_suffixes(
+        'from pathlib import Path\n'
+        'p = Path(".") / "dev" / "brief.py"\n'
+        'open(p, "w")\n'
+        'text = p.read_text()\n'
+    )
+    assert "dev/brief.py" in suffixes, (
+        f"alias read should win over write; got {suffixes!r}"
+    )
+
+
+def test_read_wins_across_files(tmp_path):
+    """A suffix written in file A and read in file B still selects B.
+
+    The read-wins rule is per-FILE: ``_data_path_suffixes`` returns B's read
+    suffixes independently of A's write-only suffixes, so ``_data_consumers``
+    includes B.  This test exercises the cross-file path the task named
+    specifically — a path written in one file and read in another.
+
+    The ``_data_consumers`` assertion is the discriminating part: without
+    alias tracking, file A's aliased write leaks the suffix as a read and
+    A appears as a consumer (the cross-file write-exclusion breaks).
+    """
+    (tmp_path / "dev").mkdir()
+    (tmp_path / "dev" / "brief.py").write_text("VALUE = 1\n")
+    # File A writes the suffix (fixture creation) — not a consumer.
+    (tmp_path / "fixture_maker.py").write_text(
+        "from pathlib import Path\n"
+        'p = Path("/tmp") / "dev" / "brief.py"\n'
+        'open(p, "w")\n'
+    )
+    # File B reads the real file — genuine consumer.
+    (tmp_path / "test_brief.py").write_text(
+        "from pathlib import Path\n"
+        'text = (Path(".") / "dev" / "brief.py").read_text()\n'
+    )
+    # _data_consumers: fixture_maker.py must NOT be a consumer.
+    consumers = land_lane._data_consumers(tmp_path, ["dev/brief.py"])
+    fixture_consumers = consumers.get("dev/brief.py", ())
+    assert "test_brief.py" in fixture_consumers, (
+        f"cross-file read should make test_brief.py a consumer; got {fixture_consumers!r}"
+    )
+    assert "fixture_maker.py" not in fixture_consumers, (
+        f"write-only fixture_maker.py should not be a consumer; got {fixture_consumers!r}"
+    )
+    # _data_derived: the test is selected.
+    tests, matched = land_lane._data_derived(
+        tmp_path, ["dev/brief.py"]
+    )
+    assert "test_brief.py" in tests, (
+        f"cross-file read should select test_brief.py; got {tests!r}"
+    )
+
+
 def test_data_rule_is_wired_into_derivation_selection(tmp_path):
     """The data rule contributes to the derived union, not just standalone.
 

@@ -376,13 +376,26 @@ def _map_derived(changed: Sequence[str]) -> tuple[tuple[str, ...], tuple[str, ..
 # ``watch.py`` alone appears as a bare string constant in 32 test files). The
 # 2+-component requirement is what makes the rule precise.
 #
-# WRITE-EXCLUSION: a path expression used as the receiver of a write method
-# (``.write_text()``, ``.mkdir()``, etc.) is NOT a data consumer. A test that
-# creates a fixture at ``tmp_path / "dev" / "brief.py"`` is not reading the real
-# ``dev/brief.py`` — it is manufacturing a synthetic one. Without this exclusion
-# the frame.md case pulled in ``test_land_lane.py`` as collateral, because its
-# own data-rule tests build fixtures via ``(tmp_path / "dev" / "brief.py")
-# .write_text(...)`` (#1101 r2).
+# WRITE-EXCLUSION: a path expression used as the receiver of a write operation
+# is NOT a data consumer. A test that creates a fixture at
+# ``tmp_path / "dev" / "brief.py`` is not reading the real ``dev/brief.py`` —
+# it is manufacturing a synthetic one. Without this exclusion the frame.md case
+# pulled in ``test_land_lane.py`` as collateral, because its own data-rule
+# tests build fixtures via ``(tmp_path / "dev" / "brief.py").write_text(...)``
+# (#1101 r2). The exclusion covers EVERY write form a path can take:
+#   (a) ``.write_text()`` / ``.write_bytes()`` / ``.mkdir()`` / ``.touch()`` /
+#       ``.unlink()`` — method name alone determines write.
+#   (b) ``open(path, "w")`` — builtin, positional mode, including ``"w+"``,
+#       ``"wb"``, ``"a"``, ``"x"`` (any mode string containing w/a/x).
+#   (c) ``open(path, mode="w")`` — builtin, keyword mode (#1101 r4: r2 only
+#       handled the positional form).
+#   (d) ``(path).open("w")`` / ``(path).open(mode="w")`` — the ``Path.open``
+#       method form (#1101 r4: r2 did not detect this at all).
+#   (e) ALIASED writes — ``p = <path>; open(p, "w")`` (#1101 r4: r2 missed
+#       writes through a name bound to the path expression first).
+# A suffix that appears in ANY read context — directly OR through the alias —
+# is still included (read wins), including ACROSS files: written in file A and
+# read in file B selects B (#1101 r4).
 #
 # DERIVATION has two shapes. (a) DIRECT: a test references the changed file in a
 # read context → derive that test. (b) TWO-HOP: a production file references the
@@ -404,11 +417,38 @@ def _map_derived(changed: Sequence[str]) -> tuple[tuple[str, ...], tuple[str, ..
 # helper functions (``_write(path, ...)``) are not detected. The first two had
 # no real occurrences in the measured tree; the third affects one test
 # (``test_launch_lane.py``'s fixture creation of ``briefs/frame.md``), which
-# remains a low-cost collateral selection.
+# remains a low-cost collateral selection. Aliased paths ARE detected (#1101
+# r4) — the alias must be a single ``Name`` target of a plain ``Assign`` whose
+# value is a recognised path expression.
 
 _WRITE_PATH_METHODS = frozenset({
     "write_text", "write_bytes", "mkdir", "touch", "unlink",
 })
+# ``open`` mode characters that make a mode string a write: ``"w"``, ``"a"``,
+# ``"x"`` — covers ``"w+"``, ``"wb"``, ``"ab"``, ``"xb"``, etc.
+_WRITE_MODE_CHARS = frozenset("wax")
+
+
+def _open_mode_is_write(call: ast.Call, positional_mode_index: int) -> bool:
+    """Whether an ``open(...)`` call's mode argument is a write mode.
+
+    Handles BOTH the positional form and the keyword form (``mode="w"``).
+    ``positional_mode_index`` is 1 for the builtin ``open(path, "w")`` (path
+    is ``args[0]``, mode is ``args[1]``) and 0 for ``Path.open("w")`` (the
+    path is the method's object; mode is ``args[0]``). Any mode string
+    containing ``w``, ``a``, or ``x`` is a write; ``"r"`` and ``"rb"`` are
+    not. An ``open`` with no explicit mode defaults to read.
+    """
+    if len(call.args) > positional_mode_index:
+        mode = call.args[positional_mode_index]
+        if isinstance(mode, ast.Constant) and isinstance(mode.value, str):
+            return any(c in mode.value for c in _WRITE_MODE_CHARS)
+    for kw in call.keywords:
+        if (kw.arg == "mode"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)):
+            return any(c in kw.value.value for c in _WRITE_MODE_CHARS)
+    return False
 
 
 def _constant_path_suffix(node: ast.AST) -> str | None:
@@ -478,27 +518,43 @@ def _path_expr_suffix(node: ast.AST) -> str | None:
     return None
 
 
-def _is_write_target(node: ast.AST, parent: ast.AST | None) -> bool:
+def _is_write_target(node: ast.AST, parents: dict[int, ast.AST]) -> bool:
     """Whether a path expression is the receiver of a write operation.
 
-    ``(tmp_path / "dev" / "brief.py").write_text(...)`` → the BinOp is the
-    ``value`` of an ``Attribute(attr="write_text")``, so it is a write
-    target and excluded from data-consumer detection. ``open(path, "w")``
-    is also a write target. A read (``.read_text()``, ``.glob()``, an
-    assignment, or any other context) is not.
+    Covers every form a tracked path can be written through (#1101 r4
+    closed three gaps that r2 missed):
+
+    * ``(tmp_path / "dev" / "brief.py").write_text(...)`` — the BinOp is
+      the ``value`` of an ``Attribute`` whose attr is a write method.
+    * ``open(path, "w")`` / ``open(path, mode="w")`` — the builtin, in
+      positional AND keyword-mode form (``"w+"``, ``"wb"``, ``"a"``,
+      ``"x"`` all detected via ``_open_mode_is_write``).
+    * ``(path).open("w")`` / ``(path).open(mode="w")`` — the ``Path.open``
+      method form, same mode check against the enclosing Call.
+    * Aliased paths — ``p = <path>; open(p, "w")`` — handled by
+      ``_data_path_suffixes``'s alias tracking, which calls this on the
+      ``Name`` usage.
+
+    A read (``.read_text()``, ``.glob()``, an assignment, or any other
+    non-write context) returns ``False``.
     """
+    parent = parents.get(id(node))
     if parent is None:
         return False
     if isinstance(parent, ast.Attribute) and parent.value is node:
-        return parent.attr in _WRITE_PATH_METHODS
+        if parent.attr in _WRITE_PATH_METHODS:
+            return True
+        if parent.attr == "open":
+            call = parents.get(id(parent))
+            if isinstance(call, ast.Call):
+                return _open_mode_is_write(call, 0)
+        return False
     if (isinstance(parent, ast.Call)
             and isinstance(parent.func, ast.Name)
             and parent.func.id == "open"
-            and len(parent.args) >= 2
+            and len(parent.args) >= 1
             and parent.args[0] is node):
-        mode = parent.args[1]
-        if isinstance(mode, ast.Constant) and isinstance(mode.value, str):
-            return any(c in mode.value for c in ("w", "a", "x"))
+        return _open_mode_is_write(parent, 1)
     return False
 
 
@@ -506,11 +562,20 @@ def _data_path_suffixes(source: str) -> frozenset[str]:
     """Every 2+-component constant path suffix a source references as DATA.
 
     Three syntactic forms are recognised (see ``_path_expr_suffix``). A
-    suffix used only as the receiver of a write method is EXCLUDED: a test
-    that creates a fixture at ``tmp_path / "dev" / "brief.py"`` is not a
-    consumer of the real file. A suffix that appears in ANY non-write
-    context in the file IS included, even if it also appears in a write
-    context elsewhere — the read occurrence is the real dependency.
+    suffix used only as the receiver of a write operation is EXCLUDED: a
+    test that creates a fixture at ``tmp_path / "dev" / "brief.py"`` is
+    not a consumer of the real file. A suffix that appears in ANY
+    non-write context in the file IS included, even if it also appears in
+    a write context elsewhere — the read occurrence is the real
+    dependency.
+
+    ALIASED paths (``p = ROOT / "dev" / "brief.py"; open(p, "w")``) are
+    tracked: the binding itself is skipped, and the suffix's read/write
+    fate is decided by the alias's Load-context USAGES. An alias used only
+    in write contexts is excluded; an alias used in ANY read context is
+    included (read wins). An alias defined but never loaded counts as a
+    read — the binding references the path (``x = ROOT / "dev" / "f.py"``
+    with no further use yields the suffix).
 
     A ``SyntaxError`` returns an empty set.
     """
@@ -522,12 +587,39 @@ def _data_path_suffixes(source: str) -> frozenset[str]:
     for parent in ast.walk(tree):
         for child in ast.iter_child_nodes(parent):
             parents[id(child)] = parent
-    read_suffixes: set[str] = set()
+    # Alias map: Name.id -> suffix, for single-target Assign of a path expr.
+    # The assigned path-expr node is skipped in the direct scan below — its
+    # fate is decided by the alias's usages, not by the binding itself.
+    aliases: dict[str, str] = {}
+    aliased_value_ids: set[int] = set()
     for node in ast.walk(tree):
-        suffix = _path_expr_suffix(node)
-        if suffix is None or "/" not in suffix:
-            continue
-        if not _is_write_target(node, parents.get(id(node))):
+        if (isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            suffix = _path_expr_suffix(node.value)
+            if suffix is not None and "/" in suffix:
+                aliases[node.targets[0].id] = suffix
+                aliased_value_ids.add(id(node.value))
+    read_suffixes: set[str] = set()
+    alias_loaded: set[str] = set()
+    for node in ast.walk(tree):
+        # Direct path-expr occurrence (skip aliased assignment values).
+        if id(node) not in aliased_value_ids:
+            suffix = _path_expr_suffix(node)
+            if suffix is not None and "/" in suffix:
+                if not _is_write_target(node, parents):
+                    read_suffixes.add(suffix)
+        # Alias usage: a Load-context Name mapped to a known suffix.
+        if (isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id in aliases):
+            alias_loaded.add(node.id)
+            if not _is_write_target(node, parents):
+                read_suffixes.add(aliases[node.id])
+    # An alias defined but never loaded counts as a read — the binding
+    # references the path, matching ``x = ROOT / "dev" / "watch.py"``.
+    for name, suffix in aliases.items():
+        if name not in alias_loaded:
             read_suffixes.add(suffix)
     return frozenset(read_suffixes)
 
