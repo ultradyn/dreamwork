@@ -16738,3 +16738,80 @@ class TestNativePageAssembly(unittest.TestCase):
         self.assertIn(
             'if (isNativeRoute(view.name)) return null;', watch.PAGE,
             'a native route must bypass the string-builder dispatch')
+
+
+class TestNodeTimeoutPolicy(unittest.TestCase):
+    """#1121 — the node-timeout policy is one named constant, not 35 literals."""
+
+    def test_node_timeout_is_a_float_defaulting_to_ten(self):
+        # The default stays developer-friendly (fast hang detection); the gate
+        # raises it via DREAMWORK_NODE_TIMEOUT.  float() wrapping confirms the
+        # env path is exercised, not a bare int.
+        self.assertIsInstance(NODE_TIMEOUT, float)
+        self.assertEqual(NODE_TIMEOUT, 10.0)
+
+    def test_node_run_passes_the_single_source_timeout_to_subprocess(self):
+        # Production seam: _node_run's ``kwargs.setdefault("timeout", NODE_TIMEOUT)``.
+        # Blind that line and this captures None, not NODE_TIMEOUT.
+        captured = {}
+
+        def spy(argv, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            # Don't actually spawn; return a minimal CompletedProcess.
+            return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+
+        with unittest.mock.patch.object(subprocess, "run", spy):
+            _node_run(["node", "-e", "0"], capture_output=True)
+        self.assertEqual(
+            captured["timeout"], NODE_TIMEOUT,
+            "_node_run must pass NODE_TIMEOUT as the subprocess timeout")
+
+    def test_node_output_and_check_also_use_the_single_source(self):
+        seen = {}
+
+        def spy_run(argv, **kwargs):
+            seen["run"] = kwargs.get("timeout")
+            return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+
+        def spy_call(argv, **kwargs):
+            seen["call"] = kwargs.get("timeout")
+            return 0
+
+        with unittest.mock.patch.object(subprocess, "check_output", spy_run), \
+                unittest.mock.patch.object(subprocess, "check_call", spy_call):
+            _node_output(["node", "-e", "0"])
+            _node_check(["node", "-e", "0"])
+        self.assertEqual(seen["run"], NODE_TIMEOUT)
+        self.assertEqual(seen["call"], NODE_TIMEOUT)
+
+    def test_timeout_expired_raises_diagnostic_message_naming_load(self):
+        # A real timeout: an explicit 0.3s ceiling on a node script held alive
+        # past it.  The message must distinguish a load-induced timeout from an
+        # assertion failure so the next gate reader is not sent on the detour
+        # this task was filed to prevent.
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node unavailable")
+        with self.assertRaises(AssertionError) as ctx:
+            _node_run(
+                [node, "-e", "setTimeout(()=>process.exit(0), 10000)"],
+                capture_output=True, text=True, timeout=0.3)
+        msg = str(ctx.exception)
+        self.assertIn("NOT a defect in the branch under test", msg)
+        self.assertIn("timed out", msg)
+        # The original TimeoutExpired is chained for the raw traceback.
+        self.assertIsInstance(ctx.exception.__cause__,
+                              subprocess.TimeoutExpired)
+
+    def test_caller_can_override_the_timeout_per_call(self):
+        # setdefault must not clobber an explicit per-call timeout — that is
+        # how the diagnosis test above pins a tiny ceiling deterministically.
+        captured = {}
+
+        def spy(argv, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+
+        with unittest.mock.patch.object(subprocess, "run", spy):
+            _node_run(["node", "-e", "0"], timeout=99)
+        self.assertEqual(captured["timeout"], 99)
