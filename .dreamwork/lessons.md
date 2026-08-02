@@ -4412,3 +4412,49 @@ The practical rule, for briefs and for reviews: **name the seam the check must b
 defect it must catch.** When a fix spans a backend and a renderer, a test at the backend seam is
 half a fix and reads like a whole one. And when citing a precedent, state the property being
 borrowed — "additive error field, all other fields retained" — rather than the precedent's name.
+
+## To predict a tool's behaviour, measure with the tool's own function, not a lookalike command (2026-08-02, #1032/#1038/#630, mine, measured)
+
+After `#1032` landed I wanted to know whether three stuck documentation branches were now
+gate-passable. I ran `git diff --name-only master...<branch>` on each, saw only documentation paths,
+and reported to the ledger that all three measured `required_injections=0` — concluding that only
+`#1038` still blocked them. An adversarial reviewer, asked to verify a different claim, measured
+`land_lane._classify_diff(master, cx-630scope3)` **directly** and got
+`binding=('dev/land_lane.py', 'test_land_lane.py')`, `required_injections=1`. I re-derived it and the
+reviewer was right.
+
+**The mechanism: three-dot versus two-dot.** `git diff A...B` is the symmetric difference against the
+merge base; `_classify_diff` uses the direct base-to-tip comparison. On a branch that is up to date
+these agree, which is why the substitution felt safe and had probably been safe every previous time.
+All three of these branches are stale — `git merge-base --is-ancestor master <branch>` exits 1 for
+each — and on a stale branch the two disagree by exactly the files that landed on master in the
+meantime. My command reported what the branch *contributes*; the gate asks what the branch
+*contains*.
+
+**The diagnosis this produced was wrong in a way that would have wasted a lane.** I had already
+written into `#1032` that the registry fault was the sole remaining blocker and that fixing it would
+clear all three. Neither `#1032` nor `#1038` was ever the blocker: `land_lane` refuses these branches
+at preflight, before red-proof history runs at all. They are blocked by being stale, and the fix is a
+rebase. I dispatched `#1038`'s remediation with an explicit correction in its brief, because a lane
+told "this unblocks three branches" optimises toward making those branches pass — which would have
+produced a fix shaped around a fiction.
+
+**Why it is the same failure this session kept finding.** *The three-dot diff is documentation-only*
+was a **true statement**. I read it as *the gate will compute zero required injections*, which it
+does not support. That is the session's recurring shape — a true statement read as a stronger claim
+than it supports — committed by the coordinator into the ledger **while adjudicating three separate
+instances of it in other people's work** (`#1032`, `#1038`, `#1040`, all "correct about the fact,
+wrong about the inference"). Recognising a pattern in others is not the same as being immune to it,
+and the adjudicating seat is not a safe seat.
+
+The rule: **when you are predicting what a tool will do, call the tool's own function.** Not a
+command that computes something similar, not a flag that looks equivalent, not a reimplementation of
+its logic in the shell. `_classify_diff` was importable and takes two arguments; the correct
+measurement was cheaper than the one I ran, and the only reason I did not run it is that the shell
+command was the thing I already knew. Prefer the authority over the convenience — and when the two
+disagree, the authority is not "another opinion", it is the answer.
+
+Corollary for reviews: this was caught because a reviewer was told **"if your measurement contradicts
+anything stated above, YOUR MEASUREMENT WINS"**. That line is not politeness. It is what makes a
+reviewer willing to contradict the coordinator's premise instead of working around it, and it is
+worth putting in every review prompt for that reason alone.
