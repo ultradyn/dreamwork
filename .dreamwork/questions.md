@@ -2,6 +2,48 @@
 
 ## Open
 
+- **P1 · 2026-08-02 18:05 — #1009: your "use an Opus 5 subagent" instruction currently cannot execute at all. Extend the sandbox, or accept ccc-only lanes?**
+  **What happened.** You asked twice tonight for work to go to an Opus 5 subagent (the `/goals`
+  redesign, and the issue-hover styling). `@opus5` exists and is configured correctly. The launch
+  refused:
+
+      REFUSE phase=agent-worktree-reach: 1 violation(s)
+      - native agent @opus5 inherits the coordinator sandbox rooted at
+        …/skills/ud-dreamwork, but worktree …/skills/.worktrees/cx-1007hover is
+        outside that root; use @glm52 or @cx-coder, which receive their own lane
+        sandbox, or extend the native sandbox to include …/skills/.worktrees
+
+  **The check is right and I am not asking you to weaken it.** It fails closed, names both paths,
+  names the remedy, and says outright that interpreter availability was NOT checked rather than
+  implying it passed. The problem is upstream of it.
+
+  **Two of your own decisions have collided.** You asked for `.worktrees/` to live outside the repo
+  so the repo tree only shrinks. Native agents inherit my sandbox, which is rooted at the repo.
+  Together those mean **no native agent can be dispatched through the governed lane path for any
+  task** — this is a property of the fleet, not of those two tasks. The ccc-routed aliases
+  (`@glm52`, `@cx-coder`, `@cx-luna-*`) are unaffected; each gets its own lane sandbox.
+
+  It also failed quietly in the way that matters: the refusal went to a launch log I had to read on
+  purpose. Nothing would have told you your instruction did not run.
+
+  **Q1 — which way?**
+  1. **Extend the native sandbox** to include `…/skills/.worktrees`. Restores native lanes exactly
+     as the refusal suggests. The honest cost, and the reason this is yours: **it widens my own
+     write reach to every lane worktree** — the precise boundary `#465` is being built to police
+     from the other side. I would rather you decided those together than have me widen one while
+     tightening the other.
+  2. **Accept ccc-only lanes** and read "Opus 5 subagent" as "the strongest available ccc-routed
+     model" — `@cx-luna-xhigh` today. No config change, no widened reach; your intent (a
+     design-grade model on design work) is still served, by a different model.
+
+  **`rec`: 2 for now, 1 later if the ccc tiers prove not good enough on design work.** The reach
+  widening is real and `#465` is mid-flight; I would rather not move that boundary while a lane is
+  actively building a guard for it.
+
+  **Nothing is blocked while you decide.** `#1007` is dispatched to `@cx-luna-xhigh` with the
+  substitution stated plainly in its brief, and `#1006` was already queued behind it because they
+  share `client/style.css`.
+
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
   2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
   then, nothing blocks and nothing is delivered by hand.
