@@ -922,6 +922,38 @@ def test_state_report_reports_a_warn_row_claim_against_the_ledger(tmp_path):
     assert "actual state 'landed'" in report, report
 
 
+def test_state_report_warn_row_clause_captures_every_id_not_just_the_first(tmp_path):
+    """Finding 1 (#1028 P1): a multi-id WARN-row clause must claim EVERY id in
+    it, not just the first.  'WARN rows (#630, #700)' with #630 open and #700
+    landed must report #630 as MATCH and #700 as MISMATCH.  The prior regex
+    captured a single #NNN and finditer resumed after it, so #700 — a landed
+    task whose expected WARN can never occur — was reported as an unclassified
+    'other citation' rather than a MISMATCH, missing exactly the error class
+    this checker exists to find.
+
+    Production change that would break this: reverting
+    ``_TASK_WARN_OUTPUT`` to capture a single ``#(?P<task>\\d+)`` instead of a
+    clause + inner finditer, or shortening the clause so #700 falls outside it.
+    A single-id fixture cannot catch this, which is why the fixture MIXES open
+    (#630) and landed (#700) so a MISMATCH for #700 is REQUIRED."""
+    ledger = _state_ledger(tmp_path)
+    core = (
+        "## Verify\n\n"
+        "Expect WARN rows (#630, #700).\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    report = brief._task_state_claim_report(core, ledger)
+    # Both ids are claimed — not "found 1" with #700 dropped to "other".
+    assert "found 2 task-state claim(s)" in report, report
+    assert "#630 MATCH" in report, report
+    # The discriminating assertion: the landed #700 is a MISMATCH, not an
+    # unclassified "other citation".
+    assert "#700 MISMATCH" in report, report
+    assert "actual state 'landed'" in report, report
+    # No id was silently demoted to an "other citation".
+    assert "0 other #NNN citation(s)" in report, report
+
+
 def test_state_report_predicate_binds_to_the_right_id_not_a_later_one(tmp_path):
     """The regex-gap fix: '#700 exactly, and #630 is a live task' must bind the
     'live' predicate to #630 (open → MATCH), NOT to the earlier #700 (landed).

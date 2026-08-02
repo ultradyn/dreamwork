@@ -250,14 +250,18 @@ _TASK_STATE_PREDICATE = re.compile(
     + _OPEN_IMPLYING + r"|" + _LANDED_IMPLYING + r")\b",
     re.IGNORECASE,
 )
-# A #NNN inside a WARN-row expected-output claim: "WARN rows (#630, #641)".
-# This predicts that id will appear in lint output, i.e. claims it is active.
-# The prior lane also matched a generic ``expect|expected|fixture ... #NNN``
-# regex; measured across 77 retained cores that was the source of 4/6 false
-# positives (bare "fixture rename from #645" etc.), so it is DROPPED: proximity
-# to the word "fixture"/"expect" is ordinary context, not a state assertion.
+# A WARN-row expected-output claim: "WARN rows (#630, #641)".  This predicts
+# every id in the clause will appear in lint output, i.e. claims each is
+# active.  The prior regex captured a SINGLE ``#NNN`` and ``finditer`` resumed
+# AFTER it — so "WARN rows (#630, #700)" reported #630 and dropped #700 as an
+# "other citation", missing exactly the landed-id mismatch this checker exists
+# to find (#1028 P1).  The clause is bounded by a sentence terminator (``.``,
+# newline, ``;``) or 80 chars, whichever comes first; then every ``#NNN``
+# inside it is a claim.  The standing-rules line "WARN row set against the
+# measured baseline" has no ``#NNN`` in its clause, so it yields zero claims
+# and cannot false-positive.
 _TASK_WARN_OUTPUT = re.compile(
-    r"\bWARN\s+rows?\b[^.\n;]{0,30}?#(?P<task>\d+)",
+    r"\bWARN\s+rows?\b(?P<clause>[^.\n;]{0,80})",
     re.IGNORECASE,
 )
 
@@ -1092,9 +1096,12 @@ def _task_state_claim_report(core: str, ledger: Path) -> str:
             claims[key] = (index + 1, int(match.group("task")),
                            "state predicate", match.group("state"))
         for match in _TASK_WARN_OUTPUT.finditer(line):
-            key = (index + 1, int(match.group("task")))
-            claims.setdefault(key, (index + 1, int(match.group("task")),
-                                    "WARN output", None))
+            # Capture EVERY #NNN in the bounded WARN-row clause, not just the
+            # first — "WARN rows (#630, #700)" claims both ids (#1028 P1).
+            for cite in re.finditer(r"#(\d+)", match.group("clause")):
+                task = int(cite.group(1))
+                key = (index + 1, task)
+                claims.setdefault(key, (index + 1, task, "WARN output", None))
         total_citations += len(re.findall(r"#\d+", line))
 
     claim_list = list(claims.values())
