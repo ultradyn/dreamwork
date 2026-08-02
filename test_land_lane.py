@@ -576,7 +576,9 @@ def test_authorised_pass_reads_differently_from_zero_change_pass(tmp_path):
     worktree, so the same lane cannot be reused for a second run.
     """
     # Repo 1: zero-change landing.
-    root1, lane1 = _make_repo(tmp_path / "zero")
+    zero_dir = tmp_path / "zero"
+    zero_dir.mkdir()
+    root1, lane1 = _make_repo(zero_dir)
     _write(lane1 / "feature.txt", "lane\n")
     _git(lane1, "add", "feature.txt")
     _git(lane1, "commit", "-m", "lane change")
@@ -598,7 +600,9 @@ def test_authorised_pass_reads_differently_from_zero_change_pass(tmp_path):
     assert "WARN authorisation:" not in zero_change.stdout
 
     # Repo 2: authorised WARN-add landing.
-    root2, lane2 = _make_repo(tmp_path / "auth")
+    auth_dir = tmp_path / "auth"
+    auth_dir.mkdir()
+    root2, lane2 = _make_repo(auth_dir)
     _write(lane2 / "feature.txt", "lane\n")
     _git(lane2, "add", "feature.txt")
     _git(lane2, "commit", "-m", "lane change")
@@ -621,6 +625,29 @@ def test_authorised_pass_reads_differently_from_zero_change_pass(tmp_path):
     )
     assert authorised.returncode == 0, authorised.stderr
     assert "WARN authorisation:" in authorised.stdout
+
+
+def test_declared_warn_add_accepts_diff_prefix_from_gate_output(landing_repo):
+    """The coordinator copies the added-row line straight from the gate's
+    ``+   WARN  ...`` diff output. _declared_warn_index strips that leading
+    ``+ `` so the declaration matches the observed row. Without prefix
+    stripping the identity would differ (raw ``"+   WARN  ..."`` vs raw
+    ``"  WARN  ..."``) and the authorisation would never fire — the helper
+    exists to bridge exactly that gap."""
+    root, lane = landing_repo
+    _add_lane_warn(lane, "new warning")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run_declared(
+        root, "--expect-warn-add", "+   WARN  new warning"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "lint-precheck WARN authorisation: "
+        "declared_added=1 observed_added=1 matched_added=1"
+    ) in result.stdout
+    assert _git(root, "rev-parse", "refs/heads/master") != before
 
 
 def test_empty_warn_baseline_refuses_as_zero_population(landing_repo):
