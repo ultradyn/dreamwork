@@ -2644,13 +2644,14 @@ def test_consume_refuses_split_applied_ledger(tmp_path: Path):
     """consume refuses when --applied is not co-located with --journal (#808).
 
     The journal and its applied-ledger are one unit — the ledger's markers
-    prove "this receipt was drained from THIS journal".  A lane running a bare
-    ``consume`` from a cwd that is the MAIN checkout (the harness default,
-    #882) while its own journal lives in its worktree resolves the two
-    CWD-relative defaults to DIFFERENT trees: the journal from the worktree's
-    ``--journal`` (or a fixture), the applied-ledger from the main checkout's
-    ``.dreamwork/applied.md``.  That split stamps ``coordinator-drain`` into
-    the wrong dedup file — the defect this task exists to close.
+    prove "this receipt was drained from THIS journal".  ``--journal`` and
+    ``--applied`` resolve INDEPENDENTLY (both default CWD-relative to
+    ``.dreamwork/``), so a split arises whenever their resolved parent
+    directories differ — an explicit ``--applied`` pointed at another tree,
+    or a process cwd that places the default ``.dreamwork/applied.md`` in a
+    different checkout from the journal.  That split stamps
+    ``coordinator-drain`` into the wrong dedup file — the defect this task
+    exists to close.
 
     RED LINE (run): delete the ``_refuse_split_applied`` call in cmd_consume
       (the ``if args.cleared is None`` block).  The split consume then proceeds,
