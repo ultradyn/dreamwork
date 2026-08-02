@@ -45,6 +45,7 @@ def _sandbox_cli(tmp_path: Path) -> tuple[Path, Path]:
     cli = root / "dev" / "dispatch_lane.py"
     shutil.copy2(CLI, cli)
     shutil.copy2(ROOT / "lane_liveness.py", root / "lane_liveness.py")
+    shutil.copy2(ROOT / "lane_runner_identity.py", root / "lane_runner_identity.py")
     shutil.copy2(ROOT / "worktree_paths.py", root / "worktree_paths.py")
     shutil.copytree(ROOT / "dreamwork_db", root / "dreamwork_db")
     shutil.copy2(ROOT / "ledger_store.py", root / "ledger_store.py")
@@ -82,6 +83,7 @@ def _linked_worktree_cli(tmp_path: Path) -> tuple[Path, Path, Path]:
     cli = lane / "dev" / "dispatch_lane.py"
     shutil.copy2(CLI, cli)
     shutil.copy2(ROOT / "lane_liveness.py", lane / "lane_liveness.py")
+    shutil.copy2(ROOT / "lane_runner_identity.py", lane / "lane_runner_identity.py")
     shutil.copy2(ROOT / "worktree_paths.py", lane / "worktree_paths.py")
     shutil.copytree(ROOT / "dreamwork_db", lane / "dreamwork_db")
     shutil.copy2(ROOT / "ledger_store.py", lane / "ledger_store.py")
