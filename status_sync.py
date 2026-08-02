@@ -76,6 +76,7 @@ LEDGER_HEAD = re.compile(rf"^- \*\*({watch.IDS_ONLY_SPAN})\*\*", re.M)
 from ledger_parse import ENTRY_ID  # noqa: E402
 from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
 import lane_liveness  # noqa: E402
+import lane_runner_identity  # noqa: E402
 from worktree_paths import WORKTREE_DIR  # noqa: E402
 from worktree_paths import worktree_roots as _canonical_worktree_roots  # noqa: E402
 
@@ -444,18 +445,24 @@ def _ccc_model(pid: int) -> str | None:
 # head/grep/tail/bash sharing the prefix is NOT, however deleted its cwd. The
 # pairing of "known runner" with "deleted worktree cwd" is what makes the
 # reaper safe where it has kill authority, and it is what separates a genuine
-# leftover from shell noise in the phantom report.
-_LANE_RUNNERS = ("ccc", "claude", "grok", "codex")
+# leftover from shell noise in the phantom report. THE single source is
+# lane_runner_identity — both fleet probes read it, so a name added there is
+# seen by the tick and status at once (#1113: the #868/#1084 "the fleet count
+# lied" defect class was two copies drifting). Re-exported here for readers
+# that still name status_sync._LANE_RUNNERS.
+_LANE_RUNNERS = lane_runner_identity.LANE_RUNNERS
 
 
 def _is_lane_runner(pid: int) -> bool:
     """Whether ``pid``'s argv[0] basename is a known lane runner (#440, #671).
 
-    A ``head -3``, a ``grep``, a ``tail -F``, a handshake ``bash`` — these
-    share a lane's deleted cwd but are NOT lane processes. Copying
-    reaper.parse_cmdline's shape: a basename check on the NUL-split argv[0],
-    never a substring of the raw cmdline (the #716 trap: /proc cmdline is
-    NUL-separated). This is the positive test the old "ccc process mid-exit"
+    A thin I/O wrapper: read /proc/<pid>/cmdline, then delegate the basename
+    classification to ``lane_runner_identity.is_lane_runner`` — the ONE
+    classifier, shared with the tick line's cwd channel (#1113). This module
+    works with pids (it has a pid from /proc enumeration); the shared
+    classifier takes raw bytes (the tick channel already read them). A future
+    basename normalisation lands in the shared function and is seen by both
+    probes at once. This is the positive test the old "ccc process mid-exit"
     label CLAIMED but never performed (#671: a label asserting a check that
     was not done).
     """
@@ -464,46 +471,14 @@ def _is_lane_runner(pid: int) -> bool:
             raw = f.read()
     except OSError:
         return False
-    if not raw:
-        return False
-    first = raw.split(b"\x00", 1)[0]
-    return os.path.basename(first.decode("utf-8", "replace")) in _LANE_RUNNERS
+    return lane_runner_identity.is_lane_runner(raw)
 
 
-def _ancestor_pids() -> set[int]:
-    """Pids from ``os.getpid()`` up to init via ``/proc/<pid>/stat`` field 4.
-
-    #729: a process that is an ancestor of the thing doing the counting is by
-    construction not a lane. Exact, not heuristic, no allowlist — the
-    coordinator (claude) started in a worktree that was later removed, so its
-    cwd really IS deleted and the reading is correct; what was wrong was the
-    CLASSIFICATION. Walking the ppid chain identifies it as self, not a
-    phantom. Field 2 (comm) may contain spaces and parens, so we cut between
-    the first '(' and the last ')' like reaper.parse_proc_stat before indexing
-    field 4 (ppid) as ``rest[1]`` (fields 3.. follow comm).
-    """
-    ancestors: set[int] = set()
-    pid = os.getpid()
-    seen: set[int] = set()           # cycle guard against a corrupt stat file
-    while pid > 1 and pid not in seen:
-        ancestors.add(pid)
-        seen.add(pid)
-        try:
-            with open("/proc/%d/stat" % pid) as f:
-                text = f.read()
-        except OSError:
-            break
-        rparen = text.rfind(")")
-        if rparen < 0:
-            break
-        rest = text[rparen + 2:].split()
-        if len(rest) < 2:
-            break
-        try:
-            pid = int(rest[1])        # field 4 (ppid) == index 1 after comm
-        except ValueError:
-            break
-    return ancestors
+# The ancestor-self exclusion (#729) is shared from lane_runner_identity — the
+# single source — so this probe and the tick line agree on what is "self", not
+# a phantom, exactly as they agree on what is a runner (#1113). Re-exported
+# under the private name this module's callers and tests already use.
+_ancestor_pids = lane_runner_identity.ancestor_pids
 
 
 def discover_lanes(target: Path, *, stats: dict | None = None):

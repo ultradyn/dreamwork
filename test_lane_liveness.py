@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import lane_liveness
+import lane_runner_identity
 
 
 def _subject(tmp_path, *, lane="cx-finished"):
@@ -278,3 +279,57 @@ class TestCwdRunnerChannel:
             skip_pids=set())
         assert inspection.live == ("cx-locked",)
         assert inspection.cwd_live == ("glm-hand",)
+
+
+# ── #1113: the cwd channel reads the SHARED classifier ──────────────────
+#
+# The tick's fleet count uses lane_liveness._is_lane_runner, which must be the
+# SAME function status_sync uses — not a copy. The mutation test below
+# exercises this through inspect_lanes's cwd channel (the #1084 dispatch-route
+# invariant), not by calling the function in isolation: it mutates the shared
+# constant and asserts the cwd channel's runner classification flips.
+
+class TestCwdChannelSharesClassifier:
+    """#1113: the cwd channel's runner test is the shared classifier."""
+
+    def test_mutating_shared_runners_flips_cwd_classification(
+            self, tmp_path, monkeypatch):
+        # A process whose argv[0] is "codex" (a known runner) holding a
+        # worktree cwd should be classified as a cwd-live lane. Removing
+        # "codex" from the shared constant must make the cwd channel drop it
+        # — proving lane_liveness reads the shared source, not its own copy.
+        target = tmp_path / "project"
+        target.mkdir()
+        worktree = tmp_path / ".worktrees" / "glm-codex-hand"
+        (worktree / ".dreamwork").mkdir(parents=True)
+
+        cmdline = b"codex\x00--yolo\x00glm-codex-hand\x00"
+        cwd = str(worktree)
+
+        # BASELINE: the cwd channel sees "codex" as a runner → cwd_live.
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["501"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: cmdline,
+            read_cwd=lambda _pid: cwd,
+            skip_pids=set())
+        assert inspection.cwd_live == ("glm-codex-hand",), \
+            "baseline: codex is a known runner; the cwd channel must see it"
+
+        # THE MUTATION: remove "codex" from the shared constant. If
+        # lane_liveness shares the classifier, the cwd channel must now see
+        # this process as a non-runner (head/grep/tail class) and drop it.
+        monkeypatch.setattr(
+            lane_runner_identity, "LANE_RUNNERS",
+            tuple(n for n in lane_runner_identity.LANE_RUNNERS
+                  if n != "codex"))
+
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["501"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: cmdline,
+            read_cwd=lambda _pid: cwd,
+            skip_pids=set())
+        assert inspection.cwd_live == (), \
+            "after removing codex: the cwd channel must drop the lane — " \
+            "if it stayed, lane_liveness has its own copy (#1113)"
