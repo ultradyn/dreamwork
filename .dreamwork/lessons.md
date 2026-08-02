@@ -5185,3 +5185,12 @@ disagreed with the story — neither looked wrong on its own.
   `land_lane`. Chain 27 printed **0**, which told me immediately that its refusal was NOT the known
   load flake and was worth chasing — and it was, it was a red master. **A cheap line that discriminates
   between two failure modes is worth more than a smart one that describes either.** (2026-08-03, coordinator)
+- **A lane's reported sha is dead the moment my gate rebases it, and I cited it twice anyway.** Both
+  `#1113` and `#1121` folds were REFUSED by the ledger's citation guard — *"exists but is NOT an
+  ancestor of master"* — because I copied the head sha out of the lane's own report. The gate rebases
+  every branch immediately before gating it (`#1055`), so the branch's self-reported head is
+  guaranteed stale by the time it lands. **The shas to cite come from
+  `git log <old-master>..<new-master> --no-merges`, never from the report.** The guard caught it both
+  times and cost nothing, which is exactly why it exists: the same slip put three invented shas into
+  `handoffs.md` on a night when nothing was checking. **The fix for a mistake I keep making is a check
+  that makes it free, not a resolution to stop making it.** (2026-08-03, coordinator)
