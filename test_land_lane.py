@@ -564,6 +564,39 @@ def test_squash_preserves_deletion_mode_and_symlink_target(tmp_path):
     )
 
 
+def test_tree_diff_names_reinstated_deletion_mode_loss_and_symlink_loss(tmp_path):
+    root, lane = _make_repo(tmp_path)
+    _write(root / "deleted.txt", "remove me\n")
+    _write(root / "mode.sh", "#!/bin/sh\nexit 0\n")
+    (root / "link.txt").symlink_to("old-target")
+    _git(root, "add", "deleted.txt", "mode.sh", "link.txt")
+    _git(root, "commit", "-m", "add tree-shape fixtures")
+    _git(lane, "rebase", "master")
+
+    (lane / "deleted.txt").unlink()
+    (lane / "mode.sh").chmod(0o755)
+    (lane / "link.txt").unlink()
+    (lane / "link.txt").symlink_to("new-target")
+    _git(lane, "add", "deleted.txt", "mode.sh", "link.txt")
+    _git(lane, "commit", "-m", "change deletion mode and symlink target")
+    original = _git(lane, "rev-parse", "HEAD")
+    _git(lane, "tag", "lane-preserved", original)
+
+    # This is the lossy post-squash tree: deletion resurrected, executable bit
+    # removed, and symlink target reverted. No regular-file contents need be
+    # missing for two of the three losses to be real.
+    _git(lane, "reset", "--hard", "master")
+    differing = land_lane._squash_tree_diff(
+        lane, "refs/tags/lane-preserved", "refs/heads/lane"
+    )
+
+    assert differing == (
+        "A\tdeleted.txt",
+        "M\tlink.txt",
+        "M\tmode.sh",
+    ), f"tree verification failed to name every non-content loss: {differing!r}"
+
+
 def test_existing_presquash_tag_is_never_force_replaced(tmp_path):
     root, lane = _make_repo(tmp_path)
     _write(lane / "one.txt", "one\n")
