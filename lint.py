@@ -4629,13 +4629,13 @@ def check_dev_task_citations(
     root = dw.parent
     if diff_text is None:
         result = subprocess.run(
-            ["git", "diff", "--no-color", "--unified=0", "HEAD^", "HEAD",
+            ["git", "diff", "--no-color", "--unified=0", "HEAD^",
              "--", ":(glob)dev/*.py"],
             cwd=root, capture_output=True, text=True, check=False,
         )
         if result.returncode:
             rep.add(OK, "dev task citations",
-                    "examined 0 newly added citation(s): no committed HEAD^..HEAD "
+                    "examined 0 newly added citation(s): no HEAD^..working-tree "
                     "diff was available; no resolution verdict")
             return
         diff_text = result.stdout
