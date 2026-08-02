@@ -1085,6 +1085,89 @@ def test_unreadable_registry_at_require_zero_names_its_cause_not_absence(
         os.chmod(reg_dir, 0o755)
 
 
+def test_unreadable_parent_with_no_registry_does_not_assert_existence(
+        doc_only_repo, monkeypatch):
+    """#1038 Finding 1 (round 4): when the parent dir is unreadable and there
+    is NO registry.json inside it, the cause note must NOT say the registry
+    exists — redproof only establishes "not confirmed absent," and the
+    registry may genuinely not be there. Round 3 fixed "absent" → "exists,"
+    which moved the overclaim one notch: "exists" is equally false when the
+    file is not there. #136's third state is "could not determine," not
+    "exists," and the note must say that.
+
+    This is a DIFFERENT fixture from ``test_unreadable_registry_at_require_zero``
+    (which creates a registry.json then chmods its parent): here no registry
+    exists at all, so the note's "exists" assertion is flatly wrong rather
+    than merely unprovable. The fixture deletes registry.json after begin/
+    forget so the identity dir is discoverable but the file is gone.
+
+    Direction 2 guards: (a) asserting "registry exists" is absent passes if
+    the note is deleted entirely, so the test also asserts "not confirmed" IS
+    present — the undetermined state named explicitly; (b) "permission issue"
+    must still be present so the cause-specific clause survives the reword."""
+    import os
+    root, lane = doc_only_repo
+    assert _git(lane, "diff", "--name-only", "master", "lane").split() == [
+        ".dreamwork/docs/census.md"
+    ], "precondition: doc-only diff so --require derives to 0"
+
+    # Create the identity dir + redproof dir via begin/forget, then REMOVE
+    # registry.json so the scenario is: identity dir exists, redproof dir
+    # exists, but no registry file inside it — and the dir is unreadable.
+    monkeypatch.setenv("DREAMWORK_LANE_ID", "no-registry-1038")
+    armed = _redproof(lane, "begin", ".dreamwork/docs/census.md",
+                      "--expectation", "test_named.py")
+    assert armed.returncode == 0, armed.stdout + armed.stderr
+    forgotten = _redproof(lane, "forget", ".dreamwork/docs/census.md")
+    assert forgotten.returncode == 0, forgotten.stdout + forgotten.stderr
+    monkeypatch.delenv("DREAMWORK_LANE_ID", raising=False)
+
+    import dev.redproof as rp
+    idirs = rp._ls.lane_identity_dirs(lane)
+    assert len(idirs) == 1, f"precondition: one identity dir, got {len(idirs)}"
+    reg_dir = rp._redproof_dir(lane, idirs[0].name, rp._role(lane))
+    reg = reg_dir / "registry.json"
+    assert reg.exists(), "precondition: begin/forget created registry.json"
+    reg.unlink()  # the no-registry case: the file is genuinely gone
+    assert not reg.exists(), "precondition: registry.json deleted"
+    os.chmod(reg_dir, 0o000)
+    try:
+        assert not reg.exists(), (
+            "precondition: exists() must return False under chmod 000 — "
+            "if not, the test runs as root or a mode-ignoring fs and "
+            "proves nothing")
+        result = _run(root, "test_named.py")
+        assert result.returncode == 1, (
+            "an unreadable parent with no registry must REFUSE, not pass:\n"
+            + result.stderr)
+        refuse_lines = [
+            line for line in result.stderr.splitlines()
+            if "REFUSE phase=red-proof-history" in line
+        ]
+        assert refuse_lines, (
+            "expected a REFUSE phase=red-proof-history line:\n" + result.stderr)
+        refuse_line = refuse_lines[0]
+        # Direction 1: the overclaim. "registry exists" asserts a fact
+        # redproof did not establish — the file may not be there at all.
+        assert "registry exists" not in refuse_line, (
+            "land_lane's note asserted the registry exists when there is no "
+            "registry file — only the parent's unreadability was "
+            "established:\n" + refuse_line)
+        # Direction 2: the undetermined state must be named, not collapsed
+        # into a generic "a registry problem." This catches a fix that
+        # deletes the note or vagues it out.
+        assert "not confirmed" in refuse_line, (
+            "land_lane's note must name the undetermined state ('not "
+            "confirmed') rather than asserting existence or absence:\n"
+            + refuse_line)
+        # Direction 2: the cause-specific clause survives the reword.
+        assert "permission issue" in refuse_line, (
+            "land_lane's note must still name the permission cause after "
+            "rewording:\n" + refuse_line)
+    finally:
+        os.chmod(reg_dir, 0o755)
+
+
 def test_plan_plus_required_doc_map_row_lands_without_an_injection(
     plan_with_doc_map_repo,
 ):
