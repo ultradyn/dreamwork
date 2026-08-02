@@ -2464,6 +2464,7 @@ def _verb_groups(args, dw_dir):
                                access=Access.READ) as store:
                 group = store.groups.get(args.group_id)
                 triggers = store.groups.triggers(args.group_id)
+                removed = store.groups.removed_members(args.group_id)
                 try:
                     progress = store.groups.progress(args.group_id)
                 except EmptyGroup as exc:
@@ -2481,6 +2482,16 @@ def _verb_groups(args, dw_dir):
                     "task_type": trigger.task_type,
                 }
                 for trigger in triggers
+            ]
+            # #1037 Finding 1 — the supported audit reader.  Without this the
+            # actor, reason and former membership are reachable only by raw
+            # SQL, so a goal quietly narrowed to match finished work reads
+            # 100% done.  Surfaced here so `groups get` answers "what was
+            # removed from this goal?" without leaving the product.
+            rec["removed_members"] = [
+                {"task_id": m.task_id, "removed_at": m.removed_at,
+                 "actor": m.actor, "detail": m.detail}
+                for m in removed
             ]
             if progress is None:
                 rec["progress_error"] = progress_error
@@ -2507,6 +2518,13 @@ def _verb_groups(args, dw_dir):
                     ) or "none")
                     + "\n"
                 )
+                if removed:
+                    sys.stdout.write("removed_members:\n")
+                    for m in removed:
+                        sys.stdout.write(
+                            f"  #{m.task_id} removed at {m.removed_at}"
+                            f" by {m.actor} — {m.detail}\n"
+                        )
             # A zero-member group was inspected, but progress was not judged.
             # Nonzero makes that impossible to mistake for a green 0/0 bar.
             return 2 if progress is None else 0
@@ -2558,6 +2576,23 @@ def _verb_groups(args, dw_dir):
                         f"task #{args.task_id} {status} from group"
                         f" #{args.group_id}"
                     )
+                    # #1037 Finding 2 — progress rolls the whole subtree up by
+                    # de-duplicated task id, so a task still in a descendant
+                    # keeps the parent's denominator unchanged after a
+                    # direct-edge removal.  Name the retaining descendants in
+                    # the disposition so the operator sees the task is still
+                    # counted and why, rather than a silent success (option (a)
+                    # — honest and cheap; the caller must still act).
+                    retaining = tx.groups.descendant_membership(
+                        args.group_id, args.task_id,
+                    )
+                    if retaining:
+                        ids = ", ".join(f"#{g.id}" for g in retaining)
+                        disposition += (
+                            f" — still counted via descendant {ids}"
+                            f" (progress counts the subtree; remove it there"
+                            f" too to narrow the denominator)"
+                        )
                 elif args.groups_cmd == "add-trigger":
                     trigger_id, status = tx.groups.register_completion_task(
                         args.group_id, title=args.title, priority=args.priority,
