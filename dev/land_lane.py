@@ -153,13 +153,18 @@ def _derived_test(path: str) -> str | None:
 # convention cannot reach, because one rule cannot cover both:
 
 # (1) IMPORT-GRAPH derivation — for each changed Python module, find every
-# test file whose AST imports it. Strictly wider than the name convention for
-# any test that imports what it tests, and it does NOT widen to prose mentions
-# (a grep over the module name would drag in test_brief.py for nothing, which
-# is the full-suite run under another name). Accepted cost: a test that
-# exercises the module through importlib (test_land_lane.py's loader) or a
-# subprocess is NOT reached here — the name convention covers the first, and
-# the second has no static signal at all.
+# root test whose AST imports it directly OR through one production consumer.
+# The second hop is the smallest reach that catches watch.py -> tick_line.py ->
+# test_tick_line.py (#991). Deeper closure is deliberately report-only: on the
+# measured worst case, watch.py, depth 2 selected 31 files while closure reached
+# 44, which is the full-suite run under another name. Accepted cost: a test
+# reached only through a second consumer is reported but not selected, while a
+# test using importlib or a subprocess has no static edge and is not reached at
+# all. A grep over prose would be wider but would drag in unrelated tests.
+IMPORT_SELECTION_DEPTH = 2
+IMPORT_REPORT_DEPTH = 3
+
+
 def _dotted_module(path: str) -> str | None:
     """``dev/land_lane.py`` → ``dev.land_lane``; non-``.py`` → ``None``."""
     name = PurePosixPath(path)
@@ -212,20 +217,56 @@ def _test_imports_modules(test_path: Path, modules: Sequence[str]) -> bool:
     return any(_targets_import_module(targets, module) for module in wanted)
 
 
-def _import_derived(repo: Path, modules: Sequence[str]) -> tuple[str, ...]:
-    """Test files at the repo root whose AST imports any of ``modules``.
+def _production_importers(repo: Path, modules: Sequence[str]) -> frozenset[str]:
+    """Production modules that statically import any module in ``modules``."""
+    wanted = {module for module in modules if module}
+    if not wanted:
+        return frozenset()
+    found: set[str] = set()
+    for source_path in sorted(repo.rglob("*.py")):
+        relative = source_path.relative_to(repo)
+        module = _dotted_module(relative.as_posix())
+        if module is None or source_path.name.startswith("test_"):
+            continue
+        try:
+            targets = _import_targets(source_path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        if any(_targets_import_module(targets, wanted_module)
+               for wanted_module in wanted):
+            found.add(module)
+    return frozenset(found)
+
+
+def _import_derived(
+    repo: Path, modules: Sequence[str], *, depth: int = 1
+) -> tuple[str, ...]:
+    """Root tests statically importing ``modules`` within ``depth`` hops.
 
     ``modules`` are dotted module names (from ``_dotted_module``). A test
-    covers a changed module when the module's dotted name is among the test's
-    import targets, or a target extends it (``from dev.land_lane import X``
-    produces ``dev.land_lane.X``). Root-level ``test_*.py`` only — matching the
-    name convention's reach, so the two rules share one documented limit.
+    is depth 1 when it imports a changed module directly, depth 2 when it
+    imports one production consumer of that module, and so on. The visited set
+    makes cycles terminate. Root-level ``test_*.py`` only — matching the name
+    convention's reach, so the two rules share one documented limit.
+
+    The default remains depth 1 for reporting callers such as ``dev/brief.py``;
+    the landing gate opts into ``IMPORT_SELECTION_DEPTH`` explicitly.
     """
-    if not any(modules):
+    if depth < 1:
+        raise ValueError(f"import derivation depth must be >= 1, got {depth}")
+    reached = {module for module in modules if module}
+    if not reached:
         return ()
+    frontier = set(reached)
+    for _ in range(depth - 1):
+        consumers = set(_production_importers(repo, frontier)) - reached
+        if not consumers:
+            break
+        reached.update(consumers)
+        frontier = consumers
     found: set[str] = set()
     for test_path in sorted(repo.glob("test_*.py")):
-        if _test_imports_modules(test_path, modules):
+        if _test_imports_modules(test_path, tuple(reached)):
             found.add(test_path.name)
     return tuple(sorted(found))
 
@@ -418,6 +459,8 @@ def _derived_tests_line(
     *,
     name: Sequence[str],
     imported: Sequence[str],
+    imported_direct: Sequence[str],
+    imported_report_only: Sequence[str],
     mapped: Sequence[str],
     mapped_dirs: Sequence[str],
     existing: Sequence[str],
@@ -441,9 +484,10 @@ def _derived_tests_line(
     so they appear here rather than reading as satisfied.
     """
     reach = (
-        "name reaches root-level `test_<stem>.py` only; import reaches root "
-        "`test_*.py` that statically import the module (not importlib loaders or "
-        "subprocess calls); map reaches the declared directories in "
+        "name reaches root-level `test_<stem>.py` only; import SELECTS root "
+        "`test_*.py` that statically import the module or one production "
+        "consumer, and REPORTS but does not select the next consumer hop "
+        "(not importlib loaders or subprocess calls); map reaches the declared directories in "
         "DIR_TESTSET_MAP only — anything else derives NOTHING and is not covered "
         "by this line"
     )
@@ -451,11 +495,23 @@ def _derived_tests_line(
         f"name={len(name)} import={len(imported)} map={len(mapped)}"
         + (f" (matched dirs: {' '.join(mapped_dirs)})" if mapped_dirs else "")
     )
+    import_depth = (
+        f"Import depth: {len(imported_direct)} direct; "
+        f"{len(set(imported) - set(imported_direct))} added through one consumer; "
+        f"depth {IMPORT_REPORT_DEPTH} REPORT ONLY would add "
+        f"{len(imported_report_only)}"
+        + (
+            ": " + " ".join(imported_report_only)
+            if imported_report_only else ""
+        )
+        + "."
+    )
     if not existing:
         return (
             f"derived-tests: 0 required tests from {len(diff.changed)} changed "
             f"path(s) — {by_rule}; 0 present in the merged tree. This is NOT "
-            f"coverage: the branch rests entirely on the named selection. {reach}"
+            f"coverage: the branch rests entirely on the named selection. "
+            f"{import_depth} {reach}"
         )
     added = (
         "all were already named"
@@ -471,7 +527,7 @@ def _derived_tests_line(
     return (
         f"derived-tests: {len(existing)} required test(s) from "
         f"{len(diff.changed)} changed path(s) by {len(DERIVATION_RULES)} rules [{by_rule}]: "
-        f"{' '.join(existing)}; {added}{missing}. {reach}"
+        f"{' '.join(existing)}; {added}{missing}. {import_depth} {reach}"
     )
 
 
@@ -1193,8 +1249,18 @@ def land(
     # rule is RUN, never just reported (#949's IGC ruling: REPORT was refuted by
     # #936, where a true "not run" line was read past for two hours).
     name_tests = diff.tests
+    changed_modules = [
+        _dotted_module(p) for p in diff.binding if p.endswith(".py")
+    ]
+    direct_import_tests = _import_derived(repo, changed_modules, depth=1)
     import_tests = _import_derived(
-        repo, [_dotted_module(p) for p in diff.binding if p.endswith(".py")]
+        repo, changed_modules, depth=IMPORT_SELECTION_DEPTH
+    )
+    deeper_import_tests = _import_derived(
+        repo, changed_modules, depth=IMPORT_REPORT_DEPTH
+    )
+    import_report_only = tuple(
+        sorted(set(deeper_import_tests) - set(import_tests))
     )
     mapped_tests, mapped_dirs = _map_derived(diff.changed)
     derived = tuple(sorted(set(name_tests) | set(import_tests) | set(mapped_tests)))
@@ -1220,6 +1286,8 @@ def land(
         diff,
         name=name_tests,
         imported=import_tests,
+        imported_direct=direct_import_tests,
+        imported_report_only=import_report_only,
         mapped=mapped_tests,
         mapped_dirs=mapped_dirs,
         existing=existing,

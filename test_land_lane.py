@@ -1105,6 +1105,76 @@ def test_import_derived_finds_a_test_that_imports_the_changed_module(tmp_path):
     )
 
 
+def test_import_derived_reaches_a_test_through_one_consumer(tmp_path):
+    """The shipped #991 shape: changed -> consumer -> observing test."""
+    (tmp_path / "watch.py").write_text("VALUE = 1\n")
+    (tmp_path / "tick_line.py").write_text("import watch\n")
+    (tmp_path / "test_tick_line.py").write_text("import tick_line\n")
+
+    shallow = land_lane._import_derived(tmp_path, ["watch"], depth=1)
+    found = land_lane._import_derived(tmp_path, ["watch"], depth=2)
+
+    assert "test_tick_line.py" not in shallow
+    assert "test_tick_line.py" in found, (
+        "depth-2 import derivation missed test_tick_line.py; the shallow "
+        f"direct-import selection was {shallow!r}"
+    )
+
+
+def test_import_derived_sees_a_consumer_import_inside_a_function(tmp_path):
+    """ast.walk includes statically written imports below module scope."""
+    (tmp_path / "watch.py").write_text("VALUE = 1\n")
+    (tmp_path / "consumer.py").write_text(
+        "def value():\n    import watch\n    return watch.VALUE\n"
+    )
+    (tmp_path / "test_consumer.py").write_text("import consumer\n")
+
+    assert land_lane._import_derived(
+        tmp_path, ["watch"], depth=2
+    ) == ("test_consumer.py",)
+
+
+def test_depth_two_reports_but_does_not_select_a_third_hop(tmp_path):
+    """Direction 2: one more consumer is the chosen selection boundary."""
+    (tmp_path / "watch.py").write_text("VALUE = 1\n")
+    (tmp_path / "middle.py").write_text("import watch\n")
+    (tmp_path / "top.py").write_text("import middle\n")
+    (tmp_path / "test_top.py").write_text("import top\n")
+
+    selected = land_lane._import_derived(tmp_path, ["watch"], depth=2)
+    reported = land_lane._import_derived(tmp_path, ["watch"], depth=3)
+
+    assert "test_top.py" not in selected
+    assert reported == ("test_top.py",)
+
+
+def test_import_cycle_terminates_and_keeps_the_reachable_test(tmp_path):
+    """The visited set closes a cycle before a large requested depth."""
+    (tmp_path / "watch.py").write_text("VALUE = 1\n")
+    (tmp_path / "left.py").write_text("import watch\nimport right\n")
+    (tmp_path / "right.py").write_text("import left\n")
+    (tmp_path / "test_right.py").write_text("import right\n")
+
+    assert land_lane._import_derived(
+        tmp_path, ["watch"], depth=100
+    ) == ("test_right.py",)
+
+
+def test_subprocess_observer_has_no_import_edge_even_at_report_depth(tmp_path):
+    """Direction 2: a subprocess/file effect remains a genuine false-green."""
+    (tmp_path / "watch.py").write_text("VALUE = 1\n")
+    (tmp_path / "consumer.py").write_text("import watch\nprint(watch.VALUE)\n")
+    (tmp_path / "test_cli.py").write_text(
+        "import subprocess\n"
+        "def test_cli():\n"
+        "    subprocess.run(['python3', 'consumer.py'], check=True)\n"
+    )
+
+    assert land_lane._import_derived(
+        tmp_path, ["watch"], depth=land_lane.IMPORT_REPORT_DEPTH
+    ) == ()
+
+
 def test_directory_map_matches_a_changed_file_under_it():
     """The gitrow.mjs case: no test names or imports it; a directory map does."""
     targets, dirs = land_lane._map_derived(["dev/capture/gitrow.mjs", "README.md"])
@@ -1161,6 +1231,43 @@ def test_a_test_importing_a_changed_module_is_run_even_unnamed(landing_repo):
     )
     assert "test_covers_thingmod.py" in result.stdout
     assert "derived-and-added=['test_covers_thingmod.py']" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_a_test_reached_through_one_consumer_is_run_even_unnamed(landing_repo):
+    """Direction 1: the gate RUNS the depth-2 test, not only a helper."""
+    root, lane = landing_repo
+    _write(root / "dev" / "thingmod.py", "VALUE = 1\n")
+    _write(
+        root / "dev" / "consumer.py",
+        "from dev import thingmod\nVALUE = thingmod.VALUE\n",
+    )
+    _write(
+        root / "test_observes_consumer.py",
+        "from dev import consumer\n"
+        "def test_observes_consumer():\n"
+        "    assert consumer.VALUE == 1, 'depth-2 observing test ran'\n",
+    )
+    _git(root, "add", "dev/thingmod.py", "dev/consumer.py",
+         "test_observes_consumer.py")
+    _git(root, "commit", "-m", "add a test through one consumer")
+    _git(lane, "rebase", "master")
+    _write(lane / "dev" / "thingmod.py", "VALUE = 2\n")
+    _git(lane, "add", "dev/thingmod.py")
+    _git(lane, "commit", "-m", "flip depth-2 observed value")
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1, (
+        "master ADVANCED though test_observes_consumer.py watches the changed "
+        "module through one consumer; shallow derivation missed "
+        "test_observes_consumer.py"
+    )
+    assert "test_observes_consumer.py" in result.stdout
+    assert "0 direct; 1 added through one consumer" in result.stdout
+    assert "derived-and-added=['test_observes_consumer.py']" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
 
