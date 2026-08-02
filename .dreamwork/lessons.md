@@ -4233,3 +4233,45 @@ prints `owns [...]` and ``test_redproof.py`.`` reads to a human as a filename wi
 after it. Non-empty, plausible, correctly ordered, and unmatchable. Filed as `#990`, whose fix is
 not to also strip `.` — that leaves the next punctuation mark armed — but to REFUSE a declared
 path that does not resolve in the base tree, naming the token and the lane.
+
+## State the denominator; do not gate on it
+
+Two lanes in one night stopped without building, both correctly, both because I had written a
+perishable number into a blocking stop-condition.
+
+`cx-990owns` was told to reproduce "4 of 4 lanes, 5 corrupt entries" and STOP if the numbers
+differed. Between filing and dispatch two of those lanes landed and were reaped, so it measured 0
+and stopped. `cx-992lanes` was told the same about "254 branches, 0 with `wt/`; 13 worktrees, 0
+with `wt/`" — and I explicitly wrote that, *unlike* #990's premise, these "do not perish between
+filing and dispatch". They perished immediately: **dispatching the lane itself adds a branch and a
+worktree**, and concurrent fixture worktrees moved the count 15 → 14 → 15 during its read-only
+check. It measured 255 and 15, and stopped.
+
+**The second lane confirmed the entire defect before stopping** — `local_branches_starting_wt=0`,
+`worktree_branches_starting_wt=0`, `lint._live_lane_worktrees(root)` returning exactly `[]`, and
+both source lines still present. Everything load-bearing held. It stopped on the denominators
+alone, because that is what I told it to do.
+
+**The distinction I missed is the one #868 is about, applied one level up.** `#868` says report
+both denominators — state the population, not only the interesting subset. That is a rule about
+EVIDENCE, and it is right. I turned it into a rule about the GATE. The finding here was never
+"there are 254 branches"; it was **"zero of them match"**. The numerator is the defect and it is
+invariant: no amount of branch churn makes a `wt/` branch appear. The denominator is what makes
+the numerator meaningful to a reader, and it changes every few minutes on a live machine.
+
+So: **a denominator belongs in the evidence and not in the stop-condition.** Gate on the invariant
+— the zero, the absence, the ratio's numerator — and print the denominator beside it as context. A
+brief that blocks on a live count has made its own premise expire on a timer, and the more
+carefully the coordinator quotes the population, the more surface there is to expire.
+
+The lane named it better than I did: *"exact live denominators cannot be blocking invariants."*
+
+Corollary worth stating because I got it wrong twice: **asserting that a number is stable is itself
+a claim requiring verification.** I wrote "unlike #990's premise they do not perish" without asking
+what would change them, and the answer was the dispatch I was about to perform. The check is cheap
+— name the thing that would move this number, and if dispatching the lane is on the list, it is not
+an invariant.
+
+Both stops were successful deliveries and cost one dispatch each. The rule that produced them —
+refuse a brief whose premise does not reproduce — is correct and stays; what needed fixing was the
+premise I chose to make blocking.
