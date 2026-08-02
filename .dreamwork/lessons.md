@@ -4178,3 +4178,58 @@ command line contains the pattern. For everything else: the denominator family (
 a third sibling here — not a denominator that reaches zero, nor one that can never notice it is too
 small, but a **numerator that can never reach zero**. All three fail the same way: the number stays
 plausible while it stops depending on the world.
+
+## A new check's first disagreement is evidence, not teething
+
+`#988` landed a scope-derivation report in `dev/brief.py`: at brief-generation it runs the
+landing gate's own derivation and names the tests a `Lane-owns:` list omits. Minutes later I
+dispatched `#989` and it printed, on its first live use:
+
+    scope derivation REPORT: selected 1 existing test(s) ... authored Lane-owns
+    covered 0 of 1; 1 omitted: test_redproof.py
+
+My brief's line 3 read ``Lane-owns: `dev/redproof.py`, `test_redproof.py`.`` — the test was
+plainly named. **I read the report as a false positive in the newly-landed check.** It was
+correct, and the defect it had found was in the parser that every lane-ownership decision in the
+repo depends on.
+
+Both parsers (`lint.py:5781`, `dev/launch_lane.py:174`) do `token.strip().strip("`")`.
+`strip("`")` removes backticks from BOTH ends — but a coordinator's `Lane-owns:` line ends a
+SENTENCE, so the final token is `` `test_redproof.py`. ``: leading backtick stripped, trailing
+character is `.`, closing backtick survives. The result is ``test_redproof.py`.``, a path that
+`os.path.exists` says False about. Measured across the live fleet: **4 of 4 lanes, 5 corrupt
+entries, every one unresolvable** — and the corruption always lands on the LAST file named,
+which by convention is the lane's test file.
+
+**The temptation runs exactly backwards, and it is worth naming.** A new check has no track
+record, so its first surprising output reads as teething — a rough edge to be smoothed once it
+settles. But the first run is when a check has the MOST to tell you, because everything it
+examines is ground nothing has examined before. Every later run re-covers a shrinking margin.
+The prior on a new check's first disagreement should be that it is right; it was built
+specifically to see a thing you could not.
+
+Filing it as a `#988` defect would have been worse than doing nothing: it would have taught the
+next reader to distrust the one instrument that was working.
+
+**What saved it was running the parser on the actual bytes** rather than reasoning about what it
+must do — `launch_lane._core_and_owns(open(brief).read(), 989)` printed the corrupt token in one
+line. This is the same discipline as *"The failure was real; the diagnosis was invented"* above,
+and it cost about ninety seconds.
+
+**A second thing I got wrong, and this half is the sharper one.** Before measuring the consumers I
+assumed a corrupt ownership list would cause FALSE ACCUSATIONS — a lane flagged for editing its own
+test file. It does the opposite. `dev/lane_guard.py:301`'s `_contested(staged, owned)` refuses when
+a path staged in the MAIN checkout is owned by a LIVE lane; it protects lanes from the coordinator.
+An unmatchable path therefore raises nothing ever: the last file in every brief has been
+**unguarded**, silently, for as long as the convention has existed. `if not owned: continue` at
+`:296` means a brief whose only path corrupted protects nothing and says nothing.
+
+So: **guessing the DIRECTION of a defect's harm is as error-prone as guessing its cause**, and it
+is the more seductive of the two because the mechanism feels understood by then. A false alarm and
+a silent hole demand opposite responses and I had picked the wrong one before I looked.
+
+And the reason it survived so long is the family this session keeps finding: `lane_guard status`
+prints `owns [...]` and ``test_redproof.py`.`` reads to a human as a filename with punctuation
+after it. Non-empty, plausible, correctly ordered, and unmatchable. Filed as `#990`, whose fix is
+not to also strip `.` — that leaves the next punctuation mark armed — but to REFUSE a declared
+path that does not resolve in the base tree, naming the token and the lane.
