@@ -975,6 +975,37 @@ def test_state_report_predicate_binds_to_the_right_id_not_a_later_one(tmp_path):
     assert "#700 MISMATCH" not in report, report
 
 
+def test_state_report_sees_a_claim_after_a_closed_tilde_fence(tmp_path):
+    """Regression for #1028 Finding 3: the corpus scanner once opened ~~~
+    fences but only closed backtick ones, so a state claim after a closed ~~~
+    fence was hidden from the scanner while production saw it.  The fix shares
+    one fence-aware loop (_collect_state_claims); this test guards that BOTH
+    the production report and the scanner see the claim.  A fixture that uses
+    only backtick fences cannot see this bug."""
+    import brief_state_claim_stats  # noqa: PLC0415
+
+    ledger = _state_ledger(tmp_path)
+    core = (
+        "## Verify\n\n"
+        "Some prose before the fence.\n\n"
+        "~~~\n"
+        "regular code inside a tilde fence\n"
+        "~~~\n"
+        "#700 is live in another lane deciding delivery\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    # Production sees the claim after the closed ~~~ fence.
+    report = brief._task_state_claim_report(core, ledger)
+    assert "found 1 task-state claim(s)" in report, report
+    assert "#700 MISMATCH" in report, report
+    # The scanner — which delegates to the same _collect_state_claims — also
+    # sees it.  The old scanner copy returned 0 here (the ~~~ close was
+    # ignored, so the scanner stayed in-fence past the claim).
+    hits = brief_state_claim_stats.scan_core(core)
+    assert len(hits) == 1, f"scanner missed claim after ~~~ fence: {hits}"
+    assert hits[0][1] == 700, hits
+
+
 def test_command_report_a_parser_error_is_not_checked_not_certified(monkeypatch):
     """Direction 1, the :970 defect: a malformed/unreadable Justfile or any
     parser error was treated as 'resolved', silently blessing every command

@@ -2,17 +2,23 @@
 
 ## The figure, recomputed 2026-08-02
 
-Reproduced with `dev/brief.py`'s actual regexes (`_TASK_STATE_PREDICATE` +
-`_TASK_WARN_OUTPUT`) over the same 77-brief population
-`dev/brief_corpus_stats.py --sample 0` examines (77 examined, 218 skipped for
-no boilerplate; 1,363 `#NNN` citations in examined cores):
+Reproduced with `dev/brief.py`'s actual regexes by `dev/brief_state_claim_stats.py`
+(the tracked classification scanner), which examines the 77 briefs that carry the
+boilerplate sentinel (218 skipped — it globs every `*.md` in the briefs directory,
+not just task-named files). The companion `dev/brief_corpus_stats.py --sample 0`
+(#881) also examines 77 but skips only 206, because it filters to task-named files
+(`\d+-…\.md`); both agree on the 77 examined. The prior revision of this document
+attributed the 218 skip count to `brief_corpus_stats.py` and cited "1,363 `#NNN`
+citations" — neither tracked tool reports a citation count, and `brief_corpus_stats.py`
+reports 206, not 218. Both errors are corrected here (#1028 Finding 2):
 
 | metric | value |
 |---|---|
 | state candidates (deduplicated by file,line,task) | **5** |
 | false positives | **0** |
 | false-positive rate | **0.0%** |
-| genuine findings | 5 (all MISMATCH: brief asserts `live`, ledger says `landed`) |
+| candidate classification (reproducible from tree) | 5 genuine state predicates (all "`#NNN` is live") |
+| ledger verdict (NOT reproducible from tree) | all 5 MISMATCH: ledger says `landed` |
 
 Raw per-candidate data: `1028-state-claim-corpus.tsv` (alongside this file).
 Every candidate is a `state predicate` form ("`#NNN` is live …"); zero
@@ -20,42 +26,77 @@ Every candidate is a `state predicate` form ("`#NNN` is live …"); zero
 
 ## What instrument produced this figure
 
-**Not `dev/brief_corpus_stats.py`.** That tool enumerates briefs and fields
-only; grep for `state|candidate|false.positive|mismatch|threshold` across its
-source returns zero hits — it cannot compute state candidates or false
-positives at all.
+**`dev/brief_state_claim_stats.py`** (tracked). It imports `brief.py`'s
+regexes and applies them to each examined core via
+`brief._collect_state_claims` — the shared fence-aware claim-collection loop
+that production's `_task_state_claim_report` also calls — then deduplicates
+by `(file, line, task)`. The scanner delegates to the same function production
+uses rather than re-implementing the fence logic, so the population it
+measures is the one the report sees (#1028 Finding 3; the prior copy once
+opened `~~~` fences but only closed backtick ones).
 
-The figure was produced by a classification script that imports `brief.py`'s
-regexes and applies them to each examined core, then deduplicates by
-`(file, line, task)` exactly as `_task_state_claim_report` does. That script is
-not tracked (it is a one-off probe), but the method is fully specified by
-"`_TASK_STATE_PREDICATE.finditer` + `_TASK_WARN_OUTPUT.finditer` over the
-`brief_corpus_stats.py --sample 0` population" and the raw data is in the `.tsv`,
-so the rate is recomputable by anyone.
+`dev/brief_corpus_stats.py` (#881) is the companion that enumerates briefs and
+fields; it cannot compute state candidates or false positives. Both tools
+examine the same 77 briefs but count different skip totals because they use
+different file globs (above).
 
-## Threshold reconciliation
+## Threshold: no durable pre-commitment; raw result only
 
-Two durable records disagreed (both in `.dreamwork/inbox.md` on 2026-08-02):
+**No threshold was durably pre-committed before the measurement.** Two records
+of a threshold exist (both in `.dreamwork/inbox.md` on 2026-08-02), and they
+conflict:
 
 1. `≤1 FP / ≈20%` — "ship only if re-measured FP rate ≤ 1 (≤~20%)"
 2. `≤15% and ≤1 FP` — "FP rate ≤15% (≤1 FP)"
 
-**Both agree on `≤1 FP`.** They disagree only on the percentage bound. At the
-measured population of 5 candidates, `≤1 FP` is arithmetically equivalent to
-`≤20%` (1/5 = 20%), so the two bounds collapse to the same test at this size.
+These do **not** collapse to the same test. At a population of 5 candidates,
+1 false positive is 20%: it **passes** `≤1 FP` but **fails** `≤15%`. The
+measured result (0 FP) satisfies both, so the data cannot distinguish which
+commitment governed — and neither commitment was durably fixed before the
+result. Git history finds the threshold text only in the delivery commit,
+**after** the measurement commit; the prior lane's stated pre-commit rests on
+lane-private scratch that does not survive across sessions and is not in the
+diff.
 
-**Reconciled threshold: `≤1 FP`.** This is the bound both records state, it is
-population-independent (a count, not a rate), and the percentage is a derived
-consequence rather than a commitment. With 0 FP observed, the threshold is met
-under either reading.
+The prior revision of this document resolved the conflict by adopting `≤1 FP`
+and presenting the result as having cleared it. That is selecting the weaker
+of two records after the fact — the retroactive manufacture the original
+requirement anticipated: *"if that commitment was not durably made, say so
+rather than manufacture one retroactively."* This revision corrects that
+(#1028 Finding 1).
 
-## Provenance of the pre-commit
+**Raw result, no pre-registered bar claimed:**
 
-The prior lane stated it pre-committed the threshold to a lane-private scratch
-file (`precommit_threshold` / `igc_decision_statecheck`) **before** measuring.
-That artifact is not in the diff and lane scratch is not durable across
-sessions, so the pre-commit cannot be independently verified after the fact.
-The raw corpus classifications (`1028-state-claim-corpus.tsv`) are now tracked,
-so the *rate* is reproducible; whether the *threshold* was fixed before the
-result is a claim that rests on the lane's report and cannot be re-established
-from artifacts alone.
+- 5 candidates, 0 false positives, 0.0% FP rate.
+- All five are genuine state predicates (`#818`, `#816`, `#821` "is live").
+- Whether that would have satisfied a pre-committed threshold is unknowable,
+  because no threshold was durably pre-committed.
+
+## Reproducibility notes
+
+**Candidate classification (reproducible from tree).** The five candidates and
+their classification as genuine state predicates are reproducible by running
+`dev/brief_state_claim_stats.py` against the tracked brief corpus. The "is this
+a state claim" judgement requires only the source lines, not the ledger.
+
+**Ledger verdict / MISMATCH (NOT reproducible from tree).** The
+`ledger_state=landed` column in `1028-state-claim-corpus.tsv` was derived from
+the local `.dreamwork/ledger.sqlite3`, which is gitignored and does not travel.
+To reproduce the MISMATCH verdict: run `dev/ledger.py get <id> --ledger …`
+against a populated ledger in the main checkout.
+
+**Pre-commit (not verifiable).** The artifact the prior lane cited
+(lane-private scratch) does not survive sessions and is not in the diff. Git
+history confirms the threshold text appears only in the delivery commit, after
+the measurement commit.
+
+## Test reproducibility (#1028 Finding 4)
+
+`test_brief.py` is not hermetic: the module-scoped `lane` and `generated`
+fixtures call `brief.build(881, …)`, which reads the real
+`.dreamwork/ledger.sqlite3` in the ambient checkout. A clean clone with no
+populated ledger hits pre-existing non-hermetic failures unrelated to the
+state-claim work (the `1 failed, 92 passed` result this lane reports requires
+a populated ledger). The 21 state-claim tests added by this task ARE hermetic
+— each builds its own fixture store via `_state_ledger(tmp_path)` — and pass
+independently of the ambient ledger.
