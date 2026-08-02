@@ -407,9 +407,12 @@ def test_validate_core_returns_the_section_count_on_success():
 
 def test_tool_verb_check_refuses_an_unknown_master_verb_by_name(capsys):
     core = GOOD_CORE + "\nRun `dev/ledger.py definitely-not-a-verb 979`.\n"
-    with pytest.raises(brief.BriefFault) as excinfo:
+    try:
         brief.validate_core(core)
-    message = str(excinfo.value)
+    except brief.BriefFault as exc:
+        message = str(exc)
+    else:
+        pytest.fail("dev/ledger.py definitely-not-a-verb was accepted")
     assert "tool verb check ERROR" in message, message
     assert "dev/ledger.py" in message, message
     assert "'definitely-not-a-verb'" in message, message
