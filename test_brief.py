@@ -999,6 +999,44 @@ def test_state_report_unreadable_ledger_is_not_checked_not_raised(tmp_path):
     assert "not an all-verified result" in report, report
 
 
+def test_citation_report_unreadable_ledger_is_not_checked_not_raised(tmp_path):
+    """Direction 1, the P1 sibling (#1028): _citation_authority_report runs
+    FIRST in validate_core, before the task-state report, so an unfixed
+    unreadable-ledger path here refuses the dispatch even when the state path
+    is fixed.  A core with a GLOSSED citation ("#641 — the false premise") and
+    a MISSING ledger must report NOT CHECKED, not raise.  The state-only test
+    above never reaches this path, so this asserts the citation path directly —
+    the direction-2 false-green the brief names ('a test with a readable ledger
+    never reaches the unreadable-ledger path and passes unchanged')."""
+    missing_ledger = tmp_path / "nope" / "tasks.md"  # does not exist
+    core = (
+        "## The defect\n\n"
+        "#641 — the false premise that started this task.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    # Must not raise:
+    report = brief._citation_authority_report(core, missing_ledger)
+    assert "citation authority NOT CHECKED" in report, report
+    assert "found 1 task citation(s)" in report, report
+    assert "could not be read" in report, report
+    assert "not an all-verified result" in report, report
+
+
+def test_validate_core_unreadable_ledger_does_not_refuse_with_citation(tmp_path):
+    """The dispatch surface (validate_core), with a core carrying a glossed
+    citation and a missing ledger, must NOT raise — the citation path is what
+    used to refuse first.  A test asserting the report function alone does not
+    prove the dispatch no longer refuses, so this covers validate_core."""
+    missing_ledger = tmp_path / "nope" / "tasks.md"  # does not exist
+    core = (
+        "## The defect\n\n"
+        "#641 — the false premise that started this task.\n\n"
+        "## Direction 2\n\nA case.\n"
+    )
+    # Must not raise:
+    assert brief.validate_core(core, ledger=missing_ledger) == 2
+
+
 def test_validate_core_emits_both_new_reports(capsys):
     """Both new reports must appear in validate_core's stderr output, alongside
     the existing four.  A core that carries both a missing recipe and a state
