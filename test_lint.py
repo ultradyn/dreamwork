@@ -10733,8 +10733,10 @@ class TestInboxRotation:
         (dw / "inbox.md").write_text("## small report\nbody\n")
         rows = self._rows(self._check(dw))
         assert len(rows) == 1 and rows[0][0] == lint.OK, rows
-        # Coverage: the OK row carries the byte count and threshold.
-        assert "bytes" in rows[0][1]
+        # The OK row names the stable threshold and states "under" — the live
+        # byte count is intentionally absent (#1107: embedding it makes the row
+        # a function of a size that changes between the gate's two lint runs).
+        assert "under" in rows[0][1]
         assert str(lint.INBOX_ROTATE_THRESHOLD_BYTES // 1024) in rows[0][1]
 
     def test_oversized_inbox_warns_with_rotation_command(self, tmp_path):
@@ -10745,8 +10747,45 @@ class TestInboxRotation:
         (dw / "inbox.md").write_text("x" * over)
         rows = self._rows(self._check(dw))
         assert len(rows) == 1 and rows[0][0] == lint.WARN, rows
-        # The WARN names the fix command.
+        # The WARN names the fix command and the stable threshold.
         assert "rotate_inbox" in rows[0][1]
         assert "#1104" in rows[0][1]
-        # Threshold-anchored: the WARN's byte count exceeds the threshold.
-        assert str(over // 1024) in rows[0][1]
+        assert "over" in rows[0][1]
+        assert str(lint.INBOX_ROTATE_THRESHOLD_BYTES // 1024) in rows[0][1]
+
+    def test_rows_stable_across_size_change_within_state(self, tmp_path):
+        """#1107: neither row may embed the live byte count. The gate runs lint
+        twice minutes apart; inbox.md grows with every lane report, so a row
+        whose text is a function of size reads as added=1 removed=1 on an
+        unchanged state and land_lane refuses a branch that changed nothing.
+        Two sizes in the SAME state must yield identical row detail — the
+        discriminating size gap is derived at runtime, not a literal, so a
+        fixture change cannot silently hollow the assertion."""
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        # WARN state: two over-threshold sizes, both over.
+        base = lint.INBOX_ROTATE_THRESHOLD_BYTES + 1024
+        gap = 8192
+        assert base > lint.INBOX_ROTATE_THRESHOLD_BYTES  # precondition: over
+        (dw / "inbox.md").write_text("x" * base)
+        warn_a = self._rows(self._check(dw))[0][1]
+        (dw / "inbox.md").write_text("x" * (base + gap))
+        warn_b = self._rows(self._check(dw))[0][1]
+        assert warn_a == warn_b, (
+            "#1107: WARN detail changed when only the byte count changed — "
+            "the row embeds live size, so a gate spanning a lane report "
+            "refuses an unchanged branch (added=1 removed=1)"
+        )
+        # OK state: two under-threshold sizes, both under.
+        small = "## report\n" + "x" * 64
+        (dw / "inbox.md").write_text(small)
+        ok_a = self._rows(self._check(dw))[0][1]
+        assert len(small) < lint.INBOX_ROTATE_THRESHOLD_BYTES  # precondition: under
+        bigger = small + "\n" + "y" * 64
+        assert len(bigger) < lint.INBOX_ROTATE_THRESHOLD_BYTES  # still under
+        (dw / "inbox.md").write_text(bigger)
+        ok_b = self._rows(self._check(dw))[0][1]
+        assert ok_a == ok_b, (
+            "#1107: OK detail changed when only the byte count changed — "
+            "same defect, other row"
+        )

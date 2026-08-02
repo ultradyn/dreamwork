@@ -4449,28 +4449,37 @@ def check_inbox_rotation(dw: Path, rep: Report) -> None:
     the cadence — without it the file grows back silently after a one-off
     rotation. Calm on an absent file (a fresh target writes it on the first
     lane report); WARN (transient) when over threshold, naming the fix.
+
+    The live byte count is deliberately NOT in either row (#1107): inbox.md is
+    the file every live lane appends its report to, so its size changes between
+    the gate's two lint runs (baseline vs post-gates). A row whose text is a
+    function of size then reads as added=1 removed=1 on an unchanged state, and
+    land_lane refuses a branch that changed nothing. The row states the fact
+    (over/under) and the threshold (a stable constant); the exact size is one
+    `wc -c inbox.md` away when a reader wants it. This is the same class as
+    #1004 (a row embedding elapsed time); whoever lands that fix should match
+    this convention — keep the perishable value out of identity-bearing text.
     """
     inbox = dw / "inbox.md"
     if not inbox.is_file():
         return
     try:
-        size = inbox.stat().st_size
+        over = inbox.stat().st_size > INBOX_ROTATE_THRESHOLD_BYTES
     except OSError:
         return
-    if size > INBOX_ROTATE_THRESHOLD_BYTES:
+    threshold_kb = INBOX_ROTATE_THRESHOLD_BYTES // 1024
+    if over:
         rep.add(
             WARN, "inbox.md",
-            f"{size} bytes ({size // 1024}KB) — over the {INBOX_ROTATE_THRESHOLD_BYTES // 1024}KB "
-            f"rotation threshold; a lane appending its report must Read the whole file "
-            f"first and will die of context exhaustion (#1104); run "
-            f"`python3 dev/rotate_inbox.py rotate --target <repo-root>` to archive "
+            f"over the {threshold_kb}KB rotation threshold — a lane appending its report "
+            f"must Read the whole file first and will die of context exhaustion (#1104); "
+            f"run `python3 dev/rotate_inbox.py rotate --target <repo-root>` to archive "
             f"older entries",
         )
     else:
         rep.add(
             OK, "inbox.md",
-            f"{size} bytes ({size // 1024}KB) — under the {INBOX_ROTATE_THRESHOLD_BYTES // 1024}KB "
-            f"rotation threshold (#1104)",
+            f"under the {threshold_kb}KB rotation threshold (#1104)",
         )
 
 
