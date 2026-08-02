@@ -887,6 +887,26 @@ def _citation_authority_report(core: str, ledger: Path) -> str:
             "citation population, so this is not an all-verified result."
         )
 
+    # P1 (#1028, citation-path sibling): an unreadable/empty ledger must NOT
+    # refuse the dispatch.  This report runs FIRST in validate_core, before the
+    # task-state report, so an unfixed unreadable-ledger path here refuses the
+    # dispatch even though the state-path P1 is fixed — a fix at the named site
+    # only, while the sibling re-raised, made the refusal survive unchanged.  A
+    # per-task "not found" returns None inside _citation_title and is fine; a
+    # ledger-level failure (could not read / holds no entries) re-raises and is
+    # caught here as NOT CHECKED — report-only, exactly when the tool knows
+    # least (#136).
+    try:
+        _citation_title(citations[0][1], ledger)
+    except BriefFault as exc:
+        return (
+            f"citation authority NOT CHECKED: found {len(citations)} task "
+            f"citation(s) carrying an author gloss but the ledger could not "
+            f"be read ({exc}); 0 resolved; 0 unresolvable. There IS a "
+            "citation population, so this is not an all-verified result; the "
+            "citations were not checked."
+        )
+
     details: list[str] = []
     resolved = 0
     for line_no, task, gloss in citations:
