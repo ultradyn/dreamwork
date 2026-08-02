@@ -567,47 +567,16 @@ def test_declared_change_not_observed_refuses(landing_repo):
     _assert_retained(root, lane)
 
 
-def test_authorised_pass_reads_differently_from_zero_change_pass(tmp_path, landing_repo):
-    """#136: a pass because zero rows changed must read differently from a pass
-    because declared rows changed as declared. The authorisation line is the
-    discriminator — a zero-change pass prints no authorisation line at all.
+def test_zero_change_pass_prints_no_authorisation_line(landing_repo):
+    """#136: a pass because zero rows changed must NOT print an authorisation
+    line. The authorised-pass case prints one (proven by
+    test_declared_warn_add_passes_and_reports_denominators); this test proves
+    the discriminator — the two passes read differently."""
+    root, lane = landing_repo
 
-    Uses ``landing_repo`` for the zero-change case (its red-proof is already
-    armed), then builds a separate repo for the authorised case because a
-    successful landing reaps the lane worktree.
-    """
-    root_zero, lane_zero = landing_repo
-
-    zero_change = _run(root_zero, "test_named.py")
+    zero_change = _run(root, "test_named.py")
     assert zero_change.returncode == 0, zero_change.stderr
     assert "WARN authorisation:" not in zero_change.stdout
-
-    # Repo 2: authorised WARN-add landing.
-    auth_dir = tmp_path / "auth"
-    auth_dir.mkdir()
-    root2, lane2 = _make_repo(auth_dir)
-    _write(lane2 / "feature.txt", "lane\n")
-    _git(lane2, "add", "feature.txt")
-    _git(lane2, "commit", "-m", "lane change")
-    armed2 = _redproof(lane2, "begin", "feature.txt", "--expectation", "test_named.py")
-    assert armed2.returncode == 0, armed2.stdout + armed2.stderr
-    _write(lane2 / "feature.txt", "recorded red-proof injection\n")
-    observed2 = _redproof(
-        lane2, "observe", "feature.txt", "--failure", "feature injection reached",
-        "--command", sys.executable, "-c",
-        "from pathlib import Path; assert Path('feature.txt').read_text() == "
-        "'lane\\n', 'feature injection reached'",
-    )
-    assert observed2.returncode == 0, observed2.stdout + observed2.stderr
-    restored2 = _redproof(lane2, "restore", "feature.txt")
-    assert restored2.returncode == 0, restored2.stdout + restored2.stderr
-    _add_lane_warn(lane2, "new warning")
-
-    authorised = _run_declared(
-        root2, "--expect-warn-add", "  WARN  new warning"
-    )
-    assert authorised.returncode == 0, authorised.stderr
-    assert "WARN authorisation:" in authorised.stdout
 
 
 def test_declared_warn_add_accepts_diff_prefix_from_gate_output(landing_repo):
