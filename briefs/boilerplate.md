@@ -230,6 +230,21 @@ a refuted premise — stop and report it, and do not assume the coordinator chec
 seductive precisely because the wrong entry is usually true and adjacent; adjacency is not
 authority.
 
+**And a citation can be wrong by naming a real entry that says something else entirely — or by
+naming nothing at all.** `#996` landed at `e89b50be` and its generation-time citation report
+caught the author on its FIRST run against a live brief: every brief written that night carried
+*"`#894` — never compose a note inline; write to a file"*, and `#894` is actually *"ledger.py
+sweep cannot see a merge-sha citation."* No ledger entry states the note rule; the citation was
+invented wholesale around a practice that is genuinely good. **A remembered number is not
+evidence.** If you cannot quote the entry, state the rule without a number rather than borrowing
+authority from one.
+
+**Compose a `--note` in a FILE and pass `$(cat …)`, never inline.** A note is prose containing
+backticks, quotes, `$`, `#` and newlines; composing it inline hands all of that to the shell,
+which is how a note gets silently truncated at the first unescaped character. This is a standing
+rule of this repo with no issue number behind it — deliberately stated without one, per the
+paragraph above.
+
 **Every quantity a brief asserts must sit next to the command that re-derives it** (`#978`).
 `dev/brief.py` now reports, at generation, each bare number in a core that no re-derivation
 command covers — and coverage means an apparent command on the SAME, previous, or next nonblank
