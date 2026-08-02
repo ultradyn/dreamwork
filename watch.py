@@ -1695,10 +1695,12 @@ def _landed_ids(text):
     territory. That body is where `related:`, `filed as`, and prose
     cross-refs ("see **#N**") live, and the historical form has no such body
     — it is pure column-0 prose, so every mention in it lands. A `related:` /
-    `filed as` / `also-landed:` marker is excluded BY NAME as well, so a
-    head line that carries one inline (`- **#N** — … · related: **#X**`)
-    cannot re-open the `#367` hole, and `also-landed:` is left to its own
-    field-anchored marker below.
+    `filed as` / `also-landed:` marker is excluded BY NAME as well, but only
+    on a head line that carries it inline (`- **#N** — … · related: **#X**`)
+    — the head is what scopes the guard to the entry, so it cannot re-open
+    the `#367` hole, and a bare `filed as` in one historical entry's prose
+    no longer suppresses a later entry's id on the same shared line (#1097).
+    `also-landed:` is left to its own field-anchored marker below.
 
     Returns strings, matching the shape `ledger_series` and the origin walk
     key on throughout.
@@ -1710,10 +1712,17 @@ def _landed_ids(text):
         # `related:`, `filed as`, "see #N" — never a bare landing.
         if text[line_start] in " \t":
             continue
-        # A `·`-field on a head line is a reference (related:/filed as) or
-        # owned by its own marker (also-landed:), never a bare landing.
-        if LANDED_REF_FIELD.search(text[line_start:m.start()]):
-            continue
+        # A reference marker (`related:`/`filed as`/`also-landed:`) suppresses
+        # only on an ENTRY-HEAD line (`- **#N**`): there it is a `·`-field or
+        # mid-sentence cross-ref, and the head is what establishes reference
+        # territory for every later bold id on the line. The historical
+        # column-0 PARAGRAPH form has no head and no `·`-fields — it is pure
+        # prose landings, and one entry's `filed as` must not suppress a
+        # LATER entry's id on the same shared line (#1097). The head-line
+        # check is what scopes the guard per-entry rather than per-line.
+        if LEDGER_ENTRY.match(text, line_start):
+            if LANDED_REF_FIELD.search(text[line_start:m.start()]):
+                continue
         ids.update(ENTRY_ID.findall(m.group(1)))
     for m in ALSO_LANDED_MARKER.finditer(text):
         ids.update(ENTRY_ID.findall(m.group(1)))

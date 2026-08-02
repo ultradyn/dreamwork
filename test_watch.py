@@ -2330,6 +2330,45 @@ class TestCollector(unittest.TestCase):
             "**#101** scrollbar styling (2026-07-25), **#97** durable ledger\n")
         self.assertEqual(landed, {"101", "97"})
 
+    def test_a_prose_filed_as_does_not_suppress_a_later_entry_on_the_same_line(self):
+        """#1097: the reference-field guard was applied per LINE, so a bare
+        `filed as` in one historical entry's prose suppressed every LATER
+        bold id on the same column-0 paragraph line. The guard must scope to
+        the entry (a head line), not the whole line — this is the
+        discriminating red for that fix. All three markers are exercised so
+        a fix keyed to the literal `filed as` alone (leaving `related:` /
+        `also-landed:` per-line) cannot pass: each would still suppress #3."""
+        # Precondition: no entry head, so the line is a historical paragraph
+        # (every column-0 mention lands). The marker is prose inside entry
+        # #2's clause, not a `·`-field; #3 is a separate entry.
+        for marker in ("filed as", "related:", "also-landed:"):
+            line = ("**#1** first entry (2026-07-25). "
+                    "**#2** gap %s #9 (2026-07-25). "
+                    "**#3** third entry (sha)\n" % marker)
+            self.assertFalse(line.startswith("- "),
+                            "fixture must be a column-0 paragraph, not a head")
+            landed = watch._landed_ids("## Recently landed\n\n" + line)
+            self.assertIn("3", landed,
+                          "a later entry's id must land despite an earlier "
+                          "entry's prose `%s` on the same line" % marker)
+
+    def test_a_related_filed_as_and_also_landed_each_suppress_on_a_head_line(self):
+        """#1097 Direction 2: all three reference markers (`related:`,
+        `filed as`, `also-landed:`) must still suppress their bold id on a
+        head line — the #367 hole stays closed for every marker, not just
+        the one in the reported case."""
+        text = ("## Recently landed\n\n"
+                "- **#5** — x · related: **#367** · filed as **#392** · "
+                "also-landed: **#6, #7** · landed `abc`\n")
+        self.assertTrue(text.startswith("## Recently landed\n\n- **#5**"),
+                        "fixture must open with a head line")
+        landed = watch._landed_ids(text)
+        # #5 lands (the head); #6/#7 land via also-landed's own marker;
+        # #367 and #392 are references and must NOT land.
+        self.assertEqual(landed, {"5", "6", "7"})
+        self.assertNotIn("367", landed)
+        self.assertNotIn("392", landed)
+
     def test_a_related_marker_does_not_land_even_at_column_zero(self):
         """#399b: #367's hole stays closed. A `related:` or `filed as`
         marker written on a ONE-LINE head sits at column 0, so the
