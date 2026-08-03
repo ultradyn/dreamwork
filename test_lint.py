@@ -354,7 +354,7 @@ class TestSyncConflictFiles:
         assert "0 conflict copies" in detail
         # The pruned subtrees must be named, not silently skipped (#651).
         assert "pruned:" in detail
-        assert ".git/objects/[0-9a-f]{2}/" in detail
+        assert "objects/[0-9a-f]{2}/" in detail
         # Precondition: the scan actually reached files (not zero).
         assert int(detail.split("file(s) scanned")[0].split()[-1]) > 0, detail
 

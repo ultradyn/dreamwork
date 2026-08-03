@@ -5186,16 +5186,29 @@ def _main_checkout_for(target: Path) -> Path | None:
     """Main checkout sharing ``target``'s git common dir, or None."""
     try:
         out = subprocess.run(
-            ["git", "-C", str(target), "rev-parse", "--git-common-dir"],
+            ["git", "-C", str(target), "worktree", "list", "--porcelain"],
             capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None
     if out.returncode != 0:
         return None
-    common = Path(out.stdout.strip())
-    if not common.is_absolute():
-        common = (target / common).resolve()
-    return common.parent if common.name == ".git" else None
+    for line in out.stdout.splitlines():
+        if line.startswith("worktree "):
+            return Path(line[len("worktree "):]).resolve()
+    return None
+
+
+def _git_common_dir_for(target: Path) -> Path | None:
+    """Actual common Git directory for *target*, independent of its basename."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(target), "rev-parse", "--path-format=absolute",
+             "--git-common-dir"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    return Path(out.stdout.strip()).resolve()
 
 
 def _registered_in_repo_worktrees(main_root: Path, old_root: Path) -> list[Path] | None:
@@ -5334,10 +5347,13 @@ def check_inbox_rotation(dw: Path, rep: Report) -> None:
 # ShortIDStringLength=7 and slices base32.StdEncoding output to that length.
 # Match that [A-Z2-7]{7} contract exactly and anchor the remainder of the
 # filename, because a loose prefix becomes a gate-blocking false positive.
-# Names containing the marker but missing this exact shape are WARNed below,
-# preserving malformed-lookalike as a state distinct from clean or conflict.
+# A marker/date/time name that narrowly misses the ShortID contract is a
+# high-confidence near-miss. Owned state fails closed for those; other marker
+# text stays a distinct manual-inspection WARN rather than becoming an ERROR.
 SYNC_CONFLICT_RE = re.compile(
     r'\.sync-conflict-\d{8}-\d{6}-[A-Z2-7]{7}(?:\..*)?\Z')
+SYNC_CONFLICT_HIGH_CONFIDENCE_RE = re.compile(
+    r'\.sync-conflict-\d{8}-\d{6}-(?!\.)[^/]+\Z')
 SYNC_CONFLICT_LIKE_RE = re.compile(r'\.sync-conflict-')
 
 
@@ -5362,32 +5378,76 @@ _SYNC_CONFLICT_SKIP_DIRS = frozenset({
 })
 _LOOSE_OBJECT_SHARD_RE = re.compile(r'[0-9a-f]{2}\Z')
 
-# Explicit own-.git non-critical allowlist (#1166 P1b). wt/cache/ holds
-# reconstructible CI status and is not a Git input. Every unknown own-.git
-# path defaults to ERROR so newly added repository state fails closed.
-_GIT_NON_CRITICAL_PREFIXES = (("wt", "cache"),)
+# Exact, content-bound acknowledgement for the live Worktrunk cache evidence.
+# Worktrunk enumerates every JSON file in this directory, so there is no safe
+# directory exemption. This one stale copy was triaged on 2026-08-03: it is
+# older than master.json (03:19 vs 14:32), both are 107 bytes, and its digest
+# is recorded here. A changed file or a new sibling misses this key and ERRORs.
+_SYNC_CONFLICT_ACKNOWLEDGEMENTS = {
+    ("wt/cache/ci-status/"
+     "master.sync-conflict-20260729-032627-QJRKU52.json",
+     "9da2cc90e5744be8304306e5286ed0715c497ef20947615353354263c4854cf0"): (
+        "2026-08-03", "stale Worktrunk CI-status cache; human disposition pending"),
+}
 
 
-def _sync_conflict_level(path: Path, base: Path, own_root: bool) -> str:
-    """Severity for a conflict copy at *path* (#1166 P1b).
+def _alternate_object_stores(common_dir: Path) -> tuple[list[Path], list[tuple[Path, str]]]:
+    """Recursively resolve Git alternates, deduplicating stores and cycles."""
+    primary = (common_dir / "objects").resolve()
+    # Non-Git unit fixtures may model only the metadata path being exercised.
+    # Real Git common dirs always create objects/; no alternates can exist when
+    # the primary object directory itself was never present.
+    if not primary.exists():
+        return [], []
+    pending = [primary]
+    seen: set[Path] = set()
+    borrowed: list[Path] = []
+    errors: list[tuple[Path, str]] = []
+    while pending:
+        store = pending.pop().resolve()
+        if store in seen:
+            continue
+        seen.add(store)
+        if not store.is_dir():
+            errors.append((store, "configured object store is not a directory"))
+            continue
+        if store != primary:
+            borrowed.append(store)
+        alternates = store / "info" / "alternates"
+        try:
+            text = alternates.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except (OSError, UnicodeError) as exc:
+            errors.append((alternates, str(exc)))
+            continue
+        for raw in text.splitlines():
+            value = raw.strip()
+            if not value:
+                continue
+            candidate = Path(value)
+            if not candidate.is_absolute():
+                candidate = store / candidate
+            pending.append(candidate.resolve())
+    return borrowed, errors
 
-    Sibling worktrees WARN because this lane does not own them. Inside the
-    repo's own .git, unknown paths fail closed: only the explicit, auditable
-    wt/cache/ prefix WARNs because it contains reconstructible CI status, not
-    repository inputs. Everything else in the repo's own state ERRORs.
-    """
-    if not own_root:
-        return WARN
-    git_dir = base / ".git"
+
+def _sync_conflict_acknowledgement(
+        path: Path, common_dir: Path | None) -> tuple[str, str] | None:
+    """Return the triage date/reason only for an exact path+content receipt."""
+    if common_dir is None:
+        return None
     try:
-        rel = path.relative_to(git_dir)
-    except ValueError:
-        return ERROR  # repo's own working tree (.dreamwork/, tracked files)
-    parts = rel.parts
-    if any(parts[:len(prefix)] == prefix
-           for prefix in _GIT_NON_CRITICAL_PREFIXES):
-        return WARN
-    return ERROR
+        relative = path.resolve().relative_to(common_dir.resolve()).as_posix()
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except (OSError, ValueError):
+        return None
+    return _SYNC_CONFLICT_ACKNOWLEDGEMENTS.get((relative, digest))
+
+
+def _sync_conflict_level(own_root: bool) -> str:
+    """Owned current-checkout/Git state ERRORs; only other worktrees WARN."""
+    return ERROR if own_root else WARN
 
 
 def check_sync_conflict_files(dw: Path, rep: Report) -> None:
@@ -5403,33 +5463,66 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
 
     Report only, never resolve: #1162 establishes that the copy may be newer.
 
-    Severity is scoped (#1166 P1b): unknown own-repo state fails closed;
-    sibling worktrees and the explicit .git/wt/cache/ allowlist WARN.
+    Severity is scoped (#1166): the invoking worktree, its actual common Git
+    dir, and every borrowed object store are owned critical state. Only other
+    worktrees WARN. One exact path+digest acknowledgement keeps the known stale
+    Worktrunk cache copy non-blocking without blessing its directory.
 
     Clean, conflict found, malformed conflict-like, and incomplete traversal
     are distinct outcomes (#136). An absent root is also named rather than
     silently subtracted from coverage (#671/#685).
     """
-    root = dw.parent
-    # Resolve the main checkout so worktree roots are canonical even when lint
-    # runs inside a linked worktree; fall back to root for non-git fixtures.
+    root = dw.parent.resolve()
     main_checkout = _main_checkout_for(root)
     base = main_checkout if main_checkout is not None else root
+    common_dir = _git_common_dir_for(root)
+    if common_dir is None and (base / ".git").is_dir():
+        common_dir = (base / ".git").resolve()
     new_wt, old_wt = worktree_roots(base)
-    scan_roots = [
-        (base, "repo root", True),
-        (new_wt, "out-of-repo worktree root", False),
-        (old_wt, "in-repo worktree root", False),
+    scan_roots: list[tuple[Path, str, bool, bool]] = [
+        (root, "invoking worktree", True, False),
     ]
+    if common_dir is not None:
+        scan_roots.append((common_dir, "Git common dir", True, False))
+    if base != root:
+        scan_roots.append((base, "main checkout", False, False))
+    scan_roots.extend([
+        (new_wt, "out-of-repo worktree root", False, False),
+        (old_wt, "in-repo worktree root", False, False),
+    ])
+
+    alternate_errors: list[tuple[Path, str]] = []
+    object_stores: set[Path] = set()
+    if common_dir is not None:
+        object_stores.add((common_dir / "objects").resolve())
+        borrowed, alternate_errors = _alternate_object_stores(common_dir)
+        object_stores.update(path.resolve() for path in borrowed)
+        scan_roots.extend((path, "borrowed Git object store", True, True)
+                          for path in borrowed)
+
+    # Deduplicate roots while preserving owned severity and the first label.
+    merged_roots: dict[Path, tuple[str, bool, bool]] = {}
+    for entry in scan_roots:
+        scan_root, label, own_root, object_store = entry
+        canonical = scan_root.resolve()
+        prior = merged_roots.get(canonical)
+        if prior is None:
+            merged_roots[canonical] = (label, own_root, object_store)
+        else:
+            merged_roots[canonical] = (
+                prior[0], prior[1] or own_root, prior[2] or object_store)
+    dedicated_roots = set(merged_roots)
 
     examined = 0
     scanned = 0
     absent: list[str] = []
-    found: list[tuple[str, str]] = []  # (path, level)
-    malformed: list[str] = []
-    unreadable: list[tuple[str, str, str]] = []  # (path, level, error)
+    found: dict[str, str] = {}  # path -> strongest level
+    acknowledged: dict[str, tuple[str, str]] = {}
+    malformed: dict[str, str] = {}  # path -> level
+    unreadable: dict[str, tuple[str, str]] = {}  # path -> (level, error)
+    seen_files: set[Path] = set()
 
-    for scan_root, label, own_root in scan_roots:
+    for scan_root, (label, own_root, object_store) in merged_roots.items():
         if not scan_root.is_dir():
             absent.append(f"{label} ({scan_root})")
             continue
@@ -5437,40 +5530,49 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
 
         def record_walk_error(exc: OSError) -> None:
             error_path = Path(exc.filename) if exc.filename else scan_root
-            level = _sync_conflict_level(error_path, base, own_root)
-            unreadable.append((str(error_path), level, str(exc)))
+            level = _sync_conflict_level(own_root)
+            unreadable[str(error_path)] = (level, str(exc))
 
         for dirpath, dirnames, filenames in os.walk(
                 scan_root, onerror=record_walk_error):
-            # Check-specific pruning (#1166 P1a): NOT _WALK_SKIP_DIRS, which
-            # skips .git. We descend into .git because its metadata is
-            # state-bearing. Packfiles are discovered by directory scan, so
-            # objects/pack/ must be walked. Only loose-object hash shards are
-            # pruned: renaming those makes them unreachable by hash-derived
-            # path. Outside .git, skip dependency caches + .worktrees.
-            try:
-                rel_parts = Path(dirpath).relative_to(scan_root).parts
-            except ValueError:
-                rel_parts = ()
-            if ".git" in rel_parts:
-                git_rel = rel_parts[rel_parts.index(".git") + 1:]
-                if git_rel == ("objects",):
-                    dirnames[:] = [d for d in dirnames
-                                   if not _LOOSE_OBJECT_SHARD_RE.fullmatch(d)]
-            else:
-                dirnames[:] = [d for d in dirnames
-                               if d not in _SYNC_CONFLICT_SKIP_DIRS]
+            here = Path(dirpath).resolve()
+            children = []
+            for dirname in dirnames:
+                child = (here / dirname).resolve()
+                if child in dedicated_roots and child != scan_root:
+                    continue
+                if not object_store and dirname in _SYNC_CONFLICT_SKIP_DIRS:
+                    continue
+                if here in object_stores and _LOOSE_OBJECT_SHARD_RE.fullmatch(dirname):
+                    continue
+                children.append(dirname)
+            dirnames[:] = children
             for name in filenames:
+                full = Path(dirpath) / name
+                canonical = full.resolve()
+                if canonical in seen_files:
+                    continue
+                seen_files.add(canonical)
                 scanned += 1
                 if SYNC_CONFLICT_RE.search(name):
-                    full = Path(dirpath) / name
-                    level = _sync_conflict_level(full, base, own_root)
-                    found.append((str(full), level))
+                    receipt = (_sync_conflict_acknowledgement(full, common_dir)
+                               if own_root else None)
+                    if receipt is not None:
+                        acknowledged[str(full)] = receipt
+                    else:
+                        found[str(full)] = _sync_conflict_level(own_root)
                 elif SYNC_CONFLICT_LIKE_RE.search(name):
-                    malformed.append(str(Path(dirpath) / name))
+                    high_confidence = bool(
+                        SYNC_CONFLICT_HIGH_CONFIDENCE_RE.search(name))
+                    malformed[str(full)] = (
+                        _sync_conflict_level(own_root)
+                        if high_confidence else WARN)
 
-    if found or malformed or unreadable:
-        for path, level in sorted(found):
+    for path, error in alternate_errors:
+        unreadable[str(path)] = (ERROR, error)
+
+    if found or acknowledged or malformed or unreadable:
+        for path, level in sorted(found.items()):
             if level == ERROR:
                 rep.add(
                     ERROR, "sync-conflict",
@@ -5483,17 +5585,37 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
                 rep.add(
                     WARN, "sync-conflict",
                     f"Syncthing conflict copy at {path} — non-blocking "
-                    f"(externally owned or allowlisted git cache); resolve "
+                    f"because it is in another worktree; resolve "
                     f"manually, the copy may be newer: #1162/#1166")
-        for path in sorted(malformed):
+        for path, (date, reason) in sorted(acknowledged.items()):
             rep.add(
-                WARN, "sync-conflict",
-                f"Non-blocking malformed conflict-like filename at {path} — "
-                f"it contains '.sync-conflict-' but not Syncthing's exact "
-                f"date/time/seven-character Base32 ShortID shape: #1166")
-        for path, level, error in sorted(unreadable):
+                OK, "sync-conflict",
+                f"Known Syncthing conflict copy at {path} — acknowledged "
+                f"{date}: {reason}; exact relative path and SHA-256 matched, "
+                f"so no other file in the directory is exempt: #1166")
+        for path, level in sorted(malformed.items()):
+            if level == ERROR:
+                rep.add(
+                    ERROR, "sync-conflict",
+                    f"Potential Syncthing conflict copy at {path} — marker, "
+                    f"date, and time match in owned critical state but the "
+                    f"ShortID is malformed; manual inspection required: #1166")
+            else:
+                rep.add(
+                    WARN, "sync-conflict",
+                    f"low-confidence lookalike at {path} — contains the "
+                    f"'.sync-conflict-' marker without Syncthing's full "
+                    f"date/time/ShortID shape; manual inspection only: #1166")
+        for path, (level, error) in sorted(unreadable.items()):
+            if path.endswith("/info/alternates") or "object store" in error:
+                rep.add(
+                    ERROR, "sync-conflict",
+                    f"Could not read Git alternates at {path}: {error} — "
+                    f"borrowed object-store coverage is incomplete; conflict-"
+                    f"copy absence is not established: #1166")
+                continue
             scope = ("repo's own state" if level == ERROR
-                     else "externally owned or allowlisted cache state")
+                     else "externally owned worktree state")
             rep.add(
                 level, "sync-conflict",
                 f"Could not scan directory {path}: {error} — coverage "
@@ -5502,9 +5624,10 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
         return
 
     detail = (f"{examined} root(s) examined; {scanned} file(s) scanned; "
-              f"0 conflict copies; "
-              f"pruned: .git/objects/[0-9a-f]{{2}}/ loose-object shards "
-              f"(hash-path addressed; .git/objects/pack/ scanned), "
+              f"0 conflict copies; {len(object_stores) - (1 if common_dir else 0)} "
+              f"borrowed object store(s) scanned; "
+              f"pruned: Git objects/[0-9a-f]{{2}}/ loose-object shards "
+              f"(hash-path addressed; objects/pack/ scanned), "
               f"dependency caches")
     if absent:
         detail += f"; absent: {', '.join(absent)}"
