@@ -281,8 +281,8 @@ class TestIncompleteProbe:
 
 def _run_cli_at_observation(
     target: Path, appended_entry: str | None
-) -> tuple[subprocess.CompletedProcess[str], int | None]:
-    """Run the real CLI, optionally placing one real O_APPEND write in its window."""
+) -> tuple[subprocess.CompletedProcess[str], int | None, bool | None]:
+    """Run the real CLI, optionally racing the documented ``flock`` + ``cat``."""
     observed_r, observed_w = os.pipe()
     proceed_r, proceed_w = os.pipe()
     env = os.environ.copy()
@@ -299,6 +299,8 @@ def _run_cli_at_observation(
     os.close(observed_w)
     os.close(proceed_r)
     appender_status = None
+    appender_blocked = None
+    appender = None
     try:
         observed = os.read(observed_r, 1)
         if observed != b"1":
@@ -308,37 +310,61 @@ def _run_cli_at_observation(
                 f"stdout={stdout!r}, stderr={stderr!r}"
             )
         if appended_entry is not None:
-            appender = subprocess.run(
+            inbox = target / ".dreamwork" / "inbox.md"
+            appender = subprocess.Popen(
                 [
-                    sys.executable,
+                    "flock",
+                    str(target / ".dreamwork" / "inbox.md.lock"),
+                    "sh",
                     "-c",
-                    (
-                        "import os,sys; "
-                        "fd=os.open(sys.argv[1], os.O_WRONLY|os.O_APPEND); "
-                        "os.write(fd, sys.argv[2].encode()); os.close(fd)"
-                    ),
-                    str(target / ".dreamwork" / "inbox.md"),
-                    appended_entry,
+                    'cat >> "$1"',
+                    "sh",
+                    str(inbox),
                 ],
-                capture_output=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                check=False,
             )
-            appender_status = appender.returncode
-            original_live = (target / ".dreamwork" / "inbox.md").read_text()
-            assert appended_entry in original_live, (
-                "appender precondition unmet: unique entry did not land before proceed"
-            )
-            assert sum(line.startswith("## ") for line in original_live.splitlines()) == 11
+            assert appender.stdin is not None
+            appender.stdin.write(appended_entry)
+            appender.stdin.close()
+            appender.stdin = None
+            try:
+                appender_status = appender.wait(timeout=0.5)
+                appender_blocked = False
+            except subprocess.TimeoutExpired:
+                appender_blocked = True
+
+            original_live = inbox.read_text()
+            if not appender_blocked:
+                assert appended_entry in original_live, (
+                    "appender precondition unmet: unique entry did not land before proceed"
+                )
+                assert sum(line.startswith("## ") for line in original_live.splitlines()) == 11
+            else:
+                assert appended_entry not in original_live
+                assert sum(line.startswith("## ") for line in original_live.splitlines()) == 10
         os.write(proceed_w, b"1")
         stdout, stderr = cli.communicate(timeout=10)
+        if appender is not None:
+            appender_stdout, appender_stderr = appender.communicate(timeout=10)
+            appender_status = appender.returncode
+            assert appender_status == 0, (appender_stdout, appender_stderr)
     finally:
         os.close(observed_r)
         os.close(proceed_w)
         if cli.poll() is None:
             cli.kill()
             cli.wait()
-    return subprocess.CompletedProcess(cli.args, cli.returncode, stdout, stderr), appender_status
+        if appender is not None and appender.poll() is None:
+            appender.kill()
+            appender.wait()
+    return (
+        subprocess.CompletedProcess(cli.args, cli.returncode, stdout, stderr),
+        appender_status,
+        appender_blocked,
+    )
 
 
 class TestConcurrentAppenderHarness:
@@ -353,8 +379,9 @@ class TestConcurrentAppenderHarness:
     def test_real_cli_positive_control_without_appender(self, tmp_path: Path):
         """The synchronized real-CLI harness succeeds when no appender runs."""
         target, dw = self._fixture(tmp_path)
-        cli, appender_status = _run_cli_at_observation(target, None)
+        cli, appender_status, appender_blocked = _run_cli_at_observation(target, None)
         assert appender_status is None
+        assert appender_blocked is None
         assert cli.returncode == 0, cli.stderr
         assert "observed-snapshot accounted: moved=7 + retained=3 = observed=10" in cli.stdout
         assert (
@@ -366,33 +393,23 @@ class TestConcurrentAppenderHarness:
         ).read_text()
         assert sum(1 for line in combined.splitlines() if line.startswith("## ")) == 10
 
-    def test_real_cli_documents_known_append_rename_gap(self, tmp_path: Path):
-        """A real O_APPEND entry is currently lost; #1170 must change this expectation.
+    def test_real_cli_lock_excludes_shell_cat_and_preserves_entry(self, tmp_path: Path):
+        """The documented locking shell ``cat`` waits, then appends losslessly.
 
-        The pipes place the write after observation and before rename without a
-        sleep. This is a committed false-green experiment: the CLI exits 0 and
-        truthfully accounts for its ten-line snapshot, but cannot cover the
-        eleventh line written in the known unsynchronized window. Before the
-        rename proceeds, the harness requires that unique entry to be present
-        in the original inbox and requires all eleven headings.
+        The pipes hold rotation immediately before rename. The real ``flock``
+        subprocess must still be blocked there; after rename and unlock, its
+        real shell ``cat >>`` writes the unique entry to the new live inode.
         """
         target, dw = self._fixture(tmp_path)
         appended = "## Concurrent #1170 entry\n\nWritten with O_APPEND.\n"
-        cli, appender_status = _run_cli_at_observation(target, appended)
+        cli, appender_status, appender_blocked = _run_cli_at_observation(target, appended)
         assert appender_status == 0
         assert cli.returncode == 0, cli.stderr
-        warning = (
-            "WARNING: snapshot-only accounting; post-observation appends are "
-            "uncovered (#1170)"
-        )
-        accounted = "observed-snapshot accounted: moved=7 + retained=3 = observed=10"
-        assert warning in cli.stdout
-        assert accounted in cli.stdout
-        assert cli.stdout.index(warning) < cli.stdout.index(accounted)
         combined = (dw / "inbox.md").read_text() + next(
             (dw / "inbox-archive").glob("*.md")
         ).read_text()
-        assert appended not in combined, "#1170 landed: replace this known-loss expectation"
+        assert appended in combined, f"raced entry lost: {appended.splitlines()[0]}"
+        assert appender_blocked, "locking shell cat did not block while rotation held the lock"
 
 
 class TestCliContract:
