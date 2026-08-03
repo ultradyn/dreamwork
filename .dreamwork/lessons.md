@@ -5757,3 +5757,33 @@ assembled by reading.** `#868` asks for both denominators; it is worth adding th
 hand-built numerator is a claim of the same kind. And state the granularity — the lane's
 correction was precise where mine was not: 8 direct call expressions across 7 consumer
 functions, of which this task touches 2 expressions in 1 function.
+
+## A probe that cannot match what it counts reports zero, and zero reads as an answer (2026-08-03, coordinator, mine, measured)
+
+I ran `ps -eo pid,etimes,args | grep 'ccc'` to count live lanes, got one unrelated
+containerd shim, and told myself the fleet was at **zero — every lane has finished**. I
+then started planning the recovery from an empty fleet. The tick's purpose-built probe,
+arriving minutes later, had examined **1149 processes** and named **three live lanes**.
+
+The grep was never measuring lanes. A dispatched lane runner's command line does not
+contain `ccc` — only the review shells I launch directly from bash do, which is exactly
+why the same pattern had worked earlier in the session for `ccc -y @cx-reviewer`. **A
+pattern that worked for one population became evidence about a different one**, and its
+empty result was indistinguishable from a true zero.
+
+The separating question is the one this repo's lint already asks of every check —
+*"N check(s) examined NOTHING and must not be read as passing"*: **what would make this
+probe read zero even if everything were running?** If that question has any answer other
+than "nothing is running", the zero is not evidence. A count of zero from an unvalidated
+probe should be reported as *"the probe found nothing, and I have not established it
+could find anything"* — which is a different sentence from *"nothing is running"*, and
+would have stopped me.
+
+Note the company it keeps: the same day, a reviewer found `#1006`'s geometry guard
+sampling one `.goaltree-actions` with `querySelector` and passing while a second row sat
+outside the tree, and `#1042`'s boundary test asserting *one link whose text is `PG-1`*
+when both candidate tokens render that text. Guard, test, and coordinator all made the
+same move — **an instrument that cannot distinguish the failure case, read as though its
+silence were a negative result.** Prefer the purpose-built probe (`lane_liveness`, the
+tick line) over a hand-rolled `ps | grep`, and when hand-rolling is unavoidable, first
+run it against a case you KNOW is positive.
