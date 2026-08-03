@@ -440,10 +440,13 @@ def _registry_path(cwd: Path | None, lane: str | None = None) -> Path:
 
 def _snapshot_path(cwd: Path | None, posix_path: str,
                    lane: str | None = None) -> Path:
+    return _snapshot_path_at(_snap_dir(cwd, lane=lane), posix_path)
+
+
+def _snapshot_path_at(identity_dir: Path, posix_path: str) -> Path:
     # One safe filename per registered path: collisions would let one entry's
     # restore clobber another's original, the exact failure snapshots prevent.
-    return (_snap_dir(cwd, lane=lane)
-            / (hashlib.sha1(posix_path.encode()).hexdigest() + ".orig"))
+    return identity_dir / (hashlib.sha1(posix_path.encode()).hexdigest() + ".orig")
 
 
 def _claim_path(snapshot: Path) -> Path:
@@ -525,7 +528,10 @@ def _read_registry_at(rp: Path) -> tuple[list[dict], str]:
 
 def _write_registry(cwd: Path | None, entries: list[dict],
                     lane: str | None = None) -> None:
-    rp = _registry_path(cwd, lane)
+    _write_registry_at(_registry_path(cwd, lane), entries)
+
+
+def _write_registry_at(rp: Path, entries: list[dict]) -> None:
     rp.parent.mkdir(parents=True, exist_ok=True)
     tmp = rp.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -1369,13 +1375,28 @@ def forget(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
     """
     root = _ls.worktree_root(cwd)
     try:
-        identity_dir = _snap_dir(cwd, lane=lane)
-        print(f"forget: resolved identity dir {identity_dir} (role: {_role(cwd)})")
+        role = _role(cwd)
+        if lane is None:
+            identity_dir = _snap_dir(cwd, role=role)
+        else:
+            lane = lane.strip()
+            derived = _identity_segment(lane)
+            existing = {d.name for d in _ls.lane_identity_dirs(cwd)}
+            segment = lane if lane in existing else derived
+            if segment not in existing:
+                known = ", ".join(sorted(existing)) or "(none)"
+                raise RedproofError(
+                    f"--lane {lane!r} did not resolve to an existing launch "
+                    f"identity (raw-token form maps to {derived!r}; known "
+                    f"canonical identity dir(s): {known})")
+            identity_dir = _redproof_dir(cwd, segment, role)
+        print(f"forget: resolved identity dir {identity_dir} (role: {role})")
         posix, _ = _worktree_path(root, path)
     except RedproofError as exc:
         sys.stderr.write(f"forget: REFUSED — {exc}\n")
         return 2
-    entries, _ = _read_registry(cwd, lane)
+    registry = identity_dir / "registry.json"
+    entries, _ = _read_registry_at(registry)
     kept: list[dict] = []
     dropped = retired_now = already_retired = 0
     for e in entries:
@@ -1402,8 +1423,8 @@ def forget(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
                f"and cannot be dropped (#942)" if already_retired else
                " (nothing registered)") + "\n")
         return 1
-    _write_registry(cwd, kept, lane)
-    _release_snapshot(_snapshot_path(cwd, posix, lane))
+    _write_registry_at(registry, kept)
+    _release_snapshot(_snapshot_path_at(identity_dir, posix))
     print(f"forget: {posix!r} — dropped {dropped} armed/unrecorded entry(ies), "
           f"RETIRED {retired_now} restored registration(s) (working tree untouched)")
     if retired_now:

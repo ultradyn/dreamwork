@@ -2672,6 +2672,44 @@ class TestNamedLaneAcrossEveryCliVerb:
         assert not scratch.exists(), (
             "an invalid named lane created a phantom scratch directory")
 
+    def test_forget_accepts_a_printed_identity_and_refuses_an_unknown_lane(
+            self, repo, tmp_path):
+        lane = "cx-1148fixture"
+        canonical = rp._ls.identity_segment(lane)
+        env = dict(__import__("os").environ)
+        env["REDPROOF_SCRATCH_ROOT"] = str(tmp_path / "cli-scratch-1148")
+        env[rp._ls.ROLE_ENV] = rp._ls.ROLE_AUTHOR
+
+        begin = self._run(
+            repo, env, "begin", "router.js", "--expectation", "expectation.txt",
+            "--lane", lane)
+        assert begin.returncode == 0, begin.stdout + begin.stderr
+        checked = self._run(repo, env, "check", "--lane", lane)
+        printed = re.search(r"/(lane-[^/]+)/redproof/registry[.]json", checked.stderr)
+        assert printed, checked.stdout + checked.stderr
+        assert printed.group(1) == canonical, checked.stderr
+
+        # The canonical directory name printed by check names this same lane;
+        # it must not be hashed again into a double-prefixed phantom identity.
+        cleared = self._run(
+            repo, env, "forget", "router.js", "--lane", printed.group(1))
+        assert cleared.returncode == 0, cleared.stdout + cleared.stderr
+        assert "dropped 1 armed/unrecorded entry(ies)" in cleared.stdout
+        assert f"lane-{canonical}-" not in cleared.stdout
+
+        # A real, now-empty lane is the legitimate no-op. A typo resolves no
+        # existing identity and must be a distinct fault, not the same answer.
+        empty = self._run(repo, env, "forget", "router.js", "--lane", lane)
+        assert empty.returncode == 1, empty.stdout + empty.stderr
+        assert "nothing registered" in empty.stderr
+
+        unknown = self._run(
+            repo, env, "forget", "router.js", "--lane", "cx-1148fxture")
+        assert unknown.returncode == 2, unknown.stdout + unknown.stderr
+        assert "--lane 'cx-1148fxture' did not resolve to an existing launch identity" \
+            in unknown.stderr
+        assert "nothing registered" not in unknown.stderr
+
 
 # ── #877: a restored source whose downstream bundle is stale ──────────
 
