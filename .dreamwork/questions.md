@@ -26,6 +26,15 @@
     downgrade the tier you named. Say the word and I will route them to `@cx-luna-xhigh` instead,
     which is design-capable and needs no sandbox change.
 
+- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
+  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
+  then, nothing blocks and nothing is delivered by hand.
+  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
+    as an open question that we'll revisit once dreamhub is stable and the
+    primary way we access dreamworkers
+
+## Answered
+
 - **P2 · 2026-08-03 — which URL should be the canonical task view, `/tasks` or `/tasks2`? (#1110)**
   **UPDATE 2026-08-03: my stated default has since LANDED (#1013, `5887c182`, merge `bb94f305`).**
   The question is unchanged and still yours, but it is now "confirm or overturn", not "decide before
@@ -52,15 +61,14 @@
   - **Answer (via watch, 2026-08-03 16:09):** well /tasks doesn't exist
     and since /tasks2 does, sure that's 'finished enough'. anyway I
     choose (1)
+  - **Follow-up (loop, 2026-08-03 16:1x):** FOLDED — he chose **(1)**, `/tasks` becomes the
+    task view, which is what `#1013` already landed (`5887c182`, merge `bb94f305`). **So this
+    closes with NO code change**: the question had become "confirm or overturn" once my
+    default landed, and he confirmed. `#1110`, which existed to own the overturn, is folded
+    unimplemented — the right outcome for a task whose whole purpose was to carry a reversal
+    that was not wanted. His reasoning also settles the part the code could not tell me:
+    *"/tasks doesn't exist and since /tasks2 does, sure that's 'finished enough'"*.
 
-- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
-  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
-  then, nothing blocks and nothing is delivered by hand.
-  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
-    as an open question that we'll revisit once dreamhub is stable and the
-    primary way we access dreamworkers
-
-## Answered
 
 - **P1 · 2026-08-03 — the React port's main chain is blocked on ONE action only you can take:
   pushing the QaCard wrapper through claude.ai/design (#630 P5 stage 2, #1060)**
