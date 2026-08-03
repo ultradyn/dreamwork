@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Sweep registered lane worktrees and report live/dead, dirty, and armed state.
 
-A killed lane is indistinguishable from a finished one except by hand-inspecting
-its worktree, and the dangerous state — died mid-red-proof with armed injections
-on disk — looks exactly like ordinary WIP (#876). This tool makes it loud.
+A dead lane's runner being gone is one fact; whether it left work behind is a
+different one, and ``lane_liveness.FinishedWork`` now joins them (#1154) — a
+finished lane whose branch or tree holds unreviewed work is named
+``HOLDING-WORK``, not ``finished``. This tool still ORCHESTRATES the same three
+implementations rather than duplicating them, and still makes the armed state
+loud (the shape that bit #876): a lane can finish clean yet die mid-red-proof
+with sabotaged files unrestored.
 
 It ORCHESTRATES three existing implementations rather than duplicating them:
 
@@ -39,7 +43,7 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from lane_liveness import LivenessUnknown, pid_matches_lane  # noqa: E402
+from lane_liveness import LivenessUnknown, classify_finished_work, pid_matches_lane  # noqa: E402
 from worktree_paths import worktree_roots  # noqa: E402
 
 
@@ -104,12 +108,20 @@ def _liveness(worktree: Path) -> str:
     return "DEAD"
 
 
-def _dirty_count(worktree: Path) -> int:
-    """Number of uncommitted entries, via git status --porcelain."""
-    result = _git(worktree, "status", "--porcelain=v1", "--untracked-files=normal")
-    if result.returncode:
-        return -1
-    return len([line for line in result.stdout.splitlines() if line.strip()])
+def _dirty_split(worktree: Path) -> str:
+    """Tracked-dirty/untracked/ignored split, reusing the ONE classifier (#1154).
+
+    Mirrors the reap.py model and the tick-line verdict: ignored churn
+    (``__pycache__``, ``lane.lock``) is present in every lane and must not
+    read as work. Returns ``dirty-unknown`` when the worktree is not a repo.
+    """
+    work = classify_finished_work(worktree)
+    if work is None:
+        return "dirty-unknown"
+    flag = " HOLDING-WORK" if work.holding_work else ""
+    commits = "%d commits" % work.unmerged if work.commits_known else "commits?"
+    return ("tracked-dirty=%d untracked=%d ignored=%d %s%s" % (
+        work.tracked_dirty, work.untracked, work.ignored, commits, flag))
 
 
 def _armed_injections(worktree: Path, repo: Path) -> tuple[str, str]:
@@ -203,11 +215,10 @@ def sweep(repo: Path) -> int:
     armed_liveness: set[str] = set()
     for label, path in lanes:
         live = _liveness(path)
-        dirty = _dirty_count(path)
+        dirty_str = _dirty_split(path)
         armed_status, armed_detail = _armed_injections(path, repo)
         if armed_status == "ARMED":
             armed_liveness.add(live.partition(" ")[0])
-        dirty_str = f"{dirty} dirty" if dirty >= 0 else "dirty-unknown"
         parts = [f"{live:<20}", dirty_str]
         if armed_status != "clean":
             parts.append(f"{armed_status}")

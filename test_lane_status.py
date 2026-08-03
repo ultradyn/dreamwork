@@ -111,12 +111,22 @@ def test_sweep_reports_dead_lane_with_dirty_work(tmp_path):
     assert "examined 1 lane worktree(s)" in result.stdout
     assert "cx-dead" in result.stdout
     assert "DEAD" in result.stdout
-    # Derive the expected dirty count independently — the lock file may also
-    # count, so the exact number is not a literal the test should hardcode.
-    dirty = _git(wt, "status", "--porcelain=v1", "--untracked-files=normal")
-    expected_dirty = len([l for l in dirty.splitlines() if l.strip()])
-    assert expected_dirty > 0, "precondition: the worktree should have dirty work"
-    assert f"{expected_dirty} dirty" in result.stdout
+    # The split (modeled on reap.py) reports tracked-dirty separately from
+    # untracked/ignored, so a modified tracked file reads as work without
+    # collapsing into the ignored churn every lane carries (#1154). Derive the
+    # tracked-dirty count from the fixture the same way the tool does — a
+    # literal would rot if the lock file's ignore status changes.
+    status = _git(wt, "status", "--porcelain=v1",
+                  "--untracked-files=all", "--ignored")
+    tracked_dirty = sum(
+        1 for line in status.splitlines()
+        if line.strip() and line[:2] not in ("??", "!!"))
+    assert tracked_dirty > 0, "precondition: a tracked file should be dirty"
+    assert f"tracked-dirty={tracked_dirty}" in result.stdout, (
+        f"tracked-dirty count missing from split: {result.stdout!r}")
+    assert "HOLDING-WORK" in result.stdout, (
+        f"a dead lane holding work was not flagged HOLDING-WORK: "
+        f"{result.stdout!r}")
 
 
 def test_sweep_reports_armed_injections_prominently(tmp_path):
