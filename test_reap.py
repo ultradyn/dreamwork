@@ -319,9 +319,9 @@ def test_live_gate_scratch_is_refused_even_with_force(lane, force):
 
     result = _run(*(("--force",) if force else ()), worktree)
 
-    assert result.returncode == 1
     assert f"active landing gate breadcrumb {breadcrumb}" in result.stderr
     assert "refusing to reap in-flight gate scratch" in result.stderr
+    assert result.returncode == 1
     assert worktree.exists()
     assert str(worktree.resolve()) in _git(root, "worktree", "list", "--porcelain")
 
