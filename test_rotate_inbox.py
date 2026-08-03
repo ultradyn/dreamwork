@@ -475,6 +475,7 @@ class TestConcurrentAppenderHarness:
         dw.mkdir(parents=True)
         inbox = dw / "inbox.md"
         inbox.write_text("".join(_make_entry(i) for i in range(10)))
+        (dw / "inbox.md.lock").touch()
         return target, dw
 
     def test_real_cli_positive_control_without_appender(self, tmp_path: Path):
