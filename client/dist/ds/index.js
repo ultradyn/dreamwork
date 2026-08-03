@@ -1926,6 +1926,7 @@ var DreamworkDesign = (() => {
   // entry.mjs
   var entry_exports = {};
   __export(entry_exports, {
+    ArtifactRow: () => ArtifactRow,
     Expand: () => Expand,
     FollowThread: () => FollowThread,
     Label: () => Label,
@@ -8608,6 +8609,12 @@ var DreamworkDesign = (() => {
   });
   QaCompose.displayName = "QaCompose";
   QaCompose.dwBuilder = "qaCompose";
+  var ArtifactRow = ({ r, kind }) => import_react.default.createElement(HOST, {
+    "data-dw-delegate": "artifactRow",
+    dangerouslySetInnerHTML: { __html: artifactRow(r, kind) }
+  });
+  ArtifactRow.displayName = "ArtifactRow";
+  ArtifactRow.dwBuilder = "artifactRow";
   return __toCommonJS(entry_exports);
 })();
 /*! Bundled license information:

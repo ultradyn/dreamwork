@@ -84,3 +84,11 @@ export const QaCompose = ({ key, st, title }) => React.createElement(HOST, {
 
 QaCompose.displayName = 'QaCompose';
 QaCompose.dwBuilder = 'qaCompose';
+
+export const ArtifactRow = ({ r, kind }) => React.createElement(HOST, {
+  'data-dw-delegate': 'artifactRow',
+  dangerouslySetInnerHTML: { __html: artifactRow(r, kind) },
+});
+
+ArtifactRow.displayName = 'ArtifactRow';
+ArtifactRow.dwBuilder = 'artifactRow';

@@ -79,6 +79,24 @@ const CASES = [
     fixture: fixture('QaCompose'),
     build: props => qaCompose(props.key, props.st, props.title),
   },
+  {
+    name: 'ArtifactRow', delegate: 'artifactRow', expectedClass: 'rdecision',
+    fixture: fixture('ArtifactRow'),
+    build: props => artifactRow(props.r, props.kind),
+  },
+  {
+    name: 'ArtifactRow', delegate: 'artifactRow', expectedClass: 'rdecision',
+    fixture: {
+      r: {
+        name: 'research-claude-design.md',
+        created: 1722400000, created_known: true,
+        mtime: 1722550000, show_modified: false,
+        decision: 'rejected', question_title: null,
+      },
+      kind: 'research',
+    },
+    build: props => artifactRow(props.r, props.kind),
+  },
 ];
 const hasContent = value => {
   if (typeof value === 'string') return value.trim().length > 0;

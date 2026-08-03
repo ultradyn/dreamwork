@@ -18,6 +18,9 @@
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
     "client/style.css": "cd335f737a8b6f2846e35faf184e2e3f6b3a2b793422a6b13ecde4cd5ef582fb",
     "client/views.js": "c82d6bc700a37cebefe72808c189d9a335cf8fe75ea4bea4450a3ce37e997730",
+    "dev/build/ds-src/ArtifactRow.d.ts": "12ace56abf0721bdd65bbb781e52937fdbd8dbe21897fd5eab3455a3b4da04cb",
+    "dev/build/ds-src/ArtifactRow.fixture.json": "a38b3cf2012178882d4c60cf29361cef79e3192e954518830580959648fffd76",
+    "dev/build/ds-src/ArtifactRow.prompt.md": "0ee7afa94f02d495b71e321150c6563a6246ece1cfcacc2488f627f384e203c5",
     "dev/build/ds-src/Expand.d.ts": "6e9d29055de5c8d445af39e8053fca17f19825b45071c90349e56fd28ae2d480",
     "dev/build/ds-src/Expand.fixture.json": "6f59e3d934e8cdc66b2e53c53caaaaf1de56e11398431f066338aead86a96a7a",
     "dev/build/ds-src/Expand.prompt.md": "84b9ec85415d8bc8dcf6c46cddbe55db042519a33adf63a8360c0121d0634807",
@@ -42,10 +45,10 @@
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
     "dev/build/src/registry.js": "6d8b3a665afcec61e7d0ab59b32b6ee23b0fc0bff90bf23b2558823057beb0a8",
     "dev/build/src/research.js": "d792c7bd01be52922baa765afee4e5f77d9e0d35feaff0679a9f803ce1b63f73",
-    "dev/build/wrapper-exports.js": "34af1454f0a7aa97506971fab8b32de439a53f82676ce82afe2ee03ad6299265"
+    "dev/build/wrapper-exports.js": "1f7cb6a4547ad4b5ccfbbc71ca967eae633ca15c19db05daad8e1b162d6c4146"
   },
   "outputs": {
-    "client/dist/ds/index.js": "25684b10ccaa8ea96765d709a03cf6be340a0243898299579328ea03c5bb9079",
+    "client/dist/ds/index.js": "29dbcf73b12030ce3fe6422634a8a002e98dc25e09db3bf95ffc7dea4888a988",
     "client/dist/ds/styles.css": "cd335f737a8b6f2846e35faf184e2e3f6b3a2b793422a6b13ecde4cd5ef582fb",
     "client/dist/native.js": "27b580244ee603816ac535c76b83383f71a0d74a1e0be92ed5a7fd1c8da33dc4"
   },
