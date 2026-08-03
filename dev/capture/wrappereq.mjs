@@ -53,6 +53,11 @@ const CASES = [
     fixture: fixture('PipBtn'),
     build: props => pipBtn(props.url, props.label),
   },
+  {
+    name: 'Expand', delegate: 'expand', expectedClass: 'peek',
+    fixture: fixture('Expand'),
+    build: props => expand(props.s, props.inner, props.cls, props.keep),
+  },
 ];
 const hasContent = value => {
   if (typeof value === 'string') return value.trim().length > 0;

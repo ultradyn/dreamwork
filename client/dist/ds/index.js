@@ -1926,6 +1926,7 @@ var DreamworkDesign = (() => {
   // entry.mjs
   var entry_exports = {};
   __export(entry_exports, {
+    Expand: () => Expand,
     Label: () => Label,
     PipBtn: () => PipBtn,
     QaCard: () => QaCard
@@ -8587,6 +8588,12 @@ var DreamworkDesign = (() => {
   });
   PipBtn.displayName = "PipBtn";
   PipBtn.dwBuilder = "pipBtn";
+  var Expand = ({ s, inner, cls = "", keep = "" }) => import_react.default.createElement(HOST, {
+    "data-dw-delegate": "expand",
+    dangerouslySetInnerHTML: { __html: expand(s, inner, cls, keep) }
+  });
+  Expand.displayName = "Expand";
+  Expand.dwBuilder = "expand";
   return __toCommonJS(entry_exports);
 })();
 /*! Bundled license information:

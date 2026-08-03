@@ -58,3 +58,12 @@ export const PipBtn = ({ url, label }) => React.createElement(HOST, {
 
 PipBtn.displayName = 'PipBtn';
 PipBtn.dwBuilder = 'pipBtn';
+
+export const Expand = ({ s, inner, cls = '', keep = '' }) =>
+  React.createElement(HOST, {
+    'data-dw-delegate': 'expand',
+    dangerouslySetInnerHTML: { __html: expand(s, inner, cls, keep) },
+  });
+
+Expand.displayName = 'Expand';
+Expand.dwBuilder = 'expand';
