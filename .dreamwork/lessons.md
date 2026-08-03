@@ -5874,3 +5874,41 @@ looks exactly like the constructive one.
 
 The lane stopped rather than widening scope silently — third time this session that a
 STOP-on-refuted-premise rule paid for itself, and the second time on this same task.
+
+## "I could not construct a false-green" is weak evidence; "it is unsatisfiable" is a claim with premises you have not listed (2026-08-03, #1042, lane, measured)
+
+`#1042` round 4 replaced a count-plus-text assertion with a position assertion, then argued
+the remaining false-green was **unsatisfiable**: requiring `goalAt === indexOf('PG-')` (= 0)
+means the only token at offset 0 is the real one, so any implementation linking the wrong
+token necessarily lands at offset 9 and goes red.
+
+The reviewer broke it in one move: it combined the wrong-token regex with a counter that
+**drops the pre-link text chunk**. Only the invalid `PG-1` prefix linked — but with the
+leading `"PG-1 and "` gone, the fragment *began* with that anchor, `goalAt === 0`, and the
+test passed. The argument had held only under a premise it never stated: **that the
+fragment preserves the original text.**
+
+**An offset is a claim about a position in a string. It is evidence only if the string is
+the one you think it is** — and nothing in the test checked that. The proof was not wrong
+about what it said; it was silent about what it assumed, which is harder to notice and
+exactly why it survived a round.
+
+Two things worth carrying:
+
+- **Prefer an enumeration to an impossibility.** *"I tried these N counter-implementations
+  and here is what each did"* is checkable and ages well. *"No false-green exists"* invites
+  the reader to stop looking, and its refutation costs a whole round.
+- **When a lane does argue impossibility, require the premises listed.** That is the cheap
+  version of this review: the premise here was one sentence long, and writing it down would
+  probably have exposed it.
+
+The same round also had `firstPgAt` computed **after** the walker mutated the node — safe
+only by accident, because that test double's `replaceWith` happens to leave `nodeValue`
+intact. Deriving an expectation from post-mutation state is the defect this very task spent
+three rounds chasing, reappearing one level in. Capture baselines before the mutation, even
+when the current implementation makes it harmless.
+
+Related, from the same review: round 4's lint WARN-set delta was explained as including a
+"master-only `inbox.md` over-threshold row", and **the explanation did not reproduce**
+against either master or the stated base. *An explanation that does not reproduce is worse
+than an unexplained diff*, because it stops the next reader from looking.
