@@ -1326,7 +1326,11 @@ class TestLiveLivenessBoundaryDocumentation:
     """Detect prose/token drift, not whether the named mechanisms execute."""
 
     def test_classification_path_states_its_known_observation_gaps(self):
-        """The real-process descendant fixture below binds PPID selection."""
+        """The behavioural PPID guard is
+        ``TestLiveLivenessCwdChannel.test_busy_real_child_of_waiting_real_runner_vetoes_wedged``:
+        it selects the named ``ccc`` parent and proves the descendant limb via
+        ``descendants added 1`` plus the busy-child CPU assertion. It has no
+        ``lane.lock`` and does not exercise lock-confirmed PID selection."""
         doc = inspect.getdoc(lane_liveness.inspect_lanes)
         source = inspect.getsource(lane_liveness.inspect_lanes)
 
