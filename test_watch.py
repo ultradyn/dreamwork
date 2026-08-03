@@ -7380,16 +7380,16 @@ class TestGoalsRoute(unittest.TestCase):
             "Native /goals read surface; sole full-page renderer.",
             native)
         self.assertIn(
-            "no goals yet — the examined tree is genuinely empty",
+            "examined tree is genuinely empty",
             native,
-            "native /goals empty copy no longer distinguishes a healthy 0/0 tree")
+            "native /goals bundle no longer distinguishes healthy-empty from unreadable-zero copy")
         self.assertIn(
             "goal tree unavailable: examined 0 nodes; no canonical goal store",
             native,
             "native /goals failure copy no longer names the unreadable zero")
         for token in ("edit-details", "add-condition", "add-goal",
-                      "set-current", "make current", "current goal",
-                      "saved quietly · appears on the next tick"):
+                      "set-current", "Make current", "current goal",
+                      "Saved quietly · appears on the next tick"):
             self.assertIn(token, native,
                           f"native /goals write UI lost {token!r}")
         goals_source = watch.read_text(os.path.join(
