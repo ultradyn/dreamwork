@@ -30,7 +30,18 @@ const CASES = [
   {
     name: 'QaCard', delegate: 'qaCard', expectedClass: 'qa',
     fixture: fixture('QaCard'),
-    build: props => qaCard(props.q, props.k),
+    build: props => {
+      const previousData = data;
+      const previousView = view;
+      try {
+        data = (props.ctx && props.ctx.data) || {};
+        view = (props.ctx && props.ctx.view) || { name: null, param: null, q: null };
+        return qaCard(props.q, props.k);
+      } finally {
+        data = previousData;
+        view = previousView;
+      }
+    },
   },
   {
     name: 'Label', delegate: 'label', expectedClass: 'label',
