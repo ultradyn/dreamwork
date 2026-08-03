@@ -25,6 +25,27 @@
   - **My default if you do not answer:** I will keep `#1006`/`#1007` held rather than silently
     downgrade the tier you named. Say the word and I will route them to `@cx-luna-xhigh` instead,
     which is design-capable and needs no sandbox change.
+  - **CORRECTION to my own claim above, measured 2026-08-03 (#1155).** I wrote *"the ccc-runner
+    aliases are unaffected because each gets its own lane sandbox."* **That is true of the three
+    aliases I named and false as the survey it reads as** — the same error shape this session keeps
+    filing, this time inside the question I am asking you to decide. Every ccc alias whose
+    `runner = "opencode"` (`@glm51`, `@glm5t`, `@oc-glm52`, `@mm`, `@mm3`, `@mm27`, `@mimo25p`) ALSO
+    cannot reach `../.worktrees/`: `~/.config/opencode/opencode.json` allows `external_directory`
+    only under `/tmp` and `$TMPDIR` and sets `"*": "ask"`, which under `ccc -y` resolves to
+    auto-reject. Measured on five lanes at once — all five came up live, were denied the first `git`
+    call in their own worktree, and ended at master's sha with zero commits.
+  - **How this changes the question, and it does.** It is no longer one agent family's quirk against
+    one convenience. **Two independent mechanisms** — the coordinator sandbox for native agents, and
+    opencode's own permission map for seven ccc aliases — now both forbid the out-of-repo worktree
+    layout, and they forbid it for unrelated reasons. Ten of the fleet's aliases are affected, not
+    three. Unaffected: `@glm52`/`@grok`/`@gk-glm52` (runner `grok`), all `@cx-*` (codex), `@kimi`,
+    `@pi-*`.
+  - **What this does NOT establish.** It does not say the layout is wrong — you chose it so the repo
+    tree only shrinks, and it has held. It says the layout has a recurring cost that will surface
+    again at each new runner, and that the cost is currently paid in whole dispatch cycles because a
+    denied lane looks identical to a working one from outside. **A third option now worth naming:
+    leave both sandboxes alone and treat "can this runner reach `../.worktrees/`" as a route
+    property checked at dispatch, so an unusable route refuses loudly instead of burning a lane.**
 
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
   2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
