@@ -6074,22 +6074,41 @@ class TestBriefDispatchCoverage:
 
 
 class TestReviewDispatchFrame:
-    """#1112: every persisted review dispatch prompt carries the review-frame section.
+    """#1112/#1115: every persisted review dispatch prompt carries the review-frame
+    section, and stale vs missing are distinct facts.
 
     The frame carries the three clone-blindnesses; without persistence it was a
-    convention and nothing could verify it landed.  These tests prove the four
-    Direction-2 shapes the brief names: missing-frame fires, empty-dir is NOT
-    CHECKED, lane receipts are not scanned, and a clean receipt is OK.
+    convention and nothing could verify it landed (#1112).  #1115 added stale
+    detection: the receipt's ``frame_sha256`` distinguishes current / missing /
+    stale / no-receipt, so a frame that moved after dispatch reports "stale"
+    (re-review decision) rather than "missing" (re-dispatch) — the #136 collapse.
     """
 
     FRAME_TEXT = (Path(__file__).resolve().parent / "briefs" / "review-frame.md").read_text(encoding="utf-8")
 
     @staticmethod
-    def _dispatch(root: Path, branch: str, prompt: bytes) -> None:
+    def _dispatch(root: Path, branch: str, prompt: bytes,
+                  frame_sha: str | None = None,
+                  no_receipt: bool = False) -> None:
+        """Persist a review dispatch prompt + receipt, mirroring persist_review_prompt.
+
+        ``frame_sha`` defaults to the CURRENT frame's digest (the honest state a
+        real persist produces); passing a different value simulates a stale
+        receipt.  ``no_receipt`` omits the receipt entirely (#1115's fourth state).
+        """
         dispatches = root / ".dreamwork" / "review-dispatches"
         dispatches.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256(prompt).hexdigest()
-        (dispatches / f"{branch}-r1-{digest[:16]}.prompt.md").write_bytes(prompt)
+        stem = f"{branch}-r1-{digest[:16]}"
+        (dispatches / f"{stem}.prompt.md").write_bytes(prompt)
+        if not no_receipt:
+            if frame_sha is None:
+                frame_sha = hashlib.sha256(
+                    TestReviewDispatchFrame.FRAME_TEXT.encode("utf-8")).hexdigest()
+            record = {"branch": branch, "round": 1,
+                      "prompt_sha256": digest, "frame_sha256": frame_sha}
+            (dispatches / f"{stem}.json").write_text(
+                json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     @staticmethod
     def _row(root: Path):
@@ -6177,6 +6196,90 @@ class TestReviewDispatchFrame:
         assert level == lint.WARN
         assert "missing the review-frame section" in detail
         assert "(duplicate frame)" in detail
+
+    def test_stale_frame_reports_stale_not_missing(self, tmp_path):
+        """#1115/#136: a frame that moved after dispatch reports STALE, not missing.
+
+        Production line: the ``receipt_sha != current_sha`` branch in
+        check_review_dispatch_frame — the receipt carries the OLD digest and the
+        current frame differs, so this is the exact case a bare substring check
+        collapses into "missing".  The remedy for stale (decide whether to
+        re-review) is the opposite of missing (re-dispatch); reporting the same
+        word for both is the bug this fixes.
+        """
+        root = target(tmp_path)
+        self._ensure_frame(root)
+        # A prompt carrying the CURRENT frame but a receipt pinned to a DIFFERENT
+        # (stale) digest — the dispatch was correct then and the frame moved.
+        prompt = (b"# Review of branch foo\n\nLook at the diff.\n\n"
+                  + self.FRAME_TEXT.encode("utf-8"))
+        self._dispatch(root, "foo", prompt, frame_sha="0" * 64)
+        level, _, detail = self._row(root)
+        assert level == lint.WARN
+        assert "1 stale" in detail, detail
+        assert "0 missing" in detail, detail
+        # The two states must read DIFFERENTLY (#136): missing says re-dispatch,
+        # stale says decide-whether-to-re-review.  Assert neither word leaks.
+        assert "re-dispatch a review that did not need" not in detail
+        assert "frame moved after dispatch" in detail
+
+    def test_stale_and_missing_produce_different_warning_text(self, tmp_path):
+        """The discrimination must SURFACE in the message (#1094 shape).
+
+        A field no message reads is the readable-copied-as-a-field defect.  Two
+        prompts — one stale, one missing — must produce distinguishable WARN text
+        so a reader is told which remedy applies, not lumped into one.
+        """
+        root = target(tmp_path)
+        self._ensure_frame(root)
+        # stale: current frame present, receipt pinned to an old digest
+        stale_prompt = (b"# Review stale\n\n" + self.FRAME_TEXT.encode("utf-8"))
+        self._dispatch(root, "stalebr", stale_prompt, frame_sha="1" * 64)
+        # missing: receipt pinned to the current digest, but frame absent
+        missing_prompt = b"# Review missing\n\nNo frame here.\n"
+        self._dispatch(root, "missbr", missing_prompt)
+        level, _, detail = self._row(root)
+        assert level == lint.WARN
+        assert "1 missing the review-frame section" in detail
+        assert "1 stale" in detail
+        # The two carry different remedy language — the whole point.
+        assert "re-dispatch" in detail
+        assert "frame moved after dispatch" in detail
+
+    def test_current_frame_receipt_produces_no_warning(self, tmp_path):
+        """Receipt present, digest matches current frame, frame present: OK (#1115).
+
+        The third state — a clean current receipt — must produce no WARN, so the
+        check does not cry wolf over a healthy dispatch.
+        """
+        root = target(tmp_path)
+        self._ensure_frame(root)
+        prompt = (b"# Review\n\n" + self.FRAME_TEXT.encode("utf-8"))
+        self._dispatch(root, "clean", prompt)  # frame_sha defaults to current
+        level, _, detail = self._row(root)
+        assert level == lint.OK, detail
+        assert "1 current" in detail
+        assert "0 missing" in detail
+        assert "0 stale" in detail
+
+    def test_prompt_without_receipt_reports_its_own_state(self, tmp_path):
+        """#1115: a prompt with no receipt is a fourth state, never folded into missing.
+
+        Without frame_sha256 the check cannot classify; reporting "missing" would
+        collapse corruption into the re-dispatch remedy.  Production line: the
+        ``not receipt_sha`` branch that appends to ``no_receipt``.
+        """
+        root = target(tmp_path)
+        self._ensure_frame(root)
+        prompt = (b"# Review\n\n" + self.FRAME_TEXT.encode("utf-8"))
+        self._dispatch(root, "corrupt", prompt, no_receipt=True)
+        level, _, detail = self._row(root)
+        assert level == lint.WARN
+        assert "1 without a receipt" in detail
+        # It must NOT read as missing or stale — it is its own condition.
+        assert "0 missing the review-frame section" in detail
+        assert "0 stale" in detail
+        assert "cannot read frame_sha256" in detail
 
 
 class TestBriefHandoffObligation:
