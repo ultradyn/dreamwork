@@ -81,7 +81,7 @@ def test_tracked_dirty_path_refuses_and_names_what_would_be_lost(lane):
 
     result = _run("--check", worktree)
 
-    assert result.returncode == 1
+    assert result.returncode == 1, result.stdout
     assert f"path={worktree.resolve()}" in result.stderr
     assert "tracked-dirty=1" in result.stderr
     assert "untracked=0" in result.stderr
