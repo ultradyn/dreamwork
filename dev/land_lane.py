@@ -1127,6 +1127,40 @@ def _requirement_line(diff: Diff) -> str:
     )
 
 
+def _selection_waiver_line(diff: Diff) -> str:
+    """State why an empty named-test selection is legitimate (#1018).
+
+    The honest path for a documentation-only branch is a THIRD STATE, not a
+    relaxation of the empty-selection refusal (#136): *covered by lint and by
+    nothing else* is different from *covered by named tests* and different from
+    *coverage unknown*.  An empty selection is allowed ONLY when the entire
+    diff is covered — every changed path is inert documentation or a lint-gated
+    executable document — so the #1010 guarantee (an empty selection is
+    indistinguishable from a broken deriver) survives unchanged for any branch
+    that has a single binding path.
+
+    The line names the covering phases, not just the fact, because a branch
+    that lands with zero named tests must SAY what checked it (#1140's
+    authority-boundary model, #651's guard-must-name-a-detectable-mode rule).
+    """
+    parts: list[str] = []
+    if diff.inert:
+        parts.append(
+            f"{len(diff.inert)} inert documentation path(s) under "
+            f"{INERT_DOC_ROOT} (no executable input)"
+        )
+    if diff.lint_gated_binding:
+        parts.append(
+            f"{len(diff.lint_gated_binding)} executable documentation "
+            "binding path(s) covered by lint-precheck and lint-comparison"
+        )
+    return (
+        "selection: 0 named tests; the diff is entirely covered — "
+        + "; ".join(parts)
+        + "; named tests are not required because no changed path is binding"
+    )
+
+
 def _redproof_authority_note(required: int) -> str:
     """State plainly that the gate's DERIVED requirement is the authority and the
     lane's prose report was NOT an input (#1140, #651).
@@ -1832,15 +1866,6 @@ def land(
             base_state="UNTRUSTED (repository identity was not established)",
         )
 
-    if not tests:
-        return _refuse(
-            "selection",
-            "named test selection is empty",
-            f"branch argument={branch}; named tests=0",
-            retained,
-            base_state=_base_state(repo, base, None),
-        )
-
     common_git_dir = _common_git_dir(repo)
     if common_git_dir is None:
         return _refuse(
@@ -1894,6 +1919,43 @@ def land(
             retained,
             base_state=_base_state(repo, base, base_sha),
         )
+
+    # #1018: classify the diff early so the selection check is diff-aware.
+    # A documentation-only branch has no test to name — the empty selection is
+    # correct, not broken (#136's third state).  An empty selection on a branch
+    # that HAS binding paths still refuses unchanged (#1010: an empty selection
+    # is indistinguishable from a broken deriver).  The diff is reused later
+    # for the red-proof requirement derivation, so it is computed once here.
+    diff = _classify_diff(repo, base_sha, branch_sha)
+    if not tests:
+        if diff is None:
+            return _refuse(
+                "selection",
+                "named test selection is empty and the diff could not be read "
+                "to check whether any path is binding",
+                f"branch argument={branch}; named tests=0; "
+                f"base={base_sha}; branch_sha={branch_sha}",
+                retained,
+                base_state=_base_state(repo, base, base_sha),
+            )
+        if not diff.changed:
+            return _refuse(
+                "selection",
+                "named test selection is empty and the diff is empty",
+                f"branch argument={branch}; named tests=0; changed paths=0",
+                retained,
+                base_state=_base_state(repo, base, base_sha),
+            )
+        if diff.required_injections > 0:
+            return _refuse(
+                "selection",
+                "named test selection is empty",
+                f"branch argument={branch}; named tests=0; "
+                f"{len(diff.binding)} binding path(s)={list(diff.binding)!r}",
+                retained,
+                base_state=_base_state(repo, base, base_sha),
+            )
+        print(_selection_waiver_line(diff))
 
     main_dirty = _git(repo, "status", "--porcelain=v1", "--untracked-files=no")
     lane_dirty = _git(lane, "status", "--porcelain=v1", "--untracked-files=no")
@@ -2086,7 +2148,9 @@ def land(
             f"base={base_sha}; branch={branch_sha}; rev-list exit={branch_commits.returncode}",
         )
 
-    diff = _classify_diff(repo, base_sha, branch_sha)
+    # diff was computed early (before the selection check, #1018) and is reused
+    # here; no re-computation is needed because base_sha and branch_sha are
+    # stable refs and nothing between the two points commits.
     if diff is None:
         return refuse_gated(
             "diff-classification",
@@ -2455,19 +2519,35 @@ def land(
         absent=absent,
     ))
     selection = tuple(dict.fromkeys((*tests, *unnamed)))
-    print(_test_relevance_line(gate_worktree, selection, diff.changed, data_tests=data_tests))
 
     update_gate_breadcrumb("named-tests", merged_sha)
-    named = _run(["just", "pytest", *selection], gate_worktree)
-    _relay(named)
-    if named.returncode:
-        return refuse_gated(
-            "named-tests",
-            f"named test selection failed with exit {named.returncode}",
-            f"merge={merged_sha}; tests={list(tests)!r}; "
-            f"derived-and-added={list(unnamed)!r}",
+    if not selection:
+        # #1018: the diff is entirely covered (no binding paths) and no test
+        # was named or derived; running ``just pytest`` with zero arguments
+        # would invoke the FULL suite, which is the coordinator's sweep, not
+        # this lane's gate (#666).  Waive named-tests explicitly and name the
+        # covering phases, because a branch that lands with zero named tests
+        # must SAY what checked it (#1140, #651).
+        print(
+            "named-tests: 0 selected; the diff is entirely covered by the "
+            "documentation classification; running the full suite is the "
+            "coordinator's sweep, not this lane's gate; named-tests waived — "
+            "lint-precheck and lint-comparison are the covering phases"
         )
-    passed.append("named-tests")
+        passed.append("named-tests")
+    else:
+        print(_test_relevance_line(gate_worktree, selection, diff.changed, data_tests=data_tests))
+
+        named = _run(["just", "pytest", *selection], gate_worktree)
+        _relay(named)
+        if named.returncode:
+            return refuse_gated(
+                "named-tests",
+                f"named test selection failed with exit {named.returncode}",
+                f"merge={merged_sha}; tests={list(tests)!r}; "
+                f"derived-and-added={list(unnamed)!r}",
+            )
+        passed.append("named-tests")
 
     update_gate_breadcrumb("guard-selection", merged_sha)
     guard_list = _run(
