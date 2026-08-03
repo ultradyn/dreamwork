@@ -1,0 +1,34 @@
+{
+  "loading": {
+    "data": null
+  },
+  "empty": {
+    "data": {
+      "reviews": []
+    }
+  },
+  "multi": {
+    "data": {
+      "reviews": [
+        {
+          "name": "accepted-wrapper-review.md",
+          "created": 1722500000,
+          "created_known": true,
+          "mtime": 1722600000,
+          "show_modified": true,
+          "decision": "accepted",
+          "question_title": "Should Reviews delegate to buildReviews?"
+        },
+        {
+          "name": "rejected-native-composition.md",
+          "created": 1722700000,
+          "created_known": true,
+          "mtime": 1722700000,
+          "show_modified": false,
+          "decision": "rejected",
+          "question_title": "Can nested wrapper hosts serialize identically?"
+        }
+      ]
+    }
+  }
+}

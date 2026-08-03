@@ -92,3 +92,11 @@ export const ArtifactRow = ({ r, kind }) => React.createElement(HOST, {
 
 ArtifactRow.displayName = 'ArtifactRow';
 ArtifactRow.dwBuilder = 'artifactRow';
+
+export const Reviews = ({ data }) => React.createElement(HOST, {
+  'data-dw-delegate': 'buildReviews',
+  dangerouslySetInnerHTML: { __html: buildReviews(data) },
+});
+
+Reviews.displayName = 'Reviews';
+Reviews.dwBuilder = 'buildReviews';

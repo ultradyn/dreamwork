@@ -1932,7 +1932,8 @@ var DreamworkDesign = (() => {
     Label: () => Label,
     PipBtn: () => PipBtn,
     QaCard: () => QaCard,
-    QaCompose: () => QaCompose
+    QaCompose: () => QaCompose,
+    Reviews: () => Reviews
   });
   var import_react = __toESM(require_react(), 1);
   window.DEV = /*DEV*/
@@ -8705,6 +8706,12 @@ var DreamworkDesign = (() => {
   });
   ArtifactRow.displayName = "ArtifactRow";
   ArtifactRow.dwBuilder = "artifactRow";
+  var Reviews = ({ data: data2 }) => import_react.default.createElement(HOST, {
+    "data-dw-delegate": "buildReviews",
+    dangerouslySetInnerHTML: { __html: buildReviews(data2) }
+  });
+  Reviews.displayName = "Reviews";
+  Reviews.dwBuilder = "buildReviews";
   return __toCommonJS(entry_exports);
 })();
 /*! Bundled license information:

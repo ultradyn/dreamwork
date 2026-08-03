@@ -39,6 +39,9 @@
     "dev/build/ds-src/QaCompose.d.ts": "ba6c15478f43f1f39c96e5378c5418bdbf6bfec725fb38e5223c979573f13fa9",
     "dev/build/ds-src/QaCompose.fixture.json": "32f3defb89a7aa173bc587878f86b57590a4cafc53753b969505cabc46e71531",
     "dev/build/ds-src/QaCompose.prompt.md": "abbf16d73fddc2e512fe802b0c010676959178e1570c137ce2f3fc7180864e34",
+    "dev/build/ds-src/Reviews.d.ts": "8f5e7f8b6d597986e726fd866bb6327465acbffa347612891ec8c7b4b88dfe26",
+    "dev/build/ds-src/Reviews.fixture.json": "56860c2c529fd14b55a477efa0b9e492fcff45a491a45b630c71f719f87c9f25",
+    "dev/build/ds-src/Reviews.prompt.md": "3041059523cdbcec5a1d9f7e607a13063a8f702c149949cc2014fdf43259c603",
     "dev/build/src/delegate.js": "8cbeb4bce8ccaee70c8dc6ae76160eeb8dd9f8f3a92ca51e28712747ee28b293",
     "dev/build/src/goals.js": "08d293a32051a7c48294beeea918d493682b0c334cc317caa9338f43ef8ba4e3",
     "dev/build/src/native-entry.js": "7e3058581b31bc34b810c99ee44d3902cd45d58d5487445568248789af887612",
@@ -46,12 +49,12 @@
     "dev/build/src/question.js": "4c324cc693dd17c3458c7bf8f8aac19c64c173aa15985d4a3defa5b9865fd3ca",
     "dev/build/src/registry.js": "6d8b3a665afcec61e7d0ab59b32b6ee23b0fc0bff90bf23b2558823057beb0a8",
     "dev/build/src/research.js": "26813363dcb58d20cef045528fbf55da86827053584a480f9b549d03626987cd",
-    "dev/build/wrapper-exports.js": "ceac587fd5555910a0f65aa1b0bff6ea114e03991a50509ffc75365464e70080"
+    "dev/build/wrapper-exports.js": "a923f50b990938f8dab4cb6f3cf77937c7704855f2f655a656e1a4d98449a67f"
   },
   "outputs": {
-    "client/dist/ds/index.js": "d580bd79fbf5fa04399dc5e6fb2e5cb4c005ee7e9c289a1b417fe6439ecef6aa",
+    "client/dist/ds/index.js": "dc2ccfdbcadde60ac59696fe16085fcaa43ead07222e0c48cd0b89368db91e3d",
     "client/dist/ds/styles.css": "fe684b55d98501419b63469c0d09bbe12c14cbff2210bf154f949c42f9cc3a1a",
-    "client/dist/native.js": "af038013165a3145fc85de0b3c83c7aebf9d1e1eaa1d5232ff993f8e4f5a155a"
+    "client/dist/native.js": "5464c76caecf261945c52da1aea3fbd6f7d3a3eaea3412575f998876c466a6ff"
   },
   "schema": 1,
   "tool": {
