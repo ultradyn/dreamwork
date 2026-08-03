@@ -490,6 +490,31 @@ def test_unreadable_wrapper_companion_directory_refuses(tmp_path, monkeypatch):
     assert client_dist.expected_inputs(str(root)) is None
 
 
+def test_build_names_an_unreadable_wrapper_companion_directory(
+        tmp_path, monkeypatch):
+    import sys
+    sys.path.insert(0, str(ROOT / "dev"))
+    import build_client
+    _configure_toolchain(build_client)
+
+    root = _clone(tmp_path)
+    real_scandir = os.scandir
+    companion_dir = str(root / client_dist.DS_SOURCE_DIR)
+
+    def refuse_companion_dir(path):
+        if os.fspath(path) == companion_dir:
+            raise PermissionError("wrapper companion directory is unreadable")
+        return real_scandir(path)
+
+    monkeypatch.setattr(client_dist.os, "scandir", refuse_companion_dir)
+    with pytest.raises(build_client.BuildError) as exc:
+        build_client.build(str(root))
+    message = str(exc.value)
+    assert message == (
+        "%s could not be read — refusing to guess the design bundle's "
+        "wrapper companion inputs" % client_dist.DS_SOURCE_DIR)
+
+
 def test_a_new_native_source_that_the_manifest_never_saw_is_stale(tmp_path):
     """RED PROOF: the P3-shaped mistake, exactly.
 

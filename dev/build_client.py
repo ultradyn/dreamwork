@@ -225,8 +225,8 @@ def build(root=ROOT):
     companions = client_dist.ds_sources(root)
     if companions is None:
         raise BuildError(
-            "%s holds no wrapper companions — refusing a design bundle with "
-            "an empty contract surface" % client_dist.DS_SOURCE_DIR)
+            "%s could not be read — refusing to guess the design bundle's "
+            "wrapper companion inputs" % client_dist.DS_SOURCE_DIR)
 
     entry_src = generate_entry(root, order)
 
