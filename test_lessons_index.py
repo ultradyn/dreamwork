@@ -282,7 +282,7 @@ def test_act_output_survives_a_truncating_reader():
     # downstream reader (head) closes ITS stdin, exactly the `| head` usage.
     prod = subprocess.Popen(
         [_sys.executable, "dev/lessons_index.py",
-         "--act", "red-proof", "--lessons", str(LESSONS)],
+         "--act", "red-proof", "--all", "--lessons", str(LESSONS)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         cwd=str(HERE),
     )
