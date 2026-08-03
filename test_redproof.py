@@ -321,6 +321,107 @@ class TestAdoptedRegistryMustBeIndependentlyVerifiable:
         assert "ancestor-that-armed-nothing" in err, err
         assert "no verifiable caught proof" in err, err
 
+    def test_direct_caught_proof_covers_an_unchanged_carried_binding_path(
+            self, repo, monkeypatch, capsys):
+        base = _git(repo, "rev-parse", "HEAD")
+        _git(repo, "checkout", "-qb", "carry-forward-with-proof")
+        (repo / "router.js").write_text(
+            "export function route() { return true && guarded; }\n")
+        _git(repo, "add", "router.js")
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
+             "-qm", "carry production change")
+        source_sha = _git(repo, "rev-parse", "HEAD")
+
+        source_lane = "ancestor-with-caught-proof"
+        monkeypatch.setenv(rp._ls.IDENTITY_ENV, source_lane)
+        assert _begin(repo, "router.js") == 0
+        (repo / "router.js").write_text("ADOPTION_SABOTAGE\n")
+        command = [
+            sys.executable, "-c",
+            "import pathlib,sys; seen='ADOPTION_SABOTAGE' in "
+            "pathlib.Path('router.js').read_text(); "
+            "print('adoption-sabotage-seen' if seen else 'control-clean'); "
+            "sys.exit(1 if seen else 0)",
+        ]
+        assert _observe(
+            repo, "router.js", "adoption-sabotage-seen", command) == 0
+        assert _restore(repo, "router.js") == 0
+        source_registry = rp._registry_path(repo)
+
+        docs = repo / ".dreamwork" / "docs"
+        docs.mkdir(parents=True)
+        (docs / "round-note.md").write_text("review-only round\n")
+        _git(repo, "add", ".dreamwork/docs/round-note.md")
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
+             "-qm", "document review round")
+
+        current_lane = "carry-forward-current-round"
+        monkeypatch.setenv(rp._ls.IDENTITY_ENV, current_lane)
+        assert rp.adopt(
+            repo,
+            source_registry=str(source_registry),
+            source_lane=source_lane,
+            source_sha=source_sha,
+            base=base,
+            lane=current_lane,
+        ) == 0
+        out, err = capsys.readouterr()
+        assert "adopt: OK" in out, out + err
+        assert source_lane in out
+        assert source_sha in out
+
+        assert rp.check(repo, require=1, base=base, lane=current_lane) == 0
+        out, err = capsys.readouterr()
+        assert "red-proof reach: OK" in out, out + err
+        assert "router.js" in out
+
+    def test_adoption_cannot_cover_a_binding_path_changed_after_source_sha(
+            self, repo, monkeypatch, capsys):
+        base = _git(repo, "rev-parse", "HEAD")
+        _git(repo, "checkout", "-qb", "carry-forward-with-own-code")
+        (repo / "router.js").write_text(
+            "export function route() { return true && guarded; }\n")
+        _git(repo, "add", "router.js")
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
+             "-qm", "source production change")
+        source_sha = _git(repo, "rev-parse", "HEAD")
+
+        source_lane = "ancestor-proof-before-own-change"
+        monkeypatch.setenv(rp._ls.IDENTITY_ENV, source_lane)
+        assert _begin(repo, "router.js") == 0
+        (repo / "router.js").write_text("OWN_CHANGE_SABOTAGE\n")
+        command = [
+            sys.executable, "-c",
+            "import pathlib,sys; seen='OWN_CHANGE_SABOTAGE' in "
+            "pathlib.Path('router.js').read_text(); "
+            "print('own-change-sabotage-seen' if seen else 'control-clean'); "
+            "sys.exit(1 if seen else 0)",
+        ]
+        assert _observe(
+            repo, "router.js", "own-change-sabotage-seen", command) == 0
+        assert _restore(repo, "router.js") == 0
+        source_registry = rp._registry_path(repo)
+
+        (repo / "router.js").write_text(
+            "export function route() { return true && newly_changed; }\n")
+        _git(repo, "add", "router.js")
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
+             "-qm", "this round changes production again")
+
+        current_lane = "current-round-with-own-code"
+        monkeypatch.setenv(rp._ls.IDENTITY_ENV, current_lane)
+        assert rp.adopt(
+            repo,
+            source_registry=str(source_registry),
+            source_lane=source_lane,
+            source_sha=source_sha,
+            base=base,
+            lane=current_lane,
+        ) == 1
+        _, err = capsys.readouterr()
+        assert "router.js" in err, err
+        assert "paths differ from source sha" in err, err
+
 
 # ── the three zero-states (#136) ───────────────────────────────────────
 
