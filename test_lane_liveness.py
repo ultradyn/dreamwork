@@ -1,6 +1,7 @@
 """Tests for strict lane-lock classification in :mod:`lane_liveness`."""
 
 import io
+import inspect
 import json
 import os
 import subprocess
@@ -12,6 +13,7 @@ import pytest
 
 import lane_liveness
 import lane_runner_identity
+import tick_line
 
 
 def _subject(tmp_path, *, lane="cx-finished"):
@@ -1318,6 +1320,49 @@ class TestLiveLivenessCwdChannel:
         verdict = inspection.live_liveness[0]
         assert verdict.state == lane_liveness.LIVE_WEDGED
         assert "all 2/2 relevant processes classified wedged" in verdict.reason
+
+
+class TestLiveLivenessBoundaryDocumentation:
+    """Bind the classifier's stated observation boundary to its actual seams."""
+
+    def test_classification_path_states_its_known_observation_gaps(self):
+        doc = inspect.getdoc(lane_liveness.inspect_lanes)
+        source = inspect.getsource(lane_liveness.inspect_lanes)
+
+        for claim, implementation_seam in {
+                "lock-confirmed": "lock_live_pids",
+                "named runners": "_is_lane_runner",
+                "cwd": "cwd_processes.setdefault",
+                "PPID ancestry": "_descends_from",
+        }.items():
+            assert claim in doc and implementation_seam in source, (
+                "classification boundary drifted away from its %s seam" % claim)
+
+        for gap in (
+                "changes cwd outside", "setsid()", "reparenting",
+                "nohup server", "two outcomes", "unrelated same-worktree",
+                "PID reuse", "evidence, not proof", "known gaps found so far",
+                "#1173",
+        ):
+            assert gap in doc, "classification path no longer states gap %r" % gap
+        assert "process groups or sessions" in doc
+        assert "complete inventory" in doc
+
+    def test_reason_claim_tracks_the_consumers_that_are_actually_wired(self):
+        reason_paragraph = next(
+            paragraph for paragraph in inspect.getdoc(
+                lane_liveness.LiveLane).split("\n\n")
+            if paragraph.startswith("``reason``"))
+        consumers = {
+            "_classify_lane_pids": ".reason" in inspect.getsource(
+                lane_liveness._classify_lane_pids),
+            "tick line": ".reason" in inspect.getsource(tick_line._fleet_fact),
+        }
+
+        for consumer, wired in consumers.items():
+            assert (consumer in reason_paragraph) is wired, (
+                "reason doc claims %r=%s but its call site says %s" % (
+                    consumer, consumer in reason_paragraph, wired))
 
 
 class TestLiveLivenessDenominator:

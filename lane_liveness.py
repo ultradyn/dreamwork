@@ -224,8 +224,9 @@ class LiveLane:
         unfindable log lands here, NOT in ``wedged``, because the probe has no
         positive evidence to name. See ``reason``.
 
-    ``reason`` names the deciding signal so the tick line can carry it: which
-    marker, how much CPU, how old, or why the probe could not read.
+    ``reason`` names the deciding signal. ``_classify_lane_pids`` consumes it
+    internally when composing no-pid, unknown/not-yet, and wedged process
+    verdicts into a lane-level reason.
 
     The thresholds are HEURISTICS derived from the brief's measured Cases A/C
     (#967: those are few observations, not proof). They are conservative and
@@ -754,6 +755,30 @@ def inspect_lanes(
 
     Lockless idle worktrees, finished dispatched lanes, and governed process
     prompts whose worktree is no longer registered are named separately.
+
+    Classification boundary — known gaps found so far (#1173): the liveness
+    classifier consults lock-confirmed PIDs, named runners whose cwd is inside
+    the worktree, and same-worktree descendants found by following PPID
+    ancestry. It never reads process groups or sessions. Consequently:
+
+    * a child that changes cwd outside the worktree is excluded;
+    * ``setsid()`` alone excludes nothing because PPID ancestry remains, but a
+      double-fork or other reparenting can break that ancestry and exclude a
+      process;
+    * a ``just deploy`` nohup server is ancestry-included only while its recipe
+      parent chain remains, then excluded after the shell exits and it reparents;
+    * vanishing proc data has two outcomes: a selected runner whose CPU stat
+      vanishes becomes UNKNOWN, while an unreadable PPID link can exclude a
+      candidate before selection;
+    * an unrelated same-worktree process is excluded unless it is itself a
+      named runner or a PPID descendant; and
+    * PID reuse between scans can misattribute a process. PGID/SID reuse is
+      irrelevant because neither identifier is consulted.
+
+    WEDGED is therefore evidence, not proof: it means no busy process was
+    found among the consulted set and every consulted process supplied positive
+    wedge evidence. The open design question for a sounder ownership signal is
+    #1173; this is not claimed to be a complete inventory of gaps.
     """
     target = target.resolve()
     if process_entries is None:
