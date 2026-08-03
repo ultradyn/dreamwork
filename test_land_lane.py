@@ -3733,14 +3733,17 @@ def test_batch_refuses_dirty_main_without_rebasing_the_lane(tmp_path: Path):
     assert result.returncode == 1, result.stdout + result.stderr
     assert "REFUSE phase=preflight: tracked worktree state is not clean" in result.stderr
     assert "lane: REFUSED" in result.stdout, result.stdout
+    # The batch's own mutation report must say the ref did not move. Checked
+    # before the independent SHA read so the subprocess's lane-ref-mutated line
+    # is surfaced by pytest when this fails (the discriminating red signal).
+    assert "lane-ref-mutated=False" in result.stderr, (
+        f"refusal reported a mutated lane ref: {result.stderr}"
+    )
     # THE assertion — the lane ref did not move (#136).
     lane_after = _git(root, "rev-parse", "refs/heads/lane")
     assert lane_after == lane_before, (
         f"dirty-main refusal moved the lane ref {lane_before[:12]} -> "
         f"{lane_after[:12]} — a REFUSE must change nothing (#136)"
-    )
-    assert "lane-ref-mutated=False" in result.stderr, (
-        f"refusal reported a mutated lane ref: {result.stderr}"
     )
 
 
