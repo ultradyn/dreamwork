@@ -132,3 +132,36 @@ text shape cannot establish contradiction, scope completeness, or world truth.
   not to reconcile** (2026-08-04, #1071 r4). Its blocking measurement — 165185 against a 165000 budget —
   was taken against a tree 42 commits old and is now meaningless. Carrying a stale number into the
   unblocking brief is how the number outlives the condition that produced it.
+
+## From 2026-08-04's landings (#1189, #1188, #1169, #1071, #1194, #1193, #1180)
+
+- **Verify a liveness/absence probe in the POSITIVE direction before trusting it.**
+  `tr -d '\000'` over `/proc/*/cmdline` deletes the NUL separators, so
+  `sed -n '2p'` can never print argv[1] for a command with no embedded newline —
+  the probe reported a running landing gate as dead and cost two redundant gate
+  launches. Use `tr '\000' '\n'`. More generally: run the probe against a case
+  you KNOW is positive and watch it say so.
+- **A 0-byte log and a missing exit marker are the NORMAL early state of a healthy
+  redirected background job**, not symptoms. Python block-buffers stdout to a
+  file; the exit marker is written after exit. Do not read them as corroboration.
+- **Check a citation's HOLDING, not just whether the words appear.** `#1180` r1
+  stopped because I hung an auditability rule on `#612`, whose sentence I quoted
+  correctly but whose decision ran the opposite way (it TRUNCATED an over-long
+  report). If no task states the requirement, state it as mine with no citation —
+  a lane can weigh an uncited requirement, but must refuse a false attribution.
+- **`land_lane` can exit 1 on a branch that LANDED.** All six gates can pass and
+  master advance, then `phase=retirement` refuses because `reap` found a
+  non-disposable ignored file. The batch summary then prints `REFUSED`, which
+  reads as did-not-land. **Always check master's head against the merge sha
+  before re-gating anything.** Filed as `#1197`.
+- **Carry-forward dispatches must create the branch AT the carried head**, and
+  must name the whole STACK, not just its tip — `#1189` round 1 was a 3-commit
+  stack and a literal one-commit cherry-pick would have dropped the production
+  fix; `#1071` had to re-point an otherwise-empty branch.
+- **`dev/lane_scratch.py job-launch` / `job-wait` is now the supported background
+  recipe** (`#1169`, `da98635a`), with the form in `briefs/boilerplate.md`. Point
+  lanes at it instead of `nohup`; five bare `nohup` launches were measured dying
+  with 0-byte logs while five `setsid` controls survived.
+- **`lessons_index.py --act` is now bounded to six plus an explicit `N more` and
+  an `--all` command** (`#1194`). It was printing 423–5189 lines per act. When an
+  act's top six look wrong for the task at hand, run `--all` rather than assuming.
