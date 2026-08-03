@@ -40,7 +40,7 @@
     "dev/build/ds-src/QaCompose.fixture.json": "32f3defb89a7aa173bc587878f86b57590a4cafc53753b969505cabc46e71531",
     "dev/build/ds-src/QaCompose.prompt.md": "abbf16d73fddc2e512fe802b0c010676959178e1570c137ce2f3fc7180864e34",
     "dev/build/src/delegate.js": "8cbeb4bce8ccaee70c8dc6ae76160eeb8dd9f8f3a92ca51e28712747ee28b293",
-    "dev/build/src/goals.js": "cc34d5058e5527e986092eaf9d43be183683d13e0e640394e8d15932e1e4cc54",
+    "dev/build/src/goals.js": "b1e5b3c12ee7181816885d9389fbbf1471929732ccdcad4d1942bc3ce11ab3c0",
     "dev/build/src/native-entry.js": "42c071b11224dd1be63aa3065ae59c45cc6dafb5bb3f1200b8fa30821b10f9d4",
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
     "dev/build/src/registry.js": "6d8b3a665afcec61e7d0ab59b32b6ee23b0fc0bff90bf23b2558823057beb0a8",
@@ -50,7 +50,7 @@
   "outputs": {
     "client/dist/ds/index.js": "bb9ef57b9f43aaa44cd83915ac91dee86ef791342901232cc6cbed4fa0999d9a",
     "client/dist/ds/styles.css": "78ba73e70b80a8315fab4640d8f555840e48621ab7f98f61b3acaf2aabc36388",
-    "client/dist/native.js": "506af1727336dd0e6dd4d49d028699e2d390b72733e556e5a9c4b9e72a8d7d6d"
+    "client/dist/native.js": "55d47fe055706ee2e63a78c7efde76369e372e69d3c7e974693549cfb82bf85b"
   },
   "schema": 1,
   "tool": {

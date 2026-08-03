@@ -51,6 +51,10 @@ function GoalWrites(props) {
     const node = nodes.find(item => String(item.id) === first);
     return node ? node.details : '';
   });
+  const [detailsBaseline, setDetailsBaseline] = React.useState(function () {
+    const node = nodes.find(item => String(item.id) === first);
+    return { goal: first, details: node ? node.details : '' };
+  });
   const [conditionGoal, setConditionGoal] = React.useState(first);
   const [currentGoal, setCurrentGoal] = React.useState(first);
   const [condition, setCondition] = React.useState('');
@@ -100,6 +104,7 @@ function GoalWrites(props) {
     const node = nodes.find(item => String(item.id) === id);
     if (!node) return;
     setMode('details'); setDetailsGoal(id); setDetails(node.details || '');
+    setDetailsBaseline({ goal: id, details: node.details || '' });
     setErrors({}); setMessage({ kind: 'quiet', text:
       'Editing “' + node.title + '”.' });
   }, [props.editRequest]);
@@ -154,13 +159,13 @@ function GoalWrites(props) {
 
   let form;
   if (mode === 'details' && nodes.length) {
-    const selected = nodes.find(item => String(item.id) === detailsGoal);
-    const original = selected ? selected.details : '';
+    const unchanged = detailsGoal === detailsBaseline.goal &&
+      details === detailsBaseline.details;
     form = React.createElement('form', { className: 'goalwrite', noValidate: true,
       onSubmit: event => {
         event.preventDefault();
         write({ action: 'edit-details', goal_id: Number(detailsGoal), details },
-          function () {});
+          () => setDetailsBaseline({ goal: detailsGoal, details }));
       } }, React.createElement('h3', null, 'Edit goal details'),
     React.createElement('p', { className: 'goalwrite-intro' },
       'Choose a goal, revise its Markdown, then save or abandon the edit.'),
@@ -172,10 +177,11 @@ function GoalWrites(props) {
       onChange: event => setDetails(event.target.value),
     }), null, 'Markdown is supported.'),
     actions(React.createElement('button', { type: 'submit', disabled: busy ||
-      details === original }, 'Save changes'),
+      unchanged }, 'Save changes'),
     React.createElement('button', { type: 'button', className: 'quiet',
-      disabled: busy || details === original, onClick: () => {
-        setDetails(original); setErrors({});
+      disabled: busy || unchanged, onClick: () => {
+        setDetailsGoal(detailsBaseline.goal); setDetails(detailsBaseline.details);
+        setErrors({});
         setMessage({ kind: 'quiet', text: 'Edit abandoned; the tree was unchanged.' });
       } }, 'Cancel edit')));
   } else if (mode === 'condition' && nodes.length) {

@@ -2,9 +2,9 @@
    that the goal tree is the page subject above its controls and editor.
 
    The static pytest deliberately catches only order/grid-row/reverse-flex in
-   four first exact selector blocks. This guard asks Chromium for rectangles,
-   so position, transforms, compound selectors, inline styles, and future CSS
-   mechanisms cannot visually reorder the boxes without changing the result.
+   four first exact selector blocks. This guard asks Chromium for every rendered
+   row-action rectangle, so it is indifferent to the CSS mechanism while staying
+   explicitly bounded to the action boxes it measures.
 
    It also drives Cancel edit through the shipping React page: replace the
    selected goal's details, click Cancel, then assert the saved value and
@@ -25,8 +25,8 @@ mkdirSync(OUT, { recursive: true });
 
 const { ok, present, declare, finish, notes, errs } = makeReporter();
 declare({
-  drives: 'the shared fixture server GET /goals; first-row Edit; replace ' +
-          'details; click Cancel edit; no POST',
+  drives: 'the shared fixture server GET /goals; first-row Edit; change the ' +
+          'goal selector and details; click Cancel edit; no POST',
   traceWindow: 'static getBoundingClientRect reads after goal rows mount, ' +
                'then immediate React state reads after the Cancel click',
 });
@@ -52,43 +52,58 @@ if (!target) {
     page, '.goaltree-section', 'the rendered goal-tree section');
   if (subjectsExist) {
     const measured = await page.evaluate(() => {
-      const rect = selector => {
-        const box = document.querySelector(selector).getBoundingClientRect();
+      const rect = box => {
+        box = box.getBoundingClientRect();
         return { top: Math.round(box.top), bottom: Math.round(box.bottom) };
       };
       const section = document.querySelector('.goaltree-section');
-      const actions = document.querySelector('.goaltree-actions');
+      const rows = [...document.querySelectorAll('.goaltree-row')];
+      const actions = [...document.querySelectorAll('.goaltree-actions')];
       const editor = document.querySelector('.goalwrites');
       return {
         dom: {
-          actionDom: section.contains(actions),
+          actionDom: actions.every(action => section.contains(action)),
           editorDom: !!(section.compareDocumentPosition(editor) &
             Node.DOCUMENT_POSITION_FOLLOWING),
         },
-        tree: rect('.goaltree-section'),
-        actions: rect('.goaltree-actions'),
-        editor: rect('.goalwrites'),
+        rowCount: rows.length,
+        tree: rect(section),
+        actions: actions.map(rect),
+        editor: rect(editor),
       };
     });
-    const rendered = measured.tree.top < measured.actions.top &&
-      measured.actions.bottom <= measured.tree.bottom &&
+    const coverage = measured.rowCount > 0 &&
+      measured.actions.length >= measured.rowCount;
+    const outside = measured.actions.findIndex(action =>
+      !(measured.tree.top < action.top && action.bottom <= measured.tree.bottom));
+    const rendered = coverage && outside === -1 &&
       measured.tree.bottom < measured.editor.top;
     notes.push(`DOM actionDom=${measured.dom.actionDom} ` +
       `editorDom=${measured.dom.editorDom}`);
+    notes.push(`coverage rows=${measured.rowCount} ` +
+      `actionBoxes=${measured.actions.length}`);
     notes.push(`rectangles tree=${measured.tree.top}-${measured.tree.bottom} ` +
-      `actions=${measured.actions.top}-${measured.actions.bottom} ` +
+      `actions=${measured.actions.map(action =>
+        action.top + '-' + action.bottom).join(',')} ` +
       `editor=${measured.editor.top}-${measured.editor.bottom}`);
+    ok(`measured ${measured.actions.length} action boxes for ` +
+       `${measured.rowCount} rendered goal rows`, coverage);
     ok('DOM keeps row actions inside the tree and the editor after it',
       measured.dom.actionDom && measured.dom.editorDom);
-    ok(`rendered order keeps actions inside tree ` +
-       `[${measured.tree.top},${measured.tree.bottom}] / ` +
-       `[${measured.actions.top},${measured.actions.bottom}] and tree above ` +
-       `editor [${measured.editor.top},${measured.editor.bottom}]`, rendered);
+    const containmentMessage = outside === -1
+      ? `rendered containment keeps all ${measured.actions.length} action boxes ` +
+        `inside tree [${measured.tree.top},${measured.tree.bottom}] and tree above ` +
+        `editor [${measured.editor.top},${measured.editor.bottom}]`
+      : `rendered action box #${outside + 1} ` +
+        `[${measured.actions[outside].top},${measured.actions[outside].bottom}] ` +
+        `left tree [${measured.tree.top},${measured.tree.bottom}]`;
+    ok(containmentMessage, rendered);
 
     await page.getByRole('link', { name: 'Edit details for Healthy goal' }).click();
     await page.locator('#goal-details-text').waitFor();
     const originalDetails = await page.locator('#goal-details-text').inputValue();
     const originalGoal = await page.locator('#goal-details-goal').inputValue();
+    await page.locator('#goal-details-goal').selectOption('2');
     await page.locator('#goal-details-text').fill('unsaved replacement from goalorder');
     await page.getByRole('button', { name: 'Cancel edit' }).click();
 
