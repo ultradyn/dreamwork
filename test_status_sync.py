@@ -2715,6 +2715,41 @@ class TestReapFinishedLanes:
         assert "lanes reap" in err.lower(), err
         assert "pruned 1" in err, err
 
+    def test_live_dict_shape_reaps_landed_task(self, tmp_path):
+        # This is the live status.json shape measured for #1175, not the
+        # legacy prose shape described by #969's original docstring.
+        landed = {"lane": "cx-999stale", "task": 999,
+                  "agent": "@cx-reviewer",
+                  "what": "review work that landed long ago"}
+        status = {"lanes": [landed], "dreamers": [], "task": "t"}
+        ledger = _ledger(7, 8)              # 999 is NOT open
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        assert result["lanes"] == [], (
+            "landed task 999 survived lanes reap: %r" % result["lanes"])
+        assert "unparseable 0 of 1" in err, err
+
+    def test_mapping_lane_name_wins_when_task_key_disagrees(self):
+        entry = {"lane": "cx-999stale", "task": 7,
+                 "agent": "@cx-reviewer", "what": "stale dispatch note"}
+        kept, reaped, examined, unparseable = (
+            status_sync.reap_finished_lanes([entry], [7, 8]))
+        assert reaped == [entry], (
+            "lane cx-999 identifies the landed dispatch; task key 7 must not "
+            "keep it: kept=%r" % kept)
+        assert (examined, unparseable) == (1, 0)
+
+    def test_mapping_falls_back_to_task_when_lane_is_unparseable(self):
+        entry = {"lane": "manual note", "task": 7,
+                 "agent": "@cx-reviewer", "what": "open dispatch note"}
+        kept, reaped, examined, unparseable = (
+            status_sync.reap_finished_lanes([entry], [7, 8]))
+        assert kept == [entry]
+        assert reaped == []
+        assert (examined, unparseable) == (1, 0)
+
     def test_open_dispatch_survives_the_open_false_green(self, tmp_path):
         # Direction 2: a lane whose task is STILL OPEN survives the reap even
         # if its agent died hours ago. Liveness and task-openness are
@@ -2760,6 +2795,39 @@ class TestReapFinishedLanes:
         assert result["lanes"] == []
         # The population line names `examined 0` — not silence.
         assert "examined 0" in err, err
+
+    def test_total_parse_failure_is_distinct_from_all_parsed(self, tmp_path):
+        failed_target = tmp_path / "failed"
+        parsed_target = tmp_path / "parsed"
+        failed_target.mkdir()
+        parsed_target.mkdir()
+        unparseable_lanes = [
+            {"lane": "manual note %d" % task, "task": None,
+             "agent": "@cx-reviewer", "what": "unreachable dispatch"}
+            for task in range(1, 7)
+        ]
+        rc, out, failed = _run(
+            {"lanes": unparseable_lanes, "dreamers": [], "task": "t",
+             "queue": {"in_progress": 0, "pending": 6},
+             "current_task_ids": []},
+            _ledger(*range(1, 7)), failed_target, "--check")
+        assert rc == 0, failed
+        assert "unparseable 6 of 6" in failed, failed
+        assert "TOTAL PARSE FAILURE" in failed, failed
+
+        parsed_lanes = [
+            {"lane": "cx-%dactive" % task, "task": task,
+             "agent": "@cx-reviewer", "what": "live dispatch"}
+            for task in range(1, 7)
+        ]
+        rc, out, parsed = _run(
+            {"lanes": parsed_lanes, "dreamers": [], "task": "t",
+             "queue": {"in_progress": 0, "pending": 6},
+             "current_task_ids": []},
+            _ledger(*range(1, 7)), parsed_target, "--check")
+        assert rc == 0, parsed
+        assert "unparseable 0 of 6" in parsed, parsed
+        assert "TOTAL PARSE FAILURE" not in parsed, parsed
 
     def test_mixed_only_finished_reaped(self, tmp_path):
         lanes = ["cx-7active — #7 P2: in flight",

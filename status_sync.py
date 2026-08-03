@@ -56,6 +56,7 @@ before a commit; the default rewrites and prints what changed.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 import json
 import os
 import re
@@ -742,17 +743,25 @@ def _lane_task(lane: str, ids) -> int | str:
 
 
 def _lane_entry_base_id(entry) -> int | None:
-    """The task id a free-form ``lanes`` entry names, from its lane prefix.
+    """The task id a ``lanes`` entry names.
 
-    ``lanes`` entries are author-written dispatch notes whose text begins
-    with the lane name (``cx-968foldsha — #968 P2: …``). A lane name is
-    ``<dispatch>-<id><slug>`` (brief.py builds ``cx-{task}``; a slug may
-    follow), so the leading digits after the first ``-`` are the task.
-    Returns ``None`` for an entry the prefix cannot reach — matching
+    Current entries are mappings carrying ``lane`` and ``task``; historical
+    entries are author-written strings beginning with the lane name. A lane
+    name is ``<dispatch>-<id><slug>`` (brief.py builds ``cx-{task}``; a slug
+    may follow), so the leading digits after the first ``-`` are the task.
+    Prefer that dispatch identity when a mapping's lane and task disagree,
+    falling back to ``task`` when the lane is absent or unparseable.
+
+    Returns ``None`` when neither form yields an id — matching
     ``_base_id``'s contract so *cannot compare* reads as *kept*, never as
-    *landed* (#702/#136): a judgement string the tool cannot tie to a task
+    *landed* (#702/#136): a judgement entry the tool cannot tie to a task
     is preserved, not pruned on a guess.
     """
+    if isinstance(entry, Mapping):
+        m = re.match(r"^[a-z]+-(\d+)", str(entry.get("lane")))
+        if m:
+            return int(m.group(1))
+        return _base_id(entry.get("task"))
     m = re.match(r"^[a-z]+-(\d+)", str(entry))
     return int(m.group(1)) if m else None
 
@@ -1208,10 +1217,14 @@ def main(argv: list[str] | None = None) -> int:
     if isinstance(raw_lanes, list):
         kept_lanes, reaped_lanes, examined, unparseable = reap_finished_lanes(
             raw_lanes, ids)
+        parse_failure = (
+            " — TOTAL PARSE FAILURE: no lane entry could be tied to a task"
+            if examined and unparseable == examined else "")
         print("status_sync: lanes reap examined %d, pruned %d, kept %d, "
-              "unparseable %d — population named because an empty pair is "
-              "both idle and a broken deriver (#868/#969)"
-              % (examined, len(reaped_lanes), len(kept_lanes), unparseable),
+              "unparseable %d of %d%s — population named because an empty "
+              "pair is both idle and a broken deriver (#868/#969)"
+              % (examined, len(reaped_lanes), len(kept_lanes), unparseable,
+                 examined, parse_failure),
               file=sys.stderr)
         if reaped_lanes:
             status["lanes"] = kept_lanes
