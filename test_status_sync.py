@@ -2753,13 +2753,14 @@ class TestReapFinishedLanes:
     @pytest.mark.parametrize("entry", [
         {"lane": None},
         {"lane": 42},
+        {"task": True},
         {"task": "1042"},
         {"lane": None, "task": "1042"},
         {"lane": 42, "task": "1042"},
         {"agent": "@cx-reviewer", "what": "no identity"},
         42,
     ], ids=[
-        "null-lane", "numeric-lane", "string-task",
+        "null-lane", "numeric-lane", "boolean-task", "string-task",
         "null-lane-string-task", "numeric-lane-string-task",
         "mapping-with-neither-key", "non-mapping-non-string",
     ])
