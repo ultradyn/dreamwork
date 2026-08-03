@@ -16,7 +16,7 @@
     "client/favicon.js": "746a512fb2d23b6ac1294f4d5fdbb4bcc5809a93cae1fe6e78dbbe70882ba901",
     "client/router.js": "b00b457407c75fff8da54388a17771a9da2ada70f0e72ec13cf81e8b26a5273f",
     "client/shader.js": "e293165e637d135da651d35fa7834208a07e6dc1142d670d2cd6018a1017a462",
-    "client/style.css": "cd335f737a8b6f2846e35faf184e2e3f6b3a2b793422a6b13ecde4cd5ef582fb",
+    "client/style.css": "78ba73e70b80a8315fab4640d8f555840e48621ab7f98f61b3acaf2aabc36388",
     "client/views.js": "c82d6bc700a37cebefe72808c189d9a335cf8fe75ea4bea4450a3ce37e997730",
     "dev/build/ds-src/ArtifactRow.d.ts": "12ace56abf0721bdd65bbb781e52937fdbd8dbe21897fd5eab3455a3b4da04cb",
     "dev/build/ds-src/ArtifactRow.fixture.json": "a38b3cf2012178882d4c60cf29361cef79e3192e954518830580959648fffd76",
@@ -40,7 +40,7 @@
     "dev/build/ds-src/QaCompose.fixture.json": "32f3defb89a7aa173bc587878f86b57590a4cafc53753b969505cabc46e71531",
     "dev/build/ds-src/QaCompose.prompt.md": "abbf16d73fddc2e512fe802b0c010676959178e1570c137ce2f3fc7180864e34",
     "dev/build/src/delegate.js": "8cbeb4bce8ccaee70c8dc6ae76160eeb8dd9f8f3a92ca51e28712747ee28b293",
-    "dev/build/src/goals.js": "4f493cf97a6567a0dcfa809f4130fe1356ed96d21e4faf8fb8364f0499702d83",
+    "dev/build/src/goals.js": "f17512b6bd23876d8856f27bddaf52ddab738f8c4667b6269951fbbc90871837",
     "dev/build/src/native-entry.js": "42c071b11224dd1be63aa3065ae59c45cc6dafb5bb3f1200b8fa30821b10f9d4",
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
     "dev/build/src/registry.js": "6d8b3a665afcec61e7d0ab59b32b6ee23b0fc0bff90bf23b2558823057beb0a8",
@@ -49,8 +49,8 @@
   },
   "outputs": {
     "client/dist/ds/index.js": "bb9ef57b9f43aaa44cd83915ac91dee86ef791342901232cc6cbed4fa0999d9a",
-    "client/dist/ds/styles.css": "cd335f737a8b6f2846e35faf184e2e3f6b3a2b793422a6b13ecde4cd5ef582fb",
-    "client/dist/native.js": "3c160d9021b6542a5d34ddaf57910e57614b30fa5e20824e99fa5ab1bd620ed3"
+    "client/dist/ds/styles.css": "78ba73e70b80a8315fab4640d8f555840e48621ab7f98f61b3acaf2aabc36388",
+    "client/dist/native.js": "1fa3496da5f70509e736e35b3cc7365a88a365fb1d143b3456dab68778d843b2"
   },
   "schema": 1,
   "tool": {
