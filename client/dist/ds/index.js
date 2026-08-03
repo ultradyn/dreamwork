@@ -5470,7 +5470,7 @@ var DreamworkDesign = (() => {
       notice.dataset.unmatchedQid = qid;
       const absent = miss.target === "textarea" ? "its answer box is no longer available" : "the question is no longer on this page";
       if (preserved) {
-        notice.textContent = "Draft preserved in this browser because " + absent + ". It will return if the question returns.";
+        notice.textContent = "Draft preserved in this browser because " + absent + ". It will return if this title returns.";
       } else if (hasDraft) {
         notice.textContent = "Draft could not be restored or stored because " + absent + ". Copy it now: ";
         const copy = document.createElement("textarea");

@@ -2334,7 +2334,7 @@ function restoreCardState(saved) {
       : 'the question is no longer on this page';
     if (preserved) {
       notice.textContent = 'Draft preserved in this browser because ' + absent +
-        '. It will return if the question returns.';
+        '. It will return if this title returns.';
     } else if (hasDraft) {
       notice.textContent = 'Draft could not be restored or stored because ' +
         absent + '. Copy it now: ';
