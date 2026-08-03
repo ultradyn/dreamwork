@@ -129,6 +129,16 @@ flock {LIVE_INBOX}.lock -c 'cat >> {LIVE_INBOX}' <<'EOF'
         with pytest.raises(AssertionError, match="start marker must precede end marker"):
             _extract_append_command(boilerplate)
 
+    def test_two_designated_regions_fail_distinctly(self):
+        recipe = f"""{RECIPE_START}
+flock {LIVE_INBOX}.lock -c 'cat >> {LIVE_INBOX}' <<'EOF'
+{RECIPE_END}"""
+        with pytest.raises(
+            AssertionError,
+            match="expected exactly one designated inbox append recipe; got starts=2, ends=2",
+        ):
+            _extract_append_command(f"{recipe}\n{recipe}\n")
+
     def test_retargeting_refuses_changed_live_paths(self, tmp_path: Path):
         boilerplate = f"""
 {RECIPE_START}
@@ -486,13 +496,13 @@ def _waiting_flock_identities(locks: str) -> set[tuple[int, int, int]]:
     identities = set()
     for line in locks.splitlines():
         fields = line.split()
-        if len(fields) < 7 or fields[1:5] != ["->", "FLOCK", "ADVISORY", "WRITE"]:
+        if len(fields) < 5 or fields[1:5] != ["->", "FLOCK", "ADVISORY", "WRITE"]:
             continue
         try:
             major, minor, inode = fields[6].rsplit(":", 2)
             identities.add((int(major, 16), int(minor, 16), int(inode)))
-        except (ValueError, IndexError):
-            continue
+        except (ValueError, IndexError) as exc:
+            raise AssertionError(f"malformed candidate FLOCK row: {line}") from exc
     return identities
 
 
@@ -506,6 +516,14 @@ def test_waiting_flock_identity_binds_device_and_inode():
     assert (0x08, 0x01, 456) in identities
     assert (0x09, 0x01, 456) not in identities
     assert (0x00, 0x2A, 789) in identities
+
+
+def test_waiting_flock_identity_rejects_malformed_candidate_row():
+    locks = "15: -> FLOCK ADVISORY WRITE 126 08:01:not-an-inode 0 EOF\n"
+    with pytest.raises(
+        AssertionError, match=r"malformed candidate FLOCK row: .*not-an-inode"
+    ):
+        _waiting_flock_identities(locks)
 
 
 class TestConcurrentAppenderHarness:
@@ -551,6 +569,17 @@ class TestConcurrentAppenderHarness:
         for index in range(10):
             original = _make_entry(index)
             assert original in combined, f"retained entry lost: {original.splitlines()[0]}"
+        mod = _load()
+        archive = next((dw / "inbox-archive").glob("*.md")).read_text()
+        _, archived_entries = mod._split_entries(archive)
+        _, live_entries = mod._split_entries((dw / "inbox.md").read_text())
+        assert [entry.splitlines()[0] for entry in archived_entries] == [
+            _make_entry(index).splitlines()[0] for index in range(7)
+        ], "archived entries reordered"
+        assert [entry.splitlines()[0] for entry in live_entries] == [
+            *(_make_entry(index).splitlines()[0] for index in range(7, 10)),
+            appended.splitlines()[0],
+        ], "live entries reordered"
         assert appender_blocked, "locking shell cat did not block while rotation held the lock"
         print(
             f"raced-entry={appended.splitlines()[0]!r} "
