@@ -1,0 +1,61 @@
+{
+  "unreadable": {
+    "data": {
+      "answers_health": "unreadable",
+      "answers_open": [],
+      "answers_answered": []
+    }
+  },
+  "empty": {
+    "data": {
+      "answers_health": "ok",
+      "answers_open": [],
+      "answers_answered": []
+    }
+  },
+  "open": {
+    "data": {
+      "answers_health": "ok",
+      "answers_open": [
+        {
+          "title": "Why does the probe skip on a cold cache?",
+          "body": "The probe gates on a warm session cache, so a cold start reports stale until the first tick refreshes it.",
+          "aid": "open:7a3f9e2b1c4d8a6052ef"
+        }
+      ],
+      "answers_answered": []
+    }
+  },
+  "answered": {
+    "data": {
+      "answers_health": "ok",
+      "answers_open": [],
+      "answers_answered": [
+        {
+          "title": "Can the answers route coexist with the native flip?",
+          "body": "Yes. The delegate calls buildAnswers until #1050 retargets or retires the export.",
+          "aid": "ans:c92b0e4f7a618d3550be"
+        }
+      ]
+    }
+  },
+  "askform": {
+    "data": {
+      "answers_health": "ok",
+      "answers_open": [
+        {
+          "title": "What does the ask-form do while a POST is pending?",
+          "body": "Further submits are a no-op so a second request never races the first (#292).",
+          "aid": "open:1d8a5c603b9e2f4770ac"
+        }
+      ],
+      "answers_answered": [
+        {
+          "title": "Is an ask draft kept across surface destruction?",
+          "body": "DraftStore keeps it until a durable success clears it, so an interrupted ask is not lost (#459).",
+          "aid": "ans:4e7f0b2c9d185a6303be"
+        }
+      ]
+    }
+  }
+}

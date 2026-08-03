@@ -1926,6 +1926,7 @@ var DreamworkDesign = (() => {
   // entry.mjs
   var entry_exports = {};
   __export(entry_exports, {
+    Answers: () => Answers,
     ArtifactRow: () => ArtifactRow,
     Expand: () => Expand,
     FollowThread: () => FollowThread,
@@ -8712,6 +8713,12 @@ var DreamworkDesign = (() => {
   });
   Reviews.displayName = "Reviews";
   Reviews.dwBuilder = "buildReviews";
+  var Answers = ({ data: data2 }) => import_react.default.createElement(HOST, {
+    "data-dw-delegate": "buildAnswers",
+    dangerouslySetInnerHTML: { __html: buildAnswers(data2) }
+  });
+  Answers.displayName = "Answers";
+  Answers.dwBuilder = "buildAnswers";
   return __toCommonJS(entry_exports);
 })();
 /*! Bundled license information:

@@ -429,6 +429,55 @@ def test_reviews_fixture_covers_loading_empty_and_distinct_multi_row_states():
         "Reviews multi fixture rows need distinct question links")
 
 
+def test_answers_fixture_covers_unreadable_empty_open_answered_and_askform():
+    fixture = json.loads((ROOT / client_dist.DS_SOURCE_DIR /
+                          "Answers.fixture.json").read_text(encoding="utf-8"))
+    assert set(fixture) == {"unreadable", "empty", "open", "answered",
+                            "askform"}
+    # unreadable exercises the d.answers_health === 'unreadable' banner branch
+    # (views.js:1214) — the only conditional that emits the channel-broken bar.
+    assert fixture["unreadable"]["data"]["answers_health"] == "unreadable"
+    # empty exercises both fallbacks: "none awaiting the dreamer" and "none
+    # yet" render only when an answers_* list maps to an empty join (1219-1222).
+    assert fixture["empty"]["data"]["answers_open"] == []
+    assert fixture["empty"]["data"]["answers_answered"] == []
+    # open exercises the answerRecord open path with a real question + aid:
+    # a non-empty title/body is what qaCard's own guard calls a "real
+    # question", and the aid drives the data-aqid branch (views.js:1207-1211).
+    open_recs = fixture["open"]["data"]["answers_open"]
+    assert open_recs, "Answers open fixture has no open record"
+    assert open_recs[0]["title"] and open_recs[0]["body"], (
+        "Answers open fixture props do not exercise a real question")
+    assert open_recs[0].get("aid"), (
+        "Answers open fixture does not exercise the data-aqid path")
+    assert fixture["open"]["data"]["answers_answered"] == []
+    # answered exercises the answerRecord answered path with a real answer +
+    # aid, driving the data-aid/data-keep branch (views.js:1194-1198).
+    ans_recs = fixture["answered"]["data"]["answers_answered"]
+    assert ans_recs, "Answers answered fixture has no answered record"
+    assert ans_recs[0]["title"] and ans_recs[0]["body"], (
+        "Answers answered fixture props do not exercise a real answer")
+    assert ans_recs[0].get("aid"), (
+        "Answers answered fixture does not exercise the data-aid path")
+    assert fixture["answered"]["data"]["answers_open"] == []
+    # askform is the non-empty ask-form surface: a populated healthy state
+    # where the always-rendered form sits alongside real open and answered
+    # records, not the unreadable banner branch.
+    af = fixture["askform"]["data"]
+    assert af.get("answers_health") != "unreadable", (
+        "Answers askform fixture must not be the unreadable branch")
+    assert af["answers_open"] and af["answers_answered"], (
+        "Answers askform fixture must populate a non-empty surface alongside "
+        "the form")
+    # Distinct titles across every record so no case can reuse another's words
+    # and pass the shape checks hollow (a false-zero fixture, #136).
+    titles = [open_recs[0]["title"], ans_recs[0]["title"]]
+    titles += [r["title"] for r in af["answers_open"]]
+    titles += [r["title"] for r in af["answers_answered"]]
+    assert len(set(titles)) == len(titles), (
+        "Answers fixture reuses question titles across cases (hollow)")
+
+
 def test_reviews_wrapper_dom_strictly_equals_live_builder_for_every_state():
     """Both sides pass through one real DOM parser/serializer before equality.
 
