@@ -171,7 +171,7 @@ const br = await chromium.launch({
    scrollbar. Both halves matter: a zero-width reading on a page with no
    vertical overflow means the instrument could not run, not that it passed. */
 {
-  const pctx = await br.newContext({ viewport: { width: 1280, height: 900 } });
+  const pctx = await br.newContext({ viewport: { width: 1280, height: 800 } });
   const ppage = await pctx.newPage();
   await ppage.goto(`${BASE}/`, { waitUntil: 'networkidle' });
   const sb = await ppage.evaluate(() => ({
