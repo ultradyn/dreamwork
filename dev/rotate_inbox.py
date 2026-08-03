@@ -19,9 +19,11 @@ lost. The old precondition "fleet empty" is unreachable under pace=hot, so the
 rotation silently never ran. This tool now (a) REFUSES with a distinct state
 when a live lane is detected (option 2 — the only lane-deliverable choice; a
 true lock is coordinator-side, see igc-method.md), reusing ``lane_liveness``
-rather than a fresh ``ps`` grep, and (b) RECONCILES on every successful
-rotation: entries-moved + entries-retained == entries-observed, and the live
-file's first entry matches the one the pointer comment claims (#868/#702).
+rather than a fresh ``ps`` grep, and (b) ACCOUNTS FOR THE OBSERVED SNAPSHOT on
+every successful rotation: entries-moved + entries-retained ==
+entries-observed, and the live file's first entry matches the one the pointer
+comment claims. Entries appended after observation are outside that evidence;
+#1170 owns the shared append/rotate synchronization needed to cover them.
 
 Usage:
     python3 dev/rotate_inbox.py status  --target <dreamwork-dir-or-repo>
@@ -38,6 +40,7 @@ import os
 import re
 import sys
 import tempfile
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -47,16 +50,34 @@ ARCHIVE_DIR = "inbox-archive"
 
 
 class ReconciliationError(RuntimeError):
-    """A rotation could not account for every entry (#868, #702).
+    """A rotation could not account for every entry present at observation.
 
     Raised after the live file and archive have been written when
     moved + retained != observed, or when the live file's first entry does not
     match the heading the pointer comment claims. A rotation that cannot state
-    the balance has not been shown to be lossless.
+    the balance has not accounted for the observed snapshot. Appends after
+    observation are outside this check; #1170 owns that gap.
     """
 
 
-def _count_live_lanes(coordinator_root: Path) -> tuple[int, int]:
+@dataclass(frozen=True)
+class LaneProbeResult:
+    """A completed fleet observation or a named failure to observe it."""
+
+    live_lanes: int | None
+    examined: int
+    error: str | None = None
+
+    @property
+    def complete(self) -> bool:
+        return self.error is None and self.live_lanes is not None
+
+
+def _probe_failed(what: str, exc: BaseException) -> LaneProbeResult:
+    return LaneProbeResult(None, 0, f"could not read {what}: {type(exc).__name__}: {exc}")
+
+
+def _count_live_lanes(coordinator_root: Path) -> LaneProbeResult:
     """Count live lane runners via ``lane_liveness`` (cwd channel, #868/#1158).
 
     Reuses ``lane_liveness._is_lane_runner`` + ``_ancestor_pids`` +
@@ -67,27 +88,33 @@ def _count_live_lanes(coordinator_root: Path) -> tuple[int, int]:
     cwd is inside a canonical worktree root; a lane's many descendants dedupe to
     one (by worktree directory). Self and ancestors are excluded (#729).
 
-    Returns ``(live_count, examined)`` so "probed nothing" cannot read as "found
-    none" (#868 — state both denominators). Raises nothing on an unscannable
-    /proc: returns ``(0, 0)`` and lets the caller treat an unknown as "do not
-    refuse" (refusing on a blind probe would block every rotation).
+    The result type distinguishes an observed-empty fleet from an incomplete
+    probe. A global import, root-resolution, ancestry, or ``/proc`` enumeration
+    failure names the unreadable source so the caller can fail closed. Per-pid
+    disappearance remains ordinary process-table churn and is skipped.
     """
+    repo_root = str(Path(__file__).resolve().parent.parent)
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
     try:
         import lane_liveness  # noqa: E402  (repo root, lazy like dispatch_lane)
         from worktree_paths import worktree_roots  # noqa: E402
-    except Exception:
-        return 0, 0
-    roots = tuple(str(r) for r in worktree_roots(coordinator_root.resolve()))
+    except Exception as exc:
+        return _probe_failed("lane-liveness dependencies", exc)
+    try:
+        roots = tuple(str(r) for r in worktree_roots(coordinator_root.resolve()))
+    except Exception as exc:
+        return _probe_failed("canonical worktree roots", exc)
     try:
         skip = lane_liveness._ancestor_pids()
-    except Exception:
-        skip = set()
+    except Exception as exc:
+        return _probe_failed("process ancestry", exc)
     examined = 0
     occupied: set[str] = set()
     try:
         entries = os.listdir("/proc")
-    except OSError:
-        return 0, 0
+    except OSError as exc:
+        return _probe_failed("/proc directory", exc)
     for entry in entries:
         if not entry.isdigit():
             continue
@@ -110,7 +137,25 @@ def _count_live_lanes(coordinator_root: Path) -> tuple[int, int]:
             tail = cwd[len(matched_root):].lstrip(os.sep)
             lane_dir = tail.split(os.sep, 1)[0] if tail else "."
             occupied.add(matched_root + os.sep + lane_dir)
-    return len(occupied), examined
+    return LaneProbeResult(len(occupied), examined)
+
+
+def _test_observation_hook() -> None:
+    """Synchronize the committed real-CLI race harness, when explicitly armed.
+
+    The test passes inherited pipe descriptors. Production calls do nothing.
+    This hook creates no new observation or retry; it only makes the known
+    observation-to-rename window deterministic for #1170's acceptance harness.
+    """
+    ready = os.environ.get("ROTATE_INBOX_TEST_OBSERVED_FD")
+    proceed = os.environ.get("ROTATE_INBOX_TEST_PROCEED_FD")
+    if ready is None and proceed is None:
+        return
+    if ready is None or proceed is None:
+        raise RuntimeError("both rotate-inbox test hook descriptors are required")
+    os.write(int(ready), b"1")
+    if os.read(int(proceed), 1) != b"1":
+        raise RuntimeError("rotate-inbox test hook closed before proceed signal")
 
 
 def _inbox_path(target: Path) -> Path:
@@ -162,11 +207,12 @@ def _first_heading(text: str) -> str:
 
 
 def _reconcile_balanced(observed: int, moved: int, retained: int) -> bool:
-    """Whether moved + retained == observed — the lossless invariant (#868).
+    """Whether moved + retained accounts for the observed snapshot.
 
     Pure so it can be tested directly: a rotation that lost an entry has
     moved + retained < observed, and this returns False. The single source of
-    the balance verdict so a sabotage here reddens every reconciliation test.
+    the balance verdict so a sabotage here reddens every snapshot-accounting
+    test. Appends after observation are outside the inputs; #1170 owns them.
     """
     return moved + retained == observed
 
@@ -178,9 +224,9 @@ def _archive_path(dw: Path) -> Path:
 def _pointer_line(archive_rel: str, n_moved: int, first_retained_heading: str) -> str:
     """The live file's pointer. Names the archive AND the entry it resumes at.
 
-    The reconciliation (#1158) verifies the live file's first ``## `` heading
+    The snapshot accounting verifies the live file's first ``## `` heading
     equals ``first_retained_heading``: a rotation that points at the wrong entry
-    has not been shown to be lossless even if the counts balance (#868).
+    did not account for the observed snapshot even if the counts balance.
     """
     return (
         f"<!-- inbox-archive: {archive_rel} — {n_moved} older entries rotated; "
@@ -189,7 +235,7 @@ def _pointer_line(archive_rel: str, n_moved: int, first_retained_heading: str) -
     )
 
 
-def rotate(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_count=None) -> dict:
+def rotate(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_probe=None) -> dict:
     """Rotate older entries from inbox.md to a dated archive.
 
     Returns a dict whose ``action`` is one of three distinct states (#136):
@@ -199,19 +245,21 @@ def rotate(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_count=None) -> dict:
     - ``'refused'`` — a live lane was detected; rotation skipped to avoid
       orphaning an in-flight appender's fd (#1158).
 
-    ``live_lane_count`` is an optional zero-arg callable returning the number of
-    live lanes. When it is provided and returns > 0, the rotation is REFUSED
+    ``live_lane_probe`` is an optional zero-arg callable returning a
+    :class:`LaneProbeResult`. When it reports live lanes, the rotation is REFUSED
     rather than performed: ``cat >>`` (the documented append recipe) takes no
     lock, so a concurrent ``os.replace`` would orphan the appender's inode and
     lose its report. The CLI wires the real detector
-    (:func:`_count_live_lanes`, which reuses ``lane_liveness``); tests inject a
-    stub. A lane-deliverable lock would require changing the append recipe in
+    (:func:`_count_live_lanes`, which reuses ``lane_liveness``); tests inject
+    explicit complete or failed results. An incomplete probe also refuses and
+    names what could not be read. A lane-deliverable lock would require changing the append recipe in
     every brief, which is a coordinator-side act (see igc-method.md) — so the
     honest lane deliverable is "refuse loudly", not "rotate safely while live".
 
-    Never deletes data: every moved byte goes to the archive. The live file is
-    written atomically (temp + fsync + os.replace). On a successful rotation a
-    RECONCILIATION is computed and returned (#868/#702): ``entries_moved`` +
+    Every line present at observation time is accounted for in archive + live.
+    Lines appended after observation are not covered; #1170 owns that gap. The
+    live file is written atomically (temp + fsync + os.replace). On a successful
+    rotation snapshot accounting is returned: ``entries_moved`` +
     ``entries_kept`` must equal ``entries_total`` (the count observed before
     rotating), and the live file's first entry must match the heading the
     pointer comment claims; a mismatch raises :class:`ReconciliationError`.
@@ -236,11 +284,25 @@ def rotate(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_count=None) -> dict:
     # There IS work, but a concurrent appender (cat >>, no lock) would have its
     # fd orphaned by os.replace. Distinct from noop (#136): noop means "nothing
     # to do"; refused means "there was work but a live lane made it unsafe".
-    if live_lane_count is not None:
+    if live_lane_probe is not None:
         try:
-            n_live = live_lane_count()
-        except Exception:
-            n_live = 0
+            probe = live_lane_probe()
+        except Exception as exc:
+            probe = _probe_failed("live-lane probe callback", exc)
+        if not isinstance(probe, LaneProbeResult):
+            probe = LaneProbeResult(
+                None,
+                0,
+                "could not read live-lane probe result: expected "
+                f"LaneProbeResult, got {type(probe).__name__}",
+            )
+        if not probe.complete:
+            return {
+                "action": "refused",
+                "reason": f"live-lane probe incomplete: {probe.error}; rotation not performed",
+                "probe_error": probe.error,
+            }
+        n_live = probe.live_lanes
         if n_live:
             return {
                 "action": "refused",
@@ -292,6 +354,7 @@ def rotate(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_count=None) -> dict:
             f.write(live_text)
             f.flush()
             os.fsync(f.fileno())
+        _test_observation_hook()
         os.replace(tmp, str(inbox))
     except Exception:
         try:
@@ -300,7 +363,8 @@ def rotate(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_count=None) -> dict:
             pass
         raise
 
-    # --- Reconciliation: prove the rotation was lossless (#868/#702). --------
+    # Account for the snapshot observed before the rename. This cannot detect
+    # appends after observation; #1170 owns shared writer synchronization.
     moved = _count_headings(archive) - archive_before
     retained = _count_headings(inbox)
     live_first = _first_heading(inbox.read_text(encoding="utf-8", errors="replace"))
@@ -381,13 +445,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.verb == "rotate":
         # Wire the live-lane detector at the CLI boundary (#1158). Programmatic
-        # callers / tests inject ``live_lane_count`` directly; the guard is a
+        # callers / tests inject ``live_lane_probe`` directly; the guard is a
         # property of how the coordinator invokes the tool.
         coordinator_root = dw.parent
-        result = rotate(
-            dw, keep=args.keep,
-            live_lane_count=lambda: _count_live_lanes(coordinator_root)[0],
-        )
+        try:
+            result = rotate(
+                dw,
+                keep=args.keep,
+                live_lane_probe=lambda: _count_live_lanes(coordinator_root),
+            )
+        except ReconciliationError as exc:
+            print(f"error: reconciliation failed: {exc}", file=sys.stderr)
+            return 2
         action = result.get("action")
         if action == "noop":
             print(f"noop: {result.get('reason', 'nothing to do')}")
@@ -402,9 +471,10 @@ def main(argv: list[str] | None = None) -> int:
             f"rotated: {result['entries_moved']} entries -> "
             f"{result['archive_path']}; live file {result['entries_kept']} entries, "
             f"{result['bytes_before']} -> {result['bytes_after']} bytes; "
-            f"reconciled moved={result['reconcile_moved']} + retained="
+            f"observed-snapshot accounted: moved={result['reconcile_moved']} + retained="
             f"{result['reconcile_retained']} = observed="
-            f"{result['reconcile_observed']} (#868)"
+            f"{result['reconcile_observed']}; lines appended after observation "
+            f"are not covered (#1170)"
         )
         return 0
 
