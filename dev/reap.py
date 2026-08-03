@@ -4,8 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
+import os
+import stat
 import subprocess
 import sys
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -116,20 +120,59 @@ EXPECTED_UNTRACKED = frozenset({"BRIEF.md"})
 # a hand-written note hidden inside that directory is still evidence.
 DISPOSABLE_IGNORED_DIRS = frozenset({".pytest_cache", ".ruff_cache", "node_modules"})
 
+# The ledger's existence is not its lifecycle marker: the one-way cutover is a
+# watermark inside a valid SQLite store (ledger_parse.source_of_truth).  Thus a
+# locked, zero-byte file at this exact path cannot carry ledger state.  No
+# other empty path inherits that conclusion; sentinel files can encode state
+# entirely through their existence.
+EMPTY_LEDGER_PATH = ".dreamwork/ledger.sqlite3"
 
-def _is_disposable_ignored(path: str) -> bool:
+
+def _is_disposable_ignored(target: Path, path: str, ownership: ExitStack) -> bool:
     parts = PurePosixPath(path).parts
-    return (
+    if (
         path.endswith((".pyc", ".lock"))
         or any(part in DISPOSABLE_IGNORED_DIRS for part in parts)
-    )
+    ):
+        return True
+    if path != EMPTY_LEDGER_PATH:
+        return False
+
+    # Hold a POSIX write lock from the size check through worktree removal.
+    # SQLite writers honour this lock, so content cannot become durable between
+    # classification and removal.  O_NOFOLLOW keeps a symlink from borrowing
+    # the exception; the inode comparison catches replacement before the lock
+    # is admitted.  A raw writer that ignores advisory locks remains outside
+    # what this ownership proof can prevent.
+    candidate = target / path
+    fd = -1
+    try:
+        fd = os.open(
+            candidate,
+            os.O_RDWR | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+        )
+        fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        held = os.fstat(fd)
+        current = os.stat(candidate, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(held.st_mode)
+            or held.st_size != 0
+            or (held.st_dev, held.st_ino) != (current.st_dev, current.st_ino)
+        ):
+            os.close(fd)
+            return False
+        ownership.callback(os.close, fd)
+        return True
+    except OSError:
+        if fd >= 0:
+            os.close(fd)
+        return False
 
 
-def _ignored_detail(rows: list[StatusPath]) -> str:
+def _ignored_detail(rows: list[StatusPath], notable: list[StatusPath]) -> str:
     total = len(rows)
     if total == 0:
         return "ignored: examined 0 files; NOT an all-clear"
-    notable = [row.path for row in rows if not _is_disposable_ignored(row.path)]
     disposable = total - len(notable)
     noun = "file" if total == 1 else "files"
     detail = (
@@ -137,7 +180,7 @@ def _ignored_detail(rows: list[StatusPath]) -> str:
         f"{len(notable)} NOT disposable"
     )
     if notable:
-        detail += ": " + ", ".join(notable)
+        detail += ": " + ", ".join(row.path for row in notable)
     return detail
 
 
@@ -212,8 +255,8 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
     ignored = [row for row in rows if row.kind == "ignored"]
     # The untracked paths beyond the per-lane scratch set are the signal: they
     # may be a deliverable the lane forgot to commit (#760). Naming them does
-    # does not change the gate — the gate stays tracked-only — it only turns
-    # a collapsed number into something a coordinator can act on (#702).
+    # not change the gate; it only turns a collapsed number into something a
+    # coordinator can act on (#702).
     unexpected = [
         row for row in untracked if row.path not in EXPECTED_UNTRACKED
     ]
@@ -228,15 +271,20 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
             ignored=len(ignored),
         )
 
+    ownership = ExitStack()
+    non_disposable_ignored = [
+        row for row in ignored
+        if not _is_disposable_ignored(target, row.path, ownership)
+    ]
     summary = _summary(
         target,
         len(tracked),
         len(untracked),
         len(ignored),
         len(commits),
-        _ignored_detail(ignored),
+        _ignored_detail(ignored, non_disposable_ignored),
     )
-    unsafe = bool(tracked or commits)
+    unsafe = bool(tracked or commits or non_disposable_ignored)
     stream = sys.stderr if unsafe and not force else sys.stdout
     print(summary, file=stream)
     # Name unexpected untracked paths on every classified run, not only the
@@ -247,6 +295,8 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
     if unsafe and not force:
         for row in tracked:
             print(f"REFUSE: tracked path would be lost: {row.path}", file=sys.stderr)
+        for row in non_disposable_ignored:
+            print(f"REFUSE: ignored path would be lost: {row.path}", file=sys.stderr)
         for sha, subject in commits:
             print(
                 f"REFUSE: unmerged commit would become easier to delete unseen: "
@@ -255,6 +305,7 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
             )
         print("Inspect the lane, then rerun with --force only if discarding is intended.",
               file=sys.stderr)
+        ownership.close()
         return 1
 
     if force:
@@ -266,6 +317,7 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
 
     if check_only:
         print("reap gate OK (check only)")
+        ownership.close()
         return 0
 
     # git's --force and the tool's --force are two different flags (#762).
@@ -284,6 +336,7 @@ def reap(target_arg: str, *, base: str = "master", force: bool = False,
     # means ONLY "override my gate", which is what its help text already claimed.
     args = ["worktree", "remove", "--force", str(target)]
     removed = _git(main, *args)
+    ownership.close()
     if removed.returncode:
         detail = removed.stderr.decode("utf-8", errors="replace").strip()
         print(f"REFUSE: git worktree remove failed: {detail}", file=sys.stderr)
