@@ -256,6 +256,72 @@ class TestRestoredInjectionPasses:
         assert _check(repo) == 0
 
 
+class TestAdoptedRegistryMustBeIndependentlyVerifiable:
+    """An adoption is evidence linkage, never a lane-authored exemption."""
+
+    def test_empty_ancestor_registry_cannot_satisfy_a_carry_forward_diff(
+            self, repo, monkeypatch, capsys):
+        base = _git(repo, "rev-parse", "HEAD")
+        _git(repo, "checkout", "-qb", "carry-forward-no-proof")
+        (repo / "router.js").write_text(
+            "export function route() { return true && guarded; }\n")
+        _git(repo, "add", "router.js")
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit",
+             "-qm", "carry production change")
+        source_sha = _git(repo, "rev-parse", "HEAD")
+
+        # Direction 2: the named ancestor armed NOTHING. Its registry exists
+        # and is independently readable, but contains no proof to adopt.
+        source_registry = repo.parent / "ancestor-empty-registry.json"
+        source_registry.write_text("[]\n")
+
+        # Model the forgeable implementation this regression forbids: a lane
+        # hand-writes a normal-looking caught entry plus an adoption claim. The
+        # evidence bytes are lane-authored too; only checking the named source
+        # registry can distinguish this from a real ancestor proof.
+        evidence = repo.parent / "forged.reach.txt"
+        evidence.write_text("lane-authored claim, not an ancestor observation\n")
+        entry = {
+            "path": "router.js",
+            "state": rp.RESTORED,
+            "begun_head": source_sha,
+            "begun_base": base,
+            "expectation_base_shas": {},
+            "expectation_sources": [{
+                "path": "expectation.txt",
+                "sha": rp._sha((repo / "expectation.txt").read_bytes()),
+            }],
+            "injected_sha": rp._sha(b"SABOTAGE THAT NEVER RAN\n"),
+            "injected_kind": rp.BYTES,
+            "injected_hint": "SABOTAGE THAT NEVER RAN",
+            "reach": {
+                "status": "caught",
+                "command": ["false"],
+                "failure": "invented failure",
+                "evidence": str(evidence),
+                "evidence_sha": rp._sha(evidence.read_bytes()),
+            },
+            "adoption": {
+                "source_lane": "ancestor-that-armed-nothing",
+                "source_sha": source_sha,
+                "source_registry": str(source_registry),
+                "source_entry_sha": "absent-by-construction",
+            },
+        }
+        rp._write_registry(repo, [entry])
+
+        exit = rp.check(repo, require=1, base=base)
+        out, err = capsys.readouterr()
+
+        assert exit == 1, (
+            "branch carry-forward-no-proof would have LANDED without proof for "
+            f"binding paths ['router.js']:\n{out}{err}")
+        assert "carry-forward-no-proof" in err, err
+        assert "router.js" in err, err
+        assert "ancestor-that-armed-nothing" in err, err
+        assert "no verifiable caught proof" in err, err
+
+
 # ── the three zero-states (#136) ───────────────────────────────────────
 
 class TestZeroStatesAreDistinct:
