@@ -374,7 +374,7 @@ class TestIncompleteProbe:
 
 
 def _run_cli_at_observation(
-    target: Path, appended_entry: str | None
+    target: Path, appended_entry: str | None, boilerplate: str | None = None
 ) -> tuple[subprocess.CompletedProcess[str], int | None, bool | None]:
     """Run the real CLI, optionally racing the documented ``flock`` + ``cat``."""
     observed_r, observed_w = os.pipe()
@@ -406,7 +406,7 @@ def _run_cli_at_observation(
         if appended_entry is not None:
             inbox = target / ".dreamwork" / "inbox.md"
             appender = subprocess.Popen(
-                ["sh", "-c", _fixture_append_command(target)],
+                ["sh", "-c", _fixture_append_command(target, boilerplate)],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -513,6 +513,35 @@ class TestConcurrentAppenderHarness:
             f"raced-entry={appended.splitlines()[0]!r} "
             f"blocked={appender_blocked} survived={appended in combined}"
         )
+
+    @pytest.mark.parametrize(
+        ("mutation", "boilerplate"),
+        [
+            (
+                "delimiter-change",
+                BOILERPLATE.read_text().replace("<<'EOF'", '<<"ROUND3_END"', 1),
+            ),
+            (
+                "indent-only",
+                BOILERPLATE.read_text().replace("    flock ", "        flock ", 1),
+            ),
+        ],
+    )
+    def test_harmless_recipe_reformatting_preserves_race(
+        self, tmp_path: Path, mutation: str, boilerplate: str
+    ):
+        target, dw = self._fixture(tmp_path)
+        appended = f"## {mutation} #1170 entry\n\nSurvives rotation.\n"
+        cli, appender_status, appender_blocked = _run_cli_at_observation(
+            target, appended, boilerplate
+        )
+        assert appender_status == 0
+        assert cli.returncode == 0, cli.stderr
+        combined = (dw / "inbox.md").read_text() + next(
+            (dw / "inbox-archive").glob("*.md")
+        ).read_text()
+        assert appended in combined, f"raced entry lost after {mutation}"
+        assert appender_blocked, f"{mutation} recipe did not wait on the inbox sidecar"
 
 
 class TestCliContract:
