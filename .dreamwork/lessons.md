@@ -6023,3 +6023,47 @@ absent and require the opposite answer. Here that is the same appender against n
 must show `survived=True`. Without it, an experiment whose conclusion is "the write is lost" cannot
 distinguish itself from an experiment that never wrote. Related: `#1169` (a printed PID is not
 evidence the job ran) is the same lesson about process launch rather than process output.
+
+## I fixed the citation instances I was composing and carried the broken one forward
+
+Forty minutes after committing *"I have been citing a task id for a rule that lives in the lessons
+file"* — occasioned by `#1158` catching me attributing the both-denominators rule to task `#868` —
+a `#1166` lane STOPPED on the same defect in a brief I wrote **after** that commit.
+
+The brief said *"You delete a conflict file you find. REPORT ONLY (`#702`)."* The lane opened the
+entry, as briefs instruct:
+
+    #702  title: status.json records a dispatch in two places and only one is machine-readable,
+                 so the fleet can read as empty while lanes run
+
+Nothing about conflict copies. The lane refused to implement on borrowed authority and reported it,
+which is exactly right, and cost a round.
+
+**The interesting part is why the fix did not take.** When I wrote the `#1006` and `#1049` and
+`#1042` briefs I was composing citations fresh, and every one came out in the corrected
+`lessons.md:NNNN (occasioned by #NNN)` form. The `#1166` brief I *adapted* from its own round-2
+predecessor — and the false `#702` rode along untouched, because I was editing the parts that had
+changed and the citation had not changed.
+
+So the repair was applied at the site of composition and not at the site of **copying**, which is
+where most brief text actually comes from. That is the same shape as the `#1049` Lane-owns mistake
+earlier the same session: I fixed the instance I was looking at, not the class. Twice in one session
+is a pattern, and the pattern is that *"I have learned this"* means *"I do it right when I am
+thinking about it"*.
+
+Two things that would actually work, neither of which is resolve-harder:
+
+- **Audit citations at the point of dispatch, not composition.** Every `#NNN` in a brief about to go
+  out gets resolved against the ledger. It is a grep and a `ledger.py get`; it is cheaper than the
+  round it costs.
+- **A rule with no citable authority should be stated on its own merits.** The report-only rule was
+  *sound* — its real grounding is `#1162`'s own body: *"had the remote copy been NEWER rather than
+  older, the outcome could have been the live ledger being replaced by a stale one, which is silent
+  and total."* I reached for a citation to lend weight to a rule that already had its own, and
+  attached the wrong one. An unsourced true statement is honest; a sourced one whose source says
+  something else is worse than either.
+
+The lane's behaviour is the part to keep: it read the entry, found the citation refuted, stopped,
+and said so plainly. The instruction that produced that — *"if a citation does not say what the
+brief claims it says, that is a refuted premise; stop and report it"* — earns its place, because it
+caught the coordinator twice in an hour when nothing else did.
