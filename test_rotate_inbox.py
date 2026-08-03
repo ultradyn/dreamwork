@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -22,6 +24,8 @@ BOILERPLATE = REPO / "briefs" / "boilerplate.md"
 LIVE_INBOX = Path(
     "/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md"
 )
+RECIPE_START = "<!-- inbox-append-recipe:start -->"
+RECIPE_END = "<!-- inbox-append-recipe:end -->"
 
 
 def _load():
@@ -37,19 +41,90 @@ def _make_entry(i: int) -> str:
     return f"## Task #{i} — report\n\nLane #{i} completed its work.\nSHA: abc{i:04d}\n\n"
 
 
-def _fixture_append_command(target: Path) -> str:
-    """Retarget the single standing shell recipe to a fixture inbox."""
-    recipes = [
-        line.strip()
-        for line in BOILERPLATE.read_text().splitlines()
-        if line.strip().startswith("flock ") and line.strip().endswith(" <<'EOF'")
-    ]
-    assert len(recipes) == 1, f"expected one runnable locking append recipe, got {recipes!r}"
-    inbox = target / ".dreamwork" / "inbox.md"
-    command = recipes[0].removesuffix(" <<'EOF'")
-    return command.replace(str(LIVE_INBOX) + ".lock", str(inbox) + ".lock").replace(
-        str(LIVE_INBOX), str(inbox)
+def _extract_append_command(boilerplate: str) -> str:
+    """Extract the one designated recipe as a logical shell command."""
+    assert boilerplate.count(RECIPE_START) == 1 and boilerplate.count(RECIPE_END) == 1, (
+        "expected exactly one designated inbox append recipe; "
+        f"got starts={boilerplate.count(RECIPE_START)}, ends={boilerplate.count(RECIPE_END)}"
     )
+    body = boilerplate.split(RECIPE_START, 1)[1].split(RECIPE_END, 1)[0]
+    logical_lines: list[str] = []
+    pending = ""
+    for physical_line in body.splitlines():
+        stripped = physical_line.strip()
+        if not stripped or stripped.startswith("```"):
+            continue
+        pending += stripped
+        if pending.endswith("\\"):
+            pending = pending[:-1] + " "
+        else:
+            logical_lines.append(pending)
+            pending = ""
+    if pending:
+        logical_lines.append(pending)
+    assert len(logical_lines) == 1, (
+        "designated inbox append recipe must contain one logical shell command; "
+        f"got {logical_lines!r}"
+    )
+    heredoc = re.search(r"\s+<<\s*(?P<quote>['\"])(?P<word>[^'\"\n]+)(?P=quote)\s*$", logical_lines[0])
+    assert heredoc, "designated inbox append recipe must end in a quoted heredoc delimiter"
+    command = logical_lines[0][: heredoc.start()].rstrip()
+    assert command, "designated inbox append recipe has no shell command"
+    return command
+
+
+def _fixture_append_command(target: Path, boilerplate: str | None = None) -> str:
+    """Extract the designated recipe and retarget every live path to a fixture."""
+    command = _extract_append_command(
+        BOILERPLATE.read_text() if boilerplate is None else boilerplate
+    )
+    inbox = target / ".dreamwork" / "inbox.md"
+    live_lock = str(LIVE_INBOX) + ".lock"
+    assert live_lock in command, "standing append recipe did not name the live lock path"
+    retargeted = command.replace(live_lock, str(inbox) + ".lock")
+    assert str(LIVE_INBOX) in retargeted, (
+        "standing append recipe did not name the live inbox path"
+    )
+    retargeted = retargeted.replace(str(LIVE_INBOX), str(inbox))
+    assert str(LIVE_INBOX) not in retargeted, (
+        "live coordinator inbox path remained after fixture retargeting"
+    )
+    return retargeted
+
+
+class TestAppendRecipeExtraction:
+    def test_accepts_wrapping_indentation_and_arbitrary_quoted_delimiter(self, tmp_path: Path):
+        boilerplate = f"""
+{RECIPE_START}
+        flock {LIVE_INBOX}.lock \\
+          -c 'cat >> {LIVE_INBOX}' <<\"REPORT_END\"
+{RECIPE_END}
+"""
+        command = _fixture_append_command(tmp_path, boilerplate)
+        assert "flock " in command
+        assert "REPORT_END" not in command
+        assert str(LIVE_INBOX) not in command
+
+    def test_no_flock_recipe_still_extracts_for_behavioural_race(self):
+        boilerplate = f"""
+{RECIPE_START}
+    cat >> {LIVE_INBOX} <<'ANY_DELIMITER'
+{RECIPE_END}
+"""
+        assert _extract_append_command(boilerplate) == f"cat >> {LIVE_INBOX}"
+
+    def test_missing_designated_recipe_fails_distinctly(self):
+        with pytest.raises(AssertionError, match="exactly one designated inbox append recipe"):
+            _extract_append_command("The append guidance was removed.\n")
+
+    def test_retargeting_refuses_changed_live_paths(self, tmp_path: Path):
+        boilerplate = f"""
+{RECIPE_START}
+    flock /future/coordinator/inbox.md.lock -c 'cat >> /future/coordinator/inbox.md' <<'EOF'
+{RECIPE_END}
+"""
+        with pytest.raises(AssertionError, match="did not name the live lock path"):
+            _fixture_append_command(tmp_path, boilerplate)
 
 
 @pytest.fixture
@@ -341,11 +416,27 @@ def _run_cli_at_observation(
             appender.stdin.write(appended_entry)
             appender.stdin.close()
             appender.stdin = None
-            try:
-                appender_status = appender.wait(timeout=0.5)
-                appender_blocked = False
-            except subprocess.TimeoutExpired:
-                appender_blocked = True
+            lock_inode = (inbox.parent / "inbox.md.lock").stat().st_ino
+            deadline = time.monotonic() + 10
+            while True:
+                if appender.poll() is not None:
+                    appender_status = appender.returncode
+                    appender_blocked = False
+                    break
+                locks = Path("/proc/locks").read_text()
+                waiting = re.search(
+                    rf"^\d+:\s+->\s+FLOCK\s+ADVISORY\s+WRITE\s+\d+\s+\S+:{lock_inode}\s+",
+                    locks,
+                    re.MULTILINE,
+                )
+                if waiting:
+                    appender_blocked = True
+                    break
+                if time.monotonic() >= deadline:
+                    raise AssertionError(
+                        "appender did not reach lock acquisition before harness deadline"
+                    )
+                time.sleep(0.01)
 
             original_live = inbox.read_text()
             if not appender_blocked:
@@ -438,6 +529,18 @@ class TestCliContract:
         monkeypatch.setattr(mod, "rotate", fail_reconciliation)
         assert mod.main(["rotate", "--target", str(target)]) == 2
         assert "error: reconciliation failed: fixture balance mismatch" in capsys.readouterr().err
+
+    def test_lock_io_error_uses_declared_exit_2(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        mod = _load()
+        target = tmp_path / "coordinator"
+        dw = target / ".dreamwork"
+        dw.mkdir(parents=True)
+        (dw / "inbox.md.lock").mkdir()
+
+        assert mod.main(["rotate", "--target", str(target)]) == 2
+        assert "error: I/O failed:" in capsys.readouterr().err
 
 
 class TestReconciliation:

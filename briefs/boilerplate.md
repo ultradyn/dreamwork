@@ -52,7 +52,9 @@ evidence that its intended behaviour occurred.
 heredoc; it shares `inbox.md.lock` with rotation so `cat >>` cannot write to an inode while
 rotation replaces it:
 
+<!-- inbox-append-recipe:start -->
     flock /home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md.lock -c 'cat >> /home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md' <<'EOF'
+<!-- inbox-append-recipe:end -->
 
 Close the heredoc with `EOF` on its own line after the report. The transition is complete only
 when the coordinator also adopts this recipe in hand-written brief heads; boilerplate cannot

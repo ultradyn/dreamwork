@@ -468,6 +468,9 @@ def main(argv: list[str] | None = None) -> int:
         except ReconciliationError as exc:
             print(f"error: reconciliation failed: {exc}", file=sys.stderr)
             return 2
+        except OSError as exc:
+            print(f"error: I/O failed: {exc}", file=sys.stderr)
+            return 2
         action = result.get("action")
         if action == "noop":
             print(f"noop: {result.get('reason', 'nothing to do')}")
