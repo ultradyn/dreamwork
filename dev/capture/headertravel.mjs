@@ -72,7 +72,8 @@ const TRACE = href => `((href, ms) => new Promise(res => {
 
 const runs = {};
 for (const reduced of [false, true]) {
-  const ctx = await (await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] }))
+  const ctx = await (await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'],
+                                               ignoreDefaultArgs: ['--hide-scrollbars'] }))
     .newContext({ viewport: { width: 1000, height: 900 },
                   reducedMotion: reduced ? 'reduce' : 'no-preference' });
   const p = await ctx.newPage();
@@ -92,7 +93,33 @@ for (const reduced of [false, true]) {
 }
 
 // #108 at rest, on every route, in a window narrow enough to kill the gutter
-const nb = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
+const nb = await chromium.launch({
+  args: ['--use-gl=swiftshader', '--enable-webgl'],
+  ignoreDefaultArgs: ['--hide-scrollbars'],
+});
+
+/* Refuse to grade horizontal geometry through Playwright's normally hidden
+   scrollbar. Both halves matter: a zero-width reading on a page with no
+   vertical overflow means the instrument could not run, not that it passed. */
+{
+  const pctx = await nb.newContext({ viewport: { width: 1000, height: 900 } });
+  const ppage = await pctx.newPage();
+  await ppage.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  const sb = await ppage.evaluate(() => ({
+    width: window.innerWidth - document.documentElement.clientWidth,
+    scrollH: document.documentElement.scrollHeight,
+    innerH: window.innerHeight,
+  }));
+  notes.push('scrollbar precondition: ' + JSON.stringify(sb));
+  ok(`scrollbar precondition: dashboard genuinely overflows vertically `
+   + `(${sb.scrollH} > ${sb.innerH}) — else scrollbar width could not be tested`,
+     sb.scrollH > sb.innerH);
+  ok(`scrollbar precondition: this browser's scrollbar consumes width `
+   + `(sb=${sb.width}px) — else --hide-scrollbars survived ignoreDefaultArgs `
+   + `and every centered-column verdict below is blind`,
+     sb.scrollH > sb.innerH && sb.width > 0);
+  await pctx.close();
+}
 // ask the target what artifact it has rather than naming one: the guard runs
 // against a fixture, and hardcoding a filename ties it back to live content
 const REVIEW = encodeURIComponent(
