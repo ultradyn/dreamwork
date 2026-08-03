@@ -2040,7 +2040,9 @@ def handoff(cwd: Path | None, *, base: str | None = None,
     print(f"derived requirement: {require} injection(s) owed; "
           f"{len(derived['changed'])} changed path(s), "
           f"{len(binding)} binding, {len(derived['inert'])} inert doc.")
-    if binding:
+    if not derived["changed"]:
+        print("binding paths: (none — diff has no changed paths)")
+    elif binding:
         print(f"binding paths: {' '.join(binding)}")
     else:
         print("binding paths: (none — every changed path is inert documentation)")

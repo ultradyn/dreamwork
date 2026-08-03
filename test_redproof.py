@@ -3448,6 +3448,41 @@ class TestHandoffDerivesRequirement:
         out, err = capsys.readouterr()
         assert exit == 0, out + err
         assert "0 injection(s) owed" in out, out
+        assert (
+            "binding paths: (none — every changed path is inert documentation)"
+            in out
+        ), out
+
+    def test_an_empty_diff_passes_without_claiming_inert_documentation(
+            self, repo, capsys):
+        """An empty typed Diff is a calm zero, with an empty-specific reason."""
+        head = _git(repo, "rev-parse", "HEAD")
+        derived = rp._derived_requirement(repo, head, head)
+        assert derived["changed"] == ()
+        assert derived["require"] == 0
+
+        capsys.readouterr()
+        exit = _handoff(repo)
+        out, err = capsys.readouterr()
+
+        assert exit == 0, out + err
+        assert "0 injection(s) owed; 0 changed path(s)" in out, out
+        assert "binding paths: (none — diff has no changed paths)" in out, (
+            "empty handoff did not name its empty diff"
+        )
+        assert "every changed path is inert documentation" not in out, (
+            "empty handoff claimed every changed path was inert documentation"
+        )
+
+    def test_an_unreadable_diff_faults_instead_of_inheriting_empty_zero(
+            self, repo, capsys):
+        """None from _classify_diff remains a loud, typed handoff fault."""
+        head = _git(repo, "rev-parse", "HEAD")
+
+        with pytest.raises(rp.RedproofError, match="could not read the diff"):
+            rp._derived_requirement(repo, "definitely-not-a-sha", head)
+
+        assert "fatal:" in capsys.readouterr().err
 
     def test_handoff_faults_when_a_registered_path_is_absent(
             self, repo, capsys):
