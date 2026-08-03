@@ -5194,3 +5194,27 @@ disagreed with the story — neither looked wrong on its own.
   times and cost nothing, which is exactly why it exists: the same slip put three invented shas into
   `handoffs.md` on a night when nothing was checking. **The fix for a mistake I keep making is a check
   that makes it free, not a resolution to stop making it.** (2026-08-03, coordinator)
+- **Three lanes refused today because I owned the fix out of their reach, and all three were right.**
+  `#1131` was given `launch_lane.py`/`brief.py` and told to make something force a lane to run
+  `handoff`; it proved neither site has the lane's completion edge and named the gate, which it did
+  not own. `#1138` was told to reuse `#1137`'s helper as single-truth while `lint.py` belonged to
+  another lane, so it restated the helper and filed the duplication as a cost. `#1139` was told to fix
+  BOTH the empty-diff number and the sentence explaining it, while `dev/redproof.py` — where the
+  sentence is hardcoded — was forbidden; the complete outcome I demanded was **impossible as scoped**,
+  and it stopped with zero commits rather than ship the partial. **A brief that names a required
+  outcome and an ownership set that cannot produce it is a defect in the brief, not a hard task.**
+  The tell is cheap and I now check it before dispatching: for each thing the brief REQUIRES, name the
+  file that must change, and confirm it is in `Lane-owns`. Two of the three cost a full round; the
+  third cost only a report because I had written "a well-argued 'the fix belongs where you did not put
+  me' is a complete and valuable result" into the brief. **That sentence is worth its weight — keep it
+  in every brief, because it converts my scoping error from a wasted round into a finding.**
+  (2026-08-03, coordinator)
+- **The fleet probe knew something I had asserted it did not.** I re-dispatched a finished lane by
+  spawning the runner directly (the governed path refuses a second brief for the same task+lane, since
+  the corpus name is immutable), and wrote in the script that the lane would be INVISIBLE to the tick's
+  live count because no fresh `lane.lock` is written. The next tick printed
+  `lanes 5 live [... cx-1024blk3 ...]` and `cwd-only 1 [cx-1024blk3] (live runner, no live lane.lock)`.
+  There was already a category for exactly that state. **I reasoned about the probe's behaviour from
+  the code I remembered instead of reading one tick line, and shipped a false warning to my future
+  self in a script comment.** The delegation number I steer by was never at risk; my note about it was.
+  (2026-08-03, coordinator)
