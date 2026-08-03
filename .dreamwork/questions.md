@@ -146,6 +146,37 @@
   - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
     as an open question that we'll revisit once dreamhub is stable and the
     primary way we access dreamworkers
+- **P2 · 2026-08-04 — the `native.js` page-weight budget now fires on the React migration you
+  prioritised. Split it, or only report it? (#1190, blocking #1071)**
+  **Not blocking the loop** — I have a recommendation and will proceed on it if you would rather not
+  weigh in. I am asking because the guard's own docstring says a human should be asked when it fires,
+  and because what falsified its premise was your own React-migration ruling.
+  - `test_client_dist.py:502` caps `native.js` at 165000 bytes. Its docstring argues — well — for
+    bounding `native.js` instead of the whole page: *"A bound on PAGE would be the wrong check HERE
+    and would become a liability: the page is 604 KB and grows with every ordinary UI commit, so a
+    PAGE budget fires on work that has nothing to do with this phase — the false red that trains a
+    reader to raise the number without looking. The thing this phase introduced is native.js, and it
+    does NOT grow with ordinary UI work: it grows when someone changes the runtime or bumps React,
+    which is exactly when a human should be asked."*
+  - **That premise is now false.** The React migration moves components *into* `native.js` by design,
+    so it now grows with ordinary UI work — and the guard has become the liability its own docstring
+    described.
+  - It is live, not theoretical. Two lanes are trading bytes inside the ceiling: **#1174** was 16
+    bytes over, paid by deleting redundant `GoalPage` expressions, and landed at **164997** (three
+    bytes of headroom); **#1071** adds the first route-level export (`Reviews`) and lands at
+    **165185**. Neither change is about React's cost, which is the only thing the budget watches.
+  - **My recommendation (#1190):** split the measurement rather than raise the number. Budget the
+    *runtime* portion (React + ReactDOM + registry + probe, 146920 bytes at P2) separately from
+    migrated components. The runtime bound then keeps doing what the docstring describes, while
+    component growth is budgeted, if at all, on its own number. I am deliberately not just raising
+    165000 — that is the failure mode the docstring names in advance, and doing it under pressure
+    from two queued lanes is precisely "raising the number without looking".
+  - **Where your steer would help:** (1) should migrated components be *bounded* at all during the
+    migration, or only *reported*? A budget nobody can honour gets deleted; a reported number that
+    nobody bounds at least stays true. (2) Is there a page-weight ceiling you actually care about for
+    the dashboard, as opposed to one chosen to make a guard meaningful? The 604 KB page figure is in
+    the docstring but nothing bounds it.
+  - If you say nothing, I will take the split above and keep the runtime bound strict.
 
 ## Answered
 
