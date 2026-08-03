@@ -2750,6 +2750,28 @@ class TestReapFinishedLanes:
         assert reaped == []
         assert (examined, unparseable) == (1, 0)
 
+    @pytest.mark.parametrize("entry", [
+        {"lane": None},
+        {"lane": 42},
+        {"task": "1042"},
+        {"lane": None, "task": "1042"},
+        {"lane": 42, "task": "1042"},
+        {"agent": "@cx-reviewer", "what": "no identity"},
+        42,
+    ], ids=[
+        "null-lane", "numeric-lane", "string-task",
+        "null-lane-string-task", "numeric-lane-string-task",
+        "mapping-with-neither-key", "non-mapping-non-string",
+    ])
+    def test_malformed_entries_are_kept_without_coercion(self, entry):
+        kept, reaped, examined, unparseable = (
+            status_sync.reap_finished_lanes([entry], [7, 8]))
+        assert reaped == [], (
+            "malformed entry was deleted instead of KEPT: %r" % entry)
+        assert kept == [entry], (
+            "malformed entry missing from KEPT: %r" % entry)
+        assert (examined, unparseable) == (1, 1)
+
     def test_open_dispatch_survives_the_open_false_green(self, tmp_path):
         # Direction 2: a lane whose task is STILL OPEN survives the reap even
         # if its agent died hours ago. Liveness and task-openness are
@@ -2795,6 +2817,23 @@ class TestReapFinishedLanes:
         assert result["lanes"] == []
         # The population line names `examined 0` — not silence.
         assert "examined 0" in err, err
+
+    @pytest.mark.parametrize("lanes, shape", [
+        (None, "NoneType"),
+        ({"lane": "cx-7active"}, "dict"),
+        ("cx-7active", "str"),
+    ])
+    def test_non_list_lanes_reports_invalid_population_shape(
+            self, tmp_path, lanes, shape):
+        status = {
+            "lanes": lanes, "dreamers": [], "task": "t",
+            "queue": {"in_progress": 0, "pending": 2},
+            "current_task_ids": [],
+        }
+        rc, out, err = _run(status, _ledger(7, 8), tmp_path, "--check")
+        assert rc == 0, err
+        assert "lanes reap examined 0, pruned 0, kept 0" in err, err
+        assert "INVALID top-level lanes shape %s" % shape in err, err
 
     def test_total_parse_failure_is_distinct_from_all_parsed(self, tmp_path):
         failed_target = tmp_path / "failed"

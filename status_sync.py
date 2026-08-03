@@ -750,7 +750,9 @@ def _lane_entry_base_id(entry) -> int | None:
     name is ``<dispatch>-<id><slug>`` (brief.py builds ``cx-{task}``; a slug
     may follow), so the leading digits after the first ``-`` are the task.
     Prefer that dispatch identity when a mapping's lane and task disagree,
-    falling back to ``task`` when the lane is absent or unparseable.
+    falling back only to a numeric ``task`` when the lane is absent or
+    unparseable. String task ids are not trusted here: coercing author-written
+    malformed data into a task identity can turn *cannot compare* into a reap.
 
     Returns ``None`` when neither form yields an id — matching
     ``_base_id``'s contract so *cannot compare* reads as *kept*, never as
@@ -761,7 +763,8 @@ def _lane_entry_base_id(entry) -> int | None:
         m = re.match(r"^[a-z]+-(\d+)", str(entry.get("lane")))
         if m:
             return int(m.group(1))
-        return _base_id(entry.get("task"))
+        task = entry.get("task")
+        return task if isinstance(task, int) and not isinstance(task, bool) else None
     m = re.match(r"^[a-z]+-(\d+)", str(entry))
     return int(m.group(1)) if m else None
 
@@ -1214,25 +1217,28 @@ def main(argv: list[str] | None = None) -> int:
     # staleness. The population is named on every run because `lanes: []` is
     # both correct-idle and a broken deriver's output (#868 inside the fix).
     raw_lanes = status.get("lanes", [])
-    if isinstance(raw_lanes, list):
-        kept_lanes, reaped_lanes, examined, unparseable = reap_finished_lanes(
-            raw_lanes, ids)
-        parse_failure = (
-            " — TOTAL PARSE FAILURE: no lane entry could be tied to a task"
-            if examined and unparseable == examined else "")
-        print("status_sync: lanes reap examined %d, pruned %d, kept %d, "
-              "unparseable %d of %d%s — population named because an empty "
-              "pair is both idle and a broken deriver (#868/#969)"
-              % (examined, len(reaped_lanes), len(kept_lanes), unparseable,
-                 examined, parse_failure),
-              file=sys.stderr)
-        if reaped_lanes:
-            status["lanes"] = kept_lanes
-            changes.append("lanes reap %d finished dispatch(es) (examined "
-                           "%d, pruned %d, kept %d, unparseable %d): %s"
-                           % (len(reaped_lanes), examined, len(reaped_lanes),
-                              len(kept_lanes), unparseable,
-                              [_lane_entry_base_id(e) for e in reaped_lanes]))
+    kept_lanes, reaped_lanes, examined, unparseable = reap_finished_lanes(
+        raw_lanes, ids)
+    invalid_shape = (
+        " — INVALID top-level lanes shape %s; treated as an empty population"
+        % type(raw_lanes).__name__
+        if not isinstance(raw_lanes, list) else "")
+    parse_failure = (
+        " — TOTAL PARSE FAILURE: no lane entry could be tied to a task"
+        if examined and unparseable == examined else "")
+    print("status_sync: lanes reap examined %d, pruned %d, kept %d, "
+          "unparseable %d of %d%s%s — population named because an empty "
+          "pair is both idle and a broken deriver (#868/#969)"
+          % (examined, len(reaped_lanes), len(kept_lanes), unparseable,
+             examined, invalid_shape, parse_failure),
+          file=sys.stderr)
+    if reaped_lanes:
+        status["lanes"] = kept_lanes
+        changes.append("lanes reap %d finished dispatch(es) (examined "
+                       "%d, pruned %d, kept %d, unparseable %d): %s"
+                       % (len(reaped_lanes), examined, len(reaped_lanes),
+                          len(kept_lanes), unparseable,
+                          [_lane_entry_base_id(e) for e in reaped_lanes]))
 
     print(coverage(status))
 
