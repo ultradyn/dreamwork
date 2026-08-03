@@ -1,8 +1,11 @@
 """Tests for strict lane-lock classification in :mod:`lane_liveness`."""
 
+import io
 import json
 import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -1097,11 +1100,103 @@ class TestLiveLaneCasesABC:
             "default CPU probe on the live test pid produced an unexpected " \
             "verdict: %r" % (verdict[0],)
 
+    def test_read_proc_cpu_uses_exact_stat_fields_and_clock_tick(
+            self, monkeypatch):
+        """Bind utime+stime, starttime, and non-default CLK_TCK exactly."""
+        fields = ["S"] + [str(101 + index * 17) for index in range(19)]
+        fields[11] = "375"       # field 14: utime
+        fields[12] = "625"       # field 15: stime
+        fields[19] = "500000"    # field 22: starttime
+        stat = "4321 (worker ) name) %s\n" % " ".join(fields)
+
+        def read_text(path, *_args, **_kwargs):
+            assert str(path) == "/proc/4321/stat"
+            return stat
+
+        monkeypatch.setattr(lane_liveness.Path, "read_text", read_text)
+        monkeypatch.setattr(lane_liveness.os, "sysconf", lambda _name: 250)
+        monkeypatch.setattr(lane_liveness.time, "time", lambda: 10_000.0)
+        monkeypatch.setattr(
+            "builtins.open", lambda *_args, **_kwargs: io.StringIO("3000 0\n"))
+
+        assert lane_liveness.read_proc_cpu(4321) == (4.0, 1000.0), \
+            "read_proc_cpu must compute (375 + 625) / 250 CPU seconds and " \
+            "3000 - (500000 / 250) elapsed seconds from fields 14/15/22"
+
 
 class TestLiveLivenessCwdChannel:
     """A cwd-only (hand-dispatched) lane gets the same live-liveness verdict
     as a lock-confirmed lane — the dimension is dispatch-route-invariant,
     like the cwd channel itself (#1084)."""
+
+    def test_busy_real_child_of_waiting_real_runner_vetoes_wedged(
+            self, tmp_path):
+        """A real ccc waiting on a CPU-burning python child is still working."""
+        target, worktree, _identity = _git_subject(
+            tmp_path, lane="cx-busy-descendant")
+        pid_file = tmp_path / "child.pid"
+        stop_file = tmp_path / "stop-child"
+        child_script = tmp_path / "busy_child.py"
+        child_script.write_text(
+            "import pathlib, sys\n"
+            "stop = pathlib.Path(sys.argv[1])\n"
+            "value = 0\n"
+            "while not stop.exists():\n"
+            "    for number in range(200000):\n"
+            "        value = (value + number) % 1000003\n")
+        parent_script = tmp_path / "waiting_runner.py"
+        parent_script.write_text(
+            "import pathlib, subprocess, sys\n"
+            "child = subprocess.Popen([sys.argv[4], sys.argv[2], sys.argv[3]])\n"
+            "pathlib.Path(sys.argv[1]).write_text(str(child.pid))\n"
+            "child.wait()\n")
+        ccc = tmp_path / "ccc"
+        ccc.symlink_to(sys.executable)
+        parent = subprocess.Popen(
+            [str(ccc), str(parent_script), str(pid_file), str(child_script),
+             str(stop_file), sys.executable], cwd=worktree,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            deadline = time.monotonic() + 10.0
+            while not pid_file.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert pid_file.exists(), "real ccc runner did not publish its child pid"
+            child_pid = int(pid_file.read_text())
+            child_cpu = None
+            while time.monotonic() < deadline:
+                reading = lane_liveness.read_proc_cpu(child_pid)
+                if reading is not None:
+                    child_cpu = reading[0]
+                    if child_cpu >= lane_liveness.WORKING_CPU_FLOOR_S + 0.25:
+                        break
+                time.sleep(0.02)
+            assert child_cpu is not None and child_cpu >= 3.25, \
+                "real python child did not accumulate busy CPU: %r" % child_cpu
+
+            cpu_reader_calls = []
+
+            def read_cpu(pid):
+                cpu_reader_calls.append(pid)
+                if pid == parent.pid:
+                    return (0.1, 600.0)
+                return lane_liveness.read_proc_cpu(pid)
+
+            inspection = lane_liveness.inspect_lanes(
+                target,
+                process_entries=[str(parent.pid), str(child_pid)],
+                registered_worktrees=(worktree,),
+                read_cpu=read_cpu,
+                skip_pids=set())
+            verdict = inspection.live_liveness[0]
+            assert verdict.state == lane_liveness.LIVE_WORKING, \
+                "busy descendant pid %d consumed %.2fs CPU but lane was " \
+                "classified %s anyway; cpu_reader_calls=%r, parent pid %d " \
+                "was waiting at forced 0.1s CPU" % (
+                    child_pid, child_cpu, verdict.state, cpu_reader_calls,
+                    parent.pid)
+        finally:
+            stop_file.touch()
+            parent.wait(timeout=10)
 
     def test_cwd_only_lane_classified_by_cpu(self, tmp_path, monkeypatch):
         target, worktree, _identity = _subject(tmp_path, lane="glm-hand")
