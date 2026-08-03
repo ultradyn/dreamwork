@@ -5787,3 +5787,54 @@ same move — **an instrument that cannot distinguish the failure case, read as 
 silence were a negative result.** Prefer the purpose-built probe (`lane_liveness`, the
 tick line) over a hand-rolled `ps | grep`, and when hand-rolling is unavoidable, first
 run it against a case you KNOW is positive.
+
+## When a change deletes a production symbol, derive the owned set by grepping for the symbol — fixing the instance you were handed leaves the class intact (2026-08-03, #1049, mine, measured)
+
+`#1049` flips `/question` to a native component, which deletes `buildQuestion` from
+`client/views.js`. Attempt 3 ran the mandated suite and stopped on two `test_watch.py`
+tests that require the deleted spelling. **I widened Lane-owns by exactly one file —
+`test_watch.py` — and dispatched round 4.** Round 4 delivered, then reported that
+`test_question_dual_column.py:59` does `_fn_src(watch.VIEWS_JS, "buildQuestion")` and
+asserts the slice contains it. Same defect, third file, still unowned.
+
+One `grep -rn buildQuestion` before either dispatch would have named the whole set at
+once. Instead I treated the lane's failure report as the specification of the problem.
+**A failure report names an instance; it is the coordinator's job to ask what class it
+belongs to.** The lane could only tell me what its own mandated run happened to
+execute — `test_question_dual_column.py` was not in that run, so its silence was not
+evidence.
+
+This is the sibling of *"a denominator you derived by reading is a claim"*: there the
+enumeration was hand-built, here it was **handed to me by a failure and I never asked
+whether it was complete**. Both produce a set that feels authoritative because it came
+from somewhere real.
+
+**So: when the diff deletes or renames a production symbol, the owned set is `grep -rn
+<symbol>` minus what the diff already covers — computed and quoted, before the brief is
+written.** And say in the brief which command produced it, so the lane can re-run it and
+disagree.
+
+## A deliberately corrupted exhibit in a brief is indistinguishable from a typo (2026-08-03, #1042, mine, measured)
+
+The `#1042` round-4 brief quoted the reviewer's counter-implementation as
+`PG-(\d+)(?!\sda)` and added *"reproduce it yourself from the description"*, while the
+ledger note carried the real `(?!\sand)`. The intent was to make the lane derive the
+exhibit rather than paste it.
+
+The lane derived it correctly, used `(?!\sand)`, and flagged the mismatch — then made
+the point that matters: `(?!\sda)` **does not exhibit the hole at all**. Against the
+fixture `'PG-1 and PG-1abc'` it suppresses neither token, so both link, the count
+assertion catches it at 2, and a lane that injected it faithfully would conclude *the
+position assertion is unnecessary* — the exact opposite of the round's finding.
+
+**A wrong exhibit does not merely cost a pause; it can prove the opposite of what it
+was included to prove.** And the lane had no way to tell a deliberate exercise from a
+transcription slip, so it correctly reported it as a defect in my brief.
+
+If a lane should derive something, say so and **do not print a decoy** — describe the
+construction and let the lane build it. If an exhibit is printed, it must be the real
+one, because it will be run.
+
+Related, same brief family: the `#1049` round-4 head said *"Read the task record first"*
+and *"your FIRST act is `git cherry-pick`"*. Both cannot be literal, and the lane said
+so. Write it as *"after reading the record, your first mutation is the cherry-pick."*
