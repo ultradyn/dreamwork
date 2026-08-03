@@ -384,10 +384,7 @@ class TestConcurrentAppenderHarness:
         assert appender_blocked is None
         assert cli.returncode == 0, cli.stderr
         assert "observed-snapshot accounted: moved=7 + retained=3 = observed=10" in cli.stdout
-        assert (
-            "WARNING: snapshot-only accounting; post-observation appends are "
-            "uncovered (#1170)"
-        ) in cli.stdout
+        assert "lock held; locking appenders resume after replacement" in cli.stdout
         combined = (dw / "inbox.md").read_text() + next(
             (dw / "inbox-archive").glob("*.md")
         ).read_text()
@@ -410,6 +407,10 @@ class TestConcurrentAppenderHarness:
         ).read_text()
         assert appended in combined, f"raced entry lost: {appended.splitlines()[0]}"
         assert appender_blocked, "locking shell cat did not block while rotation held the lock"
+        print(
+            f"raced-entry={appended.splitlines()[0]!r} "
+            f"blocked={appender_blocked} survived={appended in combined}"
+        )
 
 
 class TestCliContract:

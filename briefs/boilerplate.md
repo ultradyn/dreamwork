@@ -48,6 +48,16 @@ Bind any success report or follow-on write to the producing command's status, no
 pipeline element or whatever state was already present. A plausible command spelling is not
 evidence that its intended behaviour occurred.
 
+**Lock every coordinator-inbox append.** Use this standing one-line command with a quoted
+heredoc; it shares `inbox.md.lock` with rotation so `cat >>` cannot write to an inode while
+rotation replaces it:
+
+    flock /home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md.lock -c 'cat >> /home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md' <<'EOF'
+
+Close the heredoc with `EOF` on its own line after the report. The transition is complete only
+when the coordinator also adopts this recipe in hand-written brief heads; boilerplate cannot
+change a recipe already held by a dispatched lane.
+
 **DO NOT WRITE TO `.dreamwork/handoffs.md` — specifically, do not append any hand-off line
 there. That file has a single writer and it is not you** (the lesson *"Both wordings of the hand-off instruction are wrong, and I
 found the second by hitting it twice"*, and `#687`). It is an ownership rule reached after the
