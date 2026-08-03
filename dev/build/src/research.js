@@ -1,8 +1,9 @@
 /* #751 — the first native surface.
  *
- * The shell is React-owned. Artifact rows are not: /reviews and the dashboard
- * still consume artifactRow, so the component delegates each row through the
- * P2 wrapper. There is one row implementation and no fallback copy here.
+ * The shell is React-owned. /reviews and the dashboard still call artifactRow
+ * directly; /research wraps each row in the shared native ArtifactRow (#1067),
+ * which sets the same data-dw-delegate attribute the fromBuilder delegate did.
+ * There is one row implementation and no fallback copy here.
  *
  * #1066 — Label is the shared native component defined in
  * wrapper-exports.js (the design-package authority, landed #1060). It calls
@@ -10,14 +11,15 @@
  * consumed by both the runtime (here, via import) and the design package
  * (in-scope by construction). The fromBuilder('label') delegate that used to
  * live here is gone: authority moved, it was not copied.
+ *
+ * #1067 — ArtifactRow is the shared native component defined in
+ * wrapper-exports.js alongside Label. It calls artifactRow(r, kind) at render
+ * time; /research passes kind='research' so the row's href resolves to
+ * /research and its PIP target to /researchraw. The fromBuilder('artifactRow')
+ * delegate that used to live here is gone: authority moved, it was not copied.
  */
 import React from 'react';
-import { fromBuilder } from './delegate.js';
-import { Label } from '../wrapper-exports.js';
-
-const ArtifactRow = fromBuilder('artifactRow', function (props) {
-  return artifactRow(props.row, 'research');
-});
+import { Label, ArtifactRow } from '../wrapper-exports.js';
 
 export function Research(props) {
   const [instance] = React.useState(function () {
@@ -59,7 +61,8 @@ export function Research(props) {
       data.research.forEach(function (row) {
         children.push(React.createElement(ArtifactRow, {
           key: row.name,
-          row: row,
+          r: row,
+          kind: 'research',
         }));
       });
     }
