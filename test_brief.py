@@ -259,6 +259,18 @@ def test_generation_refuses_a_line_beyond_the_base_sha_file(lane):
         brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
 
 
+def test_generation_does_not_treat_fenced_history_as_a_live_citation(lane):
+    """Captured historical output may name a path absent from the base tree."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A captured diagnostic follows:\n\n```\nmissing.py:999\n```",
+    )
+    generated = brief.build(
+        881, lane, ["dev/brief.py", "test_brief.py"], core
+    )
+    assert "missing.py:999" in generated
+
+
 def test_worktree_is_asked_of_git_not_guessed(lane, lane_checkout):
     """A guessed convention would be wrong for 14 of the 40 most recent briefs (#846 moved it)."""
     assert lane == lane_checkout[0], (
