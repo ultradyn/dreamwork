@@ -129,7 +129,16 @@ _PLACEHOLDER_BODY = re.compile(
     r"|(?:TODO|TBD|FIXME|XXX)\s*[:-].*)$",
     re.IGNORECASE,
 )
-_DIRECTION_2 = re.compile(r"direction[ ‑-]?2", re.IGNORECASE)
+CANONICAL_TRAPS_HEADING = (
+    "## Traps this fix must survive — EVERY BULLET BELOW IS A THING NOT TO DO"
+)
+_TRAPS_SECTION_HEADING = re.compile(
+    r"^ {0,3}#{1,6}[ \t]+(?:"
+    r"direction[ ‑-]?2\b|"
+    r"traps[ \t]+this[ \t]+(?:fix|round)[ \t]+must[ \t]+survive\b"
+    r")",
+    re.IGNORECASE,
+)
 _MARKDOWN_CLASS = re.compile(
     r"(?:\.md\s+(?:file|document)s?\b|markdown\s+(?:file|document)s?\b)",
     re.IGNORECASE,
@@ -171,6 +180,37 @@ def _is_atx_heading(line: str) -> bool:
 # to quote Markdown, and a fenced ``## Read ...`` is a quotation, not a section
 # of the brief (#947 third instance).
 _FENCE_OPEN = re.compile(r"^( {0,3})(`{3,}|~{3,})")
+
+
+def _is_traps_section_heading(line: str) -> bool:
+    """Recognise the trap-list section by its heading, never by body prose."""
+    return _TRAPS_SECTION_HEADING.search(line) is not None
+
+
+def _canonicalize_traps_heading(core: str) -> str:
+    """Give legacy authored cores an unambiguous trap heading on emission."""
+    lines = core.splitlines()
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+
+    for index, line in enumerate(lines):
+        if in_fence:
+            if re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+            ):
+                in_fence = False
+            continue
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            continue
+        if _is_traps_section_heading(line):
+            lines[index] = CANONICAL_TRAPS_HEADING
+
+    return "\n".join(lines)
 
 _TOOL_INVOCATION = re.compile(
     r"(?<![\w./-])(?P<path>"
@@ -1228,7 +1268,7 @@ def _task_state_claim_report(core: str, ledger: Path) -> str:
 
 
 def validate_core(core: str, ledger: Path | None = None) -> int:
-    """Refuse an authored core that is absent, placeholder, or has no direction 2.
+    """Refuse an authored core that is absent, placeholder, or has no traps section.
 
     Each refusal names a mode this function can actually detect.  Tool verbs
     are checked against master when their runtime surface is derivable; an
@@ -1282,6 +1322,7 @@ def validate_core(core: str, ledger: Path | None = None) -> int:
     fence_len = 0
     fence_opened_at = 0
     sections_seen = 0
+    traps_heading_seen = False
     empties: list[tuple[str, str]] = []  # (heading line, the line that closed it)
 
     def closes_fence(line: str) -> bool:
@@ -1309,6 +1350,7 @@ def validate_core(core: str, ledger: Path | None = None) -> int:
             if heading is not None and not body_seen:
                 empties.append((heading, line))
             heading, body_seen = line, False
+            traps_heading_seen = traps_heading_seen or _is_traps_section_heading(line)
         elif _substantive(line):
             body_seen = True
     # An unterminated fence leaves the rest of the core unchecked: every line
@@ -1342,15 +1384,14 @@ def validate_core(core: str, ledger: Path | None = None) -> int:
     blocking_report = _blocking_number_report(core)
     command_report = _command_existence_report(core)
     state_report = _task_state_claim_report(core, ledger)
-    for index, line in enumerate(lines):
-        if _DIRECTION_2.search(line) and any(_substantive(rest) for rest in lines[index + 1:]):
-            print(tool_report, file=sys.stderr)
-            print(quantity_report, file=sys.stderr)
-            print(citation_report, file=sys.stderr)
-            print(blocking_report, file=sys.stderr)
-            print(command_report, file=sys.stderr)
-            print(state_report, file=sys.stderr)
-            return sections_seen
+    if traps_heading_seen:
+        print(tool_report, file=sys.stderr)
+        print(quantity_report, file=sys.stderr)
+        print(citation_report, file=sys.stderr)
+        print(blocking_report, file=sys.stderr)
+        print(command_report, file=sys.stderr)
+        print(state_report, file=sys.stderr)
+        return sections_seen
     # Reaching here proves `empties` came back empty (it raises above), so the
     # denominator is the one signal left that the walk ran on thin data: a core
     # that examined zero sections reads like a core that examined twelve.
@@ -1469,6 +1510,7 @@ def build(task: int, branch: str, owns: list[str], core: str, *,
 
     if not _core_already_validated:
         validate_core(core, ledger)
+    core = _canonicalize_traps_heading(core)
 
     frame = frame_sections(_read(frame_path, "frame"))
     if not frame:

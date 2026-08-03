@@ -39,13 +39,17 @@ import dispatch_lane  # noqa: E402
 import lint  # noqa: E402
 
 
-# A minimal core that passes: substantive prose plus a direction-2 section with
-# a body. Tests mutate a copy of this to isolate one refusal at a time.
-GOOD_CORE = """## The defect, measured
+CANONICAL_TRAPS_HEADING = (
+    "## Traps this fix must survive — EVERY BULLET BELOW IS A THING NOT TO DO"
+)
+
+# A minimal core that passes: substantive prose plus a traps section with a
+# body. Tests mutate a copy of this to isolate one refusal at a time.
+GOOD_CORE = f"""## The defect, measured
 
 `## Standing rules` was retyped 33 times and produced 32 distinct bodies.
 
-## Direction 2 — construct these and run them
+{CANONICAL_TRAPS_HEADING}
 
 1. A core that is empty still emits.
 2. A frame file with no sections still emits a brief that looks fine.
@@ -457,6 +461,33 @@ def test_a_direction_2_heading_with_no_body_is_refused(lane):
     with pytest.raises(brief.BriefFault) as excinfo:
         brief.build(881, lane, ["dev/brief.py"], core)
     assert "has no body" in str(excinfo.value)
+
+
+def test_build_normalizes_a_legacy_direction_2_heading(lane):
+    """Generated briefs never expose the ambiguous legacy trap heading."""
+    legacy_heading = "## Direction 2 — construct these and run them"
+    core = GOOD_CORE.replace(CANONICAL_TRAPS_HEADING, legacy_heading)
+
+    generated = brief.build(881, lane, ["dev/brief.py"], core)
+    headings = [line for line in generated.splitlines() if line.startswith("## ")]
+
+    assert CANONICAL_TRAPS_HEADING in headings, (
+        f"corrected trap heading absent from generated brief: {headings}"
+    )
+    assert legacy_heading not in headings, (
+        f"ambiguous Direction 2 trap heading reached generated brief: {headings}"
+    )
+
+
+def test_direction_2_prose_is_not_mistaken_for_a_traps_section(lane):
+    """Red-proof vocabulary in prose cannot satisfy the trap-section gate."""
+    core = (
+        "## The defect\n\nMeasured, substantive prose.\n\n"
+        "## Red-proof\n\nDirection 2 remains the false-green construction.\n"
+    )
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief.build(881, lane, ["dev/brief.py"], core)
+    assert "names no direction-2 construction with a body" in str(excinfo.value)
 
 
 # --- #947: the heading definition and the refusal message -------------------
@@ -1727,8 +1758,11 @@ def test_core_from_task_lifts_the_body_and_still_validates_it(lane, tmp_path):
 
     lifted = brief.core_from_task(901, ledger)
     assert "Direction 2" in lifted and "32 distinct bodies" in lifted
-    assert re.search(r"^## Direction 2$", brief.build(
-        901, lane, ["dev/brief.py"], lifted, ledger=ledger), re.MULTILINE)
+    generated = brief.build(901, lane, ["dev/brief.py"], lifted, ledger=ledger)
+    assert re.search(
+        rf"^{re.escape(CANONICAL_TRAPS_HEADING)}$", generated, re.MULTILINE
+    ), "lifted legacy task core did not receive the corrected trap heading"
+    assert not re.search(r"^## Direction 2$", generated, re.MULTILINE)
 
     with pytest.raises(brief.BriefFault) as excinfo:
         brief.build(902, lane, ["dev/brief.py"],
