@@ -1337,6 +1337,11 @@ class TestLiveLivenessBoundaryDocumentation:
         }.items():
             assert claim in doc and implementation_seam in source, (
                 "classification boundary drifted away from its %s seam" % claim)
+        consulted_sentence = next(
+            sentence for sentence in doc.split(".")
+            if "classifier consults" in sentence)
+        assert "session" not in consulted_sentence.lower()
+        assert "process group" not in consulted_sentence.lower()
 
         for gap in (
                 "changes cwd outside", "setsid()", "reparenting",
