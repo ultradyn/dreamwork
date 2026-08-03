@@ -474,23 +474,41 @@ difference off to satisfy an impossible brief.
 Likewise, judge targeted pytest by its own before/after collected count; a whole-repo total quoted
 in a moving brief head is not that run's bar.
 
-**A background job's log being non-empty does NOT mean the job finished** (`#1178`). Briefs used to
-say "background the long test and check the log is non-empty", which was added to catch `#1169`'s
-zero-byte logs from vanished subshells. It does not do that job: pytest emits progress dots
-immediately, so a run that dies mid-way leaves a **non-empty, dots-only log with no verdict and no
-exit status** — and the check passes on it. `#1042` round 8 measured exactly that (a 7-byte
-dots-only log from a job that had vanished). File non-emptiness proves the file was opened and
-written to; it does not prove the job survived, finished, or recorded a result, which is the only
-thing the check exists to establish.
+**Use the verified detached-job helper for long commands.** A printed PID proves only that a fork
+happened. `nohup ... &` was measured five-for-five under a ccc-routed shell exit with a dead PID,
+zero-byte log, and no completion record (`#1169`). A non-empty log is still insufficient: pytest
+emits progress dots immediately, so a killed run can leave a non-empty dots-only log (`#1178`).
 
-So require the **completion record**, not the file:
+Choose a fresh, descriptive job name and run:
 
-- write the exit code to a file as the job's **last act** (`…; echo "exit=$?" > done.txt`), or
-- keep a **retained waiter** and `wait` for it,
+    python3 dev/lane_scratch.py job-launch <name> -- <command> <args...>
+    # Do other useful work; STARTED is not the command's verdict.
+    python3 dev/lane_scratch.py job-wait <name> --timeout <seconds>
 
-then quote **the final summary line AND the exit code AND the collected count.** All three: the
-summary line alone can be stale from a previous run, and **a mistyped node id prints `no tests ran`
-and exits 0**, so a green exit with no collected count is not evidence a test ran.
+`job-launch` uses a new session (the surviving `setsid` mechanism), writes a lane-private log, and
+returns `STARTED` only after it has verified **both a non-empty log and a live supervisor PID**. It
+atomically records those checks in `started`. The supervisor writes an exact `version`/`pid`/`exit`
+completion record as its last act. `job-wait` requires the start receipt, a still-non-empty log, and
+the complete parseable record with the same PID; a dead PID without it, or an empty/truncated record,
+is `FAILURE`, never success. Only `COMPLETE ... exit=0` is a successful run. Quote that line, the
+log's final summary line, and (for pytest) the separately collected count.
+
+IGC decision — context: long commands launched from ccc-routed lanes whose exec shell exits:
+
+| Idea | All | G1 | G2 | G3 | G4 |
+|---|:---:|:---:|:---:|:---:|:---:|
+| verified new-session supervisor (`job-launch`/`job-wait`) | ✔ | ✔ | ✔ | ✔ | ✔ |
+| `nohup` plus shell background/disown | ✘ | ✘ | ✘ | ✔ | ✔ |
+| double fork plus an intermediate printed PID | ✘ | ✔ | ✘ | ✔ | ✘ |
+| foreground/retained waiter | ✘ | ✔ | ✔ | ✘ | ✔ |
+| harness-owned PTY session | ✘ | ✔ | ✔ | ✔ | ✘ |
+
+G1 survives the parent shell · G2 makes death/truncation loud rather than less likely · G3 lets the
+lane do other work · G4 is a repo-owned, directly testable recipe available to every lane. Decisive
+errors: `nohup` failed G1 in the measured ccc boundary and has no completion proof; a double fork's
+printed intermediate PID is not the live supervisor and still lacks proof; a foreground waiter
+blocks the lane; the harness PTY is not a lane-invocable, repo-owned interface. The verified
+new-session supervisor is the sole All-✔ row.
 
 **`-q` suppresses the `collected N items` line, so the collected count needs its own command.** This
 was a contradiction in the brief contract for as long as both halves have existed — `#1171` round 2
