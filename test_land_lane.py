@@ -1952,7 +1952,7 @@ def test_reap_refusal_is_binding_when_lane_becomes_dirty_during_gates(landing_re
 
     result = _run(root, "test_dirty_lane.py")
 
-    assert result.returncode == 1
+    assert result.returncode == 2
     assert (
         f"reap examined path={lane.resolve()} tracked-dirty=1 untracked=0 ignored=0 "
         "unmerged-commits=0"
@@ -4086,6 +4086,66 @@ def test_batch_gate_refusal_continues_and_reports_loudly(batch_landed_plus_refus
     master_after = _git(root, "rev-parse", "--verify", "refs/heads/master")
     assert master_after != master_before
     assert lane_b.is_dir(), "lane-b worktree was removed despite refusal"
+
+
+def test_batch_post_advance_retirement_failure_names_merge_and_distinct_outcome(
+    landing_repo,
+):
+    """A landed merge with retained worktree is not a pre-merge REFUSED result.
+
+    #1197 IGC, context: a post-advance cleanup failure must remain loud.
+
+    | Idea | All | summary-only next action | exit-code script | loud cleanup debt |
+    | distinct state + exit 2 | yes | clean retained worktree | stop distinctly | yes |
+    | distinct state + exit 1 | no | clean retained worktree | re-gate risk | yes |
+    | advisory exit 0 | no | clean retained worktree | false success | no |
+    """
+    root, lane = landing_repo
+    _write(
+        lane / "test_dirty_lane.py",
+        "from pathlib import Path\n"
+        "def test_dirty_lane():\n"
+        f"    Path({str(lane / 'feature.txt')!r}).write_text('dirty after gate\\n')\n",
+    )
+    _git(lane, "add", "test_dirty_lane.py")
+    _git(lane, "commit", "-m", "make retirement retain the lane")
+
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    result = _run_batch(root, "--entry", "lane", "test_dirty_lane.py")
+    merged = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert merged != before
+    summary = next(l for l in result.stdout.splitlines() if "batch summary:" in l)
+    assert "landed=0" in summary
+    assert "landed-not-retired=1" in summary
+    assert "refused=0" in summary
+    branch_line = next(l for l in result.stdout.splitlines() if l.startswith("  lane:"))
+    assert "LANDED-NOT-RETIRED" in branch_line
+    assert f"merge={merged}" in branch_line
+    assert "REFUSE phase=retirement" in result.stderr
+    assert lane.is_dir(), "retirement failure must retain the lane worktree"
+
+
+def test_batch_premerge_gate_refusal_stays_refused_without_merge_sha(tmp_path: Path):
+    root, lane = _make_repo(tmp_path)
+    _write(lane / "new_tool.py", "VALUE = 1\n")
+    _git(lane, "add", "new_tool.py")
+    _git(lane, "commit", "-m", "binding change without named tests")
+
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    result = _run_batch(root, "--entry", "lane")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert _git(root, "rev-parse", "--verify", "refs/heads/master") == before
+    summary = next(l for l in result.stdout.splitlines() if "batch summary:" in l)
+    assert "landed=0" in summary
+    assert "landed-not-retired=0" in summary
+    assert "refused=1" in summary
+    branch_line = next(l for l in result.stdout.splitlines() if l.startswith("  lane:"))
+    assert "REFUSED" in branch_line
+    assert "merge=" not in branch_line
+    assert "REFUSE phase=selection" in result.stderr
 
 
 def test_batch_with_zero_entries_refuses_not_exit_zero(tmp_path: Path):
