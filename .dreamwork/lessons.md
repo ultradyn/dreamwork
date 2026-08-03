@@ -5972,3 +5972,54 @@ It took four rounds to surface because each earlier round's defect masked it: th
 bug produced `wedged` for the wrong reason, so the wrong-PID bug had nothing to show. Rounds
 that keep finding new P1s in the same function are not evidence of a careless lane; they are
 evidence that each fix is exposing the layer beneath.
+
+## I have been citing a task id for a rule that lives in the lessons file
+
+`#1158`'s dogfood report caught the coordinator in the exact failure the brief boilerplate warns
+about, and it is worth recording because I have done it in **every brief this session**.
+
+Every brief carries a line like *"`#868` — state BOTH denominators"*. The lane did the right thing
+and opened the entry:
+
+    #868  title: the tick line reports 0 live lanes while status_sync discovers 4 —
+                 two probes, one permanently wrong
+
+Its body is a specific bug report about `status_sync.live_lanes` taking `dreamers` as an argument
+and only ever pruning it. **The rule I keep citing is not in it.** "State both denominators" lives
+in `lessons.md`, attributed to `#868` — a real attribution, but one that makes the *task* id a
+pointer to something the task does not say. A lane that follows the citation finds a different
+document than the one promised. The boilerplate's own paragraph about `#894` describes this shape,
+and I wrote that paragraph.
+
+The section heading of every brief says *"each checked against its entry's body, not its title"*.
+That instruction is aimed at lanes. It applies to the person writing the brief first, and I was not
+applying it — I was citing from memory of the lesson, and the lesson's id is the id of the task that
+*occasioned* it, not the id of a task that *contains* it.
+
+**Cite the lessons line, not the task, when the rule is a lesson**: `lessons.md:3491 (occasioned by
+#868)`. Cite the task id when the lane needs the incident. They are different retrievals, and
+`dev/lessons_index.py --act <act>` returns the first kind — which is the one that should be reaching
+briefs.
+
+## A negative result from a broken instrument is indistinguishable from a negative result
+
+`#1158` had to demonstrate that a concurrent `cat >>` appender loses its write when rotation calls
+`os.replace`. Its first run reported `survived=False` — the expected answer, the answer that
+confirms the hazard.
+
+**The child had crashed.** A non-ASCII em-dash in a bytes literal made it a `SyntaxError`, so
+`survived=False` meant *"never wrote"*, not *"wrote and lost the write"*. The lane caught it only by
+reading the child's stderr, which nothing required it to do. Had it not, it would have reported a
+confirmed data-loss measurement that measured a typo.
+
+The generalisation is this session's recurring one, in the form that is hardest to catch: **when the
+outcome you are looking for is an absence, a broken instrument produces it too.** A probe that
+cannot run reports "not found". A test whose subject failed to load reports "no assertion failed".
+A grep with a wrong path reports zero hits. In every case the failure mode and the finding are the
+same observation, and the finding is the one you were hoping for.
+
+**The cheap fix is a positive control**: run the same instrument where the phenomenon is known to be
+absent and require the opposite answer. Here that is the same appender against no rotation, which
+must show `survived=True`. Without it, an experiment whose conclusion is "the write is lost" cannot
+distinguish itself from an experiment that never wrote. Related: `#1169` (a printed PID is not
+evidence the job ran) is the same lesson about process launch rather than process output.
