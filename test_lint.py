@@ -251,6 +251,165 @@ def _drain_state(dw: Path, allowed=("cx-846wtmove",), root=".worktrees",
     return path
 
 
+class TestSyncConflictFiles:
+    """#1166: detect Syncthing conflict copies of gitignored files (#1162).
+
+    The marker is infixed — <stem>.sync-conflict-<date>-<time>-<device>.<ext> —
+    so a suffix glob finds nothing. The files are gitignored, so git cannot see
+    them; the check walks the filesystem directly. These tests build their own
+    fixtures in tmp_path and NEVER touch the real repo or worktree roots.
+    """
+
+    _REAL_NAME = "ledger.sync-conflict-20260803-180706-QJRKU52.sqlite3"
+
+    def _check(self, dw: Path, monkeypatch) -> lint.Report:
+        """Point _main_checkout_for and worktree_roots at the fixture root."""
+        monkeypatch.setattr(lint, "_main_checkout_for", lambda target: dw.parent)
+        rep = lint.Report()
+        lint.check_sync_conflict_files(dw, rep)
+        return rep
+
+    def test_finds_real_shaped_conflict_under_repo_dreamwork(self, tmp_path, monkeypatch):
+        """Production line: the SYNC_CONFLICT_RE match + the ERROR branch.
+
+        The exact real filename from #1162, placed inside .dreamwork/ where the
+        live ledger lives. A tracked-file scan could never see it.
+        """
+        t = target(tmp_path)
+        conflict = t / ".dreamwork" / self._REAL_NAME
+        conflict.write_bytes(b"")
+        # Precondition: the fixture file matches the pattern (not a vacuous
+        # pass over an unrecognised name).
+        assert lint.SYNC_CONFLICT_RE.search(self._REAL_NAME), "fixture name must match"
+
+        rep = self._check(t / ".dreamwork", monkeypatch)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "sync-conflict"]
+        assert len(errors) == 1, rep.render()
+        assert self._REAL_NAME in errors[0]
+        assert str(t / ".dreamwork") in errors[0]
+
+    def test_reaches_gitignored_path_not_tracked_files(self, tmp_path, monkeypatch):
+        """Production line: the os.walk scan (not git ls-files).
+
+        A file inside a gitignored .dreamwork/ is found; git ls-files does not
+        list it. If the check scanned tracked files only, it would never see
+        the file it exists for (#1166's born-blind trap).
+        """
+        import subprocess
+        t = fresh(tmp_path)
+
+        def git(*a):
+            return subprocess.run(
+                ["git", "-C", str(t), *a],
+                capture_output=True, text=True, check=True)
+        git("init", "-q")
+        (t / ".gitignore").write_text(".dreamwork/\n")
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / self._REAL_NAME).write_bytes(b"")
+        git("add", "-A")
+        git("commit", "-qm", "base")
+
+        # Precondition: git does NOT see the conflict file (it is gitignored).
+        tracked = subprocess.run(
+            ["git", "-C", str(t), "ls-files"], capture_output=True, text=True)
+        assert self._REAL_NAME not in tracked.stdout, \
+            "fixture file must be gitignored for the test to be discriminating"
+
+        rep = self._check(dw, monkeypatch)
+        assert lint.ERROR in {lvl for lvl, w, _ in rep.rows if w == "sync-conflict"}, \
+            rep.render()
+
+    def test_clean_reports_counts_not_silent_green(self, tmp_path, monkeypatch):
+        """Production line: the OK row with roots-examined and files-scanned.
+
+        A check that examined nothing must not read as passing (#671/#685).
+        The OK row carries the counts as evidence.
+        """
+        t = target(tmp_path)
+        (t / ".dreamwork" / "ledger.sqlite3").write_bytes(b"")
+        (t / ".dreamwork" / "tasks.md").write_text("# tasks")
+        rep = self._check(t / ".dreamwork", monkeypatch)
+        rows = [(lvl, d) for lvl, w, d in rep.rows if w == "sync-conflict"]
+        assert [lvl for lvl, _ in rows] == [lint.OK], rep.render()
+        detail = rows[0][1]
+        assert "root(s) examined" in detail
+        assert "file(s) scanned" in detail
+        assert "0 conflict copies" in detail
+        # Precondition: the scan actually reached files (not zero).
+        assert int(detail.split("file(s) scanned")[0].split()[-1]) > 0, detail
+
+    def test_absent_worktree_roots_are_named_not_collapsed(self, tmp_path, monkeypatch):
+        """#136: 'no conflict found' and 'root absent' are two states.
+
+        A worktree root that does not exist is named in the OK row, not hidden
+        behind a silent green.
+        """
+        t = target(tmp_path)
+        (t / ".dreamwork" / "ledger.sqlite3").write_bytes(b"")
+        rep = self._check(t / ".dreamwork", monkeypatch)
+        ok = [d for lvl, w, d in rep.rows
+              if lvl == lint.OK and w == "sync-conflict"]
+        assert len(ok) == 1, rep.render()
+        assert "absent:" in ok[0]
+        assert "worktree root" in ok[0]
+
+    def test_suffix_glob_does_not_match(self, tmp_path, monkeypatch):
+        """The marker is INFIXED before the extension.
+
+        A file named *.sync-conflict.<ext> (suffix, no date) is NOT a Syncthing
+        conflict copy and must not match. This is the trap the brief names: a
+        suffix glob passes every test written from the same wrong understanding.
+        """
+        t = target(tmp_path)
+        (t / ".dreamwork" / "notes.sync-conflict.sqlite3").write_bytes(b"")
+        rep = self._check(t / ".dreamwork", monkeypatch)
+        assert lint.ERROR not in {lvl for lvl, w, _ in rep.rows}, rep.render()
+
+    def test_does_not_delete_or_move_conflict_file(self, tmp_path, monkeypatch):
+        """#702: report only, never resolve. The file must survive the check."""
+        t = target(tmp_path)
+        conflict = t / ".dreamwork" / self._REAL_NAME
+        conflict.write_bytes(b"stale snapshot")
+        self._check(t / ".dreamwork", monkeypatch)
+        assert conflict.exists(), "check must never delete or move a conflict file"
+        assert conflict.read_bytes() == b"stale snapshot"
+
+    def test_finds_conflict_under_worktree_root(self, tmp_path, monkeypatch):
+        """Production line: worktree roots are scanned, not just the repo root.
+
+        Conflict copies appeared under ../.worktrees/ as well (#1162). The
+        check must scan both root families.
+        """
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        # worktree_roots(t) returns (t.parent / '.worktrees', t / '.worktrees').
+        sibling_wt = t.parent / ".worktrees" / "cx-test"
+        sibling_wt.mkdir(parents=True)
+        (sibling_wt / "scratch.sync-conflict-20260803-180706-ABCDEFG.py").write_text("")
+        rep = self._check(dw, monkeypatch)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "sync-conflict"]
+        assert len(errors) == 1, rep.render()
+        assert "scratch.sync-conflict" in errors[0]
+
+    def test_device_id_and_date_are_not_hardcoded(self, tmp_path, monkeypatch):
+        """The pattern matches ANY date and device id, not a literal."""
+        t = target(tmp_path)
+        for name in [
+            "ledger.sync-conflict-20260101-120000-DEVICE01.sqlite3",
+            "notes.sync-conflict-19991231-235959-XYZ9876.md",
+            "data.sync-conflict-20260803-180706.json",
+        ]:
+            (t / ".dreamwork" / name).write_bytes(b"")
+        rep = self._check(t / ".dreamwork", monkeypatch)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "sync-conflict"]
+        assert len(errors) == 3, rep.render()
+
+
 class TestInRepoWorktreeDrain:
     def test_state_file_deletion_cannot_disable_an_existing_ratchet(
             self, tmp_path, monkeypatch):

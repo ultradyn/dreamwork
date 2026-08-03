@@ -5325,6 +5325,78 @@ def check_inbox_rotation(dw: Path, rep: Report) -> None:
         )
 
 
+# Syncthing conflict-copy marker (#1162/#1166). The real filename is
+# <stem>.sync-conflict-<YYYYMMDD>-<HHMMSS>-<deviceid>.<ext> — the marker is
+# INFIXED before the extension, so a *.sync-conflict suffix glob finds
+# nothing. The date/time digits are matched structurally (not as literals):
+# they vary per machine and per conflict, but Syncthing always emits 8+6.
+SYNC_CONFLICT_RE = re.compile(r'\.sync-conflict-\d{8}-\d{6}')
+
+
+def check_sync_conflict_files(dw: Path, rep: Report) -> None:
+    """A Syncthing conflict copy under the repo or worktree roots (#1162/#1166).
+
+    #1162 landed the prevention (.stignore excludes .dreamwork/ and
+    ../.worktrees/). This is the detection half: .stignore is PER-DEVICE and
+    not itself synced, so any second machine is one manual step from
+    reintroducing the cause. A conflict copy of the gitignored single-writer
+    ledger could silently replace the live store; git cannot help because the
+    file is gitignored. This walks the FILESYSTEM — not git's tracked-file
+    index — because the whole point is reaching gitignored paths (#1166).
+
+    Report only, never resolve (#702): the copy may be the newer one, and
+    automated resolution is the hazard #1162 names, not the fix.
+
+    Three states stay distinct (#136): conflict found (ERROR), none found
+    (OK with counts), and a root absent/unreadable (counted in the OK row,
+    never silently green — #671/#685).
+    """
+    root = dw.parent
+    # Resolve the main checkout so worktree roots are canonical even when lint
+    # runs inside a linked worktree; fall back to root for non-git fixtures.
+    main_checkout = _main_checkout_for(root)
+    base = main_checkout if main_checkout is not None else root
+    new_wt, old_wt = worktree_roots(base)
+    scan_roots = [
+        (base, "repo root"),
+        (new_wt, "out-of-repo worktree root"),
+        (old_wt, "in-repo worktree root"),
+    ]
+
+    examined = 0
+    scanned = 0
+    absent: list[str] = []
+    found: list[str] = []
+
+    for scan_root, label in scan_roots:
+        if not scan_root.is_dir():
+            absent.append(f"{label} ({scan_root})")
+            continue
+        examined += 1
+        for dirpath, dirnames, filenames in os.walk(scan_root):
+            dirnames[:] = [d for d in dirnames if d not in _WALK_SKIP_DIRS]
+            for name in filenames:
+                scanned += 1
+                if SYNC_CONFLICT_RE.search(name):
+                    found.append(str(Path(dirpath) / name))
+
+    if found:
+        for path in sorted(found):
+            rep.add(
+                ERROR, "sync-conflict",
+                f"Syncthing conflict copy at {path} — file-sync is operating "
+                f"where .stignore should exclude it; this can silently replace "
+                f"a gitignored single-writer file (possibly the live ledger); "
+                f"resolve manually, the copy may be newer: #1162/#1166")
+        return
+
+    detail = (f"{examined} root(s) examined; {scanned} file(s) scanned; "
+              f"0 conflict copies")
+    if absent:
+        detail += f"; absent: {', '.join(absent)}"
+    rep.add(OK, "sync-conflict", detail)
+
+
 def check_in_repo_worktree_drain(dw: Path, rep: Report) -> None:
     """Old-root membership/count may only drain; size is reported evidence (#846)."""
     state_path = dw / WORKTREE_DRAIN_STATE
@@ -9307,6 +9379,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_client_dist(dw.parent, rep)
     check_builder_delegation(dw.parent, rep)
     check_in_repo_worktree_drain(dw, rep)
+    check_sync_conflict_files(dw, rep)
     check_inbox_rotation(dw, rep)
     # LAST, and it must stay last: the ledger checks that can skip are spread
     # through the list above and each records its own skip as it returns, so
