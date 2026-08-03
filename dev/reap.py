@@ -78,9 +78,11 @@ def worktree_liveness(target: Path) -> WorktreeLiveness:
             raw = Path(f"/proc/{pid}/cmdline").read_bytes()
         except (FileNotFoundError, ProcessLookupError):
             continue
-        except OSError:
-            # A process whose identity cannot be read is outside the named
-            # ccc/agent population; the shared classifier cannot select it.
+        except OSError as exc:
+            # Identity failure is not evidence that the process is unrelated.
+            # The current fleet has no unreadable same-uid cmdlines; if one
+            # appears, refuse rather than turn it into a false idle verdict.
+            unknown.append(f"pid {pid}: cannot read cmdline: {exc.strerror or exc}")
             continue
         if not is_lane_runner(raw):
             continue
