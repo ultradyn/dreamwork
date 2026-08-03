@@ -127,6 +127,22 @@ observed command, you cannot claim the paths were unrelated; re-arm instead.
       python3 dev/redproof.py restore <path> --lane <your-lane>
       python3 dev/redproof.py check --require 1 --lane <your-lane>
 
+  **`<expectation-source>` should be the TRACKED test file that binds your change** — the
+  docstring's own example is `router.js --expectation test_router.py`. It must be a file that
+  still exists, unchanged in identity, when `restore` and `check` run later. A lane pointed
+  `begin` at an untracked `.bak` copy of the production file, cleaned the copy up, and both
+  `restore` and `check` then FAULTED with *"registered path absent from the working tree"* — one
+  cycle lost (`#1123`). `begin` does warn about untracked expectation sources, but the warning is
+  easy to lose in the output wall, so choose the tracked test file up front rather than relying on
+  catching it.
+
+  **A test-only diff still owes an injection — it is NOT inert.** `land_lane._classify_diff`
+  treats any path outside `.dreamwork/` as binding, so a lane that owns nothing but test files
+  computes `required_injections=1`. Arm up front rather than discovering the requirement at
+  `check`; several briefs (mine included) have said a test-only change "may classify inert", and
+  `#1123` measured that it does not. **Whatever any brief tells you, run
+  `land_lane._classify_diff` against your ACTUAL diff and believe the tool**, not the prose.
+
   **`--lane` MUST come BEFORE `--command`, and this ordering is load-bearing** (`#989`).
   `--command` is an `argparse.REMAINDER` (`dev/redproof.py:1765`), so it consumes everything after
   it — including `--lane` (`:1772`), which is then never parsed. The tool resolves a DIFFERENT
@@ -391,6 +407,16 @@ and without it the map rots silently. A lane adding a plan under
 `plans row omits N plan(s) that exist: <names> — a reader of the map cannot learn they are there` —
 expected, not a regression, when the omitted names are the plans you just added;
 any other `doc-map.md` WARN is a real finding.
+
+  **This holds even if your brief tells you to add the slug yourself — the brief is wrong and the
+  rule wins.** The file has two different kinds of row and they mislead in opposite directions: a
+  per-plan *description* row (clearly the coordinator's) and a single enumerated *plan-slug list*
+  (which looks like a one-word append anyone could make). It is the second that bites. On
+  2026-08-03 two lanes each appended one slug to that one line, both correctly, and collided at
+  the merge gate; the coordinator hand-merged two 60-slug lines with three assertions to be sure
+  the result was right. **Two lanes cannot append to the same line.** Report your new doc path and
+  let it be folded. If a brief instructs otherwise, say so in your report — that is a defect in the
+  brief worth more than the row.
 
 **Lane bars are command-, snapshot-, and interpreter-relative.** Run `python3 lint.py`: require
 NO ERRORs and compare the complete WARN row set against the measured baseline, not only the trailer
