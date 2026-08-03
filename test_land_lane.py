@@ -1151,13 +1151,64 @@ def test_success_runs_real_reap_and_retains_branch_only(landing_repo):
     assert _git(root, "show-ref", "--verify", "refs/heads/lane")
 
 
+def test_success_advances_master_exactly_once(landing_repo, monkeypatch, capsys):
+    root, lane = landing_repo
+    before = _git(root, "rev-parse", "master")
+    real_git = land_lane._git
+    advances: list[tuple[str, ...]] = []
+
+    def recording_git(cwd, *args):
+        if Path(cwd).resolve() == root.resolve() and args[:2] == ("merge", "--ff-only"):
+            advances.append(args)
+        return real_git(cwd, *args)
+
+    monkeypatch.setattr(land_lane, "_git", recording_git)
+    monkeypatch.chdir(root)
+    assert land_lane.land("lane", ["test_named.py"]) == 0, capsys.readouterr().err
+    assert len(advances) == 1, f"master advance calls={advances!r}"
+    assert _git(root, "rev-parse", "master") != before
+    assert not lane.exists()
+
+
+def test_compare_before_advance_exercises_moved_master_and_refuses(landing_repo):
+    root, lane = landing_repo
+    marker = root.parent / "moved-master.txt"
+    _write(
+        lane / "test_move_master.py",
+        "from pathlib import Path\n"
+        "import subprocess\n"
+        "def git(*args):\n"
+        "    return subprocess.run(['git', *args], check=True, capture_output=True, text=True).stdout.strip()\n"
+        "def test_move_master():\n"
+        "    base = git('rev-parse', 'refs/heads/master')\n"
+        "    tree = git('rev-parse', base + '^{tree}')\n"
+        "    moved = subprocess.run(['git', 'commit-tree', tree, '-p', base, '-m', 'concurrent master move'], check=True, capture_output=True, text=True).stdout.strip()\n"
+        "    git('update-ref', 'refs/heads/master', moved, base)\n"
+        f"    Path({str(marker)!r}).write_text(moved)\n",
+    )
+    _git(lane, "add", "test_move_master.py")
+    _git(lane, "commit", "-m", "exercise moved-master CAS")
+
+    result = _run(root, "test_move_master.py")
+
+    assert result.returncode == 1
+    assert "REFUSE phase=advance: compare-before-advance refused" in result.stderr
+    assert "master moved from captured" in result.stderr
+    moved = marker.read_text(encoding="utf-8")
+    assert _git(root, "rev-parse", "master") == moved
+    assert _git(root, "branch", "--show-current") == "master"
+    assert not (root / ".dreamwork" / "gate-in-flight.json").exists()
+    assert not any("/.gate-" in row for row in _git(root, "worktree", "list", "--porcelain").splitlines())
+    _assert_retained(root, lane)
+
+
 def test_reap_refusal_is_binding_when_lane_becomes_dirty_during_gates(landing_repo):
     root, lane = landing_repo
     _write(
         lane / "test_dirty_lane.py",
         "from pathlib import Path\n"
         "def test_dirty_lane():\n"
-        "    Path('../lane/feature.txt').write_text('dirty after preflight\\n')\n",
+        f"    Path({str(lane / 'feature.txt')!r}).write_text('dirty after preflight\\n')\n",
     )
     _git(lane, "add", "test_dirty_lane.py")
     _git(lane, "commit", "-m", "exercise preserve refusal")
@@ -1189,14 +1240,15 @@ def test_gates_run_on_the_merge_commit_not_on_the_branch(landing_repo):
     worktree, or before the merge, sees one parent and writes elsewhere.
     """
     root, lane = landing_repo
+    probe = root.parent / "gate-probe.json"
     _write(
         lane / "test_probe.py",
         "from pathlib import Path\n"
-        "import subprocess\n"
+        "import json, os, subprocess\n"
         "def test_probe():\n"
         "    out = subprocess.run(['git', 'rev-list', '--parents', '-n', '1', 'HEAD'],\n"
         "        capture_output=True, text=True, check=True).stdout\n"
-        "    Path('probe.txt').write_text(out)\n",
+        f"    Path({str(probe)!r}).write_text(json.dumps({{'cwd': os.getcwd(), 'parents': out.split()}}))\n",
     )
     _git(lane, "add", "test_probe.py")
     _git(lane, "commit", "-m", "record the tree the gate judged")
@@ -1205,10 +1257,18 @@ def test_gates_run_on_the_merge_commit_not_on_the_branch(landing_repo):
 
     result = _run(root, "test_probe.py")
 
-    assert result.returncode == 0, result.stderr
-    probe = root / "probe.txt"
-    assert probe.exists(), "the gate did not run in the main checkout at all"
-    seen = probe.read_text().split()
+    assert result.returncode == 0, (
+        "provisional gate command ran in main checkout\n" + result.stderr
+    )
+    assert probe.exists(), "the gate command did not run at all"
+    record = json.loads(probe.read_text(encoding="utf-8"))
+    gate_cwd = Path(record["cwd"]).resolve()
+    assert gate_cwd not in {root.resolve(), lane.resolve()}, (
+        "provisional gate command ran in main checkout or lane worktree"
+    )
+    assert f"registered detached scratch={gate_cwd}" in result.stdout
+    assert f"at exact base={base_before}" in result.stdout
+    seen = record["parents"]
     assert seen[1:] == [base_before, lane_head], f"gate judged {seen!r}"
     assert (
         f"merge-identity: {seen[0]} has parents master@{base_before} and lane@{lane_head}"
@@ -1217,12 +1277,7 @@ def test_gates_run_on_the_merge_commit_not_on_the_branch(landing_repo):
 
 
 def test_a_restore_that_cannot_land_is_loud_and_master_is_still_correct(landing_repo):
-    """The argument for detaching rather than merging-then-reverting.
-
-    The named test dirties a tracked path the restore has to delete, so
-    `git checkout master` genuinely fails. The refusal must say so — and
-    refs/heads/master must still be right, because it never held the merge.
-    """
+    """A dirty failing scratch is removed without touching attached main."""
     root, lane = landing_repo
     _write(
         lane / "test_blocks_restore.py",
@@ -1239,8 +1294,8 @@ def test_a_restore_that_cannot_land_is_loud_and_master_is_still_correct(landing_
 
     assert result.returncode == 1
     assert "REFUSE phase=named-tests: named test selection failed" in result.stderr
-    assert "RESTORE FAILED:" in result.stderr
-    assert "run `git checkout master` in" in result.stderr
+    assert "RECOVERY FAILED:" not in result.stderr
+    assert _git(root, "branch", "--show-current") == "master"
     assert _git(root, "rev-parse", "--verify", "refs/heads/master") == before
     _assert_retained(root, lane)
 
@@ -2605,9 +2660,10 @@ def test_a_doc_only_lane_with_no_registry_lands_because_none_was_required(
     assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before
 
 
-def test_land_tool_contains_no_second_worktree_removal_route():
+def test_land_tool_has_one_exact_scratch_removal_and_reap_still_owns_lane_removal():
     source = TOOL.read_text(encoding="utf-8")
-    assert '"worktree", "remove"' not in source
+    assert source.count('"worktree", "remove"') == 1
+    assert "def _cleanup_gate_worktree" in source
     assert 'Path(__file__).with_name("reap.py")' in source
 
 
@@ -2623,16 +2679,14 @@ def test_just_recipe_requires_branch_but_leaves_empty_tests_for_named_refusal():
 
 
 # ---------------------------------------------------------------------------
-# #1120: an interrupted land_lane leaves the main checkout detached at an
-# ungated merge, which reads as a successful landing to anything following
-# HEAD. These tests cover the breadcrumb's three states (#136: no file /
-# live pid / dead pid), the refusal on a dead breadcrumb, and — critically —
-# a REAL SIGTERM delivered to a REAL land_lane subprocess, which proves the
-# signal handler is reached rather than merely that the handler runs when
-# called from a mock.
+# #1120/#1128: interrupted gating leaves a registered detached scratch while
+# main remains attached. These cover absent/live/dead breadcrumbs and exact
+# registered-path recovery.
 
 
-def _write_dead_breadcrumb(root: Path, *, branch: str, merge_sha: str, phase: str) -> Path:
+def _write_dead_breadcrumb(
+    root: Path, *, branch: str, merge_sha: str, phase: str
+) -> tuple[Path, Path]:
     """Write a gate-in-flight breadcrumb with a pid guaranteed dead (#136).
 
     ``os.kill(0, 0)`` is NOT "no such process" on Linux — pid 0 means "the
@@ -2640,31 +2694,44 @@ def _write_dead_breadcrumb(root: Path, *, branch: str, merge_sha: str, phase: st
     spawn a child that exits immediately, reap it, and use its (now-recycled)
     pid: that pid refers to a process that no longer exists, so
     ``_pid_alive`` reports DEAD — the state a real SIGKILLed gate would leave
-    behind (SIGKILL skips the signal handler, so the breadcrumb survives and
-    the checkout stays detached).
+    behind (SIGKILL skips the signal handler, so the breadcrumb survives).
     """
     child = subprocess.Popen([sys.executable, "-c", "import sys; sys.exit(0)"])
     child.wait()
     dead_pid = child.pid
+    scratch = (root.parent / ".worktrees" / f".gate-dead-{dead_pid}").resolve()
+    _git(root, "worktree", "add", "--detach", str(scratch), "master")
+    common = Path(_git(root, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+    base_sha = _git(root, "rev-parse", "master")
+    branch_sha = _git(root, "rev-parse", branch)
     crumb = root / ".dreamwork" / "gate-in-flight.json"
     crumb.parent.mkdir(parents=True, exist_ok=True)
     crumb.write_text(json.dumps({
         "branch": branch,
-        "base": "master",
+        "gate_worktree": str(scratch),
+        "common_git_dir": str(common.resolve()),
+        "base_ref": "master",
+        "base_sha": base_sha,
+        "branch_sha": branch_sha,
         "merge_sha": merge_sha,
         "phase": phase,
         "pid": dead_pid,
     }, sort_keys=True) + "\n", encoding="utf-8")
-    return crumb
+    return crumb, scratch
 
 
 def _write_live_breadcrumb(root: Path, *, branch: str, merge_sha: str, phase: str) -> Path:
     """Write a gate-in-flight breadcrumb with THIS process's pid (LIVE)."""
     crumb = root / ".dreamwork" / "gate-in-flight.json"
     crumb.parent.mkdir(parents=True, exist_ok=True)
+    common = Path(_git(root, "rev-parse", "--path-format=absolute", "--git-common-dir"))
     crumb.write_text(json.dumps({
         "branch": branch,
-        "base": "master",
+        "gate_worktree": str((root.parent / ".worktrees" / "live-gate").resolve()),
+        "common_git_dir": str(common.resolve()),
+        "base_ref": "master",
+        "base_sha": _git(root, "rev-parse", "master"),
+        "branch_sha": _git(root, "rev-parse", branch),
         "merge_sha": merge_sha,
         "phase": phase,
         "pid": os.getpid(),
@@ -2673,10 +2740,10 @@ def _write_live_breadcrumb(root: Path, *, branch: str, merge_sha: str, phase: st
 
 
 def test_dead_gate_breadcrumb_refuses_and_names_the_state(landing_repo):
-    """A dead gate-in-flight breadcrumb must refuse with the recovery command."""
+    """Dead recovery removes the exact registration before the breadcrumb."""
     root, lane = landing_repo
     before = _git(root, "rev-parse", "HEAD")
-    crumb = _write_dead_breadcrumb(
+    crumb, scratch = _write_dead_breadcrumb(
         root, branch="lane", merge_sha="deadbeefdeadbeef", phase="named-tests",
     )
 
@@ -2691,9 +2758,12 @@ def test_dead_gate_breadcrumb_refuses_and_names_the_state(landing_repo):
     # And the merge sha and the dead pid state.
     assert "merge=deadbeefdeadbeef" in result.stderr
     assert "DEAD" in result.stderr
-    # Recovery command names the base and the breadcrumb path.
-    assert "git switch master" in result.stderr
+    assert f"removed exact registered gate worktree {scratch}" in result.stderr
+    assert "verified registration/path absent, then cleared" in result.stderr
     assert str(crumb) in result.stderr
+    assert not crumb.exists()
+    assert not scratch.exists()
+    assert str(scratch) not in _git(root, "worktree", "list", "--porcelain")
     # master unmoved; the refuse happened before the merge.
     assert _git(root, "rev-parse", "--verify", "refs/heads/master") == before
     _assert_retained(root, lane)
@@ -2763,7 +2833,7 @@ def test_successful_landing_clears_the_breadcrumb(landing_repo):
     )
 
 
-def test_clean_refusal_after_detach_clears_the_breadcrumb(landing_repo):
+def test_clean_scratch_refusal_clears_the_breadcrumb(landing_repo):
     """A post-merge gate refusal is not a death — it clears the breadcrumb.
 
     The breadcrumb records a gate that DIED (interrupted). A gate that ran,
@@ -2793,14 +2863,45 @@ def test_clean_refusal_after_detach_clears_the_breadcrumb(landing_repo):
     _assert_base_unmoved(root, before)
 
 
-def test_real_sigterm_reattaches_checkout_and_leaves_breadcrumb(landing_repo):
-    """A REAL SIGTERM to a REAL land_lane subprocess reattaches the checkout.
+def test_cleanup_failure_retains_exact_scratch_breadcrumb(landing_repo, monkeypatch, capsys):
+    root, lane = landing_repo
+    _write(lane / "test_failing.py", "def test_fails(): assert False\n")
+    _git(lane, "add", "test_failing.py")
+    _git(lane, "commit", "-m", "reach cleanup failure")
+    before = _git(root, "rev-parse", "master")
+    real_cleanup = land_lane._cleanup_gate_worktree
+    monkeypatch.setattr(
+        land_lane, "_cleanup_gate_worktree",
+        lambda repo, path: "injected exact scratch cleanup failure",
+    )
+    monkeypatch.chdir(root)
+
+    assert land_lane.land("lane", ["test_named.py", "test_failing.py"]) == 1
+
+    captured = capsys.readouterr()
+    crumb = root / ".dreamwork" / "gate-in-flight.json"
+    assert "RECOVERY FAILED: injected exact scratch cleanup failure" in captured.err
+    assert crumb.is_file(), "breadcrumb cleared before failed scratch cleanup"
+    record = json.loads(crumb.read_text(encoding="utf-8"))
+    scratch = Path(record["gate_worktree"])
+    assert scratch.is_dir()
+    assert str(scratch) in _git(root, "worktree", "list", "--porcelain")
+    assert _git(root, "branch", "--show-current") == "master"
+    assert _git(root, "rev-parse", "master") == before
+
+    monkeypatch.setattr(land_lane, "_cleanup_gate_worktree", real_cleanup)
+    assert real_cleanup(root, scratch) is None
+    crumb.unlink()
+
+
+def test_real_sigkill_leaves_exact_scratch_and_recovery_removes_it(landing_repo):
+    """A real uncatchable kill leaves the main attached and exact residue.
 
     This is the test the brief mandates (#1120 Direction 2): a mocked signal
     proves the handler runs, not that a real SIGTERM reaches it. Here a
     land_lane subprocess is started, allowed to reach the gate phase, then
-    SIGTERM'd. The checkout must be back on master (the handler reattached),
-    AND the breadcrumb must survive (the handler leaves it as the record).
+    SIGKILL'd. Main was never detached, while the breadcrumb and registered
+    scratch survive for the next invocation to recover in checked order.
 
     The gate phase is reached by adding a blocking named test that waits on a
     sentinel file: the land_lane subprocess will be in the named-tests gate
@@ -2848,7 +2949,12 @@ def test_real_sigterm_reattaches_checkout_and_leaves_breadcrumb(landing_repo):
                 f"stdout={out!r} stderr={err!r}"
             )
 
-        os.kill(proc.pid, signal.SIGTERM)
+        second = _run(root, "test_named.py")
+        assert second.returncode == 1
+        assert "REFUSE phase=gate-mutex" in second.stderr
+        assert "another landing gate owns the whole-run mutex" in second.stderr
+
+        os.kill(proc.pid, signal.SIGKILL)
         proc.wait(timeout=15)
     finally:
         (root / "unblock.txt").write_text("unblock\n")
@@ -2856,26 +2962,27 @@ def test_real_sigterm_reattaches_checkout_and_leaves_breadcrumb(landing_repo):
             proc.kill()
             proc.wait(timeout=5)
 
-    # The handler reattached the checkout to master.
     assert _git(root, "branch", "--show-current") == "master", (
-        "SIGTERM handler did not reattach the checkout to master"
+        "main checkout detached while the scratch gate was running"
     )
     # master is unmoved — the signal arrived before the fast-forward.
     assert _git(root, "rev-parse", "--verify", "refs/heads/master") == before
-    # The breadcrumb SURVIVES the handler (it is the record, #1120 dir 2).
     assert crumb.is_file(), (
-        "SIGTERM handler must LEAVE the breadcrumb; reattaching is recovery, "
-        "the breadcrumb is the record"
+        "SIGKILL must leave the durable breadcrumb"
     )
     record = json.loads(crumb.read_text(encoding="utf-8"))
     assert record["branch"] == "lane"
     assert record["phase"] == "named-tests"
     assert record["merge_sha"] != "<pre-merge>"
+    scratch = Path(record["gate_worktree"])
+    assert scratch.is_dir()
+    assert str(scratch) in _git(root, "worktree", "list", "--porcelain")
     # A subsequent run refuses on the now-dead breadcrumb (pid no longer live).
     result = _run(root, "test_named.py")
     assert result.returncode == 1
     assert "REFUSE phase=gate-in-flight" in result.stderr
     assert "DEAD" in result.stderr
     assert "phase_reached=named-tests" in result.stderr
-    # Recovery restores the tree: switch to master, delete the breadcrumb.
-    crumb.unlink(missing_ok=True)
+    assert f"removed exact registered gate worktree {scratch}" in result.stderr
+    assert not scratch.exists()
+    assert not crumb.exists()

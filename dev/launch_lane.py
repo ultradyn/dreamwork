@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import errno
+import fcntl
 import hashlib
 import json
 import os
@@ -50,6 +52,48 @@ _RUNNER_SETTLE_SECONDS = 0.3
 
 class LaunchFault(Exception):
     pass
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError as exc:
+        return exc.errno != errno.ESRCH
+    return True
+
+
+def _gate_in_flight(main: Path) -> tuple[bool, str]:
+    """Return whether the main-owned gate breadcrumb blocks dispatch."""
+    path = main / ".dreamwork" / "gate-in-flight.json"
+    if not path.is_file():
+        return False, f"breadcrumb={path}; state=absent"
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+        pid = int(record.get("pid", 0))
+        phase = str(record.get("phase", ""))
+        scratch = str(record.get("gate_worktree", ""))
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return True, f"breadcrumb={path}; state=unreadable"
+    state = "LIVE" if _pid_alive(pid) else "DEAD"
+    return True, (
+        f"breadcrumb={path}; state={state}; pid={pid}; phase={phase or 'UNKNOWN'}; "
+        f"gate_worktree={scratch or 'UNKNOWN'}"
+    )
+
+
+def _try_repo_state_lock(main: Path):
+    path = main / ".git" / "dreamwork-repo-state.lock"
+    handle = path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
 
 
 def _run(args: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -376,6 +420,18 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
     inbox = main / ".dreamwork" / "inbox.md"
     retained = "worktree=none; branch=none"
 
+    gate_blocks, gate_detail = _gate_in_flight(main)
+    if gate_blocks:
+        return _refuse(
+            "gate-in-flight",
+            [
+                "dispatch remains refused for the whole live gate interval; "
+                "the shared brief corpus is still the gate lint subject"
+            ],
+            gate_detail,
+            retained,
+        )
+
     selection: list[str] = []
     if task <= 0:
         selection.append("task id must be a positive integer")
@@ -493,6 +549,33 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
             collisions.append(f"attempt {attempt_id} already exists; use --resume {attempt_id}")
         if collisions:
             return _refuse("worktree-preflight", collisions, f"git worktree list entries={len(worktrees)}; digest={digest}", retained)
+        repo_state_lock = _try_repo_state_lock(main)
+        if repo_state_lock is None:
+            return _refuse(
+                "worktree-preflight",
+                ["repository-state mutex is busy; a gate may be selecting or advancing master"],
+                f"base={base_sha}; lock={main / '.git' / 'dreamwork-repo-state.lock'}",
+                retained,
+            )
+        locked_base = _git_text(main, "rev-parse", "--verify", "master^{commit}")
+        locked_current = _git_text(main, "branch", "--show-current")
+        gate_blocks, gate_detail = _gate_in_flight(main)
+        if locked_base != base_sha or locked_current != "master" or gate_blocks:
+            repo_state_lock.close()
+            reasons = []
+            if locked_base != base_sha:
+                reasons.append(
+                    f"master moved from selected {base_sha} to {locked_base or 'UNREADABLE'}"
+                )
+            if locked_current != "master":
+                reasons.append(f"main checkout moved to {locked_current or 'DETACHED'}")
+            if gate_blocks:
+                reasons.append("a gate breadcrumb appeared before worktree creation")
+            return _refuse(
+                "worktree-preflight", reasons,
+                f"selected-base={base_sha}; locked-base={locked_base or 'UNREADABLE'}; {gate_detail}",
+                retained,
+            )
         record = {
             "attempt_id": attempt_id, "task_id": task, "lane": lane, "agent": agent,
             "base_sha": base_sha, "prompt_sha256": digest, "prompt_bytes": len(prompt.encode("utf-8")),
@@ -502,6 +585,7 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
         try:
             _write_record(attempt_path, record, create=True)
         except OSError as exc:
+            repo_state_lock.close()
             return _refuse("attempt-persistence", [f"could not persist attempt record: {exc}"],
                            f"attempt={attempt_id}; digest={digest}; path={attempt_path}", retained)
         added = _git(main, "worktree", "add", str(lane_path), "-b", lane, base_sha)
@@ -516,9 +600,11 @@ def launch(task: int, lane: str, agent: str, head_path: Path, runner_args: Seque
                 registered = _worktrees(main) or {}
             record["state"] = "worktree creation refused"
             _write_record(attempt_path, record)
+            repo_state_lock.close()
             retained = f"attempt={attempt_id} preserved; registered worktree={registered.get(lane, 'none')}; branch={lane if _git_text(main, 'show-ref', '--verify', f'refs/heads/{lane}') else 'none'}"
             return _refuse("worktree-creation", reasons,
                            f"git worktree list entries={len(registered)}; expected={lane_path.resolve()}", retained)
+        repo_state_lock.close()
         retained = f"worktree={lane_path.resolve()}; branch={lane}; attempt={attempt_id} preserved"
 
     created_here = not bool(resume)
