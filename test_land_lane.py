@@ -1952,13 +1952,13 @@ def test_reap_refusal_is_binding_when_lane_becomes_dirty_during_gates(landing_re
 
     result = _run(root, "test_dirty_lane.py")
 
-    assert result.returncode == 1
+    assert result.returncode == 2
     assert (
         f"reap examined path={lane.resolve()} tracked-dirty=1 untracked=0 ignored=0 "
         "unmerged-commits=0"
     ) in result.stderr
     assert "REFUSE: tracked path would be lost: feature.txt" in result.stderr
-    assert "REFUSE phase=retirement: dev/reap.py refused with exit 1" in result.stderr
+    assert "LANDED-NOT-RETIRED phase=retirement: dev/reap.py refused with exit 1" in result.stderr
     # Retirement is the one refusal that legitimately follows the advance, so
     # this is where the message must say master DID move rather than "unchanged".
     landed = _git(root, "rev-parse", "--verify", "refs/heads/master")
@@ -3967,7 +3967,15 @@ def test_batch_lands_two_stale_doc_branches_by_rebasing_per_entry(batch_two_doc_
     assert "lane: LANDED" in result.stdout, result.stdout
     assert "lane-b: LANDED" in result.stdout, result.stdout
     # Both denominators stated (#868).
-    assert "batch summary: attempted=2 landed=2" in result.stdout
+    summary = next(l for l in result.stdout.splitlines() if "batch summary:" in l)
+    assert "attempted=2 landed=2" in summary
+    merge_shas = _git(
+        root, "rev-list", "--first-parent", "--max-count=2", "master",
+    ).splitlines()
+    assert len(merge_shas) == 2
+    assert all(sha in summary for sha in merge_shas), (
+        "a batch summary with multiple landings omitted a merge sha"
+    )
     # Lane-a's landing advanced master; lane-b was rebased onto that new tip
     # before its own gate. If the rebase were up-front, lane-b would REFUSE.
     assert "REFUSE phase=preflight: branch is not rebased" not in result.stdout
@@ -4088,6 +4096,68 @@ def test_batch_gate_refusal_continues_and_reports_loudly(batch_landed_plus_refus
     assert lane_b.is_dir(), "lane-b worktree was removed despite refusal"
 
 
+def test_batch_post_advance_retirement_failure_names_merge_and_distinct_outcome(
+    landing_repo,
+):
+    """A landed merge with retained worktree is not a pre-merge REFUSED result.
+
+    #1197 IGC, context: a post-advance cleanup failure must remain loud.
+
+    | Idea | All | summary-only next action | exit-code script | loud cleanup debt |
+    | distinct state + exit 2 | ✔ | clean retained worktree | stop distinctly | ✔ |
+    | distinct state + exit 1 | ✘ | clean retained worktree | re-gate risk | ✔ |
+    | advisory exit 0 | ✘ | clean retained worktree | false success | ✔ |
+    """
+    root, lane = landing_repo
+    _write(
+        lane / "test_dirty_lane.py",
+        "from pathlib import Path\n"
+        "def test_dirty_lane():\n"
+        f"    Path({str(lane / 'feature.txt')!r}).write_text('dirty after gate\\n')\n",
+    )
+    _git(lane, "add", "test_dirty_lane.py")
+    _git(lane, "commit", "-m", "make retirement retain the lane")
+
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    result = _run_batch(root, "--entry", "lane", "test_dirty_lane.py")
+    merged = _git(root, "rev-parse", "--verify", "refs/heads/master")
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert merged != before
+    summary = next(l for l in result.stdout.splitlines() if "batch summary:" in l)
+    assert "landed=0" in summary
+    assert "landed-not-retired=1" in summary
+    assert "refused=0" in summary
+    assert f"merges={merged}" in summary
+    branch_line = next(l for l in result.stdout.splitlines() if l.startswith("  lane:"))
+    assert "LANDED-NOT-RETIRED" in branch_line
+    assert f"merge={merged}" in branch_line
+    assert "LANDED-NOT-RETIRED phase=retirement" in result.stderr
+    assert lane.is_dir(), "retirement failure must retain the lane worktree"
+
+
+def test_batch_premerge_gate_refusal_stays_refused_without_merge_sha(tmp_path: Path):
+    root, lane = _make_repo(tmp_path)
+    _write(lane / "new_tool.py", "VALUE = 1\n")
+    _git(lane, "add", "new_tool.py")
+    _git(lane, "commit", "-m", "binding change without named tests")
+
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    result = _run_batch(root, "--entry", "lane")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert _git(root, "rev-parse", "--verify", "refs/heads/master") == before
+    summary = next(l for l in result.stdout.splitlines() if "batch summary:" in l)
+    assert "landed=0" in summary
+    assert "landed-not-retired=0" in summary
+    assert "refused=1" in summary
+    assert "merges=none" in summary
+    branch_line = next(l for l in result.stdout.splitlines() if l.startswith("  lane:"))
+    assert "REFUSED" in branch_line
+    assert "merge=" not in branch_line
+    assert "REFUSE phase=selection" in result.stderr
+
+
 def test_batch_with_zero_entries_refuses_not_exit_zero(tmp_path: Path):
     """A batch with zero entries must exit non-zero — 'the batch exited 0' is
     vacuous when zero branches were gated (#1157 trap, #868 denominator).
@@ -4109,12 +4179,12 @@ def test_batch_entry_without_registered_worktree_is_skipped(tmp_path: Path):
     assert "skipped=1" in result.stdout, result.stdout
 
 
-def test_batch_summary_reports_all_five_outcomes_distinguishably(tmp_path: Path):
-    """#136: the batch has FIVE outcomes (landed / refused / rebase-conflict /
-    abort-failed / skipped) and they must stay distinguishable in the output.
+def test_batch_summary_reports_all_six_outcomes_distinguishably(tmp_path: Path):
+    """#136: the batch has SIX outcomes (landed / landed-not-retired /
+    refused / rebase-conflict / abort-failed / skipped), kept distinguishable.
     This test constructs a batch that exercises four of them in one run and
-    asserts the fifth (abort-failed) is stated at zero, so a pass is never
-    silent about whether a worktree was stranded.
+    asserts the other two are stated at zero, so a pass is never silent about
+    whether cleanup debt or a stranded worktree exists.
 
     Entries: (1) a doc-only lane that lands; (2) a doc-only lane that conflicts
     with #1 on rebase; (3) a code lane with no tests that refuses at selection;
@@ -4150,6 +4220,7 @@ def test_batch_summary_reports_all_five_outcomes_distinguishably(tmp_path: Path)
     assert len(summary) == 1, f"expected one summary line, got {summary}"
     assert "attempted=4" in summary[0]
     assert "landed=1" in summary[0]
+    assert "landed-not-retired=0" in summary[0]
     assert "rebase-conflict=1" in summary[0]
     assert "refused=1" in summary[0]
     assert "skipped=1" in summary[0]
