@@ -272,7 +272,11 @@ class TestAdoptedRegistryMustBeIndependentlyVerifiable:
 
         # Direction 2: the named ancestor armed NOTHING. Its registry exists
         # and is independently readable, but contains no proof to adopt.
-        source_registry = repo.parent / "ancestor-empty-registry.json"
+        source_registry = (
+            rp._ls.SCRATCH_ROOT / rp._ls.repo_key(repo) /
+            "ancestor-empty" / "lane-ancestor-empty" / rp.SUB / "registry.json"
+        )
+        source_registry.parent.mkdir(parents=True)
         source_registry.write_text("[]\n")
 
         # Model the forgeable implementation this regression forbids: a lane
@@ -320,6 +324,7 @@ class TestAdoptedRegistryMustBeIndependentlyVerifiable:
         assert "router.js" in err, err
         assert "ancestor-that-armed-nothing" in err, err
         assert "no verifiable caught proof" in err, err
+        assert "population=0, state=empty" in err, err
 
     def test_direct_caught_proof_covers_an_unchanged_carried_binding_path(
             self, repo, monkeypatch, capsys):
