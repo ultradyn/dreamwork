@@ -46,10 +46,34 @@ from pathlib import Path
 
 # -- parsing helpers ----------------------------------------------------------
 
-# A citation in a brief looks like "#NNN — <wording>" or "#NNN: <wording>".
+# A citation in a brief looks like "#NNN — <wording>" or "#NNN: <wording>";
+# the task id may carry the house Markdown bold wrapper.
 # The em-dash (—) and colon are the two forms the coordinator actually writes.
 # We capture the id and the wording that follows it on the same logical line.
-CITATION_RE = re.compile(r"#(\d+)\s*[—:]\s*(.+?)(?:\.\s|\.$|$)", re.MULTILINE)
+CITATION_RE = re.compile(
+    r"(?:\*\*)?#(\d+)(?:\*\*)?\s*[—:]\s*(.+?)(?:\.\s|\.$|$)",
+    re.MULTILINE,
+)
+
+# Explicitly narrow citation-like forms which the extractor does not claim to
+# understand.  Keep this separate from CITATION_RE: widening the audit grammar
+# to every task reference would turn ordinary prose such as "#1152" into noise.
+UNSUPPORTED_CITATION_RES = (
+    ("parenthesized", re.compile(r"\(#\d+\)")),
+    ("possessive", re.compile(r"#\d+(?:'s|’s)\b")),
+    ("bracketed", re.compile(r"\[#\d+\]")),
+    (
+        "line-wrapped",
+        re.compile(r"#\d+(?:\*\*)?[ \t]*(?:—|:)[ \t]*[^\n]{0,4}\n[ \t]*\S"),
+    ),
+    (
+        "shared-gloss",
+        re.compile(
+            r"#\d+(?:\*\*)?[ \t]*/[ \t]*(?:\*\*)?#\d+"
+            r"(?:\*\*)?[ \t]*(?:—|:)"
+        ),
+    ),
+)
 
 # Words too common to carry meaning.  Deliberately SHORT: the tool's
 # NO_RELATIONSHIP verdict fires only on ZERO overlap, so a long stopword list
@@ -114,6 +138,16 @@ class Citation:
     detail: str = ""
 
 
+@dataclass(frozen=True)
+class UnsupportedCitationForm:
+    """One citation-like form deliberately outside ``CITATION_RE``."""
+
+    brief: str
+    line: int
+    form: str
+    specimen: str
+
+
 @dataclass
 class CorpusCoverage:
     """The Git-tracked vs on-disk split of a brief corpus (#671, #651)."""
@@ -154,6 +188,7 @@ class AuditReport:
     unresolvable: list[Citation] = field(default_factory=list)
     no_relationship: list[Citation] = field(default_factory=list)
     unclassifiable: list[Citation] = field(default_factory=list)
+    unsupported_forms: list[UnsupportedCitationForm] = field(default_factory=list)
 
     @property
     def classified(self) -> int:
@@ -186,6 +221,24 @@ def extract_citations(text: str, brief_name: str) -> list[Citation]:
             )
         )
     return found
+
+
+def find_unsupported_citation_forms(
+    text: str, brief_name: str
+) -> list[UnsupportedCitationForm]:
+    """Name known citation-like shapes outside the audit's narrow grammar."""
+    found: list[UnsupportedCitationForm] = []
+    for form, pattern in UNSUPPORTED_CITATION_RES:
+        for match in pattern.finditer(text):
+            found.append(
+                UnsupportedCitationForm(
+                    brief=brief_name,
+                    line=text.count("\n", 0, match.start()) + 1,
+                    form=form,
+                    specimen=match.group(0).replace("\n", "\\n"),
+                )
+            )
+    return sorted(found, key=lambda item: (item.line, item.form))
 
 
 def classify(cit: Citation, entries: dict[int, str]) -> None:
@@ -235,6 +288,9 @@ def audit_briefs(
     for brief in sorted(briefs_dir.glob("*.md")):
         text = brief.read_text()
         report.briefs_examined += 1
+        report.unsupported_forms.extend(
+            find_unsupported_citation_forms(text, brief.stem)
+        )
         for cit in extract_citations(text, brief.stem):
             classify(cit, entries)
             report.examined += 1
@@ -302,6 +358,7 @@ def format_report(report: AuditReport, quiet: bool = False) -> str:
             if incomplete else ""
         ),
         f"citation_audit: examined {report.examined} citation(s)",
+        f"  CITATION FORMS NOT COVERED: {len(report.unsupported_forms)}",
         f"  UNRESOLVABLE:     {len(report.unresolvable)}",
         f"  NO_RELATIONSHIP:  {len(report.no_relationship)}",
         f"  UNCLASSIFIABLE:   {len(report.unclassifiable)}",
@@ -317,6 +374,17 @@ def format_report(report: AuditReport, quiet: bool = False) -> str:
             f"#{cit.task_id} — {cit.wording[:60]}"
         )
         lines.append(f"    {cit.detail}")
+    if report.unsupported_forms:
+        by_form: dict[str, list[UnsupportedCitationForm]] = {}
+        for item in report.unsupported_forms:
+            by_form.setdefault(item.form, []).append(item)
+        lines.append("  known citation forms outside extraction grammar:")
+        for form, items in by_form.items():
+            examples = "; ".join(
+                f"{item.brief}:{item.line} {item.specimen!r}" for item in items[:3]
+            )
+            suffix = f"; {len(items) - 3} more" if len(items) > 3 else ""
+            lines.append(f"    {form}: {len(items)} ({examples}{suffix})")
     if report.unclassifiable:
         lines.append(f"  ({len(report.unclassifiable)} UNCLASSIFIABLE — not shown, use --verbose)")
     return "\n".join(lines)

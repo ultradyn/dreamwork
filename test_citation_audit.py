@@ -202,7 +202,7 @@ def test_unsupported_citation_forms_are_reported_not_silently_ignored():
         "parenthesized": "(#140)",
         "possessive": "#140's",
         "bracketed": "[#140]",
-        "line-wrapped": "#140\n— one gloss after a line wrap.",
+        "line-wrapped": "#140 — a\n gloss split across a line wrap.",
         "shared-gloss": "#140/#141 — one gloss shared by two citations.",
     }
     text = "\n".join(forms.values())
@@ -212,6 +212,9 @@ def test_unsupported_citation_forms_are_reported_not_silently_ignored():
     assert {cit.task_id for cit in extract_citations(text, "test")} == {141}
     unsupported = find_unsupported_citation_forms(text, "test")
     assert {item.form for item in unsupported} == set(forms)
+    from dev.citation_audit import AuditReport
+    rendered = format_report(AuditReport(unsupported_forms=unsupported), quiet=True)
+    assert "CITATION FORMS NOT COVERED: 5" in rendered
 
 
 def test_citation_detection_does_not_widen_to_plain_issue_or_cli_numbers():
