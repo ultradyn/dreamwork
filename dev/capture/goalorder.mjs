@@ -48,8 +48,11 @@ if (!target) {
   await page.goto(`${BASE}/goals`, { waitUntil: 'networkidle' });
   await waitFor(page, '.goaltree-row');
 
-  const subjectsExist = await present(
+  const treeExists = await present(
     page, '.goaltree-section', 'the rendered goal-tree section');
+  const editorExists = await present(
+    page, '.goalwrites', 'the rendered goal editor');
+  const subjectsExist = treeExists && editorExists;
   if (subjectsExist) {
     const measured = await page.evaluate(() => {
       const rect = box => {
@@ -57,8 +60,15 @@ if (!target) {
         return { top: Math.round(box.top), bottom: Math.round(box.bottom) };
       };
       const section = document.querySelector('.goaltree-section');
-      const rows = [...document.querySelectorAll('.goaltree-row')];
-      const actions = [...document.querySelectorAll('.goaltree-actions')];
+      const rows = [...section.querySelectorAll('.goaltree-row')];
+      const treeActions = [...section.querySelectorAll('.goaltree-actions')];
+      const actionsByRow = rows.map(row => treeActions.filter(action =>
+        action.closest('.goaltree-row') === row));
+      const actions = actionsByRow.flat();
+      const attributed = new Set(actions);
+      const unattributed = treeActions.filter(action => !attributed.has(action));
+      const unattributedIndices = treeActions.flatMap((action, index) =>
+        attributed.has(action) ? [] : [index]);
       const editor = document.querySelector('.goalwrites');
       return {
         dom: {
@@ -67,27 +77,45 @@ if (!target) {
             Node.DOCUMENT_POSITION_FOLLOWING),
         },
         rowCount: rows.length,
+        actionCountsByRow: actionsByRow.map(rowActions => rowActions.length),
+        treeActionCount: treeActions.length,
+        unattributed: unattributed.map(rect),
+        unattributedIndices,
         tree: rect(section),
         actions: actions.map(rect),
         editor: rect(editor),
       };
     });
-    const coverage = measured.rowCount > 0 &&
-      measured.actions.length >= measured.rowCount;
+    const missingRow = measured.actionCountsByRow.findIndex(count => count === 0);
+    const coverage = measured.rowCount > 0 && missingRow === -1;
+    const attribution = measured.unattributed.length === 0 &&
+      measured.actions.length === measured.treeActionCount;
     const outside = measured.actions.findIndex(action =>
       !(measured.tree.top < action.top && action.bottom <= measured.tree.bottom));
-    const rendered = coverage && outside === -1 &&
+    const rendered = coverage && attribution && outside === -1 &&
       measured.tree.bottom < measured.editor.top;
     notes.push(`DOM actionDom=${measured.dom.actionDom} ` +
       `editorDom=${measured.dom.editorDom}`);
     notes.push(`coverage rows=${measured.rowCount} ` +
-      `actionBoxes=${measured.actions.length}`);
+      `actionBoxesPerRow=[${measured.actionCountsByRow.join(',')}] ` +
+      `attributed=${measured.actions.length}/${measured.treeActionCount}`);
     notes.push(`rectangles tree=${measured.tree.top}-${measured.tree.bottom} ` +
       `actions=${measured.actions.map(action =>
         action.top + '-' + action.bottom).join(',')} ` +
       `editor=${measured.editor.top}-${measured.editor.bottom}`);
-    ok(`measured ${measured.actions.length} action boxes for ` +
-       `${measured.rowCount} rendered goal rows`, coverage);
+    const coverageMessage = measured.rowCount === 0
+      ? 'measured no rendered goal rows, so per-row action coverage is absent'
+      : missingRow === -1
+      ? `every rendered goal row has an action box; distribution ` +
+        `[${measured.actionCountsByRow.join(',')}]`
+      : `rendered goal row #${missingRow + 1} has no action box; distribution ` +
+        `[${measured.actionCountsByRow.join(',')}]`;
+    ok(coverageMessage, coverage);
+    const attributionMessage = attribution
+      ? `all ${measured.treeActionCount} tree action boxes are attributed to a row`
+      : `tree action box #${measured.unattributedIndices[0] + 1} is attributed to no ` +
+        `rendered goal row`;
+    ok(attributionMessage, attribution);
     ok('DOM keeps row actions inside the tree and the editor after it',
       measured.dom.actionDom && measured.dom.editorDom);
     const containmentMessage = outside === -1
@@ -105,6 +133,12 @@ if (!target) {
     const originalGoal = await page.locator('#goal-details-goal').inputValue();
     await page.locator('#goal-details-goal').selectOption('2');
     await page.locator('#goal-details-text').fill('unsaved replacement from goalorder');
+    const changedDetails = await page.locator('#goal-details-text').inputValue();
+    const changedGoal = await page.locator('#goal-details-goal').inputValue();
+    notes.push(`Edit perturbation read from DOM details=${JSON.stringify(changedDetails)} ` +
+      `goal=${JSON.stringify(changedGoal)}`);
+    ok('Edit perturbation changes both details and selected goal before Cancel',
+      changedDetails !== originalDetails && changedGoal !== originalGoal);
     await page.getByRole('button', { name: 'Cancel edit' }).click();
 
     const restoredDetails = await page.locator('#goal-details-text').inputValue();
