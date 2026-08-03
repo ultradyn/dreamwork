@@ -5515,3 +5515,72 @@ The re-gate with no declaration passed clean. The general form: **before
 reporting that an expectation was not met, establish that the thing which
 produces it actually ran.** A checker that cannot distinguish "absent" from "not
 measured" will blame the messenger every time.
+
+---
+
+## A relative path validated before a `cd`, then read after it
+
+`preflight_paths.sh` opened with
+
+    [ -s "$CORE" ] || { echo "REFUSE: core missing or empty"; exit 1; }
+    cd "$REPO" || exit 1
+
+and every read of `$CORE` came after the `cd`. Invoked as
+`preflight_paths.sh scratchpad/core-1004.md` from the parent directory, the `-s`
+test resolved against the CALLER's cwd and passed — then the `cd` moved the
+ground under the relative path, and `grep`, `awk` and `sed` all hit "No such
+file or directory". Their stderr went to the terminal; the script's own verdict
+was
+
+    preflight-paths: no path-shaped tokens found in core-1004.md
+
+and **exit 0**. Five briefs in a row, all reported clean, none of them opened.
+
+The existence check and the reads did not examine the same file. Nothing in the
+script was wrong in isolation; the ordering was.
+
+**The empty-candidate branch was the trap.** "This brief names no paths" is a
+LEGITIMATE state — which is exactly why it could not be allowed to double as
+"this brief could not be read". Two states, one message, and the benign one
+printed. Fix was to absolutise `$CORE` before the `cd` and re-verify `-r` after
+it, so unreadable is a loud refusal rather than a quiet zero (#136).
+
+Fourth time my own preflight reported clean on an unexamined input, and the
+third distinct mechanism after fenced-block blindness and comma-splitting. The
+tool built to enforce did-not-examine-is-not-clean kept breaking that rule
+internally. **A checker's own inputs deserve the scepticism it applies to its
+subject** — worth asking, of any check that can emit a benign zero, what would
+make it emit that zero WITHOUT having looked.
+
+---
+
+## A live runner is not a working lane, and the fleet count cannot tell them apart
+
+Five lanes were redispatched onto `@glm51` during a provider outage. All five
+came up, held live pids, wrote `lane.lock`, and were counted by the heartbeat as
+`lanes 2 live`. **None of them could touch its own worktree.**
+
+`~/.config/opencode/opencode.json` sets
+
+    "external_directory": { "/tmp": "allow", "env:$TMPDIR": "allow", "*": "ask" }
+
+and under `ccc -y` an "ask" resolves to AUTO-REJECT. Our worktrees live at
+`../.worktrees/` — outside both allowed roots — so every opencode-runner alias
+(`glm51`, `glm5t`, `oc-glm52`, `mm*`) denied its lane the first `git log` in its
+own worktree and every call after it. All five ended at master's sha with ZERO
+commits. The route was never viable; the outage merely sent me to it.
+
+**The fleet count answers "is a runner alive". I read it as "is a lane
+working".** Those differ by exactly the failure that had occurred, and the
+count's own vocabulary cannot express the difference — same shape as #1154 (a
+lane reports `finished` whether it reported or was killed), one level earlier.
+
+What finally discriminated was not liveness but EVIDENCE OF WORK: files in the
+worktree newer than `lane.lock`. The first attempt at that probe used the `.git`
+file as the time reference and returned ~1320 for every lane — it was measuring
+the checkout, not the lane, and would have certified a wedged fleet as busy.
+`lane.lock` is written after checkout, so it is the honest reference: a lane
+continuing a branch shows its own subject files, a lane starting from master
+shows `__pycache__` from importing, and a wedged lane shows nothing.
+
+**When a probe returns the same number for every subject, suspect the probe.**
