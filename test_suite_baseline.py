@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -50,6 +51,42 @@ def _run(repo: Path, record: Path, env: dict[str, str]) -> subprocess.CompletedP
         [sys.executable, str(REPO / "dev/suite_baseline.py"), "run", "--repo", str(repo), "--record", str(record)],
         text=True, capture_output=True, env=env, check=False,
     )
+
+
+def test_pytest_recipe_disables_inline_snapshot_with_forwarded_args(tmp_path):
+    just = shutil.which("just")
+    assert just is not None
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    capture = tmp_path / "python3-argv"
+    _write(
+        bindir / "python3",
+        """#!/bin/sh
+{
+    printf 'CI=<%s>' "${CI-UNSET}"
+    for arg in "$@"; do printf ' <%s>' "$arg"; done
+    printf '\\n'
+} >> "$JUST_PYTEST_CAPTURE"
+""",
+    )
+    (bindir / "python3").chmod(0o755)
+    env = os.environ.copy()
+    env.update({
+        "CI": "inherited-ci",
+        "JUST_PYTEST_CAPTURE": str(capture),
+        "PATH": f"{bindir}:{env['PATH']}",
+    })
+
+    result = subprocess.run(
+        [just, "pytest", "foo.py", "-k", "bar"],
+        cwd=REPO, text=True, capture_output=True, env=env, check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert capture.read_text(encoding="utf-8").splitlines() == [
+        "CI=<inherited-ci> <dev/concurrent_tests.py>",
+        "CI=<> <-m> <pytest> <-q> <-p> <no:inline-snapshot> <foo.py> <-k> <bar>",
+    ]
 
 
 def test_gate_coverage_names_the_full_suite_complement():

@@ -14,7 +14,9 @@ pytest *ARGS:
     # nothing, exits 0, and the leading `-` means a crash in the helper never
     # blocks a lane's verification (the advisory must never become a gate).
     -python3 dev/concurrent_tests.py
-    python3 -m pytest -q {{ARGS}}
+    # Empty CI makes local test semantics independent of an inherited CI value;
+    # disabling inline-snapshot is the separate, direct rewrite barrier.
+    CI= python3 -m pytest -q -p no:inline-snapshot {{ARGS}}
 
 # this target's own `.dreamwork/` files, read through the REAL parsers — so a
 # clean pass means the dashboard can actually see what the loop wrote, rather
