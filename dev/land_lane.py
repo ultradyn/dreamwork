@@ -2502,14 +2502,14 @@ def land(
             # "this branch introduced it" with "another worktree was detached".
             print(
                 f"{phase} excluded {excluded_total} non-tree-derived WARN row(s) "
-                f"from the comparison (fleet-transient lane-containment or "
-                f"clock-derived sync-conflict advisory): baseline="
+                f"from the comparison (fleet-transient lane-containment #1159 "
+                f"or clock-derived sync-conflict advisory #1166): baseline="
                 f"{len(baseline_excluded)} {reading}={len(after_excluded)}"
             )
             for row in baseline_excluded:
-                print(f"~ (baseline excluded, #1159) {row}")
+                print(f"~ (baseline excluded, non-tree-derived) {row}")
             for row in after_excluded:
-                print(f"~ ({reading} excluded, #1159) {row}")
+                print(f"~ ({reading} excluded, non-tree-derived) {row}")
         for row in added:
             print(f"+ {row}")
         for row in removed:
