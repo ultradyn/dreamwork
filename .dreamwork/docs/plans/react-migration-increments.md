@@ -12,6 +12,8 @@ features belong on the React side of the transition. It applies the ratified
 builders the dashboard serves, plus component-native new surfaces. It does not
 propose a parallel hand-maintained library or a wholesale rewrite.
 
+The separate visible dashboard cutover is scoped in [`dashboard-cutover-increments.md`](dashboard-cutover-increments.md); it does not alter this derived-wrapper sequence.
+
 ## Verdict
 
 The build step is already built. Rebuilding it would be waste.
