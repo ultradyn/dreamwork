@@ -55,13 +55,20 @@ def _git_subject(tmp_path, *, lane="cx-finished"):
             capture_output=True, text=True, env=env)
 
     git("init", "-q", "-b", "master")
-    # Match the real repo's ignored-churn patterns so __pycache__/*.pyc appear
-    # as ignored (!! / disposable), not untracked (??). .pytest_cache is NOT
-    # gitignored (the real repo's .gitignore omits it), so it appears as ?? —
-    # the scratch the probe must exclude (#1155 P1).
-    (target / ".gitignore").write_text("__pycache__/\n*.pyc\n")
+    # Match the REAL repo's .gitignore and tracked layout (#1155 round 4 P2b):
+    # the root .gitignore lists __pycache__/ but NOT *.pyc (verified against the
+    # real file). .dreamwork/lane.lock and .dreamwork/status.json ARE gitignored
+    # (lane-local state); .dreamwork/ itself is TRACKED (it holds deliverables —
+    # docs/, reports/, etc. — just like the real repo). So a worktree at base
+    # has .dreamwork/ tracked, lane.lock ignored, and only genuinely new files
+    # under .dreamwork/ (a plan, a doc) appear as ?? — the deliverables the
+    # probe must count as progress (#1155 round 4 P1).
+    (target / ".gitignore").write_text(
+        "__pycache__/\n.dreamwork/lane.lock\n.dreamwork/status.json\n")
     (target / "tracked").write_text("fixture\n")
-    git("add", ".gitignore", "tracked")
+    (target / ".dreamwork").mkdir(parents=True)
+    (target / ".dreamwork" / ".gitkeep").touch()
+    git("add", ".gitignore", "tracked", ".dreamwork/.gitkeep")
     git("commit", "-q", "-m", "fixture")
     worktree = tmp_path / ".worktrees" / lane
     git("worktree", "add", "-q", "-b", lane, str(worktree), "HEAD")
@@ -291,10 +298,11 @@ def _git_repo(worktree, *, branch="lane"):
     git("init", "-q", "-b", "master")
     # Match the real repo's per-lane churn patterns so ignored entries read
     # ignored (!! / disposable) the way they do in a fleet worktree, not as
-    # untracked (??). Without this, __pycache__/*.pyc would be untracked here
-    # and the "discount ignored churn" path would never be exercised.
+    # untracked (??). The real .gitignore lists __pycache__/ but NOT *.pyc
+    # (#1155 round 4 P2b). Without __pycache__/, __pycache__/*.pyc would be
+    # untracked here and the "discount ignored churn" path would never fire.
     (worktree / ".gitignore").write_text(
-        "__pycache__/\n*.pyc\n.dreamwork/lane.lock\n")
+        "__pycache__/\n.dreamwork/lane.lock\n")
     (worktree / "seed.txt").write_text("seed\n")
     git("add", ".gitignore", "seed.txt")
     git("commit", "-q", "-m", "seed")
@@ -740,6 +748,34 @@ class TestLiveLaneCasesABC:
     The default probe (the one the tick uses) must return WEDGED for A and
     NOT-wedged for B and C in the same run, unmodified.
 
+    DISCRIMINATION DISCLOSURE (#1155 round 4, updating round 3's). Which tests
+    FAIL under the always-None probe defect (stubbed _default_wedge_probe →
+    None), verified by re-running the mutation this round:
+
+      - test_case_a_wedged_via_production_path: FAILS (WEDGED→UNKNOWN). ✓
+      - test_case_a_dreamwork_docs_deliverable_is_unknown_not_wedged: PASSES
+        (UNKNOWN either way — it tests NOT-wedged, and always-None gives
+        UNKNOWN too). NOT a discriminating test for the too-narrow direction.
+      - test_case_a_untracked_deliverable_is_unknown_not_wedged: same — PASSES
+        under always-None. NOT discriminating for too-narrow.
+      - test_scratch_only_untracked_still_reads_wedged: PASSES (WEDGED→UNKNOWN
+        — it tests the too-NARROW direction; always-None gives UNKNOWN, not
+        WEDGED, so it DOES fail under too-narrow). NOT discriminating for
+        too-BROAD: it has ONLY scratch, so mutating the predicate to return
+        True for EVERY path leaves it green (#1155 round 4 P2a).
+      - test_scratch_plus_deliverable_is_not_wedged: the too-BROAD
+        discriminator — FAILS under the "every path is scratch" mutation
+        (the deliverable is swallowed → WEDGED). This is the test the P1
+        shipped without.
+      - B and C: PASS (return early on high CPU before examining git).
+
+    The probe's git-check discrimination (too-narrow) rests on
+    test_case_a_wedged_via_production_path and test_scratch_only_untracked_
+    still_reads_wedged. The exclusion's not-too-broad discrimination rests
+    on test_scratch_plus_deliverable_is_not_wedged. The .dreamwork/docs/
+    subtree regression is test_case_a_dreamwork_docs_deliverable_is_unknown_
+    not_wedged.
+
     pid_matches_lane BLIND SPOT (#651): every test in this class patches
     pid_matches_lane to lambda True/False, so deleting the production
     function fails setup but a BROKEN implementation stays green. The
@@ -909,18 +945,21 @@ class TestLiveLaneCasesABC:
 
     def test_scratch_only_untracked_still_reads_wedged(self, tmp_path,
                                                        monkeypatch):
-        """BOUNDARY: the scratch exclusion does not swallow ALL untracked
-        files. A lane whose only untracked entries are scratch (BRIEF.md,
-        .pytest_cache/, .dreamwork/) has NO progress → WEDGED (old, low CPU).
-        This is the other side of the P1 fix: too broad an exclusion and the
-        hazard returns — every lane looks busy forever. The exclusion list is
-        the whole risk surface, and this test pins its boundary."""
+        """BOUNDARY (not-too-narrow direction): the scratch exclusion does not
+        swallow ALL untracked files. A lane whose only untracked entries are
+        scratch (BRIEF.md, .pytest_cache/) has NO progress → WEDGED (old, low
+        CPU). This tests the too-NARROW direction: if the exclusion is removed
+        entirely, this lane would read UNKNOWN (a false non-wedged). It CANNOT
+        detect too-BROAD — see test_scratch_plus_deliverable_is_not_wedged for
+        that direction (#1155 round 4 P2a: a test named for a bound must be
+        red when the bound is violated in the direction it names)."""
         target, worktree, identity = _git_subject(
             tmp_path, lane="glm-scratch-only")
         _write_lock(worktree, identity, pid=1107)
-        # Scratch the real fleet produces: .pytest_cache (not gitignored) and
-        # .dreamwork (lane-local state). BRIEF.md is already created by the
-        # fixture as the identity file.
+        # Scratch the real fleet produces: .pytest_cache (not gitignored).
+        # BRIEF.md is already created by the fixture as the identity file.
+        # .dreamwork/ is tracked in the fixture (matching the real repo), so
+        # it does not appear as ?? — only genuinely new files under it do.
         (worktree / ".pytest_cache").mkdir()
         (worktree / ".pytest_cache" / "v.json").write_text("{}")
         monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
@@ -933,6 +972,83 @@ class TestLiveLaneCasesABC:
             "a lane with ONLY scratch untracked was not classified wedged " \
             "— the exclusion list is too broad and hides the hazard: %r" % (
                 verdict[0],)
+
+    def test_case_a_dreamwork_docs_deliverable_is_unknown_not_wedged(
+            self, tmp_path, monkeypatch):
+        """#1155 round 4 P1 — THE .dreamwork/docs/ REGRESSION. A real named-
+        branch worktree whose only untracked path is under .dreamwork/docs/
+        must classify UNKNOWN through the production path with NO injected
+        probe (#1155 round 4: the reviewer built this case and got WEDGED).
+
+        Round 3's blanket .dreamwork entry in _LIVE_PROGRESS_UNTRACKED_SCRATCH
+        declared ALL .dreamwork paths scratch. The top-level-component match
+        at _is_live_progress_scratch therefore discarded .dreamwork/docs/**,
+        so a lane whose whole increment was a plan or design doc under
+        .dreamwork/docs/ read as having no git progress → WEDGED → the
+        data-loss hazard. .dreamwork/docs/ is a tracked deliverable subtree
+        (design docs, plans, audits); this loop dispatches lanes to write
+        there regularly.
+
+        The fixture matches the reviewer's exact construction: .dreamwork/ is
+        tracked (via .gitkeep, as in the real repo), so only NEW files under
+        it appear as ?? — not the directory itself. The sole untracked path
+        is .dreamwork/docs/plans/new-plan.md."""
+        target, worktree, identity = _git_subject(
+            tmp_path, lane="glm-docs-work")
+        _write_lock(worktree, identity, pid=1109)
+        # An untracked deliverable under .dreamwork/docs/ — the lane's
+        # increment (a plan, a design doc). .dreamwork/ is tracked in the
+        # fixture (matching the real repo), so this new path is the only ??
+        # beyond BRIEF.md (scratch).
+        docs_plans = worktree / ".dreamwork" / "docs" / "plans"
+        docs_plans.mkdir(parents=True)
+        (docs_plans / "new-plan.md").write_text("# a plan\n")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
+            target, process_entries=["1109"],
+            read_cmdline=lambda _pid: b"",
+            read_cpu=lambda _pid: (0.1, 600.0))
+        verdict = inspection.live_liveness
+        assert verdict[0].state == lane_liveness.LIVE_UNKNOWN, \
+            "a lane whose only work is under .dreamwork/docs/ was classified " \
+            "WEDGED — this is the data-loss hazard: .dreamwork/docs/ holds " \
+            "tracked deliverables (plans, design docs) and a lane writing " \
+            "there is doing work, not wedged: %r" % (verdict[0],)
+
+    def test_scratch_plus_deliverable_is_not_wedged(self, tmp_path,
+                                                     monkeypatch):
+        """BOUNDARY (not-too-broad direction) — #1155 round 4 P2a: a test
+        whose name asserts a bound must be RED when the bound is violated in
+        the direction it names.
+
+        Round 3's test_scratch_only_untracked_still_reads_wedged COULD NOT
+        detect too-broad: it had ONLY scratch, so mutating _is_live_progress_
+        scratch to return True for EVERY path left it green (every path WAS
+        scratch). This test mixes scratch (.pytest_cache/) with a deliverable
+        (new_module.py): under the normal predicate the deliverable provides
+        progress → UNKNOWN; under the maximally over-broad mutation
+        (every path is scratch) the deliverable is swallowed → no progress →
+        WEDGED → this test fails. That is the discrimination the P1 shipped
+        without."""
+        target, worktree, identity = _git_subject(
+            tmp_path, lane="glm-mixed")
+        _write_lock(worktree, identity, pid=1110)
+        # Scratch + a deliverable: .pytest_cache (scratch) and new_module.py
+        # (work). The deliverable must survive the exclusion and provide
+        # progress; if the predicate is too broad, it is swallowed.
+        (worktree / ".pytest_cache").mkdir()
+        (worktree / ".pytest_cache" / "v.json").write_text("{}")
+        (worktree / "new_module.py").write_text("real work\n")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        inspection = lane_liveness.inspect_lanes(  # NO wedge_probe
+            target, process_entries=["1110"],
+            read_cmdline=lambda _pid: b"",
+            read_cpu=lambda _pid: (0.1, 600.0))
+        verdict = inspection.live_liveness
+        assert verdict[0].state == lane_liveness.LIVE_UNKNOWN, \
+            "a lane with a deliverable (new_module.py) alongside scratch " \
+            "was classified WEDGED — the scratch exclusion is too broad: " \
+            "%r" % (verdict[0],)
 
     def test_injected_probe_that_raises_degrades_to_unknown(self, tmp_path,
                                                             monkeypatch):

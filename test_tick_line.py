@@ -1088,3 +1088,28 @@ class TestLiveLivenessOnTheTickLine:
         assert "lanes 0 live []" in out
         assert "WEDGED" not in out
         assert "live-liveness-unknown" not in out
+
+    def test_unrendered_liveness_state_is_named(self, tmp_path, monkeypatch):
+        """#1155 round 4 / #651: a verdict state NOT in _LIVENESS_CLAUSE_SPECS
+        is a denominator mismatch — the headline counts a live lane the
+        rendered clauses do not name. Without this guard the tick prints
+        'lanes 1 live [foo] · working 0 · wedged 0 · ... 0 · ... 0' and the
+        reader must do arithmetic to notice. The mismatch must be NAMED so a
+        reader meets it at the surface, not in the arithmetic (#868)."""
+        target = make_target(tmp_path, posture=HOT)
+        verdicts = (lane_liveness.LiveLane(
+            "glm-fifth", "fifth-state", "a state the tick does not render"),)
+        monkeypatch.setattr(lane_liveness, "inspect_lanes",
+                            lambda _t: self._inspection(live=("glm-fifth",),
+                                                        liveness=verdicts))
+        out = tick_line.facts(target)
+        assert "lanes 1 live [glm-fifth]" in out, \
+            "the fifth-state lane should still count in the headline: %s" % out
+        assert "UNRENDERED-LIVENESS-STATE" in out, \
+            "a verdict state not in _LIVENESS_CLAUSE_SPECS was not named " \
+            "on the tick line — the denominator mismatch is invisible " \
+            "without arithmetic: %s" % out
+        assert "fifth-state" in out, \
+            "the unrendered state name was not quoted: %s" % out
+        assert "glm-fifth" in out.split("UNRENDERED")[1], \
+            "the unrendered lane was not named: %s" % out
