@@ -71,6 +71,10 @@ class ReconciliationError(RuntimeError):
     """
 
 
+class RotationIOError(RuntimeError):
+    """A filesystem operation failed inside the real rotation boundary."""
+
+
 @dataclass(frozen=True)
 class LaneProbeResult:
     """A completed fleet observation or a named failure to observe it."""
@@ -248,8 +252,11 @@ def _pointer_line(archive_rel: str, n_moved: int, first_retained_heading: str) -
 
 def rotate(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_probe=None) -> dict:
     """Rotate while holding the lock shared with the standing append recipe."""
-    with _inbox_lock(dw):
-        return _rotate_locked(dw, keep=keep, live_lane_probe=live_lane_probe)
+    try:
+        with _inbox_lock(dw):
+            return _rotate_locked(dw, keep=keep, live_lane_probe=live_lane_probe)
+    except OSError as exc:
+        raise RotationIOError(str(exc)) from exc
 
 
 def _rotate_locked(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_probe=None) -> dict:
@@ -468,7 +475,7 @@ def main(argv: list[str] | None = None) -> int:
         except ReconciliationError as exc:
             print(f"error: reconciliation failed: {exc}", file=sys.stderr)
             return 2
-        except OSError as exc:
+        except RotationIOError as exc:
             print(f"error: I/O failed: {exc}", file=sys.stderr)
             return 2
         action = result.get("action")
