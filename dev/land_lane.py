@@ -15,6 +15,7 @@ import argparse
 import ast
 from dataclasses import dataclass
 import errno
+from enum import Enum
 import fcntl
 import json
 import os
@@ -1673,15 +1674,75 @@ def _refuse_dead_gate(repo: Path, crumb: GateInFlight, base: str) -> int:
     )
 
 
-def _lint(repo: Path) -> tuple[subprocess.CompletedProcess[str], tuple[str, ...] | None]:
+class LintOutcome(Enum):
+    CLEAN = "clean"
+    LINT_FAILED = "lint-failed"
+    REPORT_INVALID = "report-invalid"
+    REPOSITORY_UNREADABLE = "repository-unreadable"
+
+
+@dataclass(frozen=True)
+class LintReading:
+    process: subprocess.CompletedProcess[str]
+    outcome: LintOutcome
+    rows: tuple[str, ...] | None
+    repository_probe: subprocess.CompletedProcess[str] | None = None
+
+
+def _command_output(result: subprocess.CompletedProcess[str], limit: int = 2000) -> str:
+    """A bounded, single-line account of what a failed command printed."""
+    output = (result.stdout + result.stderr).strip().replace("\n", " | ")
+    if not output:
+        return "<no output>"
+    if len(output) > limit:
+        return "..." + output[-limit:]
+    return output
+
+
+def _lint_refusal(reading: LintReading, phase: str, label: str) -> tuple[str, str]:
+    """Stable refusal identity plus evidence for each non-clean lint outcome."""
+    refusal_phase = f"{phase}/{reading.outcome.value}"
+    lint_output = _command_output(reading.process)
+    if reading.outcome is LintOutcome.REPOSITORY_UNREADABLE:
+        assert reading.repository_probe is not None
+        reason = (
+            f"repository-readability probe exited {reading.repository_probe.returncode}; "
+            f"lint exit={reading.process.returncode}; lint output: {lint_output}; "
+            f"git probe output: {_command_output(reading.repository_probe)}"
+        )
+    elif reading.outcome is LintOutcome.LINT_FAILED:
+        reason = (
+            f"lint exited {reading.process.returncode}; lint output: {lint_output}"
+        )
+    else:
+        reason = (
+            f"lint exited 0 but {label} WARN rows had no valid clean trailer; "
+            f"lint output: {lint_output}"
+        )
+    return refusal_phase, reason
+
+
+def _lint(repo: Path) -> LintReading:
     result = _run([sys.executable, "lint.py"], repo)
     _relay(result)
     combined = result.stdout + result.stderr
     trailer = LINT_TRAILER.search(combined)
     rows = _warn_rows(combined)
-    if result.returncode or trailer is None or int(trailer.group(1)) != len(rows):
-        return result, None
-    return result, rows
+    if not result.returncode and trailer is not None and int(trailer.group(1)) == len(rows):
+        return LintReading(result, LintOutcome.CLEAN, rows)
+
+    # This is a separate checked Git reading, not an interpretation of lint's
+    # output.  `git diff` is intentional: it is the operation whose failure
+    # exposed #1133's unusable-but-verifier-clean multi-pack-index.  Exit 1 is
+    # a readable dirty tree; any higher exit is an unreadable repository.
+    repository_probe = _git(repo, "diff", "--no-ext-diff", "--quiet", "HEAD", "--")
+    if repository_probe.returncode not in (0, 1):
+        outcome = LintOutcome.REPOSITORY_UNREADABLE
+    elif result.returncode:
+        outcome = LintOutcome.LINT_FAILED
+    else:
+        outcome = LintOutcome.REPORT_INVALID
+    return LintReading(result, outcome, None, repository_probe)
 
 
 def land(
@@ -1914,11 +1975,15 @@ def land(
             ),
         )
 
-    _, baseline = _lint(gate_worktree)
+    baseline_reading = _lint(gate_worktree)
+    baseline = baseline_reading.rows
     if baseline is None:
+        refusal_phase, reason = _lint_refusal(
+            baseline_reading, "lint-baseline", "baseline"
+        )
         return refuse_gated(
-            "lint-baseline",
-            "WARN baseline was not captured (lint failed or emitted no clean trailer)",
+            refusal_phase,
+            reason,
             f"lint.py in {gate_worktree}; base={base_sha}; branch={branch_sha}",
         )
     _print_rows("baseline", baseline)
@@ -2166,11 +2231,13 @@ def land(
 
     def compare_lint(phase: str, reading: str) -> int | None:
         """Compare one merged-tree lint reading with the pre-merge baseline."""
-        _, after = _lint(gate_worktree)
+        lint_reading = _lint(gate_worktree)
+        after = lint_reading.rows
         if after is None:
+            refusal_phase, reason = _lint_refusal(lint_reading, phase, reading)
             return refuse_gated(
-                phase,
-                f"{reading} WARN rows were unavailable (lint failed or emitted no clean trailer)",
+                refusal_phase,
+                reason,
                 f"merge={merged_sha}; baseline rows={len(baseline)}",
             )
         _print_rows(reading, after)
