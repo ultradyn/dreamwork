@@ -86,3 +86,10 @@ false attribution.
 The checklist-only idea cannot prevent dispatch. A base-only gate leaves the
 other brief species structural only in memory. Semantic lint is refuted because
 text shape cannot establish contradiction, scope completeness, or world truth.
+
+- **When `launch-lane` says it derived zero tests from `Lane-owns`, read it as a scope finding, not a
+  formatting complaint.** `#1184` owned only `landed-guards.md`; the refusal said *"selected 0 existing
+  test(s) … an empty selection is indistinguishable from broken derivation"*. It was right on the
+  merits: the change removes a `lint.py` WARN row, and whatever test asserts the WARN population has to
+  be in scope to be updated. A doc-only scope for a change with a measurable output is usually a scope
+  that is too small, and the derivation is what notices.
