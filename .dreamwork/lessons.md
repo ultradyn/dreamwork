@@ -6874,3 +6874,52 @@ genuinely present in the cited task and still misattribute its holding"*, one
 level out: there the words were real and the holding was not; here the
 measurement was real and the consequence was not. Both are a true statement read
 as a stronger claim than it supports.
+
+## A rule I remember is not a rule I have re-read, and a relaxed rule reads exactly like a live one from memory (2026-08-04, #1069/#614)
+
+I wrote in a brief: *"`DREAMWORK.md:14-23` refuses a port that REIMPLEMENTS
+each feature ... a second render authority is refused"*, and told the lane that
+a component re-stating what a builder renders *"is a finding to report, not a
+design to write."* The lane verified it and STOPPED. Both halves were wrong:
+
+- **`DREAMWORK.md:14-23` is about Claude-design ORDERING**, not the render rule.
+  I attached a line range to a rule from memory without opening the lines.
+- **The render rule had been RELAXED** on 2026-07-31 19:09, answering `#614`:
+  *"we should relax this now since we're changing over to react based webui."*
+  `DREAMWORK.md:239-247` says renderers are outside the second-truth rule and
+  *"were never a state question"*; a React renderer beside a surface's Python
+  builder is the **intended** shape of the `#630` transition. What survives is a
+  **cost, not a refusal** — *"a lane that wants one now argues that cost — it is
+  no longer refused by a rule."* `dreamhub-design.md:197` carries an explicit
+  `RELAXED 2026-07-31 19:09` marker on the very paragraph I was paraphrasing.
+
+**The damage a stale prohibition does is not that the lane builds the wrong
+thing — it is that the lane never considers the right thing.** The lane named it
+exactly: whether a maintained route-local native renderer is legally
+inadmissible or merely costly *changes the rival set*. Had it proceeded, its IGC
+grid would have been built over a candidate list I had illegally truncated, and
+the surviving row would have looked verified while being the best of the wrong
+options. An All-✔ row over a censored rival set is worse than no row, because it
+carries the authority of the method.
+
+Three failures of the same family landed in one session, and they escalate:
+
+1. Quoting a real sentence from `#612` whose HOLDING ran the other way.
+2. Accepting a review's stated CONSEQUENCE without checking the code path it named.
+3. This one — asserting a rule's TEXT, LOCATION, and CURRENT FORCE, all from memory.
+
+The first two cost me a rewrite and a near-miss round. This one cost a lane's
+entire round.
+
+**The check that would have caught all three: before a citation goes into a
+brief, open it and read the lines you are about to cite — and for anything
+phrased as a prohibition, look for the word that revokes it.** Repository docs
+here record relaxations IN PLACE, as marked amendments to the paragraph they
+modify, rather than by deleting the superseded text. That convention is good —
+it preserves why — and it means the original prohibition is still sitting there,
+still readable, still quotable, and no longer true. Grep found me the sentence I
+remembered; it was the amendment eleven lines down that I never saw.
+
+The corollary for briefs: **when the rule you are about to invoke is what makes
+a whole class of answers inadmissible, that is the citation to verify FIRST**,
+because it is the one that does its work by silence.
