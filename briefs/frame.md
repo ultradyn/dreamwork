@@ -123,7 +123,20 @@ caught is before code is written.
   broke, and the *discriminating* failure message quoted. Direction 2: each
   false-green you constructed and ran, closed or open — and if you could not
   construct one, why not.
-- Quote `python3 dev/redproof.py check --require 1` if an injection was owed.
+- **Run `python3 dev/redproof.py handoff` as your LAST act before reporting,
+  and quote its output verbatim.** `handoff` derives the injection requirement
+  from the SAME function the gate uses (`land_lane._classify_diff`) and then
+  runs `check`, so it prints the tool's number for what you owed — not your
+  recollection of what you did (#1086). Three of five lanes reported a
+  red-proof count the tool contradicted, each because the lane stated what it
+  had *done* ("I ran three sabotage cycles", "no injection was owed") and read
+  it as a stronger statement about what the tool *had* (three live
+  registrations; zero required). The general rule, and it applies past
+  red-proof: **when a tool can report the number, the report must carry the
+  tool's number, not your recollection of your own actions.** Quote the
+  `handoff` block (or `check --require <N>` if you cannot run `handoff`)
+  verbatim, with its exit line — unpiped. Stating "I red-proofed" is not
+  quoting the tool.
 - Quote the **final line** of every named test run verbatim, with the sha and
   cwd it was produced under — `just pytest <files>` is the one instrument whose
   verdict this frame accepts as a paraphrase, and a paraphrase of `28 passed, 1
