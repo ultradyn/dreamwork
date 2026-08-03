@@ -27,6 +27,24 @@ healthy briefs and cannot reliably distinguish instructions from evidence.
 - Present observations as measurements, with the command or method that
   produced them. Never instruct a lane not to re-derive a measurement. Mark an
   unreproduced premise as unverified and make non-reproduction a valid result.
+- **Before asserting that a file contains something, or that a tool behaves a
+  certain way, OPEN IT.** On 2026-08-04 three briefs shipped in one day with a
+  premise I had not measured: `#1177` said `reap.py` asks sha identity when it
+  has called `git cherry` since `db6078e8`; `#1170` said `briefs/boilerplate.md`
+  carries a bare `cat >> …inbox.md` recipe when it carries none; `#1175` round 3
+  cited `#1153`'s identity split for a pair it does not describe (the redproof
+  launch token vs its hashed registry directory — not a status entry's lane name
+  vs the probe's, which do match). Every one was caught by a lane's premise-stop,
+  each costing a dispatch. A one-line `grep` or `--check` run would have caught
+  all three in seconds. **The tell is a sentence about the codebase written from
+  memory rather than from a command** — those are the sentences to verify, and
+  the cheapest moment is while composing, not after a lane stops.
+- Keep the "if a premise here is false, STOP and report" clause in every brief,
+  and scope it per-deliverable. It is what turns the mistake above from a wasted
+  round into a ten-minute correction, and it is the single highest-value
+  paragraph in the boilerplate. Where a stop was correct, **say so plainly in
+  the next round's brief and name the error as yours** — a lane that is told its
+  refusal was right refuses again when it should.
 - Put the measurement instrument beside every numeric bar so a reader can
   audit how the number was obtained.
 
