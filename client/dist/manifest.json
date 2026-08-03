@@ -43,7 +43,7 @@
     "dev/build/src/goals.js": "b1e5b3c12ee7181816885d9389fbbf1471929732ccdcad4d1942bc3ce11ab3c0",
     "dev/build/src/native-entry.js": "7e3058581b31bc34b810c99ee44d3902cd45d58d5487445568248789af887612",
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
-    "dev/build/src/question.js": "c87b8ecffbfa18e965ffce65f1571b99433cf2ec3a66f61bf7b1a8e49e9323b9",
+    "dev/build/src/question.js": "4c324cc693dd17c3458c7bf8f8aac19c64c173aa15985d4a3defa5b9865fd3ca",
     "dev/build/src/registry.js": "6d8b3a665afcec61e7d0ab59b32b6ee23b0fc0bff90bf23b2558823057beb0a8",
     "dev/build/src/research.js": "26813363dcb58d20cef045528fbf55da86827053584a480f9b549d03626987cd",
     "dev/build/wrapper-exports.js": "ceac587fd5555910a0f65aa1b0bff6ea114e03991a50509ffc75365464e70080"
@@ -51,7 +51,7 @@
   "outputs": {
     "client/dist/ds/index.js": "4068f5f00557f9bf42a6b4e56ad673dbd84ab808d7d48a20ceb548bab5fd9221",
     "client/dist/ds/styles.css": "78ba73e70b80a8315fab4640d8f555840e48621ab7f98f61b3acaf2aabc36388",
-    "client/dist/native.js": "1eda65e09f46269d8c20365391046cd0a252a19d6f9495ee999fc1f81f539429"
+    "client/dist/native.js": "0cfbc07f2f40841033fb051686705bcb2bf9e62a0e3f710ccc39d48846da40e2"
   },
   "schema": 1,
   "tool": {

@@ -1,67 +1,35 @@
-/* Native /question: one stationary title follows a question across the fold.
- *
- * Deliberately do not use wrapper-exports.js's QaCard here. Its `ambient`
- * helper is a bounded design-tool context; on the dashboard it would shadow
- * the live `data` and `view` bindings while qaCard formats the card. This
- * render-time delegate calls the one qaCard markup authority directly, in
- * the page's live lexical environment, and adds no fallback copy.
- */
+/* Native /question delegates card markup to the live qaCard builder rather
+ * than wrapper-exports.js's design-tool ambient context. */
 import React from 'react';
 import { fromBuilder } from './delegate.js';
 
-const FocusQaCard = fromBuilder('qaCard', function (props) {
-  return qaCard(props.q, props.k, 'focus');
-});
+const h = React.createElement;
+const div = (className, ...children) => h('div', { className }, ...children);
+const FocusQaCard = fromBuilder('qaCard', props =>
+  qaCard(props.q, props.k, 'focus'));
+const focus = (q, k) => h('div', { id: 'qfocus', className: 'qdual' },
+  h(FocusQaCard, { q, k }));
 
-export function Question(props) {
-  const data = props.data;
-  const title = props.param;
-  if (!data) {
-    return React.createElement('div', { className: 'dim' }, 'loading…');
+export function Question({ data, param: title }) {
+  if (!data) return div('dim', '…');
+
+  // One stationary title follows its entry from open o<n> to answered a<n>.
+  for (const [name, prefix] of [
+    ['questions_open', 'o'], ['answered_entries', 'a'],
+  ]) {
+    const entries = data[name] || [];
+    const i = entries.findIndex(item => item.title === title);
+    if (i >= 0) return focus(entries[i], prefix + i);
   }
 
-  if (title) {
-    const oi = (data.questions_open || []).findIndex(function (item) {
-      return item.title === title;
-    });
-    if (oi >= 0) {
-      return React.createElement('div', { id: 'qfocus', className: 'qdual' },
-        React.createElement(FocusQaCard, {
-          q: data.questions_open[oi], k: 'o' + oi,
-        }));
-    }
-
-    /* Follow the fold under a stationary URL: answering moves the entry into
-     * answered_entries and changes its address from o<n> to a<n>; it does not
-     * make the live question disappear. */
-    const ai = (data.answered_entries || []).findIndex(function (item) {
-      return item.title === title;
-    });
-    if (ai >= 0) {
-      return React.createElement('div', { id: 'qfocus', className: 'qdual' },
-        React.createElement(FocusQaCard, {
-          q: data.answered_entries[ai], k: 'a' + ai,
-        }));
-    }
-  }
-
-  /* A missing title is neither a transport fault nor permission to guess at
-   * a nearby question. Keep the established neutral notice and way back. */
-  return React.createElement('div', { id: 'qfocus' },
-    React.createElement('div', { className: 'qmissing' },
-      React.createElement('div', { className: 'qmisshead' }, 'not found'),
-      React.createElement('div', { className: 'qmissbody' },
-        'this link names a question the list no longer has — it was most ',
-        'likely re-titled or removed while you watched. No other question ',
-        'has been substituted for it.'),
-      React.createElement('div', { className: 'qmissback' },
-        React.createElement('a', { href: '/questions' },
-          '← back to questions'))));
+  // Missing is neutral and never substitutes a nearby title.
+  return h('div', { id: 'qfocus' },
+    div('qmissing',
+      div('qmisshead', 'not found'),
+      div('qmissbody', 'renamed or removed'),
+      div('qmissback',
+        h('a', { href: '/questions' }, '← list'))));
 }
 
-export function registerQuestion(registry) {
-  return registry.register('question', {
-    component: Question,
-    doc: 'Native /question; follows one title from open to answered.',
-  });
-}
+export const registerQuestion = registry =>
+  registry.register('question', { component: Question });
