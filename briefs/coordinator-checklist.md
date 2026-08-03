@@ -10,7 +10,17 @@ healthy briefs and cannot reliably distinguish instructions from evidence.
   distance. The wrapper resolves the revision and refuses it unless it is the
   branch point of local `master` and the named branch.
 - Name every standing-rule override explicitly and name the rule it replaces.
-  Remove contradictions within the task-specific head.
+  Remove contradictions within the task-specific head — **and between the head
+  and the boilerplate it is composed with.** The head is read as an addition to
+  the standing rules, not as a replacement for them, so a head that restates a
+  rule differently is a contradiction the lane must resolve on its own. `#1171`
+  round 2 reported this: the head cited
+  `/home/xertrov/.claude-p/skills/ud-dreamwork/igc-method.md` while
+  `boilerplate.md:315` says to use the worktree-local `./igc-method.md` and not
+  to read under `~/.claude-p/`. The two copies happened to be byte-identical, so
+  nothing was decided wrongly — but the lane had to establish that itself before
+  it could proceed. **When the head needs to point at a resource the boilerplate
+  already governs, cite it the boilerplate's way.**
 - State a conditional deliverable conditionally at its first imperative.
 - Derive scope and verification lists from the moved symbol's callers and
   caller fallout, not from expected diff ownership.

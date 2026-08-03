@@ -480,6 +480,14 @@ then quote **the final summary line AND the exit code AND the collected count.**
 summary line alone can be stale from a previous run, and **a mistyped node id prints `no tests ran`
 and exits 0**, so a green exit with no collected count is not evidence a test ran.
 
+**`-q` suppresses the `collected N items` line, so the collected count needs its own command.** This
+was a contradiction in the brief contract for as long as both halves have existed — `#1171` round 2
+was the first lane to say so, having worked around it silently. Run `--collect-only -q` as a **second**
+command and retain its output; that pairing is expected, not a workaround, and quoting a count from a
+run that never printed one is not available to you. (`#1171` round 2 also reports the check earning its
+keep: a mistyped class name produced `no tests ran`, and the mandated count caught it before it was
+read as evidence.)
+
 **Never take an exit status through a pipe.** `$?` after a pipeline is the *last* command's status,
 so `cmd | tail -1` reports 0 over a FAULT. Redirect to a regular file and read the file.
 
