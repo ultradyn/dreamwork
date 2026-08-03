@@ -1590,6 +1590,15 @@ _LANE_CONTAINMENT_TRANSIENT_MARKER = "detached HEAD is transient"
 _SYNC_CONFLICT_CLOCK_ADVISORY_MARKER = (
     "Advisory: self-attested acknowledgement expired"
 )
+_SYNC_CONFLICT_RECEIPT_PATH_RE = re.compile(
+    r"known Syncthing conflict copy at (?P<path>.+?) — acknowledgement is "
+)
+_SYNC_CONFLICT_ACK_AGE_RE = re.compile(
+    r"acknowledgement is \d+ day\(s\) old"
+)
+_SYNC_CONFLICT_OVERDUE_AGE_RE = re.compile(
+    r"expired \d+ day\(s\) ago"
+)
 
 
 def _is_fleet_transient_lane_warn(row: str) -> bool:
@@ -1648,6 +1657,69 @@ def _partition_warn_rows(
     compared = tuple(r for r in rows if not _is_non_tree_warn(r))
     excluded = tuple(r for r in rows if _is_non_tree_warn(r))
     return compared, excluded
+
+
+def _clock_advisory_receipt_identity(row: str) -> tuple[str, str] | None:
+    """Return ``(receipt path, row with only clock ages canonicalised)``."""
+    if not _is_clock_derived_sync_conflict_warn(row):
+        return None
+    identity = _warn_row_identity(row)
+    detail = identity[2] if len(identity) > 2 else ""
+    path_match = _SYNC_CONFLICT_RECEIPT_PATH_RE.search(detail)
+    if path_match is None:
+        return None
+    canonical, age_count = _SYNC_CONFLICT_ACK_AGE_RE.subn(
+        "acknowledgement is <clock-derived age>", row, count=1
+    )
+    canonical, overdue_count = _SYNC_CONFLICT_OVERDUE_AGE_RE.subn(
+        "expired <clock-derived age>", canonical, count=1
+    )
+    if age_count != 1 or overdue_count != 1:
+        return None
+    return path_match.group("path"), canonical
+
+
+def _partition_warn_row_sets(
+    baseline: Sequence[str],
+    after: Sequence[str],
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """Partition two readings while comparing tracked receipt metadata.
+
+    Rule: for the same receipt path, only the two clock-derived age counts are
+    exempt; every rendered field derived from tracked acknowledgement content
+    remains in a canonical comparable row. A receipt advisory present in only
+    one reading is the due-date clock transition and remains fully excluded.
+    """
+    baseline_compared, baseline_excluded = _partition_warn_rows(baseline)
+    after_compared, after_excluded = _partition_warn_rows(after)
+
+    def receipt_rows(rows: Sequence[str]) -> dict[str, list[str]]:
+        found: dict[str, list[str]] = {}
+        for row in rows:
+            receipt = _clock_advisory_receipt_identity(row)
+            if receipt is not None:
+                path, canonical = receipt
+                found.setdefault(path, []).append(canonical)
+        return found
+
+    baseline_receipts = receipt_rows(baseline_excluded)
+    after_receipts = receipt_rows(after_excluded)
+    # Duplicate rows for one path are not safely identifiable as one receipt;
+    # leave them excluded here and let the existing full-population reporting
+    # expose the anomaly rather than arbitrarily pairing them.
+    for path in baseline_receipts.keys() & after_receipts.keys():
+        baseline_rows = baseline_receipts[path]
+        after_rows = after_receipts[path]
+        if len(baseline_rows) == 1 and len(after_rows) == 1:
+            baseline_compared += (baseline_rows[0],)
+            after_compared += (after_rows[0],)
+
+    return (
+        baseline_compared,
+        baseline_excluded,
+        after_compared,
+        after_excluded,
+    )
 
 
 def _declared_warn_index(
@@ -2478,8 +2550,12 @@ def land(
         # fleet state and wall-clock state may change while the merged tree does
         # not. The full population each reading examined is still reported
         # above; the split states BOTH denominators so a pass is never silent.
-        baseline_compared, baseline_excluded = _partition_warn_rows(baseline)
-        after_compared, after_excluded = _partition_warn_rows(after)
+        (
+            baseline_compared,
+            baseline_excluded,
+            after_compared,
+            after_excluded,
+        ) = _partition_warn_row_sets(baseline, after)
         try:
             baseline_index = _warn_row_index(baseline_compared)
             after_index = _warn_row_index(after_compared)
