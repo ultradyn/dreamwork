@@ -883,7 +883,7 @@ function chatTurn(t) {
 }
 function buildChat(fetched) {
   // Unknown id degrades quietly, in the page's own voice — never a traceback,
-  // never a thrown exception (the same .qmissing shape buildQuestion uses).
+  // never a thrown exception (the same .qmissing shape /question uses).
   // No composer on this path: you cannot reply to a chat that does not exist.
   if (!fetched)
     return `<div class="qmissing"><div class="qmisshead">not found</div>` +
@@ -1721,44 +1721,6 @@ addEventListener('change', e => {
    blank page and never a different question ("I could not tell" and
    "nothing" must not render the same). #294's planned question_id can
    later be accepted beside the title without invalidating a single link. */
-/* #583 — the dual-column marker. `#qfocus` already scopes the focus view
-   uniquely (it exists on no other route), and `.qdual` is the layout-split
-   branch the CSS keys the two-column grid off: the question body (`.qbody`)
-   becomes the left reading column and the answer/note compose (`.qcompose`)
-   the right, taller-than-normal response column. The split is CSS-driven and
-   focus-scoped on purpose — `qaCard` is the shared component the dashboard,
-   /questions and the dock all render through, and changing its structure is
-   out of scope; only the focus container opts the same card into two columns.
-   The missing-key branch does NOT carry it (no card → nothing to split). */
-function buildQuestion(title, d) {
-  if (!d) return '<div class="dim">loading…</div>';
-  if (title) {
-    const oi = (d.questions_open || []).findIndex(x => x.title === title);
-    if (oi >= 0)
-      return `<div id="qfocus" class="qdual">` +
-        qaCard(d.questions_open[oi], 'o' + oi, 'focus') + `</div>`;
-    /* the fold, followed: answering re-indexes the entry into
-       answered_entries while he watches, and the page moves WITH it — a
-       live question reported as gone is the failure this route exists to
-       prevent. Same title, same card, new 'a<n>' address. */
-    const ai = d.answered_entries.findIndex(x => x.title === title);
-    if (ai >= 0)
-      return `<div id="qfocus" class="qdual">` +
-        qaCard(d.answered_entries[ai], 'a' + ai, 'focus') + `</div>`;
-  }
-  /* Unresolved. The notice says WHAT (the key names nothing live), WHY
-     (most likely a retitle), and the way back — and it guesses at nothing:
-     a near title is a different question. Not --warn: the channel is fine,
-     the question is simply gone, and a fault colour would cry broken over
-     an edit. */
-  return `<div id="qfocus"><div class="qmissing">` +
-    `<div class="qmisshead">not found</div>` +
-    `<div class="qmissbody">this link names a question the list no longer ` +
-    `has — it was most likely re-titled or removed while you watched. ` +
-    `No other question has been substituted for it.</div>` +
-    `<div class="qmissback"><a href="/questions">&larr; back to questions</a></div>` +
-    `</div></div>`;
-}
 /* ── the review split (#305) ──────────────────────────────────────────────
    An INVISIBLE affordance still has to be operable by everything that
    operates a control, so the bar is a real `separator` with a value: a

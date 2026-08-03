@@ -713,6 +713,7 @@ DATA_SIBLINGS = ("SKILL.md", "vendor/morphdom.min.js", "vendor/LICENSE.morphdom"
                  "dev/build/src/native-entry.js",
                  "dev/build/src/probe.js",
                  "dev/build/src/research.js", "dev/build/src/goals.js",
+                 "dev/build/src/question.js",
                  "dev/build/src/registry.js",
                  "client/dist/manifest.json",
                  "client/dist/ds/index.js",

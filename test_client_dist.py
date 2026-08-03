@@ -39,6 +39,10 @@ import pytest
 
 import client_dist
 import watch
+from test_question_dual_column import (
+    question_browser_fixture,
+    run_question_browser_scenario,
+)
 
 ROOT = pathlib.Path(__file__).resolve().parent
 CLIENT = ROOT / "client"
@@ -176,6 +180,106 @@ def test_dist_delivery_matches_phase_authority():
             "HTML response by design; native.js must be inline, not a fetch "
             "that content containment cannot distinguish"
             % ref)
+
+
+def test_question_route_follows_the_fold_through_the_shipping_registry(tmp_path):
+    """The registered /question component owns all three states and the move.
+
+    This loads the assembled page, lets routeOf/isNativeRoute mount the
+    production registry entry, and drives the production setData ->
+    registry.update seam. No component is imported or constructed by the
+    test, so deleting the registered production symbol makes this red.
+    """
+    base, assembled = question_browser_fixture(tmp_path)
+    assert "function buildQuestion(" not in assembled, (
+        "the converted route still ships its legacy buildQuestion authority")
+    assert "return buildQuestion(view.param, d)" not in assembled, (
+        "the router still dispatches /question to the deleted legacy builder")
+
+    assert base["questions_open"] and base["answered_entries"], (
+        "the production collector fixture needs both question shapes; a "
+        "fabricated card would not exercise the shipping qaCard path")
+
+    title = "Fold-following production question"
+    opened = dict(base["questions_open"][0])
+    opened.update(title=title, body="Read the live `DREAMWORK.md` link.")
+    answered = dict(base["answered_entries"][0])
+    answered["title"] = title
+    nearby = dict(opened)
+    nearby["title"] = title + " nearby, never a substitute"
+
+    open_data = dict(base)
+    open_data.update(questions_open=[opened], answered_entries=[])
+    answered_data = dict(base)
+    answered_data.update(questions_open=[], answered_entries=[answered])
+    missing_data = dict(base)
+    missing_data.update(questions_open=[nearby], answered_entries=[])
+
+    states = {
+        "title": title,
+        "open": open_data,
+        "answered": answered_data,
+        "missing": missing_data,
+    }
+    scenario = r'''
+  const initialUrl = page.url();
+  const open = await page.evaluate(() => ({
+    routes: window.dwNative.registry.routes(),
+    mounted: window.dwNative.registry.mounted(),
+    oldBuilder: typeof buildQuestion,
+    missing: !!document.querySelector('#qfocus .qmissing'),
+    knownLink: document.querySelector('#qfocus .mdfile a')?.getAttribute('href'),
+    surface: document.querySelector('#qfocus .qa')?.dataset.qsurface,
+  }));
+  if (!open.routes.includes('question') || open.mounted[0] !== 'question')
+    throw new Error('OPEN state did not arrive through the shipping question registry');
+  if (open.oldBuilder !== 'undefined')
+    throw new Error('OPEN state retained the deleted buildQuestion symbol');
+  if (open.missing)
+    throw new Error('OPEN state collapsed into qmissing');
+  if (open.surface !== 'focus')
+    throw new Error('OPEN state did not call qaCard with the focus surface');
+  if (open.knownLink !== '/file?p=DREAMWORK.md')
+    throw new Error('OPEN state qaCard did not read the live data binding');
+
+  await page.evaluate(next => setData(next), states.answered);
+  const moved = await page.evaluate(() => ({
+    url: location.href,
+    answered: !!document.querySelector(
+      '#qfocus.qdual .qa[data-qkey="a0"]'),
+    open: !!document.querySelector('#qfocus .qa[data-qkey="o0"]'),
+    missing: !!document.querySelector('#qfocus .qmissing'),
+  }));
+  if (moved.url !== initialUrl || !moved.answered || moved.open || moved.missing)
+    throw new Error('OPEN-TO-ANSWERED MOVE lost Fold-following production question under its stationary URL');
+
+  await page.evaluate(next => setData(next), states.missing);
+  const missing = await page.evaluate(() => {
+    const focus = document.querySelector('#qfocus');
+    return {
+      url: location.href,
+      dual: focus?.classList.contains('qdual'),
+      head: focus?.querySelector('.qmisshead')?.textContent,
+      back: focus?.querySelector('.qmissback a')?.getAttribute('href'),
+      warned: !!focus?.querySelector('.--warn') ||
+        !!focus?.classList.contains('--warn'),
+      cards: focus?.querySelectorAll('.qa').length,
+    };
+  });
+  if (missing.url !== initialUrl || missing.dual ||
+      missing.head !== 'not found' || missing.back !== '/questions' ||
+      missing.warned || missing.cards !== 0)
+    throw new Error('NOT-FOUND state lost its neutral qmissing markup or substituted the near title');
+  if (pageErrors.length)
+    throw new Error('shipping /question raised page errors: ' + pageErrors.join(' | '));
+  console.log('question shipping path: open o0; stationary move a0; neutral missing');
+'''
+    run = run_question_browser_scenario(
+        tmp_path, assembled, states, scenario,
+        script_name="question-route.mjs")
+    assert run.returncode == 0, (
+        "shipping /question browser check failed\nstdout:\n%s\nstderr:\n%s"
+        % (run.stdout, run.stderr))
 
 
 def test_ds_styles_is_a_byte_copy_of_the_stylesheet_the_page_serves():

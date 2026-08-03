@@ -1376,7 +1376,15 @@ function setData(next) {
   // all of them — where the declared set has not moved.
   if (window.dwPluginCommands) window.dwPluginCommands(data.plugin_commands);
   const registry = nativeRegistry();
-  if (registry) registry.update(data);
+  // Native delegates replace their builder-owned subtree when React updates.
+  // Carry the same human-owned card state the legacy tick carries, and take
+  // the snapshot BEFORE update: afterwards the draft and caret are gone.
+  const kept = registry && registry.mounted().length
+    ? snapshotCardState() : null;
+  if (registry) {
+    registry.update(data);
+    restoreCardState(kept);
+  }
   return data;
 }
 async function ensureData() {
@@ -1508,7 +1516,6 @@ async function buildCurrent() {
   const d = await ensureData();
   if (isNativeRoute(view.name)) return null;
   if (view.name === 'review') return buildReview(view.param, view.q, d);
-  if (view.name === 'question') return buildQuestion(view.param, d);
   if (view.name === 'reviews') return buildReviews(d);
   if (view.name === 'settings') return buildSettings(d);
   if (!d) return '<div class="dim">loading…</div>';
@@ -1656,7 +1663,7 @@ const DraftStore = (() => {
     };
   }
   function save(logicalId, text, meta) {
-    const k1 = v1Key(logicalId); if (!k1) return;
+    const k1 = v1Key(logicalId); if (!k1) return false;
     try {
       if (text) {
         const rec = { t: text };
@@ -1681,7 +1688,12 @@ const DraftStore = (() => {
         const lo = legacyKey(logicalId);
         if (lo) localStorage.removeItem(lo);
       }
-    } catch (e) { /* storage unavailable; the live box is unaffected */ }
+      return true;
+    } catch (e) {
+      // Storage is optional, but callers surfacing a vanished draft need to
+      // distinguish "preserved" from "copy this now" rather than lie.
+      return false;
+    }
   }
   function restore(logicalId, el) {
     if (!logicalId || !el || el.value) return;  // live outranks (#118)
@@ -1789,8 +1801,8 @@ const DraftStore = (() => {
    Routes through DraftStore so card and composer share one policy. */
 const dwDraft = {
   save(title, value) {
-    if (!title) return;
-    DraftStore.save(DraftStore.id('card', title), value);
+    if (!title) return false;
+    return DraftStore.save(DraftStore.id('card', title), value);
   },
   restore(title, el) {
     if (!title) return;
@@ -2262,8 +2274,16 @@ function putScroll(el, top) {
 }
 function restoreCardState(saved) {
   if (!saved || !saved.size) return;
+  // Start with every saved card unresolved. A post-update card can disappear
+  // entirely, or survive without the textarea that held a draft; iterating
+  // only the fresh DOM makes both cases look like a successful restore.
+  const unmatched = new Map();
+  saved.forEach((state, qid) => unmatched.set(qid, {
+    state, target: 'card',
+  }));
   document.querySelectorAll('.qa[data-qid]').forEach(card => {
-    const s = saved.get(card.dataset.qid);
+    const qid = card.dataset.qid;
+    const s = saved.get(qid);
     if (!s) return;
     // only ever re-opened, never closed: the fresh render is the default and
     // what he did to it is the addition
@@ -2278,9 +2298,12 @@ function restoreCardState(saved) {
     // it is restored BEFORE the no-text early return below. setCardMode
     // declines a mode the new state cannot accept.
     setCardMode(comp, s.mode, true);
-    if (s.value === null) return;
+    if (s.value === null) { unmatched.delete(qid); return; }
     const ta = comp && comp.querySelector('textarea');
-    if (!ta) return;                       // the state stopped offering a box
+    if (!ta) {
+      unmatched.get(qid).target = 'textarea';
+      return;
+    }
     ta.value = s.value;
     // #177: re-fit the box to its restored content, SNAPPED — the tick
     // re-creates the box at its floor every ~2s, so an animated fit here would
@@ -2291,6 +2314,39 @@ function restoreCardState(saved) {
     putScroll(ta, s.scroll);
     try { ta.setSelectionRange(s.start, s.end, s.dir || 'none'); } catch (e) {}
     if (s.focus) refocus(ta);
+    unmatched.delete(qid);
+  });
+  unmatched.forEach((miss, qid) => {
+    const s = miss.state;
+    let title = '';
+    try { title = decodeURIComponent(qid); } catch (e) {}
+    const hasDraft = s.value !== null && s.value !== '';
+    const preserved = hasDraft && title ? dwDraft.save(title, s.value) : false;
+    const host = document.getElementById('qfocus') ||
+      document.getElementById('view');
+    if (!host) return;
+    const notice = document.createElement('div');
+    notice.className = 'qhealth qdraftrecovery';
+    notice.setAttribute('role', 'alert');
+    notice.dataset.unmatchedQid = qid;
+    const absent = miss.target === 'textarea'
+      ? 'its answer box is no longer available'
+      : 'the question is no longer on this page';
+    if (preserved) {
+      notice.textContent = 'Draft preserved in this browser because ' + absent +
+        '. It will return if this title returns.';
+    } else if (hasDraft) {
+      notice.textContent = 'Draft could not be restored or stored because ' +
+        absent + '. Copy it now: ';
+      const copy = document.createElement('textarea');
+      copy.readOnly = true;
+      copy.value = s.value;
+      copy.setAttribute('aria-label', 'unrestored question draft');
+      notice.appendChild(copy);
+    } else {
+      notice.textContent = 'Question state was discarded because ' + absent + '.';
+    }
+    host.appendChild(notice);
   });
 }
 /* Put the caret back in the box he was typing in — and CHECK that it landed,

@@ -32,12 +32,14 @@ import { createRegistry } from './registry.js';
 import { registerProbe, PROBE_ROUTE } from './probe.js';
 import { registerResearch } from './research.js';
 import { registerGoals } from './goals.js';
+import { registerQuestion } from './question.js';
 import { OWNED_ATTR } from './registry.js';
 
 export const registry = createRegistry();
 registerProbe(registry);
 registerResearch(registry);
 registerGoals(registry);
+registerQuestion(registry);
 
 /* Re-exported so a guard (and P3) can assert WHICH React is running without
  * a second copy arriving from anywhere else. Two Reacts on one page is the

@@ -932,11 +932,11 @@ question.
 - **The split is CSS-driven and focus-scoped, never a second card.** `qaCard`
   is the one component the dashboard, `/questions`, the dock and the
   answer-submit morph all render through, so changing its structure is out of
-  scope. Instead `buildQuestion` marks the focus container `#qfocus.qdual`,
-  and a `#qfocus.qdual`-scoped grid lays the same card's `.qbody` (col 1) and
-  `.qcompose` (col 2) side by side. The dashboard is unchanged because the
-  scope never reaches it — `.qbody` is `display:contents` everywhere but here,
-  where it becomes the left column.
+  scope. Instead the registered native Question component marks the focus
+  container `#qfocus.qdual`, and a `#qfocus.qdual`-scoped grid lays the same
+  card's `.qbody` (col 1) and `.qcompose` (col 2) side by side. The dashboard
+  is unchanged because the scope never reaches it — `.qbody` is
+  `display:contents` everywhere but here, where it becomes the left column.
 - **A third deliberate width exception.** A second column needs room the
   `72ch` reading column does not give, so `body.question .wrap` widens to
   `1040px` — the same body-class + `body.wsliding` glide idiom `/review` and
@@ -2215,7 +2215,7 @@ same compose path as everywhere else.
   those three are the churn the page exists for. The alternatives were
   rejected on the same evidence: a content hash breaks on the body rewrites
   that are the common case, and a positional key breaks on every re-sort.
-  `#294`'s planned `question_id` can later be accepted *beside* the title
+  `#1183`'s planned `question_id` can later be accepted *beside* the title
   without invalidating a single link.
 - **The fold is followed, not reported.** Resolution searches
   `questions_open` AND `answered_entries`, because answering re-indexes the
@@ -2228,6 +2228,14 @@ same compose path as everywhere else.
   wears the rail at DIM level, deliberately not `--warn`: the channel is
   healthy and the question is simply gone; a fault colour would cry broken
   over an edit.
+- **A vanished draft leaves a visible recovery affordance.**
+  `.qdraftrecovery` is appended at the stable focus/view host when the fresh
+  native DOM has no matching card or answer box. A successfully stored draft
+  wears the accent rail because it remains live state; a storage-refused
+  notice containing the readonly copy switches that rail to `--warn`, because
+  the persistence channel really did fail. The copy states the title-bound
+  limit exactly: the draft returns only if this title returns. Stable identity
+  and migration belong to `#1183`, not this interim.
 - **The way in is a real link on every card, in every state.** `.qfocus`
   sits in the headline beside the age chrome: the href makes it
   deep-linkable and copyable, keyboard operation is native, and the click

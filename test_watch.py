@@ -7857,8 +7857,12 @@ class TestAppShell(unittest.TestCase):
         # render an explicit missing notice — never a blank page and never
         # a different question ("I could not tell" and "nothing" must not
         # render the same). Guard: dev/capture/qfocus.mjs.
-        for token in ('buildQuestion', '/question?qid=', 'qfocus', 'qmissing'):
-            self.assertIn(token, watch.PAGE)
+        registration = re.search(
+            r'\.\s*register\("question",\{component:([A-Za-z_$][\w$]*)',
+            watch.PAGE)
+        self.assertIsNotNone(
+            registration,
+            "the shipped native registry does not register /question")
         # A route lives in three places and must live in all three: the
         # client router (routeOf), the internal-link claim (isInternal),
         # and the server's app-shell table (covered live in
@@ -7866,11 +7870,10 @@ class TestAppShell(unittest.TestCase):
         # or a link the browser sends nowhere.
         self.assertIn("loc.pathname === '/question'", watch.PAGE)
         self.assertIn("a.pathname === '/question'", watch.PAGE)
-        # Resolution searches BOTH sections: answering folds an entry from
-        # questions_open into answered_entries while he watches, and the
-        # focused page must follow it across the fold rather than reporting
-        # a live question as gone.
-        self.assertIn("d.answered_entries.find", watch.PAGE)
+        self.assertIn(
+            'registry.mount(view.name, viewEl, data, view.param, view.payload)',
+            watch.PAGE,
+            "/question no longer mounts its registered component")
 
     def test_page_has_qroll_wiring(self):
         # #454 — an open question card rolls up to the top of the scroll:
@@ -8628,11 +8631,27 @@ class TestAppShell(unittest.TestCase):
                       # every call site goes through the one component
                       "qaCard(q, 'o' + i)", "qaCard(e, 'a' + j)",
                       "qaCard(d.questions_open[i], 'o' + i, 'dock')",
-                      "qaCard(d.questions_open[oi], 'o' + oi, 'focus')",
                       # ...including the submit morph, which restates the card
                       "card.className = 'qa ' + qaState(next, key)",
                       "qaInner(next, key, card.dataset.qsurface || 'list')"):
             self.assertIn(token, watch.PAGE)
+        registration = re.search(
+            r'\.\s*register\("question",\{component:([A-Za-z_$][\w$]*)',
+            watch.PAGE)
+        self.assertIsNotNone(
+            registration,
+            "the shipped native registry does not register /question")
+        component = registration.group(1)
+        start = watch.PAGE.rfind(
+            'function ' + component + '(', 0, registration.start())
+        self.assertNotEqual(
+            start, -1,
+            "the registered /question component is absent from the shipment")
+        # State resolution is behaviour-bound by
+        # QuestionDualColumnSource.test_registered_question_emits_dual_column_container:
+        # it mounts the executable registry and drives open, answered, and
+        # missing data through the shipped component. Do not pin this static
+        # shell check to minifier-specific object or className output.
         # the folded Answered section no longer has look-alike markup
         self.assertNotIn('answeredEntry', watch.PAGE)
         self.assertNotIn('aentry', watch.PAGE)
