@@ -77,6 +77,30 @@ the review path deliberately is not — collapsing generator and validator for
 review is the point, because a hand-assembled review prompt is exactly what
 there is no second instrument to witness.
 
+## #644 IGC: one mechanical mitigation, not a bundle
+
+Context: a precise authored core can carry (F1) a remembered/inferred specific,
+(F2) mutable ledger state, (F3) a relaxed rule remembered as live, or (F4) a
+derived count that rotted. G1 is independent of author confidence; G2 keeps a
+correct, precise brief generatable; G3 closes a live defect without another
+author convention. “partial” catches only a subset of a family.
+
+| Rival | All | F1 | F2 | F3 | F4 | Refuses correct? | G1 | G2 | G3 |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| inline confidence labels | ✘ | ✔ | — | — | — | no | ✘ | ✔ | ✘ |
+| derive boilerplate constants | ✘ | — | — | — | ✔ | no | ✔ | ✔ | ✘ |
+| resolve repo `file:line` at base SHA | ✔ | partial | — | — | — | no | ✔ | ✔ | ✔ |
+| date/SHA on rule citations | ✘ | — | — | partial | — | yes | ✘ | ✘ | ✘ |
+| omit mutable ledger fields | ✘ | — | ✔ | — | — | yes | ✔ | ✘ | ✘ |
+
+Decisive errors: confidence labels still trust the confidently-wrong author;
+the stale count named by this task has already been removed, so a new derived
+token would not close typed counts; a ruling date exposes age but cannot prove
+the ruling remains live and rejects a correct undated citation; forbidding a
+currently-correct ledger field rejects a correct brief. Base-SHA resolution is
+the sole survivor: it closes the observed wrong-path coordinate mechanically,
+while stating plainly that a resolving line can still support a false claim.
+
 ## Storage
 
 This tool writes no files and opens no store for writing; it emits text on
@@ -234,6 +258,18 @@ _ASSERTED_QUANTITY = re.compile(
 )
 _INLINE_CODE = re.compile(
     r"(?<!`)(?P<fence>`+)(?P<body>.*?)(?P=fence)(?!`)", re.DOTALL
+)
+# Repo-relative source coordinates are mechanically decidable at the brief's
+# generation SHA.  Keep the suffix list source-shaped so prose such as
+# ``version 3.11:2`` is not promoted into a citation, and require a full path
+# token so the tail of a URL cannot match on its own (#644).
+_FILE_LINE_CITATION = re.compile(
+    r"(?<![\w./-])(?P<path>"
+    r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*"
+    r"\.(?:css|html|js|json|md|mjs|py|sh|toml|txt|ya?ml)"
+    r"):(?P<first>[1-9]\d*)(?:-(?P<last>[1-9]\d*))?"
+    r"(?![\w.-])",
+    re.IGNORECASE,
 )
 _GLOSSED_TASK_CITATION = re.compile(
     rf"(?<![\w/]){GLOSSED_CITATION_TOKEN}\s*(?:—|:)\s*"
@@ -921,6 +957,72 @@ def _citation_title(task: int, ledger: Path) -> str | None:
         raise
 
 
+def _validate_file_line_citations(core: str, checkout: Path, sha: str) -> None:
+    """Refuse repo ``file:line`` citations absent at the generation SHA.
+
+    This checks only authored prose.  Fenced blocks are specimens or captured
+    output, not active citations; treating their historical coordinates as
+    current claims would refuse correct briefs.  Semantic accuracy is outside
+    this check: a line can resolve and still support the wrong conclusion.
+    """
+    citations: list[tuple[int, str, int, int]] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line_no, line in enumerate(core.splitlines(), 1):
+        if in_fence:
+            if re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}[ \t]*$", line
+            ):
+                in_fence = False
+            continue
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            in_fence = True
+            fence_char = opened.group(2)[0]
+            fence_len = len(opened.group(2))
+            continue
+        prose = re.sub(r"https?://\S+", " ", line)
+        for match in _FILE_LINE_CITATION.finditer(prose):
+            first = int(match.group("first"))
+            last = int(match.group("last") or first)
+            citations.append((line_no, match.group("path"), first, last))
+
+    faults: list[str] = []
+    blobs: dict[str, list[str] | None] = {}
+    for line_no, path, first, last in citations:
+        if path not in blobs:
+            result = subprocess.run(
+                ["git", "-C", str(checkout), "show", f"{sha}:{path}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            blobs[path] = result.stdout.splitlines() if result.returncode == 0 else None
+        source = blobs[path]
+        if source is None:
+            faults.append(f"core line {line_no} `{path}:{first}` (path absent)")
+        elif last < first:
+            faults.append(
+                f"core line {line_no} `{path}:{first}-{last}` "
+                "(range ends before it starts)"
+            )
+        elif last > len(source):
+            rendered = f"{path}:{first}" if first == last else f"{path}:{first}-{last}"
+            faults.append(
+                f"core line {line_no} `{rendered}` "
+                f"(line exceeds file's {len(source)} lines)"
+            )
+
+    if faults:
+        raise BriefFault(
+            f"file:line citation does not resolve at generation sha {sha}: "
+            + "; ".join(faults)
+            + ". Cite the repo-relative path and a line present in that exact tree; "
+            "this proves resolution only, not that the line supports the claim."
+        )
+
+
 def _citation_authority_report(core: str, ledger: Path) -> str:
     """Put each explicit citation gloss beside its ledger title for human review."""
     prose_lines = _INLINE_CODE.sub(
@@ -1541,6 +1643,7 @@ def build(task: int, branch: str, owns: list[str], core: str, *,
         if not re.fullmatch(r"[0-9a-f]{40}", prepared_base_sha or ""):
             raise BriefFault(f"prepared base sha is not a commit id: {prepared_base_sha!r}")
         resolved_base = prepared_base_sha
+    _validate_file_line_citations(core, checkout, resolved_base)
     print(
         _base_scope_derivation_report(checkout, resolved_base, owns),
         file=sys.stderr,

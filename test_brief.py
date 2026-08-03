@@ -219,6 +219,58 @@ def test_lane_owns_is_emitted_and_parses_as_lint_reads_it(generated):
     assert lint._parse_lane_owns(generated) == ["dev/brief.py", "test_brief.py"]
 
 
+def test_generation_refuses_a_file_line_citation_absent_from_its_base_sha(lane):
+    """The observed `lessons.md:N` typo must not survive generation.
+
+    `.dreamwork/lessons.md` exists at the generated brief's base SHA; the
+    remembered top-level spelling does not.  Before #644, build() emitted this
+    defective brief successfully, leaving each lane to rediscover the typo.
+    """
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "The governing lesson is `lessons.md:430`.",
+    )
+    with pytest.raises(
+        brief.BriefFault,
+        match=r"file:line citation does not resolve at generation sha.*lessons\.md:430",
+    ):
+        brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+
+
+def test_generation_accepts_a_file_line_citation_present_at_its_base_sha(lane):
+    """The resolver must preserve precise, correct repo-relative citations."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "The governing lesson is `.dreamwork/lessons.md:430`.",
+    )
+    generated = brief.build(
+        881, lane, ["dev/brief.py", "test_brief.py"], core
+    )
+    assert "`.dreamwork/lessons.md:430`" in generated
+
+
+def test_generation_refuses_a_line_beyond_the_base_sha_file(lane):
+    """An existing path does not make a stale/out-of-range coordinate resolve."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "The generator contract is `dev/brief.py:999999`.",
+    )
+    with pytest.raises(brief.BriefFault, match=r"line exceeds file's \d+ lines"):
+        brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+
+
+def test_generation_does_not_treat_fenced_history_as_a_live_citation(lane):
+    """Captured historical output may name a path absent from the base tree."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "A captured diagnostic follows:\n\n```\nmissing.py:999\n```",
+    )
+    generated = brief.build(
+        881, lane, ["dev/brief.py", "test_brief.py"], core
+    )
+    assert "missing.py:999" in generated
+
+
 def test_worktree_is_asked_of_git_not_guessed(lane, lane_checkout):
     """A guessed convention would be wrong for 14 of the 40 most recent briefs (#846 moved it)."""
     assert lane == lane_checkout[0], (
