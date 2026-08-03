@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 
 export interface QaComposeProps {
-  key: `o${number}` | `a${number}`;
+  ck: `o${number}` | `a${number}`;
   st: "open" | "awaiting" | "folded";
   title: string;
 }

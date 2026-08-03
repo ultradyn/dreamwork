@@ -36,19 +36,19 @@
     "dev/build/ds-src/QaCard.d.ts": "a4c1d50dbe833c951432f0275701cf5743c068f1af5f731919928aff28e86d30",
     "dev/build/ds-src/QaCard.fixture.json": "5b233390ea719c4139cb4e95f192c730c9c0db64c1816ceec0c73b976f19f086",
     "dev/build/ds-src/QaCard.prompt.md": "0036ca1f279f529447f21ec1504e21caffbcda3cbc2ca760aa1ccd3395f039c2",
-    "dev/build/ds-src/QaCompose.d.ts": "e5ea075825c43700291ff3be69a0b61296c826271ec8b9a832c6ce76bc9b9781",
-    "dev/build/ds-src/QaCompose.fixture.json": "852f8c2555fc321ed649a2e34aae3bc2fcce3e922fbc7e8c7bb86828b368e410",
-    "dev/build/ds-src/QaCompose.prompt.md": "00f882ea855ee52088549266269dde7938f19d2ea76c3979ac2137a442ec523b",
+    "dev/build/ds-src/QaCompose.d.ts": "ba6c15478f43f1f39c96e5378c5418bdbf6bfec725fb38e5223c979573f13fa9",
+    "dev/build/ds-src/QaCompose.fixture.json": "32f3defb89a7aa173bc587878f86b57590a4cafc53753b969505cabc46e71531",
+    "dev/build/ds-src/QaCompose.prompt.md": "abbf16d73fddc2e512fe802b0c010676959178e1570c137ce2f3fc7180864e34",
     "dev/build/src/delegate.js": "8cbeb4bce8ccaee70c8dc6ae76160eeb8dd9f8f3a92ca51e28712747ee28b293",
     "dev/build/src/goals.js": "4f493cf97a6567a0dcfa809f4130fe1356ed96d21e4faf8fb8364f0499702d83",
     "dev/build/src/native-entry.js": "42c071b11224dd1be63aa3065ae59c45cc6dafb5bb3f1200b8fa30821b10f9d4",
     "dev/build/src/probe.js": "f6c51e602a98990ca28fe31206f0aa533c77016f5a9e04cc883769e52c3f67fc",
     "dev/build/src/registry.js": "6d8b3a665afcec61e7d0ab59b32b6ee23b0fc0bff90bf23b2558823057beb0a8",
     "dev/build/src/research.js": "d792c7bd01be52922baa765afee4e5f77d9e0d35feaff0679a9f803ce1b63f73",
-    "dev/build/wrapper-exports.js": "1f7cb6a4547ad4b5ccfbbc71ca967eae633ca15c19db05daad8e1b162d6c4146"
+    "dev/build/wrapper-exports.js": "ceac587fd5555910a0f65aa1b0bff6ea114e03991a50509ffc75365464e70080"
   },
   "outputs": {
-    "client/dist/ds/index.js": "29dbcf73b12030ce3fe6422634a8a002e98dc25e09db3bf95ffc7dea4888a988",
+    "client/dist/ds/index.js": "bb9ef57b9f43aaa44cd83915ac91dee86ef791342901232cc6cbed4fa0999d9a",
     "client/dist/ds/styles.css": "cd335f737a8b6f2846e35faf184e2e3f6b3a2b793422a6b13ecde4cd5ef582fb",
     "client/dist/native.js": "27b580244ee603816ac535c76b83383f71a0d74a1e0be92ed5a7fd1c8da33dc4"
   },

@@ -77,7 +77,7 @@ const CASES = [
   {
     name: 'QaCompose', delegate: 'qaCompose', expectedClass: 'qcompose',
     fixture: fixture('QaCompose'),
-    build: props => qaCompose(props.key, props.st, props.title),
+    build: props => qaCompose(props.ck, props.st, props.title),
   },
   {
     name: 'ArtifactRow', delegate: 'artifactRow', expectedClass: 'rdecision',

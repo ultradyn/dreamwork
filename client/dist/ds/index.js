@@ -8603,9 +8603,9 @@ var DreamworkDesign = (() => {
   });
   FollowThread.displayName = "FollowThread";
   FollowThread.dwBuilder = "followThread";
-  var QaCompose = ({ key, st, title }) => import_react.default.createElement(HOST, {
+  var QaCompose = ({ ck, st, title }) => import_react.default.createElement(HOST, {
     "data-dw-delegate": "qaCompose",
-    dangerouslySetInnerHTML: { __html: qaCompose(key, st, title) }
+    dangerouslySetInnerHTML: { __html: qaCompose(ck, st, title) }
   });
   QaCompose.displayName = "QaCompose";
   QaCompose.dwBuilder = "qaCompose";
