@@ -6582,3 +6582,48 @@ The recovery worked because I tagged `prerebase-1174r3` before starting, and `re
 restored the lane's reported sha byte for byte. Tag before any rebase you are about to perform on
 someone else's finished work; it costs one command and it is the difference between a redispatch and a
 reconstruction.
+
+## A probe that matches a tool's name also matches every test that exercises that tool (2026-08-04, #1170/#1166/#1171)
+
+Before dispatching I check whether a landing gate is in flight, because `#773` forbids dispatching
+during one. The check is a process probe. Twice in one tick it told me a gate was running when none was.
+
+The first probe matched the whole `ps` line:
+
+    ps -eo pid,comm,args --no-headers | awk '$2 ~ /python/ && $0 ~ /land_lane\.py/'
+
+That matched three processes — all of them lanes whose **brief text** contains the string
+`dev/land_lane.py`, because every brief I write says "never run `dev/land_lane.py`". I had already
+learned this once and written it down; the fix I applied then was to match a field rather than the
+whole line. So I tightened it to match only `argv[1..2]`:
+
+    awk '{for(i=2;i<=NF;i++){if($i ~ /dev\/land_lane\.py$/ && i<=3){print "GATE pid="$1}}}'
+
+That still reported two gates. This time the matches were real invocations of the real script:
+
+    /home/xertrov/.llm-general/skills/.worktrees/cx-1166r7rv/dev/land_lane.py lane test_dirty_lane.py
+    /home/xertrov/.llm-general/skills/.worktrees/cx-1171r4gate/dev/land_lane.py lane test_named.py
+
+`#1166` and `#1171` both change `test_land_lane.py`, and that suite **spawns the production script
+against fixtures**. Nothing about the process name, the argv position, or the interpreter distinguishes
+a fixture invocation from a landing. The probe was correct and the conclusion was false.
+
+**The discriminator is the path the script runs FROM.** A landing gate runs
+`/…/ud-dreamwork/dev/land_lane.py` — the main checkout. A fixture spawn runs it from inside a worktree.
+Same basename, same args shape, opposite meaning.
+
+Two things worth keeping from this.
+
+**The tell was that it exited too fast.** A landing gate runs about 500 seconds; these vanished between
+two consecutive probes. Duration was available as a cross-check the whole time and I only consulted it
+after the second false positive. When a probe's answer is surprising, the cheapest second opinion is
+usually a different property of the same object.
+
+**A codebase that tests its own tooling makes every name-based probe ambiguous.** This is not a quirk
+of `land_lane`; it is structural. `reap.py`, `redproof.py`, `rotate_inbox.py` and `status_sync.py` are
+all exercised by fixtures that run them for real. Any probe over `ps` for one of those names must
+anchor on the invoking path, or it is asking "is this tool running anywhere" when what I meant was "is
+this tool running *for me*".
+
+The general shape, which is this session's recurring one: **the probe found something true, and I read
+it as the thing I was looking for.**
