@@ -19,13 +19,173 @@ class LivenessUnknown(Exception):
 
 
 @dataclass(frozen=True)
+class FinishedWork:
+    """The work a dead lane left behind, split the way ``dev/reap.py`` splits it.
+
+    ``finished`` today is one word for a lane whose runner is gone, whether it
+    reported and exited, died holding nothing, or died holding a day's work on
+    its branch or in a dirty tree (#1154). The dangerous state — work that
+    reaping would destroy or that sits unreviewed on a branch — looked exactly
+    like the disposable one, because the classifier never looked at the work.
+
+    These counts mirror ``dev/reap.py``'s ``tracked-dirty=N untracked=N
+    ignored=N`` split on purpose: that is the model this repo already trusts for
+    the decision "would work be lost", and a second taxonomy would drift. The
+    split keeps ignored churn (``__pycache__``, ``lane.lock`` — present in every
+    lane) OUT of ``holding_work``, so a lane with only cache dirt reads clean
+    and not as "died holding work".
+
+      - ``tracked_dirty`` — modified or staged tracked files. Work that reaping
+        destroys (the ``cx-1140ingest`` shape: 448 insertions, zero commits).
+      - ``untracked`` — notable untracked paths beyond the per-lane scratch set
+        (``BRIEF.md``). A deliverable the lane forgot to commit.
+      - ``unmerged`` — commits on the branch not on the base. Work on the branch
+        (the ``cx-1060label6`` shape: 8 commits of accepted work).
+      - ``ignored`` — ignored churn, named for audit (#868) but never counted
+        toward ``holding_work``.
+
+    ``commits_known`` is False when the branch could not be compared to the base
+    (no ``master``, detached): ``unmerged`` is then 0 and the tick line says so
+    rather than asserting an all-clear (#136).
+    """
+
+    tracked_dirty: int
+    untracked: int
+    ignored: int
+    unmerged: int
+    commits_known: bool = True
+
+    @property
+    def holding_work(self) -> bool:
+        """Whether the dead lane left work that must not be silently reaped.
+
+        Keys on the WORKING TREE and the branch, never on the runner: a lane
+        that reported and then died has a clean tree and reads ``False`` here,
+        so it is not classified as work-losing because its process vanished.
+        Commit count alone does NOT decide this — a lane can hold a day's work
+        with zero commits (#1154).
+        """
+        return self.tracked_dirty > 0 or self.untracked > 0 or self.unmerged > 0
+
+
+# The per-lane scratch every lane carries, modelled on reap.EXPECTED_UNTRACKED.
+# BRIEF.md is written into each worktree by the coordinator and never tracked;
+# suppressing it would hide nothing, but counting it would call an idle lane
+# "holding work". Kept as a literal of one name (#612): a fact about the lane
+# model, not a computed value.
+_FINISHED_EXPECTED_UNTRACKED = frozenset({"BRIEF.md"})
+
+# Disposable ignored entries present in every lane (__pycache__, *.pyc,
+# *.lock). Mirrors reap._is_disposable_ignored so the two never disagree on
+# what "ignored churn" means; the comment there is the authority.
+_FINISHED_DISPOSABLE_IGNORED_DIRS = frozenset(
+    {".pytest_cache", ".ruff_cache", "node_modules"})
+
+
+def _is_disposable_ignored(path: str) -> bool:
+    parts = path.split("/")
+    return (
+        path.endswith((".pyc", ".lock"))
+        or any(part in _FINISHED_DISPOSABLE_IGNORED_DIRS for part in parts))
+
+
+def _finished_status_kinds(raw: bytes):
+    """Parse ``git status -z --ignored`` into (kind, path) rows.
+
+    Re-states reap._status_paths's porcelain walk rather than importing the
+    dev/ script: lane_liveness is a top-level probe imported by tick_line and
+    status_sync, and a dev/ import with its land_lane fallback would be the
+    wrong direction. The split is the model reap trusts; the two are kept in
+    sync by the test that builds all three tree states (#1154).
+    """
+    fields = raw.split(b"\0")
+    rows = []
+    index = 0
+    while index < len(fields) and fields[index]:
+        field = fields[index]
+        if len(field) < 4:
+            return None
+        code = field[:2].decode("ascii", errors="replace")
+        path = field[3:].decode("utf-8", errors="surrogateescape")
+        index += 1
+        if "R" in code or "C" in code:
+            if index >= len(fields) or not fields[index]:
+                return None
+            index += 1
+        kind = ("untracked" if code == "??"
+                else "ignored" if code == "!!" else "tracked")
+        rows.append((kind, path))
+    return rows
+
+
+def classify_finished_work(
+        worktree: Path, *, base: str = "master") -> FinishedWork | None:
+    """Classify the work a finished lane's worktree holds (#1154).
+
+    Returns None when the worktree is not a git repo (``git status`` failed),
+    so the caller renders ``finished`` without a work verdict rather than
+    guessing clean. Mirrors reap's tracked/untracked/ignored split; see
+    :class:`FinishedWork` for why each bucket is reported separately.
+    """
+    status = subprocess.run(
+        ["git", "-C", str(worktree), "status", "--porcelain=v1", "-z",
+         "--untracked-files=all", "--ignored"],
+        capture_output=True, check=False,
+    )
+    if status.returncode:
+        return None
+    rows = _finished_status_kinds(status.stdout)
+    if rows is None:
+        return None
+    tracked = sum(1 for kind, _ in rows if kind == "tracked")
+    ignored = sum(1 for kind, _ in rows if kind == "ignored")
+    notable_untracked = sum(
+        1 for kind, path in rows
+        if kind == "untracked" and path not in _FINISHED_EXPECTED_UNTRACKED)
+    # Disposable ignored churn (__pycache__, *.lock) is present in every lane;
+    # subtract it from the reported ignored count so a clean lane reads
+    # ignored=0 and the audit trail shows the classifier saw the churn and
+    # correctly discounted it (#868).
+    notable_ignored = sum(
+        1 for kind, path in rows
+        if kind == "ignored" and not _is_disposable_ignored(path))
+    cherry = subprocess.run(
+        ["git", "-C", str(worktree), "cherry", base, "HEAD"],
+        capture_output=True, text=True, check=False,
+    )
+    commits_known = cherry.returncode == 0
+    unmerged = 0
+    if commits_known:
+        unmerged = sum(
+            1 for line in cherry.stdout.splitlines()
+            if line.startswith("+ "))
+    return FinishedWork(
+        tracked_dirty=tracked,
+        untracked=notable_untracked,
+        # Report NON-disposable ignored so the count is a signal, not noise:
+        # a stray hand-written file inside an ignored dir is still evidence.
+        ignored=notable_ignored,
+        unmerged=unmerged,
+        commits_known=commits_known,
+    )
+
+
+@dataclass(frozen=True)
 class FinishedLane:
-    """A dispatched lane whose recorded runner is no longer present."""
+    """A dispatched lane whose recorded runner is no longer present.
+
+    ``work`` classifies what the dead lane left behind (#1154): None when the
+    worktree could not be classified (no git repo), otherwise a split that
+    separates the dangerous state — died holding work on the branch or in a
+    dirty tree — from the disposable one. The runner being gone is the same
+    fact for both; the work is what differs.
+    """
 
     lane: str
     task: object
     pid: object
     identity: str
+    work: FinishedWork | None = None
 
 
 @dataclass(frozen=True)
@@ -187,6 +347,7 @@ def inspect_lanes(
         read_cmdline: Callable[[int], bytes] | None = None,
         read_cwd: Callable[[int], str | None] | None = None,
         skip_pids: set[int] | None = None,
+        work_classifier: Callable[[Path], FinishedWork | None] | None = None,
 ) -> LaneInspection:
     """Inspect the canonical lane locks and report both mismatch directions.
 
@@ -265,9 +426,10 @@ def inspect_lanes(
         if pid_matches_lane(record["pid"], str(identity)):
             live.append(worktree.name)
         else:
+            classify = work_classifier or classify_finished_work
             finished.append(FinishedLane(
                 lane=record["lane"], task=record["task"], pid=record["pid"],
-                identity=str(identity)))
+                identity=str(identity), work=classify(worktree)))
 
     # CWD-RUNNER SCAN — the dispatch-route-invariant channel (#1084). A lane
     # whose runner lives in its worktree but has no lane.lock (hand-dispatched,
