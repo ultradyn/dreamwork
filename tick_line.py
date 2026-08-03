@@ -290,6 +290,30 @@ def _fleet_fact(target: str) -> str:
     fact = "lanes %d live [%s] (probe examined %d processes)" % (
         len(all_live), ", ".join(all_live),
         inspection.examined_processes)
+    # #1155: "lanes N live" answers "is a runner alive", not "is it able to
+    # work". A permission-wedged lane holds a live pid and reads live,
+    # indistinguishable from a computing one. The live-liveness verdicts split
+    # the live set, so the headline carries its own qualification rather than
+    # asserting a working count it never measured. A lane the probe could not
+    # classify is named — it is the honest stall signature, and folding it into
+    # 'wedged' (no positive evidence) or 'working' (no CPU) would be the
+    # collapse #136 forbids. The denominator is the live set itself.
+    verdicts = {v.lane: v.state for v in inspection.live_liveness}
+    if verdicts:
+        wedged = sorted(l for l, s in verdicts.items()
+                        if s == lane_liveness.LIVE_WEDGED)
+        unknown = sorted(l for l, s in verdicts.items()
+                         if s == lane_liveness.LIVE_UNKNOWN)
+        not_yet = sorted(l for l, s in verdicts.items()
+                         if s == lane_liveness.LIVE_NOT_YET)
+        if wedged:
+            fact += " · WEDGED %d [%s] (live runner, positive wedge evidence)" % (
+                len(wedged), ", ".join(wedged))
+        if unknown:
+            fact += " · live-liveness-unknown %d [%s] (could not classify)" % (
+                len(unknown), ", ".join(unknown))
+        if not_yet:
+            fact += " · not-yet-observed %d" % len(not_yet)
     if inspection.cwd_live:
         fact += " · cwd-only %d [%s] (live runner, no live lane.lock)" % (
             len(inspection.cwd_live), ", ".join(inspection.cwd_live))

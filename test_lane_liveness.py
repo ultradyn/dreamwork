@@ -522,8 +522,7 @@ class TestCwdRunnerChannel:
         assert inspection.cwd_live == ("glm-hand",)
 
 
-# ── #1113: the cwd channel reads the SHARED classifier ──────────────────
-#
+# ── #1113: the cwd channel reads the SHARED classifier ──────────────────#
 # The tick's fleet count uses lane_liveness._is_lane_runner, which must be the
 # SAME function status_sync uses — not a copy. The mutation test below
 # exercises this through inspect_lanes's cwd channel (the #1084 dispatch-route
@@ -574,3 +573,272 @@ class TestCwdChannelSharesClassifier:
         assert inspection.cwd_live == (), \
             "after removing codex: the cwd channel must drop the lane — " \
             "if it stayed, lane_liveness has its own copy (#1113)"
+
+
+# ── #1155: LIVE-side liveness — is a live runner actually able to work? ─
+#
+# "finished" splits by the WORK a dead lane left behind (#1154). The LIVE side
+# was left open: "is a runner alive" is answered, "is it able to work" is not,
+# so a permission-wedged lane (live pid, blocked, zero commits) is
+# indistinguishable from a computing one in the fleet count. The brief's three
+# measured Cases are the discrimination test, and B/C are the false positives
+# that matter — they are what would make a stall signal untrustworthy and so
+# ignored. Each case is constructed as a FIXTURE (fake process table + fake
+# worktree), never a real lane — four lanes are live doing real work.
+
+class TestLiveLaneStates:
+    """#1155: classify_live_lane is the pure state machine. Inputs are measured
+    signals; tests inject numbers, never a real process."""
+
+    def test_wedge_marker_is_wedged_even_with_cpu(self):
+        """A retry loop burns CPU but the runner is still wedged: marker wins."""
+        verdict = lane_liveness.classify_live_lane(
+            "glm-wedged-loop", cpu_seconds=120.0, elapsed_seconds=300.0,
+            wedge_marker="auto-rejecting external_directory")
+        assert verdict.state == lane_liveness.LIVE_WEDGED, \
+            "a lane with a positive wedge marker was not classified wedged: " \
+            "%r" % (verdict,)
+
+    def test_cpu_above_floor_is_working(self):
+        """Case C shape: 31s CPU, no marker → working."""
+        verdict = lane_liveness.classify_live_lane(
+            "glm-1066label", cpu_seconds=31.0, elapsed_seconds=540.0,
+            wedge_marker=None)
+        assert verdict.state == lane_liveness.LIVE_WORKING, \
+            "a lane with 31s CPU read as not-working: %r" % (verdict,)
+
+    def test_young_lane_with_no_signal_is_not_yet_observed(self):
+        """30 seconds after dispatch: NOT wedged, NOT working — not yet
+        observed. #1155: a lane 30s after dispatch is not yet observed working."""
+        verdict = lane_liveness.classify_live_lane(
+            "cx-just-dispatched", cpu_seconds=0.5, elapsed_seconds=30.0,
+            wedge_marker=None)
+        assert verdict.state == lane_liveness.LIVE_NOT_YET, \
+            "a 30s-old lane read as something other than not-yet-observed: " \
+            "%r" % (verdict,)
+
+    def test_young_lane_with_marker_is_still_wedged(self):
+        """Youth is not innocence: a marker found under the age floor is still
+        wedged (step 1 precedes step 3 in classify_live_lane)."""
+        verdict = lane_liveness.classify_live_lane(
+            "cx-quick-wedge", cpu_seconds=0.0, elapsed_seconds=10.0,
+            wedge_marker="auto-rejecting external_directory")
+        assert verdict.state == lane_liveness.LIVE_WEDGED
+
+    def test_old_low_cpu_no_marker_is_unknown(self):
+        """The honest stall signature: old enough to have produced CPU that
+        produced almost none, no recognised marker. NOT wedged (no positive
+        evidence), NOT working (no CPU) — unknown, and that must be sayable
+        rather than folded into wedged (#136)."""
+        verdict = lane_liveness.classify_live_lane(
+            "glm-wedge-no-log", cpu_seconds=0.1, elapsed_seconds=600.0,
+            wedge_marker=None)
+        assert verdict.state == lane_liveness.LIVE_UNKNOWN, \
+            "old+low-cpu+no-marker read as a confident state instead of " \
+            "unknown: %r" % (verdict,)
+
+    def test_no_signal_is_unknown_not_working(self):
+        """A missing /proc reads unknown, never as a zero-CPU 'working' (#136)."""
+        verdict = lane_liveness.classify_live_lane(
+            "glm-gone", cpu_seconds=None, elapsed_seconds=None,
+            wedge_marker=None)
+        assert verdict.state == lane_liveness.LIVE_UNKNOWN
+
+
+class TestLiveLaneCasesABC:
+    """The three measured Cases as fixtures, each with its verdict.
+
+    Case A — five wedged lanes: 0 CPU, marker present → wedged.
+    Case B — glm-1153ident: 0 commits at 11 min, accumulating CPU → working.
+    Case C — glm-1066label: 0-byte transcript, 31s CPU → working.
+
+    B and C are the false positives: a classifier that called either wedged
+    would make the signal untrustworthy. All three, or it proves nothing.
+    """
+
+    def test_case_a_wedged_lane_is_wedged(self, tmp_path, monkeypatch):
+        """Case A: live pid, lane.lock present, but the runner logged
+        'permission requested … auto-rejecting' on its first git op and never
+        recovered. 0 CPU (blocked, not computing) + marker → wedged."""
+        target, worktree, identity = _subject(tmp_path, lane="glm-wedged")
+        _write_lock(worktree, identity, pid=1101)
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["1101"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"",
+            read_cpu=lambda _pid: (0.1, 600.0),
+            wedge_probe=lambda _wt, _pid: "auto-rejecting external_directory")
+        verdict = inspection.live_liveness
+        assert len(verdict) == 1, "expected one live-liveness verdict: %r" % (
+            verdict,)
+        assert verdict[0].lane == "glm-wedged"
+        assert verdict[0].state == lane_liveness.LIVE_WEDGED, \
+            "Case A (0 cpu + marker) was not classified wedged: %r" % (
+                verdict[0],)
+
+    def test_case_b_zero_commits_reading_is_working(self, tmp_path,
+                                                    monkeypatch):
+        """Case B: glm-1153ident — at 11 minutes, 0 commits, 0 dirty, newest
+        file still lane.lock. Indistinguishable from Case A by commits/mtime.
+        But it was READING the codebase, accumulating CPU. → working.
+
+        THIS IS THE DIRECTION-2 ANCHOR. The injected defect this task arms
+        against (classify on 'no commits') would call THIS lane wedged and
+        flag a working lane for destruction."""
+        target, worktree, identity = _subject(tmp_path, lane="glm-1153ident")
+        _write_lock(worktree, identity, pid=1102)
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        # 11 minutes in, ~25s of CPU accumulated reading the tree. No marker.
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["1102"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"",
+            read_cpu=lambda _pid: (25.0, 660.0),
+            wedge_probe=lambda _wt, _pid: None)
+        verdict = inspection.live_liveness
+        assert verdict[0].state == lane_liveness.LIVE_WORKING, \
+            "Case B (0 commits, accumulating CPU) was NOT classified working " \
+            "— this is the false positive that would kill a real lane: %r" % (
+                verdict[0],)
+
+    def test_case_c_zero_byte_transcript_is_working(self, tmp_path,
+                                                    monkeypatch):
+        """Case C: glm-1066label — 9 minutes in, runner transcript is 0 bytes
+        (written at completion, not streamed). Indistinguishable by log
+        presence. But ps showed 31s of CPU — it was working the whole time.
+        → working."""
+        target, worktree, identity = _subject(tmp_path, lane="glm-1066label")
+        _write_lock(worktree, identity, pid=1103)
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["1103"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"",
+            read_cpu=lambda _pid: (31.0, 540.0),
+            wedge_probe=lambda _wt, _pid: None)
+        verdict = inspection.live_liveness
+        assert verdict[0].state == lane_liveness.LIVE_WORKING, \
+            "Case C (0-byte transcript, 31s CPU) was NOT classified working: " \
+            "%r" % (verdict[0],)
+
+    def test_case_a_without_marker_is_unknown_not_wedged(self, tmp_path,
+                                                         monkeypatch):
+        """Case A but the runner's log is NOT findable (default wedge probe):
+        0 CPU, old, no marker. → unknown — the honest stall signature, NOT a
+        false 'wedged'. The default probe finds nothing by design (#651)."""
+        target, worktree, identity = _subject(tmp_path, lane="glm-no-log")
+        _write_lock(worktree, identity, pid=1104)
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        inspection = lane_liveness.inspect_lanes(  # no wedge_probe → default
+            target, process_entries=["1104"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"",
+            read_cpu=lambda _pid: (0.1, 600.0))
+        verdict = inspection.live_liveness
+        assert verdict[0].state == lane_liveness.LIVE_UNKNOWN, \
+            "Case A without a findable log read as wedged — the default probe " \
+            "must not assert a marker it cannot read (#651): %r" % (verdict[0],)
+
+    def test_default_cpu_probe_reads_proc(self, tmp_path, monkeypatch):
+        """When read_cpu is not injected, inspect_lanes uses read_proc_cpu on
+        the real /proc. For the test's own pid (alive), that returns a real
+        (cpu, elapsed) tuple — proving the live default is wired, not a stub.
+        We assert it does not raise and returns a verdict (the value depends
+        on the test runner's own CPU, so we bind the shape not the number)."""
+        target, worktree, identity = _subject(tmp_path, lane="cx-default-cpu")
+        _write_lock(worktree, identity, pid=os.getpid())
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=[str(os.getpid())],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"",
+            wedge_probe=lambda _wt, _pid: None)
+        verdict = inspection.live_liveness
+        assert len(verdict) == 1
+        assert verdict[0].state in (
+            lane_liveness.LIVE_WORKING, lane_liveness.LIVE_NOT_YET), \
+            "default CPU probe on the live test pid produced an unexpected " \
+            "verdict: %r" % (verdict[0],)
+
+
+class TestLiveLivenessCwdChannel:
+    """A cwd-only (hand-dispatched) lane gets the same live-liveness verdict
+    as a lock-confirmed lane — the dimension is dispatch-route-invariant,
+    like the cwd channel itself (#1084)."""
+
+    def test_cwd_only_lane_classified_by_cpu(self, tmp_path, monkeypatch):
+        target, worktree, _identity = _subject(tmp_path, lane="glm-hand")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: False)
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["1201"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"ccc\x00-y\x00@glm52\x00",
+            read_cwd=lambda _pid: str(worktree),
+            read_cpu=lambda _pid: (0.2, 400.0),
+            wedge_probe=lambda _wt, _pid: "auto-rejecting external_directory",
+            skip_pids=set())
+        assert inspection.cwd_live == ("glm-hand",)
+        verdict = inspection.live_liveness
+        assert len(verdict) == 1
+        assert verdict[0].lane == "glm-hand"
+        assert verdict[0].state == lane_liveness.LIVE_WEDGED, \
+            "cwd-only lane was not given a live-liveness verdict: %r" % (
+                verdict,)
+
+
+class TestLiveLivenessDenominator:
+    """#868: the verdict set is the denominator. A tick that names 2 wedged of
+    3 live must also say the third was classified — a stall count over an
+    unknown population is the defect this loop keeps finding."""
+
+    def test_every_live_lane_gets_a_verdict(self, tmp_path, monkeypatch):
+        target = tmp_path / "project"
+        target.mkdir()
+        wt_a = tmp_path / ".worktrees" / "glm-a"
+        wt_b = tmp_path / ".worktrees" / "cx-b"
+        wt_c = tmp_path / ".worktrees" / "glm-c"
+        for wt in (wt_a, wt_b, wt_c):
+            (wt / ".dreamwork").mkdir(parents=True)
+        _write_lock(wt_a, wt_a / "brief.md", pid=1, lane="glm-a")
+        _write_lock(wt_b, wt_b / "brief.md", pid=2, lane="cx-b")
+        _write_lock(wt_c, wt_c / "brief.md", pid=3, lane="glm-c")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
+        cpus = {1: (0.1, 600.0), 2: (30.0, 400.0), 3: (0.5, 40.0)}
+        markers = {1: "auto-rejecting external_directory"}
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["1", "2", "3"],
+            registered_worktrees=(wt_a, wt_b, wt_c),
+            read_cmdline=lambda _pid: b"",
+            read_cpu=lambda pid: cpus.get(pid),
+            wedge_probe=lambda _wt, pid: markers.get(pid))
+        verdicts = {v.lane: v.state for v in inspection.live_liveness}
+        # The denominator: all three live lanes are classified, not just the
+        # wedged one — a wedged count of 1 over a live set of 3 states the
+        # other two, and "unknown" is one of them.
+        assert set(verdicts) == {"glm-a", "cx-b", "glm-c"}, \
+            "not every live lane got a verdict (denominator unknown): %r" % (
+                verdicts,)
+        assert verdicts["glm-a"] == lane_liveness.LIVE_WEDGED
+        assert verdicts["cx-b"] == lane_liveness.LIVE_WORKING
+        assert verdicts["glm-c"] == lane_liveness.LIVE_NOT_YET
+
+
+class TestLiveLivenessDoesNotInflateFinished:
+    """The live-liveness verdicts are ONLY for live lanes. A finished lane
+    (dead pid) gets no live-liveness entry — its dimension is #1154's work
+    classifier, not this one. The two dimensions must not cross."""
+
+    def test_finished_lane_has_no_live_liveness(self, tmp_path, monkeypatch):
+        target, worktree, identity = _subject(tmp_path, lane="cx-finished")
+        _write_lock(worktree, identity)
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: False)
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["101"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"",
+            work_classifier=lambda _wt: None)
+        assert inspection.finished, "precondition: lane is finished"
+        assert inspection.live_liveness == (), \
+            "a finished lane got a live-liveness verdict: %r" % (
+                inspection.live_liveness,)

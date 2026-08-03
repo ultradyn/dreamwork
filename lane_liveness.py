@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -189,6 +190,75 @@ class FinishedLane:
 
 
 @dataclass(frozen=True)
+class LiveLane:
+    """A live lane's progress verdict — the LIVE-side dimension #1154 left open.
+
+    ``inspect_lanes`` already answers "is a runner alive" (#1084 lock + cwd
+    channels). It did NOT answer "is that runner able to do work": a
+    permission-wedged lane holds a live pid and reads live, indistinguishable
+    from a computing one (#1155 — a wedged lane is indistinguishable from a
+    working one in the fleet count). This verdict splits the live set so the
+    fleet count no longer asserts a working count it never measured.
+
+    States (#136 — none collapsed into another, and "cannot tell" is one):
+
+      - ``working`` — positive evidence the runner is computing: accumulated
+        CPU at or above ``WORKING_CPU_FLOOR_S``. A process that has burned
+        real cycles has done work. (Case C: 31s CPU at 9 min while its
+        transcript sat at 0 bytes; Case B reading the codebase accumulates
+        CPU the same way.)
+      - ``wedged`` — positive evidence of a SPECIFIC wedge: a marker the
+        wedge probe recognised (e.g. a permission-rejection line in the
+        runner's log). ``wedged`` is reachable ONLY from a marker — CPU and
+        age never produce it — so the dangerous verdict the coordinator might
+        act on by destroying work is never made on circumstantial evidence
+        alone (Case B has zero commits for 11 min and is never wedged).
+      - ``not-yet-observed`` — alive but too young to expect a signal:
+        elapsed under ``YOUNG_ELAPSED_S``, CPU below floor, no marker. A lane
+        30s after dispatch is NOT wedged; it has not had time to show either
+        sign (#1155: a lane 30s after dispatch is not yet observed working).
+      - ``unknown`` — cannot tell. Either the signals were unreadable (no pid,
+        /proc gone) or present-but-ambiguous: old enough to have produced CPU
+        that produced almost none, with no recognised wedge marker. The
+        latter is the honest stall signature — a permission-wedge with an
+        unfindable log lands here, NOT in ``wedged``, because the probe has no
+        positive evidence to name. See ``reason``.
+
+    ``reason`` names the deciding signal so the tick line can carry it: which
+    marker, how much CPU, how old, or why the probe could not read.
+
+    The thresholds are HEURISTICS derived from the brief's measured Cases A/C
+    (#967: those are few observations, not proof). They are conservative and
+    unverifiable against the live fleet — disturbing live lanes is forbidden —
+    and their blind spots are stated in :func:`classify_live_lane`.
+    """
+
+    lane: str
+    state: str
+    reason: str
+
+
+# Live-progress states (module constants so the tick line and callers agree by
+# symbol, and a typo is a NameError rather than a silent miss — #136: states
+# must not collapse, and a misspelled state string folds silently into nothing).
+LIVE_WORKING = "working"
+LIVE_WEDGED = "wedged"
+LIVE_NOT_YET = "not-yet-observed"
+LIVE_UNKNOWN = "unknown"
+
+# A process that has burned this much CPU has done real work. Case C's 31s is
+# an order of magnitude above; a permission-wedge's ~0 is well below; any lane
+# that has exec'd a tool clears a few seconds. Conservative and named, not
+# magic: see #967 — these encode the brief's two data points, they do not prove
+# them, and they cannot be re-measured without disturbing the live fleet.
+WORKING_CPU_FLOOR_S = 3.0
+# Under this wall-clock age a lane is too young to expect accumulated CPU or a
+# wedge marker; it is "not yet observed working", never wedged. The brief's
+# "30 seconds after dispatch" sits well under it.
+YOUNG_ELAPSED_S = 90.0
+
+
+@dataclass(frozen=True)
 class LaneInspection:
     """One checkable view of lane locks, worktrees, and process evidence."""
 
@@ -198,6 +268,7 @@ class LaneInspection:
     examined_processes: int
     finished: tuple[FinishedLane, ...] = ()
     cwd_live: tuple[str, ...] = ()
+    live_liveness: tuple[LiveLane, ...] = ()
 
 
 def pid_alive(pid) -> bool:
@@ -219,6 +290,125 @@ def read_proc_cwd(pid: int) -> str | None:
         return os.readlink("/proc/%d/cwd" % pid)
     except OSError:
         return None
+
+
+def read_proc_cpu(pid: int) -> tuple[float, float] | None:
+    """Return ``(cpu_seconds, elapsed_seconds)`` for ``pid`` from ``/proc``.
+
+    ``cpu_seconds`` is accumulated utime+stime; ``elapsed_seconds`` is wall
+    time since the process started. Both are the LIVE-side progress signals
+    that discriminate a computing runner from a blocked one (#1155): a
+    permission-wedged runner is blocked, not computing, so its CPU stays near
+    zero while a working one accumulates (Case C: 31s at 9 min).
+
+    Returns None when /proc cannot be read (the pid is gone, or this is not
+    Linux). The classifier treats None as "no signal" rather than as zero, so
+    a vanished runner is ``unknown`` not ``working`` — an absent measurement
+    must not read as a zero measurement (#136).
+    """
+    try:
+        raw = Path("/proc/%d/stat" % int(pid)).read_text()
+    except (OSError, ValueError):
+        return None
+    # comm is parenthesised and may contain spaces/parens; split after the
+    # last ')'. Fields after comm are 1-indexed from 2: utime=14, stime=15,
+    # starttime=22 → indices 11, 12, 19 in the post-comm list.
+    rparen = raw.rfind(")")
+    if rparen < 0:
+        return None
+    fields = raw[rparen + 2:].split()
+    if len(fields) <= 19:
+        return None
+    try:
+        utime = int(fields[11])
+        stime = int(fields[12])
+        starttime = int(fields[19])
+    except (ValueError, IndexError):
+        return None
+    try:
+        hz = os.sysconf("SC_CLK_TCK")
+    except (ValueError, OSError):
+        hz = 100
+    cpu_seconds = (utime + stime) / hz if hz else 0.0
+    try:
+        with open("/proc/uptime") as handle:
+            uptime = float(handle.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        # CPU is readable but uptime is not: return CPU with unknown age so the
+        # classifier can still clear a computing runner rather than guessing.
+        return (cpu_seconds, 0.0)
+    now = time.time()
+    start_epoch = (now - uptime) + (starttime / hz if hz else 0)
+    return (cpu_seconds, max(0.0, now - start_epoch))
+
+
+def no_wedge_probe(worktree: Path, pid: int) -> str | None:
+    """The conservative default wedge probe: it finds nothing, by design.
+
+    Runner logs are NOT reliably locatable from the worktree — verified: no
+    ``*.log`` lives inside a fleet worktree, and the runner's combined output
+    lands wherever the dispatcher redirected it (outside the worktree), in a
+    format that differs per runner family (grok / codex / opencode). A default
+    that guessed a location would either find the wrong file or silently read
+    nothing while claiming to scan — the #651 shape (a probe whose verdict
+    names a cause it cannot detect).
+
+    So the default returns None: the wedge marker is an INJECTABLE signal. A
+    caller that knows the runner family's log location (the tick, a future
+    dispatcher that records the redirect path) supplies a real probe, and a
+    permission-wedge with a supplied ``auto-rejecting`` line then reads
+    ``wedged``. Without one, a low-CPU lane reads ``unknown`` — the honest
+    stall signature — never a false ``wedged`` (#1155 direction-2).
+    """
+    return None
+
+
+def classify_live_lane(
+        lane: str,
+        cpu_seconds: float | None,
+        elapsed_seconds: float | None,
+        wedge_marker: str | None) -> LiveLane:
+    """The pure LIVE-side state machine for one lane (#1155).
+
+    Inputs are the MEASURED signals (so tests inject numbers, never a real
+    process); the verdict is the four-state split documented on
+    :class:`LiveLane`. Ordering is load-bearing:
+
+      1. wedge marker → ``wedged``. Checked FIRST so a wedged lane that also
+         burns CPU in a retry loop is still flagged wedged, not working.
+      2. CPU at/above floor → ``working`` (positive evidence of computation).
+      3. young (elapsed under floor) → ``not-yet-observed`` (too soon to
+         expect CPU or a marker; never wedged).
+      4. otherwise → ``unknown``.
+
+    Steps 2-4 can NEVER produce ``wedged``: only the marker can. So the
+    dangerous verdict is never made on CPU/age alone (#1155 direction-2:
+    flagging Case B wedged because it had not committed would kill working).
+
+    BLIND SPOTS stated (#651): a wedge that burns CPU in a tight loop reads
+    ``working`` (the marker, if any, would still catch it at step 1); a wedge
+    whose cause has no recognised marker and no log reachable reads
+    ``unknown`` (hung network, crashed interpreter, unfindable log); a young
+    lane that is already wedged reads ``not-yet-observed`` until it ages past
+    ``YOUNG_ELAPSED_S`` — youth is not innocence, but a marker found under the
+    age floor is still reported ``wedged`` (step 1 precedes step 3).
+    """
+    if wedge_marker:
+        return LiveLane(lane, LIVE_WEDGED, wedge_marker)
+    if cpu_seconds is None or elapsed_seconds is None:
+        return LiveLane(
+            lane, LIVE_UNKNOWN, "no process signal (could not read cpu)")
+    if cpu_seconds >= WORKING_CPU_FLOOR_S:
+        return LiveLane(lane, LIVE_WORKING, "%.1fs cpu" % cpu_seconds)
+    if elapsed_seconds < YOUNG_ELAPSED_S:
+        return LiveLane(lane, LIVE_NOT_YET,
+                        "alive %.0fs, %.1fs cpu, no marker"
+                        % (elapsed_seconds, cpu_seconds))
+    return LiveLane(
+        lane, LIVE_UNKNOWN,
+        "alive %.0fs, %.1fs cpu, no wedge marker — could be a wedge this "
+        "probe cannot identify, or a slow worker"
+        % (elapsed_seconds, cpu_seconds))
 
 
 def pid_matches_lane(
@@ -348,6 +538,8 @@ def inspect_lanes(
         read_cwd: Callable[[int], str | None] | None = None,
         skip_pids: set[int] | None = None,
         work_classifier: Callable[[Path], FinishedWork | None] | None = None,
+        read_cpu: Callable[[int], tuple[float, float] | None] | None = None,
+        wedge_probe: Callable[[Path, int], str | None] | None = None,
 ) -> LaneInspection:
     """Inspect the canonical lane locks and report both mismatch directions.
 
@@ -402,6 +594,7 @@ def inspect_lanes(
     live = []
     worktree_only = []
     finished = []
+    lock_live_pids: dict[str, object] = {}
     for worktree in sorted(registered, key=lambda path: path.name):
         lock = worktree / ".dreamwork" / "lane.lock"
         try:
@@ -425,6 +618,7 @@ def inspect_lanes(
                 % (lock, identity))
         if pid_matches_lane(record["pid"], str(identity)):
             live.append(worktree.name)
+            lock_live_pids[worktree.name] = record["pid"]
         else:
             classify = work_classifier or classify_finished_work
             finished.append(FinishedLane(
@@ -444,7 +638,7 @@ def inspect_lanes(
     cwd_reader = read_cwd or read_proc_cwd
     skip = skip_pids if skip_pids is not None else _ancestor_pids()
     wt_by_path = {str(wt): wt.name for wt in worktrees}
-    cwd_occupied: set[str] = set()
+    cwd_occupied: dict[str, int] = {}
     for pid in pids:
         if pid in skip:
             continue
@@ -458,7 +652,9 @@ def inspect_lanes(
         if lane_name is None:
             continue
         if _is_lane_runner(reader(pid)):
-            cwd_occupied.add(lane_name)
+            # First runner pid wins; a lane's many descendants share the cwd
+            # (#837) and need only one pid to measure CPU/elapsed.
+            cwd_occupied.setdefault(lane_name, pid)
     cwd_live_names = tuple(sorted(
         name for name in cwd_occupied if name not in live_set))
     cwd_live_set = set(cwd_live_names)
@@ -467,6 +663,26 @@ def inspect_lanes(
     worktree_only = tuple(n for n in worktree_only if n not in cwd_live_set)
     finished = tuple(f for f in finished if f.lane not in cwd_live_set)
 
+    # LIVE-SIDE LIVENESS (#1155) — the dimension #1154 left open. "Is a
+    # runner alive" is now answered; "is it able to do work" is not. A
+    # permission-wedged lane holds a live pid and reads live, indistinguishable
+    # from a computing one. classify_live_lane splits the live set (lock +
+    # cwd) using CPU/elapsed (the discriminator the brief measured) and an
+    # injectable wedge marker, so the fleet count no longer asserts a working
+    # count it never measured. cpu/wedge probes default to the live ones and
+    # may both be injected in tests; each lane gets the verdict its own pid's
+    # signals produce, never a fleet-wide guess.
+    live_names = sorted(live_set | cwd_live_set)
+    pid_by_lane = dict(lock_live_pids)
+    pid_by_lane.update(cwd_occupied)
+    wt_by_name = {wt.name: wt for wt in worktrees}
+    cpu_reader = read_cpu or read_proc_cpu
+    wedge = wedge_probe or no_wedge_probe
+    live_liveness = tuple(
+        _classify_lane_pid(lane, pid_by_lane.get(lane), wt_by_name,
+                           cpu_reader, wedge)
+        for lane in live_names)
+
     return LaneInspection(
         live=tuple(live),
         worktree_only=tuple(worktree_only),
@@ -474,4 +690,34 @@ def inspect_lanes(
         examined_processes=len(pids),
         finished=tuple(finished),
         cwd_live=cwd_live_names,
+        live_liveness=live_liveness,
     )
+
+
+def _classify_lane_pid(lane, pid, wt_by_name, cpu_reader, wedge):
+    """Classify one live lane by its pid's CPU/elapsed and wedge marker.
+
+    Centralises the "no pid → unknown" and probe-error handling so the
+    classification loop stays a one-liner: a None pid (a lock-record pid that
+    is not an int, or a pid that left the table) degrades to ``unknown``
+    rather than raising, because liveness already named the lane live and the
+    progress verdict must not un-name it (#136: a missing signal reads
+    unknown, never as a confident state).
+    """
+    worktree = wt_by_name.get(lane)
+    if pid is None or not isinstance(pid, int):
+        return LiveLane(lane, LIVE_UNKNOWN, "no pid for live lane (lock "
+                        "record unreadable or pid left the table)")
+    try:
+        cpu = cpu_reader(pid)
+    except Exception:  # noqa: BLE001 — a probe error degrades to unknown
+        cpu = None
+    marker = None
+    if worktree is not None:
+        try:
+            marker = wedge(worktree, pid)
+        except Exception:  # noqa: BLE001 — a probe error degrades to unknown
+            marker = None
+    cpu_s = cpu[0] if cpu else None
+    elapsed = cpu[1] if cpu else None
+    return classify_live_lane(lane, cpu_s, elapsed, marker)
