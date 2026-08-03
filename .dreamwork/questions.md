@@ -2,6 +2,35 @@
 
 ## Open
 
+- **P1 · 2026-08-03 — Syncthing is replicating `.dreamwork/` and `../.worktrees/`, and it made a
+  conflict copy of the LIVE LEDGER. Do you want those paths excluded from the share? (#1162)**
+  **Nothing was lost and nothing is broken — I checked properly before saying so.** But this is a
+  near-miss on the one file whose loss would be silent and total, and the fix is on your machine, not
+  in the repo, so it is yours to make.
+  - At 18:07 today Syncthing wrote
+    `.dreamwork/ledger.sync-conflict-20260803-180706-QJRKU52.sqlite3` beside the live ledger.
+  - **I verified containment rather than assuming it:** a full id-set comparison shows the live store
+    is a strict superset of the copy — zero ids present only in the copy, zero state regressions. The
+    copy is a stale 15:45 snapshot (1035 tasks / max id 1146) against the live 1050 / 1161.
+  - **Why it still matters.** `ledger.sqlite3` is gitignored and single-writer by design, so git
+    cannot protect it. Syncthing resolves conflicts by filename, not semantics — it does not know
+    this is a live SQLite store. Had the remote copy been NEWER instead of older, the plausible
+    outcome is the live ledger being replaced by a stale one. The single-writer rule stops two agents
+    writing; it does not stop a sync daemon writing.
+  - **It is already costing me something concrete.** The orphaned gate worktree
+    `.gate-3261843-4c5252daab2e` (44M) holds **1367** sync-conflict files: `git worktree remove`
+    dropped the registration, Syncthing recreated files underneath, and `dev/reap.py` now correctly
+    REFUSES it ("not a registered linked worktree; cannot prove the lane is safe to reap"). Sync
+    churn manufactures exactly the state the reaper is built to refuse, and it accumulates.
+  - Live lane `cx-1143laneowns` holds a conflict copy of a **lint baseline** — a plausible source of
+    a spurious WARN row, which under `lint-comparison` is a false RED (`#1159`'s shape from a new
+    source).
+  - **What I would do if you want me to choose:** exclude `.dreamwork/` and the worktree root from
+    the share. I have NOT touched your Syncthing config and will not.
+  - **What I am doing regardless, and it needs no answer:** `#1162` also asks for a check that fails
+    loudly when a `*sync-conflict*` file appears under the repo or worktree root — today nothing
+    reports them at all and I found this by accident while cleaning something else.
+
 - **P1 · 2026-08-03 — do I widen the native-agent sandbox to reach `../.worktrees/`, or route your
   "use an Opus 5 subagent" instructions to a different agent? (#1009)**
   **Two of your own standing decisions now contradict each other, and the effect is that you have
