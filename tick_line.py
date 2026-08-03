@@ -326,9 +326,8 @@ def _fleet_fact(target: str) -> str:
     if verdicts:
         # #868 / #1155 P2a: RENDER every count — including zeros — derived
         # from the state enumeration (_LIVENESS_CLAUSE_SPECS), so a count
-        # that is zero is not a denominator the reader must reconstruct. A
-        # fifth state added to lane_liveness surfaces as a missing entry
-        # here rather than silently under-reporting.
+        # that is zero is not a denominator the reader must reconstruct.
+        known_states = {spec[0] for spec in _LIVENESS_CLAUSE_SPECS}
         for state, template, zero_label in _LIVENESS_CLAUSE_SPECS:
             lanes = sorted(l for l, s in verdicts.items() if s == state)
             if lanes:
@@ -336,6 +335,20 @@ def _fleet_fact(target: str) -> str:
                     "n": len(lanes), "lanes": ", ".join(lanes)}
             else:
                 fact += " · " + zero_label
+        # #1155 round 4: a verdict state NOT in _LIVENESS_CLAUSE_SPECS is a
+        # denominator mismatch — the headline counts a live lane the clauses
+        # do not name. Visible-only-by-arithmetic (lanes 1 live · working 0 ·
+        # WEDGED 0 · unknown 0 · not-yet-observed 0) is weaker than named
+        # (#651). Render the unrendered states explicitly so the mismatch is
+        # NAMED. This fires when lane_liveness gains a state the tick has not
+        # been taught to render.
+        unrendered = sorted(
+            set(verdicts.values()) - known_states)
+        for state in unrendered:
+            lanes = sorted(
+                l for l, s in verdicts.items() if s == state)
+            fact += " · UNRENDERED-LIVENESS-STATE %d [%s] (%r)" % (
+                len(lanes), ", ".join(lanes), state)
     if inspection.cwd_live:
         fact += " · cwd-only %d [%s] (live runner, no live lane.lock)" % (
             len(inspection.cwd_live), ", ".join(inspection.cwd_live))

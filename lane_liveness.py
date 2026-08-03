@@ -350,28 +350,55 @@ def read_proc_cpu(pid: int) -> tuple[float, float | None] | None:
 
 # Untracked paths that are NOT a deliverable — lane scratch and tool churn a
 # working lane produces without committing. This is the exclusion list the P1
-# fix hinges on (#1155 round 3): too broad and the hazard returns (every lane
+# fix hinges on (#1155 round 4): too broad and the hazard returns (every lane
 # looks busy forever), too narrow and a lane holding an uncommitted deliverable
 # reads wedged. Each entry names what it is and why excluding it is safe:
 #
 #   BRIEF.md — coordinator-written per-lane scratch, never tracked (#1154's
 #     same exclusion). Counting it would call an idle lane "in progress".
 #   .pytest_cache — pytest creates this on every run; the repo's .gitignore
-#     lists __pycache__/ but omits .pytest_cache/, so it reads as ?? (untracked)
-#     in a real fleet worktree. Tool churn, not a deliverable.
-#   .dreamwork — lane-local state. Most entries are gitignored (lane.lock,
-#     status.json); entries the .gitignore omits (e.g. a coordinator-written
-#     transcript) must not read as progress — they are lane state, not work.
+#     omits .pytest_cache/ (it lists __pycache__/ but NOT .pytest_cache/), so
+#     .pytest_cache/ reads as ?? (untracked) in a real fleet worktree. Tool
+#     churn, not a deliverable.
 #
-# __pycache__/ and *.pyc ARE gitignored and appear as !! (ignored), not ??
-# (untracked), so git status --porcelain never lists them and they need no
-# exclusion here. The list is the MINIMUM set the real fleet produces as
-# untracked non-deliverables: it does not guess at future churn, because an
-# unrecognised untracked path is progress (a lane that wrote something new did
-# work), and the probe's age and CPU gates still protect against false
-# negatives (#1155 blind spot at :401).
+# NO .dreamwork ENTRY (#1155 round 4). The round-3 blanket .dreamwork entry
+# was path-specific in NAME but top-level-component in EFFECT, so it discarded
+# EVERY untracked path under .dreamwork/ — including deliverables. The .dreamwork/
+# tree holds BOTH lane-local state and deliverables (#136 — two states), and the
+# enumeration shows the gitignore already separates them:
+#
+#   LANE-LOCAL STATE (all gitignored → invisible to git status --porcelain,
+#     which does NOT pass --ignored — they appear as !!, never ??):
+#     status.json, lane.lock, .lane.lock.*, inbox.md, user-events.sqlite3*,
+#     ledger.sqlite3*, run-mode, posture, subagent-policy, question-sigs.json,
+#     expedite, .ledger-lint-mtimes.json, .status-keys, plugin-commands.json,
+#     watch-events.log, submissions.log, applied.md(.lock), chats-v1/,
+#     launch-attempts/, inbox-archive/, salvage/, docs/briefs/
+#   DELIVERABLES (tracked or NOT gitignored → appear as ?? when new = progress):
+#     docs/*.md (design docs, plans, audits), dreams/, evidence/, relay/,
+#     reports/, review/, answers.md, lane-*-report.md, lessons.md,
+#     questions.md, tasks.md, skill-version, watch-port, watch-tint
+#
+# Because git status --porcelain never lists gitignored files, the blanket
+# .dreamwork entry was protecting against nothing visible while discarding
+# every deliverable whose top-level component was .dreamwork. Removing it
+# lets .dreamwork/docs/plans/foo.md count as progress while gitignored
+# state stays invisible. This is #868's both-denominators call: 20+ lane-
+# local files are already hidden by .gitignore; 6+ deliverable subtrees were
+# wrongly hidden by the exclusion.
+#
+# __pycache__/ IS gitignored, so .pyc files inside it appear as !! (ignored),
+# not ?? (untracked) — no exclusion needed. *.pyc is NOT in the real .gitignore
+# (#1155 round 4 P2b), but a root-level .pyc is not normal Python churn (Python
+# writes .pyc into __pycache__/); if one appears and counts as progress the
+# result is a conservative false-UNKNOWN, never a destructive false-WEDGED.
+# The list is the MINIMUM set the real fleet produces as untracked
+# non-deliverables: it does not guess at future churn, because an unrecognised
+# untracked path is progress (a lane that wrote something new did work), and
+# the probe's age and CPU gates still protect against false negatives (#1155
+# blind spot at :401).
 _LIVE_PROGRESS_UNTRACKED_SCRATCH = frozenset({
-    "BRIEF.md", ".pytest_cache", ".dreamwork"})
+    "BRIEF.md", ".pytest_cache"})
 
 
 def _is_live_progress_scratch(path: str) -> bool:
@@ -382,7 +409,9 @@ def _is_live_progress_scratch(path: str) -> bool:
     NOT scratch because its top-level component (itself) is not in the set.
     This is the precise boundary the brief names (#1155 round 3 direction-2):
     ``*.py`` under a scratch dir is scratch; ``new_module.py`` at the root is
-    work.
+    work. ``.dreamwork/`` is NOT in the set (#1155 round 4): its lane-local
+    state is gitignored (invisible to --porcelain) and its tracked content is
+    deliverables (docs, reports, dreams), so excluding it all discarded work.
     """
     return path.split("/", 1)[0] in _LIVE_PROGRESS_UNTRACKED_SCRATCH
 
@@ -400,13 +429,14 @@ def _worktree_has_progress(worktree: Path) -> bool | None:
     (#136).
 
     An untracked deliverable is an untracked file BEYOND known lane scratch
-    (BRIEF.md, .pytest_cache, .dreamwork — see
-    ``_LIVE_PROGRESS_UNTRACKED_SCRATCH``). A lane that wrote ``new_module.py``
-    and has not committed it is the NORMAL state of a lane mid-increment, and
-    classifying it wedged would point the destructive reaping tool at
-    precisely the lane whose work exists only in the working tree (#1155 round
-    3 P1 / #702 / #760: reap separates untracked from ignored for exactly
-    this reason).
+    (BRIEF.md, .pytest_cache — see ``_LIVE_PROGRESS_UNTRACKED_SCRATCH``). A
+    lane that wrote ``new_module.py`` and has not committed it is the NORMAL
+    state of a lane mid-increment, and classifying it wedged would point the
+    destructive reaping tool at precisely the lane whose work exists only in
+    the working tree (#1155 round 3 P1 / #702 / #760: reap separates untracked
+    from ignored for exactly this reason). A lane whose only work is a new
+    ``.dreamwork/docs/plans/foo.md`` is the same case under a tracked subtree
+    (#1155 round 4 P1).
     """
     cherry = subprocess.run(
         ["git", "-C", str(worktree), "cherry", "master", "HEAD"],
