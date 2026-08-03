@@ -2848,7 +2848,7 @@ class TestNamedLaneAcrossEveryCliVerb:
         canonical dir name check prints AND fault on an unknown token; that
         was a per-verb re-derivation, and #1153 removes it so a token begin
         accepts is never one forget refuses. forget takes the SAME raw token
-        begin took; an unknown/empty token is "nothing to forget" (exit 1),
+        begin took; an unknown/empty token is "nothing to forget" (exit 0),
         not a FAULT — begin creates, forget drops, but both resolve the same
         segment."""
         lane = "cx-1148fixture"
@@ -2878,32 +2878,76 @@ class TestNamedLaneAcrossEveryCliVerb:
 
         # The canonical dir name is NOT a second accepted spelling: passing it
         # re-hashes (as begin would), resolving a different, empty segment.
-        # That is "nothing to forget" (exit 1), not a silent clear (#1148's
-        # false-all-clear) and not a FAULT (#1153 instance 2).
+        # That is an idempotent "nothing to forget" success (exit 0), not a
+        # claim that the other identity's registry was cleared (#1153).
         rehashed = self._run(
             repo, env, "forget", "router.js", "--lane", printed.group(1))
-        assert rehashed.returncode == 1, rehashed.stdout + rehashed.stderr
+        assert rehashed.returncode == 0, rehashed.stdout + rehashed.stderr
         assert "nothing registered" in rehashed.stderr
 
         # A now-empty lane and an unknown token are the SAME state — no
         # registry for that identity — and both are "nothing to forget"
-        # (exit 1). #1148 faulted on the unknown one; #1153 unifies: forget
-        # refuses calmly, never faulting on a token begin would accept.
+        # (exit 0). #1148 faulted on the unknown one; #1153 unifies: forget
+        # succeeds idempotently, never faulting on a token begin would accept.
         empty = self._run(repo, env, "forget", "router.js", "--lane", lane)
-        assert empty.returncode == 1, empty.stdout + empty.stderr
+        assert empty.returncode == 0, empty.stdout + empty.stderr
         assert "nothing registered" in empty.stderr
 
         unknown = self._run(
             repo, env, "forget", "router.js", "--lane", "cx-1148fxture")
-        assert unknown.returncode == 1, (
-            "an unknown lane token must be a calm 'nothing to forget' (exit 1), "
+        assert unknown.returncode == 0, (
+            "an unknown lane token must be a calm 'nothing to forget' (exit 0), "
             "not a FAULT — it resolves the same segment begin would: "
             + unknown.stdout + unknown.stderr)
         assert "nothing registered" in unknown.stderr
-        # A typo must NOT report success (exit 0); exit 1 is the refusal.
+        # The message still makes a possible identity typo visible.
+        assert "other launch-identity dir(s) exist" in unknown.stderr
         assert "did not resolve to an existing launch identity" not in unknown.stderr, (
             "the #1148 per-verb fault message survived the unification: "
             + unknown.stderr)
+
+
+# ── #1188: forget exit codes distinguish no-op, clear, and failure ─────
+
+class TestForgetExitCodeMeaning:
+    def test_empty_clear_and_failed_clear_have_distinct_meanings(
+            self, repo, monkeypatch, capsys):
+        # Empty is the mandated first-arm state: an idempotent no-op succeeds,
+        # while the message keeps the operator informed.
+        empty_exit = rp.forget(repo, "router.js")
+        _, empty_err = capsys.readouterr()
+        assert empty_exit == 0, (
+            f"empty forget was not an idempotent success (#1188): {empty_err}")
+        assert "nothing registered" in empty_err, empty_err
+
+        # A live registration that is actually cleared is also success.
+        _begin(repo, "router.js")
+        capsys.readouterr()
+        cleared_exit = rp.forget(repo, "router.js")
+        cleared_out, cleared_err = capsys.readouterr()
+        assert cleared_exit == 0, cleared_out + cleared_err
+        assert "dropped 1 armed/unrecorded entry(ies)" in cleared_out
+
+        # A genuine failure must not inherit those zeroes. Refuse the atomic
+        # registry replacement at the production write seam, then prove the
+        # live entry and its recovery snapshot both remain intact.
+        _begin(repo, "router.js")
+        entries_before, _ = rp._read_registry(repo)
+        snapshot = Path(entries_before[0]["snapshot"])
+        assert snapshot.exists(), "fixture has no recovery snapshot"
+
+        def refuse_registry_replace(_registry, _entries):
+            raise OSError("fixture denied registry replacement")
+
+        monkeypatch.setattr(rp, "_write_registry_at", refuse_registry_replace)
+        failed_exit = rp.forget(repo, "router.js")
+        _, failed_err = capsys.readouterr()
+        assert failed_exit != 0, (
+            "forget false-greened when its live registration could not clear")
+        assert "could not clear live registration" in failed_err, failed_err
+        assert "fixture denied registry replacement" in failed_err, failed_err
+        assert rp._read_registry(repo)[0] == entries_before
+        assert snapshot.exists(), "failed forget discarded its recovery snapshot"
 
 
 # ── #1153: every verb resolves ONE identity, stated once ──────────────
@@ -2990,7 +3034,7 @@ class TestEveryVerbResolvesOneIdentity:
         """Instance 2, discriminating: ``forget --lane FRESH`` on a token with
         no registry must NOT FAULT (exit 2), because ``begin --lane FRESH``
         accepts the same token. forget resolves the same segment and reports
-        'nothing to forget' (exit 1). The two operations differ (begin
+        'nothing to forget' (exit 0). The two operations differ (begin
         creates, forget drops) but they agree on identity."""
         # A registry exists under another token (the several-registries state):
         assert rp.begin(repo, "router.js", ("expectation.txt",),
@@ -2999,9 +3043,8 @@ class TestEveryVerbResolvesOneIdentity:
         # forget on a FRESH token no registry exists for:
         exit = rp.forget(repo, "router.js", lane="fresh-unused-token-1153")
         out, err = capsys.readouterr()
-        assert exit != 2, (
-            f"forget FAULTED on a token begin would accept (#1153 instance 2): "
-            f"{err}")
+        assert exit == 0, (
+            f"empty forget was not an idempotent success (#1188): {err}")
         # It resolved the SAME segment begin would, and said nothing-to-forget:
         seg = rp._identity_segment("fresh-unused-token-1153")
         assert str(rp._redproof_dir(repo, seg, rp._role(repo))) in out, (

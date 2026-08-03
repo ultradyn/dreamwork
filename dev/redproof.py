@@ -1449,7 +1449,7 @@ def forget(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
         # does not apply — that per-verb disagreement is what made a token
         # begin accepts one forget refused (#1148's guard, #1153's defect).
         # A token whose registry does not (yet) exist resolves to "nothing to
-        # forget" (exit 1), not a FAULT: begin creates, forget drops, but both
+        # forget" (exit 0), not a FAULT: begin creates, forget drops, but both
         # resolve the SAME segment so a lane can address what it created.
         identity_dir = _snap_dir(cwd, lane=lane)
         print(f"forget: resolved identity dir {identity_dir} (role: {role})")
@@ -1494,8 +1494,15 @@ def forget(cwd: Path | None, path: str, *, lane: str | None = None) -> int:
                 if hint:
                     msg += hint
         sys.stderr.write(msg + "\n")
-        return 1
-    _write_registry_at(registry, kept)
+        return 1 if already_retired else 0
+    try:
+        _write_registry_at(registry, kept)
+    except OSError as exc:
+        sys.stderr.write(
+            f"forget: FAULT — could not clear live registration(s) for "
+            f"{posix!r}; registry update failed and the recovery snapshot "
+            f"was retained: {exc}\n")
+        return 2
     _release_snapshot(_snapshot_path_at(identity_dir, posix))
     print(f"forget: {posix!r} — dropped {dropped} armed/unrecorded entry(ies), "
           f"RETIRED {retired_now} restored registration(s) (working tree untouched)")
