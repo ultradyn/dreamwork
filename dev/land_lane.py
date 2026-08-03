@@ -1732,11 +1732,21 @@ def _lint(repo: Path) -> LintReading:
         return LintReading(result, LintOutcome.CLEAN, rows)
 
     # This is a separate checked Git reading, not an interpretation of lint's
-    # output.  `git diff` is intentional: it is the operation whose failure
-    # exposed #1133's unusable-but-verifier-clean multi-pack-index.  Exit 1 is
-    # a readable dirty tree; any higher exit is an unreadable repository.
-    repository_probe = _git(repo, "diff", "--no-ext-diff", "--quiet", "HEAD", "--")
-    if repository_probe.returncode not in (0, 1):
+    # output.  Force Git's diff machinery to materialise HEAD's patch (`-m`
+    # includes both sides of the provisional merge), so a clean index cannot
+    # short-circuit before reading the changed blob that exposed #1133's
+    # unusable-but-verifier-clean multi-pack-index.
+    repository_probe = _git(
+        repo,
+        "show",
+        "-m",
+        "--format=",
+        "--no-ext-diff",
+        "--no-renames",
+        "--binary",
+        "HEAD",
+    )
+    if repository_probe.returncode:
         outcome = LintOutcome.REPOSITORY_UNREADABLE
     elif result.returncode:
         outcome = LintOutcome.LINT_FAILED
