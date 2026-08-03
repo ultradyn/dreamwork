@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 
+import lint  # real lint.py: captures the actual transient WARN row from a worktree
 import pytest
 
 
@@ -483,6 +484,141 @@ def test_meaningful_detail_whitespace_swap_refuses_and_names_both_rows(landing_r
     assert "REFUSE phase=lint-precheck: WARN row set changed" in result.stderr
     _assert_base_unmoved(root, before)
     _assert_retained(root, lane)
+
+
+# ---------------------------------------------------------------------------
+# #1159: a lane-containment WARN about ANOTHER worktree's transient rebase is
+# not a function of the merged tree, so it must not false-RED an unrelated
+# branch when it appears in one of the gate's two lint readings and not the
+# other. The row is still PRINTED (it surfaces a genuinely detached worktree);
+# only the comparison excludes it. The transient row text is captured from a
+# REAL mid-rebase worktree (#906) — never a hand-built string — so a rewording
+# of lint.py's emission fails loud rather than silently passing.
+# ---------------------------------------------------------------------------
+
+
+def _capture_real_transient_lane_row(tmp_path: Path) -> str:
+    """Build a fixture repo with a lane worktree MID-REBASE (a genuine conflict)
+    and return the EXACT WARN row the real lint emits — captured from
+    production, not hand-built.
+
+    Reuses the #1116 technique (test_lint.py::_repo_with_conflicting_rebase):
+    a real detached worktree with ``rebase-merge/`` state is the only input
+    that proves the transient row is actually produced. Cleans up the rebase
+    so no fixture leaves git in a bad state.
+    """
+    t = tmp_path / "transient-fixture"
+    t.mkdir()
+
+    def git(*a, cwd=None):
+        r = subprocess.run(
+            ["git", "-C", str(cwd or t), *a],
+            capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+        return r
+
+    git("init", "-q", "-b", "master")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (t / "watch.py").write_text("# base\n", encoding="utf-8")
+    briefs = t / ".dreamwork" / "docs" / "briefs"
+    briefs.mkdir(parents=True, exist_ok=True)
+    (briefs / "900-lane.md").write_text(
+        "# Brief\n\nWorktree: `.worktrees/lane` on `wt/lane`.\n\n"
+        "Lane-owns: watch.py\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    git("worktree", "add", "-q", "-b", "wt/lane", str(t / ".worktrees" / "lane"))
+    lane_wt = t / ".worktrees" / "lane"
+    # Diverge so the rebase conflicts → a genuine mid-rebase detached state.
+    (t / "watch.py").write_text("# master\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "master edit")
+    (lane_wt / "watch.py").write_text("# lane\n", encoding="utf-8")
+    git("add", "-A", cwd=lane_wt)
+    git("commit", "-qm", "lane edit", cwd=lane_wt)
+    subprocess.run(
+        ["git", "-C", str(lane_wt), "rebase", "master"],
+        capture_output=True, text=True, check=False)  # conflict → detached
+    try:
+        rep = lint.Report()
+        lint.check_lane_containment_backstop(t / ".dreamwork", rep)
+        rendered = rep.render()
+        row = next(line for line in rendered.splitlines()
+                   if "lane-containment" in line
+                   and "detached HEAD is transient" in line)
+        return row
+    finally:
+        subprocess.run(
+            ["git", "-C", str(lane_wt), "rebase", "--abort"],
+            capture_output=True, text=True, check=False)
+
+
+def test_real_mid_rebase_transient_row_is_produced_and_classified_excluded(
+        tmp_path):
+    """Both halves of #1159 at the partition unit: the transient row IS
+    produced by a real detached worktree, and the comparison's partition
+    classifies THAT real row as excluded — proven against production output,
+    not a hand-built string (#906).
+    """
+    row = _capture_real_transient_lane_row(tmp_path)
+    # Half 1 — the row is genuinely produced (real lint, real mid-rebase worktree).
+    assert "lane-containment" in row
+    assert "detached HEAD is transient" in row
+    assert "mid-rebase" in row  # the operation, from a genuine conflict
+    # Half 2 — the comparison's partition excludes the REAL row.
+    assert land_lane._is_fleet_transient_lane_warn(row) is True
+    compared, excluded = land_lane._partition_warn_rows([row])
+    assert excluded == (row,) and compared == ()
+    # The partition must NOT over-exclude. A plain WARN stays compared, and a
+    # lane-containment ERROR (the #465 dirty-main-checkout hazard) stays
+    # compared too — it is not WARN-level, so it is never a comparison input.
+    plain = "  WARN  lessons.md  a standing fact belongs in an OK row"
+    assert land_lane._is_fleet_transient_lane_warn(plain) is False
+    dirty = ("  ERROR  lane-containment  other.py dirty in the MAIN CHECKOUT "
+             "but owned by lane wt/lane (#465)")
+    assert land_lane._is_fleet_transient_lane_warn(dirty) is False
+    assert land_lane._partition_warn_rows([plain, dirty]) == (
+        (plain, dirty), ())
+
+
+def test_foreign_lane_transient_row_does_not_false_red_the_gate(
+        landing_repo, tmp_path):
+    """#1159 end-to-end: a lane-containment WARN about ANOTHER worktree's
+    transient rebase lands in the post-merge reading but not the baseline —
+    exactly the natural experiment that false-REDd glm-1140ingest2. The gate
+    must PASS: the row is excluded from the comparison (not a function of the
+    tree) while still printed for awareness. The row text is the REAL emission
+    captured from a mid-rebase worktree (#906).
+    """
+    root, lane = landing_repo
+    real_row = _capture_real_transient_lane_row(tmp_path)
+    # The fixture lint prints '  WARN  ' + each lint-rows.txt line, so the line
+    # carries the label + double-space + detail the real renderer produces.
+    line = real_row[len("  WARN  "):]
+    _write(lane / "lint-rows.txt", "old warning\n" + line + "\n")
+    _git(lane, "add", "lint-rows.txt")
+    _git(lane, "commit", "-m", "a foreign lane went mid-rebase between readings")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root, "test_named.py")
+
+    # The gate PASSES: the foreign transient row is excluded, not a tree change.
+    assert result.returncode == 0, (
+        "gate REFUSED on a foreign lane's transient row — the comparison "
+        "counted a row that is not a function of the tree (a worktree other "
+        "than the gated subject, mid-rebase):\n" + result.stdout + result.stderr)
+    # Both halves visible in one run: the row WAS seen (printed) AND excluded
+    # from the comparison with a stated reason and both denominators (#868).
+    assert real_row in result.stdout, "the transient row must still be PRINTED"
+    assert "excluded" in result.stdout
+    assert "fleet-transient lane-containment" in result.stdout
+    assert "#1159" in result.stdout
+    # No false RED: among compared rows nothing was added or removed.
+    assert "WARN row-set comparison: added=0 removed=0" in result.stdout
+    # The gate PASSED, so master advanced (a refusal would have left it unmoved).
+    assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before, (
+        "gate reported success but master did not advance")
 
 
 # ---------------------------------------------------------------------------

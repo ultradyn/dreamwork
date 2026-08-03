@@ -1560,6 +1560,67 @@ def _warn_row_index(rows: Sequence[str]) -> dict[tuple[str, ...], str]:
     return indexed
 
 
+# #1159: lint.py's check_lane_containment emits a WARN whenever ANY registered
+# lane worktree is mid-rebase/-merge/-cherry-pick (a detached HEAD transient
+# during an instructed rebase). That row is a function of the FLEET's live git
+# state, not of the merged tree, so it can appear in one of this gate's two lint
+# readings and not the other and false-RED an unrelated branch — #1004's defect
+# (a WARN row not a function of the tree breaks the comparison) with a source
+# that is worse than wall-clock: another lane's rebase starts and ends at times
+# uncorrelated with anything the gated branch does.
+#
+# The marker below is the phrase the #1116 transient emission hardcodes for ALL
+# three operations (rebase/merge/cherry-pick). It does NOT match the perishable
+# operation NAME ("mid-rebase"), which would sail straight through a mid-merge or
+# mid-cherry-pick worktree. The row's own text announces the protection still
+# holds ("its owned paths are still checked from the registered path"), so a row
+# that names its own non-hazard is a poor candidate for failing a merge: it is
+# printed for awareness and excluded from the comparison, never suppressed.
+#
+# Blind spot (#1004 — name the class of real change this is now blind to): the
+# comparison can no longer detect a lane-containment WARN that carries this
+# marker AND is a genuine function of the merged tree. No such row exists today
+# — the only lane-containment WARN is this transient observation, and the real
+# lane-containment hazard (a lane editing the main checkout's owned paths) is an
+# ERROR (#465), caught outside the WARN row-set comparison. The binding is
+# guarded by a test that constructs a real mid-rebase worktree and asserts the
+# REAL emitted row is excluded (#906), so a rewording of the emission fails loud
+# — false RED returns, the safe direction — rather than silently passing.
+_LANE_CONTAINMENT_TRANSIENT_MARKER = "detached HEAD is transient"
+
+
+def _is_fleet_transient_lane_warn(row: str) -> bool:
+    """True for a lane-containment WARN observing another worktree's transient
+    detached-HEAD state — by construction not a function of the merged tree.
+
+    Keys on the structured WARN identity (the same parser the comparison uses)
+    so it never matches a different label's detail, then on the class marker
+    that is invariant across all three transient operations.
+    """
+    identity = _warn_row_identity(row)
+    if identity[0] != "warn":
+        return False
+    label = identity[1] if len(identity) > 1 else ""
+    detail = identity[2] if len(identity) > 2 else ""
+    return label == "lane-containment" and _LANE_CONTAINMENT_TRANSIENT_MARKER in detail
+
+
+def _partition_warn_rows(
+    rows: Sequence[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Split WARN rows into ``(compared, excluded_fleet_transient)``.
+
+    Excluded rows are lane-containment WARNs observing another worktree's
+    transient detached-HEAD state — not functions of the merged tree, so
+    comparing them across the gate's two readings false-REDs unrelated branches
+    (#1159/#1004). They are still printed (``_print_rows`` already showed the
+    full population); only the fail-decision excludes them.
+    """
+    compared = tuple(r for r in rows if not _is_fleet_transient_lane_warn(r))
+    excluded = tuple(r for r in rows if _is_fleet_transient_lane_warn(r))
+    return compared, excluded
+
+
 def _declared_warn_index(
     rows: Sequence[str],
 ) -> tuple[dict[tuple[str, ...], str], str | None]:
@@ -2369,9 +2430,17 @@ def land(
                 f"{reading} WARN population is empty; zero rows examined is not a match",
                 f"merge={merged_sha}; baseline={len(baseline)} rows; {reading}=0 rows examined",
             )
+        # #1159: partition out fleet-transient lane-containment WARNs before
+        # comparing — they are functions of the live fleet (another lane's
+        # mid-rebase), not of the merged tree, so a foreign lane's instructed
+        # rebase must not false-RED the branch under test. The full population
+        # each reading examined is still reported above; the split below states
+        # BOTH denominators so an authorised pass is never silent (#868).
+        baseline_compared, baseline_excluded = _partition_warn_rows(baseline)
+        after_compared, after_excluded = _partition_warn_rows(after)
         try:
-            baseline_index = _warn_row_index(baseline)
-            after_index = _warn_row_index(after)
+            baseline_index = _warn_row_index(baseline_compared)
+            after_index = _warn_row_index(after_compared)
         except ValueError as exc:
             return refuse_gated(
                 phase,
@@ -2384,6 +2453,21 @@ def land(
         removed = tuple(sorted(baseline_index[identity] for identity in removed_ids))
         print(f"{phase} WARN row-set comparison: added={len(added)} removed={len(removed)}")
         print(f"lint WARN populations: baseline={len(baseline)} rows; {reading}={len(after)} rows")
+        excluded_total = len(baseline_excluded) + len(after_excluded)
+        if excluded_total:
+            # #868: a pass that excluded rows must say how many and why, not
+            # silently compare a smaller set — "row present" must not collapse
+            # "this branch introduced it" with "another worktree was detached".
+            print(
+                f"{phase} excluded {excluded_total} fleet-transient lane-containment "
+                f"WARN row(s) from the comparison — not functions of the merged tree, "
+                f"so a foreign lane's mid-rebase cannot false-RED the branch under test "
+                f"(#1159): baseline={len(baseline_excluded)} {reading}={len(after_excluded)}"
+            )
+            for row in baseline_excluded:
+                print(f"~ (baseline excluded, #1159) {row}")
+            for row in after_excluded:
+                print(f"~ ({reading} excluded, #1159) {row}")
         for row in added:
             print(f"+ {row}")
         for row in removed:
