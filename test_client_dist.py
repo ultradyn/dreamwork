@@ -476,10 +476,13 @@ def test_goals_tree_is_the_page_subject_before_the_editor():
         "be the page subject above every add/edit control")
 
     css = (CLIENT / "style.css").read_text(encoding="utf-8")
-    for selector in (".goaltree", ".goalwrites"):
+    for selector in (".goalpage", ".goaltree-section", ".goaltree",
+                     ".goalwrites"):
         start = css.index(selector + " {")
         rule = css[start:css.index("}", start)]
-        reordering = re.search(r"(?:^|[;{]\s*)(?:order|grid-row)\s*:", rule)
+        reordering = re.search(
+            r"(?:^|[;{]\s*)(?:(?:order|grid-row)\s*:|"
+            r"(?:flex-direction|flex-flow)\s*:[^;}]*reverse)", rule)
         assert reordering is None, (
             f"{selector} visually reorders the tree/editor despite their DOM "
             "order")
