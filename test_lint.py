@@ -514,6 +514,57 @@ class TestSyncConflictFiles:
         assert all(sum(str(path) in detail for detail in errors) == 1
                    for path in conflicts), rep.render()
 
+    def test_linked_worktree_reads_and_reports_external_alternate_packs(
+            self, tmp_path):
+        """Compose linked common-dir discovery with a Git-read alternate pack."""
+        source = tmp_path / "source"
+        source.mkdir()
+        self._git("init", "-q", cwd=source)
+        self._git("config", "user.email", "test@example.invalid", cwd=source)
+        self._git("config", "user.name", "Test", cwd=source)
+        (source / "payload").write_text("borrowed packed content\n")
+        self._git("add", "payload", cwd=source)
+        self._git("commit", "-qm", "packed source", cwd=source)
+        self._git("repack", "-ad", cwd=source)
+
+        main = tmp_path / "main"
+        subprocess.run(
+            ["git", "clone", "-q", "--shared", str(source), str(main)],
+            check=True, capture_output=True)
+        lane = tmp_path / ".worktrees" / "lane"
+        self._git("worktree", "add", "-q", "-b", "lane", str(lane), cwd=main)
+        (lane / ".dreamwork").mkdir()
+
+        pack_dir = source / ".git" / "objects" / "pack"
+        originals = (list(pack_dir.glob("pack-*.pack"))
+                     + list(pack_dir.glob("pack-*.idx")))
+        assert len(originals) == 2, originals
+        conflicts = []
+        for original in originals:
+            conflict = original.with_name(
+                f"{original.stem}.sync-conflict-20260803-180706-QJRKU52"
+                f"{original.suffix}")
+            conflict.write_bytes(original.read_bytes())
+            original.unlink()
+            conflicts.append(conflict)
+
+        trace = self._git(
+            "log", "-1", "--format=%H", cwd=lane,
+            env={**os.environ, "GIT_TRACE_PACK_ACCESS": "1"})
+        assert any(str(path) in trace.stderr for path in conflicts), trace.stderr
+
+        rep = self._real_check(lane / ".dreamwork")
+        zero_rows = [detail for _, what, detail in rep.rows
+                     if what == "sync-conflict" and "0 conflict copies" in detail]
+        assert not zero_rows, (
+            "lint reported 0 conflict copies for a Git-read external alternate "
+            f"pack reached through a linked worktree: {rep.render()}")
+        errors = [detail for level, what, detail in rep.rows
+                  if level == lint.ERROR and what == "sync-conflict"]
+        assert len(errors) == 2, rep.render()
+        assert all(sum(str(path) in detail for detail in errors) == 1
+                   for path in conflicts), rep.render()
+
     def test_unreadable_alternates_fails_closed(self, tmp_path, monkeypatch):
         """An unreadable alternates file cannot mean that no stores exist."""
         repo = tmp_path / "repo"
@@ -566,6 +617,8 @@ class TestSyncConflictFiles:
         """Marker/date/time near-misses in owned state demand inspection."""
         t = target(tmp_path)
         names = [
+            "empty.sync-conflict-20260803-180706-.json",
+            "absent.sync-conflict-20260803-180706.json",
             "short.sync-conflict-20260803-180706-QJRKU5.sqlite3",
             "lower.sync-conflict-20260803-180706-qjrku52.json",
             "forbidden.sync-conflict-20260803-180706-QJRKU50.json",
@@ -623,9 +676,11 @@ class TestSyncConflictFiles:
         assert name in errors[0]
         assert str(git_dir) in errors[0]
 
-    def test_known_cache_copy_is_acknowledged_but_unknown_neighbor_blocks(
-            self, tmp_path, monkeypatch):
-        """An acknowledgement binds one relative path and exact content hash."""
+    def _acknowledged_cache(self, tmp_path, monkeypatch, *, today="2026-08-04",
+                            reviewed="2026-08-03", deadline="2026-08-10"):
+        """Build one exact receipt without touching the live evidence file."""
+        from datetime import date
+
         t = tmp_path / "repo"
         t.mkdir()
         self._git("init", "-q", cwd=t)
@@ -633,25 +688,72 @@ class TestSyncConflictFiles:
         cache = t / ".git" / "wt" / "cache" / "ci-status"
         cache.mkdir(parents=True)
         known_name = "known.sync-conflict-20260729-032627-QJRKU52.json"
-        unknown_name = "next.sync-conflict-20260803-180706-QJRKU52.json"
         known = cache / known_name
-        unknown = cache / unknown_name
         known.write_bytes(b"triaged stale cache")
-        unknown.write_bytes(b"unknown cache")
         digest = hashlib.sha256(known.read_bytes()).hexdigest()
         monkeypatch.setattr(lint, "_SYNC_CONFLICT_ACKNOWLEDGEMENTS", {
             ("wt/cache/ci-status/" + known_name, digest): (
-                "2026-08-03", "fixture stale cache copy")
+                reviewed, deadline,
+                "fixture stale cache copy; human disposition pending")
         })
+        monkeypatch.setattr(
+            lint, "_sync_conflict_today", lambda: date.fromisoformat(today))
+        return t, known, cache
+
+    def test_in_date_acknowledgement_is_ok(self, tmp_path, monkeypatch):
+        t, known, _ = self._acknowledged_cache(tmp_path, monkeypatch)
+
+        rep = self._real_check(t / ".dreamwork")
+        oks = [d for lvl, w, d in rep.rows
+               if lvl == lint.OK and w == "sync-conflict"]
+        assert len(oks) == 1 and str(known) in oks[0], rep.render()
+        assert "acknowledged 2026-08-03; review due 2026-08-10" in oks[0]
+        assert not rep.failed, rep.render()
+
+    def test_expired_acknowledgement_warns_without_wedging(
+            self, tmp_path, monkeypatch):
+        t, known, _ = self._acknowledged_cache(
+            tmp_path, monkeypatch, today="2026-08-13")
+
+        rep = self._real_check(t / ".dreamwork")
+        warns = [d for lvl, w, d in rep.rows
+                 if lvl == lint.WARN and w == "sync-conflict"]
+        assert len(warns) == 1 and str(known) in warns[0], rep.render()
+        assert "acknowledgement is 10 day(s) old" in warns[0], warns[0]
+        assert "expired 3 day(s) ago" in warns[0], warns[0]
+        assert "human disposition pending" in warns[0], warns[0]
+        assert not rep.failed, "expired acknowledgement must not wedge the gate"
+
+    def test_renewed_acknowledgement_returns_to_ok(
+            self, tmp_path, monkeypatch):
+        t, _, _ = self._acknowledged_cache(
+            tmp_path, monkeypatch, today="2026-08-13",
+            reviewed="2026-08-12", deadline="2026-08-19")
+
+        rep = self._real_check(t / ".dreamwork")
+        rows = [(lvl, d) for lvl, w, d in rep.rows if w == "sync-conflict"]
+        assert len(rows) == 1 and rows[0][0] == lint.OK, rep.render()
+        assert "acknowledged 2026-08-12; review due 2026-08-19" in rows[0][1]
+
+    def test_changed_acknowledged_content_blocks(self, tmp_path, monkeypatch):
+        t, known, _ = self._acknowledged_cache(tmp_path, monkeypatch)
+        known.write_bytes(b"changed after acknowledgement")
 
         rep = self._real_check(t / ".dreamwork")
         errors = [d for lvl, w, d in rep.rows
                   if lvl == lint.ERROR and w == "sync-conflict"]
-        oks = [d for lvl, w, d in rep.rows
-               if lvl == lint.OK and w == "sync-conflict"]
-        assert len(errors) == 1 and str(unknown) in errors[0], rep.render()
-        assert len(oks) == 1 and str(known) in oks[0], rep.render()
-        assert "acknowledged 2026-08-03" in oks[0], rep.render()
+        assert len(errors) == 1 and str(known) in errors[0], rep.render()
+
+    def test_acknowledgement_does_not_cover_a_sibling(
+            self, tmp_path, monkeypatch):
+        t, known, cache = self._acknowledged_cache(tmp_path, monkeypatch)
+        sibling = cache / "next.sync-conflict-20260803-180706-QJRKU52.json"
+        sibling.write_bytes(known.read_bytes())
+
+        rep = self._real_check(t / ".dreamwork")
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "sync-conflict"]
+        assert len(errors) == 1 and str(sibling) in errors[0], rep.render()
 
     def test_unknown_own_git_state_fails_closed(self, tmp_path, monkeypatch):
         """Unknown own Git state fails closed, including wt/cache neighbors."""

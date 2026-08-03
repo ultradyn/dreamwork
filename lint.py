@@ -40,6 +40,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent
@@ -5353,7 +5354,7 @@ def check_inbox_rotation(dw: Path, rep: Report) -> None:
 SYNC_CONFLICT_RE = re.compile(
     r'\.sync-conflict-\d{8}-\d{6}-[A-Z2-7]{7}(?:\..*)?\Z')
 SYNC_CONFLICT_HIGH_CONFIDENCE_RE = re.compile(
-    r'\.sync-conflict-\d{8}-\d{6}-(?!\.)[^/]+\Z')
+    r'\.sync-conflict-\d{8}-\d{6}(?:-(?:[^./][^/]*)?)?(?:\..*)?\Z')
 SYNC_CONFLICT_LIKE_RE = re.compile(r'\.sync-conflict-')
 
 
@@ -5387,7 +5388,8 @@ _SYNC_CONFLICT_ACKNOWLEDGEMENTS = {
     ("wt/cache/ci-status/"
      "master.sync-conflict-20260729-032627-QJRKU52.json",
      "9da2cc90e5744be8304306e5286ed0715c497ef20947615353354263c4854cf0"): (
-        "2026-08-03", "stale Worktrunk CI-status cache; human disposition pending"),
+        "2026-08-03", "2026-08-10",
+        "stale Worktrunk CI-status cache; human disposition pending"),
 }
 
 
@@ -5433,8 +5435,8 @@ def _alternate_object_stores(common_dir: Path) -> tuple[list[Path], list[tuple[P
 
 
 def _sync_conflict_acknowledgement(
-        path: Path, common_dir: Path | None) -> tuple[str, str] | None:
-    """Return the triage date/reason only for an exact path+content receipt."""
+        path: Path, common_dir: Path | None) -> tuple[date, date, str] | None:
+    """Return a dated review receipt only for an exact path+content match."""
     if common_dir is None:
         return None
     try:
@@ -5442,7 +5444,23 @@ def _sync_conflict_acknowledgement(
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
     except (OSError, ValueError):
         return None
-    return _SYNC_CONFLICT_ACKNOWLEDGEMENTS.get((relative, digest))
+    receipt = _SYNC_CONFLICT_ACKNOWLEDGEMENTS.get((relative, digest))
+    if receipt is None:
+        return None
+    reviewed_text, deadline_text, reason = receipt
+    try:
+        reviewed = date.fromisoformat(reviewed_text)
+        deadline = date.fromisoformat(deadline_text)
+    except ValueError:
+        return None
+    if deadline < reviewed:
+        return None
+    return reviewed, deadline, reason
+
+
+def _sync_conflict_today() -> date:
+    """Clock seam for deterministic acknowledgement-expiry tests."""
+    return date.today()
 
 
 def _sync_conflict_level(own_root: bool) -> str:
@@ -5517,7 +5535,7 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
     scanned = 0
     absent: list[str] = []
     found: dict[str, str] = {}  # path -> strongest level
-    acknowledged: dict[str, tuple[str, str]] = {}
+    acknowledged: dict[str, tuple[date, date, str]] = {}
     malformed: dict[str, str] = {}  # path -> level
     unreadable: dict[str, tuple[str, str]] = {}  # path -> (level, error)
     seen_files: set[Path] = set()
@@ -5587,12 +5605,28 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
                     f"Syncthing conflict copy at {path} — non-blocking "
                     f"because it is in another worktree; resolve "
                     f"manually, the copy may be newer: #1162/#1166")
-        for path, (date, reason) in sorted(acknowledged.items()):
-            rep.add(
-                OK, "sync-conflict",
-                f"Known Syncthing conflict copy at {path} — acknowledged "
-                f"{date}: {reason}; exact relative path and SHA-256 matched, "
-                f"so no other file in the directory is exempt: #1166")
+        for path, (reviewed, deadline, reason) in sorted(acknowledged.items()):
+            today = _sync_conflict_today()
+            if today > deadline:
+                age = (today - reviewed).days
+                overdue = (today - deadline).days
+                rep.add(
+                    WARN, "sync-conflict",
+                    f"Acknowledgement expired for known Syncthing conflict "
+                    f"copy at {path} — acknowledgement is {age} day(s) old "
+                    f"(recorded {reviewed}); review deadline {deadline} "
+                    f"expired {overdue} day(s) ago; open question remains: "
+                    f"{reason}. Renew the review deadline after human "
+                    f"re-review; exact relative path and SHA-256 still "
+                    f"match, so this warning is visible but does not wedge "
+                    f"unrelated lanes: #1166")
+            else:
+                rep.add(
+                    OK, "sync-conflict",
+                    f"Known Syncthing conflict copy at {path} — acknowledged "
+                    f"{reviewed}; review due {deadline}: {reason}; exact "
+                    f"relative path and SHA-256 matched, so no other file in "
+                    f"the directory is exempt: #1166")
         for path, level in sorted(malformed.items()):
             if level == ERROR:
                 rep.add(
