@@ -8878,12 +8878,14 @@ def check_landed_guards(dw: Path, rep: Report) -> None:
                 "deleted guard is detectable instead of silent (#1114)")
         return
     # Resolve each against the test tree: a `def <name>(` in any test_*.py.
-    # node_modules / .git / .worktrees are skipped — they are not this repo's
-    # tests, and a long guard name will not coincide with one by accident.
+    # Nested dependency, metadata, and lane roots are not this checkout's
+    # tests. Compare relative parts: the checkout itself may legitimately sit
+    # beneath a parent named `.worktrees` or `.native-lanes`.
+    root = dw.parent
+    excluded_roots = {"node_modules", ".git", ".worktrees", ".native-lanes"}
     corpus: list[str] = []
-    for p in sorted(dw.parent.rglob("test_*.py")):
-        sp = str(p)
-        if "/node_modules/" in sp or "/.git/" in sp or "/.worktrees/" in sp:
+    for p in sorted(root.rglob("test_*.py")):
+        if excluded_roots.intersection(p.relative_to(root).parts):
             continue
         corpus.append(p.read_text(encoding="utf-8", errors="replace"))
     joined = "\n".join(corpus)
