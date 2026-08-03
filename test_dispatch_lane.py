@@ -1256,7 +1256,8 @@ def test_launch_review_creates_attached_branch_worktree_and_records_cwd(tmp_path
         "pathlib.Path(os.environ['REVIEW_TEST_OUTPUT']).write_text(json.dumps({\n"
         "    'argv': sys.argv[1:], 'cwd': os.getcwd(),\n"
         "    'role': os.environ.get('DREAMWORK_LANE_ROLE'),\n"
-        "}), encoding='utf-8')\n",
+        "}), encoding='utf-8')\n"
+        "os.execlp('sleep', 'ccc', '2')\n",
         encoding="utf-8",
     )
     fake_ccc.chmod(0o755)
@@ -1265,6 +1266,7 @@ def test_launch_review_creates_attached_branch_worktree_and_records_cwd(tmp_path
         "DREAMWORK_ALLOW_PIPED_STDOUT": "1",
         "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
         "REVIEW_TEST_OUTPUT": str(observed),
+        "REVIEW_RUNNER_SETTLE": "0.05",
     }
     result = subprocess.run(
         [
@@ -1296,7 +1298,9 @@ def test_launch_review_creates_attached_branch_worktree_and_records_cwd(tmp_path
         part for part in porcelain.split("\n\n")
         if f"worktree {review_worktree}" in part
     )
-    assert f"branch refs/heads/{review_lane}" in block
+    assert f"branch refs/heads/{review_lane}" in block, (
+        "review worktree has no attached branch line"
+    )
     assert "detached" not in block
     attempts = sorted((root / ".dreamwork" / "review-dispatches").glob("*.launch.json"))
     assert len(attempts) == 1
@@ -1309,7 +1313,14 @@ def test_launch_review_creates_attached_branch_worktree_and_records_cwd(tmp_path
     }
     assert attempt["review_lane"] == review_lane
     assert attempt["worktree"] == str(review_worktree)
-    assert attempt["state"] == "spawned: reviewer detached; exit not observed"
+    assert subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=review_worktree,
+        capture_output=True, text=True, check=True,
+    ).stdout.strip() == attempt["pinned_sha"]
+    assert attempt["state"] == (
+        "spawned: reviewer present in review worktree (cwd-containment); "
+        "runner exit not observed"
+    )
 
 
 def test_launch_review_refuses_write_capable_runner_mode(tmp_path):

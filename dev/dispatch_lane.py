@@ -25,6 +25,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -667,12 +668,32 @@ def launch_review(prompt_path: Path, branch: str, round_num: int,
             child_env={LANE_ROLE_ENV: "reviewer", LANE_ID_ENV: secrets.token_hex(16)},
         )
         if result == 0:
-            record["state"] = "spawned: reviewer detached; exit not observed"
+            settle = float(os.environ.get("REVIEW_RUNNER_SETTLE", "0.3"))
+            if settle > 0:
+                time.sleep(settle)
+            present, examined, _ = _review_lane_live(review_lane, coordinator_root)
+            if not present:
+                record["state"] = (
+                    "spawn failed: dispatcher exit=0 but no reviewer runner "
+                    "holds the review worktree cwd"
+                )
+                _write_json_atomic(attempt_path, record)
+                print(
+                    "review launch refused: dispatcher exited 0 but no reviewer "
+                    f"runner holds {worktree.resolve()} as cwd; examined={examined}",
+                    file=sys.stderr,
+                )
+                return 3
+            record["state"] = (
+                "spawned: reviewer present in review worktree (cwd-containment); "
+                "runner exit not observed"
+            )
             _write_json_atomic(attempt_path, record)
             print(
                 f"review launched: branch={branch}; review_lane={review_lane}; "
                 f"worktree={worktree.resolve()}; attempt={attempt_id}; "
-                "permission_mode=plan; runner exit not observed"
+                f"permission_mode=plan; cwd-containment examined={examined}; "
+                "runner exit not observed"
             )
         else:
             record["state"] = f"launch refused: dispatcher exited {result}"
