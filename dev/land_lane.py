@@ -36,6 +36,10 @@ PADDED_LINT_ROW = re.compile(
     r"(?P<padding> {2,})(?P<detail>\S.*)$"
 )
 LINT_TRAILER = re.compile(r"^clean \((\d+) warning\(s\)\)$", re.MULTILINE)
+PYTEST_FAILED_NODE = re.compile(r"^FAILED (?P<node>\S+)", re.MULTILINE)
+LOW_MEMORY_ADVISORY = (
+    "low available memory — a browser lane costs RAM a pytest lane does not"
+)
 
 # The gates this tool promises to run before the base branch is allowed to
 # move. Declared apart from the code that runs them so that a gate deleted
@@ -1007,10 +1011,7 @@ def _test_relevance_line(
             f"test-relevance: DID NOT CHECK — {prefix}; no relevance result is "
             "available when either population is empty"
         )
-    unrelated = tuple(
-        selector for selector in tests
-        if not _test_relation_rules(repo, selector, changed, data_tests=data_tests)
-    )
+    unrelated = _unrelated_tests(repo, tests, changed, data_tests=data_tests)
     if not unrelated:
         return (
             f"test-relevance: OK — {prefix}; all {len(tests)} related by at least "
@@ -1023,6 +1024,68 @@ def _test_relevance_line(
         + "; remedy: name or add a test related by the `test_<stem>.py` convention "
         "or a static import, or update DIR_TESTSET_MAP when a declared directory "
         "testset owns the changed path"
+    )
+
+
+def _unrelated_tests(
+    repo: Path, selection: Sequence[str], changed: Sequence[str],
+    *, data_tests: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Tests for which none of the four derivation rules relates the diff."""
+    return tuple(
+        selector for selector in dict.fromkeys(selection)
+        if not _test_relation_rules(repo, selector, changed, data_tests=data_tests)
+    )
+
+
+def _indeterminate_named_test_reason(
+    result: subprocess.CompletedProcess[str], unrelated: Sequence[str],
+) -> str | None:
+    """Classify one resource-sensitive death without turning it into a verdict.
+
+    IGC context: a nonzero named-test run under ordinary high fleet load.
+
+    | Idea | All | G1 | G2 | G3 | G4 |
+    | post-hoc distinct refusal | ✔ | ✔ | ✔ | ✔ | ✔ |
+    | refuse before starting on load | ✘ | ✔ | ✔ | ✘ | ✘ |
+    | ignore rule-unrelated failures | ✘ | ✘ | ✘ | ✘ | ✔ |
+    | retry and land if green | ✘ | ✘ | ✘ | ✘ | ✔ |
+
+    G1 no genuinely broken branch lands; G2 no death is reported as a test
+    verdict; G3 the refusal names every signal without log-reading; G4 the gate
+    remains runnable at the machine's normal load. The survivor still refuses,
+    so neither this heuristic nor a retry can exonerate a branch. A strict load
+    precondition fails G3/G4 because it sees neither relevance nor death and
+    routinely blocks this machine; ignoring or retrying can land a real
+    assertion/intermittent failure and therefore fails G1/G2.
+
+    ``returncode: -9`` proves SIGKILL, not OOM: a user, supervisor, cgroup, or
+    the kernel OOM killer can send it. Low memory is therefore a required
+    corroborating signal, never a claimed cause. Requiring exactly one pytest
+    FAILED node keeps the death marker attributable to that unrelated test.
+    """
+    output = result.stdout + "\n" + result.stderr
+    failed = tuple(dict.fromkeys(PYTEST_FAILED_NODE.findall(output)))
+    if len(failed) != 1 or LOW_MEMORY_ADVISORY not in output:
+        return None
+    unrelated_files = {_selected_test_file(selector) for selector in unrelated}
+    if _selected_test_file(failed[0]) not in unrelated_files:
+        return None
+    timed_out = "TimeoutExpired" in output and "timed out" in output
+    sigkilled = bool(re.search(r"returncode:\s*-9\b", output))
+    if not timed_out and not sigkilled:
+        return None
+    if timed_out and sigkilled:
+        death = "timeout+SIGKILL(returncode=-9; sender unknown)"
+    elif timed_out:
+        death = "timeout"
+    else:
+        death = "SIGKILL(returncode=-9; sender unknown)"
+    return (
+        "named test selection INDETERMINATE — "
+        f"unrelated-by-{len(DERIVATION_RULES)}-rules={failed[0]}; "
+        f"low-memory-advisory=present; death={death}; "
+        "the test produced no verdict and the landing remains refused"
     )
 
 
@@ -2801,13 +2864,20 @@ def land(
         )
         passed.append("named-tests")
     else:
-        print(_test_relevance_line(gate_worktree, selection, diff.changed, data_tests=data_tests))
+        unrelated = _unrelated_tests(
+            gate_worktree, selection, diff.changed, data_tests=data_tests
+        )
+        print(_test_relevance_line(
+            gate_worktree, selection, diff.changed, data_tests=data_tests
+        ))
 
         named = _run(["just", "pytest", *selection], gate_worktree)
         _relay(named)
         if named.returncode:
+            indeterminate = _indeterminate_named_test_reason(named, unrelated)
             return refuse_gated(
                 "named-tests",
+                indeterminate or
                 f"named test selection failed with exit {named.returncode}",
                 f"merge={merged_sha}; tests={list(tests)!r}; "
                 f"derived-and-added={list(unnamed)!r}",
