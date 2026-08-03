@@ -416,7 +416,12 @@ def test_the_native_runtime_stays_inside_a_chosen_page_weight_budget():
         "%s is %d bytes — that is not React plus a runtime, and a budget "
         "check against a stub passes forever"
         % (client_dist.NATIVE_REL, size))
-    budget = 160_000
+    # #1006 replaces four bare forms with one labelled, cancellable editor,
+    # contextual tree actions, and field-specific validation. Measured after
+    # the final rebase also carried the parallel wrapper exports: 164255 bytes.
+    # Keep only 745 bytes of headroom so this remains a bound, not a rounded
+    # permission slip for unrelated growth.
+    budget = 165_000
     assert size <= budget, (
         "%s is %d bytes, over the %d-byte budget chosen at P2 (measured "
         "146920 then). This is weight every dashboard load will carry from "
@@ -448,6 +453,55 @@ def test_native_sources_are_all_build_inputs(tmp_path):
     assert new == [client_dist.NATIVE_SRC_DIR + "/zz_p3_surface.js"], (
         "a new file in %s did not become a build input (%r) — the input set "
         "is not derived from the tree" % (client_dist.NATIVE_SRC_DIR, new))
+
+
+def _goals_source():
+    source = ROOT / client_dist.NATIVE_SRC_DIR / "goals.js"
+    text = source.read_text(encoding="utf-8")
+    assert "function GoalPage" in text, (
+        "dev/build/src/goals.js no longer contains GoalPage — this check did "
+        "not examine the /goals renderer")
+    return text
+
+
+def test_goals_dom_order_and_common_exact_selector_css_declarations():
+    """Check DOM order plus three common declarations in four exact blocks."""
+    source = _goals_source()
+    page = source[source.index("function GoalPage"):
+                  source.index("export function registerGoals")]
+    tree_heading = page.index("'goal tree'")
+    editor = page.index("React.createElement(GoalWrites")
+    assert tree_heading < editor, (
+        "GoalPage renders the editing UI before the goal tree — the tree must "
+        "be the page subject above every add/edit control")
+
+    css = (CLIENT / "style.css").read_text(encoding="utf-8")
+    for selector in (".goalpage", ".goaltree-section", ".goaltree",
+                     ".goalwrites"):
+        start = css.index(selector + " {")
+        rule = css[start:css.index("}", start)]
+        reordering = re.search(
+            r"(?:^|[;{]\s*)(?:(?:order|grid-row)\s*:|"
+            r"(?:flex-direction|flex-flow)\s*:[^;}]*reverse)", rule)
+        assert reordering is None, (
+            f"{selector}'s first exact CSS block uses order/grid-row or "
+            "reverse flex; this static check does not cover other selectors, "
+            "declarations, inline styles, or rendered geometry")
+
+
+def test_goals_editor_source_exposes_required_controls_and_messages():
+    """Usability controls stay explicit; browser behaviour is guarded separately."""
+    source = _goals_source()
+    required = {
+        "Goal title": "Goal title is required",
+        "Done when": "Done when is required",
+        "edit escape": "Cancel edit",
+        "draft escape": "Clear draft",
+        "child shortcut": "Add child",
+    }
+    for subject, marker in required.items():
+        assert marker in source, (
+            f"the goals editor lost its {subject} control/message: {marker!r}")
 
 
 def test_expected_inputs_accepts_a_tree_without_wrapper_companions(tmp_path):
