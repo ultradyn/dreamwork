@@ -63,7 +63,8 @@ def lane(tmp_path: Path) -> tuple[Path, Path]:
     _git(root, "config", "user.email", "t@t")
     _git(root, "config", "user.name", "t")
     (root / ".gitignore").write_text(
-        "__pycache__/\n.dreamwork/applied.md\n.dreamwork/ledger.sqlite3\n"
+        "__pycache__/\n.dreamwork/applied.md\n.dreamwork/expedite\n"
+        ".dreamwork/ledger.sqlite3\n"
         "*.tmp.*\nnode_modules/\n",
         encoding="utf-8",
     )
@@ -148,6 +149,21 @@ def test_empty_ignored_regular_file_is_disposable(lane):
 
     assert result.returncode == 0, result.stderr
     assert "ignored: examined 1 file; 1 disposable, 0 NOT disposable" in result.stdout
+
+
+def test_empty_ignored_sentinel_refuses_removal_and_names_path(lane):
+    root, worktree = lane
+    sentinel = worktree / ".dreamwork" / "expedite"
+    sentinel.parent.mkdir()
+    sentinel.touch()
+
+    result = _run(worktree)
+
+    assert result.returncode == 1, result
+    assert "ignored: examined 1 file; 0 disposable, 1 NOT disposable" in result.stderr
+    assert "REFUSE: ignored path would be lost: .dreamwork/expedite" in result.stderr
+    assert worktree.exists()
+    assert str(worktree.resolve()) in _git(root, "worktree", "list", "--porcelain")
 
 
 def test_unforeseen_ignored_file_type_falls_through_allowlist_and_refuses(lane):
