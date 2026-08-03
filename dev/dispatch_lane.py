@@ -269,6 +269,46 @@ def _ledger_ids(dreamwork_dir: Path) -> set[int]:
     return {int(match) for match in _MARKDOWN_TASK.findall(text)}
 
 
+def primary_task_state(task_id: int, dreamwork_dir: Path) -> str | None:
+    """The primary task's state ('open'/'landed'), or None when it cannot be told.
+
+    The one record-vs-head supersession signal a dispatcher can detect without
+    reading prose (#1125): if the task a brief targets has already LANDED, the
+    record moved past the head's premise of open work, and landing is terminal,
+    so the head is stale by construction.  Measured against the live store, every
+    broader signal is wallpaper -- a bare-citation-to-landed check fires 71 times
+    on a single brief (lesson authority, not live premises), and "the record moved
+    since the head was written" fires on 77% of dispatches because the normal task
+    lifecycle moves the record constantly.  Neither a head render-timestamp nor a
+    note timestamp exists in any rendered record, so a timestamp compare is not
+    even computable.  Primary-landed is the rare, unambiguous, detectable case.
+
+    Reads the store only (the source of truth); a markdown-only or unreadable
+    store returns None, which the caller treats as fail-safe (#136: present-but-
+    unreadable is not a verdict, and a dispatch may never be refused on a probe
+    that did not run).  Silent on None: ``ledger_reference_reports`` already
+    warns when the store cannot be read, so a second DID-NOT-RUN line is noise.
+    """
+    store = dreamwork_dir / "ledger.sqlite3"
+    if not store.is_file():
+        return None
+    try:
+        spec = StoreSpec(
+            store,
+            repositories={"tasks": TaskRepository},
+            busy_timeout_ms=0,
+        )
+        with open_database(spec, access=Access.READ) as database:
+            open_ids, landed_ids = database.tasks.ids_by_state()
+    except Exception:
+        return None
+    if str(task_id) in landed_ids:
+        return "landed"
+    if str(task_id) in open_ids:
+        return "open"
+    return None
+
+
 def ledger_reference_reports(prompt_head: str, dreamwork_dir: Path) -> list[str]:
     """Classify unresolved ledger references without blocking a dispatch."""
     command_ids = {int(match) for match in _LEDGER_GET.findall(prompt_head)}
@@ -952,6 +992,24 @@ def main(argv: list[str] | None = None) -> int:
             validate_base_sha(prompt_head, branch)
         for report in ledger_reference_reports(prompt_head, briefs_dir.parent.parent):
             print(report, file=sys.stderr)
+        # #1125: the one head-vs-record supersession signal a dispatcher can
+        # detect.  Landing is terminal, so a brief for a LANDED task is stale by
+        # construction -- the record moved past its premise of open work.  This
+        # is the contradicted state worth blocking on (#136); open and unreadable
+        # both proceed, the latter silently because ledger_reference_reports
+        # already names a store that could not be read.
+        state = primary_task_state(task, briefs_dir.parent.parent)
+        if state == "landed":
+            raise DispatchFault(
+                f"task #{task} is LANDED; this dispatch targets already-resolved "
+                f"work. The record moved past this head's premise of open work, "
+                f"and landing is terminal, so the head is stale by construction. "
+                f"This names the task's STATE, not the head's full claims (#651): "
+                f"a landed record does not prove every sentence in the head wrong, "
+                f"only that the task it targets is done. Re-read "
+                f"`ledger.py get {task}` and, if follow-up is genuinely needed, "
+                f"file it as a new task rather than re-dispatching the resolved one."
+            )
         try:
             persist_prompt(prompt, briefs_dir)
         except DispatchFault as exc:
