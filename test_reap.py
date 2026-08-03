@@ -459,7 +459,11 @@ def test_running_process_cwd_refuses_then_dead_process_allows_check(lane):
         executable=sys.executable,
         cwd=worktree,
     )
+    reap = _load_reap()
     try:
+        positive = reap.worktree_liveness(worktree)
+        assert positive.unknown == ()
+        assert process.pid in positive.pids
         result = _run(worktree)
         assert result.returncode == 1
         assert "active process cwd inside worktree at removal time" in result.stderr
@@ -469,6 +473,8 @@ def test_running_process_cwd_refuses_then_dead_process_allows_check(lane):
         process.terminate()
         process.wait(timeout=5)
 
+    negative = reap.worktree_liveness(worktree)
+    assert negative == reap.WorktreeLiveness((), ())
     result = _run("--check", worktree)
     assert result.returncode == 0, result.stderr
     assert str(worktree.resolve()) in _git(root, "worktree", "list", "--porcelain")
