@@ -1323,9 +1323,10 @@ class TestLiveLivenessCwdChannel:
 
 
 class TestLiveLivenessBoundaryDocumentation:
-    """Bind the classifier's stated observation boundary to its actual seams."""
+    """Detect prose/token drift, not whether the named mechanisms execute."""
 
     def test_classification_path_states_its_known_observation_gaps(self):
+        """The real-process descendant fixture below binds PPID selection."""
         doc = inspect.getdoc(lane_liveness.inspect_lanes)
         source = inspect.getsource(lane_liveness.inspect_lanes)
 
