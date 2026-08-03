@@ -84,8 +84,13 @@ function GoalWrites(props) {
     setMessage({ kind: 'quiet', text: node
       ? 'Adding a child under “' + node.title + '”.'
       : 'Adding a goal at the tree root.' });
-    if (titleRef.current) titleRef.current.focus();
   }, [props.createRequest]);
+
+  React.useEffect(function () {
+    if (props.createRequest && mode === 'add' && titleRef.current) {
+      titleRef.current.focus();
+    }
+  }, [props.createRequest, mode]);
 
   React.useEffect(function () {
     if (!props.editRequest) return;
@@ -95,8 +100,13 @@ function GoalWrites(props) {
     setMode('details'); setDetailsGoal(id); setDetails(node.details || '');
     setErrors({}); setMessage({ kind: 'quiet', text:
       'Editing “' + node.title + '”.' });
-    if (detailsRef.current) detailsRef.current.focus();
   }, [props.editRequest]);
+
+  React.useEffect(function () {
+    if (props.editRequest && mode === 'details' && detailsRef.current) {
+      detailsRef.current.focus();
+    }
+  }, [props.editRequest, mode]);
 
   async function write(payload, clear) {
     setBusy(true); setMessage({ kind: 'quiet', text: 'Saving…' });
@@ -322,10 +332,13 @@ function GoalPage(props) {
         : node.blockers.length ? ' · ' + node.blockers.length + ' blocked' : '')),
       React.createElement('div', { className: 'goaltree-actions' },
         React.createElement('a', { className: 'goaltree-action', href: '#goal-editor',
-          onClick: () => setEditRequest({ goalId: node.id, nonce: Date.now() }),
+          onClick: event => {
+            event.preventDefault();
+            setEditRequest({ goalId: node.id, nonce: Date.now() });
+          },
           'aria-label': 'Edit details for ' + node.title }, 'Edit'),
         React.createElement('a', { className: 'goaltree-action', href: '#goal-editor',
-          onClick: () => addChild(node),
+          onClick: event => { event.preventDefault(); addChild(node); },
           'aria-label': 'Add child under ' + node.title }, 'Add child')))))
     : React.createElement('div', { className: 'goalpage-fault' },
         'examined ' + examined + ' of ' + expected +
