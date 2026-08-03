@@ -6826,7 +6826,6 @@ class TestTasksRoute(unittest.TestCase):
             %s
             %s
             %s
-            %s
             let data = null;
             %s
             %s
