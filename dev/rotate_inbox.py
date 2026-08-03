@@ -13,17 +13,13 @@ So moving bytes to a sibling archive breaks no parser. The one real reader —
 the coordinator LLM — reads via shell (tail/grep), and a pointer comment at
 the top of the live file names the archive so older entries stay findable.
 
-#1158: ``os.replace`` orphans the old inode, so a lane appending via ``cat >>``
-(O_APPEND, no lock) at that instant writes to an unlinked file — its report is
-lost. The old precondition "fleet empty" is unreachable under pace=hot, so the
-rotation silently never ran. This tool now (a) REFUSES with a distinct state
-when a live lane is detected (option 2 — the only lane-deliverable choice; a
-true lock is coordinator-side, see igc-method.md), reusing ``lane_liveness``
-rather than a fresh ``ps`` grep, and (b) ACCOUNTS FOR THE OBSERVED SNAPSHOT on
-every successful rotation: entries-moved + entries-retained ==
-entries-observed, and the live file's first entry matches the one the pointer
-comment claims. Entries appended after observation are outside that evidence;
-#1170 owns the shared append/rotate synchronization needed to cover them.
+#1158: ``os.replace`` orphans the old inode, so an unlocked ``cat >>`` at that
+instant writes to an unlinked file and loses its report. Rotation and the
+standing append recipe now take the same advisory sidecar lock (#1170). The
+live-lane refusal remains as a second transition condition until every writer
+has adopted that recipe. Successful rotations also account for the observed
+snapshot: entries-moved + entries-retained == entries-observed, and the live
+file's first entry matches the pointer comment.
 
 Usage:
     python3 dev/rotate_inbox.py status  --target <dreamwork-dir-or-repo>
@@ -36,10 +32,12 @@ error, 2 I/O or reconciliation error.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import re
 import sys
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -49,15 +47,32 @@ DEFAULT_KEEP = 50
 ARCHIVE_DIR = "inbox-archive"
 
 
+@contextmanager
+def _inbox_lock(dw: Path):
+    """Exclude appenders and rotation via ``inbox.md.lock``."""
+    lock_path = dw / "inbox.md.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 class ReconciliationError(RuntimeError):
     """A rotation could not account for every entry present at observation.
 
     Raised after the live file and archive have been written when
     moved + retained != observed, or when the live file's first entry does not
     match the heading the pointer comment claims. A rotation that cannot state
-    the balance has not accounted for the observed snapshot. Appends after
-    observation are outside this check; #1170 owns that gap.
+    the balance has not accounted for the observed snapshot. Locking appenders
+    after observation wait until replacement and are outside this count.
     """
+
+
+class RotationIOError(RuntimeError):
+    """A filesystem operation failed inside the real rotation boundary."""
 
 
 @dataclass(frozen=True)
@@ -212,7 +227,7 @@ def _reconcile_balanced(observed: int, moved: int, retained: int) -> bool:
     Pure so it can be tested directly: a rotation that lost an entry has
     moved + retained < observed, and this returns False. The single source of
     the balance verdict so a sabotage here reddens every snapshot-accounting
-    test. Appends after observation are outside the inputs; #1170 owns them.
+    test. Lock-serialized appends after observation are outside the inputs.
     """
     return moved + retained == observed
 
@@ -236,28 +251,33 @@ def _pointer_line(archive_rel: str, n_moved: int, first_retained_heading: str) -
 
 
 def rotate(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_probe=None) -> dict:
+    """Rotate while holding the lock shared with the standing append recipe."""
+    try:
+        with _inbox_lock(dw):
+            return _rotate_locked(dw, keep=keep, live_lane_probe=live_lane_probe)
+    except OSError as exc:
+        raise RotationIOError(str(exc)) from exc
+
+
+def _rotate_locked(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_probe=None) -> dict:
     """Rotate older entries from inbox.md to a dated archive.
 
     Returns a dict whose ``action`` is one of three distinct states (#136):
 
     - ``'rotated'`` — entries moved; the live file now holds the recent tail.
     - ``'noop'`` — fewer entries than ``keep``; nothing to do.
-    - ``'refused'`` — a live lane was detected; rotation skipped to avoid
-      orphaning an in-flight appender's fd (#1158).
+    - ``'refused'`` — a live lane was detected during lock migration.
 
     ``live_lane_probe`` is an optional zero-arg callable returning a
-    :class:`LaneProbeResult`. When it reports live lanes, the rotation is REFUSED
-    rather than performed: ``cat >>`` (the documented append recipe) takes no
-    lock, so a concurrent ``os.replace`` would orphan the appender's inode and
-    lose its report. The CLI wires the real detector
+    :class:`LaneProbeResult`. When it reports live lanes, rotation is REFUSED
+    during the transition because already-dispatched writers may still hold the
+    old unlocked recipe. The CLI wires the real detector
     (:func:`_count_live_lanes`, which reuses ``lane_liveness``); tests inject
     explicit complete or failed results. An incomplete probe also refuses and
-    names what could not be read. A lane-deliverable lock would require changing the append recipe in
-    every brief, which is a coordinator-side act (see igc-method.md) — so the
-    honest lane deliverable is "refuse loudly", not "rotate safely while live".
+    names what could not be read.
 
     Every line present at observation time is accounted for in archive + live.
-    Lines appended after observation are not covered; #1170 owns that gap. The
+    Locking appenders run after rotation and remain in the new live file. The
     live file is written atomically (temp + fsync + os.replace). On a successful
     rotation snapshot accounting is returned: ``entries_moved`` +
     ``entries_kept`` must equal ``entries_total`` (the count observed before
@@ -280,10 +300,8 @@ def rotate(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_probe=None) -> dict:
             "entries_total": len(entries),
         }
 
-    # --- Option 2: refuse loudly when a live lane is detected (#1158). -------
-    # There IS work, but a concurrent appender (cat >>, no lock) would have its
-    # fd orphaned by os.replace. Distinct from noop (#136): noop means "nothing
-    # to do"; refused means "there was work but a live lane made it unsafe".
+    # Keep the #1158 refusal during migration: a live lane may have received the
+    # old unlocked recipe before #1170's standing rule reached it.
     if live_lane_probe is not None:
         try:
             probe = live_lane_probe()
@@ -363,8 +381,8 @@ def rotate(dw: Path, keep: int = DEFAULT_KEEP, *, live_lane_probe=None) -> dict:
             pass
         raise
 
-    # Account for the snapshot observed before the rename. This cannot detect
-    # appends after observation; #1170 owns shared writer synchronization.
+    # Account for the snapshot observed before the rename. Locking appenders
+    # resume only after replacement, so they remain in the new live file.
     moved = _count_headings(archive) - archive_before
     retained = _count_headings(inbox)
     live_first = _first_heading(inbox.read_text(encoding="utf-8", errors="replace"))
@@ -457,6 +475,9 @@ def main(argv: list[str] | None = None) -> int:
         except ReconciliationError as exc:
             print(f"error: reconciliation failed: {exc}", file=sys.stderr)
             return 2
+        except RotationIOError as exc:
+            print(f"error: I/O failed: {exc}", file=sys.stderr)
+            return 2
         action = result.get("action")
         if action == "noop":
             print(f"noop: {result.get('reason', 'nothing to do')}")
@@ -471,8 +492,7 @@ def main(argv: list[str] | None = None) -> int:
             f"rotated: {result['entries_moved']} entries -> "
             f"{result['archive_path']}; live file {result['entries_kept']} entries, "
             f"{result['bytes_before']} -> {result['bytes_after']} bytes; "
-            f"WARNING: snapshot-only accounting; post-observation appends are "
-            f"uncovered (#1170); "
+            f"lock held; locking appenders resume after replacement; "
             f"observed-snapshot accounted: moved={result['reconcile_moved']} + retained="
             f"{result['reconcile_retained']} = observed="
             f"{result['reconcile_observed']}"

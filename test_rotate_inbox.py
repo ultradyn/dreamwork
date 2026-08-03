@@ -10,14 +10,22 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parent
 TOOL = REPO / "dev" / "rotate_inbox.py"
+BOILERPLATE = REPO / "briefs" / "boilerplate.md"
+LIVE_INBOX = Path(
+    "/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md"
+)
+RECIPE_START = "<!-- inbox-append-recipe:start -->"
+RECIPE_END = "<!-- inbox-append-recipe:end -->"
 
 
 def _load():
@@ -31,6 +39,114 @@ def _load():
 
 def _make_entry(i: int) -> str:
     return f"## Task #{i} — report\n\nLane #{i} completed its work.\nSHA: abc{i:04d}\n\n"
+
+
+def _extract_append_command(boilerplate: str) -> str:
+    """Extract the one designated recipe as a logical shell command."""
+    assert boilerplate.count(RECIPE_START) == 1 and boilerplate.count(RECIPE_END) == 1, (
+        "expected exactly one designated inbox append recipe; "
+        f"got starts={boilerplate.count(RECIPE_START)}, ends={boilerplate.count(RECIPE_END)}"
+    )
+    assert boilerplate.index(RECIPE_START) < boilerplate.index(RECIPE_END), (
+        "inbox append recipe start marker must precede end marker"
+    )
+    body = boilerplate.split(RECIPE_START, 1)[1].split(RECIPE_END, 1)[0]
+    logical_lines: list[str] = []
+    pending = ""
+    for physical_line in body.splitlines():
+        stripped = physical_line.strip()
+        if not stripped or stripped.startswith("```"):
+            continue
+        pending += stripped
+        if pending.endswith("\\"):
+            pending = pending[:-1] + " "
+        else:
+            logical_lines.append(pending)
+            pending = ""
+    if pending:
+        logical_lines.append(pending)
+    assert len(logical_lines) == 1, (
+        "designated inbox append recipe must contain one logical shell command; "
+        f"got {logical_lines!r}"
+    )
+    heredoc = re.search(r"\s+<<\s*(?P<quote>['\"])(?P<word>[^'\"\n]+)(?P=quote)\s*$", logical_lines[0])
+    assert heredoc, "designated inbox append recipe must end in a quoted heredoc delimiter"
+    command = logical_lines[0][: heredoc.start()].rstrip()
+    assert command, "designated inbox append recipe has no shell command"
+    return command
+
+
+def _fixture_append_command(target: Path, boilerplate: str | None = None) -> str:
+    """Extract the designated recipe and retarget every live path to a fixture."""
+    command = _extract_append_command(
+        BOILERPLATE.read_text() if boilerplate is None else boilerplate
+    )
+    inbox = target / ".dreamwork" / "inbox.md"
+    assert str(LIVE_INBOX) in command, (
+        "standing append recipe did not name the live inbox path"
+    )
+    retargeted = command.replace(str(LIVE_INBOX), str(inbox))
+    assert str(LIVE_INBOX) not in retargeted, (
+        "live coordinator inbox path remained after fixture retargeting"
+    )
+    return retargeted
+
+
+class TestAppendRecipeExtraction:
+    def test_accepts_wrapping_indentation_and_arbitrary_quoted_delimiter(self, tmp_path: Path):
+        boilerplate = f"""
+{RECIPE_START}
+        flock {LIVE_INBOX}.lock \\
+          -c 'cat >> {LIVE_INBOX}' <<\"REPORT_END\"
+{RECIPE_END}
+"""
+        command = _fixture_append_command(tmp_path, boilerplate)
+        assert "flock " in command
+        assert "REPORT_END" not in command
+        assert str(LIVE_INBOX) not in command
+        assert str(tmp_path / ".dreamwork" / "inbox.md.lock") in command
+        assert f"cat >> {tmp_path / '.dreamwork' / 'inbox.md'}" in command
+
+    def test_no_flock_recipe_still_extracts_for_behavioural_race(self):
+        boilerplate = f"""
+{RECIPE_START}
+    cat >> {LIVE_INBOX} <<'ANY_DELIMITER'
+{RECIPE_END}
+"""
+        assert _extract_append_command(boilerplate) == f"cat >> {LIVE_INBOX}"
+
+    def test_missing_designated_recipe_fails_distinctly(self):
+        with pytest.raises(AssertionError, match="exactly one designated inbox append recipe"):
+            _extract_append_command("The append guidance was removed.\n")
+
+    def test_reversed_markers_fail_distinctly(self):
+        boilerplate = f"""
+{RECIPE_END}
+unrelated prose
+{RECIPE_START}
+flock {LIVE_INBOX}.lock -c 'cat >> {LIVE_INBOX}' <<'EOF'
+"""
+        with pytest.raises(AssertionError, match="start marker must precede end marker"):
+            _extract_append_command(boilerplate)
+
+    def test_two_designated_regions_fail_distinctly(self):
+        recipe = f"""{RECIPE_START}
+flock {LIVE_INBOX}.lock -c 'cat >> {LIVE_INBOX}' <<'EOF'
+{RECIPE_END}"""
+        with pytest.raises(
+            AssertionError,
+            match="expected exactly one designated inbox append recipe; got starts=2, ends=2",
+        ):
+            _extract_append_command(f"{recipe}\n{recipe}\n")
+
+    def test_retargeting_refuses_changed_live_paths(self, tmp_path: Path):
+        boilerplate = f"""
+{RECIPE_START}
+    flock /future/coordinator/inbox.md.lock -c 'cat >> /future/coordinator/inbox.md' <<'EOF'
+{RECIPE_END}
+"""
+        with pytest.raises(AssertionError, match="did not name the live inbox path"):
+            _fixture_append_command(tmp_path, boilerplate)
 
 
 @pytest.fixture
@@ -280,9 +396,9 @@ class TestIncompleteProbe:
 
 
 def _run_cli_at_observation(
-    target: Path, appended_entry: str | None
-) -> tuple[subprocess.CompletedProcess[str], int | None]:
-    """Run the real CLI, optionally placing one real O_APPEND write in its window."""
+    target: Path, appended_entry: str | None, boilerplate: str | None = None
+) -> tuple[subprocess.CompletedProcess[str], int | None, bool | None]:
+    """Run the real CLI, optionally racing the documented ``flock`` + ``cat``."""
     observed_r, observed_w = os.pipe()
     proceed_r, proceed_w = os.pipe()
     env = os.environ.copy()
@@ -299,6 +415,8 @@ def _run_cli_at_observation(
     os.close(observed_w)
     os.close(proceed_r)
     appender_status = None
+    appender_blocked = None
+    appender = None
     try:
         observed = os.read(observed_r, 1)
         if observed != b"1":
@@ -308,37 +426,106 @@ def _run_cli_at_observation(
                 f"stdout={stdout!r}, stderr={stderr!r}"
             )
         if appended_entry is not None:
-            appender = subprocess.run(
-                [
-                    sys.executable,
-                    "-c",
-                    (
-                        "import os,sys; "
-                        "fd=os.open(sys.argv[1], os.O_WRONLY|os.O_APPEND); "
-                        "os.write(fd, sys.argv[2].encode()); os.close(fd)"
-                    ),
-                    str(target / ".dreamwork" / "inbox.md"),
-                    appended_entry,
-                ],
-                capture_output=True,
+            inbox = target / ".dreamwork" / "inbox.md"
+            appender = subprocess.Popen(
+                ["sh", "-c", _fixture_append_command(target, boilerplate)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                check=False,
             )
-            appender_status = appender.returncode
-            original_live = (target / ".dreamwork" / "inbox.md").read_text()
-            assert appended_entry in original_live, (
-                "appender precondition unmet: unique entry did not land before proceed"
+            assert appender.stdin is not None
+            appender.stdin.write(appended_entry)
+            appender.stdin.close()
+            appender.stdin = None
+            lock_stat = (inbox.parent / "inbox.md.lock").stat()
+            lock_identity = (
+                os.major(lock_stat.st_dev),
+                os.minor(lock_stat.st_dev),
+                lock_stat.st_ino,
             )
-            assert sum(line.startswith("## ") for line in original_live.splitlines()) == 11
+            deadline = time.monotonic() + 10
+            while True:
+                if appender.poll() is not None:
+                    appender_status = appender.returncode
+                    appender_blocked = False
+                    break
+                locks = Path("/proc/locks").read_text()
+                if lock_identity in _waiting_flock_identities(locks):
+                    appender_blocked = True
+                    break
+                if time.monotonic() >= deadline:
+                    raise AssertionError(
+                        "appender did not reach lock acquisition before harness deadline"
+                    )
+                time.sleep(0.01)
+
+            original_live = inbox.read_text()
+            if not appender_blocked:
+                assert appended_entry in original_live, (
+                    "appender precondition unmet: unique entry did not land before proceed"
+                )
+                assert sum(line.startswith("## ") for line in original_live.splitlines()) == 11
+            else:
+                assert appended_entry not in original_live
+                assert sum(line.startswith("## ") for line in original_live.splitlines()) == 10
         os.write(proceed_w, b"1")
         stdout, stderr = cli.communicate(timeout=10)
+        if appender is not None:
+            appender_stdout, appender_stderr = appender.communicate(timeout=10)
+            appender_status = appender.returncode
+            assert appender_status == 0, (appender_stdout, appender_stderr)
     finally:
         os.close(observed_r)
         os.close(proceed_w)
         if cli.poll() is None:
             cli.kill()
             cli.wait()
-    return subprocess.CompletedProcess(cli.args, cli.returncode, stdout, stderr), appender_status
+        if appender is not None and appender.poll() is None:
+            appender.kill()
+            appender.wait()
+    return (
+        subprocess.CompletedProcess(cli.args, cli.returncode, stdout, stderr),
+        appender_status,
+        appender_blocked,
+    )
+
+
+def _waiting_flock_identities(locks: str) -> set[tuple[int, int, int]]:
+    """Parse device and inode identities for blocked advisory flock waiters."""
+    identities = set()
+    for line in locks.splitlines():
+        fields = line.split()
+        if len(fields) < 5 or fields[1:5] != ["->", "FLOCK", "ADVISORY", "WRITE"]:
+            continue
+        try:
+            major, minor, inode = fields[6].rsplit(":", 2)
+            identities.add((int(major, 16), int(minor, 16), int(inode)))
+        except (ValueError, IndexError) as exc:
+            raise AssertionError(f"malformed candidate FLOCK row: {line}") from exc
+    return identities
+
+
+def test_waiting_flock_identity_binds_device_and_inode():
+    locks = """\
+12: -> FLOCK ADVISORY WRITE 123 08:01:456 0 EOF
+13: -> FLOCK ADVISORY WRITE 124 00:2a:789 0 EOF
+14: FLOCK ADVISORY WRITE 125 08:01:456 0 EOF
+15: POSIX ADVISORY WRITE 126 08:01:not-an-inode 0 EOF
+16: OFDLCK ADVISORY WRITE 127 08:01:not-an-inode 0 EOF
+"""
+    identities = _waiting_flock_identities(locks)
+    assert (0x08, 0x01, 456) in identities
+    assert (0x09, 0x01, 456) not in identities
+    assert (0x00, 0x2A, 789) in identities
+
+
+def test_waiting_flock_identity_rejects_malformed_candidate_row():
+    locks = "15: -> FLOCK ADVISORY WRITE 126 08:01:not-an-inode 0 EOF\n"
+    with pytest.raises(
+        AssertionError, match=r"malformed candidate FLOCK row: .*not-an-inode"
+    ):
+        _waiting_flock_identities(locks)
 
 
 class TestConcurrentAppenderHarness:
@@ -348,51 +535,87 @@ class TestConcurrentAppenderHarness:
         dw.mkdir(parents=True)
         inbox = dw / "inbox.md"
         inbox.write_text("".join(_make_entry(i) for i in range(10)))
+        (dw / "inbox.md.lock").touch()
         return target, dw
 
     def test_real_cli_positive_control_without_appender(self, tmp_path: Path):
         """The synchronized real-CLI harness succeeds when no appender runs."""
         target, dw = self._fixture(tmp_path)
-        cli, appender_status = _run_cli_at_observation(target, None)
+        cli, appender_status, appender_blocked = _run_cli_at_observation(target, None)
         assert appender_status is None
+        assert appender_blocked is None
         assert cli.returncode == 0, cli.stderr
         assert "observed-snapshot accounted: moved=7 + retained=3 = observed=10" in cli.stdout
-        assert (
-            "WARNING: snapshot-only accounting; post-observation appends are "
-            "uncovered (#1170)"
-        ) in cli.stdout
+        assert "lock held; locking appenders resume after replacement" in cli.stdout
         combined = (dw / "inbox.md").read_text() + next(
             (dw / "inbox-archive").glob("*.md")
         ).read_text()
         assert sum(1 for line in combined.splitlines() if line.startswith("## ")) == 10
 
-    def test_real_cli_documents_known_append_rename_gap(self, tmp_path: Path):
-        """A real O_APPEND entry is currently lost; #1170 must change this expectation.
+    def test_real_cli_lock_excludes_shell_cat_and_preserves_entry(self, tmp_path: Path):
+        """The documented locking shell ``cat`` waits, then appends losslessly.
 
-        The pipes place the write after observation and before rename without a
-        sleep. This is a committed false-green experiment: the CLI exits 0 and
-        truthfully accounts for its ten-line snapshot, but cannot cover the
-        eleventh line written in the known unsynchronized window. Before the
-        rename proceeds, the harness requires that unique entry to be present
-        in the original inbox and requires all eleven headings.
+        The pipes hold rotation immediately before rename. The real ``flock``
+        subprocess must still be blocked there; after rename and unlock, its
+        real shell ``cat >>`` writes the unique entry to the new live inode.
         """
         target, dw = self._fixture(tmp_path)
         appended = "## Concurrent #1170 entry\n\nWritten with O_APPEND.\n"
-        cli, appender_status = _run_cli_at_observation(target, appended)
+        cli, appender_status, appender_blocked = _run_cli_at_observation(target, appended)
         assert appender_status == 0
         assert cli.returncode == 0, cli.stderr
-        warning = (
-            "WARNING: snapshot-only accounting; post-observation appends are "
-            "uncovered (#1170)"
-        )
-        accounted = "observed-snapshot accounted: moved=7 + retained=3 = observed=10"
-        assert warning in cli.stdout
-        assert accounted in cli.stdout
-        assert cli.stdout.index(warning) < cli.stdout.index(accounted)
         combined = (dw / "inbox.md").read_text() + next(
             (dw / "inbox-archive").glob("*.md")
         ).read_text()
-        assert appended not in combined, "#1170 landed: replace this known-loss expectation"
+        assert appended in combined, f"raced entry lost: {appended.splitlines()[0]}"
+        for index in range(10):
+            original = _make_entry(index)
+            assert original in combined, f"retained entry lost: {original.splitlines()[0]}"
+        mod = _load()
+        archive = next((dw / "inbox-archive").glob("*.md")).read_text()
+        _, archived_entries = mod._split_entries(archive)
+        _, live_entries = mod._split_entries((dw / "inbox.md").read_text())
+        assert [entry.splitlines()[0] for entry in archived_entries] == [
+            _make_entry(index).splitlines()[0] for index in range(7)
+        ], "archived entries reordered"
+        assert [entry.splitlines()[0] for entry in live_entries] == [
+            *(_make_entry(index).splitlines()[0] for index in range(7, 10)),
+            appended.splitlines()[0],
+        ], "live entries reordered"
+        assert appender_blocked, "locking shell cat did not block while rotation held the lock"
+        print(
+            f"raced-entry={appended.splitlines()[0]!r} "
+            f"blocked={appender_blocked} survived={appended in combined}"
+        )
+
+    @pytest.mark.parametrize(
+        ("mutation", "boilerplate"),
+        [
+            (
+                "delimiter-change",
+                BOILERPLATE.read_text().replace("<<'EOF'", '<<"ROUND3_END"', 1),
+            ),
+            (
+                "indent-only",
+                BOILERPLATE.read_text().replace("    flock ", "        flock ", 1),
+            ),
+        ],
+    )
+    def test_harmless_recipe_reformatting_preserves_race(
+        self, tmp_path: Path, mutation: str, boilerplate: str
+    ):
+        target, dw = self._fixture(tmp_path)
+        appended = f"## {mutation} #1170 entry\n\nSurvives rotation.\n"
+        cli, appender_status, appender_blocked = _run_cli_at_observation(
+            target, appended, boilerplate
+        )
+        assert appender_status == 0
+        assert cli.returncode == 0, cli.stderr
+        combined = (dw / "inbox.md").read_text() + next(
+            (dw / "inbox-archive").glob("*.md")
+        ).read_text()
+        assert appended in combined, f"raced entry lost after {mutation}"
+        assert appender_blocked, f"{mutation} recipe did not wait on the inbox sidecar"
 
 
 class TestCliContract:
@@ -409,6 +632,31 @@ class TestCliContract:
         monkeypatch.setattr(mod, "rotate", fail_reconciliation)
         assert mod.main(["rotate", "--target", str(target)]) == 2
         assert "error: reconciliation failed: fixture balance mismatch" in capsys.readouterr().err
+
+    def test_lock_io_error_uses_declared_exit_2(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        mod = _load()
+        target = tmp_path / "coordinator"
+        dw = target / ".dreamwork"
+        dw.mkdir(parents=True)
+        (dw / "inbox.md.lock").mkdir()
+
+        assert mod.main(["rotate", "--target", str(target)]) == 2
+        assert "error: I/O failed:" in capsys.readouterr().err
+
+    def test_unexpected_oserror_is_not_mislabeled_as_operational(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        mod = _load()
+        target = tmp_path / "coordinator"
+
+        def fail_outside_rotation_boundary(*_args, **_kwargs):
+            raise OSError("synthetic non-operational failure")
+
+        monkeypatch.setattr(mod, "rotate", fail_outside_rotation_boundary)
+        with pytest.raises(OSError, match="synthetic non-operational failure"):
+            mod.main(["rotate", "--target", str(target)])
 
 
 class TestReconciliation:

@@ -1,6 +1,7 @@
 __pycache__/
 .dreamwork/status.json
 .dreamwork/lane.lock
+.dreamwork/*.lock
 .dreamwork/.lane.lock.*
 # lint.py's append-only memo of the keys status.json has carried (#303) —
 # gitignored because the file it describes is, and because it is a record of
