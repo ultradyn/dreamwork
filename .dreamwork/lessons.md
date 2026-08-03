@@ -6541,3 +6541,44 @@ from a failed command is indistinguishable from an empty result.** `ledger.py li
 grep …` returned nothing, and I filed the nothing as a measurement. `list` takes `--state`. The exit
 status died in the pipe; the grep read an empty stdin and reported honestly on it. Check the verb's own
 `--help` before quoting its output as evidence, and never take an exit status through a pipe.
+
+## A rebased branch's own tests cannot tell you the rebase was correct
+
+2026-08-04. `#1049` landed as `ec734ca7`, touching `client/router.js`. `#1174` also touches
+`client/router.js`, so its rebase onto the new master conflicted there and in three generated
+`client/dist/` artifacts.
+
+I wrote a loop to resolve the generated files with `git checkout --theirs` — correct for output that is
+about to be regenerated — guarded by a check that was supposed to STOP on any path outside
+`client/dist/`. **The guard did not fire. `client/router.js` was resolved with `--theirs`, discarding
+`#1049`'s side wholesale.** Measured afterwards:
+
+    git show master:client/router.js           | grep -c qdraftrecovery  → 1
+    git show cx-1174r3ingress:client/router.js | grep -c qdraftrecovery  → 0
+
+with the diff deleting `const preserved = hasDraft && title ? dwDraft.save(title, s.value) : false;`
+and `notice.className = 'qhealth qdraftrecovery';` — the recovery behaviour that had merged eleven
+rounds' work about twenty minutes earlier.
+
+**Three things, in increasing order of how much they matter.**
+
+**The guard printed its own failure and I read it as progress.** The step logged
+`resolving: client/dist/ds/index.js client/router.js`. A non-dist path is right there in the line, and
+the line only exists because the STOP branch was skipped. I saw output, inferred forward motion, and
+moved on. A guard's silence is evidence; a guard's output has to be *read*, not merely produced.
+
+**Every test would have passed.** `#1174`'s suite is green on a tree with `#1049` reverted, because a
+branch's tests cover the branch's own behaviour. `just build-client` would have been clean, lint clean,
+guards green, red-proof intact. **The landing gate would have passed it.** There is no automated check
+in this repo that would have caught it — the gate verifies the branch, and a bad merge is a claim about
+two branches. The only thing that caught it was going and looking for the other task's marker.
+
+**So the check has to name the other side explicitly.** After any rebase across a landing that touched
+a shared file, assert the *other* task's content is still present, by a marker chosen from that task —
+not by "tests pass", which is exactly the reassurance that cannot see this. Both directions of the
+diff, too: `git diff master..HEAD -- <file> | grep '^-'` should contain none of the other task's lines.
+
+The recovery worked because I tagged `prerebase-1174r3` before starting, and `reset --hard` to that tag
+restored the lane's reported sha byte for byte. Tag before any rebase you are about to perform on
+someone else's finished work; it costs one command and it is the difference between a redispatch and a
+reconstruction.
