@@ -6463,3 +6463,43 @@ Two things that worked and should be repeated:
   no `--force` and no policy change, while 80 correctly refused. The goal behind the task was reachable
   the whole time — by *using* the tool I had wrongly accused. Filed the real growth driver as `#1180`:
   nothing ever calls the reaper.
+
+## A deferral nobody filed turns "do it later" into "do not do it", and the decision that rested on it reads as sound
+
+Occasioned by `#1049` rounds 9+10's review, 2026-08-04.
+
+Question drafts are keyed by the question's **title**, so a retitle destroys them. Round 9's IGC chose
+the smaller fix — change the promise from *"your draft will return"* to the truthful *"It will return
+if this title returns."* — over the real fix, a stable question id plus migration. The stated reason
+the smaller option survived was that **the real fix was filed as a follow-up rather than built.**
+
+The reviewer could not verify that from its clone and said so. I checked the ledger: **no such task
+existed.** The checked-in comment cited `#294`, which is *"Migrate the durable task ledger to SQLite
+and a tool/CLI API"* — landed, and entirely unrelated. Filed properly now as `#1183`.
+
+**The interim itself was good, and that is what makes this worth recording.** The reviewer drove a real
+scheduled retitle and measured the wording as truthful *and* timely — same tick, draft stored, `qmissing`
+shown, sentence appended. The title key really is load-bearing for body rewrites, sorting, and
+open→answered movement. Nothing about the chosen option was wrong.
+
+**What was wrong is that the comparison depended on a fact the comparison itself was responsible for
+creating.** "The alternative is filed as a follow-up" is a claim about the world, and it was the claim
+doing the work: without it the smaller fix is a partial fix, and with it the smaller fix is a staged
+plan. Nobody checked it, including me — my own brief to the reviewer named this exact failure mode
+(*"a 'filed as follow-up' that produced no entry is the oldest way for a deferral to become a silent
+decision"*) and I still had to check the ledger afterwards to find out.
+
+Three things follow.
+
+**File the deferral before recording the decision, and cite its id.** Not after, not "when I get to it"
+— the moment it becomes a reason in an argument, it is load-bearing. This is now step 7 of
+`igc-method.md`.
+
+**A citation is not a filing.** The comment pointed at a real, live, four-digit task id. It looked
+exactly like a discharged deferral. Only opening the id revealed it was about something else entirely —
+the same mention-vs-citation gap `#1176` produces in lint, here with the full weight of a design
+decision on it.
+
+**Deferral is where a partial fix becomes indistinguishable from a complete one.** Every later round
+read `#1049` as a task whose remaining work was tracked. It was not, and the round that closed the
+visible symptom is precisely the round after which nobody looks again.

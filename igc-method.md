@@ -55,6 +55,8 @@ Run these as a loop, not a one-shot. Most of the work is in framing the problem 
 
 **6. Show your work.** A bare ✘ is just an assertion. Beneath the table, briefly state the decisive error behind each ✘ (and each contested ✔). The errors *are* the reasoning; the grid is just the index.
 
+**7. Discharge every deferral before you record the decision.** If a ✔ or ✘ rests on something being done later — "the fuller fix is filed as a follow-up", "the migration comes separately" — then **file it first, get its id, and cite the id in the write-up.** A deferral is load-bearing whenever it is what made the smaller option survive: the scoring depended on it, so an unrecorded one silently converts *do it later* into *do not do it*, and every later reader sees a closed decision rather than an open debt. Measured case (`#1049`, 2026-08-04): a round chose honest wording over a stable question id "filed as a follow-up", the comment cited a task id that belonged to an unrelated, already-landed task, and no such task ever existed. The wording fix was genuinely the right interim — but the comparison that selected it was, retroactively, resting on a promise nobody kept. Cite a real id or say plainly that nothing is planned.
+
 Scale the effort to the decision: a quick 2–3 × 2–3 matrix for a small choice, a fuller pass with iteration for a big one. Hold conclusions tentatively — a better idea or a new error can always reopen the matrix.
 
 ## Worked example
