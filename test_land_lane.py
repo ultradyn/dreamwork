@@ -793,7 +793,9 @@ def test_expired_receipt_reason_change_produces_gate_refusal_delta(
 
     counts, added, removed = _comparable_warn_delta([before], [after])
 
-    assert counts == (1, 1, 1, 1)
+    assert counts == (1, 1, 1, 1), (
+        "expired receipt reason changed from A to B unnoticed: tracked reason "
+        "metadata never entered the gate's comparable population")
     assert (len(added), len(removed)) == (1, 1), (
         "expired receipt reason changed from A to B unnoticed: the gate's "
         "clock exemption swallowed tracked acknowledgement metadata")
@@ -811,7 +813,9 @@ def test_expired_receipt_date_change_produces_gate_refusal_delta(
 
     counts, added, removed = _comparable_warn_delta([before], [after])
 
-    assert counts == (1, 1, 1, 1)
+    assert counts == (1, 1, 1, 1), (
+        "expired receipt reviewed/deadline dates changed unnoticed: tracked "
+        "date metadata never entered the gate's comparable population")
     assert (len(added), len(removed)) == (1, 1), (
         "expired receipt reviewed/deadline dates changed unnoticed: the "
         "gate's clock exemption swallowed tracked acknowledgement metadata")
