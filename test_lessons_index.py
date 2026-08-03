@@ -72,10 +72,10 @@ def test_red_proof_stays_skimmable():
 
 
 def test_red_proof_slice_is_truncation_detectable():
-    """#1033: the red-proof slice is the loop's largest (hundreds of lines),
-    and a reader (an agent harness) that receives a truncated prefix has no
-    way to tell it is incomplete — the consultation looks performed. The act
-    output must let a caller that received a partial slice detect it.
+    """#1033: the full red-proof match set is hundreds of lines, and a reader
+    (an agent harness) that receives a truncated prefix has no way to tell it
+    is incomplete — the consultation looks performed. The ``--all`` output
+    must let a caller that received a partial result detect it.
 
     The mechanism: a header states the magnitude up front (a truncated read
     still has the header), and a trailing sentinel restating the lesson count
