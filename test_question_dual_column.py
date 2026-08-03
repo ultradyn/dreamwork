@@ -1,11 +1,11 @@
-"""#583 — the dual-column /question focus view, asserted on the shipped source.
+"""#583 — the dual-column /question focus view, asserted on the shipped page.
 
-pytest cannot see rendered structure (see the justfile: "pytest cannot see
-rendered structure"), so the authoritative geometry check is the browser guard
-`dev/capture/qdual.mjs`. This file pins the SOURCE contract the geometry is
-built from, on the same surface `test_client_assets.py` already reads — the
-byte-exact client constants — so a regression in the layout-split branch, the
-focus-scoped grid, or the width-exception wiring is caught without a browser.
+The authoritative geometry check remains the browser guard
+`dev/capture/qdual.mjs`. This file additionally loads the shipped page in a
+browser, resolves /question through the executable registry, and pins the
+source contracts around the rendered layout. A regression in registration,
+the layout-split branch, focus-scoped grid, or width-exception wiring is caught
+at the seam that owns it.
 
 Production lines the red-proofs name (each assertion has one):
   · the registered native Question component's `qdual` container emission in
