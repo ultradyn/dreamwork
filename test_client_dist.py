@@ -244,8 +244,8 @@ def test_wrapper_exports_states_no_markup_of_its_own():
     # distinguish `<div>` the markup from `<div>` the call — which a regex
     # cannot do, and which would therefore fall to a reviewer every time.
     subjects = [client_dist.WRAPPER_EXPORTS_REL]
-        native = client_dist.native_sources(str(ROOT))
-        assert native, (
+    native = client_dist.native_sources(str(ROOT))
+    assert native, (
         "%s holds no source — this check would then be asserting the absence "
         "of markup from no files at all" % client_dist.NATIVE_SRC_DIR)
     subjects += native
@@ -542,23 +542,23 @@ def test_the_committed_dist_is_built_from_the_committed_tree():
     native = client_dist.native_sources(str(ROOT))
     assert native, (
         "%s holds no source — the native runtime's inputs would be an empty "
-            "set, and an empty set is what every vacuous check looks like"
-            % client_dist.NATIVE_SRC_DIR)
-        companions = client_dist.ds_sources(str(ROOT))
-        assert companions, (
-            "%s holds no companions — the design contract inputs would be "
-            "an empty set" % client_dist.DS_SOURCE_DIR)
+        "set, and an empty set is what every vacuous check looks like"
+        % client_dist.NATIVE_SRC_DIR)
+    companions = client_dist.ds_sources(str(ROOT))
+    assert companions, (
+        "%s holds no companions — the design contract inputs would be "
+        "an empty set" % client_dist.DS_SOURCE_DIR)
     # Derived on both sides rather than a literal count: #630 P2 took this
     # from 9 to 13 and P3 will take it further, and a hard-coded total makes
     # every later phase edit a number here to make an unrelated test pass —
     # which is how a check stops being read and starts being satisfied.
-        expected = (len(watch._CLIENT_ASSETS) + 1 + len(companions)
-                    + len(native))
-        assert len(want) == expected, (
-            "expected %d inputs (%d assets + wrapper-exports + %d companions "
-            "+ %d native sources), derived %d"
-            % (expected, len(watch._CLIENT_ASSETS), len(companions),
-               len(native), len(want)))
+    expected = (len(watch._CLIENT_ASSETS) + 1 + len(companions)
+                + len(native))
+    assert len(want) == expected, (
+        "expected %d inputs (%d assets + wrapper-exports + %d companions "
+        "+ %d native sources), derived %d"
+        % (expected, len(watch._CLIENT_ASSETS), len(companions),
+           len(native), len(want)))
     reading = client_dist.check(str(ROOT))
     assert reading["state"] == client_dist.OK, (
         "client/dist is %s: %s — run `just build-client`"
