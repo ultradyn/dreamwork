@@ -785,7 +785,7 @@ class TestDetachedLaneJob:
         os.kill(pid, signal.SIGTERM)  # only the fixture supervisor spawned above
 
         failed = self._wait(tmp_path, "dies")
-        assert failed.returncode == 1
+        assert failed.returncode == 1, failed.stderr
         assert log.stat().st_size > 0, "partial output alone must not become success"
         assert not done.exists()
         assert (
