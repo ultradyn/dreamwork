@@ -103,6 +103,15 @@ ROOT = Path(__file__).resolve().parent.parent
 FRAME_PATH = ROOT / "briefs" / "frame.md"
 BOILERPLATE_PATH = ROOT / "briefs" / "boilerplate.md"
 
+# The **#NNN** glossed-citation token is defined ONCE, shared with
+# dev/citation_audit.py, so the two extractors cannot drift apart again (#1156).
+# This is a shared DEFINITION, not a shared validity judgment — the
+# dispatch_lane independence documented below is untouched, because the token
+# shape is not a constrained value either tool re-derives from the corpus.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from dev.citation_token import GLOSSED_CITATION_TOKEN  # noqa: E402
+
 # Retyped rather than imported from dispatch_lane, on purpose — see the module
 # docstring.  test_brief.py binds the two literals.
 COORDINATOR_INBOX_PREFIX = (
@@ -187,8 +196,8 @@ _INLINE_CODE = re.compile(
     r"(?<!`)(?P<fence>`+)(?P<body>.*?)(?P=fence)(?!`)", re.DOTALL
 )
 _GLOSSED_TASK_CITATION = re.compile(
-    r"(?<![\w/])(?:\*\*)?#(?P<task>\d+)(?:\*\*)?\s*(?:—|:)\s*"
-    r"(?P<gloss>\S.*?)(?=\s+(?:\*\*)?#\d+(?:\*\*)?\s*(?:—|:)|$)"
+    rf"(?<![\w/]){GLOSSED_CITATION_TOKEN}\s*(?:—|:)\s*"
+    rf"(?P<gloss>\S.*?)(?=\s+(?:\*\*)?#\d+(?:\*\*)?\s*(?:—|:)|$)"
 )
 _DIRECTION_NUMBER = re.compile(r"\bdirection\s+\d+\b", re.IGNORECASE)
 _VERIFICATION_CUE = re.compile(

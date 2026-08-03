@@ -21,6 +21,9 @@ from dreamwork_db.tasks import task_store_spec
 
 # Make dev/ importable when running from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Bare dev/ modules (brief) need the dir itself on the path, the way
+# test_brief.py reaches `import brief`.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "dev"))
 
 from dev.citation_audit import (  # noqa: E402
     CorpusCoverage,
@@ -34,6 +37,8 @@ from dev.citation_audit import (  # noqa: E402
     format_report,
 )
 from dev import citation_audit  # noqa: E402
+from dev.citation_token import GLOSSED_CITATION_TOKEN  # noqa: E402
+import brief  # noqa: E402
 
 
 # -- fixtures -----------------------------------------------------------------
@@ -233,6 +238,57 @@ def test_extract_ignores_bare_reference():
 def test_extract_ignores_too_short_wording():
     text = "See #100 — x."
     assert extract_citations(text, "test") == []
+
+
+# -- shared token shape (#1156) -----------------------------------------------
+# citation_audit.py and brief.py once each carried their own copy of the
+# **#NNN** token; citation_audit's dropped the bold markers and matched ZERO of
+# the house-style **#N** — gloss citations.  These guard the single definition.
+
+
+def test_both_call_sites_embed_the_shared_citation_token():
+    """Both compiled patterns are built FROM the one shared token constant.
+
+    A call site that reverts to a private literal re-forks the definition:
+    the constant is no longer a substring of its pattern.  This is the
+    structural half — it catches "imports the constant but does not use it".
+    """
+    assert GLOSSED_CITATION_TOKEN in citation_audit.CITATION_RE.pattern, (
+        "citation_audit.CITATION_RE no longer embeds the shared token — "
+        "it has re-forked onto a private literal (#1156)"
+    )
+    assert GLOSSED_CITATION_TOKEN in brief._GLOSSED_TASK_CITATION.pattern, (
+        "brief._GLOSSED_TASK_CITATION no longer embeds the shared token — "
+        "it has re-forked onto a private literal (#1156)"
+    )
+
+
+def test_both_call_sites_extract_the_same_ids_from_a_shared_specimen_set():
+    """The same citations resolve through both extractors — behaviour, not text.
+
+    Binding the id SET (not the regex source) lets the constant evolve without
+    a third re-statement failing on a harmless change.  Gloss capture stays
+    each tool's own grammar (#996); only the token that STARTS a citation is
+    shared.  The bold specimens are the discriminating ones: a private copy
+    that drops bold-awareness finds them through brief but not through the audit.
+    """
+    specimens = [
+        "#100 — a principle about zebras.",            # plain em-dash
+        "**#101** — a bold citation about giraffes.",  # bold em-dash (181-form)
+        "#102: a colon citation form here.",           # plain colon
+        "**#103**: a bold colon citation form.",       # bold colon
+    ]
+    for specimen in specimens:
+        audit_ids = {
+            m.group("task") for m in citation_audit.CITATION_RE.finditer(specimen)
+        }
+        brief_ids = {
+            m.group("task") for m in brief._GLOSSED_TASK_CITATION.finditer(specimen)
+        }
+        assert audit_ids == brief_ids, (
+            f"glossed-citation token drift on {specimen!r}: "
+            f"citation_audit found {audit_ids}, brief found {brief_ids}"
+        )
 
 
 # -- classify -----------------------------------------------------------------
@@ -468,6 +524,12 @@ def test_default_corpus_reaches_main_checkout_from_linked_worktree(tmp_path):
     source = Path(__file__).resolve().parent
     (main / "dev" / "citation_audit.py").write_text(
         (source / "dev" / "citation_audit.py").read_text()
+    )
+    # citation_audit.py now imports its token shape from this sibling, so the
+    # isolated fixture must carry it too — otherwise the copied audit ModuleErrors
+    # on the shared constant (#1156).
+    (main / "dev" / "citation_token.py").write_text(
+        (source / "dev" / "citation_token.py").read_text()
     )
     (main / "ledger_parse.py").write_text(
         "from pathlib import Path\n"
