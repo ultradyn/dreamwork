@@ -99,7 +99,7 @@ def _scan_processes(
     process ancestry are outside the subject and are ``excluded``.
     """
     if not cwd.is_absolute():
-        raise ValueError("lane-runners cwd must be absolute")
+        raise ValueError("probe cwd must be absolute")
     target = cwd.resolve()
     if pids is None:
         entries = proc_root.iterdir()
@@ -225,6 +225,9 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.verb == "run":
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
+        if not command:
+            print("procprobe: run requires a command after --", file=sys.stderr)
+            return 2
         return run_exact(command)
 
     try:
@@ -234,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
             scan = scan_exact_command(
                 args.cwd, argv0=args.argv0, argv1=args.argv1, pids=args.pids)
     except (OSError, ValueError) as exc:
-        print("procprobe: lane-runners unknown: %s" % exc, file=sys.stderr)
+        print("procprobe: %s unknown: %s" % (args.verb, exc), file=sys.stderr)
         return 2
     counts = {state: scan.count(state) for state in ObservationState}
     print(
