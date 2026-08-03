@@ -2750,7 +2750,303 @@ def land(
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Batch landing (#1157).
+#
+# When N branches are ready to land, landing the first advances master and
+# staleifies the remaining N-1 — their preflight "branch is not rebased onto
+# current master" refusal is CORRECT (#1055: it fires before any test work, so
+# N refusals cost seconds, not N full gate runs). What was missing was a
+# supported coordinator path that, per entry, rebases onto the CURRENT master
+# and then gates, absorbing each landing before starting the next. The
+# coordinator hand-built that as throwaway shell scripts three times in one
+# afternoon; this is the version that lives in the repo.
+#
+# The rebase happens immediately before each gate, inside the loop — NOT all
+# up front. Rebase-all-then-gate-all reproduces the original bug: the first
+# landing staleifies the rest again (#1157 trap: "you rebase all branches up
+# front, then gate them all").
+#
+# Four outcomes stay distinguishable (#136): landed, refused, rebase-conflict,
+# skipped. A batch reports BOTH denominators (#868): how many it attempted and
+# how many landed.
+
+BATCH_STATES = ("landed", "refused", "rebase-conflict", "skipped")
+
+
+@dataclass
+class BatchEntry:
+    """One (branch, tests) pair in a batch.
+
+    ``tests`` is the coordinator's explicit named-test list, passed verbatim
+    to :func:`land`. An empty tuple is legal ONLY for a doc-only branch whose
+    diff has no binding paths (#1018); ``land`` itself enforces that.
+    """
+    branch: str
+    tests: tuple[str, ...]
+
+
+@dataclass
+class BatchOutcome:
+    """The verdict for one entry, carried to the summary table unchanged.
+
+    States must not collapse (#136): landed / refused / rebase-conflict /
+    skipped are four outcomes. ``base_before`` / ``base_after`` let the
+    summary show that master advanced once per landing (#1157 red-proof).
+    """
+    branch: str
+    state: str
+    detail: str
+    base_before: str
+    base_after: str
+
+
+def _parse_batch_entries(
+    raw: Sequence[Sequence[str]] | None,
+) -> list[BatchEntry]:
+    """Turn ``--entry`` token-lists into BatchEntry objects.
+
+    Each raw list's first token is the branch name; the rest are named test
+    paths. This pairing is the thing a flat ``just land-lanes b1 b2 ...``
+    recipe CANNOT express (IGC goal G2 refuted the justfile-only option),
+    because there is no delimiter in a flat arg list to say where one
+    branch's tests end and the next branch begins.
+    """
+    if not raw:
+        return []
+    entries: list[BatchEntry] = []
+    for tokens in raw:
+        if not tokens:
+            continue
+        entries.append(BatchEntry(branch=tokens[0], tests=tuple(tokens[1:])))
+    return entries
+
+
+def land_batch(
+    entries: Sequence[BatchEntry],
+    *,
+    base: str = "master",
+) -> int:
+    """Land multiple branches serially: rebase-then-gate, per entry.
+
+    For each entry: resolve the branch's registered linked worktree, rebase
+    it onto the CURRENT ``base`` tip, and then call :func:`land` (which gates
+    and, on PASS, fast-forwards base and reaps the worktree). A rebase
+    conflict aborts the rebase (``--abort``, leaving the branch untouched)
+    and continues to the next entry; a gate refusal likewise continues.
+    Every entry's verdict is reported individually in the summary.
+
+    Returns 0 iff every entry landed; 1 otherwise. A batch with zero entries
+    returns 1 — "the batch exited 0" must not be vacuous (#1157 trap).
+
+    Does NOT address #997 (the serial, exclusive gate means the fleet idles
+    while one branch gates): batching removes the coordinator's re-derivation
+    cost, not the gate's serial bottleneck.
+    """
+    if not entries:
+        print(
+            "REFUSE batch: no entries provided; a batch that gates zero "
+            "branches is not a batch run",
+            file=sys.stderr,
+        )
+        return 1
+
+    invoked = Path.cwd().resolve()
+    repo_claim = _git(invoked, "rev-parse", "--show-toplevel")
+    repo_text = repo_claim.stdout.strip()
+    repo = Path(repo_text).resolve() if not repo_claim.returncode and repo_text else None
+    if repo is None or (invoked != repo and repo not in invoked.parents):
+        print(
+            "REFUSE batch: invocation is not inside a git worktree",
+            file=sys.stderr,
+        )
+        return 1
+
+    current = _git_text(repo, "branch", "--show-current")
+    if current != base:
+        print(
+            f"REFUSE batch: main checkout is on {current or 'DETACHED'}, "
+            f"not {base}; the batch rebase target must be the checked-out base",
+            file=sys.stderr,
+        )
+        return 1
+
+    outcomes: list[BatchOutcome] = []
+    for i, entry in enumerate(entries, 1):
+        separator = "=" * 60
+        print(
+            f"\n{separator}\nbatch entry {i}/{len(entries)}: "
+            f"branch={entry.branch} named-tests={list(entry.tests)!r}\n{separator}"
+        )
+
+        base_before = (
+            _git_text(repo, "rev-parse", "--verify", f"refs/heads/{base}")
+            or "UNKNOWN"
+        )
+
+        # Refresh the worktree roster each iteration: a prior entry's
+        # successful landing retired its worktree via reap.py, and a new
+        # gate worktree may have been registered and removed in between.
+        roster = _worktrees(repo)
+        if roster is None:
+            outcome = BatchOutcome(
+                entry.branch, "skipped",
+                "could not enumerate worktrees", base_before, base_before,
+            )
+            outcomes.append(outcome)
+            print(f"batch: {entry.branch}: SKIPPED — could not enumerate worktrees")
+            continue
+
+        lane = roster.get(entry.branch)
+        if lane is None:
+            outcome = BatchOutcome(
+                entry.branch, "skipped",
+                "no registered linked worktree for this branch",
+                base_before, base_before,
+            )
+            outcomes.append(outcome)
+            print(f"batch: {entry.branch}: SKIPPED — no registered linked worktree")
+            continue
+
+        # A dirty worktree means the lane is mid-work; rebasing it would
+        # either fail or silently incorporate uncommitted state. Skip it
+        # rather than touching a worktree the lane still owns.
+        dirty = _git(lane, "status", "--porcelain=v1", "--untracked-files=no")
+        if dirty.returncode or dirty.stdout.strip():
+            count = len(dirty.stdout.splitlines()) if dirty.stdout else 0
+            outcome = BatchOutcome(
+                entry.branch, "skipped",
+                f"lane worktree has {count} uncommitted tracked change(s)",
+                base_before, base_before,
+            )
+            outcomes.append(outcome)
+            print(
+                f"batch: {entry.branch}: SKIPPED — lane worktree not clean "
+                f"({count} path(s))"
+            )
+            continue
+
+        # Rebase onto the CURRENT base tip, immediately before gating. This
+        # is the whole behaviour: it absorbs each prior landing before this
+        # entry's gate checks staleness. Rebase-all-up-front would reproduce
+        # the original bug (#1157).
+        print(f"batch: rebasing {entry.branch} onto {base}@{base_before[:12]}")
+        rebase = _git(lane, "rebase", base)
+        if rebase.returncode:
+            _relay(rebase)
+            # Clean up any partial rebase state, then leave the branch
+            # untouched. --abort is a no-op (exit 1) when no rebase is in
+            # progress, e.g. a dirty-tree refusal that never started one.
+            _git(lane, "rebase", "--abort")
+            detail = (
+                rebase.stderr.strip()
+                or rebase.stdout.strip()
+                or f"git rebase exited {rebase.returncode}"
+            )
+            outcome = BatchOutcome(
+                entry.branch, "rebase-conflict", detail,
+                base_before, base_before,
+            )
+            outcomes.append(outcome)
+            print(
+                f"batch: {entry.branch}: REBASE-CONFLICT — {detail}",
+                file=sys.stderr,
+            )
+            continue
+
+        # Gate: land() re-checks staleness (now satisfied by the rebase),
+        # runs all gates, and on PASS fast-forwards base and reaps the
+        # worktree. Its full output is visible in the interleaved stream.
+        result = land(entry.branch, entry.tests, base=base)
+        base_after = (
+            _git_text(repo, "rev-parse", "--verify", f"refs/heads/{base}")
+            or "UNKNOWN"
+        )
+
+        if result == 0:
+            outcome = BatchOutcome(
+                entry.branch, "landed",
+                f"{base} {base_before[:12]} -> {base_after[:12]}",
+                base_before, base_after,
+            )
+            print(
+                f"batch: {entry.branch}: LANDED — "
+                f"{base} {base_before[:12]} -> {base_after[:12]}"
+            )
+        else:
+            outcome = BatchOutcome(
+                entry.branch, "refused",
+                f"gate exited {result}", base_before, base_after,
+            )
+            print(
+                f"batch: {entry.branch}: REFUSED — gate exited {result}",
+                file=sys.stderr,
+            )
+        outcomes.append(outcome)
+
+    # Summary: every entry's verdict is individually visible (#1157 req 4,
+    # #136 states must not collapse, #868 both denominators).
+    landed = sum(1 for o in outcomes if o.state == "landed")
+    refused = sum(1 for o in outcomes if o.state == "refused")
+    conflicts = sum(1 for o in outcomes if o.state == "rebase-conflict")
+    skipped = sum(1 for o in outcomes if o.state == "skipped")
+
+    print(f"\n{'=' * 60}")
+    print(
+        f"batch summary: attempted={len(outcomes)} landed={landed} "
+        f"refused={refused} rebase-conflict={conflicts} skipped={skipped}"
+    )
+    print(f"{'=' * 60}")
+    markers = {
+        "landed": "LANDED  ",
+        "refused": "REFUSED ",
+        "rebase-conflict": "CONFLICT",
+        "skipped": "SKIPPED ",
+    }
+    for o in outcomes:
+        print(f"  {o.branch}: {markers[o.state]}  {o.detail}")
+
+    return 0 if landed == len(outcomes) else 1
+
+
+def _main_batch(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="dev/land_lane.py batch",
+        description=(
+            "Land multiple branches serially: per entry, rebase onto current "
+            "base then gate, absorbing each landing before the next (#1157)."
+        ),
+    )
+    parser.add_argument(
+        "--entry",
+        action="append",
+        dest="raw_entries",
+        metavar="BRANCH [TESTS...]",
+        nargs="+",
+        help=(
+            "one entry per repeat: the first token is the lane branch, the "
+            "rest are its named pytest paths/node ids. Repeat --entry for "
+            "each branch in the batch. A doc-only branch (#1018) may omit "
+            "tests; any other branch must name at least one test."
+        ),
+    )
+    parser.add_argument(
+        "--base",
+        default="master",
+        help="checked-out base branch (default: master)",
+    )
+    args = parser.parse_args(argv)
+    entries = _parse_batch_entries(args.raw_entries)
+    return land_batch(entries, base=args.base)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = list(argv) if argv is not None else list(sys.argv[1:])
+    # The batch subcommand (#1157) has its own arg shape (--entry, repeated),
+    # so it is routed before the single-branch parser. Anything else is the
+    # original single-branch path, unchanged.
+    if raw_argv and raw_argv[0] == "batch":
+        return _main_batch(raw_argv[1:])
     parser = argparse.ArgumentParser(
         description="Merge a rebased lane, run named and repo-wide gates, then reap its worktree."
     )
