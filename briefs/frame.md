@@ -23,6 +23,21 @@ looks fine and carries no rules, which is a failure mode this loop has already
 had for real (a shell-quoting bug delivered a 24-character prompt and every
 instrument read normal).
 
+The task-specific trap list is authored core, not a section owned by this file.
+`dev/brief.py` normalizes its heading before emission; the `Direction 2` below
+is exclusively red-proof vocabulary. Naming decision (IGC, #1161):
+
+| Idea | All | G1 | G2 | G3 | G4 |
+|---|:---:|:---:|:---:|:---:|:---:|
+| `Direction 2` plus explanatory body | ✘ | ✘ | ✘ | ✔ | ✘ |
+| `Direction 2 — traps … NOT TO DO` | ✘ | ✔ | ✘ | ✔ | ✔ |
+| `Anti-patterns this fix must avoid` | ✘ | ✔ | ✔ | ✔ | ✘ |
+| `Traps this fix must survive — … NOT TO DO` | ✔ | ✔ | ✔ | ✔ | ✔ |
+
+G1: a heading-only reader cannot act wrongly · G2: no collision with
+red-proof's Direction 2 · G3: legacy task cores remain generatable · G4: the
+hand-written and generated conventions converge on explicit bullet polarity.
+
 ## Live-state prohibitions — absolute
 
 - **NEVER open the live `.dreamwork/ledger.sqlite3` for writing.** It has a

@@ -479,6 +479,17 @@ def test_build_normalizes_a_legacy_direction_2_heading(lane):
     )
 
 
+def test_direction_2_prose_is_not_mistaken_for_a_traps_section(lane):
+    """Red-proof vocabulary in prose cannot satisfy the trap-section gate."""
+    core = (
+        "## The defect\n\nMeasured, substantive prose.\n\n"
+        "## Red-proof\n\nDirection 2 remains the false-green construction.\n"
+    )
+    with pytest.raises(brief.BriefFault) as excinfo:
+        brief.build(881, lane, ["dev/brief.py"], core)
+    assert "names no direction-2 construction with a body" in str(excinfo.value)
+
+
 # --- #947: the heading definition and the refusal message -------------------
 #
 # The house style opens a sentence with a task id (`#847 is the campaign`).
