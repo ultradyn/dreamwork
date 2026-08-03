@@ -163,6 +163,76 @@ def test_empty_named_selection_refuses_before_merge(landing_repo):
     _assert_retained(root, lane)
 
 
+def test_preflight_refuses_before_trusting_a_worktree_outside_the_invocation(
+    landing_repo, tmp_path, monkeypatch, capsys
+):
+    root, _lane = landing_repo
+    reported = tmp_path / "wrong-worktree"
+    reported.mkdir()
+    _git(root, "config", "core.worktree", str(reported))
+    real_git = land_lane._git
+    calls: list[tuple[Path, tuple[str, ...]]] = []
+
+    def recording_git(cwd, *args):
+        calls.append((Path(cwd).resolve(), args))
+        return real_git(cwd, *args)
+
+    monkeypatch.setattr(land_lane, "_git", recording_git)
+    monkeypatch.chdir(root)
+
+    assert land_lane.land("lane", ["test_named.py"]) == 1
+    err = capsys.readouterr().err
+    assert "REFUSE phase=preflight: Git resolved the invocation outside its worktree" in err
+    assert f"invoked={root.resolve()}; resolved={reported.resolve()}" in err
+    assert "git config --local --unset core.worktree" in err
+    assert calls == [(root.resolve(), ("rev-parse", "--show-toplevel"))], (
+        "preflight trusted the contaminated tree before proving that it contains "
+        f"the invocation: {calls!r}"
+    )
+
+
+def test_preflight_accepts_a_normal_invocation_from_a_subdirectory(landing_repo):
+    root, lane = landing_repo
+
+    result = _run(root / "dev")
+
+    assert result.returncode == 1
+    assert "REFUSE phase=selection: named test selection is empty" in result.stderr
+    assert "resolved the invocation outside its worktree" not in result.stderr
+    _assert_retained(root, lane)
+
+
+def test_preflight_property_also_catches_git_work_tree(
+    landing_repo, tmp_path, monkeypatch
+):
+    root, lane = landing_repo
+    reported = tmp_path / "environment-worktree"
+    reported.mkdir()
+    monkeypatch.setenv("GIT_WORK_TREE", str(reported))
+    monkeypatch.setenv("GIT_DIR", str(root / ".git"))
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "REFUSE phase=preflight: Git resolved the invocation outside its worktree" in result.stderr
+    assert f"invoked={root.resolve()}; resolved={reported.resolve()}" in result.stderr
+    assert "possible causes: shared .git/config core.worktree or GIT_WORK_TREE" in result.stderr
+    assert lane.is_dir()
+
+
+def test_preflight_refuses_when_git_cannot_resolve_a_worktree(landing_repo):
+    root, lane = landing_repo
+    _git(root, "config", "core.bare", "true")
+
+    result = _run(root, "test_named.py")
+
+    assert result.returncode == 1
+    assert "REFUSE phase=preflight: Git could not resolve a worktree" in result.stderr
+    assert f"invoked={root.resolve()}; resolved=UNRESOLVED" in result.stderr
+    assert "base: UNTRUSTED (repository identity was not established)" in result.stderr
+    assert lane.is_dir()
+
+
 @pytest.mark.parametrize(
     ("generator", "message"),
     [
