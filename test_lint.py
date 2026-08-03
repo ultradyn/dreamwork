@@ -694,7 +694,8 @@ class TestSyncConflictFiles:
         monkeypatch.setattr(lint, "_SYNC_CONFLICT_ACKNOWLEDGEMENTS", {
             ("wt/cache/ci-status/" + known_name, digest): (
                 reviewed, deadline,
-                "fixture stale cache copy; human disposition pending")
+                "fixture stale cache copy; human disposition pending in "
+                ".dreamwork/questions.md")
         })
         monkeypatch.setattr(
             lint, "_sync_conflict_today", lambda: date.fromisoformat(today))
@@ -723,7 +724,11 @@ class TestSyncConflictFiles:
             f"acknowledgement is 10 day(s) old; {rep.render()}")
         assert "acknowledgement is 10 day(s) old" in warns[0], warns[0]
         assert "expired 3 day(s) ago" in warns[0], warns[0]
-        assert "human disposition pending" in warns[0], warns[0]
+        assert "Advisory: self-attested acknowledgement expired" in warns[0]
+        assert "Dates are author-editable" in warns[0], warns[0]
+        assert "renewal is an unverified claim" in warns[0], warns[0]
+        assert "binding record is that human question" in warns[0], warns[0]
+        assert ".dreamwork/questions.md" in warns[0], warns[0]
         assert not rep.failed, "expired acknowledgement must not wedge the gate"
 
     def test_renewed_acknowledgement_returns_to_ok(

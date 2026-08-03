@@ -1587,6 +1587,9 @@ def _warn_row_index(rows: Sequence[str]) -> dict[tuple[str, ...], str]:
 # REAL emitted row is excluded (#906), so a rewording of the emission fails loud
 # — false RED returns, the safe direction — rather than silently passing.
 _LANE_CONTAINMENT_TRANSIENT_MARKER = "detached HEAD is transient"
+_SYNC_CONFLICT_CLOCK_ADVISORY_MARKER = (
+    "Advisory: self-attested acknowledgement expired"
+)
 
 
 def _is_fleet_transient_lane_warn(row: str) -> bool:
@@ -1605,19 +1608,45 @@ def _is_fleet_transient_lane_warn(row: str) -> bool:
     return label == "lane-containment" and _LANE_CONTAINMENT_TRANSIENT_MARKER in detail
 
 
+def _is_clock_derived_sync_conflict_warn(row: str) -> bool:
+    """True only for the clock-derived expired-acknowledgement advisory.
+
+    The label and invariant class marker independently bind the exemption. The
+    row remains printed with its changing ages; only cross-reading comparison
+    excludes a value that is not a function of the merged tree.
+    """
+    identity = _warn_row_identity(row)
+    if identity[0] != "warn":
+        return False
+    label = identity[1] if len(identity) > 1 else ""
+    detail = identity[2] if len(identity) > 2 else ""
+    return (
+        label == "sync-conflict"
+        and _SYNC_CONFLICT_CLOCK_ADVISORY_MARKER in detail
+    )
+
+
+def _is_non_tree_warn(row: str) -> bool:
+    """True for narrowly identified WARNs not derived from the merged tree."""
+    return (
+        _is_fleet_transient_lane_warn(row)
+        or _is_clock_derived_sync_conflict_warn(row)
+    )
+
+
 def _partition_warn_rows(
     rows: Sequence[str],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Split WARN rows into ``(compared, excluded_fleet_transient)``.
+    """Split WARN rows into ``(compared, excluded_non_tree_derived)``.
 
-    Excluded rows are lane-containment WARNs observing another worktree's
-    transient detached-HEAD state — not functions of the merged tree, so
-    comparing them across the gate's two readings false-REDs unrelated branches
-    (#1159/#1004). They are still printed (``_print_rows`` already showed the
-    full population); only the fail-decision excludes them.
+    Excluded rows are narrowly bound lane-containment fleet transients or the
+    sync-conflict expired-acknowledgement clock advisory. Neither is a function
+    of the merged tree, so comparing them across the gate's two readings
+    false-REDs unrelated branches. They are still printed (``_print_rows``
+    already showed the full population); only the fail-decision excludes them.
     """
-    compared = tuple(r for r in rows if not _is_fleet_transient_lane_warn(r))
-    excluded = tuple(r for r in rows if _is_fleet_transient_lane_warn(r))
+    compared = tuple(r for r in rows if not _is_non_tree_warn(r))
+    excluded = tuple(r for r in rows if _is_non_tree_warn(r))
     return compared, excluded
 
 
@@ -2445,12 +2474,10 @@ def land(
                 f"{reading} WARN population is empty; zero rows examined is not a match",
                 f"merge={merged_sha}; baseline={len(baseline)} rows; {reading}=0 rows examined",
             )
-        # #1159: partition out fleet-transient lane-containment WARNs before
-        # comparing — they are functions of the live fleet (another lane's
-        # mid-rebase), not of the merged tree, so a foreign lane's instructed
-        # rebase must not false-RED the branch under test. The full population
-        # each reading examined is still reported above; the split below states
-        # BOTH denominators so an authorised pass is never silent (#868).
+        # Partition narrowly identified non-tree-derived WARNs before comparing:
+        # fleet state and wall-clock state may change while the merged tree does
+        # not. The full population each reading examined is still reported
+        # above; the split states BOTH denominators so a pass is never silent.
         baseline_compared, baseline_excluded = _partition_warn_rows(baseline)
         after_compared, after_excluded = _partition_warn_rows(after)
         try:
@@ -2474,10 +2501,10 @@ def land(
             # silently compare a smaller set — "row present" must not collapse
             # "this branch introduced it" with "another worktree was detached".
             print(
-                f"{phase} excluded {excluded_total} fleet-transient lane-containment "
-                f"WARN row(s) from the comparison — not functions of the merged tree, "
-                f"so a foreign lane's mid-rebase cannot false-RED the branch under test "
-                f"(#1159): baseline={len(baseline_excluded)} {reading}={len(after_excluded)}"
+                f"{phase} excluded {excluded_total} non-tree-derived WARN row(s) "
+                f"from the comparison (fleet-transient lane-containment or "
+                f"clock-derived sync-conflict advisory): baseline="
+                f"{len(baseline_excluded)} {reading}={len(after_excluded)}"
             )
             for row in baseline_excluded:
                 print(f"~ (baseline excluded, #1159) {row}")

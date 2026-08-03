@@ -5387,9 +5387,10 @@ _LOOSE_OBJECT_SHARD_RE = re.compile(r'[0-9a-f]{2}\Z')
 _SYNC_CONFLICT_ACKNOWLEDGEMENTS = {
     ("wt/cache/ci-status/"
      "master.sync-conflict-20260729-032627-QJRKU52.json",
-     "9da2cc90e5744be8304306e5286ed0715c497ef20947615353354263c4854cf0"): (
+    "9da2cc90e5744be8304306e5286ed0715c497ef20947615353354263c4854cf0"): (
         "2026-08-03", "2026-08-10",
-        "stale Worktrunk CI-status cache; human disposition pending"),
+        "stale Worktrunk CI-status cache; human disposition pending in "
+        ".dreamwork/questions.md"),
 }
 
 
@@ -5436,7 +5437,11 @@ def _alternate_object_stores(common_dir: Path) -> tuple[list[Path], list[tuple[P
 
 def _sync_conflict_acknowledgement(
         path: Path, common_dir: Path | None) -> tuple[date, date, str] | None:
-    """Return a dated review receipt only for an exact path+content match."""
+    """Return author-editable, self-attested review dates for an exact match.
+
+    This is advisory metadata, not independent attestation: renewal is an
+    unverified author claim, while the binding record is the human question.
+    """
     if common_dir is None:
         return None
     try:
@@ -5484,7 +5489,9 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
     Severity is scoped (#1166): the invoking worktree, its actual common Git
     dir, and every borrowed object store are owned critical state. Only other
     worktrees WARN. One exact path+digest acknowledgement keeps the known stale
-    Worktrunk cache copy non-blocking without blessing its directory.
+    Worktrunk cache copy non-blocking without blessing its directory. Its
+    author-editable dates are a self-attested advisory: renewal is an
+    unverified claim, and the binding record is the durable human question.
 
     Clean, conflict found, malformed conflict-like, and incomplete traversal
     are distinct outcomes (#136). An absent root is also named rather than
@@ -5612,20 +5619,25 @@ def check_sync_conflict_files(dw: Path, rep: Report) -> None:
                 overdue = (today - deadline).days
                 rep.add(
                     WARN, "sync-conflict",
-                    f"Acknowledgement expired for known Syncthing conflict "
+                    f"Advisory: self-attested acknowledgement expired for "
+                    f"known Syncthing conflict "
                     f"copy at {path} — acknowledgement is {age} day(s) old "
                     f"(recorded {reviewed}); review deadline {deadline} "
                     f"expired {overdue} day(s) ago; open question remains: "
-                    f"{reason}. Renew the review deadline after human "
-                    f"re-review; exact relative path and SHA-256 still "
+                    f"{reason}. Dates are author-editable and renewal is an "
+                    f"unverified claim; the binding record is that human "
+                    f"question. Exact relative path and SHA-256 still "
                     f"match, so this warning is visible but does not wedge "
                     f"unrelated lanes: #1166")
             else:
                 rep.add(
                     OK, "sync-conflict",
-                    f"Known Syncthing conflict copy at {path} — acknowledged "
-                    f"{reviewed}; review due {deadline}: {reason}; exact "
-                    f"relative path and SHA-256 matched, so no other file in "
+                    f"Known Syncthing conflict copy at {path} — advisory and "
+                    f"self-attested; acknowledged {reviewed}; review due "
+                    f"{deadline}: {reason}; exact "
+                    f"relative path and SHA-256 matched. Dates are author-"
+                    f"editable and renewal is an unverified claim; the "
+                    f"binding record is the human question. No other file in "
                     f"the directory is exempt: #1166")
         for path, level in sorted(malformed.items()):
             if level == ERROR:
