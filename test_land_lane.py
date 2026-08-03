@@ -1474,6 +1474,7 @@ def test_sigkilled_unrelated_test_under_low_memory_is_indeterminate(landing_repo
     before = _git(root, "rev-parse", "HEAD")
 
     result = _run(root, "test_named.py")
+    print(result.stderr)
 
     assert result.returncode == 1
     assert (
