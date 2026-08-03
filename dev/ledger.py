@@ -178,13 +178,25 @@ def _named_blocker_ids(blocked_on):
         int(match) for match in _BLOCKER_ID.findall(blocked_on or "")))
 
 
-def _blocked_on_states(records):
-    """Classify open blocked tasks without turning unknown prose into clear.
+_TYPED_BLOCKER_REF = re.compile(r"(task|question):([1-9][0-9]*)\Z")
 
-    Returns the examined population and three disjoint task-id buckets:
-    every explicitly named blocker landed; at least one named blocker is not
-    landed; and no task id was parseable.  The last state is UNKNOWN, never
-    an all-clear.
+
+def _typed_blocker_ref(value):
+    """One exact typed referent, or ``None`` for legacy/untyped prose."""
+    match = _TYPED_BLOCKER_REF.fullmatch((value or "").strip())
+    return (match.group(1), int(match.group(2))) if match else None
+
+
+def _blocked_on_states(records):
+    """Resolve task and question blockers against their distinct stores.
+
+    ``depends_on`` is intrinsically task-typed by its FK. Exact ``task:`` and
+    ``question:`` values in ``blocked_on`` resolve against their named store.
+    Legacy prose containing ``#N`` remains task-typed for compatibility, but
+    is also reported as untyped so it can be migrated. Only
+    ``question.status == 'answered'`` is clear. ``answered_pending_fold``
+    stays distinct and blocking: a ruling that has not been folded is not yet
+    incorporated into the durable answer.
 
     A task is "carrying a blocker" when it has non-empty ``blocked_on``
     prose OR a structured ``depends_on`` edge (#1054 — ``block`` writes the
@@ -197,17 +209,45 @@ def _blocked_on_states(records):
     carrying = [record for record in open_records
                 if (record.get("blocked_on") or "").strip()
                 or record.get("depends_on")]
-    states = {"landed": [], "still_open": [], "unknown": []}
+    states = {
+        "landed": [], "still_open": [], "question_answered": [],
+        "question_pending_fold": [], "question_unanswered": [],
+        "question_missing": [], "unknown": [], "untyped": [],
+    }
     for record in carrying:
-        blocker_ids = tuple(dict.fromkeys(
-            _named_blocker_ids(record.get("blocked_on"))
-            + tuple(record.get("depends_on") or ())))
-        if not blocker_ids:
-            states["unknown"].append(record["id"])
-        elif all(task_id in landed_ids for task_id in blocker_ids):
-            states["landed"].append(record["id"])
-        else:
+        blocker_ids = list(record.get("depends_on") or ())
+        question_status = None
+        blocked_on = (record.get("blocked_on") or "").strip()
+        if blocked_on:
+            referent = _typed_blocker_ref(blocked_on)
+            if referent is None:
+                legacy_ids = _named_blocker_ids(blocked_on)
+                if not legacy_ids and not blocker_ids:
+                    states["unknown"].append(record["id"])
+                    continue
+                if legacy_ids:
+                    states["untyped"].append(record["id"])
+                    blocker_ids.extend(legacy_ids)
+            else:
+                kind, referent_id = referent
+                if kind == "task":
+                    blocker_ids.append(referent_id)
+                else:
+                    question_status = record.get("question_statuses", {}).get(
+                        referent_id)
+
+        if any(task_id not in landed_ids for task_id in blocker_ids):
             states["still_open"].append(record["id"])
+        elif question_status is None and blocked_on.startswith("question:"):
+            states["question_missing"].append(record["id"])
+        elif question_status == "unanswered":
+            states["question_unanswered"].append(record["id"])
+        elif question_status == "answered_pending_fold":
+            states["question_pending_fold"].append(record["id"])
+        elif question_status == "answered":
+            states["question_answered"].append(record["id"])
+        else:
+            states["landed"].append(record["id"])
     return len(open_records), len(carrying), states
 
 
@@ -227,12 +267,20 @@ def _blocked_on_report(records, expected_open=None):
 
     landed_label = ("WARNING " if states["landed"] else "") \
         + "every named blocker landed"
+    answered_label = ("WARNING " if states["question_answered"] else "") \
+        + "question blocker answered"
     return (
         f"blocked_on: examined {examined} open task(s), "
         f"{carrying} carrying a blocker\n"
         f"{landed_label}: {ids_or_none('landed')}\n"
         f"some named blocker still open: {ids_or_none('still_open')}\n"
+        f"{answered_label}: {ids_or_none('question_answered')}\n"
+        f"question answer pending fold: {ids_or_none('question_pending_fold')}\n"
+        f"question unanswered: {ids_or_none('question_unanswered')}\n"
+        f"question referent missing, unknown: {ids_or_none('question_missing')}\n"
         f"no id parseable, unknown: {ids_or_none('unknown')}\n"
+        f"WARNING legacy untyped blocker resolved as task: "
+        f"{ids_or_none('untyped')}\n"
     )
 
 
@@ -678,7 +726,7 @@ def _next_up_store(dw_dir, task_id, clear, why):
 
 
 def _block_store(dw_dir, task_id, needs, why):
-    """Store-mode block: block_task (write depends edge, note + event).
+    """Store-mode block: persist a typed task or question referent.
 
     #1054 — the inverse of unblock for the structured-edge case.  The edge
     lives in the ``depends`` table (#440's ruling), not in ``blocked_on``
@@ -698,7 +746,7 @@ def _block_store(dw_dir, task_id, needs, why):
     except ledger_write.WriteError as exc:
         sys.stderr.write(f"ledger: {exc}\n")
         return 2
-    sys.stdout.write(f"blocked #{task_id} on #{needs} ({result})\n")
+    sys.stdout.write(f"blocked #{task_id} on {needs} ({result})\n")
     return 0
 
 
@@ -3151,10 +3199,10 @@ def main(argv=None):
 
     pblk = sub.add_parser(
         "block",
-        help="record a task→task dependency edge (depends), recording why [#1054]")
+        help="record a typed task or question blocker, recording why [#1025]")
     pblk.add_argument("id", type=int, help="the task id to block")
-    pblk.add_argument("--on", type=int, required=True, dest="on",
-                      help="the task id this task depends on (the blocker)")
+    pblk.add_argument("--on", required=True, dest="on",
+                      help="typed blocker: task:NNN or question:NNN (prefix required)")
     pblk.add_argument("--why", required=True,
                       help="the reason — recorded in the task's history (NOT optional)")
     pblk.add_argument("--ledger", default=LEDGER_DEFAULT,
