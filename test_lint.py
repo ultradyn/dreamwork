@@ -2442,12 +2442,14 @@ Next id: **9**
         softened WARN is one nobody re-checks. The replacement rec asks the
         reader to "check git, which takes one command" — so the check runs that
         command itself and prints the answer. Overriding from memory then has to
-        be done against a printed timestamp and an age, which is a much harder
-        thing to do by accident.
+        be done against a printed timestamp, which is a much harder thing to do
+        by accident.
 
-        The production line is the `%cI`/`%cr` fields in the `git log --format`
-        and the clause built from them. Drop them and this fails while every
-        other row in this class still passes.
+        The production line is the `%cI` field in the `git log --format` and
+        the clause built from it. Drop it and this fails while every other row
+        in this class still passes. (#1004: the relative `%cr` age was dropped
+        because it is perishable; the absolute `%cI` timestamp carries the same
+        weight.)
         """
         import subprocess
         t, sha2 = self.build(tmp_path)
@@ -2462,10 +2464,20 @@ Next id: **9**
         mine = [d for d in self.warns(t) if d.startswith("#1 (")]
         assert len(mine) == 1, mine
         assert stamp in mine[0], (stamp, mine[0])
-        assert re.search(r"\d+ (second|minute|hour|day|week|month|year)s? ago",
-                         mine[0]), mine[0]
-        # And the sha is still there: the age is added evidence, not a swap.
+        # #1004: no perishable relative age — the row is tree-derived.
+        assert not re.search(r"\d+ (second|minute|hour|day|week|month|year)s? ago",
+                             mine[0]), mine[0]
+        # And the sha is still there: the timestamp is added evidence, not a swap.
         assert "`" in mine[0]
+
+    def test_the_row_is_stable_across_wall_clock_movement(self, tmp_path):
+        """#1004: the same tree must produce an identical WARN row on two calls.
+        A relative age from git's `%cr` ("2 hours ago") changes between runs and
+        makes land_lane refuse itself; the absolute `%cI` timestamp does not."""
+        t, _ = self.build(tmp_path)
+        first = [d for d in self.warns(t) if d.startswith("#1 (")]
+        second = [d for d in self.warns(t) if d.startswith("#1 (")]
+        assert first == second, (first, second)
 
     def flagged(self, t):
         """The ids this check actually flagged, not a substring search.
@@ -5392,16 +5404,29 @@ class TestUnfoldedAnswers:
         rows = self.rows(t)
         assert len(rows) == 1 and "duplicate" not in rows[0], rows
 
-    def test_the_age_is_computed_from_the_bullet_not_pinned(self, tmp_path):
+    def test_the_answer_stamp_is_tree_derived_not_relative_age(self, tmp_path):
         from datetime import datetime, timedelta
         recent = (datetime.now() - timedelta(minutes=7)).strftime("%Y-%m-%d %H:%M")
         t = self.build(tmp_path, self.q(bullets=["Answer (via watch"], stamp=recent))
         rows = self.rows(t)
         assert len(rows) == 1, rows
-        # Derived at runtime: a fresh answer reads in minutes, and the hours
-        # wording must NOT appear — that is what separates the legitimate
-        # fold-on-the-next-tick window from the hour-long failure.
-        assert "minutes ago" in rows[0] and "hours ago" not in rows[0], rows[0]
+        # #1004: the bullet's OWN recorded time (tree-derived) appears, not a
+        # relative age ("7 minutes ago") that changes with wall-clock movement.
+        assert recent in rows[0], (recent, rows[0])
+        assert " ago" not in rows[0], rows[0]
+
+    def test_the_row_is_stable_across_wall_clock_movement(self, tmp_path):
+        """#1004 acceptance test: the same tree must produce an identical WARN
+        row at T and T+10min.  A relative age ("8 minutes ago") changes between
+        runs and makes land_lane refuse itself on a clock diff; an absolute
+        answer timestamp does not."""
+        stamp = "2026-07-28 01:23"
+        t = self.build(tmp_path, self.q(bullets=["Answer (via watch"], stamp=stamp))
+        rows_a = self.rows(t)
+        assert len(rows_a) == 1, rows_a
+        # Re-read from the same tree (no file change) — must be byte-identical.
+        rows_b = self.rows(t)
+        assert rows_a == rows_b, (rows_a, rows_b)
 
     def test_an_unstamped_answer_bullet_still_warns(self, tmp_path):
         text = self.q(bullets=["Answer (via watch"]).replace(
