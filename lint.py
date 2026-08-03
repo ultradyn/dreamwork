@@ -128,6 +128,25 @@ BLOCKED_ON_HUMAN_MARK = re.compile(r"blocked-on:\s*\*\*\s*([^*]+?)\s*\*\*")
 # own id — the #371 trap. Optional; absent defaults to the entry's own id.
 GATE_MARK = re.compile(r"gate:\s*\*\*\s*([^*]+?)\s*\*\*")
 
+# #1024: question titles provide the strongest blocker edge already present in
+# the corpus.  Task prose is admitted only when the same fragment both makes a
+# blocker claim and names a human-decision concept; plain ``blocked on #N
+# landing first`` task dependencies remain outside this check.
+QUESTION_BLOCKS_TASK = re.compile(
+    r"#(?P<question>\d+)\s*\(\s*blocks\s+#(?P<task>\d+)\s*\)", re.IGNORECASE)
+QUESTION_ID = re.compile(r"#(\d+)\b")
+BLOCKER_CLAIM = re.compile(
+    r"\b(?:blocked\s+on|do\s+not\s+start\s+before|"
+    r"authori[sz]es?\s+nothing\s+until|waiting\s+(?:on|for)|"
+    r"gated?\s+on)\b",
+    re.IGNORECASE,
+)
+HUMAN_DECISION = re.compile(
+    r"\b(?:rul(?:e|es|ed|ing)|questions?|decisions?|design\s+calls?|"
+    r"he\s+answers?|human)\b",
+    re.IGNORECASE,
+)
+
 
 def _metadata_clause(entry_text: str) -> str:
     """The ` · `-delimited tag run between the title and the body prose (#335).
@@ -2107,6 +2126,131 @@ def check_title_blocked_claim(dw: Path, rep: Report) -> None:
             OK, "tasks.md",
             f"{examined} open title(s) containing the `blocked on` phrase carry a "
             f"blocked_on value (#725)")
+
+
+def _question_blocker_state(item: dict, answered: bool) -> tuple[str, str | None]:
+    """Classify one parsed question through the shared resolution seam."""
+    if not answered:
+        return "STILL OPEN", None
+    marker = classify_resolution_marker(
+        item["body"],
+        (follow.get("when") for follow in item.get("follows", [])
+         if follow.get("author") == "human"),
+    )
+    if marker.kind is ResolutionKind.RESOLVED:
+        return "ANSWERED", marker.date
+    return "UNRESOLVABLE", None
+
+
+def _direct_blocker_citations(entry: str, own_ids: set[int]) -> set[int]:
+    """Question-like citations in task titles or bodies, not task dependencies."""
+    lines = entry.splitlines()
+    title = _entry_title(entry)
+    initial_body: list[str] = []
+    for line in lines[1:]:
+        if not line.strip() or line.lstrip().startswith("·"):
+            break
+        initial_body.append(line)
+    scope = title + "\n" + "\n".join(initial_body)
+    citations: set[int] = set()
+    for fragment in re.split(r"(?<=[.!?])\s+|\n+", scope):
+        if not BLOCKER_CLAIM.search(fragment) or not HUMAN_DECISION.search(fragment):
+            continue
+        citations.update(int(value) for value in QUESTION_ID.findall(fragment))
+    return citations - own_ids
+
+
+def _unmet_group_blockers(
+    dw: Path, task_ids: set[int], source: str,
+) -> dict[int, tuple] | None:
+    """Read current structural prerequisites; an old question is not the live block."""
+    if source != "store" or not task_ids:
+        return {}
+    try:
+        from dreamwork_db import open_database
+        from dreamwork_db.store import dreamwork_store_spec
+        with open_database(dreamwork_store_spec(store_path(dw))) as db:
+            return {task_id: db.groups.blockers(task_id=task_id)
+                    for task_id in task_ids}
+    except Exception:
+        return None
+
+
+def check_blocker_citations(dw: Path, watch, rep: Report) -> None:
+    """#1024 — resolve open-task blocker citations against current questions."""
+    text, source = ledger_view(dw)
+    if text is None:
+        note_ledger_skip(rep, "check_blocker_citations")
+        rep.add(WARN, "blocker citations",
+                "DID NOT EXAMINE open tasks; ledger unavailable (denominator unknown)")
+        return
+    open_text = open_section_text(text)
+    if open_text is None:
+        note_ledger_skip(rep, "check_blocker_citations")
+        rep.add(WARN, "blocker citations",
+                "DID NOT EXAMINE open tasks; `## Open` unavailable (denominator unknown)")
+        return
+
+    questions_path = dw / "questions.md"
+    parsed: list[tuple[dict, bool]] = []
+    if watch is not None and questions_path.exists():
+        try:
+            question_text = questions_path.read_text()
+            parsed.extend((item, False) for item in watch.parse_open_questions(question_text))
+            parsed.extend((item, True) for item in watch.parse_answered(question_text))
+        except Exception:
+            parsed = []
+
+    states: dict[int, tuple[str, str | None]] = {}
+    reverse: dict[int, set[int]] = {}
+    for item, answered in parsed:
+        ids = QUESTION_ID.findall(item["title"])
+        if ids:
+            states[int(ids[0])] = _question_blocker_state(item, answered)
+        for match in QUESTION_BLOCKS_TASK.finditer(item["title"]):
+            reverse.setdefault(int(match.group("task")), set()).add(
+                int(match.group("question")))
+
+    entries: list[tuple[int, str]] = []
+    for ids, body in ledger_entries(open_text):
+        entries.extend((int(task_id), body) for task_id in ids)
+    open_ids = {task_id for task_id, _ in entries}
+    structural = _unmet_group_blockers(dw, open_ids, source)
+    if structural is None:
+        rep.add(WARN, "blocker citations",
+                "structural prerequisites were unreadable — current blockers "
+                "were not used to suppress cleared-question warnings")
+        structural = {}
+
+    carrying = 0
+    for task_id, body in entries:
+        citations = set(reverse.get(task_id, ())) | _direct_blocker_citations(
+            body, {task_id})
+        if not citations:
+            continue
+        carrying += 1
+        if structural.get(task_id):
+            # A newer, still-unmet structural prerequisite supersedes a cleared
+            # question edge.  This is #631's required stay-quiet state.
+            continue
+        for cited_id in sorted(citations):
+            state, cleared = states.get(cited_id, ("UNRESOLVABLE", None))
+            if state == "STILL OPEN":
+                continue
+            if state == "ANSWERED":
+                rep.add(
+                    WARN, "blocker citations",
+                    f"#{task_id} cites blocker #{cited_id}: ANSWERED "
+                    f"(resolves: yes; cleared {cleared}) — the blocker note is stale")
+            else:
+                rep.add(
+                    WARN, "blocker citations",
+                    f"#{task_id} cites blocker #{cited_id}: UNRESOLVABLE "
+                    f"(resolves: no) — no current question entry has that id")
+
+    rep.add(
+        OK, "blocker citations",
+        f"examined {len(entries)} open task(s), {carrying} carrying a blocker citation")
 
 
 # status.json has two readers now (watch.py and dreamhub.py), which makes it
@@ -8969,6 +9113,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_tasks(dw, rep)
     check_human_blocker(dw, watch, rep)
     check_title_blocked_claim(dw, rep)
+    check_blocker_citations(dw, watch, rep)
     check_landed_asks(dw, watch, rep)
     check_status(dw, rep)
     check_status_task_ids(dw, rep)

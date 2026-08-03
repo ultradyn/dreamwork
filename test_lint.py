@@ -6998,6 +6998,147 @@ Next id: **5**
         assert not any(lvl == lint.ERROR for lvl, _, _ in rep.rows), rep.render()
 
 
+class TestBlockerCitations1024:
+    """Standing resolution of question blockers in titles and bodies."""
+
+    def build(self, tmp_path, tasks, questions):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(tasks)
+        (dw / "questions.md").write_text(questions)
+        return t
+
+    def rows(self, target):
+        rep = lint.Report()
+        lint.check_blocker_citations(
+            target / ".dreamwork", lint.load_watch(), rep)
+        return rep.rows
+
+    def tasks(self, open_entries, landed_entries=""):
+        return (
+            "# Tasks\n\nNext id: **1000**\n\n## Open\n\n"
+            + open_entries
+            + "\n## Recently landed\n\n"
+            + landed_entries
+        )
+
+    def questions(self, open_entries="", answered_entries=""):
+        return (
+            "# Questions for the human\n\n## Open\n\n"
+            + open_entries
+            + "\n## Answered\n\n"
+            + answered_entries
+        )
+
+    def blocker_rows(self, rows, level=lint.WARN):
+        return [detail for row_level, what, detail in rows
+                if row_level == level and what == "blocker citations"]
+
+    def test_630_body_and_question_title_report_one_cleared_blocker(self, tmp_path):
+        tasks = self.tasks(
+            "- **#630** — Build the derived component surface · P1 · origin: **loop**\n"
+            "  Do not start before the ruling cited in #591.\n")
+        questions = self.questions(answered_entries=(
+            "- **P1 · #591: render authority ruling**\n"
+            "  → answered (2026-07-31 17:03): rec on all three\n"))
+        rows = self.rows(self.build(tmp_path, tasks, questions))
+        warns = self.blocker_rows(rows)
+        expected = (
+            "#630 cites blocker #591: ANSWERED (resolves: yes; cleared "
+            "2026-07-31 17:03) — the blocker note is stale")
+        assert warns == [expected], (
+            "hardcoded fixture pair #630/#591 lost its cleared-blocker warning: "
+            f"{warns}")
+
+    def test_question_title_blocks_mapping_is_sufficient(self, tmp_path):
+        tasks = self.tasks(
+            "- **#710** — plain task title with no blocker prose · P1 · origin: **loop**\n")
+        questions = self.questions(answered_entries=(
+            "- **P1 · #800 (blocks #710): an answered gate**\n"
+            "  → answered (2026-08-01 08:00): proceed\n"))
+        warns = self.blocker_rows(self.rows(self.build(tmp_path, tasks, questions)))
+        assert warns == [
+            "#710 cites blocker #800: ANSWERED (resolves: yes; cleared "
+            "2026-08-01 08:00) — the blocker note is stale"
+        ], warns
+
+    def test_641_title_would_fire_open_and_stays_silent_landed(self, tmp_path):
+        entry = (
+            "- **#641** — push transport — BLOCKED on the #614 wire-protocol ruling "
+            "· P1 · origin: **loop**\n")
+        answered = (
+            "- **P1 · #614 (blocks #641): wire protocol**\n"
+            "  - **Comment (via watch, 2026-07-31 17:20) — use SSE.**\n")
+        open_rows = self.rows(self.build(
+            tmp_path, self.tasks(entry), self.questions(answered_entries=answered)))
+        assert any("#641 cites blocker #614: ANSWERED" in row
+                   for row in self.blocker_rows(open_rows)), open_rows
+
+        landed_rows = self.rows(self.build(
+            tmp_path, self.tasks("", entry), self.questions(answered_entries=answered)))
+        assert not any("#641" in row for row in self.blocker_rows(landed_rows)), landed_rows
+        assert any("examined 0 open task(s), 0 carrying a blocker citation" in detail
+                   for _, _, detail in landed_rows), landed_rows
+
+    def test_613_and_614_resolve_from_human_follows_without_arrow(self, tmp_path):
+        tasks = self.tasks(
+            "- **#701** — BLOCKED on the #613 design ruling · P1 · origin: **loop**\n"
+            "- **#702** — BLOCKED on the #614 transport ruling · P1 · origin: **loop**\n")
+        answered = (
+            "- **P1 · #613: design ruling**\n"
+            "  - **Comment (via watch, 2026-07-31 19:04) — rec.**\n"
+            "- **P1 · #614: transport ruling**\n"
+            "  - **Comment (via watch, 2026-07-31 19:12) — SSE.**\n")
+        assert "→ answered" not in answered, "fixture accidentally stopped testing follows"
+        warns = self.blocker_rows(self.rows(self.build(
+            tmp_path, tasks, self.questions(answered_entries=answered))))
+        assert any("#701 cites blocker #613: ANSWERED" in row for row in warns), (
+            "marker-only implementation lost human follows for #613: " + repr(warns))
+        assert any("#702 cites blocker #614: ANSWERED" in row for row in warns), (
+            "marker-only implementation lost human follows for #614: " + repr(warns))
+
+    def test_a_genuinely_open_blocker_stays_quiet(self, tmp_path):
+        tasks = self.tasks(
+            "- **#631** — session log — BLOCKED on the #1 migration ruling "
+            "· P1 · origin: **loop**\n")
+        questions = self.questions(open_entries=(
+            "- **P1 · #1: migration sequencing ruling** still awaiting him\n"))
+        rows = self.rows(self.build(tmp_path, tasks, questions))
+        assert self.blocker_rows(rows) == [], rows
+        assert any("examined 1 open task(s), 1 carrying a blocker citation" in detail
+                   for _, _, detail in rows), rows
+
+    def test_a_nonexistent_question_is_unresolvable_not_clean(self, tmp_path):
+        tasks = self.tasks(
+            "- **#703** — BLOCKED on the #999 mistyped ruling · P1 · origin: **loop**\n")
+        rows = self.rows(self.build(tmp_path, tasks, self.questions()))
+        assert self.blocker_rows(rows) == [
+            "#703 cites blocker #999: UNRESOLVABLE (resolves: no) — no current "
+            "question entry has that id"
+        ], rows
+
+    def test_an_empty_citation_population_has_a_denominator(self, tmp_path):
+        tasks = self.tasks(
+            "- **#704** — ordinary work with no human gate · P2 · origin: **loop**\n")
+        rows = self.rows(self.build(tmp_path, tasks, self.questions()))
+        assert self.blocker_rows(rows) == [], rows
+        assert any(level == lint.OK and
+                   detail == "examined 1 open task(s), 0 carrying a blocker citation"
+                   for level, _, detail in rows), rows
+
+    def test_plain_task_dependency_does_not_become_a_question_blocker(self, tmp_path):
+        tasks = self.tasks(
+            "- **#705** — ordinary ordering · P2 · origin: **loop**\n"
+            "  blocked on #2 landing first; this is a task dependency\n")
+        answered = (
+            "- **P1 · #2: an unrelated answered question**\n"
+            "  → answered (2026-07-31 17:03): yes\n")
+        rows = self.rows(self.build(
+            tmp_path, tasks, self.questions(answered_entries=answered)))
+        assert self.blocker_rows(rows) == [], rows
+
+
 class TestTitleBlockedClaim:
     """#725 — a deliberately noisy ``blocked on`` phrase heuristic.
 
@@ -9987,10 +10128,10 @@ class TestLedgerSkipsAreReported:
     EXPECTED = ["check_task_origins", "check_ledger_sections",
                 "check_landed_still_open", "check_self_completed_open",
                 "check_human_blocker", "check_landed_asks",
-                "check_title_blocked_claim"]
+                "check_title_blocked_claim", "check_blocker_citations"]
 
     def test_a_worktree_names_every_ledger_check_that_examined_nothing(self, tmp_path):
-        """The defect: six checks went silent and the report said nothing."""
+        """The defect: ledger checks went silent and the report said nothing."""
         root, _ = self._repo_with_a_landing(tmp_path)
         wt, wtdw = self._fx._worktree(root, "lane-skips")
         self._fx._preconditions(wtdw)
