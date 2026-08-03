@@ -249,6 +249,16 @@ def test_generation_accepts_a_file_line_citation_present_at_its_base_sha(lane):
     assert "`.dreamwork/lessons.md:430`" in generated
 
 
+def test_generation_refuses_a_line_beyond_the_base_sha_file(lane):
+    """An existing path does not make a stale/out-of-range coordinate resolve."""
+    core = GOOD_CORE.replace(
+        "`## Standing rules` was retyped 33 times and produced 32 distinct bodies.",
+        "The generator contract is `dev/brief.py:999999`.",
+    )
+    with pytest.raises(brief.BriefFault, match=r"line exceeds file's \d+ lines"):
+        brief.build(881, lane, ["dev/brief.py", "test_brief.py"], core)
+
+
 def test_worktree_is_asked_of_git_not_guessed(lane, lane_checkout):
     """A guessed convention would be wrong for 14 of the 40 most recent briefs (#846 moved it)."""
     assert lane == lane_checkout[0], (
