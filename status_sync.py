@@ -382,24 +382,55 @@ def _argv_lane(pid: int, wt_root: str) -> str | None:
     return path.name if path is not None else None
 
 
+# The dispatch-runner concept — a process whose argv[0] basename is one of
+# these is a DISPATCHED lane (started by dispatch_lane.py), distinct from an
+# Agent-tool lane (#675: a non-ccc process with a lane cwd). _is_ccc_proc
+# gates discover_lanes's `found` bucket; a lane-cwd process that is NOT a
+# dispatch runner is routed to `agent_tool` instead. NARROWER than
+# LANE_RUNNERS (lane_runner_identity): every dispatch runner is a lane
+# runner, but the cwd-live channel ALSO sees Agent-tool lanes
+# (claude/grok/codex), which are NOT dispatches — so the two concepts MUST
+# stay distinct and MUST NOT be collapsed (#136 three-state). Named and
+# module-level so a future dispatch route forces a reader past LANE_RUNNERS:
+# the hardcoded ``== "ccc"`` this replaces was a silent second classifier
+# (#1113 ended the first copy; #1124 names this one). PROPOSED for
+# lane_runner_identity.py (#1124 report): move DISPATCH_RUNNERS beside
+# LANE_RUNNERS so both concepts share one home and a reader cannot extend
+# either without seeing the other — outside this lane's ownership.
+DISPATCH_RUNNERS = ("ccc",)
+
+
+def _is_dispatch_runner(raw: bytes) -> bool:
+    """Whether ``raw`` cmdline's argv[0] basename is a dispatch runner.
+
+    The bytes-level classifier for the dispatch concept, parallel to
+    ``lane_runner_identity.is_lane_runner`` for the lane-runner concept.
+    Takes raw BYTES so a caller that already read /proc/<pid>/cmdline reuses
+    that read (no second shell-out; a NUL-containing cmdline cannot parse as
+    a dispatch runner by accident, #716). ``_is_ccc_proc`` is the pid-level
+    I/O wrapper; this is the classifier.
+    """
+    if not raw:
+        return False
+    first = raw.split(b"\x00", 1)[0]
+    return os.path.basename(first.decode("utf-8", "replace")) in DISPATCH_RUNNERS
+
+
 def _is_ccc_proc(pid: int) -> bool:
-    """Whether `pid`'s argv[0] basename is `ccc` (the probe-observable form).
+    """Whether ``pid``'s argv[0] basename is a dispatch runner (ccc today).
 
     Avoids over-counting: a worktree cwd is also held by the zsh wrapper, an
-    editor, or a pytest a coordinator ran from a worktree (#716 dir-2). Only a
-    `ccc` process is a dispatched lane, so the argv check keeps discovery to
-    the one form the liveness probe already reasons about (#675). Reads the
-    raw bytes so a NUL-containing cmdline cannot parse as `ccc` by accident.
+    editor, or a pytest a coordinator ran from a worktree (#716 dir-2). Only
+    a dispatch runner is a dispatched lane, so the argv check keeps discovery
+    to the one form the liveness probe already reasons about (#675). Reads
+    raw bytes then delegates to ``_is_dispatch_runner`` (DISPATCH_RUNNERS).
     """
     try:
         with open("/proc/%d/cmdline" % pid, "rb") as f:
             raw = f.read()
     except OSError:
         return False
-    if not raw:
-        return False
-    first = raw.split(b"\x00", 1)[0]
-    return os.path.basename(first.decode("utf-8", "replace")) == "ccc"
+    return _is_dispatch_runner(raw)
 
 
 def _ccc_model(pid: int) -> str | None:
