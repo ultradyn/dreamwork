@@ -418,8 +418,9 @@ def test_the_native_runtime_stays_inside_a_chosen_page_weight_budget():
         % (client_dist.NATIVE_REL, size))
     # #1006 replaces four bare forms with one labelled, cancellable editor,
     # contextual tree actions, and field-specific validation. Measured after
-    # that native surface: 162610 bytes. Keep only 2390 bytes of headroom so
-    # this remains a bound, not a rounded permission slip for unrelated growth.
+    # the final rebase also carried the parallel wrapper exports: 164255 bytes.
+    # Keep only 745 bytes of headroom so this remains a bound, not a rounded
+    # permission slip for unrelated growth.
     budget = 165_000
     assert size <= budget, (
         "%s is %d bytes, over the %d-byte budget chosen at P2 (measured "
