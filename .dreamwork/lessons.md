@@ -5674,3 +5674,40 @@ verbatim to every reviewer. **A doc that is itself shipped as part of a prompt
 decays differently from one a human reads occasionally — nobody re-reads the
 boilerplate, so its staleness is invisible until it contradicts a tool in front
 of an agent.** Filed as `#1163`.
+
+**FOUR BRANCHES, ONE DEFECT: THE TEST EXERCISED A SUBSTITUTE FOR THE PRODUCTION
+PATH.** On 2026-08-03 the mandatory `@cx-reviewer` pass ran on four ready
+branches at once, and three came back not-mergeable on the same shape — plus a
+fourth instance the `#1066` lane had found in its own direction-2 probe hours
+earlier. They look unrelated until you line them up:
+
+- `#1155` — the wedge classifier could never fire on the tick path.
+  `lane_liveness.py:363`'s default probe always returns `None`, `inspect_lanes`
+  selects it, and the sole production caller passes no probe. **18 green tests,
+  every one injecting the probe itself.**
+- `#1042` — the autolink tests **injected their own copy** of `TASK_REF_RE`
+  rather than reaching the shipping constant, so the production regex was
+  untested and could drift silently.
+- `#1066`/`#1067` — the tag-literal purity test is structurally blind to a
+  `.replace()`-shaped divergence: it checks a property (no HTML tag literals)
+  that the real defect does not touch. Both lanes proved it independently by
+  sabotage; only the `wrappereq` DOM-equality guard catches that class.
+- `#1157` — the real-conflict test drives only the normal non-zero return path,
+  so the interruption and failed-abort paths are unproven.
+
+**Every one of those reports was TRUE. None of them was about production.** That
+is what makes this the loop's most expensive failure: it does not look like a
+gap, it looks like coverage. The green test is real, the count is real, the
+red-proof even CAUGHT its injection — because the injection was made on the same
+substitute path the test reads.
+
+**THE CHECK THAT SEPARATES THEM, and it belongs in every brief:** *if I deleted
+or broke the production symbol, would this test go red?* A test that injects its
+subject, copies its subject, or checks a proxy for its subject answers no. Ask it
+of the shipping call site, not of the function — `#1155`'s classifier was
+correct; nothing called it.
+
+**And a red-proof does not settle it.** A red-proof proves the test can detect a
+defect *on the path the test takes*. When the test's path is the substitute, the
+injection lands there too and the proof comes back CAUGHT with a discriminating
+message. Arm against the production symbol, and say which one you armed against.
