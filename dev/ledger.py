@@ -40,7 +40,7 @@ USAGE
   python3 dev/ledger.py next-up <id> [--clear] --why <text> [--ledger PATH]
   python3 dev/ledger.py sweep [--since REF] [--ledger PATH] [--repo PATH]
   python3 dev/ledger.py reach [--base REF] [--ledger PATH] [--repo PATH]
-  python3 dev/ledger.py list [--state open|landed] [--sort id|id-desc] [--json] [--ledger PATH]
+  python3 dev/ledger.py list [--state open|landed] [--sort id|id-desc] [--json] [--unblocked] [--ledger PATH]
   python3 dev/ledger.py get <id> [--ledger PATH]
   python3 dev/ledger.py count [--state open|landed] [--json] [--ledger PATH]
   python3 dev/ledger.py reviews list|get <artifact> [--ledger PATH]
@@ -291,6 +291,122 @@ def _newly_unblocked_dependents(records, blocker_id):
     return [record["id"] for record in records
             if record["id"] in stale
             and blocker_id in _named_blocker_ids(record.get("blocked_on"))]
+
+
+# ---------------------------------------------------------------------------
+# depends resolution for `list` (#1152).  The `depends(task, needs)` table is
+# the live edge store — what `block` writes (#1054) — and the JSON payload
+# carried no trace of it, so every task read as free.  This resolves those
+# edges against task state to produce a per-task `blocked` flag and the
+# denominator counts a false zero would hide (#868).  It NEVER reads the
+# `blocked_on` column, which is NULL for every current task and is not where
+# blocking lives.
+# ---------------------------------------------------------------------------
+
+def _resolve_depends_state(records):
+    """Resolve ``depends`` edges against task state (#1152).
+
+    Returns ``(blocked_ids, info)`` where ``blocked_ids`` is the set of OPEN
+    task ids that are blocked (have ≥1 need still open OR naming a task that
+    does not exist), and ``info`` carries the denominator counts and defect
+    lists a summary prints.
+
+    The four resolution outcomes per open task (#136 — three zero-states must
+    not collapse; here it is four, and the fourth is the silent one):
+
+      - no edges → free
+      - all needs landed → free (dependencies satisfied)
+      - ≥1 need still open → blocked (unsatisfied)
+      - ≥1 need names a task NOT in the store → blocked (a data defect that
+        must NOT read as satisfied — the same false-zero one level down)
+
+    A cycle among open tasks is detected and reported but does not change the
+    `blocked` flag: every cycle member already has an open need, so normal
+    resolution marks it blocked.  Swallowing the cycle would convert a loud
+    data defect into a task that never becomes selectable and never explains
+    why.
+    """
+    id_state = {r["id"]: r["state"] for r in records}
+    open_ids = {r["id"] for r in records if r["state"] == "open"}
+    blocked_ids = set()
+    unresolved_ids = set()
+    missing_edges = []  # (task_id, need_id) where need does not exist
+    for r in records:
+        if r["state"] != "open":
+            continue
+        for need in (r.get("depends_on") or ()):
+            if need not in id_state:
+                blocked_ids.add(r["id"])
+                unresolved_ids.add(r["id"])
+                missing_edges.append((r["id"], need))
+            elif id_state[need] != "landed":
+                blocked_ids.add(r["id"])
+    cycles = _depends_cycles({tid: [n for n in (r.get("depends_on") or ())
+                                     if n in open_ids]
+                              for tid, r in ((r["id"], r) for r in records)
+                              if r["state"] == "open" and r.get("depends_on")})
+    examined = len(open_ids)
+    blocked = len(blocked_ids & open_ids)
+    info = {
+        "examined": examined,
+        "blocked": blocked,
+        "free": examined - blocked,
+        "resolved": examined - len(unresolved_ids),
+        "unresolved": len(unresolved_ids),
+        "missing_edges": missing_edges,
+        "cycles": cycles,
+    }
+    return blocked_ids, info
+
+
+def _depends_cycles(graph):
+    """Node-id lists for every directed cycle in *graph* (open-task edges).
+
+    A node is on a cycle iff it can reach itself through ≥1 edge.  The graph
+    is small (the live store holds ~50 edges), so a per-node DFS reachability
+    probe is simple and correct.  Returns a sorted list of sorted id-lists,
+    one per cycle member set.
+    """
+    on_cycle = set()
+    for start in graph:
+        seen = set()
+        stack = list(graph[start])
+        while stack:
+            node = stack.pop()
+            if node == start:
+                on_cycle.add(start)
+                break
+            if node in seen:
+                continue
+            seen.add(node)
+            stack.extend(graph.get(node, ()))
+    return sorted(on_cycle) if on_cycle else []
+
+
+def _deps_summary_line(info):
+    """The stderr denominators line — #868: a computed field whose count is
+    unstated reads as an all-clear.  States how many open tasks were
+    examined, how many are blocked, and how many are free."""
+    line = (f"deps: examined {info['examined']} open task(s), "
+            f"{info['blocked']} blocked, {info['free']} free")
+    if info["unresolved"]:
+        line += (f", {info['unresolved']} had an unresolvable edge "
+                 f"(missing referent)")
+    return line + "\n"
+
+
+def _deps_warnings(info):
+    """Defect warnings: missing-referent edges and dependency cycles."""
+    out = []
+    for task_id, need_id in sorted(info["missing_edges"]):
+        out.append(
+            f"deps WARNING: #{task_id} depends on #{need_id} which does not "
+            "exist — a data defect, not satisfied\n")
+    for member in info["cycles"]:
+        out.append(
+            f"deps WARNING: #{member} is on a dependency cycle — will never "
+            "resolve\n")
+    return "".join(out)
 
 
 # ---------------------------------------------------------------------------
@@ -2261,8 +2377,12 @@ def emit_warnings(dw_dir, rc=0, stream=None):
 #   list --json  -> a JSON ARRAY, one object per task, each with EXACTLY:
 #                     id (int) . state ("open"|"landed") . title (str)
 #                     priority (str|null) . type (str|null) . origin (str|null)
+#                     next_up (int|null) . depends_on ([int]) . blocked (bool)
 #                   (body is omitted -- list is a summary; --state filters by
-#                   state; --sort id (asc, default) | id-desc orders the array.)
+#                   state; --sort id (asc, default) | id-desc orders the array.
+#                   --unblocked filters to tasks whose depends edges are all
+#                   satisfied; `blocked` is resolved against task state from
+#                   the depends table, never the blocked_on column, #1152.)
 #   count --json -> a JSON OBJECT mapping each counted state to an int.
 #                   No --state: {"open": N, "landed": M}; --state open: {"open": N}.
 #   get <id>     -> human-readable full record (no --json in the ruled shape):
@@ -2382,18 +2502,24 @@ def _records_for(args, dw_dir):
     return recs
 
 
-def _record_json(r, body):
+def _record_json(r, body, *, blocked=False):
     """The JSON object for one record -- EXACTLY the contract keys."""
     d = {"id": r["id"], "state": r["state"], "title": r["title"],
          "priority": r["priority"], "type": r["type"], "origin": r["origin"],
-         "next_up": r.get("next_up")}
+         "next_up": r.get("next_up"),
+         # #1152 — the live dependency edges and the resolved blocked flag.
+         # `depends_on` is the raw `needs` ids from the depends table; `blocked`
+         # is resolved against task state (not the blocked_on column, which is
+         # NULL everywhere and is not where blocking lives).
+         "depends_on": list(r.get("depends_on") or ()),
+         "blocked": blocked}
     if body:
         d["body"] = r["body"]
         d["blocked_on"] = r["blocked_on"]
     return d
 
 
-def _list_line(r):
+def _list_line(r, *, blocked=False):
     """One stable human line per task for `list`."""
     parts = [f"#{r['id']}", r["state"]]
     for key in ("priority", "type", "origin"):
@@ -2410,6 +2536,11 @@ def _list_line(r):
         # because the loop thinks it is blocked is the failure #884 is about.
         if r.get("blocked_on"):
             parts.append(f"BLOCKED:{r['blocked_on']}")
+    if blocked:
+        # #1152 — resolved from depends edges against task state.  Visible on
+        # every blocked task (not only the marked one) so `list` shows which
+        # open work is genuinely selectable.
+        parts.append("BLOCKED")
     return f"{'  '.join(parts)}  — {r['title']}"
 
 
@@ -2426,15 +2557,30 @@ def _record_text(r):
 
 
 def _verb_list(args, dw_dir):
+    # Resolve depends edges against ALL records (not the --state-filtered
+    # subset): a need that has landed is satisfied, and a landed need is only
+    # visible when landed rows are in the resolver's input. Filtering first
+    # would make every landed need read as a missing referent (#136 fourth
+    # state) — the same false-zero this verb is here to prevent.
+    all_recs = _read_records(dw_dir)
+    blocked_ids, deps_info = _resolve_depends_state(all_recs)
+    # #868 — state BOTH denominators on stderr so a computed `blocked` field
+    # cannot read as an all-clear when nobody stated the count.
+    sys.stderr.write(_deps_summary_line(deps_info))
+    sys.stderr.write(_deps_warnings(deps_info))
     recs = _records_for(args, dw_dir)
+    if getattr(args, "unblocked", False):
+        recs = [r for r in recs if r["id"] not in blocked_ids]
     if getattr(args, "json", False):
-        sys.stdout.write(json.dumps([_record_json(r, body=False) for r in recs]) + "\n")
+        sys.stdout.write(json.dumps(
+            [_record_json(r, body=False, blocked=r["id"] in blocked_ids)
+             for r in recs]) + "\n")
         return 0
     if not recs:
         sys.stdout.write("(no tasks)\n")
         return 0
     for r in recs:
-        sys.stdout.write(_list_line(r) + "\n")
+        sys.stdout.write(_list_line(r, blocked=r["id"] in blocked_ids) + "\n")
     return 0
 
 
@@ -3276,6 +3422,9 @@ def main(argv=None):
                        help="row order (default id ascending)")
     plist.add_argument("--json", action="store_true",
                        help="emit a JSON array (stable field names; see module docstring)")
+    plist.add_argument("--unblocked", action="store_true",
+                       help="filter to tasks whose depends edges are all "
+                            "satisfied (resolved against task state, #1152)")
     plist.add_argument("--ledger", default=LEDGER_DEFAULT,
                        help="path to the ledger; its parent is the .dreamwork/ dir (default %(default)s)")
 

@@ -361,7 +361,8 @@ def test_count_human_shape(migrate, dev_ledger, tmp_path):
 # ===========================================================================
 
 _CONTRACT_KEYS = {"id", "state", "title", "priority", "type", "origin",
-                  "next_up"}  # #884 — the mark rides the same contract
+                  "next_up",  # #884 — the mark rides the same contract
+                  "depends_on", "blocked"}  # #1152 — resolved dependency edges
 
 
 def test_list_json_store_ids_match_fixture(migrate, dev_ledger, tmp_path):
@@ -442,6 +443,159 @@ def test_list_human_line_shape(migrate, dev_ledger, tmp_path):
     # Each line begins with the id token and carries the title (from fixture).
     for ln in lines:
         assert ln.startswith("#"), f"line must start with id token: {ln!r}"
+
+
+# ===========================================================================
+# list --json dependency resolution (#1152).  The `depends(task, needs)` table
+# is the live edge store — what `block` writes (#1054) — and the JSON payload
+# carried no trace of it, so `row.get("blocked_on")` was None on every row and
+# every task read as free.  These tests resolve those edges against task state
+# and bind the RESOLUTION RULE against a fixture, not a corpus total.
+#
+# The fixture's known structure: #10 #12 #15 open; #11 #13 landed.  Edges are
+# added per-test so each of the four blocked-states (#136) is exercised.
+# ===========================================================================
+
+def _dw_with_edges(migrate, tmp_path, edges, *, missing=None):
+    """A store fixture from LEDGER plus task→task depends edges.
+
+    ``edges`` is a list of ``(task_id, needs_id)`` written via the production
+    ``block`` writer (#1054).  ``missing`` is an optional ``(task_id,
+    needs_id)`` inserted with FK enforcement OFF so the need names a task that
+    does NOT exist — the fourth blocked-state, the one most likely to be
+    silently folded into "satisfied".
+    """
+    dw = _store_dw(migrate, tmp_path / "dw")
+    db_path = dw / ledger_parse.STORE_FILENAME
+    with open_database(task_store_spec(db_path), access=Access.WRITE) as store:
+        for task_id, needs_id in edges:
+            ledger_write.block_task(
+                store, task_id, needs=needs_id, why="test edge")
+    if missing is not None:
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.execute(
+            "INSERT INTO depends (task, needs) VALUES (?, ?)", missing)
+        conn.commit()
+        conn.close()
+    return dw
+
+
+def test_list_json_carries_depends_and_blocked(migrate, dev_ledger, tmp_path):
+    """list --json carries the depends edges and a resolved blocked flag.
+
+    PRODUCTION LINE: ``_resolve_depends_state`` + ``_record_json`` in
+    ``dev/ledger.py``.  RED: make the resolver read the ``blocked_on`` column
+    instead of ``depends`` and a blocked task reads as free (#1152).
+    """
+    # #15 needs #10 (open → unsatisfied); #12 needs #13 (landed → satisfied).
+    dw = _dw_with_edges(migrate, tmp_path, [(15, 10), (12, 13)])
+    rc, out, _ = _run(dev_ledger,
+                      ["list", "--state", "open", "--json",
+                       "--ledger", str(dw / "tasks.md")])
+    assert rc == 0
+    data = json.loads(out)
+    by_id = {r["id"]: r for r in data}
+    # Precondition: the three open fixture tasks are present.
+    assert {10, 12, 15} <= set(by_id), "fixture open tasks must appear"
+
+    # Four blocked-states (#136), each asserted from the fixture's structure:
+    # (a) no edges → free.
+    assert by_id[10]["depends_on"] == [], "no-edge task has empty depends_on"
+    assert by_id[10]["blocked"] is False, "no-edge task is free"
+    # (b) all needs landed → free (dependencies satisfied).
+    assert by_id[12]["depends_on"] == [13], "satisfied task lists its landed need"
+    assert by_id[12]["blocked"] is False, "all-needs-landed task is free"
+    # (c) ≥1 need open → blocked (unsatisfied).
+    assert by_id[15]["depends_on"] == [10], "blocked task lists its open need"
+    assert by_id[15]["blocked"] is True, "open-need task is blocked"
+
+
+def test_list_unblocked_filter_excludes_blocked(migrate, dev_ledger, tmp_path):
+    """--unblocked filters to tasks whose depends edges are all satisfied.
+
+    PRODUCTION LINE: the ``if getattr(args, 'unblocked', False)`` filter in
+    ``_verb_list``.  RED: delete the filter and blocked tasks leak back in.
+    """
+    dw = _dw_with_edges(migrate, tmp_path, [(15, 10)])
+    # Precondition: #15 is open and blocked (so the filter has work to do).
+    rc, out, _ = _run(dev_ledger,
+                      ["list", "--state", "open", "--json",
+                       "--ledger", str(dw / "tasks.md")])
+    assert rc == 0
+    pre = {r["id"]: r for r in json.loads(out)}
+    assert pre[15]["blocked"], "precondition: #15 is blocked before filtering"
+
+    rc, out, _ = _run(dev_ledger,
+                      ["list", "--state", "open", "--unblocked", "--json",
+                       "--ledger", str(dw / "tasks.md")])
+    assert rc == 0
+    data = json.loads(out)
+    got = {r["id"] for r in data}
+    assert 15 not in got, "blocked task #15 must be filtered out by --unblocked"
+    assert all(not r["blocked"] for r in data), "no blocked task in --unblocked"
+
+
+def test_list_deps_denominators_on_stderr(migrate, dev_ledger, tmp_path):
+    """list states both denominators on stderr (#868): how many open, blocked,
+    and free — so a computed ``blocked`` field cannot read as all-clear.
+
+    PRODUCTION LINE: ``_deps_summary_line`` in ``_verb_list``.  RED: drop the
+    stderr line and the counts vanish while the per-task field stays.
+    """
+    dw = _dw_with_edges(migrate, tmp_path, [(15, 10), (12, 13)])
+    rc, _, err = _run(dev_ledger,
+                      ["list", "--state", "open",
+                       "--ledger", str(dw / "tasks.md")])
+    assert rc == 0
+    # Derive the expected counts from the fixture's structure at runtime: 3
+    # open tasks (#10 #12 #15), 1 blocked (#15 needs open #10), 2 free.
+    assert "deps: examined 3 open task(s), 1 blocked, 2 free" in err, err
+
+
+def test_list_missing_referent_is_blocked_not_satisfied(
+        migrate, dev_ledger, tmp_path):
+    """An edge naming a task that does not exist is NOT satisfied — it is the
+    same false-zero one level down (#136 fourth state).
+
+    PRODUCTION LINE: the ``if need not in id_state`` branch in
+    ``_resolve_depends_state``.  RED: treat a missing need as satisfied (or
+    skip it) and the task reads as free under an authoritative field.
+    """
+    dw = _dw_with_edges(migrate, tmp_path, [], missing=(10, 999999))
+    rc, out, err = _run(dev_ledger,
+                        ["list", "--state", "open", "--json",
+                         "--ledger", str(dw / "tasks.md")])
+    assert rc == 0
+    data = json.loads(out)
+    by_id = {r["id"]: r for r in data}
+    assert by_id[10]["blocked"] is True, (
+        "a task needing a nonexistent task must NOT read as satisfied")
+    assert 999999 in by_id[10]["depends_on"], "the missing need is in depends_on"
+    # The defect is named on stderr, not swallowed.
+    assert "999999" in err and "does not exist" in err, err
+
+
+def test_resolve_depends_state_reports_cycle(dev_ledger):
+    """A cycle among open tasks is reported, not silently blocked-forever.
+
+    PRODUCTION LINE: ``_depends_cycles`` in ``_resolve_depends_state``.  The
+    ``block`` writer refuses cycles, so this is a unit test of the resolver
+    against hand-built records — the only way to construct the defect state.
+    RED: make ``_depends_cycles`` return ``[]`` and the cycle warning vanishes
+    while the tasks stay blocked with no explanation.
+    """
+    resolve = dev_ledger._resolve_depends_state
+    # A -> B -> A cycle, plus C needs A (not in a cycle but blocked).
+    records = [
+        {"id": 1, "state": "open", "depends_on": (2,)},
+        {"id": 2, "state": "open", "depends_on": (1,)},
+        {"id": 3, "state": "open", "depends_on": (1,)},
+    ]
+    blocked_ids, info = resolve(records)
+    assert blocked_ids == {1, 2, 3}, "all three are blocked (open needs)"
+    assert sorted(info["cycles"]) == [1, 2], (
+        f"the A->B->A cycle is reported: {info['cycles']}")
 
 
 # ===========================================================================
