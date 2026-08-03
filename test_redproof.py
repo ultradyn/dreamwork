@@ -2705,9 +2705,9 @@ class TestNamedLaneAcrossEveryCliVerb:
 
         unknown = self._run(
             repo, env, "forget", "router.js", "--lane", "cx-1148fxture")
-        assert unknown.returncode == 2, unknown.stdout + unknown.stderr
         assert "--lane 'cx-1148fxture' did not resolve to an existing launch identity" \
-            in unknown.stderr
+            in unknown.stderr, unknown.stdout + unknown.stderr
+        assert unknown.returncode == 2, unknown.stdout + unknown.stderr
         assert "nothing registered" not in unknown.stderr
 
 
