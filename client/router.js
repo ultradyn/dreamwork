@@ -1376,7 +1376,15 @@ function setData(next) {
   // all of them — where the declared set has not moved.
   if (window.dwPluginCommands) window.dwPluginCommands(data.plugin_commands);
   const registry = nativeRegistry();
-  if (registry) registry.update(data);
+  // Native delegates replace their builder-owned subtree when React updates.
+  // Carry the same human-owned card state the legacy tick carries, and take
+  // the snapshot BEFORE update: afterwards the draft and caret are gone.
+  const kept = registry && registry.mounted().length
+    ? snapshotCardState() : null;
+  if (registry) {
+    registry.update(data);
+    restoreCardState(kept);
+  }
   return data;
 }
 async function ensureData() {
