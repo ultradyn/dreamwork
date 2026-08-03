@@ -806,7 +806,7 @@ def inspect_lanes(
     cwd_reader = read_cwd or read_proc_cwd
     skip = skip_pids if skip_pids is not None else _ancestor_pids()
     wt_by_path = {str(wt): wt.name for wt in worktrees}
-    cwd_occupied: dict[str, int] = {}
+    cwd_occupied: dict[str, list[int]] = {}
     for pid in pids:
         if pid in skip:
             continue
@@ -820,9 +820,10 @@ def inspect_lanes(
         if lane_name is None:
             continue
         if _is_lane_runner(reader(pid)):
-            # First runner pid wins; a lane's many descendants share the cwd
-            # (#837) and need only one pid to measure CPU/elapsed.
-            cwd_occupied.setdefault(lane_name, pid)
+            # Keep every runner in the worktree. A ccc lock holder commonly
+            # waits on a nested runner and therefore accumulates little CPU;
+            # any busy descendant must veto the destructive WEDGED verdict.
+            cwd_occupied.setdefault(lane_name, []).append(pid)
     cwd_live_names = tuple(sorted(
         name for name in cwd_occupied if name not in live_set))
     cwd_live_set = set(cwd_live_names)
@@ -839,10 +840,16 @@ def inspect_lanes(
     # injectable wedge marker, so the fleet count no longer asserts a working
     # count it never measured. cpu/wedge probes default to the live ones and
     # may both be injected in tests; each lane gets the verdict its own pid's
-    # signals produce, never a fleet-wide guess.
+    # signals produce, never a fleet-wide guess. Every lock-confirmed pid and
+    # every cwd runner is consulted; one busy process vetoes WEDGED, while an
+    # unreadable process prevents treating the full set as idle.
     live_names = sorted(live_set | cwd_live_set)
-    pid_by_lane = dict(lock_live_pids)
-    pid_by_lane.update(cwd_occupied)
+    pids_by_lane = {
+        lane: [pid] for lane, pid in lock_live_pids.items()
+    }
+    for lane, runner_pids in cwd_occupied.items():
+        lane_pids = pids_by_lane.setdefault(lane, [])
+        lane_pids.extend(pid for pid in runner_pids if pid not in lane_pids)
     wt_by_name = {wt.name: wt for wt in worktrees}
     cpu_reader = read_cpu or read_proc_cpu
     if wedge_probe is not None:
@@ -857,8 +864,8 @@ def inspect_lanes(
             return _default_wedge_probe(
                 wt, p, cpu_seconds=cpu_s, elapsed_seconds=elapsed_seconds)
     live_liveness = tuple(
-        _classify_lane_pid(lane, pid_by_lane.get(lane), wt_by_name,
-                           cpu_reader, wedge)
+        _classify_lane_pids(lane, pids_by_lane.get(lane, ()), wt_by_name,
+                            cpu_reader, wedge)
         for lane in live_names)
 
     return LaneInspection(
@@ -915,3 +922,46 @@ def _classify_lane_pid(lane, pid, wt_by_name, cpu_reader, wedge):
             # not an exception that crashes the tick.
             marker = None
     return classify_live_lane(lane, cpu_s, elapsed, marker)
+
+
+def _classify_lane_pids(lane, pids, wt_by_name, cpu_reader, wedge):
+    """Classify every relevant process, then conservatively reduce to a lane.
+
+    ``WEDGED`` is the only destructive verdict, so it requires every
+    lock-confirmed/cwd-runner process to classify wedged. One working process
+    vetoes it. An unreadable process is UNKNOWN rather than zero CPU and also
+    vetoes it; a process that vanished during /proc probing is not idle.
+    """
+    if not pids:
+        return _classify_lane_pid(
+            lane, None, wt_by_name, cpu_reader, wedge)
+
+    verdicts = [
+        (pid, _classify_lane_pid(lane, pid, wt_by_name, cpu_reader, wedge))
+        for pid in pids
+    ]
+    working = [(pid, verdict) for pid, verdict in verdicts
+               if verdict.state == LIVE_WORKING]
+    if working:
+        return LiveLane(
+            lane, LIVE_WORKING,
+            "busy pid(s) %s; consulted %d/%d relevant processes"
+            % (", ".join(str(pid) for pid, _verdict in working),
+               len(verdicts), len(pids)))
+
+    for state in (LIVE_UNKNOWN, LIVE_NOT_YET):
+        matching = [(pid, verdict) for pid, verdict in verdicts
+                    if verdict.state == state]
+        if matching:
+            pid, verdict = matching[0]
+            return LiveLane(
+                lane, state,
+                "pid %s: %s; consulted %d/%d relevant processes"
+                % (pid, verdict.reason, len(verdicts), len(pids)))
+
+    # No busy, unreadable, or young process remains: every relevant process
+    # independently supplied the low-CPU wedge evidence required for WEDGED.
+    return LiveLane(
+        lane, LIVE_WEDGED,
+        "%s; all %d/%d relevant processes classified wedged"
+        % (verdicts[0][1].reason, len(verdicts), len(pids)))

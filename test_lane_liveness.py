@@ -1127,8 +1127,9 @@ class TestLiveLivenessCwdChannel:
         """All cwd runners are relevant to the lane verdict. PID 701 is idle
         while its nested PID 702 is busy; reversing /proc enumeration must
         not change the state, and the busy runner must veto WEDGED."""
-        target, worktree, _identity = _subject(tmp_path, lane="glm-nested")
-        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: False)
+        target, worktree, identity = _subject(tmp_path, lane="glm-nested")
+        _write_lock(worktree, identity, pid=701)
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: True)
         cpu = {701: (0.1, 600.0), 702: (25.0, 600.0)}
 
         def state_for(order):
@@ -1140,7 +1141,8 @@ class TestLiveLivenessCwdChannel:
                 read_cpu=lambda pid: cpu[pid],
                 wedge_probe=lambda _wt, _pid: "permission-wedge",
                 skip_pids=set())
-            assert inspection.cwd_live == ("glm-nested",)
+            assert inspection.live == ("glm-nested",)
+            assert inspection.cwd_live == ()
             assert len(inspection.live_liveness) == 1
             return inspection.live_liveness[0].state
 
@@ -1150,6 +1152,43 @@ class TestLiveLivenessCwdChannel:
             "same lane with PID 701=0.1s CPU and PID 702=25.0s CPU produced " \
             "states forward=%s reverse=%s; both runners must be consulted " \
             "and busy PID 702 must veto WEDGED" % (forward, reverse)
+
+    def test_unreadable_runner_prevents_wedged(self, tmp_path, monkeypatch):
+        """A runner that vanishes between enumeration and its CPU read is
+        UNKNOWN, not an idle process that can help authorise WEDGED."""
+        target, worktree, _identity = _subject(tmp_path, lane="glm-vanished")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: False)
+        cpu = {701: (0.1, 600.0), 702: None}
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["701", "702"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"ccc\x00-y\x00@glm52\x00",
+            read_cwd=lambda _pid: str(worktree),
+            read_cpu=lambda pid: cpu[pid],
+            wedge_probe=lambda _wt, _pid, *, cpu_s=None, **_kw: (
+                "permission-wedge" if cpu_s is not None else None),
+            skip_pids=set())
+        verdict = inspection.live_liveness[0]
+        assert verdict.state == lane_liveness.LIVE_UNKNOWN
+        assert "pid 702" in verdict.reason
+        assert "consulted 2/2 relevant processes" in verdict.reason
+
+    def test_all_idle_runners_can_still_be_wedged(self, tmp_path, monkeypatch):
+        """The conservative reduction does not make WEDGED unreachable: all
+        relevant runners may still independently supply wedge evidence."""
+        target, worktree, _identity = _subject(tmp_path, lane="glm-all-idle")
+        monkeypatch.setattr(lane_liveness, "pid_matches_lane", lambda *_a: False)
+        inspection = lane_liveness.inspect_lanes(
+            target, process_entries=["701", "702"],
+            registered_worktrees=(worktree,),
+            read_cmdline=lambda _pid: b"ccc\x00-y\x00@glm52\x00",
+            read_cwd=lambda _pid: str(worktree),
+            read_cpu=lambda _pid: (0.1, 600.0),
+            wedge_probe=lambda _wt, _pid: "permission-wedge",
+            skip_pids=set())
+        verdict = inspection.live_liveness[0]
+        assert verdict.state == lane_liveness.LIVE_WEDGED
+        assert "all 2/2 relevant processes classified wedged" in verdict.reason
 
 
 class TestLiveLivenessDenominator:
