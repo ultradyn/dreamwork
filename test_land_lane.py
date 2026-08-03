@@ -1597,6 +1597,88 @@ def test_documentation_only_branch_requires_no_injection_and_lands(doc_only_repo
     assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before
 
 
+def test_doc_only_branch_lands_with_empty_named_selection(doc_only_repo):
+    """#1018: a documentation-only branch has no test to name.
+
+    The honest path is a THIRD STATE (#136): covered by lint and by nothing
+    else is different from covered by named tests and different from coverage
+    unknown.  An empty named-test selection is legitimate when — and only
+    when — the entire diff is inert documentation, so the #1010 guarantee (an
+    empty selection is indistinguishable from a broken deriver) survives for
+    any branch that has a single binding path.
+    """
+    root, lane = doc_only_repo
+    _empty_registry(lane, ".dreamwork/docs/census.md")
+    before = _git(root, "rev-parse", "--verify", "refs/heads/master")
+    # Precondition the test's meaning depends on: the diff is one doc path.
+    assert _git(lane, "diff", "--name-only", "master", "lane").split() == [
+        ".dreamwork/docs/census.md"
+    ]
+
+    result = _run(root)  # no named tests — the honest path for a doc-only branch
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "selection: 0 named tests; the diff is entirely covered" in result.stdout
+    assert (
+        "named tests are not required because no changed path is binding"
+        in result.stdout
+    )
+    assert "named-tests: 0 selected" in result.stdout
+    assert "named-tests waived" in result.stdout
+    assert "lint-precheck and lint-comparison are the covering phases" in result.stdout
+    assert "gate-coverage: 6 of 6 declared gates passed" in result.stdout
+    assert _git(root, "rev-parse", "--verify", "refs/heads/master") != before
+
+
+def test_empty_selection_names_binding_paths_when_refusing(landing_repo):
+    """#651/#1018: the refusal for a binding branch must NAME what it detected.
+
+    The examined line carries the binding paths so an operator can see WHY an
+    empty selection was refused — not just THAT it was.  This binds the
+    BEHAVIOUR (a branch with binding paths still refuses) and names the
+    detectable mode (the binding paths are listed), not just the prose.
+    """
+    root, lane = landing_repo
+    before = _git(root, "rev-parse", "HEAD")
+    result = _run(root)  # no named tests on a binding diff
+
+    assert result.returncode == 1
+    assert "REFUSE phase=selection: named test selection is empty" in result.stderr
+    assert "binding path(s)" in result.stderr
+    assert "feature.txt" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
+def test_comment_only_py_still_refuses_empty_selection(tmp_path):
+    """#1018 Symptom B is NOT fixed: a comment-only .py is still binding.
+
+    A sound automatic inert-classification for comment-only .py diffs is not
+    achievable — a line that looks like a comment inside a triple-quoted string
+    is code, and a docstring a test asserts on IS behaviour (test_brief.py is
+    a module full of assertions about text).  The classifier stays conservative:
+    anything outside .dreamwork/ that ends in .py is binding, regardless of
+    whether the diff content looks inert.  This binds that behaviour so the
+    trap (Direction 2 of the brief) survives the fix for Symptom A.
+    """
+    root, lane = _make_repo(tmp_path)
+    # A .py file whose diff is comments only — still classified binding by path.
+    _write(lane / "some_tool.py", "# a comment-only change\n")
+    _git(lane, "add", "some_tool.py")
+    _git(lane, "commit", "-m", "comment-only py")
+    _empty_registry(lane, "some_tool.py")
+    before = _git(root, "rev-parse", "HEAD")
+
+    result = _run(root)  # no named tests
+
+    assert result.returncode == 1
+    assert "REFUSE phase=selection: named test selection is empty" in result.stderr
+    assert "binding path(s)" in result.stderr
+    assert "some_tool.py" in result.stderr
+    _assert_base_unmoved(root, before)
+    _assert_retained(root, lane)
+
+
 def test_unreadable_registry_at_require_zero_names_its_cause_not_absence(
         doc_only_repo, monkeypatch):
     """#1038 Finding 1 integration: a registry that is PRESENT but UNREADABLE
