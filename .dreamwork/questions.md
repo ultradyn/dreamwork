@@ -33,6 +33,8 @@
     as an open question that we'll revisit once dreamhub is stable and the
     primary way we access dreamworkers
 
+## Answered
+
 - **P1 · 2026-08-03 — the React port is a strictly serial 21-task chain: batch the five
   wrapper exports into one lane, or keep walking it one at a time?**
   **The React port is a strictly serial chain, and I want your call on whether to keep it that way
@@ -84,7 +86,15 @@
   nearly briefed two blocked tasks as ready. Filed as `#1152` (P1); `ledger.py counts` reports blockers
   correctly, so it is the listing verb specifically.
 
-## Answered
+  - **Answer (human, via transcript, 2026-08-03):** "you should always batch when you can and it
+    makes sense"
+  - **Folded:** taken as a STANDING preference, not just a ruling on this chain. Recorded in
+    DREAMWORK.md. Applied immediately: `#1061`..`#1065` (the five wrapper exports) will go out as ONE
+    lane once `#1060` lands, collapsing five chain links to one. The judgement half — "when it makes
+    sense" — I am reading as: batch when the tasks share the contended files AND are the same shape,
+    because that is what makes one increment cheaper than N; do NOT batch unrelated defects that
+    merely happen to touch one file, since that trades a scheduling win for a diff nobody can review.
+
 
 - **P2 · 2026-08-03 — which URL should be the canonical task view, `/tasks` or `/tasks2`? (#1110)**
   **UPDATE 2026-08-03: my stated default has since LANDED (#1013, `5887c182`, merge `bb94f305`).**

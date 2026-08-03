@@ -258,6 +258,30 @@ cleared. Recorded so the near-term focus is not re-derived from scratch next tim
 
 ## Preferences & Routines
 
+- **Batch work whenever you can and it makes sense** (human-set 2026-08-03,
+  answering the React-chain question): *"you should always batch when you can
+  and it makes sense"*. Said in reply to a specific ask — should the five
+  wrapper exports `#1061`..`#1065` go out as one lane or five — but phrased as a
+  general rule, so it is recorded as one.
+
+  **What it decides.** When several filed tasks share the contended files AND
+  are the same shape, they are ONE increment, not N. Five wrapper exports each
+  edit `dev/build/wrapper-exports.js`, `client_dist.py`, `watch.py`'s
+  `DATA_SIBLINGS`, `client/dist/*` and `dev/capture/wrappereq.mjs`; dispatched
+  separately they cannot even run concurrently, because two lanes on those files
+  conflict at the merge gate. Batched, the contended files are edited once and
+  five chain links collapse to one.
+
+  **The judgement half — "when it makes sense" — reads as: share files AND
+  share shape.** Do NOT batch unrelated defects that merely happen to touch one
+  file (`#1004`, `#1144`, `#1147` and `#1149` all want `lint.py` for four
+  different reasons); that trades a scheduling win for a diff nobody can review,
+  and the ~15-20 minute increment cap is what the batch has to stay inside.
+
+  **Why it needed saying at all:** a serial chain is invisible in the task list.
+  21 of 26 blocked tasks were one chain and nothing displayed that, so the
+  default was to walk it a lane at a time without ever noticing the cost.
+
 - **Ask him less, and only where the answer is genuinely his** (human-set
   2026-07-28 05:35, folding #367's answer): *"instruct dreamwork agents to be
   more concise and keep to the most important topics. IGCs that only have one
