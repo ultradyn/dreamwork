@@ -6761,3 +6761,67 @@ is upstream: before restating a second-hand report as fact, run the one-line
 fixture that would refute it.** `#1188` was dispatched this way — with a
 measurement taken minutes earlier by the lane that refuted `#1168` — and that
 is the shape to copy.
+
+## A probe that cannot express "alive" reports every process as dead (2026-08-04, #1189/#1169)
+
+I read a running landing gate as having died, filed a note claiming it as a
+sixth confirmation of `#1169`, and launched two redundant gates on that belief.
+The gate was working the whole time and had already merged `#1189`.
+
+The instrument:
+
+    a1=$(tr -d '\000' < /proc/$pid/cmdline | sed -n '2p')   # WRONG
+    case "$a1" in *land_lane.py*) echo ALIVE ;; esac
+
+`tr -d '\000'` DELETES the NUL separators, so the whole cmdline becomes ONE
+line and `sed -n '2p'` returns the empty string for any command without an
+embedded newline. **The probe had no code path that could print a live
+`land_lane`.** It did not measure liveness and report a wrong answer; it
+measured nothing and rendered it as absence. The fix is one character of
+intent: `tr '\000' '\n'` — translate, do not delete.
+
+**What made it stick was corroboration that was not corroboration.** Two other
+signals agreed, and both were normal states of a healthy job: a 0-byte log
+(python block-buffers stdout to a file, so an empty log is the EXPECTED early
+state of a long redirected run) and a missing exit marker (written only after
+the process exits, so its absence means "not finished", which is what running
+looks like). Three signals, one cause — I had built three views of the same
+"has not produced output yet" and read them as independent evidence of death.
+
+**The rule: verify an instrument in the direction it is supposed to be able to
+say YES.** A check that only ever fires negative is indistinguishable from a
+check that cannot fire. Before trusting "X is not running", "no matches found",
+or "nothing to do", run it against a case you KNOW is positive and watch it say
+so. `#1169`'s lane landed the same discipline in code the same hour — its
+`job-wait` does not ask "is the pid alive", it requires a POSITIVE completion
+record — and `#1180`'s brief now carries it, because a reaper whose liveness
+probe can only return "not running" will happily reap live lanes.
+
+This is the sibling of the false-zero lesson: there, a zero read as an
+all-clear; here, a zero that the instrument could never have failed to produce.
+
+## A quoted sentence can be genuinely present in the cited task and still misattribute its holding (2026-08-04, #1180/#612)
+
+`#1180`'s round 1 stopped with zero commits: my brief hung the rule *"a sweep
+that reports only removals cannot be audited"* on `#612`, and the lane opened
+`#612`, found it did not support that, and refused under the standing contract.
+It was right to stop.
+
+The subtlety is what makes this worth writing down. The sentence I quoted —
+*"A report nobody can skim is a report nobody reads"* — **is in `#612`,
+verbatim.** I had not fabricated it. But `#612` is about lint output being too
+LONG, and its remedy is *"truncate the quote to the first sentence plus the
+sha."* I cited a SHORTENING decision as authority for demanding MORE reporting.
+The quote was real and the attribution was still false.
+
+So "I can find the words in the source" is not the check. The check is whether
+the cited task's HOLDING — what it decided, and in which direction — supports
+the use being made of it. A citation is a claim about a decision, not about a
+string.
+
+The repair made the brief better than the original: `#612` now appears
+constraining the FORM of the sweep's output (short, structured, complete, detail
+behind a flag) — which is what it actually says — and the auditability
+requirement is stated plainly as mine, with no citation behind it, because I am
+not aware of a task that states it. **An uncited requirement a lane can weigh is
+worth more than a cited one it has to disprove.**

@@ -450,13 +450,23 @@ lane has no persistence duty to forget.
   still knows"* — retrieval is.
 
   Retrieval has a tool (#349): `python3 <skill-dir>/dev/lessons_index.py
-  --act <act>` prints, verbatim, the lessons governing the act you are
-  about to do — `--acts` lists them (`red-proof` before an injection,
+  --act <act>` prints, verbatim, a RANKED BOUNDED SELECTION of the lessons
+  governing the act you are about to do — at most six, followed by an
+  explicit `N more` and the exact `--all` command that retrieves the rest
+  (#1194). `--acts` lists the acts (`red-proof` before an injection,
   `parsed-file` before writing a file a tool parses, `worktree-dispatch`
   before a dispatch). Consult it at the moment of the act, and select a
   brief's four to six from the slice it prints, not from the top of the
   file. It never summarises (the evidence half is why the format exists),
   and it reports what it could not classify rather than missing silently.
+
+  **The bound is not a cap you can ignore — it is the reason the tool is
+  usable at all.** Before #1194 the acts ran 423–5189 lines and the widest
+  ones were simply truncated by a lane's harness, which reads exactly like
+  a short act (#1188 found this). Six-plus-an-honest-count is what makes a
+  slice something a coordinator can actually copy four to six lessons out
+  of; when an act's ranking looks wrong for what you are about to do, run
+  `--all` rather than assuming the top six are everything.
 
 Delegation blocks files, not the loop. Record what a dispatched dreamer
 owns (files/dirs) at dispatch; the coordinator stays off those. After
