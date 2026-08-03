@@ -481,6 +481,20 @@ class TestFailClosed:
         assert exit == 2
         assert "absent" in err or "FAULT" in err
 
+    def test_a_present_but_unreadable_history_blob_is_a_fault(
+            self, lane, capsys):
+        poisoned, _ = _poison(lane)
+        blob = _git(lane, "rev-parse", f"{poisoned}:router.js")
+        object_path = lane / ".git" / "objects" / blob[:2] / blob[2:]
+        assert object_path.is_file(), "fixture needs a loose blob it can corrupt"
+        object_path.unlink()
+
+        exit = _check(lane)
+        _, err = capsys.readouterr()
+        assert exit == 2, err
+        assert f"{poisoned}:router.js" in err, err
+        assert "exists in its tree but its blob is unreadable" in err, err
+
 
 # ─#950: a state this build cannot read ────────────────────────────────
 
@@ -1819,14 +1833,14 @@ class TestTheScanCannotLookAtNothingAndPass:
 
 
 class TestKnownHole:
-    """Direction 2, executable: the branch the scan still gets wrong.
+    """Regression coverage for false-green history shapes."""
 
-    Kept as a passing test asserting the WRONG answer, so that closing the
-    hole fails here loudly instead of silently — and so the hole cannot be
-    forgotten the way a paragraph in a report can."""
-
-    def test_a_fork_point_moved_past_the_injection_hides_it(self, lane, capsys):
+    @pytest.mark.parametrize("retire", [False, True])
+    def test_a_fork_point_moved_past_the_injection_is_still_refused(
+            self, lane, capsys, retire):
         poisoned, clean = _poison(lane)
+        if retire:
+            assert rp.forget(lane, "router.js") == 0
         # The coordinator merges (fast-forward here), then the lane keeps going
         # on the same branch. merge-base is now PAST the poisoned commit.
         _git(lane, "branch", "-f", "master", clean)
@@ -1835,14 +1849,18 @@ class TestKnownHole:
 
         entries, _ = rp._read_registry(lane)
         rep = rp.scan_history(lane, entries)
-        assert rep["commits"] == 1, rep          # only the post-merge commit
-        assert rep["hits"] == []
+        assert rep["commits"] == 3, rep
+        assert [h["commit"] for h in rep["hits"]] == [poisoned], rep
 
         # ...while master demonstrably holds the injection, forever.
         assert _blob_sha_at(lane, poisoned, "router.js") == entries[0]["injected_sha"]
         assert _git(lane, "merge-base", "--is-ancestor", poisoned, "master") == ""
 
-        assert _check(lane) == 0                 # <- the false green, on purpose
+        # This test previously asserted exit 0. That was wrong: it specified
+        # silence after the mutable merge base hid committed sabotage.
+        assert _check(lane) == 1
+        _, err = capsys.readouterr()
+        assert poisoned[:12] in err, err
 
     def test_edits_between_the_sabotaged_commit_and_the_restore_hide_it(self, lane):
         """The comparison is whole-file byte-identity with what `restore` saw.
