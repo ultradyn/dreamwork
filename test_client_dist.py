@@ -499,39 +499,116 @@ def test_native_js_bundles_reacts_production_build():
         "grepping 143 KB of generated code")
 
 
+RUNTIME_WEIGHT_BUDGET = 147_000
+# Report migrated-component weight by default. Set this one line to the page
+# ceiling Max chooses if component growth should become bounded.
+COMPONENT_WEIGHT_BUDGET = None
+
+
+def _native_weight(root=ROOT):
+    res = subprocess.run(
+        ["node", str(ROOT / "dev/build/measure-runtime.mjs"),
+         "--root", str(root)], capture_output=True, text=True)
+    assert res.returncode == 0, (
+        "runtime-only measurement failed: %s" % res.stderr.strip())
+    try:
+        runtime = json.loads(res.stdout)["runtime_bytes"]
+    except (KeyError, TypeError, ValueError) as exc:
+        pytest.fail("runtime-only measurement emitted no byte count: %s (%s)"
+                    % (res.stdout.strip(), exc))
+    total = (pathlib.Path(root) / client_dist.NATIVE_REL).stat().st_size
+    assert 50_000 < runtime <= total, (
+        "runtime-only measurement is %r against %d total bytes — it is not "
+        "a non-empty proper runtime/component split" % (runtime, total))
+    return {"runtime": runtime, "components": total - runtime, "total": total}
+
+
+def _enforce_native_weight(weight):
+    assert weight["runtime"] <= RUNTIME_WEIGHT_BUDGET, (
+        "runtime-only bundle is %d bytes, over its %d-byte budget; this "
+        "measurement excludes migrated route components, so raising it is a "
+        "React/runtime decision, not ordinary UI work"
+        % (weight["runtime"], RUNTIME_WEIGHT_BUDGET))
+    if COMPONENT_WEIGHT_BUDGET is not None:
+        assert weight["components"] <= COMPONENT_WEIGHT_BUDGET, (
+            "migrated components are %d bytes, over their %d-byte ceiling"
+            % (weight["components"], COMPONENT_WEIGHT_BUDGET))
+
+
 def test_the_native_runtime_stays_inside_a_chosen_page_weight_budget():
-    """#630 plan §5-P2(ii): React's cost is a number someone chose.
+    """#630 plan §5-P2(ii), corrected by #1190 after its premise changed.
 
     The plan asks for a bound on PAGE. A bound on PAGE would be the wrong
     check HERE and would become a liability: the page is 604 KB and grows with
     every ordinary UI commit, so a PAGE budget fires on work that has nothing
     to do with this phase — the false red that trains a reader to raise the
-    number without looking. The thing this phase introduced is native.js, and
-    it does NOT grow with ordinary UI work: it grows when someone changes the
-    runtime or bumps React, which is exactly when a human should be asked.
+    number without looking. Native.js used to isolate the runtime, but the
+    React migration falsified that premise: route components now enter it as
+    ordinary UI work. The strict subject is therefore rebuilt separately as
+    React + ReactDOM + the registry + one probe; component weight is reported
+    independently and is bounded only when COMPONENT_WEIGHT_BUDGET is set.
 
-    Measured at P2: 146920 bytes minified (React 18.3.1 + ReactDOM + the
-    registry + one probe), against the plan's INFERRED 140-180 KB — so the
-    estimate held. P3 now pays that page-weight bill and keeps the same bound
-    on the runtime itself, where an ordinary builder edit cannot false-red it.
+    IGC context: preserve the P2 human decision while routes keep migrating.
+
+      Idea                         All  G1  G2  G3  G4
+      runtime-only measurement     yes  yes yes yes yes
+      esbuild per-input manifest   no   no  no  yes no
+      split production chunks      no   yes yes no  yes
+
+    G1 measures the semantic runtime; G2 stays true when the next component
+    lands without editing a number; G3 leaves native.js unchanged; G4 needs no
+    hand-classification of future component files. Per-input attribution is
+    refuted because a component can make esbuild retain new React code and the
+    compiler's byte allocation is not a semantic boundary. Production chunks
+    are refuted because this task changes measurement, not shipped contents.
     """
-    size = (ROOT / client_dist.NATIVE_REL).stat().st_size
-    assert size > 50_000, (
-        "%s is %d bytes — that is not React plus a runtime, and a budget "
-        "check against a stub passes forever"
-        % (client_dist.NATIVE_REL, size))
-    # #1006 replaces four bare forms with one labelled, cancellable editor,
-    # contextual tree actions, and field-specific validation. Measured after
-    # the final rebase also carried the parallel wrapper exports: 164255 bytes.
-    # Keep only 745 bytes of headroom so this remains a bound, not a rounded
-    # permission slip for unrelated growth.
-    budget = 165_000
-    assert size <= budget, (
-        "%s is %d bytes, over the %d-byte budget chosen at P2 (measured "
-        "146920 then). This is weight every dashboard load will carry from "
-        "P3 on. Raising the number is a decision, not a fix — say what was "
-        "added and why it is worth it"
-        % (client_dist.NATIVE_REL, size, budget))
+    weight = _native_weight()
+    print("native weight: runtime=%d, components=%d, total=%d"
+          % (weight["runtime"], weight["components"], weight["total"]))
+    _enforce_native_weight(weight)
+
+
+def test_runtime_growth_reds_while_larger_component_growth_stays_green(
+        tmp_path):
+    """The separating pair: runtime RED, ordinary component growth GREEN."""
+    root = tmp_path / "subject"
+    src = root / client_dist.NATIVE_SRC_DIR
+    shutil.copytree(ROOT / client_dist.NATIVE_SRC_DIR, src)
+    dist = root / client_dist.NATIVE_REL
+    dist.parent.mkdir(parents=True)
+    shutil.copy(ROOT / client_dist.NATIVE_REL, dist)
+    baseline = _native_weight(root)
+
+    registry = src / "registry.js"
+    original = registry.read_text(encoding="utf-8")
+    runtime_padding = "x" * 2_000
+    registry.write_text(
+        original + "\nglobalThis.__runtimeWeightProof = %r;\n" %
+        runtime_padding, encoding="utf-8")
+    runtime_growth = _native_weight(root)
+    assert runtime_growth["runtime"] > baseline["runtime"] + 1_000, (
+        "runtime injection did not materially enter the measured bundle")
+    with pytest.raises(AssertionError, match="runtime-only bundle is"):
+        _enforce_native_weight(runtime_growth)
+
+    registry.write_text(original, encoding="utf-8")
+    component_padding = "y" * 4_000
+    (src / "ordinary-component.js").write_text(
+        "import React from 'react';\n"
+        "export const Ordinary = () => React.createElement('div', null, %r);\n"
+        % component_padding, encoding="utf-8")
+    entry = src / "native-entry.js"
+    entry.write_text(
+        entry.read_text(encoding="utf-8") +
+        "\nimport { Ordinary } from './ordinary-component.js';\n"
+        "registry.register('__weight_proof', { component: Ordinary });\n",
+        encoding="utf-8")
+    component_growth = _native_weight(root)
+    assert component_growth["runtime"] == baseline["runtime"], (
+        "an ordinary registered component changed the runtime-only reading")
+    reported = dict(component_growth)
+    reported["components"] += len(component_padding)
+    _enforce_native_weight(reported)  # default report-only component policy
 
 
 def test_native_sources_are_all_build_inputs(tmp_path):
